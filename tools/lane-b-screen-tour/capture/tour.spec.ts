@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
-import { type Browser, type BrowserContext, type Page, type Route, expect, test } from '@playwright/test';
+import { type Browser, type BrowserContext, type Locator, type Page, type Route, expect, test } from '@playwright/test';
 
 import { shownVersionId } from '/home/user/screens/apps/web/e2e/export-attempts';
 import { addVirtualKey, enterPassword, registerKeyAndSignIn, signInWithKey, signInWithTotp, withDatabase } from '/home/user/screens/apps/web/e2e/helpers';
@@ -86,6 +86,14 @@ function wanted(id: string): boolean {
 /** Whether this run takes any shot whose id starts with the prefix (for a step that shots of several routes need). */
 function wantedPrefix(prefix: string): boolean {
   return ONLY.length === 0 || ONLY.some((item) => item.startsWith(prefix) || (item.endsWith('*') && prefix.startsWith(item.slice(0, -1))));
+}
+/**
+ * Whether TOUR_ONLY names this dark id exactly. A full run takes the dark tokens of each route's default only; a pull
+ * request's sample asks for every changed state at 1280 dark too (the UX and brand reviewer: "1280 and 390 px light and
+ * 1280 px dark (tokens only)" of each changed screen and state), so a dark id named in full is taken for any state.
+ */
+function darkAsked(darkId: string): boolean {
+  return ONLY.includes(darkId);
 }
 
 const shots: ShotEntry[] = [];
@@ -239,6 +247,52 @@ async function unreadGrant(): Promise<{ practiceId: string; grantId: string; nam
   return pick !== undefined && pick.reads === 0 ? { practiceId: pick.practice_id, grantId: pick.grant_id, name: pick.name, ticket: pick.ticket } : undefined;
 }
 
+/** Synthetic checklist words by unpriced reason (no figure, no payer name: the gateway's verifier keeps such an item). */
+const CHECKLIST_WORDS: Record<string, { readonly document: string; readonly why: string }> = {
+  NO_AGREEMENT: { document: 'The signed agreement with this payer, with its fee schedule', why: 'Lines from this payer have no agreement on file, so they cannot be priced yet.' },
+  NO_MAPPING: { document: 'The plan names this payer uses on its remittances', why: 'A plan on these lines is not mapped to an agreement yet.' },
+  NO_RATE_FOR_CODE: { document: 'The fee schedule page that lists these procedure codes', why: 'The agreement on file names no rate for these codes.' },
+  NO_PFS_VALUE: { document: 'The Medicare fee schedule year the agreement refers to', why: 'The schedule on file has no value for these codes.' },
+  DATE_OUTSIDE_VERSIONS: { document: 'The agreement version in force on these dates of service', why: 'No version on file covers these dates.' },
+  AMBIGUOUS_RATE: { document: 'The page of the agreement that settles which rate applies', why: 'More than a single rate on file could apply to these lines.' },
+};
+
+/**
+ * The model's evidence checklist for a practice (route map, /p/[practiceId]/coverage, "Suggest what to obtain with the
+ * model"). The server runs the gateway on the local deterministic provider, which answers only a request whose output was
+ * written for its exact key, as the repository's model journeys do (e2e/models.ts, expectModelOutput). So the gaps the
+ * server will send are computed with the product's own coverageGaps, in a practice scope as pricing-manager (one audited
+ * read of the run in effect, as the coverage page itself makes), and a synthetic checklist of one item per gap is written
+ * for them. The person then presses the button on screen. Imported when the step runs, so a ref without these modules
+ * fails only this step. Returns the number of items written.
+ */
+async function expectChecklist(practiceId: string): Promise<number> {
+  const models = (await import(`${SCREENS}/apps/web/e2e/models.ts`)) as { expectModelOutput: (purpose: 'suggestEvidenceRequests', input: unknown, output: unknown) => void };
+  const evidence = (await import(`${SCREENS}/apps/web/src/lib/models/evidence-checklist.ts`)) as {
+    coverageGaps: (scope: unknown, practiceId: string, requestId: string) => Promise<{ reason: string; count: number; payer: string | null; codes: string[] }[]>;
+  };
+  const environment = (await import(`${SCREENS}/apps/web/e2e/env.ts`)) as { e2eDatabaseUrl: () => string };
+  const db = (await import('@tp/db')) as {
+    appDevLoginUrl: (url: string) => string;
+    openPool: (url: string, max?: number) => { end: () => Promise<void> };
+    withPracticeScope: <T>(pool: unknown, scope: { actorId: string; practiceIds: string[] }, run: (scope: unknown) => Promise<T>) => Promise<T>;
+  };
+  const actorId = await one('SELECT id FROM "user" WHERE email = $1', [personaEmail('pricing-manager')]);
+  if (actorId === '') throw new Error('no pricing-manager user on this database');
+  const pool = db.openPool(db.appDevLoginUrl(environment.e2eDatabaseUrl()), 2);
+  try {
+    const gaps = await db.withPracticeScope(pool, { actorId, practiceIds: [practiceId] }, (scope) => evidence.coverageGaps(scope, practiceId, `tour-${randomBytes(8).toString('hex')}`));
+    log(`RECORDS checklist gaps: ${gaps.map((gap) => `${gap.reason} ${String(gap.count)}`).join('; ') || 'none'}`);
+    if (gaps.length === 0) throw new Error('the practice has no coverage gap, so the model is not asked (no_gaps)');
+    const fallback = { document: 'The document the contract specialist names for these lines', why: 'Lines with this reason cannot be priced until it is on file.' };
+    const items = gaps.map((gap) => ({ reason: gap.reason, ...(CHECKLIST_WORDS[gap.reason] ?? fallback) }));
+    models.expectModelOutput('suggestEvidenceRequests', { gaps }, { items });
+    return items.length;
+  } finally {
+    await pool.end();
+  }
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Pages, sessions and shots.
 
@@ -385,7 +439,7 @@ async function snap(page: Page, meta: Meta, options: { dark?: boolean; held?: bo
   const id = idOf(meta, width);
   const darkId = idOf(meta, width, true);
   const takeLight = wanted(id);
-  const takeDark = options.dark === true && width === 1280 && wanted(darkId);
+  const takeDark = (options.dark === true || darkAsked(darkId)) && width === 1280 && wanted(darkId);
   if (!takeLight && !takeDark) return;
   if (options.held === true) {
     await settleHeld(page);
@@ -537,6 +591,23 @@ async function refused(page: Page, text: RegExp = /Not done|Check the fields|Not
   await expect(page.locator('[data-slot="alert"], [role="alert"]').filter({ hasText: text }).first()).toBeVisible({ timeout: 15_000 });
 }
 
+/** The refusal of a page out of date: "could not be checked against your session" before co-001/ux-forms, "out of date" from it. */
+const STALE = /out of date|could not be checked/;
+
+/**
+ * A page out of date, as a person meets it once their session's token has changed (another tab, a new sign-in): the
+ * form's hidden CSRF token is altered on the page, as the forms journey does (apps/web/e2e/forms-keep-input.spec.ts, the
+ * support form's second step), so the server refuses the post before any write.
+ */
+async function staleToken(form: Locator): Promise<void> {
+  await form
+    .locator('input[name="csrfToken"]')
+    .first()
+    .evaluate((input) => {
+      (input as HTMLInputElement).value = 'SYNTHETIC-STALE-TOKEN';
+    });
+}
+
 interface Cap {
   readonly key: string;
   readonly route: string;
@@ -565,7 +636,7 @@ async function cap(browser: Browser, c: Cap): Promise<void> {
   const meta: Meta = { key: c.key, variant: c.variant ?? variantOf(state), state, route: c.route, role: c.persona ?? 'public', note: c.note };
   const dark = c.dark ?? state === 'default';
   for (const width of c.widths ?? WIDTHS) {
-    const shotIds = [idOf(meta, width), ...(dark && width === 1280 ? [idOf(meta, width, true)] : [])];
+    const shotIds = [idOf(meta, width), ...((dark || darkAsked(idOf(meta, width, true))) && width === 1280 ? [idOf(meta, width, true)] : [])];
     await attempt(shotIds, c.route, async () => {
       if (groupMade && c.persona === 'platform-admin' && LISTS_ORGANIZATIONS.has(c.key)) {
         throw new Error('SYNTHETIC CONSOLE EMPTY GROUP, which the run makes last, is on this database and the screen would list it: retake on a fresh prepare');
@@ -634,7 +705,7 @@ interface LoadCap {
 async function capLoading(browser: Browser, c: LoadCap): Promise<void> {
   const meta: Meta = { key: c.key, variant: 'loading', state: 'loading', route: c.route, role: c.persona ?? 'public', note: c.note ?? 'The route’s loading.tsx, held on a client navigation (page.route holds the RSC request).' };
   for (const width of WIDTHS) {
-    await attempt([idOf(meta, width)], c.route, async () => {
+    await attempt([idOf(meta, width), ...(width === 1280 && darkAsked(idOf(meta, width, true)) ? [idOf(meta, width, true)] : [])], c.route, async () => {
       const { page, dispose } = await open(browser, c.persona, width);
       try {
         await go(page, c.persona, c.from());
@@ -708,7 +779,11 @@ async function heldShot(
   await page.route(match, handler);
   try {
     await options.submit();
-    await expect(page.getByRole('button', { name: options.busy }).first()).toBeVisible({ timeout: 10_000 });
+    // Pending shows as the button's own words ("Working...", "Waiting for the key...") before co-001/ux-forms (ADR 0077),
+    // and from it as a status line beside a button that keeps its words ([data-slot="pending-status"]: "Working…",
+    // "Waiting for your hardware key. …"). Either is the pending state, so one spec shoots a PR's before and after.
+    const busy = page.getByRole('button', { name: options.busy }).or(page.locator('[data-slot="pending-status"]').filter({ hasText: options.busy }));
+    await expect(busy.first()).toBeVisible({ timeout: 10_000 });
     if (held === 0) throw new Error('the submit was not held (no matching request), so its pending state is not shown');
     await snap(page, meta, { held: true });
   } finally {
@@ -735,7 +810,7 @@ interface HeldCap {
 async function capHeld(browser: Browser, c: HeldCap): Promise<void> {
   const meta: Meta = { key: c.key, variant: 'loading', state: 'loading', route: c.route, role: c.persona ?? 'public', note: c.note ?? 'The pending submit, held with page.route and then aborted (nothing was sent).' };
   for (const width of WIDTHS) {
-    await attempt([idOf(meta, width)], c.route, async () => {
+    await attempt([idOf(meta, width), ...(width === 1280 && darkAsked(idOf(meta, width, true)) ? [idOf(meta, width, true)] : [])], c.route, async () => {
       const { page, dispose } = await open(browser, c.persona, width);
       try {
         await go(page, c.persona, typeof c.path === 'function' ? c.path() : c.path);
@@ -839,6 +914,7 @@ test.afterAll(async () => {
   await consumer?.close().catch(() => undefined);
   for (const context of [...desktop.values(), ...phones.values()]) await context.close().catch(() => undefined);
   if (ONLY.length === 0) coverageCheck();
+  else unreached();
   flush();
   log(`DONE ${String(taken.size)} shots taken this run; shots.json holds ${String(shots.length)} shots and ${String(skipped.length)} skipped`);
 });
@@ -990,7 +1066,7 @@ test('public pages and sign-in', async ({ browser }) => {
     path: R.key,
     prepare: async (page) => page.getByLabel('Email').fill(personaEmail('support')),
     submit: (page) => page.getByRole('button', { name: 'Sign in with hardware key' }).click(),
-    busy: /Waiting for the key/,
+    busy: /Waiting for (the|your hardware) key/,
     match: (url) => url.pathname === '/api/sign-in/hardware-key/options',
     note: 'The busy state while the key is asked: the options request held, then aborted.',
   });
@@ -1237,14 +1313,14 @@ async function registerKeyShots(browser: Browser): Promise<void> {
         await attempt(['sign-in-register-key.loading.390'], route, async () => {
           await heldShot(small, meta('loading', 'loading', 'reviewer', 'The busy state while the key answers: the options request held, then aborted.'), {
             submit: () => small.getByRole('button', { name: 'Register hardware key' }).click(),
-            busy: /Waiting for the key/,
+            busy: /Waiting for (the|your hardware) key/,
             after: 'abort',
             match: (url) => url.pathname === '/api/sign-in/register-key/options',
           });
         });
         await heldShot(page, meta('loading', 'loading', 'reviewer', 'The busy state while the key answers: the options request held, then let through (the key registers).'), {
           submit: () => page.getByRole('button', { name: 'Register hardware key' }).click(),
-          busy: /Waiting for the key/,
+          busy: /Waiting for (the|your hardware) key/,
           after: 'continue',
           match: (url) => url.pathname === '/api/sign-in/register-key/options',
         });
@@ -1282,7 +1358,7 @@ async function registerKeyShots(browser: Browser): Promise<void> {
             options: { protocol: 'ctap2', transport: 'usb', hasResidentKey: true, hasUserVerification: false, isUserVerified: false, automaticPresenceSimulation: true },
           });
           await view.getByRole('button', { name: 'Register hardware key' }).click();
-          await expect(view.locator('[data-slot="alert"], [role="alert"]').filter({ hasText: /Not signed in/ }).first()).toBeVisible({ timeout: 60_000 });
+          await expect(view.locator('[data-slot="alert"], [role="alert"]').filter({ hasText: /Not signed in|Not registered/ }).first()).toBeVisible({ timeout: 60_000 });
           await snap(view, meta('error', 'error', 'support-expiry', 'The key does not answer the ceremony (a virtual key that cannot verify the user, so the browser refuses): the refusal and its next step.'));
         });
       }
@@ -1643,12 +1719,15 @@ test('console and account', async ({ browser }) => {
     persona: A,
     path: cm,
     state: 'error',
-    note: 'A daily budget in dollars, not whole cents (refused; nothing set).',
+    note: 'A daily budget written in words, "5 dollars", for Everyone (refused: the budget is dollars and cents such as 5.00; nothing set).',
     act: async (page) => {
-      await page.getByLabel('Flag').selectOption({ index: await optionIndex(page, 'Flag', /budget/i) });
-      await page.getByLabel('Applies to').selectOption({ index: await optionIndex(page, 'Applies to', /Everyone/) });
-      await page.getByLabel('Value').fill('5.00');
-      await press(page.getByRole('button', { name: 'Set the flag' }));
+      // Since the budget became dollars (by e908c21), "5.00" is accepted and set a global budget (2026-10-27, the PR #74
+      // before run, undone on that synthetic database): the value is now one the form refuses on every ref.
+      const form = page.locator('form').filter({ has: page.getByRole('button', { name: 'Set the flag' }) });
+      await form.getByLabel('Flag', { exact: true }).selectOption({ index: await optionIndex(page, /^Flag$/, /budget/i) });
+      await form.getByLabel('Applies to', { exact: true }).selectOption({ index: await optionIndex(page, /^Applies to$/, /Everyone/) });
+      await form.getByLabel('Value', { exact: true }).fill('5 dollars');
+      await press(form.getByRole('button', { name: 'Set the flag' }));
       await refused(page);
     },
   });
@@ -1670,6 +1749,21 @@ test('console and account', async ({ browser }) => {
       await page.getByLabel('First update').fill('SYNTHETIC CHECK');
       await press(page.getByRole('button', { name: 'Open incident' }));
       await refused(page);
+    },
+  });
+  await cap(browser, {
+    key: 'console.status',
+    route: cs,
+    persona: A,
+    path: cs,
+    state: 'error',
+    variant: 'error-row',
+    note: 'The first component’s status row (a one-line flex form) refused: its CSRF token altered on the page, so the page is out of date and nothing is set. Its Status select offers only valid choices, so no field of the row can be refused by a person.',
+    act: async (page) => {
+      const row = page.getByRole('table', { name: 'Components' }).locator('form').first();
+      await staleToken(row);
+      await press(row.getByRole('button', { name: 'Set', exact: true }));
+      await refused(page, STALE);
     },
   });
   notReached('console.status', 'incident', cs, 'an open incident is an optional operator write that also changes /status; not taken');
@@ -1729,6 +1823,52 @@ test('console and account', async ({ browser }) => {
       await page.getByLabel('What happened, and what you expected').fill('SYNTHETIC CHECK');
       await press(page.getByRole('button', { name: 'Open ticket' }));
       await refused(page);
+    },
+  });
+  // A dropped connection and a page out of date, with the form filled (co-001/ux-forms, design 10.1; the forms journey's
+  // support steps): nothing reaches the server, or the server refuses before any write.
+  const ticketDraft = async (page: Page): Promise<void> => {
+    await page.getByLabel('Subject').fill('SYNTHETIC A QUESTION ABOUT THE STATEMENT');
+    await page.getByLabel('What happened, and what you expected').fill('SYNTHETIC CHECK the statement page');
+  };
+  await cap(browser, {
+    key: 'support',
+    route: sp,
+    persona: 'billing-manager',
+    path: '/support?from=remittances',
+    state: 'error',
+    variant: 'error-unconfirmed',
+    note: 'The connection dropped before an answer came back: the post aborted by page.route as a lost connection (nothing reached the server).',
+    act: async (page) => {
+      await ticketDraft(page);
+      const post = (url: URL): boolean => url.pathname === '/support';
+      const drop = async (route: Route): Promise<void> => {
+        if (route.request().method() === 'POST') await route.abort('internetdisconnected').catch(() => undefined);
+        else await route.continue().catch(() => undefined);
+      };
+      await page.route(post, drop);
+      try {
+        await press(page.getByRole('button', { name: 'Open ticket' }));
+        // From co-001/ux-forms the form says "Not confirmed" and keeps what was typed; before it, the error page shows.
+        await expect(page.getByText(/^(Not confirmed|Something went wrong)$/).first()).toBeVisible({ timeout: 15_000 });
+      } finally {
+        await page.unroute(post, drop).catch(() => undefined);
+      }
+    },
+  });
+  await cap(browser, {
+    key: 'support',
+    route: sp,
+    persona: 'billing-manager',
+    path: '/support?from=remittances',
+    state: 'error',
+    variant: 'error-stale',
+    note: 'A page out of date: the form’s CSRF token altered on the page, so the server refuses before any write.',
+    act: async (page) => {
+      await ticketDraft(page);
+      await staleToken(page.locator('form').filter({ has: page.getByRole('button', { name: 'Open ticket' }) }));
+      await press(page.getByRole('button', { name: 'Open ticket' }));
+      await refused(page, STALE);
     },
   });
   await capHeld(browser, {
@@ -2340,7 +2480,47 @@ test('practice workflow', async ({ browser }) => {
   await notice(browser, { key: 'p.coverage', route: cg, persona: 'pricing-manager', path: () => L('/coverage?model=proposed'), name: 'model-notice' });
   await cap(browser, { key: 'p.coverage', route: cg, persona: 'ledger-viewer', path: () => L('/coverage'), state: 'interaction:viewer' });
   await cap(browser, { key: 'p.coverage', route: cg, persona: 'era-manager', path: () => O('/coverage'), state: 'interaction:no-run', note: 'Lines but no run yet (SYNTHETIC OTHER PRACTICE).' });
-  notReached('p.coverage', 'refused-and-unconfirmed', cg, 'the refused state, months waiting on the ZIP, unconfirmed export formats and the model checklist need specs outside the populate set (uploads, onboarding, era-exports, models)');
+  notReached('p.coverage', 'refused-and-unconfirmed', cg, 'the refused state, months waiting on the ZIP and unconfirmed export formats need specs outside the populate set (uploads, onboarding, era-exports)');
+  // The model's checklist and its review form (writes, taken after LAYOUT's other coverage shots): Suggest pressed on
+  // screen once the model's synthetic answer for LAYOUT's gaps is written (expectChecklist), then Keep the checked items
+  // with every item ticked, which records the review, or is refused where the form carries no FormKeys (before
+  // co-001/ux-forms). Each width makes its own checklist, so the 390 px review form is a fresh one.
+  for (const width of WIDTHS) {
+    const review: Meta = {
+      key: 'p.coverage',
+      variant: 'checklist-review',
+      state: 'interaction:checklist-review',
+      route: cg,
+      role: 'pricing-manager',
+      note: 'The model’s checklist awaiting its review: the tour wrote the local provider’s synthetic answer for LAYOUT’s coverage gaps (as e2e/models.ts does), then pressed Suggest what to obtain with the model.',
+    };
+    const sent: Meta = {
+      ...review,
+      variant: 'checklist-review-sent',
+      state: 'interaction:checklist-review-sent',
+      note: 'Keep the checked items pressed with every item ticked: the review is recorded, or the form is refused.',
+    };
+    const reviewIds = [idOf(review, width), idOf(sent, width), ...(width === 1280 ? [idOf(review, width, true), idOf(sent, width, true)] : [])];
+    await attempt(reviewIds, cg, async () => {
+      const { page, dispose } = await open(browser, 'pricing-manager', width);
+      try {
+        await go(page, 'pricing-manager', L('/coverage'));
+        await h1(page);
+        const items = await expectChecklist(need('layout'));
+        await press(page.getByRole('button', { name: 'Suggest what to obtain with the model' }));
+        await page.waitForURL(/[?&]model=/, { timeout: 30_000 });
+        if (!/[?&]model=suggested/.test(page.url())) throw new Error(`the model proposed no checklist (${shown(page)}; ${String(items)} items written)`);
+        const keep = page.getByRole('button', { name: 'Keep the checked items' });
+        await expect(keep).toBeVisible();
+        await snap(page, review);
+        await press(keep);
+        await Promise.any([page.waitForURL(/[?&]model=(kept|dismissed|reviewed_already)/, { timeout: 20_000 }), refused(page)]);
+        await snap(page, sent);
+      } finally {
+        await dispose();
+      }
+    });
+  }
 
   // Digest
   const dg = '/p/[practiceId]/digests/[digestId]';
@@ -2956,9 +3136,9 @@ test('writes last, each undone', async ({ browser }) => {
             await page.getByLabel('Password').fill('Wrong-Synthetic-Pass-2026!');
             await page.getByRole('button', { name: 'Continue' }).click();
             await refused(page);
-            if ((await page.locator('[data-slot="alert"]').filter({ hasText: 'Account locked' }).count()) > 0) break;
+            if ((await page.locator('[data-slot="alert"], [role="alert"]').filter({ hasText: 'Account locked' }).count()) > 0) break;
           }
-          await expect(page.locator('[data-slot="alert"]').filter({ hasText: 'Account locked' }).first()).toBeVisible();
+          await expect(page.locator('[data-slot="alert"], [role="alert"]').filter({ hasText: 'Account locked' }).first()).toBeVisible();
           await snap(page, { key: 'sign-in', variant: 'error-locked', state: 'error', route: si, role: 'public', note: 'The lockout persona after ten wrong synthetic passwords.' });
         } finally {
           await dispose();
@@ -3012,6 +3192,17 @@ test('writes last, each undone', async ({ browser }) => {
   });
   notReached('status', 'degraded', '/status', 'a degraded component and an incident are optional operator writes; not taken');
 });
+
+/**
+ * A restricted run (TOUR_ONLY): each id it names in full that this run neither took nor skipped is recorded as skipped,
+ * so a mistyped id, or a dark id whose step failed after its light shot, is never silently missing from shots.json.
+ */
+function unreached(): void {
+  for (const id of ONLY) {
+    if (id.endsWith('*') || taken.has(id) || skipped.some((item) => item.shot === id)) continue;
+    skip(id, shots.find((item) => item.id === id)?.routePattern ?? '', 'named in TOUR_ONLY, but no step of this run took it (check its key and variant in capture/tour.spec.ts, and the step’s other skips)');
+  }
+}
 
 /** Every reachable route in the map has a shot, and every not-reachable one is listed with the map's reason. */
 function coverageCheck(): void {

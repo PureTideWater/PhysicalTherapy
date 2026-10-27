@@ -1,4 +1,4 @@
-<title>PaidWhole Screen Review, __WIDTH__ px</title>
+<title>__TITLE__, __WIDTH__ px</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -88,8 +88,8 @@ dd.mono { font-family: var(--mono); font-size: .75rem }
 
 <header class="wrap top">
   <div>
-    <h1><span class="key" aria-hidden="true"></span>PaidWhole Screen Review, __WIDTH__ px</h1>
-    <p class="lede">The UX/UI and brand baseline review's capture, 2026-10-26: every reachable screen and state at __WIDTH__ px, as the role that uses it, from claude/build-platform 6ddd587 on synthetic data. A checker looked at every shot first; its notes are leads the eleven reviewers verified. __COUNT__ shots.</p>
+    <h1><span class="key" aria-hidden="true"></span>__TITLE__, __WIDTH__ px</h1>
+    <p class="lede">__LEDE__</p>
   </div>
   __OTHER__
 </header>
@@ -134,7 +134,8 @@ dd.mono { font-family: var(--mono); font-size: .75rem }
   fill($('fs'), [...new Set(rows.map((r) => STATE(r.s)))].sort());
   if (!rows.some((r) => r.t === 'dark')) $('ft').hidden = true;
   if (!rows.some((r) => r.f.length)) $('fv').querySelector('option[value="find"]').hidden = true;
-  const verdictText = (v) => v === 'ok' ? 'Checked' : ({ other: 'Noted', cropped: 'Noted: cut off', 'dark-not-applied': 'Noted: dark not applied', 'error-page': 'Noted: error page', 'state-not-shown': 'Noted: state not shown' }[v] || 'Noted: ' + v);
+  if (!rows.some((r) => r.v)) $('fv').hidden = true;
+  const verdictText = (v) => !v ? 'Not checked' : v === 'ok' ? 'Checked' : ({ other: 'Noted', cropped: 'Noted: cut off', 'dark-not-applied': 'Noted: dark not applied', 'error-page': 'Noted: error page', 'state-not-shown': 'Noted: state not shown' }[v] || 'Noted: ' + v);
   let shown = [];
   const keyOf = (r) => [r.id, r.r, r.p, r.o, r.n, r.s].join(' ').toLowerCase();
   function render() {
@@ -164,7 +165,7 @@ dd.mono { font-family: var(--mono); font-size: .75rem }
     const chips = document.createElement('div'); chips.className = 'chips';
     chips.appendChild(chip(r.o)); chips.appendChild(chip(r.s.replace('interaction:', ''))); if (r.t === 'dark') chips.appendChild(chip('dark'));
     if (r.f.length) chips.appendChild(chip(`${r.f.length} finding${r.f.length > 1 ? 's' : ''}`, 'find'));
-    else if (r.v !== 'ok') chips.appendChild(chip(verdictText(r.v), 'note'));
+    else if (r.v && r.v !== 'ok') chips.appendChild(chip(verdictText(r.v), 'note'));
     if (r.rt) chips.appendChild(chip('retaken'));
     m.append(id, route, chips); b.append(t, m);
     b.addEventListener('click', () => open(r.id));
@@ -194,7 +195,7 @@ dd.mono { font-family: var(--mono); font-size: .75rem }
       for (const f of r.f) { const li = document.createElement('li'); const s = document.createElement('span'); s.className = 'sev'; s.textContent = `${f.ux} ${f.sev}`; li.append(s, document.createTextNode(` ${f.title}`)); ul.appendChild(li); }
       box.appendChild(ul); extra.appendChild(box);
     }
-    if (r.n) { const box = document.createElement('div'); box.className = 'box'; const h = document.createElement('h3'); h.textContent = "Checker's note"; const p = document.createElement('div'); p.textContent = r.n; box.append(h, p); extra.appendChild(box); }
+    if (r.n) { const box = document.createElement('div'); box.className = 'box'; const h = document.createElement('h3'); h.textContent = "__NOTE_HEADING__"; const p = document.createElement('div'); p.textContent = r.n; box.append(h, p); extra.appendChild(box); }
   }
   const step = (d) => { if (!shown.length) return; cur = (cur + d + shown.length) % shown.length; show(); try { history.replaceState(null, '', '#' + shown[cur].id); } catch (e) {} };
   $('prev').addEventListener('click', () => step(-1));
