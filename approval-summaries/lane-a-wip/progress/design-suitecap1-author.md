@@ -71,3 +71,5 @@ Clone: scratchpad/designs/suitecap1-author
   REPORT 126.0 s: inline triage ~22 s; gather 101.6 s (runLines ~25 s heap 829; deadlines+ledger 23.1 s heap 978; patientBalance 49.7 s WITH index); pdf 0.4; stored 1.5. heapUsed peak 1125 MiB, rss 1522 MiB.
   RE-TRIAGE 25.3 s heap 379.
   => memory NOT within worker (heap 560/task 1024) for report, maybe not for triage; E tests heap limit. Need: case_rules fix (practice_id + head row?), triage candidate streaming, report streaming.
+- PROBE E (C + NODE_OPTIONS=--max-old-space-size=560 = worker heap; db _8 NOT dropped (crash) -> DROP at end): TRIAGE completes 267.3 s, heap peak 531 MiB (477 at candidates judged; 95% of 560), rss 745; actionable written 210.8 s again. REPORT: FATAL heap out of memory in gatherReport after runLines (heap 525 at runLines mark) -> the audit report cannot run at 100k in the worker heap. => design must bound memory in triage (candidates) and report (runLines etc.).
+- Next: probe F = harness shape: B 20k triaged + ANALYZE first, then A 100k triage + ANALYZE + report (no heap limit), head+index -> is the 208 s actionable a stats artifact?
