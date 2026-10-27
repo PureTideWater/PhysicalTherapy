@@ -1,3 +1,15 @@
+diff --git a/apps/web/package.json b/apps/web/package.json
+index 6c17ab14..360bf540 100644
+--- a/apps/web/package.json
++++ b/apps/web/package.json
+@@ -15,6 +15,7 @@
+     "@aws-sdk/client-cognito-identity-provider": "^3.1152.0",
+     "@aws-sdk/client-s3": "^3.1152.0",
+     "@aws-sdk/client-sesv2": "^3.1152.0",
++    "@aws-sdk/client-sts": "^3.1152.0",
+     "@aws-sdk/s3-request-presigner": "^3.1152.0",
+     "@paidwhole/brand": "workspace:*",
+     "@simplewebauthn/browser": "^14.0.0",
 diff --git a/infra/lib/app.ts b/infra/lib/app.ts
 index 1989f73f..e22a80f5 100644
 --- a/infra/lib/app.ts
@@ -321,3 +333,155 @@ index 3693ec41..831c619c 100644
      });
      this.supportMail = new SupportMail(this, 'SupportMail', { environmentName, key, supportEmail: parameters.supportEmail });
      this.operator = new OperatorRole(this, 'Operator', {
+diff --git a/infra/test/application-role.test.ts b/infra/test/application-role.test.ts
+index 8e99fd22..3a9e2b2c 100644
+--- a/infra/test/application-role.test.ts
++++ b/infra/test/application-role.test.ts
+@@ -137,9 +137,9 @@ describe.each(ENVIRONMENTS)('%s: application role', (environment) => {
+     expect(text).not.toContain(logicalIdOf(stack, stack.storage.auditCopies));
+   });
+ 
+-  it('sends digest email only through MailFromAddress\'s identity and the transactional set, from MailFromAddress, and validates screening addresses; nothing else of SES', () => {
++  it('sends digest email only through MailFromAddress\'s identity and the transactional set, from MailFromAddress, and is refused address validation here; nothing else of SES', () => {
+     const ses = statements.filter((statement) => actionsOf(statement).some((action) => action.startsWith('ses:')));
+-    expect(ses.map((statement) => statement.Sid)).toEqual(['DigestEmail', 'ScreeningAddressValidation']);
++    expect(ses.map((statement) => statement.Sid)).toEqual(['DigestEmail', 'NoAddressValidationHere']);
+     const [digest, validation] = ses as [CfnStatement, CfnStatement];
+     expect(actionsOf(digest)).toEqual(['ses:SendEmail']);
+     expect(digest.Condition).toEqual({ StringEquals: { 'ses:FromAddress': { Ref: PARAMETER_NAMES.mailFromAddress } } });
+@@ -151,8 +151,8 @@ describe.each(ENVIRONMENTS)('%s: application role', (environment) => {
+     for (const other of ['notices', 'screening']) {
+       expect(resource).not.toContain(`tp-${environment}-${other}`);
+     }
+-    // GetEmailAddressInsights takes no resource.
+-    expect(validation).toEqual({ Sid: 'ScreeningAddressValidation', Effect: 'Allow', Action: 'ses:GetEmailAddressInsights', Resource: '*' });
++    // The validation runs as the address-validation account's role (address-validation.test.ts); here it is refused.
++    expect(validation).toEqual({ Sid: 'NoAddressValidationHere', Effect: 'Deny', Action: 'ses:GetEmailAddressInsights', Resource: '*' });
+     expect([...ADDRESS_VALIDATION_ACTIONS]).toEqual(['ses:GetEmailAddressInsights']);
+   });
+ 
+@@ -177,13 +177,17 @@ describe.each(ENVIRONMENTS)('%s: application role', (environment) => {
+   it('runs Textract’s text detection for scanned pages, and nothing else of Textract', () => {
+     const textract = statements.filter((statement) => actionsOf(statement).some((action) => action.startsWith('textract:')));
+     expect(textract).toEqual([{ Sid: 'ScannedPages', Effect: 'Allow', Action: [...TEXTRACT_ACTIONS], Resource: '*' }]);
+-    // Every other statement names its resources, but the address validation's, whose action takes none.
+-    expect(statements.filter((statement) => statement.Resource === '*').map((statement) => statement.Sid)).toEqual(['ScreeningAddressValidation', 'ScannedPages']);
++    // Every other statement it is allowed names its resources; the one refusal of every resource is address validation's.
++    expect(statements.filter((statement) => statement.Resource === '*').map((statement) => [statement.Sid, statement.Effect])).toEqual([
++      ['NoAddressValidationHere', 'Deny'],
++      ['ScannedPages', 'Allow'],
++    ]);
+   });
+ 
+   it('cannot delete objects, change retention or bypass Object Lock', () => {
+-    const actions = statements.flatMap(actionsOf);
+-    expect(actions.filter((action) => /Delete|Retention|LegalHold|Bypass|PutBucket|\*/.test(action))).toEqual([]);
+-    expect(statements.every((statement) => statement.Effect === 'Allow')).toBe(true);
++    const allowed = statements.filter((statement) => statement.Effect === 'Allow').flatMap(actionsOf);
++    expect(allowed.filter((action) => /Delete|Retention|LegalHold|Bypass|PutBucket|\*/.test(action))).toEqual([]);
++    // Its only refusals: address validation here, and any role of this account (address-validation.test.ts).
++    expect(statements.filter((statement) => statement.Effect !== 'Allow').map((statement) => statement.Sid)).toEqual(['NoAddressValidationHere', 'NoRoleOfThisAccount']);
+   });
+ });
+diff --git a/infra/test/deploy-parameters.test.ts b/infra/test/deploy-parameters.test.ts
+index 5393ded7..27171b0d 100644
+--- a/infra/test/deploy-parameters.test.ts
++++ b/infra/test/deploy-parameters.test.ts
+@@ -8,7 +8,7 @@ import { type AttestationReading, registryImageId, reportSha256, verifyReportAtt
+ import { type Measurements, report } from '../../tools/screening-capacity/report';
+ import { attestationOutput, releaseSigner } from '../../tools/screening-capacity/test-support/attestation';
+ import { ADVISORY, ENFORCED, SYNTHETIC_COMMIT, SYNTHETIC_TAG, measured, onOwnCpus, scenario, upload, withS1 } from '../../tools/screening-capacity/test-support/measurements';
+-import { MAIL_IDENTITIES_VERIFIED_CONDITION, NO_IMAGE, PARAMETER_NAMES, SCREENING_CLOSED, SCREENING_CONSUMER_STATES, SCREENING_LAUNCH_PATTERN, SCREENING_LAUNCH_RULE } from '../lib/deploy-parameters';
++import { MAIL_IDENTITIES_VERIFIED_CONDITION, NO_IMAGE, NO_VALIDATION_ROLE, PARAMETER_NAMES, SCREENING_CLOSED, SCREENING_CONSUMER_STATES, SCREENING_LAUNCH_PATTERN, SCREENING_LAUNCH_RULE } from '../lib/deploy-parameters';
+ import { ENVIRONMENTS, type EnvironmentName } from '../lib/environments';
+ import { DEPLOY_LAUNCH_READERS, LAUNCH_ATTESTATION_CONTEXT, LAUNCH_REPORT_CONTEXT, LAUNCH_TAG_CONTEXT, type LaunchReaders, type LaunchTarget, ecrImageReference } from '../lib/screening-launch';
+ import { SYNTH_TIMEOUT_MS, resourcesOf, synthesizeAll, templateFor } from './synth';
+@@ -68,14 +68,15 @@ describe.each(ENVIRONMENTS)('%s: deploy-time parameters', (environment) => {
+     expect(own).not.toContain('ScreeningLaunch');
+   });
+ 
+-  it('has no default for anything but the image tag, which starts at none (no task runs), the consumer, which starts held, and the mail phase, which starts at 1', () => {
+-    const defaulted: readonly string[] = [PARAMETER_NAMES.imageTag, PARAMETER_NAMES.screeningConsumer, PARAMETER_NAMES.mailIdentitiesVerified];
++  it('has no default for anything but the image tag, which starts at none (no task runs), the consumer, which starts held, the mail phase, which starts at 1, and the validation role, which starts at none', () => {
++    const defaulted: readonly string[] = [PARAMETER_NAMES.imageTag, PARAMETER_NAMES.screeningConsumer, PARAMETER_NAMES.mailIdentitiesVerified, PARAMETER_NAMES.mailValidationRoleArn];
+     for (const name of Object.values(PARAMETER_NAMES).filter((candidate) => !defaulted.includes(candidate))) {
+       expect(declared[name]?.Default, name).toBeUndefined();
+     }
+     expect(declared[PARAMETER_NAMES.imageTag]?.Default).toBe(NO_IMAGE);
+     expect(declared[PARAMETER_NAMES.screeningConsumer]?.Default).toBe('held');
+     expect(declared[PARAMETER_NAMES.mailIdentitiesVerified]?.Default).toBe('false');
++    expect(declared[PARAMETER_NAMES.mailValidationRoleArn]?.Default).toBe(NO_VALIDATION_ROLE);
+     expect(json(templateFor(environment)).Conditions.Released).toEqual({ 'Fn::Not': [{ 'Fn::Equals': [{ Ref: PARAMETER_NAMES.imageTag }, NO_IMAGE] }] });
+   });
+ 
+@@ -116,6 +117,14 @@ describe.each(ENVIRONMENTS)('%s: deploy-time parameters', (environment) => {
+     expect(matches(PARAMETER_NAMES.imageTag, 'latest:sha256')).toBe(false);
+   });
+ 
++  it('takes the address-validation account\'s role as none or an IAM role\'s ARN, and nothing else (docs/adr/0065; review S3)', () => {
++    expect(matches(PARAMETER_NAMES.mailValidationRoleArn, NO_VALIDATION_ROLE)).toBe(true);
++    expect(matches(PARAMETER_NAMES.mailValidationRoleArn, 'arn:aws:iam::444455556666:role/tp-production-address-validation')).toBe(true);
++    for (const bad of ['', 'None', 'arn:aws:iam::444455556666:user/someone', 'arn:aws:iam::4444:role/x', 'arn:aws:sts::444455556666:assumed-role/x/y', '*']) {
++      expect(matches(PARAMETER_NAMES.mailValidationRoleArn, bad), bad).toBe(false);
++    }
++  });
++
+   it('takes the consumer’s state as held or running', () => {
+     expect((declared[PARAMETER_NAMES.screeningConsumer] as CfnParameter & { AllowedValues?: string[] }).AllowedValues).toEqual([...SCREENING_CONSUMER_STATES]);
+     expect(SCREENING_CONSUMER_STATES).toEqual(['held', 'running']);
+diff --git a/infra/test/synth.ts b/infra/test/synth.ts
+index 6a16ef69..b28beb14 100644
+--- a/infra/test/synth.ts
++++ b/infra/test/synth.ts
+@@ -1,7 +1,8 @@
+-import { App, CfnElement } from 'aws-cdk-lib';
++import { App, CfnElement, type Stack } from 'aws-cdk-lib';
+ import { Template } from 'aws-cdk-lib/assertions';
+ import type { IConstruct } from 'constructs';
+ 
++import { type AddressValidationStack, addressValidationStackName } from '../lib/address-validation-stack';
+ import { buildApp } from '../lib/app';
+ import { ENVIRONMENTS, type EnvironmentName, stackName } from '../lib/environments';
+ import type { PlatformStack } from '../lib/platform-stack';
+@@ -29,6 +30,8 @@ export interface Synthesized {
+   readonly app: App;
+   readonly stack: PlatformStack;
+   readonly template: Template;
++  /** The environment's address-validation account's stack, synthesized from the same app. */
++  readonly validation: { readonly stack: AddressValidationStack; readonly template: Template };
+ }
+ 
+ /**
+@@ -43,7 +46,8 @@ export function synthesizeAll(context: Record<string, unknown> = {}, readers?: L
+   const result: Partial<Record<EnvironmentName, Synthesized>> = {};
+   for (const environment of ENVIRONMENTS) {
+     const stack = app.node.findChild(stackName(environment)) as PlatformStack;
+-    result[environment] = { app, stack, template: Template.fromStack(stack) };
++    const validation = app.node.findChild(addressValidationStackName(environment)) as AddressValidationStack;
++    result[environment] = { app, stack, template: Template.fromStack(stack), validation: { stack: validation, template: Template.fromStack(validation) } };
+   }
+   return result as Record<EnvironmentName, Synthesized>;
+ }
+@@ -130,7 +134,7 @@ export function actionsOf(statement: CfnStatement): string[] {
+ }
+ 
+ /** The logical ID of the construct's default CloudFormation resource. */
+-export function logicalIdOf(stack: PlatformStack, construct: IConstruct): string {
++export function logicalIdOf(stack: Stack, construct: IConstruct): string {
+   const child = construct.node.defaultChild;
+   if (!(child instanceof CfnElement)) {
+     throw new Error(`${construct.node.path} has no CloudFormation resource`);
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index b0ec3ed5..b5e4cb03 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -122,6 +122,9 @@ importers:
+       '@aws-sdk/client-sesv2':
+         specifier: ^3.1152.0
+         version: 3.1152.0
++      '@aws-sdk/client-sts':
++        specifier: ^3.1152.0
++        version: 3.1152.0
+       '@aws-sdk/s3-request-presigner':
+         specifier: ^3.1152.0
+         version: 3.1152.0

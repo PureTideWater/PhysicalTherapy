@@ -13,3 +13,15 @@ Started 2026-10-27. Clone: $SP/designs/interest-database (detached at origin/cla
 - DB: claim.interest_cents bigint nullable (20261023120000:58, grant INSERT :59). ledger_match (:121-165): kind interest, allocated (CHECK ledger_match_allocated :162), matched_at := now() in ledger_match_rules (:345) -> all matches of one reconcile tx share matched_at; unique ledger_match_standing (kind, evidence_id, service_line_id) WHERE reversed_at IS NULL (:168). ledger_entry: seq identity (:173), stage interest evidence provider_adjustment|claim (:199), sign >0, allocated CHECK; ledger_entry_once_per_match (:216). ledger_match_rules interest branch :367-371 (PLB category interest of same remittance, or claim interest_cents>0 of same remittance). ledger_entry_rules latest body 20261027090000:50 (interest entry needs matched.kind interest, allocated = match.allocated). NO DB bound on interest entries vs their evidence amount, nor across AMT I + PLB L6 (ledger_entry_within_evidence only posted/deposited; ledger_entry_within_line only approved/posted/deposited + adjustment bounds).
 - #42 (20261107090000_mail_streams.sql) touches no ledger table/function; only generated headers of set_updated_at/reject_change/app_actor_is_platform_admin change.
 - claim.superseded_by_claim_id: 20261016120000_remittances.sql:123, no index (indexes :134-136 only control number, patient, reversal_of).
+- probe script: scratchpad/probes/interest-probe.mts (DB tp_design_interest_1, main checkout code e908c214, variants A-F,H + E later L6)
+## PROBE RESULTS (tp_design_interest_1, base code e908c214, LED-16 two-line case, AMT I 5.40 = lines 240/300)
+- A AMT I + L6 naming claim (-5.40, BPR 59.40, TR3 shape): interest 240+300 (claim) + 240+300 (PLB) = 1080 vs cash 540. REPRODUCED double.
+- B AMT I + L6 no reference: 540 via claim evidence; L6 never matched (reference IS NULL filter remittances.ts:791).
+- C L6 naming claim, no AMT I: 540 (PLB evidence).
+- D AMT I only (the fixture; BPR 54.00 excludes it): 540 credited, no cash in check.
+- F AMT I 5.40 + L6 -6.00: 240+300+267+333 = 1140 vs cash 600.
+- H AMT I 5.40 + L6 +5.40 (taken back, BPR 48.60): 540 credited, take-back dropped (interest<=0 return; sign CHECK interest >0).
+- E AMT I fixture then later remittance L6 naming claim: 1080.
+- 2nd reconcile idempotent in all. One reconcile's matches share ONE matched_at (6 matches, 1 stamp).
+## TR3 semantics (X12 RFIs via search; x12.org blocked by proxy): AMT*I informational, not in balancing; TR3 1.10.2.9: payer conveys net interest in PLB L6 = -(sum AMT*I), same remittance; RFI 2202: AMT*I without supporting L6 (and vice versa) non-compliant; RFI 1324: no L6 when net zero (reversal+correction interest).
+## Next: callers list, N1/sequence/index DB specifics, migration shape, #42 overlap, drop DB

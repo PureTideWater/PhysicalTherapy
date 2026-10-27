@@ -53,5 +53,8 @@ Marker route: touch <clone>/.claude/.allow-protected-edit, Edit migration, rm ma
   janedoe spelling accepted), mail.db agreement test (function missing). After: mail.db+screening.db 95/95;
   routes.db (web) 49/49; mail-address.test + rate.test 6/6; tsc web+db clean; eslint clean.
   NFKC chosen (superset of NFC; rate key already NFKC); ASCII-only trim/lower for TS/SQL exact agreement.
+- 9a99cedc S1 (db: screening_run_mail_refusal = budget then list; helpers screening_bounce_budget_spent,
+  screening_contact_refused; upload gate = pause only). Failing first: D2 test (listed+budgeted gave contact_undeliverable)
+  and grants test. After: screening.db + mail.db 95/95. ADR 0065 update deferred to one docs commit at the end.
 
 ## Checks
