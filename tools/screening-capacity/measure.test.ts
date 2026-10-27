@@ -7,7 +7,22 @@ import { describe, expect, it } from 'vitest';
 import { SCREENING_MAIN_HEAP_FLAG } from '../../apps/worker/src/screening/threads';
 import { COMMANDS } from '../../infra/lib/constructs/compute';
 import { MIB, MIN_ROUND_TRIP_MS, NETWORK_DELAY_MS, cpuLayout, postgresLimit, productionLimits } from './limits';
-import { anonBytes, cpuThrottling, emailedLines, ioMax, median, memoryEvents, phaseLines, phasesByRun, pricedRuns, psqlTimings, untilComplete, workerStarted } from './measure';
+import {
+  ADDRESS_CHECKED_MESSAGE,
+  addressCheckTimes,
+  anonBytes,
+  cpuThrottling,
+  emailedLines,
+  ioMax,
+  median,
+  memoryEvents,
+  phaseLines,
+  phasesByRun,
+  pricedRuns,
+  psqlTimings,
+  untilComplete,
+  workerStarted,
+} from './measure';
 import {
   CommandError,
   ROUND_TRIP_SCRIPT,
@@ -97,6 +112,24 @@ describe('the consumer’s log', () => {
     ]);
     expect([...pricedRuns(lines)].sort()).toEqual(['r-1', 'r-2', 'r-4']);
     expect(pricedRuns([JSON.stringify({ msg: 'worker started', time: '2026-10-22T12:00:00.000Z' }), JSON.stringify({ msg: 'screening expiry', job_id: 'j', record_count: 0, time: '2026-10-22T12:00:00.000Z' })]).size).toBe(0);
+  });
+});
+
+describe('the web’s log', () => {
+  it('reads the address checks’ measured time by run, numbers only, a run’s first line kept', () => {
+    const lines = [
+      'not json',
+      JSON.stringify({ request_id: 'q-1', screening_run_id: 'r-1', elapsed_ms: 2_004, time: '2026-10-27T12:00:02.000Z', level: 'info', msg: 'screening address checked' }),
+      JSON.stringify({ screening_run_id: 'r-2', elapsed_ms: 2_131, time: '2026-10-27T12:00:03.000Z', level: 'info', msg: 'screening address checked' }),
+      JSON.stringify({ screening_run_id: 'r-1', elapsed_ms: 9, time: '2026-10-27T12:00:04.000Z', level: 'info', msg: 'screening address checked' }),
+      JSON.stringify({ screening_run_id: 'r-3', elapsed_ms: 'slow', time: '2026-10-27T12:00:04.000Z', level: 'info', msg: 'screening address checked' }),
+      JSON.stringify({ screening_run_id: 'r-4', error_code: 'SCREENING_NOT_QUEUED', time: '2026-10-27T12:00:05.000Z', level: 'warn', msg: 'screening run not queued; the sweep will send it' }),
+    ];
+    expect([...addressCheckTimes(lines)]).toEqual([
+      ['r-1', 2_004],
+      ['r-2', 2_131],
+    ]);
+    expect(ADDRESS_CHECKED_MESSAGE).toBe('screening address checked');
   });
 });
 

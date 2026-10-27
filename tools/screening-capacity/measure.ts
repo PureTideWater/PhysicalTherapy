@@ -146,6 +146,27 @@ export function emailedLines(lines: Iterable<string>): EmailedLine[] {
 }
 
 /**
+ * The web's line for each stored upload (apps/web/src/lib/screening/routes.ts): how long its address checks, DNS and
+ * SES's validation run together, took on the web's own clock, by the upload's run.
+ */
+export const ADDRESS_CHECKED_MESSAGE = 'screening address checked';
+
+/**
+ * The address checks' measured milliseconds by run, from the web's log lines (JSON lines; anything else is skipped);
+ * a run logged twice keeps its first line.
+ */
+export function addressCheckTimes(lines: Iterable<string>): Map<string, number> {
+  const found = new Map<string, number>();
+  for (const line of lines) {
+    const entry = jsonLine(line);
+    if (entry?.msg === ADDRESS_CHECKED_MESSAGE && typeof entry.screening_run_id === 'string' && typeof entry.elapsed_ms === 'number' && !found.has(entry.screening_run_id)) {
+      found.set(entry.screening_run_id, entry.elapsed_ms);
+    }
+  }
+  return found;
+}
+
+/**
  * Waits until each upload's run reads `complete`, at most `waitMs` for them all, and returns the uploads whose run did
  * not (in the order given). The consumer sends a result's email inside its completion's transaction and commits after
  * the send returns (apps/worker/src/screening/job.ts), so the local outbox's file, which the harness reads its link

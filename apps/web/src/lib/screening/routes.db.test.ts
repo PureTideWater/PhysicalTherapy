@@ -33,7 +33,7 @@ import {
 } from './routes';
 import { parseScreeningBytes } from './parse';
 import { screeningRateAccount } from './rate';
-import { type AddressCheckServices, type MailboxVerdicts } from './validation';
+import { type AddressCheckServices, type MailboxVerdicts, localAddressChecks } from './validation';
 import { pageRequest } from './test-support/page-services';
 import { ScreeningWorld, SCREENING_HEADERS, SAMPLE_ROWS, practiceName, screeningRow, submitInput } from './test-support/screening-world';
 
@@ -1319,6 +1319,27 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
     // A clean upload is asked about once.
     expect((await call(screeningSubmit, services, { input: submitInput({ contactEmail: 'clean@clinic-clean.synthetic.test' }) })).status).toBe('ok');
     expect(calls).toEqual(['clean@clinic-clean.synthetic.test']);
+  });
+
+  it('logs the address checks\' measured time with the stored run, and nothing of the address (the capacity harness\'s G1)', async () => {
+    // The stand-ins slowed as the harness slows them (MAIL_CHECK_DELAY_MS): the line measures the delay, never copies it.
+    const services = withServices({ addressChecks: localAddressChecks(1_000, 300) });
+    const email = 'timed.checks@clinic-timed.synthetic.test';
+    const from = world.logLines.length;
+    expect(await call(screeningSubmit, services, { input: submitInput({ contactEmail: email }) })).toEqual({ status: 'ok', data: { redirect: SENT } });
+    const { rows } = await world.owner.query<{ id: string }>(
+      'SELECT r.id FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1',
+      [email],
+    );
+    const checked = world.logLines.slice(from).filter((line) => line.msg === 'screening address checked');
+    expect(checked).toEqual([expect.objectContaining({ level: 'info', screening_run_id: rows[0]?.id, elapsed_ms: expect.any(Number) as number })]);
+    expect(Number(checked[0]?.elapsed_ms)).toBeGreaterThanOrEqual(300);
+    expect(Number(checked[0]?.elapsed_ms)).toBeLessThan(5_000);
+    expect(JSON.stringify(checked)).not.toMatch(/timed|clinic/);
+    // An upload the checks refuse stores no run, and logs no such line.
+    const refusedFrom = world.logLines.length;
+    expect((await call(screeningSubmit, services, { input: submitInput({ contactEmail: 'invalid.mailbox@clinic-timed.synthetic.test' }) })).status).toBe('invalid');
+    expect(world.logLines.slice(refusedFrom).filter((line) => line.msg === 'screening address checked')).toEqual([]);
   });
 
   it('keeps the client\'s keyed subject with the run, and refuses a client past its bounce budget with the budget\'s sentence, naming no address', async () => {
