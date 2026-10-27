@@ -6,7 +6,8 @@ session_01L3tN5LCq2aNYetEQBNJYZg, a Lane B item session started 2026-10-27 by La
 (status `lane-b-ux-home-figures-status.md`).
 
 ## Now
-- **Stage:** 1, design with one reviewer.
+- **Stage:** 1, design with one reviewer: the review workflow `wf_a85eb619-cf6` is running (its script archived in `workflow-scripts/`).
+- **Paused** on the orchestrator's instruction (2026-10-27 01:50 UTC; weekly usage 94%, resets 14:00 UTC): finish the running review, start no new workflow until 14:05 UTC. A check-in is scheduled for 2026-10-27T14:05:00Z.
 - **Branch:** `co-001/ux-download-refusals`, worktree `/home/user/ux-download-refusals`, cut from claude/build-platform
   e908c21 (#49 merged). No commits yet. No PR.
 - **Design:** `designs/lane-b-ux-download-refusals.md`.
@@ -21,7 +22,7 @@ session_01L3tN5LCq2aNYetEQBNJYZg, a Lane B item session started 2026-10-27 by La
 - 2026-10-27 01:55 UTC: design written; next, its adversarial review (workflow).
 
 ## Waiting on someone
-- Nothing yet.
+- The account's weekly limit (resets 2026-10-27 14:00 UTC): no new workflow before 14:05 UTC.
 
 ## Proposals (improve as you go, outside this PR)
 - None yet.
