@@ -214,3 +214,36 @@ the amendment.
 | R18 | nit | ADR 0079 and the security review kept; the security reviewer gets DLR-03's hostile inputs and R08's cross-site navigation case. The codes 97110 and 97530 in the hint and message render in mono with tabular numerals. |
 
 **Next:** builders (one workflow, two agents in series), after the usage hold lifts at 14:05 UTC.
+
+## 7. After the reviews (fix round, 2026-10-27 ~20:00 to 22:30 UTC)
+
+The two adversarial reviews (`wf_1c44b1a2-762`: security, and UX and brand on 74 after shots) and their verification (one
+skeptic per finding; 16 real, UX-DLR-12 and 13 not defects; `approval-summaries/lane-b-ux-download-refusals-review-findings.json`)
+changed the design in these places. **ADR 0079 is the record of what is built; where §3, §4 or §6 disagree, it wins.**
+
+- **D5's words (R09):** every refusal is titled "Not downloaded" (UX-DLR-08); forbidden reads "Your role cannot download
+  this file. Ask your organization’s administrator, who manages users and roles."; not_found "This file is not available
+  here now. This page lists the files that are."; no notice tells the person to reload.
+- **R16:** a shown refusal leaves the address bar (`ForgetRefusal`, on a timer with a null history state so Next moves its
+  canonical URL too; UX-DLR-01), with each page's return-only keys (`forget`: the letter's entries, the Reports list;
+  SEC-02, UX-DLR-14); the notice outlasts a router refresh while the person stays on the page (`RefusalNotice`). The
+  letter clears a control's mark as the person edits it, and on a valid submit clears every mark and the refusal's keys
+  (`LetterMarks`; UX-DLR-04), rather than waiting for ux-forms' Field.
+- **D4:** on pages that hold what a reload would lose (the Uploads screen mid-batch, the export review's checklist, the
+  audit report's reviewer checklist, the packet page's version form, the console's evidence export) the link is a
+  `DownloadLink`: a plain click fetches the file as a script and says a refusal in place; the href keeps the 303 path for
+  a new tab or no script (UX-DLR-02). Uploader warns before leaving while a file is sending.
+- **D6:** the letter's messages follow "Error: " with no field-name prefix: payer "Choose one of the payers listed.",
+  contract "Choose one of this payer’s contracts, or None named.", codes "Each code must be five letters or digits."
+  (UX-DLR-10); a not-found payer shows "Choose a payer" (UX-DLR-06); no placeholder (UX-DLR-07); each example code in
+  mono, the separators not (UX-DLR-09); every control's `aria-describedby` is its own attribute (UX-DLR-03, for ux-forms'
+  FRM-04). Before the server, the contract select also refuses another payer's contract (`setCustomValidity`; UX-DLR-15).
+- **D3, R08:** `keptCodes` itself drops a value with an identifier's shape, so the 303 and the page share one rule; the
+  separators are never read as "-", which would drop valid lists such as "L1832, 0101T" (SEC-01).
+- **R05:** the upload report's `from` is `uploads` only (Reconciliation and Contracts show no receipts); a zip's files
+  download in place, and only a new tab returns to the file's receipt, which links its zip (UX-DLR-13).
+- **Forbidden branches:** a return page that the person's role cannot open says the file's own reason where it is
+  narrower than the file's (the packet page, the reviewer checklist; UX-DLR-05), and every return page forgets a refusal
+  shown on its Forbidden branch.
+- **With ux-forms (#74, ADR 0077):** whichever merges second moves the letter's controls onto form-issues' `FieldError`
+  and drops `scroll-mt-18` for ADR 0077's `scroll-padding-top` (UX-DLR-11).
