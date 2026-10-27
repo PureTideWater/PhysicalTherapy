@@ -428,4 +428,28 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
   { id: 'RCC-06', title: 'A line priced before its content loaded', assertion: "Triage holds a priced line whose trace read MPPR or MUE outside its release's spans as CONTENT_NOT_LOADED, never actionable; the audit report names the reason" },
   { id: 'RCC-07', title: 'A run reads only the keys it prices', assertion: "The price job, the release impact check and the dry run read each key of their claims once a run and the shared types once per release; every stored row equals the whole-release read's; a lookup outside the fetch fails the run as release_read_outside_fetch before its batch is stored; triage and reports read two types only; the keyed read uses rule_record_identity; weekly, under the quarterly scale release 900110, a 100,000-line month prices while another practice's audit report prints and four 835s parse, then triages and reports, within the worker task's memory" },
   { id: 'RCC-08', title: 'Content due', assertion: "The calendar names every content but PaidWhole's own; content ending within 45 or 14 days, ended, due with no draft, or overdue is reported with the exact import commands, as is a calendar entry never reviewed or older than 13 months; before any release is published the drafts are judged and the titles say so; the console shows Content due, customers see every family of the release in force, loaded through a date, open, loaded only from a later date, partly loaded or not loaded; the source watch finds a new matching file whatever its name, shows plain names as they are and others percent-encoded, reports a page that lists no matching file any more, and reads pages over https from the calendar's hosts only, at most 5 MiB; the workflow's check job only reads and its notify job alone writes issues, once per title and at most 20 new ones a run, listing the rest in one issue" },
+  {
+    id: 'DLR-01',
+    title: "A navigation's refused download",
+    assertion:
+      "`downloadHandler` answers a refusal to `Sec-Fetch-Mode: navigate` with `Sec-Fetch-Dest: document` or none (and, without Fetch Metadata, to an `Accept` that ranks `text/html` above JSON and the wildcard) with 303 to the route's `returnTo` page, with no fragment: `refused=<status>` for each of the seven statuses, `fields` for invalid (parameter names only, each once, at most 8), `retry` for a rate limit in whole minutes from 1 to 1440, and the page's kept values, each validated with that page's schema; a relative Location, the cookies the request wrote and `private, no-store`; the signed-out statuses go where a page's refusal goes, with or without `returnTo`; the wrapper's own refusals (the codes, an ID that is not opaque) come back the same way; a link's closed `from` picks its page and any other value takes the route's own; the letter's bad codes, another payer's contract and a payer not the practice's each return to Coverage",
+  },
+  {
+    id: 'DLR-02',
+    title: "A script's refused download",
+    assertion:
+      'Without a navigation (a `fetch()` in mode `cors` or `same-origin`, navigate with Dest empty as a download link and "Save link as" send it, a frame, no Fetch Metadata with `Accept: */*`, JSON or the wildcard first, HTML ranked lower or refused, or no `Accept` at all) every refusal is today\'s JSON outcome, its status, headers and body byte for byte; a success is the same attachment to a navigation and a script; a navigation\'s HEAD or POST is still refused with 405 before the route runs',
+  },
+  {
+    id: 'DLR-03',
+    title: 'Every download route has a safe page',
+    assertion:
+      "The registry test finds every `downloadHandler` route under `src/app` and refuses one without `returnTo`, one not registered at its file's path, and one whose page for synthetic IDs is not under its practice (the evidence export's under `/console/`); a page path of `//evil.example`, `/\\evil.example`, `javascript:`, an absolute URL, encoded slashes, a control character, dot segments, a query, a fragment or an ID that is not opaque sends the navigation to `/`, as does a route with no page or a `returnTo` that throws; a kept value is dropped when its page's schema refuses it (a bad month returns to the monthly summary without it, and the page opens), when its name is not a lowercase code or is a refusal's own, or when it holds an identifier's shape, and no Location has a finding of the PHI guard; the page reads back only the closed codes and field names and ignores everything else; the codes field's pattern accepts exactly what the route accepts, letters with non-ASCII case mappings and Unicode separators included",
+  },
+  {
+    id: 'DLR-04',
+    title: 'The person sees it in the frame (e2e and axe)',
+    assertion:
+      'In a practice of its own, a letter with "ABC" sent past the pattern returns to Coverage with the entries kept, the codes field `aria-invalid`, its message first in its description and the focus on it, and axe (WCAG 2.1 A and AA) passing at 1280 px and at 390 px with no sideways scroll; a contract that is not the payer\'s and a payer that is not the practice\'s come back marked on their own controls; the pattern stops "ABC" before the round trip and takes good codes; a good letter downloads and the page stays; a viewer who opens the audit report\'s line CSV as a page lands on the report with the forbidden notice focused, while a script\'s request keeps the JSON refusal',
+  },
 ];

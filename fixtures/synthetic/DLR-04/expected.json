@@ -1,0 +1,21 @@
+{
+  "case": "DLR-04",
+  "module": "DLR",
+  "title": "The person sees it in the frame (e2e and axe)",
+  "assertion": "In a practice of its own, a letter with \"ABC\" sent past the pattern returns to Coverage with the entries kept, the codes field `aria-invalid`, its message first in its description and the focus on it, and axe (WCAG 2.1 A and AA) passing at 1280 px and at 390 px with no sideways scroll; a contract that is not the payer's and a payer that is not the practice's come back marked on their own controls; the pattern stops \"ABC\" before the round trip and takes good codes; a good letter downloads and the page stays; a viewer who opens the audit report's line CSV as a page lands on the report with the forbidden notice focused, while a script's request keeps the JSON refusal",
+  "synthetic": true,
+  "completesIn": 11,
+  "assertedBy": [
+    "apps/web/e2e/download-refusals.spec.ts",
+    "apps/web/src/components/coverage/letter.test.tsx",
+    "apps/web/src/components/download-refusal.test.tsx"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "A practice of its own, its SYNTHETIC CAS-08 remittance uploaded in the browser and its second payer added by the journey; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
