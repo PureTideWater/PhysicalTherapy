@@ -613,13 +613,14 @@ async function staleToken(form: Locator): Promise<void> {
  * (co-001/ux-download-refusals; designs/lane-b-ux-download-refusals.md). Before it (claude/build-platform e908c21 and
  * earlier) the download handler answers with its raw JSON outcome at the download's own URL, a page with no frame. From
  * it on, it answers with 303 to the page the download is opened from, with `?refused=<status>` in that page's URL and
- * the notice (or the marked field) on it. This waits for either and says which; the shot's path records it too.
+ * the notice (or the marked field) on it; a notice then takes the key out of the URL. This waits for either and says which; the shot's path records it too.
  */
 async function downloadRefusal(page: Page): Promise<'json' | 'page'> {
   const deadline = Date.now() + 15_000;
   for (;;) {
     await page.waitForLoadState('load').catch(() => undefined);
-    if (new URL(page.url()).searchParams.has('refused')) {
+    // The page's notice takes ?refused= out of the address bar once shown (ForgetRefusal), so the notice counts too.
+    if (new URL(page.url()).searchParams.has('refused') || (await page.locator('[data-download-refusal]').count()) > 0) {
       await expect(page.getByRole('heading', { level: 1 }).or(page.locator('[data-state="permission"]')).first()).toBeVisible();
       return 'page';
     }

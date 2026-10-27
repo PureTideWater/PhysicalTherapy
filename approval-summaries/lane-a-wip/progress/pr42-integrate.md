@@ -5,10 +5,25 @@
 - [x] 1. cherry-pick db: 15 commits, clean (to d8abd613)
 - [x] 1. cherry-pick infra: 8 commits, clean (to a3aed2d9)
 - [x] 1. cherry-pick harness: 9 commits (to d14f0ac5); one conflict routes.ts (99ae18a8): kept db precheck block then harness checksStarted timing; comment merged. pnpm install --frozen-lockfile linked client-sts (lockfile unchanged)
-- [ ] 1. review combined diff
-- [ ] 2. CI on 098636e3
-- [ ] 2. web-entries guard fix
+- [x] 1. review combined diff (integrator fixes: ADR 0065 known (a)/(e), runbook M1/M2/M9, e2e helpers/timeouts)
+- [x] 2. CI on 098636e3 (run 40434505373 etc.): red = unit (web-entries.test.ts:77, 13 worker modules via route-tests/world.ts -> test-support/*-world.ts -> @tp/worker/runtime) and domain model (expected: approval names no person; SHA 07c4a8ee...). Green: lint, static, build, images, db 1-4, e2e 1/2 2/2, capacity, screening-capacity gate, mutation (6 stryker shards), approval-of-record. all green = failure (from unit + domain model)
+- [x] 2. web-entries guard fix: 15189a50 (seeds from Next entries; 3/3 pass; mutation check: billing/public.ts + @tp/db import -> guard names it, imported by lib/http/invoke.ts; file restored)
 - [ ] 3. regenerate domain model
 - [ ] 4. full suite
 - [ ] 5. push
 - [ ] 6. PR body
+- User question (ultra code): get_session read-only: Lane B sessions 01L3tN5L, 019Vghcx, 01TAgFZo, 01UzQ6wg, 017SNqG4 and this orchestrator: effort xhigh, flag ultracode=true, is_ultracode_active=true. session_019i9ifAWsQ6zhLLegnMqSdK (Lane B test flakes, created 14:32) has NO effort_level and no ultracode flag -> not in ultra code. Cannot change it from here.
+- e2e edits (integrator): mail.ts registerKeyAndSignInAs -> registerOrRestoreKeyAndSignIn (harness proposal); stream fixtures in mail-cutoff.spec.ts and screening.spec.ts get { timeout: 240_000 } (db builder proposal, CI-07)
+- Body before saved: scratchpad/pr42/pr42-body-before.md (77,305 chars; ends with session_01MXvjcg... attribution)
+- [x] 3. domain model regenerated on fresh PG18 tp_pr6b4_integrate_1 (45 migrations, --out --strict): 98 tables, 1 view, 47 registered, 226 divergence rows (23 to approve), 0 explanation problems; Cross-checks Drizzle 97/97, none missing, 0 column diffs, catalogProblems 0. functions: 375 files, 12 written, 1 removed (screening_run_bounce_budget); 7 new. NEW SHA-256 b12150bb…, approval line 7333 (blank). DB tp_pr6b4_integrate_1 still exists (drop at end)
+- SHA map builder->branch: scratchpad/pr42/sha-map.txt
+- watched.ts --write: no change (537 lines; +validation-credentials.ts, +mail-address.ts vs base merge)
+- dm summary (pre-commit): scratchpad/pr42/dm-summary.md (59,347 chars; regenerate after commit)
+- Commits: 14392ab1 (domain model + functions), 5ef893d5 (ADR 0065 known (a)/(e) + runbook M1/M2/M9 staging checks), 869352a9 (e2e mail.ts restore helper + stream fixture timeouts)
+- PENDING: web-entries guard commit after mutation check (billing/public.ts mutated in tree! restore from scratchpad/billing-public.bak before commit)
+- Suite script: scratchpad/pr42/suite.sh (results scratchpad/pr42/suite/results.tsv)
+- NEXT: full suite on final tree (head 15189a50), suite.sh in background
+- Suite started 16:19 UTC in background (bgj64gaot): suite.sh (typecheck..actionlint); then suite2.sh (mutation 6 shards + gate, capacity S1,S4 binding, e2e on tp_pr6b4_integrate_e2e port 4961). Mutation affected: packets-scan, packets-rest, packets-explain, pricing-engine, pricing-recompute, pricing-rest (by packages/db/src/mail-address.ts etc.)
+- unit FAILED at 15189a50: packages/synth fixtures.test (matrix.ts rows SEC-18/19, SCR-21/22 stale vs test-matrix.md). Fixed f-commit 8aa45a46. Rerun unit+typecheck+lint+synth after suite.
+- Suite pass 1 (15189a50 / 8aa45a46): typecheck 0, lint 0 (1,644 files), lint-copy 0, lint-logs 0, check-fixtures 0, synth 0, engine-freeze 0, unit 1 (matrix; fixed 8aa45a46), golden 0, oracle 0, verify-content 0, db1 0 (33 files 3269+1 skipped), db2 0 (33 files 2654), db3 0 (32 files 2545), db4 0 (32 files 964), domain-model-check 0 (375 functions), build 0, infra 0 (26 files 697), cdk-synth 0 (6 stacks), actionlint 0
+- 17:06 rerun unit/typecheck/lint/synth at 8aa45a46, then suite2 (mutation, capacity, e2e) in background bic5mae06

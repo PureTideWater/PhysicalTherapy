@@ -2,11 +2,12 @@
 
 Session: the parallel Lane B session started by the orchestrator (session_01CntuGR3wkXMF6kK3at6bGh) on the co-founder's direction of 2026-10-25 ~23:40 UTC. Reserved: ADR 0070; test-matrix MOD-7 to MOD-12; `packages/synth` cases MOD-7 to MOD-12.
 
-## Current state (2026-10-27 15:40 UTC)
-- **PR #75** (draft), head **9b7eadfe**. CI: every job green except `unit`, red twice on two different flaky tests outside this PR (workflows.test.ts:880, then rerun-rule.property.test.ts:252); commented on #75; the one re-run is spent. The orchestrator (14:36 UTC): these are now Lane B's `co-001/test-flakes` item (session_019i9ifAWsQ6zhLLegnMqSdK); keep #75 to its scope; a head whose only red is one of those three tests gets one re-run of the failed job, never a merge on red; once test-flakes merges, merge the base in as usual.
-- **Reviews:** wf_85f2ff34-1ed finished the capture (39 shots) and the PHI-screen review with eight skeptic verdicts (`lane-b-model-eval-gate-phi-review-phi-screen.md`, verdicts in `...-phi-screen-verified.md`: F1 and F5 major, F2, F3, F4, F7, F8 minor, F6 refuted, three nits). Its security and UX reviews, run as the custom agent types, returned no structured result, so **wf_fe838a07-52a** runs both again as default agents following the agents' definition files (script `workflow-scripts/lane-b-model-eval-gate-phi-review-2-wf_fe838a07-52a.js`).
-- **Shots:** private gallery https://claude.ai/artifact/V2B2bKoNPjYivH9h7WV5wK (21 states, base e908c214 vs head 9b7eadfe; manifest `lane-b-model-eval-gate-phi-ux-capture.md`). The capture's tour.spec.ts and route-map lines went into cfc252df with a status commit (an `-a` commit), so they are on this branch.
-- **Next:** the fix round once wf_fe838a07-52a returns (every verified finding; the full local suite once; one push), the fresh-clone verification reading CI, the merge (rule 6), then #32.
+## Current state (2026-10-27 16:34 UTC)
+- **PR #75** (draft), head **9b7eadfe** on origin. CI: all green but `unit` (two flaky tests outside the PR, now `co-001/test-flakes`; see the 14:36 UTC ruling below in the log).
+- **Reviews done** (wf_85f2ff34-1ed, wf_fe838a07-52a): security (`lane-b-model-eval-gate-phi-review-security.md`), PHI-screen correctness (`...-phi-screen.md`), UX and brand (`...-ux.md`); every finding with its skeptic verdict in `lane-b-model-eval-gate-phi-review-findings-all.md`. Verified: F1, F5, S1, UX-1 major; F2, F3=S3, F4, F6=S4, F7, F8, S2, UX-2 to UX-4, UX-6 minor; UX-5 and nits. S2's route is #42's settings.ts (not edited; a patch for after #42 if it is needed there).
+- **Fix round running:** wf_aa0fc3e3-0ae (script `workflow-scripts/lane-b-model-eval-gate-phi-fix-wf_aa0fc3e3-0ae.js`): four fixers (tokenizer, records, gateway, UX) on disjoint files in `/home/user/contract-phi-check`, then the integrator (requests, docs, the full local suite once, commits, no push), then after-fix shots. Progress in this session's scratchpad `phi/progress/fix-*.md`, notes in `phi/fix/`. Check-in 21:42 UTC (trig_01WmeDvf57FCyfMiMQdpDigZ) resumes it if stopped.
+- **Shots:** private gallery https://claude.ai/artifact/V2B2bKoNPjYivH9h7WV5wK.
+- **Next:** push once (CI), update the PR description (findings table, checks, wording), the fresh-clone verification reading CI, the merge (rule 6; base merged in first, after test-flakes if it has merged), then #32.
 
 ## Open questions
 None. The co-founder's standing ruling of 2026-10-26 ~00:20 UTC (relayed by the orchestrator): "Don't ask for approvals anymore just build and optimize." Every choice takes the recommended option (security: the safer one), recorded with its reasons here and in the design and PR description. Founder-kept matters stay out of scope; Lane B still opens no migration PR (LANES rule 2).
@@ -61,6 +62,8 @@ None. The co-founder's standing ruling of 2026-10-26 ~00:20 UTC (relayed by the 
 - 2026-10-27 14:13 UTC: **Resumed** after the weekly reset; setup re-run, OK (playwright ok). Base unchanged (e908c214).
 - 2026-10-27 14:16 UTC: **Draft PR #75** opened, head 9b7eadfe; description written with update_pull_request, proved byte for byte; subscribed.
 - 2026-10-27 14:18 UTC: **Reviews** running (wf_85f2ff34-1ed): security, PHI-screen correctness, and the UX and brand review on base/head shots (the PR changes the upload panel and two contract-page notices, so a person sees it).
+- 2026-10-27 14:36 UTC: **The orchestrator's ruling** on #75's CI: the three flaky tests (workflows.test.ts:880, rerun-rule.property.test.ts:233-253, verifier.test.ts:384) are Lane B's `co-001/test-flakes` (session_019i9ifAWsQ6zhLLegnMqSdK); #75 keeps its scope; a head whose only red is one of them gets one re-run of the failed job, never a merge on red; once test-flakes merges, merge the base in as usual.
+- 2026-10-27 ~15:50 UTC: **Reviews done**; gallery published. 16:33 UTC: **fix round** running (wf_aa0fc3e3-0ae).
 
 ## Handoff: `co-001/contract-phi-check` (#120), for whoever takes it
 - **Branch:** `co-001/contract-phi-check` at **d7447adb**, from `claude/build-platform` at 88a0e4e9 (#53 merged). Commits:
