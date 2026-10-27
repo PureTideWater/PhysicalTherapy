@@ -51,7 +51,10 @@ const streamTest = test.extend<{ stream: undefined }>({
         await release();
       }
     },
-    { auto: true },
+    // Its own time: the lock waits while the cut-off journey holds the stream alone, which may take that journey's
+    // whole 240 seconds, and the wait would otherwise count against the test's default 30 before its own budget is set
+    // (CI runs the journeys in parallel, and a timeout there is a flaky failure, test matrix CI-07).
+    { auto: true, timeout: 240_000 },
   ],
 });
 

@@ -38,7 +38,10 @@ const cutoffTest = test.extend<{ stream: undefined; consumer: Awaited<ReturnType
         }
       }
     },
-    { auto: true },
+    // Its own time: the lock waits while another worker's screening journey holds the stream shared, which may take
+    // that journey's whole 240 seconds, and the wait would otherwise count against this test's default 30 before its
+    // own 240 are set (CI runs the journeys in parallel, and a timeout there is a flaky failure, test matrix CI-07).
+    { auto: true, timeout: 240_000 },
   ],
   consumer: [
     async ({ stream }, provide) => {
