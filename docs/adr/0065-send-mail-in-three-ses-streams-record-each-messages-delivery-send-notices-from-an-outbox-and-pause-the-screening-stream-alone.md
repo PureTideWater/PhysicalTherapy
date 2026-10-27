@@ -139,6 +139,10 @@ granted to no role. No function sets `app.practice_ids`. `operator_record_suppor
 
 - A screening send whose bounce capture is broken cannot count toward the cut-off, so the screening closes: readiness
   needs the day's probes back (D8).
+- A probe the platform cannot send pages the operator within 15 minutes (`MAIL_PROBE_UNSENT` in each of three
+  five-minute periods; review M3), about a day before the stream's readiness lapses: such a probe is never outstanding,
+  so `MAIL_PROBE_MISSED` would not fire, and the screening would close in silence. It adds one alarm and one log metric
+  to Q1's figure (about $0.40 a month per environment).
 - After a pause, the runs already queued wait, not fail; a run whose completion raced the pause rolls back and is
   claimed again by the stale rule after the resume, spending one attempt (an accepted edge).
 - The refusal list and the bounce marks are the only values derived from a screening address the database keeps

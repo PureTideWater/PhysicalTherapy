@@ -376,12 +376,13 @@ month).
 | Operator | `MailEventsQueue`, `MailEventsDecryptThroughSqs` | receive, delete and visibility on the mail-events queue, and the key through SQS only |
 | Screening | `ScreeningResultEmail` | `ses:SendEmail` on the screening identity and set only, from `results@screening.<domain>` (the plan's G4) |
 
-**Alarms** (15, to the operator topic): the account's bounce rate at 2.5% and 4% and complaint rate at 0.05% and 0.08%
+**Alarms** (16, to the operator topic): the account's bounce rate at 2.5% and 4% and complaint rate at 0.05% and 0.08%
 (the two warnings also pause the screening through the second rule), the screening set's bounce rate at 3% and
 complaint rate at 0.08%, the transactional set's bounce rate at 2%, a message in the dead-letter queue, the queue's
-oldest message past 15 minutes, and six counted from the logs in namespace `TherapyPlatform/Mail` (`MAIL_STREAM_PAUSED`,
-`NOTICE_UNDELIVERED`, `NOTICE_UNDELIVERABLE`, `INVITATION_UNDELIVERED` and `MAIL_PROBE_MISSED` from the platform's log
-in five minutes, `MAIL_VALIDATION_CAP_REACHED` from the web's in a day). No metric has an address as a dimension.
+oldest message past 15 minutes, and seven counted from the logs in namespace `TherapyPlatform/Mail`
+(`MAIL_STREAM_PAUSED`, `NOTICE_UNDELIVERED`, `NOTICE_UNDELIVERABLE`, `INVITATION_UNDELIVERED` and `MAIL_PROBE_MISSED`
+from the platform's log in five minutes, `MAIL_PROBE_UNSENT` from it in each of three five-minute periods, and
+`MAIL_VALIDATION_CAP_REACHED` from the web's in a day). No metric has an address as a dimension.
 
 **Settings** (`constructs/compute.ts`): the web gains `MAIL_VALIDATION=ses` and `MAIL_VALIDATION_DAILY_CAP` (1,000 in
 production, 50 elsewhere; the founder's Q1 (g)); the worker `MAIL_STREAM_PREFIX`; the platform `MAIL_STREAM_PREFIX`,
@@ -394,8 +395,9 @@ production, 50 elsewhere; the founder's Q1 (g)); the worker `MAIL_STREAM_PREFIX`
 them, reach the log (open item O11, now held by the template rather than checked by hand).
 
 **Cost** (Q1; prices read from search results, to be read again on AWS's pages before the first deploy, O12): about $18
-a month per environment, the SQS endpoint $14.60 of it (two zones), 15 alarms $1.50, six log metrics $1.80, the probes
-and requests well under $1; SES at Essentials' $0.16 per 1,000 messages; SES's validation of a screening address at
+a month per environment, the SQS endpoint $14.60 of it (two zones), 16 alarms $1.60, seven log metrics $2.10 (the
+unsent probe's alarm and metric, $0.40, came with the review's fix round, within the founder's figure), the probes and
+requests well under $1; SES at Essentials' $0.16 per 1,000 messages; SES's validation of a screening address at
 $0.01, at most 1,000 a day in production.
 
 **Revisit when** staging's phase 2 shows that Cognito needs a sending-authorization policy on the stack's identity, or

@@ -57,12 +57,14 @@ a synthetic mailbox you control, and reads IDs and counts.
   paged (`NOTICE_UNDELIVERED`). A practice with no administrator gets no message (`NOTICE_UNDELIVERABLE`).
 - **Probes.** Once the identities are verified (phase 2), the platform sends each stream a message to SES's simulator
   (`success@` and `bounce@simulator.amazonses.com`) daily, and at once after a resume. Staging and production open the
-  screening only while its delivered and bounced probes came back within 48 hours and since the last resume.
+  screening only while its delivered and bounced probes came back within 48 hours and since the last resume. A probe
+  that does not come back pages (`MAIL_PROBE_MISSED`), and so does one that cannot be sent (`MAIL_PROBE_UNSENT`, once
+  every run has failed for 15 minutes).
 - **The console** (`/console/mail`, a platform administrator): each stream's state (sending, paused with its reason and
   the counts that paused it, or resumed and not yet confirmed), the window's sends, bounces and complaints, the last
   probes, whether the screening is ready to open, its bounce marks, and the last 7 days' undelivered customer messages
   (the screening's counted, never listed). It pauses the screening by hand and resumes it with a reason.
-- **Alarms**, all to the operator topic (15):
+- **Alarms**, all to the operator topic (16):
 
   | Alarm | Fires at | Section |
   | --- | --- | --- |
@@ -80,6 +82,7 @@ a synthetic mailbox you control, and reads IDs and counts.
   | `NOTICE_UNDELIVERABLE` | a notice with no recipient (platform log) | 3.3 |
   | `INVITATION_UNDELIVERED` | an invitation's email undelivered (platform log) | 3.4 |
   | `MAIL_PROBE_MISSED` | a probe not back in 26 hours (platform log) | 3.7 |
+  | `MAIL_PROBE_UNSENT` | a probe that could not be sent, in each of three 5-minute periods (platform log) | 3.7 |
   | `MAIL_VALIDATION_CAP_REACHED` | the day's validation cap reached (web log) | 3.5 |
 
   `MAIL_EVENT_UNREADABLE` (an event the platform cannot read) is covered by the dead-letter alarm;
@@ -223,11 +226,33 @@ aws sqs start-message-move-task --source-arn <the dead-letter queue's ARN> --des
 
 A message older than the queue's 4 days is gone; its message's state stays as last recorded.
 
-### 3.7 A probe missed (`MAIL_PROBE_MISSED`)
+### 3.7 A probe missed, or not sent (`MAIL_PROBE_MISSED`, `MAIL_PROBE_UNSENT`)
 
-A probe went and its event did not come back in 26 hours: the event path is broken somewhere. Check, in order, the
-identity (still verified), the set's event destination, rule `<p>-mail-events` (its invocations and failed
-invocations), the queue and the job. Until a probe comes back, staging and production keep the screening closed.
+`MAIL_PROBE_MISSED`: a probe went and its event did not come back in 26 hours: the event path is broken somewhere.
+Check, in order, the identity (still verified), the set's event destination, rule `<p>-mail-events` (its invocations
+and failed invocations), the queue and the job.
+
+`MAIL_PROBE_UNSENT`: for 15 minutes every run's probe send was refused, so nothing goes out to come back, and the
+stream's readiness lapses 48 hours after its last probe came back (about a day from now). Check, in order:
+
+1. the account's sending and enforcement (`aws sesv2 get-account --query '{sending: SendingEnabled, enforcement:
+   EnforcementStatus}'`: `true` and `HEALTHY`);
+2. both identities still verified (section 2, step 2's command);
+3. the stream's set: for the screening, `aws sesv2 get-configuration-set --configuration-set-name <p>-screening
+   --query SendingOptions` reads enabled while the stream is not paused (the platform's reconcile sets it each minute);
+4. the operator role's `MailProbes` statement, which the probes need (`ses:SendEmail` on both identities and the three
+   sets, from the two senders, to the simulator's two addresses only):
+
+   ```
+   aws iam simulate-principal-policy --policy-source-arn <OperatorRoleArn> --action-names ses:SendEmail \
+     --resource-arns <the identity's ARN> <the set's ARN> \
+     --context-entries 'ContextKeyName=ses:FromAddress,ContextKeyValues=<the sender>,ContextKeyType=string' \
+       'ContextKeyName=ses:Recipients,ContextKeyValues=success@simulator.amazonses.com,ContextKeyType=stringList'
+   ```
+
+   Each resource must read `allowed`; a recent change to `infra/lib/constructs/operator-role.ts` is the usual cause.
+
+Until a probe comes back, staging and production keep the screening closed.
 
 ## 4. Rules
 
