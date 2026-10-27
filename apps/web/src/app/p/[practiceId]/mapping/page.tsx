@@ -4,6 +4,7 @@ import Link from 'next/link';
 
 import { MappingText, TotalsText } from '../../../../components/contracts/display';
 import { Money, Pager } from '../../../../components/remittances/display';
+import { ScrollTable } from '../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import type { PlanStatus } from '../../../../lib/contracts/mapping-queries';
 import { loadPage } from '../../../../lib/http/next';
@@ -106,64 +107,66 @@ export default async function MappingPage(props: Props) {
       ) : (
         <Card>
           <CardContent>
-            <table className="w-full text-left text-sm" aria-label="Payers and plans">
-              <thead className="text-muted-foreground">
-                <tr>
-                  <th className="py-1 pr-3 font-medium">Payer</th>
-                  <th className="py-1 pr-3 font-medium">Plan</th>
-                  <th className="py-1 pr-3 font-medium">Status</th>
-                  <th className="py-1 pr-3 text-right font-medium">Claims</th>
-                  <th className="py-1 pr-3 text-right font-medium">Billed</th>
-                  <th className="py-1 pr-3 text-right font-medium">Waiting</th>
-                  <th className="py-1 font-medium">Mapped to</th>
-                </tr>
-              </thead>
-              <tbody>
-                {list.plans.map((plan) => (
-                  <tr key={plan.id} className="border-t align-top" data-plan={plan.id}>
-                    <td className="py-2 pr-3">{plan.payerName}</td>
-                    <td className="py-2 pr-3">
-                      <Link className="underline" href={`${path}/${plan.id}`}>
-                        {plan.planName ?? plan.planKey}
-                      </Link>
-                      {plan.medicareAdvantage ? <div className="text-xs text-muted-foreground">Medicare Advantage</div> : null}
-                    </td>
-                    <td className="py-2 pr-3">
-                      <Badge variant={STATUS[plan.status].variant}>{STATUS[plan.status].label}</Badge>
-                    </td>
-                    <td className="py-2 pr-3 text-right font-mono tabular-nums">{plan.totals.claims}</td>
-                    <td className="py-2 pr-3 text-right">
-                      <Money value={plan.totals.chargeCents} />
-                    </td>
-                    <td className="py-2 pr-3 text-right">
-                      <Money value={plan.waiting.chargeCents} />
-                      <div className="text-xs text-muted-foreground">
-                        {plan.waiting.lines} of {plan.totals.lines} lines
-                      </div>
-                    </td>
-                    <td className="py-2">
-                      {plan.current.length === 0 ? (
-                        canMap ? (
-                          <Link className="underline" href={`${path}/${plan.id}`}>
-                            Map this plan
-                          </Link>
-                        ) : (
-                          <span className="text-muted-foreground">Not mapped</span>
-                        )
-                      ) : (
-                        <ul className="flex flex-col gap-1">
-                          {plan.current.map((mapping) => (
-                            <li key={mapping.id}>
-                              <MappingText practiceId={practiceId} kind={mapping.kind} mapping={mapping} />
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </td>
+            <ScrollTable label="Payers and plans">
+              <table className="w-full min-w-[54rem] text-left text-sm" aria-label="Payers and plans">
+                <thead className="text-muted-foreground">
+                  <tr>
+                    <th className="py-1 pr-3 font-medium">Payer</th>
+                    <th className="py-1 pr-3 font-medium">Plan</th>
+                    <th className="py-1 pr-3 font-medium">Status</th>
+                    <th className="py-1 pr-3 text-right font-medium">Claims</th>
+                    <th className="py-1 pr-3 text-right font-medium">Billed</th>
+                    <th className="py-1 pr-3 text-right font-medium">Waiting</th>
+                    <th className="py-1 font-medium">Mapped to</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {list.plans.map((plan) => (
+                    <tr key={plan.id} className="border-t align-top" data-plan={plan.id}>
+                      <td className="py-2 pr-3">{plan.payerName}</td>
+                      <td className="py-2 pr-3 wrap-anywhere">
+                        <Link className="underline" href={`${path}/${plan.id}`}>
+                          {plan.planName ?? plan.planKey}
+                        </Link>
+                        {plan.medicareAdvantage ? <div className="text-xs text-muted-foreground">Medicare Advantage</div> : null}
+                      </td>
+                      <td className="py-2 pr-3">
+                        <Badge variant={STATUS[plan.status].variant}>{STATUS[plan.status].label}</Badge>
+                      </td>
+                      <td className="py-2 pr-3 text-right font-mono tabular-nums">{plan.totals.claims}</td>
+                      <td className="py-2 pr-3 text-right">
+                        <Money value={plan.totals.chargeCents} />
+                      </td>
+                      <td className="py-2 pr-3 text-right">
+                        <Money value={plan.waiting.chargeCents} />
+                        <div className="text-xs text-muted-foreground">
+                          {plan.waiting.lines} of {plan.totals.lines} lines
+                        </div>
+                      </td>
+                      <td className="py-2">
+                        {plan.current.length === 0 ? (
+                          canMap ? (
+                            <Link className="underline" href={`${path}/${plan.id}`}>
+                              Map this plan
+                            </Link>
+                          ) : (
+                            <span className="text-muted-foreground">Not mapped</span>
+                          )
+                        ) : (
+                          <ul className="flex flex-col gap-1">
+                            {plan.current.map((mapping) => (
+                              <li key={mapping.id}>
+                                <MappingText practiceId={practiceId} kind={mapping.kind} mapping={mapping} />
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollTable>
           </CardContent>
         </Card>
       )}

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ActionForm } from '../../../../../components/action-form';
 import { EVIDENCE_WORDS, LedgerTotals, entryStage } from '../../../../../components/reconciliation/display';
 import { Money, Pager } from '../../../../../components/remittances/display';
+import { ScrollTable } from '../../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { loadPage } from '../../../../../lib/http/next';
 import type { EntryView } from '../../../../../lib/reconciliation/queries';
@@ -45,8 +46,8 @@ function AdjustForm({ practiceId, entry, idPrefix }: { readonly practiceId: stri
 
 function Entries({ entries, practiceId, canAdjust, label }: { readonly entries: readonly EntryView[]; readonly practiceId: string; readonly canAdjust: boolean; readonly label: string }) {
   return (
-    <div className="overflow-x-auto">
-      <table aria-label={label} className="w-full text-sm">
+    <ScrollTable label={label}>
+      <table aria-label={label} className="w-full min-w-[54rem] text-sm">
         <thead>
           <tr className="border-b text-left">
             <th className="py-1 pr-3">#</th>
@@ -71,13 +72,13 @@ function Entries({ entries, practiceId, canAdjust, label }: { readonly entries: 
                 <Money value={entry.amountCents} />
               </td>
               <td className="py-1 pr-3">{EVIDENCE_WORDS[entry.evidenceKind] ?? entry.evidenceKind}</td>
-              <td className="py-1 pr-3">{entry.byJob ? 'the reconcile job' : (entry.createdBy ?? '—')}</td>
+              <td className="py-1 pr-3 wrap-anywhere">{entry.byJob ? 'the reconcile job' : (entry.createdBy ?? '—')}</td>
               <td className="py-1">{canAdjust && entry.adjustable ? <AdjustForm practiceId={practiceId} entry={entry} idPrefix={label === 'Ledger entries' ? 'ledger' : 'shortfall'} /> : null}</td>
             </tr>
           ))}
         </tbody>
       </table>
-    </div>
+    </ScrollTable>
   );
 }
 

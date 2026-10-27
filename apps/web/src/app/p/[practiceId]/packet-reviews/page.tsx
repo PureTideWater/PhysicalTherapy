@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { utc } from '../../../../components/format';
 import { Hash } from '../../../../components/packets/display';
 import { Money } from '../../../../components/remittances/display';
+import { ScrollTable } from '../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { StatusChip } from '../../../../components/status';
 import { loadPage } from '../../../../lib/http/next';
@@ -45,8 +46,8 @@ function ExportRow({ practiceId, entry }: { readonly practiceId: string; readonl
 
 function ExportTable({ label, practiceId, entries }: { readonly label: string; readonly practiceId: string; readonly entries: readonly ExportAwaitingAttestation[] }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm" aria-label={label}>
+    <ScrollTable label={label}>
+      <table className="w-full min-w-[48rem] text-sm" aria-label={label}>
         <thead>
           <tr className="border-b text-left">
             <th className="px-2 py-1 font-medium">Packet</th>
@@ -62,7 +63,7 @@ function ExportTable({ label, practiceId, entries }: { readonly label: string; r
           ))}
         </tbody>
       </table>
-    </div>
+    </ScrollTable>
   );
 }
 

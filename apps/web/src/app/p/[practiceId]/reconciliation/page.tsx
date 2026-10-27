@@ -8,6 +8,7 @@ import { roleNames, utc } from '../../../../components/format';
 import { EVIDENCE_WORDS, KindBadge, LedgerTotals, LineCorrectionWords, correctionWords, entryStage, exportStatusText, levelWords, lineEntriesEmptyText } from '../../../../components/reconciliation/display';
 import { UnattestedSubmissions } from '../../../../components/packets/unattested';
 import { Money, Pager } from '../../../../components/remittances/display';
+import { ScrollTable } from '../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { stageLabel } from '../../../../components/triage/display';
 import { Uploader } from '../../../../components/uploads/uploader';
@@ -123,8 +124,8 @@ function EntryRows({ entries, practiceId, phi }: { readonly entries: readonly En
             </Link>
           </td>
           <td className="py-1 pr-3">{EVIDENCE_WORDS[entry.evidenceKind] ?? entry.evidenceKind}</td>
-          <td className="py-1 pr-3">{entry.byJob ? 'the reconcile job' : (entry.createdBy ?? '—')}</td>
-          <td className="py-1">{phi ? (entry.reason ?? '') : ''}</td>
+          <td className="py-1 pr-3 wrap-anywhere">{entry.byJob ? 'the reconcile job' : (entry.createdBy ?? '—')}</td>
+          <td className="py-1 wrap-anywhere">{phi ? (entry.reason ?? '') : ''}</td>
         </tr>
       ))}
     </>
@@ -141,8 +142,8 @@ function EntryTable({ entries, practiceId, phi, label, empty }: { readonly entri
     );
   }
   return (
-    <div className="overflow-x-auto">
-      <table aria-label={label} className="w-full text-sm">
+    <ScrollTable label={label}>
+      <table aria-label={label} className="w-full min-w-[54rem] text-sm">
         <thead>
           <tr className="border-b text-left">
             <th className="py-1 pr-3">#</th>
@@ -159,7 +160,7 @@ function EntryTable({ entries, practiceId, phi, label, empty }: { readonly entri
           <EntryRows entries={entries} practiceId={practiceId} phi={phi} />
         </tbody>
       </table>
-    </div>
+    </ScrollTable>
   );
 }
 
@@ -303,30 +304,32 @@ export default async function ReconciliationPage(props: Props) {
             {data.exports.total === 0 ? (
               <EmptyState title="No export uploaded yet" nextStep="Upload the practice-management system’s payment-posting export and the bank’s EFT export above." />
             ) : (
-              <table aria-label="Exports" className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left">
-                    <th className="py-1 pr-3">Kind</th>
-                    <th className="py-1 pr-3">Uploaded</th>
-                    <th className="py-1 pr-3">What became of it</th>
-                    <th className="py-1 pr-3 text-right">Rows</th>
-                    <th className="py-1 text-right">Matched</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.exports.items.map((item) => (
-                    <tr key={item.id} className="border-b" data-document={item.id} data-status={item.status}>
-                      <td className="py-1 pr-3">
-                        <KindBadge kind={item.kind} />
-                      </td>
-                      <td className="py-1 pr-3">{utc(item.uploadedAt)}</td>
-                      <td className="py-1 pr-3">{exportStatusText(item.status, item.kind, data.template.system !== null)}</td>
-                      <td className="py-1 pr-3 text-right">{item.rows}</td>
-                      <td className="py-1 text-right">{item.matchedRows}</td>
+              <ScrollTable label="Exports">
+                <table aria-label="Exports" className="w-full min-w-[36rem] text-sm">
+                  <thead>
+                    <tr className="border-b text-left">
+                      <th className="py-1 pr-3">Kind</th>
+                      <th className="py-1 pr-3">Uploaded</th>
+                      <th className="py-1 pr-3">What became of it</th>
+                      <th className="py-1 pr-3 text-right">Rows</th>
+                      <th className="py-1 text-right">Matched</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {data.exports.items.map((item) => (
+                      <tr key={item.id} className="border-b" data-document={item.id} data-status={item.status}>
+                        <td className="py-1 pr-3">
+                          <KindBadge kind={item.kind} />
+                        </td>
+                        <td className="py-1 pr-3">{utc(item.uploadedAt)}</td>
+                        <td className="py-1 pr-3">{exportStatusText(item.status, item.kind, data.template.system !== null)}</td>
+                        <td className="py-1 pr-3 text-right font-mono tabular-nums">{item.rows}</td>
+                        <td className="py-1 text-right font-mono tabular-nums">{item.matchedRows}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </ScrollTable>
             )}
             <Pager path={path} query={query} page={data.exports.page} pages={data.exports.pages} total={data.exports.total} noun="Exports" param="exports" />
           </section>

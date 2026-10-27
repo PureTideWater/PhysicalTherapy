@@ -7,6 +7,7 @@ import { PricedShare } from '../../../../components/coverage/share';
 import { AnswerForm, TagForm, documentLabel } from '../../../../components/contracts/forms';
 import { roleNames } from '../../../../components/format';
 import { Pager } from '../../../../components/remittances/display';
+import { ScrollTable } from '../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { Uploader } from '../../../../components/uploads/uploader';
 import { METHOD_NAMES, VERSION_STATUS_NAMES, windowText } from '../../../../lib/contracts/display';
@@ -88,53 +89,55 @@ export default async function ContractsPage(props: Props) {
       ) : (
         <Card>
           <CardContent>
-            <table className="w-full text-left text-sm" aria-label="Contracts">
-              <thead className="text-muted-foreground">
-                <tr>
-                  <th className="py-1 pr-3 font-medium">Payer</th>
-                  <th className="py-1 pr-3 font-medium">Contract</th>
-                  <th className="py-1 pr-3 font-medium">Plans</th>
-                  <th className="py-1 pr-3 font-medium">Version</th>
-                  <th className="py-1 pr-3 font-medium">Effective</th>
-                  <th className="py-1 pr-3 font-medium">Method</th>
-                  <th className="py-1 pr-3 font-medium">Status</th>
-                  <th className="py-1 font-medium">Coverage share</th>
-                </tr>
-              </thead>
-              <tbody>
-                {list.items.map((contract) => (
-                  <tr key={contract.id} className="border-t align-top" data-contract={contract.id}>
-                    <td className="py-2 pr-3">{contract.payerName}</td>
-                    <td className="py-2 pr-3">
-                      <Link className="underline" href={`${path}/${contract.id}`}>
-                        {contract.title}
-                      </Link>
-                    </td>
-                    <td className="py-2 pr-3">{contract.plans.length === 0 ? <span className="text-muted-foreground">None mapped</span> : contract.plans.join(', ')}</td>
-                    <td className="py-2 pr-3">
-                      {contract.shown === null ? (
-                        '—'
-                      ) : (
-                        <Link className="underline" href={`${path}/versions/${contract.shown.versionId}`}>
-                          Version {contract.shown.versionNo}
-                          {contract.shown.inForce ? ' (in force)' : ''}
-                        </Link>
-                      )}
-                    </td>
-                    <td className="py-2 pr-3">{contract.shown === null ? '—' : windowText(contract.shown.effectiveFrom, contract.shown.effectiveTo)}</td>
-                    <td className="py-2 pr-3">{contract.methods.length === 0 ? '—' : contract.methods.map((method) => METHOD_NAMES[method]).join(', ')}</td>
-                    <td className="py-2 pr-3">{contract.latestStatus === null ? '—' : <VersionStatusBadge status={contract.latestStatus} />}</td>
-                    <td className="py-2" data-coverage-share={contract.coverage === null ? 'none' : 'priced'}>
-                      {contract.coverage !== null ? (
-                        <PricedShare priced={contract.coverage.priced} of={contract.coverage.of} />
-                      ) : (
-                        <span className="text-muted-foreground">{runsInEffect === 0 ? 'No pricing run in effect yet' : 'No line in effect priced under it'}</span>
-                      )}
-                    </td>
+            <ScrollTable label="Contracts">
+              <table className="w-full min-w-[54rem] text-left text-sm" aria-label="Contracts">
+                <thead className="text-muted-foreground">
+                  <tr>
+                    <th className="py-1 pr-3 font-medium">Payer</th>
+                    <th className="py-1 pr-3 font-medium">Contract</th>
+                    <th className="py-1 pr-3 font-medium">Plans</th>
+                    <th className="py-1 pr-3 font-medium">Version</th>
+                    <th className="py-1 pr-3 font-medium">Effective</th>
+                    <th className="py-1 pr-3 font-medium">Method</th>
+                    <th className="py-1 pr-3 font-medium">Status</th>
+                    <th className="py-1 font-medium">Coverage share</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {list.items.map((contract) => (
+                    <tr key={contract.id} className="border-t align-top" data-contract={contract.id}>
+                      <td className="py-2 pr-3">{contract.payerName}</td>
+                      <td className="py-2 pr-3">
+                        <Link className="underline" href={`${path}/${contract.id}`}>
+                          {contract.title}
+                        </Link>
+                      </td>
+                      <td className="py-2 pr-3 wrap-anywhere">{contract.plans.length === 0 ? <span className="text-muted-foreground">None mapped</span> : contract.plans.join(', ')}</td>
+                      <td className="py-2 pr-3">
+                        {contract.shown === null ? (
+                          '—'
+                        ) : (
+                          <Link className="underline" href={`${path}/versions/${contract.shown.versionId}`}>
+                            Version {contract.shown.versionNo}
+                            {contract.shown.inForce ? ' (in force)' : ''}
+                          </Link>
+                        )}
+                      </td>
+                      <td className="py-2 pr-3">{contract.shown === null ? '—' : windowText(contract.shown.effectiveFrom, contract.shown.effectiveTo)}</td>
+                      <td className="py-2 pr-3">{contract.methods.length === 0 ? '—' : contract.methods.map((method) => METHOD_NAMES[method]).join(', ')}</td>
+                      <td className="py-2 pr-3">{contract.latestStatus === null ? '—' : <VersionStatusBadge status={contract.latestStatus} />}</td>
+                      <td className="py-2" data-coverage-share={contract.coverage === null ? 'none' : 'priced'}>
+                        {contract.coverage !== null ? (
+                          <PricedShare priced={contract.coverage.priced} of={contract.coverage.of} />
+                        ) : (
+                          <span className="text-muted-foreground">{runsInEffect === 0 ? 'No pricing run in effect yet' : 'No line in effect priced under it'}</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollTable>
           </CardContent>
         </Card>
       )}
@@ -145,30 +148,32 @@ export default async function ContractsPage(props: Props) {
         {calendar.length === 0 ? (
           <p className="text-sm text-muted-foreground">No dates ahead. Signing off a version records its anniversary, notice deadline, fee-schedule year and amendment dates here.</p>
         ) : (
-          <table className="w-full text-left text-sm" aria-label="Calendar">
-            <thead className="text-muted-foreground">
-              <tr>
-                <th className="py-1 pr-3 font-medium">Date</th>
-                <th className="py-1 pr-3 font-medium">What</th>
-                <th className="py-1 pr-3 font-medium">Contract</th>
-                <th className="py-1 font-medium">Note</th>
-              </tr>
-            </thead>
-            <tbody>
-              {calendar.map((event) => (
-                <tr key={event.id} className="border-t">
-                  <td className="py-1 pr-3 whitespace-nowrap">{event.onDate}</td>
-                  <td className="py-1 pr-3">{CALENDAR_KIND_NAMES[event.kind]}</td>
-                  <td className="py-1 pr-3">
-                    <Link className="underline" href={`${path}/${event.contractId}`}>
-                      {event.contractTitle}
-                    </Link>
-                  </td>
-                  <td className="py-1">{event.note ?? ''}</td>
+          <ScrollTable label="Calendar">
+            <table className="w-full min-w-[36rem] text-left text-sm" aria-label="Calendar">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="py-1 pr-3 font-medium">Date</th>
+                  <th className="py-1 pr-3 font-medium">What</th>
+                  <th className="py-1 pr-3 font-medium">Contract</th>
+                  <th className="py-1 font-medium">Note</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {calendar.map((event) => (
+                  <tr key={event.id} className="border-t">
+                    <td className="py-1 pr-3 whitespace-nowrap">{event.onDate}</td>
+                    <td className="py-1 pr-3">{CALENDAR_KIND_NAMES[event.kind]}</td>
+                    <td className="py-1 pr-3">
+                      <Link className="underline" href={`${path}/${event.contractId}`}>
+                        {event.contractTitle}
+                      </Link>
+                    </td>
+                    <td className="py-1 wrap-anywhere">{event.note ?? ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollTable>
         )}
       </section>
 

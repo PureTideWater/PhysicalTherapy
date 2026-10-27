@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ActionForm } from '../../../../components/action-form';
 import { utc } from '../../../../components/format';
 import { Money, Pager } from '../../../../components/remittances/display';
+import { ScrollTable } from '../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { Investigatory, lineName } from '../../../../components/triage/display';
 import { loadPage } from '../../../../lib/http/next';
@@ -55,8 +56,8 @@ export default async function AnomaliesPage(props: Props) {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm" aria-label="Flagged lines">
+            <ScrollTable label="Flagged lines">
+              <table className="w-full min-w-[48rem] text-sm" aria-label="Flagged lines">
                 <thead>
                   <tr className="border-b text-left">
                     {canReadPhi ? <th className="px-2 py-1 font-medium">Payer claim control number</th> : null}
@@ -71,7 +72,7 @@ export default async function AnomaliesPage(props: Props) {
                 <tbody>
                   {open.lines.map((line, index) => (
                     <tr key={line.serviceLineId} className="border-b last:border-0">
-                      {canReadPhi ? <td className="px-2 py-1">{line.payerClaimControlNumber}</td> : null}
+                      {canReadPhi ? <td className="px-2 py-1 wrap-anywhere">{line.payerClaimControlNumber}</td> : null}
                       <td className="px-2 py-1">
                         <Link className="underline" href={`/p/${practiceId}/lines/${line.serviceLineId}`}>
                           {line.serviceDate ?? lineName(index + 1, open.lines.length)}
@@ -92,7 +93,7 @@ export default async function AnomaliesPage(props: Props) {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollTable>
             <div className="flex flex-col gap-2 text-sm">
               <p data-state={open.anomaly.reviewedAt === null ? 'unreviewed' : 'reviewed'}>
                 {open.anomaly.reviewedAt === null ? 'Not reviewed yet.' : `Reviewed ${utc(open.anomaly.reviewedAt)} by ${open.anomaly.reviewedBy ?? '—'}.`}{' '}
@@ -159,8 +160,8 @@ export default async function AnomaliesPage(props: Props) {
         ) : anomalies.length === 0 ? (
           <p className="text-sm text-muted-foreground">No cohort matches these filters.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm" aria-label="Anomaly cohorts">
+          <ScrollTable label="Anomaly cohorts">
+            <table className="w-full min-w-[54rem] text-sm" aria-label="Anomaly cohorts">
               <thead>
                 <tr className="border-b text-left">
                   <th className="px-2 py-1 font-medium">Label</th>
@@ -198,7 +199,7 @@ export default async function AnomaliesPage(props: Props) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollTable>
         )}
         <Pager path={path} query={filters} page={page.data.page} pages={page.data.pages} total={total} noun="Cohorts" />
       </section>

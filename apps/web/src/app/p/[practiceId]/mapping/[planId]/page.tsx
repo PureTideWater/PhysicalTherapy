@@ -8,6 +8,7 @@ import { MappingText, TotalsText, VersionStatusBadge } from '../../../../../comp
 import { Field, SelectField } from '../../../../../components/field';
 import { roleNames, utc } from '../../../../../components/format';
 import { Money } from '../../../../../components/remittances/display';
+import { ScrollTable } from '../../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { MAPPING_KIND_NAMES, windowText } from '../../../../../lib/contracts/display';
 import type { ResolutionBucket } from '../../../../../lib/contracts/mapping-queries';
@@ -98,39 +99,41 @@ export default async function PlanPage(props: Props) {
           {resolution.length === 0 ? (
             <p className="text-sm text-muted-foreground">The plan has no lines yet.</p>
           ) : (
-            <table className="w-full text-left text-sm" aria-label="Agreement resolution">
-              <thead className="text-muted-foreground">
-                <tr>
-                  <th className="py-1 pr-3 font-medium">Outcome</th>
-                  <th className="py-1 pr-3 font-medium">Contract version</th>
-                  <th className="py-1 pr-3 text-right font-medium">Lines</th>
-                  <th className="py-1 text-right font-medium">Billed</th>
-                </tr>
-              </thead>
-              <tbody>
-                {resolution.map((bucket) => (
-                  <tr key={`${bucket.outcome}:${bucket.version?.versionId ?? ''}`} className="border-t" data-outcome={bucket.outcome}>
-                    <td className="py-1 pr-3">{outcomeText(bucket)}</td>
-                    <td className="py-1 pr-3">
-                      {bucket.version === null ? (
-                        '—'
-                      ) : (
-                        <>
-                          <Link className="underline" href={`/p/${practiceId}/contracts/versions/${bucket.version.versionId}`}>
-                            {bucket.version.contractTitle}, version {bucket.version.versionNo}
-                          </Link>{' '}
-                          <VersionStatusBadge status={bucket.version.status} />
-                        </>
-                      )}
-                    </td>
-                    <td className="py-1 pr-3 text-right font-mono tabular-nums">{bucket.lines}</td>
-                    <td className="py-1 text-right">
-                      <Money value={bucket.chargeCents} />
-                    </td>
+            <ScrollTable label="Agreement resolution">
+              <table className="w-full min-w-[32rem] text-left text-sm" aria-label="Agreement resolution">
+                <thead className="text-muted-foreground">
+                  <tr>
+                    <th className="py-1 pr-3 font-medium">Outcome</th>
+                    <th className="py-1 pr-3 font-medium">Contract version</th>
+                    <th className="py-1 pr-3 text-right font-medium">Lines</th>
+                    <th className="py-1 text-right font-medium">Billed</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {resolution.map((bucket) => (
+                    <tr key={`${bucket.outcome}:${bucket.version?.versionId ?? ''}`} className="border-t" data-outcome={bucket.outcome}>
+                      <td className="py-1 pr-3">{outcomeText(bucket)}</td>
+                      <td className="py-1 pr-3">
+                        {bucket.version === null ? (
+                          '—'
+                        ) : (
+                          <>
+                            <Link className="underline" href={`/p/${practiceId}/contracts/versions/${bucket.version.versionId}`}>
+                              {bucket.version.contractTitle}, version {bucket.version.versionNo}
+                            </Link>{' '}
+                            <VersionStatusBadge status={bucket.version.status} />
+                          </>
+                        )}
+                      </td>
+                      <td className="py-1 pr-3 text-right font-mono tabular-nums">{bucket.lines}</td>
+                      <td className="py-1 text-right">
+                        <Money value={bucket.chargeCents} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollTable>
           )}
           <p className="mt-2 text-xs text-muted-foreground">
             Only a signed-off version covering a line’s service date prices it. A pricing run records this resolution for each line and never changes afterwards.
@@ -199,32 +202,34 @@ export default async function PlanPage(props: Props) {
         {history.length === 0 ? (
           <EmptyState title="Never mapped" nextStep="Until it is mapped, every line of this plan waits on mapping and pricing refuses to run over it." />
         ) : (
-          <table className="w-full text-left text-sm" aria-label="Mappings">
-            <thead className="text-muted-foreground">
-              <tr>
-                <th className="py-1 pr-3 font-medium">Mapping</th>
-                <th className="py-1 pr-3 font-medium">State</th>
-                <th className="py-1 font-medium">Mapped by</th>
-              </tr>
-            </thead>
-            <tbody>
-              {history.map((mapping) => (
-                <tr key={mapping.id} className="border-t align-top" data-mapping={mapping.id}>
-                  <td className="py-1 pr-3">
-                    <MappingText practiceId={practiceId} kind={mapping.kind} mapping={mapping} />
-                  </td>
-                  <td className="py-1 pr-3">
-                    {mapping.supersededById === null ? <Badge>Current</Badge> : <Badge variant="outline">Corrected by a later mapping</Badge>}
-                    {mapping.supersedesId === null ? null : <div className="text-xs text-muted-foreground">Corrects an earlier mapping</div>}
-                  </td>
-                  <td className="py-1">
-                    {mapping.mappedBy}
-                    <div className="text-xs text-muted-foreground">{utc(mapping.mappedAt)}</div>
-                  </td>
+          <ScrollTable label="Mappings">
+            <table className="w-full text-left text-sm" aria-label="Mappings">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="py-1 pr-3 font-medium">Mapping</th>
+                  <th className="py-1 pr-3 font-medium">State</th>
+                  <th className="py-1 font-medium">Mapped by</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {history.map((mapping) => (
+                  <tr key={mapping.id} className="border-t align-top" data-mapping={mapping.id}>
+                    <td className="py-1 pr-3">
+                      <MappingText practiceId={practiceId} kind={mapping.kind} mapping={mapping} />
+                    </td>
+                    <td className="py-1 pr-3">
+                      {mapping.supersededById === null ? <Badge>Current</Badge> : <Badge variant="outline">Corrected by a later mapping</Badge>}
+                      {mapping.supersedesId === null ? null : <div className="text-xs text-muted-foreground">Corrects an earlier mapping</div>}
+                    </td>
+                    <td className="py-1">
+                      <span className="wrap-anywhere">{mapping.mappedBy}</span>
+                      <div className="text-xs text-muted-foreground">{utc(mapping.mappedAt)}</div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollTable>
         )}
       </section>
     </AppShell>

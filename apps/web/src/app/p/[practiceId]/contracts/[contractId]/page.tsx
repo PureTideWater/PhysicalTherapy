@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { QuestionList, VersionStatusBadge } from '../../../../../components/contracts/display';
 import { AnswerForm, TagForm, documentLabel } from '../../../../../components/contracts/forms';
 import { utc } from '../../../../../components/format';
+import { ScrollTable } from '../../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { windowText } from '../../../../../lib/contracts/display';
 import { loadPage } from '../../../../../lib/http/next';
@@ -50,39 +51,57 @@ export default async function ContractPage(props: Props) {
         {versions.length === 0 ? (
           <EmptyState title="No version yet" nextStep="Add an uploaded document to this contract below to start its first version." />
         ) : (
-          <table className="w-full text-left text-sm" aria-label="Versions">
-            <thead className="text-muted-foreground">
-              <tr>
-                <th className="py-1 pr-3 font-medium">Version</th>
-                <th className="py-1 pr-3 font-medium">Status</th>
-                <th className="py-1 pr-3 font-medium">Effective</th>
-                <th className="py-1 pr-3 text-right font-medium">Rate records</th>
-                <th className="py-1 pr-3 font-medium">Approved</th>
-                <th className="py-1 font-medium">Signed off</th>
-              </tr>
-            </thead>
-            <tbody>
-              {versions.map((version) => (
-                <tr key={version.id} className="border-t align-top" data-version={version.id}>
-                  <td className="py-1 pr-3">
-                    <Link className="underline" href={`${path}/versions/${version.id}`}>
-                      Version {version.versionNo}
-                    </Link>
-                    {version.supersedesNo === null ? null : <div className="text-xs text-muted-foreground">Follows version {version.supersedesNo}</div>}
-                  </td>
-                  <td className="py-1 pr-3">
-                    <VersionStatusBadge status={version.status} />
-                  </td>
-                  <td className="py-1 pr-3">{windowText(version.effectiveFrom, version.effectiveTo)}</td>
-                  <td className="py-1 pr-3 text-right font-mono tabular-nums">
-                    {version.verified} of {version.records} verified
-                  </td>
-                  <td className="py-1 pr-3">{version.approvedAt === null ? '—' : `${version.approvedBy ?? ''}, ${utc(version.approvedAt)}`}</td>
-                  <td className="py-1">{version.signedOffAt === null ? '—' : `${version.signedOffBy ?? ''}, ${utc(version.signedOffAt)}`}</td>
+          <ScrollTable label="Versions">
+            <table className="w-full min-w-[48rem] text-left text-sm" aria-label="Versions">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="py-1 pr-3 font-medium">Version</th>
+                  <th className="py-1 pr-3 font-medium">Status</th>
+                  <th className="py-1 pr-3 font-medium">Effective</th>
+                  <th className="py-1 pr-3 text-right font-medium">Rate records</th>
+                  <th className="py-1 pr-3 font-medium">Approved</th>
+                  <th className="py-1 font-medium">Signed off</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {versions.map((version) => (
+                  <tr key={version.id} className="border-t align-top" data-version={version.id}>
+                    <td className="py-1 pr-3">
+                      <Link className="underline" href={`${path}/versions/${version.id}`}>
+                        Version {version.versionNo}
+                      </Link>
+                      {version.supersedesNo === null ? null : <div className="text-xs text-muted-foreground">Follows version {version.supersedesNo}</div>}
+                    </td>
+                    <td className="py-1 pr-3">
+                      <VersionStatusBadge status={version.status} />
+                    </td>
+                    <td className="py-1 pr-3">{windowText(version.effectiveFrom, version.effectiveTo)}</td>
+                    <td className="py-1 pr-3 text-right font-mono tabular-nums">
+                      {version.verified} of {version.records} verified
+                    </td>
+                    <td className="py-1 pr-3">
+                      {version.approvedAt === null ? (
+                        '—'
+                      ) : (
+                        <>
+                          <span className="wrap-anywhere">{version.approvedBy ?? ''}</span>, {utc(version.approvedAt)}
+                        </>
+                      )}
+                    </td>
+                    <td className="py-1">
+                      {version.signedOffAt === null ? (
+                        '—'
+                      ) : (
+                        <>
+                          <span className="wrap-anywhere">{version.signedOffBy ?? ''}</span>, {utc(version.signedOffAt)}
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollTable>
         )}
       </section>
       <section aria-label="Plans mapped" className="flex flex-col gap-2">

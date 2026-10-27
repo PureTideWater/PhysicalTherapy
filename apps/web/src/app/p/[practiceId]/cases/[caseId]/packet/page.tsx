@@ -14,6 +14,7 @@ import { ExportRequestForm, ExportStatus } from '../../../../../../components/pa
 import { PricingNowPanel } from '../../../../../../components/packets/pricing';
 import { type AttachableOption, VersionForm } from '../../../../../../components/packets/version-form';
 import { Money } from '../../../../../../components/remittances/display';
+import { ScrollTable } from '../../../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../../../components/shell';
 import { CaseStateBadge, stageLabel } from '../../../../../../components/triage/display';
 import { loadPage } from '../../../../../../lib/http/next';
@@ -567,8 +568,8 @@ export default async function PacketPage(props: Props) {
           {builder.versions.length === 0 ? (
             <EmptyState title="No version yet" nextStep="Write the first version above." />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm" aria-label="Versions">
+            <ScrollTable label="Versions">
+              <table className="w-full min-w-[54rem] text-sm" aria-label="Versions">
                 <thead>
                   <tr className="border-b text-left">
                     <th className="px-2 py-1 font-medium">Version</th>
@@ -591,13 +592,22 @@ export default async function PacketPage(props: Props) {
                         {draftOf(drafts, entry.id) === undefined ? '' : ', drafted by the model'}
                       </td>
                       <td className="px-2 py-1">
-                        {utc(entry.writtenAt)}, {entry.writtenBy ?? '—'}
+                        {utc(entry.writtenAt)}, <span className="wrap-anywhere">{entry.writtenBy ?? '—'}</span>
                       </td>
                       <td className="px-2 py-1">{entry.verifierPassed ? 'Passed' : 'Failed'}</td>
                       <td className="px-2 py-1">
                         <DeadlineChip status={entry.deadlineStatus} />
                       </td>
-                      <td className="px-2 py-1">{entry.approvedAt === null ? '—' : `${utc(entry.approvedAt)}, ${entry.approvedBy ?? '—'}${entry.approvedAlone ? ' (alone, flagged)' : ''}`}</td>
+                      <td className="px-2 py-1">
+                        {entry.approvedAt === null ? (
+                          '—'
+                        ) : (
+                          <>
+                            {utc(entry.approvedAt)}, <span className="wrap-anywhere">{entry.approvedBy ?? '—'}</span>
+                            {entry.approvedAlone ? ' (alone, flagged)' : ''}
+                          </>
+                        )}
+                      </td>
                       <td className="px-2 py-1">
                         {entry.exportedAt === null ? (
                           '—'
@@ -632,7 +642,7 @@ export default async function PacketPage(props: Props) {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollTable>
           )}
         </CardContent>
       </Card>
