@@ -25,3 +25,10 @@ Started 2026-10-27T16:51:53Z. Nothing written yet.
 - DONE seed.db.test (new persona forms-second): 1/1 pass (log records/seed-db.log)
 ## 3. Design — STARTING (backup records/design.before.md)
 - DONE ADR renumber (19:15Z): code cites "docs/adr/0077, D10" for the person mark (next.ts, form-keys, form-issues, split-form, next.test), so the other-person decision is folded into D10 (heading widened) and the split form's status line is D11 (no D12). Backup records/adr0077.before-renumber.md. No line >120 added.
+- 19:20Z writing records/design_edit.py (3.5 wrap+titles, 2.1/2.6 duplicate words, 3.8 fallback, 4.6 quiet list, 5.1 select rule+showChosen, 5.3 locked props+pressed, 5.4 apostrophes, 10.2, 10.3, 11.2.6, new 12.2). Apply once from records/design.before.md.
+- 19:32Z APPLIED design_edit.py (from design.before.md + design-12.2.md)
+- 19:36Z re-APPLIED design_edit.py (code spans kept whole; 10.1 screening row; CSP wording)
+- 19:38Z re-APPLIED design_edit.py (+9.1 decisions and Not covered)
+- 19:40Z ADR: D3 names flex-col-reverse too (reflowed); Date line notes the 2026-10-27 revision
+- 19:42Z checks after the doc edits: lint:copy 517 files clean; check:fixtures clean; gitleaks 8.24.3 (dir scan of my changed files) no leaks.
+## DONE (all four parts). Design: 3.5 (states, wrap rule corrected, titles), 2.1/2.6 (pinned key, "already sent"), 3.8 (fallback skip), 4.6 (quiet list + status line; another person), 5.1, 5.3, 5.4, 9.1, 10.1 (screening row), 10.2, 10.3, 11.2.6, 12 row 8, new 12.2 (16 rows + 3 not-defects + also-in-round + 8 open proposals). Script records/design_edit.py + records/design-12.2.md, applied from records/design.before.md.

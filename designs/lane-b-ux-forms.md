@@ -160,12 +160,13 @@ What each part does, and the evidence:
   and D6 count one call through the browser hook and one without JavaScript).
 - **A dropped connection keeps everything.** Today, and with a single hook, a failed POST makes `useActionState`
   rethrow, `app/error.tsx` replaces the page, and "Try again" remounts the form empty (review finding 4, `r1.out` R1).
-  With the browser hook (`r4.out` D2): no error page, every field kept, the summary focused, and a second press, once
-  the connection is back, reaches the action. Its words (10.2) say "Not confirmed", never "Not sent": the response may
-  be what dropped, after the server saved. A second press then replays the same request key, which does nothing and
-  answers "This form was already submitted. Reload the page to see the result." (ADR 0017), so nothing is saved
-  twice. A server failure still reaches `error.tsx` with its digest (`r4.out` D3), and a redirect still remounts the
-  form (D4, and scout A's `rfr` variant).
+  With the browser hook (`r4.out` D2): no error page, every field kept but the secrets (2.3), the summary focused, and
+  a second press, once the connection is back, reaches the action. Its words (10.2) say "Not confirmed", never "Not
+  sent": the response may be what dropped, after the server saved. A second press then replays the same request key,
+  pinned by the dropped press even when the page is read again in between (12.2, S-SEC-1), which does nothing and
+  answers "This form was already sent, so nothing new was saved. Reload the page to see the result." under the title
+  "Already sent" (ADR 0017; 12.2, U-UX-4), so nothing is saved twice. A server failure still reaches `error.tsx` with
+  its digest (`r4.out` D3), and a redirect still remounts the form (D4, and scout A's `rfr` variant).
 - **Which state shows.** Only the server hook runs without JavaScript and for a pre-hydration replay; only the
   browser hook runs once `onSubmit` has dispatched. `source` flips to `browser` inside the same transition, so the
   form never shows a stale state of the other hook (`r4.out` D1, D2, D6).
@@ -236,6 +237,22 @@ className="text-sm text-muted-foreground">`, so a sighted person does not take a
 old value, and a screen reader hears why the field is empty. Without JavaScript the post comes back with every field
 empty and the same note under the secret fields, which is still true.
 
+**Where no press can succeed, the password's note asks for nothing** (12.2, S-A11Y-2 and U-UX-3): **"Emptied for
+your security."**, as a code's, since "type it again" would contradict the summary's next step. The server says which
+refusals those are, never the browser: a locked account (`locked`, "Account locked"); an invitation that expired,
+which `SignInFlow.start` refuses before any password is checked, so the right password is refused too
+(`StepResult.final`, `lib/routes/sign-in.ts`); and `runSignInStep`'s "Sign-in could not continue. Start again."
+(`ActionState.final`, `next.ts`), whose next step is the start, another page from the new-password step.
+`FormIssues` puts `locked || final` into the form's context as `final`, which `EmptiedNote` reads, so a press with
+JavaScript and the post without it render the same note. Never on a refusal whose words are a wrong password's
+(`no_account` reads as `credentials`): a different note would tell which addresses have accounts. A rate limit keeps
+"type it again": its summary says to wait, then try again.
+
+**After a dropped connection** the form's values stay but its secrets are emptied like after any refusal, so the lead
+of a form that held one says which went (10.2): "The connection to PaidWhole dropped before an answer came back. What
+you typed is still here, except passwords and codes: check your connection, type them again, then press “{submit}”
+again." `emptySecrets` reports whether the form held a secret, and the summary passes it to `RefusalLead`.
+
 Scout A left one case open: a sign-in step that ends without a redirect. `runSignInStep` returns the route's
 `StepResult` (`next.ts:192`), which is `{ redirect } | { error, … }` (`lib/routes/sign-in.ts:41`), and a redirect
 throws. So every step that comes back to the form carries `error`, and the effect always clears the secrets. Nothing
@@ -301,7 +318,7 @@ JavaScript has no dead button and one tab stop fewer.
   run on synthetic values only.
 - **CSRF and replay are unchanged.** The request key and CSRF token still come from `FormKeys`, rendered on the
   server (`components/form-keys.tsx:11-18`); a replay of the same key does nothing (ADR 0017). The `inFlight` guard
-  means a double press no longer produces "This form was already submitted" for a press the person did not mean.
+  means a double press no longer produces "This form was already sent" for a press the person did not mean.
 - **Response headers do not change** (ADR 0053/0055). Every new mark uses classes and SVG attributes, never a
   `style` attribute: CSP `style-src` is `'self'` plus a nonce (`lib/http/security-headers.ts:60`).
 - **PHI** stays where it was: in the person's own browser and in the post. No URL, key, filename or job payload
@@ -316,12 +333,17 @@ export interface ActionState {
   readonly invalid?: boolean;
   readonly issues?: readonly Issue[];
   readonly locked?: boolean;
+  /** No press of this form can succeed, whatever is typed (a sign-in step's expired invitation): a secret's note asks for nothing (2.3). */
+  readonly final?: boolean;
   /** The page's CSRF token or request key was out of date: the form reads the page again (3.5a). */
   readonly stale?: boolean;
+  /** The request key was used before: an earlier post with it saved, and this one did nothing ("Already sent", 12.2). */
+  readonly duplicate?: boolean;
 }
 ```
 
-`invalid` is #50's (it lands first, section 7.9) and is kept. `stale` is new. `problems` is removed: the password
+`invalid` is #50's (it lands first, section 7.9) and is kept. `stale` is new; `final` and `duplicate` came in the fix
+round after the reviews (12.2: S-A11Y-2 and U-UX-3; U-UX-4). `problems` is removed: the password
 policy becomes an issue on the password field (section 6), and ActionForm's `It needs …` line
 (`action-form.tsx:81`) goes with it.
 
@@ -464,19 +486,22 @@ and the post without JavaScript still has every message, beside its field.
 
 `RefusalSummary` (in `form-issues.tsx`) renders **first inside the form, before the fields**, so its words about
 place are true and a screen reader meets it first. It is the same `Alert` as today (`variant="destructive"`,
-`tabIndex={-1}`, `data-state` `error`, `locked` or `unconfirmed`); the Alert's role and kinds are the later Notice
-PR's.
+`tabIndex={-1}`, `data-state` `error`, `locked`, `unconfirmed`, `duplicate` or `cleared`, the last two from 12.2); the
+Alert's role and kinds are the later Notice PR's.
 
 - **Its own line in any layout** (review finding 8). 17 callers give `<ActionForm>` a grid or a row: six two-column
-  grids (`grid gap-3 md:grid-cols-2` ×5, `sm:grid-cols-2` ×1), five `flex flex-wrap items-end` rows (ROI, reports)
-  and six plain `flex` rows (the users page's row forms, `MatchForm`). The summary carries
+  grids (`grid gap-3 md:grid-cols-2` ×5, `sm:grid-cols-2` ×1), five `flex flex-wrap items-end` rows (ROI, reports) and
+  six plain `flex` rows (the users page's row forms, `MatchForm`). The summary carries
   `className="col-span-full basis-full w-full"` and `data-slot="refusal-summary"`, so in a grid it spans every column
   and in a wrapping row it takes a line of its own; no field moves to another cell when a refusal appears. The six
   rows that do not wrap (console status's row, the users page's two row forms and console support's grant row, both
   #42 pages, and the two `className="flex"` forms) would squeeze their controls beside a full-width item, so one
-  unlayered rule in `packages/ui/src/styles.css` lets a flex form wrap while it shows a refusal:
-  `form:has(> [data-slot='refusal-summary']) { flex-wrap: wrap; }`. A grid ignores it, and a column form has no
-  height for it to wrap into. It reaches #42's row forms through the stylesheet, without touching their files.
+  unlayered rule in `packages/ui/src/styles.css` lets a row form wrap while it shows a refusal:
+  `form:not(.flex-col, .flex-col-reverse):has(> [data-slot='refusal-summary']) { flex-wrap: wrap; }`. A grid ignores
+  it. A column form must never wrap (corrected in 12.2, U-UX-1): a wrapping column is a multi-line flexbox, Chromium
+  sizes its line to its widest item's max-content, where a select's `max-width: 100%` no longer holds, so a select
+  with a long option pushed the refused submissions form to 613 px on a 390 px screen. It reaches #42's row forms
+  through the stylesheet, without touching their files.
 - **Announced every time** (review finding 5). `drive/r1.out` R2: pressing Enter twice in a refused field gives the
   same summary node with 0 mutations, and focusing the field that already has focus fires nothing, so a second
   identical refusal is silent after "Working…". The summary is rendered with `key={state.seq ?? 0}` (2.1): each
@@ -491,7 +516,9 @@ Fix the field listed here, then try again.            <- the lead (below)
 
 - **Title** stays "Not done": `contracts.spec.ts` filters on it, and the tour's `refused()` matches it
   (`tour.spec.ts:536`). "Account locked" is unchanged. A dropped connection (2.1) reads **"Not confirmed"**, because
-  the server may have saved.
+  the server may have saved. A press whose request key was used before reads **"Already sent"**, because an earlier
+  press saved (U-UX-4), and a form cleared because the page now shows another person reads **"Form cleared"**
+  (S-SEC-2; both 12.2).
 - **Lead.** `next.ts` sets an `invalid` outcome to `{ error: 'Fix the fields listed here, then try again.', invalid:
   true, issues }` in both `runAction` (:162) and `runSignInStep` (:180), replacing "Check the fields marked below."
   (`words-other-03`'s recommended sentence; `invalid` is #50's flag). The summary chooses the lead itself, through
@@ -618,10 +645,12 @@ One rule in `packages/ui/src/styles.css`, **unlayered** (globals.css imports `@t
 - **The route's group message.** `componentList` (`lib/routes/support.ts:392-395`) passes `undefined` through, so
   Zod's "Invalid input: expected array, received undefined" wins over "choose at least one component"
   (`a11y-other-09`). The preprocess maps `undefined` and `''` to `[]`. The route test's `sample` input stays valid.
-- **The fallback.** A control no shared field renders (#42's users page :85 confirm box; anything added later by
-  hand) is still marked by ActionForm's effect as today: `aria-invalid` on it, and the summary item's id first in its
-  `aria-describedby`. The effect skips any control that already carries `aria-invalid="true"` from its component.
-  The cleanup restores both attributes when the next state arrives (as `action-form.tsx:53-62` does now).
+- **The fallback.** A control no shared field renders (#42's users page :85 confirm box; anything added later by hand)
+  is still marked by ActionForm's effect as today: `aria-invalid` on it, and the summary item's id first in its
+  `aria-describedby`. The effect skips any control that already carries `aria-invalid="true"` from its component, and
+  any control inside a group its component marked `[data-invalid]`, so a group's problem never marks only its first
+  box (12.2, S-A11Y-1). The cleanup restores both attributes when the next state arrives (as `action-form.tsx:53-62`
+  does now).
 
 ### 3.9 What a screen reader hears
 
@@ -767,9 +796,13 @@ is in the browser only):
 
 - **Per-field problems.** `splitSettings` (:32-51) also says which list each problem concerns: an invalid code, the
   list it is in; a code in both lists, both; no code at all, the facility list.
-- **A live region from the first render.** `<div id="split-problems" role="status">` always renders; the `<ul>`
-  (:109-115) goes inside it when there are problems. Each `CodesField` at fault gets `aria-invalid` and
-  `aria-describedby="split-problems {id}-hint"`, and so the 3.7 mark.
+- **A quiet list, and a status line from the first render** (amended in 12.2, U-A11Y-2). `<div id="split-problems">`
+  always renders, with no live role, so nothing is said mid-word as the person types; the `<ul>` (:109-115) goes
+  inside it when there are problems. Each `CodesField` at fault gets `aria-invalid` and
+  `aria-describedby="split-problems {id}-hint"`, and so the 3.7 mark. A visually hidden `<p role="status">`
+  (`data-slot="split-status"`), on the page from the first render, says the problems a second after the last change to
+  either list, at once when the person leaves a list, and again, as a new node, on every press while they stand (ADR
+  0077 D11). The lists' hints use the shared `Hint`.
 - **No post with problems.** ActionForm gains an optional client-only prop
   `beforeSubmit?: (form: HTMLFormElement) => boolean`, called in `onSubmit` after the in-flight check and before the
   guard is set (2.1). The split form passes one
@@ -777,6 +810,8 @@ is in the browser only):
   focuses the first field at fault and returns false, so nothing is sent. "Approve this split" stays enabled.
 - **A server issue on `settings`** (a hidden input) is placed through `data-issue-for="settings"` on the facility
   field, so the summary names "Facility places of service" and links to it.
+- **Another person.** When the page, read again in place, shows another person signed in, the two lists start again
+  from the page (`usePersonChange`; 12.2, S-SEC-2): they live outside the fields ActionForm mounts afresh.
 - The form stays JavaScript-only, as it is by design.
 
 ---
@@ -816,6 +851,11 @@ page into any focused control under 16 px and leaves it zoomed.
 - `app/layout.tsx:29`'s viewport keeps no `maximum-scale`, so pinch zoom stays (WCAG 1.4.4).
 - The new e2e spec asserts a computed `font-size` of at least 16 px at 390 px on an input, a select and a text area
   (section 8.4).
+- **The larger text never widens a page** (12.2, U-UX-2 and U-UX-8). In the base layer, so a class still wins,
+  `select { max-width: 100% }` and `:where(:has(> select)) { min-width: 0; max-width: 100% }`: the box's `max-width`
+  is for a box in a column that sizes to its content (the uploader's drop zone, `items-start`), which otherwise takes
+  the long option's width; and a `SelectField` given `showChosen` shows its chosen text whole on a line under it while
+  the select cuts that text short. `uploads.spec.ts` measures the drop zone at 390 px, the ERA export's list shown.
 
 ### 5.2 The six-digit code accepts what an authenticator app copies (`a11y-other-05`)
 
@@ -853,9 +893,11 @@ managers keep working.
 - It renders `Field`'s markup (label, input, hint, the inline error, the emptied note of 2.3) with `type` `password`
   or `text`, the same `autoComplete` the page gives, and `data-secret`. It stays uncontrolled (2.3).
 - **What a browser's spelling service reads** (review finding 9). Chrome's Enhanced Spell Check and Edge's Microsoft
-  Editor send the contents of text fields to the vendor's cloud service and skip `type=password`; a password shown
-  as `type=text` would be sent too (the 2022 "spell-jacking" disclosure). The input therefore always carries
-  `spellCheck={false}`, `autoCorrect="off"` and `autoCapitalize="none"`, in both modes.
+  Editor send the contents of text fields to the vendor's cloud service and skip `type=password`; a password shown as
+  `type=text` would be sent too (the 2022 "spell-jacking" disclosure). The input therefore always carries
+  `spellCheck={false}`, `autoCorrect="off"` and `autoCapitalize="none"`, in both modes. It writes them, with `type`,
+  `data-secret` and `ref`, after the caller's props, whose type leaves them out, so no caller can turn them back on
+  (12.2, S-SEC-3).
 - The toggle is `<button type="button" aria-pressed={shown} aria-controls={id}>`, its visible text **"Show"**, followed
   by a visually hidden part that completes its name: `showName` (" password", " new password", " new password again").
   Its accessible name is therefore "Show password", "Show new password" or "Show new password again", which starts
@@ -872,7 +914,9 @@ managers keep working.
   Show again to see what they type next. This replaces the first draft's "it stays in whichever mode the person
   chose", which contradicted the listener.
 - The toggle renders `hidden` until the component has mounted (2.4): without JavaScript it would be a dead button.
-- No `style` attribute (CSP). The toggle is a `variant="outline" size="sm"` Button beside the input.
+- No `style` attribute (CSP). The toggle is a `variant="outline" size="sm"` Button beside the input. Pressed, it shows
+  an Ink rule on the inset surface (`aria-pressed:border-foreground aria-pressed:bg-secondary`; 12.2, U-A11Y-3), its
+  word and its name unchanged.
 
 ### 5.4 Format hints (`a11y-other-20`, outside #42)
 
@@ -881,7 +925,7 @@ browser's generic message is never the only guide:
 
 | Field (file:line) | Hint |
 | --- | --- |
-| SHA-256, `console/compliance/page.tsx:191` | "The document's SHA-256, 64 hexadecimal characters." (the terms page's wording, `console/terms/page.tsx:68`) |
+| SHA-256, `console/compliance/page.tsx:191` | "The document’s SHA-256, 64 hexadecimal characters." (the terms page's wording, `console/terms/page.tsx:68`) |
 | NPI (optional), `console/organizations/[organizationId]/page.tsx:108` | "Ten digits." |
 | Tax ID, last four (optional), same file :109 | "The last four digits." |
 | Stated year (when locked), `p/[practiceId]/abstraction/versions/[versionId]/page.tsx:204` | "Four digits, such as 2026." |
@@ -892,7 +936,8 @@ browser's generic message is never the only guide:
 
 On `/support` (`app/support/page.tsx`, not #42) the no-patient-information rule moves from the card's description
 into the Subject and Message hints: **"No patient names, dates of birth, member IDs or claim numbers. Name the screen
-and the record's ID."** (`a11y-other-20`'s recommended words.)
+and the record’s ID."** (`a11y-other-20`'s recommended words.) The card says the rule again for mail to the support
+address, which no hint reaches (12.2, U-UX-5).
 
 A unit test holds it: `apps/web/src/components/form-hints.test.ts` parses every `.tsx` under `apps/web/src` with the
 TypeScript compiler API and fails on any JSX element with a `pattern` attribute and neither `hint` nor
@@ -1202,9 +1247,11 @@ Its in-memory actions can also throw: a `TypeError('Failed to fetch')` stands fo
    not its default `27601`.
 2. **FRM-01** The action receives the submitter's name and value (a form with two named submit buttons), and the
    state the action returns carries no field value.
-3. **FRM-01** A dropped connection: no error is thrown out of the form, every value stays, the summary reads "Not
-   confirmed" and is focused; the next press reaches the action. A server failure (an error with a `digest`) is
-   rethrown to the nearest error boundary.
+3. **FRM-01** A dropped connection: no error is thrown out of the form, every value but the secrets stays, the summary
+   reads "Not confirmed" and is focused, and its lead says which values to type again on a form that held a password
+   or a code ("… except passwords and codes …", 2.3), and that everything is still here on a form that held none; the
+   next press reaches the action. A server failure (an error with a `digest`) is rethrown to the nearest error
+   boundary.
 4. **FRM-01** A `stale` state: the stand-in router's `refresh()` is called once, the values stay, the lead ends
    "press “Save” again." (the form's own button words); a refusal with `refreshOnError` still notes its takeover
    (#50's behaviour, unchanged).
@@ -1431,12 +1478,18 @@ Alternatives considered, Consequences, Not verified here, Revisit when):
   - D7. A six-digit code is accepted with spaces or hyphens; no `pattern` on the code fields.
   - D8. Password fields offer Show (NIST SP 800-63B 5.1.1.2), named by their own words.
   - D9. Every field checked by `pattern` states its format in its hint, held by a test.
+  - The fix round (12.2) adds to D1 (the pinned key; "Already sent"), D2 (the locked note; the lead over secrets), D3
+    (a column form never wraps; the hardware key's problem first), D6 (the select rule; `showChosen`), D8 (the props
+    no caller sets; the pressed look), D9 (14 px hints) and D10 (a form whose page shows another person is cleared),
+    and adds D11 (the split form's quiet list and its status line).
 - **Alternatives considered:** section 2.5's table, the render-time label source (3.4), class-based 16 px (5.1), a
   single hook (a dropped connection then shows the error page and empties the form, `drive/r1.out` R1), a closed list
   of strippable label notes (3.4), a separate prefix id or CSS content for "Error:" (3.3).
 - **Not covered:** a press made before hydration is replayed by React through the server hook and its refusal resets
   the form (2.4a); a session that ends while a form is open sends the person to sign in and loses what was typed,
-  on purpose, since typed text is never kept in browser storage (2.4a).
+  on purpose, since typed text is never kept in browser storage (2.4a); without JavaScript, what was typed is lost on
+  a refusal (2.4); a hand-written form outside ActionForm and the version, export and split forms (#42's upload form)
+  neither pins its key nor watches the person's mark (12.2).
 - **Not verified here:** iOS Safari's zoom itself (the captures and CI are Chromium; the computed size is asserted);
   screen readers by hand (the announcements in 3.9 follow the ARIA the tests assert, and are listed for PR 7's manual
   3.3.7 and 3.3.8 checks, combined audit #103).
@@ -1477,7 +1530,7 @@ Alternatives considered, Consequences, Not verified here, Revisit when):
 | "New password again: the two passwords do not match. Type the same password in both fields." (`words-other-01`) | "New password again: the two passwords do not match: type the same password in both fields" | The house form above; the words are the recommended ones. |
 | "Check the fields marked below." → "Fix the fields listed here, then try again." (`words-other-03`) | Taken; made singular for one field, and no lead when no issue names a field (#50's rule) | A lead about fields over items that are not fields is false (review finding 7). |
 | `zip`, `email` (console), the screening's messages (`words-other-01`) | Wait for #42 (7.8) | Their files are #42's. |
-| "Not sent: the connection to PaidWhole dropped." (review finding 4, not a mine.md wording) | Title "Not confirmed"; "The connection to PaidWhole dropped before an answer came back. What you typed is still here: check your connection, then press “{submit}” again." | The response may be what dropped, after the server saved; "Not sent" could be false. A second press is safe (ADR 0017). |
+| "Not sent: the connection to PaidWhole dropped." (review finding 4, not a mine.md wording) | Title "Not confirmed"; "The connection to PaidWhole dropped before an answer came back. What you typed is still here: check your connection, then press “{submit}” again." (a form that held a password or a code says "… still here, except passwords and codes: check your connection, type them again, then …", 2.3) | The response may be what dropped, after the server saved; "Not sent" could be false. A second press is safe (ADR 0017). |
 | "Reload the page and try again" (today's CSRF and request-key words) | 3.5a's two sentences | A reload now throws away what this PR keeps. |
 
 ---
@@ -1514,7 +1567,7 @@ With `tools/lane-b-screen-tour`, `TOUR_REF` set to the base (`4d99df8`) and then
 | `/console/status` | `error-row` (a component's status row, `className="flex items-end gap-2"`, refused) | the row wraps: the summary on its own line above the select and "Set" |
 | `/support` | `error-unconfirmed`, `error-stale` | "Not confirmed" and "This page was out of date" with every value kept (the tour aborts the POST and alters the hidden token, as 8.4 step 5 does) |
 | `/sign-in` | `error-wrong-password` at 390 | "Emptied for your security: type it again." under Password |
-| `/console/screening` | `error` | the split's live problems and marked fields |
+| `/console/screening` | `error` | the split's problems as typed, in a list that is not live (12.2), and marked fields |
 | any `loading.tsx` route (`/settings/billing`, `/p/[practiceId]/cases`) | loading | the label shown beside the bar |
 | `/p/[practiceId]/coverage` | checklist review | now submits (FormKeys) |
 
@@ -1527,11 +1580,13 @@ Every refused state shows the summary at the top of the form and the "Error:" li
 | Summary lead (`next.ts:162`, `:180`; chosen in the browser, 3.5) | "Check the fields marked below." | "Fix the field listed here, then try again." (one issue on a field) / "Fix the fields listed here, then try again." (several) / no lead (no issue names a field) |
 | Summary item | "{key}: {message}" | "{label}: {message}", or "{Message}" alone for an issue with no field |
 | Under a refused field | (nothing) | "Error:" (shown, beside the icon) and "{message}" |
-| Under an emptied password, after a refusal | (nothing) | "Emptied for your security: type it again." |
+| Under an emptied password, after a refusal | (nothing) | "Emptied for your security: type it again."; where no press can succeed, "Emptied for your security.": under "Account locked" (the lock allows no next try), under "This invitation has expired. Ask your organization’s administrator to send it again." (refused before any password is checked) and under "Sign-in could not continue. Start again." (2.3) |
 | Under an emptied six-digit code, after a refusal | (nothing) | "Emptied for your security." |
-| A dropped connection (title, lead) | the error page ("Something went wrong") | "Not confirmed"; "The connection to PaidWhole dropped before an answer came back. What you typed is still here: check your connection, then press “{submit}” again." |
+| A dropped connection (title, lead) | the error page ("Something went wrong") | "Not confirmed"; on a form that held no password or code, "The connection to PaidWhole dropped before an answer came back. What you typed is still here: check your connection, then press “{submit}” again."; on a form that held one, "… What you typed is still here, except passwords and codes: check your connection, type them again, then press “{submit}” again." |
 | A stale CSRF token or request key, after the person's own press | "This form could not be checked against your session (it may have come from another site, or your session changed). Reload the page and try again." / "requestKey: reload the page and try again" | "This page was out of date, so nothing was saved. It is up to date now: press “{submit}” again." |
 | The same, from a post this page did not start (no JavaScript, a replay) | as above | "This page was out of date, so nothing was saved. Check the form, then send it again if you still mean to." |
+| A press whose request key was used before (title; the words, `next.ts`) | "Not done"; "This form was already submitted. Reload the page to see the result." | "Already sent"; "This form was already sent, so nothing new was saved. Reload the page to see the result." |
+| A page read again in place that shows another person signed in, or no one (title, lead) | (none: the first person's values stayed, and a page out of date invited a press) | "Form cleared"; "The person signed in on this browser changed, so this form was cleared.", after "This page was out of date, so nothing was saved." or "The connection to PaidWhole dropped before an answer came back, so the save is not confirmed." when one came first; no invitation to press |
 | Too long (`requiredText`) | "at most {n} characters" | "enter at most {n} characters" |
 | Console billing, the audit invoice line (`console/billing/page.tsx:76`) | "(its administrator adds one in Settings first)" | "(its administrator adds one under Billing first)" |
 | Pending (ActionForm, version form, export form, Stripe) | the button's words become "Working…" | the button keeps its words; a status beside it says "Working…" |
@@ -1552,9 +1607,13 @@ Every refused state shows the summary at the top of the form and the "Error:" li
 | Console status, no component | "Invalid input: expected array, received undefined" | "choose at least one component" (the existing words, now reached) |
 | Attestation lists' legends (new) | (none) | "Confirm each item before you sign" (report); "Confirm each item before you attest" (packet) |
 | Consequence checkboxes' summary name | (the key `confirm`) | "Confirmation" |
-| `/support` Subject and Message hints | (none) | "No patient names, dates of birth, member IDs or claim numbers. Name the screen and the record's ID." |
-| `/support` card | "… Never send a patient's name, date of birth, member ID or claim number: name the screen and the record's ID from its address instead." | the last sentence moves into the hints |
+| `/support` Subject and Message hints | (none) | "No patient names, dates of birth, member IDs or claim numbers. Name the screen and the record’s ID." |
+| `/support` card | "… Never send a patient's name, date of birth, member ID or claim number: name the screen and the record's ID from its address instead." | the rule for the form moves into the hints, and the card keeps one for mail: "… the mail opens a ticket here too. Your mail takes no patient information either: no names, dates of birth, member IDs or claim numbers. Name the screen and the record’s ID." |
 | Format hints | (none) | 5.4's table |
+| Console terms, Version hint | "Letters, digits and . _ - (for example 2026-11)." | "Letters, digits, dots, underscores and hyphens, such as 2026-11." (its error's words) |
+| Console terms, Document reference hint | "Where the signed-off document is kept." | "Where the signed-off document is kept: letters, digits, colons, slashes, dots, underscores and hyphens, such as terms/2026-11." |
+| The SHA-256 hints (terms, compliance, an organization's agreement) and the agreement's Document reference hint | "The document's SHA-256, …", "The signed document's SHA-256, …", "The e-signature vendor's envelope or document reference." | the same words with ’ ("The document’s SHA-256, 64 hexadecimal characters.") |
+| A select that cuts its chosen text short (`showChosen`) | (the text cut, such as a run's "(release 3)") | the chosen option's own words, whole, on a line under the select, only while the select cuts them (no new words) |
 
 ### 10.3 Server messages reworded in this PR (`words-other-01`, outside #42)
 
@@ -1566,8 +1625,9 @@ Every refused state shows the summary at the top of the form and the "Error:" li
 | request audit, `lib/routes/onboarding.ts:34` | "this form takes no patient information: remove anything that looks like an identifier, a date or a phone number" | the same, then ", then send it again" |
 | `occurredOn`, `lib/routes/compliance.ts:151` | "evidence is recorded for what has happened" | "the date is after today: enter the day it happened, today or earlier" |
 | `version`, `lib/routes/console-onboarding.ts:316` | "letters, digits and . _ -" | "use only letters, digits, dots, underscores and hyphens, such as 2026-11" |
+| `documentRef`, `lib/routes/console-onboarding.ts:320` | "the document’s reference (letters, digits and : / . _ -)" | "use only letters, digits, colons, slashes, dots, underscores and hyphens, such as terms/2026-11" |
 | `confirm`, `lib/routes/sign-in.ts:164` | "the two passwords differ" | 10.2 |
-| `subject`, `lib/routes/support.ts:243` | unchanged (its words already give a next step; only its key goes) | |
+| `subject` and `message`, `lib/routes/support.ts:249` | "… and name the screen and the record’s opaque ID instead", on the first field that held patient information | "… and name the screen and the record’s ID instead", on every field that holds it, at once (12.2, U-UX-9) |
 
 Every one keeps the house form "{name}: {lower-case instruction}" the summary prints. All are checked against
 `.claude/rules/brand.md`, BRAND.md and CO-11: no "AI", no "owed", "underpaid" or "recovered", no ProofPack; `pnpm
@@ -1601,6 +1661,8 @@ key's recording (ADR 0017) and every guard are unchanged.
 5. **A skip link** in the shell (`shell.tsx`, #42): "Skip to the content", first in the page.
 6. **The write-off's default reason**: the Reason select opens on "Window passed" even for a line whose window is open
    (`narrow-practice-1-07`'s note). A flows fix: open on no choice ("Choose a reason") so the person picks one.
+   Deferred from the fix round (12.2, U-UX-6) to UX PR 10, `co-001/ux-payer-response` (UX-035), with the payer
+   Response's empty first choice and the handler's refusal of "Window passed" on a line whose window is open.
 7. **Combined audit #103 / PR 7**: cite FRM-01 and FRM-07 as its first manual 3.3.7 and 3.3.8 cases, and add the
    refused states to its route visits; FRM-05's header check is its first 2.4.11 case.
 8. **Tell a stale token from a wrong origin** in the route outcome (`csrf_refused` with a reason), so a page out of
@@ -1645,7 +1707,7 @@ of the checking and is applied too (row 23).
 | 5 | A second identical refusal is silent | **Applied** | 3.5: `RefusalSummary` keyed by `seq`, a number the browser hook adds per response; when focus is already on the target, the new alert carries the announcement. 8.2 test 8 counts two insertions; FRM-04. |
 | 6 | Focus can sit under the sticky header (2.4.11) | **Applied** | 3.6: `html { scroll-padding-top: calc(3.5rem + 1rem) }`, unlayered, in `packages/ui/src/styles.css`. 8.2 test 9 (harness), 8.4 step 4 (390 px, the real header); FRM-05; ADR D4. |
 | 7 | "Fix the field listed here" over items that are no field | **Applied (the review's safer variant)** | 3.5: the browser chooses the lead from the issues it placed, through #50's `summaryLead`; no lead when none names a field; before placement, the count leaves out `input` and `requestKey`. A `requestKey`-only refusal becomes the stale state (3.5a). 8.2 test 6 covers `pattern` and `refused`. |
-| 8 | "First in the form" lands inside each caller's grid or row | **Applied, extended** | 3.5: `col-span-full basis-full w-full`. The review's classes alone would squeeze the six rows that do not wrap, so one unlayered rule lets a flex form wrap while it shows a refusal (`form:has(> [data-slot='refusal-summary'])`), which also reaches #42's row forms. 4.1: `PendingStatus` inside the button's wrapper. 10.1 adds the tag form (grid) and console status's row; 8.2 test 6. |
+| 8 | "First in the form" lands inside each caller's grid or row | **Applied, extended** | 3.5: `col-span-full basis-full w-full`. The review's classes alone would squeeze the six rows that do not wrap, so one unlayered rule lets a flex form wrap while it shows a refusal (`form:has(> [data-slot='refusal-summary'])`), which also reaches #42's row forms. The fix round narrowed it to row forms (`form:not(.flex-col, .flex-col-reverse)`; 12.2, U-UX-1). 4.1: `PendingStatus` inside the button's wrapper. 10.1 adds the tag form (grid) and console status's row; 8.2 test 6. |
 | 9 | Show password and spelling services; the listener contradiction; clearing by type | **Applied** | 5.3: `spellCheck={false}`, `autoCorrect="off"`, `autoCapitalize="none"` always; `flushSync(() => setShown(false))` in the capture listener, so `type` and `aria-pressed` agree; "stays in whichever mode" removed. 2.3: clear by `data-secret`, uncontrolled, stated. FRM-07, 8.2 tests 1 and 12. |
 | 10 | Stale CSRF token or request key ends in "Reload the page" | **Applied, with a safer wording split** | 3.5a: `stale: true` from `next.ts` (a flag, not words), `router.refresh()` through `RefreshAfterRefusal`. The invitation to "press “{submit}” again" shows only after the person's own press (the browser hook); any other post reads "Check the form, then send it again if you still mean to", because `csrf_refused` also answers a wrong origin and the outcome cannot say which without changing what the generated route tests assert (proposal 11.2.8). FRM-01, 8.2 test 4, 8.4 step 5. |
 | 11 | Emptied secret fields are emptied silently | **Applied** | 2.3: "Emptied for your security: type it again." (password), "Emptied for your security." (code: its error or hint already gives the next step, so it is not said twice), in `aria-describedby` after the error. 10.2, FRM-01, 3.9. |
@@ -1684,3 +1746,74 @@ they name.
 | 8.1 FRM-01, FRM-02 | FRM-01's "the action's state carries no value the person typed" is asserted on the real adapters by `lib/http/next.test.ts`: `runAction` and `runSignInStep` over real routes, refused before any database call. FRM-02's three redirects are asserted in `forms-keep-input.spec.ts`: the support ticket (same path, new query), the console incident (the identical address, resolved again afterwards) and the ROI statement (another page, then back by its link). | The harness scripts its own states, and the one FRM-02 step covered one redirect of three. |
 | 8.5 | `e2e/helpers.ts`'s `refusal()` matches `[data-slot="alert"], [data-slot="refusal-summary"]` (changed in slice A, 17bbb70). | The summary is an Alert whose own `data-slot` overrides the Alert's, so it has no `[data-slot="alert"]`. |
 | 3.4 (FORM_LABELS removed) | `components/settings/defaults.tsx` keeps no label table: `MATERIALITY_LABELS` and `PURSUIT_LABELS` are removed and the labels written on the fields. | Design question 3: no per-form table. |
+
+### 12.2 The fix round after the two reviews (2026-10-27)
+
+Two adversarial reviews read the branch at `4f0b526`: the security and accessibility review (six findings, here
+S-) and the UX and brand review (thirteen, here U-). A verifier checked each against the code and the base
+(`e908c21`) and proposed a fix (the workflow's `reviews-result.json`). Sixteen held: fifteen are fixed in this fix
+round, and one is deferred with where it is tracked. Three were judged not defects. Each verifier's fix was taken as
+a proposal, not an order: where the build took a better or a safer option, the row says so and why. These rows
+override the sections they name, as 12.1's do; the sections named "corrected" or "amended" were also edited in place.
+ADR 0077 records each decision (D1, D2, D3, D6, D8, D9, D10 and the new D11).
+
+| Finding | Disposition | Amends | What was done, where, and why | Commit |
+| --- | --- | --- | --- | --- |
+| S-SEC-1: "Not confirmed, press again" could save twice: a refresh in between rendered a new request key | **Applied, safer than proposed** | 2.1, 2.7; ADR D1 | `useGuardedSubmit` (`form-issues.tsx`) takes a shared `heldKey` ref and pins the key a dropped press carried, and a key the server answers `duplicate`; every later press sends it, a refresh's new key notwithstanding, until a press is saved (the redirect) or fails on the server, or the page shows another person. ActionForm owns one ref; the version form's write and draft share one, as they share `inFlight`. Departure: the verifier let the pin go on any answer; it is kept through refusals and stale answers, because a refusal can come before the key is read (a parse refusal, a claim rolled back with the work) and says nothing of the dropped press, so a drop, a refusal and a refresh would send a fresh key and could save twice. Tests: `action-form.browser.test.tsx` (no pin before a drop; the pin across a refresh, a refusal and two duplicates; the version form's draft after a dropped save sends the save's key); `forms-keep-input.spec.ts`, the support test: a post the server saves whose answer is aborted, the page read again, a press: "Already sent", and one ticket after a reload. | this fix round |
+| S-SEC-2: the out-of-date refresh adopts another person's session, keeps the first person's text and invites a press | **Applied, wider** | 3.5a, 4.2, 4.6 (amended); ADR D10 | `loadPage` (`next.ts`) sets a request-scoped mark of the person signed in: an HMAC of the lower-cased email under the sealer, purpose `form-actor`. `FormKeys` renders it on a `hidden` `span` that is never posted, read by no route and logged nowhere. After each commit `usePersonChange` compares it; when it changes or goes, a form holding anything typed or a response mounts its fields afresh from the page (a keyed `Fragment`, so controlled fields and secrets too), lets the pinned key go, and shows "Form cleared", focused, with no invitation to press. The same person signed in again keeps the mark. The export form only stops inviting a press; the split form starts its lists again through the same hook (they live outside the fields ActionForm remounts, so a press would have sent the first person's split under the second's name). Departures: on any refresh in place, not only the stale one, since the export status's polling refresh shows the new person with no refusal at all; a form untouched and showing nothing is left alone, so a page of row forms announces the change once; the mark lives in `next.ts`, not a new module, which the generated screening-capacity watched-paths list would have had to name. Tests: browser (a stale refresh as another person; a polling-style refresh as another person and as no one, only the touched form cleared and a dropped press's key let go; the same person changes nothing; the version and export forms), `next.test.ts` (stable across case, another for another person or key, no part of the email, never a named field), `split-form.browser.test.tsx`, and the support test in `forms-keep-input.spec.ts`, where a fifth persona, `forms-second`, signs in from another tab. | this fix round |
+| S-SEC-3: a caller could undo the shown password's spelling-service protection | **Applied, wider** | 5.3; ADR D8 | `PasswordField`'s props type also leaves out `spellCheck`, `autoCorrect`, `autoCapitalize` and `ref`, and the component writes `ref`, `type`, `data-secret` and the three spelling attributes after `{...props}`. Departure: the verifier moved the three spelling attributes; `type`, `data-secret` and `ref` are held too, because a caller's `ref` would replace the one that hides the password before the data is read. `fields.test.tsx`: a compile-time check per prop, and a cast spread that changes none of them. | this fix round |
+| S-A11Y-2: the emptied note and the "Not confirmed" lead contradict the state they describe | **Applied, wider** (one fix with U-UX-3) | 2.3, 2.7, 8.2 test 3, 10.2; ADR D2 | Where no press can succeed, a password's note reads "Emptied for your security.": a locked account (`locked`), and, by a new server flag, `final`, an invitation that expired (`lib/routes/sign-in.ts`; `SignInFlow.start` refuses it before any password is checked, so the right one is refused too) and `runSignInStep`'s "Sign-in could not continue. Start again." (`next.ts`). `FormIssues` puts `locked || final` into the form's context as `final`. Departure, found on re-verification: the first fix keyed the note on `locked` alone, so an expired invitation still said "type it again" under a summary that asks for a new invitation; the verifiers proposed `noRetry` or `final` on the route, taken as `final` and also on "Start again". Never on a refusal whose words are a wrong password's (`no_account`): a different note would tell which addresses have accounts. `emptySecrets` reports whether the form held a secret, and after a dropped connection such a form's lead reads "What you typed is still here, except passwords and codes: check your connection, type them again, then press “{submit}” again." A rate limit keeps "type it again": its summary already says to wait first. Tests: browser (the locked, the rate-limited and the expired-invitation notes; both leads), `action-form.test.tsx`, `fields.test.tsx` (the notes as `FormIssues` renders them without JavaScript), `next.test.ts` (the flag carried, and set on "Start again"; never on a wrong password or a rate limit), `onboarding-routes.db.test.ts` (the real route sets it on an expired invitation), and `sign-in.spec.ts` (the locked account's password is described "Emptied for your security."). | this fix round |
+| U-UX-1: a refused column form widens past a phone's width | **Applied** | 3.5 (corrected), 12 row 8; ADR D3 | The wrap rule is `form:not(.flex-col, .flex-col-reverse):has(> [data-slot='refusal-summary'])`. 3.5's premise ("a column form has no height for it to wrap into") was wrong: a wrapping column is a multi-line flexbox, and Chromium sizes its line to its widest item, where a long-option select ignores `max-width: 100%`. Proved both ways on a scratch page with the compiled CSS: the old rule alone puts the column forms back at 623 and 627 px; with the fix both end at 373, and a row form still wraps with its summary above. `packets.spec.ts` measures the refused submissions response form, whose Document option holds a date and a SHA-256, at 390 px. | this fix round |
+| U-UX-2: 16 px controls widen selects that cannot shrink | **Applied, wider** | 5.1; ADR D6 | Coverage's letter form is `grid-cols-1` on `SelectField`s and a `Field` (Contract keeps its payer groups: `SelectField` now takes option groups); console status's row form wraps (`flex flex-wrap items-end gap-2`). Departure: the base layer also holds `select { max-width: 100% }` and `:where(:has(> select)) { min-width: 0; max-width: 100% }`, which reach hand-written selects and #42's pages through the stylesheet; the verifier showed the select rule alone fixes nothing, and with the box rule it does (the old Coverage markup 404 to 373 px; the Cases filter form, found in the check, 503 to 374). The box's `max-width` came on re-verification: `/p/<id>/uploads` was still 437 px wide at 390, because the drop zone is a column that sizes to its content (`items-start`), so the box took the "Kind of document" select's long option ("ERA export from a practice-management system"); with it the page is 390 and both selects end inside the zone (scratch page with the compiled CSS, Chromium 1194: 441 to 390 px, nothing moved at 1280). Taken in the stylesheet, not as `max-w-full` on the uploader's two boxes, so a select in any such column is held. A class still wins. Tests: `packets.spec.ts` (Cases and Coverage at 390), `forms-keep-input.spec.ts` (console status at 390, and with a row refused: its summary above the select, no sideways scroll), `uploads.spec.ts` (the drop zone at 390, then with an ERA export chosen, its system list and hint shown; FRM-08's registry entry names it). | this fix round |
+| U-UX-3: "type it again" tells a locked person to retype; "still here" is said over an emptied password | **Applied, wider** (one fix with S-A11Y-2) | 2.3, 2.7, 8.2 test 3, 10.2; ADR D2 | As S-A11Y-2, the expired invitation included. | this fix round |
+| U-UX-4: after "Not confirmed", the press the page invites can come back "Not done" although the first press saved | **Applied** | 2.1 (corrected), 2.7, 3.5 (corrected), 10.2; ADR D1 | `ActionState.duplicate`; `next.ts` answers "This form was already sent, so nothing new was saved. Reload the page to see the result."; the summary's `duplicate` kind is titled "Already sent", the export form's too. Nothing reads the page again for it, and the key stays pinned (S-SEC-1), so no fresh key sits under "Already sent". "Sent" matches the title and "send it again". Tests: `next.test.ts`, browser, `action-form.test.tsx`, and the support test's step above. | this fix round |
+| U-UX-5: `/support`'s mail route lost its no-patient-information warning | **Applied** | 5.4, 10.2 | The card ends: "… the mail opens a ticket here too. Your mail takes no patient information either: no names, dates of birth, member IDs or claim numbers. Name the screen and the record’s ID." The field hints stay. Departure: "Your mail" for the verifier's "A mail", and the last sentence kept, since someone writing a mail never sees a hint and needs to know what to write instead. Words only; the tour's `support.default` and `support.error` captures change. | this fix round |
+| U-UX-6: the write-off Reason and the payer Response open pre-answered | **Deferred** to UX PR 10, `co-001/ux-payer-response` | 11.2.6 | The baseline's UX-035 (`flows-practice-07`, blocking at baseline), which also holds the server-side refusal in `lib/routes/triage.ts`: "Window passed" on a line whose window is open must be refused in the handler, not only left out of the page (CLAUDE.md), and the Response's empty first choice goes with it. One finding, one pull request: the page half alone would leave the handler accepting it. This PR does not make it worse: the two selects keep the base's options and order, and a refusal no longer silently puts the default back, the base's second path to recording it (`triage.spec.ts` asserts it). #74's description lists UX-035 as open there. | UX PR 10 |
+| U-UX-8: at 390 px the 16 px rule cuts a select's chosen text | **Applied, differently** | 5.1, 10.2; ADR D6 | `SelectField`'s opt-in `showChosen` shows the chosen text whole on a line directly under the select, `aria-hidden`, only while the select cuts it: measured against a hidden copy of the select holding that one option (so the browser's own arrow and padding count), again on a change, a form reset, a resize and the fonts' load. The copy is styled through the CSSOM, which the Content-Security-Policy's `style-src` does not govern: checked in Chromium 1194 under the app's `style-src` (`'self'` and a nonce), a CSSOM style applies and a `style` attribute is refused. Passed to the Cases and Reports run selects, the compliance What, Policy and Workforce member selects, Contracts' Payer and Contract, Coverage's Payer and Contract, and the submissions response's Document. Departure: the verifier's line was always on below md, after the hint, which repeats the words wherever the select is wide enough (most phones wider than 390 px, tablets). `packets.spec.ts`: no line at 1280; at 390 the line equals the chosen run, "(release N)" included; on Coverage it follows the contract and goes on "None named". | this fix round |
+| U-UX-9: one field mixes apostrophes and names; a format hint and its error say the format differently | **Applied** | 5.4, 10.2, 10.3 | The support hints, the SHA-256 hints (terms, compliance, an organization's agreement) and "vendor’s" use ’; the ticket's refusal says "the record’s ID", not "opaque ID" (`onboarding-routes.db.test.ts` asserts the issue whole); the terms Version hint takes its error's words. In the same form, the Document reference error spelled bare punctuation, which screen readers skip, and gave no instruction: it and its hint now say "letters, digits, colons, slashes, dots, underscores and hyphens, such as terms/2026-11". A ticket with patient information in both fields names both at once. | this fix round |
+| U-UX-10: two refused states skip the pattern (the hardware-key sign-in's problem below the email; the split form's list) | **Applied in part; the split-form half refuted** | 4.4, 10.1 | `HardwareKeySignIn` shows its problem first: problem, email, button; focus, title and status line unchanged (`HardwareKeyRegistration` already did). `action-form.browser.test.tsx`, through the harness's new `hardwareKey` form: the form's children are the alert, the input and the button, the alert focused. No e2e step: the server answers an address with no key with options no key can answer, so as not to tell which addresses have keys, and the refusal comes only when the browser's ceremony times out. The verifier refuted the split-form half: 4.6 decides that layout. | this fix round |
+| U-A11Y-1: essential instructions moved into 12 px hints | **Applied, wider** | 5.4; ADR D9 | `Hint` is `text-sm`, 14 px, the size of the message beside it. Coverage's hand-written hint is a `Field` hint, and so now also the field's description; the organization's upload note is 14 px; the split form's list hints use `Hint`. On re-verification D9's "a hand-written hint uses the shared `Hint`" was not yet true, so every hint beside a hand-written control outside #42 now does: the uploader's system list (`upload-format-hint`; `Hint` takes a `className` for layout only, here `max-w-prose`, and the unconfirmed-format note under it is 14 px too), the pursuit cost's rule (`pursuit-hint`), the packet reference and a share link's (whose clipboard status is 14 px too). `form-hints.test.ts` now holds the rule: it fails on any text a control's `aria-describedby` names in the same file that is written at 12 px, and on a `Hint` given a size; its allowlist is #42's screening upload (two hints), until #42 merges. `settings/defaults.test.tsx` asserts the pursuit hint. | this fix round |
+| U-A11Y-2: the split form's live problem list speaks while the person types | **Applied** | 4.6 (amended); ADR D11 | The visible list is no live region and stays the faulty fields' description. A hidden `role="status"` line, present from the first render, says the problems a second after the last change, at once when a list is left, and again as a new node on every press while they stand; unchanged words are not said again after a pause or a leave, a line with nothing wrong empties silently, and the problems a page opens with are never said. This departs from the baseline's best fix for `a11y-other-09` (a live list), on the reviewer's rule that a live check stays quiet while the person types and `a11y-practice-1-26`'s pause. Departure from the verifier: a press always says the problems again, even when focus moves to a field whose description reads them, since a screen reader's user can turn descriptions off. Tests: `screening/forms.test.tsx`; `split-form.browser.test.tsx` (typing says nothing, then the settled problem after a second; a leave says it at once; every press, Enter included, says it again and sends nothing), each failing with its part removed. ADR 0077's alternative now cites what the live list really said mid-word (a collision with a non-facility 03 at the 3 of a facility 31; the 0 of a 02), not a message the form never produces. | this fix round |
+| U-A11Y-3: Show password has no visible pressed state | **Applied** | 5.3; ADR D8 | The outline button adds `aria-pressed:border-foreground aria-pressed:bg-secondary`: pressed, an Ink rule on the inset surface; the word "Show" and the name unchanged (5.3). `components.test.tsx`; FRM-07 in `forms-keep-input.spec.ts` reads the border turn to the text's colour and back. | this fix round |
+
+Judged not defects, with the verifiers' reasons:
+
+| Finding | Why it is not a defect | What follows |
+| --- | --- | --- |
+| S-A11Y-1: a refused `CheckboxGroup` box takes the focus but never says it is invalid | No refusal a person can reach lands on one box under its own key: `applyNcci` is refused only past five characters (a forged post), `kept` only past 100 entries, and the attestation boxes are `required`, so the browser stops the press. The reachable refusals are group refusals, for which 3.3 and 3.9 record the checkbox-group pattern (the fieldset's description, no "invalid" on a box), and the summary is an alert, spoken when it appears. The wider skip is deliberate: without it a group's problem would mark only its first box invalid, which the browser test of a refused group asserts does not happen. Not a regression: at the base no box was marked. | 3.8 amended in place: the fallback also skips a control inside a group its component marked. Proposal, hardening that nothing needs today: `CheckboxGroup` sets `aria-invalid` and the description on a box whose own key is refused. |
+| S-A11Y-3: the version form's two actions number their responses separately, so the summary may not be inserted again | The pressed button (`clicked`) commits at sync priority before the response, so the other action's summary unmounts (key 0, or that hook's earlier number) and every response mounts a new alert, which is announced. | Proposal, not verified: pressing the other button briefly shows that action's earlier refusal while "Working…"; choosing the shown state by the action that last answered would end it. |
+| U-UX-7: summary items stack two or three colons | A recorded wording decision (12 row 14, 9.3, reported to the co-founder). The stacked colons predate this PR (about 20 messages at the base), and the colon form is shared with #42's `NO_PATIENT_INFORMATION`, so changing one message here would make the two differ. | The words pass after #42 (ADR 0077, "Revisit when") chooses one separator for every route message. |
+
+Also in this round: the audit request's no-JavaScript e2e step types a clinic name with no digits, which the screen
+always accepts (digits from a clock can take an identifier's or a date's shape, and the success would never come);
+ADR 0077's "Not covered" now says that without JavaScript what was typed is lost on a refusal (2.4), which that step
+cites. The test matrix's FRM introduction and its FRM-01, FRM-05, FRM-07 and FRM-08 rows say what the round added,
+word for word in `docs/product/test-matrix.md` and `packages/synth/src/cases/matrix.ts`, and `pnpm synth --all`
+rewrote their `expected.json`; the registry adds `split-form.browser.test.tsx` (FRM-01), `fields.test.tsx` (FRM-06,
+FRM-07) and `packets.spec.ts` (FRM-08). The forms harness gains the screening form's keys and a `hardwareKey` form.
+
+Left open, outside this round's files (proposals):
+
+1. #42's upload form adopts the pinned key and the person's mark (ADR 0077, "Not covered"; 7.8), as does any later
+   form that holds its values in a component around ActionForm, as the split form did.
+2. `apps/worker/src/support/support-mail.ts:57`: the notice support staff read still says "the record’s opaque ID".
+3. `lib/routes/console.ts:615` and `lib/routes/compliance.ts:141` describe formats in bare punctuation; spell them
+   out as the terms form now does. `support.ts`'s `publicText` (an incident's title and message) still refuses one
+   field at a time.
+4. The support hint could say where the ID is ("from the page's address"), which departs from `a11y-other-20`'s
+   words and needs a ruling. The organization's upload note says "an opaque key", an internal word.
+5. #42's screening upload (`components/screening/upload-form.tsx`): its file and template hints are still 12 px and
+   hand-written; after #42 merges they take the shared `Hint` and leave `form-hints.test.ts`'s allowlist.
+6. `settings/organizations/[organizationId]/users` (a #42 page): its table overflowed at 390 px at the base and now
+   reaches 686 px; it should scroll inside its card.
+7. The screen tour (11.2.9) gains `/support`'s `error-duplicate` and `error-cleared`; its `support.default`,
+   `support.error`, `sign-in.error-locked` and `sign-in-hardware-key.error-no-credential` captures change.
+8. The split form's harness test in `action-form.browser.test.tsx` could move into `split-form.browser.test.tsx`.
+9. At 390 px four console pages still scroll sideways, for causes that are no form control and the same at 14 px (the
+   U-UX-2 re-verification's measure): `/console/compliance` 492 px, `/console/billing` 438, `/console/terms` 482
+   (wide tables) and `/console/organizations/<id>` 641 (a `w-fit shrink-0` badge; "End membership" past the card).
+   Each table should scroll inside its card, and each page take an `atPhoneWidth` step.
+10. The split form says a mouse press's problems twice, about 9 ms apart (the field's blur on mousedown, then the
+    press), and Tab then Space twice, about 300 ms apart. Skipping the blur's saying when focus moves to the submit
+    button would say a mouse press once but leave a Tab onto the button silent; a skip on a pointer press only is the
+    candidate, judged with a screen reader.
