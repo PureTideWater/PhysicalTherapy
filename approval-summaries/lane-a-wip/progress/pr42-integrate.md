@@ -37,3 +37,4 @@
 - e2e 56 passed; lint-copy 0, lint-logs 0 at 6f23c42b (rerun of light steps in bd1udgdmi)
 - light reruns at 6f23c42b all 0 (lint-copy, lint-logs, engine-freeze, golden, oracle, verify-content); mutation packets-scan done (canary/stryker/gate 0), packets-rest running
 - approval summary draft: scratchpad/pr42/approval-summary.md; checks table: scratchpad/pr42/checks-table.md; body assembly: python3 -I scratchpad/pr42/assemble.py <P> <head> <shards> <mutation> -> body-final.md. Body edits: UX row, M3 follow-up open item, capacity paragraph, fixtures row
+- mutation: packets-scan, packets-rest, packets-explain shards+gates 0; pricing-engine running (20:29)
