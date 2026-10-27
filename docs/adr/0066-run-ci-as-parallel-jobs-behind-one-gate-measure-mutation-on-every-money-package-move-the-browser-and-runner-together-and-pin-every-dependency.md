@@ -405,9 +405,11 @@ later default cannot turn the cache back on.
 
 **`.github/workflows/release-dry-run.yml`** (new, advisory, outside the ruleset) runs on every pull request and push
 that changes release.yml, itself, `tools/screening-capacity/image-id.ts`, either Dockerfile or the images' pnpm
-installer (`tools/check-toolchain/install-pnpm.sh`). Its `build` job (`contents: read`) builds the images as
-release.yml does, saves each with its identity and uploads it (v7, `overwrite: true`, kept a day): the web image here,
-and from Part 3 on release.yml's `web` and `worker` legs as a matrix (N16). Its `push` job (`contents: read`,
+installer (`tools/check-toolchain/install-pnpm.sh`), and from Part 3 on the worker's browser check and its record
+(`tools/ci/browser-build.ts`, `apps/web/e2e/browser.json`, `apps/web/e2e/browser-builds/*`). Its `build` job
+(`contents: read`) builds the images as release.yml does, saves each with its identity and uploads it (v7,
+`overwrite: true`, kept a day): the web image here, and from Part 3 on release.yml's `web` and `worker` legs as a
+matrix (N16). Its `push` job (`contents: read`,
 `packages: read`) downloads them with `merge-multiple` (v8), runs release.yml's identity check, loads them and logs in
 to ghcr.io with the job's own token. It names its images `ghcr.io/<repository>/<image>:dry-run-<run id>`, since a pull
 request's ref name (`<n>/merge`) is no image tag, and never tags, pushes or attests. Its build job also writes each
@@ -908,8 +910,9 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
   runs the same harness on a pull request that changes a watched path); `push`'s tag, push and registry read-back; and
   the whole `report` job (the attestation and the release's assets); the founder's first tag runs them first. Every
   other step of a tag's run runs on each pull request that changes one of the dry run's paths (release.yml, the dry run,
-  `image-id.ts`, either Dockerfile or the pnpm installer), and ci.yml's `images` job runs the worker's browser check on
-  every pull request.
+  `image-id.ts`, either Dockerfile, the pnpm installer, and the worker's browser check and its record, as the dry run
+  now runs that check the way the tag does), and ci.yml's `images` job runs the worker's browser check on every pull
+  request.
 - **N17.** Both measuring jobs that build the worker image, `release-capacity.yml`'s and `screening-capacity.yml`'s
   `capacity`, check its headless shell with `browser-build.ts --image` before anything is installed or measured, beside
   `images` and the release's `build`: the weekly runs measure the image whose headless shell prints customers' reports,

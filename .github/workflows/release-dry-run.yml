@@ -1,8 +1,8 @@
 name: release-dry-run
 
 # The release's chain without a release (docs/adr/0066, Parts 2 and 3). Only a tag runs release.yml, and only the
-# founder makes tags, so a change to it, to the actions it pins or to the images' Dockerfiles and their pnpm installer
-# would otherwise run first on the founder's tag. On every pull request and push that changes one of those files, this
+# founder makes tags, so a change to it, to the actions it pins, to the images' Dockerfiles and their pnpm installer or
+# to the worker's browser check and its record would otherwise run first on the founder's tag. On every pull request and push that changes one of those files, this
 # runs release.yml's own build and hand-over steps on two of its build's four legs, the web image and the worker image:
 # it builds each image as release.yml does, checks the worker's headless shell against browser.json, saves each with its
 # identity as the leg's own outputs, uploads them and downloads them as release.yml's jobs do, checks each download
@@ -24,6 +24,10 @@ on:
       - apps/web/Dockerfile
       - apps/worker/Dockerfile
       - tools/check-toolchain/install-pnpm.sh
+      # The worker leg's browser check and the record it reads, which release.yml's build runs on the same image.
+      - tools/ci/browser-build.ts
+      - apps/web/e2e/browser.json
+      - apps/web/e2e/browser-builds/*
   push:
     branches: [claude/build-platform]
     paths:
@@ -33,6 +37,10 @@ on:
       - apps/web/Dockerfile
       - apps/worker/Dockerfile
       - tools/check-toolchain/install-pnpm.sh
+      # The worker leg's browser check and the record it reads, which release.yml's build runs on the same image.
+      - tools/ci/browser-build.ts
+      - apps/web/e2e/browser.json
+      - apps/web/e2e/browser-builds/*
 
 permissions:
   contents: read

@@ -2186,8 +2186,19 @@ describe('the release’s dry run (docs/adr/0066, Part 2)', () => {
   type DryJob = Job & { permissions?: unknown };
   const dry = () => workflow('release-dry-run.yml') as Workflow & { permissions?: unknown; jobs: Record<string, DryJob> };
   const release = () => workflow('release.yml') as Workflow & { jobs: Record<string, DryJob> };
-  // The images' pnpm installer runs in both Dockerfiles' build stage, so a change to it is a change to the image build.
-  const PATHS = ['.github/workflows/release.yml', '.github/workflows/release-dry-run.yml', 'tools/screening-capacity/image-id.ts', 'apps/web/Dockerfile', 'apps/worker/Dockerfile', 'tools/check-toolchain/install-pnpm.sh'];
+  // The images' pnpm installer runs in both Dockerfiles' build stage, so a change to it is a change to the image build;
+  // the worker leg runs the browser check, which reads browser.json and its file lists, as image-id.ts is run.
+  const PATHS = [
+    '.github/workflows/release.yml',
+    '.github/workflows/release-dry-run.yml',
+    'tools/screening-capacity/image-id.ts',
+    'apps/web/Dockerfile',
+    'apps/worker/Dockerfile',
+    'tools/check-toolchain/install-pnpm.sh',
+    'tools/ci/browser-build.ts',
+    'apps/web/e2e/browser.json',
+    'apps/web/e2e/browser-builds/*',
+  ];
   // Two of the release build's four legs: the web image (which stands for the capacity job's production web image) and
   // the worker image. web-staging and web-production differ from web only by a repository variable's static host.
   const IMAGES = ['web', 'worker'];
@@ -2209,7 +2220,7 @@ describe('the release’s dry run (docs/adr/0066, Part 2)', () => {
     ...(step.with === undefined ? {} : { with: Object.fromEntries(Object.entries(step.with).map(([key, value]) => [key, cutInput(key, value)])) }),
   });
 
-  it('runs on every pull request and push that changes the release, its dry run, the images’ Dockerfiles or their pnpm installer, outside the required checks', () => {
+  it('runs on every pull request and push that changes the release, its dry run, the images’ Dockerfiles or their pnpm installer, or the worker’s browser check and its record, outside the required checks', () => {
     expect(dry().on).toEqual({ pull_request: { paths: PATHS }, push: { branches: ['claude/build-platform'], paths: PATHS } });
     expect(Object.keys(dry().jobs)).toEqual(['build', 'push', 'capacity']);
     expect(dry().jobs.push?.needs).toBe('build');
