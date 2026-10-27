@@ -33,7 +33,9 @@ jobs:
     # before measuring: this label then becomes the same 4-core larger runner as screening-capacity's, which needs an
     # organization on GitHub Team and is billed beyond the included minutes (docs/runbooks/screening-capacity.md, "The
     # 8-core runner"; docs/adr/0071); until then a private run fails every week without measuring (fix round S5).
-    runs-on: ubuntu-24.04
+    # ubuntu-26.04, as every job but the release's capacity chain (the founder's F5): this report is advisory and never
+    # attested, so no binding measurement is made here, and the launch check reads none (docs/adr/0066, Part 3).
+    runs-on: ubuntu-26.04
     # The larger release takes longer to build and load than the screening's: a run takes 60 to 120 minutes, and a hung
     # one stops at 180 instead of GitHub's 360 (docs/adr/0063).
     timeout-minutes: 180
@@ -111,7 +113,7 @@ jobs:
   notify:
     needs: capacity
     if: always() && github.event_name != 'pull_request' && (needs.capacity.result == 'failure' || needs.capacity.result == 'cancelled' || needs.capacity.outputs.advisories != '')
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # One call to the issues API; a hung call stops at 5 minutes instead of GitHub's 360 (docs/adr/0063).
     timeout-minutes: 5
     permissions:

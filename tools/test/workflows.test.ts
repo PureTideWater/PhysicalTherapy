@@ -164,7 +164,7 @@ function inputLabels(runsOn: string, inputs: Record<string, unknown> | undefined
 
 /**
  * Why a runs-on value does not name only pinned runner images (audit item #19). GitHub moves a -latest label to a new
- * image on its own schedule (ubuntu-latest to Ubuntu 26.04 from 2026-10-19, which Playwright 1.56.1 predates), and can
+ * image on its own schedule (ubuntu-latest to Ubuntu 26.04, announced for November 2026 in runner-images #14748), and can
  * move any hosted label without a version, so a job on one changes under a commit that changed nothing. runs-on is a
  * label, a list of labels or a group with its labels; an expression is followed only when it is one of the job's own
  * matrix values, and refused otherwise.
@@ -426,7 +426,10 @@ describe('workflows', () => {
     expect(runners['screening-capacity.yml capacity']).toEqual([RELEASE_RUNNER.label, RUNNER]);
     expect(workflow('screening-capacity.yml').jobs.capacity?.['runs-on']).toBe(`\${{ inputs.runner || '${RELEASE_RUNNER.label}' }}`);
     expect(Object.entries(runners).filter(([job, labels]) => !RELEASE_CHAIN.includes(job) && !isDeepStrictEqual(labels, [RUNNER]))).toEqual([]);
-    expect(Object.keys(runners).filter((job) => !RELEASE_CHAIN.includes(job))).toHaveLength(18);
+    // Twenty-two on ubuntu-26.04: approval-of-record's one, ci.yml's nine, content-calendar's check and notify,
+    // large-zip's one, mutation's three, publish-content's one, release-capacity's capacity and notify (its report is
+    // advisory and never attested, so F5's chain does not hold it), and screening-capacity's changes, gate and notify.
+    expect(Object.keys(runners).filter((job) => !RELEASE_CHAIN.includes(job))).toHaveLength(22);
     // GitHub's larger runners exist only for an organization on GitHub Team or Enterprise Cloud, and PureTideWater is a
     // personal account: actionlint's configuration, which named the 8-core runner's label, is gone with it, and none
     // names ubuntu-26.04 as a self-hosted label (the actionlint test ignores that one message instead).
