@@ -1442,7 +1442,9 @@ is not sending: it waits, and is priced and emailed after the resume if that is 
 Every refused address, whatever refused it, gets one sentence, so the form says nothing about any earlier screening,
 and nothing about a customer's mail, which the refusal list never holds. No log line, issue or error names the address
 or its domain. The harness charges the checks' worst case on every upload, so the 60-second promise holds with them
-(the plan's G1; ADR 0065).
+(the plan's G1; ADR 0065): the web logs the checks' time with each stored upload's run (`screening address checked`,
+the run's ID and its milliseconds, never the address), and the harness's verdict fails an upload with no such line or
+one under 2 seconds, so it reads what the web measured, never the delay the harness gave its stand-ins (review M4).
 
 **The delivery state (D11; the plan's D9).** A prospect's delivery state is its result mail's record (`mail_send`,
 keyed to the prospect, set null when the prospect goes), not a column on the immutable prospect; PR 7 adds its read
