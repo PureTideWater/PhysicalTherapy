@@ -1,0 +1,23 @@
+## 15. Review
+
+**Review 1** (2026-10-27; one independent reviewer on the payment-engine reviewer's checklist and the EDI reviewer's
+for section 2; notes and probes in `scratchpad/progress/design-interest-review.md` and `scratchpad/probes/review/`):
+verdict "build with changes". Each finding was checked against the code before it was taken; every one was taken.
+
+| # | Finding (the reviewer's severity) | Checked | What changed |
+|---|---|---|---|
+| F1 | Once per L6 and claim lets a re-attribution (a same-numbered later claim, an out-of-order upload) credit an L6 again; Postgres refuses; the practice's whole reconcile fails on every retry (blocking) | `rem` keys; `allocateByWeight(540, [0, 300])` gives `[0, 540]` (`packages/ledger/src/allocation.ts:42-60`, no cap at a weight); `adoptOrphanReversals` | 3.7; D6: once per L6 and sign, gross, with each chain's part as a second cap; a take-back cut to what the lines hold before it is split (D5); worked cases R' and "pooled first, named later"; LED-24's `second.835` now carries the first correction's control number and `out-of-order-*.835` is new; the properties change the attribution between reconciles |
+| F2 | The pool counts a correction's positive AMT I and ignores its reversal's negative one, so a net-zero pair takes another claim's interest (blocking) | The run-1 D2 pooled positive AMT I only | 3.6; D3: a chain's AMT I nets within the remittance; worked case "net zero beside another claim"; LED-23 `net-zero-beside.835` |
+| F3 | A take-back keyed to the reversed claim and its standing approval misses interest held through an earlier claim of the chain (a restatement), and a person-reversed approval (should fix) | The reviewer's probe S2 (`probes/review/probe1.out`): nothing taken back after a restatement | D5: take-backs from the lines holding the chain's interest; paid interest through approved matches first, else any standing match; D8: a claim reaches a line through a standing claim or interest match; run 2's T10; worked case and LED-24 `restated-taken-back.835` |
+| F4 | Refusing the previous image's interest match fails every reconcile of every practice with an AMT I claim on a case line until roll-forward, not only interest (should fix) | The reviewer's probe S3; the previous image's `everMatched` is keyed by the claim's ID and the new matches' evidence is the L6 | 3.8; D16: the job's one-record interest match is skipped, a person's refused; the skip is shown to let the previous image's reconcile complete (run 2); a database test asserts every match the current image writes carries both records |
+| F5 | The printed statement's new sentence breaks `brand.test.ts:144`, and the ROI statement page keeps the old one (should fix) | Both carry the same sentence today | Section 7 changes both; files, exception and UX review list updated; the Verified seal coordination named (section 11) |
+| F6 | PLB03-2 hashed whole misses X12's recommended "CLP01 CLP07 TRN02" (should fix) | `rem:799`; the parser keeps PLB03-2 whole (`packages/edi835/src/transaction.ts`) | 3.9; D2: the whole reference, else its tokens, naming one chain or nothing; LED-23 `identifiers.835`. The WO's naming is unchanged and handed on (section 14) |
+| F7 | A named net L6 (TR3 1.10.2.9) gives the whole net to the named claim, other claims' interest included (should fix) | The run-1 D2 step 1 | D4 step 2 and 4: a named L6 covers its claim's AMT I first, its remainder joins the pool, and what the pool leaves returns to the named claim (so case F stands); LED-23 `named-net.835` |
+| F8 | The exception's file list misses tests and the stryker shard; the order WO-then-interest differed from today's; "stays frozen" conflicts with SUITE-CAP-1's Q1 (should fix) | The lists; `rem:788-793` | Section 10's files and "stays frozen" reworded; D13 keeps today's order, so no order change needs the exception |
+| N1 | `allocated` for negative parts undefined | | D10: two or more nonzero parts of one split |
+| N2 | `net-zero.835`'s "approved 2.00 more" needs the allowed amount raised | `payment.ts:390-392` (same allowed paying more is no change) | 8.2: the allowed amount and the payment both rise by 2.00 |
+| N3 | RFI 2202 described both as a same-remittance rule and as a later payment | | Section 2: RFI 2202 is the same-remittance rule; a later L6 is a later payment (case E) |
+
+**Pending:** a second look at sections 3.6 to 3.9, 4, 5 and 8 as revised (the exact-or-net pool, the per-sign bound,
+the skip), by the same checklists. Its findings and their dispositions are recorded here before the builders start,
+and the freeze exception of section 10.1 goes to the founder in its reviewed form.

@@ -33,6 +33,15 @@
 
   One push: b02435c5 to co-001/test-flakes. The base is unchanged at e908c21, so no merge was needed. PR body updated (findings table, checks) and read back byte for byte. Waiting on CI on b02435c, then the fresh-clone verification.
 
+- 19:10 UTC: resumed after the account's 5-hour limit (~17:27 to 19:00 UTC); setup re-run (PostgreSQL restarted). CI on b02435c all green (24 runs; the four required checks). Fresh-clone verification (wf_3d495224-e23) passed with no blockers; its two description-wording nits are fixed in the body.
+- 19:13 UTC: **MERGED.** PR #76 was marked ready; approval-of-record re-ran green; then merge_pull_request (method merge, expectedHeadSha b02435c5). Merge commit **085299b** on claude/build-platform. Housekeeping:
+  - unsubscribed from #76; the 20:26 check-in cancelled;
+  - the orchestrator told;
+  - the main checkout fast-forwarded and installed;
+  - the worktree, the local branch and the review clones removed (the remote branch stays).
+
+  Push runs on 085299b: ci, mutation and screening-capacity all succeeded.
+
 ## Proposals (not built here)
 - `tools/stryker/affected.test.ts:601` took 55.9 s of its 120 s on CI (2.1x headroom).
 - `apps/worker/src/screening/threads.test.ts:100-112` asserts wall-clock bounds (took < 3000; active count after a 100 ms timer) under load; beside the "Not while #42 is open" screening files.
@@ -44,4 +53,4 @@
   - (b) `packages/packets/src/facts.ts`: `quoted(source.quote, dayCounts)` sends a five-digit number in a contract-window quote to codes, not dayCounts. So "10000 visits" passes when the window says 10000 days.
 
 ## Next step
-CI green on b02435c, then the fresh-clone verification (one agent, reads CI). Then merge per lanes/lane-b.md: merge the base in if it moved, mark ready, wait for approval-of-record, then merge_pull_request with method merge and expectedHeadSha. Then tell the orchestrator (session_01TrKDxeLbxVo7t7zwRXFzrg).
+Done. Item merged (085299b). Remaining: the proposals above, for the orchestrator to queue.

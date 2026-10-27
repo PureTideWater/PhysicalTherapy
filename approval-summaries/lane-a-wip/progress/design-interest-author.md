@@ -48,3 +48,47 @@ Output: /home/user/ops/designs/ledger-interest-once.md
 - PROTOTYPE DONE (tp_design_interest_3 dropped; output probes/author/proto.out): all checks as designed (seq 8 rows filled 1..8, objects owned tp_owner, ACL tp_owner only, CHECKs validated; previous image refused with nothing written; T1/T1b/T8/T9 refused; T2 dual ok seq 14/15 evidence=L6; sign/L6 bound/line floor [ledger_interest_line_floor] each refused at the right amount; superseded index used). seq/evidence plan checks INCONCLUSIVE (gen_random_uuid() volatile prevents index cond) -> rerun plan check with constants (tp_design_interest_4).
 - plans done (tp_design_interest_4 dropped); 8.0 filled
 ## STATUS: DESIGN COMPLETE (run 1). /home/user/ops/designs/ledger-interest-once.md, sections 0-15 (15 = review pending). All probe DBs dropped (tp_design_interest_2/3/4). Returning StructuredOutput.
+
+## RUN 2 (started 2026-10-27 ~19:15)
+- Found: design complete (run 1, mtime 15:44). Since then: review (progress/design-interest-review.md, F1-F8 + nits, verdict build with changes) and revise run 1 (progress/design-interest-revise.md: verified F1-F8, dispositions, NO edits made to design). Scouts re-ran (run 3; #42 head 8aa45a46).
+- Plan run 2: re-verify base/#42 heads; read design fully; fold verified review findings (F1-F7, F8 file list, N1-N3) into the design as author; re-prototype revised SQL (tp_design_interest_41); update sections; return.
+- Run 2 note: my `git fetch` in /home/user/PhysicalTherapy (19:13) fast-forwarded its origin/claude/build-platform to 085299bd; RESTORED to e908c214 via update-ref (19:15). GitHub build-platform = 085299bd (#76, test-only: rerun-rule.property, denial-letter, verifier, worksheet, db-shards, workflows tests; none of this item's files). GitHub #42 head 098636e3; local #42 (pr6b4 + local branch) 6f23c42b.
+- Run 2: read design fully (1068 lines). Next: verify code for F1-F7 (rem 760-947, rled insert*, ledger_match_rules, statement-html path, brand.test:144, web roi :108, loader adoptOrphanReversals, manual reverse), then rewrite D2-D5/D11, 4.1, 5.3 SQL, 6, 7, 8, 10, 11, 12, add section 15 dispositions.
+## Run 2 decisions (folding review F1-F8, N1-N3; verified against code)
+- #42 local head 6f23c42b (212 files; list progress/interest-author-42files-run2.txt): ledger_match_rules + called fns + ledger_entry_* sha-identical to base; mail_streams.sql changed since run 1 -> refresh migs1/migs2. Overlap unchanged (+ areas.json generated).
+- SS-01 migration = 20261108090000_suspension_refusal.sql; SUITE-CAP-1 = 20261109090000_line_status_heads.sql and it CARRIES claim_by_superseded (its D15: first to merge carries it) and recreates within_evidence/_within_line (lock key only, its Q1). => this item: <ts> after both (e.g. 20261110090000); drop claim_by_superseded if SUITE-CAP-1 merged it; Stays-frozen wording = their checks.
+- F1: per-L6 gross caps by sign (G+/G-), per (L6,unit) credited; DB bound B1: G+ <= max(0,cash)+negR, G- <= max(0,-cash)+posR (posR/negR = L6's remittance claims' AMT I by sign; claim_once index serves).
+- F2: units = R's AMT I claims grouped by chain root (reversal_of / inverse superseded_by); a_u signed net.
+- Pool rule (Option E): if pool cash == sum of residual a_u (guide case) each unit exactly a_u (both signs, not allocated); else net-only: P>0 positives share min(P,PosU) by weight; P<0 negatives share min(-P,NegU); rest unattributed.
+- F7: named L6 with named chain in R covers its unit first (same sign, min), residual joins R's pool, pool-unclaimed residual returns to named unit. Named chain not in R: whole to it.
+- F6: reference whole hash, else tokens split on whitespace , ; | / ; must name exactly one chain else pooled. WO unchanged (follow-up).
+- F3: paid lines = standing claim match naming the paying claim (approved first, else any outcome); take-back lines = lines holding net interest from matches naming any chain claim; DB match rule = standing claim match OR standing interest match naming NEW.claim_id on the line.
+- F4: ledger_match_rules RETURN NULL for job (matched_by NULL) interest insert carrying exactly one of claim/L6 (old image) -> old reconcile completes, writes no interest; persons RAISE. Drop L6-sign check (mixed-sign exact).
+- F5: statement sentence in statement-html.ts:114 + brand.test.ts:144 + web roi [statementId]/page.tsx:108 (same sentence); UX review adds web ROI page. Verified seal = LANES '#46' (queue item 6, not started; PR #46 = db-function-diffs merged).
+- F8 files added; order: keep today's position order (WO/L6 interleaved per R) -> interest per remittance computed when its first L6 is reached? (decide: compute R's attribution at R's first L6 in the loop; write in position order).
+- N1: allocated = one of >=2 nonzero same-sign parts of a pro-rata division (pool shortfall share among units, or line split). Exact AMT I amounts are not allocated.
+- N2: net-zero.835 raises allowed AND paid on line 1 by 2.00 (same allowed+higher pay = no_change, payment.ts:390-392).
+- N3: RFI 2202 wording: same-remittance rule only; later L6 = a later payment (case E), not RFI 2202's.
+- Run 2 draft migration: probes/author/run2/draft.sql (= run2/migs2/20261110090000_ledger_interest_once.sql); prototype run2/proto2.mts on tp_design_interest_41 (drops itself; if interrupted DROP it), output run2/proto2.out, running in bg under flock (b8aoy2l19), queued behind #42 capacity run.
+- Pool rule refined (Option E): units negative always need held lines; exact only when pool cash == sum residual a_u; else net-only by sign of P.
+- Next: edit design sections 0,1.3(N3 wording),2,3,4 (D2-D6,D11 rewritten; worked cases), 5 (SQL replaced with run-2 draft), 6, 7, 8 (8.0 run-2 results; LED-23/24 cases incl. F1/F2/F3/F6/F7), 10 (exception), 11 (files), 12 (risks), 14, 15 (review dispositions).
+- Run 2: backup of run-1 design at progress/ledger-interest-once.run1.md; editing sections in place (order: header+0, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15)
+- WRITTEN run 2: header + section 0
+- WRITTEN run 2: 1.4 two bullets (reference whole; CLP04 folded), section 2 (N3, TR3 1.10.2.9, RFI 2370)
+- WRITTEN run 2: 3.5 SUITE-CAP-1 lines; 3.6 (net chains, exact/net-only), 3.7 (once per L6 gross), 3.8 (skip legacy shape), 3.9 (tokens)
+- WRITTEN run 2: section 4 (D1-D16, 4.1 worked cases incl F1-F7)
+- WRITTEN run 2: section 5 (5.1-5.3 with run-2 SQL)
+- WRITTEN run 2: section 6
+- WRITTEN run 2: section 7 (entry-sign words, ROI page sentence, refusals, UX list)
+- WRITTEN run 2: section 8 (8.0 has RUN2_RESULTS_PLACEHOLDER and RUN2_SHOWS_PLACEHOLDER to fill)
+- WRITTEN run 2: section 9 updates
+- WRITTEN run 2: section 10 (exception text revised)
+- WRITTEN run 2: section 11
+- WRITTEN run 2: sections 12, 13, 14. Next: section 15 (review dispositions), 8.0 results, final read-through
+- plans2.mts (tp_design_interest_42, drops itself) running bg under flock -> run2/plans2.out; proto2 DONE (output run2/proto2.out, tp_design_interest_41 dropped)
+- WRITTEN run 2: 8.0 run-2 results + shows; PLANS2_PLACEHOLDER pending plans2.out
+- WRITTEN run 2: section 15 (review dispositions). Next: plans2 results into 8.0; final read-through
+- Read-through done for sections 0-7, 9 (fixes applied: 3.2/3.3 wording, D5 wrap, 7 reported sentence, 9.1 wrap). Waiting on plans2 (queued behind #42 mutation + golden) to fill PLANS2_PLACEHOLDER and confirm 5.1 'by which index' paragraph.
+- 19:44 waiting for plans2 (monitor blwh0f8dl); everything else in the design is written
+- plans2 DONE (tp_design_interest_42 dropped); 8.0 filled; LED-25 large test over 20 practices
+## STATUS RUN 2: DESIGN COMPLETE (revised after review; sections 0-15). Probe DBs tp_design_interest_41/42 dropped. Returning StructuredOutput.

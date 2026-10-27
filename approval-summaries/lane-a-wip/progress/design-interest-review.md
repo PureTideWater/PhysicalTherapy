@@ -46,3 +46,38 @@ Started 2026-10-27. Reviewing /home/user/ops/designs/ledger-interest-once.md (87
 - CHAIN_ORDER tie-breaks (matched_at, kind class, bpr16_date, created_at, position, id) reproduce in-pass order -> seq equivalent for new rows. Sound.
 - Only LED-16 among LED fixtures carries AMT I (also V07 variant); PAR-18 is L6 named. Sound.
 ## STATUS: analysis complete; writing StructuredOutput. Verdict: build with changes. All probe DBs dropped (tp_design_interest_21).
+
+# ROUND 2 (started 2026-10-27 ~19:5x): design revised (123962 bytes, mtime 19:46) after round-1 findings; header says sect 15 records each finding. Reviewing the revision.
+- R2: read whole revised design (1374 lines). #42 now 6f23c42b; ledger fns byte-identical to base (rechecked). Sect 15 maps F1-F8, N1-N3; pending = second look at 3.6-3.9, 4, 5, 8.
+## R2 leads (open)
+- R2-L1 out-of-order fixture: later-named chain is 'another patient's claim' (no case line) -> DB test passes under per-(L6,chain) keying (F1 regression undetected). Candidate should_fix.
+- R2-L2 skip RETURN NULL: verify old rled insertMatch/recordInterest on 0 rows; other job-shaped writers of 1-ID interest matches (seeds, tour, e2e, synth oracle)
+- R2-L3 rollback: old code reading negative interest (entryProblems callers, totals/roi/statement validation, roi_statement_rules)
+- R2-L4 seq vs matched_at across txns (now() = txn start before lock wait); reversalRule uses matched_at
+- R2-L5 catalog test lists of triggers/functions; lockLedger key form == hashtextextended('ledger:'||id,0)?
+- R2-L6 job ever writes reversed/adjusted entries on interest (floor refusal path for job)?
+- R2-L7 pool remainder / bound proofs (sound so far by hand)
+## R2 closed sound (20:xx)
+- R2-L2 old rled insertMatch returns null on skip -> recordInterest continue (rem:892-894); only other 1-ID interest writer = ledger-world.ts (design updates it). SOUND.
+- R2-L3 entryProblems only in packages/ledger; totals/roi/statement signed sums; figure empty-state by entry count; reportReconciliation for recovered only. SOUND.
+- R2-L4 seq vs matched_at: seq is true insert order; reversalRule's at=matched_at unaffected. SOUND (pre-existing lock-wait skew not this design's).
+- R2-L5 lockLedger key == hashtextextended('ledger:'||id,0); catalog test has no trigger/function lists hit; new trigger locks only for interest roots (no deadlock with per-row locks). SOUND.
+- R2-L6 ledger_entry_rules: job never writes reversed/adjusted (created_by required). SOUND.
+- R2-L7 per-L6 per-sign bound vs exact-pool remainder: r <= chain-net negatives <= reported_taken; static inputs; SOUND.
+- LED-16 fixture BPR02 54->59.40 doesn't touch its posting/EFT (those are adjusted.835 LED16002). SOUND.
+- approvedRemaining = approved+recouped (not minus proved) so later-L6 (E) after posting still has weight. SOUND.
+## R2 findings so far
+- RF1 should_fix (test gap): LED-24 out-of-order fixture's later-named claim is 'another patient's claim' (no case line) and R' uses same chain -> no DB test fails if worker keys left per (L6,chain) without per-L6-sign gross cap; property tests only cover pure interestLeft. Fix: later-named claim approves a line of a 2nd case; assert nothing written & completes.
+- RF2 should_fix: unlinked reversal (payer gives reversal its own CLP07 + REF*F8; parser ignores F8 for status 22, transaction.ts:797-800; loader earlier() by own CLP07) beside linked correction C2 + another claim K with AMT I + net L6: exact pool pays C2 its full +540 again (double count); Postgres bound accepts (200+540). Same as today (not regression) but Risk 8 understates; fix: D3 nets unlinked status-22 claim in R with same-PCN/linked correction (or parser F8 for reversals) + synth case.
+- RF3 nit/should_fix: reverse-route refusal sentence tells person to reverse take-back match; page:84 never offers reversal of interest matches; Risk 5 remedy 'reverse through the route' has no screen. Fix: offer ReverseForm on interest matches (take-back first) or reword to specialist adjustment.
+- RF4 nit: reported-interest sentences per claim match show C and C2 each 'reports 5.40' after a net-zero restatement (reversal -5.40 not shown).
+- RF5 should_fix (race): reconcile txn is READ COMMITTED (pass.ts:38 context.transaction, plain BEGIN); loader takes no ledger lock (only remittance-traces lock, loader.ts:222) -> a load of R can commit between interestAttribution's AMT I claims read and its L6/reference reads. Torn view: named net L6 (740 naming CLP07 X, C2 AMT I 540 + K 200 in R) seen with no R claims -> step 1 'chain with no claim in R' -> whole 740 to chain C via C1's standing approved matches (same CLP07) -> written; next pass correct attribution gives 540 but per-L6-sign left 0 -> first attribution stands permanently; Postgres bound 740<=740 accepts. Fix: read attribution inputs + L6 loop rows from one statement / restrict every query (claims, links, hash lookups, L6 loop) to the remittance IDs one statement saw; ignore links to claims outside that set.
+- #42 6f23c42b overlap = only shared docs/synth/generated (as design says). SOUND.
+- LANES delegation (co-founder) is Lane B only -> founder decides here. SOUND.
+- nit candidate: reference lookup not restricted to the L6's payer (CLP07 unique per payer only); tokens widen collisions. Fix: reach claims of the L6's payer only.
+- RF6 BLOCKING (probe review2/zero-l6.out): a PLB L6 of 0.00 parses (outcome loaded, 0 errors), plans and loads as provider_adjustment category interest amount 0 (no CHECK <> 0, remittances.sql:216). Design 6.1: interest.ts throws LedgerError on a zero L6; 6.2 L6 query has no amount filter -> reconcile throws -> whole pass rolls back every retry/day (approvals, postings, deposits, stages, notices, statements), no remedy. Today harmless (negateCents(0)<=0 return). Same for a chain netting to 0 if passed (6.1 'each chain ... with AMT I'). Fix: filter amount_cents <> 0 in the L6 query and the attribution, pass only chains with net a <> 0; throws only for impossible-from-stored-data inputs; add LED-23 variant zero-l6.835 (reconcile completes, nothing written).
+- zero-L6 probe ran on main checkout code read-only via tsx; git status clean.
+- RF7 nit: oracle harness (ledger-oracle.db.test.ts:236-238) always caseFor(`${fixture}/original.835`) + load `${fixture}/adjusted.835` before steps; LED-23/24 file lists (8.2) have neither -> 'two appended cases' need those names (or a harness change, which the exception freezes). Also the oracle's LED-16 case uses original/adjusted (interest 0n), never two-lines-adjusted -> '(LED-16 against its corrected fixture)' in 8.3 misleads.
+- RF1 extended: second.835's same-CLP07 claim must be a linked correction (REF F8 or after a reversal) else it is a separate chain (transaction.ts:797-800) and R' tests nothing.
+- nits: takesBack must read the stage-interest entry's sign, not its corrections (adjusted/reversed negative); summary 'an L6 with no AMT I is credited' only when named (unnamed L6 w/o AMT I in R never credited; D then unnamed later L6 goes 540 -> 0); reference lookup not restricted to the L6's payer.
+## STATUS R2: analysis complete; no DBs of mine left; writing StructuredOutput. Verdict: build with changes.

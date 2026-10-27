@@ -3,6 +3,9 @@ export const meta = {
   description: '#74 fix round part 1: three fixers on disjoint files for the 15 verified in-scope findings, records, integration check, then an adversarial verifier per fix and a re-fix where one falls short',
   phases: [{ title: 'Fix' }, { title: 'Records' }, { title: 'Check' }, { title: 'Verify fixes' }, { title: 'Re-fix' }],
 }
+// RESUMED 2026-10-27 19:12 UTC: the account's 5-hour limit stopped this run at ~17:12 UTC after the three fixers
+// returned; records, check, the verifiers and the re-fix failed on the limit. PostgreSQL restarted (setup re-run).
+// Every agent keeps its progress file (SAVE) and every heavy command runs under flock /tmp/laneb-heavy.lock.
 const SP = '/tmp/claude-0/-home-user-PhysicalTherapy/d75bf211-7cd4-58d6-b13d-568cbdc1db2a/scratchpad'
 const SAVE = (file, what) => `Save as you go: keep ${SP}/progress/${file} up to date (${what}), so an interruption loses nothing. If it already exists when you start, an earlier run of yours was interrupted: read it, trust what it holds unless the code says otherwise, and continue from where it stopped.`
 const WT = '/home/user/ux-forms'
