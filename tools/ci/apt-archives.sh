@@ -58,7 +58,8 @@ case "$command" in
         else
           # An Architecture: all package is listed under the native architecture, so it is asked for by version alone.
           if [ "$arch" = all ]; then spec="$name=$version"; else spec="$name:$arch=$version"; fi
-          # apt-cache exits 100 for a version no index lists; that is a stale file, not a failure of apt.
+          # apt-cache prints no record (exit 0) for a version no index lists, and exits 100 for a package it does not
+          # know; either is a stale file, not a failure of apt.
           listed="$(apt-cache show "$spec" 2> /dev/null | sed -n 's/^SHA256: //p')" || listed=""
           actual="$(sha256sum "$file" | cut -d ' ' -f 1)"
           if [ -z "$listed" ]; then
