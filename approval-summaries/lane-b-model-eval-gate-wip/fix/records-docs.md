@@ -12,7 +12,7 @@ This covers phi-screen F3 = security S3, F4, F7, F6 = security S4, N1 and N2, an
   - At compile time: `PurposeSpec`'s `prepare`, `screen` and `verify` are readonly properties (`src/spec.ts`), so the same assignment or delete does not compile.
   - `PURPOSE_SPECS` is no longer exported from the package's entry. `requestFor` and the gateway's methods are the surface. `specs.test.ts` holds all of this.
 - **590-593, "Test helpers stay in tests".** Replace the last sentence with the following points:
-  - `lint.test.ts` holds that only test code reaches `src/testing.ts`. Test code means tests, their support files, the generated route tests, the e2e and `eval/`.
+  - `lint.test.ts` holds that only test code reaches `src/testing.ts`. Test code means tests, their support files, the generated route tests, the e2e and `eval/`. A `test-support/` or `route-tests/` directory counts only outside the web's route tree (`apps/web/src/app/`), where Next serves a page or route by its path though nothing imports it.
   - The guard follows every static import, re-export (`export … from`), side-effect import, dynamic import and `require`, in any quotes (a template literal without a substitution too).
   - It resolves relative paths and workspace packages through their `exports`, and follows the chain transitively. So a production module that imports a test-support module that re-exports `testing.ts` is refused.
   - A specifier computed at run time is not followed. No source outside `tools/test` uses one.
@@ -121,6 +121,7 @@ Add two rows:
   - neither `PURPOSE_SPECS` nor `syntheticRecordsCheck` on the package's entry.
 - **`src/lint.test.ts`**. Add:
   - the testing module reached by nothing but test code, through any import form, transitively, with a self-check over a synthetic graph;
+  - what counts as test code, with its own check: a support directory inside the web's route tree does not;
   - `practiceRecordsCheck` named only in its two production callers (each call's arguments pinned), `testing.ts`, the definition, the entry and tests;
   - `syntheticRecordsCheck` only in `testing.ts`, `eval/` and tests.
 

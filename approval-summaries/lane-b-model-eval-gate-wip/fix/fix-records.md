@@ -32,3 +32,9 @@ Mutant driver: progress/mutants.py; log progress/fix-records-mutants.log (13/13 
 - fix/requests.md records section appended
 ## Left
 - write fix/records-docs.md, fix/records.md
+
+## Resumed 2026-10-27 19:15 UTC
+- Verified worktree = saved WIP (4ee7c665) for my files; re-ran: tsc gateway/web/worker clean; unit patient-records+specs+lint+contract-terms+prompts pass, gateway.test.ts:379 fails only as requested (postings:1); db patient-records+gateway 31/31; web models-routes.db + worker permitted.db 20/20; eslint my 10 files clean. Logs progress/fix-records-resume-*.log
+- Before (head clone with current tests copied in): unit 15 failed/32 passed (3 files); db 3 failed/7 passed. progress/fix-records-resume-before.log
+- DONE: lint.test.ts isTestCode (support dirs not test code under apps/web/src/app/) + self-check; before (head-equivalent regex) 2 failed/14; after lint+specs 20/20; tsc+eslint clean. records-docs.md updated. Left: write fix/records.md
+- DONE: fix/records.md written (2026-10-27 19:36 UTC). Part complete; nothing left in my files.
