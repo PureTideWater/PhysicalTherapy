@@ -48,5 +48,10 @@ Marker route: touch <clone>/.claude/.allow-protected-edit, Edit migration, rm ma
 - 1c8ccb2f M2 (db: global Suppressed -> bounced; account/config-set suppression stays suppressed; 'undetermined'
   subtype kept). Marker route worked (no refusal). Failing first: 3 tests (mail.db counts, screening.db refusal list and
   marks). After: mail.db + screening.db 93/93; events.test 11/11; tsc packages/db clean; eslint clean.
+- c1daa301 S2 (db: mail_recipient_canonical + canonicalMailbox() in @tp/db runtime; rate.ts uses it; spellings table in
+  packages/db/src/test-support/mailbox-spellings.ts). Failing first: screening.db S2 test (complaint to +tag spelling,
+  janedoe spelling accepted), mail.db agreement test (function missing). After: mail.db+screening.db 95/95;
+  routes.db (web) 49/49; mail-address.test + rate.test 6/6; tsc web+db clean; eslint clean.
+  NFKC chosen (superset of NFC; rate key already NFKC); ASCII-only trim/lower for TS/SQL exact agreement.
 
 ## Checks

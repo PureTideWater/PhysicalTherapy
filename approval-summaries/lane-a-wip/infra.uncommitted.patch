@@ -1,0 +1,323 @@
+diff --git a/infra/lib/app.ts b/infra/lib/app.ts
+index 1989f73f..e22a80f5 100644
+--- a/infra/lib/app.ts
++++ b/infra/lib/app.ts
+@@ -1,6 +1,7 @@
+ import { Annotations, App } from 'aws-cdk-lib';
+ 
+ import type { OperatorEndpoints } from './constructs/monitoring';
++import { AddressValidationStack, addressValidationStackName } from './address-validation-stack';
+ import { ENVIRONMENTS, stackName } from './environments';
+ import { PlatformStack } from './platform-stack';
+ import { DEPLOY_LAUNCH_READERS, LAUNCH_ATTESTATION_CONTEXT, LAUNCH_ENVIRONMENT, LAUNCH_REPORT_CONTEXT, LAUNCH_TAG_CONTEXT, type LaunchReaders, refuseHandTypedLaunch, screeningLaunchValue } from './screening-launch';
+@@ -36,7 +37,8 @@ function booleanContext(app: App, key: string): boolean {
+ }
+ 
+ /**
+- * Builds the CDK app: one PlatformStack per environment. Account and region come from CDK's defaults. Production's
++ * Builds the CDK app: one PlatformStack per environment, and beside each the AddressValidationStack its
++ * address-validation account holds. Account and region come from CDK's defaults. Production's
+  * screening launch value is computed here, once, from `-c tp:launchReport`, `-c tp:launchAttestation` and
+  * `-c tp:launchTag` (screening-launch.ts; decision 13 and the founder's ruling of 2026-10-22); `readers` are what it
+  * reads outside the code (the tests' own).
+@@ -66,6 +68,12 @@ export function buildApp(app: App = new App(), readers: LaunchReaders = DEPLOY_L
+         Annotations.of(stack).addInfo(note);
+       }
+     }
++    // Deployed into the environment's address-validation account, never its own (docs/adr/0065).
++    new AddressValidationStack(app, addressValidationStackName(environmentName), {
++      environmentName,
++      stackName: addressValidationStackName(environmentName),
++      description: `Therapy contract-payment platform (${environmentName}): the screening's address validation, in its own account`,
++    });
+   }
+   return app;
+ }
+diff --git a/infra/lib/constructs/account-security.ts b/infra/lib/constructs/account-security.ts
+index 8a519251..1f33f98c 100644
+--- a/infra/lib/constructs/account-security.ts
++++ b/infra/lib/constructs/account-security.ts
+@@ -12,7 +12,7 @@ import {
+ import { Construct } from 'constructs';
+ 
+ import type { EnvironmentName } from '../environments';
+-import { privateBucket } from './storage';
++import { accountTrail } from './account-trail';
+ 
+ /** GuardDuty findings at this severity or above reach the operator (4 is the start of Medium). */
+ export const FINDING_ALERT_SEVERITY = 4;
+@@ -36,8 +36,9 @@ export interface AccountSecurityProps {
+  * PRD 19, monitoring). Each environment is its own account, so each stack owns its trail and its
+  * detector.
+  *
+- * - CloudTrail: one multi-region trail with global service events and log file validation, log
+- *   files encrypted under the environment key in a private, TLS-only, versioned bucket.
++ * - CloudTrail: one multi-region trail of every management event, read and write, with global service
++ *   events and log file validation, log files encrypted under the environment key in a private, TLS-only,
++ *   versioned bucket (accountTrail).
+  * - GuardDuty: a detector with S3 data-event and RDS login-activity monitoring, and Malware
+  *   Protection for S3 on the documents bucket, which tags every new object with its scan result
+  *   (the application gates parsing on it, milestone 3). Findings of Medium severity or higher go to
+@@ -51,43 +52,11 @@ export class AccountSecurity extends Construct {
+ 
+   constructor(scope: Construct, id: string, props: AccountSecurityProps) {
+     super(scope, id);
+-    const stack = Stack.of(this);
+-    const trailName = `tp-${props.environmentName}-account`;
+-
+-    this.trailBucket = privateBucket(this, 'TrailBucket', props.key);
+-    const trailArn = `arn:${stack.partition}:cloudtrail:${stack.region}:${stack.account}:trail/${trailName}`;
+-    const cloudtrailPrincipal = new iam.ServicePrincipal('cloudtrail.amazonaws.com');
+-    props.key.addToResourcePolicy(
+-      new iam.PolicyStatement({
+-        sid: 'CloudTrailEncryptLogs',
+-        principals: [cloudtrailPrincipal],
+-        actions: ['kms:GenerateDataKey*'],
+-        resources: ['*'],
+-        conditions: {
+-          StringEquals: { 'aws:SourceArn': trailArn },
+-          StringLike: { 'kms:EncryptionContext:aws:cloudtrail:arn': `arn:${stack.partition}:cloudtrail:*:${stack.account}:trail/*` },
+-        },
+-      }),
+-    );
+-    props.key.addToResourcePolicy(
+-      new iam.PolicyStatement({
+-        sid: 'CloudTrailDescribeKey',
+-        principals: [cloudtrailPrincipal],
+-        actions: ['kms:DescribeKey'],
+-        resources: ['*'],
+-        conditions: { StringEquals: { 'aws:SourceArn': trailArn } },
+-      }),
+-    );
+-    this.trail = new cloudtrail.Trail(this, 'Trail', {
+-      trailName,
+-      bucket: this.trailBucket,
+-      encryptionKey: props.key,
+-      isMultiRegionTrail: true,
+-      includeGlobalServiceEvents: true,
+-      enableFileValidation: true,
+-      managementEvents: cloudtrail.ReadWriteType.ALL,
+-      sendToCloudWatchLogs: false,
+-    });
++    // Every management event, read and write. The screening's address validation, a read whose request names a
++    // prospect's address, runs in its own account (docs/adr/0065; AddressValidationStack), so this trail never holds it.
++    const { bucket, trail } = accountTrail(this, { trailName: `tp-${props.environmentName}-account`, key: props.key, managementEvents: cloudtrail.ReadWriteType.ALL });
++    this.trailBucket = bucket;
++    this.trail = trail;
+ 
+     this.detector = new guardduty.CfnDetector(this, 'Detector', {
+       enable: true,
+diff --git a/infra/lib/constructs/application-role.ts b/infra/lib/constructs/application-role.ts
+index a3c6ae95..97cf32ec 100644
+--- a/infra/lib/constructs/application-role.ts
++++ b/infra/lib/constructs/application-role.ts
+@@ -1,4 +1,4 @@
+-import { Stack, type aws_cognito as cognito, aws_iam as iam, type aws_kms as kms, type aws_s3 as s3 } from 'aws-cdk-lib';
++import { type CfnCondition, Stack, type aws_cognito as cognito, aws_iam as iam, type aws_kms as kms, type aws_s3 as s3 } from 'aws-cdk-lib';
+ import { Construct } from 'constructs';
+ 
+ import { bedrockModelArns, pinnedBedrockModels } from '../models';
+@@ -19,7 +19,11 @@ export const MODEL_INVOKE_ACTIONS = ['bedrock:InvokeModel'] as const;
+ /** The Textract calls intake's scan reader makes (packages/contracts/src/evidence/scan.ts: TextractPageReader). */
+ export const TEXTRACT_ACTIONS = ['textract:StartDocumentTextDetection', 'textract:GetDocumentTextDetection'] as const;
+ 
+-/** The SES call the screening's submit makes to check a prospect's address (apps/web/src/lib/screening/validation.ts; Q1 (g)). */
++/**
++ * The SES call the screening's submit makes to check a prospect's address (apps/web/src/lib/screening/validation.ts;
++ * Q1 (g)), only in the environment's address-validation account (AddressValidationStack; docs/adr/0065): this role is
++ * refused it here.
++ */
+ export const ADDRESS_VALIDATION_ACTIONS = ['ses:GetEmailAddressInsights'] as const;
+ 
+ export interface ApplicationRoleProps {
+@@ -29,6 +33,8 @@ export interface ApplicationRoleProps {
+   readonly userPool: cognito.IUserPool;
+   /** The digests' sender and stream (docs/adr/0065): MailFromAddress, its identity and the transactional set. */
+   readonly digestMail: { readonly mailFromAddress: string; readonly identityArn: string; readonly configurationSetArn: string };
++  /** The address-validation account's role (MailValidationRoleArn) and the condition true once it is set. */
++  readonly addressValidation: { readonly roleArn: string; readonly roleSet: CfnCondition };
+ }
+ 
+ /**
+@@ -54,9 +60,13 @@ export interface ApplicationRoleProps {
+  * - Digest email (PRD 5, J17; docs/adr/0039): the worker sends a practice's digests through SES
+  *   (SESv2 SendEmail) through MailFromAddress's identity and the transactional stream's set only, from
+  *   MailFromAddress alone (docs/adr/0065). A digest carries counts and a sign-in link, never a patient's data.
+- * - Address validation (Q1 (g); docs/adr/0065, D9): the screening's submit asks SES whether a prospect's address
+- *   can receive mail (GetEmailAddressInsights, $0.01 a call, under the web's daily cap). The action takes no
+- *   resource. The worker shares this role and never calls it.
++ * - Address validation (Q1 (g); docs/adr/0065, D9 and "Address validation in its own account"): the screening's
++ *   submit asks SES whether a prospect's address can receive mail (GetEmailAddressInsights, $0.01 a call, under the
++ *   web's daily cap) as the role MailValidationRoleArn names in the environment's address-validation account, which
++ *   this role may assume once the parameter is set (the policy AddressValidationRole, under its condition), so the
++ *   call and the address in it are recorded in that account and never in this one's trail. Here the call is refused
++ *   (`NoAddressValidationHere`), and so is assuming any role of this account (`NoRoleOfThisAccount`), so the
++ *   parameter cannot point the call back here. The worker shares this role and never calls either.
+  * - The user pool (docs/adr/0049): the three administrative calls the web app makes, on this
+  *   environment's pool only (USER_POOL_ADMIN_ACTIONS).
+  * - Models (PRD 14, Provider and data path; docs/adr/0048 and 0054): bedrock:InvokeModel, the one call
+@@ -119,10 +129,17 @@ export class ApplicationRole extends Construct {
+         conditions: { StringEquals: { 'ses:FromAddress': props.digestMail.mailFromAddress } },
+       }),
+       new iam.PolicyStatement({
+-        sid: 'ScreeningAddressValidation',
++        sid: 'NoAddressValidationHere',
++        effect: iam.Effect.DENY,
+         actions: [...ADDRESS_VALIDATION_ACTIONS],
+         resources: ['*'],
+       }),
++      new iam.PolicyStatement({
++        sid: 'NoRoleOfThisAccount',
++        effect: iam.Effect.DENY,
++        actions: ['sts:AssumeRole'],
++        resources: [`arn:${stack.partition}:iam::${stack.account}:role/*`],
++      }),
+       new iam.PolicyStatement({
+         sid: 'UserPoolAdministration',
+         actions: [...USER_POOL_ADMIN_ACTIONS],
+@@ -142,5 +159,18 @@ export class ApplicationRole extends Construct {
+     for (const statement of statements) {
+       this.role.addToPolicy(statement);
+     }
++
++    // Only once MailValidationRoleArn names a role: before, there is no role to name.
++    const validation = new iam.Policy(this, 'AddressValidationRole', {
++      roles: [this.role],
++      statements: [
++        new iam.PolicyStatement({
++          sid: 'AssumeAddressValidationRole',
++          actions: ['sts:AssumeRole'],
++          resources: [props.addressValidation.roleArn],
++        }),
++      ],
++    });
++    (validation.node.defaultChild as iam.CfnPolicy).cfnOptions.condition = props.addressValidation.roleSet;
+   }
+ }
+diff --git a/infra/lib/constructs/compute.ts b/infra/lib/constructs/compute.ts
+index f864a9f3..31cf119d 100644
+--- a/infra/lib/constructs/compute.ts
++++ b/infra/lib/constructs/compute.ts
+@@ -136,7 +136,8 @@ interface ContainerSpec {
+  * (`tp-<env>`); the screening consumer and the platform's probes send the screening's results from
+  * SCREENING_MAIL_FROM (results@screening.<domain>, Q12) with Reply-To the support address (SCREENING_REPLY_TO); the
+  * platform drains MAIL_EVENTS_QUEUE_URL and sends probes only once MAIL_IDENTITIES_VERIFIED is `true` (phase 2); the web
+- * validates a screening's address with SES (MAIL_VALIDATION=ses) at most MAIL_VALIDATION_DAILY_CAP times a UTC day.
++ * validates a screening's address with SES (MAIL_VALIDATION=ses) at most MAIL_VALIDATION_DAILY_CAP times a UTC day, as
++ * MAIL_VALIDATION_ROLE_ARN in the environment's address-validation account (docs/adr/0065).
+  *
+  * Secrets reach a container only from Secrets Manager (ECS reads them at start through each task's
+  * execution role); every other setting is plain configuration. The worker and platform tasks beat
+@@ -258,9 +259,12 @@ export class Compute extends Construct {
+         // Screenings priced at once across the consumer: more queued and pricing than this, and the "sent" page says
+         // it can take a few minutes (Q12).
+         SCREENING_SLOTS: String(screeningSlots(compute.screening)),
+-        // A screening's address is checked with SES at submit, at most this many times a UTC day (Q1 (g)).
++        // A screening's address is checked with SES at submit, at most this many times a UTC day (Q1 (g)), as the role
++        // the web assumes in the environment's address-validation account (`none` only while no release runs; the
++        // rule ReleaseNeedsAddressValidationRole), so the call is recorded there and never in this account's trail.
+         MAIL_VALIDATION: 'ses',
+         MAIL_VALIDATION_DAILY_CAP: String(MAIL_VALIDATION_DAILY_CAP[environmentName]),
++        MAIL_VALIDATION_ROLE_ARN: parameters.mailValidationRoleArn,
+       },
+       secrets: {
+         AUTH_COOKIE_SECRET: ecs.Secret.fromSecretsManager(this.cookieSecret),
+diff --git a/infra/lib/deploy-parameters.ts b/infra/lib/deploy-parameters.ts
+index d4fab1c8..25efbf8b 100644
+--- a/infra/lib/deploy-parameters.ts
++++ b/infra/lib/deploy-parameters.ts
+@@ -9,6 +9,9 @@ export const NO_IMAGE = 'none';
+ /** A DNS host name (lowercase labels), as CloudFormation's AllowedPattern reads it. */
+ const HOST_NAME = '^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$';
+ 
++/** An IAM role's ARN, as CloudFormation's AllowedPattern reads it (unanchored; each use anchors it). */
++export const ROLE_ARN_PATTERN = 'arn:aws[a-z-]*:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_/-]{1,512}';
++
+ /** The CloudFormation parameters each stack takes at deploy time, by name. */
+ export const PARAMETER_NAMES = {
+   appDomainName: 'AppDomainName',
+@@ -21,11 +24,21 @@ export const PARAMETER_NAMES = {
+   imageTag: 'ImageTag',
+   screeningConsumer: 'ScreeningConsumer',
+   mailIdentitiesVerified: 'MailIdentitiesVerified',
++  mailValidationRoleArn: 'MailValidationRoleArn',
+ } as const;
+ 
+ /** The condition true once MailIdentitiesVerified is `true` (D2's phase 2). */
+ export const MAIL_IDENTITIES_VERIFIED_CONDITION = 'MailIdentitiesReady';
+ 
++/** MailValidationRoleArn before the environment's address-validation account holds its stack. */
++export const NO_VALIDATION_ROLE = 'none';
++
++/** The condition true once MailValidationRoleArn names a role. */
++export const MAIL_VALIDATION_ROLE_CONDITION = 'MailValidationRoleSet';
++
++/** The rule that refuses a release before MailValidationRoleArn names a role (docs/adr/0065; review S3). */
++export const RELEASE_NEEDS_VALIDATION_ROLE_RULE = 'ReleaseNeedsAddressValidationRole';
++
+ /** The launch value before the screening opens in production: the web keeps it closed (decision 13). */
+ export const SCREENING_CLOSED = 'closed';
+ 
+@@ -73,6 +86,12 @@ export const SCREENING_CONSUMER_STATES = ['held', 'running'] as const;
+  *   user pool keeps Cognito's own sender and the platform sends no probe, so the screening stays closed. `true` in
+  *   phase 2, once both identities read verified with DKIM `SUCCESS`: Cognito sends through the transactional set and
+  *   the probes start.
++ * - MailValidationRoleArn (docs/adr/0065, "Address validation in its own account"; review S3): the role the web assumes
++ *   to validate a screening's address with SES, in the environment's address-validation account (the
++ *   `AddressValidationRoleArn` output of `tp-<env>-address-validation`, deployed there with this stack's
++ *   `ApplicationRoleArn` output), so the call, whose request names the address, is recorded in that account alone.
++ *   `none` (the default) until that stack exists; the rule ReleaseNeedsAddressValidationRole refuses a deploy whose
++ *   ImageTag names a release while it is `none`, since the web validates through no other path.
+  *
+  * The screening's sender (Q12) is not a parameter: it is results@screening.<MailFromAddress's domain>, so its identity
+  * is always a subdomain of the main one and never the same identity (CloudFormation's rules cannot split an address to
+@@ -107,6 +126,10 @@ export class DeployParameters extends Construct {
+   readonly screeningConsumer: string;
+   /** True once ImageTag names a release. */
+   readonly released: CfnCondition;
++  /** `none`, or the address-validation account's role the web assumes (MailValidationRoleArn). */
++  readonly mailValidationRoleArn: string;
++  /** True once MailValidationRoleArn names a role. */
++  readonly mailValidationRoleSet: CfnCondition;
+   private launchedCondition: CfnCondition | undefined;
+   private readonly parameterScope: Construct;
+ 
+@@ -194,6 +217,26 @@ export class DeployParameters extends Construct {
+     this.mailIdentitiesVerified.overrideLogicalId(MAIL_IDENTITIES_VERIFIED_CONDITION);
+     this.released = new CfnCondition(scope, 'Released', { expression: Fn.conditionNot(Fn.conditionEquals(this.imageTag, NO_IMAGE)) });
+     this.released.overrideLogicalId('Released');
++    this.mailValidationRoleArn = parameter(PARAMETER_NAMES.mailValidationRoleArn, {
++      type: 'String',
++      description: `The role the web assumes in the address-validation account to validate a screening address (tp-<env>-address-validation's AddressValidationRoleArn output); ${NO_VALIDATION_ROLE} until that stack exists, and no release runs before`,
++      default: NO_VALIDATION_ROLE,
++      allowedPattern: `^(${NO_VALIDATION_ROLE}|${ROLE_ARN_PATTERN})$`,
++      constraintDescription: `${NO_VALIDATION_ROLE}, or an IAM role ARN`,
++    });
++    const validationRoleSet = Fn.conditionNot(Fn.conditionEquals(this.mailValidationRoleArn, NO_VALIDATION_ROLE));
++    this.mailValidationRoleSet = new CfnCondition(scope, MAIL_VALIDATION_ROLE_CONDITION, { expression: validationRoleSet });
++    this.mailValidationRoleSet.overrideLogicalId(MAIL_VALIDATION_ROLE_CONDITION);
++    // CloudFormation refuses the deploy before any change: a released web validates only through that role.
++    const needsRole = new CfnRule(scope, RELEASE_NEEDS_VALIDATION_ROLE_RULE, {
++      assertions: [
++        {
++          assert: Fn.conditionOr(Fn.conditionEquals(this.imageTag, NO_IMAGE), validationRoleSet),
++          assertDescription: `A release runs the web, which validates a screening's address only in the environment's address-validation account (docs/adr/0065): deploy tp-<env>-address-validation there and pass ${PARAMETER_NAMES.mailValidationRoleArn}=<its AddressValidationRoleArn output>, or keep ImageTag=${NO_IMAGE}`,
++        },
++      ],
++    });
++    needsRole.overrideLogicalId(RELEASE_NEEDS_VALIDATION_ROLE_RULE);
+     if (launch !== SCREENING_CLOSED) {
+       // The value names the report of one tag: CloudFormation refuses the deploy before any change unless ImageTag is it.
+       const tag = launch.slice(0, launch.lastIndexOf(':'));
+diff --git a/infra/lib/platform-stack.ts b/infra/lib/platform-stack.ts
+index 3693ec41..831c619c 100644
+--- a/infra/lib/platform-stack.ts
++++ b/infra/lib/platform-stack.ts
+@@ -122,6 +122,7 @@ export class PlatformStack extends Stack {
+       packets: this.storage.packets,
+       userPool: this.identity.userPool,
+       digestMail: { mailFromAddress: parameters.mailFromAddress, identityArn: mail.mailIdentity.emailIdentityArn, configurationSetArn: configurationSetArns.transactional },
++      addressValidation: { roleArn: parameters.mailValidationRoleArn, roleSet: parameters.mailValidationRoleSet },
+     });
+     this.supportMail = new SupportMail(this, 'SupportMail', { environmentName, key, supportEmail: parameters.supportEmail });
+     this.operator = new OperatorRole(this, 'Operator', {
