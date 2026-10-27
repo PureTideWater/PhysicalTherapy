@@ -45,5 +45,21 @@ Marker route: touch <clone>/.claude/.allow-protected-edit, Edit migration, rm ma
   failed on the old parser (no NOTICE_UNDELIVERED). After: events.test 11/11, mail-events.db + mail.db 36/36. eslint clean.
   Note: mail.db.test 'pauses the screening alone on the account's signals' failed once in ~10 runs (not reproduced in
   the next 9 runs); watch it.
+- 1c8ccb2f M2 (db: global Suppressed -> bounced; account/config-set suppression stays suppressed; 'undetermined'
+  subtype kept). Marker route worked (no refusal). Failing first: 3 tests (mail.db counts, screening.db refusal list and
+  marks). After: mail.db + screening.db 93/93; events.test 11/11; tsc packages/db clean; eslint clean.
+- c1daa301 S2 (db: mail_recipient_canonical + canonicalMailbox() in @tp/db runtime; rate.ts uses it; spellings table in
+  packages/db/src/test-support/mailbox-spellings.ts). Failing first: screening.db S2 test (complaint to +tag spelling,
+  janedoe spelling accepted), mail.db agreement test (function missing). After: mail.db+screening.db 95/95;
+  routes.db (web) 49/49; mail-address.test + rate.test 6/6; tsc web+db clean; eslint clean.
+  NFKC chosen (superset of NFC; rate key already NFKC); ASCII-only trim/lower for TS/SQL exact agreement.
+- 9a99cedc S1 (db: screening_run_mail_refusal = budget then list; helpers screening_bounce_budget_spent,
+  screening_contact_refused; upload gate = pause only). Failing first: D2 test (listed+budgeted gave contact_undeliverable)
+  and grants test. After: screening.db + mail.db 95/95. ADR 0065 update deferred to one docs commit at the end.
+- e5dc7708 S4 (db definer screening_submit_mail_refusal(email, account, client) for tp_app: closed, paused, budget, list;
+  routes.ts calls it before the hint and address checks; clientSubject computed earlier). Failing first: routes.db SCR-21
+  tests (validations spent: 2 and 3 calls). After: screening.db + mail.db + routes.db 145/145 (70+25+49+...);
+  catalog/hardening/cross-tenant/access 1240/1240; tsc web clean; eslint clean.
+  Residual (proposal): a ZIP the DB refuses still spends one validation (not in the precheck to avoid copying 6b-2's rule).
 
 ## Checks

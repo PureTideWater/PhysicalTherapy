@@ -1,129 +1,263 @@
 # PaidWhole build: handoff and state
 
-This branch (`claude/build-ops`) holds the build's operating state. It has no history in common with the product, so it never merges into `claude/build-platform`. Every product decision also lives in the product repository: ADRs, `docs/product/reconciliation-001.md` (Approval) and `CLAUDE.md`. This file collects in one place what a fresh session needs to carry on. Last updated: 2026-10-22 16:40 UTC. Start with "Start here" below; the dated sections after it are the full record.
+This branch (`claude/build-ops`) holds the build's operating state. It has no history in common with the product, so it never merges into `claude/build-platform`. Every product decision also lives in the product repository: ADRs, `docs/product/reconciliation-001.md` (Approval) and `CLAUDE.md`. This file collects in one place what a fresh session needs to carry on. Last updated: 2026-10-27 ~02:00 UTC (Lane B folded in; the co-founder runs both lanes from Lane A's account). Start with "Start here" below; the dated sections after it are the full record.
 
-## Start here: state at 2026-10-25 10:00 UTC (both lanes folded in; PR 6b-4 reviewed)
-**Two lanes from 2026-10-24.** The founder's sessions are Lane A, and this file is Lane A's log. The co-founder's sessions, on his own Max 20x account, are Lane B. A person starting Lane B reads `COFOUNDER-START.md`; Lane B logs in `lanes/lane-b.md`. **`LANES.md` holds the rules both lanes follow, and every session reads it before starting a PR:** one schema PR at a time, in Lane A; claims; reserved ADR and test-matrix numbers; merging; who decides; per-account usage pacing. It also holds both queues and the claims. Lane A folds Lane B's log into the tracker.
+## Start here: state at 2026-10-27 ~02:00 UTC (Lane B folded in; the co-founder runs both lanes)
+**Two lanes since 2026-10-24; one orchestrator for both until Friday.** The founder's account is Lane A, and this file is Lane A's log. The co-founder's own account is Lane B, which logs in `lanes/lane-b.md`. **`LANES.md` holds the rules both lanes follow, and every session reads it before starting a PR:** one schema PR at a time, in Lane A; claims; reserved numbers; merging; who decides; usage. It also holds both queues, the claims and "Handed to Lane A".
+- **From 2026-10-27 the co-founder runs Lane A's account.** Lane B's account stopped on 2026-10-26 at ~97% of its weekly allowance and handed its work to Lane A (`lanes/lane-b-handoff-to-lane-a.md`). It resets Friday 2026-10-30 19:00 UTC.
+- **Until then, Lane A's orchestrator (session_01TrKDxeLbxVo7t7zwRXFzrg) runs both lanes' work:**
+  - Lane A's schema chain, serial, from this session: #42 first, then SS-01;
+  - Lane B's no-migration items in five parallel cloud sessions, each claimed and logged as a Lane B item (LANES.md Claims; `lanes/lane-b.md`, entry of 2026-10-27 ~01:40 UTC).
+- **From Friday,** both accounts run side by side as one team. Lane A keeps the schema chain and the founder-gated work; Lane B takes the no-migration queue. Sessions on different accounts cannot message each other, so they coordinate only through the repository: Claims, "Handed to Lane A", both logs and the status files. Pull before every edit.
+- **Before this account stops** (at its limit, or before Friday), Lane A writes a handoff for Lane B like `lanes/lane-b-handoff-to-lane-a.md`, so Lane B continues with no gap.
 
 **Shared branches.** Only two branches are shared state:
 - `claude/build-platform` is the product;
 - `claude/build-ops` is the handoff: this file, LANES.md, `lanes/`, designs, summaries, scripts and the tracker's source.
 
-A session branch, such as `claude/brave-cerf-4uldp9`, or a session's scratchpad, is never the handoff. Anything shared is pushed here, and anything product-side to its `co-001/*` branch, before a session ends.
+A session branch, or a session's scratchpad, is never the handoff. Anything shared is pushed here, and anything product-side to its `co-001/*` branch, before a session ends.
 
-Check of 2026-10-25 ~10:00 UTC:
-- Every local branch of this container matches its remote.
-- `claude/brave-cerf-4uldp9` exists only locally in the PhysicalTherapy clone, and is an ancestor of `main` with nothing of its own.
-- `/home/user/PTApplication` (another repository) is clean, with nothing unpushed.
-- 6b-4's build result and local smoke report were only in the scratchpad; they are now in `approval-summaries/pr6b4-build-result.json` and `approval-summaries/pr6b4-smoke1/`.
+**The machine and GitHub (2026-10-27 ~01:30 UTC):**
+- `tools/setup-container.sh` read ok at 01:26 UTC on every part but one: Playwright's pinned Chromium. The environment's network policy refused storage.googleapis.com, so the script could not lay out Chrome for Testing. The ci-browser session's machine hit the same refusal. CI's e2e was never affected.
+- **The person allowed storage.googleapis.com at ~02:00 UTC.** The host answers through the proxy (checked 02:03 UTC), and Chrome for Testing 141.0.7390.37 is now in the script's cache. The script's next run lays out Playwright's browsers for local e2e and screenshots; the five sessions re-run it at their 14:05 UTC check-ins.
+- `tools/setup-container.sh` on this branch now always installs the pnpm that `packageManager` pins, 10.34.8, in `/opt/pnpm-10.34.8`, linked at `/opt/pnpm-bin/pnpm` (the ci-browser session, 2026-10-27 ~01:45 UTC; ci-deps' merge asked for it). This machine was set up before that (no `/opt/pnpm-bin` at 02:05 UTC); after its next run, the shell line is `export PATH=/opt/node24/bin:/opt/pnpm-bin:/opt/py312-ci/bin:$PATH`.
+- The GitHub login is `PureTideWater`. `gh api` works through the proxy for the repository, pulls, commits, check runs and rulesets. The proxy refuses `actions/permissions`, `vulnerability-alerts` and `automated-security-fixes` (403).
 
-**Lane B, folded in 2026-10-25 ~10:00 UTC** (from `lanes/lane-b.md`; Lane B's own log has the detail):
-- **The CI series is four PRs** (`designs/lane-b-ci.md`; ADR 0066; CI-01 to CI-20; no migration):
-  - ci-speed (#109) is **draft PR [#43](https://github.com/PureTideWater/PhysicalTherapy/pull/43)**: green, CI in 7:26 (29 to 41 min before), reviewed (0 blocking, 4 should_fix, 11 nits), and in its fix round (wf_074459f2-b14).
-  - ci-mutation (#54) is being built (wf_62c3df65-d76, resumed after an auto-mode interruption).
-  - ci-deps (#112, #19's asserts, Dependabot #40, #38 and #33) and ci-browser (#19's upgrade) come next.
-- **PR 15** (LED-12 and LED-13) is designed, with its tests written and pre-validated for L1 (a). Its build takes Lane B's next free heavy slot.
-- **The required checks after ci-speed** are `all green`, `mutation`, `screening-capacity gate` and `approval-of-record`. The ruleset (F7) uses these names.
-- **Lane B's queue** now also holds the no-migration items moved from Lane A's (LANES.md, items 3 to 19).
-- **The co-founder's usage:** 14% at 2026-10-25 ~07:45 UTC; his reset is Friday 2026-10-30.
-
-**Repository settings, and when to click each** (the owner-admin settings stay yours; Lane B gives the exact steps at each moment):
-- **F7, the `claude/build-platform` ruleset:** requires `all green`, `mutation`, `screening-capacity gate` and `approval-of-record`; requires a PR, no force push, up to date. Apply it **after ci-speed's (#43) first green push run on `claude/build-platform`**, that is, once #43 has merged and the run on the merge commit is green.
-- **F1, the default branch becomes `claude/build-platform`** (back to `main` at the launch merge), **together with F2 (a), Dependabot alerts and security updates. Apply both when ci-deps merges**, not earlier: switching earlier starts today's weekly `mutation.yml` and `large-zip.yml` schedules before ci-speed and ci-mutation fix them.
-- **F3, require actions pinned to a full-length commit SHA** (Settings, then Actions): **after ci-deps merges** (F4 holds).
+**Repository settings:**
+- **F7 applied** (2026-10-25 ~21:15 UTC): the ruleset "Protect the build branch" (id 25837331, active) requires `all green`, `mutation`, `screening-capacity gate` and `approval-of-record`, up to date, through a PR, with no bypass.
+- **F1 (a) done:** the default branch reads `claude/build-platform` (back to `main` at the launch merge). Scheduled workflows now fire from it, so #49's weekly release-capacity run fails until SUITE-CAP-1 is fixed. Its first scheduled run is today, Tuesday 2026-10-27 at 03:29 UTC (cron `29 3 * * 2`). That failure is the known defect.
+- **F2 (a) and F3 applied by the person** (reported ~01:50 UTC; steps in `designs/lane-b-settings-after-ci-deps.md`). Dependabot security updates read enabled. The proxy refuses the alerts and Actions-permissions endpoints, so F2's alerts and F3 rest on the person's word. F3 is proved by the next workflow run that starts: every action is pinned since #48, and an unpinned one would fail to start.
+- **Dependabot's first runs** from the default branch: Tuesday 2026-10-27 04:37 UTC (actions), Wednesday 04:43 (images), Thursday 04:31 (npm). The ci-browser session reads them.
 
 **Merged into `claude/build-platform`, all on green CI:**
-- #24: CI pinned to ubuntu-24.04.
-- #25: governance; ADR 0063, hooks and pre-push.
-- #30: PR 5, deadlines and the payer's copy, d152976. Domain model 6f72ea56, approved.
-- #32: the images fix, 5df4108.
-- #31: PR 6, the free screening with audits #53 and #57 and the campaign list, 2ec3449. Domain model a17f33aa, approved by the founder in a66f148.
-- #34: PR 5b, the plan type in words, squash-merged as 8e33cb3 (the squash settled efac005's malformed subject; no force push).
-- #35: PR 6b-1, ZIP+4 in the engine under the freeze exception, 510a26d (merge commit). No migration.
-- #36: PR 6b-2, the pricing location and ZIP+4 in the product, a33b0fd (merge commit). Domain model 5614d0b0, approved by the founder in f4320d9.
-- #39: PR 6b-3, the screening's own consumer and the time check, 49514e8 (merge commit). Domain model 6d7a143d, approved by the founder in 54ec890.
+- **Lane A, to 2026-10-23:**
+  - #24: CI pinned to ubuntu-24.04.
+  - #25: governance; ADR 0063, hooks and pre-push.
+  - #30: PR 5, deadlines and the payer's copy, d152976. Domain model 6f72ea56, approved.
+  - #32: the images fix, 5df4108.
+  - #31: PR 6, the free screening, 2ec3449. Domain model a17f33aa, approved by the founder in a66f148.
+  - #34: PR 5b, the plan type in words, squash-merged as 8e33cb3.
+  - #35: PR 6b-1, ZIP+4 in the engine under the freeze exception, 510a26d. No migration.
+  - #36: PR 6b-2, the pricing location and ZIP+4 in the product, a33b0fd. Domain model 5614d0b0, approved by the founder in f4320d9.
+  - #39: PR 6b-3, the screening's own consumer and the time check, 49514e8. Domain model 6d7a143d, approved by the founder in 54ec890.
+- **Lane B, 2026-10-25 to 2026-10-26:** 14 PRs, each a merge commit after its fresh-clone verification, every required check green on its head (times from `git log`):
 
-`claude/build-platform` head: **49514e8**.
+  | PR | Item | Merge commit | Merged (UTC) |
+  | --- | --- | --- | --- |
+  | #43 | ci-speed (CI 1 of 4; ADR 0066): parallel jobs behind one `all green` gate | 9c57d2d | 2026-10-25 14:16 |
+  | #44 | ci-mutation (CI 4 of 4): every money package mutation-tested, gated above 85% | de8f9b5 | 2026-10-25 18:50 |
+  | #45 | PR 15, ledger tests LED-12 and LED-13 (the founder's L1 (a)) | 6ddd587 | 2026-10-25 20:04 |
+  | #47 | #135, the bank account shown first (ADR 0073, BIL-01 to BIL-04) | c5195ee | 2026-10-26 03:56 |
+  | #46 | #111, readable database-function diffs, `packages/db/functions/*.sql` (ADR 0068, DBF-01 to DBF-05) | 4d99df8 | 2026-10-26 04:37 |
+  | #54 | materiality settings showed stored cents as dollars, a money bug (CAS-38, CAS-39) | 7ef421b | 2026-10-26 08:56 |
+  | #53 | #84, the model evaluation gate (ADR 0070 Parts 1 and 2, MOD-07 to MOD-11) | 88a0e4e | 2026-10-26 09:50 |
+  | #55 | the UX and brand reviewer checklist, `.claude/agents/ux-brand-reviewer.md` | 6070e41 | 2026-10-26 10:30 |
+  | #50 | #10, a superseded re-run cannot be accepted (amends ADR 0037; PRC-25 to PRC-28) | 9d3ab33 | 2026-10-26 11:06 |
+  | #52 | #38, every figure explained in words (ADR 0072, CAS-30 to CAS-34) | 3486f75 | 2026-10-26 11:41 |
+  | #56 | UX PR 2, a suspended organization never reads "In good standing" (UX-004; BIL-05, BIL-06) | 0e28f9b | 2026-10-26 12:11 |
+  | #51 | PR 15b (#12), ledger amounts in payment terms (ADR 0067, LED-14 to LED-18) | c355633 | 2026-10-26 12:41 |
+  | #49 | the release content checks (#7, #30, #31, #59; ADR 0071, RCC-01 to RCC-08) | d725977 | 2026-10-26 14:25 |
+  | #48 | ci-deps (CI 2 of 4; ADR 0066): every action and image pinned, Dependabot's groups, cooldowns and trust rules | e908c21 | 2026-10-26 21:06 |
 
-`main` holds #27 (Dependabot grouping and the PR template) on top of the plan documents.
+`claude/build-platform` head: **e908c21**. Its push runs are green (ci, mutation, screening-capacity, content-calendar, release-dry-run). Counts on #48's head 7b6b10b: unit 6,265 and 1 skipped; db 9,222 and 1 skipped; e2e 54.
 
-**Open (Lane A): PR 6b-4, draft [#42](https://github.com/PureTideWater/PhysicalTherapy/pull/42) (`co-001/pr-06b-mail-streams`, head 13f59b1), subscribed.**
-- **Done:** built by wf_886baacd-e56 (2.39M subagent tokens) and reviewed by wf_6a552017-113 (0.88M). One blocking and seven should_fix findings, plus nits and wording; the full list is in `approval-summaries/pr6b4-review-findings.md`.
-- **CI on 13f59b1:** green but the expected approval case.
-- **Next:** the fix round, after the Tuesday 2026-10-27 14:00 UTC reset or on the founder's word (reminder trig_01LGMZT6vtRSH1Cfsy89GHCr at 14:05). Then CI, the fresh-clone verification, the approval line as a suggested change, the founder's commit, and the merge.
-- **Founder decision pending:** S3. CloudTrail likely keeps every address SES validates. Recommended: a dedicated validation account whose trail records writes only, verified on staging.
-- **Where:** worktree `/home/user/pr6b4`; databases tp_pr6b4_*; PG18 on 5433 (socket /tmp). The domain model's SHA-256 is 07c4a8ee… (approval line 7327), and it changes if the fix round changes the schema.
+`main` holds #27 (Dependabot grouping and the PR template) on top of the plan documents. No PR into `main` and no release tag before launch.
 
-**Also open:** three Dependabot PRs into `claude/build-platform`: #40 (GitHub Actions; replaced #37), #38 (npm minor and patch, 10 updates; replaced #26) and #33 (Docker base images). Never merge one as it stands. The CI PR, Lane B's first item, checks their versions like any change.
+**Open (Lane A): PR 6b-4, draft [#42](https://github.com/PureTideWater/PhysicalTherapy/pull/42) (`co-001/pr-06b-mail-streams`), subscribed. Its fix round is running as wf_ba2333bd-714.**
+- **The base merged in:** 098636e (parents 13f59b1 and e908c21), pushed ~01:45 UTC.
+  - Three conflicts: `consumer.db.test.ts` (the base moved its helpers to `test-support/consumer.ts`; the PR's mail settings now sit there once), ADR 0062 (both amendments kept) and reconciliation-001 (both lanes' blocks, in date order).
+  - Regenerated, never hand-merged: the lockfile (only the PR's own 33 lines differ from the base), `watched-paths.txt` (no change) and `pnpm db:domain-model --out`, which now also writes `packages/db/functions` (369 files: 35 added, 7 changed, 3 removed).
+  - The domain model's SHA-256 is unchanged at 07c4a8ee…. The fix round changes the migration, so it will change.
+  - Quick checks passed: typecheck, eslint on 119 files, 1,354 unit tests, `db:domain-model --check`, the consumer db tests, `toolchain:check`.
+- **CI on 098636e** (run 40434505373), read at 02:05 UTC with `capacity` and one mutation shard still running. Every finished job is green but three:
+  - `domain model`: red, the expected approval case;
+  - `unit`: red on one test, `apps/worker/src/web-entries.test.ts:77`, #42's guard that the worker modules the web bundles reach `@tp/db` only through `@tp/db/runtime`. It lists 13 modules under `runtime.ts`. A seam of the base merge: #43 moved the route tests' helpers to `apps/web/src/lib/routes/route-tests/`, outside `test-support/`, so the guard now walks from `route-tests/world.ts` through `../test-support/*-world.ts` into `@tp/worker/runtime`. The merge's quick checks ran only part of unit. The integrator fixes it in this round;
+  - `all green`: red with them.
+- **Three builders,** each in its own clone, then one integrator. At 02:05 UTC database and infrastructure were running; harness next:
+  - database and jobs: S1, S2, S4, S6, M1 (blocking), M2, M6 to M9;
+  - infrastructure: S3, S5, M3, M10, M11;
+  - harness, e2e and wording: M4, M5, the screening journey's e2e timing flake and the capacity harness race in `tools/screening-capacity/run.ts` (both handed to Lane A);
+  - the integrator brings them in, reads CI, regenerates, runs the full local suite once, pushes once and updates the description.
+- **S3 is decided, no longer the founder's question:** under the co-founder's direction of 2026-10-27 (take the recommended option; for security, the safer), validated addresses are kept out of the account trail's indefinite record. The builder states the residual in ADR 0065 and the deliverability runbook.
+  - **The infrastructure builder's choice** (its progress file, 02:02 UTC; the integrator may still refine it): a dedicated mail-validation AWS account per environment (stack `tp-<env>-mail-validation`). Its role may only call `ses:GetEmailAddressInsights`, and its trail records writes only. The web role assumes that role and loses the call itself. A released deploy refuses to run without it.
+  - **The residual:** that account's 90 days of event history, which CloudTrail keeps whatever the trails do.
+  - **Sources:** AWS's API models and SDKs, because the proxy refuses docs.aws.amazon.com.
+- **Next:**
+  1. the fresh-clone verification that reads CI;
+  2. the approval line as a suggested change in one PR comment (`gh api repos/PureTideWater/PhysicalTherapy/pulls/42/comments`);
+  3. the founder commits that suggestion on GitHub, as on #39 (54ec890), so it becomes #42's latest commit;
+  4. CI green on that commit;
+  5. the merge (rule 6; ready; wait for `approval-of-record`; `merge_pull_request` with `expectedHeadSha`).
+- **Why a commit and not a review:** an APPROVED review becomes the approval of record only after runbook 3i and `APPROVAL_REVIEW_REQUIRED` (ADR 0063); `approval-of-record` passes until then. Today `PureTideWater` is both the founder's account and the one that opens the PRs (#42 included), and GitHub does not let a PR's author approve it.
+- **Where:** worktree `/home/user/pr6b4`; the builders' clones `pr42/build-*` and the progress files `progress/pr42-*.md` in this session's scratchpad. The review findings: `approval-summaries/pr6b4-review-findings.md`.
+
+**Lane A's schema chain after #42** (claimed 2026-10-27; each a schema PR, opened only after the one before merges):
+- **Designs running in wf_5f09e0bd-311** (script `workflow-scripts/lane-a-lane-a-schema-designs-wf_5f09e0bd-311.js`), each with two scouts (database and application), an author, one adversarial reviewer and a revision. At 02:05 UTC SS-01's scouts had finished and SUITE-CAP-1's were running; no design file is written yet.
+  - **SS-01, blocking** (`co-001/ss-01-suspension-refusal`; ADR 0080, BIL-07 to BIL-10): a suspended firm's granted practices still run. #56 fixed only the words.
+    - With it: the stored suspension reason and the console's form, the database refusal's words, and SS-08 (#42's dunning mail says runs restarted during PaidWhole's suspension).
+    - If wanted: a way to reopen a closed organization (none exists, so #56 promises none).
+    - The database scout reproduced it: with the firm suspended or closed, `practice_run_refusal` returns null for a practice it reaches by grant, and a digest and an upload for that practice succeed. It also found that a firm can be suspended for nonpayment today, so #56's note that this cannot happen before milestone 12 is untrue at the database.
+    - Design: `designs/ss-01-suspension.md` (being written).
+  - **SUITE-CAP-1** (`co-001/suite-cap-1-triage-locks`; ADR 0083, CAS-40 to CAS-42): triage at a 100,000-line month fails with "out of shared memory", one advisory lock per line in `line_status_rules()`.
+    - The database scout reproduced it locally: one 16,000-line insert fails, and while one practice's transaction holds 14,000 locks, another practice's 1,000-line insert fails too.
+    - Design: `designs/suite-cap-1-triage-locks.md` (being written).
+  - **Interest credited twice** (`co-001/ledger-interest-once`; ADR 0084, LED-23 to LED-25): AMT I and PLB L6 both credited (from 15b). Its build waits for the founder's ledger freeze exception. Design: `designs/ledger-interest-once.md` (being written).
+- **Then the rest of LANES.md "Handed to Lane A"**, most severe first:
+  - #32's stored notice and email;
+  - #54's two `settings.ts` steps (no migration; a #42 file);
+  - #38's four proposals;
+  - 15b's other ledger items (N1, the `ledger_match` sequence, the `superseded_by_claim_id` index) and its stored case close;
+  - #84 and #120's F3 and F4;
+  - #59's coverage function;
+  - #49's advisory: the per-content windows query takes 10 to 13 s cold at real size against a 5 s budget (the stored-windows proposal, with #8 in release-operations' load path);
+  - the UX review's 19 items (`designs/lane-b-ux-review.md` §5).
+- **Then Lane A's queue** in LANES.md "Queues": 6c (with the four frozen-engine defects from #44's review), 6d and onward.
+
+**Lane B's work, run by Lane A's orchestrator** in five parallel sessions, started 01:39 to 01:40 UTC with the repository as their source. Each follows `lanes/lane-b-session-brief.md` and keeps its status file in `approval-summaries/`; only the orchestrator edits LANES.md and `lanes/lane-b.md`. All five read running at 01:45 UTC. **They hold after their current stage until the 14:00 UTC reset** (below, "Weekly usage").
+
+| Item, then its follow-on | Session | Branch | Status file |
+|---|---|---|---|
+| #120 contract PHI check: base merged (862c9dc8, local), integrator running (wf_cedc1f41-ac5), let finish; then #32 unmapped plan | session_017SNqG4nQbbt6xqEG1ZDKe6 | `co-001/contract-phi-check` (d7447ad on GitHub), then `co-001/unmapped-plan` | `lane-b-model-eval-gate-status.md`, then `lane-b-unmapped-plan-status.md` |
+| ci-browser (CI 3 of 4): base merged (2ab2b15, pushed), design re-read running (wf_4b7cdc69-267), then phase 2; then P1, P2, P4; Dependabot's first runs | session_01UzQ6wgZgtThBRBxXTFYhRB | `co-001/ci-browser`, then `co-001/ci-pin-age`, `co-001/ci-trivy-version`, `co-001/ci-mutation-trigger` | `lane-b-ci-deps-status.md` |
+| UX PR 1 ux-forms: base merged (9f9757e, then 2982890, pushed), build 2b running (wf_7d776c57-f07), let finish; then UX PRs 6 and 7 (sign-in) | session_01TAgFZo3SGSTBEfKRjX1jeG | `co-001/ux-forms`, then `co-001/ux-sign-in-time`, `co-001/ux-sign-in-recovery` | `lane-b-ux-forms-status.md`, then `lane-b-ux-sign-in-time-status.md`, `lane-b-ux-sign-in-recovery-status.md` |
+| UX PR 3 table scroll: design running (wf_76fa3626-8c5); then UX PR 4 screening result on a phone | session_019VghcxKzP9LAj3WK8k6u1D | `co-001/ux-table-scroll`, then `co-001/ux-screening-result-tables` | `lane-b-ux-table-scroll-status.md`, then `lane-b-ux-screening-result-tables-status.md` |
+| UX PR 5 download refusals: design written (`designs/lane-b-ux-download-refusals.md`, 01:55 UTC), its review running (wf_a85eb619-cf6), let finish; then UX PR 9 home figures | session_01L3tN5LCq2aNYetEQBNJYZg | `co-001/ux-download-refusals`, then `co-001/ux-home-figures` | `lane-b-ux-download-refusals-status.md`, then `lane-b-ux-home-figures-status.md` |
+
+- **Check-ins at 14:05 UTC**, one per session, each resuming from its status file: trig_01PqXoVpjkq7fjs88tiff7Do (#120), trig_01GrMo81PeKyvGDWj3GRrUYp (ci-browser; it re-runs the setup script for the browsers), trig_01KiYG9d8Ghh5mDSXj3MUH8V (ux-forms), trig_014JmG4RLDV8nbmCHPYPkTCM (ux-table-scroll), trig_01AFxeLNofoPZ4Ht55SeePSi (ux-download-refusals). A workflow stopped by a limit resumes only in its own session.
+- A first set of five (01:37 to 01:38 UTC) started without the repository as their source, so with no clone and no GitHub tools. They were stopped and archived within a minute; nothing was pushed.
+- **Lane B's other work** (`lanes/lane-b.md` "Start here"):
+  - **Designed and reviewed, not built:** #32 (`designs/lane-b-unmapped-plan.md`, ADR 0075; next in #120's session); #48's narrative draft (`designs/lane-b-narrative-draft.md`, ADR 0076, CAS-35 to CAS-37); the CI follow-ups P1, P2 and P4 (`designs/lane-b-ci/follow-up-p*.md`, CI-21 to CI-29; next in ci-browser's session).
+  - **Queued, not designed:** #46, the Verified seal (ADR 0074, LED-19 to LED-22); #135's micro-deposit proposal; P5, one catalog line (after #42 and ci-browser); #111's proposal I2, CI renders the function-diff summary from the base ref (its own PR).
+  - **After #42 merges:** #49's later PR in #42's files (`approval-summaries/lane-b-release-content-checks-status.md`, "Later PR, for after #42 merges": the heap flags, the content alarms, and the daily `content_due` job, which needs Lane A's `operator_content_coverage()` migration first); LANES.md's items that touch #42's files (8, 15, 16 and 17).
+  - **Then** LANES.md's Lane B queue from its first open item, with its "Not while #42 is open" list.
+- **The UX/UI and brand baseline review: done** (`designs/lane-b-ux-review.md`).
+  - 857 screenshots of every reachable screen and state, at 1280 and 390 px, light and dark; eleven reviewers; 208 verified problems (16 blocking, 121 should fix, 71 polish).
+  - **Its queue:** 91 PRs in landing order (§3; as data, `designs/lane-b-ux-review/synthesis/prs.json`). PR 2 merged (#56). PRs 1, 3 and 5 are running; 4, 6, 7 and 9 follow in the same sessions; then the rest from PR 8, in landing order. A PR marked "after #42" waits for #42; a migration part is Lane A's.
+  - **To Lane A:** 19 items (§5). **To the founder:** 5 questions (§6.2, below).
+  - The galleries are private to the co-founder's claude.ai account (links in `lanes/lane-b.md`).
+- **Every PR that changes what a person sees,** in either lane, takes the UX and brand review (#55's checklist) as one of its two adversarial reviews, with before and after shots at 1280 and 390 px (LANES.md rule 1; `tools/lane-b-screen-tour/README.md`, "From another lane"). Lane A's own shots wait on the network block above.
+- **Proposals:** each status file ends with the improvements its session found but did not build ("improve as you go").
+
+**Dependabot:** only #33 is open: the base images to `node:26-trixie-slim`, rebased 2026-10-26 21:08 UTC (head 5fab269). Why (`approval-summaries/lane-b-ci-deps-status.md`, 2026-10-27 01:45 UTC): it was a recreate job of the old PR, run under the config #33 was opened with (group `base-images`, no ignore), not ci-deps' entry. ci-deps' node-major ignore is sound, so no PR is needed. Under today's config there is no `base-images` group, so Dependabot's refresh should close #33 at the images run, Wednesday 04:43 UTC; if it is still open on node 26 after that, it is recorded again. #40 closed at 21:10 (superseded by ci-deps' pins) and #38 on 2026-10-25 at 18:57 UTC. Never merge one as it stands.
+
+**Shared counters** (LANES.md rule 4), allocated by Lane A's orchestrator for both lanes until Friday and recorded in each claim row. Next free: **ADR 0085**, **`packages/synth` module 21**, **fixture release 900008**.
+- Reserved on 2026-10-27: ADR 0078 (TBL), 0079 (DLR), 0080 (SS-01), 0081 (SGN), 0082 (HOM), 0083 (SUITE-CAP-1), 0084 (the interest fix); modules 17 TBL, 18 DLR, 19 SGN, 20 HOM.
+- ADR 0069 was never used (#10 amended ADR 0037 instead); numbers go on from 0085. The highest ADR on `claude/build-platform` is 0073; 0074 to 0077 are Lane B's earlier reservations (the seal, #32, the narrative draft, ux-forms).
+- Test-matrix IDs have two digits (`[A-Z]{2,3}-\d{2}`): MOD-07, not MOD-7.
+
+**Rulings and conventions since 2026-10-24** (each in `lanes/lane-b.md` "Rulings", with who and when):
+- **The founder:** F1 to F7 as recommended (relayed 2026-10-25 ~01:10 UTC); L1 (a) (~02:05 UTC); the delegation of Lane B's decisions to the co-founder (1f35d71); Lane A's screen-changing PRs take the same UX and brand review (relayed 2026-10-25 ~21:10 UTC; now LANES.md rule 1).
+- **The co-founder, on Lane B's work:** take the recommended option without asking (security: the safer); apply wording and visible changes without asking; "improve as you go"; Q2 (rule 6: the PR merged second keeps both lanes' changes and regenerates generated files); Q3; Q4. His budget for Lane B was 98%.
+- **The co-founder, 2026-10-27 (this session's start message):** everything that is not the founder's, Lane B's work included, takes the recommended option (security: the safer), recorded with why, without asking.
+- **The founder's, always** (the co-founder relays): approving `docs/product/domain-model.md`, so every schema PR's merge; release tags; owner-admin settings; legal text; freeze exceptions; reversing a founder ruling.
+
+**What cost Lane B time, so it does not cost Lane A's** (`lanes/lane-b.md` "How Lane B runs" has each one in full):
+- **The account's 5-hour limit** stopped every session twice on 2026-10-26 (~02:20 to 03:40 and ~06:15 to 08:40 UTC). Every workflow agent keeps a progress file it continues from (the SAVE rule). Resume with `resumeFromRunId`. Keep a scheduled check just after each reset.
+- **An interrupt of the main session** (the stop button, or a message sent while a reply runs) stops its background workflow agents too. A monitor that alarms after 10 quiet minutes catches it. After any interrupt, read the running workflows' journals and resume the stopped ones.
+- **After a container restart,** PostgreSQL 18 on 5433 keeps a stale pid. Re-run `tools/setup-container.sh` with the open branches, then resume each stopped workflow.
+- **gitleaks** reads bare screenshot ids such as `support-access.1280` as keys, so write them in backticks. Never add a `.gitleaksignore` entry. A refused push of unpushed commits: `git reset --soft origin/<branch>`, remove the flagged text, commit again.
+- **Merging:** marking a PR ready re-runs `approval-of-record`. Wait for it before `merge_pull_request` with `expectedHeadSha`.
+- **Times:** take every recorded time from `date -u`.
+- **Counting tests:** from CI's run totals or a full local run, never from `vitest list`, which lists a parametric test once.
+- **PR descriptions:** only with the MCP `update_pull_request`, then read back. A `gh api` PATCH rewrote #43's footer.
+- **CI:** read logs with `get_job_logs`; the proxy refuses artifact downloads. A new push cancels the PR run in progress, so push once per round.
+- **Node and load:** `export PATH=/opt/node24/bin:/opt/pnpm-bin:/opt/py312-ci/bin:$PATH` in every command (the shell's default is 22; `/opt/pnpm-bin` exists once the setup script has run since 2026-10-27 ~01:45 UTC). One heavy command at a time under `flock`; at most two heavy workflows at once.
+- **Money code:** no non-test change under `packages/pricing` outside a freeze exception; the ledger takes additions only; a new pricing or ledger source file needs its shard in `stryker/shards.json`. A mutation survivor is killed with a test, or recorded as equivalent only when no input tells it apart, by a reviewer who is not its proposer.
+- **The full local suite** runs once, in the fix round: unit; golden; oracle; test:db in shards one after another; build, stamp, then e2e with `E2E_PREBUILT=1`; the mutation shards the change affects, then the gate.
+- **Waiting:** the Bash tool blocks a foreground `sleep`. Use `run_in_background` or Monitor with an until-loop; a PR's events arrive through `subscribe_pr_activity`. If auto mode becomes unavailable, workflow agents stop mid-run: wait for the person, then resume the same way.
+- **Improve as you go** (the co-founder's standing direction): an improvement in files the PR already changes goes in that PR; a larger one becomes its own queued PR; one that needs a migration or touches frozen code goes to Lane A. Never skip a stage or stop a running workflow for it.
 
 **Housekeeping:**
-- No other workflow is mid-run.
 - Worktrees: `/home/user/ops` and `/home/user/pr6b4`.
+- Running workflows in this session: wf_ba2333bd-714 (#42's fix round) and wf_5f09e0bd-311 (the three designs); their scripts and this fold's (wf_83d455b5-98c) are in `workflow-scripts/lane-a-*`. Each of the five sessions runs its own (the table above).
+- Lane A's own check-in after the weekly reset: trig_01XqKZsF9KvqAG7S6pBGUmoi, 14:05 UTC today.
+- **Before 14:05 UTC, the orchestrator deletes trig_01LGMZT6vtRSH1Cfsy89GHCr** ("Weekly reset: PR 6b-4 fix round", made 2026-10-23). It is still enabled and fires at 14:05 UTC into the old Lane A session (session_01MXvjcgRoTSrfU3V7a5MShH, idle, not archived), telling it to run #42's fix round: a second fix round on the same branch.
 - Scratch databases need no cleanup: a new container starts with empty clusters.
 - The archived run script `co-001-pr5-qualifiers-and-image-fix-wf_ac693abe-059.js` is the only one not on this branch: gitleaks read a document hash in it as a key, and the push was not forced.
+- Leftover branches of merged PRs stay on GitHub (no session deletes a branch).
 
-**Next, in order** (reconciliation-001 "Proposed pull requests, in order"; the combined audit `audits/combined/combined-report.md` maps each upgrade to its PR):
-1. **PR 6b, the rest** (split into four in `designs/pr6b-plan.md`; costs and the 13 questions ruled 2026-10-21 ~22:30 UTC; 6b-1, 6b-2 and 6b-3 merged; only 6b-4 left):
-   - **6b-3** `co-001/pr-06b-screening-consumer` (MERGED 2026-10-23 as 49514e8; see the dated sections for what changed from this plan: the web at 0.5 vCPU, time advisory on PRs and binding on a release, the attested launch report): the screening's own consumer (a fourth Fargate service, 2 vCPU/4 GiB, three worker threads; role tp_screening and its login; queue share and daily cap; wait states; metrics and alarms) and the 60-second time check switched on (the harness runs the consumer with time enforced at 48 s; decisions 13 to 16; ADR 0062). Migration `20261106090000_screening_consumer.sql`, so the founder's approval. Design: `designs/pr6b-plan.md` (6b-3 sections) and `designs/pr6b-consumer-time.md`. It carries the harness's cgroup-v1 affinity fix (exec services under taskset); the queue-order fix is already merged with 6b-2 (7c7b078). Its first CI capacity run is the measurement of record; above 44 s goes to the founder before merge.
-   - **6b-4** `co-001/pr-06b-mail-streams`: three SES configuration sets, events through EventBridge/SQS to a mail_events job, mail_send, the screening stream's cut-off, outbox for notices, 15 alarms, ADR 0065, the deliverability runbook. Migration `20261107090000_mail_streams.sql`, so the founder's approval. Design: `designs/pr6b-email-streams.md`.
-   - Both are serial: each migration rewrites `submit_screening` and the domain model. Worktrees `/home/user/pr6b3`, then `/home/user/pr6b4`.
-2. **PR 6c:** the audit's engine corrections, under one freeze exception (ADR 0061 notes on remittance_date).
-3. **PR 6d:** denials in the paid audit's triage (audit item 1).
-4. **PR 6e:** consent capture, the withdrawal page (screening_lead_withdraw) and reminders.
-5. **PR 7:** milestone 6 exit, with the red team, gates and scorecard. It also carries the console funnel, the lead list, the campaign screen (console_register_marketing_campaign) and campaign reports with a minimum cohort of 11. Its read functions make it a schema PR.
-6. **PRs 8 to 17** as listed in reconciliation-001. Schema PRs needing approval: 8, 14 and 17, plus any other that adds a migration.
-7. **The audit PRs, then milestone 12, milestone 13 and the final pass** (runbooks, whole-plan audit, 390 px screens, mono figures, e2e journeys, the Dependabot PRs, settings.json last).
+**Next, in order** (reconciliation-001 "Proposed pull requests, in order"; the combined audit `audits/combined/combined-report.md` maps each upgrade to its PR; LANES.md "Queues" splits them by lane):
+1. **#42 (PR 6b-4)** to its merge, with the founder's approval.
+2. **SS-01**, then SUITE-CAP-1, then the interest fix (after the founder's freeze exception), then the rest of "Handed to Lane A".
+3. **PR 6c:** the audit's engine corrections, under one freeze exception (ADR 0061 notes on remittance_date), with #44's four engine defects.
+4. **PR 6d:** denials in the paid audit's triage (audit item 1).
+5. **PR 6e:** consent capture, the withdrawal page (screening_lead_withdraw) and reminders.
+6. **PR 7:** milestone 6 exit, with the red team, gates and scorecard. It also carries the console funnel, the lead list, the campaign screen (console_register_marketing_campaign) and campaign reports with a minimum cohort of 11. Its read functions make it a schema PR. When its generated WCAG 2.2 check lands, keep one list of the manual WCAG 2.2 checks (the UX checklist's Accessibility bullet or PR 7's, the other pointing to it), and add tagged PDFs to the checklist's print bullet (LANES.md "Handed to Lane A", 2026-10-25).
+7. **PRs 8 to 17** as listed in reconciliation-001. Schema PRs needing approval: 8, 14 and 17, plus any other that adds a migration.
+8. **The audit PRs, then milestone 12, milestone 13 and the final pass** (runbooks, whole-plan audit, 390 px screens, mono figures, e2e journeys, the Dependabot PRs, settings.json last).
+- In parallel, Lane B's queue: the five sessions above, then the UX review's PRs in landing order and LANES.md's Lane B items.
 
 **Decisions to revisit (taken to save cost, not the best option; the founder asked on 2026-10-23 that they be kept in view):**
 - **How the screening's 60-second promise is measured** (6b-3; GitHub issue https://github.com/PureTideWater/PhysicalTherapy/issues/41, label "revisit"): the capacity test runs on GitHub's free 4-CPU runner, the PR time is only a warning, and a release's time is binding behind an attested report. The free runner's times follow the host (38 to 57 s on the same code), so production stays closed until a faithful measurement exists. Revisit before the screening opens and again once production has traffic: staging on AWS (recommended), or an organization on GitHub Team with the 8-core runner; then settle the sizing question (O9).
 
-**Open for the founder (none blocks PR 6b-4):**
-- **The `claude/build-platform` ruleset (F7, ruled 2026-10-25, applied by you):**
-  - It requires the four checks as ci-speed (#43) names them: `all green`, `mutation`, `screening-capacity gate` and `approval-of-record`, each from GitHub Actions. It also requires a PR, blocks force pushes, and requires branches to be up to date.
-  - It is free on this public repository. It was first offered on 2026-10-22 ~06:50 UTC with the older names (check, mutation, capacity, approval-of-record), which ci-speed replaces.
-  - **When to apply it:** see "Repository settings, and when to click each" below.
+**Open for the founder** (the co-founder relays them; this file's list and `lanes/lane-b.md` "Waiting on someone" in one; F7, F1, F2, F3 and S3 are done):
+- **#42's domain model:** after the fix round and the fresh-clone verification, the approval line goes up as a suggested change in one PR comment. The founder reads the approval summary and commits that suggestion on GitHub, as on #39 (54ec890); the commit is then #42's latest. An APPROVED review becomes the record only after runbook 3i (ADR 0063; "Open (Lane A)" above says why). No session writes the line or `approvers.json`, and no session approves a PR.
+- **A ledger freeze exception** for the interest credited twice (ADR 0084; its design is running). The fix changes the ledger's existing behaviour.
+- **The UX review's five questions** (`designs/lane-b-ux-review.md` §6.2, each with its options and recommendation):
+  - F1, dark mode: it reverses D9 item 3 ("dark mode stays off"; reconciliation-001.md:309), so dark stays off meanwhile;
+  - F2, the terms page shows no terms text (legal);
+  - F3, the palette (the brand owner's, ADR 0058 D9);
+  - F4, the screening's kept-data notices (legal surfaces, counsel's list);
+  - F5, the screening's sentences held for counsel.
+- **From #84 and #120:** the evaluation gate's per-field recall and precision floors (they ship unset, so the gate fails closed); whether the data-rights addendum covers accepted proposals used as examples (legal text).
+- **From #111:** a `protect-content.sh` guard and a CLAUDE.md Never line for `packages/db/functions` (generated files).
+- **The rulesets 4B and 4C** (`main`'s, and the `v*` release tags'). Neither exists. In 4B, target `main` by pattern, not "Include default branch".
+- **The CI design's** O1 (the account's plan) and O12 (the PR capacity run's length), `designs/lane-b-ci.md` §11.
+- **PR 6c:** the four frozen-engine defects from #44's review, under 6c's freeze exception.
+- **LANES.md items 3, 10 and 14:** the amendments for the exceptions granted on 2026-10-20.
+- **If wanted, the co-founder's own approval in his name:** a dated delegation line in LANES.md and a small governance PR (approvers.json, ADR 0063, the approval-of-record check). No session signs the founder's name.
+- **At #42's first deploy** (its deploy and deliverability runbooks; owner actions): DNS, SES phase 2 and production access, Postmaster Tools and SNDS, O11 and O12; and, as S3 is being built, one mail-validation AWS account per environment.
+- **Kept from before:**
   - Today nothing enforces CODEOWNERS on `tools/engine-freeze/exception.json` or on `packages/synth/src/guard/pinned-tables.json` (6b-1 pinned GPCI_SYNTHETIC_900006.csv there).
-- O1: the ZIP9 file's layout is unconfirmed (cms.gov unreachable through the proxy; ADR 0064 says so). Confirm against the real CMS file before release 1 loads it. O12: re-read the AWS prices on AWS's own pages before the first deploy.
-- Whether the narrative verifier should also catch a letter claim-filing-indicator code (for example "plan identifier MC"). Today only digit codes fail as figures, and the approving person is the check (ADR 0061).
-- The CLP06 words: 7 of the 19 were matched against public sources. The X12 TR3 code list is the check of record before the first real packet.
+  - PR 6b's O1: the ZIP9 file's layout is unconfirmed (cms.gov unreachable through the proxy; ADR 0064 says so). Confirm against the real CMS file before release 1 loads it. PR 6b's O12: re-read the AWS prices on AWS's own pages before the first deploy.
+  - Whether the narrative verifier should also catch a letter claim-filing-indicator code (for example "plan identifier MC"). Today only digit codes fail as figures, and the approving person is the check (ADR 0061).
+  - The CLP06 words: 7 of the 19 were matched against public sources. The X12 TR3 code list is the check of record before the first real packet.
 - **Counsel, before the first real packet and before the screening opens:**
   - the wording in decisions 3, 4, 7 and 17;
   - the cookie notice;
   - the 11-claim-line floor (the number, lines or patients, a left-out total under 11, what counts as "the same practice");
   - the screening terms;
-  - the "campaign codes ... of the link you came from" wording (retention.ts, wording.ts), which can now say a code is kept only when it is on the founder's list.
+  - the "campaign codes ... of the link you came from" wording (retention.ts, wording.ts), which can now say a code is kept only when it is on the founder's list;
+  - #42's O4: a refusal that reveals a past bounce.
 - **The specialist:** Q21 on sequestration (`fixtures/golden/QUESTIONS.md`).
-- **The founder's own setup:** runbook 3i (a GitHub identity for the build), then `APPROVAL_REVIEW_REQUIRED`. Until then the build merges on green CI (D4 (a)).
+- **The founder's own setup:** runbook 3i (a GitHub identity for the build), then `APPROVAL_REVIEW_REQUIRED`. Until then the build merges non-schema PRs on green CI (D4 (a)).
+
+**For the person (the co-founder):**
+- Done ~02:00 UTC: storage.googleapis.com allowed in the environment's network policy (Playwright's pinned Chromium, for local e2e and screenshots).
+- Relay the founder's items above. For #42 the founder commits one suggested change on GitHub; the session says when.
+- Lane B's delegated items now follow his 2026-10-27 direction (the recommended option, recorded): ci-browser's A9 inspection of its regenerated baselines; payment-engine/S1 from #44, a MoneyError guard in `multiplyCents`; the order of the UX review's PRs. He may reverse any.
 
 **Follow-ups to fold into a later PR:**
-- The CI PR takes the Dependabot versions dismissed on 2026-10-18.
-- Dependabot coverage for the postgres and minio images.
-- The build-branch docs fix: main has 11 files, and the PR template exists only on main.
+- Done: the Dependabot versions dismissed on 2026-10-18 (ci-deps, #48); Dependabot coverage for the postgres image (#48's docker-compose entry; no minio image is referenced on the build branch); the PR template is on `claude/build-platform`, now the default branch.
+- Still open: the rest of the build-branch docs fix (`main` has 11 files).
 - A later migration that turns the `not_recorded` decline fill-in into a refusal once the old website no longer runs.
+- At Lane A's next regeneration: one sentence in the domain model's Appendix C introduction pointing to `packages/db/functions` (#111's proposal).
 
 **How this session worked, so the next one works the same way:**
-- **Pipeline (founder, 2026-10-20):**
+- **Pipeline (founder, 2026-10-20; the co-founder's message of 2026-10-27 repeats it):**
   1. Design first, with one reviewer.
   2. Builders check what they touch.
-  3. Open a draft PR at once so CI runs during the reviews.
-  4. At least two adversarial reviews.
+  3. Open a draft PR from `.github/pull_request_template.md` at once, so CI runs during the reviews.
+  4. Two adversarial reviews; the UX and brand review is one of the two whenever a person sees the change.
   5. One full local suite in the fix round.
   6. A fresh-clone verification that reads CI.
-  7. At most two heavy workflows at once.
+  7. At most two heavy workflows at once; every workflow agent keeps a progress file it continues from.
   8. Short agent reports.
 - **Use the default workflow agent for reviews,** given the checklist in `.claude/agents/<type>.md`. The custom agent types (payment-engine-reviewer, edi-reviewer) twice stopped without calling StructuredOutput, which left a PR unreviewed. Have the script refuse to go on when a review returns nothing.
-- **Approval lines:** `gh auth status` calls the token invalid, but `gh api` works through the proxy, so use CLAUDE.md's suggested-change route: one PR review comment on the approval line with a ```suggestion block (`gh api repos/PureTideWater/PhysicalTherapy/pulls/<n>/comments`, the line number and the head commit), never a review event. Used on #36. If `gh api` fails, post the exact line in one PR comment with the web-editor steps (the edit URL `https://github.com/PureTideWater/PhysicalTherapy/edit/<branch>/docs/product/domain-model.md`). The founder commits it. When the founder asks in chat for the build to write it, decline: CLAUDE.md, ADR 0063 and the protect-approval hook forbid it. Before asking, regenerate and read the Cross-checks block. This session found and fixed a false "Column differences: 4" there (e297346).
+- **Approval lines:** `gh auth status` calls the token invalid, but `gh api` works through the proxy, so use CLAUDE.md's suggested-change route: one PR review comment on the approval line with a ```suggestion block (`gh api repos/PureTideWater/PhysicalTherapy/pulls/<n>/comments`, the line number and the head commit), never a review event. Used on #36. If `gh api` fails, post the exact line in one PR comment with the web-editor steps (the edit URL `https://github.com/PureTideWater/PhysicalTherapy/edit/<branch>/docs/product/domain-model.md`). The founder commits it. When anyone asks in chat for the build to write it, decline: CLAUDE.md, ADR 0063 and the protect-approval hook forbid it. Before asking, regenerate and read the Cross-checks block. This session found and fixed a false "Column differences: 4" there (e297346). Since #46, commit the regenerated `packages/db/functions` before the founder signs, and put `pnpm db:domain-model --summary-since origin/<base> --function-diffs list` in the description.
 - **Pushing:**
   - Push from the worktree. If its checkout lacks `.githooks`, push from the main checkout with `GITLEAKS=/root/.cache/paidwhole/gitleaks/8.24.3/gitleaks git -C /home/user/PhysicalTherapy push origin <branch>`.
   - The permission check refuses force-pushes. Never force: fix a malformed commit message with a squash merge of the PR instead. Squash is allowed on the build branch; ADR 0063 forbids it only into main.
-- **Merge order** when two PRs edit reconciliation-001 or the ADRs: merge the one the founder approved first, merge the base into the other with a merge commit, resolve keeping both, then merge it.
-- **Container restarts** stop Postgres and workflows. Restart both clusters (commands in "Environment recipe"), then resume a stopped workflow with `resumeFromRunId`, which works within one session only.
+- **Merge order** when two PRs edit reconciliation-001, the ADRs, the test matrix or the synth registry: merge the one ready first (when both need the founder, the one approved first), merge the base into the other with a merge commit, resolve keeping both, regenerate the generated files, then merge it (LANES.md rule 6).
+- **Container restarts** stop Postgres and workflows. Re-run `tools/setup-container.sh` (or restart both clusters by the commands in "Environment recipe"), then resume a stopped workflow with `resumeFromRunId`, which works within one session only.
 - **Disk:** clear finished review clones under the scratchpad when free space drops below about 8 GB.
 
-**Weekly usage (founder):**
-- Readings: 24% (Wed 00:15 UTC), 35% (Wed 12:40), 41% (Wed 19:55), 44% (Wed 22:51), 52% (Thu 2026-10-22 06:50). The reset is Tuesday at 10:00 the founder's time (founder, 2026-10-22 ~16:53 UTC), which is 14:00 UTC if that is US Eastern (EDT until 2026-11-01); the next is 2026-10-27.
-- That is ahead of the ~11%-a-day pace (about 31% a day after the reset). Since Thursday: one heavy run at a time, about 5% a day, so the ~80% line is not reached before Tuesday.
-- Ask the founder for the % and the reset time at session start and before each heavy run. Start no new heavy run past about 80%, never cut a run off mid-way, and keep every quality stage.
+**Weekly usage:**
+- **Lane A's account** (the founder's; run by the co-founder from 2026-10-27): **94% weekly at ~01:50 UTC** (the co-founder's reading; the rate-limit status read `allowed_warning` at 01:38 UTC). The founder's earlier readings: 72% (Fri 2026-10-23 ~16:40 UTC), 78% (~20:52 UTC), about 80-81% after #42's reviews. The weekly reset is Tuesday 14:00 UTC: **today, 2026-10-27 14:00 UTC** (a session record's weekly rate-limit reset reads that instant). The founder gave it as Tuesday 10:00 their time; if that is US Eastern, the next one, 2026-11-03, falls at 15:00 UTC (EST from 2026-11-01), so set the next check-in from the account's reset time, not from this line.
+- **The orchestrator's ruling at ~01:50 UTC** (the recommended option under LANES.md rule 9; `lanes/lane-b.md`): the remaining allowance goes first to #42's fix round, so the founder can approve it during the pause. Each of the five sessions finishes the stage it is running (none cut off mid-run), records it in its status file, starts no new workflow until 14:05 UTC, and keeps a check-in at 14:05 UTC that resumes it.
+- **The co-founder's direction (2026-10-27):** use this account fully, never sacrificing quality. Keep a scheduled check just after each 5-hour and weekly reset, and never cut a run off mid-way.
+- **Lane B's account:** ~97% at its stop on 2026-10-26; it resets Friday 2026-10-30 19:00 UTC.
+- Ask the co-founder for the % at session start and before each heavy run.
 
 ## How to resume in a new session
 1. Read this file, then `CLAUDE.md`, `docs/product/change-order-001.md` and `docs/product/reconciliation-001.md` on `claude/build-platform`.
@@ -149,7 +283,8 @@ bash /tmp/setup-container.sh co-001/<open branch> ...
   - The oracle venv `/root/.venvs/tp-oracle`: Python 3.13 from the base image, with the same two packages. `tools/test-oracle/README.md` and the older briefs (`TP_ORACLE_PYTHON=/root/.venvs/tp-oracle/bin/python`) use this path. `/opt/py312-ci/bin/python` works for `pnpm test:oracle` too.
   - gitleaks 8.24.3 at `/root/.cache/paidwhole/gitleaks/8.24.3/gitleaks`, also linked at `/tmp/claude-0/gitleaks/gitleaks`.
   - actionlint 1.7.7 in `/opt/actionlint`, on PATH as `/usr/local/bin/actionlint`. This is a new home: in the old container, actionlint lived only in that session's scratchpad.
-  - pnpm is the base image's 10.28.0. Only when no pnpm is on PATH, the script installs `pnpm@10.28.0` from the npm registry into `/opt/pnpm-10.28.0` (pinned hashes) and links it at `/usr/local/bin/pnpm`, outside `/opt/node24`.
+  - pnpm 10.34.8, the version `packageManager` pins (since 2026-10-27; it was the base image's 10.28.0 before). The script always installs it from the npm registry into `/opt/pnpm-10.34.8` (pinned SHA-256 and SHA-512, the SHA-512 equal to `packageManager`'s), compares it file for file with its tarball, and links it at `/opt/pnpm-bin/pnpm`, which every install it runs puts first after Node 24. The base image's 10.28.0 in `/opt/node22/bin` is left alone.
+  - Playwright's Chromium for each pinned Playwright (revision 1194 for the repository's 1.56.1; 1248 for ci-browser's 1.64.1), laid out from Google's Chrome for Testing bucket on storage.googleapis.com, each zip checked against a pinned SHA-256, because the proxy refuses Playwright's own hosts. The environment must allow storage.googleapis.com (allowed since 2026-10-27 ~02:00 UTC).
   - It also starts both servers, checks out `claude/build-platform`, runs `pnpm install --frozen-lockfile`, and adds `/home/user/ops` and the PR worktrees.
 - **Checks:** every download is pinned.
   - PostgreSQL 18, Node and pnpm are npm registry tarballs. Each is checked against a pinned SHA-256, a pinned SHA-512 and the registry's own SHA-512.
@@ -159,7 +294,7 @@ bash /tmp/setup-container.sh co-001/<open branch> ...
   - Only the Ubuntu packages (PostgreSQL 16, locales and python3.12-venv, each installed only when missing) are not pinned.
 - **Result:** it prints one line per part with its version, then `OK`, or `FAILED` with exactly what failed and what to do about it.
 - **Running it again** installs nothing that is already in place. It is not read-only, though: it fetches origin, fast-forwards branches that are behind, and runs `pnpm install` where `node_modules` does not match `pnpm-lock.yaml`. It never lets pnpm delete an existing `node_modules`; if pnpm wants to, the script stops and says how to do it. **While agents are working, use check mode instead.**
-- **Check without changing anything:** `SETUP_CHECK=1 bash /home/user/ops/tools/setup-container.sh <same branches>`. On the old container, add `ACTIONLINT=<old scratchpad>/gov-r2/actionlint`, because actionlint was never installed in `/opt/actionlint` there. Then `export PATH=/opt/node24/bin:/opt/py312-ci/bin:$PATH` as before.
+- **Check without changing anything:** `SETUP_CHECK=1 bash /home/user/ops/tools/setup-container.sh <same branches>`. On the old container, add `ACTIONLINT=<old scratchpad>/gov-r2/actionlint`, because actionlint was never installed in `/opt/actionlint` there. Then `export PATH=/opt/node24/bin:/opt/pnpm-bin:/opt/py312-ci/bin:$PATH`.
 - **Testing:** these settings let you test it elsewhere: `SETUP_PREFIX`, `PG18_PORT`, `PG16_PORT`, `PG16_SKIP=1`, `PG_SOCKET_DIR`, `CLONE_DIR`, `OPS_DIR`, `WORKTREE_ROOT` and `REPO_URL`, plus `ACTIONLINT` in check mode. The postgres user must be able to enter `SETUP_PREFIX`. The scratchpad cannot be used directly, because `/tmp/claude-0` is 0700 and Claude Code resets it, so bind-mount a scratchpad directory (for example at `/mnt/setup-test`).
 - **Tested on 2026-10-21, under a prefix:**
   - a fresh install, with no pnpm on PATH so that the pinned pnpm path ran;
@@ -541,3 +676,33 @@ Applies from the next round of every PR. Every stage stays: design, independent 
 - Lane B's queue: the CI PR first; then PR 15 (ledger tests); then the infrastructure PRs once #42 merges; then legal surfaces. Schema PRs stay in Lane A, one at a time.
 - `RESUME.md` (Lane A's start message) is updated to the current state.
 - Founder actions: add the co-founder's GitHub account as a collaborator with write access; optionally add delegations to `LANES.md`.
+
+## 2026-10-27 ~01:30 UTC: the co-founder runs Lane A's account; Lane A's orchestrator takes over both lanes
+- **Who and why:** from 2026-10-27 the co-founder runs Lane A's account (session_01TrKDxeLbxVo7t7zwRXFzrg is Lane A's orchestrator). Lane B's account stopped on 2026-10-26 at ~97% of its weekly allowance and handed its work over in `lanes/lane-b-handoff-to-lane-a.md`; it returns Friday 2026-10-30 19:00 UTC. Until then this session runs Lane A's schema chain and Lane B's no-migration items. His direction: everything that is not the founder's takes the recommended option (security: the safer), recorded with why, without asking.
+- **The machine (01:26 to 01:29 UTC):** `tools/setup-container.sh` from `claude/build-ops` (03208f1), twice; the second run added the worktree `/home/user/pr6b4` for `co-001/pr-06b-mail-streams`. Every part read ok (PostgreSQL 18.4 on 5433 and 16.15 on 5432, Node v24.22.0, Python 3.12.3 and the oracle venv, actionlint 1.7.7, gitleaks 8.24.3, pnpm 10.28.0 switching to the pinned 10.34.8, the repository at e908c21 with the pre-push hook) except Playwright 1.56.1's chromium-1194: the proxy refused storage.googleapis.com (403 to CONNECT). So local e2e and screenshots wait on the person allowing that host.
+- **GitHub:** `gh api user --jq .login` prints `PureTideWater`. Reads of the repository, pulls, commits, check runs and rulesets work; pushes work (the pre-push hook with gitleaks).
+- **The founder's settings** (told to the person as due, with the steps in `designs/lane-b-settings-after-ci-deps.md`; read back read-only):
+  - F1 (a): `default_branch` reads `claude/build-platform`: done.
+  - F2 (a): `security_and_analysis.dependabot_security_updates` reads enabled. `vulnerability-alerts` and `automated-security-fixes` answer 403 through the proxy.
+  - F3: `actions/permissions` answers 403 through the proxy.
+  - ~01:50 UTC: the person reports F2 and F3 applied. F2's alerts and F3 rest on that word; F3 is proved by the next workflow run that starts.
+  - F7: the ruleset "Protect the build branch" (25837331) reads active on the branch.
+- **#42's fix round started (wf_ba2333bd-714):**
+  - The base e908c21 merged into #42 as 098636e (three conflicts resolved keeping both sides; lockfile, watched paths, the domain model and the 369 function files regenerated, never hand-merged; quick checks green), pushed ~01:45 UTC. The domain model's SHA-256 stayed 07c4a8ee… on the merge.
+  - CI on 098636e running at 01:48 UTC; `domain model` red as the expected approval case.
+  - Three builders running in their own clones (database and jobs; infrastructure, with S3 decided as the safer option; harness, e2e and wording), then one integrator with the full local suite and one push.
+- **Claims and counters** (LANES.md, commits 968a133, 02f547c, 06c3125 and 582c14c, 01:35 to 01:42 UTC):
+  - Lane A's orchestrator allocates the shared counters for both lanes until Friday (LANES.md rule 4).
+  - Lane B items: UX PR 3 then 4 (ADR 0078, TBL-01 to TBL-08, module 17); UX PR 5 (ADR 0079, DLR-01 to DLR-04, module 18) then PR 9 (ADR 0082, HOM-01 to HOM-04, module 20); UX PRs 6 and 7 after ux-forms (ADR 0081, SGN-01 to SGN-08, module 19); #32 after #120; ux-forms, #120 and ci-browser continued as Lane B items.
+  - Lane A items: SS-01 (ADR 0080, BIL-07 to BIL-10), SUITE-CAP-1 (ADR 0083, CAS-40 to CAS-42), the interest credited twice (ADR 0084, LED-23 to LED-25).
+  - Next free: ADR 0085, synth module 21, fixture release 900008.
+  - LANES.md rule 1 now carries the UX and brand reviewer line for both lanes (handed to Lane A on 2026-10-25).
+- **Five parallel sessions for Lane B's items** (01:39 to 01:40 UTC; table in "Start here"; brief `lanes/lane-b-session-brief.md`; logged in `lanes/lane-b.md` by this session for Lane B). A first set of five (01:37 to 01:38 UTC) started without the repository as their source, so with no clone and no GitHub tools. They were stopped and archived within a minute; nothing was pushed. At 01:45 UTC all five of the second set read running; ux-forms had merged e908c21 into its branch (2982890).
+- **Designs (wf_5f09e0bd-311):** SS-01 (with the stored suspension reason, the refusal's words and SS-08), SUITE-CAP-1 and the interest credited twice, each with database and application scouts, an author, one adversarial reviewer and a revision. The SS-01 database scout reproduced the defect on a fresh database at e908c21. The interest fix's build waits for the founder's ledger freeze exception.
+- **Usage, ~01:50 UTC:** 94% weekly on this account (the co-founder's reading); the reset is today at 14:00 UTC. Ruled as the recommended option (LANES.md rule 9): the remaining allowance goes first to #42's fix round, so the founder can approve it during the pause; the five sessions each finish their running stage, record it, start nothing new until 14:05 UTC and resume from a 14:05 UTC check-in (`lanes/lane-b.md`).
+- **The sessions' first records (01:42 to 01:55 UTC, on this branch):** the ci-browser session pinned pnpm 10.34.8 in `tools/setup-container.sh`, explained #33's node 26 rebase (a recreate job under #33's original config; ci-deps' rule is sound) and merged the base into ci-browser (2ab2b15); #120's session merged the base (862c9dc8) and runs its integrator; ux-forms merged the base (9f9757e, 2982890); ux-table-scroll's design is running; ux-download-refusals' design is written.
+- **~02:00 UTC: the person allowed storage.googleapis.com.** It answers through the proxy at 02:03 UTC; the sessions lay out the browsers when they re-run the setup script at 14:05 UTC.
+- **CI on 098636e (run 40434505373), read ~02:05 UTC:** `unit` red on #42's web-boundary guard (`apps/worker/src/web-entries.test.ts:77`), a seam with #43's `route-tests/` helpers, for the integrator; `domain model` red as the expected approval case; `all green` red with them.
+- **This file and the tracker:** "Start here" rewritten with Lane B's state folded in; `tracker/build_status.py` brought current (this session's journals; Lane B's merges; the five sessions; #42's fix round; the designs; the blockers). A completeness check against both logs, LANES.md, git and GitHub followed (~02:10 UTC) and corrected the founder's step for #42, CI on 098636e, the storage host, the sessions' stages and check-ins, and the items handed to Lane A.
+- **Found then, for the orchestrator:** the old session's 14:05 UTC reminder trig_01LGMZT6vtRSH1Cfsy89GHCr is still enabled and would start a second #42 fix round there; delete it before 14:05 UTC.
+- **Next:** #42's integrator (with the guard seam), the fresh-clone verification and the approval line, then the founder's commit of it (during the pause if it comes); the three designs to their reviews; at 14:05 UTC the five sessions resume toward their merges.

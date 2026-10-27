@@ -1,0 +1,12 @@
+# suite progress (PART suite)
+- [x] started 2026-10-27; read settle-code.md and docs.md
+- [x] settle: ADR 0070 departures gain 18 (screen reads prepared.user) and 19 (testing.ts kept to tests); all else in docs.md items 1-8 already consistent with code
+- [x] pnpm synth --all x2: 237 cases, 0 written, 637 unchanged, 0 removed; 8 EMR formats 16 unchanged (both runs)
+- [x] eval: gate: passed (contracts 63 docs precision/recall 0.996941; narratives 300/300); set unchanged (sets.ts type-only) so no re-record; gitleaks dir eval: see below
+- [x] watched-paths.txt regenerated: 531 lines, unchanged
+- [x] typecheck: exit 0
+- [x] stryker affected (pre-commit, HEAD vs e908c214): money/pricing/ledger/packets not affected, shards none -> gate: no mutation run (re-check after commit)
+- [x] typecheck: passed, 22 projects in 21.0 s wall
+- [x] lint: passed, 1,620 files in 3 groups, 0 errors, 0 warnings
+- [x] lint:logs: 1057 files scanned; every log call uses allowlisted fields
+- [x] lint:copy: 514 files read; the product copy keeps the brand's words

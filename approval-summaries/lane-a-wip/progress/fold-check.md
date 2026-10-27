@@ -12,3 +12,16 @@
 - FINDING 5: S3 builder's choice (dedicated validation account per env; residual 90 d event history) not in HANDOFF; deploy action for the person -> add
 - FINDING 6: DST caveat on Lane A's reset dropped (next reset 2026-11-03 likely 15:00 UTC if Eastern) -> add
 - FINDING 7: handed items missing: SS-01 'reopen a closed organization' (if wanted); SUITE-CAP-1 advisory windows query 10-13 s; #49's #42-file parts (Lane B after #42); #46/#111 I2 proposal; PR 7 WCAG 2.2 one-list note -> add
+- FINDING 8: founder action for #42 vague/contradictory: PureTideWater opened #42 (and is the founder's account), so an APPROVED review by the founder is impossible today; APPROVAL_REVIEW_REQUIRED unset (approval-of-record passes on 098636e); the record today = the founder commits the suggested line (as #39's 54ec890, web-flow) -> fix HANDOFF Next + Open for the founder; report
+- FINDING 9: design files not yet written (designs/ss-01-suspension.md etc.) -> "(being written)"; S3 "AWS's own documentation" wrong (docs.aws.amazon.com refused; API models used) -> fix
+- FINDING 10: release-capacity cron 29 3 * * 2 -> first scheduled fail today 03:29 UTC -> add
+- FINDING 11: Fresh session section pnpm 10.28.0 stale (not a dated section) -> fix; /opt/pnpm-bin absent on this machine
+- FINDING 12: #42's deploy actions (DNS, SES phase 2/production access, Postmaster/SNDS, O11, O12; S3's validation accounts) not in founder list -> add
+- FINDING 13: tracker: storage blocker done; add rulesets 4B/4C + smaller founder rulings row; Lane B queue gains #49's after-#42 parts and #111's I2
+- NEXT: apply HANDOFF edits E1..E17, then tracker, then rerun
+- [x] HANDOFF fixes applied ~02:07 UTC: machine/storage host, pnpm (Start here, Node line, Fresh session), F1 cron 03:29, #42 CI (unit red), builders state, S3 builder's choice + sources, Next (founder commits suggestion; why not a review), designs (being written; scouts; SS-01 reopen; #56 note; SUITE-CAP-1 repro), handed list (+#49 windows advisory), sessions table stages + check-in ids, Lane B other work (+I2, after-#42), #33 21:08 5fab269, #38 time, ADR 0069 note, pitfalls (+survivors, suite order, waiting/auto mode, improve as you go), housekeeping (+scripts, Lane A check-in, STALE TRIGGER), PR 7 WCAG note, founder list (#42 step, deploy actions), person list, DST caveat, dated entry bullets + Next
+- NEXT: tracker edits (blockers, queue rows), rerun
+- [x] tracker edits ~02:09: Lane B queue +I2, +#49 later PR (after #42); ETA comment 'From then'; blockers: storage removed (comment), deploy row +#42 mail actions, #42 approval row (commit suggestion; why not a review), +rulesets 4B/4C, +smaller rulings. Re-run OK 02:09:50Z: 164 done, 12 running, 62 queued (+2 queued rows); no Done went back
+- NEXT: final read of Start here; return
+- [x] Fresh session: +Playwright CfT bullet (storage host). Dated sections verified unchanged (diff). No model identifier in the diff; build_status.py parses.
+- [x] DONE 02:10 UTC. Not committed (orchestrator commits). Return list written.
