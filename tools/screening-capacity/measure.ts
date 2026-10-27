@@ -145,6 +145,34 @@ export function emailedLines(lines: Iterable<string>): EmailedLine[] {
   return found;
 }
 
+/**
+ * Waits until each upload's run reads `complete`, at most `waitMs` for them all, and returns the uploads whose run did
+ * not (in the order given). The consumer sends a result's email inside its completion's transaction and commits after
+ * the send returns (apps/worker/src/screening/job.ts), so the local outbox's file, which the harness reads its link
+ * from, can be there a moment before the run commits, and the link opens nothing until it does. The harness opens a
+ * link only once its run reads complete, so a link that does not open is a broken link, not one opened too early; a
+ * run still not complete after the wait is opened anyway, and its link's status says what a person would have seen.
+ * `status` reads a run's status (null for no run); `sleep` and `now` are the clock (the tests give their own).
+ */
+export async function untilComplete(
+  uploads: readonly string[],
+  status: (upload: string) => Promise<string | null>,
+  options: { readonly waitMs: number; readonly pollMs?: number; readonly now?: () => number; readonly sleep?: (ms: number) => Promise<void> },
+): Promise<string[]> {
+  const now = options.now ?? Date.now;
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const until = now() + options.waitMs;
+  let waiting = [...uploads];
+  for (;;) {
+    const read = await Promise.all(waiting.map(async (upload) => ((await status(upload).catch(() => null)) === 'complete' ? null : upload)));
+    waiting = read.filter((upload): upload is string => upload !== null);
+    if (waiting.length === 0 || now() >= until) {
+      return waiting;
+    }
+    await sleep(options.pollMs ?? 250);
+  }
+}
+
 /** The runs a container's log shows it pricing or emailing: any phase line or time-to-email line names the run. */
 export function pricedRuns(lines: readonly string[]): Set<string> {
   return new Set([...phaseLines(lines).map((line) => line.runId), ...emailedLines(lines).map((line) => line.runId)]);

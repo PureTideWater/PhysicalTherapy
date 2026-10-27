@@ -44,7 +44,7 @@ import {
   productionLimits,
   runnerTooSmall,
 } from './limits';
-import { anonBytes, cpuThrottling, emailedLines, memoryEvents, peak, phaseLines, phasesByRun, pricedRuns, workerStarted } from './measure';
+import { anonBytes, cpuThrottling, emailedLines, memoryEvents, peak, phaseLines, phasesByRun, pricedRuns, untilComplete, workerStarted } from './measure';
 import {
   ADDRESS_CHECK_CHARGE_MS,
   type AppliedLimits,
@@ -694,6 +694,21 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
     const read = await response?.arrayBuffer().catch(() => null);
     return read === undefined || read === null ? null : (response?.status ?? null);
   };
+  // The consumer emails a result inside its completion's transaction, so the outbox's file can be read before the run
+  // commits: each link is opened once its run reads complete (at most LOG_WAIT_MS for them all), so a link that does
+  // not open then is broken, never one opened a moment too early (untilComplete; the 404 of S4#3 S4-1 on fb0af1d).
+  const linked = prepared.filter((entry) => entry.link !== null);
+  const notComplete = await untilComplete(
+    linked.map((entry) => entry.upload.id),
+    async (id) => {
+      const entry = linked.find((item) => item.upload.id === id);
+      return entry === undefined ? null : ((await runFacts(await owner.client(), entry.upload.contactEmail))?.status ?? null);
+    },
+    { waitMs: LOG_WAIT_MS },
+  );
+  for (const id of notComplete) {
+    say(`${label}: upload ${id} was emailed and its run was not complete after ${String(LOG_WAIT_MS / 1000)} s; its link is opened as sent`);
+  }
   const resultStatuses = new Map<string, { readonly first: number | null; readonly last: number | null }>();
   for (const entry of prepared) {
     if (entry.link !== null) {
