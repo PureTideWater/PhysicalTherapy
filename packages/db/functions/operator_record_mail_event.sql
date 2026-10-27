@@ -2,7 +2,7 @@
 -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
 
 -- operator_record_mail_event(text,text,text,timestamp with time zone,timestamp with time zone,text,text,uuid,uuid,uuid,text,text,text,text)
--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 3de0eeb78b63986f
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: eda27a15443050cf
 -- Trigger function of: (none)
 -- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.operator_record_mail_event(message_id text, stream text, event text, mail_at timestamp with time zone, event_at timestamp with time zone, recipient text, kind text, subject uuid, recipient_user uuid, practice uuid, bounce_kind text, bounce_subtype text, complaint_type text, request text)
@@ -25,7 +25,6 @@ DECLARE
   touched_notice uuid;
   touched_invoice uuid;
   touched_stage text;
-  counted record;
 BEGIN
   recorded := false;
   notice_undelivered := NULL;
@@ -44,9 +43,13 @@ BEGIN
   IF event = 'bounce' THEN
     given_bounce := CASE WHEN bounce_kind IN ('permanent', 'transient', 'undetermined') THEN bounce_kind ELSE 'undetermined' END;
     given_subtype := CASE WHEN bounce_subtype IN ('general', 'no_email', 'suppressed', 'on_account_suppression_list', 'on_configuration_set_suppression_list',
-                                                  'mailbox_full', 'message_too_large', 'content_rejected', 'attachment_rejected', 'other')
+                                                  'mailbox_full', 'message_too_large', 'content_rejected', 'attachment_rejected', 'undetermined', 'other')
                           THEN bounce_subtype ELSE 'other' END;
-    new_state := CASE WHEN given_subtype IN ('suppressed', 'on_account_suppression_list', 'on_configuration_set_suppression_list') THEN 'suppressed' ELSE 'bounced' END;
+    -- Suppressed by the account's own list (or a set's override of it, which only changes what goes on that list): SES
+    -- accepted the message, sent it to no one and counts it toward neither rate. A bounce from SES's global suppression
+    -- list (subtype suppressed: the address bounced recently for some sender) is counted toward the account's bounce rate
+    -- as any hard bounce is, so it is a bounce here too: the window, the refusal list and the bounce marks count it.
+    new_state := CASE WHEN given_subtype IN ('on_account_suppression_list', 'on_configuration_set_suppression_list') THEN 'suppressed' ELSE 'bounced' END;
   ELSIF event = 'complaint' THEN
     given_complaint := CASE WHEN complaint_type IS NULL THEN 'unspecified'
                             WHEN complaint_type IN ('abuse', 'auth_failure', 'fraud', 'not_spam', 'virus', 'other', 'unspecified') THEN complaint_type
@@ -159,16 +162,7 @@ BEGIN
        WHERE v.marked IS NOT NULL
       ON CONFLICT DO NOTHING;
     END IF;
-    SELECT w.sends, w.bounces, w.complaints INTO counted FROM mail_window_counts('screening') w;
-    IF counted.bounces::bigint * 10000 > 300 * greatest(counted.sends, 200)::bigint THEN
-      IF mail_stream_pause('bounce_rate', NULL, request) THEN
-        stream_paused := 'bounce_rate';
-      END IF;
-    ELSIF counted.complaints::bigint * 100000 > 80 * greatest(counted.sends, 2500)::bigint THEN
-      IF mail_stream_pause('complaint_rate', NULL, request) THEN
-        stream_paused := 'complaint_rate';
-      END IF;
-    END IF;
+    stream_paused := mail_stream_cutoff(request);
   END IF;
   RETURN NEXT;
 END;

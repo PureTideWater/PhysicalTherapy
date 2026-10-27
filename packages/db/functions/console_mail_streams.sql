@@ -2,7 +2,7 @@
 -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
 
 -- console_mail_streams()
--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 8ca35dce4f520314
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: b178b66699759acf
 -- Trigger function of: (none)
 -- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.console_mail_streams()
@@ -16,7 +16,7 @@ BEGIN
     RAISE EXCEPTION 'only a platform administrator reads the mail streams' USING ERRCODE = 'insufficient_privilege';
   END IF;
   RETURN QUERY
-    SELECT s.stream, s.paused_at, s.paused_reason, s.paused_by, s.pause_sends, s.pause_bounces, s.pause_complaints, s.window_starts_at,
+    SELECT s.stream, s.paused_at, s.paused_reason, s.paused_by, s.pause_sends, s.pause_bounces, s.pause_complaints, w.starts_at,
            w.sends, w.bounces, w.complaints, s.resumed_at, s.ses_enabled_confirmed_at,
            s.paused_at IS NULL AND s.ses_enabled_confirmed_at IS NOT NULL,
            s.paused_at IS NULL AND s.ses_enabled_confirmed_at IS NOT NULL
