@@ -52,3 +52,16 @@ export function ScrollTable({ label, children }: { readonly label: string; reado
     </>
   );
 }
+
+/** Stub for the tests-first commit: the props are final, the box is not built yet. */
+export function ScrollBox(
+  _props: {
+    readonly label: string;
+    readonly height?: 'md' | 'lg';
+    readonly tone?: 'muted' | 'faint';
+    readonly as?: 'pre' | 'div';
+    readonly children: ReactNode;
+  } & Readonly<Record<`data-${string}`, string | undefined>>,
+): never {
+  throw new Error('ScrollBox is not built yet');
+}
