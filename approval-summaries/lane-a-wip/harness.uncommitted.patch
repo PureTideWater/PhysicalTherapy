@@ -146,6 +146,31 @@ index af30eeb3..c5e45cf0 100644
 -  await signInWithKey(page, key);
 +  await registerOrRestoreKeyAndSignIn(page, { name: key, email: personaEmail(key) }, () => signInWithTotp(page, key));
  }
+diff --git a/apps/web/e2e/mail-cutoff.spec.ts b/apps/web/e2e/mail-cutoff.spec.ts
+index f72fdea8..10ce72ce 100644
+--- a/apps/web/e2e/mail-cutoff.spec.ts
++++ b/apps/web/e2e/mail-cutoff.spec.ts
+@@ -133,6 +133,8 @@ cutoffTest('a seventh hard bounce in a week pauses the screening stream alone; t
+       const screening = admin.locator('[data-stream="screening"]');
+       await expect(screening).toHaveAttribute('data-state', 'paused');
+       await expect(screening).toContainText('Its bounce rate passed the cut-off');
++      // The resume form says a review SES still holds pauses it again (the platform reads SES's enforcement each minute).
++      await expect(screening.locator('[data-copy="resume-review"]')).toHaveText('If SES still has the account under review, the platform pauses it again within a minute.');
+       // The customer streams never pause.
+       await expect(admin.locator('[data-stream="transactional"]')).toHaveAttribute('data-state', 'sending');
+       await expect(admin.locator('[data-stream="notices"]')).toHaveAttribute('data-state', 'sending');
+@@ -166,6 +168,11 @@ cutoffTest('a seventh hard bounce in a week pauses the screening stream alone; t
+       await admin.goto('/console/mail');
+       await expect(admin.locator('[data-stream="screening"]')).toHaveAttribute('data-state', 'sending');
+       await expect(admin.locator('[data-ready]')).toHaveAttribute('data-ready', 'yes');
++      // Sending, the card says when the stream pauses by itself, the floors' own counts named, and what a mark is on.
++      await expect(admin.locator('[data-stream="screening"]')).toContainText(
++        'It pauses by itself when more than 3% of its sends bounce permanently (counted over at least 200 sends, so 7 hard bounces pause it) or more than 0.08% are reported as spam (over at least 2,500, so 3 complaints pause it), within 7 days or since the last resume; on the account’s warnings; or under an SES review.',
++      );
++      await expect(admin.locator('[data-stream="screening"]')).toContainText('on email domains or mailboxes (3 refuse a fourth screening)');
+       await prospect.goto('/screening');
+       await expect(prospect.locator('[data-state="paused"]')).toHaveCount(0);
+       await expect(prospect.getByLabel('File to screen')).toBeVisible();
 diff --git a/apps/web/e2e/screening.spec.ts b/apps/web/e2e/screening.spec.ts
 index fe33d9a2..3ef80504 100644
 --- a/apps/web/e2e/screening.spec.ts
@@ -206,6 +231,145 @@ index fe33d9a2..3ef80504 100644
      const [message, ...more] = outboxFor(CONTACT);
      expect(more).toEqual([]);
      expect(message?.subject).toBe('Your screening is ready | PaidWhole');
+diff --git a/apps/web/src/app/console/mail/page.tsx b/apps/web/src/app/console/mail/page.tsx
+index 1f366c29..078f675e 100644
+--- a/apps/web/src/app/console/mail/page.tsx
++++ b/apps/web/src/app/console/mail/page.tsx
+@@ -68,7 +68,9 @@ export default async function ConsoleMailPage(props: { readonly searchParams: Pr
+                 {stream.pausedAt !== null
+                   ? `Paused ${utc(stream.pausedAt)}: ${stream.pausedReason === null ? 'reason not recorded' : PAUSE_REASON_LABELS[stream.pausedReason]}.`
+                   : stream.stream === 'screening'
+-                    ? 'It pauses by itself past the cut-off (3% bounces over at least 200 sends, 0.08% complaints over at least 2,500, in 7 days), on the account’s warnings, or under an SES review.'
++                    ? // The cut-off as mail_stream_cutoff() computes it: each rate over a floor of sends, so the floor's own
++                      // count of hard bounces or complaints pauses it (7 and 3), not only once that many sends exist.
++                      'It pauses by itself when more than 3% of its sends bounce permanently (counted over at least 200 sends, so 7 hard bounces pause it) or more than 0.08% are reported as spam (over at least 2,500, so 3 complaints pause it), within 7 days or since the last resume; on the account’s warnings; or under an SES review.'
+                     : 'It never pauses: it alarms instead.'}
+               </CardDescription>
+             </CardHeader>
+@@ -102,7 +104,9 @@ export default async function ConsoleMailPage(props: { readonly searchParams: Pr
+                     <dd data-ready={stream.ready ? 'yes' : 'no'}>{stream.ready ? 'Yes: sending, confirmed, and both probes back within 48 hours' : 'No: staging and production keep the screening closed'}</dd>
+                     <dt className="text-muted-foreground">Bounce marks (7 days)</dt>
+                     <dd>
+-                      <span className="font-mono tabular-nums">{stream.marks.client}</span> on clients, <span className="font-mono tabular-nums">{stream.marks.account}</span> on email accounts (3 refuse a fourth screening)
++                      {/* The account a mark is on is a work address's domain or a free-mail address's mailbox (rate.ts). */}
++                      <span className="font-mono tabular-nums">{stream.marks.client}</span> on clients, <span className="font-mono tabular-nums">{stream.marks.account}</span> on email domains or mailboxes (3 refuse
++                      a fourth screening)
+                     </dd>
+                   </>
+                 ) : null}
+@@ -117,6 +121,10 @@ export default async function ConsoleMailPage(props: { readonly searchParams: Pr
+                   <FormKeys />
+                   <input type="hidden" name="stream" value="screening" />
+                   <SelectField label="Why it can resume" id="resume-reason" name="reason" required options={[{ value: '', label: 'Choose a reason' }, ...resumeReasons]} />
++                  {/* The mail_events job reads SES's enforcement every minute and pauses the stream again under a review. */}
++                  <p className="text-sm text-muted-foreground" data-copy="resume-review">
++                    If SES still has the account under review, the platform pauses it again within a minute.
++                  </p>
+                 </ActionForm>
+               )}
+             </CardContent>
+diff --git a/apps/web/src/app/settings/organizations/[organizationId]/users/page.tsx b/apps/web/src/app/settings/organizations/[organizationId]/users/page.tsx
+index 344aed61..b2d95245 100644
+--- a/apps/web/src/app/settings/organizations/[organizationId]/users/page.tsx
++++ b/apps/web/src/app/settings/organizations/[organizationId]/users/page.tsx
+@@ -135,11 +135,17 @@ export default async function UsersSettingsPage(props: { readonly params: Promis
+                     <td className="py-1 pr-3">{invitation.email}</td>
+                     <td className="py-1 pr-3">{roleName(invitation.role)}</td>
+                     <td className="py-1 pr-3">
+-                      {/* An invitation email reported undelivered (docs/adr/0065, D10): the administrator checks the address and invites again. */}
++                      {/*
++                        An invitation email reported undelivered (docs/adr/0065, D10): the administrator checks the address and
++                        invites again. One reported as spam was delivered, and SES now holds the address back from the
++                        transactional stream, so the person is asked to find it, not sent another (the review of 2026-10-23).
++                      */}
+                       {invitation.acceptedAt !== null
+                         ? `accepted ${utcDate(invitation.acceptedAt)}`
+                         : invitation.undeliveredAt !== null
+-                          ? `Not delivered ${utcDate(invitation.undeliveredAt)}: check the address, then invite again`
++                          ? invitation.undeliveredReason === 'complained'
++                            ? `Reported as spam ${utcDate(invitation.undeliveredAt)}: ask the person to find it in their spam folder; one sent again will not reach them`
++                            : `Not delivered ${utcDate(invitation.undeliveredAt)}: check the address, then invite again`
+                           : invitation.expired
+                             ? 'expired'
+                             : `open until ${utcDate(invitation.expiresAt)}`}
+diff --git a/apps/web/src/components/screening/result.test.tsx b/apps/web/src/components/screening/result.test.tsx
+index 8721c9ed..84ba2271 100644
+--- a/apps/web/src/components/screening/result.test.tsx
++++ b/apps/web/src/components/screening/result.test.tsx
+@@ -588,6 +588,12 @@ describe('what the result says is kept (audit #57; decisions 7, 17 and 18)', ()
+     expect(text).toContain('Then we delete the result: its rows and figures, and the practice name, ZIP code and email address you gave.');
+     expect(text).toContain(`If you request an audit from it, we keep ${KEPT_SUMMARY} with your request for 12 months from the screening.`);
+     expect(text).toContain(KEPT_COUNTS);
++    // The refused address's coded form: what it is used for and for how long, never "never" (it lapses after 12
++    // months, and a screening already accepted for the address is still sent; Q11 (b), the review of 2026-10-23).
++    expect(text).toContain(
++      'If email to the address you gave cannot be delivered, or is reported as spam, we keep a coded form of it, which cannot be turned back into the address, for 12 months, only to refuse another screening to that address.',
++    );
++    expect(text).not.toMatch(/\bnever send\b/);
+   });
+ 
+   it('tells a prospect whose screening took over an earlier request that their details are kept with it, never that they are deleted', () => {
+diff --git a/apps/web/src/lib/routes/mail-routes.db.test.ts b/apps/web/src/lib/routes/mail-routes.db.test.ts
+index 4d0bdebf..086b8267 100644
+--- a/apps/web/src/lib/routes/mail-routes.db.test.ts
++++ b/apps/web/src/lib/routes/mail-routes.db.test.ts
+@@ -258,9 +258,18 @@ describe('an invitation whose email was not delivered (SEC-19)', () => {
+     // The email last sent bounced (its own send time, within SES's clock skew of sent_at).
+     await owner.query("UPDATE invitation SET undelivered_at = sent_at - interval '2 seconds', undelivered_reason = 'bounced' WHERE id = $1", [invitationId]);
+     expect((await view())?.undeliveredAt).toBeInstanceOf(Date);
++    expect((await view())?.undeliveredReason).toBe('undelivered');
++    // Reported as spam: it reached the person, so the page says so rather than "Not delivered" (the review of 2026-10-23).
++    await owner.query("UPDATE invitation SET undelivered_reason = 'complained' WHERE id = $1", [invitationId]);
++    expect((await view())?.undeliveredReason).toBe('complained');
++    for (const reason of ['suppressed', 'rejected']) {
++      await owner.query('UPDATE invitation SET undelivered_reason = $2 WHERE id = $1', [invitationId, reason]);
++      expect((await view())?.undeliveredReason, reason).toBe('undelivered');
++    }
+     // A late report of an email a resend replaced flags nothing.
+     await owner.query("UPDATE invitation SET undelivered_at = sent_at - interval '10 minutes' WHERE id = $1", [invitationId]);
+     expect((await view())?.undeliveredAt).toBeNull();
++    expect((await view())?.undeliveredReason).toBeNull();
+     // Nor once the invitation is accepted.
+     await owner.query("UPDATE invitation SET undelivered_at = sent_at, accepted_at = now() WHERE id = $1", [invitationId]);
+     expect((await view())?.undeliveredAt).toBeNull();
+diff --git a/apps/web/src/lib/routes/settings.ts b/apps/web/src/lib/routes/settings.ts
+index 8f0b96ec..e35a0658 100644
+--- a/apps/web/src/lib/routes/settings.ts
++++ b/apps/web/src/lib/routes/settings.ts
+@@ -875,6 +875,12 @@ export interface InvitationView {
+    * skew between SES and the database), so a late report of an earlier email never flags a resent one.
+    */
+   readonly undeliveredAt: Date | null;
++  /**
++   * Why, beside undeliveredAt: 'complained' when the email reached the person and was reported as spam (SES then holds
++   * the address back from the transactional stream, so one sent again does not reach them), else 'undelivered'
++   * (bounced, held back by SES's suppression list, or rejected); null with undeliveredAt.
++   */
++  readonly undeliveredReason: 'complained' | 'undelivered' | null;
+ }
+ 
+ const organizationParams = z.object({ organizationId: opaqueId, notice: optionalText(z.enum(['invited', 'role_changed', 'ended', 'resent'])).catch(undefined) });
+@@ -914,9 +920,11 @@ export const usersSettingsPage = organizationRoute({
+       accepted_at: Date | null;
+       expired: boolean;
+       undelivered_at: Date | null;
++      undelivered_reason: string | null;
+     }>(
+       `SELECT i.id, u.email, m.role, i.sent_at, i.expires_at, i.sends, i.accepted_at, (i.accepted_at IS NULL AND i.expires_at <= now()) AS expired,
+-              CASE WHEN i.accepted_at IS NULL AND i.undelivered_at >= i.sent_at - interval '5 seconds' THEN i.undelivered_at END AS undelivered_at
++              CASE WHEN i.accepted_at IS NULL AND i.undelivered_at >= i.sent_at - interval '5 seconds' THEN i.undelivered_at END AS undelivered_at,
++              CASE WHEN i.accepted_at IS NULL AND i.undelivered_at >= i.sent_at - interval '5 seconds' THEN i.undelivered_reason END AS undelivered_reason
+          FROM invitation i JOIN "user" u ON u.id = i.user_id JOIN membership m ON m.id = i.membership_id
+         WHERE i.organization_id = $1 AND (m.ends_at IS NULL OR m.ends_at > now())
+         ORDER BY i.accepted_at IS NOT NULL, i.sent_at DESC, i.id LIMIT 100`,
+@@ -939,6 +947,7 @@ export const usersSettingsPage = organizationRoute({
+           acceptedAt: row.accepted_at,
+           expired: row.expired,
+           undeliveredAt: row.undelivered_at,
++          undeliveredReason: row.undelivered_at === null ? null : row.undelivered_reason === 'complained' ? 'complained' : 'undelivered',
+         }),
+       ),
+       notice: params.notice ?? null,
 diff --git a/apps/web/src/lib/screening/messages.ts b/apps/web/src/lib/screening/messages.ts
 index d15f71e6..9596fdfb 100644
 --- a/apps/web/src/lib/screening/messages.ts
@@ -292,3 +456,77 @@ index 23d07367..37716a1d 100644
 +    );
    });
  });
+diff --git a/docs/adr/0062-screen-prospects-from-aggregate-rows-without-phi-price-each-row-with-the-unchanged-engine-and-send-the-result-by-emailed-link.md b/docs/adr/0062-screen-prospects-from-aggregate-rows-without-phi-price-each-row-with-the-unchanged-engine-and-send-the-result-by-emailed-link.md
+index 3e038526..ff907a33 100644
+--- a/docs/adr/0062-screen-prospects-from-aggregate-rows-without-phi-price-each-row-with-the-unchanged-engine-and-send-the-result-by-emailed-link.md
++++ b/docs/adr/0062-screen-prospects-from-aggregate-rows-without-phi-price-each-row-with-the-unchanged-engine-and-send-the-result-by-emailed-link.md
+@@ -1461,13 +1461,17 @@ marks.
+ new screening (`screening_bounce_budget`), so one client or one email account cannot close the screening for everyone.
+ 
+ **The wording (Q12, the recommended wording; counsel confirms it before the screening opens).** The new sentences a
+-prospect reads, word for word:
+-
+-- the page while the stream is paused, under "New screenings are paused": "Too many of our recent result emails could
+-  not be delivered, so we have stopped sending them while we fix it. Screenings uploaded before the pause are kept and
+-  will be emailed when we resume, if that is within 30 days of the upload. Result links already sent still work.",
+-  then "Meanwhile, you can request an audit.";
+-- an upload that raced the pause: "New screenings are paused while we fix our result emails. Try again later.";
++prospect reads, word for word, as the review of 2026-10-23 left them (its Wording section: the paused page and its
++refusal named one cause, undelivered mail, for every pause, though a pause also follows delivered mail reported as
++spam, the account's rates, SES's review or a person; the bounce budget said "this email account" where the account is
++a work address's domain, so a colleague at the practice was told their own address had failed; and what is kept said
++"never send to it again" of a hash that lapses after 12 months and refuses only a new screening):
++
++- the page while the stream is paused, under "New screenings are paused": "We have paused new screenings while we
++  check that our result emails are reaching people. Screenings uploaded before the pause are kept, and their results
++  are emailed once we resume, if that is within 30 days of the upload. Result links already sent still work.", then
++  "Meanwhile, you can request an audit.";
++- an upload that raced the pause: "New screenings are paused for now. Try again later, or request an audit.";
+ - every refused address: "We cannot send email to this address. Check it, or use another address.";
+ - a mailbox SES could not confirm: "We could not confirm this mailbox exists. Check the address, or keep it as
+   typed.";
+@@ -1478,11 +1482,11 @@ prospect reads, word for word:
+ - any other ending in no use: "This address ends in “.qqq”, which is not a domain ending in use. Check it, or keep it
+   as typed.";
+ - the box that keeps a questioned address: "Keep this address as typed";
+-- the bounce budget: "Several recent screening results sent from this connection, or to this email account, could not
+-  be delivered, so we cannot take another screening from it for up to 7 days. Check the email address, or request an
+-  audit instead.";
++- the bounce budget: "Several recent screening results for this connection, or for this email address or its work
++  domain, could not be delivered, so we cannot take another screening from them for up to 7 days. Check the email
++  address, or request an audit instead.";
+ - what is kept: "If email to the address you gave cannot be delivered, or is reported as spam, we keep a coded form of
+-  it that cannot be read back as the address, for 12 months, only so that we never send to it again."
++  it, which cannot be turned back into the address, for 12 months, only to refuse another screening to that address."
+ 
+ **What proves it.** `apps/web/src/lib/screening/address.test.ts` and `validation.test.ts` (the hints, the DNS
+ verdicts, the validation table, the cap, the timeouts and the logs), `routes.db.test.ts` (paused and not ready closing
+diff --git a/docs/product/legal-surfaces.md b/docs/product/legal-surfaces.md
+index a947995c..e1731ff9 100644
+--- a/docs/product/legal-surfaces.md
++++ b/docs/product/legal-surfaces.md
+@@ -15,7 +15,7 @@ the screening terms and the AMA notice in a legal-surfaces pull request before P
+ | --- | --- | --- | --- | --- |
+ | `good-faith-research` | The disclosure page's good-faith research statement: research that follows the page is treated as authorized, no legal action is brought or supported over it, and a third party's claim is answered by saying so; it never authorizes access to patient information or to data that is not the researcher's | `apps/web/src/app/security/page.tsx` | Counsel (the legal-surfaces pull request) | Launch, and any production deploy |
+ | `disclosure-response-times` | The disclosure page's response times: receipt confirmed within three business days, an assessment within ten, a fix aimed for within 90 days of the report, publication agreed with the reporter, no rewards | `apps/web/src/app/security/page.tsx` | The security official (with the incident-response policy) | Launch, and any production deploy |
+-| `screening-kept-result` | The screening result page's notice of what is kept: the record of counts that names no one (decision 7's plain list, every column) and, by what the screening's summary is kept with as the database says, nothing more until an audit is requested, the summary with the screening's own request, the summary with an earlier screening's request of the same practice name and ZIP code that it took over (decision 17: the later prospect's own details are what is kept), or by consent (PR 6e); that a kept request's record of counts can be matched to it (decision 18); and, with no request, that a coded form of an address whose email could not be delivered or was reported as spam is kept 12 months, only so that it is never sent to again (the founder's Q11 (b) of 2026-10-21) | `apps/web/src/components/screening/result-summary.tsx` | Counsel (with decisions 7, 17 and 18) | The screening opens, and any production deploy |
++| `screening-kept-result` | The screening result page's notice of what is kept: the record of counts that names no one (decision 7's plain list, every column) and, by what the screening's summary is kept with as the database says, nothing more until an audit is requested, the summary with the screening's own request, the summary with an earlier screening's request of the same practice name and ZIP code that it took over (decision 17: the later prospect's own details are what is kept), or by consent (PR 6e); that a kept request's record of counts can be matched to it (decision 18); and, with no request, that a coded form of an address whose email could not be delivered or was reported as spam is kept 12 months, only to refuse another screening to that address (the founder's Q11 (b) of 2026-10-21) | `apps/web/src/components/screening/result-summary.tsx` | Counsel (with decisions 7, 17 and 18) | The screening opens, and any production deploy |
+ | `screening-kept-email` | The result email's sentences on what is deleted when its link closes and what is kept, by the same basis as the result page | `apps/worker/src/screening/message.ts` | Counsel (with decisions 7, 17 and 18) | The screening opens, and any production deploy |
+ | `screening-kept-closed-link` | The closed link's page: what was deleted, and what is kept if an audit was requested from the screening or an earlier one of the same practice name and ZIP code (it cannot say whether one was), and the coded form of an undeliverable or reported address kept 12 months (Q11 (b)) | `apps/web/src/app/screening/results/[resultId]/not-found.tsx` | Counsel (with decisions 7 and 17) | The screening opens, and any production deploy |
+ | `screening-kept-upload` | The upload form's hint under the email address: how long the link opens the result, what is deleted, and what is kept if an audit is requested, and the coded form of an undeliverable or reported address kept 12 months (Q11 (b)) | `apps/web/src/components/screening/upload-form.tsx` | Counsel (with decisions 7 and 17) | The screening opens, and any production deploy |
+diff --git a/docs/runbooks/deliverability.md b/docs/runbooks/deliverability.md
+index 24d0dd7b..a8907ee6 100644
+--- a/docs/runbooks/deliverability.md
++++ b/docs/runbooks/deliverability.md
+@@ -202,7 +202,10 @@ mailbox works.
+ ### 3.4 An invitation undelivered (`INVITATION_UNDELIVERED`; `TransactionalSetBounce`)
+ 
+ The users page shows the invitation "Not delivered" with its date. Tell the administrator who invited the person to
+-check the address, then invite again. A transactional bounce rate at 2% means invitations are going to bad addresses
++check the address, then invite again. An invitation the person reported as spam reads "Reported as spam" instead: it
++reached them, and SES now holds the address back from the transactional stream, so another would not arrive. The
++person finds the invitation in their spam folder; take the address off the suppression list (3.3) only if they need a
++new one and confirm they expect it. A transactional bounce rate at 2% means invitations are going to bad addresses
+ at volume: look for one organization's import.
+ 
+ ### 3.5 The validation cap reached (`MAIL_VALIDATION_CAP_REACHED`)
