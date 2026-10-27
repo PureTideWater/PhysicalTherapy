@@ -273,6 +273,42 @@ describe('the evaluation on permitted examples inside the PHI boundary', () => {
     expect(permittedRegressions(await evaluatePermitted(services(), { runId: randomUUID(), practiceIds: [misfiled.practiceId] }), report)).toEqual([]);
   });
 
+  it('reads none of a practice’s records for examples the gateway refuses without the screen: a spent budget (combined audit item 120’s review, S1)', async () => {
+    const screenReads = async () =>
+      asOwner(owner, [misfiled.practiceId], async () => (await owner.query<{ n: string }>("SELECT count(*)::text AS n FROM audit_event WHERE practice_id = $1 AND action = 'read' AND purpose = 'contract_screen'", [misfiled.practiceId])).rows[0]?.n);
+    const before = await screenReads();
+    await owner.query("INSERT INTO feature_flag (key, scope, scope_id, value) VALUES ('model.daily_budget_cents', 'practice', $1, '\"0\"'::jsonb)", [misfiled.practiceId]);
+    try {
+      const report = await evaluatePermitted(services(), { runId: randomUUID(), practiceIds: [misfiled.practiceId] });
+      // Refused by the budget before the screen, though each document names a patient: the run is the budget's, not the documents'.
+      expect(report.problems.map((entry) => entry.problem)).toEqual(['budget_exceeded', 'budget_exceeded']);
+      expect(await screenReads()).toBe(before);
+    } finally {
+      await owner.query("DELETE FROM feature_flag WHERE key = 'model.daily_budget_cents' AND scope = 'practice' AND scope_id = $1", [misfiled.practiceId]);
+    }
+  });
+
+  it('refuses each example as screen_failed when a practice’s stored identifier does not decrypt, reading again for the next, every read kept (combined audit item 120’s review, F3)', async () => {
+    const sealed = await practice('PERMITTED UNREADABLE RECORDS', syntheticContractOutput(), [...SYNTHETIC_CONTRACT_PAGES, 'SYNTHETIC RENEWAL NOTE - INVENTED']);
+    // A member ID sealed for another column (what a write bug, or a restore under the wrong key, leaves): it does not decrypt.
+    await asOwner(owner, [sealed.practiceId], () =>
+      owner.query('INSERT INTO patient_ref (practice_id, pseudonym, member_id) VALUES ($1, $2, $3)', [sealed.practiceId, 'd'.repeat(64), sealed.cipher.encrypt('claim.patient_control_number', 'SYNMBR90000002')]),
+    );
+    await example(sealed, correction(sealed, [record('97110', '3250')]));
+    await example(sealed, correction(sealed, [record('97140', '3025')]));
+    const runId = randomUUID();
+    const report = await evaluatePermitted(services(), { runId, practiceIds: [sealed.practiceId] });
+    // The run's setting, not the examples': unmeasured, so record-permitted refuses the run whole.
+    expect(report.problems.map((entry) => entry.problem)).toEqual(['refused:screen_failed', 'refused:screen_failed']);
+    expect(report.problems.every((entry) => permittedOutcome(entry.problem) === 'unmeasured')).toBe(true);
+    expect(await asOwner(owner, [sealed.practiceId], async () => (await owner.query<{ id: string }>('SELECT id FROM model_call WHERE practice_id = $1', [sealed.practiceId])).rows)).toEqual([]);
+    // The check read again for the second example after the first failed: one audited read of the row per example, both kept.
+    const screened = await asOwner(owner, [sealed.practiceId], async () =>
+      (await owner.query<{ object_type: string; n: string }>("SELECT object_type, count(*)::text AS n FROM audit_event WHERE practice_id = $1 AND action = 'read' AND purpose = 'contract_screen' AND actor_id = $2 GROUP BY 1", [sealed.practiceId, runId])).rows,
+    );
+    expect(screened).toEqual([{ object_type: 'patient_ref', n: '2' }]);
+  });
+
   it('scores an answer that does not parse as proposing nothing', async () => {
     const report = await evaluatePermitted(services(), { runId: randomUUID(), practiceIds: [west.practiceId] });
     expect([report.problems, report.total]).toEqual([[{ exampleId: ids.west, problem: 'invalid_output' }], tally({ missed: 5 })]);

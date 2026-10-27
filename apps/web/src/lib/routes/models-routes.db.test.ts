@@ -37,6 +37,8 @@ import { Sealer } from '../auth/seal';
 import { SESSION_COOKIE, openSession } from '../auth/sessions';
 import { evidenceFor } from '../contracts/evidence';
 import type { CookieJar, MutationResult, Outcome, Route } from '../http/route';
+import { seedScreenRecords } from '../../../../../packages/model-gateway/src/test-support/screen-world';
+import { SCREEN_LIMITS, screenLimitSubject } from '../models/contract-proposals';
 import { coverageGaps } from '../models/evidence-checklist';
 import { assignModelPath } from '../models/path';
 import { type Services, createServices } from '../server/services';
@@ -45,6 +47,7 @@ import { abstractionVersionPage, addRateRecordAction, approveFieldAction, approv
 import { coveragePage } from './coverage';
 import { draftNarrativeAction, proposeTermsAction, rejectProposalAction, reviewEvidenceAction, suggestEvidenceAction } from './models';
 import { approvePacketVersionAction, packetPage, requestApprovalAction, writeVersionAction } from './packets';
+import { ACCESS_LOG_PAGE_SIZE, accessLogPage } from './settings';
 import { CONTRACT_PAGES, storeContractDocument } from './test-support/contract-world';
 import { csrfTokenFor } from '../http/csrf';
 
@@ -633,8 +636,148 @@ describe('the practice records check before a contract is sent (docs/adr/0070, P
     // The operator's log names the failed read apart from the bound (MODEL_INPUT_SCREEN_UNAVAILABLE); the person reads the same notice for both.
     expect(logs.filter((entry) => entry.error_code === 'MODEL_INPUT_SCREEN_FAILED').map((entry) => entry.practice_id)).toEqual([practiceId]);
     expect(JSON.stringify(logs)).not.toContain('SYNSEALEDELSEWHERE01');
-    expect((await screenTrail(practiceId)).events).toHaveLength(1);
+    const trail = await screenTrail(practiceId);
+    expect(trail.events).toHaveLength(1);
+    // The screen's reads are kept though a value then failed to decrypt: one per row it read (combined audit item 120's review, F3).
+    expect(Object.fromEntries(trail.reads.map((read) => [read.object_type, Number(read.n)]))).toEqual(await heldRows(practiceId));
   });
+});
+
+/** The rows of the practice the screen reads, by table: one audited read each. */
+async function heldRows(practiceId: string): Promise<Readonly<Record<string, number>>> {
+  const [held] = await rows<{ claims: number; patients: number }>(
+    practiceId,
+    'SELECT (SELECT count(*) FROM claim WHERE practice_id = $1)::int AS claims, (SELECT count(*) FROM patient_ref WHERE practice_id = $1 AND member_id IS NOT NULL)::int AS patients',
+    [practiceId],
+  );
+  return { claim: held?.claims ?? 0, patient_ref: held?.patients ?? 0 };
+}
+
+/** What a practice's contract screens wrote: the person's events, the screens that read (one request ID each) and their audited reads. */
+async function screenCounts(practiceId: string): Promise<{ readonly events: number; readonly screens: number; readonly reads: number }> {
+  const trail = await screenTrail(practiceId);
+  return { events: trail.events.length, screens: new Set(trail.reads.map((read) => read.request_id)).size, reads: trail.reads.reduce((sum, read) => sum + Number(read.n), 0) };
+}
+
+const total = (held: Readonly<Record<string, number>>) => Object.values(held).reduce((sum, n) => sum + n, 0);
+
+describe('what a click costs the practice’s audit trail (combined audit item 120’s review, S1; docs/adr/0070, Part 3)', () => {
+  it('refuses every click at a practice that has spent its daily budget before the screen: no read, and no person’s event', async () => {
+    const draft = await draftContract('MODELS SCREEN BUDGET');
+    const { practiceId } = draft.practice;
+    answer('proposeContractTerms', await pagesInput(draft), { candidates: [fixed('97110', Q97110, '$32.00')] });
+    await setFeatureFlag(w.app, platformAdmin, { key: 'model.daily_budget_cents', scope: 'practice', scopeId: practiceId, value: '0' });
+    const sentBefore = provider.requests.length;
+    for (let click = 0; click < 3; click += 1) {
+      expect(redirectOf(await call(proposeTermsAction, draft.specialist, { practiceId }, { versionId: draft.versionId, documentId: draft.documentId }))).toBe(`/p/${practiceId}/abstraction/versions/${draft.versionId}?model=budget`);
+    }
+    // Each click once read and audited every identifier the practice holds, after the person's event, and only then
+    // met the budget: now the budget refuses it first, and nothing is read or recorded but the route's own event.
+    expect(await screenCounts(practiceId)).toEqual({ events: 0, screens: 0, reads: 0 });
+    expect(await rows(practiceId, "SELECT 1 FROM audit_event WHERE practice_id = $1 AND action = 'model_proposal_requested'", [practiceId])).toHaveLength(3);
+    expect(provider.requests.length).toBe(sentBefore);
+  });
+
+  it('screens a document that names a patient once: clicked again on the same server, it is refused at once, reading nothing', async () => {
+    const draft = await draftContract('MODELS SCREEN REMEMBERED', [{ pages: MISFILED_EXHIBIT, kind: 'exhibit' }]);
+    const { practiceId } = draft.practice;
+    const P = { practiceId };
+    const exhibitId = draft.extraIds[0] ?? '';
+    const sentBefore = provider.requests.length;
+    logs.length = 0;
+    for (let click = 0; click < 3; click += 1) {
+      expect(redirectOf(await call(proposeTermsAction, draft.specialist, P, { versionId: draft.versionId, documentId: exhibitId }))).toBe(`/p/${practiceId}/abstraction/versions/${draft.versionId}?model=names_patient`);
+    }
+    // One screen's reads and the person's one event, where each click once wrote both again.
+    expect(await screenCounts(practiceId)).toEqual({ events: 1, screens: 1, reads: total(await heldRows(practiceId)) });
+    expect(logs.filter((entry) => entry.error_code === 'MODEL_INPUT_NAMES_PATIENT').map((entry) => entry.practice_id)).toEqual([practiceId]);
+    expect(provider.requests.length).toBe(sentBefore);
+    // What is remembered is that document's refusal alone: the version's contract is screened, and proposed.
+    answer('proposeContractTerms', await pagesInput(draft), { candidates: [fixed('97110', Q97110, '$32.00')] });
+    expect(redirectOf(await call(proposeTermsAction, draft.specialist, P, { versionId: draft.versionId, documentId: draft.documentId }))).toBe(`/p/${practiceId}/abstraction/versions/${draft.versionId}?model=proposed`);
+    expect(await screenCounts(practiceId)).toMatchObject({ events: 2, screens: 2 });
+  });
+
+  it('counts a screen against the practice’s and the person’s limits only when it is about to read, and refuses one past any limit with nothing read or sent', async () => {
+    const draft = await draftContract('MODELS SCREEN LIMITS');
+    const { practiceId } = draft.practice;
+    const P = { practiceId };
+    answer('proposeContractTerms', await pagesInput(draft), { candidates: [fixed('97110', Q97110, '$32.00')] });
+    const subjects = SCREEN_LIMITS.map((limit) => ({ bucket: limit.bucket, subject: screenLimitSubject(services.sealer, limit.bucket, limit.subject, limit.subject === 'practice' ? practiceId : draft.specialist) }));
+    const counters = async () =>
+      (await rows<{ bucket: string; subject: string; hits: number }>(practiceId, 'SELECT bucket, subject, hits FROM rate_limit_counter WHERE subject = ANY($1)', [subjects.map((entry) => entry.subject)])).map((counter) => `${counter.bucket}:${counter.subject}:${String(counter.hits)}`).sort();
+    // A click the gateway refuses anyway (the kill switch) counts against no limit, and records no person's event.
+    await setFeatureFlag(w.app, platformAdmin, { key: 'model.kill_switch', scope: 'practice', scopeId: practiceId, value: true });
+    expect(redirectOf(await call(proposeTermsAction, draft.specialist, P, { versionId: draft.versionId, documentId: draft.documentId }))).toBe(`/p/${practiceId}/abstraction/versions/${draft.versionId}?model=off`);
+    expect(await counters()).toEqual([]);
+    // A screen about to read counts one hit against each limit.
+    await setFeatureFlag(w.app, platformAdmin, { key: 'model.kill_switch', scope: 'practice', scopeId: practiceId, value: false });
+    expect(redirectOf(await call(proposeTermsAction, draft.specialist, P, { versionId: draft.versionId, documentId: draft.documentId }))).toBe(`/p/${practiceId}/abstraction/versions/${draft.versionId}?model=proposed`);
+    expect(await counters()).toEqual(subjects.map((entry) => `${entry.bucket}:${entry.subject}:1`).sort());
+    expect(await screenCounts(practiceId)).toMatchObject({ events: 1, screens: 1 });
+
+    // Past any one of the limits (the practice's or the person's, in the hour or the day), the click is refused before
+    // the screen: no read, no person's event, nothing sent, and one line for the operator.
+    for (const [index, limit] of SCREEN_LIMITS.entries()) {
+      const past = await draftContract(`MODELS SCREEN LIMIT ${String(index)}`);
+      const at = past.practice.practiceId;
+      answer('proposeContractTerms', await pagesInput(past), { candidates: [fixed('97110', Q97110, '$32.00')] });
+      const subject = screenLimitSubject(services.sealer, limit.bucket, limit.subject, limit.subject === 'practice' ? at : past.specialist);
+      for (let hit = 0; hit < limit.hits; hit += 1) {
+        await w.app.query('SELECT * FROM rate_limit_take($1, $2, $3, $4)', [limit.bucket, subject, limit.hits, limit.windowSeconds]);
+      }
+      const sentBefore = provider.requests.length;
+      logs.length = 0;
+      expect(redirectOf(await call(proposeTermsAction, past.specialist, { practiceId: at }, { versionId: past.versionId, documentId: past.documentId })), limit.bucket).toBe(`/p/${at}/abstraction/versions/${past.versionId}?model=screen_unavailable`);
+      expect(await screenCounts(at), limit.bucket).toEqual({ events: 0, screens: 0, reads: 0 });
+      expect(provider.requests.length).toBe(sentBefore);
+      expect(await rows(at, 'SELECT 1 FROM model_call WHERE practice_id = $1', [at])).toEqual([]);
+      expect(logs.filter((entry) => entry.error_code === 'MODEL_SCREEN_LIMITED').map((entry) => entry.practice_id), limit.bucket).toEqual([at]);
+    }
+  });
+});
+
+describe('the practice’s access log after a contract screen (combined audit item 120’s review, S2)', () => {
+  // A gap pinned, not a behaviour wanted: practice_access_log pages on `at` alone and returns no request ID, so the
+  // reads one screen writes (all at its transaction's one `at`) show as a job of the practice, beside no person, and
+  // only the first page of them is listed. This test flips when Lane A's change lands (practice_access_log paged on
+  // (at, id), its request ID returned, a contract_screen read labelled from the event it joins; docs/adr/0070, Part 3):
+  // then every read is listed, and labelled with the person who caused it.
+  it('lists the first page of one screen’s reads, as a job of the practice beside no person; the record filter still finds each read', async () => {
+    const draft = await draftContract('MODELS ACCESS LOG', [{ pages: MISFILED_EXHIBIT, kind: 'exhibit' }]);
+    const { practiceId } = draft.practice;
+    await seedScreenRecords(w.owner, { practiceId, uploaderId: draft.practice.manager }, draft.practice.cipher, { bulkClaims: 120 });
+    expect(redirectOf(await call(proposeTermsAction, draft.specialist, { practiceId }, { versionId: draft.versionId, documentId: draft.extraIds[0] ?? '' }))).toContain('model=names_patient');
+    const audited = total(await heldRows(practiceId));
+    expect(await screenCounts(practiceId)).toEqual({ events: 1, screens: 1, reads: audited });
+
+    // The practice administrator pages the log as its page does, `next` into `before`.
+    const admin = draft.practice.world.adminUserId;
+    const seen: { readonly action: string; readonly actor: string; readonly via: string; readonly ticket: string | null; readonly purpose: string | null; readonly objectId: string | null }[] = [];
+    let before: string | undefined;
+    for (let page = 0; page < 20; page += 1) {
+      const data = ok(await call(accessLogPage, admin, { practiceId, ...(before === undefined ? {} : { before }) }));
+      seen.push(...data.entries.map((entry) => ({ action: entry.action, actor: entry.actor, via: entry.via, ticket: entry.ticket, purpose: entry.purpose, objectId: entry.objectId })));
+      if (data.next === null) {
+        break;
+      }
+      before = data.next;
+    }
+    const shown = seen.filter((entry) => entry.action === 'read' && entry.purpose === 'contract_screen');
+    expect(audited).toBeGreaterThan(ACCESS_LOG_PAGE_SIZE);
+    expect(shown).toHaveLength(ACCESS_LOG_PAGE_SIZE);
+    expect(new Set(shown.map((entry) => `${entry.actor}|${entry.via}|${String(entry.ticket)}`))).toEqual(new Set(['a job of the practice|system|null']));
+    // The person's event is listed, under their support ticket, apart from the reads, and nothing on either joins them.
+    expect(seen.filter((entry) => entry.action === 'contract_screen_requested').map((entry) => [entry.via, entry.ticket, entry.purpose])).toEqual([['support', 'SYN-MOD', 'contract_screen']]);
+    // A claim the paged log skipped is found by the record filter: no read is lost, though its cause is not named.
+    const [skipped] = await rows<{ object_id: string }>(
+      practiceId,
+      "SELECT object_id FROM audit_event WHERE practice_id = $1 AND action = 'read' AND purpose = 'contract_screen' AND object_type = 'claim' AND NOT (object_id = ANY($2::uuid[])) LIMIT 1",
+      [practiceId, shown.flatMap((entry) => (entry.objectId === null ? [] : [entry.objectId]))],
+    );
+    const filtered = ok(await call(accessLogPage, admin, { practiceId, object_type: 'claim', object_id: skipped?.object_id }));
+    expect(filtered.entries.filter((entry) => entry.purpose === 'contract_screen').map((entry) => [entry.action, entry.actor, entry.via])).toEqual([['read', 'a job of the practice', 'system']]);
+  }, 120_000);
 });
 
 describe('the packet builder’s narrative draft (MOD-03)', () => {
@@ -828,6 +971,8 @@ describe('a model feature not evaluated for the configured model (docs/adr/0070,
     expect(standIn.requests).toEqual([]);
     expect(await rows(practiceId, 'SELECT 1 FROM model_call WHERE practice_id = $1', [practiceId])).toEqual([]);
     expect(await rows(practiceId, 'SELECT 1 FROM model_proposal WHERE practice_id = $1', [practiceId])).toEqual([]);
+    // Refused before the screen, so no screen was caused: no person's contract_screen_requested event, and no read.
+    expect(await screenCounts(practiceId)).toEqual({ events: 0, screens: 0, reads: 0 });
 
     // By hand: the record entered, approved field by field, the version approved.
     const hand = await enter97140(draft);
@@ -854,6 +999,8 @@ describe('the kill switch (MOD-06)', () => {
     expect(provider.requests.length).toBe(sentBefore);
     expect(await rows(practiceId, 'SELECT 1 FROM model_call WHERE practice_id = $1', [practiceId])).toEqual([]);
     expect(await rows(practiceId, 'SELECT 1 FROM model_proposal WHERE practice_id = $1', [practiceId])).toEqual([]);
+    // Refused before the screen, so no screen was caused: no person's contract_screen_requested event, and no read.
+    expect(await screenCounts(practiceId)).toEqual({ events: 0, screens: 0, reads: 0 });
 
     // By hand: the record entered, approved field by field, the version approved.
     const hand = await enter97140(draft);

@@ -534,6 +534,39 @@ describe('MOD-12: a contract or exhibit naming a patient of the practice (combin
     }
   });
 
+  it('screens no call it refuses without the screen: a replay under a completed key and a practice past its budget write no audit row (combined audit item 120’s review, S1)', async () => {
+    const screenReads = async () =>
+      Number.parseInt(
+        (await asOwner(owner, [north.practiceId], () => owner.query<{ n: string }>("SELECT count(*) AS n FROM audit_event WHERE practice_id = $1 AND action = 'read' AND purpose = 'contract_screen'", [north.practiceId]))).rows[0]?.n ?? '',
+        10,
+      );
+    const provider = local();
+    const { gateway: g, logger } = gateway({ kind: 'user', userId: specialist }, provider);
+    const key = context();
+    let before = await screenReads();
+    await expect(g.proposeContractTerms(key, syntheticContractInput({ patientRecords: await northRecords() }))).resolves.toMatchObject({ passed: true });
+    // One screen: one audited read per row of the practice's records.
+    expect((await screenReads()) - before).toBeGreaterThan(0);
+    // A job retried under the same key, with a check of its own: refused by the completed call, unscreened.
+    before = await screenReads();
+    await expect(g.proposeContractTerms(key, syntheticContractInput({ patientRecords: await northRecords() }))).rejects.toBeInstanceOf(DuplicateModelCallError);
+    expect(await screenReads()).toBe(before);
+    // A practice whose budget is spent: each call refused before its screen, a document naming a patient as well.
+    await clearFlags();
+    await setFeatureFlag(app, platformAdmin, { key: 'model.daily_budget_cents', scope: 'practice', scopeId: north.practiceId, value: '0' });
+    try {
+      const eob = await documentPages('eob-filed-as-contract.pdf');
+      for (const pages of [eob, eob, eob]) {
+        await expect(g.proposeContractTerms(context(), syntheticContractInput({ pages, patientRecords: await northRecords() }))).rejects.toBeInstanceOf(ModelBudgetExceededError);
+      }
+      expect(await screenReads()).toBe(before);
+      expect(logger.lines.map((line) => line.fields.error_code)).toEqual(['MODEL_BUDGET_EXCEEDED', 'MODEL_BUDGET_EXCEEDED', 'MODEL_BUDGET_EXCEEDED']);
+      expect(provider.requests).toHaveLength(1);
+    } finally {
+      await clearFlags();
+    }
+  });
+
   it('sends the fee-schedule twin, alone and from the zip: its codes, NPIs, TIN, ZIP+4s and dates are none of the practice’s kept identifiers', async () => {
     for (const pages of [await documentPages('fee-schedule-twin.pdf'), await zipped('fee-schedule.pdf')]) {
       const input = syntheticContractInput({ pages, patientRecords: await northRecords() });

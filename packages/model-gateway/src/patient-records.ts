@@ -29,8 +29,10 @@ import { type RunIndex, SCREEN_FLOORS, SCREEN_MAX_RUN, SCREEN_MIN_RUN, type Scre
  * records are read in a job scope whose actor is the service screen ID (withJobScope: actor kind service, refused
  * if the ID names a person), each returned row audited (readWithAudit) with purpose contract_screen and the request
  * ID `<requestId>:screen:<screenId>`. The caller records one event in the person's own name that joins to those
- * reads by that request ID (the web's contract_screen_requested), so the trail says who caused the screen without
- * saying that the person read every patient. The job scope returns the rows as stored (ciphertext) and commits, its
+ * reads by that request ID (the web's contract_screen_requested, written in the gateway's step before the screen,
+ * CallContext.beforeScreen, so only for a screen about to read), so the audit_event trail says who caused the
+ * screen without saying that the person read every patient (the practice's access log cannot show the join yet:
+ * docs/adr/0070, Part 3, What it gives up). The job scope returns the rows as stored (ciphertext) and commits, its
  * audit rows with it, before any value is decrypted: no value is decrypted whose read is not audited, so a value
  * that does not decrypt answers screen_failed with every read kept (combined audit item 120's review, F3).
  *
@@ -224,9 +226,10 @@ export function screenAuditRequestId(requestId: string, screenId: string): strin
 }
 
 /**
- * The person's own audit event for a screen they cause (the design's 5.2): recorded in their request scope before
- * the gateway is called, under the same request ID as the screen's reads (screenAuditRequestId), so the trail says
- * who caused the screen and joins to its reads without saying the person read every patient.
+ * The person's own audit event for a screen they cause (the design's 5.2): recorded in their request scope in the
+ * gateway's step before the screen (CallContext.beforeScreen), once every refusal the gateway can make without a
+ * screen has passed, under the same request ID as the screen's reads (screenAuditRequestId), so the audit_event
+ * trail says who caused the screen and joins to its reads without saying the person read every patient.
  */
 export async function recordContractScreenRequested(
   scope: AnyScope<ScopeClient>,

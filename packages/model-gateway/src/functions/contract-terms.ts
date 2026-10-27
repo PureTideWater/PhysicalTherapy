@@ -483,8 +483,9 @@ export const NAMES_PATIENT_MESSAGE = 'this document names a patient of the pract
 export const SCREEN_UNAVAILABLE_MESSAGE = 'this document could not be checked for patient details and was not sent';
 
 /**
- * The contract PHI check (combined audit item 120; docs/adr/0070, Part 3), run by the gateway after preparation and the
- * variant's serving check and before the idempotency key, the budget and the call (gateway.ts, step 4):
+ * The contract PHI check (combined audit item 120; docs/adr/0070, Part 3), run by the gateway last of its refusals: after
+ * preparation, the variant's serving check, the idempotency key's lookup, the read of the day's budget and the caller's
+ * step before the screen, and before the budget's hold and the call (gateway.ts, step 8; the review's S1):
  * 1. the check must be one the gateway's factories issued (../patient-records.ts), else `screen_invalid`;
  * 2. it must be bound to the call's practice (a synthetic check, bound to none, only on a synthetic evaluation
  *    call), else `screen_invalid`;

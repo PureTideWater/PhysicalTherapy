@@ -9,7 +9,7 @@ import {
   rateTermsToJson,
   removeRateRecord,
 } from '@tp/contracts';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit } from '@tp/db/runtime';
 import {
@@ -18,6 +18,7 @@ import {
   type CandidateReview,
   type Correction,
   type ContractTermsProposal,
+  InputRefusedError,
   type ProposedRateRecord,
   practiceRecordsCheck,
   recordContractScreenRequested,
@@ -26,6 +27,7 @@ import {
 } from '@tp/model-gateway';
 import type { DocumentStore } from '@tp/worker/documents';
 
+import type { Sealer } from '../auth/seal';
 import { evidenceFor } from '../contracts/evidence';
 import { type ModelProblem, type ModelServices, gatewayFor, modelProblem } from './path';
 
@@ -48,12 +50,19 @@ import { type ModelProblem, type ModelServices, gatewayFor, modelProblem } from 
  *   model_call row is written, and the screen offers hand entry. The check is built here, after the role check
  *   (the route's), the kind check and the pages, from the request's own scope as proof that it reaches the
  *   practice and never read through: the contract specialist holds no phi.read, so the records are read in the
- *   check's own job scope as a service actor, the screen, a fresh ID per request. The person's
- *   `contract_screen_requested` event, recorded here in the request's transaction before the call, names the
- *   document and carries the screen's request ID, so the audit trail says who caused the screen and joins it
- *   to every read the screen made, without saying the person read every patient. The gateway requires the
+ *   check's own job scope as a service actor, the screen, a fresh ID per request. The gateway requires the
  *   check (ContractPagesInput.patientRecords) and accepts only one it issued for this practice, so no caller
  *   can send a contract unchecked.
+ *   Until the lookup hashes land (F3), a screen reads, decrypts and audits every identifier the practice holds,
+ *   so a screen runs only when it must (combined audit item 120's review, S1). The gateway refuses first every
+ *   call it can refuse without one (the kill switch, a variant not served, a completed call under the key, a
+ *   spent budget), and only then runs this module's step before the screen (CallContext.beforeScreen): the
+ *   screen's limits (SCREEN_LIMITS: per practice and per person, in Postgres), then the person's
+ *   `contract_screen_requested` event, in the request's transaction, naming the document and carrying the
+ *   screen's request ID, so the audit trail says who caused the screen and joins it to every read the screen
+ *   made, without saying the person read every patient, and the event is written exactly when a screen is
+ *   about to read, never for a call refused before one. A document this server found naming a patient is
+ *   refused again at once, unscreened, for an hour (remembered names_patient refusals, below).
  * - reject: the specialist discards a proposal: its model records not yet verified are removed, and
  *   the decision is recorded on the call as rejected.
  * - review: when the version is approved, each proposal not yet reviewed is decided from what the
@@ -107,6 +116,132 @@ export interface ProposeInput {
 interface ProposeServices extends ModelServices {
   readonly keys: Parameters<typeof loadPracticeCipher>[1];
   readonly documents: DocumentStore;
+  /** The server's key: the screen limits' subjects are HMACs under it, as every rate limit's are (src/lib/http/rate-limit.ts). */
+  readonly sealer: Sealer;
+}
+
+// ---------------------------------------------------------------------------------------------------
+// When a proposal may screen the practice's records (combined audit item 120's review, S1)
+
+/** One of the contract screen's limits: hits per fixed window, per practice or per person. */
+export interface ScreenLimit {
+  readonly bucket: 'model_screen' | 'model_screen_day';
+  readonly subject: 'practice' | 'user';
+  readonly hits: number;
+  readonly windowSeconds: number;
+}
+
+/**
+ * How often one practice's records are screened, and how often one person causes a screen (docs/adr/0070, Part 3).
+ * Until the lookup hashes land (F3, Lane A's), each screen reads, decrypts and audits every identifier the practice
+ * holds: up to SCREEN_MAX_IDENTIFIERS audit_event rows a screen, which no role can remove. So the screens are counted
+ * in Postgres (rate_limit_take: fixed windows every web task shares; the hour and the day in buckets of their own,
+ * since the function keeps one window per bucket and subject), each subject an HMAC under the server's key as
+ * src/lib/http/rate-limit.ts stores them, and a screen past any limit is not run: the person is told the document
+ * could not be checked, and enters the terms by hand. A limit is taken only in the gateway's step before the screen
+ * (CallContext.beforeScreen), so only a screen about to read counts: a click the gateway refuses anyway, or a document
+ * this server remembers naming a patient, counts against none. A version's terms are proposed once (a proposal that
+ * records anything moves the version out of draft), so a specialist's day of abstraction meets none of them, and a
+ * scripted loop stops within the hour: at most 60 screens of one practice a day, where the review measured a loop
+ * writing 1 to 6 million audit rows a minute.
+ */
+export const SCREEN_LIMITS: readonly ScreenLimit[] = [
+  { bucket: 'model_screen', subject: 'practice', hits: 20, windowSeconds: 3_600 },
+  { bucket: 'model_screen', subject: 'user', hits: 20, windowSeconds: 3_600 },
+  { bucket: 'model_screen_day', subject: 'practice', hits: 60, windowSeconds: 86_400 },
+  { bucket: 'model_screen_day', subject: 'user', hits: 100, windowSeconds: 86_400 },
+];
+
+/** A limit's subject as rate_limit_counter stores it: an HMAC of the bucket, the kind of subject and its ID (rate-limit.ts rateSubjectHash's form). */
+export function screenLimitSubject(sealer: Sealer, bucket: ScreenLimit['bucket'], subject: ScreenLimit['subject'], id: string): string {
+  return sealer.sign('rate-limit', `${bucket}:${subject}:${id}`).toString('hex');
+}
+
+/** A screen past one of SCREEN_LIMITS: refused before it read anything (the person's event is not written either). */
+class ScreenLimitedError extends Error {
+  override readonly name = 'ScreenLimitedError';
+}
+
+/**
+ * The screen limits, a hit each, on the gateway's own pool (never the request's, whose connection the request's
+ * transaction holds: docs/adr/0055), each statement its own transaction, so a hit counts whatever the request does
+ * next. The first limit reached stops the count: the rest are not charged for a screen that will not run. A failure
+ * of the count itself is thrown as it is, so the call is refused unscreened (fail closed).
+ */
+async function takeScreenLimits(services: ProposeServices, practiceId: string, userId: string): Promise<void> {
+  const ids: Readonly<Record<ScreenLimit['subject'], string>> = { practice: practiceId, user: userId };
+  const client = await services.modelPool.connect();
+  let allowed = true;
+  try {
+    for (const limit of SCREEN_LIMITS) {
+      const { rows } = await client.query<{ allowed: boolean }>('SELECT allowed FROM rate_limit_take($1, $2, $3, $4)', [
+        limit.bucket,
+        screenLimitSubject(services.sealer, limit.bucket, limit.subject, ids[limit.subject]),
+        limit.hits,
+        limit.windowSeconds,
+      ]);
+      if (rows[0]?.allowed !== true) {
+        allowed = false;
+        break;
+      }
+    }
+  } finally {
+    client.release();
+  }
+  if (!allowed) {
+    services.logger.warn('a contract proposal was refused before its screen: the practice or the person has had as many screens as the limits allow', { practice_id: practiceId, error_code: 'MODEL_SCREEN_LIMITED' });
+    throw new ScreenLimitedError('the contract screen’s limit was reached; nothing was read or sent');
+  }
+}
+
+/**
+ * What a person reads for a screen past its limits: the document could not be checked, so it was not sent, and the
+ * terms are entered by hand. (A notice of its own, saying when to try again, is the notices' to add.)
+ */
+const SCREEN_LIMITED_PROBLEM: ModelProblem = 'screen_unavailable';
+
+/**
+ * The documents this server found naming a patient of their practice: clicked again within the hour, one is refused
+ * as `names_patient` at once, unscreened (nothing read, decrypted or audited again) and uncounted by the limits.
+ * Only the refusal is held, under the practice, the document and a SHA-256 of the pages screened: nothing of the
+ * match (not which identifier, its kind, its row or how many), no identifier and no page text. A remembered refusal
+ * can go stale only toward refusing (the practice's records no longer hold the patient), never toward sending, so it
+ * needs no version of the practice's records; a screen's `clear` is never remembered, since records loaded meanwhile
+ * could make the same pages name a patient, and no record version exists to tell (one would be a migration). One map
+ * per server (per services, as path.ts keeps its limiter), at most REMEMBERED_MAX entries, the oldest out first.
+ */
+const remembered = new WeakMap<object, Map<string, number>>();
+const REMEMBERED_MS = 3_600_000;
+const REMEMBERED_MAX = 1_000;
+
+const screenedKey = (practiceId: string, documentId: string, pages: readonly string[]) => `${practiceId}:${documentId}:${createHash('sha256').update(JSON.stringify(pages)).digest('hex')}`;
+
+function rememberedNamesPatient(services: ProposeServices, key: string): boolean {
+  const until = remembered.get(services)?.get(key);
+  if (until === undefined) {
+    return false;
+  }
+  if (until > services.now().getTime()) {
+    return true;
+  }
+  remembered.get(services)?.delete(key);
+  return false;
+}
+
+function rememberNamesPatient(services: ProposeServices, key: string): void {
+  let documents = remembered.get(services);
+  if (documents === undefined) {
+    documents = new Map();
+    remembered.set(services, documents);
+  }
+  documents.delete(key);
+  documents.set(key, services.now().getTime() + REMEMBERED_MS);
+  for (const oldest of documents.keys()) {
+    if (documents.size <= REMEMBERED_MAX) {
+      break;
+    }
+    documents.delete(oldest);
+  }
 }
 
 export class ProposalRefusedError extends Error {
@@ -171,24 +306,38 @@ export async function proposeTerms(scope: PracticeScope<ScopeClient>, services: 
   if (gateway === null) {
     return { kind: 'not_proposed', problem: 'unavailable' };
   }
+  const screened = screenedKey(input.practiceId, input.documentId, pages.pages);
+  if (rememberedNamesPatient(services, screened)) {
+    return { kind: 'not_proposed', problem: 'names_patient' };
+  }
   // The practice records check (docs/adr/0070, Part 3): built from the request's scope as proof only, it reads
   // in its own job scope on the model pool as the screen, under a request ID that joins its reads to the
-  // person's event below; the event is recorded first, in the request's transaction, naming the document.
+  // person's event, which the step before the screen records in the request's transaction, naming the document.
   const screenId = randomUUID();
   const patientRecords = practiceRecordsCheck({ authorizedBy: scope, pool: services.modelPool, cipher, practiceId: input.practiceId, screenId, requestId: input.requestId });
-  // The gateway's own writer of the event, under the request ID its screen's reads carry (screenAuditRequestId), so
-  // the two IDs cannot drift apart.
-  await recordContractScreenRequested(scope, { practiceId: input.practiceId, documentId: input.documentId, requestId: input.requestId, screenId });
+  // Run by the gateway once it has refused everything it can without the screen, right before the screen reads:
+  // the screen's limits, then the person's event, through the gateway's own writer under the request ID its
+  // screen's reads carry (screenAuditRequestId), so the two IDs cannot drift apart.
+  const beforeScreen = async () => {
+    await takeScreenLimits(services, input.practiceId, input.userId);
+    await recordContractScreenRequested(scope, { practiceId: input.practiceId, documentId: input.documentId, requestId: input.requestId, screenId });
+  };
   let result;
   try {
     result = await gateway.proposeContractTerms(
-      { practiceId: input.practiceId, requestKey: input.requestKey },
+      { practiceId: input.practiceId, requestKey: input.requestKey, beforeScreen },
       { documentId: input.documentId, documentSha256: document.sha256, kind, pages: pages.pages, ambiguous: input.ambiguous, patientRecords },
     );
   } catch (error) {
+    if (error instanceof ScreenLimitedError) {
+      return { kind: 'not_proposed', problem: SCREEN_LIMITED_PROBLEM };
+    }
     const problem = modelProblem(error);
     if (problem === null) {
       throw error;
+    }
+    if (error instanceof InputRefusedError && error.code === 'names_patient') {
+      rememberNamesPatient(services, screened);
     }
     return { kind: 'not_proposed', problem };
   }
