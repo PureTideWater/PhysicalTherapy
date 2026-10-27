@@ -2,7 +2,7 @@
   "case": "CI-19",
   "module": "CI",
   "title": "Header controls named by their visible text",
-  "assertion": "Each header control's accessible name contains its visible text (WCAG 2.5.3) at 1280 and 390 px; axe 4.14 with the WCAG 2.0/2.1 A and AA tags finds no violation on any page a journey scans",
+  "assertion": "Each header control's accessible name starts with its visible text and contains every other piece of it (WCAG 2.5.3) at 1280 and 390 px; axe 4.14 with the WCAG 2.0/2.1 A and AA tags finds no violation on any page a journey scans",
   "synthetic": true,
   "completesIn": 0,
   "assertedBy": ["apps/web/e2e/brand.spec.ts","apps/web/e2e/a11y.ts"],
