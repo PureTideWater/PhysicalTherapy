@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { SCREENING_MAIN_HEAP_FLAG } from '../../apps/worker/src/screening/threads';
 import { COMMANDS } from '../../infra/lib/constructs/compute';
 import { MIB, MIN_ROUND_TRIP_MS, NETWORK_DELAY_MS, cpuLayout, postgresLimit, productionLimits } from './limits';
-import { anonBytes, cpuThrottling, emailedLines, ioMax, median, memoryEvents, phaseLines, phasesByRun, pricedRuns, psqlTimings, workerStarted } from './measure';
+import { anonBytes, cpuThrottling, emailedLines, ioMax, median, memoryEvents, phaseLines, phasesByRun, pricedRuns, psqlTimings, untilComplete, workerStarted } from './measure';
 import {
   CommandError,
   ROUND_TRIP_SCRIPT,
@@ -97,6 +97,44 @@ describe('the consumer’s log', () => {
     ]);
     expect([...pricedRuns(lines)].sort()).toEqual(['r-1', 'r-2', 'r-4']);
     expect(pricedRuns([JSON.stringify({ msg: 'worker started', time: '2026-10-22T12:00:00.000Z' }), JSON.stringify({ msg: 'screening expiry', job_id: 'j', record_count: 0, time: '2026-10-22T12:00:00.000Z' })]).size).toBe(0);
+  });
+});
+
+describe('a result link, opened once its run commits', () => {
+  /** A clock the waits move: sleep advances it, and nothing waits for real. */
+  function clock() {
+    let at = 0;
+    return { now: () => at, sleep: (ms: number) => ((at += ms), Promise.resolve()) };
+  }
+
+  it('waits while an emailed run is still pricing (its completion not yet committed) and returns once it reads complete', async () => {
+    const time = clock();
+    // S4-1's email is in the outbox while its completion's transaction has not committed: pricing for 600 ms.
+    const reads: string[] = [];
+    const status = (upload: string) => {
+      reads.push(`${upload}@${String(time.now())}`);
+      return Promise.resolve(upload === 'S4-1' && time.now() < 600 ? 'pricing' : 'complete');
+    };
+    expect(await untilComplete(['S4-1', 'S4-2'], status, { waitMs: 30_000, ...time })).toEqual([]);
+    expect(time.now()).toBe(750);
+    // S4-2 is read once; S4-1 until it commits.
+    expect(reads).toEqual(['S4-1@0', 'S4-2@0', 'S4-1@250', 'S4-1@500', 'S4-1@750']);
+  });
+
+  it('gives up at the wait and returns the runs not complete, whose links are then opened as sent', async () => {
+    const time = clock();
+    const late = await untilComplete(['S1-1', 'S1-2', 'S1-3'], (upload) => Promise.resolve(upload === 'S1-1' ? 'complete' : upload === 'S1-2' ? 'pricing' : null), { waitMs: 1_000, ...time });
+    expect(late).toEqual(['S1-2', 'S1-3']);
+    expect(time.now()).toBe(1_000);
+  });
+
+  it('reads a status it cannot read as not complete, and waits for nothing when every run is complete or there is none', async () => {
+    const time = clock();
+    expect(await untilComplete(['S2-1'], () => Promise.reject(new Error('the connection went away')), { waitMs: 500, ...time })).toEqual(['S2-1']);
+    const still = clock();
+    expect(await untilComplete([], () => Promise.resolve(null), { waitMs: 30_000, ...still })).toEqual([]);
+    expect(await untilComplete(['S3-1'], () => Promise.resolve('complete'), { waitMs: 30_000, ...still })).toEqual([]);
+    expect(still.now()).toBe(0);
   });
 });
 
