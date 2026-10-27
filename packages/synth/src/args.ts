@@ -8,10 +8,10 @@ export class SynthUsageError extends Error {
 }
 
 /**
- * Case IDs: a test-matrix ID (a three-letter module and a two-digit number: PAR-01, PRC-13, LED-06)
- * or an oracle variant (V01).
+ * Case IDs: a test-matrix ID (a module of two or three letters and a two-digit number: PAR-01, PRC-13,
+ * LED-06, CI-04) or an oracle variant (V01).
  */
-const CASE_ID = /^(?:[A-Z]{3}-\d{2}|V\d{2})$/;
+const CASE_ID = /^(?:[A-Z]{2,3}-\d{2}|V\d{2})$/;
 
 export const SYNTH_USAGE =
   'usage: pnpm synth --all | pnpm synth --case <id> | pnpm synth --large   (--case PAR-08, or V01 for an oracle variant; --large writes the 10,000-claim PAR-29 file to its ignored path)';

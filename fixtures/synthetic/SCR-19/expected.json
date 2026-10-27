@@ -6,6 +6,7 @@
   "synthetic": true,
   "completesIn": 6,
   "assertedBy": [
+    "apps/worker/src/screening/consumer-lease.db.test.ts",
     "apps/worker/src/screening/consumer.db.test.ts",
     "apps/worker/src/screening/threads.test.ts",
     "apps/worker/src/jobs/enqueue.test.ts",

@@ -6,7 +6,7 @@
  */
 import { type OracleSummary } from '../x12/summary';
 
-export const CASE_MODULES = ['PAR', 'MAP', 'CON', 'PRC', 'CAS', 'LED', 'SEC', 'SCR', 'JOB', 'MOD'] as const;
+export const CASE_MODULES = ['PAR', 'MAP', 'CON', 'PRC', 'CAS', 'LED', 'SEC', 'SCR', 'JOB', 'MOD', 'BIL', 'CI', 'DBF', 'RCC'] as const;
 export type CaseModule = (typeof CASE_MODULES)[number];
 
 /** The typed parser errors of PRD section 10 (packages/edi835 EDI_ERROR_CODES). */
@@ -257,7 +257,8 @@ export interface GeneratedFileExpectation {
   readonly sha256: string;
   readonly bytes: number;
   readonly description: string;
-  readonly oracle: OracleExpectation;
+  /** What pyx12 must find in a generated 835; absent for a generated file the 835 oracle does not read (MOD-09's large contracts). */
+  readonly oracle?: OracleExpectation;
 }
 
 export interface CaseExpectation {

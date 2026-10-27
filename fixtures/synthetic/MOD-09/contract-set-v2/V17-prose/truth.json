@@ -1,0 +1,320 @@
+{
+  "format": "tp-eval-contract/2",
+  "synthetic": true,
+  "id": "V17",
+  "layout": "prose",
+  "drawnAs": null,
+  "kind": "contract",
+  "document": "document.pdf",
+  "contentType": "application/pdf",
+  "scan": null,
+  "pages": 3,
+  "tier": "small",
+  "pageText": "faithful",
+  "unfaithfulBecause": null,
+  "pairOf": null,
+  "twinOf": null,
+  "conflicts": [[0,4]],
+  "records": [
+    {
+      "label": "Article 3: 92608 GP 59",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["92608"],
+          "written": ["92608"],
+          "page": 3,
+          "quote": "For CPT 92608 billed with modifiers GP and 59, Payer shall pay $128.14 per unit."
+        },
+        "modifiers": {
+          "value": ["GP","59"],
+          "written": ["GP","59"],
+          "page": 3,
+          "quote": "For CPT 92608 billed with modifiers GP and 59, Payer shall pay $128.14 per unit."
+        },
+        "amount": {
+          "value": "12814",
+          "written": "$128.14",
+          "page": 3,
+          "quote": "For CPT 92608 billed with modifiers GP and 59, Payer shall pay $128.14 per unit."
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": false,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits do not apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "rounding": {
+          "value": "HALF_UP_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded half up to the nearest cent."
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "Jan. 15th, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and remains in effect through Dec. 31st, 2026."
+        },
+        "effective_to": {
+          "value": "2026-12-31",
+          "written": "Dec. 31st, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and remains in effect through Dec. 31st, 2026."
+        }
+      }
+    },
+    {
+      "label": "Article 3: 97533 CQ POS 12",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["97533"],
+          "written": ["97533"],
+          "page": 3,
+          "quote": "For CPT 97533 billed with modifier CQ in place of service 12, Payer shall pay $33.84 per unit."
+        },
+        "modifiers": {
+          "value": ["CQ"],
+          "written": ["CQ"],
+          "page": 3,
+          "quote": "For CPT 97533 billed with modifier CQ in place of service 12, Payer shall pay $33.84 per unit."
+        },
+        "places_of_service": {
+          "value": ["12"],
+          "written": ["12"],
+          "page": 3,
+          "quote": "For CPT 97533 billed with modifier CQ in place of service 12, Payer shall pay $33.84 per unit."
+        },
+        "amount": {
+          "value": "3384",
+          "written": "$33.84",
+          "page": 3,
+          "quote": "For CPT 97533 billed with modifier CQ in place of service 12, Payer shall pay $33.84 per unit."
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": false,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits do not apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "rounding": {
+          "value": "HALF_UP_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded half up to the nearest cent."
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "Jan. 15th, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and remains in effect through Dec. 31st, 2026."
+        },
+        "effective_to": {
+          "value": "2026-12-31",
+          "written": "Dec. 31st, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and remains in effect through Dec. 31st, 2026."
+        }
+      }
+    },
+    {
+      "label": "Article 3: 96112",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["96112"],
+          "written": ["96112"],
+          "page": 3,
+          "quote": "For CPT 96112, Payer shall pay $18.64 per unit."
+        },
+        "amount": {
+          "value": "1864",
+          "written": "$18.64",
+          "page": 3,
+          "quote": "For CPT 96112, Payer shall pay $18.64 per unit."
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": false,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits do not apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "rounding": {
+          "value": "HALF_UP_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded half up to the nearest cent."
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "Jan. 15th, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and remains in effect through Dec. 31st, 2026."
+        },
+        "effective_to": {
+          "value": "2026-12-31",
+          "written": "Dec. 31st, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and remains in effect through Dec. 31st, 2026."
+        }
+      }
+    },
+    {
+      "label": "Article 3: 97012 GP KX",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["97012"],
+          "written": ["97012"],
+          "page": 3,
+          "quote": "For CPT 97012 billed with modifiers GP and KX, Payer shall pay $156.35 per unit."
+        },
+        "modifiers": {
+          "value": ["GP","KX"],
+          "written": ["GP","KX"],
+          "page": 3,
+          "quote": "For CPT 97012 billed with modifiers GP and KX, Payer shall pay $156.35 per unit."
+        },
+        "amount": {
+          "value": "15635",
+          "written": "$156.35",
+          "page": 3,
+          "quote": "For CPT 97012 billed with modifiers GP and KX, Payer shall pay $156.35 per unit."
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": false,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits do not apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "rounding": {
+          "value": "HALF_UP_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded half up to the nearest cent."
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "Jan. 15th, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and remains in effect through Dec. 31st, 2026."
+        },
+        "effective_to": {
+          "value": "2026-12-31",
+          "written": "Dec. 31st, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and remains in effect through Dec. 31st, 2026."
+        }
+      }
+    },
+    {
+      "label": "Section 2.6: 92608 GP 59",
+      "role": "decoy",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["92608"],
+          "written": ["92608"],
+          "page": 2,
+          "quote": "Section 2.6. Effective May. 15th, 2026, CPT 92608 billed with modifiers GP and 59 is reimbursed at $47.41 per unit."
+        },
+        "modifiers": {
+          "value": ["GP","59"],
+          "written": ["GP","59"],
+          "page": 2,
+          "quote": "Section 2.6. Effective May. 15th, 2026, CPT 92608 billed with modifiers GP and 59 is reimbursed at $47.41 per unit."
+        },
+        "amount": {
+          "value": "4741",
+          "written": "$47.41",
+          "page": 2,
+          "quote": "Section 2.6. Effective May. 15th, 2026, CPT 92608 billed with modifiers GP and 59 is reimbursed at $47.41 per unit."
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": false,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits do not apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "rounding": {
+          "value": "HALF_UP_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded half up to the nearest cent."
+        },
+        "effective_from": {
+          "value": "2026-05-15",
+          "written": "May. 15th, 2026",
+          "page": 2,
+          "quote": "Section 2.6. Effective May. 15th, 2026, CPT 92608 billed with modifiers GP and 59 is reimbursed at $47.41 per unit."
+        },
+        "effective_to": {
+          "value": "2026-12-31",
+          "written": "Dec. 31st, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Jan. 15th, 2026 and remains in effect through Dec. 31st, 2026."
+        }
+      }
+    }
+  ]
+}

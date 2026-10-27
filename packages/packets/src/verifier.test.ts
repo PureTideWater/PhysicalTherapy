@@ -477,3 +477,83 @@ it('holds the facts of the CAS-08 content', () => {
   expect([...facts.amounts]).toEqual(expect.arrayContaining(['5000', '21000', '30000', '9000']));
   expect(facts.amounts.has('123456')).toBe(false);
 });
+
+// ---------------------------------------------------------------------------------------------------
+// The inputs each rule of the check separates (PRD 18, mutation testing; ADR 0047): every case below is
+// one that a looser pattern, a rule left out or a boundary moved by one would judge differently.
+// ---------------------------------------------------------------------------------------------------
+
+describe('the check: the inputs each rule separates', () => {
+  const at = (narrative: string, report: VerifierReport) => report.mismatches.map((item) => [item.code, item.sentence, narrative.slice(item.start, item.end)]);
+  /** A contract window of 3650 days, or thirty (30) days after notice, cited from page 9: its numbers are days and a page, never counts. */
+  const window = assemblePacket(
+    assemblyInput({
+      deadlineSources: [{ kind: 'contract_window', contract_version_id: '0b9a7c55-5f0e-4d43-8d2c-6a1f00000009', days: 3650, document_id: '0b9a7c55-5f0e-4d43-8d2c-6a1f00000008', page: 9, quote: 'Disputes are raised within 3650 days, or thirty (30) days after notice.', hash: 'c'.repeat(64), verified_by: null, verified_at: null }],
+    }),
+  );
+
+  it('accepts a day count before its own word, singular or plural, with calendar, business or working and any spaces between', () => {
+    for (const passes of [
+      'It is a 3650 day window [1].',
+      'The window is 3650 business days [1].',
+      'The window is 3650 working days [1].',
+      'The window is 3650 calendar  days [1].',
+      'The window is 3650 business  days [1].',
+      'The window is 3650 working  days [1].',
+    ]) {
+      expect(verify(passes, window), passes).toMatchObject({ passed: true });
+    }
+  });
+
+  it('accepts a day count in words with its digits in parentheses, however they are spaced', () => {
+    for (const passes of ['Disputes follow within thirty(30) days after notice [1].', 'Disputes follow within thirty ( 30 ) days after notice [1].', 'Disputes follow within thirty (30)days after notice [1].']) {
+      expect(verify(passes, window), passes).toMatchObject({ passed: true });
+    }
+  });
+
+  it('takes a day count as days only when its word follows it at once, not later in the text nor joined by a hyphen', () => {
+    for (const fails of ['It billed 3650 units in the days after notice [1].', 'It is a 3650-day window [1].']) {
+      expect(flagged(fails, verify(fails, window)), fails).toEqual(['3650']);
+    }
+  });
+
+  it('takes a page’s number as a page only right after its word, at the text’s start or after any spaces', () => {
+    for (const passes of ['Page 9 holds the window [1].', 'The window is on page  9 [1].']) {
+      expect(verify(passes, window), passes).toMatchObject({ passed: true });
+    }
+    const counted = 'See page 9 for 9 claims [1].';
+    expect(verify(counted, window).mismatches.map((item) => [item.code, item.kind, item.start])).toEqual([['figure_not_in_input', 'number', counted.lastIndexOf('9')]]);
+  });
+
+  it('accepts a month and a day of a month that only a quoted clause names', () => {
+    const quoted = assemblePacket(assemblyInput({ citation: contractCitation({ quote: '97110 is paid 50.00 per unit from July 2026, billed by March 20' }) }));
+    expect(verify('It was paid in July 2026 [1].', quoted).passed).toBe(true);
+    expect(verify('It was billed on March 20 [1].', quoted).passed).toBe(true);
+    // Neither is among the content's dates: the quote alone allows them.
+    expect(verify('It was paid in July 2026 [1].').passed).toBe(false);
+    expect(verify('It was billed on March 20 [1].').passed).toBe(false);
+  });
+
+  it('accepts a modifier the lines hold, and never takes a modifier for a number', () => {
+    const modified = assemblePacket(assemblyInput({ lines: [line(1, { modifiers: ['GP'] }), line(2), line(3)] }));
+    expect(verify('The 97110-GP lines were short [3].', modified).passed).toBe(true);
+    expect(verify('The lines with modifier GP were short [3].', modified).passed).toBe(true);
+    // 90 is a number the quoted clause holds (90 days), never the modifier 90.
+    const quoted = assemblePacket(assemblyInput({ citation: contractCitation({ quote: '97110 is paid 50.00 per unit within 90 days' }) }));
+    expect(verify('It pays within 90 days [1].', quoted).passed).toBe(true);
+    expect(verify('The 97110-90 lines were short [3].', quoted).mismatches.map((item) => [item.code, item.kind])).toEqual([['figure_not_in_input', 'modifier']]);
+  });
+
+  it('finds an identifier holding a character a pattern would read as syntax only as written', () => {
+    const named = 'St. Synthetic was underpaid [1].';
+    const spans = verify(named, content, ['ST. SYNTHETIC'])
+      .mismatches.filter((item) => item.code === 'identifier_in_narrative')
+      .map((item) => named.slice(item.start, item.end));
+    expect(spans).toEqual(['St. Synthetic']);
+  });
+
+  it('puts a mismatch between two sentences in neither of them', () => {
+    const between = `Paid short [3].${cp(0x200b)} Next [3].`;
+    expect(at(between, verify(between))).toEqual([['hidden_character', -1, cp(0x200b)]]);
+  });
+});

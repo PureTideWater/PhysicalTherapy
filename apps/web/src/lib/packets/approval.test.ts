@@ -150,7 +150,7 @@ describe('the export’s words (audit item #26)', () => {
       code: 'render_failed',
       tone: 'warning',
       live: true,
-      text: `The try at [${ANSWERED}] failed: The PDF could not be printed. Nothing was stored. The worker tries again by itself; this updates every few seconds.`,
+      text: `The try at [${ANSWERED}] failed: The PDF could not be printed: its renderer failed, or PaidWhole was updated after the export was asked for, so the calculation’s words may differ from those on the page it was asked from. Nothing was stored. The worker tries again by itself; this updates every few seconds.`,
     });
   });
 
@@ -174,6 +174,11 @@ describe('the export’s words (audit item #26)', () => {
       live: false,
       text: `The files could not be stored. Every try failed, the last at [${ANSWERED}], and nothing was stored. Ask for the export again; the operator was alerted.`,
     });
+    // A job asked for from a page another release worded fails at once under render_failed (the database's closed list
+    // of failure codes): its words name that cause, and the remedy is to ask again from this page.
+    expect(exportAttemptWords({ state: 'failed', requestedAt: REQUESTED, at: ANSWERED, code: 'render_failed' }, time)?.text).toBe(
+      `The PDF could not be printed: its renderer failed, or PaidWhole was updated after the export was asked for, so the calculation’s words may differ from those on the page it was asked from. Every try failed, the last at [${ANSWERED}], and nothing was stored. Ask for the export again; the operator was alerted.`,
+    );
     expect(exportAttemptWords({ state: 'failed', requestedAt: REQUESTED, at: null, code: 'no_result' }, time)).toMatchObject({
       title: 'No result from the export',
       live: false,

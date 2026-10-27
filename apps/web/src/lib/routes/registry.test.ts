@@ -45,7 +45,7 @@ import * as workbench from './workbench';
 /**
  * Nothing reaches the browser without the registry: every page.tsx, route.ts and server action in
  * src/app runs a registered route through the wrapper, so the generated database tests
- * (route-tests.db.test.ts) cover it, and every registered route has its file. Also: URLs carry
+ * (route-tests/define.ts) cover it, and every registered route has its file. Also: URLs carry
  * opaque IDs only (PRD 7; SEC-08), every route that changes records records an audit event, and every
  * practice route is scoped by params.practiceId.
  */

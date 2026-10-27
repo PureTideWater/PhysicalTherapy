@@ -306,16 +306,22 @@ Read the prices again on GitHub's pricing page before relying on them (O12).
 ## Making it required (the founder's Q8)
 
 The founder ruled on 2026-10-21 that the capacity test becomes a required check from PR 6b-3. The build makes the
-check sound; the founder sets the rule:
+check sound; the founder sets the rule, in the same ruleset as the other required checks
+(docs/runbooks/github-governance.md, step 4A, whose list docs/adr/0066 set on 2026-10-25). Steps 1 to 3 below are
+done for the build branch: applied 2026-10-25 21:14 UTC (ruleset 25837331, "Protect the build branch"), the gate among
+its four required checks. "Protect main" gains the same checks once the launch pull request is open (governance
+runbook, step 8).
 
 1. GitHub → the repository → Settings → Rules → Rulesets → the ruleset that protects `claude/build-platform` (and the
    one that will protect `main` for the launch pull request).
-2. Under "Require status checks to pass", add the check `screening-capacity gate` (source: GitHub Actions). Add the
-   gate, never `capacity`: the measuring job is skipped on pull requests that change no watched path, and a skipped
-   required job would leave them pending.
+2. Under "Require status checks to pass", the required checks, each with the source GitHub Actions:
+   <!-- required-checks -->`all green`, `mutation`, `screening-capacity gate` and
+   `approval-of-record`<!-- /required-checks -->. For this test, add the gate, never `capacity`: the measuring job is skipped on pull requests that change no watched
+   path, and a skipped required job would leave them pending.
 3. Save. From then on a watched pull request merges only after a measurement that passes every check but time, whose
-   verdicts show on its checks as warnings (about 45 minutes; "Time advisory and binding"), and every other pull
-   request passes the gate in about a minute.
+   verdicts show on its checks as warnings ("Time advisory and binding"; the measuring job took 13:20 to 16:00 on runs
+   39977565861, 40018476404 and 39978142533, and the gate about 12 to 19 minutes on five runs of 2026-10-25, so it, not
+   ci's `all green` at about 10 minutes, sets when such a pull request can merge), and every other pull request passes the gate in about a minute.
 
 Why it is sound: every pull request runs the workflow (no path filter on the trigger), so the gate is always reported;
 the gate fails when the changed paths cannot be read, and when a watched change's measurement failed, timed out or was

@@ -1,0 +1,21 @@
+{
+  "case": "RCC-06",
+  "module": "RCC",
+  "title": "A line priced before its content loaded",
+  "assertion": "Triage holds a priced line whose trace read MPPR or MUE outside its release's spans as CONTENT_NOT_LOADED, never actionable; the audit report names the reason",
+  "synthetic": true,
+  "completesIn": 7,
+  "assertedBy": [
+    "packages/triage/src/actionable.test.ts",
+    "apps/worker/src/triage/triage.db.test.ts",
+    "apps/worker/src/report/report.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The priced lines are seeded in a scratch database; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

@@ -1,0 +1,17 @@
+{
+  "case": "CI-06",
+  "module": "CI",
+  "title": "End-to-end shards over one build",
+  "assertion": "Every shard runs the build job's artifact; a build stamped with another commit is refused",
+  "synthetic": true,
+  "completesIn": 0,
+  "assertedBy": ["apps/web/scripts/build-stamp.test.ts","tools/test/workflows.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "The stamp is written and read in a temporary directory; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

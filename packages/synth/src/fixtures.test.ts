@@ -33,7 +33,7 @@ describe('the case registry', () => {
   it('holds every row of docs/product/test-matrix.md, word for word, and nothing else', () => {
     const rows = readFileSync(path.join(repository, 'docs/product/test-matrix.md'), 'utf8')
       .split('\n')
-      .map((text) => /^\| ([A-Z]{3}-\d{2}) \| (.*) \| (.*) \|$/.exec(text))
+      .map((text) => /^\| ([A-Z]{2,3}-\d{2}) \| (.*) \| (.*) \|$/.exec(text))
       .filter((match): match is RegExpExecArray => match !== null)
       .map((match) => ({ id: match[1], title: match[2], assertion: match[3] }));
     expect(TEST_MATRIX).toEqual(rows);
@@ -274,7 +274,7 @@ describe('the 10,000-claim fixture (PAR-29)', () => {
     expect(expected.generated).toHaveLength(1);
     expect(facts.claims).toBe(LARGE_CLAIMS);
     expect(facts.path).toBe(LARGE_FIXTURE_PATH);
-    expect(generatedFile?.oracle.summarySha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(generatedFile?.oracle?.summarySha256).toMatch(/^[0-9a-f]{64}$/);
     const target = await writeLargeFixture(syntheticRoot, facts.sha256);
     const bytes = readFileSync(target);
     expect(bytes.length).toBe(facts.bytes);

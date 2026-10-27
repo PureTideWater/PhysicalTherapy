@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
 import { repositoryRoot } from '../content-files';
-import { WATCHED_FIXED, WATCHED_LIST, importClosure, matchesWatched, readWatchedList, watchedListText, watchedPaths } from './watched';
+import { SCREENING_ENTRY_POINTS, WATCHED_FIXED, WATCHED_LIST, importClosure, matchesWatched, readWatchedList, watchedListText, watchedPaths } from './watched';
 
 /**
  * The screening-capacity gate's watched list (tools/screening-capacity/watched.ts; the founder's Q8 of 2026-10-21): the
@@ -56,6 +56,18 @@ describe('the watched list', () => {
     expect(closure.some((file) => file.endsWith('.test.ts'))).toBe(false);
   });
 
+  it('follows tests only when asked (the mutation closures, tools/stryker/affected.ts), so the watched list is unchanged', () => {
+    // Off by default and when false: the watched list derives exactly as before the option.
+    expect(importClosure(SCREENING_ENTRY_POINTS, repositoryRoot, { includeTests: false })).toEqual(importClosure(SCREENING_ENTRY_POINTS));
+    expect(committed).toEqual(watchedPaths());
+    // A test as an entry point is skipped unless tests are included; then it and what it imports are followed.
+    expect(importClosure(['packages/money/src/cents.test.ts'])).toEqual([]);
+    const withTests = importClosure(['packages/money/src/cents.test.ts'], repositoryRoot, { includeTests: true });
+    expect(withTests).toContain('packages/money/src/cents.test.ts');
+    expect(withTests).toContain('packages/money/src/cents.ts');
+    expect(withTests.every((file) => file.startsWith('packages/money/src/'))).toBe(true);
+  });
+
   it('reads a line as the workflow does: the path itself, or a pattern with * and no other pattern character', () => {
     expect(matchesWatched('apps/web/src/app/screening/results/[resultId]/page.tsx', 'apps/web/src/app/screening/results/[resultId]/page.tsx')).toBe(true);
     expect(matchesWatched('apps/web/src/app/screening/results/r/page.tsx', 'apps/web/src/app/screening/results/[resultId]/page.tsx')).toBe(false);
@@ -65,6 +77,9 @@ describe('the watched list', () => {
       expect(line, line).toMatch(/^[^?[\]]*$/);
     }
     expect(WATCHED_FIXED).toContain('pnpm-lock.yaml');
+    // The harness's Postgres image comes from the compose file (containers.ts), so a digest bump measures (CI-13).
+    expect(WATCHED_FIXED).toContain('docker-compose.yml');
+    expect(committed).toContain('docker-compose.yml');
   });
 
   it('is inside what a push to the build branch measures', () => {

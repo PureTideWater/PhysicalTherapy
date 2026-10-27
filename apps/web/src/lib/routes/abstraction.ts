@@ -68,7 +68,7 @@ async function workflow(scope: PracticeScope<ScopeClient>, services: Services, p
   return { scope, requestId, evidence: evidenceFor(scope, services.documents, cipher, practiceId, requestId) };
 }
 
-/** A line of the synthetic contract every route-test world holds (route-tests.db.test.ts). */
+/** A line of the synthetic contract every route-test world holds (route-tests/world.ts). */
 export const SAMPLE_QUOTE = '97140 Manual therapy $30.50 per unit';
 /** Where that contract states its dispute window (page 1): what the window routes' samples cite. */
 export const SAMPLE_WINDOW_QUOTE = 'Disputes are raised within 3650 days of the payment date.';

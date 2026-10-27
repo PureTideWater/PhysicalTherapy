@@ -1,0 +1,21 @@
+{
+  "case": "PRC-27",
+  "module": "PRC",
+  "title": "A re-run whose service dates overlap a run of another period, or a run still being priced",
+  "assertion": "A run of another period that took effect after the original and was priced after the re-run, or under a later release or a later place-of-service split, refuses it (`superseded`). Of two runs priced at once, the one that read its inputs last counts as priced last. No shared line goes back to older pricing, and re-running the original again is accepted. One priced before the re-run, under the same release and split, does not refuse it, and its own lines stay in effect. The re-run's page lists exactly the lines whose pricing in effect accepting changes, each against the run of whichever period holds it, and an acceptance whose changes were shown against other runs than hold those lines now is refused as `diff_changed`. A run pinned to a withdrawn release does not count as newer. A first run of overlapping dates being priced refuses acceptance (`newer_run_pending`). One queued refuses new re-runs but not acceptance, and when it completes it takes effect after the accepted re-run",
+  "synthetic": true,
+  "completesIn": 7,
+  "assertedBy": [
+    "apps/worker/src/price/rerun.db.test.ts",
+    "apps/worker/src/price/rerun-rule.property.test.ts",
+    "apps/web/src/lib/routes/reruns-routes.db.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "No file of its own: SYNTHETIC 835s the pricing world already loads.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

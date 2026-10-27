@@ -1,0 +1,49 @@
+# fixtures/golden/claims/G113-fixed-out-of-network-plan.json
+
+## Line 1, internal
+Not priced: Mapped as out of network or no agreement.
+  [agreement] Mapped as out of network or no agreement.
+  [terms] Not reached.
+  [units] Not reached.
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $40.00, the allowed amount the payer states for the line (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: Mapped as out of network or no agreement. The line stopped at the agreement. Remedy: None; anomaly screening only.
+
+## Line 1, viewer
+Not priced: Mapped as out of network or no agreement.
+  [agreement] Mapped as out of network or no agreement.
+  [terms] Not reached.
+  [units] Not reached.
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $40.00, the allowed amount the payer states for the line (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: Mapped as out of network or no agreement. The line stopped at the agreement. Remedy: None; anomaly screening only.
+
+## Line 2, internal
+Not priced: Mapped as out of network or no agreement.
+  [agreement] Mapped as out of network or no agreement.
+  [terms] Not reached.
+  [units] Not reached.
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $20.00, the allowed amount the payer states for the line (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: Mapped as out of network or no agreement. The line stopped at the agreement. Remedy: None; anomaly screening only.
+
+## Line 2, viewer
+Not priced: Mapped as out of network or no agreement.
+  [agreement] Mapped as out of network or no agreement.
+  [terms] Not reached.
+  [units] Not reached.
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $20.00, the allowed amount the payer states for the line (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: Mapped as out of network or no agreement. The line stopped at the agreement. Remedy: None; anomaly screening only.

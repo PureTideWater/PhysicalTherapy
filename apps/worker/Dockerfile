@@ -1,22 +1,29 @@
-# syntax=docker/dockerfile:1
 # The worker image: one bundled ESM file (apps/worker/build.ts). Build from the repository root:
 #   docker build -f apps/worker/Dockerfile -t tp-worker .
 
-FROM node:24-slim AS build
-RUN npm install --global pnpm@10.28.0
+# Node 24 on Debian 13 (trixie), by the index digest Dependabot's docker entry updates; both stages, both images.
+FROM node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS build
 WORKDIR /repo
+# pnpm at the exact version package.json's packageManager names, so no version is written here (tools/check-toolchain
+# refuses one). install-pnpm.sh packs that version from the registry and installs the tarball only when its sha512
+# equals packageManager's +sha512 suffix, which check-toolchain holds to the registry's dist.integrity: the bytes are
+# the ones committed, not only the ones the registry's answer vouches for. The base image's corepack would need its
+# signing keys current, and Node 25 and later no longer bundle it.
+COPY package.json ./
+COPY tools/check-toolchain/install-pnpm.sh /tmp/install-pnpm.sh
+RUN sh /tmp/install-pnpm.sh package.json && rm /tmp/install-pnpm.sh
 COPY . .
 RUN pnpm install --frozen-lockfile --filter "@tp/worker..."
 RUN pnpm --filter @tp/worker build
 
-FROM node:24-slim AS runtime
+FROM node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS runtime
 ENV NODE_ENV=production
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 WORKDIR /app
 # The audit report's PDF is printed with Chromium (docs/adr/0037): playwright-core at the version the
 # lockfile pins, beside the bundle, and its headless Chromium with the system libraries it needs.
 # Debian's security updates published since the base image come first, and npm, npx and corepack are
-# removed once Chromium is in: the image scan (supply-chain.yml) fails on any HIGH or CRITICAL finding
+# removed once Chromium is in: the image scan (ci.yml's images job) fails on any HIGH or CRITICAL finding
 # that has a fix, and the worker never runs a package manager.
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends \

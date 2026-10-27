@@ -21,7 +21,8 @@ import { usersSettingsPage } from './settings';
 
 /**
  * What the pages read of the mail path (audit #76; docs/adr/0065, D6 to D10; the founder's Q9 and Q12 of 2026-10-21;
- * test matrix SCR-21 and SEC-19), beyond who may open them (route-tests.db.test.ts covers every route):
+ * test matrix SCR-21 and SEC-19), beyond who may open them (the route tests route-tests/define.ts generates cover every
+ * route):
  *
  * - the console's mail streams: a platform administrator pauses the screening stream alone and resumes it with a
  *   reason, each audited by the route and recorded by the database; a resumed stream reads unconfirmed until the

@@ -1,3 +1,4 @@
+import type { IndexedRelease } from '@tp/pricing';
 import { describe, expect, it } from 'vitest';
 
 import * as triage from './index';
@@ -28,6 +29,25 @@ describe('@tp/triage', () => {
     expect(triage.MA_DISPUTE_ROUTE_CONFIRMED).toBe(false);
     expect(triage.DEADLINE_UNVERIFIED_CAUSES).toContain('MA_ROUTE_UNCONFIRMED');
     expect(triage.DEADLINE_UNVERIFIED_CAUSES).toContain('CONTRACT_WINDOW_RULE_NOT_COMPUTED');
+  });
+
+  it('holds a line priced without the Medicare content it read, after RELEASE_WITHDRAWN, and reads only two record types of a release (audit #7 and #31)', () => {
+    expect(triage.NOT_ACTIONABLE_REASONS.indexOf('CONTENT_NOT_LOADED')).toBe(triage.NOT_ACTIONABLE_REASONS.indexOf('RELEASE_WITHDRAWN') + 1);
+    expect(triage.BEHAVIOR_RECORD_TYPES).toEqual(['mppr_rate', 'conversion_factor']);
+    // releaseReferences() asks a release for those types and no other, so a release read for them alone serves it.
+    const asked = new Set<string>();
+    const release = {
+      releaseNo: 900001,
+      manifestSha256: '0'.repeat(64),
+      inForce: (type: string) => (asked.add(type), null),
+      latestInYear: (type: string) => (asked.add(type), null),
+      ref: () => {
+        throw new Error('no record is referenced');
+      },
+    } as unknown as IndexedRelease;
+    const references = triage.releaseReferences(release);
+    expect([references.mpprReductionPercent('97110', '2026-03-02'), references.conversionFactor('non_qualifying', 2026)]).toEqual([null, null]);
+    expect([...asked].sort()).toEqual([...triage.BEHAVIOR_RECORD_TYPES].sort());
   });
 
   it('defaults the materiality to $5 a line and $250 a case and the anomaly cohort to 30 lines (PRD 20)', () => {

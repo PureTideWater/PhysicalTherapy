@@ -9,8 +9,8 @@ import { PROVIDER_KINDS, type ProviderKind } from './provider';
  * than assumed"; PRD 19: model-call cost per practice against budget). Prices are configuration
  * (config/models.json): whole cents per million input and output tokens for each provider's model
  * identifier, and whether a person has confirmed them against the provider's price list. Production
- * refuses a provider whose prices are not confirmed (./config.ts), so a budget is never enforced on a
- * guess.
+ * serves no model feature whose model's price is not confirmed (./evaluated.ts, `price_unconfirmed`),
+ * so a budget is never enforced on a guess.
  *
  * Integer arithmetic only: tokens times cents per million is millionths of a cent, exactly; the cost is
  * rounded up once to whole cents, and the exact value is kept beside it (numeric(18,6) cents, which

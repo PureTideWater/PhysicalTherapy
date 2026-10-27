@@ -4,7 +4,7 @@ import path from 'node:path';
 import { UNPRICED_REASONS } from '@tp/pricing';
 import { describe, expect, it } from 'vitest';
 
-import { REMEDY_SCREEN_NAMES, UNPRICED_REASON_TEXT, remedyPath, unpricedReasonText } from './remedies';
+import { REMEDY_SCREEN_NAMES, UNPRICED_REASON_TEXT, otherRunReasonText, remedyPath, unpricedReasonText } from './remedies';
 
 const RULES_REFERENCE = path.resolve(import.meta.dirname, '../../../../../docs/product/rules-reference.md');
 
@@ -43,5 +43,15 @@ describe('the Coverage screen’s unpriced reasons and remedies', () => {
     expect(unpricedReasonText('DATE_OUTSIDE_VERSIONS').screen).toBe('contracts');
     expect(remedyPath('3f0b8c1e-5d2a-4e7f-9a6b-1c2d3e4f5a60', 'mapping')).toBe('/p/3f0b8c1e-5d2a-4e7f-9a6b-1c2d3e4f5a60/mapping');
     expect(REMEDY_SCREEN_NAMES.claims).toBe('Claims and lines');
+  });
+});
+
+describe('an earlier run’s reason, beside it on the line page (UX review: the reason was in an attribute only)', () => {
+  it('is the reason’s meaning word for word, and a secondary claim as the engine stops it', () => {
+    for (const reason of UNPRICED_REASONS.filter((item) => item !== 'SECONDARY_PAYER')) {
+      expect(otherRunReasonText(reason)).toBe(unpricedReasonText(reason).meaning);
+    }
+    expect(otherRunReasonText('DATE_OUTSIDE_VERSIONS')).toBe('No signed-off version covers the service date');
+    expect(otherRunReasonText('SECONDARY_PAYER')).toBe('the payer processed the claim as secondary or later, which the release does not price');
   });
 });

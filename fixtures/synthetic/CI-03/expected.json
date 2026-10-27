@@ -1,0 +1,17 @@
+{
+  "case": "CI-03",
+  "module": "CI",
+  "title": "A route snapshot in one statement",
+  "assertion": "The folded snapshot equals the per-table snapshot on two worlds and after an update",
+  "synthetic": true,
+  "completesIn": 0,
+  "assertedBy": ["apps/web/src/lib/routes/route-tests/snapshot.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "Both snapshots read two synthetic worlds the test builds on a scratch database; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

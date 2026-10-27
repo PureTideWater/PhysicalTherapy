@@ -10,8 +10,20 @@ import type { Cents } from '@tp/money';
 export type PlanInterval = 'monthly' | 'annual';
 export const PLAN_INTERVALS: readonly PlanInterval[] = ['monthly', 'annual'];
 
+/**
+ * The payment methods billing accepts, in the order they are offered (docs/adr/0050: ACH debit or card;
+ * docs/adr/0073: the bank account first): ACH debit (Stripe's us_bank_account) first, then card. The one source of
+ * that order: the SetupIntent, the subscription and the audit invoice the Stripe adapter creates, and the browser's
+ * Payment Element, all read it, so what the server allows and what the form shows cannot drift apart. Each use takes
+ * a fresh copy (`[...PAYMENT_METHOD_ORDER]`), since Stripe's parameters are mutable arrays.
+ *
+ * This module's only import is a type, erased at compile, so the browser bundle takes it (as `@tp/billing/types`)
+ * without Stripe's SDK or node:crypto; types.test.ts holds it to that.
+ */
+export const PAYMENT_METHOD_ORDER = ['us_bank_account', 'card'] as const;
+
 /** ACH debit (Stripe's us_bank_account) or card. */
-export type PaymentMethodKind = 'us_bank_account' | 'card';
+export type PaymentMethodKind = (typeof PAYMENT_METHOD_ORDER)[number];
 
 export type SubscriptionStatus = 'incomplete' | 'incomplete_expired' | 'trialing' | 'active' | 'past_due' | 'canceled' | 'unpaid' | 'paused';
 export type InvoiceStatus = 'draft' | 'open' | 'paid' | 'void' | 'uncollectible';

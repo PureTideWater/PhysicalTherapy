@@ -2,8 +2,8 @@
 
 - **Status:** accepted (PR 6b-1, the engine part); amends [0029](0029-price-a-claim-at-a-time-from-resolved-agreements-and-recompute-every-amount-from-its-trace.md) (the trace's three optional keys), [0033](0033-read-contract-pages-at-intake-in-a-bounded-thread-hold-general-terms-and-price-what-the-review-found-unsettled.md) (the locality rule) and [0034](0034-price-every-contract-method-hold-ncci-edits-for-review-and-keep-the-golden-lines-first.md) (`ENGINE_VERSION`). PR 6b-2 amends it with the practice's location record, the pricing settings taken at onboarding, the months that wait for them, the split every practice defaults to and the screening's ZIP+4 ("Amendment (PR 6b-2)", below; the founder's answers of 2026-10-21 to Q2, Q3, Q5, Q6 and Q11 (a)).
 - **Date:** 2026-10-21
-- **Deciders:** the founder, Tyler Williams: the ruling of 11:47 UTC on 2026-10-18 that supersedes ADR 0062's owner ruling 3 (`docs/product/reconciliation-001.md`, the engine freeze at line 428 and the Approval at line 499), and on 2026-10-21 (about 22:30 UTC) the answers to PR 6b's 13 questions ("Do all the recommended options for these questions as long as it optimizes the app"; every recommended answer of `designs/pr6b-plan.md` section 3 accepted), of which this pull request builds Q3 (a) and Q4 (a); the build (PR 6b-1 of Change Order 001)
-- **PRD sections:** 9 (rule records and releases), 11 (the engine: step 2 and the trace), 18 (the pricing oracle); Change Order 001 and reconciliation-001's checks (lines 423-454); test matrix PRC-16, PRC-21 and PRC-22; ADRs 0020, 0029, 0033, 0034, 0037 and 0062
+- **Deciders:** the founder, Tyler Williams: the ruling of 11:47 UTC on 2026-10-18 that supersedes ADR 0062's owner ruling 3 (`docs/product/reconciliation-001.md`, the engine freeze under "What must not change, as checks" and the ZIP+4 (D20) ruling under "Approval"), and on 2026-10-21 (about 22:30 UTC) the answers to PR 6b's 13 questions ("Do all the recommended options for these questions as long as it optimizes the app"; every recommended answer of `designs/pr6b-plan.md` section 3 accepted), of which this pull request builds Q3 (a) and Q4 (a); the build (PR 6b-1 of Change Order 001)
+- **PRD sections:** 9 (rule records and releases), 11 (the engine: step 2 and the trace), 18 (the pricing oracle); Change Order 001 and reconciliation-001's checks ("What must not change, as checks"); test matrix PRC-16, PRC-21 and PRC-22; ADRs 0020, 0029, 0033, 0034, 0037 and 0062
 
 ## Context
 
@@ -168,6 +168,8 @@ five-digit input's trace carries neither new key.
   covered mutant under Vitest 5, which names tests by `fullTestName` ("a > b"), so every runtime mutant survived
   (ADR 0047 had seen the symptom on the verifier); `patches/@stryker-mutator__vitest-runner@10.0.0.patch`, applied at
   install through `pnpm-workspace.yaml`, names a test as Vitest does, and `tools/stryker/runner.test.ts` holds it.
+  *Amended 2026-10-25 (`co-001/ci-mutation`; docs/adr/0066, Part 4):* the label, the engine-change step, the patch,
+  10.0.0 and `runner.test.ts` are gone; see the amendment at the end.
 - The test matrix gains PRC-21 (with a fixture under 900006) and PRC-22.
 - A release that loads 900006 needs PR 6b-2's CHECK; the closed-list test that holds `RULE_RECORD_TYPES` equal to the
   CHECK's 17 values comes with it.
@@ -185,8 +187,8 @@ five-digit input's trace carries neither new key.
   withdrawal with the approval, the export guard, the attestation and the submission's flag, so no packet goes out as
   current under a release being withdrawn; ADR 0061, Owner ruling (2026-10-22)). The catalog snapshot keeps it as it
   stands; any other DDL on a rule table still needs its own ruling;
-- a release of `@stryker-mutator/vitest-runner` supports Vitest 5, and the patch is dropped (the canary says whether
-  it still works).
+- *(settled 2026-10-25)* a release of `@stryker-mutator/vitest-runner` supports Vitest 5, and the patch is dropped (the
+  canary says whether it still works): 10.1.1 does, and the patch is dropped (the amendment of 2026-10-25 below).
 
 ## Amendment (PR 6b-2, 2026-10-21): the practice's location, pricing settings at onboarding, the months that wait, the split, the screening's ZIP+4 and the content span
 
@@ -403,3 +405,26 @@ both fixed in the pull request:
   unmerged migration: the marker was set for the edits alone and removed before any test ran.
 - **The location paragraph above described `practice_site` before the review round** (finding 2): it now lists
   `confirmed_by` and `confirmed_at` and says what `practice_site_rules()` lets change.
+
+## Amendment (`co-001/ci-mutation`, 2026-10-25): mutation by path, on Stryker 10.1.1, without the label or the patch
+
+Combined audit #54, adopted by the founder with the whole audit on 2026-10-20, replaces what the Consequences above
+describe for mutation testing (docs/adr/0066, Part 4, gives the decision in full):
+
+- **No label.** `.github/workflows/mutation.yml` no longer runs on the `labeled` and `unlabeled` events, and no longer
+  fails an engine change that lacks the `money` label. It runs on every pull request (default types), on every push to
+  `claude/build-platform`, weekly and on request. A pull request runs every shard of each money package whose closure it
+  changes (`tools/stryker/affected.ts`: the package's code and tests and what they import, upstream workspace packages
+  included, its data files, and the third-party packages the lockfile resolves for it), taken at the head and at the
+  merge base, so a deleted or renamed test or helper still reaches its package. An engine change always reaches
+  pricing's closure, so it is always measured, and a forgotten label can no longer leave one unmeasured.
+- **Stryker 10.1.1, no patch.** `@stryker-mutator/vitest-runner` 10.1.1 names a test as Vitest 5 does, and reports a
+  mutant that breaks a test file's load as a RuntimeError, not a survivor (10.0.0, patched, still counted those as
+  Survived: 20 of `trace.ts`'s mutants). `patches/@stryker-mutator__vitest-runner@10.0.0.patch`, its
+  `patchedDependencies` entry and `tools/stryker/runner.test.ts` are deleted.
+- **The canary has five cases** (`tools/stryker/canary/expected.json`), each held to an expected status per mutant, and
+  runs first in every shard job. Its first case is the old canary: runtime mutants selected by their tests' names, which
+  is what `runner.test.ts` held. The other four cases cover load failures, the workspace aliases, the seed and prefix
+  selection. On 10.0.0 with this ADR's patch, cases 2 and 5 fail; without the patch, all five do.
+- **The gate** is the required `mutation` job (`tools/stryker/gate.ts`). It requires each fully-run money package above
+  85% and no survivor that is not recorded as equivalent. This ADR's engine change is measured like every other.

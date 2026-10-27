@@ -15,7 +15,8 @@ import { unmatchedItems } from './unmatched';
 
 /**
  * The ledger oracle (PRD 18, "Three oracles", 3): synthetic posting and EFT exports with known
- * outcomes (a recovery, a partial, a recoupment after deposit, a reversed match, a duplicate export),
+ * outcomes (a recovery, a partial, a recoupment after deposit, a reversal a forward balance offsets, a
+ * reversed match, a duplicate export),
  * driven through the reconcile step against a scratch database, and the ledger's totals compared with
  * the known outcomes. The known totals are stated here by hand from the SYNTHETIC fixtures (a 30.00
  * difference approved on one 97110 line, the practice proving recovery by deposit, as each fixture's
@@ -85,6 +86,18 @@ const CASES: readonly OracleCase[] = [
     known: { approved: 3000n, posted: 3000n, deposited: 3000n, recouped: -1800n, interest: 0n, recovered: 1200n, postedEntries: 1, lineStage: 'actionable' },
   },
   {
+    name: 'a reversal a forward balance offsets, after deposit, and the forward balance withheld later',
+    fixture: 'LED-12',
+    steps: [
+      { kind: 'export', file: 'posting-export.csv', as: 'posting_export' },
+      { kind: 'export', file: 'eft-export.csv', as: 'eft_export' },
+      { kind: 'remittance', file: 'reversal.835' },
+      { kind: 'remittance', file: 'forward-balance-withheld.835' },
+    ],
+    // The totals at the end: the 30.00 the corrected claim approved taken back once, and neither forward balance moving a figure (that it is taken back at once, at the reversal, is ledger.db.test.ts's).
+    known: { approved: 3000n, posted: 3000n, deposited: 3000n, recouped: -3000n, interest: 0n, recovered: 0n, postedEntries: 1, lineStage: 'actionable' },
+  },
+  {
     name: 'a reversed manual match',
     fixture: 'LED-07',
     steps: [{ kind: 'export', file: 'posting-export.csv', as: 'posting_export' }, { kind: 'match_by_hand_then_reverse', reason: 'SYNTHETIC matched to the wrong check' }],
@@ -99,6 +112,43 @@ const CASES: readonly OracleCase[] = [
       { kind: 'export', file: 'posting-export-again.csv', as: 'posting_export' },
     ],
     known: { approved: 3000n, posted: 3000n, deposited: 0n, recouped: 0n, interest: 0n, recovered: 0n, postedEntries: 1, lineStage: 'payer_approved' },
+  },
+  {
+    name: 'a correction on a line with coinsurance, posted by line, deposited, then reversed alone',
+    fixture: 'LED-14',
+    steps: [
+      { kind: 'export', file: 'lines-posting-export.csv', as: 'posting_export' },
+      { kind: 'export', file: 'eft-export.csv', as: 'eft_export' },
+      { kind: 'remittance', file: 'reversal.835' },
+    ],
+    // 80.00 paid against the 56.00 before it: 24.00 approved, the 80.00 line row and the 24.00 deposit each proving 24.00, and the reversal taking back the 24.00 paid.
+    known: { approved: 2400n, posted: 2400n, deposited: 2400n, recouped: -2400n, interest: 0n, recovered: 0n, postedEntries: 1, lineStage: 'actionable' },
+  },
+  {
+    name: 'a correction a deductible absorbed, its line row posted',
+    fixture: 'LED-15',
+    steps: [{ kind: 'export', file: 'lines-posting-export.csv', as: 'posting_export' }],
+    // The allowed amount 30.00 higher and the payment the same 40.00: no entry, and the 40.00 row proves nothing.
+    known: { approved: 0n, posted: 0n, deposited: 0n, recouped: 0n, interest: 0n, recovered: 0n, postedEntries: 0, lineStage: 'actionable' },
+  },
+  {
+    name: 'a correction on a line with an unchanged copay, deposited',
+    fixture: 'LED-16',
+    steps: [{ kind: 'export', file: 'eft-export.csv', as: 'eft_export' }],
+    // 80.00 paid against 50.00 with the 20.00 copay unchanged: the whole 30.00 allowed increase.
+    known: { approved: 3000n, posted: 0n, deposited: 3000n, recouped: 0n, interest: 0n, recovered: 3000n, postedEntries: 0, lineStage: 'recovered' },
+  },
+  {
+    name: 'a line holding two approvals, each posted by line and deposited, the last reversed alone with nothing standing',
+    fixture: 'LED-17',
+    steps: [
+      { kind: 'remittance', file: 'second.835' },
+      { kind: 'export', file: 'lines-posting-export.csv', as: 'posting_export' },
+      { kind: 'export', file: 'eft-export.csv', as: 'eft_export' },
+      { kind: 'remittance', file: 'reversal.835' },
+    ],
+    // 8.00 and 16.00 approved, posted and deposited; every claim of the line reversed, so the last reversal takes back both.
+    known: { approved: 2400n, posted: 2400n, deposited: 2400n, recouped: -2400n, interest: 0n, recovered: 0n, postedEntries: 2, lineStage: 'actionable' },
   },
 ];
 

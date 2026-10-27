@@ -82,6 +82,14 @@ const DEADLINE_RELEASE_DIR = path.join(FIXTURES, 'rules/release-synth-900005');
 export const PLUS_FOUR_RELEASE = 900006;
 const PLUS_FOUR_RELEASE_DIR = path.join(FIXTURES, 'rules/release-synth-900006');
 
+/**
+ * SYNTHETIC release 900007: release 900001 with its per-code MPPR list and its MUE windowed 2026-01-01 to 2026-09-30, so
+ * a Medicare Advantage line after September reads both outside their spans (audit #7; docs/adr/0071). The general MPPR
+ * rate stays open. Loaded only by the tests that need it.
+ */
+export const CONTENT_GAP_RELEASE = 900_007;
+const CONTENT_GAP_RELEASE_DIR = path.join(FIXTURES, 'rules/release-synth-900007');
+
 /** The SYNTHETIC place-of-service split and default rounding of a practice's settings. */
 export const SETTINGS = { place_of_service_settings: { '11': 'non_facility', '22': 'facility' }, default_rounding: 'HALF_UP_CENT' };
 
@@ -372,6 +380,11 @@ export class PricingWorld {
   /** Loads SYNTHETIC release 900003 into the scratch database (once): from then on it is the release in force. */
   async loadWindowRelease(): Promise<void> {
     await loadRelease(this.owner, WINDOW_RELEASE_DIR, { release: WINDOW_RELEASE, allowSyntheticFixtureForTests: true });
+  }
+
+  /** Loads SYNTHETIC release 900007 into the scratch database (once): from then on it is the release in force. */
+  async loadContentGapRelease(): Promise<void> {
+    await loadRelease(this.owner, CONTENT_GAP_RELEASE_DIR, { release: CONTENT_GAP_RELEASE, allowSyntheticFixtureForTests: true });
   }
 
   /** A content rollback of the release in force, as `pnpm release:rollback` records it (the owner role). */

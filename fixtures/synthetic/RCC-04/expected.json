@@ -1,0 +1,17 @@
+{
+  "case": "RCC-04",
+  "module": "RCC",
+  "title": "A month that needs Medicare content not loaded",
+  "assertion": "Under release 900007 a Medicare Advantage month after 2026-09-30 fails as waiting_on_content naming exactly the MPPR and MUE families read, with no line kept and one content alert logged; a commercial fixed-fee month and a 2026-Q3 month price; over the whole run, a read outside the fetch outranks the location and the location outranks content",
+  "synthetic": true,
+  "completesIn": 7,
+  "assertedBy": ["apps/worker/src/price/content.db.test.ts","apps/worker/src/price/content.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "The month is seeded in a scratch database under release 900007; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

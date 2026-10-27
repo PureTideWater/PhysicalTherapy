@@ -55,8 +55,11 @@ export type RecordKind =
 export type EvidenceSource =
   /** A step of a CI workflow, by the workflow file and the command or action it runs. */
   | { readonly kind: 'ci_job'; readonly workflow: string; readonly step: string; readonly what: string }
-  /** A test in the repository, by file and the title (or part of it) of the test that proves it. */
-  | { readonly kind: 'database_test' | 'unit_test' | 'e2e_test' | 'cdk_assertion'; readonly file: string; readonly test: string }
+  /**
+   * A test in the repository, by file and the title (or part of it) of the test that proves it. A test the file runs
+   * from a shared module it imports (the route tests' define.ts) names that module as definedIn, which holds the title.
+   */
+  | { readonly kind: 'database_test' | 'unit_test' | 'e2e_test' | 'cdk_assertion'; readonly file: string; readonly definedIn?: string; readonly test: string }
   | { readonly kind: 'runbook'; readonly file: string }
   | { readonly kind: 'policy'; readonly policy: PolicyId }
   /** A record a person (or the restore drill) writes, current within its period. */
@@ -79,8 +82,15 @@ export interface Control {
 }
 
 const CI = '.github/workflows/ci.yml';
-const SUPPLY = '.github/workflows/supply-chain.yml';
 const RELEASE = '.github/workflows/release.yml';
+/**
+ * The route tests run from one shared module in twelve files, each a slice of the route registry (docs/adr/0066, Part 1):
+ * the first file stands for them. It calls the module that holds the titles (controls.test.ts holds every definedIn
+ * file to that), and its slice holds a route of each kind the named titles are generated for, an authenticated mutation
+ * and a practice route among them (route-tests/partition.test.ts); the twelve together hold every route.
+ */
+const ROUTE_TESTS = 'apps/web/src/lib/routes/route-tests/route-tests.0.db.test.ts';
+const ROUTE_TESTS_DEFINED_IN = 'apps/web/src/lib/routes/route-tests/define.ts';
 const APPROVAL = '.github/workflows/approval-of-record.yml';
 
 export const CONTROLS: readonly Control[] = [
@@ -92,11 +102,11 @@ export const CONTROLS: readonly Control[] = [
     soc2: ['CC6.1', 'CC6.3'],
     hipaa: ['164.312(a)(1)', '164.308(a)(4)'],
     evidence: [
-      { kind: 'ci_job', workflow: CI, step: 'pnpm db:migrate && pnpm test:db', what: 'the database suite on every pull request' },
+      { kind: 'ci_job', workflow: CI, step: 'pnpm db:migrate && pnpm test:db', what: 'the database suite on every pull request and every push to the build branch, in shards that the required all green check needs every one of' },
       { kind: 'database_test', file: 'packages/db/src/catalog.db.test.ts', test: 'passes on the migrated schema' },
       { kind: 'database_test', file: 'packages/db/src/catalog.db.test.ts', test: 'fails when a new PHI table has no row-level security' },
       { kind: 'database_test', file: 'packages/db/src/cross-tenant.db.test.ts', test: 'reads none of A’s rows' },
-      { kind: 'database_test', file: 'apps/web/src/lib/routes/route-tests.db.test.ts', test: 'gives %s of another practice nothing of this practice, and changes nothing of it' },
+      { kind: 'database_test', file: ROUTE_TESTS, definedIn: ROUTE_TESTS_DEFINED_IN, test: 'gives %s of another practice nothing of this practice, and changes nothing of it' },
       { kind: 'policy', policy: 'access-control' },
     ],
   },
@@ -124,9 +134,9 @@ export const CONTROLS: readonly Control[] = [
     evidence: [
       { kind: 'database_test', file: 'apps/web/src/lib/auth/sign-in.db.test.ts', test: 'locks after ten failures' },
       { kind: 'database_test', file: 'apps/web/src/lib/auth/sign-in.db.test.ts', test: 'lets a TOTP sign-in only register a key' },
-      { kind: 'database_test', file: 'apps/web/src/lib/routes/route-tests.db.test.ts', test: 'refuses a user without MFA' },
-      { kind: 'database_test', file: 'apps/web/src/lib/routes/route-tests.db.test.ts', test: 'refuses a session idle for more than 30 minutes' },
-      { kind: 'database_test', file: 'apps/web/src/lib/routes/route-tests.db.test.ts', test: 'refuses a missing or wrong CSRF token' },
+      { kind: 'database_test', file: ROUTE_TESTS, definedIn: ROUTE_TESTS_DEFINED_IN, test: 'refuses a user without MFA' },
+      { kind: 'database_test', file: ROUTE_TESTS, definedIn: ROUTE_TESTS_DEFINED_IN, test: 'refuses a session idle for more than 30 minutes' },
+      { kind: 'database_test', file: ROUTE_TESTS, definedIn: ROUTE_TESTS_DEFINED_IN, test: 'refuses a missing or wrong CSRF token' },
       { kind: 'database_test', file: 'apps/web/src/lib/http/rate-limit.db.test.ts', test: 'shares one count across every server' },
       { kind: 'cdk_assertion', file: 'infra/test/identity.test.ts', test: 'requires MFA for every user' },
       { kind: 'cdk_assertion', file: 'infra/test/identity.test.ts', test: 'enforces the password policy' },
@@ -143,7 +153,7 @@ export const CONTROLS: readonly Control[] = [
     soc2: ['CC6.1', 'CC6.3'],
     hipaa: ['164.312(a)(1)', '164.308(a)(4)'],
     evidence: [
-      { kind: 'database_test', file: 'apps/web/src/lib/routes/route-tests.db.test.ts', test: 'answers %s as the persona matrix says' },
+      { kind: 'database_test', file: ROUTE_TESTS, definedIn: ROUTE_TESTS_DEFINED_IN, test: 'answers %s as the persona matrix says' },
       { kind: 'unit_test', file: 'apps/web/src/lib/routes/registry.test.ts', test: 'runs every server action through a registered action route' },
       { kind: 'database_test', file: 'packages/db/src/identity.db.test.ts', test: 'role_permission' },
       { kind: 'policy', policy: 'access-control' },
@@ -189,7 +199,8 @@ export const CONTROLS: readonly Control[] = [
     soc2: ['CC7.2', 'C1.1'],
     hipaa: ['164.312(b)', '164.308(a)(1)(ii)(D)'],
     evidence: [
-      { kind: 'ci_job', workflow: CI, step: 'pnpm typecheck && pnpm lint && pnpm lint:logs', what: 'the log lint on every pull request' },
+      { kind: 'ci_job', workflow: CI, step: 'pnpm typecheck', what: 'the logger’s typed allowlist of fields on every pull request (the static job)' },
+      { kind: 'ci_job', workflow: CI, step: 'pnpm lint:logs', what: 'the log lint on every pull request (the static job)' },
       { kind: 'unit_test', file: 'packages/observability/src/logger.test.ts', test: 'drops a synthetic patient record that reaches it through a cast (canary)' },
       { kind: 'unit_test', file: 'packages/observability/src/phi-guard.test.ts', test: 'urlPhiFindings' },
     ],
@@ -246,9 +257,13 @@ export const CONTROLS: readonly Control[] = [
     hipaa: ['164.308(a)(1)(ii)(B)'],
     evidence: [
       { kind: 'ci_job', workflow: CI, step: 'pnpm audit --prod', what: 'the dependency audit on every pull request' },
-      { kind: 'ci_job', workflow: SUPPLY, step: 'pnpm licenses:check', what: 'the license allowlist on every pull request' },
-      { kind: 'ci_job', workflow: SUPPLY, step: 'aquasecurity/trivy-action', what: 'the container scan of both images on every pull request' },
+      { kind: 'ci_job', workflow: CI, step: 'pnpm audit --audit-level=high', what: 'the audit of every dependency, development tooling included, at high or worse, on every pull request (the static job)' },
+      { kind: 'ci_job', workflow: CI, step: 'pnpm actions:check', what: 'every action pinned to its release’s commit, its inputs declared and the release’s nested caches off, on every pull request and push (the static job; tools/check-action-pins)' },
+      { kind: 'ci_job', workflow: CI, step: 'pnpm toolchain:check', what: 'the pinned pnpm without advisories and every version the lockfile adds at least three days old or a dated exclude, on every pull request and push (the static job; tools/check-toolchain)' },
+      { kind: 'ci_job', workflow: CI, step: 'pnpm licenses:check', what: 'the license allowlist on every pull request (the static job)' },
+      { kind: 'ci_job', workflow: CI, step: 'aquasecurity/trivy-action', what: 'the container scan of both images on every pull request (the images job)' },
       { kind: 'ci_job', workflow: RELEASE, step: 'sbom-', what: 'a software bill of materials per release image' },
+      { kind: 'runbook', file: 'docs/runbooks/dependency-upgrades.md' },
       { kind: 'policy', policy: 'change-management' },
     ],
   },
@@ -295,7 +310,8 @@ export const CONTROLS: readonly Control[] = [
       { kind: 'ci_job', workflow: APPROVAL, step: 'node tools/approval-of-record/approval-of-record.ts', what: 'the approval of record on every pull request: a change to the domain model’s approval line or the approver list needs the approver’s review of its latest commit' },
       { kind: 'unit_test', file: 'tools/approval-of-record/approval-of-record.test.ts', test: 'refuses the author’s own approval' },
       { kind: 'unit_test', file: 'tools/test/codeowners.test.ts', test: 'gives every tracked file the founder as its owner' },
-      { kind: 'ci_job', workflow: CI, step: 'pnpm db:migrate && pnpm test:db', what: 'migrations applied before the suite on every pull request' },
+      { kind: 'ci_job', workflow: CI, step: 'pnpm db:migrate && pnpm test:db', what: 'migrations applied before the suite in every database shard of every pull request' },
+      { kind: 'ci_job', workflow: CI, step: 'pnpm db:domain-model --check --strict --require-approval', what: 'the domain model regenerated from the migrated schema, with the generated file of every database function beside it, byte for byte (packages/db/functions, a function outside schema public refused, so each changed line of a function, its header and grants included, is a diff in the pull request and in the job summary; docs/adr/0068), and the founder’s approval of exactly the document’s text, as its own check on every pull request (CO-02; the domain model job)' },
       { kind: 'database_test', file: 'packages/db/src/migrate.db.test.ts', test: 'migrate --dry-run' },
       { kind: 'record', record: 'change_review', withinDays: 92, what: 'the quarterly review of a sample of merged pull requests by someone independent of the build, against the change-management policy (recorded here once the database accepts this kind)' },
       { kind: 'runbook', file: 'docs/runbooks/github-governance.md' },
@@ -324,7 +340,7 @@ export const CONTROLS: readonly Control[] = [
     hipaa: ['164.308(a)(3)(ii)(B)', '164.308(a)(4)(ii)(C)'],
     evidence: [
       { kind: 'record', record: 'access_review', withinDays: 92, what: 'the quarterly review of memberships, grants and internal roles' },
-      { kind: 'database_test', file: 'apps/web/src/lib/routes/route-tests.db.test.ts', test: 'never makes the internal %s a member of the practice’s group' },
+      { kind: 'database_test', file: ROUTE_TESTS, definedIn: ROUTE_TESTS_DEFINED_IN, test: 'never makes the internal %s a member of the practice’s group' },
       { kind: 'policy', policy: 'access-control' },
     ],
   },

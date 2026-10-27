@@ -1,62 +1,94 @@
-import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import os from 'node:os';
 import path from 'node:path';
-import { isDeepStrictEqual } from 'node:util';
+import { isDeepStrictEqual, stripVTControlCharacters } from 'node:util';
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
+import { consistencyProblems, formProblems, parsePin } from '../check-action-pins/workflows';
+import { MAX_OPENED_PER_RUN } from '../content-calendar/render';
 import { repositoryRoot } from '../content-files';
+import { REQUIRED_CHECKS } from '../required-checks';
 import { RELEASE_RUNNER } from '../screening-capacity/launch-check';
 
 /**
- * The CI gates outside ci.yml (docs/adr/0010-supply-chain-gates-beside-ci.md): no Docker daemon or
- * GitHub runner exists here, so these tests read the workflow files and check that each gate is
- * wired where the plan needs it, in the right order.
+ * The workflows: ci.yml's parallel jobs behind its one gate (docs/adr/0066, Part 1), with the image and licence gates
+ * among them (docs/adr/0010), the release and capacity workflows (docs/adr/0062), the release's dry run, the action pin
+ * policy and Postgres from the compose file (docs/adr/0066, Part 2), the approval of record (docs/adr/0063), and the
+ * content calendar and the weekly real-size test (docs/adr/0071). No Docker daemon or GitHub runner exists here, so
+ * these tests read the workflow files and check that each gate is wired where the plan needs it, in the right order,
+ * and run under bash, on fixture input, the scripts whose logic decides what a run checks.
+ *
+ * Every read of .github/, the Dockerfiles and docker-compose.yml goes through one root, CI_ROOT: the directory CI_TREE
+ * names when it is set, the repository otherwise. The simulated Dependabot rewrite below runs these tests on a copy
+ * with every pin and digest replaced, and the failing-first proofs run them on the merge base's tree.
  */
 
 interface Step {
   readonly name?: string;
+  readonly id?: string;
+  readonly if?: string;
   readonly uses?: string;
   readonly run?: string;
   readonly with?: Record<string, unknown>;
+  readonly env?: Record<string, string>;
+  readonly shell?: string;
+  readonly 'continue-on-error'?: unknown;
 }
 
 interface Job {
+  readonly name?: string;
   readonly 'runs-on'?: unknown;
   readonly uses?: string;
+  readonly if?: string;
+  readonly needs?: unknown;
   readonly steps: readonly Step[];
-  readonly strategy?: { readonly matrix?: Record<string, unknown> };
+  readonly strategy?: { readonly 'fail-fast'?: boolean; readonly matrix?: Record<string, unknown> };
+  readonly services?: Record<string, unknown>;
+  readonly env?: Record<string, string>;
+  readonly concurrency?: unknown;
+  readonly 'timeout-minutes'?: number;
+  readonly defaults?: { readonly run?: { readonly shell?: string } };
+  readonly 'continue-on-error'?: unknown;
 }
 
 interface Workflow {
+  readonly name?: string;
   readonly on: unknown;
+  readonly concurrency?: unknown;
+  readonly permissions?: unknown;
+  readonly defaults?: { readonly run?: { readonly shell?: string } };
   readonly jobs: Record<string, Job>;
 }
 
+/** The tree whose CI files these tests judge: CI_TREE when set (a rewritten copy, or a base's archive), else the repository. */
+const CI_ROOT = process.env.CI_TREE ?? repositoryRoot;
+
+const WORKFLOWS = path.join(CI_ROOT, '.github/workflows');
+
 function workflow(name: string): Workflow {
-  return parse(readFileSync(path.join(repositoryRoot, '.github/workflows', name), 'utf8')) as Workflow;
+  return parse(readFileSync(path.join(WORKFLOWS, name), 'utf8')) as Workflow;
 }
 
+const workflowFiles = (): string[] =>
+  readdirSync(WORKFLOWS)
+    .filter((file) => /\.ya?ml$/.test(file))
+    .sort();
+
 /**
- * The actions the release and capacity workflows run, each pinned to a full commit SHA with its version in a comment
- * (the review of 2026-10-22): a moved tag cannot run code in the push job, which holds packages: write, nor write the
- * capacity report the launch check reads. trivy-action was pinned this way already.
+ * A step's `uses:` as these tests expect it: the action, at any full commit SHA. Which commit and which release is the pin
+ * rules' to hold (tools/check-action-pins, below), never a behaviour test's, so a Dependabot pin bump changes no
+ * assertion here.
  */
-const PINNED = {
-  // v4.2.2, read with git ls-remote (the verification of PR 6b-3's capacity changes): the report's provenance.
-  attestBuildProvenance: 'actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8',
-  checkout: 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262',
-  cacheRestore: 'actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830',
-  cacheSave: 'actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830',
-  downloadArtifact: 'actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093',
-  uploadArtifact: 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02',
-  setupNode: 'actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020',
-  buildPush: 'docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8',
-  login: 'docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9',
-  setupBuildx: 'docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f',
-  pnpm: 'pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1',
-} as const;
+const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const pinOf = (action: string): unknown => expect.stringMatching(new RegExp(`^${escaped(action)}@[0-9a-f]{40}$`));
+
+/** The action a step names: its `uses:` before the @. */
+const actionOf = (step: Step): string | undefined => step.uses?.split('@')[0];
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isList = (value: unknown): value is readonly unknown[] => Array.isArray(value);
@@ -144,22 +176,177 @@ function stepIndex(steps: readonly Step[], predicate: (step: Step) => boolean): 
 
 const isScan = (step: Step) => step.uses?.startsWith('aquasecurity/trivy-action@') === true && step.with?.['exit-code'] === '1';
 
+/** The first step of a job whose action is this one, whatever its ref: steps are matched by action, never by version. */
+const usesAction = (step: Step, action: string): boolean => step.uses?.startsWith(`${action}@`) === true;
+
+/** A ci.yml job, which must exist. */
+function ciJob(id: string): Job {
+  const job = workflow('ci.yml').jobs[id];
+  expect(job, `ci.yml has no job ${id}`).toBeDefined();
+  return job as Job;
+}
+
+// Made before the tests run, not when the file is collected, which runs no hook to remove it (tools/test/collection.test.ts).
+let scratch = '';
+beforeAll(() => {
+  scratch = mkdtempSync(path.join(os.tmpdir(), 'tp-workflows-'));
+});
+afterAll(() => {
+  rmSync(scratch, { recursive: true, force: true });
+});
+
+/** Runs a step's script as GitHub runs a `shell: bash` step (bash --noprofile --norc -eo pipefail), with this environment alone. */
+function runScript(script: string, env: Record<string, string>, cwd: string): { status: number | null; output: string } {
+  const result = spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', script], { cwd, encoding: 'utf8', env: { PATH: process.env.PATH ?? '/usr/bin:/bin', ...env } });
+  expect(result.error).toBeUndefined();
+  return { status: result.status, output: result.stdout + result.stderr };
+}
+
+/**
+ * Why a workflow's or a job's concurrency group could cancel another workflow's runs: groups are shared by every
+ * workflow of the repository, so each must start with its own workflow's name, as `${{ github.workflow }}-` or the
+ * literal name (github/docs, "Only cancel in-progress jobs or runs for the current workflow").
+ */
+function concurrencyProblems(file: string, parsed: Workflow): string[] {
+  const name = parsed.name ?? file;
+  const own = (group: string) => group === name || group.startsWith(`${name}-`) || group.startsWith('${{ github.workflow }}-');
+  const groupOf = (concurrency: unknown) => (typeof concurrency === 'string' ? concurrency : isRecord(concurrency) ? concurrency.group : undefined);
+  const entries: [string, unknown][] = [['the workflow', parsed.concurrency], ...Object.entries(parsed.jobs).map(([id, job]): [string, unknown] => [`job ${id}`, job.concurrency])];
+  return entries.flatMap(([where, concurrency]) => {
+    if (concurrency === undefined) return [];
+    const group = groupOf(concurrency);
+    if (typeof group !== 'string') return [`${file} ${where}: a concurrency with no group`];
+    return own(group) ? [] : [`${file} ${where}: the group ${group} starts with neither \${{ github.workflow }}- nor ${name}-`];
+  });
+}
+
+/** playwright-core's list of the browser builds its version pins, under pnpm's store: the browsers' cache key. */
+const BROWSERS_JSON = 'node_modules/.pnpm/playwright-core@*/node_modules/playwright-core/browsers.json';
+
+/** Playwright's Chromium with its system libraries, which the printing tests need (docs/adr/0058). */
+const CHROMIUM_INSTALL = /\bplaywright install --with-deps chromium\b/;
+
+/**
+ * Whether a script runs vitest's unit or db project: `pnpm test` or `pnpm test:db` (never test:golden, test:oracle or
+ * test:e2e), or vitest itself without `--project golden`, since a vitest run with no project runs them all.
+ */
+function runsVitestUnitOrDb(run: string): boolean {
+  const lines = run.split('\n');
+  return lines.some((line) => /\bpnpm\s+(?:run\s+)?test(?::db)?(?=$|[\s;&|)])/.test(line) || (/\bvitest\b/.test(line) && !/\bvitest\s+list\b/.test(line) && !/--project[=\s]+golden\b/.test(line)));
+}
+
+/**
+ * Every step that runs vitest's unit or db project with no Chromium installed by an earlier step of its job: the
+ * printing tests would fail there (tools/test/ci-chromium.ts), and before that guard they skipped in silence.
+ */
+function chromiumProblems(file: string, parsed: Workflow): string[] {
+  return Object.entries(parsed.jobs).flatMap(([id, job]) => {
+    const steps = job.steps ?? [];
+    const install = steps.findIndex((step) => CHROMIUM_INSTALL.test(step.run ?? ''));
+    return steps.flatMap((step, index) =>
+      step.run !== undefined && runsVitestUnitOrDb(step.run) && (install === -1 || install > index) ? [`${file} ${id}: "${step.run.split('\n')[0] ?? ''}" runs vitest's unit or db project with no Chromium installed before it`] : [],
+    );
+  });
+}
+
+/** Script idioms that swallow a failing command: `|| true`, `|| :`, `|| exit 0`, and errexit or pipefail turned off. */
+const SWALLOWS = [/\|\|\s*(?:true\b|:(?=\s|;|\)|$)|exit\s+0\b)/m, /\bset\s+\+[a-z]*e/, /\bset\s+\+o\s+(?:errexit|pipefail)\b/];
+
+/**
+ * Why a workflow's jobs could pass a failure. In every job: `continue-on-error`, on the job or a step, under any value
+ * (a failed step then leaves its job's conclusion success, so `needs.<job>.result` reads success and a gate passes it;
+ * on a job it keeps a failed job from failing its run). In the jobs `scripts` names: a step or job shell other than the
+ * workflow's bash, which runs with -e and pipefail, and a script that swallows a failing command.
+ */
+function maskingProblems(file: string, parsed: Workflow, scripts: (id: string) => boolean): string[] {
+  return Object.entries(parsed.jobs).flatMap(([id, job]) => {
+    const steps = job.steps ?? [];
+    const where = (step: Step, index: number) => `${file} ${id} step ${String(index + 1)} (${step.name ?? step.run?.split('\n')[0] ?? step.uses ?? ''})`;
+    const problems = [
+      ...('continue-on-error' in job ? [`${file} ${id}: continue-on-error on the job`] : []),
+      ...steps.flatMap((step, index) => ('continue-on-error' in step ? [`${where(step, index)}: continue-on-error`] : [])),
+    ];
+    if (!scripts(id)) return problems;
+    return [
+      ...problems,
+      ...(job.defaults?.run?.shell === undefined ? [] : [`${file} ${id}: the job's shell is ${job.defaults.run.shell}, not the workflow's bash`]),
+      ...steps.flatMap((step, index) => [
+        ...(step.shell === undefined ? [] : [`${where(step, index)}: runs under ${step.shell}, not the workflow's bash`]),
+        ...(step.run !== undefined && SWALLOWS.some((idiom) => idiom.test(step.run ?? '')) ? [`${where(step, index)}: swallows a failing command`] : []),
+      ]),
+    ];
+  });
+}
+
+/** A job's reported name as a pattern: its name, or its id, with each expression in it standing for any text. */
+function reportedName(id: string, job: Job): RegExp {
+  const parts = (job.name ?? id).split(/\$\{\{.*?\}\}/s);
+  return new RegExp(`^${parts.map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`, 's');
+}
+
+/**
+ * Why a required check could be reported by a job other than its own: a ruleset matches a required check by its name
+ * and the app that reports it (GitHub Actions), never by workflow, so a second job of any workflow that is named, or
+ * whose name's expressions could make it named, as one of the checks would stand for it.
+ */
+function requiredNameProblems(workflows: Readonly<Record<string, Workflow>>, checks: typeof REQUIRED_CHECKS = REQUIRED_CHECKS): string[] {
+  return checks.flatMap((check) => {
+    const reporters = Object.entries(workflows).flatMap(([file, parsed]) =>
+      Object.entries(parsed.jobs)
+        .filter(([id, job]) => reportedName(id, job).test(check.name))
+        .map(([id]) => `${file} ${id}`),
+    );
+    const own = `${check.workflow} ${check.job}`;
+    return [
+      ...(reporters.includes(own) ? [] : [`${check.name}: ${own} does not report it`]),
+      ...reporters.filter((reporter) => reporter !== own).map((reporter) => `${check.name}: ${reporter} could report it too`),
+    ];
+  });
+}
+
+/** A step's script, found by its name or by its run's text. */
+function stepNamed(steps: readonly Step[], name: string): Step {
+  return steps[stepIndex(steps, (step) => step.name === name)] as Step;
+}
+
+/** A matrix of shards: the public repository's widths and the private one's, read from its one expression. */
+function shardWidths(matrix: Record<string, unknown> | undefined): { public: unknown; private: unknown } | undefined {
+  const match = /^\$\{\{ fromJSON\(github\.event\.repository\.private && '(\[[\d,]+\])' \|\| '(\[[\d,]+\])'\) \}\}$/.exec(String(matrix?.shard));
+  return match === null ? undefined : { private: JSON.parse(match[1] ?? '[]') as unknown, public: JSON.parse(match[2] ?? '[]') as unknown };
+}
+
+/** A small git repository with three commits on main and origin/main at the first, for the range scripts. */
+function rangeRepository(): { dir: string; first: string; second: string; head: string; env: Record<string, string> } {
+  const dir = mkdtempSync(path.join(scratch, 'range-'));
+  const env = { HOME: dir, GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'Synthetic', GIT_AUTHOR_EMAIL: 'synthetic@example.invalid', GIT_COMMITTER_NAME: 'Synthetic', GIT_COMMITTER_EMAIL: 'synthetic@example.invalid' };
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env: { ...process.env, ...env }, encoding: 'utf8' }).trim();
+  git('init', '-q', '-b', 'main');
+  const shas = ['first', 'second', 'third'].map((name) => {
+    writeFileSync(path.join(dir, `${name}.txt`), `${name}\n`);
+    git('add', '.');
+    git('commit', '-q', '-m', name);
+    return git('rev-parse', 'HEAD');
+  });
+  git('update-ref', 'refs/remotes/origin/main', shas[0] ?? '');
+  return { dir, first: shas[0] ?? '', second: shas[1] ?? '', head: shas[2] ?? '', env };
+}
+
 describe('workflows', () => {
   it('all parse', () => {
-    for (const file of readdirSync(path.join(repositoryRoot, '.github/workflows'))) {
+    for (const file of readdirSync(WORKFLOWS)) {
       expect(() => workflow(file), file).not.toThrow();
     }
   });
 
   it('run every job on a pinned runner image: none on a -latest or other unversioned hosted label, none without runs-on, none on an expression this test cannot resolve (audit item #19)', () => {
-    const files = readdirSync(path.join(repositoryRoot, '.github/workflows')).filter((file) => /\.ya?ml$/.test(file));
+    const files = readdirSync(WORKFLOWS).filter((file) => /\.ya?ml$/.test(file));
     expect(files).toContain('ci.yml');
     const problems = files.flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([name, job]) => jobRunnerProblems(job, files).map((problem) => `${file} ${name}: ${problem}`)));
     expect(problems).toEqual([]);
   });
 
   it('run every job on GitHub’s free ubuntu-24.04 runner, both capacity jobs included, and name no larger runner’s label (the founder’s third ruling of 2026-10-23, “Free: time advisory”)', () => {
-    const files = readdirSync(path.join(repositoryRoot, '.github/workflows')).filter((file) => /\.ya?ml$/.test(file));
+    const files = readdirSync(WORKFLOWS).filter((file) => /\.ya?ml$/.test(file));
     const runners = Object.fromEntries(files.flatMap((file) => Object.entries(workflow(file).jobs).map(([name, job]) => [`${file} ${name}`, job['runs-on']])));
     expect(runners['release.yml capacity']).toBe('ubuntu-24.04');
     expect(runners['screening-capacity.yml capacity']).toBe('ubuntu-24.04');
@@ -167,7 +354,7 @@ describe('workflows', () => {
     // GitHub's larger runners exist only for an organization on GitHub Team or Enterprise Cloud, and PureTideWater is a
     // personal account: actionlint's configuration, which named the 8-core runner's label, is gone with it.
     for (const config of ['.github/actionlint.yaml', '.github/actionlint.yml']) {
-      expect(existsSync(path.join(repositoryRoot, config)), config).toBe(false);
+      expect(existsSync(path.join(CI_ROOT, config)), config).toBe(false);
     }
   });
 
@@ -219,22 +406,9 @@ describe('workflows', () => {
     }
   });
 
-  it('build and scan both images on every pull request, failing on HIGH or CRITICAL', () => {
-    const supplyChain = workflow('supply-chain.yml');
-    expect(supplyChain.on).toEqual(['pull_request']);
-    const images = supplyChain.jobs.images;
-    expect(images?.strategy?.matrix?.app).toEqual(['web', 'worker']);
-    const steps = images?.steps ?? [];
-    const build = stepIndex(steps, (step) => step.uses?.startsWith('docker/build-push-action@') === true);
-    expect(steps[build]?.with).toMatchObject({ file: 'apps/${{ matrix.app }}/Dockerfile', push: false, load: true });
-    const scan = stepIndex(steps, isScan);
-    expect(scan).toBeGreaterThan(build);
-    expect(steps[scan]?.with).toMatchObject({ severity: 'HIGH,CRITICAL' });
-  });
-
   it('take Debian security updates into both runtime images and leave no package manager in them', () => {
     for (const app of ['web', 'worker']) {
-      const dockerfile = readFileSync(path.join(repositoryRoot, 'apps', app, 'Dockerfile'), 'utf8');
+      const dockerfile = readFileSync(path.join(CI_ROOT, 'apps', app, 'Dockerfile'), 'utf8');
       const runtime = dockerfile.slice(dockerfile.indexOf('AS runtime'));
       expect(runtime, app).toContain('apt-get upgrade -y');
       for (const removed of ['/usr/local/lib/node_modules/npm', '/usr/local/bin/npm', '/usr/local/bin/npx', '/usr/local/bin/corepack']) {
@@ -248,7 +422,7 @@ describe('workflows', () => {
     // BuildKit gives an ADD's --chmod to the directories it creates (moby/buildkit#5943): --chmod=644 on the RDS bundle
     // left /etc/ssl untraversable, and Node, which reads /etc/ssl/openssl.cnf as it starts, could not start as node.
     for (const app of ['web', 'worker']) {
-      const dockerfile = readFileSync(path.join(repositoryRoot, 'apps', app, 'Dockerfile'), 'utf8');
+      const dockerfile = readFileSync(path.join(CI_ROOT, 'apps', app, 'Dockerfile'), 'utf8');
       const runtime = dockerfile.slice(dockerfile.indexOf('AS runtime'));
       const instructions = runtime.split('\n').filter((line) => /^(ADD|COPY)\s/.test(line));
       expect(instructions.filter((line) => line.includes('--chmod')), app).toEqual([]);
@@ -259,13 +433,8 @@ describe('workflows', () => {
     }
   });
 
-  it('check production licenses against the allowlist on every pull request', () => {
-    const steps = workflow('supply-chain.yml').jobs.licenses?.steps ?? [];
-    expect(steps.some((step) => step.run === 'pnpm licenses:check')).toBe(true);
-  });
-
   describe('release (decision 13; docs/adr/0062): build each image once, scan it, measure the screening on exactly the production web image and the worker image, and push exactly what was built', () => {
-    const file = readFileSync(path.join(repositoryRoot, '.github/workflows/release.yml'), 'utf8');
+    const file = readFileSync(path.join(CI_ROOT, '.github/workflows/release.yml'), 'utf8');
     type ReleaseJob = Job & { needs?: unknown; if?: string; permissions?: unknown; 'timeout-minutes'?: number };
     const release = parse(file) as Workflow & { permissions: unknown; jobs: Record<string, ReleaseJob> };
     const job = (name: string) => release.jobs[name] as ReleaseJob;
@@ -284,7 +453,7 @@ describe('workflows', () => {
       expect(build.strategy?.matrix?.image).toEqual(['web', 'web-staging', 'web-production', 'worker']);
       expect(build.permissions).toBeUndefined();
       const steps = build.steps;
-      const built = stepIndex(steps, (step) => step.uses === PINNED.buildPush);
+      const built = stepIndex(steps, (step) => usesAction(step, 'docker/build-push-action'));
       expect(steps.filter((step) => step.uses?.startsWith('docker/build-push-action@') === true)).toHaveLength(1);
       expect(steps[built]?.with).toMatchObject({ push: false, load: true, file: '${{ steps.image.outputs.dockerfile }}', tags: '${{ steps.image.outputs.ref }}' });
       expect(String(steps[built]?.with?.['build-args']).trim()).toBe('STATIC_ASSET_ORIGIN=${{ steps.image.outputs.origin }}');
@@ -296,7 +465,7 @@ describe('workflows', () => {
       const scan = stepIndex(steps, isScan);
       const sbom = stepIndex(steps, (step) => step.with?.format === 'spdx-json');
       const saved = stepIndex(steps, (step) => step.run?.includes('docker save') === true);
-      const kept = steps.findLastIndex((step) => step.uses === PINNED.uploadArtifact);
+      const kept = steps.findLastIndex((step) => usesAction(step, 'actions/upload-artifact'));
       expect(steps[scan]?.with).toMatchObject({ 'image-ref': '${{ steps.image.outputs.ref }}', severity: 'HIGH,CRITICAL', 'exit-code': '1' });
       expect([built < scan, scan < sbom, sbom < saved, saved < kept]).toEqual([true, true, true, true]);
       // The image ID beside the image, so the jobs that load it can prove it is the one scanned.
@@ -309,15 +478,15 @@ describe('workflows', () => {
       const capacity = job('capacity');
       expect(capacity.needs).toBe('build');
       expect(capacity.permissions).toBeUndefined();
-      const workflowRunner = (parse(readFileSync(path.join(repositoryRoot, '.github/workflows/screening-capacity.yml'), 'utf8')) as Workflow).jobs.capacity?.['runs-on'];
+      const workflowRunner = (parse(readFileSync(path.join(CI_ROOT, '.github/workflows/screening-capacity.yml'), 'utf8')) as Workflow).jobs.capacity?.['runs-on'];
       expect(capacity['runs-on']).toEqual(workflowRunner);
       expect(capacity['runs-on']).toBe('ubuntu-24.04');
       // The launch check accepts only the layout this runner gives (launch-check.ts, RELEASE_RUNNER): moving the release
       // to another runner fails here until the check moves with it.
       expect(capacity['runs-on']).toBe(RELEASE_RUNNER.label);
       const steps = capacity.steps;
-      expect(steps[0]).toEqual({ uses: PINNED.checkout, with: { 'persist-credentials': false } });
-      expect(steps.filter((step) => step.uses === PINNED.downloadArtifact).map((step) => step.with?.name)).toEqual(['image-web-production', 'image-worker']);
+      expect(steps[0]).toEqual({ uses: pinOf('actions/checkout'), with: { 'persist-credentials': false } });
+      expect(steps.filter((step) => usesAction(step, 'actions/download-artifact')).map((step) => step.with?.name)).toEqual(['image-web-production', 'image-worker']);
       expect(steps.some((step) => step.uses?.startsWith('docker/build-push-action@') === true)).toBe(false);
       expect(runs('capacity')).not.toMatch(/docker (?:buildx )?build/);
       const measure = stepIndex(steps, (step) => step.run?.includes('pnpm screening:capacity') === true);
@@ -332,7 +501,7 @@ describe('workflows', () => {
       expect((steps[measure] as Step & { env?: Record<string, string> }).env).toEqual({ PRODUCTION_ORIGIN: '${{ vars.PRODUCTION_STATIC_ASSET_ORIGIN }}' });
       expect(steps[measure]?.run).toContain('set -- "$@" --static-asset-origin "$PRODUCTION_ORIGIN"');
       const kept = steps[measure + 1] as Step & { if?: string };
-      expect(kept.uses).toBe(PINNED.uploadArtifact);
+      expect(actionOf(kept)).toBe('actions/upload-artifact');
       expect(kept.if).toBe('always()');
       expect(String(kept.with?.path)).toContain('screening-capacity.sha256');
     });
@@ -367,12 +536,11 @@ describe('workflows', () => {
         expect(granted.includes('attestations'), name).toBe(name === 'report');
       }
       expect(JSON.stringify(release.permissions)).not.toMatch(/id-token|attestations/);
-      expect(report.steps.map((step) => step.uses ?? 'run')).toEqual([PINNED.downloadArtifact, PINNED.attestBuildProvenance, 'run']);
+      expect(report.steps.map((step) => actionOf(step) ?? 'run')).toEqual(['actions/download-artifact', 'actions/attest-build-provenance', 'run']);
       // The attestation's subject is the report's bytes as the harness wrote them, the file the release keeps.
       const attest = report.steps[1] as Step & { id?: string };
       expect(attest.id).toBe('attest');
       expect(attest.with).toEqual({ 'subject-path': '${{ runner.temp }}/screening-capacity/screening-capacity.json' });
-      expect(file).toContain(`uses: ${PINNED.attestBuildProvenance} # v4.2.2`);
       const keep = report.steps[2] as Step & { env?: Record<string, string> };
       expect(keep.env?.BUNDLE).toBe('${{ steps.attest.outputs.bundle-path }}');
       const commands = runs('report')
@@ -388,6 +556,32 @@ describe('workflows', () => {
       // It never makes a tag: a release is made only for the tag the founder pushed.
       expect(runs('report')).toContain('--verify-tag');
     });
+
+    it('restores no cache: every scale release, scanner, database, builder and pnpm store is made in its own run (docs/adr/0062; docs/adr/0066, Part 2)', () => {
+      // A tag's run may restore the default branch's caches, which the build branch's push runs save until launch.
+      const steps = Object.entries(release.jobs).flatMap(([name, entry]) => entry.steps.map((step) => ({ where: `${name}: ${step.name ?? step.uses ?? step.run?.split('\n')[0] ?? ''}`, step })));
+      expect(steps.filter(({ step }) => /^actions\/cache(?:\/|@)/.test(step.uses ?? '')).map(({ where }) => where)).toEqual([]);
+      const named = (action: string) => steps.filter(({ step }) => usesAction(step, action));
+      // These explicit inputs are the only guard for a JavaScript action's built-in cache (setup-node's, action-setup's,
+      // setup-buildx's binary cache): tools/check-action-pins follows the actions/cache steps a composite nests, and a
+      // JavaScript action's cache is code it cannot read (the security review's N2).
+      // Node without its package-manager cache, which v7 turns on by itself for a packageManager it caches.
+      expect(named('actions/setup-node').map(({ step }) => step.with)).toEqual([{ 'node-version': 24, 'package-manager-cache': false }]);
+      expect(named('pnpm/action-setup').map(({ step }) => step.with)).toEqual([{ cache: false }]);
+      expect(named('docker/setup-buildx-action').map(({ step }) => step.with?.['cache-binary'])).toEqual([false]);
+      for (const { where, step } of named('docker/build-push-action')) {
+        expect([step.with?.['cache-from'], step.with?.['cache-to'], step.with?.['no-cache']], where).toEqual([undefined, undefined, undefined]);
+      }
+      // Trivy's binary and its vulnerability database, each made by this run, kept outside the checkout; the actions it
+      // nests are tools/check-action-pins' to follow to this input.
+      const trivy = named('aquasecurity/trivy-action');
+      expect(trivy).toHaveLength(2);
+      for (const { where, step } of trivy) expect([step.with?.cache, step.with?.['cache-dir']], where).toEqual([false, '${{ runner.temp }}/trivy']);
+      // The scale release built every time, in this run.
+      const scale = job('capacity').steps.find((step) => step.run?.includes('tools/release/scale.ts') === true);
+      expect(scale?.if).toBeUndefined();
+      expect(file).not.toMatch(/cache-hit|hashFiles/);
+    });
   });
 
   it('run the intake test on a 2 GiB zip of 835s weekly against PostgreSQL (the milestone 3 done check)', () => {
@@ -396,53 +590,10 @@ describe('workflows', () => {
     const steps = large.jobs['large-zip']?.steps ?? [];
     const test: (Step & { env?: Record<string, string> }) | undefined = steps.find((step) => step.run?.includes('apps/worker/src/intake/intake.large.db.test.ts') === true);
     expect(test?.env).toMatchObject({ TP_LARGE_ZIP_MB: '2048' });
-  });
-
-  it('keep the e2e suite’s report, results and brand screenshots from every pull request, failed runs included', () => {
-    const steps = workflow('ci.yml').jobs.check?.steps ?? [];
-    const e2e = stepIndex(steps, (step) => step.run === 'pnpm test:e2e');
-    const upload = stepIndex(steps, (step) => step.uses === 'actions/upload-artifact@v4');
-    expect(upload).toBe(e2e + 1);
-    const step = steps[upload] as Step & { if?: string };
-    expect(step.if).toBe('always()');
-    // Playwright's defaults beside apps/web/playwright.config.ts (it names no outputFolder or outputDir), and the
-    // brand journey's screenshots (BRAND_SCREENSHOTS_DIR's default, apps/web/e2e/brand.spec.ts).
-    expect(String(step.with?.path).trim().split('\n')).toEqual(['apps/web/playwright-report/', 'apps/web/test-results/', 'brand-screenshots/']);
-    const config = readFileSync(path.join(repositoryRoot, 'apps/web/playwright.config.ts'), 'utf8');
-    expect(config).not.toMatch(/outputDir|outputFolder/);
-    expect(readFileSync(path.join(repositoryRoot, 'apps/web/e2e/brand.spec.ts'), 'utf8')).toContain("path.resolve(import.meta.dirname, '../../../brand-screenshots')");
-    // The release-immutability gate still runs, unchanged, on every pull request.
-    expect(steps.some((step) => step.run === 'tools/check-releases-immutable.sh "origin/${{ github.base_ref }}"')).toBe(true);
-  });
-
-  it('print a failed run’s screenshot diffs and actuals into the job log, each under 300 KB as its path and its base64 on one line', () => {
-    const steps = workflow('ci.yml').jobs.check?.steps ?? [];
-    const print = stepIndex(steps, (step) => step.run?.includes('base64 -w 0') === true);
-    // After the e2e step and the artifact upload, which stays right after it.
-    expect(print).toBeGreaterThan(stepIndex(steps, (step) => step.run === 'pnpm test:e2e'));
-    expect(print).toBeGreaterThan(stepIndex(steps, (step) => step.uses === 'actions/upload-artifact@v4'));
-    const step = steps[print] as Step & { if?: string };
-    expect(step.if).toBe('failure()');
-    expect(step.run).toContain("find apps/web/test-results -type f \\( -name '*-diff.png' -o -name '*-actual.png' \\) -size -300k");
-    expect(step.run).toContain('echo "$file $(base64 -w 0 "$file")"');
-  });
-
-  it('install Playwright’s own Chromium, with its system libraries, before the unit tests, so the worker’s print checks run and the brand baselines compare under the build that made them', () => {
-    const steps = workflow('ci.yml').jobs.check?.steps ?? [];
-    const install = stepIndex(steps, (step) => step.run === 'pnpm --filter @tp/web exec playwright install --with-deps chromium');
-    // Right before the unit tests, which print reports with it (apps/worker/src/report/print-layout.test.ts fails in
-    // CI without it), and so before the e2e suite.
-    expect(install).toBe(stepIndex(steps, (step) => step.run === 'pnpm test && pnpm test:golden && pnpm test:oracle') - 1);
-    expect(install).toBeLessThan(stepIndex(steps, (step) => step.run === 'pnpm test:e2e'));
-    expect(install).toBeGreaterThan(stepIndex(steps, (step) => step.run === 'pnpm install --frozen-lockfile'));
-    // The config takes that Chromium wherever it is installed, and Google Chrome only where it is not (docs/adr/0058).
-    const config = readFileSync(path.join(repositoryRoot, 'apps/web/playwright.config.ts'), 'utf8');
-    expect(config).toContain('const bundledChromium = existsSync(chromium.executablePath());');
-    expect(config).toContain("...(bundledChromium ? {} : { channel: 'chrome' })");
-    // The baselines the brand journey compares are committed for that browser on Linux.
-    for (const name of ['header-1280', 'header-390', 'header-lockup-1280', 'header-lockup-390', 'report-cover-with-seal', 'report-cover-without-seal', 'report-cover-top']) {
-      expect(existsSync(path.join(repositoryRoot, 'apps/web/e2e/brand.spec.ts-snapshots', `${name}-chromium-linux.png`)), name).toBe(true);
-    }
+    // Chromium first: the db project fails on CI without it rather than skip a printing test (CI-05).
+    expect(stepIndex(steps, (step) => step.run === 'pnpm --filter @tp/web exec playwright install --with-deps chromium')).toBeLessThan(steps.indexOf(test as Step));
+    // GitHub's bash with pipefail, as ci.yml and the release run theirs, so no pipe in a step can hide a failure.
+    expect(large.defaults).toEqual({ run: { shell: 'bash' } });
   });
 
   it('rasterize the e2e browser’s text with fixed parameters and its own fontconfig, so the brand baselines compare the same on any Linux host', () => {
@@ -463,60 +614,6 @@ describe('workflows', () => {
     }
   });
 
-  it('run the fixture check on every pull request on the commit as it is, and fail when the generation changes a committed fixture (CO-03)', () => {
-    const steps = workflow('ci.yml').jobs.check?.steps ?? [];
-    const check = stepIndex(steps, (step) => step.run === 'pnpm check:fixtures');
-    const synth = stepIndex(steps, (step) => step.run === 'pnpm synth --all');
-    // Right after the secret scan and before pnpm synth --all, which rewrites a hand-edited generated file and removes
-    // an extra one, so the check reads the commit's own bytes.
-    expect(check).toBe(stepIndex(steps, (step) => step.name === "Secret scan of the pull request's commits") + 1);
-    expect(check).toBeLessThan(synth);
-    // Right after the generation, a clean tree under fixtures/synthetic: what the commit holds is what synth writes.
-    expect(steps[synth + 1]?.run).toBe('git diff --exit-code -- fixtures/synthetic && test -z "$(git status --porcelain -- fixtures/synthetic)"');
-    expect(check).toBeLessThan(stepIndex(steps, (step) => step.run === 'pnpm test && pnpm test:golden && pnpm test:oracle'));
-    expect(steps.filter((step) => step.run?.includes('check:fixtures') === true)).toHaveLength(1);
-    const scripts = (JSON.parse(readFileSync(path.join(repositoryRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts;
-    expect(scripts['check:fixtures']).toBe('tsx tools/fixture-check/index.ts');
-  });
-
-  it('scan the pull request’s commits with the pinned gitleaks the pre-push hook runs, never the gitleaks action, which an organization’s repository must license', () => {
-    const files = readdirSync(path.join(repositoryRoot, '.github/workflows')).filter((file) => /\.ya?ml$/.test(file));
-    const actions = files.flatMap((file) => Object.values(workflow(file).jobs).flatMap((job) => (job.steps ?? []).map((step) => step.uses ?? '')));
-    expect(actions.filter((uses) => /gitleaks/i.test(uses))).toEqual([]);
-    const steps = workflow('ci.yml').jobs.check?.steps ?? [];
-    const step = steps[stepIndex(steps, (candidate) => candidate.name === "Secret scan of the pull request's commits")] as Step & { env?: Record<string, string> };
-    expect(step.env).toEqual({ BASE_REF: '${{ github.base_ref }}' });
-    const script = step.run ?? '';
-    expect(script).toContain('gitleaks="$(tools/gitleaks/install.sh)"');
-    expect(script).not.toContain('${{');
-    for (const option of ['git --no-banner --redact', '--config .gitleaks.toml', '--gitleaks-ignore-path .gitleaksignore', '--log-opts "--no-color --no-ext-diff --no-textconv --diff-merges=remerge origin/$BASE_REF..HEAD" .']) {
-      expect(script, option).toContain(option);
-    }
-    // The pin it installs: one version and a SHA-256 for each platform, the archive checked before anything in it runs.
-    const release = readFileSync(path.join(repositoryRoot, 'tools/gitleaks/release.txt'), 'utf8');
-    expect(release).toMatch(/^version \d+\.\d+\.\d+$/m);
-    for (const platform of ['linux_x64', 'linux_arm64', 'darwin_x64', 'darwin_arm64']) {
-      expect(release, platform).toMatch(new RegExp(`^${platform} [0-9a-f]{64}$`, 'm'));
-    }
-    const installer = readFileSync(path.join(repositoryRoot, 'tools/gitleaks/install.sh'), 'utf8');
-    expect(installer.indexOf('if [ "$actual" != "$expected" ]')).toBeLessThan(installer.indexOf('tar -xzf'));
-    // The whole workflow reads the repository and nothing more.
-    expect((parse(readFileSync(path.join(repositoryRoot, '.github/workflows/ci.yml'), 'utf8')) as { permissions?: unknown }).permissions).toEqual({ contents: 'read' });
-  });
-
-  it('write the changes since the last approved domain model into the check job’s summary, against the base branch, before any check can fail', () => {
-    const steps = workflow('ci.yml').jobs.check?.steps ?? [];
-    const summary = stepIndex(steps, (step) => step.run?.includes('db:domain-model --summary-since') === true);
-    const step = steps[summary] as Step & { env?: Record<string, string> };
-    expect(summary).toBe(stepIndex(steps, (step) => step.run === 'pnpm install --frozen-lockfile') + 1);
-    // The base branch by its name from the environment, never pasted into the script; the summary is appended to the job's.
-    expect(step.env).toEqual({ BASE_REF: '${{ github.base_ref }}' });
-    expect(step.run).toContain('pnpm -s db:domain-model --summary-since "origin/$BASE_REF" >> "$GITHUB_STEP_SUMMARY"');
-    expect(step.run).not.toContain('${{');
-    // It needs the base branch's history, which the checkout fetches whole.
-    expect(steps[0]?.with).toMatchObject({ 'fetch-depth': 0 });
-  });
-
   it('run the content checker on each outgoing release before publishing it', () => {
     const steps = workflow('publish-content.yml').jobs.publish?.steps ?? [];
     const verify = stepIndex(steps, (step) => step.run?.includes('pnpm verify-content') === true);
@@ -525,7 +622,7 @@ describe('workflows', () => {
   });
 
   it('measure the screening under production limits with time advisory on pull requests, pushes, weekly and on request, and gate every pull request through one required job that measures only when a watched path changed (audit #53 part 1; the founder’s Q8 of 2026-10-21 and third ruling of 2026-10-23)', () => {
-    const file = readFileSync(path.join(repositoryRoot, '.github/workflows/screening-capacity.yml'), 'utf8');
+    const file = readFileSync(path.join(CI_ROOT, '.github/workflows/screening-capacity.yml'), 'utf8');
     const capacity = parse(file) as Workflow & {
       permissions: unknown;
       concurrency: Record<string, unknown>;
@@ -551,6 +648,8 @@ describe('workflows', () => {
       'package.json',
       'pnpm-lock.yaml',
       'pnpm-workspace.yaml',
+      // The Postgres image the harness and CI take (tools/screening-capacity/watched.ts watches it).
+      'docker-compose.yml',
       '.github/workflows/screening-capacity.yml',
     ];
     expect(push.paths).toEqual(pushPaths);
@@ -571,7 +670,7 @@ describe('workflows', () => {
     expect(changes?.['runs-on']).toBe('ubuntu-24.04');
     expect(changes?.permissions).toBeUndefined();
     expect(changes?.outputs).toEqual({ measure: '${{ steps.watched.outputs.measure }}' });
-    expect(changes?.steps[0]).toEqual({ uses: PINNED.checkout, with: { 'persist-credentials': false, 'fetch-depth': 0, filter: 'blob:none' } });
+    expect(changes?.steps[0]).toEqual({ uses: pinOf('actions/checkout'), with: { 'persist-credentials': false, 'fetch-depth': 0, filter: 'blob:none' } });
     const watched = changes?.steps.find((step) => (step as Step & { id?: string }).id === 'watched');
     const script = watched?.run ?? '';
     expect(script).toContain('git diff --name-only "$BASE...$HEAD" > "$RUNNER_TEMP/changed-paths"');
@@ -594,7 +693,7 @@ describe('workflows', () => {
     expect(measure?.permissions).toBeUndefined();
     const steps = measure?.steps ?? [];
     // Both production images built from their Dockerfiles before the harness runs.
-    const builds = steps.filter((step) => step.uses === PINNED.buildPush);
+    const builds = steps.filter((step) => usesAction(step, 'docker/build-push-action'));
     expect(builds.map((step) => [step.with?.file, step.with?.load, step.with?.tags])).toEqual([
       ['apps/web/Dockerfile', true, 'tp-web:capacity'],
       ['apps/worker/Dockerfile', true, 'tp-worker:capacity'],
@@ -608,15 +707,17 @@ describe('workflows', () => {
     );
     // The scale release: restored, built in a step of its own when missing, and saved straight after, before the
     // measurement, so a failing measurement still caches it.
-    const restore = stepIndex(steps, (step) => step.uses === PINNED.cacheRestore);
+    const restore = stepIndex(steps, (step) => usesAction(step, 'actions/cache/restore'));
     const build = stepIndex(steps, (step) => step.run?.includes('tools/release/scale.ts') === true);
-    const save = stepIndex(steps, (step) => step.uses === PINNED.cacheSave);
+    const save = stepIndex(steps, (step) => usesAction(step, 'actions/cache/save'));
     expect([restore < build, build < save]).toEqual([true, true]);
-    expect(steps.some((step) => step.uses === 'actions/cache@v4')).toBe(false);
+    // The scale release only, by its own restore and save: no actions/cache step, at any ref, which would also save
+    // whatever its path held at the job's end.
+    expect(plainCacheSteps(steps)).toEqual([]);
     expect((steps[build] as Step & { if?: string }).if).toBe("steps.scale-release.outputs.cache-hit != 'true'");
     expect((steps[save] as Step & { if?: string }).if).toBe("steps.scale-release.outputs.cache-hit != 'true'");
     const run = stepIndex(steps, (step) => step.run?.includes('pnpm screening:capacity') === true);
-    expect(stepIndex(steps, (step) => step.uses === PINNED.buildPush)).toBeLessThan(run);
+    expect(stepIndex(steps, (step) => usesAction(step, 'docker/build-push-action'))).toBeLessThan(run);
     expect(save).toBeLessThan(run);
     // The harness, its children and Chromium where the runner's layout puts them (Postgres's 0-1 on the free runner),
     // never the consumer's CPUs.
@@ -625,7 +726,7 @@ describe('workflows', () => {
     // Advisory on every event this workflow runs on (none is a release): time warns, every other check fails the job.
     expect(steps[run]?.run).toContain('--time-mode advisory');
     expect(steps[run]?.run).not.toContain('binding');
-    const upload = stepIndex(steps, (step) => step.uses === PINNED.uploadArtifact);
+    const upload = stepIndex(steps, (step) => usesAction(step, 'actions/upload-artifact'));
     expect(upload).toBe(run + 1);
     expect((steps[upload] as Step & { if?: string }).if).toBe('always()');
     expect(String(steps[upload]?.with?.path).trim().split('\n')).toEqual([
@@ -636,7 +737,7 @@ describe('workflows', () => {
     ]);
     expect(steps[upload]?.with?.['retention-days']).toBe(90);
     // The measuring job's checkout keeps no token: nothing it runs calls GitHub.
-    expect(steps[0]).toEqual({ uses: PINNED.checkout, with: { 'persist-credentials': false } });
+    expect(steps[0]).toEqual({ uses: pinOf('actions/checkout'), with: { 'persist-credentials': false } });
     // A sizing question (a worst time above 44 s) and the time warnings leave the job as outputs the gate prints as
     // warnings (O9; the founder's ruling of 2026-10-23, time advisory).
     expect(measure?.outputs).toEqual({ sizing: '${{ steps.measure.outputs.sizing }}', 'time-warnings': '${{ steps.measure.outputs.time-warnings }}' });
@@ -681,27 +782,860 @@ describe('workflows', () => {
   });
 });
 
-describe('the release and capacity workflows\' actions (the review of 2026-10-22)', () => {
-  it('pin every action to a full commit SHA with its version beside it, so no moved tag runs in a job that pushes images or writes the report', () => {
-    for (const name of ['release.yml', 'screening-capacity.yml']) {
-      const lines = readFileSync(path.join(repositoryRoot, '.github/workflows', name), 'utf8')
-        .split('\n')
-        .filter((line) => /^\s*(?:-\s+)?uses:/.test(line));
-      expect(lines.length, name).toBeGreaterThan(0);
-      for (const line of lines) {
-        expect(line, `${name}: ${line.trim()}`).toMatch(/uses: [\w./-]+@[0-9a-f]{40} # v\d+\.\d+\.\d+$/);
+describe('the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08)', () => {
+  type ContentJob = Job & { permissions?: unknown; outputs?: Record<string, string> };
+  const read = (name: string) => parse(readFileSync(path.join(WORKFLOWS, name), 'utf8')) as Workflow & { jobs: Record<string, ContentJob> };
+  const runs = (job: ContentJob | undefined) => (job?.steps ?? []).map((step) => step.run ?? '');
+
+  /** A notify job writes issues alone, with the job's own token: it checks nothing out, runs no action and puts no expression in its shell. */
+  function expectQuietNotify(name: string, needs: string, condition: string) {
+    const notify = read(name).jobs.notify;
+    expect(notify?.needs, name).toBe(needs);
+    expect(notify?.if, name).toBe(condition);
+    expect(notify?.permissions, name).toEqual({ issues: 'write' });
+    expect(notify?.steps.filter((step) => step.uses !== undefined), name).toEqual([]);
+    expect(runs(notify).filter((run) => run.includes('${{')), name).toEqual([]);
+    for (const step of notify?.steps ?? []) expect(Object.keys(step.env ?? {}).filter((key) => /SECRET|PASSWORD|KEY/.test(key)), name).toEqual([]);
+    expect(JSON.stringify(notify?.steps ?? []), name).not.toContain('secrets.');
+  }
+
+  it('content-calendar: runs daily, on request, and on a push to the build branch or a pull request touching the calendar or the content, with a read-only token', () => {
+    const calendar = read('content-calendar.yml');
+    const on = calendar.on as Record<string, { branches?: string[]; paths?: string[] } | { cron: string }[] | null>;
+    expect(Object.keys(on)).toEqual(['schedule', 'workflow_dispatch', 'push', 'pull_request']);
+    expect(on.schedule).toEqual([{ cron: '17 7 * * *' }]);
+    const push = on.push as { branches?: string[]; paths?: string[] };
+    const pull = on.pull_request as { paths?: string[] };
+    expect(push.branches).toEqual(['claude/build-platform']);
+    expect(push.paths).toEqual(['packages/rules/src/calendar.ts', 'packages/rules/src/records.ts', 'tools/content-calendar/**', 'content/**', '.github/workflows/content-calendar.yml']);
+    expect(pull.paths).toEqual(push.paths);
+    expect(calendar.permissions).toEqual({ contents: 'read' });
+    expect(calendar.concurrency).toEqual({ group: '${{ github.workflow }}-${{ github.ref }}', 'cancel-in-progress': "${{ github.event_name == 'pull_request' }}" });
+    expect(Object.keys(calendar.jobs)).toEqual(['check', 'notify']);
+  });
+
+  it('content-calendar: its check job only reads, with no permissions of its own and no secret, and hands the findings on as an output', () => {
+    const check = read('content-calendar.yml').jobs.check;
+    expect(check?.permissions).toBeUndefined();
+    expect(check?.steps[0]).toEqual({ uses: pinOf('actions/checkout'), with: { 'persist-credentials': false } });
+    expect(runs(check).filter((run) => run.startsWith('pnpm install'))).toEqual(['pnpm install --frozen-lockfile']);
+    expect(JSON.stringify(check?.steps ?? [])).not.toContain('secrets.');
+    expect(runs(check).filter((run) => run.includes('${{'))).toEqual([]);
+    const script = runs(check).find((run) => run.includes('tools/content-calendar/index.ts')) ?? '';
+    expect(script).toContain('--today "$(date -u +%F)" --out "$RUNNER_TEMP/findings.json" --summary "$RUNNER_TEMP/summary.md"');
+    expect(script).toContain('>> "$GITHUB_STEP_SUMMARY"');
+    expect(check?.outputs).toEqual({ findings: '${{ steps.calendar.outputs.findings }}' });
+  });
+
+  /**
+   * A fake gh on PATH for a notify script: `gh api` answers with the open issues (as its --jq would print them, one
+   * object a line), `gh issue list` with them as one JSON array, and every call is logged one line each.
+   */
+  function fakeGh(open: readonly { number: number; title: string }[]): { dir: string; log: () => string[]; bodies: () => string[] } {
+    const dir = mkdtempSync(path.join(scratch, 'notify-'));
+    mkdirSync(path.join(dir, 'bin'));
+    mkdirSync(path.join(dir, 'fake'));
+    writeFileSync(path.join(dir, 'fake/open.jsonl'), open.map((issue) => JSON.stringify(issue)).join('\n') + (open.length > 0 ? '\n' : ''));
+    writeFileSync(path.join(dir, 'fake/open.json'), JSON.stringify(open));
+    writeFileSync(
+      path.join(dir, 'bin/gh'),
+      [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'printf "%s\\n" "$*" >> "$FAKE_DIR/log"',
+        'if [ "$1" = api ]; then cat "$FAKE_DIR/fake/open.jsonl"; exit 0; fi',
+        'if [ "$1 $2" = "issue list" ]; then cat "$FAKE_DIR/fake/open.json"; exit 0; fi',
+        'for arg in "$@"; do if [ "${previous:-}" = --body-file ]; then { cat "$arg"; printf "\\n---\\n"; } >> "$FAKE_DIR/bodies"; fi; previous=$arg; done',
+      ].join('\n'),
+      { mode: 0o755 },
+    );
+    const lines = (name: string) => (existsSync(path.join(dir, name)) ? readFileSync(path.join(dir, name), 'utf8') : '');
+    return { dir, log: () => lines('log').split('\n').filter((line) => line !== ''), bodies: () => lines('bodies').split('\n---\n').filter((body) => body !== '') };
+  }
+
+  const notifyStep = (name: string) => read(name).jobs.notify?.steps[0];
+
+  /** Runs a notify step as GitHub runs it, with its env's literals and these values for its expressions. */
+  function runNotify(name: string, values: Record<string, string>, open: readonly { number: number; title: string }[]) {
+    const step = notifyStep(name);
+    const gh = fakeGh(open);
+    const literals = Object.fromEntries(Object.entries(step?.env ?? {}).filter(([, value]) => !value.includes('${{')));
+    const result = runScript(step?.run ?? '', { ...literals, GH_REPO: 'owner/repo', GH_TOKEN: 'token', RUN_URL: 'https://github.com/owner/repo/actions/runs/1', GITHUB_REF_NAME: 'claude/build-platform', GITHUB_SHA: 'abc123', FAKE_DIR: gh.dir, PATH: `${path.join(gh.dir, 'bin')}:${process.env.PATH ?? '/usr/bin:/bin'}`, ...values }, gh.dir);
+    return { ...result, log: gh.log(), bodies: gh.bodies() };
+  }
+  const b64 = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64');
+  const finding = (index: number) => ({ title: `Finding ${String(index)}`, body: `Body ${String(index)}` });
+
+  it('content-calendar: its notify job alone writes issues, skips pull requests, dedupes by exact title against every open issue, and opens at most MAX_OPENED_PER_RUN a run', () => {
+    expectQuietNotify('content-calendar.yml', 'check', "always() && github.event_name != 'pull_request'");
+    const step = notifyStep('content-calendar.yml');
+    expect(step?.env?.MAX_OPENED).toBe(String(MAX_OPENED_PER_RUN));
+    const script = step?.run ?? '';
+    expect(script.startsWith('set -euo pipefail\n')).toBe(true);
+    // Every page of the open issues, not the first 200 (sec-boundary improvement 3).
+    expect(script).toContain('gh api --paginate "repos/$GH_REPO/issues?labels=content-due&state=open&per_page=100"');
+    expect(script).not.toContain('--limit 200');
+  });
+
+  it('content-calendar: notify files the findings not open, at most 20 a run, and lists the rest in one issue it closes once every finding is filed (fix round SB-5)', () => {
+    const all = Array.from({ length: 25 }, (_, index) => finding(index));
+    const open = [0, 1, 2].map((index) => ({ number: 100 + index, title: `Finding ${String(index)}` }));
+    const first = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', FINDINGS_B64: b64(all) }, open);
+    expect(first.status, first.output).toBe(0);
+    const creates = first.log.filter((line) => line.startsWith('issue create'));
+    expect(creates).toEqual([
+      ...Array.from({ length: 20 }, (_, index) => `issue create --title Finding ${String(index + 3)} --label content-due --body-file body.md`),
+      'issue create --title Content calendar: findings not filed --label content-due --body-file body.md',
+    ]);
+    expect(first.bodies[0]).toBe('Body 3\n\n\nOpened by the content-calendar workflow: https://github.com/owner/repo/actions/runs/1\n');
+    expect(first.bodies.at(-1)).toBe('A run opens at most 20 new issues. These 2 findings were not filed by https://github.com/owner/repo/actions/runs/1; a later run files them:\n\n- Finding 23\n- Finding 24\n');
+    // The next day, with those open: findings 23 and 24 are filed, and the list of findings not filed is closed.
+    const nowOpen = [...open, ...Array.from({ length: 20 }, (_, index) => ({ number: 200 + index, title: `Finding ${String(index + 3)}` })), { number: 300, title: 'Content calendar: findings not filed' }];
+    const second = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', FINDINGS_B64: b64(all) }, nowOpen);
+    expect(second.status, second.output).toBe(0);
+    expect(second.log.filter((line) => line.startsWith('issue '))).toEqual([
+      'issue create --title Finding 23 --label content-due --body-file body.md',
+      'issue create --title Finding 24 --label content-due --body-file body.md',
+      'issue close 300 --comment Every finding is filed: https://github.com/owner/repo/actions/runs/1',
+    ]);
+    // Twenty-five more the day after, while the list is open: it is commented on, not opened twice.
+    const third = runNotify('content-calendar.yml', { CHECK_RESULT: 'success', FINDINGS_B64: b64(Array.from({ length: 21 }, (_, index) => finding(index + 50))) }, [{ number: 300, title: 'Content calendar: findings not filed' }]);
+    expect(third.log.filter((line) => line.startsWith('issue ')).at(-1)).toBe('issue comment 300 --body-file body.md');
+    expect(third.log.filter((line) => line.startsWith('issue create'))).toHaveLength(20);
+  });
+
+  it('content-calendar: notify opens, or comments on, the one "check failing" issue when the check did not finish or handed on no findings list (fix round S8; sec-boundary improvement 2)', () => {
+    const failing = 'issue create --title Content calendar check failing --label content-due --body-file body.md';
+    for (const values of [
+      { CHECK_RESULT: 'failure', FINDINGS_B64: '' },
+      { CHECK_RESULT: 'cancelled', FINDINGS_B64: b64([finding(1)]) },
+      { CHECK_RESULT: 'success', FINDINGS_B64: '' },
+      { CHECK_RESULT: 'success', FINDINGS_B64: '!!not base64!!' },
+      { CHECK_RESULT: 'success', FINDINGS_B64: b64({ title: 'x' }) },
+      { CHECK_RESULT: 'success', FINDINGS_B64: b64([{ title: 'x' }]) },
+    ]) {
+      const result = runNotify('content-calendar.yml', values, []);
+      expect(result.status, `${JSON.stringify(values)} ${result.output}`).toBe(0);
+      expect(result.log.filter((line) => line.startsWith('issue ')), JSON.stringify(values)).toEqual([failing]);
+      expect(result.bodies[0], JSON.stringify(values)).toBe(`The content calendar check did not hand on its findings (the check: ${values.CHECK_RESULT}) on claude/build-platform at abc123: https://github.com/owner/repo/actions/runs/1\n`);
+    }
+    // Each later failing run comments on the open issue, so a long failure shows in its history.
+    const again = runNotify('content-calendar.yml', { CHECK_RESULT: 'failure', FINDINGS_B64: '' }, [{ number: 7, title: 'Content calendar check failing' }]);
+    expect(again.log.filter((line) => line.startsWith('issue '))).toEqual(['issue comment 7 --body-file body.md']);
+    // An empty list on a passing check files nothing.
+    expect(runNotify('content-calendar.yml', { CHECK_RESULT: 'success', FINDINGS_B64: b64([]) }, []).log.filter((line) => line.startsWith('issue '))).toEqual([]);
+  });
+
+  it('release-capacity: runs weekly and on request with a read-only token, builds release 900110 outside the repository and measures the production worker image under the worker task’s limits', () => {
+    const capacity = read('release-capacity.yml');
+    expect(capacity.on).toEqual({ schedule: [{ cron: '29 3 * * 2' }], workflow_dispatch: null });
+    expect(capacity.permissions).toEqual({ contents: 'read' });
+    expect(capacity.concurrency).toEqual({ group: 'release-capacity-${{ github.sha }}', 'cancel-in-progress': false });
+    expect(Object.keys(capacity.jobs)).toEqual(['capacity', 'notify']);
+    const job = capacity.jobs.capacity;
+    expect(job?.permissions).toBeUndefined();
+    expect(job?.steps[0]).toEqual({ uses: pinOf('actions/checkout'), with: { 'persist-credentials': false } });
+    const build = job?.steps.find((step) => usesAction(step, 'docker/build-push-action'));
+    expect(build?.with).toMatchObject({ file: 'apps/worker/Dockerfile', load: true, push: false, tags: 'tp-worker:capacity' });
+    expect(build?.with?.['cache-to']).toBeUndefined();
+    const steps = runs(job);
+    const release = steps.findIndex((run) => run === 'pnpm exec tsx tools/release/scale.ts --shape quarterly --out "$RUNNER_TEMP/quarterly-release"');
+    const measure = steps.findIndex((run) => run.includes('tools/release-capacity/run.ts \\'));
+    expect(release).toBeGreaterThan(-1);
+    expect(measure).toBeGreaterThan(release);
+    expect(steps[measure]).toContain('--release-dir "$RUNNER_TEMP/quarterly-release"');
+    expect(steps[measure]).toContain('--worker-image tp-worker:capacity');
+    expect(steps.filter((run) => run.startsWith('pnpm install'))).toEqual(['pnpm install --frozen-lockfile']);
+    expect(JSON.stringify(job?.steps ?? [])).not.toContain('secrets.');
+  });
+
+  it('release-capacity: its notify job alone writes issues, on a failure, a cancel or an advisory that is not a pull request’s (fix round S3, SB-7)', () => {
+    expectQuietNotify(
+      'release-capacity.yml',
+      'capacity',
+      "always() && github.event_name != 'pull_request' && (needs.capacity.result == 'failure' || needs.capacity.result == 'cancelled' || needs.capacity.outputs.advisories != '')",
+    );
+    const capacity = read('release-capacity.yml').jobs.capacity;
+    expect(capacity?.outputs).toEqual({ advisories: '${{ steps.measure.outputs.advisories }}' });
+    expect(capacity?.steps.find((step) => step.id === 'measure')?.run).toContain('tools/release-capacity/run.ts \\');
+    expect(notifyStep('release-capacity.yml')?.env).toMatchObject({ CAPACITY_RESULT: '${{ needs.capacity.result }}', ADVISORIES_B64: '${{ needs.capacity.outputs.advisories }}' });
+    const advisory = Buffer.from('the windows query took 7000 ms cold, above its 5000 ms budget (advisory)').toString('base64');
+
+    const failed = runNotify('release-capacity.yml', { CAPACITY_RESULT: 'failure', ADVISORIES_B64: advisory }, []);
+    expect(failed.status, failed.output).toBe(0);
+    expect(failed.log.filter((line) => line.startsWith('issue '))).toEqual(['issue list --label release-capacity --state open --json number,title', 'issue create --title Release capacity test failing --label release-capacity --body-file body.md']);
+    expect(failed.bodies[0]).toBe(
+      'The release capacity test ended failure on claude/build-platform at abc123: https://github.com/owner/repo/actions/runs/1. The artifact of the run holds release-capacity.json and summary.md with each failing check.\n\nAdvisory:\n\n- the windows query took 7000 ms cold, above its 5000 ms budget (advisory)\n',
+    );
+    const cancelled = runNotify('release-capacity.yml', { CAPACITY_RESULT: 'cancelled', ADVISORIES_B64: '' }, [{ number: 4, title: 'Release capacity test failing' }]);
+    expect(cancelled.log.filter((line) => line.startsWith('issue ')).at(-1)).toBe('issue comment 4 --body-file body.md');
+    expect(cancelled.bodies[0]).toContain('ended cancelled');
+    // A pass with an advisory: its own issue, so the failing one's title never misleads.
+    const passed = runNotify('release-capacity.yml', { CAPACITY_RESULT: 'success', ADVISORIES_B64: advisory }, [{ number: 4, title: 'Release capacity test failing' }]);
+    expect(passed.log.filter((line) => line.startsWith('issue ')).at(-1)).toBe('issue create --title Release capacity advisory --label release-capacity --body-file body.md');
+    expect(passed.bodies[0]).toBe('The release capacity test passed on claude/build-platform at abc123 with an advisory: https://github.com/owner/repo/actions/runs/1\n\nAdvisory:\n\n- the windows query took 7000 ms cold, above its 5000 ms budget (advisory)\n');
+  });
+
+  it('are neither of them a required check', () => {
+    expect(REQUIRED_CHECKS.filter((check) => check.workflow === 'content-calendar.yml' || check.workflow === 'release-capacity.yml')).toEqual([]);
+  });
+});
+
+describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/adr/0066, Part 1)', () => {
+  const ci = workflow('ci.yml');
+  const JOBS = ['static', 'lint', 'unit', 'db', 'domain-model', 'build', 'e2e', 'images', 'all-green'];
+
+  it('runs on every pull request and every push to the build branch, with no path filter, a read-only token and bash with pipefail', () => {
+    expect(ci.on).toEqual({ pull_request: null, push: { branches: ['claude/build-platform'] } });
+    // The whole workflow reads the repository and nothing more, and no checkout keeps the token.
+    expect(ci.permissions).toEqual({ contents: 'read' });
+    for (const [id, job] of Object.entries(ci.jobs)) {
+      for (const step of job.steps.filter((candidate) => usesAction(candidate, 'actions/checkout'))) {
+        expect(step.with?.['persist-credentials'], id).toBe(false);
       }
     }
-    const pinned = new Set(Object.values(PINNED));
-    for (const name of ['release.yml', 'screening-capacity.yml']) {
-      const used = [...readFileSync(path.join(repositoryRoot, '.github/workflows', name), 'utf8').matchAll(/uses: ([\w./-]+@[0-9a-f]{40})/g)].map((match) => match[1] ?? '');
-      expect(used.filter((ref) => !ref.startsWith('aquasecurity/trivy-action@') && !pinned.has(ref as (typeof PINNED)[keyof typeof PINNED])), name).toEqual([]);
+    expect(ci.defaults).toEqual({ run: { shell: 'bash' } });
+  });
+
+  it('groups a pull request’s runs by its number and a push’s by its commit, cancelling only a pull request’s older run', () => {
+    expect(ci.concurrency).toEqual({
+      group: "${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.sha }}",
+      'cancel-in-progress': "${{ github.event_name == 'pull_request' }}",
+    });
+  });
+
+  it('has exactly its job graph, and its gate needs every other job, so no job escapes it (CI-01)', () => {
+    expect(Object.keys(ci.jobs)).toEqual(JOBS);
+    const gate = ci.jobs['all-green'];
+    expect([...((gate?.needs as string[] | undefined) ?? [])].sort()).toEqual(JOBS.filter((id) => id !== 'all-green').sort());
+    expect(gate?.if).toBe('${{ always() }}');
+    // Every other job starts at once, but the e2e shards, which run the build job's build.
+    expect(Object.fromEntries(Object.entries(ci.jobs).filter(([id]) => id !== 'all-green').map(([id, job]) => [id, job.needs ?? null]))).toEqual({
+      static: null,
+      lint: null,
+      unit: null,
+      db: null,
+      'domain-model': null,
+      build: null,
+      e2e: 'build',
+      images: null,
+    });
+    expect(Object.fromEntries(Object.entries(ci.jobs).map(([id, job]) => [id, job.name ?? id]))).toEqual({
+      static: 'static',
+      lint: 'lint',
+      unit: 'unit',
+      db: 'db (${{ matrix.shard }}/${{ strategy.job-total }})',
+      'domain-model': 'domain model',
+      build: 'build',
+      e2e: 'e2e (${{ matrix.shard }}/${{ strategy.job-total }})',
+      images: 'images',
+      'all-green': 'all green',
+    });
+    expect(Object.values(ci.jobs).every((job) => job.if === undefined || job === gate)).toBe(true);
+  });
+
+  it('writes every verdict it puts in a job’s summary to the job’s log as well, which the verifier reads', () => {
+    const text = readFileSync(path.join(WORKFLOWS, 'ci.yml'), 'utf8');
+    expect(text).toContain('tee -a "$GITHUB_STEP_SUMMARY"');
+    expect(text).not.toMatch(/>>\s*"\$GITHUB_STEP_SUMMARY"/);
+  });
+
+  describe('static', () => {
+    const steps = () => ciJob('static').steps;
+
+    it('checks out the whole history, runs every check once the install succeeded whatever the one before it did, and each once', () => {
+      expect(steps()[0]).toEqual({ uses: pinOf('actions/checkout'), with: { 'fetch-depth': 0, 'persist-credentials': false } });
+      const install = stepIndex(steps(), (step) => step.run === 'pnpm install --frozen-lockfile');
+      const checks = ['pnpm audit --prod', 'pnpm audit --audit-level=high', 'pnpm check:fixtures', 'pnpm verify-content', 'pnpm synth --all', 'pnpm typecheck', 'pnpm lint:logs', 'pnpm test:golden', 'pnpm test:oracle', 'pnpm licenses:check'];
+      for (const run of checks) {
+        const at = stepIndex(steps(), (step) => step.run === run);
+        expect(at, run).toBeGreaterThan(install);
+        expect(steps()[at]?.if, run).toBe("${{ !cancelled() && steps.install.outcome == 'success' }}");
+        expect(steps().filter((step) => step.run === run), run).toHaveLength(1);
+      }
+      // The 835 oracle's pyx12 on Python 3.12, before the oracle test.
+      expect(stepIndex(steps(), (step) => usesAction(step, 'actions/setup-python'))).toBeLessThan(stepIndex(steps(), (step) => step.run === 'pip install pyx12'));
+      expect(stepIndex(steps(), (step) => step.run === 'pip install pyx12')).toBeLessThan(stepIndex(steps(), (step) => step.run === 'pnpm test:oracle'));
+      // The oracle also reads the 10,000-claim PAR-29 remittance, generated into its ignored path and never committed:
+      // in this job no unit test writes it first, so pnpm synth --large does, once, before the oracle.
+      const large = stepIndex(steps(), (step) => step.run === 'pnpm synth --large');
+      expect([install < large, large < stepIndex(steps(), (step) => step.run === 'pnpm test:oracle')]).toEqual([true, true]);
+      expect(steps()[large]?.if).toBe("${{ !cancelled() && steps.install.outcome == 'success' }}");
+      expect(steps().filter((step) => step.run === 'pnpm synth --large')).toHaveLength(1);
+      // The action pins and the toolchain, each once, after the install and the range step, against the range's base:
+      // on every run, with no condition beyond the two steps they need (docs/adr/0066, Part 2).
+      const range = stepIndex(steps(), (step) => step.id === 'range');
+      for (const run of ['pnpm actions:check', 'pnpm toolchain:check']) {
+        const at = stepIndex(steps(), (step) => step.run === run);
+        expect(steps().filter((step) => step.run === run), run).toHaveLength(1);
+        expect([at > install, at > range], run).toEqual([true, true]);
+        expect(steps()[at]?.if, run).toBe("${{ !cancelled() && steps.install.outcome == 'success' && steps.range.outcome == 'success' }}");
+        expect(steps()[at]?.env, run).toEqual({ BASE: '${{ steps.range.outputs.base }}' });
+      }
+      // Every step after the install runs on its own condition, so a red one leaves the others' verdicts.
+      for (const step of steps().slice(install + 1)) expect(step.if, step.name ?? step.run ?? step.uses).toMatch(/^\$\{\{ (?:github\.event_name == 'pull_request' && )?!cancelled\(\)/);
+    });
+
+    it('runs the fixture check on the commit as it is, and fails when the generation changes a committed fixture (CO-03)', () => {
+      const check = stepIndex(steps(), (step) => step.run === 'pnpm check:fixtures');
+      const synth = stepIndex(steps(), (step) => step.run === 'pnpm synth --all');
+      // Before pnpm synth --all, which rewrites a hand-edited generated file and removes an extra one, so the check
+      // reads the commit's own bytes.
+      expect(check).toBeLessThan(synth);
+      // Right after the generation, a clean tree under fixtures/synthetic: what the commit holds is what synth writes.
+      expect(steps()[synth + 1]?.run).toBe('git diff --exit-code -- fixtures/synthetic && test -z "$(git status --porcelain -- fixtures/synthetic)"');
+      expect(steps()[synth + 1]?.if).toBe("${{ !cancelled() && steps.synth.outcome == 'success' }}");
+      expect(steps().filter((step) => step.run?.includes('check:fixtures') === true)).toHaveLength(1);
+      const scripts = (JSON.parse(readFileSync(path.join(repositoryRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts;
+      expect(scripts['check:fixtures']).toBe('tsx tools/fixture-check/index.ts');
+    });
+
+    it('typechecks over the build information a run on this branch or its base saved, restored by prefix and saved by commit', () => {
+      const restore = stepIndex(steps(), (step) => usesAction(step, 'actions/cache/restore'));
+      const typecheck = stepIndex(steps(), (step) => step.run === 'pnpm typecheck');
+      const save = stepIndex(steps(), (step) => usesAction(step, 'actions/cache/save'));
+      expect([restore < typecheck, typecheck < save]).toEqual([true, true]);
+      expect(steps()[restore]?.with).toEqual({
+        path: 'node_modules/.cache/tsc',
+        key: "tsc-v1-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}",
+        'restore-keys': "tsc-v1-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-\ntsc-v1-${{ runner.os }}-\n",
+      });
+      expect(steps()[save]?.with).toEqual({ path: 'node_modules/.cache/tsc', key: '${{ steps.tsc-cache.outputs.cache-primary-key }}' });
+      expect(steps()[save]?.if).toBe("${{ !cancelled() && steps.typecheck.outcome != 'skipped' && steps.tsc-cache.outputs.cache-hit != 'true' }}");
+    });
+
+    it('scans the commits it checks with the pinned gitleaks the pre-push hook runs, never the gitleaks action, which an organization’s repository must license', () => {
+      const actions = workflowFiles().flatMap((file) => Object.values(workflow(file).jobs).flatMap((job) => (job.steps ?? []).map((step) => step.uses ?? '')));
+      expect(actions.filter((uses) => /gitleaks/i.test(uses))).toEqual([]);
+      const step = stepNamed(steps(), "Secret scan of the pull request's commits");
+      expect(step.env).toEqual({ BASE: '${{ steps.range.outputs.base }}' });
+      expect(step.if).toBe("${{ !cancelled() && steps.range.outcome == 'success' }}");
+      const script = step.run ?? '';
+      expect(script).toContain('gitleaks="$(tools/gitleaks/install.sh)"');
+      expect(script).not.toContain('${{');
+      for (const option of ['git --no-banner --redact', '--config .gitleaks.toml', '--gitleaks-ignore-path .gitleaksignore', '--log-opts "--no-color --no-ext-diff --no-textconv --diff-merges=remerge $BASE..HEAD" .']) {
+        expect(script, option).toContain(option);
+      }
+      // The pin it installs: one version and a SHA-256 for each platform, the archive checked before anything in it runs.
+      const release = readFileSync(path.join(repositoryRoot, 'tools/gitleaks/release.txt'), 'utf8');
+      expect(release).toMatch(/^version \d+\.\d+\.\d+$/m);
+      for (const platform of ['linux_x64', 'linux_arm64', 'darwin_x64', 'darwin_arm64']) {
+        expect(release, platform).toMatch(new RegExp(`^${platform} [0-9a-f]{64}$`, 'm'));
+      }
+      const installer = readFileSync(path.join(repositoryRoot, 'tools/gitleaks/install.sh'), 'utf8');
+      expect(installer.indexOf('if [ "$actual" != "$expected" ]')).toBeLessThan(installer.indexOf('tar -xzf'));
+      // The release-immutability gate checks the same range's base.
+      const releases = stepNamed(steps(), 'Published releases and prompt versions unchanged');
+      expect(releases.run).toBe('tools/check-releases-immutable.sh "$BASE"');
+      expect(releases.env).toEqual({ BASE: '${{ steps.range.outputs.base }}' });
+    });
+
+    it('checks a pull request’s commits beyond its base, a push’s beyond the branch’s previous head, a new branch’s last commit, and refuses a previous head it does not hold', () => {
+      const step = stepNamed(steps(), 'The commits this run checks');
+      expect(step.env).toEqual({ EVENT: '${{ github.event_name }}', BASE_REF: '${{ github.base_ref }}', BEFORE: '${{ github.event.before }}' });
+      expect(step.run).not.toContain('${{');
+      const repo = rangeRepository();
+      const run = (env: Record<string, string>) => {
+        const output = path.join(repo.dir, `output-${String(Math.random()).slice(2)}`);
+        const summary = `${output}.md`;
+        writeFileSync(output, '');
+        writeFileSync(summary, '');
+        const result = runScript(step.run ?? '', { ...repo.env, GITHUB_OUTPUT: output, GITHUB_STEP_SUMMARY: summary, ...env }, repo.dir);
+        return { ...result, base: /^base=(.*)$/m.exec(readFileSync(output, 'utf8'))?.[1], summary: readFileSync(summary, 'utf8') };
+      };
+      const pull = run({ EVENT: 'pull_request', BASE_REF: 'main', BEFORE: '' });
+      expect([pull.status, pull.base]).toEqual([0, 'origin/main']);
+      expect(pull.summary).toContain('This run checks the commits origin/main..HEAD.');
+      expect(pull.output).toContain('This run checks the commits origin/main..HEAD.');
+      const push = run({ EVENT: 'push', BASE_REF: '', BEFORE: repo.first });
+      expect([push.status, push.base]).toEqual([0, repo.first]);
+      const created = run({ EVENT: 'push', BASE_REF: '', BEFORE: '0000000000000000000000000000000000000000' });
+      expect([created.status, created.base]).toEqual([0, repo.second]);
+      const missing = run({ EVENT: 'push', BASE_REF: '', BEFORE: 'f'.repeat(40) });
+      expect([missing.status, missing.base]).toEqual([1, undefined]);
+      expect(missing.output).toContain(`::error title=The commits this run checks::${'f'.repeat(40)} is not a commit in this checkout`);
+    });
+
+    it('runs the engine freeze’s check on a pull request only, against its merge base, with its number for the exception', () => {
+      const step = stepNamed(steps(), 'Engine freeze');
+      expect(step.if).toBe("${{ github.event_name == 'pull_request' && !cancelled() && steps.install.outcome == 'success' }}");
+      expect(step.env).toEqual({ BASE_REF: '${{ github.base_ref }}', PR_NUMBER: '${{ github.event.pull_request.number }}' });
+    });
+  });
+
+  it('lints every file in one job with the repository’s lint command', () => {
+    const steps = ciJob('lint').steps;
+    expect(steps.map((step) => step.run ?? step.uses?.split('@')[0])).toEqual(['actions/checkout', 'pnpm/action-setup', 'actions/setup-node', 'pnpm install --frozen-lockfile', 'pnpm lint']);
+  });
+
+  describe('unit', () => {
+    const steps = () => ciJob('unit').steps;
+
+    it('installs Playwright’s Chromium and sets the engine freeze’s base before the unit tests, over the whole history', () => {
+      expect(steps()[0]).toEqual({ uses: pinOf('actions/checkout'), with: { 'fetch-depth': 0, 'persist-credentials': false } });
+      const install = stepIndex(steps(), (step) => step.run === 'pnpm --filter @tp/web exec playwright install --with-deps chromium');
+      const base = stepIndex(steps(), (step) => step.name === "The engine freeze's base");
+      const unit = stepIndex(steps(), (step) => step.run === 'pnpm test');
+      expect([install < unit, base < unit]).toEqual([true, true]);
+      expect(steps()[unit]).toEqual({ run: 'pnpm test' });
+    });
+
+    it('installs the pinned gitleaks before the unit tests, so the pre-push hook’s real secret-scan cases run rather than skip', () => {
+      const gitleaks = stepNamed(steps(), "The pinned gitleaks for the pre-push hook's tests");
+      expect(gitleaks.run).toBe('tools/gitleaks/install.sh');
+      expect(steps().indexOf(gitleaks)).toBeLessThan(stepIndex(steps(), (step) => step.run === 'pnpm test'));
+    });
+
+    it('gives the differential test a pull request’s merge base, a push’s previous head or a new branch’s parent, through GITHUB_ENV', () => {
+      const step = stepNamed(steps(), "The engine freeze's base");
+      expect(step.env).toEqual({ EVENT: '${{ github.event_name }}', BASE_REF: '${{ github.base_ref }}', BEFORE: '${{ github.event.before }}' });
+      const repo = rangeRepository();
+      const run = (env: Record<string, string>) => {
+        const file = path.join(repo.dir, `env-${String(Math.random()).slice(2)}`);
+        writeFileSync(file, '');
+        const result = runScript(step.run ?? '', { ...repo.env, GITHUB_ENV: file, ...env }, repo.dir);
+        return { ...result, base: /^ENGINE_FREEZE_BASE=(.*)$/m.exec(readFileSync(file, 'utf8'))?.[1] };
+      };
+      expect(run({ EVENT: 'pull_request', BASE_REF: 'main', BEFORE: '' })).toMatchObject({ status: 0, base: repo.first });
+      expect(run({ EVENT: 'push', BASE_REF: '', BEFORE: repo.second })).toMatchObject({ status: 0, base: repo.second });
+      expect(run({ EVENT: 'push', BASE_REF: '', BEFORE: '0000000000000000000000000000000000000000' })).toMatchObject({ status: 0, base: repo.second });
+      expect(run({ EVENT: 'push', BASE_REF: '', BEFORE: 'e'.repeat(40) })).toMatchObject({ status: 1, base: undefined });
+    });
+  });
+
+  describe('db', () => {
+    const job = () => ciJob('db');
+    const steps = () => job().steps;
+
+    it('shards the database suite four ways on the public repository’s 4-CPU runners and six on a private one’s 2-CPU runners, none cancelling another (CI-04)', () => {
+      expect(shardWidths(job().strategy?.matrix)).toEqual({ public: [1, 2, 3, 4], private: [1, 2, 3, 4, 5, 6] });
+      expect(job().strategy?.['fail-fast']).toBe(false);
+      const suite = stepNamed(steps(), "The database suite, this shard's files");
+      expect(suite.env).toEqual({ SHARD: '${{ matrix.shard }}/${{ strategy.job-total }}' });
+      expect(suite.run).toBe('pnpm db:migrate && pnpm test:db --shard="$SHARD" --reporter=default --reporter=json --outputFile.json="$RUNNER_TEMP/db-results.json"');
+    });
+
+    it('migrates its own Postgres, quieted, and installs Chromium before the suite', () => {
+      expect(job().services).toBeUndefined();
+      expect(job().env).toEqual({ DATABASE_URL: 'postgres://postgres:test@localhost:5432/postgres' });
+      const quiet = stepIndex(steps(), (step) => step.name === "Quiet the database's log");
+      const chromium = stepIndex(steps(), (step) => CHROMIUM_INSTALL.test(step.run ?? ''));
+      const suite = stepIndex(steps(), (step) => step.name === "The database suite, this shard's files");
+      expect([quiet < suite, chromium < suite, chromium < quiet]).toEqual([true, true, true]);
+      expect(steps()[quiet]?.run).toContain(`psql "$DATABASE_URL" -qc "ALTER SYSTEM SET log_min_messages = 'panic'"`);
+    });
+
+    it('orders each shard’s files by that shard’s own last durations, restored and saved under its width and number', () => {
+      // The durations' own cache step, by its id (the browsers' cache comes before it).
+      const restore = steps()[stepIndex(steps(), (step) => usesAction(step, 'actions/cache/restore') && step.id === 'vitest-cache')];
+      expect(restore?.with).toEqual({
+        path: 'node_modules/.vite/vitest',
+        key: 'vitest-db-v1-${{ runner.os }}-${{ strategy.job-total }}-${{ matrix.shard }}-${{ github.sha }}',
+        'restore-keys': 'vitest-db-v1-${{ runner.os }}-${{ strategy.job-total }}-${{ matrix.shard }}-',
+      });
+      const save = stepIndex(steps(), (step) => usesAction(step, 'actions/cache/save'));
+      expect(save).toBeGreaterThan(stepIndex(steps(), (step) => step.name === "The database suite, this shard's files"));
+      expect(steps()[save]?.with).toEqual({ path: 'node_modules/.vite/vitest', key: '${{ steps.vitest-cache.outputs.cache-primary-key }}' });
+    });
+
+    it('prints the files the shard ran, sorted, with their count and the list’s SHA-256, to the log and the summary, whatever the suite’s result (CI-04)', () => {
+      const step = stepNamed(steps(), 'Files this shard ran');
+      expect(step.if).toBe('${{ !cancelled() }}');
+      expect(stepIndex(steps(), (candidate) => candidate.name === 'Files this shard ran')).toBe(stepIndex(steps(), (candidate) => candidate.name === "The database suite, this shard's files") + 1);
+      const dir = mkdtempSync(path.join(scratch, 'shard-'));
+      const workspace = '/home/runner/work/PhysicalTherapy/PhysicalTherapy';
+      const file = (name: string, seconds: number) => ({ name: `${workspace}/${name}`, startTime: 1_000, endTime: 1_000 + seconds * 1_000 });
+      writeFileSync(path.join(dir, 'db-results.json'), JSON.stringify({ testResults: [file('packages/db/src/catalog.db.test.ts', 3), file('apps/web/src/lib/routes/route-tests/route-tests.4.db.test.ts', 61), file('apps/worker/src/screening/consumer-lease.db.test.ts', 190)] }));
+      writeFileSync(path.join(dir, 'summary.md'), '');
+      // The runner's sha256sum, or a stand-in on a host that has only shasum.
+      const tools = path.join(dir, 'bin');
+      const shim = spawnSync('/bin/sh', ['-c', 'command -v sha256sum'], { encoding: 'utf8' }).stdout.trim() === '';
+      if (shim) {
+        mkdirSync(tools);
+        writeFileSync(path.join(tools, 'sha256sum'), '#!/bin/sh\nexec shasum -a 256 "$@"\n', { mode: 0o755 });
+      }
+      const PATH = shim ? `${tools}:${process.env.PATH ?? '/usr/bin:/bin'}` : (process.env.PATH ?? '/usr/bin:/bin');
+      // The paths sorted bytewise (LC_ALL=C), whatever the host's locale, so the list and its hash are the same everywhere.
+      expect(step.run).toContain('| LC_ALL=C sort >');
+      const result = runScript(step.run ?? '', { PATH, LANG: 'en_US.UTF-8', RUNNER_TEMP: dir, GITHUB_WORKSPACE: workspace, GITHUB_STEP_SUMMARY: path.join(dir, 'summary.md'), SHARD: '2/4' }, dir);
+      expect(result.status).toBe(0);
+      const list = ['apps/web/src/lib/routes/route-tests/route-tests.4.db.test.ts', 'apps/worker/src/screening/consumer-lease.db.test.ts', 'packages/db/src/catalog.db.test.ts'];
+      const sha = createHash('sha256').update(`${list.join('\n')}\n`).digest('hex');
+      for (const text of [result.output, readFileSync(path.join(dir, 'summary.md'), 'utf8')]) {
+        expect(text).toContain(`### Files db (2/4) ran: 3, list SHA-256 ${sha}\n\n\`\`\`\n${list.join('\n')}\n\`\`\``);
+        expect(text).toContain('190\tapps/worker/src/screening/consumer-lease.db.test.ts\n61\tapps/web/src/lib/routes/route-tests/route-tests.4.db.test.ts\n3\tpackages/db/src/catalog.db.test.ts');
+      }
+      // No results at all fails the shard rather than show an empty list.
+      rmSync(path.join(dir, 'db-results.json'));
+      const none = runScript(step.run ?? '', { PATH, RUNNER_TEMP: dir, GITHUB_WORKSPACE: workspace, GITHUB_STEP_SUMMARY: path.join(dir, 'summary.md'), SHARD: '2/4' }, dir);
+      expect(none.status).toBe(1);
+      expect(none.output).toContain('::error title=Files this shard ran::vitest wrote no results, so db (2/4) cannot show which files it ran.');
+    });
+  });
+
+  describe('domain model (CI-09)', () => {
+    const job = () => ciJob('domain-model');
+    const steps = () => job().steps;
+
+    it('migrates its own Postgres and runs CLAUDE.md’s command, --check --strict --require-approval, as its own check', () => {
+      expect(job().services).toBeUndefined();
+      expect(job().env).toEqual({ DATABASE_URL: 'postgres://postgres:test@localhost:5432/postgres' });
+      const migrate = stepIndex(steps(), (step) => step.run === 'pnpm db:migrate');
+      const check = stepIndex(steps(), (step) => step.run === 'pnpm db:domain-model --check --strict --require-approval');
+      expect(migrate).toBeLessThan(check);
+      expect(steps()[check]).toEqual({ run: 'pnpm db:domain-model --check --strict --require-approval' });
+    });
+
+    it('writes the changes since the last approved domain model to its summary and its log on a pull request, against the base branch, before the check can fail', () => {
+      const summary = stepIndex(steps(), (step) => step.run?.includes('db:domain-model --summary-since') === true);
+      const step = steps()[summary] as Step;
+      expect(step.name).toBe('Changes since the last approved domain model');
+      expect(summary).toBe(stepIndex(steps(), (candidate) => candidate.run === 'pnpm install --frozen-lockfile') + 1);
+      expect(summary).toBeLessThan(stepIndex(steps(), (candidate) => candidate.run === 'pnpm db:migrate'));
+      expect(step.if).toBe("${{ github.event_name == 'pull_request' }}");
+      // The base branch by its name from the environment, never pasted into the script.
+      expect(step.env).toEqual({ BASE_REF: '${{ github.base_ref }}' });
+      expect(step.run).toContain('pnpm -s db:domain-model --summary-since "origin/$BASE_REF" | tee -a "$GITHUB_STEP_SUMMARY"');
+      expect(step.run).not.toContain('${{');
+      // It needs the base branch's history, which the checkout fetches whole.
+      expect(steps()[0]).toEqual({ uses: pinOf('actions/checkout'), with: { 'fetch-depth': 0, 'persist-credentials': false } });
+    });
+
+    it('leaves no approval case in the database suite, which keeps the drift case', () => {
+      const suite = readFileSync(path.join(repositoryRoot, 'packages/db/src/domain-model/domain-model.db.test.ts'), 'utf8');
+      expect(suite).toContain("it('matches the schema a fresh database migrates to, every divergence explained and every table in an area'");
+      expect(suite).not.toMatch(/documentApprovalProblems|readApprovers|approver list/);
+      expect([...suite.matchAll(/\bit\(/g)]).toHaveLength(1);
+    });
+  });
+
+  describe('build and e2e (CI-06)', () => {
+    it('builds the web app and the worker once, stamps the web build with its commit and keeps it for the shards, replacing it on a re-run, then diffs the stacks', () => {
+      const steps = ciJob('build').steps;
+      const build = stepIndex(steps, (step) => step.run === 'pnpm build');
+      const keep = stepIndex(steps, (step) => step.name === 'Keep the web build for the e2e shards');
+      const upload = stepIndex(steps, (step) => usesAction(step, 'actions/upload-artifact'));
+      const diff = stepIndex(steps, (step) => step.run === 'pnpm cdk:diff');
+      expect([build < keep, keep < upload, upload < diff]).toEqual([true, true, true]);
+      expect(steps[keep]?.run).toContain('git rev-parse HEAD > apps/web/.next/BUILD_COMMIT');
+      expect(steps[keep]?.run).toContain('tar -C apps/web -cf - .next/standalone .next/static .next/BUILD_COMMIT | gzip -1 > "$RUNNER_TEMP/web-build.tar.gz"');
+      expect(steps[upload]?.with).toEqual({ name: 'web-build', path: '${{ runner.temp }}/web-build.tar.gz', 'if-no-files-found': 'error', 'compression-level': 0, 'retention-days': 1, overwrite: true });
+      expect(steps[diff]?.if).toBe("${{ !cancelled() && steps.install.outcome == 'success' }}");
+      // The build job builds with no e2e setting, so the journeys run the production build that ships.
+      expect(JSON.stringify(ciJob('build'))).not.toMatch(/E2E_|TP_ALLOW_LOCAL_PROVIDERS/);
+    });
+
+    it('runs the journeys in two shards, three on a private repository, each on its own Postgres over the build job’s artifact', () => {
+      const job = ciJob('e2e');
+      expect(job.needs).toBe('build');
+      expect(shardWidths(job.strategy?.matrix)).toEqual({ public: [1, 2], private: [1, 2, 3] });
+      expect(job.strategy?.['fail-fast']).toBe(false);
+      expect(job.services).toBeUndefined();
+      const steps = job.steps;
+      const chromium = stepIndex(steps, (step) => step.run === 'pnpm --filter @tp/web exec playwright install --with-deps chromium');
+      const download = stepIndex(steps, (step) => usesAction(step, 'actions/download-artifact'));
+      const unpack = stepIndex(steps, (step) => step.run === 'tar -C apps/web -xzf "$RUNNER_TEMP/web-build/web-build.tar.gz"');
+      const e2e = stepIndex(steps, (step) => step.name === "The end-to-end journeys, this shard's");
+      expect([chromium < e2e, download < unpack, unpack < e2e]).toEqual([true, true, true]);
+      expect(steps[download]?.with).toEqual({ name: 'web-build', path: '${{ runner.temp }}/web-build' });
+      expect(steps[e2e]?.env).toEqual({ E2E_PREBUILT: '1', SHARD: '${{ matrix.shard }}/${{ strategy.job-total }}' });
+      expect(steps[e2e]?.run).toBe('pnpm test:e2e --shard="$SHARD"');
+    });
+
+    it('starts the shards’ web server on the downloaded build only when its stamp names this commit, and fails a run on a test that passed only on its retry, naming it (CI-07)', () => {
+      const config = readFileSync(path.join(repositoryRoot, 'apps/web/playwright.config.ts'), 'utf8');
+      // E2E_PREBUILT: the stamp check in place of a second build (apps/web/scripts/build-stamp.ts refuses another commit's).
+      expect(config).toContain('E2E_PREBUILT');
+      expect(config).toContain('scripts/build-stamp.ts --expect');
+      // The stamp's verdict, a pass included, reaches the shard's log: the stamp prints it to stderr, which the web
+      // server keeps as [WebServer] lines (apps/web/scripts/build-stamp.test.ts runs both).
+      expect(config).toContain("stdout: 'ignore',\n    stderr: 'pipe',");
+      expect(readFileSync(path.join(repositoryRoot, 'apps/web/scripts/build-stamp.ts'), 'utf8')).not.toContain('process.stdout');
+      // One retry keeps the first attempt's trace and the "flaky" label; the flake still fails the run, and the github
+      // reporter names it on the pull request.
+      expect(config).toContain('retries: process.env.CI ? 1 : 0');
+      expect(config).toContain('failOnFlakyTests: Boolean(process.env.CI)');
+      expect(config).toContain("trace: 'retain-on-failure'");
+      expect(config).toMatch(/\[\s*'github'\s*\]/);
+    });
+
+    it('keeps each shard’s report, results and brand screenshots, failed runs included, under its own name', () => {
+      const steps = ciJob('e2e').steps;
+      const e2e = stepIndex(steps, (step) => step.name === "The end-to-end journeys, this shard's");
+      const upload = stepIndex(steps, (step) => usesAction(step, 'actions/upload-artifact'));
+      expect(upload).toBe(e2e + 1);
+      const step = steps[upload] as Step;
+      expect(step.if).toBe('always()');
+      expect(step.with?.name).toBe('playwright-${{ matrix.shard }}');
+      expect(step.with?.overwrite).toBe(true);
+      // Playwright's defaults beside apps/web/playwright.config.ts (it names no outputFolder or outputDir), and the
+      // brand journey's screenshots (BRAND_SCREENSHOTS_DIR's default, apps/web/e2e/brand.spec.ts).
+      expect(String(step.with?.path).trim().split('\n')).toEqual(['apps/web/playwright-report/', 'apps/web/test-results/', 'brand-screenshots/']);
+      const config = readFileSync(path.join(repositoryRoot, 'apps/web/playwright.config.ts'), 'utf8');
+      expect(config).not.toMatch(/outputDir|outputFolder/);
+      expect(readFileSync(path.join(repositoryRoot, 'apps/web/e2e/brand.spec.ts'), 'utf8')).toContain("path.resolve(import.meta.dirname, '../../../brand-screenshots')");
+    });
+
+    it('prints a failed shard’s screenshot diffs and actuals into its log, each under 300 KB as its path and its base64 on one line', () => {
+      const steps = ciJob('e2e').steps;
+      const print = stepIndex(steps, (step) => step.run?.includes('base64 -w 0') === true);
+      expect(print).toBeGreaterThan(stepIndex(steps, (step) => usesAction(step, 'actions/upload-artifact')));
+      const step = steps[print] as Step;
+      expect(step.if).toBe('failure()');
+      expect(step.run).toContain("find apps/web/test-results -type f \\( -name '*-diff.png' -o -name '*-actual.png' \\) -size -300k");
+      expect(step.run).toContain('echo "$file $(base64 -w 0 "$file")"');
+      // Run as GitHub runs it: a shard that left no results prints nothing and passes; one that did prints each picture.
+      const dir = mkdtempSync(path.join(scratch, 'pictures-'));
+      expect(runScript(step.run ?? '', {}, dir)).toEqual({ status: 0, output: '' });
+      // The pictures need GNU base64's -w, as the runner has. On CI (CI set to anything but empty or "false", as
+      // tools/test/ci-chromium.ts reads it) they run whatever, so a runner without it fails here rather than skip
+      // them; elsewhere, where a BSD base64 has no -w, only the empty case runs.
+      const onCi = process.env.CI !== undefined && process.env.CI !== '' && process.env.CI !== 'false';
+      if (onCi || spawnSync('base64', ['-w', '0'], { input: '' }).status === 0) {
+        mkdirSync(path.join(dir, 'apps/web/test-results/brand'), { recursive: true });
+        writeFileSync(path.join(dir, 'apps/web/test-results/brand/header-diff.png'), 'png');
+        writeFileSync(path.join(dir, 'apps/web/test-results/brand/header-expected.png'), 'png');
+        expect(runScript(step.run ?? '', {}, dir)).toEqual({ status: 0, output: `apps/web/test-results/brand/header-diff.png ${Buffer.from('png').toString('base64')}\n` });
+      }
+    });
+  });
+
+  it('names every artifact once per run and lets a re-run of failed jobs replace it, in every workflow (upload-artifact v7 names are unique per run and immutable)', () => {
+    const uploads = Object.entries(ci.jobs).flatMap(([id, job]) => job.steps.filter((step) => usesAction(step, 'actions/upload-artifact')).map((step) => ({ id, job, step })));
+    expect(uploads.map(({ id }) => id)).toEqual(['build', 'e2e']);
+    for (const { id, job, step } of uploads) {
+      // A matrix job's artifact carries its shard, so no two of its jobs write one name.
+      if (job.strategy?.matrix !== undefined) expect(String(step.with?.name), id).toContain('${{ matrix.shard }}');
+    }
+    // Every upload of every workflow, the release's three and its dry run's included, overwrites, so a re-run of a
+    // failed job replaces what its first attempt left instead of failing on the name.
+    const every = workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => job.steps.filter((step) => usesAction(step, 'actions/upload-artifact')).map((step) => ({ where: `${file} ${id}`, step }))));
+    expect(every.filter(({ where }) => where.startsWith('release.yml ')).length).toBe(3);
+    expect(every.filter(({ where }) => where.startsWith('release-dry-run.yml ')).length).toBe(1);
+    for (const { where, step } of every) expect(step.with?.overwrite, where).toBe(true);
+  });
+
+  it('builds and scans both images in one job, failing on HIGH or CRITICAL, the worker whatever the web image did', () => {
+    const steps = ciJob('images').steps;
+    const builds = steps.filter((step) => usesAction(step, 'docker/build-push-action'));
+    expect(builds.map((step) => [step.with?.file, step.with?.load, step.with?.push, step.with?.tags])).toEqual([
+      ['apps/web/Dockerfile', true, false, 'tp-web:scan'],
+      ['apps/worker/Dockerfile', true, false, 'tp-worker:scan'],
+    ]);
+    const scans = steps.filter(isScan);
+    expect(scans.map((step) => [step.with?.['image-ref'], step.with?.severity, step.with?.['ignore-unfixed']])).toEqual([
+      ['tp-web:scan', 'HIGH,CRITICAL', true],
+      ['tp-worker:scan', 'HIGH,CRITICAL', true],
+    ]);
+    expect(steps.indexOf(scans[0] as Step)).toBe(steps.indexOf(builds[0] as Step) + 1);
+    expect(steps.indexOf(scans[1] as Step)).toBe(steps.indexOf(builds[1] as Step) + 1);
+    expect(builds[1]?.if).toBe('${{ !cancelled() }}');
+    expect(builds[1]?.id).toBe('worker');
+    expect(scans[1]?.if).toBe("${{ !cancelled() && steps.worker.outcome == 'success' }}");
+    // Each verdict is made from the vulnerability database this run downloads, never one another run cached (the
+    // action caches it by default, and a push run's copy would be every pull request's).
+    expect(scans.map((step) => step.with?.cache)).toEqual([false, false]);
+    // And kept outside the workspace: the worker image is built after the web scan from the checkout (`context: .`,
+    // whose Dockerfile copies it whole), and the action's default, the workspace's .cache/trivy, put the database in
+    // that context (1.63 GB sent to the worker's build in run 40166129200, against the checkout's 16 MB).
+    expect(builds.map((step) => step.with?.context)).toEqual(['.', '.']);
+    expect(scans.map((step) => step.with?.['cache-dir'])).toEqual(['${{ runner.temp }}/trivy', '${{ runner.temp }}/trivy']);
+    expect(existsSync(path.join(WORKFLOWS, 'supply-chain.yml'))).toBe(false);
+  });
+
+  it('checks production licenses against the allowlist on every pull request', () => {
+    expect(ciJob('static').steps.some((step) => step.run === 'pnpm licenses:check')).toBe(true);
+  });
+
+  it('installs Playwright’s own Chromium, with its system libraries, wherever vitest or the journeys run, so the printing tests run and the brand baselines compare under the build that made them', () => {
+    for (const id of ['unit', 'db', 'e2e']) {
+      const steps = ciJob(id).steps;
+      const install = stepIndex(steps, (step) => step.run === 'pnpm --filter @tp/web exec playwright install --with-deps chromium');
+      expect(install, id).toBeGreaterThan(stepIndex(steps, (step) => step.run === 'pnpm install --frozen-lockfile'));
+      // The browsers from the cache, keyed by the builds this Playwright pins, so the install fetches only the system
+      // libraries on a hit, and installs the pinned builds on a miss or a stale entry.
+      expect(steps[install - 1], id).toEqual({ name: "Restore Playwright's browsers", id: 'browsers', uses: pinOf('actions/cache/restore'), with: { path: '~/.cache/ms-playwright', key: `playwright-v1-\${{ runner.os }}-\${{ hashFiles('${BROWSERS_JSON}') }}` } });
+    }
+    // Saved once a run, by the unit job, on a miss: a hit is never saved again, and no other job writes the key.
+    const unit = ciJob('unit').steps;
+    const save = unit.findIndex((step) => usesAction(step, 'actions/cache/save'));
+    expect(unit[save - 1]?.run).toBe('pnpm --filter @tp/web exec playwright install --with-deps chromium');
+    expect(unit[save]).toEqual({ name: "Save Playwright's browsers", if: "${{ steps.browsers.outputs.cache-hit != 'true' }}", uses: pinOf('actions/cache/save'), with: { path: '~/.cache/ms-playwright', key: '${{ steps.browsers.outputs.cache-primary-key }}' } });
+    expect(['db', 'e2e'].flatMap((id) => ciJob(id).steps.filter((step) => step.with?.path === '~/.cache/ms-playwright' && !usesAction(step, 'actions/cache/restore')))).toEqual([]);
+    // The key's file is the one playwright-core this lockfile installs: it names the browser builds the install fetches.
+    const store = path.join(repositoryRoot, 'node_modules/.pnpm');
+    const cores = readdirSync(store).filter((name) => name.startsWith('playwright-core@') && existsSync(path.join(store, name, 'node_modules/playwright-core/browsers.json')));
+    expect(cores).toEqual([`playwright-core@${(JSON.parse(readFileSync(path.join(repositoryRoot, 'apps/web/node_modules/@playwright/test/package.json'), 'utf8')) as { version: string }).version}`]);
+    // The config takes that Chromium wherever it is installed, and Google Chrome only where it is not (docs/adr/0058).
+    const config = readFileSync(path.join(repositoryRoot, 'apps/web/playwright.config.ts'), 'utf8');
+    expect(config).toContain('const bundledChromium = existsSync(chromium.executablePath());');
+    expect(config).toContain("...(bundledChromium ? {} : { channel: 'chrome' })");
+    // The baselines the brand journey compares are committed for that browser on Linux.
+    for (const name of ['header-1280', 'header-390', 'header-lockup-1280', 'header-lockup-390', 'report-cover-with-seal', 'report-cover-without-seal', 'report-cover-top']) {
+      expect(existsSync(path.join(repositoryRoot, 'apps/web/e2e/brand.spec.ts-snapshots', `${name}-chromium-linux.png`)), name).toBe(true);
     }
   });
 });
 
+describe('the action pin rules (CI-11; docs/adr/0066, Part 2)', () => {
+  const texts = () => workflowFiles().map((file) => ({ file, text: readFileSync(path.join(WORKFLOWS, file), 'utf8') }));
+
+  it('(a) pin every action of every workflow to a full commit SHA with its release version beside it, so no moved tag runs anywhere', () => {
+    expect(texts().length).toBeGreaterThanOrEqual(8);
+    expect(formProblems(texts())).toEqual([]);
+    // The workflows that push images, write the report or decide a required check, and the content-calendar and
+    // release-capacity workflows (docs/adr/0071), are among the files read, each naming at least one action.
+    for (const name of ['release.yml', 'screening-capacity.yml', 'ci.yml', 'content-calendar.yml', 'release-capacity.yml']) {
+      expect(texts().find((entry) => entry.file === name)?.text.match(/^\s*(?:-\s+)?uses:/gm)?.length ?? 0, name).toBeGreaterThan(0);
+    }
+    // Every action the YAML names is one of the lines read.
+    const uses = workflowFiles().flatMap((file) => Object.values(workflow(file).jobs).flatMap((job) => job.steps.flatMap((step) => (step.uses === undefined ? [] : [step.uses]))));
+    expect(uses.length).toBeGreaterThan(0);
+    for (const ref of uses) expect(parsePin(ref), ref).toBeDefined();
+  });
+
+  it('(b) pin each action’s repository to one commit and one version across every workflow', () => {
+    expect(consistencyProblems(texts())).toEqual([]);
+  });
+
+  it('(c) match steps by the action they name, never by its ref, so a capacity step of actions/cache at any SHA is caught', () => {
+    const fixture: Step[] = [{ uses: `actions/cache/restore@${'1'.repeat(40)}` }, { uses: `actions/cache@${'2'.repeat(40)}` }, { uses: `actions/cache/save@${'1'.repeat(40)}` }];
+    expect(plainCacheSteps(fixture)).toEqual([fixture[1]]);
+    expect(plainCacheSteps([{ uses: 'actions/cache@v4' }, { run: 'actions/cache@v4' }])).toHaveLength(1);
+    expect(usesAction({ uses: `actions/checkout@${'3'.repeat(40)}` }, 'actions/checkout')).toBe(true);
+    expect(usesAction({ uses: `actions/checkout-extra@${'3'.repeat(40)}` }, 'actions/checkout')).toBe(false);
+  });
+
+  it('are checked on every run by pnpm actions:check, whose root script runs tools/check-action-pins', () => {
+    const scripts = (JSON.parse(readFileSync(path.join(repositoryRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts;
+    expect(scripts['actions:check']).toBe('tsx tools/check-action-pins/index.ts');
+    expect(scripts['toolchain:check']).toBe('tsx tools/check-toolchain/index.ts');
+  });
+});
+
+describe('the release’s dry run (docs/adr/0066, Part 2)', () => {
+  type DryJob = Job & { permissions?: unknown };
+  const dry = () => workflow('release-dry-run.yml') as Workflow & { permissions?: unknown; jobs: Record<string, DryJob> };
+  const release = () => workflow('release.yml') as Workflow & { jobs: Record<string, DryJob> };
+  // The images' pnpm installer runs in both Dockerfiles' build stage, so a change to it is a change to the image build.
+  const PATHS = ['.github/workflows/release.yml', '.github/workflows/release-dry-run.yml', 'tools/screening-capacity/image-id.ts', 'apps/web/Dockerfile', 'apps/worker/Dockerfile', 'tools/check-toolchain/install-pnpm.sh'];
+
+  it('runs on every pull request and push that changes the release, its dry run, the images’ Dockerfiles or their pnpm installer, outside the required checks', () => {
+    expect(dry().on).toEqual({ pull_request: { paths: PATHS }, push: { branches: ['claude/build-platform'], paths: PATHS } });
+    expect(Object.keys(dry().jobs)).toEqual(['build', 'push', 'capacity']);
+    expect(dry().jobs.push?.needs).toBe('build');
+    expect(dry().jobs.capacity?.needs).toBe('build');
+    expect(REQUIRED_CHECKS.filter((check) => check.workflow === 'release-dry-run.yml')).toEqual([]);
+  });
+
+  it('holds no write permission and never tags, pushes or attests', () => {
+    expect(dry().permissions).toEqual({ contents: 'read' });
+    expect(dry().jobs.build?.permissions).toBeUndefined();
+    expect(dry().jobs.push?.permissions).toEqual({ contents: 'read', packages: 'read' });
+    const text = readFileSync(path.join(WORKFLOWS, 'release-dry-run.yml'), 'utf8');
+    expect(text).not.toMatch(/: write|id-token|attestations/);
+    const steps = Object.values(dry().jobs).flatMap((entry) => entry.steps);
+    expect(steps.filter((step) => /\bdocker (?:push|tag)\b/.test(step.run ?? ''))).toEqual([]);
+    expect(steps.filter((step) => /attest/.test(step.uses ?? ''))).toEqual([]);
+    expect(steps.filter((step) => usesAction(step, 'docker/build-push-action')).map((step) => [step.with?.push, step.with?.load])).toEqual([[false, true]]);
+  });
+
+  it('runs each action release.yml’s job runs with the same pin and the same inputs, overwriting its upload and caching nothing', () => {
+    for (const [id, entry] of Object.entries(dry().jobs)) {
+      const theirs = release().jobs[id]?.steps ?? [];
+      for (const step of entry.steps.filter((candidate) => candidate.uses !== undefined)) {
+        const where = `${id}: ${step.uses ?? ''}`;
+        const same = theirs.filter((candidate) => candidate.uses === step.uses && isDeepStrictEqual(Object.keys(candidate.with ?? {}).sort(), Object.keys(step.with ?? {}).sort()));
+        expect(same.length, `${where}: release.yml's ${id} job runs it with the inputs ${JSON.stringify(Object.keys(step.with ?? {}).sort())}`).toBeGreaterThan(0);
+        for (const input of ['overwrite', 'cache', 'cache-binary', 'package-manager-cache', 'cache-from', 'cache-to']) {
+          expect(same.some((candidate) => isDeepStrictEqual(candidate.with?.[input], step.with?.[input])), `${where}: ${input}`).toBe(true);
+        }
+      }
+    }
+    expect(dry().jobs.build?.steps.find((step) => usesAction(step, 'actions/upload-artifact'))?.with?.overwrite).toBe(true);
+  });
+
+  it('runs the capacity job’s setup as release.yml does, with no cache, up to its frozen install and no further (the ci-infra review’s N4)', () => {
+    // The steps a tag runs first in its capacity job: the checkout, a download by name, pnpm and Node with no cache and
+    // the frozen install, each with release.yml's own inputs; the measurement itself stays the tag's.
+    const theirs = release().jobs.capacity?.steps ?? [];
+    const ours = dry().jobs.capacity?.steps ?? [];
+    expect(ours.map((step) => step.run ?? step.uses?.split('@')[0])).toEqual(['actions/checkout', 'actions/download-artifact', 'pnpm/action-setup', 'actions/setup-node', 'pnpm install --frozen-lockfile']);
+    for (const step of ours) {
+      // The download names the dry run's one image where the tag names the production web image; every other input is
+      // release.yml's own.
+      const inputs = usesAction(step, 'actions/download-artifact') ? { ...step.with, name: 'image-web-production' } : step.with;
+      const match = theirs.find((candidate) => (step.run !== undefined ? candidate.run === step.run : candidate.uses === step.uses && isDeepStrictEqual(candidate.with, inputs)));
+      expect(match, `${step.run ?? step.uses ?? ''} with ${JSON.stringify(step.with)}`).toBeDefined();
+    }
+    expect(ours.find((step) => usesAction(step, 'actions/download-artifact'))?.with).toEqual({ name: 'image-web', path: '${{ runner.temp }}/image' });
+    expect(dry().jobs.capacity?.permissions).toBeUndefined();
+  });
+
+  it('writes the software bill of materials with release.yml’s own step, cut to this run’s image, and checks it is SPDX', () => {
+    const sbom = (entry: Job | undefined) => entry?.steps.find((step) => usesAction(step, 'aquasecurity/trivy-action') && step.with?.format === 'spdx-json');
+    const theirs = sbom(release().jobs.build);
+    const ours = sbom(dry().jobs.build);
+    expect(ours?.uses).toBe(theirs?.uses);
+    expect(ours?.with).toEqual({ ...theirs?.with, output: 'sbom-web-dry-run.spdx.json' });
+    expect(theirs?.with?.output).toBe('sbom-${{ matrix.image }}-${{ github.ref_name }}.spdx.json');
+    const steps = dry().jobs.build?.steps ?? [];
+    const index = steps.findIndex((step) => usesAction(step, 'aquasecurity/trivy-action') && step.with?.format === 'spdx-json');
+    expect(index).toBeGreaterThan(steps.findIndex((step) => usesAction(step, 'docker/build-push-action')));
+    expect(steps[index + 1]?.run).toBe("jq -e '.spdxVersion and (.packages | length > 0)' sbom-web-dry-run.spdx.json > /dev/null");
+  });
+
+  it('saves the image and checks its identity with release.yml’s own scripts, cut to the web image and this run’s tag', () => {
+    const save = (entry: Job | undefined) => entry?.steps.find((step) => step.run?.includes('docker save') === true);
+    expect(save(dry().jobs.build)?.run).toBe(save(release().jobs.build)?.run);
+    expect(save(dry().jobs.build)?.env).toEqual({ REF: '${{ steps.image.outputs.ref }}', IMAGE: 'web' });
+    const identity = (entry: Job | undefined) => entry?.steps.find((step) => step.run?.includes('docker load') === true)?.run ?? '';
+    const cut = identity(release().jobs.push)
+      .replace('for image in web web-staging web-production worker; do', 'for image in web; do')
+      .replace('ref="$repository/$image:$GITHUB_REF_NAME"', 'ref="$repository/$image:dry-run-$GITHUB_RUN_ID"')
+      .split('\n')
+      .filter((line) => !/\bdocker (?:tag|push)\b/.test(line))
+      .join('\n');
+    expect(cut).not.toBe(identity(release().jobs.push));
+    expect(identity(dry().jobs.push)).toBe(cut);
+    expect(dry().jobs.build?.steps.find((step) => step.id === 'image')?.run).toBe('echo "ref=ghcr.io/${GITHUB_REPOSITORY,,}/web:dry-run-$GITHUB_RUN_ID" >> "$GITHUB_OUTPUT"');
+  });
+});
+
+describe('every checkout (CI-11)', () => {
+  it('keeps no token in the checkout, in every workflow but publish-content.yml, which pushes the releases it publishes', () => {
+    for (const file of workflowFiles()) {
+      for (const [id, job] of Object.entries(workflow(file).jobs)) {
+        for (const step of job.steps.filter((candidate) => usesAction(candidate, 'actions/checkout'))) {
+          expect(step.with?.['persist-credentials'], `${file} ${id}`).toBe(file === 'publish-content.yml' ? undefined : false);
+        }
+      }
+    }
+  });
+});
+
+describe('publish-content.yml, held to its frozen copy (the founder’s F4)', () => {
+  /** The text with each action's ref and version comment set aside, the one change a Dependabot pin bump makes. */
+  const normalised = (text: string) => text.replace(/^(\s*(?:-\s+)?uses:\s*[\w./-]+)@\S+(?:\s+#.*)?$/gm, '$1');
+
+  it('changes only by its actions’ pins: every other line is tools/test/frozen/publish-content.yml’s, its runner and its one timeout included', () => {
+    const live = readFileSync(path.join(WORKFLOWS, 'publish-content.yml'), 'utf8');
+    const frozen = readFileSync(path.join(repositoryRoot, 'tools/test/frozen/publish-content.yml'), 'utf8');
+    expect(normalised(live)).toBe(normalised(frozen));
+    // The frozen copy keeps the workflow's own tags, so only the live file's pins vary.
+    expect(frozen).toContain('timeout-minutes: 15');
+    expect(frozen).toContain('runs-on: ubuntu-24.04');
+    expect(normalised('      - uses: actions/checkout@v4\n        with: x\n      - uses: a/b@' + 'f'.repeat(40) + ' # v7.0.1\n')).toBe('      - uses: actions/checkout\n        with: x\n      - uses: a/b\n');
+  });
+});
+
+/** The capacity or release steps that run actions/cache itself, at any ref: matched by the action, never by its ref. */
+function plainCacheSteps(steps: readonly Step[]): Step[] {
+  return steps.filter((step) => usesAction(step, 'actions/cache'));
+}
+
 describe('approval-of-record (docs/adr/0063)', () => {
-  const file = readFileSync(path.join(repositoryRoot, '.github/workflows/approval-of-record.yml'), 'utf8');
+  const file = readFileSync(path.join(CI_ROOT, '.github/workflows/approval-of-record.yml'), 'utf8');
   const parsed = parse(file) as Workflow & { permissions?: unknown; jobs: Record<string, { 'timeout-minutes'?: number }> };
 
   it('runs on each pull request event and each review, so a review re-runs it', () => {
@@ -716,7 +1650,7 @@ describe('approval-of-record (docs/adr/0063)', () => {
   it('reads with a read-only token, installs nothing and runs the decision on Node 24 alone', () => {
     expect(parsed.permissions).toEqual({ contents: 'read', 'pull-requests': 'read' });
     const steps = parsed.jobs['approval-of-record']?.steps ?? [];
-    expect(steps.map((step) => step.uses ?? step.run)).toEqual(['actions/checkout@v4', 'actions/setup-node@v4', 'node tools/approval-of-record/approval-of-record.ts']);
+    expect(steps.map((step) => actionOf(step) ?? step.run)).toEqual(['actions/checkout', 'actions/setup-node', 'node tools/approval-of-record/approval-of-record.ts']);
     expect(steps[0]?.with).toEqual({ 'persist-credentials': false });
     expect(steps[1]?.with).toEqual({ 'node-version': 24 });
     expect((steps[2] as Step & { env?: Record<string, string> }).env).toEqual({
@@ -733,7 +1667,7 @@ describe('approval-of-record (docs/adr/0063)', () => {
   // actionlint where it is installed (or ACTIONLINT names it); the YAML of every workflow is parsed above either way.
   const actionlint = process.env.ACTIONLINT ?? spawnSync('/bin/sh', ['-c', 'command -v actionlint'], { encoding: 'utf8' }).stdout.trim();
   it.runIf(actionlint !== '')('every workflow passes actionlint', () => {
-    const files = readdirSync(path.join(repositoryRoot, '.github/workflows')).map((name) => path.join(repositoryRoot, '.github/workflows', name));
+    const files = readdirSync(WORKFLOWS).map((name) => path.join(WORKFLOWS, name));
     const result = spawnSync(actionlint, ['-shellcheck=', '-pyflakes=', ...files], { encoding: 'utf8' });
     expect(result.error).toBeUndefined();
     expect(result.stdout + result.stderr).toBe('');
@@ -741,69 +1675,610 @@ describe('approval-of-record (docs/adr/0063)', () => {
   });
 });
 
-describe('mutation testing', () => {
-  it('runs on a label as well as a push, fails an engine change without the money label, and runs the canary first (docs/adr/0064)', () => {
-    const mutation = workflow('mutation.yml');
-    expect(mutation.on).toEqual({ pull_request: { types: ['opened', 'synchronize', 'reopened', 'labeled', 'unlabeled'] }, schedule: [{ cron: expect.any(String) as unknown }] });
-    // ci.yml runs on pull_request's default types, which carry no label event, so it holds no mutation job.
-    expect(Object.keys(workflow('ci.yml').jobs)).toEqual(['check']);
-    const steps = mutation.jobs.mutation?.steps ?? [];
-    const gate = stepIndex(steps, (step) => step.name === 'The money label on an engine change');
-    const gateStep = steps[gate] as Step & { env?: Record<string, string> };
-    expect(gateStep.env?.MONEY).toBe("${{ contains(github.event.pull_request.labels.*.name, 'money') }}");
-    expect(gateStep.run).toContain("git diff --name-only \"$base\" HEAD -- packages/pricing/src ':!**/*.test.ts'");
-    expect(gateStep.run).toContain('exit 1');
-    const canary = stepIndex(steps, (step) => step.run === 'pnpm stryker run tools/stryker/canary/stryker.config.mjs');
-    const money = stepIndex(steps, (step) => step.run === 'pnpm stryker run');
-    expect(gate).toBeLessThan(canary);
-    expect(canary).toBeLessThan(money);
-    for (const step of steps.slice(gate + 1) as (Step & { if?: string })[]) {
-      expect(step.if, step.name ?? step.uses ?? step.run).toBe("steps.label.outputs.run == 'true'");
+describe('mutation testing (docs/adr/0066, Part 4; CI-15 to CI-17)', () => {
+  type MutationStep = Step & { readonly id?: string; readonly if?: string; readonly env?: Record<string, string> };
+  interface MutationJob {
+    readonly name?: string;
+    readonly needs?: string | readonly string[];
+    readonly if?: string;
+    readonly 'timeout-minutes'?: number;
+    readonly outputs?: Record<string, string>;
+    readonly env?: Record<string, string>;
+    readonly strategy?: { readonly 'fail-fast'?: boolean; readonly matrix?: Record<string, unknown> };
+    readonly steps: readonly MutationStep[];
+  }
+  const parsed = parse(readFileSync(path.join(CI_ROOT, '.github/workflows/mutation.yml'), 'utf8')) as {
+    on: unknown;
+    permissions?: unknown;
+    concurrency?: { group?: string; 'cancel-in-progress'?: unknown };
+    jobs: Record<string, MutationJob>;
+  };
+  const job = (name: string): MutationJob => {
+    const found = parsed.jobs[name];
+    if (found === undefined) throw new Error(`mutation.yml has no ${name} job`);
+    return found;
+  };
+  const runs = (steps: readonly MutationStep[]) => steps.map((step) => step.run ?? step.uses ?? '');
+
+  it('runs on every push to the build branch, every pull request on its default types, weekly and on request, with a read-only token', () => {
+    expect(parsed.on).toEqual({ push: { branches: ['claude/build-platform'] }, pull_request: null, schedule: [{ cron: '23 5 * * 1' }], workflow_dispatch: null });
+    expect(parsed.permissions).toEqual({ contents: 'read' });
+    // No label decides any more: path-affected runs replace the money label.
+    expect(readFileSync(path.join(CI_ROOT, '.github/workflows/mutation.yml'), 'utf8')).not.toMatch(/labels|labeled/);
+    expect(Object.keys(parsed.jobs)).toEqual(['changes', 'stryker', 'mutation']);
+    // ci.yml holds no Stryker run: mutation keeps its own required gate.
+    const ci = workflow('ci.yml');
+    expect(Object.values(ci.jobs).flatMap((ciJob) => ciJob.steps).filter((step) => step.run?.includes('stryker') === true)).toEqual([]);
+  });
+
+  it('groups its runs under its own name, cancelling only a pull request’s older run', () => {
+    expect(parsed.concurrency).toEqual({
+      group: "${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.sha }}",
+      'cancel-in-progress': "${{ github.event_name == 'pull_request' }}",
+    });
+    expect(parsed.concurrency?.group?.startsWith('${{ github.workflow }}-')).toBe(true);
+  });
+
+  it('decides what to measure in its changes job, from the merge base on a pull request, and outputs the shard matrix', () => {
+    const changes = job('changes');
+    expect(changes['timeout-minutes']).toBe(5);
+    expect(changes.outputs).toEqual({ any: '${{ steps.affected.outputs.any }}', packages: '${{ steps.affected.outputs.packages }}', shards: '${{ steps.affected.outputs.shards }}' });
+    expect(changes.steps[0]?.with).toEqual({ 'persist-credentials': false, 'fetch-depth': 0 });
+    const affected = changes.steps.find((step) => step.id === 'affected');
+    expect(affected?.run).toBe('pnpm -s exec tsx tools/stryker/affected.ts --event "$EVENT" --base "$BASE" --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"');
+    expect(affected?.env).toEqual({ EVENT: '${{ github.event_name }}', BASE: '${{ github.event.pull_request.base.sha }}' });
+    expect(existsSync(path.join(repositoryRoot, 'tools/stryker/affected.ts'))).toBe(true);
+  });
+
+  it('runs every selected shard, the canary first, then the shard in full, and uploads its reports overwriting a re-run’s', () => {
+    const stryker = job('stryker');
+    expect(stryker.name).toBe('stryker (${{ matrix.shard }})');
+    expect(stryker.needs).toBe('changes');
+    // An empty matrix is an error, so the job is skipped instead when nothing is affected.
+    expect(stryker.if).toBe("needs.changes.outputs.any == 'true'");
+    expect(stryker['timeout-minutes']).toBe(30);
+    expect(stryker.strategy).toEqual({ 'fail-fast': false, matrix: { shard: '${{ fromJSON(needs.changes.outputs.shards) }}' } });
+    expect(stryker.env).toEqual({ TP_MUTATION_SHARD: '${{ matrix.shard }}' });
+    const steps = stryker.steps;
+    const install = stepIndex(steps, (step) => step.run === 'pnpm install --frozen-lockfile');
+    const canary = stepIndex(steps, (step) => step.name === 'The canary');
+    const shard = stepIndex(steps, (step) => step.name === 'The shard');
+    expect(steps[canary]?.run).toBe('pnpm stryker run tools/stryker/canary/stryker.config.mjs\npnpm -s exec tsx tools/stryker/canary/verdict.ts --shard "$TP_MUTATION_SHARD"\n');
+    expect(steps[shard]?.run).toBe('pnpm -s exec tsx tools/stryker/shards.ts "$TP_MUTATION_SHARD"');
+    // The canary is the first step after the install, and no Stryker run comes before it.
+    expect(canary).toBe(install + 1);
+    expect(runs(steps.slice(0, canary)).filter((run) => run.includes('stryker'))).toEqual([]);
+    expect(canary).toBeLessThan(shard);
+    // Its verdicts, the shard's scores and survivors, go to the log whatever the shard did, as long as it was not cancelled.
+    const view = stepIndex(steps, (step) => step.run === 'pnpm -s exec tsx tools/stryker/gate.ts reports/mutation --shard "$TP_MUTATION_SHARD"');
+    expect(steps[view]?.if).toBe('${{ !cancelled() }}');
+    const upload = stepIndex(steps, (step) => usesAction(step, 'actions/upload-artifact'));
+    expect(upload).toBeGreaterThan(shard);
+    expect(steps[upload]?.if).toBe('${{ !cancelled() }}');
+    expect(steps[upload]?.with).toEqual({ name: 'mutation-${{ matrix.shard }}', path: 'reports/mutation/', 'if-no-files-found': 'error', overwrite: true, 'retention-days': 14 });
+  });
+
+  it('gates every run in its mutation job: always run, failing on a failed, cancelled or skipped need, then on the gate’s rules', () => {
+    const mutation = job('mutation');
+    expect(mutation.name).toBe('mutation');
+    expect(mutation.needs).toEqual(['changes', 'stryker']);
+    expect(mutation.if).toBe('${{ always() }}');
+    expect(mutation['timeout-minutes']).toBe(10);
+    expect(mutation.strategy).toBeUndefined();
+    const needs = mutation.steps[0];
+    expect(needs?.env).toEqual({
+      CHANGES: '${{ needs.changes.result }}',
+      STRYKER: '${{ needs.stryker.result }}',
+      ANY: '${{ needs.changes.outputs.any }}',
+      PACKAGES: '${{ needs.changes.outputs.packages }}',
+      SHARDS: '${{ needs.changes.outputs.shards }}',
+    });
+    for (const text of ['if [ "$CHANGES" != success ]; then', 'case "$ANY" in', 'if [ "$STRYKER" != skipped ]; then', 'No money path changed: no mutation run.', 'if [ "$STRYKER" != success ]; then']) expect(needs?.run).toContain(text);
+    expect(needs?.run?.match(/exit 1/g)).toHaveLength(7);
+    for (const step of mutation.steps.slice(1)) expect(step.if, step.name ?? step.uses ?? step.run).toBe("steps.needs.outputs.run == 'true'");
+    const download = stepIndex(mutation.steps, (step) => usesAction(step, 'actions/download-artifact'));
+    expect(mutation.steps[download]?.with).toEqual({ pattern: 'mutation-*', path: 'reports/mutation', 'merge-multiple': true });
+    const gate = stepIndex(mutation.steps, (step) => step.name === 'The gate');
+    expect(gate).toBeGreaterThan(download);
+    expect(mutation.steps[gate]?.run).toBe('pnpm -s exec tsx tools/stryker/gate.ts reports/mutation --expected "$SHARDS" --summary "$GITHUB_STEP_SUMMARY"');
+    expect(mutation.steps[gate]?.env).toEqual({ SHARDS: '${{ needs.changes.outputs.shards }}' });
+  });
+
+  // The step's own script, run with bash -e as the runner runs it, its outputs and summary in temporary files bash
+  // makes, the outputs printed after a marker.
+  const guard = (env: { CHANGES?: string; STRYKER?: string; ANY?: string; PACKAGES?: string; SHARDS?: string }) => {
+    const wrapper = 'out=$(mktemp); sum=$(mktemp); status=0; GITHUB_OUTPUT="$out" GITHUB_STEP_SUMMARY="$sum" bash -e -c "$1" || status=$?; printf "\\n--outputs--\\n%s" "$(cat "$out")"; rm -f "$out" "$sum"; exit "$status"';
+    const ran = spawnSync('bash', ['-c', wrapper, 'guard', job('mutation').steps[0]?.run ?? ''], { encoding: 'utf8', env: { PATH: process.env.PATH ?? '/usr/bin:/bin', ...env } });
+    const [log = '', output = ''] = ran.stdout.split('\n--outputs--\n');
+    return { status: ran.status, output, log: log + ran.stderr };
+  };
+  const affectedRun = { CHANGES: 'success', ANY: 'true', PACKAGES: '["money","ledger"]', SHARDS: '["money-ledger"]', STRYKER: 'success' };
+  const quietRun = { CHANGES: 'success', ANY: 'false', PACKAGES: '[]', SHARDS: '[]', STRYKER: 'skipped' };
+
+  it('fails closed on any verdict of the changes job but the two it writes, and on shards that do not match it', () => {
+    expect(guard(affectedRun)).toMatchObject({ status: 0, output: 'run=true' });
+    expect(guard(quietRun)).toMatchObject({ status: 0, output: 'run=false' });
+    for (const [why, env] of [
+      ['the changes job failed', { ...affectedRun, CHANGES: 'failure' }],
+      ['the changes job was cancelled', { ...quietRun, CHANGES: 'cancelled' }],
+      ['no any output', { ...quietRun, ANY: '' }],
+      ['no outputs at all', { CHANGES: 'success', STRYKER: 'skipped' }],
+      ['a garbled any', { ...affectedRun, ANY: 'True' }],
+      ['nothing affected, yet shards', { ...quietRun, SHARDS: '["money-ledger"]' }],
+      ['nothing affected, yet packages', { ...quietRun, PACKAGES: '["money"]' }],
+      ['affected, with packages that are not a JSON array', { ...affectedRun, PACKAGES: 'money' }],
+      ['nothing affected, yet a shard job ran', { ...quietRun, STRYKER: 'success' }],
+      ['affected, with no shards', { ...affectedRun, SHARDS: '[]' }],
+      ['affected, with no shards output', { ...affectedRun, SHARDS: '' }],
+      ['affected, with shards that are not a JSON array', { ...affectedRun, SHARDS: 'money-ledger' }],
+      ['affected, with no packages', { ...affectedRun, PACKAGES: '[]' }],
+      ['affected, the shard jobs skipped', { ...affectedRun, STRYKER: 'skipped' }],
+      ['affected, a shard job failed', { ...affectedRun, STRYKER: 'failure' }],
+      ['affected, a shard job cancelled', { ...affectedRun, STRYKER: 'cancelled' }],
+    ] as const) {
+      const result = guard(env);
+      expect(result.status, why).toBe(1);
+      expect(result.output, why).toBe('');
+      expect(result.log, why).toMatch(/::error::/);
+    }
+  });
+
+  it('runs every job on one exact Node, the one tools/stryker/unicode.json’s equivalents were checked on', () => {
+    const versions = Object.entries(parsed.jobs).map(([name, mutationJob]) => [name, mutationJob.steps.find((step) => usesAction(step, 'actions/setup-node'))?.with?.['node-version']] as const);
+    expect(versions.map(([name]) => name)).toEqual(['changes', 'stryker', 'mutation']);
+    for (const [name, version] of versions) expect(version, name).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(new Set(versions.map(([, version]) => version)).size).toBe(1);
+    const unicode = JSON.parse(readFileSync(path.join(repositoryRoot, 'tools/stryker/unicode.json'), 'utf8')) as { checkedOn: { node: string } };
+    expect(versions[0]?.[1]).toBe(unicode.checkedOn.node);
+  });
+
+  it('pins every action to a full commit SHA and installs from the lockfile in every job that runs code', () => {
+    for (const [name, mutationJob] of Object.entries(parsed.jobs)) {
+      for (const step of mutationJob.steps) if (step.uses !== undefined) expect(parsePin(step.uses), `${name}: ${step.uses}`).toBeDefined();
+      expect(mutationJob.steps.some((step) => usesAction(step, 'actions/checkout') && step.with?.['persist-credentials'] === false), name).toBe(true);
+      expect(runs(mutationJob.steps).filter((run) => run.startsWith('pnpm install')), name).toEqual(['pnpm install --frozen-lockfile']);
+    }
+  });
+
+  it('scores each package with the mutate and test sets its configuration names', async () => {
+    const { MUTATE, MUTATION_PACKAGES, PACKAGE_VARIABLE, SHARD_VARIABLE } = await import('../../stryker/base.mjs');
+    const { TEST_SETS, default: mutationConfig } = await import('../../vitest.mutation.config');
+    const saved = [process.env[PACKAGE_VARIABLE], process.env[SHARD_VARIABLE]] as const;
+    delete process.env[SHARD_VARIABLE];
+    try {
+      for (const pkg of MUTATION_PACKAGES) {
+        const config = ((await import(`../../stryker/${pkg}.config.mjs`)) as { default: { mutate?: string[]; vitest?: { configFile?: string }; testRunner?: string; coverageAnalysis?: string } }).default;
+        expect(config.mutate, pkg).toEqual(MUTATE[pkg]);
+        expect(config.vitest?.configFile, pkg).toBe('vitest.mutation.config.ts');
+        expect([config.testRunner, config.coverageAnalysis], pkg).toEqual(['vitest', 'perTest']);
+        process.env[PACKAGE_VARIABLE] = pkg;
+        const resolved = (mutationConfig as unknown as (env: object) => { test: { include: string[] } })({});
+        expect(resolved.test.include, pkg).toEqual(TEST_SETS[pkg]);
+      }
+    } finally {
+      for (const [name, value] of [[PACKAGE_VARIABLE, saved[0]], [SHARD_VARIABLE, saved[1]]] as const) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
     }
   });
 });
 
-describe('dependabot', () => {
-  it('updates the workspace, the actions and both base images weekly, grouped, a few pull requests at a time', () => {
-    const config = parse(readFileSync(path.join(repositoryRoot, '.github/dependabot.yml'), 'utf8')) as {
-      updates: {
-        'package-ecosystem': string;
-        schedule: { interval: string };
-        directory?: string;
-        directories?: string[];
-        'open-pull-requests-limit'?: number;
-        groups?: Record<string, { 'update-types'?: string[]; patterns?: string[] }>;
-      }[];
-    };
-    expect(config.updates.map((update) => [update['package-ecosystem'], update.schedule.interval])).toEqual([
-      ['npm', 'weekly'],
-      ['github-actions', 'weekly'],
-      ['docker', 'weekly'],
-    ]);
-    expect(config.updates[2]?.directories).toEqual(['/apps/web', '/apps/worker']);
-    // Each pull request costs about 35 minutes of CI (docs/adr/0063): one per week for every action, one for both images.
-    expect(config.updates.map((update) => update['open-pull-requests-limit'])).toEqual([5, 2, 2]);
-    expect(config.updates[0]?.groups).toEqual({ 'minor-and-patch': { 'update-types': ['minor', 'patch'] } });
-    expect(config.updates[1]?.groups).toEqual({ actions: { patterns: ['*'] } });
-    expect(config.updates[2]?.groups).toEqual({ 'base-images': { patterns: ['*'] } });
-  });
-});
-
-describe('job timeouts', () => {
-  it('give every job of the pull-request workflows a timeout well under GitHub’s 360 minutes', () => {
-    const limits: Record<string, Record<string, number>> = {};
-    for (const file of ['ci.yml', 'mutation.yml', 'supply-chain.yml', 'approval-of-record.yml', 'screening-capacity.yml']) {
-      const jobs = (parse(readFileSync(path.join(repositoryRoot, '.github/workflows', file), 'utf8')) as { jobs: Record<string, { 'timeout-minutes'?: number }> }).jobs;
-      limits[file] = Object.fromEntries(Object.entries(jobs).map(([name, job]) => [name, job['timeout-minutes'] ?? 360]));
-    }
+describe('job timeouts (CI-10)', () => {
+  it('give every job of every workflow the timeout its table names, well under GitHub’s 360 minutes', () => {
+    const limits = Object.fromEntries(
+      workflowFiles().map((file) => [file, Object.fromEntries(Object.entries(workflow(file).jobs).map(([name, job]) => [name, job['timeout-minutes'] ?? 360]))]),
+    );
     expect(limits).toEqual({
-      'ci.yml': { check: 60 },
-      'mutation.yml': { mutation: 120 },
-      'supply-chain.yml': { licenses: 15, images: 15 },
       'approval-of-record.yml': { 'approval-of-record': 5 },
+      // Each about three times its expected time (docs/adr/0066, Part 1); the gate's 5 for a job that only reads results.
+      'ci.yml': { static: 15, lint: 15, unit: 20, db: 20, 'domain-model': 10, build: 15, e2e: 25, images: 20, 'all-green': 5 },
+      // The daily calendar check and its one issues call (docs/adr/0071).
+      'content-calendar.yml': { check: 15, notify: 5 },
+      // The 2 GiB intake run, weekly and on request.
+      'large-zip.yml': { 'large-zip': 45 },
+      'mutation.yml': { changes: 5, stryker: 30, mutation: 10 },
+      // Its one run took 21 s; the work of the static job's band (the founder's F4, which allows this one line).
+      'publish-content.yml': { publish: 15 },
+      // Each about three times its expected time (docs/adr/0066, Part 2).
+      'release-dry-run.yml': { build: 20, push: 10, capacity: 15 },
+      // The release's own table is held in its describe block above; S4 three times in the capacity job.
+      'release.yml': { build: 60, capacity: 100, push: 30, report: 10 },
+      // The weekly real-size test builds and loads the quarterly scale release 900110 before it measures (docs/adr/0071).
+      'release-capacity.yml': { capacity: 180, notify: 5 },
       // Every pull request runs its path check and gate; one that touches a watched path also measures (Q8), S4 three
       // times since the founder's ruling of 2026-10-23.
       'screening-capacity.yml': { changes: 5, capacity: 100, gate: 5, notify: 5 },
     });
   });
+});
+
+describe('concurrency groups', () => {
+  it('start with their own workflow’s name in every workflow, and no two workflows share a name', () => {
+    expect(workflowFiles().flatMap((file) => concurrencyProblems(file, workflow(file)))).toEqual([]);
+    const names = workflowFiles().map((file) => workflow(file).name);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('refuse a group that could cancel another workflow’s runs, at the workflow’s level or a job’s', () => {
+    const problems = (text: string) => concurrencyProblems('fixture.yml', parse(text) as Workflow);
+    const job = 'jobs: { a: { runs-on: ubuntu-24.04, steps: [] } }';
+    for (const own of [
+      "name: ci\nconcurrency: { group: '${{ github.workflow }}-${{ github.ref }}' }",
+      "name: screening-capacity\nconcurrency: { group: 'screening-capacity-${{ github.sha }}' }",
+      'name: publish-content\nconcurrency: publish-content',
+      'name: ci',
+    ]) {
+      expect(problems(`${own}\n${job}`), own).toEqual([]);
+    }
+    expect(problems(`name: mutation\nconcurrency: { group: '\${{ github.event.pull_request.number || github.ref }}' }\n${job}`)).toEqual([
+      'fixture.yml the workflow: the group ${{ github.event.pull_request.number || github.ref }} starts with neither ${{ github.workflow }}- nor mutation-',
+    ]);
+    expect(problems(`name: mutation\nconcurrency: { group: 'ci-\${{ github.ref }}' }\n${job}`)).toHaveLength(1);
+    expect(problems(`name: mutation\nconcurrency: { cancel-in-progress: true }\n${job}`)).toEqual(['fixture.yml the workflow: a concurrency with no group']);
+    expect(problems("name: ci\njobs: { a: { runs-on: ubuntu-24.04, concurrency: 'deploy', steps: [] } }")).toEqual(['fixture.yml job a: the group deploy starts with neither ${{ github.workflow }}- nor ci-']);
+    expect(problems("name: ci\njobs: { a: { runs-on: ubuntu-24.04, concurrency: { group: '${{ github.workflow }}${{ github.ref }}' }, steps: [] } }")).toHaveLength(1);
+  });
+});
+
+describe('Chromium before vitest (CI-05)', () => {
+  it('is installed in every job of every workflow before any step that runs vitest’s unit or db project', () => {
+    expect(workflowFiles().flatMap((file) => chromiumProblems(file, workflow(file)))).toEqual([]);
+  });
+
+  it('is required before pnpm test, pnpm test:db and vitest itself, and not before golden, oracle, e2e or mutation runs', () => {
+    const problems = (steps: string) => chromiumProblems('fixture.yml', parse(`name: fixture\non: push\njobs: { a: { runs-on: ubuntu-24.04, steps: [${steps}] } }`) as Workflow);
+    const install = '{ run: pnpm --filter @tp/web exec playwright install --with-deps chromium }';
+    for (const run of ['pnpm test', 'pnpm test && pnpm test:golden', 'pnpm db:migrate && pnpm test:db --shard=1/4', 'pnpm vitest run --project db apps/worker/src/intake/intake.large.db.test.ts', 'pnpm exec vitest run tools/test', 'pnpm run test']) {
+      expect(problems(`{ run: '${run}' }`), run).toEqual([`fixture.yml a: "${run}" runs vitest's unit or db project with no Chromium installed before it`]);
+      expect(problems(`${install}, { run: '${run}' }`), run).toEqual([]);
+      expect(problems(`{ run: '${run}' }, ${install}`), `${run} before the install`).toHaveLength(1);
+    }
+    for (const run of ['pnpm test:golden', 'pnpm test:oracle', 'pnpm test:e2e --shard=1/2', 'pnpm stryker run', 'pnpm vitest run --project golden', 'pnpm -s vitest list --project db --filesOnly']) {
+      expect(problems(`{ run: '${run}' }`), run).toEqual([]);
+    }
+    // The install of another browser, or without its system libraries, is not it.
+    expect(problems("{ run: 'pnpm exec playwright install chromium' }, { run: 'pnpm test' }")).toHaveLength(1);
+    expect(problems("{ run: 'pnpm exec playwright install --with-deps firefox' }, { run: 'pnpm test' }")).toHaveLength(1);
+  });
+});
+
+describe('the required checks (docs/adr/0066; tools/required-checks.ts)', () => {
+  it.each(REQUIRED_CHECKS.map((check) => [check.name, check]))('%s is a job of its workflow, reported on every pull request', (_, check) => {
+    const parsed = workflow(check.workflow);
+    const job = parsed.jobs[check.job];
+    expect(job, `${check.workflow} has no job ${check.job}`).toBeDefined();
+    // The name GitHub reports: the job's name, or its id when it has none.
+    expect(job?.name ?? check.job).toBe(check.name);
+    // On every pull request, with no path, branch or type filter that leaves one out, so it never waits forever.
+    const on = parsed.on as Record<string, { types?: string[]; paths?: unknown; 'paths-ignore'?: unknown; branches?: unknown; 'branches-ignore'?: unknown } | null>;
+    expect(Object.keys(on)).toContain('pull_request');
+    const trigger = on.pull_request ?? {};
+    expect([trigger.paths, trigger['paths-ignore'], trigger.branches, trigger['branches-ignore']]).toEqual([undefined, undefined, undefined, undefined]);
+    for (const type of ['opened', 'synchronize', 'reopened']) expect(trigger.types ?? ['opened', 'synchronize', 'reopened'], type).toContain(type);
+    // Never skipped by its own condition, which GitHub would count as passing.
+    expect([undefined, '${{ always() }}']).toContain(job?.if);
+    expect(job?.strategy?.matrix, 'a matrix job reports one check per value, never the name the ruleset requires').toBeUndefined();
+  });
+});
+
+describe('Postgres from docker-compose.yml (CI-13; docs/adr/0066, Part 2)', () => {
+  /** The jobs that use a database: every job that names DATABASE_URL, in its environment or a step's. */
+  const databaseJobs = () =>
+    workflowFiles().flatMap((file) =>
+      Object.entries(workflow(file).jobs)
+        .filter(([, job]) => JSON.stringify(job).includes('DATABASE_URL'))
+        .map(([id, job]) => ({ where: `${file} ${id}`, job })),
+    );
+  /** A step that reaches the database: by DATABASE_URL, a migration, the db or e2e suites or psql. */
+  const readsDatabase = (step: Step) => /DATABASE_URL|db:migrate|test:db|test:e2e|--project db|\bpsql\b/.test(`${step.run ?? ''} ${JSON.stringify(step.env ?? {})}`);
+  const UP = 'tools/ci/postgres.sh up';
+  const WAIT = 'tools/ci/postgres.sh wait';
+
+  it('runs in every database job from the compose file, started right after the checkout and waited for before the first step that reaches it, with no service container in any workflow', () => {
+    expect(databaseJobs().map(({ where }) => where)).toEqual(['ci.yml db', 'ci.yml domain-model', 'ci.yml e2e', 'large-zip.yml large-zip']);
+    for (const file of workflowFiles()) {
+      for (const [id, job] of Object.entries(workflow(file).jobs)) expect(job.services, `${file} ${id}`).toBeUndefined();
+    }
+    for (const { where, job } of databaseJobs()) {
+      const steps = job.steps;
+      expect(usesAction(steps[0] ?? {}, 'actions/checkout'), where).toBe(true);
+      expect(steps[1], where).toEqual({ name: 'Start the database', run: UP });
+      const wait = stepIndex(steps, (step) => step.run === WAIT);
+      expect(steps.filter((step) => step.run === UP || step.run === WAIT).length, where).toBe(2);
+      expect(steps[wait]?.name, where).toBe('Wait for the database');
+      const first = steps.findIndex(readsDatabase);
+      expect(first, where).toBeGreaterThan(wait);
+      // The same URL everywhere: compose publishes 5432 with the password test.
+      const urls = [...JSON.stringify(job).matchAll(/postgres:\/\/[^"\s]+/g)].map((match) => match[0]);
+      expect(new Set(urls), where).toEqual(new Set(['postgres://postgres:test@localhost:5432/postgres']));
+      // The database's own log as the job's last step, when anything failed: compose prints none when the job ends.
+      expect(steps.at(-1), where).toEqual({ name: "The database's log", if: 'failure()', run: 'docker compose logs --no-color --tail=200 postgres' });
+    }
+    // No step polls the server itself: compose's --wait reads its healthcheck.
+    expect(workflowFiles().flatMap((file) => Object.values(workflow(file).jobs).flatMap((job) => job.steps.filter((step) => step.run?.includes('pg_isready') === true)))).toEqual([]);
+  });
+
+  it('quiets the database’s log right after the wait, once Playwright’s browser is installed, so the pull overlaps the install', () => {
+    for (const id of ['db', 'e2e']) {
+      const steps = ciJob(id).steps;
+      const chromium = stepIndex(steps, (step) => CHROMIUM_INSTALL.test(step.run ?? ''));
+      const wait = stepIndex(steps, (step) => step.run === WAIT);
+      const quiet = stepIndex(steps, (step) => step.name === "Quiet the database's log");
+      expect([chromium < wait, quiet === wait + 1], id).toEqual([true, true]);
+      expect(steps[quiet]?.run, id).toBe(`psql "$DATABASE_URL" -qc "ALTER SYSTEM SET log_min_messages = 'panic'" -qc "ALTER SYSTEM SET log_min_error_statement = 'panic'" -qc "SELECT pg_reload_conf()"`);
+    }
+  });
+
+  it('is healthy only once the server answers on TCP, with the port and password the jobs’ URL names', () => {
+    const compose = parse(readFileSync(path.join(CI_ROOT, 'docker-compose.yml'), 'utf8')) as { services: Record<string, { image?: string; environment?: Record<string, string>; ports?: string[]; healthcheck?: { test?: string[] } }> };
+    const postgres = compose.services.postgres;
+    // The image's first-run setup serves its Unix socket before the server listens on TCP, where the jobs connect.
+    expect(postgres?.healthcheck?.test).toEqual(['CMD-SHELL', 'pg_isready -h localhost -U postgres']);
+    expect(postgres?.ports).toEqual(['5432:5432']);
+    expect(postgres?.environment?.POSTGRES_PASSWORD).toBe('test');
+  });
+
+  it('checks its health on the timing ci.yml’s services proved, every 2 s with 5 s to answer, 30 times, all inside the wait postgres.sh gives compose', () => {
+    const compose = parse(readFileSync(path.join(CI_ROOT, 'docker-compose.yml'), 'utf8')) as { services: Record<string, { healthcheck?: Record<string, unknown> }> };
+    const health = compose.services.postgres?.healthcheck;
+    // The whole check, as the services' --health-interval 2s --health-timeout 5s --health-retries 30 held it.
+    expect(health).toEqual({ test: ['CMD-SHELL', 'pg_isready -h localhost -U postgres'], interval: '2s', timeout: '5s', retries: 30 });
+    const seconds = (value: unknown) => Number(/^(\d+)s$/.exec(String(value))?.[1] ?? Number.NaN);
+    const script = readFileSync(path.join(repositoryRoot, 'tools/ci/postgres.sh'), 'utf8');
+    const composeWait = Number(/--wait-timeout (\d+)/.exec(script)?.[1] ?? Number.NaN);
+    const scriptWait = Number(/POSTGRES_WAIT_SECONDS:-(\d+)/.exec(script)?.[1] ?? Number.NaN);
+    // Its retries run out before compose stops waiting, and compose gives its verdict before the wait step stops reading.
+    expect(seconds(health?.interval) * Number(health?.retries)).toBeLessThan(composeWait);
+    expect(composeWait).toBeLessThan(scriptWait);
+  });
+});
+
+describe('images by digest (CI-13)', () => {
+  const DIGEST_PIN = /@sha256:[0-9a-f]{64}$/;
+  it('name every base and service image with its digest, in both Dockerfiles and the compose file', () => {
+    const DIGEST = /@sha256:[0-9a-f]{64}$/;
+    for (const app of ['web', 'worker']) {
+      const from = readFileSync(path.join(CI_ROOT, 'apps', app, 'Dockerfile'), 'utf8')
+        .split('\n')
+        .filter((line) => /^FROM\s/i.test(line))
+        .map((line) => line.split(/\s+/)[1] ?? '');
+      expect(from.length, app).toBeGreaterThan(0);
+      for (const image of from) expect(image, `${app}: ${image}`).toMatch(DIGEST);
+    }
+    const compose = parse(readFileSync(path.join(CI_ROOT, 'docker-compose.yml'), 'utf8')) as { services: Record<string, { image?: string }> };
+    for (const [name, service] of Object.entries(compose.services)) expect(service.image, name).toMatch(DIGEST);
+  });
+
+  it('name every image a build runs by digest: the Dockerfile frontend and the BuildKit builder, one version on every setup-buildx step (the security review\'s S4)', () => {
+    // The frontend: a `# syntax=` line pulls its image from Docker Hub by tag on every build, so either none (the
+    // frontend built into the pinned BuildKit) or one by digest.
+    for (const app of ['web', 'worker']) {
+      const syntax = readFileSync(path.join(CI_ROOT, 'apps', app, 'Dockerfile'), 'utf8')
+        .split('\n')
+        .filter((line) => /^#\s*syntax\s*=/i.test(line));
+      for (const line of syntax) expect(line, app).toMatch(/^# syntax=docker\/dockerfile:\d+\.\d+(?:\.\d+)?@sha256:[0-9a-f]{64}$/);
+    }
+    // The builder: setup-buildx's docker-container driver runs moby/buildkit, by default by the mutable buildx-stable-1.
+    const steps = workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => (job.steps ?? []).map((step, index) => ({ where: `${file} ${id} step ${String(index + 1)}`, file, id, index, step }))));
+    const buildx = steps.filter(({ step }) => usesAction(step, 'docker/setup-buildx-action'));
+    expect(buildx.map(({ file }) => file).sort()).toEqual(['ci.yml', 'release-capacity.yml', 'release-dry-run.yml', 'release.yml', 'screening-capacity.yml']);
+    const images = buildx.map(({ where, step }) => {
+      const opts = step.with?.['driver-opts'];
+      expect(opts, where).toMatch(/^image=moby\/buildkit:v\d+\.\d+\.\d+@sha256:[0-9a-f]{64}$/);
+      return opts;
+    });
+    expect(new Set(images).size, images.join('\n')).toBe(1);
+    // Every build runs on that builder: each job that builds an image sets up buildx before its first build.
+    for (const { where, file, id, index } of steps.filter(({ step }) => usesAction(step, 'docker/build-push-action'))) {
+      expect(buildx.some((setup) => setup.file === file && setup.id === id && setup.index < index), where).toBe(true);
+    }
+    // And no job or step runs an image by tag: no container or service by tag, no docker:// action by tag.
+    for (const file of workflowFiles()) {
+      for (const [id, job] of Object.entries(workflow(file).jobs) as [string, Job & { container?: unknown }][]) {
+        if (job.container !== undefined) expect(typeof job.container === 'string' ? job.container : (job.container as { image?: string }).image, `${file} ${id}`).toMatch(DIGEST_PIN);
+        for (const step of job.steps ?? []) if (step.uses?.startsWith('docker://') === true) expect(step.uses, `${file} ${id}`).toMatch(DIGEST_PIN);
+      }
+    }
+  });
+});
+
+describe('no job hides a failure from a required check (CI-01)', () => {
+  const ownJob = new Map(REQUIRED_CHECKS.map((check) => [check.workflow, check.job]));
+  /** Every job of ci.yml, whose gate needs them all, and each required check's own job elsewhere. */
+  const scriptsHeld = (file: string) => (id: string) => file === 'ci.yml' || ownJob.get(file) === id;
+  const fixture = (jobs: Record<string, unknown>): Workflow => ({ name: 'fixture', on: 'push', jobs }) as unknown as Workflow;
+  const job = (fields: Record<string, unknown>) => ({ 'runs-on': 'ubuntu-24.04', steps: [{ run: 'pnpm test' }], ...fields });
+
+  it('sets continue-on-error on no job or step of any workflow, and runs every script of ci.yml and of each required check’s job under bash with -e and pipefail, swallowing no failing command', () => {
+    expect(workflowFiles().flatMap((file) => maskingProblems(file, workflow(file), scriptsHeld(file)))).toEqual([]);
+  });
+
+  it('refuses continue-on-error on a job or on a step, whatever its value, as the review’s two edits of ci.yml show', () => {
+    const text = readFileSync(path.join(WORKFLOWS, 'ci.yml'), 'utf8');
+    const lint = text.replace('  lint:\n    runs-on: ubuntu-24.04\n', '  lint:\n    runs-on: ubuntu-24.04\n    continue-on-error: true\n');
+    const oracle = text.replace('      - run: pnpm test:oracle\n', '      - run: pnpm test:oracle\n        continue-on-error: true\n');
+    expect([lint, oracle].map((edited) => edited === text)).toEqual([false, false]);
+    expect(maskingProblems('ci.yml', parse(lint) as Workflow, scriptsHeld('ci.yml'))).toEqual(['ci.yml lint: continue-on-error on the job']);
+    expect(maskingProblems('ci.yml', parse(oracle) as Workflow, scriptsHeld('ci.yml'))).toEqual([expect.stringMatching(/^ci\.yml static step \d+ \(pnpm test:oracle\): continue-on-error$/)]);
+    for (const value of [true, false, '${{ matrix.experimental }}']) {
+      expect(maskingProblems('fixture.yml', fixture({ a: job({ 'continue-on-error': value }) }), () => false), String(value)).toEqual(['fixture.yml a: continue-on-error on the job']);
+      expect(maskingProblems('fixture.yml', fixture({ a: job({ steps: [{ run: 'pnpm test', 'continue-on-error': value }] }) }), () => false), String(value)).toEqual(['fixture.yml a step 1 (pnpm test): continue-on-error']);
+    }
+  });
+
+  it('refuses, where it holds the scripts, a shell other than the workflow’s bash and a script that swallows a failing command', () => {
+    const problems = (fields: Record<string, unknown>, held = true) => maskingProblems('fixture.yml', fixture({ a: job(fields) }), () => held);
+    expect(problems({ steps: [{ run: 'pnpm test', shell: 'bash {0}' }] })).toEqual(['fixture.yml a step 1 (pnpm test): runs under bash {0}, not the workflow\'s bash']);
+    expect(problems({ defaults: { run: { shell: 'sh' } } })).toEqual(['fixture.yml a: the job\'s shell is sh, not the workflow\'s bash']);
+    for (const run of ['pnpm test || true', 'pnpm test ||true', 'pnpm test || :', '{ pnpm test || :; }', 'pnpm test || exit 0', 'set +e\npnpm test', 'set +eu\npnpm test', 'set +o errexit\npnpm test', 'set +o pipefail\npnpm test | tee log']) {
+      expect(problems({ steps: [{ run }] }), run).toEqual([`fixture.yml a step 1 (${run.split('\n')[0] ?? ''}): swallows a failing command`]);
+      // A job whose scripts no required check stands on keeps its own idioms (the capacity workflow's notify job).
+      expect(problems({ steps: [{ run }] }, false), run).toEqual([]);
+    }
+    for (const run of ['pnpm test', 'pnpm test || exit 1', 'set -euo pipefail\npnpm test', 'if [ -d apps/web/test-results ]; then\n  find apps/web/test-results -type f\nfi', 'test -z "$(git status --porcelain)"', 'echo "a: b"']) {
+      expect(problems({ steps: [{ run }] }), run).toEqual([]);
+    }
+  });
+});
+
+describe('the required checks’ names (docs/adr/0066; docs/runbooks/github-governance.md, step 4A)', () => {
+  const all = () => Object.fromEntries(workflowFiles().map((file) => [file, workflow(file)]));
+  const rogue = (jobs: Record<string, unknown>) => ({ ...all(), 'rogue.yml': { name: 'rogue', on: { pull_request: null }, jobs } as unknown as Workflow });
+
+  it('are each reported by their own job alone, in every workflow: a ruleset matches a required check by name and source, never by workflow', () => {
+    expect(requiredNameProblems(all())).toEqual([]);
+  });
+
+  it('refuse a second job named as a required check, by its name, by its id, or by a name its expressions could make one', () => {
+    expect(requiredNameProblems(rogue({ x: { name: 'all green', steps: [] } }))).toEqual(['all green: rogue.yml x could report it too']);
+    expect(requiredNameProblems(rogue({ mutation: { steps: [] } }))).toEqual(['mutation: rogue.yml mutation could report it too']);
+    expect(requiredNameProblems(rogue({ x: { name: '${{ matrix.check }}', steps: [] } }))).toEqual(REQUIRED_CHECKS.map((check) => `${check.name}: rogue.yml x could report it too`));
+    expect(requiredNameProblems(rogue({ x: { name: 'approval-of-${{ matrix.what }}', steps: [] } }))).toEqual(['approval-of-record: rogue.yml x could report it too']);
+    // A name its expressions cannot make a required one, as ci.yml's shards are named.
+    expect(requiredNameProblems(rogue({ x: { name: 'db (${{ matrix.shard }}/${{ strategy.job-total }})', steps: [] }, green: { steps: [] } }))).toEqual([]);
+    // The check's own job renamed: no job reports it.
+    const renamed = all();
+    const ci = renamed['ci.yml'] as Workflow;
+    renamed['ci.yml'] = { ...ci, jobs: { ...ci.jobs, 'all-green': { ...(ci.jobs['all-green'] as Job), name: 'all-green' } } };
+    expect(requiredNameProblems(renamed)).toEqual(['all green: ci.yml all-green does not report it']);
+  });
+});
+
+describe('a simulated Dependabot rewrite (A4 (a); docs/adr/0066, Part 2)', () => {
+  /** The files Dependabot's actions, docker and docker-compose updates rewrite, as these tests read them. */
+  const CI_FILES = ['.github', 'apps/web/Dockerfile', 'apps/worker/Dockerfile', 'docker-compose.yml'];
+  const PIN_REF = /\b([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*)@([0-9a-f]{40})(?: # v(\d+)\.(\d+)\.(\d+))?/g;
+  const DIGEST_REF = /@sha256:([0-9a-f]{64})/g;
+  const TESTS = ['tools/test/workflows.test.ts', 'tools/test/dependabot-config.test.ts', 'tools/test/no-duplicated-versions.test.ts'];
+
+  /**
+   * A copy of the CI files with every action pin replaced by another well-formed one (a new SHA, the same for every use
+   * of a commit, and a higher major version) and every image digest by another, as a Dependabot update would leave them.
+   */
+  function rewrittenCopy(edit: (file: string, text: string) => string = (_, text) => text): { dir: string; pins: number; digests: number; originals: string[] } {
+    const dir = mkdtempSync(path.join(scratch, 'rewrite-'));
+    let pins = 0;
+    let digests = 0;
+    const originals: string[] = [];
+    const rewrite = (file: string) => {
+      const text = readFileSync(path.join(repositoryRoot, file), 'utf8');
+      const rewritten = text
+        .replace(PIN_REF, (_, action: string, commit: string, major?: string, minor?: string, patch?: string) => {
+          pins += 1;
+          originals.push(commit);
+          const next = createHash('sha1').update(`rewrite:${commit}`).digest('hex');
+          return major === undefined ? `${action}@${next}` : `${action}@${next} # v${String(Number(major) + 1)}.${minor ?? '0'}.${patch ?? '0'}`;
+        })
+        .replace(DIGEST_REF, (_, digest: string) => {
+          digests += 1;
+          originals.push(digest);
+          return `@sha256:${createHash('sha256').update(`rewrite:${digest}`).digest('hex')}`;
+        });
+      mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+      writeFileSync(path.join(dir, file), edit(file, rewritten));
+    };
+    const walk = (file: string) => {
+      const full = path.join(repositoryRoot, file);
+      if (!existsSync(full)) return;
+      if (statSync(full).isDirectory()) {
+        for (const child of readdirSync(full)) walk(path.join(file, child));
+      } else {
+        rewrite(file);
+      }
+    };
+    for (const file of CI_FILES) walk(file);
+    return { dir, pins, digests, originals };
+  }
+
+  /** What these tests read of vitest's JSON report (--reporter=json): its counts and each test's outcome. */
+  interface Report {
+    readonly numTotalTests: number;
+    readonly numPassedTests: number;
+    readonly numFailedTests: number;
+    readonly numPendingTests: number;
+    readonly numTodoTests: number;
+    readonly testResults: readonly { readonly name: string; readonly assertionResults: readonly { readonly fullName: string; readonly status: string; readonly failureMessages: readonly string[] }[] }[];
+  }
+
+  /**
+   * vitest on these assertions with CI_TREE set to the copy: a vitest of its own, as collection.test.ts runs one. Its
+   * counts are read from its JSON report, written to a scratch file, never from its printed summary, whose colour codes
+   * depend on the environment (CI's runner sets FORCE_COLOR, which coloured the summary and hid the passed count:
+   * run 40255481181). NO_COLOR stays as belt and braces for what it prints.
+   */
+  function assertionsOn(dir: string, extra: readonly string[] = []): { status: number | null; output: string; report: Report } {
+    const vitest = path.join(path.dirname(createRequire(import.meta.url).resolve('vitest/package.json')), 'vitest.mjs');
+    const outputFile = path.join(mkdtempSync(path.join(scratch, 'report-')), 'report.json');
+    const env: NodeJS.ProcessEnv = { ...process.env, CI_TREE: dir, NO_COLOR: '1' };
+    for (const name of Object.keys(env).filter((key) => key.startsWith('VITEST') || key === 'FORCE_COLOR')) Reflect.deleteProperty(env, name);
+    const ran = spawnSync(process.execPath, [vitest, 'run', '--project', 'unit', '--reporter=json', `--outputFile=${outputFile}`, ...TESTS, ...extra], {
+      cwd: repositoryRoot,
+      env,
+      encoding: 'utf8',
+      timeout: 280_000,
+    });
+    expect(ran.error).toBeUndefined();
+    const output = stripVTControlCharacters(`${ran.stdout}${ran.stderr}`);
+    expect(existsSync(outputFile), output).toBe(true);
+    return { status: ran.status, output, report: JSON.parse(readFileSync(outputFile, 'utf8')) as Report };
+  }
+
+  /** Every test of a report by its full name and outcome. */
+  const outcomes = (report: Report) => report.testResults.flatMap((file) => file.assertionResults.map((result) => ({ file: path.relative(repositoryRoot, file.name), ...result })));
+
+  /** The failed tests of a report with their messages, for an assertion's message: the JSON reporter prints none. */
+  const failures = (report: Report) =>
+    outcomes(report)
+      .filter((result) => result.status === 'failed')
+      .map((result) => `${result.file} > ${result.fullName}\n${result.failureMessages.join('\n')}`)
+      .join('\n\n');
+
+  const SELF = 'passes every workflow, Dependabot and version assertion with every action pin and image digest rewritten, and fails on one deliberate break, so the run reads the copy';
+
+  // Skipped inside the run it starts, which sets CI_TREE, so it never recurses.
+  it.skipIf(process.env.CI_TREE !== undefined)(
+    SELF,
+    () => {
+      const copy = rewrittenCopy();
+      expect(copy.pins).toBeGreaterThan(50);
+      expect(copy.digests).toBeGreaterThan(0);
+      const list = (file: string): string[] => {
+        const full = path.join(copy.dir, file);
+        if (!existsSync(full)) return [];
+        return statSync(full).isDirectory() ? readdirSync(full).flatMap((child) => list(path.join(file, child))) : [readFileSync(full, 'utf8')];
+      };
+      const texts = CI_FILES.flatMap(list).join('\n');
+      expect(copy.originals.filter((original) => texts.includes(original))).toEqual([]);
+      // The control: the same three files on the repository's own tree, in a run started the same way, so a test that
+      // skips in this environment (actionlint's where none is installed, as on CI, or any other) skips in both runs and
+      // no list of them is kept here. CI's run 40269124920 failed on such a list.
+      const control = assertionsOn(repositoryRoot);
+      expect(control.status, `${control.output}\n${failures(control.report)}`).toBe(0);
+      const green = assertionsOn(copy.dir);
+      expect(green.status, `${green.output}\n${failures(green.report)}`).toBe(0);
+      // Every test of the three files ran on the copy, none filtered out, and none failed.
+      expect(green.report.testResults.map((file) => path.relative(repositoryRoot, file.name)).sort()).toEqual([...TESTS].sort());
+      expect(green.report.numFailedTests, failures(green.report)).toBe(0);
+      expect(green.report.numTotalTests).toBeGreaterThan(80);
+      expect(green.report.numPassedTests).toBeGreaterThan(80);
+      // The rewrite changes no outcome: each test passed or skipped on the copy exactly as on the repository's tree.
+      const byName = (report: Report) => outcomes(report).map((result) => `${result.file} > ${result.fullName}: ${result.status}`).sort();
+      expect(byName(green.report)).toEqual(byName(control.report));
+      // What did not pass in either run only skipped, and this test was among them, skipping itself there.
+      const notPassed = outcomes(green.report).filter((result) => result.status !== 'passed');
+      expect(notPassed.map((result) => result.status).filter((status) => status !== 'skipped')).toEqual([]);
+      expect(notPassed.map((result) => result.fullName)).toContainEqual(expect.stringContaining(SELF));
+
+      // One checkout's persist-credentials removed: the rule that holds it fails on the copy, so the run read the copy.
+      const broken = rewrittenCopy((file, text) => (file.endsWith('large-zip.yml') ? text.replace('\n        with: { persist-credentials: false }', '') : text));
+      const red = assertionsOn(broken.dir, ['-t', 'keeps no token in the checkout']);
+      expect(red.status, red.output).toBe(1);
+      const failed = outcomes(red.report).filter((result) => result.status === 'failed');
+      expect(red.report.numFailedTests).toBe(1);
+      expect(failed.map((result) => result.fullName)).toEqual([expect.stringContaining('keeps no token in the checkout')]);
+      expect(failed[0]?.failureMessages.join('\n')).toContain('large-zip.yml large-zip');
+    },
+    300_000,
+  );
 });

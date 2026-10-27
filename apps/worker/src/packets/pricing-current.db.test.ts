@@ -216,7 +216,7 @@ async function everyStage(label: string, releaseNo = RELEASE): Promise<Record<St
 async function acceptedRerun(setup: Staged, releaseNo = RELEASE): Promise<string> {
   const { pricingRunId } = await w.as(setup.practice, setup.practice.manager, (scope) => createRerun(scope, { practiceId: setup.practice.practiceId, pricingRunId: setup.runId, releaseNo, requestId: 'test-rerun' }));
   await w.triage.pricing.execute(setup.practice, pricingRunId);
-  await w.as(setup.practice, setup.practice.manager, (scope) => acceptRun(scope, { practiceId: setup.practice.practiceId, pricingRunId }));
+  await w.as(setup.practice, setup.practice.manager, (scope) => acceptRun(scope, { practiceId: setup.practice.practiceId, pricingRunId, replacesId: setup.runId , heldByIds: [] }));
   return pricingRunId;
 }
 

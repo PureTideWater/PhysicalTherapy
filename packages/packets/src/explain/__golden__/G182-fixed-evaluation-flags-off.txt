@@ -1,0 +1,67 @@
+# fixtures/golden/claims/G182-fixed-evaluation-flags-off.json
+
+## Line 1, internal
+1 unit × $74.00 = $74.00 under the contract’s clause on page 1; rounded once to $74.00; observed allowed $74.00; no variance.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Fixed schedule: $74.00 per unit. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Units as billed; timed units are counted per code.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). 1 × $74.00 = $74.00.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the practice’s default, as the rate record names no rule: $74.00 needed no rounding.
+  [observed] Observed allowed $74.00, the allowed amount the payer states for the line (AMT B6). Expected $74.00, observed allowed $74.00: no variance.
+  [window] Dispute window: 30 days from the payment date 2026-03-06, under the contract; it ends on 2026-04-05; on 2026-10-15 it is passed.
+  [release] Priced under rule release 900002 by engine phase-two/2.
+  [outcome] Priced: $74.00 expected, $74.00 before the one rounding.
+
+## Line 1, viewer
+1 unit × $74.00 = $74.00 under the contract’s clause on page 1; rounded once to $74.00; observed allowed $74.00; no variance.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Fixed schedule: $74.00 per unit. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Units as billed; timed units are counted per code.
+  [units] 1 unit billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). 1 × $74.00 = $74.00.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the practice’s default, as the rate record names no rule: $74.00 needed no rounding.
+  [observed] Observed allowed $74.00, the allowed amount the payer states for the line (AMT B6). Expected $74.00, observed allowed $74.00: no variance.
+  [window] Dispute window: 30 days from the payment date, under the contract.
+  [release] Priced under rule release 900002 by engine phase-two/2.
+  [outcome] Priced: $74.00 expected, $74.00 before the one rounding.
+
+## Line 1, payer
+1 unit × $74.00 = $74.00 under the contract’s clause on page 1; rounded once to $74.00; observed allowed $74.00; no variance.
+  [terms] Fixed schedule: $74.00 per unit.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the practice’s default, as the contract names no rule: $74.00 needed no rounding.
+  [observed] Observed allowed $74.00, the allowed amount the remittance states.
+
+## Line 2, internal
+2 units × $74.00 = $148.00 under the contract’s clause on page 1; rounded once to $148.00; observed allowed $74.00; short $74.00.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Fixed schedule: $74.00 per unit. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Units as billed; timed units are counted per code.
+  [units] 2 units billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). 2 × $74.00 = $148.00.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the practice’s default, as the rate record names no rule: $148.00 needed no rounding.
+  [observed] Observed allowed $74.00, the allowed amount the payer states for the line (AMT B6). Expected $148.00, observed allowed $74.00: short $74.00.
+  [window] Dispute window: 30 days from the payment date 2026-03-06, under the contract; it ends on 2026-04-05; on 2026-10-15 it is passed.
+  [release] Priced under rule release 900002 by engine phase-two/2.
+  [outcome] Priced: $148.00 expected, $148.00 before the one rounding.
+
+## Line 2, viewer
+2 units × $74.00 = $148.00 under the contract’s clause on page 1; rounded once to $148.00; observed allowed $74.00; short $74.00.
+  [agreement] The plan’s mapping names a contract; its signed-off version prices this code by one rate record, cited on page 1.
+  [terms] Fixed schedule: $74.00 per unit. Not applied (flag off): the multiple procedure payment reduction, the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Units as billed; timed units are counted per code.
+  [units] 2 units billed, taken as billed. The medically unlikely edit (MUE) is not checked (flag off). 2 × $74.00 = $148.00.
+  [ncci_ptp] National Correct Coding Initiative (NCCI) edits are not checked (flag off).
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the practice’s default, as the rate record names no rule: $148.00 needed no rounding.
+  [observed] Observed allowed $74.00, the allowed amount the payer states for the line (AMT B6). Expected $148.00, observed allowed $74.00: short $74.00.
+  [window] Dispute window: 30 days from the payment date, under the contract.
+  [release] Priced under rule release 900002 by engine phase-two/2.
+  [outcome] Priced: $148.00 expected, $148.00 before the one rounding.
+
+## Line 2, payer
+2 units × $74.00 = $148.00 under the contract’s clause on page 1; rounded once to $148.00; observed allowed $74.00; short $74.00.
+  [terms] Fixed schedule: $74.00 per unit.
+  [patient_share] Patient share $0.00, reported beside the expected amount and never subtracted from it.
+  [rounding] Rounded once, half up to the cent, under the practice’s default, as the contract names no rule: $148.00 needed no rounding.
+  [observed] Observed allowed $74.00, the allowed amount the remittance states.

@@ -8,13 +8,14 @@ No real PHI, real 835, real contract or real export ever enters this repository.
 
 ## Development
 
-Prerequisites: Node 24 (see `.nvmrc` and `engines`; Node 22 runs everything with an engine warning), pnpm 10.28 (`corepack enable` or
-`npm install --global pnpm@10.28.0`), and Docker for `pnpm dev`. The local database is PostgreSQL 18, the version CI's
-`postgres:18` service and production (`infra/lib/constructs/database.ts`) run; `pnpm dev` starts it from
-`docker-compose.yml`. Nothing in the test suites needs Docker: database tests use `DATABASE_URL`, defaulting to the
-docker-compose Postgres at `postgres://postgres:test@localhost:5432/postgres`. To run them as CI does against a
-PostgreSQL 18 server of your own, point `DATABASE_URL` at its superuser (a UTF-8 cluster with password logins, as the
-image initializes one); `E2E_DATABASE` and `E2E_PORT` keep an end-to-end run apart from another on the same machine:
+Prerequisites: Node 24 (see `.nvmrc` and `engines`; Node 22 runs everything with an engine warning), pnpm at the version
+`package.json`'s `packageManager` names (`corepack enable` installs it), and Docker for `pnpm dev`. The local database is
+PostgreSQL 18, the version CI and production (`infra/lib/constructs/database.ts`) run; `pnpm dev`, CI's database jobs
+and the capacity harness all start it from the one image `docker-compose.yml` pins by digest. Nothing in the test
+suites needs Docker: database tests use `DATABASE_URL`, defaulting to the docker-compose Postgres at
+`postgres://postgres:test@localhost:5432/postgres`. To run them as CI does against a PostgreSQL 18 server of your
+own, point `DATABASE_URL` at its superuser (a UTF-8 cluster with password logins, as the image initializes one);
+`E2E_DATABASE` and `E2E_PORT` keep an end-to-end run apart from another on the same machine:
 
 ```sh
 export DATABASE_URL=postgres://postgres:test@localhost:5433/postgres   # a PostgreSQL 18 superuser
@@ -34,12 +35,14 @@ pnpm test            # unit and property tests, with the 100% branch gates
 pnpm test:db         # database tests (each creates and drops its own database)
 pnpm test:e2e        # builds the web app and runs the Playwright journeys, with the axe check
 pnpm build           # web (Next.js standalone) and worker (esbuild bundle)
-pnpm dev             # Postgres and MinIO in Docker, then the web app and the worker
+pnpm dev             # PostgreSQL from docker-compose.yml in Docker, then the web app and the worker
 pnpm db:migrate      # roles, then forward-only migrations as the owner role (--dev-login: local app login)
 pnpm db:migrate --dry-run   # apply the pending migrations in one transaction and roll it back
-pnpm db:domain-model --check --strict   # docs/product/domain-model.md against the migrated database (--out rewrites it)
+pnpm db:domain-model --check --strict   # the domain model and its function files against the migrated database (--out rewrites both)
 pnpm db:domain-model --summary-since origin/claude/build-platform   # what changed since the last approved document (no database)
 pnpm licenses:check  # production dependency licenses against tools/check-licenses/allowlist.json
+pnpm actions:check   # every workflow's actions pinned to their release's commit, inputs declared (networked; BASE=<ref>)
+pnpm toolchain:check # pnpm's advisories and age, the lockfile's release age, the exception lists (networked; BASE=<ref>)
 pnpm synth --all     # regenerate every synthetic fixture (deterministic; --case <id>, --large for PAR-29)
 pnpm test:oracle     # pyx12 and packages/edi835 read every synthetic 835 and must agree (TP_ORACLE_PYTHON: a python with pyx12)
 ```
@@ -104,9 +107,22 @@ writes it, and only with a commit of 7 to 40 hexadecimal digits (or `unknown`) a
 (letters, digits, `.`, `_`, `/`, `-`); the tool refuses any other `--commit` or `--branch` (exit 2), and a provenance
 line moved elsewhere or with other text in those fields is compared and hashed like any other line. `pnpm test:db` makes
 the same comparison on its own scratch database (`domain-model.db.test.ts`), so a migration merged without regenerating
-the document fails. Its second case is the approval: the founder's name, a `YYYY-MM-DD` date (from 2026-10-16, when the
-change order was issued, to today) and the document's SHA-256 on the "Approved by" line (`--require-approval`, which
-prints the hash to sign when it refuses). The name must be exactly an entry of the reviewed approver list,
+the document fails. The same `--out` writes one file per database function name to `packages/db/functions`
+(docs/adr/0068; its README), every overload's definition, owner and grants as PostgreSQL holds them, and `--check` and
+the drift case compare those files too, so a pull request shows each changed function as a diff and `git log -p` on a
+file is that function's history; they are generated, never edited, and outside the approved text. They are read in the
+same READ ONLY transaction as the document, on a database nothing else is migrating, under pinned settings
+(`quote_all_identifiers`, `extra_float_digits` and the rest; the ADR's "Determinism"), and `.gitattributes` gives them
+`text eol=lf`, so they are the same bytes on every machine. `--out` checks the directory before it writes anything and
+removes a stale `*.sql` only when it opens with the generator's banner; a function in a schema other than `public`, a
+symlinked directory, a refused file name or a `*.sql` without the banner exits 2, as does any git or file-system
+failure, and a custom `--out FILE` or `--check FILE` needs `--functions DIR` (exit 2 without), so a preview written
+elsewhere never touches the repository's files. The approval is
+CI's `domain model` check, which runs `pnpm db:domain-model --check --strict --require-approval` on a freshly
+migrated database (docs/adr/0066): the founder's name, a `YYYY-MM-DD` date (from 2026-10-16, when the change order was
+issued, to today) and the document's SHA-256 on the "Approved by" line
+(`--require-approval` prints the hash to sign when it refuses), so an unsigned document turns that check red and leaves
+the database suite to report on the database alone. The name must be exactly an entry of the reviewed approver list,
 `packages/db/domain-model/approvers.json` (apart from spaces at either end, in the same case), and never a placeholder
 (TBD, N/A, name, first name, last name, full name, founder, approver, VERIFY ONLY, Claude, in any case and their common
 spellings such as T.B.D., N.A., VERIFY-ONLY or ClaudeCode, or text in angle brackets) or a name with no letters. The
@@ -120,16 +136,23 @@ committed one, so any schema change, or an edit to the document alone, leaves it
 migration merges without one (CLAUDE.md, Schema gate). The document lists each applied migration's SHA-256 and each
 function body's, and shows a disabled or replica-only trigger as not enforced, rewrite rules and default privileges, so
 an edit to a migration after it was signed fails the gate too (`domain-model-drift.db.test.ts`). Milestone 1 does not
-start until the founder approves the document; until then that case fails. The document records PostgreSQL's major
-version beside the catalog's own text, so it is checked on PostgreSQL 18, as CI runs; on an older server its drift case
-fails (on 16, at the version line alone).
+start until the founder approves the document; until then the `domain model` check fails. The document records
+PostgreSQL's major version beside the catalog's own text, so it is checked on PostgreSQL 18, as CI runs; on an older
+server its drift case fails (on 16, at the version line alone).
 
 Each approval opens with the changes since the last approved document (docs/adr/0063): `pnpm db:domain-model
 --summary-since <ref>` compares the document at a git ref (the base branch, whose document is approved) with the working
 tree's, or with the text `--out` or `--check` generates, and prints one line per change, row-level security, policies,
 the PHI registry and grants first, then tables, columns, constraints, functions, triggers and the divergence rows, with
-both documents' SHA-256 and approval state. CI's `check` job writes it into its job summary, and a pull request that
-regenerates the document opens its description with it.
+both documents' SHA-256 and approval state, then "Function definitions changed since <ref>" (docs/adr/0068), which
+compares the files at `git merge-base <ref> HEAD` and has three parts: one line saying these are the committed (or
+generated) files and that `--check` proves they equal the migrated catalog; a compact list of every changed file under
+`packages/db/functions` with `+N/-M` and its flags, those flagged "SECURITY DEFINER, tenant scope, privileges or
+PUBLIC" first; and "Diffs", each file's unified diff in that order until a 900,000-byte budget, then one line
+naming the files left out (see "Files changed"). CI's `domain model` job writes the full form into its job summary and
+its log; a pull request that regenerates the document opens its description with the `--function-diffs list` form,
+the same output without the Diffs part, since GitHub caps a description at 65,536 characters, and the founder checks
+that its list matches the CI copy's.
 
 Synthetic data and the 835 oracle (ADRs 0021 to 0024): `packages/synth` generates every test-matrix case and
 thirty-five oracle variants into `fixtures/synthetic/<case>/`, each with an `expected.json` stating the outcome, and holds
@@ -288,9 +311,10 @@ lines and submissions. Recording a response writes no ledger entry and no stage.
 (`writePacketVersion`, `approvePacketVersion`, `confirmRegulation`, `requestPacketExport`, `logSubmission`,
 `recordPayerResponse`, `submissionLog`, `followUpsDue`, `acceptedPayerResponses` for the ledger); its screens are
 the workbench below. `apps/worker/src/packets/packets.db.test.ts` runs CAS-08 to CAS-15 and LED-01 on SYNTHETIC
-fixtures. Mutation testing of the verifier (`pnpm stryker run stryker.verifier.config.mjs`, Stryker's command runner over
-the packets unit suite, since under Vitest 5 the vitest runner reports these mutants survived without running a test)
-scored 86.17% on 2026-10-16: 1,377 of 1,598 mutants killed (ADR 0047).
+fixtures. Mutation testing of the verifier (Stryker's command runner over the packets unit suite, since under Vitest 5
+the vitest runner of the time reported these mutants survived without running a test) scored 86.17% on 2026-10-16:
+1,377 of 1,598 mutants killed (ADR 0047). It now runs with the packet's arithmetic in `pnpm stryker run
+stryker/packets.config.mjs`, on Stryker 10.1.1's vitest runner (ADR 0066, Part 4).
 
 The workbench (ADR 0044; migration `20261024110000_case_workbench.sql`) is three screens under each case, every
 filter and page in the URL with opaque IDs only:
@@ -354,8 +378,8 @@ line's posted and deposited at or below its approved, and every correction betwe
 shows, for every role; only
 the reconcile job writes posting and EFT rows, from a stored clean export of their kind, and an export the database
 refuses a row of is unreadable without stopping the rest (ADR 0046); the dashboard's recovered this quarter and the digest's recoveries now read the
-ledger. `apps/worker/src/reconcile/ledger.db.test.ts` runs LED-01 to LED-11 and
-`apps/worker/src/reconcile/ledger-oracle.db.test.ts` is the ledger oracle (PRD 18): five synthetic export scenarios
+ledger. `apps/worker/src/reconcile/ledger.db.test.ts` runs LED-01 to LED-13 and
+`apps/worker/src/reconcile/ledger-oracle.db.test.ts` is the ledger oracle (PRD 18): six synthetic export scenarios
 whose known outcomes are compared with plain SQL sums.
 
 Reconciliation in the product (ADR 0043): the monitoring chain reconciles every upload batch. After a document whose
@@ -428,7 +452,7 @@ each call logs one `model_call` row of hashes, counts and codes (never text). Th
 the VPC endpoint), `anthropic` (`ANTHROPIC_API_KEY`) or `local` (the default elsewhere: the deterministic provider,
 which answers only outputs registered for the exact request, from code or `MODEL_LOCAL_FIXTURES_DIR`). Model
 identifiers are pinned per prompt version in its `prompt.json`; prices are in `config/models.json`, and production
-refuses a real provider until a person confirms them there. Outside production the gateway sends no practice's material
+serves no feature of a real provider whose models' prices a person has not confirmed there. Outside production the gateway sends no practice's material
 to a real provider. The kill switch (`model.kill_switch`), the denial-letter reader (`model.read_denial_letter`, v1.5,
 off by default) and the daily budget (`model.daily_budget_cents`, 500 by default) are rows in `feature_flag`, set by a
 platform administrator on the console's model features screen (`/console/models`, which also shows each practice's model
@@ -448,24 +472,44 @@ on the screen for hand entry. The packet builder can draft a version's narrative
 as any version and approved by a second person; the coverage screen can suggest what to obtain for its gaps. Each call
 runs in the person's name and is logged in `model_call`; what it proposed is a `model_proposal` row; the decision
 (accepted, accepted with the changed fields named, rejected) is recorded when the person approves the version, sends
-the packet for approval or keeps the checklist; a corrected contract proposal becomes an evaluation example only under
-the practice's signed data-rights agreement. With the kill switch on, the budget spent or no model path configured,
-the screens offer hand entry and nothing is sent. The e2e suite runs the gateway on the local provider
+the packet for approval or keeps the checklist; a corrected or rejected contract proposal becomes an evaluation example,
+holding only its own document's final records, under the practice's signed data-rights agreement and only then
+(keeping an accepted one waits on the founder's reading of that agreement, ADR 0070's F2). With the kill switch on,
+the budget spent, no model path configured or the feature not yet passed its own evaluation, the screens offer hand
+entry and nothing is sent. The e2e suite runs the gateway on the local provider
 (`MODEL_LOCAL_FIXTURES_DIR`, written by `e2e/models.ts`).
 
-The evaluation (ADR 0051; `packages/model-gateway/eval`): 40 synthetic contracts and exhibits (tables, prose, scanned
-image-only PDFs with their recorded Textract lines) with ground-truth rate records, and 300 synthetic narrative cases
-with their required facts, generated by `pnpm synth --all` into `fixtures/synthetic/MOD-01` and `MOD-03`.
-`pnpm --filter @tp/model-gateway eval` scores a provider field by field (precision and recall) and runs every narrative
-through the packets verifier; `eval/baseline.json` holds the committed baseline, and `pnpm test:golden` fails a change
-that lowers either, puts a quote off its page or lets one narrative fail. CI runs it on the local provider, which
-proves the path and the gate (injected faults fail it), not a model. Each baseline entry records its prompt version's
-content hash; CI's `tools/check-releases-immutable.sh` refuses an edit to a released prompt version, and production
-refuses a real provider until the baseline records the gate for every current prompt version and model it pins
-(`--variant ambiguous` evaluates the larger contract model). Inside the PHI boundary the worker image's
-`evaluate-permitted` task (`node dist/evaluate-permitted.js --practice <id> [--report <file>] [--against <file>]`, or
+The evaluation (ADRs 0051 and 0070; `packages/model-gateway/eval`; `docs/runbooks/model-evaluation.md`): set v2, 63
+synthetic contracts and exhibits (v1's 40 unchanged, plus medium and large documents to 80 pages and 60 codes,
+contract-plus-exhibit pairs, scans with seeded OCR errors or their own OCR layer, struck-through rates,
+injected-instruction twins and decoy amended rates, each case marked faithful or not), with ground-truth rate records,
+and 300 synthetic narrative cases with their required facts, generated by `pnpm synth --all` into
+`fixtures/synthetic/MOD-01`, `MOD-09` (its five large documents generated on demand and pinned by hash) and `MOD-03`.
+`pnpm --filter @tp/model-gateway eval` scores a provider field by field in eight counts, keeping a value the verifier
+passed that is wrong, or a scope field a proposed rate record leaves out so that it applies more widely than the
+contract's row ("wrong but verified"), apart from one it rejected or missed, and runs every narrative through the
+packets verifier (the specialist's card names each scope field left out as "Not stated"); `eval/baseline.json` holds the committed baseline, one entry per prompt version, provider, model and
+contract variant, each naming its recorded report under `eval/reports/`. `pnpm test:golden` fails a change that lowers
+precision or recall, raises wrong but verified, leaves any wrong but verified field on a faithful case, lets an
+injected twin's answer differ from its clean twin's, or any output string hold a word only the injection writes, or a
+decoy go unflagged, puts a quote off its page or lets one narrative fail; a run with a failed or refused call is never
+recorded, a changed set refuses comparison, and a set change and a model change are recorded in two steps. CI
+runs it on the local provider, which proves the path and the gate (injected faults fail it), not a model. Per-field
+recall and precision floors (`eval/floors.json`) are the founder's, set with the contract specialist, and ship unset,
+so no real provider is recorded or served until they are set. Each baseline entry records its prompt version's content
+hash; CI's `tools/check-releases-immutable.sh` refuses an edit to a released prompt version. In production a real
+provider serves each model feature (and each contract variant, `--variant ambiguous` evaluating the larger contract
+model) only once its own entry passes, every floor is set and met, its prices are confirmed and, for contracts, the
+permitted run is recorded; any other feature is off on its own with hand entry, and evidence requests and the
+denial-letter reader, which have no set yet, stay off. Inside the PHI boundary the worker image's `evaluate-permitted`
+task (`node dist/evaluate-permitted.js --practice <id> [--report <file>] [--against <file>]`, or
 `pnpm --filter @tp/worker eval:permitted`) replays a practice's permitted examples through the gateway in its own scope
-and reports field-level counts, problem codes and example IDs only; with `--against` any regression exits 1 (ADR 0054).
+and reports field-level counts per contract variant, problem codes, refusals and example IDs only, refusing to run a
+real provider outside production; with `--against` any regression exits 1. `eval record-permitted` records only a
+production run in which no example went unmeasured for the run's own reasons (a failed call, the kill switch, a flag,
+the PHI boundary), compares each variant on its own with a run of what was
+served (required once anything was ever served, kept in the baseline's `served` history across version changes), and
+writes its verdict into that variant's entry, which serves the feature (ADRs 0054 and 0070).
 
 Tenancy and audit (ADRs 0013 to 0015, 0018 and 0019): every query runs in a scope from `@tp/db` (`withActor`,
 `withPracticeScope`, `withJobScope`, one practice per job; a practice job reaches the database only through its
@@ -548,8 +592,8 @@ The security contact (audit item #20 (f)): `/.well-known/security.txt` (RFC 9116
 the public disclosure page `/security` as its Policy, English as its language and its own address under `APP_ORIGIN` as
 Canonical, with an `Expires` date set in `apps/web/src/lib/security/disclosure.ts`; `disclosure.test.ts` fails 30 days
 before that date, when the address is checked and the date moved on, less than a year ahead. That failure is in `pnpm
-test`, so from 30 days before the date (2027-03-31 for today's 2027-04-30) every pull request's `check` is red until the
-renewal merges; the change-management policy's quarterly review renews it when fewer than 120 days remain. The page says
+test`, so from 30 days before the date (2027-03-31 for today's 2027-04-30) every pull request's `unit` job, and with it
+`all green`, is red until the renewal merges; the change-management policy's quarterly review renews it when fewer than 120 days remain. The page says
 how to report, what to include, what not to do and what to expect, with no sign-in and no form. Production refuses to
 start without `SECURITY_EMAIL`, or with it equal to the support address, whose mail opens tickets only for accounts. Its
 response times and its good-faith research statement are drafts for the security official and counsel, listed in
@@ -612,14 +656,16 @@ prices in `packages/billing/config/plans.json` are placeholders (`confirmed: fal
 
 **Milestone 10 is not complete.** Its done check is "every quote verifies, the narrative gate passes with zero
 failures, and the lint fails a test file that imports the provider directly". The lint check is met
-(`packages/model-gateway/src/lint.test.ts`). The verifiers, the evaluation harness on the 40 synthetic contracts and the
-300 synthetic narratives (742 of 742 fields, no quote off its page, 300 of 300 narratives passing; ADR 0051) and the
+(`packages/model-gateway/src/lint.test.ts`). The verifiers, the evaluation harness on set v2's 63 synthetic contracts and the
+300 synthetic narratives (every field of every faithful case right and none wrong but verified, no quote off its page,
+300 of 300 narratives passing; ADRs 0051 and 0070) and the
 features on their screens (ADR 0052; `apps/web/src/lib/routes/models-routes.db.test.ts`, `apps/web/e2e/models.spec.ts`)
 are built and tested, but only on the local deterministic provider: the build has no model access, so no real model
-has answered anything. The real gate needs a model: `pnpm --filter @tp/model-gateway eval --provider configured
---record` run with credentials on the synthetic sets, and `evaluate-permitted` inside the PHI boundary on the practices'
-permitted examples, before the milestone closes; until a real provider's entries are committed, production refuses it
-(ADR 0054). The Bedrock and Anthropic providers are tested against their SDKs with mocked clients, and
+has answered anything. The real gate needs a model and the founder's floors: the per-field recall and precision floors set
+with the contract specialist and committed to `eval/floors.json`, then `pnpm --filter @tp/model-gateway eval --provider
+configured --record` run by a person with credentials on the synthetic sets, and `evaluate-permitted` inside the PHI
+boundary on the practices' permitted examples, before the milestone closes (`docs/runbooks/model-evaluation.md`); until
+a feature's own entry passes and its permitted run is recorded, production does not serve it (ADRs 0054 and 0070). The Bedrock and Anthropic providers are tested against their SDKs with mocked clients, and
 their pinned prices are unconfirmed (ADR 0048). PRD 20's choice of model path waits on counsel's read of both
 agreements; Bedrock is the default until then.
 

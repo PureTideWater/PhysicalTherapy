@@ -600,7 +600,7 @@ describe('the compute contract with the applications', () => {
       expect(configured(definitionOf('tp-staging-worker'))).toContain(name);
       expect(gatewayConfig, name).toContain(`'${name}'`);
     }
-    expect(source('apps/worker/src/models/permitted-cli.ts')).toContain('readGatewayConfig()');
+    expect(source('apps/worker/src/models/permitted-cli.ts')).toContain("readGatewayConfig(process.env, { serving: 'evaluable' })");
   });
 
   it('runs the commands the images hold: the web server, the worker bundle and its migrator', () => {

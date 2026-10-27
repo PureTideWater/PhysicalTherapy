@@ -1,0 +1,10 @@
+{
+  "$comment": "Exact versions excused from trustPolicy no-downgrade, equal to pnpm-workspace.yaml's trustPolicyExclude and each still resolved in the lockfile (tools/check-toolchain): package (name@x.y.z), reason, added. Only a fixed old version is ever listed, so an entry has no expiry.",
+  "entries": [
+    {
+      "package": "semver@6.3.1",
+      "reason": "Published 2023-07-10 without provenance, after semver 7.5.1 (2023-05-12) was published with it, so no-downgrade refuses it; reached through @babel/core (next > styled-jsx, and eslint-plugin-react-hooks). The co-founder's CQ2 (a).",
+      "added": "2026-10-26"
+    }
+  ]
+}

@@ -7,7 +7,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./stripe": "./src/stripe.ts",
-    "./local": "./src/local.ts"
+    "./local": "./src/local.ts",
+    "./types": "./src/types.ts",
+    "./standing": "./src/standing.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

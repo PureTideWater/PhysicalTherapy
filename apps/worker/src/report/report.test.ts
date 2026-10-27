@@ -7,9 +7,9 @@ import { UNPRICED_REASONS } from '@tp/pricing';
 import { DEADLINE_UNVERIFIED_CAUSES, NOT_ACTIONABLE_REASONS, STAGE_LABELS } from '@tp/triage';
 import { describe, expect, it } from 'vitest';
 
-import { type ReportLine, deadlineRemedy } from './content';
+import { CONTENT_NOT_LOADED_REASONS, type ReportLine, contentNotLoadedReason, deadlineRemedy } from './content';
 import { CSV_COLUMNS, auditCsv, csvDocument, csvNumber, csvText } from './csv';
-import { auditHtml, auditReconciliation, escapeHtml, reasonText } from './html';
+import { auditHtml, auditReconciliation, caseStateText, escapeHtml, reasonText } from './html';
 import { ChromiumPdfRenderer, chromiumInstalled } from './pdf';
 import { UNPRICED_REMEDIES } from './remedies';
 import { CONTENT } from './test-support/audit-content';
@@ -153,7 +153,7 @@ describe('the report HTML', () => {
       cases: [{ ...first, state: 'resolved', actionable_now_lines: 0, actionable_now_cents: '0', payer_approved_cents: '3000', recovered_cents: '3000' }],
     });
     const headline = recovered.slice(recovered.indexOf('aria-label="Headline"'), recovered.indexOf('aria-label="Coverage"'));
-    expect(headline).toContain('Payer approved</div><div class="amount">$30.00</div><div class="note">accepted by the payer, from the ledger’s entries; not cash until it posts</div>');
+    expect(headline).toContain('Payer approved</div><div class="amount">$30.00</div><div class="note">what payers have agreed to pay on the lines they corrected, from the ledger’s entries; not cash until it posts</div>');
     expect(headline).toContain('Recovered (posted)</div><div class="amount">$30.00</div><div class="note">cash posted, from the ledger’s entries, net of recoupments and reversals</div>');
     expect(recovered).not.toContain('recorded yet');
     expect(recovered).not.toContain('nothing has posted yet');
@@ -165,6 +165,14 @@ describe('the report HTML', () => {
     const submitted = auditHtml({ ...CONTENT, cases: [{ ...first, state: 'submitted' }] });
     expect(submitted).toContain('<td>submitted</td>');
     expect(submitted).not.toContain('closed (written off)');
+    // With nothing approved, the note says so in the same words (design review S4).
+    const none = auditHtml({ ...CONTENT, headline: { ...CONTENT.headline, payer_approved_cents: '0' } });
+    expect(none).toContain('<div class="note">what payers have agreed to pay on the lines they corrected; no payer approval is recorded yet</div>');
+    // A case whose correction the patient's share took whole says so after its state, which stays as stored (docs/adr/0067, S6).
+    const corrected = { ...first, state: 'submitted', patient_balance: true as const };
+    expect(caseStateText(corrected)).toBe('submitted; payer corrected, balance is the patient’s');
+    expect(corrected.state).toBe('submitted');
+    expect(auditHtml({ ...CONTENT, cases: [corrected] })).toContain('<td>submitted; payer corrected, balance is the patient’s</td>');
   });
 
   it('escapes every text it shows and loads nothing from outside the document', () => {
@@ -265,5 +273,30 @@ describe('the reasons a withdrawal or an amendment takes a line out of the total
     expect(reasonText('VERSION_NOT_IN_FORCE')).toBe('Contract version no longer covers the service date (amended since it was priced)');
     expect(reasonText('MAPPING_NOT_IN_FORCE')).toBe('Plan mapping corrected since it was priced (another agreement applies on the service date)');
     expect(reasonText('RELEASE_WITHDRAWN')).toBe('Rule release withdrawn since it was priced');
+  });
+
+  it('names a line priced before the Medicare content for its date was loaded, and which content when the trace knows, held until a re-run (audit #7; UX-10)', () => {
+    expect(reasonText('CONTENT_NOT_LOADED')).toBe(
+      'Priced before PaidWhole loaded Medicare’s multiple-procedure reduction list (MPPR) or unit limits (MUE) for its date; held until a re-run under a release that loads them',
+    );
+    expect(CONTENT_NOT_LOADED_REASONS.map(reasonText)).toEqual([
+      'Priced before PaidWhole loaded Medicare’s multiple-procedure reduction list (MPPR) for its date; held until a re-run under a release that loads it',
+      'Priced before PaidWhole loaded Medicare’s unit limits (MUE) for its date; held until a re-run under a release that loads them',
+      'Priced before PaidWhole loaded Medicare’s multiple-procedure reduction list (MPPR) and unit limits (MUE) for its date; held until a re-run under a release that loads them',
+    ]);
+    // The trace's reads decide the reason: the per-code list and the general rate are both the MPPR.
+    expect(contentNotLoadedReason([{ content: 'mppr_code', date: '2027-01-04' }])).toBe('CONTENT_NOT_LOADED:mppr');
+    expect(contentNotLoadedReason([{ content: 'mppr_general', date: '2027-01-04' }])).toBe('CONTENT_NOT_LOADED:mppr');
+    expect(contentNotLoadedReason([{ content: 'ncci_mue', date: '2027-01-04' }])).toBe('CONTENT_NOT_LOADED:mue');
+    expect(
+      contentNotLoadedReason([
+        { content: 'ncci_mue', date: '2027-01-04' },
+        { content: 'mppr_code', date: '2027-01-04' },
+      ]),
+    ).toBe('CONTENT_NOT_LOADED:mppr_mue');
+    // Every reason a validated line waits on has its words; none falls back to its code.
+    for (const reason of NOT_ACTIONABLE_REASONS.filter((item) => item !== 'WRITTEN_OFF')) {
+      expect(reasonText(reason)).not.toBe(reason);
+    }
   });
 });

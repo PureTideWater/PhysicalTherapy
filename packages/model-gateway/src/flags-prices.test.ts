@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 
 import { GatewayConfigError } from './errors';
 import { DEFAULT_DAILY_BUDGET_CENTS, type FlagRow, resolveFeatures } from './flags';
-import { callCost, microCentsText, parseMicroCents, priceOf } from './prices';
+import { COMMITTED_BASELINE, COMMITTED_FLOORS, servingDecisions } from './evaluated';
+import { PRICES, callCost, microCentsText, parseMicroCents, priceOf } from './prices';
+import { ALL_SERVED, offeredPurposes } from './purposes';
 
 const PRACTICE = '00000000-0000-4000-8000-0000000000a1';
 const OTHER = '00000000-0000-4000-8000-0000000000a2';
@@ -41,6 +43,24 @@ describe('resolveFeatures', () => {
       readDenialLetter: false,
       dailyBudgetCents: DEFAULT_DAILY_BUDGET_CENTS,
     });
+  });
+});
+
+describe('the flags beside serving (docs/adr/0070, Part 2)', () => {
+  it('turns no feature on that serving keeps off, and the kill switch still turns off one that is served', () => {
+    const everyFlagOn = resolveFeatures([flag('model.read_denial_letter', 'global', true)], PRACTICE, ORGANIZATION);
+    expect(offeredPurposes(everyFlagOn, { keys: new Set() })).toEqual({ proposeContractTerms: false, readDenialLetter: false, draftPacketNarrative: false, suggestEvidenceRequests: false });
+    expect(offeredPurposes(everyFlagOn, { keys: new Set(['proposeContractTerms/default'] as const) })).toMatchObject({ proposeContractTerms: true, readDenialLetter: false });
+    const killed = resolveFeatures([flag('model.read_denial_letter', 'global', true), flag('model.kill_switch', 'practice', true, PRACTICE)], PRACTICE, ORGANIZATION);
+    expect(Object.values(offeredPurposes(killed, ALL_SERVED))).toEqual([false, false, false, false]);
+  });
+
+  it('serves a key only on its own model’s confirmed price: as config/models.json ships, no real provider’s', () => {
+    for (const provider of ['bedrock', 'anthropic'] as const) {
+      const decisions = servingDecisions(provider, { baseline: COMMITTED_BASELINE, floors: COMMITTED_FLOORS, prices: PRICES });
+      expect(decisions.filter((decision) => decision.reasons.includes('price_unconfirmed')).map((decision) => decision.key), provider).toEqual(['proposeContractTerms/default', 'proposeContractTerms/ambiguous', 'draftPacketNarrative/default']);
+    }
+    expect(PRICES.filter((price) => price.provider !== 'local').every((price) => !price.confirmed)).toBe(true);
   });
 });
 

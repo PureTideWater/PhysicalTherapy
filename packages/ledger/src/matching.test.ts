@@ -120,3 +120,29 @@ describe('remittance to deposit (PRD 13, Matching step 3; LED-05)', () => {
     expect(batchMatches({ rowAmounts: [cents(1n)], paymentCents: [] })).toBe(false);
   });
 });
+
+describe('matching at its edges, by fixed examples', () => {
+  it('matches no posting of nothing, and the whole check in full only when nothing posted before it', () => {
+    expect(checkPosting({ amountCents: cents(0n), checkTotalCents: cents(3000n), postedBeforeCents: cents(0n) })).toEqual({ kind: 'unmatched', reason: 'amount_not_positive' });
+    // A take-back posted before leaves a posting of the check's size a part of the check, never the whole of it.
+    expect(checkPosting({ amountCents: cents(3000n), checkTotalCents: cents(3000n), postedBeforeCents: cents(-100n) })).toEqual({ kind: 'partial' });
+  });
+
+  it('matches a line-level row to a claim when it posts one of the claim’s lines, not only when it posts them all', () => {
+    const claims = [
+      {
+        claimId: 'two-lines',
+        paidCents: cents(15000n),
+        lines: [
+          { procedureCode: '97110', serviceDate: '2026-03-09', paidCents: cents(10000n) },
+          { procedureCode: '97140', serviceDate: '2026-03-09', paidCents: cents(5000n) },
+        ],
+      },
+    ];
+    expect(linePosting({ amountCents: cents(5000n), procedureCode: '97140', serviceDate: null, claims })).toBe('two-lines');
+  });
+
+  it('matches a batch only when every row found its own payment, even when the totals agree', () => {
+    expect(batchMatches({ rowAmounts: [cents(4200n)], paymentCents: [cents(3000n), cents(1200n)] })).toBe(false);
+  });
+});

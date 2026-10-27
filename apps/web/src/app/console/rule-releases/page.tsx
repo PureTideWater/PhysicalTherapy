@@ -4,6 +4,7 @@ import Link from 'next/link';
 
 import { ActionForm } from '../../../components/action-form';
 import { utc } from '../../../components/format';
+import { ContentDueSection } from '../../../components/releases/content-due';
 import { ReleaseChanges, ReleaseStatusText } from '../../../components/releases/note';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
@@ -22,14 +23,15 @@ type Props = { readonly searchParams: Promise<Record<string, string | string[] |
  * the database, with each release's notes and record changes and, per practice, the runs pinned to it
  * and what the re-runs made under it changed, as counts (no run, line or claim is read). The drafts, the
  * content checker and preparing the next release work in the content checkout the server is given.
- * Publishing is never here: CI publishes a prepared release when its pull request merges.
+ * Publishing is never here: CI publishes a prepared release when its pull request merges. Above the list, what content
+ * is due under the content calendar (audit #59; components/releases/content-due.tsx).
  */
 export default async function RuleReleasesPage(props: Props) {
   const page = await loadPage(ruleReleasesPage, { searchParams: props.searchParams });
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="rule_releases" roles={page.roles} message={page.message} nextStep="Rule releases are the platform administrators'." />;
   }
-  const { releases, runs, note, elsewhere, workspace, check, nextRelease, prepared } = page.data;
+  const { releases, runs, note, elsewhere, workspace, check, nextRelease, prepared, contentDue } = page.data;
   const shownRuns = note === null ? [] : runs.filter((row) => row.releaseNo === note.releaseNo);
   return (
     <AppShell shell={page.shell} section="rule_releases">
@@ -48,6 +50,7 @@ export default async function RuleReleasesPage(props: Props) {
           </AlertDescription>
         </Alert>
       )}
+      <ContentDueSection due={contentDue} />
       <section aria-label="Published releases" className="flex flex-col gap-2">
         <h2 className="text-xl font-bold tracking-display">Published releases</h2>
         {releases.length === 0 ? (

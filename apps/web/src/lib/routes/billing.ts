@@ -1,11 +1,13 @@
-import { BillingEventError, BillingProviderError, type CatalogPrice, type PaymentMethodSummary, type PlanCatalog, type PlanPrice, WebhookSignatureError, planCatalog } from '@tp/billing';
+import { BillingEventError, BillingProviderError, type CatalogPrice, type PaymentMethodSummary, type PlanCatalog, type PlanPrice, WebhookSignatureError, planCatalog, suspensionAt } from '@tp/billing';
 import { LocalBillingProvider, SIMULATOR_TEST_ROUTING } from '@tp/billing/local';
+import { STANDING_ORDER, type StandingKind, standingKind } from '@tp/billing/standing';
 import { type ScopeClient, rolesPermit } from '@tp/db/runtime';
 import type { Cents } from '@tp/money';
 import {
   type BillingServices,
   BillingRefusedError,
   type ConsoleBillingRow,
+  type HoldingInvoice,
   type InvoiceView,
   type OrganizationBilling,
   assertManagesBilling,
@@ -30,10 +32,11 @@ import { opaqueId } from './schemas';
  * billing, and Internal console, Organizations and practices: billing status; docs/adr/0050):
  *
  * - Settings > Billing (/settings/billing): the organizations the person manages billing for, and each one's
- *   page (/settings/billing/<organization>): its plan, its payment method (ACH or card, collected by Stripe
- *   Elements, or by the local simulator's form in development), its invoices, its standing and any
- *   suspension. Organization routes: the organization's administrator (organization.billing), checked here
- *   and again by the database; no practice is in scope, so nothing here can show PHI.
+ *   page (/settings/billing/<organization>): its payment method (a bank account by ACH, preferred and shown
+ *   first, or a card, collected by Stripe Elements, or by the local simulator's form in development;
+ *   docs/adr/0073), its plan, its invoices, and its one standing (the record's status and billing's, with what to
+ *   do next; accountStanding). Organization routes: the organization's administrator (organization.billing), checked
+ *   here and again by the database; no practice is in scope, so nothing here can show PHI.
  * - The webhook (/api/billing/webhook): public, verified by Stripe's signature, recorded once by event ID.
  * - The console's billing status per organization (/console/billing), and an audit invoice issued from it
  *   (billing.manage).
@@ -87,8 +90,9 @@ export type CentsText<T> = { readonly [K in keyof T]: T[K] extends Cents ? strin
 
 export type InvoiceRow = CentsText<InvoiceView>;
 
-export interface BillingView extends Omit<OrganizationBilling, 'invoices'> {
+export interface BillingView extends Omit<OrganizationBilling, 'invoices' | 'holdingInvoice'> {
   readonly invoices: readonly InvoiceRow[];
+  readonly holdingInvoice: CentsText<HoldingInvoice> | null;
 }
 
 export interface CatalogView {
@@ -97,11 +101,15 @@ export interface CatalogView {
   readonly audit: CentsText<CatalogPrice>;
 }
 
-export type ConsoleBillingView = CentsText<ConsoleBillingRow>;
+/** A row of the console's billing status, with the one standing (standingKind) the console shows and orders by. */
+export interface ConsoleBillingView extends CentsText<ConsoleBillingRow> {
+  readonly standingKind: StandingKind;
+}
 
 function billingView(billing: OrganizationBilling): BillingView {
   return {
     ...billing,
+    holdingInvoice: billing.holdingInvoice === null ? null : { ...billing.holdingInvoice, amountRemainingCents: billing.holdingInvoice.amountRemainingCents.toString() },
     invoices: billing.invoices.map((invoice) => ({
       ...invoice,
       amountDueCents: invoice.amountDueCents.toString(),
@@ -147,23 +155,160 @@ export interface OrganizationBillingPage {
   readonly catalog: CatalogView;
   readonly provider: 'stripe' | 'local';
   readonly publishableKey: string | null;
-  /** Why new runs are refused for the organization's practices, or null. */
-  readonly suspension: string | null;
+  readonly standing: AccountStanding;
   readonly testRouting: string;
 }
 
-/** The standing as a sentence for the page, from the record's status and billing's view. */
-export function suspensionNotice(billing: Pick<OrganizationBilling, 'status' | 'standing'>): string | null {
-  if (billing.status === 'suspended') {
-    return 'A platform administrator has suspended the organization: its data stays readable, and new runs start again once it is reinstated.';
+/** A next step as one sentence: its action (a link when it has an address) and the rest of the sentence. */
+export interface NextStep {
+  readonly action: string;
+  readonly href: string | null;
+  readonly detail: string;
+}
+
+/** Billing's own hold beside a suspension or closure by PaidWhole: an unpaid invoice whose payment failed, and since when. */
+export interface BillingHold {
+  readonly kind: 'past_due' | 'suspended_nonpayment';
+  readonly since: Date | null;
+  readonly invoice: CentsText<HoldingInvoice> | null;
+}
+
+/**
+ * The organization's one standing as its administrator reads it: the badge's label and tone, the alert's title and
+ * notice (an alert while runs are stopped, the organization is suspended, or a closed organization still owes an
+ * invoice; a status while only past due or closed with nothing owed),
+ * the next steps, billing's own hold beside a suspension or closure by PaidWhole, the note above the payment and plan
+ * forms while PaidWhole's suspension lasts, and what stands in for the plan form once the organization is closed.
+ */
+export interface AccountStanding {
+  readonly kind: StandingKind;
+  readonly label: string;
+  readonly tone: 'neutral' | 'danger';
+  readonly title: string | null;
+  readonly notice: string | null;
+  readonly alert: boolean;
+  readonly nextSteps: readonly NextStep[];
+  readonly billingHold: BillingHold | null;
+  readonly formsNote: string | null;
+  readonly planRefusal: string | null;
+}
+
+/** Where a next step opens a ticket: the support form, on the Billing category (support.ts). */
+export const BILLING_TICKET = '/support?from=billing';
+
+const day = (date: Date | null): string => (date === null ? '' : date.toISOString().slice(0, 10));
+/** An instant as the pages print one (components/format.ts utc): UTC, to the minute. */
+const instant = (date: Date): string => `${date.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+const since = (date: Date | null): string => (date === null ? '' : ` since ${day(date)}`);
+const ticket = (detail: string): NextStep => ({ action: 'Open a support ticket', href: BILLING_TICKET, detail });
+const pay = (invoice: BillingHold['invoice'], detail: string): NextStep => ({
+  action: `Pay ${invoice?.number ?? 'the open invoice'}`,
+  href: invoice === null ? null : `#pay-${invoice.id}`,
+  detail,
+});
+const PAYMENT_METHOD: NextStep = { action: 'Update the payment method', href: null, detail: ' above.' };
+/** A closed organization's one step, beside its standing and where the plan form was: no path reopens one. */
+export const CLOSURE_TICKET: NextStep = ticket(' if you have a question about the closure.');
+/** A bank (ACH) payment leaves the invoice open until the bank settles it, so it counts only then (docs/adr/0073). */
+const ACH_SETTLES = 'a bank (ACH) payment counts once the bank settles it, usually within a few days';
+/** The step to pay what holds a group suspended for nonpayment: every invoice unpaid for 30 days, since paying one moves the hold to the next. */
+function restarts(count: number): string {
+  return count > 1
+    ? ` and the other ${count - 1 === 1 ? 'invoice' : `${String(count - 1)} invoices`} unpaid for 30 days below. Runs restart once all of them are paid: at once by card, or once the bank settles a bank (ACH) payment, usually within a few days.`
+    : ' below. A card payment restarts runs at once; a bank (ACH) payment restarts them once the bank settles it, usually within a few days.';
+}
+
+/**
+ * The standing from the record's status and billing's (standingKind, @tp/billing/standing), in the customer's words.
+ * The record wins: a suspended or closed organization never reads good, and an invoice unpaid beside it is named with
+ * what it holds, since reinstating the organization alone restarts nothing while billing still holds it. Closed is
+ * final (the console changes no closed status), so nothing promises a reopening, and it reads in the neutral tone
+ * unless an invoice is still owed. A firm's suspension, closure or unpaid invoice refuses no run before milestone 12
+ * (docs/adr/0050), so a firm is told nothing about runs. "Suspended by PaidWhole" carries no date: none is stored;
+ * suspendedSince is billing's (30 days after the first failed payment). Runs restart only once every invoice unpaid
+ * for 30 days is paid (holdingCount, billing_standing's own predicate).
+ */
+export function accountStanding(
+  billing: Pick<BillingView, 'kind' | 'status' | 'standing' | 'pastDueSince' | 'suspendedSince' | 'holdingInvoice' | 'holdingCount'>,
+): AccountStanding {
+  const kind = standingKind(billing.status, billing.standing, billing.kind);
+  const firm = billing.kind === 'firm';
+  const invoice = billing.holdingInvoice;
+  const several = billing.holdingCount > 1;
+  const stops = billing.pastDueSince === null ? '' : instant(suspensionAt(billing.pastDueSince));
+  const quiet = { billingHold: null, formsNote: null, planRefusal: null };
+  if (kind === 'good') {
+    return { kind, label: 'In good standing', tone: 'neutral', title: null, notice: null, alert: false, nextSteps: [], ...quiet };
   }
-  if (billing.status === 'closed') {
-    return 'The organization is closed: its data stays readable, and no new run starts.';
+  if (kind === 'past_due') {
+    const notice = firm
+      ? `An invoice is unpaid since its payment failed on ${day(billing.pastDueSince)}.`
+      : `New runs stop at ${stops}, 30 days after the failed payment, until the invoice is paid; ${ACH_SETTLES}. Your data stays readable.`;
+    return { kind, label: `Past due${since(billing.pastDueSince)}`, tone: 'danger', title: 'A payment failed', notice, alert: false, nextSteps: [PAYMENT_METHOD, pay(invoice, ' below.')], ...quiet };
   }
-  if (billing.standing === 'suspended') {
-    return 'New runs have stopped because an invoice has been unpaid for 30 days since its payment failed. Your data stays readable; runs start again as soon as it is paid.';
+  if (kind === 'suspended_nonpayment') {
+    return {
+      kind,
+      label: `Suspended for nonpayment${since(billing.suspendedSince)}`,
+      tone: 'danger',
+      title: 'New runs have stopped',
+      notice: several
+        ? `New runs have stopped because ${String(billing.holdingCount)} invoices have been unpaid for 30 days since their payments failed; your data stays readable.`
+        : 'New runs have stopped because an invoice has been unpaid for 30 days since its payment failed; your data stays readable.',
+      alert: true,
+      nextSteps: [pay(invoice, restarts(billing.holdingCount)), ticket(' if you have a question about the invoice.')],
+      ...quiet,
+    };
   }
-  return null;
+  // Suspended by PaidWhole or closed, and perhaps held by billing as well.
+  const holdKind = billing.standing === 'good' ? null : standingKind('active', billing.standing, billing.kind);
+  const billingHold = holdKind === 'past_due' || holdKind === 'suspended_nonpayment' ? { kind: holdKind, since: billing.pastDueSince, invoice } : null;
+  const paying = billingHold === null ? [] : [pay(invoice, ' below.')];
+  if (kind === 'closed') {
+    // Nothing restarts runs for a closed organization, so its unpaid invoice is named as owed, with no clause about runs.
+    const owed =
+      billingHold === null
+        ? ''
+        : several
+          ? ` ${String(billing.holdingCount)} invoices are also unpaid, the oldest since ${day(billingHold.since)}; they are still owed.`
+          : ` An invoice is also unpaid since ${day(billingHold.since)}; it is still owed.`;
+    return {
+      kind,
+      label: 'Closed',
+      tone: billingHold === null ? 'neutral' : 'danger',
+      title: 'The organization is closed',
+      notice: `${firm ? 'Its data stays readable.' : 'Its data stays readable, and no new run starts.'}${owed}`,
+      alert: billingHold !== null,
+      nextSteps: [CLOSURE_TICKET, ...paying],
+      billingHold,
+      formsNote: null,
+      planRefusal: 'A closed organization takes no new plan.',
+    };
+  }
+  const held =
+    billingHold === null
+      ? ''
+      : firm
+        ? ` An invoice is also unpaid since ${day(billingHold.since)}.`
+        : billingHold.kind === 'suspended_nonpayment'
+          ? several
+            ? ` ${String(billing.holdingCount)} invoices have also been unpaid for 30 days since their payments failed, the oldest since ${day(billingHold.since)}; new runs stay stopped until all of them are paid as well.`
+            : ` An invoice is also unpaid since ${day(billingHold.since)}; new runs stay stopped until it is paid as well.`
+          : ` An invoice is also unpaid since ${day(billingHold.since)}; if it is still unpaid at ${stops}, new runs stop then, even if PaidWhole has reinstated the organization; ${ACH_SETTLES}.`;
+  return {
+    kind,
+    label: 'Suspended by PaidWhole',
+    tone: 'danger',
+    title: firm ? 'The organization is suspended' : 'New runs have stopped',
+    notice: firm
+      ? `PaidWhole has suspended the organization.${held}`
+      : `PaidWhole has suspended the organization: new runs have stopped until PaidWhole reinstates it, and its data stays readable. Paying an invoice does not reinstate it.${held}`,
+    alert: true,
+    nextSteps: [ticket(firm ? ' to find out why.' : ' to find out why and what reinstates it.'), ...paying],
+    billingHold,
+    formsNote: 'Changing the plan or payment method does not reinstate an organization suspended by PaidWhole.',
+    planRefusal: null,
+  };
 }
 
 export const organizationBillingPage = organizationRoute({
@@ -178,13 +323,14 @@ export const organizationBillingPage = organizationRoute({
     if (billing === null) {
       throw new NotFoundError();
     }
+    const view = billingView(billing);
     return {
-      billing: billingView(billing),
+      billing: view,
       paymentMethod: await paymentMethodOnFile(billingServices(services), organizationId),
       catalog: catalogView(planCatalog()),
       provider: services.billing.kind,
       publishableKey: services.billing.publishableKey,
-      suspension: suspensionNotice(billing),
+      standing: accountStanding(view),
       testRouting: SIMULATOR_TEST_ROUTING,
     };
   },
@@ -331,8 +477,11 @@ export const consoleBillingPage = platformRoute({
   phi: false,
   permission: 'billing.manage',
   params: z.object({}),
+  // Ordered by the one standing, PaidWhole's suspensions first; within one, as billing ordered them (a stable sort).
   handle: async ({ scope }): Promise<{ readonly organizations: readonly ConsoleBillingView[]; readonly catalog: CatalogView }> => ({
-    organizations: (await consoleBillingStatus(scope.client)).map((row) => ({ ...row, openCents: row.openCents.toString() })),
+    organizations: (await consoleBillingStatus(scope.client))
+      .map((row) => ({ ...row, openCents: row.openCents.toString(), standingKind: standingKind(row.status, row.standing, row.kind) }))
+      .sort((a, b) => STANDING_ORDER.indexOf(a.standingKind) - STANDING_ORDER.indexOf(b.standingKind)),
     catalog: catalogView(planCatalog()),
   }),
   sample: { params: () => ({}) },

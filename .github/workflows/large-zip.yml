@@ -1,8 +1,8 @@
 name: large-zip
 
 # The milestone 3 done check at full size: "a 2 GB zip queues per file" (PRD 6, Intake and documents;
-# PRD 17). ci.yml (the plan's verbatim workflow) runs the same intake test on every pull request at 256
-# MiB, what its runner's minutes allow; this runs it weekly, and on request, at 2048 MiB: a stream of
+# PRD 17). ci.yml runs the same intake test on every pull request at 256 MiB, in its database shards,
+# what its runners' minutes allow; this runs it weekly, and on request, at 2048 MiB: a stream of
 # SYNTHETIC 835 entries sealed into the local store, expanded by the intake job against PostgreSQL, one
 # source_document and one parse_835 job per entry, in bounded memory. No credentials, synthetic data only.
 on:
@@ -13,22 +13,35 @@ on:
 permissions:
   contents: read
 
+# GitHub's bash with pipefail (bash --noprofile --norc -eo pipefail), as ci.yml and the release run theirs.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   large-zip:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    services:
-      postgres:
-        image: postgres:18
-        env: { POSTGRES_PASSWORD: test }
-        ports: ["5432:5432"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      # PostgreSQL from docker-compose.yml in the background, as in ci.yml's database jobs (tools/ci/postgres.sh).
+      - name: Start the database
+        run: tools/ci/postgres.sh up
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with: { node-version: 24, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      # Playwright's Chromium before any vitest run of the db project, which fails on CI without it rather than skip a
+      # printing test (tools/test/ci-chromium.ts; docs/adr/0066, Part 1).
+      - run: pnpm --filter @tp/web exec playwright install --with-deps chromium
+      - name: Wait for the database
+        run: tools/ci/postgres.sh wait
       - run: pnpm vitest run --project db apps/worker/src/intake/intake.large.db.test.ts
         env:
           DATABASE_URL: postgres://postgres:test@localhost:5432/postgres
           TP_LARGE_ZIP_MB: "2048"
+      # The database's last lines when anything failed: compose prints no container's log when the job ends.
+      - name: The database's log
+        if: failure()
+        run: docker compose logs --no-color --tail=200 postgres
