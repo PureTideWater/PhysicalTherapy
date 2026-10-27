@@ -1,11 +1,16 @@
 import { randomUUID } from 'node:crypto';
 
+import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { FormKeys } from '../../components/form-keys';
+import { Sealer } from '../auth/seal';
 import { requestAudit } from '../routes/onboarding';
 import { signInWithPassword } from '../routes/sign-in';
 import { createTicket } from '../routes/support';
-import { runAction, runSignInStep } from './next';
+import { services } from '../server/services';
+import { formActorTag, loadPage, pageFormActor, runAction, runSignInStep } from './next';
+import type { MutationResult, Outcome, Route } from './route';
 
 /**
  * What a refused form's state carries back to the browser (test matrix FRM-01, "the action's state carries no value the
@@ -20,7 +25,22 @@ vi.mock('next/headers', () => ({
   headers: () => Promise.resolve(new Headers(sent.origin === null ? {} : { origin: sent.origin, 'sec-fetch-site': 'same-origin' })),
   cookies: () => Promise.resolve({ get: () => undefined, set: () => undefined }),
 }));
-vi.mock('../server/services', () => ({ services: () => ({ origin: APP, trustedProxyHops: 0 }) }));
+vi.mock('../server/services', async () => {
+  const { randomBytes } = await import('node:crypto');
+  const { Sealer: Keyed } = await import('../auth/seal');
+  const sealer = new Keyed(randomBytes(32));
+  return { services: () => ({ origin: APP, trustedProxyHops: 0, sealer }) };
+});
+// React's cache outside a server render calls through each time; here, as in a page's render, one request is one object.
+vi.mock('react', async (original) => {
+  return {
+    ...(await original<object>()),
+    cache: (make: () => unknown) => {
+      let made: { readonly value: unknown } | undefined;
+      return () => (made ??= { value: make() }).value;
+    },
+  };
+});
 
 /** A form's data from its fields. */
 function formOf(fields: Record<string, string>): FormData {
@@ -97,5 +117,46 @@ describe('a refused form’s state (FRM-01: it carries no value the person typed
     for (const value of typedValues(fields)) {
       expect(carried).not.toContain(value);
     }
+  });
+});
+
+/** A route whose outcome is given: the adapters' mapping, without a database. */
+function answering<R>(outcome: Outcome<R>): Route<R> {
+  return { invoke: () => Promise.resolve(outcome) } as unknown as Route<R>;
+}
+
+describe('a request key used before (U-UX-4)', () => {
+  it('says the form was already sent and flags it, so the summary titles it "Already sent", never "Not done"', async () => {
+    const state = await runAction(answering<MutationResult>({ status: 'duplicate' }), formOf(TICKET));
+    expect(state).toEqual({ error: 'This form was already sent, so nothing new was saved. Reload the page to see the result.', duplicate: true });
+  });
+});
+
+describe('the mark of the person a page’s forms are rendered for (S-SEC-2; docs/adr/0077, D10)', () => {
+  const email = 'Synthetic.Person@Example.test';
+
+  it('is the same for every session of one person, another for anyone else, and holds no part of the email', () => {
+    const { sealer } = services();
+    const tag = formActorTag(sealer, email);
+    expect(formActorTag(sealer, ' synthetic.person@example.test ')).toBe(tag);
+    expect(formActorTag(sealer, 'synthetic.other@example.test')).not.toBe(tag);
+    // Keyed on the server: another key, another mark.
+    expect(formActorTag(new Sealer(new Uint8Array(32).fill(7)), email)).not.toBe(tag);
+    expect(tag).toMatch(/^[\w-]{43}$/);
+    for (const part of ['synthetic', 'person', 'example']) {
+      expect(tag.toLowerCase()).not.toContain(part);
+    }
+  });
+
+  it('is set by loadPage from the page’s shell and rendered by FormKeys on an element that is never posted', async () => {
+    const shell = { email, practices: [], currentPracticeId: null, platformRoles: [] };
+    await loadPage(answering({ status: 'ok', data: {}, shell }), {});
+    const tag = formActorTag(services().sealer, email);
+    expect(pageFormActor()).toBe(tag);
+    const html = renderToStaticMarkup(await FormKeys());
+    expect(html).toContain(`<span hidden="" data-form-actor="${tag}"></span>`);
+    // Not a field: only the request key and the CSRF token have names.
+    expect([...html.matchAll(/name="([^"]+)"/g)].map((match) => match[1])).toEqual(['requestKey', 'csrfToken']);
+    expect(html.toLowerCase()).not.toContain('synthetic.person');
   });
 });

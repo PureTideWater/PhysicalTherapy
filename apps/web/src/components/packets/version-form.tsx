@@ -2,12 +2,12 @@
 
 import type { PacketContent } from '@tp/packets';
 import { Button } from '@tp/ui';
-import { type FormEvent, type ReactNode, useRef, useState } from 'react';
+import { type FormEvent, Fragment, type ReactNode, useRef, useState } from 'react';
 
 import type { ActionState } from '../../lib/http/next';
 import { RefreshAfterRefusal } from '../action-form';
 import { CheckboxGroup, SelectField } from '../field';
-import { FormIssues, PendingStatus, RefusalSummary, useGuardedSubmit } from '../form-issues';
+import { FormIssues, PendingStatus, RefusalSummary, useClearedForAnotherPerson, useGuardedSubmit } from '../form-issues';
 import { NarrativeEditor } from './narrative-editor';
 
 /**
@@ -23,7 +23,10 @@ import { NarrativeEditor } from './narrative-editor';
  * It submits as ActionForm does (docs/adr/0077): from onSubmit, so a refusal keeps the narrative, the prompt-pay
  * state and the ticks, with one guard across both actions; the submitter chooses the action (its data-intent), and
  * the buttons keep their formAction and intent, so the post without JavaScript still reaches the right one. A refusal
- * shows the shared summary first in the form, naming each field by its label, and marks the fields.
+ * shows the shared summary first in the form, naming each field by its label, and marks the fields. A press whose
+ * connection dropped pins its request key for the next press of either button, so the export status's refresh beside
+ * this form never turns a retry into a second version or a second model call; and a refresh that shows another person
+ * signed in clears the narrative, the state and the ticks (useClearedForAnotherPerson).
  */
 
 export type VersionIntent = 'save' | 'code_draft' | 'model_draft';
@@ -92,10 +95,12 @@ export function VersionForm({
   readonly submits: readonly VersionSubmit[];
   readonly model: ModelDraftGroup | null;
 }) {
-  // One guard across both actions: a press for either sends nothing while the other is out.
+  // One guard across both actions: a press for either sends nothing while the other is out. One pinned request key too:
+  // a retry by either button after a dropped press sends the key that press carried.
   const inFlight = useRef(false);
-  const write = useGuardedSubmit(writeAction, { inFlight });
-  const draft = useGuardedSubmit(modelAction, { inFlight });
+  const heldKey = useRef<string | null>(null);
+  const write = useGuardedSubmit(writeAction, { inFlight, heldKey });
+  const draft = useGuardedSubmit(modelAction, { inFlight, heldKey });
   const formRef = useRef<HTMLFormElement>(null);
   const [clicked, setClicked] = useState<VersionIntent | null>(null);
   const pending = write.pending || draft.pending;
@@ -103,6 +108,7 @@ export function VersionForm({
   // React replayed before the page hydrated), whichever action answered: the model's button posts to its own.
   const shown = clicked === 'model_draft' || (clicked === null && draft.state.error !== undefined && write.state.error === undefined) ? draft : write;
   const pressed = [...submits, ...(model?.submit === null || model?.submit === undefined ? [] : [model.submit])].find((submit) => submit.intent === clicked);
+  const { shown: state, generation } = useClearedForAnotherPerson(formRef, shown.state, heldKey);
   function onSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     if (inFlight.current) {
@@ -116,30 +122,32 @@ export function VersionForm({
   }
   const button = (submit: VersionSubmit) => <Submit key={submit.intent} submit={submit} formAction={submit.intent === 'model_draft' ? draft.formAction : undefined} pending={pending} />;
   return (
-    <FormIssues state={shown.state}>
+    <FormIssues state={state}>
       <form ref={formRef} action={write.formAction} onSubmit={onSubmit} className="flex flex-col gap-4" aria-label="Write a version">
-        <RefusalSummary state={shown.state} fromBrowser={shown.fromBrowser} submit={pressed?.label ?? submits[0]?.label ?? ''} formRef={formRef} />
-        {keys}
-        <input type="hidden" name="practiceId" value={practiceId} />
-        <input type="hidden" name="caseId" value={caseId} />
-        <input type="hidden" name="basedOnVersionId" value={basedOnVersionId ?? ''} />
-        <div className="max-w-xs">
-          <SelectField
-            label="Prompt-pay state (interest, its own line)"
-            name="promptPayState"
-            id="prompt-pay-state"
-            defaultValue={promptPay.selected}
-            options={[{ value: '', label: 'None: no interest line' }, ...promptPay.states.map((code) => ({ value: code, label: code }))]}
-          />
-        </div>
-        {attachable.length === 0 ? null : (
-          <CheckboxGroup
-            legend="Attach to the evidence list"
-            issueKey="attachments"
-            options={attachable.map((document) => ({ name: `attach:${document.id}`, value: 'on', label: document.label, defaultChecked: document.checked }))}
-          />
-        )}
-        {narrative === null ? null : <NarrativeEditor name="narrative" initial={narrative.initial} content={narrative.content} maxLength={narrative.maxLength} />}
+        <RefusalSummary state={state} fromBrowser={shown.fromBrowser} submit={pressed?.label ?? submits[0]?.label ?? ''} formRef={formRef} />
+        <Fragment key={generation}>
+          {keys}
+          <input type="hidden" name="practiceId" value={practiceId} />
+          <input type="hidden" name="caseId" value={caseId} />
+          <input type="hidden" name="basedOnVersionId" value={basedOnVersionId ?? ''} />
+          <div className="max-w-xs">
+            <SelectField
+              label="Prompt-pay state (interest, its own line)"
+              name="promptPayState"
+              id="prompt-pay-state"
+              defaultValue={promptPay.selected}
+              options={[{ value: '', label: 'None: no interest line' }, ...promptPay.states.map((code) => ({ value: code, label: code }))]}
+            />
+          </div>
+          {attachable.length === 0 ? null : (
+            <CheckboxGroup
+              legend="Attach to the evidence list"
+              issueKey="attachments"
+              options={attachable.map((document) => ({ name: `attach:${document.id}`, value: 'on', label: document.label, defaultChecked: document.checked }))}
+            />
+          )}
+          {narrative === null ? null : <NarrativeEditor name="narrative" initial={narrative.initial} content={narrative.content} maxLength={narrative.maxLength} />}
+        </Fragment>
         <div className="flex flex-wrap items-center gap-3">
           {submits.map(button)}
           <PendingStatus pending={pending && clicked !== 'model_draft'} />

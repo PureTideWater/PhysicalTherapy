@@ -8,7 +8,7 @@ import { type FormEvent, type ReactNode, useActionState, useEffect, useRef, useS
 import type { ActionState } from '../../lib/http/next';
 import type { ExportAttemptWords } from '../../lib/packets/export-attempts';
 import { RefreshAfterRefusal } from '../action-form';
-import { PendingStatus, RefusalLead } from '../form-issues';
+import { PendingStatus, RefusalLead, SUMMARY_TITLES, usePersonChange } from '../form-issues';
 
 /**
  * A packet version's export, as its packet page shows it (the best-option audit's item #26, the founder's ruling
@@ -20,7 +20,9 @@ import { PendingStatus, RefusalLead } from '../form-issues';
  * a request is on its way the button keeps focus and its words (aria-disabled, a ref guarding a second press) and a
  * status beside it says "Working…" (docs/adr/0077, decision D5). Its fields are hidden: nothing typed to keep. A
  * request refused because the page was out of date (`stale`) reads the page again, as ActionForm does (D10), and says
- * so in the same words: a press made on this page is invited again, any other post is not.
+ * so in the same words: a press made on this page is invited again, any other post is not, nor one made before the
+ * page showed another person signed in (usePersonChange): a press now would export as them. A request whose key was
+ * used before is "Already sent", as the shared summary titles it.
  */
 
 export function ExportStatus({ words, checkAgainHref, refreshMs }: { readonly words: ExportAttemptWords; readonly checkAgainHref: string; readonly refreshMs: number }) {
@@ -79,6 +81,9 @@ export function ExportRequestForm({
       inFlight.current = false;
     }
   }, [pending]);
+  usePersonChange(formRef, () => {
+    setPressedHere(false);
+  });
   function onSubmit(event: FormEvent<HTMLFormElement>): void {
     if (inFlight.current) {
       event.preventDefault();
@@ -106,8 +111,8 @@ export function ExportRequestForm({
           </AlertDescription>
         </Alert>
       ) : state.error === undefined ? null : (
-        <Alert variant="destructive" data-state="error">
-          <AlertTitle>Not done</AlertTitle>
+        <Alert variant="destructive" data-state={state.duplicate === true ? 'duplicate' : 'error'}>
+          <AlertTitle>{SUMMARY_TITLES[state.duplicate === true ? 'duplicate' : 'error']}</AlertTitle>
           <AlertDescription>
             {/* No field of this form is the person's to fill (none placed): an invalid request's messages stand alone (#50's rule). */}
             <RefusalLead state={state} placed={0} fromBrowser={pressedHere} submit="Export PDF and CSV" />

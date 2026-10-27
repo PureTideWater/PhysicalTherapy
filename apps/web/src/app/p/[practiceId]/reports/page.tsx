@@ -94,7 +94,7 @@ export default async function ReportsPage(props: Props) {
                 <ActionForm action={generateReportFormAction} submit="Generate the report" className="flex max-w-xl flex-col gap-3">
                   <FormKeys />
                   <input type="hidden" name="practiceId" value={practiceId} />
-                  <SelectField id="report-run" label="Pricing run" name="runId" options={runs.map((run) => ({ value: run.id, label: `${run.periodFrom} to ${run.periodTo} (release ${String(run.releaseNo)})` }))} required />
+                  <SelectField id="report-run" label="Pricing run" name="runId" options={runs.map((run) => ({ value: run.id, label: `${run.periodFrom} to ${run.periodTo} (release ${String(run.releaseNo)})` }))} required showChosen />
                 </ActionForm>
               )}
             </CardContent>

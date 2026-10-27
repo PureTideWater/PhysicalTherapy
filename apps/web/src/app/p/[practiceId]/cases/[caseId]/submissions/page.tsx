@@ -299,6 +299,7 @@ export default async function SubmissionsPage(props: Props) {
                     value: document.id,
                     label: `${KIND_TEXT[document.kind] ?? document.kind}, uploaded ${utc(document.uploadedAt)}${document.sha256 === null ? '' : `, SHA-256 ${document.sha256.slice(0, 12)}…`}`,
                   }))}
+                  showChosen
                 />
                 <div className="flex flex-wrap items-end gap-3">
                   <SelectField

@@ -78,6 +78,17 @@
   textarea {
     @apply border-input;
   }
+  /*
+   * A select is no wider than its box, and a box holding one may shrink to its column (a flex or grid item otherwise
+   * keeps its longest option's width), so a long option never pushes a page past a phone's width (ADR 0056), at 16 px
+   * below md as at 14 px. SelectField does this by its classes; this reaches hand-written selects. A class still wins.
+   */
+  select {
+    max-width: 100%;
+  }
+  :where(:has(> select)) {
+    min-width: 0;
+  }
 }
 
 /*
@@ -122,9 +133,12 @@ html {
 
 /*
  * A form laid out as a row wraps while it shows a refusal, so its summary takes a line of its own above the controls
- * (the summary spans a grid's columns by its own classes). A column form has nothing to wrap.
+ * (the summary spans a grid's columns by its own classes, and a grid ignores this). Never a column form: a column that
+ * wraps sizes its line to its widest item's content, not to the form, so a select with a long option no longer shrinks
+ * to the form and pushes the page past a phone's width. Every column form says flex-col, and none becomes a row at a
+ * breakpoint.
  */
-form:has(> [data-slot='refusal-summary']) {
+form:not(.flex-col, .flex-col-reverse):has(> [data-slot='refusal-summary']) {
   flex-wrap: wrap;
 }
 

@@ -5,7 +5,7 @@
   "assertion": "The post reaches the action once; the page shows the summary and each field's own message, and no key; a success redirects with its notice",
   "synthetic": true,
   "completesIn": 1,
-  "assertedBy": ["apps/web/e2e/forms-keep-input.spec.ts"],
+  "assertedBy": ["apps/web/src/components/fields.test.tsx","apps/web/e2e/forms-keep-input.spec.ts"],
   "codeListRelease": null,
   "noFileReason": "The public request form is posted from a browser with scripts off; no file.",
   "files": [],

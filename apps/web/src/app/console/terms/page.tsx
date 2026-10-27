@@ -63,9 +63,9 @@ export default async function ConsoleTermsPage() {
         <CardContent>
           <ActionForm action={publishTermsAction} submit="Publish version" className="grid max-w-xl gap-3">
             <FormKeys />
-            <Field label="Version" name="version" required maxLength={40} hint="Letters, digits and . _ - (for example 2026-11)." />
-            <Field label="Document reference" name="documentRef" required maxLength={200} hint="Where the signed-off document is kept." />
-            <Field label="SHA-256" name="sha256" required pattern="[0-9a-fA-F]{64}" hint="The document's SHA-256, 64 hexadecimal characters." />
+            <Field label="Version" name="version" required maxLength={40} hint="Letters, digits, dots, underscores and hyphens, such as 2026-11." />
+            <Field label="Document reference" name="documentRef" required maxLength={200} hint="Where the signed-off document is kept: letters, digits, colons, slashes, dots, underscores and hyphens, such as terms/2026-11." />
+            <Field label="SHA-256" name="sha256" required pattern="[0-9a-fA-F]{64}" hint="The document’s SHA-256, 64 hexadecimal characters." />
           </ActionForm>
         </CardContent>
       </Card>

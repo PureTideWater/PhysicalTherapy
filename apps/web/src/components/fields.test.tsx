@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import { CheckboxField, CheckboxGroup, Field, SelectField, TextAreaField } from './field';
 import { FieldError, FormIssuesContext, PendingStatus, RefusalSummary, type RefusalSummaryProps } from './form-issues';
@@ -14,8 +14,8 @@ import { PasswordField } from './password-field';
 
 type Issues = readonly { readonly field: string; readonly message: string }[];
 
-function inForm(node: ReactNode, issues: Issues = [], refused = issues.length > 0): string {
-  return renderToStaticMarkup(<FormIssuesContext value={{ issues, refused }}>{node}</FormIssuesContext>);
+function inForm(node: ReactNode, issues: Issues = [], refused = issues.length > 0, locked = false): string {
+  return renderToStaticMarkup(<FormIssuesContext value={{ issues, refused, locked }}>{node}</FormIssuesContext>);
 }
 
 /** An element's attribute, by the element's id. */
@@ -215,6 +215,27 @@ describe('PasswordField (FRM-07)', () => {
     }
   });
 
+  it('holds its type, its secret mark and the spelling service off, whatever a caller passes', () => {
+    // A caller cannot write them: the props type leaves them out (and the ref the submit-time hide needs).
+    expectTypeOf<ComponentProps<typeof PasswordField>>().not.toHaveProperty('type');
+    expectTypeOf<ComponentProps<typeof PasswordField>>().not.toHaveProperty('spellCheck');
+    expectTypeOf<ComponentProps<typeof PasswordField>>().not.toHaveProperty('autoCorrect');
+    expectTypeOf<ComponentProps<typeof PasswordField>>().not.toHaveProperty('autoCapitalize');
+    expectTypeOf<ComponentProps<typeof PasswordField>>().not.toHaveProperty('ref');
+    // Nor does a cast past the type undo them: the component writes them after the caller's props.
+    const forced = { type: 'text', 'data-secret': undefined, spellCheck: true, autoCorrect: 'on', autoCapitalize: 'sentences' } as object;
+    const html = inForm(<PasswordField label="New password" name="password" showName=" new password" autoComplete="new-password" {...forced} />);
+    for (const [name, value] of [
+      ['type', 'password'],
+      ['data-secret', ''],
+      ['spellcheck', 'false'],
+      ['autocorrect', 'off'],
+      ['autocapitalize', 'none'],
+    ] as const) {
+      expect(attribute(html, 'field-password', name), name).toBe(value);
+    }
+  });
+
   it('renders Show hidden until mounted, named by its words and never an aria-label', () => {
     const html = inForm(field);
     expect(html).toMatch(/<button [^>]*type="button" aria-pressed="false" aria-controls="field-password" hidden="">Show<span class="sr-only"> new password<\/span><\/button>/);
@@ -225,6 +246,9 @@ describe('PasswordField (FRM-07)', () => {
     const html = inForm(field, [{ field: 'password', message: 'it still needs an uppercase letter, a digit and a symbol' }]);
     expect(attribute(html, 'field-password', 'aria-describedby')).toBe('field-password-error field-password-emptied field-password-hint');
     expect(html).toContain('<p id="field-password-emptied" data-slot="emptied-note" class="text-sm text-muted-foreground">Emptied for your security: type it again.</p>');
+    // A locked account's note asks for nothing: no password opens it.
+    const locked = inForm(field, [], true, true);
+    expect(locked).toContain('<p id="field-password-emptied" data-slot="emptied-note" class="text-sm text-muted-foreground">Emptied for your security.</p>');
   });
 });
 

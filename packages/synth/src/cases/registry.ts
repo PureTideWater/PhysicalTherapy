@@ -648,6 +648,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   // The forms of the UX baseline review's first pull request (docs/adr/0077).
   'FRM-01': none(1, 'The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.', [
     'apps/web/src/components/action-form.browser.test.tsx',
+    'apps/web/src/components/screening/split-form.browser.test.tsx',
     'apps/web/src/lib/http/next.test.ts',
     'apps/web/e2e/forms-keep-input.spec.ts',
     'apps/web/e2e/triage.spec.ts',
@@ -663,14 +664,18 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/e2e/forms-keep-input.spec.ts',
   ]),
   'FRM-05': none(1, 'The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.', ['apps/web/src/components/action-form.browser.test.tsx', 'apps/web/e2e/forms-keep-input.spec.ts']),
-  'FRM-06': none(1, 'The public request form is posted from a browser with scripts off; no file.', ['apps/web/e2e/forms-keep-input.spec.ts']),
+  'FRM-06': none(1, 'The public request form is posted from a browser with scripts off; no file.', ['apps/web/src/components/fields.test.tsx', 'apps/web/e2e/forms-keep-input.spec.ts']),
   'FRM-07': none(1, 'Synthetic personas sign in through the local identity provider; no file.', [
     'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
     'apps/web/src/lib/http/next.test.ts',
     'apps/web/src/components/action-form.browser.test.tsx',
+    'apps/web/src/components/fields.test.tsx',
     'apps/web/e2e/forms-keep-input.spec.ts',
   ]),
-  'FRM-08': none(1, 'The public request form and a synthetic practice’s form are measured and scanned in the browser; no file.', ['apps/web/e2e/forms-keep-input.spec.ts']),
+  'FRM-08': none(1, 'The public request form, synthetic practices’ forms and the console’s status page are measured and scanned in the browser; no file.', [
+    'apps/web/e2e/forms-keep-input.spec.ts',
+    'apps/web/e2e/packets.spec.ts',
+  ]),
 };
 
 export interface CaseDefinition {

@@ -73,7 +73,7 @@ export default async function CasesPage(props: Props) {
               <ActionForm action={triageRunFormAction} submit="Triage the run" className="flex max-w-xl flex-col gap-3">
                 <FormKeys />
                 <input type="hidden" name="practiceId" value={practiceId} />
-                <SelectField id="triage-run" label="Pricing run" name="runId" options={runs.map((run) => ({ value: run.id, label: `${run.periodFrom} to ${run.periodTo} (release ${String(run.releaseNo)})` }))} required />
+                <SelectField id="triage-run" label="Pricing run" name="runId" options={runs.map((run) => ({ value: run.id, label: `${run.periodFrom} to ${run.periodTo} (release ${String(run.releaseNo)})` }))} required showChosen />
               </ActionForm>
             )}
           </CardContent>

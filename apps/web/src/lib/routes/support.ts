@@ -236,19 +236,20 @@ export const supportRequestPage = selfRoute({
  * A ticket names no patient (PRD 19: "Support staff never see PHI without a break-glass grant"; docs/adr/0055): the
  * desk reads it with no support grant, so its text is refused when it holds an identifier's shape, a date in words or
  * a birth date, an identifier of letters and digits, or a name after a word that introduces a person. A name written
- * with no such word cannot be told from other words; the form asks for screens and opaque IDs only.
+ * with no such word cannot be told from other words; the form asks for screens and opaque IDs only. Each field that
+ * holds one is named at once, so a person who wrote a patient into both fixes both before the next press.
  */
-function screened(field: string, text: string): string {
-  if (writtenPhiFindings(text).length > 0) {
-    throw new InputError([
-      {
+function screened(fields: Readonly<Record<'subject' | 'message', string>>): void {
+  const refused = Object.entries(fields).filter(([, text]) => writtenPhiFindings(text).length > 0);
+  if (refused.length > 0) {
+    throw new InputError(
+      refused.map(([field]) => ({
         field,
         message:
-          'a ticket takes no patient information: remove names, dates of birth, member IDs, claim numbers, other identifiers and phone numbers, and name the screen and the record’s opaque ID instead',
-      },
-    ]);
+          'a ticket takes no patient information: remove names, dates of birth, member IDs, claim numbers, other identifiers and phone numbers, and name the screen and the record’s ID instead',
+      })),
+    );
   }
-  return text;
 }
 
 export const createTicket = selfRoute({
@@ -266,11 +267,10 @@ export const createTicket = selfRoute({
   }),
   audit: { action: 'support_ticket_opened', objectType: 'support_ticket' },
   handle: async ({ scope, input }): Promise<MutationResult> => {
-    const subject = screened('subject', input.subject);
-    const message = screened('message', input.message);
+    screened({ subject: input.subject, message: input.message });
     const { rows } = await scope.client.query<{ id: string; number: string }>(
       'INSERT INTO support_ticket (requester_id, screen, category, subject, message) VALUES (app_actor_id(), $1, $2, $3, $4) RETURNING id, number',
-      [input.screen, input.category, subject, message],
+      [input.screen, input.category, input.subject, input.message],
     );
     const ticket = rows[0];
     if (ticket === undefined) {

@@ -65,7 +65,7 @@ export default async function ConsoleStatusPage() {
                     {component.name} <Badge variant={component.status === 'operational' ? 'outline' : 'destructive'}>{STATUS_LABELS[component.status]}</Badge>
                   </td>
                   <td className="py-2">
-                    <ActionForm action={setComponentStatusAction} submit="Set" variant="outline" className="flex items-end gap-2">
+                    <ActionForm action={setComponentStatusAction} submit="Set" variant="outline" className="flex flex-wrap items-end gap-2">
                       <FormKeys />
                       <input type="hidden" name="component" value={component.key} />
                       <SelectField label="Status" id={`status-${component.key}`} name="status" options={statuses} defaultValue={component.status} />

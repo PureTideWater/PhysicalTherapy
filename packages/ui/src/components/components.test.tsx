@@ -37,6 +37,18 @@ describe('Button', () => {
     expect(html).toContain('h-8');
   });
 
+  it('looks pressed while an outline toggle is pressed, with the same words (a password’s Show)', () => {
+    const html = renderToStaticMarkup(
+      <Button type="button" variant="outline" size="sm" aria-pressed>
+        Show
+      </Button>,
+    );
+    expect(html).toContain('aria-pressed:border-foreground');
+    expect(html).toContain('aria-pressed:bg-secondary');
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toMatch(/>Show<\/button>$/);
+  });
+
   it('renders its child element when asChild is set', () => {
     const html = renderToStaticMarkup(
       <Button asChild>

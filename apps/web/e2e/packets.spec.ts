@@ -42,8 +42,9 @@ import { holdExports, startLocalWorker } from './worker';
  * chosen and naming the amount (FRM-01); recorded as a partial acceptance of 60.00, it
  * moves no money by itself; the next reconcile (queued as the daily schedule queues it) approves it in
  * the recovery ledger, and the dashboard shows it as payer approved, never as recovered. The adjusted
- * remittance, posting, deposit, recovered and recoupment steps of J10 are e2e/reconciliation.spec.ts.
- * Synthetic data only.
+ * remittance, posting, deposit, recovered and recoupment steps of J10 are e2e/reconciliation.spec.ts. At a phone's
+ * width (FRM-08), Cases and Coverage's letter form show a choice their select cuts short whole under it, and neither
+ * they nor the refused response form scroll sideways. Synthetic data only.
  */
 
 const REMITTANCE = readFileSync(path.resolve(import.meta.dirname, '../../../fixtures/synthetic/CAS-08/remit.835'));
@@ -432,6 +433,34 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
       await expect(page.getByRole('region', { name: 'Version' }).locator('[data-reference]')).toHaveAttribute('data-reference', reference);
     });
 
+    await test.step('at 390 px a select that cuts its choice short shows it whole under it and follows a new choice, and neither Cases nor Coverage’s letter form scrolls sideways (FRM-08)', async () => {
+      await page.goto(`/p/${practiceId}/cases`);
+      const triage = page.getByRole('region', { name: 'Triage a run' });
+      const shown = triage.locator('[data-slot="chosen-text"]');
+      // At a desktop's width the run's name fits its select, so no line repeats it.
+      await expect(shown).toHaveCount(0);
+      await page.setViewportSize({ width: 390, height: 844 });
+      try {
+        const run = (await triage.getByLabel('Pricing run', { exact: true }).locator('option:checked').textContent()) ?? '';
+        // The release is what tells two runs of one period apart, and 16 px cuts it off the select.
+        expect(run).toMatch(/ \(release \d+\)$/);
+        await expect(shown).toHaveText(run);
+        await atPhoneWidth(page, 'Cases');
+        await page.goto(`/p/${practiceId}/coverage`);
+        const letter = page.getByRole('form', { name: 'Letter' });
+        const contract = letter.getByLabel('The payer’s contract (optional)', { exact: true });
+        const chosen = letter.locator('[data-slot="chosen-text"]');
+        await expect(chosen).toHaveCount(0);
+        await contract.selectOption({ label: 'SYNTHETIC FIXED SCHEDULE AGREEMENT' });
+        await expect(chosen).toHaveText('SYNTHETIC FIXED SCHEDULE AGREEMENT');
+        await contract.selectOption({ label: 'None named' });
+        await expect(chosen).toHaveCount(0);
+        await atPhoneWidth(page, 'Coverage, its letter form');
+      } finally {
+        await page.setViewportSize({ width: 1280, height: 720 });
+      }
+    });
+
     await test.step('a partial acceptance with no amount is refused and keeps its response (FRM-01); the payer’s letter is recorded as a partial acceptance; recording moves no money, and the next reconcile approves it (J10, LED-01)', async () => {
       await withWorker(async () => {
         await approver.goto(`/p/${practiceId}/contracts`);
@@ -455,6 +484,9 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
       await expect(amount).toHaveAttribute('aria-invalid', 'true');
       await expect(amount).toBeFocused();
       await expect(approver.locator('[data-notice="recorded"]')).toHaveCount(0);
+      // At a phone's width the refused column form stays inside the page: the Document select, whose choice holds a
+      // date and a SHA-256, shrinks to the form instead of widening it (FRM-08).
+      await atPhoneWidth(approver, 'Log a payer response, refused');
       await amount.fill('60.00');
       await form.getByRole('button', { name: 'Record the response' }).click();
       await expect(approver.locator('[data-notice="recorded"]')).toBeVisible();

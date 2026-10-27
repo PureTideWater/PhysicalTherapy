@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 
 import { cookies, headers } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
+import { cache } from 'react';
 
+import type { Sealer } from '../auth/seal';
 import type { StepResult } from '../routes/sign-in';
 import { services } from '../server/services';
 import { formInput } from './form';
@@ -79,6 +81,29 @@ function guardMessage(outcome: Outcome<unknown>): string | undefined {
   return undefined;
 }
 
+/**
+ * Who a page's forms were rendered for (docs/adr/0077, D10). A page read again in place (a page out of date, the
+ * export's status, an upload) renders for whoever is signed in now, and someone else may have signed in from another
+ * tab of the same browser: a form that sees the mark change clears what was typed, so one person's words are never
+ * sent under another's name. The mark is an HMAC of the person's email under the server's key: the same for every
+ * session of theirs (signing in again changes nothing), another for anyone else. It is opaque (never the email or an
+ * id a route reads), never a field (FormKeys renders it on an element that is not posted), and never logged.
+ */
+const FORM_ACTOR = 'form-actor';
+
+/** The request's mark: one object per server render (React's cache), which loadPage sets and FormKeys reads. */
+const pageMark = cache((): { tag: string | undefined } => ({ tag: undefined }));
+
+/** The mark of the person whose email this is. */
+export function formActorTag(sealer: Sealer, email: string): string {
+  return sealer.sign(FORM_ACTOR, email.trim().toLowerCase()).toString('base64url');
+}
+
+/** The mark of the person this request's page renders for; undefined with no one signed in, or outside a page. */
+export function pageFormActor(): string | undefined {
+  return pageMark().tag;
+}
+
 export type PageResult<R> =
   | { readonly kind: 'ok'; readonly data: R; readonly shell: Shell | undefined }
   | { readonly kind: 'forbidden'; readonly message: string; readonly roles: readonly string[]; readonly shell: Shell | undefined };
@@ -95,6 +120,11 @@ export async function loadPage<R>(route: Route<R>, props: { readonly params?: Pa
   const signIn = signInFor(outcome);
   if (signIn !== undefined) {
     redirect(signIn);
+  }
+  const shell = outcome.status === 'ok' || outcome.status === 'forbidden' ? outcome.shell : undefined;
+  if (shell !== undefined) {
+    // Whom the page's forms are rendered for, as the opaque mark FormKeys renders (pageFormActor).
+    pageMark().tag = formActorTag(services().sealer, shell.email);
   }
   if (outcome.status === 'ok') {
     return { kind: 'ok', data: outcome.data, shell: outcome.shell };
@@ -129,6 +159,8 @@ export interface ActionState {
   readonly locked?: boolean;
   /** The page's CSRF token or request key was out of date: the form reads the page again and keeps what was typed. */
   readonly stale?: boolean;
+  /** The request key was used before: an earlier post with it saved, and this one did nothing (the form says "Already sent"). */
+  readonly duplicate?: boolean;
 }
 
 /** The lead of an invalid form; the browser says "field" for one field it places (summaryLead). */
@@ -202,7 +234,8 @@ export async function runAction(route: Route<MutationResult>, form: FormData, pa
   if (outcome.status === 'suspended') {
     return { error: `Not started: ${outcome.reason}.` };
   }
-  return { error: 'This form was already submitted. Reload the page to see the result.' };
+  // The one outcome left: the request key was used before (invoke.ts), so an earlier post with it saved.
+  return { error: 'This form was already sent, so nothing new was saved. Reload the page to see the result.', duplicate: true };
 }
 
 /** Runs a sign-in step from a form: on to the next step, or the step's error. */

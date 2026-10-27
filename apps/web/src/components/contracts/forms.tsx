@@ -47,7 +47,7 @@ export function TagForm({
       <input type="hidden" name="documentId" value={document.id} />
       {fixedContract === undefined ? (
         <>
-          <SelectField label="Payer" name="payerId" id={id('payer')} required options={payers.map((payer) => ({ value: payer.id, label: payer.name }))} />
+          <SelectField label="Payer" name="payerId" id={id('payer')} required options={payers.map((payer) => ({ value: payer.id, label: payer.name }))} showChosen />
           <SelectField
             label="Contract"
             name="contractId"
@@ -56,6 +56,7 @@ export function TagForm({
               { value: '', label: 'A new contract with this payer' },
               ...contracts.map((contract) => ({ value: contract.id, label: `${contract.title} (${payers.find((payer) => payer.id === contract.payerId)?.name ?? 'its payer'})` })),
             ]}
+            showChosen
           />
           <Field label="Title of a new contract" name="title" id={id('title')} maxLength={200} hint="As the document names the agreement." />
         </>

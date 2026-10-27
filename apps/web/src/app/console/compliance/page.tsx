@@ -183,12 +183,12 @@ export default async function CompliancePage(props: { readonly searchParams: Pro
         <CardContent>
           <ActionForm action={recordEvidenceAction} submit="Record" className="grid max-w-xl gap-3">
             <FormKeys />
-            <SelectField label="What" name="kind" options={recordKinds} />
-            <SelectField label="Policy (for an approval)" name="policy" options={[{ value: '', label: '—' }, ...policies.map((policy) => ({ value: policy.id, label: `${policy.title} ${policy.version}` }))]} />
-            <SelectField label="Workforce member (for an attestation or the security official)" name="member" options={[{ value: '', label: '—' }, ...workforce.map((member) => ({ value: member.userId, label: `${member.email} (${roleNames(member.roles)})` }))]} />
+            <SelectField label="What" name="kind" options={recordKinds} showChosen />
+            <SelectField label="Policy (for an approval)" name="policy" options={[{ value: '', label: '—' }, ...policies.map((policy) => ({ value: policy.id, label: `${policy.title} ${policy.version}` }))]} showChosen />
+            <SelectField label="Workforce member (for an attestation or the security official)" name="member" options={[{ value: '', label: '—' }, ...workforce.map((member) => ({ value: member.userId, label: `${member.email} (${roleNames(member.roles)})` }))]} showChosen />
             <Field label="Date it happened" name="occurredOn" type="date" required />
             <Field label="Document reference" name="documentRef" required maxLength={200} />
-            <Field label="SHA-256" name="sha256" required pattern="[0-9a-fA-F]{64}" hint="The document's SHA-256, 64 hexadecimal characters." />
+            <Field label="SHA-256" name="sha256" required pattern="[0-9a-fA-F]{64}" hint="The document’s SHA-256, 64 hexadecimal characters." />
           </ActionForm>
         </CardContent>
       </Card>

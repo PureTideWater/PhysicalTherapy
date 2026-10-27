@@ -8,10 +8,16 @@ import { type Harness, chromiumInstalled, startHarness } from './test-support/br
  * A refused form in a real browser (test matrix FRM-01, FRM-03, FRM-04, FRM-05 and FRM-07; docs/adr/0077), through the
  * in-repo harness (test-support/browser.ts): the real ActionForm and fields (useGuardedSubmit, RefusalSummary,
  * FormIssues, PendingStatus) and the real stylesheet, with in-memory actions the test scripts and a stand-in router
- * that counts refreshes. Synthetic values only.
+ * that counts refreshes and renders the page's keys again as the test scripts them. Synthetic values only.
  */
 
 type Step = { readonly refuse: RefusalState } | { readonly hold: RefusalState } | { readonly drop: true } | { readonly fail: string };
+
+/** What the server renders into a form's keys (FormKeys): its request key and the opaque mark of the person signed in. */
+interface PageKeys {
+  readonly requestKey: string;
+  readonly person: string | null;
+}
 
 interface Control {
   steps: Step[];
@@ -19,6 +25,8 @@ interface Control {
   release: (() => void) | null;
   allow: boolean;
   refreshes: number;
+  refreshRenders: Partial<PageKeys>[];
+  render: (next: Partial<PageKeys>) => void;
 }
 
 /** #50's hand-off, as the harness page exposes it: what an explanation, or the note after a list, would take. */
@@ -56,6 +64,25 @@ function refreshes(page: Page): Promise<number> {
   return page.evaluate(() => (window as unknown as { harness: Control }).harness.refreshes);
 }
 
+/** Has the next refresh render the page's keys as given (the server's answer to router.refresh). */
+async function onRefresh(page: Page, next: Partial<PageKeys>): Promise<void> {
+  await page.evaluate((given) => {
+    (window as unknown as { harness: Control }).harness.refreshRenders.push(given);
+  }, next);
+}
+
+/** Renders the page again with these keys now, as a refresh this form did not ask for does (the export status's). */
+async function rerender(page: Page, next: Partial<PageKeys>): Promise<void> {
+  await page.evaluate((given) => {
+    (window as unknown as { harness: Control }).harness.render(given);
+  }, next);
+}
+
+/** The request key each call sent, call by call. */
+async function sentKeys(page: Page): Promise<readonly (string | undefined)[]> {
+  return (await calls(page)).map((call) => call.entries.find(([name]) => name === 'requestKey')?.[1]);
+}
+
 /** Presses the button with these words and waits for the form to show the response. */
 async function send(page: Page, words = 'Save'): Promise<void> {
   const before = await shown(page);
@@ -74,8 +101,15 @@ function invalid(...issues: readonly (readonly [string, string])[]): RefusalStat
 }
 
 const SUMMARY = '[data-slot="refusal-summary"]';
+const TITLE = `${SUMMARY} [data-slot="alert-title"]`;
+const DESCRIPTION = `${SUMMARY} [data-slot="alert-description"]`;
 /** A page out of date, in the server's words (next.ts), which end in a reload: a form that reads the page again writes its own. */
 const STALE: RefusalState = { error: 'This page was out of date, so nothing was saved. Reload the page and try again.', stale: true };
+/** A request key used before, in the server's words (next.ts): an earlier press with it saved. */
+const DUPLICATE: RefusalState = { error: 'This form was already sent, so nothing new was saved. Reload the page to see the result.', duplicate: true };
+/** The page's keys as the harness first renders them, and as a refresh may render them again. */
+const FIRST_KEY = 'synthetic-request-key';
+const PERSON_B = 'synthetic-person-b';
 /** A synthetic password the tests type, joined from words so no scanner reads it as a stored secret. */
 const TYPED_PASSWORD = ['Synthetic', 'typed', 'words', '2026'].join('-');
 const ZIP = ['zip', 'five digits, or ZIP+4 such as 27601-1234'] as const;
@@ -166,21 +200,108 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     await page.close();
   });
 
-  it('FRM-01: a dropped connection keeps everything, says the save is not confirmed, and the next press is sent', async () => {
+  it('FRM-01: a dropped connection keeps everything but the secrets, says the save is not confirmed and which values to type again, and the next press is sent', async () => {
     const page = await harness.open('keep');
     await page.fill('#field-zip', '27514');
+    await page.fill('#field-password', TYPED_PASSWORD);
+    await page.fill('#field-code', '123 456');
+    await page.fill('#raw-pin', '9999');
     await script(page, { drop: true });
     await send(page);
     expect(await page.getAttribute(SUMMARY, 'data-state')).toBe('unconfirmed');
-    expect(await page.textContent(`${SUMMARY} [data-slot="alert-title"]`)).toBe('Not confirmed');
-    expect(await page.textContent(`${SUMMARY} [data-slot="alert-description"]`)).toBe(
-      'The connection to PaidWhole dropped before an answer came back. What you typed is still here: check your connection, then press “Save” again.',
+    expect(await page.textContent(TITLE)).toBe('Not confirmed');
+    // The form held a password and a code, which are emptied: the lead never says they are still here (S-A11Y-2, U-UX-3).
+    expect(await page.textContent(DESCRIPTION)).toBe(
+      'The connection to PaidWhole dropped before an answer came back. What you typed is still here, except passwords and codes: check your connection, type them again, then press “Save” again.',
     );
     expect(await focused(page)).toBe('refusal-summary');
     expect(await page.inputValue('#field-zip')).toBe('27514');
+    for (const secret of ['#field-password', '#field-code', '#raw-pin']) {
+      expect(await page.inputValue(secret)).toBe('');
+    }
     await refusedWith(page, invalid(ZIP));
     expect(await calls(page)).toHaveLength(2);
-    expect(await page.textContent(`${SUMMARY} [data-slot="alert-title"]`)).toBe('Not done');
+    expect(await page.textContent(TITLE)).toBe('Not done');
+    await page.close();
+
+    // A form with no secret: everything is still here.
+    const plain = await harness.open('submitters');
+    await plain.fill('#field-title', 'SYNTHETIC title');
+    await script(plain, { drop: true });
+    await send(plain);
+    expect(await plain.textContent(DESCRIPTION)).toBe(
+      'The connection to PaidWhole dropped before an answer came back. What you typed is still here: check your connection, then press “Save” again.',
+    );
+    expect(await plain.inputValue('#field-title')).toBe('SYNTHETIC title');
+    await plain.close();
+  });
+
+  it('FRM-01: after a dropped connection every press sends that press’s request key until one is saved, though a refresh renders a new one; before, a refresh’s key is sent (S-SEC-1)', async () => {
+    const page = await harness.open('keep');
+    await page.fill('#field-zip', '27514');
+    // No press has dropped: a refusal, then a refresh in place, and the next press sends the key the page holds now.
+    await refusedWith(page, invalid(ZIP));
+    await rerender(page, { requestKey: 'synthetic-request-key-2' });
+    await refusedWith(page, invalid(ZIP));
+    // That press drops; the export status's refresh renders a new key; every later press still sends the dropped one.
+    await script(page, { drop: true });
+    await send(page);
+    await rerender(page, { requestKey: 'synthetic-request-key-3' });
+    expect(await page.inputValue('input[name="requestKey"]')).toBe('synthetic-request-key-3');
+    // A refusal says nothing of the dropped press (the input is refused before the key is read): the key stays pinned.
+    await refusedWith(page, invalid(ZIP));
+    await refusedWith(page, DUPLICATE);
+    await refusedWith(page, DUPLICATE);
+    expect(await sentKeys(page)).toEqual([FIRST_KEY, 'synthetic-request-key-2', 'synthetic-request-key-2', 'synthetic-request-key-2', 'synthetic-request-key-2', 'synthetic-request-key-2']);
+    expect(await page.inputValue('#field-zip')).toBe('27514');
+    await page.close();
+  });
+
+  it('FRM-01: a request key used before is "Already sent", never "Not done", and reads nothing again, so no fresh key sits under the kept values (U-UX-4)', async () => {
+    const page = await harness.open('keep');
+    await page.fill('#field-zip', '27514');
+    await refusedWith(page, DUPLICATE);
+    expect(await page.getAttribute(SUMMARY, 'data-state')).toBe('duplicate');
+    expect(await page.textContent(TITLE)).toBe('Already sent');
+    expect(await page.textContent(DESCRIPTION)).toBe('This form was already sent, so nothing new was saved. Reload the page to see the result.');
+    expect(await focused(page)).toBe('refusal-summary');
+    expect(await refreshes(page)).toBe(0);
+    // A refresh from elsewhere renders a new key: the next press still sends the used one, and is "Already sent" again.
+    await rerender(page, { requestKey: 'synthetic-request-key-2' });
+    await refusedWith(page, DUPLICATE);
+    expect(await sentKeys(page)).toEqual([FIRST_KEY, FIRST_KEY]);
+    await page.close();
+
+    const exported = await harness.open('export');
+    await script(exported, { refuse: DUPLICATE });
+    await exported.getByRole('button', { name: 'Export PDF and CSV', exact: true }).click();
+    await exported.waitForSelector('[data-state="duplicate"]');
+    expect(await exported.textContent('[data-state="duplicate"] [data-slot="alert-title"]')).toBe('Already sent');
+    await exported.close();
+  });
+
+  it('FRM-01: the version form’s two buttons share one pinned key: a draft after a dropped save sends the save’s key (S-SEC-1)', async () => {
+    const page = await harness.open('version');
+    await script(page, { drop: true });
+    await send(page, 'Save as a new version');
+    await rerender(page, { requestKey: 'synthetic-request-key-2' });
+    await refusedWith(page, DUPLICATE, 'Draft with the model');
+    expect(await sentKeys(page)).toEqual([FIRST_KEY, FIRST_KEY]);
+    expect(await page.textContent(TITLE)).toBe('Already sent');
+    await page.close();
+  });
+
+  it('FRM-01: a locked account’s password note asks for nothing; the code’s says only that it was emptied (S-A11Y-2, U-UX-3)', async () => {
+    const page = await harness.open('keep');
+    await page.fill('#field-password', TYPED_PASSWORD);
+    await refusedWith(page, { error: 'This account is locked after ten failed attempts. A platform administrator can unlock it.', locked: true });
+    expect(await page.textContent(TITLE)).toBe('Account locked');
+    expect(await page.inputValue('#field-password')).toBe('');
+    expect(await page.textContent('#field-password-emptied')).toBe('Emptied for your security.');
+    expect(await page.textContent('#field-code-emptied')).toBe('Emptied for your security.');
+    // Any other refusal asks for the password again.
+    await refusedWith(page, { error: 'Too many attempts in a short time. Wait 15 minutes and try again.' });
+    expect(await page.textContent('#field-password-emptied')).toBe('Emptied for your security: type it again.');
     await page.close();
   });
 
@@ -195,16 +316,109 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
   it('FRM-01: a page out of date is read again once, keeps the values and the summary, and invites the person’s own press again', async () => {
     const page = await harness.open('keep');
     await page.fill('#field-zip', '27514');
+    // The refresh renders a fresh key for the same person (signed in again in another tab, say).
+    await onRefresh(page, { requestKey: 'synthetic-request-key-2' });
     await refusedWith(page, STALE);
-    await page.waitForFunction(() => (window as unknown as { harness: Control }).harness.refreshes > 0);
-    expect(await page.textContent(`${SUMMARY} [data-slot="alert-description"]`)).toBe('This page was out of date, so nothing was saved. It is up to date now: press “Save” again.');
+    await page.waitForFunction(() => document.querySelector<HTMLInputElement>('input[name="requestKey"]')?.value === 'synthetic-request-key-2');
+    expect(await page.textContent(DESCRIPTION)).toBe('This page was out of date, so nothing was saved. It is up to date now: press “Save” again.');
     expect(await page.inputValue('#field-zip')).toBe('27514');
     expect(await focused(page)).toBe('refusal-summary');
     // Once for the state, though strict mode mounts the refresh twice; the next refusal of another kind reads nothing again.
     await refusedWith(page, invalid(ZIP));
     expect(await refreshes(page)).toBe(1);
     expect(await page.inputValue('#field-zip')).toBe('27514');
+    // Nothing dropped, so nothing is pinned: the press sends the fresh key.
+    expect(await sentKeys(page)).toEqual([FIRST_KEY, 'synthetic-request-key-2']);
     await page.close();
+  });
+
+  it('FRM-01: a page out of date whose refresh shows another person clears the form, says so, and invites no press; the new person’s press sends their own key (S-SEC-2)', async () => {
+    const page = await harness.open('keep');
+    await page.fill('#field-zip', '27514');
+    await page.fill('#field-why', 'SYNTHETIC reason');
+    await page.selectOption('#field-reason', 'other');
+    await page.fill('#field-password', TYPED_PASSWORD);
+    await onRefresh(page, { requestKey: 'synthetic-request-key-2', person: PERSON_B });
+    await refusedWith(page, STALE);
+    await page.waitForSelector(`${SUMMARY}[data-state="cleared"]`);
+    expect(await page.textContent(TITLE)).toBe('Form cleared');
+    expect(await page.textContent(DESCRIPTION)).toBe('This page was out of date, so nothing was saved. The person signed in on this browser changed, so this form was cleared.');
+    // Every field is back at what the page renders, and nothing marks or notes a field.
+    expect(await page.inputValue('#field-zip')).toBe('27601');
+    expect(await page.inputValue('#field-reason')).toBe('window_passed');
+    expect(await page.inputValue('#field-why')).toBe('');
+    expect(await page.inputValue('#field-password')).toBe('');
+    expect(await page.locator('[data-slot="emptied-note"]').count()).toBe(0);
+    expect(await focused(page)).toBe('refusal-summary');
+    expect(await page.locator(SUMMARY).count()).toBe(1);
+    await page.fill('#field-zip', '27514');
+    await refusedWith(page, invalid(ZIP));
+    expect(await page.textContent(TITLE)).toBe('Not done');
+    expect(await sentKeys(page)).toEqual([FIRST_KEY, 'synthetic-request-key-2']);
+    expect((await calls(page))[1]?.entries).not.toContainEqual(['why', 'SYNTHETIC reason']);
+    await page.close();
+  });
+
+  it('FRM-01: any refresh that shows another person, or no one, clears a form that holds what was typed, and only that form; a dropped press’s key is let go (S-SEC-2)', async () => {
+    const page = await harness.open('two');
+    await page.fill('#first-title', 'SYNTHETIC first');
+    // The export status's refresh, say: no refusal, and another person signed in.
+    await rerender(page, { person: PERSON_B });
+    await page.waitForSelector(`${SUMMARY}[data-state="cleared"]`);
+    expect(await page.textContent(DESCRIPTION)).toBe('The person signed in on this browser changed, so this form was cleared.');
+    expect(await page.inputValue('#first-title')).toBe('');
+    // The untouched form shows nothing: one change is announced once.
+    expect(await page.locator(SUMMARY).count()).toBe(1);
+    expect(await page.evaluate((selector) => document.querySelector(selector)?.closest('form')?.contains(document.getElementById('first-title')), SUMMARY)).toBe(true);
+    expect(await focused(page)).toBe('refusal-summary');
+    // No one signed in now: the second form, typed in since, is cleared too.
+    await page.fill('#second-title', 'SYNTHETIC second');
+    await rerender(page, { person: null });
+    await page.waitForFunction(() => document.querySelectorAll('[data-slot="refusal-summary"][data-state="cleared"]').length === 2);
+    expect(await page.inputValue('#second-title')).toBe('');
+    await page.close();
+
+    // A dropped press, then another person: the save is not confirmed, the form is cleared, and the next press sends
+    // the page's own key, not the dropped press's.
+    const dropped = await harness.open('keep');
+    await dropped.fill('#field-zip', '27514');
+    await script(dropped, { drop: true });
+    await send(dropped);
+    await rerender(dropped, { requestKey: 'synthetic-request-key-2', person: PERSON_B });
+    await dropped.waitForSelector(`${SUMMARY}[data-state="cleared"]`);
+    expect(await dropped.textContent(DESCRIPTION)).toBe(
+      'The connection to PaidWhole dropped before an answer came back, so the save is not confirmed. The person signed in on this browser changed, so this form was cleared.',
+    );
+    expect(await dropped.inputValue('#field-zip')).toBe('27601');
+    await refusedWith(dropped, invalid(ZIP));
+    expect(await sentKeys(dropped)).toEqual([FIRST_KEY, 'synthetic-request-key-2']);
+    // The same person rendered again changes nothing.
+    await dropped.fill('#field-zip', '27514');
+    await rerender(dropped, { requestKey: 'synthetic-request-key-3' });
+    expect(await dropped.inputValue('#field-zip')).toBe('27514');
+    expect(await dropped.textContent(TITLE)).toBe('Not done');
+    await dropped.close();
+  });
+
+  it('FRM-01: the version form clears its choices when a refresh shows another person, and the export form then invites no press (S-SEC-2)', async () => {
+    const page = await harness.open('version');
+    await page.selectOption('#prompt-pay-state', 'NC');
+    await rerender(page, { person: PERSON_B });
+    await page.waitForSelector(`${SUMMARY}[data-state="cleared"]`);
+    expect(await page.inputValue('#prompt-pay-state')).toBe('');
+    expect(await page.textContent(DESCRIPTION)).toBe('The person signed in on this browser changed, so this form was cleared.');
+    await page.close();
+
+    const exported = await harness.open('export');
+    await onRefresh(exported, { person: PERSON_B });
+    await script(exported, { refuse: STALE });
+    await exported.getByRole('button', { name: 'Export PDF and CSV', exact: true }).click();
+    const description = '[data-state="error"] [data-slot="alert-description"]';
+    await exported.waitForFunction(
+      (selector) => document.querySelector(selector)?.textContent === 'This page was out of date, so nothing was saved. Check the form, then send it again if you still mean to.',
+      description,
+    );
+    await exported.close();
   });
 
   it('FRM-01: the version form reads a page out of date again, keeps its choice, and invites the person’s own press again', async () => {
@@ -598,6 +812,26 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     expect(await page.locator(`${SUMMARY} li`).allTextContents()).toEqual(['Facility places of service: list at least one place of service']);
     expect(await focused(page)).toBe('split-facility');
     expect([await page.inputValue('#split-facility'), await page.inputValue('#split-non-facility')]).toEqual(['11 22', '02']);
+    await page.close();
+  });
+
+  it('FRM-05: a refused hardware-key sign-in shows its problem first in the form, before the email, and focuses it (U-UX-10)', async () => {
+    const page = await harness.open('hardwareKey');
+    // The server's answer to the ceremony's first step: no key to ask, with the sign-in's own words.
+    await page.route('**/api/sign-in/hardware-key/options', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ error: 'That did not match. Check the email, the password or the code, and try again.' }) }),
+    );
+    await page.fill('#key-email', 'forms-harness@synthetic.test');
+    await page.getByRole('button', { name: 'Sign in with hardware key', exact: true }).click();
+    await page.waitForSelector('form [role="alert"]');
+    expect(await page.textContent('form [role="alert"] [data-slot="alert-title"]')).toBe('Not signed in');
+    expect(await page.evaluate(() => [...document.querySelectorAll('form [role="alert"], form input, form button')].map((element) => element.getAttribute('role') ?? element.tagName))).toEqual([
+      'alert',
+      'INPUT',
+      'BUTTON',
+    ]);
+    expect(await page.evaluate(() => document.activeElement?.getAttribute('role') ?? '')).toBe('alert');
+    expect(await page.inputValue('#key-email')).toBe('forms-harness@synthetic.test');
     await page.close();
   });
 });

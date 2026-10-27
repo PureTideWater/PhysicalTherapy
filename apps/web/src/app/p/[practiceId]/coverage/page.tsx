@@ -1,10 +1,10 @@
 import { quarterNameOf } from '@tp/rules';
-import { Alert, AlertDescription, AlertTitle, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Label } from '@tp/ui';
+import { Alert, AlertDescription, AlertTitle, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../components/action-form';
-import { CheckboxField, CheckboxGroup } from '../../../../components/field';
+import { CheckboxField, CheckboxGroup, Field, SelectField } from '../../../../components/field';
 import { QuestionList, TotalsText } from '../../../../components/contracts/display';
 import { Figure } from '../../../../components/coverage/share';
 import { utc } from '../../../../components/format';
@@ -417,41 +417,24 @@ export default async function CoveragePage(props: Props) {
           {payers.length === 0 ? (
             <p className="text-sm text-muted-foreground">Payers appear once their 835s load.</p>
           ) : (
-            <form method="get" action={`${path}/letter`} className="grid max-w-xl gap-3" aria-label="Letter">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="letter-payer">Payer</Label>
-                <select id="letter-payer" name="payer" required className="h-9 rounded-md border bg-background px-2 text-sm">
-                  {payers.map((payer) => (
-                    <option key={payer.id} value={payer.id}>
-                      {payer.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="letter-contract">The payer’s contract (optional)</Label>
-                <select id="letter-contract" name="contract" className="h-9 rounded-md border bg-background px-2 text-sm">
-                  <option value="">None named</option>
-                  {payers
+            <form method="get" action={`${path}/letter`} className="grid max-w-xl grid-cols-1 gap-3" aria-label="Letter">
+              <SelectField id="letter-payer" label="Payer" name="payer" required options={payers.map((payer) => ({ value: payer.id, label: payer.name }))} showChosen />
+              <SelectField
+                id="letter-contract"
+                label="The payer’s contract (optional)"
+                name="contract"
+                options={[
+                  { value: '', label: 'None named' },
+                  ...payers
                     .filter((payer) => contracts.some((contract) => contract.payerId === payer.id))
-                    .map((payer) => (
-                      <optgroup key={payer.id} label={payer.name}>
-                        {contracts
-                          .filter((contract) => contract.payerId === payer.id)
-                          .map((contract) => (
-                            <option key={contract.id} value={contract.id}>
-                              {contract.title}
-                            </option>
-                          ))}
-                      </optgroup>
-                    ))}
-                </select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="letter-codes">Procedure codes (optional)</Label>
-                <Input id="letter-codes" name="codes" placeholder="97110, 97530" maxLength={400} />
-                <p className="text-xs text-muted-foreground">Leave blank to ask for the complete schedule.</p>
-              </div>
+                    .map((payer) => ({
+                      group: payer.name,
+                      options: contracts.filter((contract) => contract.payerId === payer.id).map((contract) => ({ value: contract.id, label: contract.title })),
+                    })),
+                ]}
+                showChosen
+              />
+              <Field id="letter-codes" label="Procedure codes (optional)" name="codes" placeholder="97110, 97530" maxLength={400} hint="Leave blank to ask for the complete schedule." />
               <div>
                 <Button type="submit" variant="outline">
                   Download the letter
