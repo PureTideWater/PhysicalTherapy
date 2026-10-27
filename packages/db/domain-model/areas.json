@@ -8,9 +8,10 @@
       "id": "tenancy",
       "title": "Tenancy and access",
       "dictionary": "Tenancy and access",
-      "about": "Organizations, practices (the tenant) and each practice's pricing location (its billing ZIP and ZIP+4), people, memberships and their roles, grants of practice access to other organizations, agreements, break-glass support grants and the outbox of their opening and closing notices (one row a notice, one a practice administrator, each with its message's delivery), sign-in devices and sessions, the persona matrix and the PHI table registry itself.",
+      "about": "Organizations, practices (the tenant) and each practice's pricing location (its billing ZIP and ZIP+4), people, memberships and their roles, grants of practice access to other organizations, agreements, break-glass support grants and the outbox of their opening and closing notices (one row a notice, one a practice administrator, each with its message's delivery), sign-in devices and sessions, the persona matrix and the PHI table registry itself, and PaidWhole's suspensions and reinstatements of an organization, with their reasons.",
       "tables": [
         "organization",
+        "organization_status_change",
         "practice",
         "practice_site",
         "user",
