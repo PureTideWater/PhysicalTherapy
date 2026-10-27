@@ -38,3 +38,6 @@
 - light reruns at 6f23c42b all 0 (lint-copy, lint-logs, engine-freeze, golden, oracle, verify-content); mutation packets-scan done (canary/stryker/gate 0), packets-rest running
 - approval summary draft: scratchpad/pr42/approval-summary.md; checks table: scratchpad/pr42/checks-table.md; body assembly: python3 -I scratchpad/pr42/assemble.py <P> <head> <shards> <mutation> -> body-final.md. Body edits: UX row, M3 follow-up open item, capacity paragraph, fixtures row
 - mutation: packets-scan, packets-rest, packets-explain shards+gates 0; pricing-engine running (20:29)
+- mutation at 6f23c42b: 6 shards (canary 5/5 each, stryker, gate) and the gate passed: pricing 98.67% (1934 detected, 26 undetected = 26 recorded equivalents, 12 load failures), packets 97.75% (4310 detected, 99 = 99 equivalents, 2 load failures). SUITE COMPLETE. Next: drop dbs, push.
+- 20:47 pushing 6f23c42b (38 commits over 098636e3)
+- PUSHED 6f23c42b… to co-001/pr-06b-mail-streams (20:48; hook: commits already on remote via wip-pr42-integrate push 19:12). Next: PR body update.
