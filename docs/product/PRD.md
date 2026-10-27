@@ -572,7 +572,7 @@ The default is Claude on AWS Bedrock inside the company's own AWS account, under
 
 ### PHI minimization
 
-Contracts carry no PHI (they are confidential, which is a separate obligation handled by the data-rights terms), and each contract or exhibit is checked against the practice's records before it is sent: one that holds a member ID, payer claim number or patient control number of the practice's is a misfiled payer letter or EOB, and is refused, never sent. Narratives are drafted from pattern-level facts with no identifiers at all; identifiers are inserted by code at export. Denial letters do carry PHI; the gateway sends the minimum text needed, strips names, dates of birth, member IDs and claim numbers by exact match before the call where the task allows it, and never sends more than one patient's material in one call. No PHI is ever sent to a model from a development environment, a test, or a CI job.
+Contracts carry no PHI (they are confidential, which is a separate obligation handled by the data-rights terms), and each contract or exhibit is checked against the practice's records before it is sent: one that holds a member ID, payer claim number or patient control number of the practice's is refused, never sent (most often it is a misfiled payer letter or EOB). Narratives are drafted from pattern-level facts with no identifiers at all; identifiers are inserted by code at export. Denial letters do carry PHI; the gateway sends the minimum text needed, strips names, dates of birth, member IDs and claim numbers by exact match before the call where the task allows it, and never sends more than one patient's material in one call. No PHI is ever sent to a model from a development environment, a test, or a CI job.
 
 ### Untrusted input
 

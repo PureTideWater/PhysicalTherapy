@@ -576,6 +576,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
       'packages/model-gateway/src/redact.test.ts',
       'packages/model-gateway/src/patient-records.test.ts',
       'packages/model-gateway/src/patient-records.db.test.ts',
+      'packages/model-gateway/src/specs.test.ts',
       'packages/model-gateway/src/functions/contract-terms.test.ts',
       'packages/model-gateway/src/gateway.test.ts',
       'packages/model-gateway/src/gateway.db.test.ts',
