@@ -18,9 +18,10 @@ split"; 1b completes it), test-matrix CAS-41, `packages/synth` case CAS-41 (modu
   the content stays identical (the design's "keeping the key's fields from the first line", made exact).
 
 ## Waiting on someone
-- None.
+- None for 1a. For Lane A (1b, already in its design as D15): the report's patient-balance step at 100,000 lines is dominated by claimLines' lookup on superseded_by_claim_id, which has no index: 718.7 s of the base report's 842.5 s (no heap flag). 1a's grouping (D16) and batching (D18) remove the rest (about 47 s), but the report stays near pg-boss's 15-minute attempt until `claim_by_superseded` lands (1b section 4.4, or the interest PR, whichever merges first). It is a migration, so it is not 1a's.
 
 ## Log
+- 2026-10-27 21:39 UTC: reproduction done (scripts and results in the session scratchpad's repro/ and results/). Base report with no heap flag: ready in 842.5 s, the patient-balance step 766.0 s (claimLines 718.7 s, no index). Base triage re-run: live heap with the candidate rows held 415.6 MiB, 75.0 MiB after judging. Slices 1 (CAS-41.1 tests first, passing on the base: 9 triage and 11 report job cases) and 2 (D12, D13) done; slice 3 (the report) running. WIP snapshot pushed: `co-001/wip-suite-cap-1a` at 23847b0b.
 - 2026-10-27 21:24 UTC: the orchestrator's reminder (21:31) taken: never force a push, WIP branches included; a diverged WIP ref gets a fresh name (co-001/wip-suite-cap-1a-2, ...), recorded here. Before figures at 100,000 lines on the base (private cluster, 1,024 locks per transaction; 560 MiB heap flag): A's triage 260.4 s, its actionable advanceStages 207.9 s for 33,334 lines (quadratic), live heap after judging 74.8 MiB, sampled peak 509.2 MiB; A's audit report heap out of memory at about 62 s, twice, holding runLines' 100,000 rows (511.7 MiB live). On the default cluster (64 locks): A's report 53200 at 47.3 s, 14,533 advisory locks.
 - 2026-10-27 20:37 UTC: build workflow wf_34688805-4ff launched.
 - 2026-10-27 20:35 UTC: started; setup OK; worktree and install done.
