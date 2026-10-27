@@ -135,11 +135,17 @@ export default async function UsersSettingsPage(props: { readonly params: Promis
                     <td className="py-1 pr-3">{invitation.email}</td>
                     <td className="py-1 pr-3">{roleName(invitation.role)}</td>
                     <td className="py-1 pr-3">
-                      {/* An invitation email reported undelivered (docs/adr/0065, D10): the administrator checks the address and invites again. */}
+                      {/*
+                        An invitation email reported undelivered (docs/adr/0065, D10): the administrator checks the address and
+                        invites again. One reported as spam was delivered, and SES now holds the address back from the
+                        transactional stream, so the person is asked to find it, not sent another (the review of 2026-10-23).
+                      */}
                       {invitation.acceptedAt !== null
                         ? `accepted ${utcDate(invitation.acceptedAt)}`
                         : invitation.undeliveredAt !== null
-                          ? `Not delivered ${utcDate(invitation.undeliveredAt)}: check the address, then invite again`
+                          ? invitation.undeliveredReason === 'complained'
+                            ? `Reported as spam ${utcDate(invitation.undeliveredAt)}: ask the person to find it in their spam folder; one sent again will not reach them`
+                            : `Not delivered ${utcDate(invitation.undeliveredAt)}: check the address, then invite again`
                           : invitation.expired
                             ? 'expired'
                             : `open until ${utcDate(invitation.expiresAt)}`}
