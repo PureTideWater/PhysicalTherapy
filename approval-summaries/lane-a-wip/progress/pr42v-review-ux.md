@@ -29,3 +29,8 @@ Started 2026-10-27. Clone: /tmp/claude-0/-home-user-PhysicalTherapy/e99dbc78-96e
 - F-users-complained: users page complained row says 'one sent again will not reach them' but row still offers 'Send again'; Cognito RESEND issues a NEW temp password (cognito-provider.ts:346-350, dev-provider.ts:304-313) -> pressing voids the spam-folder email's password AND is suppressed; no 'contact PaidWhole support' path (runbook 3.4 says operator can lift suppression). should_fix
 - F-users-suppressed: 'Not delivered: check the address, then invite again' for undelivered_reason 'suppressed' (account suppression list; M1 now routes complaint-suppressed there) -> re-send suppressed again; dead end. should_fix
 - before: 30 shots 0 skipped (22:05-22:06), server stopped, port free
+- before tiled: 108 tiles (screens-before/tiles). before users.390 = 667 px wide (baseline overflow, pre-existing); console window before 'Since 2026-10-17' (M8 bug shown)
+- after: setup done (c37fa7cc), build+serve bg b1cs33kh4, capture bg bpd8xt2sm
+- lint:copy at c37fa7cc: pass (523 files)
+- LEAD legal sign-off: LANES.md:291 founder keeps 'sign-off of legal text before it goes to counsel'; PR body Open items 'The founder' does not list the changed legal sentences -> blocking-until-signed (PR-body fix)
+- LEAD complained date: invitation.undelivered_at = held.sent_at (migration ~1063) -> 'Reported as spam {send date}' nit
