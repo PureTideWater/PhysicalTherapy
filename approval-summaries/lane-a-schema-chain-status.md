@@ -24,6 +24,16 @@ GitHub login: PureTideWater.
   SS-01's head, #42's and part 1a's state (light; no build yet).
 - **Never force a push, WIP branches included** (the orchestrator, 21:31 UTC): a diverged WIP ref goes to a fresh name
   (co-001/wip-<item>-2, ...), recorded here.
+- **SUITE-CAP-1b re-read done (wf_6e2dedb0-b5e, 21:38 UTC): build with deltas** (`approval-summaries/lane-a-suitecap1b-reread.json`):
+  line_status_head gets an `id` primary key plus the unique index line_status_head_once (the cross-tenant factory needs a
+  single-column key); one combined NOWAIT lock loop over claim and line_status; fields.test.ts's unit regex gains `mib`;
+  JOB_HEAP_MESSAGE/METRIC in infra/lib/jobs.ts; CAS-40.7 migrates a partial set; claim_by_superseded stays in 1b and the
+  interest PR drops its object 5. CAS-42 and the slice-1 gate need part 1a's readers, so they run after 1a merges
+  (1a has no remote branch yet). Decision (recommended): build 1b's other slices on SS-01's branch after SS-01's build
+  and #42's merge, so nothing waits idle; regenerate everything on the final tree.
+- **#42 moved to 6f23c42b** (38 commits past 098636e3; mail_streams.sql +163/-62). After SS-01's builders finish: merge
+  it into SS-01 (merge commit), re-check the audit_event_record policy body SS-01 recreates, regenerate the domain model
+  and function files, re-run the affected db tests.
 - **Next:** read the build's result; the PR waits for #42 to merge (then merge #42's head and the latest
   claude/build-platform in, regenerate, open the draft PR, two reviews: security and tenancy, UX and brand).
 
@@ -51,3 +61,4 @@ GitHub login: PureTideWater.
 - 2026-10-27 20:45 UTC: session started; setup OK; SS-01 branch cut from #42's 098636e3 and pushed; wf_8ee54e2b-824 started.
 - 2026-10-27 20:52 UTC: both ledger freeze exceptions granted (above); SUITE-CAP-1b's ledger part goes into its PR, no WIP branch.
 - 2026-10-27 21:26 UTC: SS-01's database slice pushed (d213416b, 7da01015); SUITE-CAP-1b re-read started (wf_6e2dedb0-b5e).
+- 2026-10-27 21:40 UTC: SUITE-CAP-1b re-read: build with deltas; #42 at 6f23c42b, to merge into SS-01 after its build.
