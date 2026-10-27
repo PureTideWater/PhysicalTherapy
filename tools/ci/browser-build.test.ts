@@ -273,13 +273,14 @@ describe('the browser build check (CI-18)', () => {
 
   describe('--image, against a stand-in docker', () => {
     /**
-     * A `docker run --rm --user 0:0 --network none --entrypoint <cat|sh> <ref> …` that runs in a stand-in image: /app and
-     * /ms-playwright. Any other form is refused, so the check reads the image as root and offline.
+     * A `docker run --rm --pull never --user 0:0 --network none --entrypoint <cat|sh> <ref> …` that runs in a stand-in
+     * image: /app and /ms-playwright. Any other form is refused, so the check reads the image as root, offline, and only
+     * as the local tag (never one pulled from a registry).
      */
     const DOCKER = `#!/usr/bin/env bash
 set -eu
-[ "$1 $2 $3 $4 $5 $6 $7" = "run --rm --user 0:0 --network none --entrypoint" ] || { echo "unexpected: $*" >&2; exit 97; }
-entrypoint=$8 ref=$9; shift 9
+[ "$1 $2 $3 $4 $5 $6 $7 $8 $9" = "run --rm --pull never --user 0:0 --network none --entrypoint" ] || { echo "unexpected: $*" >&2; exit 97; }
+entrypoint=\${10} ref=\${11}; shift 11
 [ "$ref" = "registry.example/tp-worker:test" ] || { echo "no such image: $ref" >&2; exit 98; }
 cd "$IMAGE_ROOT/app"
 case "$entrypoint" in
@@ -332,9 +333,10 @@ exit 99
       expect(out.filter((line) => line.startsWith('  ')).map((line) => line.trim())).toEqual(treeLines(revisionDir, DIRS['chromium-headless-shell'].dir).lines);
     });
 
-    it('reads the image as root with no network, and fails on a file the check cannot read, naming it', () => {
-      // The stand-in refuses any docker run without --user 0:0 --network none; this one also reports a file the script's
-      // find could not read, as it would for the image's runtime user on Chrome for Testing's mode-0600 deb.deps.
+    it('reads the image as root with no network and no pull, and fails on a file the check cannot read, naming it', () => {
+      // The stand-in refuses any docker run without --pull never --user 0:0 --network none; this one also reports a file
+      // the script's find could not read, as it would for the image's runtime user on Chrome for Testing's mode-0600
+      // deb.deps.
       const env = image();
       copyShell(REVISION);
       expect(IMAGE_SCRIPT).toContain('find "$dir" -type f ! -readable -exec printf');

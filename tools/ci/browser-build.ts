@@ -32,7 +32,8 @@ import path from 'node:path';
  *
  * With --image it checks a built worker image instead and needs no node_modules: the image's own
  * node_modules/playwright-core/browsers.json and the headless shell's tree, hashed inside the image by the command
- * above, each read with `docker run --rm --user 0:0 --network none --entrypoint <cat|sh>`: as root, so the image's
+ * above, each read with `docker run --rm --pull never --user 0:0 --network none --entrypoint <cat|sh>`: only the local
+ * tag (a tag missing here fails, never pulled and checked in place of the image just built), as root, so the image's
  * runtime user cannot hide a file from the hash (Chrome for Testing's deb.deps and rpm.deps are mode 0600), and offline.
  * The worker prints customers' PDFs with that headless shell.
  *
@@ -218,11 +219,13 @@ export const IMAGE_SCRIPT = [
 ].join('\n');
 
 /**
- * How the --image mode starts a container: as root, so the image's runtime user (the worker's is `node`) cannot hide a
- * file from the hash (Chrome for Testing's zips carry `deb.deps` and `rpm.deps` as mode 0600, and the image installs the
- * build as root), and with no network, since the check only reads the image.
+ * How the --image mode starts a container: from the local tag only (`--pull never`: a tag missing here fails, rather
+ * than a registry's image of that name being pulled and checked in place of the one just built), as root, so the
+ * image's runtime user (the worker's is `node`) cannot hide a file from the hash (Chrome for Testing's zips carry
+ * `deb.deps` and `rpm.deps` as mode 0600, and the image installs the build as root), and with no network, since the
+ * check only reads the image.
  */
-export const IMAGE_RUN = ['run', '--rm', '--user', '0:0', '--network', 'none', '--entrypoint'] as const;
+export const IMAGE_RUN = ['run', '--rm', '--pull', 'never', '--user', '0:0', '--network', 'none', '--entrypoint'] as const;
 
 /** The headless shell as a built image holds it, read with `docker run` (the image's own browsers.json, its tree). */
 export function imageBuild(ref: string, recorded: RecordedBuild, env: NodeJS.ProcessEnv): FoundBuild {
