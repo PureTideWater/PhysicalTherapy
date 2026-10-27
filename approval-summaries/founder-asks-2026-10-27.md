@@ -1,5 +1,7 @@
 # For the founder (2026-10-27): two ledger freeze exceptions, and what's coming for approval
 
+**GRANTED by the founder (Tyler Williams), relayed by the co-founder, 2026-10-27 20:49 UTC:** "Granted: the ledger freeze exceptions in designs/ledger-interest-once.md section 10.1 and designs/suite-cap-1-triage-locks.md section 4.5, as written." Each PR records the grant in its ADR and in reconciliation-001.
+
 The co-founder relays these. Each is the founder's alone (reconciliation-001 "Ledger semantics"; LANES.md "Who decides").
 Neither blocks #42. Both designs are reviewed (nine findings each, all taken) and are on `claude/build-ops`.
 
