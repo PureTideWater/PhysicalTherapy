@@ -46,7 +46,8 @@ function shellTree(revisionDir: string, dir: string): string {
  * A stand-in binary that answers --version as Chrome for Testing does. Its bytes never change between cases: what it
  * does comes from the environment the check passes it, so a case can make a build whose every file equals the record
  * fail to start (STANDIN_FAIL: printed, exit 127, as a missing shared library would), print another version
- * (STANDIN_VERSION_LINE), or record that it ran at all (STANDIN_RAN, a file it appends its path to).
+ * (STANDIN_VERSION_LINE), or record that it ran at all (STANDIN_RAN, a file it appends its path and its user to: the
+ * stand-in docker's STANDIN_USER, else "caller").
  */
 const STANDIN_BINARY = [
   '#!/bin/sh',
