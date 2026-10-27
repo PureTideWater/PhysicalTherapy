@@ -116,7 +116,8 @@ differential test, which prices the base's engine and this commit's.
      `--function-diffs list` form, whose list must match. Nothing else is waiting on it: the database suite reports on
      its own.
    - **`e2e (k/M)`:** the failing journey is in the step's output and annotated on the pull request. A screenshot
-     comparison prints each diff and actual picture under 300 KB in the log as base64 (docs/adr/0058). A "flaky" test,
+     comparison prints each diff and actual picture under 300 KB in the log as its SHA-256 and numbered base64 chunks
+     (`tools/ci/print-pictures.sh`; rebuild one as "Upgrading the browser", step 5, says; docs/adr/0058). A "flaky" test,
      one that passed only on its retry, fails the run by design: fix it, never re-run it to green. A refusal of the
      build's stamp means the shard was handed another commit's build: re-run the whole workflow, not the shard.
    - **`images`:** the Trivy table names each HIGH or CRITICAL finding with a fixed version: take the fix (a base-image

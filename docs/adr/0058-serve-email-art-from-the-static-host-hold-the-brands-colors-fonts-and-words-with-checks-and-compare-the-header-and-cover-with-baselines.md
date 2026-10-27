@@ -179,8 +179,9 @@ host preferring Inter for sans-serif or not, and a glyph check of the faces for 
 ellipsis included), so the host's installed fonts do not enter them either. The screenshots for people stay in
 `brand-screenshots/`, and CI uploads them with the Playwright report and test results (the diffs of a failed
 comparison included) after the e2e step, failed runs included. A failed run also prints each diff and actual picture
-under `apps/web/test-results` smaller than 300 KB into the job's log, as its path and its base64 on one line, so a
-comparison can be read where the artifact cannot be fetched.
+under `apps/web/test-results` smaller than 300 KB into the job's log, as its SHA-256 and then its base64 in numbered
+lines of 8,000 characters (amendment below; first as one line), so a comparison can be read where the artifact cannot
+be fetched.
 
 **Printed documents print at full size.** Chromium shrinks a whole PDF to fit when anything is wider than the inside
 pages' content box (8.5 in less the stylesheet's 0.75 in margins: 672 CSS px), the full-bleed Paper cover and the 16 px
@@ -300,7 +301,8 @@ as much as by the browser: a change under 1% would pass the journey and leave th
 committed files, regenerates them with `--update-snapshots=all --retries=0`, requires the run to pass and the pictures
 present after it to be exactly the committed set, and fails on any byte that differs from the commit, printing each
 changed picture's SHA-256 and then the picture as numbered lines of 8,000 base64 characters (`<path> <i>/<n> <chunk>`),
-so a log reader that cuts long lines still gets it whole and proves the decode. The pull request that moved to 1.64.1
+so a log reader that cuts long lines still gets it whole and proves the decode; the failed comparisons' pictures
+print the same way, through the same `tools/ci/print-pictures.sh`. The pull request that moved to 1.64.1
 records its first passing run, with the seven SHA-256s, as this ADR's proof that ubuntu-26.04 renders the committed
 bytes; if the local host and CI ever disagree, CI's bytes are committed and the difference is recorded here. For 1.64.1
 the seven were regenerated on Ubuntu 24.04 with the 1248 build laid out from Google's zips and held to `browser.json`,

@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
@@ -1691,16 +1691,22 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
       expect(readFileSync(path.join(repositoryRoot, 'apps/web/e2e/brand.spec.ts'), 'utf8')).toContain("path.resolve(import.meta.dirname, '../../../brand-screenshots')");
     });
 
-    it('prints a failed shard’s screenshot diffs and actuals into its log, each under 300 KB as its path and its base64 on one line', () => {
+    it('prints a failed shard’s screenshot diffs and actuals into its log, each under 300 KB as its SHA-256 and then its base64 in numbered chunks of 8,000 characters', () => {
       const steps = ciJob('e2e').steps;
-      const print = stepIndex(steps, (step) => step.run?.includes('base64 -w 0') === true);
+      const print = stepIndex(steps, (step) => step.run?.includes("-name '*-diff.png'") === true);
       expect(print).toBeGreaterThan(stepIndex(steps, (step) => usesAction(step, 'actions/upload-artifact')));
       const step = steps[print] as Step;
+      expect(step.name).toBe("The failed comparisons' pictures");
       expect(step.if).toBe('failure()');
-      expect(step.run).toContain("find apps/web/test-results -type f \\( -name '*-diff.png' -o -name '*-actual.png' \\) -size -300k");
-      expect(step.run).toContain('echo "$file $(base64 -w 0 "$file")"');
+      // One printer for both of the job's prints (tools/ci/print-pictures.sh, its own test), so neither prints a picture
+      // on one line that a log reader may cut.
+      expect(step.run).toContain("find apps/web/test-results -type f \\( -name '*-diff.png' -o -name '*-actual.png' \\) -size -300k | LC_ALL=C sort | tools/ci/print-pictures.sh");
+      expect(step.run).not.toMatch(/base64|sha256sum/);
+      expect(stepNamed(steps, 'The brand baselines, regenerated from nothing').run).toContain('| LC_ALL=C sort -u | tools/ci/print-pictures.sh');
       // Run as GitHub runs it: a shard that left no results prints nothing and passes; one that did prints each picture.
       const dir = mkdtempSync(path.join(scratch, 'pictures-'));
+      mkdirSync(path.join(dir, 'tools/ci'), { recursive: true });
+      copyFileSync(path.join(repositoryRoot, 'tools/ci/print-pictures.sh'), path.join(dir, 'tools/ci/print-pictures.sh'));
       expect(runScript(step.run ?? '', {}, dir)).toEqual({ status: 0, output: '' });
       // The pictures need GNU base64's -w, as the runner has. On CI (CI set to anything but empty or "false", as
       // tools/test/ci-chromium.ts reads it) they run whatever, so a runner without it fails here rather than skip
@@ -1710,7 +1716,8 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
         mkdirSync(path.join(dir, 'apps/web/test-results/brand'), { recursive: true });
         writeFileSync(path.join(dir, 'apps/web/test-results/brand/header-diff.png'), 'png');
         writeFileSync(path.join(dir, 'apps/web/test-results/brand/header-expected.png'), 'png');
-        expect(runScript(step.run ?? '', {}, dir)).toEqual({ status: 0, output: `apps/web/test-results/brand/header-diff.png ${Buffer.from('png').toString('base64')}\n` });
+        const name = 'apps/web/test-results/brand/header-diff.png';
+        expect(runScript(step.run ?? '', {}, dir)).toEqual({ status: 0, output: `${name} sha256 ${createHash('sha256').update('png').digest('hex')}\n${name} 1/1 ${Buffer.from('png').toString('base64')}\n` });
       }
     });
   });
@@ -2010,6 +2017,8 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
       mkdirSync(snapshots, { recursive: true });
       writeFileSync(path.join(snapshots, 'header-1280-chromium-linux.png'), 'header');
       writeFileSync(path.join(snapshots, 'report-cover-top-chromium-linux.png'), 'cover');
+      mkdirSync(path.join(dir, 'tools/ci'), { recursive: true });
+      copyFileSync(path.join(repositoryRoot, 'tools/ci/print-pictures.sh'), path.join(dir, 'tools/ci/print-pictures.sh'));
       git('init', '-q', '-b', 'main');
       git('add', '.');
       git('commit', '-q', '-m', 'baselines');

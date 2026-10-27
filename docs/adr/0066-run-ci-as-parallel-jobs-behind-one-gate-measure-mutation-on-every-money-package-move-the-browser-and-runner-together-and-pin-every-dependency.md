@@ -903,7 +903,9 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
   before it, so no message text of Playwright's is read, and prints each changed picture's SHA-256 and then the picture
   as lines `<path> <i>/<n> <8,000 base64 characters>`: a log reader that cuts long lines still gets every chunk, and the
   SHA-256 proves each decode (where the series is built, CI's logs are read through an API that may cut a
-  66,000-character line, and the artifact and raw-log hosts are out of reach).
+  66,000-character line, and the artifact and raw-log hosts are out of reach). The failed comparisons' step prints its
+  diff and actual pictures through the same script, `tools/ci/print-pictures.sh`, where it had printed each as one line
+  of up to 400,000 characters; the script has its own test, and both steps' tests run it.
 
 ### Consequences
 

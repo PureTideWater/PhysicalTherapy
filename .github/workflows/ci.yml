@@ -583,14 +583,14 @@ jobs:
           retention-days: 7
           overwrite: true
       # A failed run's screenshot comparisons, readable from the job's log alone: each diff and actual picture under
-      # apps/web/test-results smaller than 300 KB, as its path and its base64 on one line (docs/adr/0058).
+      # apps/web/test-results smaller than 300 KB, as its SHA-256 and then lines "<path> <i>/<n> <8,000 base64
+      # characters>", which a log reader that cuts long lines still gets whole (tools/ci/print-pictures.sh;
+      # docs/adr/0058).
       - name: The failed comparisons' pictures
         if: failure()
         run: |
           if [ -d apps/web/test-results ]; then
-            find apps/web/test-results -type f \( -name '*-diff.png' -o -name '*-actual.png' \) -size -300k | sort | while IFS= read -r file; do
-              echo "$file $(base64 -w 0 "$file")"
-            done
+            find apps/web/test-results -type f \( -name '*-diff.png' -o -name '*-actual.png' \) -size -300k | LC_ALL=C sort | tools/ci/print-pictures.sh
           fi
       # The brand baselines regenerated from nothing on this runner, on every pull request and every push, with no path
       # condition: the pictures are drawn by application code (the header, the worker's report covers) as well as by the
@@ -601,8 +601,8 @@ jobs:
       # the ones present after the run, every one having been removed before it, so no message text of Playwright's is
       # read. It fails on a failed run, on any set of pictures written other than the committed set, or on any byte, and
       # prints each changed picture's SHA-256, then the picture as lines "<path> <i>/<n> <8,000 base64 characters>", so
-      # a log reader that cuts long lines still gets it whole and proves each decode by its SHA-256 (docs/runbooks/ci.md,
-      # "Upgrading the browser").
+      # a log reader that cuts long lines still gets it whole and proves each decode by its SHA-256 (tools/ci/print-pictures.sh;
+      # docs/runbooks/ci.md, "Upgrading the browser").
       - name: The brand baselines, regenerated from nothing
         if: ${{ !cancelled() && steps.browser-install.outcome == 'success' && matrix.shard == 1 }}
         env: { E2E_PREBUILT: "1" }
@@ -630,13 +630,7 @@ jobs:
           fi
           find apps/web/e2e/brand.spec.ts-snapshots -type f -name '*.png' -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum
           if [ "$failed" -ne 0 ]; then
-            { git diff --name-only -- apps/web/e2e/brand.spec.ts-snapshots; git ls-files --others --exclude-standard -- apps/web/e2e/brand.spec.ts-snapshots; } | LC_ALL=C sort -u | while IFS= read -r file; do
-              if [ -f "$file" ]; then
-                chunks="$(base64 -w 8000 "$file" | wc -l | tr -d ' ')"
-                echo "$file sha256 $(sha256sum "$file" | cut -d ' ' -f 1)"
-                base64 -w 8000 "$file" | awk -v file="$file" -v chunks="$chunks" '{ print file " " NR "/" chunks " " $0 }'
-              fi
-            done
+            { git diff --name-only -- apps/web/e2e/brand.spec.ts-snapshots; git ls-files --others --exclude-standard -- apps/web/e2e/brand.spec.ts-snapshots; } | LC_ALL=C sort -u | tools/ci/print-pictures.sh
           fi
           exit "$failed"
       # Compose prints no container's log when the job ends, as a service container's was: the database's last lines,
