@@ -22,3 +22,4 @@ Clone: $P/designs/ss01-author
 - SS-08: words at send time from organization.status (+ kind) in sendOne; also firm dunning words claim no run effects; billing_suspended/reinstated audits only for groups (TBD).
 - Reopen: no; guards only.
 - grants view only before M12: settings.ts:46-48 confirms.
+- resumed 2026-10-27 (run 2)
