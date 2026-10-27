@@ -81,10 +81,24 @@ td.pw-money,
   inset-inline-end: 0;
   background: linear-gradient(to left, var(--pw-scroll-surface, var(--pw-bg)), transparent);
 }
+/* Right to left the start edge is on the right: each fade still runs from its own edge's surface inward. */
+[data-slot="scroll-table"] > .pw-scroll-frame:dir(rtl)::before {
+  background: linear-gradient(to left, var(--pw-scroll-surface, var(--pw-bg)), transparent);
+}
+[data-slot="scroll-table"] > .pw-scroll-frame:dir(rtl)::after {
+  background: linear-gradient(to right, var(--pw-scroll-surface, var(--pw-bg)), transparent);
+}
 [data-edge-start] > .pw-scroll-frame::before,
 [data-edge-end] > .pw-scroll-frame::after { opacity: 1; }
 /* Keep a focused link or control clear of the fades (WCAG 2.4.11). */
 .pw-scroll-frame > [data-scroller] { scroll-padding-inline: var(--pw-scroll-fade); }
+/* A link or control in a scroller draws its ring inside its own box: the scroller clips what passes its edges, and a
+   first or last column's cell has no padding there to hold a ring drawn outside (WCAG 2.4.7). A field's or a form's
+   Tailwind ring is inset the same way, as `ring-inset` sets it. */
+.pw-scroll-frame > [data-scroller] :focus-visible {
+  outline-offset: -2px;
+  --tw-ring-inset: inset;
+}
 /* A text box's fades are bands at its top and bottom, inside its border, from its own surface. */
 [data-axis="block"] > .pw-scroll-frame::before,
 [data-axis="block"] > .pw-scroll-frame::after { inset-inline: 0; width: auto; height: var(--pw-scroll-fade); }

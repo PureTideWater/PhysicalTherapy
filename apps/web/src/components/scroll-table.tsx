@@ -122,15 +122,19 @@ interface Scroller {
  * reached or left. Only the scroller's own focus counts (DR-01), and focus taken before hydration is kept (DR-06).
  */
 function useScroller(axis: Axis, label: string, suffix: RegionSuffix): Scroller {
-  const scroller = useRef<HTMLElement | null>(null);
+  // The scroller element itself, in state rather than a ref: when it is replaced while the component stays mounted (a
+  // ScrollBox whose `as` changes), the effect moves its observers and its listener to the new element.
+  const [element, setElement] = useState<HTMLElement | null>(null);
   const remeasure = useRef<() => void>(() => undefined);
   const [state, setState] = useState<ScrollState>(() => scrollState(null));
   const [focused, setFocused] = useState(false);
   const ref = useCallback((node: HTMLElement | null) => {
-    scroller.current = node;
+    setElement(node);
+    // A keyboard user may have tabbed onto the server's region before hydration, when React saw no focus event: keep
+    // its stop, or a first measurement that fits would take the tab stop from the focused element (DR-06).
+    setFocused(node !== null && document.activeElement === node);
   }, []);
   useEffect(() => {
-    const element = scroller.current;
     if (element === null) {
       return undefined;
     }
@@ -139,9 +143,6 @@ function useScroller(axis: Axis, label: string, suffix: RegionSuffix): Scroller 
       setState((current) => (stateChanged(current, next) ? next : current));
     };
     remeasure.current = measure;
-    // A keyboard user may have tabbed onto the server's region before hydration, when React saw no focus event: keep
-    // its stop, or a first measurement that fits would take the tab stop from the focused element (DR-06).
-    setFocused(document.activeElement === element);
     measure();
     const resized = new ResizeObserver(measure);
     resized.observe(element);
@@ -184,7 +185,7 @@ function useScroller(axis: Axis, label: string, suffix: RegionSuffix): Scroller 
       cancelAnimationFrame(frame);
       remeasure.current = () => undefined;
     };
-  }, [axis]);
+  }, [axis, element]);
   if (label.trim() === '') {
     throw new Error('A scroller needs a label: it names the region.');
   }

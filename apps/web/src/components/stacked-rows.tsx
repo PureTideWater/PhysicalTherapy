@@ -25,7 +25,7 @@ export interface StackedRow {
   /** The row's naming cell: a link when the row opens something, else text. */
   readonly heading: ReactNode;
   readonly fields: readonly StackedField[];
-  /** The row's actions (links, ActionForms), under its facts. */
+  /** The row's actions (links, ActionForms), under its facts; none when it renders nothing (`canAct && <Form />` that is false). */
   readonly actions?: ReactNode;
   /** The caller's own test hooks for the stacked copy (data-stacked-…); never the table row's (docs/adr/0078). */
   readonly hooks?: Readonly<Record<`data-${string}`, string>>;
@@ -45,10 +45,19 @@ const SWITCH: Readonly<Record<StackBelow, { readonly table: string; readonly row
 
 const HEADINGS = { 2: 'h2', 3: 'h3', 4: 'h4' } as const;
 
-/** A value wraps inside the card, a status chip with it (the chip is whitespace-nowrap in a table cell). */
-const VALUE = 'min-w-0 wrap-anywhere [&_[data-slot=status-chip]]:whitespace-normal';
-/** A figure, code or count never breaks, in the mono face with tabular numerals. */
-const MONO = 'min-w-0 font-mono tabular-nums';
+/**
+ * Under 24rem the terms stand over their values, so each value but the last keeps 8 px below it: a pair sits closer
+ * together than to the next term.
+ */
+const PAIRED = '@max-[24rem]:not-last:pb-2';
+/** A value wraps inside the card, and a status with it: a StatusChip or a Badge, each whitespace-nowrap in a table cell. */
+const VALUE = `min-w-0 wrap-anywhere [&_[data-slot=status-chip]]:whitespace-normal [&_[data-slot=badge]]:whitespace-normal ${PAIRED}`;
+/**
+ * A figure, code, count, key or date, in the mono face with tabular numerals. It breaks only where one token is wider
+ * than the card (a key or a hash), never a figure that fits: a dd is a block the width of its column, so wrap-anywhere
+ * here, unlike in a table cell, never narrows the column.
+ */
+const MONO = `min-w-0 font-mono tabular-nums wrap-anywhere ${PAIRED}`;
 
 type ListName = { readonly label: string; readonly labelledBy?: never } | { readonly labelledBy: string; readonly label?: never };
 
@@ -62,6 +71,14 @@ export type StackedRowsProps = ListName &
     readonly headingLevel?: 2 | 3 | 4;
   };
 
+/** What React renders as nothing: undefined, null, a boolean, the empty string, or a list of those. */
+export function rendersNothing(node: ReactNode): boolean {
+  if (node === undefined || node === null || typeof node === 'boolean' || node === '') {
+    return true;
+  }
+  return Array.isArray(node) && node.every((child: ReactNode) => rendersNothing(child));
+}
+
 function Row({ row, level }: { readonly row: StackedRow; readonly level: 2 | 3 | 4 }) {
   const Heading = HEADINGS[level];
   return (
@@ -72,7 +89,7 @@ function Row({ row, level }: { readonly row: StackedRow; readonly level: 2 | 3 |
           <Field key={`${String(index)}:${field.label}`} field={field} />
         ))}
       </dl>
-      {row.actions === undefined || row.actions === null ? null : <div className="mt-3 flex flex-col items-start gap-2">{row.actions}</div>}
+      {rendersNothing(row.actions) ? null : <div className="mt-3 flex flex-col items-start gap-2">{row.actions}</div>}
     </li>
   );
 }
@@ -91,17 +108,20 @@ function Field({ field }: { readonly field: StackedField }) {
 /**
  * One stacked-row layout for a phone (docs/adr/0078; UX-079 (c)): a list named by `label` or `labelledBy`, each item
  * its row's naming cell as a heading at the caller's level, then a definition list of each column's label and value
- * (terms over values until the list is 24rem wide), then the row's actions. The fields render in the order given:
- * `brandOrderProblems` is the check, in the caller's test, that the three figures are given together and in the
- * brand's order, and the caller reads one constant of column labels in order for the table's headers and the fields.
- * The primitive never picks a status tone: the caller renders the chip, and its cell lets it wrap.
+ * (terms over values until the list is 24rem wide), then the row's actions. The list says role="list": Safari and
+ * VoiceOver drop the role of a list styled `list-style: none` (Tailwind's preflight), and with it the list's name and
+ * count. The fields render in the order given: `brandOrderProblems` is the check, in the caller's test, that the three
+ * figures are given together and in the brand's order, and the caller reads one constant of column labels in order for
+ * the table's headers and the fields. The primitive never picks a status tone: the caller renders the StatusChip or
+ * Badge, and its value lets it wrap.
  *
  * With `table` (the same rows as a `ScrollTable`), both copies render from the caller's one row array, and a container
  * query on the wrapper shows the table from `stackBelow`, the table's own min-w, up and the rows below it, so the band
  * where the rail narrows the column (768 to 1023 px) stacks too; `display: none` takes the other copy out of the
  * accessibility tree and out of axe. Both copies are in the DOM, so no id and no test hook may repeat between them:
- * the stacked copy carries data-stacked-row and the caller's own hooks, and `repeatedIds` is the check. A server
- * component: every value is the caller's rendered node.
+ * the stacked copy carries data-stacked-row and the caller's own hooks, and `repeatedIds` is the check. The parts a
+ * component names for itself (data-slot, data-tone) are in both copies by design, so a spec scopes a locator of one to
+ * `[data-stacked-copy]` or `:visible`. A server component: every value is the caller's rendered node.
  */
 export function StackedRows(props: StackedRowsProps): ReactElement {
   if ((props.label ?? props.labelledBy ?? '').trim() === '') {
@@ -117,7 +137,7 @@ export function StackedRows(props: StackedRowsProps): ReactElement {
           {paired.table}
         </div>
       )}
-      <ul data-stacked-copy="rows" {...named} className={paired === null ? 'flex flex-col gap-3' : `flex flex-col gap-3 ${paired.classes.rows}`}>
+      <ul role="list" data-stacked-copy="rows" {...named} className={paired === null ? 'flex flex-col gap-3' : `flex flex-col gap-3 ${paired.classes.rows}`}>
         {props.rows.map((row) => (
           <Row key={row.key} row={row} level={level} />
         ))}

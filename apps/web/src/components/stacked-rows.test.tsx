@@ -1,9 +1,11 @@
+import { Badge } from '@tp/ui';
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import { ScrollTable } from './scroll-table';
-import { type StackBelow, type StackedField, type StackedRow, StackedRows, brandOrderProblems, repeatedIds } from './stacked-rows';
+import { type StackBelow, type StackedField, type StackedRow, StackedRows, brandOrderProblems, rendersNothing, repeatedIds } from './stacked-rows';
 import { StatusChip } from './status';
 
 /**
@@ -80,14 +82,19 @@ const item = (html: string, key: string) => new RegExp(`<li [^>]*data-stacked-ro
 const terms = (html: string) => [...html.matchAll(/<dt [^>]*>([^<]*)<\/dt>/g)].map((match) => match[1]);
 const ddOf = (html: string, label: string) => new RegExp(`<dt [^>]*>${label}</dt><dd ([^>]*)>`).exec(html)?.[1] ?? '';
 
+/** Each value's classes: under 24rem, where terms stand over values, a value keeps 8 px below it, the last one none. */
+const PAIRED = '@max-[24rem]:not-last:pb-2';
+const VALUE = `class="min-w-0 wrap-anywhere [&amp;_[data-slot=status-chip]]:whitespace-normal [&amp;_[data-slot=badge]]:whitespace-normal ${PAIRED}"`;
+const MONO = `class="min-w-0 font-mono tabular-nums wrap-anywhere ${PAIRED}"`;
+
 describe('one stacked-row layout', () => {
-  it('is a list named by its label, or by the id of the title that names it, with one item per row carrying the row’s key', () => {
+  it('is a list named by its label, or by the id of the title that names it, with one item per row carrying the row’s key; a list by its role too, which Safari drops from an unstyled list', () => {
     const html = renderToStaticMarkup(<StackedRows label="Cases" rows={[caseRow('case-1'), caseRow('case-2')]} />);
-    expect(html).toMatch(/<ul data-stacked-copy="rows" aria-label="Cases" class="flex flex-col gap-3">/);
+    expect(html).toMatch(/<ul role="list" data-stacked-copy="rows" aria-label="Cases" class="flex flex-col gap-3">/);
     expect([...html.matchAll(/<li [^>]*data-stacked-row="([^"]+)"/g)].map((match) => match[1])).toEqual(['case-1', 'case-2']);
     expect(html.match(/<li /g)).toHaveLength(2);
     const labelled = renderToStaticMarkup(<StackedRows labelledBy="cases-title" rows={[caseRow('case-1')]} />);
-    expect(labelled).toContain('<ul data-stacked-copy="rows" aria-labelledby="cases-title" class="flex flex-col gap-3">');
+    expect(labelled).toContain('<ul role="list" data-stacked-copy="rows" aria-labelledby="cases-title" class="flex flex-col gap-3">');
     expect(labelled).not.toContain('aria-label=');
   });
 
@@ -100,7 +107,7 @@ describe('one stacked-row layout', () => {
     }
   });
 
-  it('gives each field a term and a value in one definition list, under the given labels, terms above values until the list is wide enough for two columns', () => {
+  it('gives each field a term and a value in one definition list, under the given labels, terms above values until the list is wide enough for two columns, each pair apart from the next while they stand so', () => {
     const html = item(renderToStaticMarkup(<StackedRows label="Cases" rows={[caseRow('case-1')]} />), 'case-1');
     expect(html.match(/<dl /g)).toHaveLength(1);
     expect(html).toContain('<dl class="mt-2 grid grid-cols-1 gap-y-1 text-sm @min-[24rem]:grid-cols-[max-content_1fr] @min-[24rem]:gap-x-4">');
@@ -108,7 +115,9 @@ describe('one stacked-row layout', () => {
     expect(html.match(/<dd /g)).toHaveLength(fields().length);
     expect(html.match(/<dt class="text-muted-foreground">/g)).toHaveLength(fields().length);
     // A long value wraps inside the card instead of passing the window.
-    expect(ddOf(html, COLUMNS.pattern)).toBe('class="min-w-0 wrap-anywhere [&amp;_[data-slot=status-chip]]:whitespace-normal"');
+    expect(ddOf(html, COLUMNS.pattern)).toBe(VALUE);
+    // Every value but the last keeps 8 px below it while terms stand over values (under 24rem), so a figure sits nearer its own term than the next.
+    expect(html.match(/<dd [^>]*@max-\[24rem\]:not-last:pb-2/g)).toHaveLength(fields().length);
   });
 
   it('renders the fields in the order given, and checks the brand’s order instead of fixing it: expected, paid and short, together and in that order (DR-08)', () => {
@@ -139,11 +148,11 @@ describe('one stacked-row layout', () => {
 
   it('shows each figure and each code or count in the mono face with tabular numerals, a figure naming its role', () => {
     const html = item(renderToStaticMarkup(<StackedRows label="Cases" rows={[caseRow('case-1')]} />), 'case-1');
-    expect(ddOf(html, COLUMNS.expected)).toBe('class="min-w-0 font-mono tabular-nums" data-stacked-figure="expected"');
-    expect(ddOf(html, COLUMNS.paid)).toBe('class="min-w-0 font-mono tabular-nums" data-stacked-figure="paid"');
-    expect(ddOf(html, COLUMNS.short)).toBe('class="min-w-0 font-mono tabular-nums" data-stacked-figure="short"');
-    expect(ddOf(html, COLUMNS.charge)).toBe('class="min-w-0 font-mono tabular-nums"');
-    expect(ddOf(html, COLUMNS.paidOut)).toBe('class="min-w-0 font-mono tabular-nums"');
+    expect(ddOf(html, COLUMNS.expected)).toBe(`${MONO} data-stacked-figure="expected"`);
+    expect(ddOf(html, COLUMNS.paid)).toBe(`${MONO} data-stacked-figure="paid"`);
+    expect(ddOf(html, COLUMNS.short)).toBe(`${MONO} data-stacked-figure="short"`);
+    expect(ddOf(html, COLUMNS.charge)).toBe(MONO);
+    expect(ddOf(html, COLUMNS.paidOut)).toBe(MONO);
     // Only the fields marked as a figure or mono are in the mono face.
     expect(html.match(/font-mono tabular-nums/g)).toHaveLength(5);
   });
@@ -155,6 +164,32 @@ describe('one stacked-row layout', () => {
     // No tone class outside the chip the caller rendered.
     const withoutChip = html.replace(/<span data-slot="status-chip"[^>]*>[^<]*<\/span>/, '');
     expect(withoutChip).not.toMatch(/status-(whole|short|unpriced)|pw-status|danger/);
+  });
+
+  it('lets a Badge status and a key longer than the card wrap inside it, as a chip does (UX-PR79-03)', () => {
+    // A case's state as a Badge (whitespace-nowrap in a table cell), and a 36-character SYNTHETIC key in the mono face.
+    const key = 'SYNTHETIC-0000-4000-8000-00000000001';
+    const html = item(
+      renderToStaticMarkup(
+        <StackedRows
+          label="Cases"
+          rows={[
+            caseRow('case-1', {
+              fields: [
+                { label: COLUMNS.state, value: <Badge variant="default">Awaiting the payer’s response to the SYNTHETIC packet</Badge> },
+                { label: 'Document', value: key, mono: true },
+              ],
+            }),
+          ]}
+        />,
+      ),
+      'case-1',
+    );
+    expect(key).toHaveLength(36);
+    expect(ddOf(html, COLUMNS.state)).toBe(VALUE);
+    expect(html).toMatch(/<dd [^>]*\[&amp;_\[data-slot=badge\]\]:whitespace-normal[^>]*><span data-slot="badge" class="[^"]*\bwhitespace-nowrap\b/);
+    expect(ddOf(html, 'Document')).toBe(MONO);
+    expect(html).toContain(`>${key}</dd>`);
   });
 
   it('puts the row’s actions after the facts, full width, and renders no actions box when there are none', () => {
@@ -175,6 +210,34 @@ describe('one stacked-row layout', () => {
     );
     expect(item(html, 'case-1')).toMatch(/<\/dl><div class="mt-3 flex flex-col items-start gap-2"><a class="underline" href="\/p\/synthetic\/cases\/case-1\/packet">Open the packet<\/a><\/div>$/);
     expect(item(html, 'case-2')).toMatch(/<\/dl>$/);
+  });
+
+  it('renders no actions box for actions that render nothing: a condition that is false, an empty string or an empty list', () => {
+    const nothing: readonly (readonly [string, ReactNode])[] = [
+      ['false', false],
+      ['an empty string', ''],
+      ['an empty list', []],
+      ['a list of nothing', [false, null]],
+      ['undefined', undefined],
+      ['null', null],
+      ['true', true],
+    ];
+    for (const [what, actions] of nothing) {
+      expect(rendersNothing(actions), what).toBe(true);
+      const html = renderToStaticMarkup(<StackedRows label="Cases" rows={[caseRow('case-1', { actions })]} />);
+      expect(item(html, 'case-1'), what).toMatch(/<\/dl>$/);
+    }
+    // A number, text or an element renders, so it gets the box.
+    const something: readonly (readonly [string, ReactNode])[] = [
+      ['zero', 0],
+      ['text', 'Read only'],
+      ['a list of an element', [<span key="a">Read only</span>]],
+    ];
+    for (const [what, actions] of something) {
+      expect(rendersNothing(actions), what).toBe(false);
+      const html = renderToStaticMarkup(<StackedRows label="Cases" rows={[caseRow('case-1', { actions })]} />);
+      expect(item(html, 'case-1'), what).toMatch(/<div class="mt-3 flex flex-col items-start gap-2">/);
+    }
   });
 
   it('carries the caller’s own hooks on each item and repeats no id and no hook of the table’s (DR-07)', () => {
@@ -216,7 +279,7 @@ describe('one stacked-row layout', () => {
   it('pairs with its table by a container query at the table’s own width: the table from there up, the rows below it; and is never squeezed to nothing (DR-13)', () => {
     const html = renderToStaticMarkup(<StackedRows label="Cases" stackBelow="54rem" table={casesTable(['case-1'])} rows={[caseRow('case-1')]} />);
     expect(html).toMatch(
-      /^<div data-slot="stacked-rows" class="@container w-full min-w-0"><div data-stacked-copy="table" class="hidden @min-\[54rem\]:block"><div data-slot="scroll-table" [\s\S]*<\/div><ul data-stacked-copy="rows" aria-label="Cases" class="flex flex-col gap-3 @min-\[54rem\]:hidden">/,
+      /^<div data-slot="stacked-rows" class="@container w-full min-w-0"><div data-stacked-copy="table" class="hidden @min-\[54rem\]:block"><div data-slot="scroll-table" [\s\S]*<\/div><ul role="list" data-stacked-copy="rows" aria-label="Cases" class="flex flex-col gap-3 @min-\[54rem\]:hidden">/,
     );
     // Each width the tables use maps to its own literal classes, so Tailwind generates every one.
     for (const width of ['32rem', '36rem', '40rem', '48rem', '54rem'] as const satisfies readonly StackBelow[]) {
@@ -226,7 +289,7 @@ describe('one stacked-row layout', () => {
     }
     // Without a table: the list alone, always shown, still a container for its definition lists.
     const alone = renderToStaticMarkup(<StackedRows label="Cases" rows={[caseRow('case-1')]} />);
-    expect(alone).toMatch(/^<div data-slot="stacked-rows" class="@container w-full min-w-0"><ul data-stacked-copy="rows" aria-label="Cases" class="flex flex-col gap-3">/);
+    expect(alone).toMatch(/^<div data-slot="stacked-rows" class="@container w-full min-w-0"><ul role="list" data-stacked-copy="rows" aria-label="Cases" class="flex flex-col gap-3">/);
     expect(alone).not.toContain('data-stacked-copy="table"');
     expect(alone).not.toContain('hidden @min-[');
     expect(alone).not.toMatch(/@min-\[(32|36|40|48|54)rem\]:hidden/);
