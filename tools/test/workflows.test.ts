@@ -310,6 +310,61 @@ function chromiumProblems(file: string, parsed: Workflow): string[] {
   });
 }
 
+/** A step's script with each `$NAME`, `${NAME}` or `"$NAME"` its own env sets written out as that value. */
+function expandedRun(step: Step): string {
+  return (step.run ?? '').replace(/"?\$(?:\{(\w+)\}|(\w+))"?/g, (whole: string, braced: string | undefined, bare: string | undefined) => step.env?.[braced ?? bare ?? ''] ?? whole);
+}
+
+/** The tag a worker image's browser check names (`node tools/ci/browser-build.ts --image <tag>`), or undefined. */
+function imageCheckTag(step: Step): string | undefined {
+  return /^node tools\/ci\/browser-build\.ts --image (\S.*)$/.exec(expandedRun(step).trim())?.[1]?.trim();
+}
+
+/** Whether a step measures, saves, tags or pushes an image tag: what must wait for the image's browser check. */
+function usesImageTag(step: Step, tag: string): boolean {
+  return new RegExp(`(?:--worker-image|\\bdocker\\s+(?:image\\s+)?(?:save|tag|push))\\s+"?${escaped(tag)}"?(?=\\s|;|\\||$)`).test(expandedRun(step));
+}
+
+/**
+ * Why a job's worker image could be measured, saved, tagged or pushed with a headless shell browser.json does not
+ * record (test matrix CI-18; docs/adr/0066, Part 3). Every job that builds apps/worker/Dockerfile into a local tag (load,
+ * or a type=docker archive it then loads) runs `node tools/ci/browser-build.ts --image <that tag>` once the tag exists
+ * and before any step measures, saves, tags or pushes it; a build into no local tag, or in a script this rule cannot
+ * follow, is refused. A scan may read the image first (the release's build scans, then checks, then saves): the browser
+ * changes no scan. And every such check has actions/setup-node with Node 24 before it in its job, since it runs on
+ * Node's own type stripping (the review's S6); the cache inputs stay each job's own, since the check imports only
+ * Node's own modules. A matrix build whose Dockerfile is an expression counts as the worker's when its job names
+ * apps/worker/Dockerfile anywhere (the release's naming step).
+ */
+function workerImageProblems(file: string, parsed: Workflow): string[] {
+  return Object.entries(parsed.jobs).flatMap(([id, job]) => {
+    const steps = job.steps ?? [];
+    const where = `${file} ${id}`;
+    const namesWorker = JSON.stringify(steps).includes('apps/worker/Dockerfile');
+    return steps.flatMap((step, index) => {
+      const problems: string[] = [];
+      const run = step.run ?? '';
+      if (/\bdocker\s+(?:buildx\s+)?build\b/.test(run) && run.includes('apps/worker/Dockerfile')) problems.push(`${where}: builds apps/worker/Dockerfile in a script, which this rule cannot follow`);
+      const checked = imageCheckTag(step);
+      if (checked !== undefined && !steps.slice(0, index).some((before) => usesAction(before, 'actions/setup-node') && String(before.with?.['node-version']) === '24')) {
+        problems.push(`${where}: checks ${checked} with no actions/setup-node of Node 24 before it`);
+      }
+      const dockerfile = String(step.with?.file ?? '');
+      if (!usesAction(step, 'docker/build-push-action') || !(dockerfile === 'apps/worker/Dockerfile' || (dockerfile.includes('${{') && namesWorker))) return problems;
+      const tag = String(step.with?.tags ?? '').trim();
+      const archive = /(?:^|,)\s*type=docker\b/.test(String(step.with?.outputs ?? ''));
+      if (step.with?.load !== true && !archive) return [...problems, `${where}: builds apps/worker/Dockerfile into no local tag, so nothing checks its headless shell before it leaves the job`];
+      const later = steps.slice(index + 1);
+      const check = later.findIndex((candidate) => imageCheckTag(candidate) === tag);
+      if (check === -1) return [...problems, `${where}: builds apps/worker/Dockerfile into ${tag} and never runs node tools/ci/browser-build.ts --image ${tag}`];
+      const used = later.findIndex((candidate) => usesImageTag(candidate, tag));
+      if (used !== -1 && used < check) problems.push(`${where}: "${later[used]?.name ?? later[used]?.run?.split('\n')[0] ?? ''}" uses ${tag} before its browser check`);
+      if (archive && !later.slice(0, check).some((candidate) => /\bdocker\s+load\b/.test(candidate.run ?? ''))) problems.push(`${where}: checks ${tag} before its archive is loaded`);
+      return problems;
+    });
+  });
+}
+
 /** Script idioms that swallow a failing command: `|| true`, `|| :`, `|| exit 0`, and errexit or pipefail turned off. */
 const SWALLOWS = [/\|\|\s*(?:true\b|:(?=\s|;|\)|$)|exit\s+0\b)/m, /\bset\s+\+[a-z]*e/, /\bset\s+\+o\s+(?:errexit|pipefail)\b/];
 
@@ -1827,9 +1882,67 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
         for (const after of later.slice(0, measure + 1)) expect(after.if ?? '', `${where}: ${after.name ?? after.run ?? ''}`).not.toMatch(/always\(\)|cancelled\(\)|failure\(\)/);
       }
     }
-    // The same check with --image on the worker image: in ci.yml's images job and in the release's build, before the save.
+    // The same check with --image on the worker image: in ci.yml's images job, in the release's build before the save,
+    // and in both measuring jobs that build it before the measurement (below).
     const imageChecks = workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => job.steps.filter((step) => step.run?.startsWith(`${BROWSER_CHECK} --image`) === true).map(() => `${file} ${id}`)));
-    expect(imageChecks).toEqual(['ci.yml images', 'release.yml build']);
+    expect(imageChecks).toEqual(['ci.yml images', 'release-capacity.yml capacity', 'release.yml build', 'screening-capacity.yml capacity']);
+  });
+
+  it('checks the headless shell of every worker image a job builds into a local tag with --image before the tag is measured, saved, tagged or pushed, on Node 24 (design 3.3.7; the review’s S6)', () => {
+    expect(workflowFiles().flatMap((file) => workerImageProblems(file, workflow(file)))).toEqual([]);
+    // The jobs that build it, each checked by the rule above: none is left out by a form the rule does not read.
+    const builders = workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => (JSON.stringify(job.steps).includes('apps/worker/Dockerfile') && job.steps.some((step) => usesAction(step, 'docker/build-push-action')) ? [`${file} ${id}`] : [])));
+    expect(builders).toEqual(['ci.yml images', 'release-capacity.yml capacity', 'release.yml build', 'screening-capacity.yml capacity']);
+    // The two measuring jobs check the image before anything is installed, so no installed package runs before it;
+    // release-capacity's Node 24 for it restores no cache, while its own pnpm setup keeps cache: pnpm after.
+    for (const file of ['release-capacity.yml', 'screening-capacity.yml']) {
+      const steps = workflow(file).jobs.capacity?.steps ?? [];
+      const check = stepIndex(steps, (step) => step.run === `${BROWSER_CHECK} --image tp-worker:capacity`);
+      expect(steps[check], file).toEqual({ name: "Check the worker image's headless shell against browser.json", run: `${BROWSER_CHECK} --image tp-worker:capacity` });
+      expect(check, file).toBeLessThan(stepIndex(steps, (step) => step.run === 'pnpm install --frozen-lockfile'));
+      expect(check, file).toBeLessThan(stepIndex(steps, (step) => step.run?.includes('--worker-image tp-worker:capacity') === true));
+    }
+    const weekly = workflow('release-capacity.yml').jobs.capacity?.steps ?? [];
+    const check = stepIndex(weekly, (step) => step.run === `${BROWSER_CHECK} --image tp-worker:capacity`);
+    expect(weekly[check - 1]).toEqual({ uses: pinOf('actions/setup-node'), with: { 'node-version': 24, 'package-manager-cache': false } });
+    expect(usesAction(weekly[check - 2] ?? {}, 'docker/build-push-action')).toBe(true);
+    const screening = workflow('screening-capacity.yml').jobs.capacity?.steps ?? [];
+    expect(screening[stepIndex(screening, (step) => step.run === `${BROWSER_CHECK} --image tp-worker:capacity`) - 1]?.name).toBe('Load the images as built');
+  });
+
+  it('refuses a worker image build whose headless shell is not checked before its tag is used, and a check without Node 24 before it', () => {
+    const problems = (steps: string) => workerImageProblems('fixture.yml', parse(`name: fixture\non: push\njobs: { a: { runs-on: ubuntu-24.04, steps: [${steps}] } }`) as Workflow);
+    const node = `{ uses: 'actions/setup-node@${'1'.repeat(40)}', with: { node-version: 24 } }`;
+    const loaded = "{ uses: 'docker/build-push-action@x', with: { file: apps/worker/Dockerfile, load: true, tags: 'tp-worker:t' } }";
+    const archived = "{ uses: 'docker/build-push-action@x', with: { file: apps/worker/Dockerfile, tags: 'tp-worker:t', outputs: 'type=docker,dest=/tmp/w.tar' } }";
+    const load = "{ run: 'docker load --input /tmp/w.tar' }";
+    const check = "{ run: 'node tools/ci/browser-build.ts --image tp-worker:t' }";
+    const measure = "{ run: 'pnpm exec tsx run.ts --worker-image tp-worker:t' }";
+    expect(problems(`${loaded}, ${node}, ${check}, ${measure}`)).toEqual([]);
+    expect(problems(`${archived}, ${node}, ${load}, ${check}, ${measure}`)).toEqual([]);
+    // The release's form: the Dockerfile and the tag from a naming step, the check through the step's env, then the save.
+    const named = "{ id: image, run: 'echo dockerfile=apps/worker/Dockerfile >> $GITHUB_OUTPUT' }, { uses: 'docker/build-push-action@x', with: { file: '${{ steps.image.outputs.dockerfile }}', load: true, tags: '${{ steps.image.outputs.ref }}' } }";
+    const viaEnv = (run: string) => `{ env: { REF: '\${{ steps.image.outputs.ref }}' }, run: '${run}' }`;
+    expect(problems(`${named}, ${node}, ${viaEnv('node tools/ci/browser-build.ts --image "$REF"')}, ${viaEnv('docker save "$REF" | gzip -1 > w.tar.gz')}`)).toEqual([]);
+    expect(problems(`${named}, ${viaEnv('docker save "$REF" | gzip -1 > w.tar.gz')}, ${node}, ${viaEnv('node tools/ci/browser-build.ts --image "$REF"')}`)).toEqual([`fixture.yml a: "docker save \"$REF\" | gzip -1 > w.tar.gz" uses \${{ steps.image.outputs.ref }} before its browser check`]);
+    // The web image needs no check.
+    expect(problems("{ uses: 'docker/build-push-action@x', with: { file: apps/web/Dockerfile, load: true, tags: 'tp-web:t' } }, { run: 'run.ts --web-image tp-web:t' }")).toEqual([]);
+    expect(problems(`${loaded}, ${measure}`)).toEqual(['fixture.yml a: builds apps/worker/Dockerfile into tp-worker:t and never runs node tools/ci/browser-build.ts --image tp-worker:t']);
+    expect(problems(`${loaded}, ${node}, ${measure}, ${check}`)).toEqual(['fixture.yml a: "pnpm exec tsx run.ts --worker-image tp-worker:t" uses tp-worker:t before its browser check']);
+    for (const use of ['docker tag tp-worker:t registry/w:1', 'docker push tp-worker:t', 'docker image save "tp-worker:t" > w.tar']) {
+      expect(problems(`${loaded}, ${node}, { run: '${use}' }, ${check}`), use).toEqual([`fixture.yml a: "${use}" uses tp-worker:t before its browser check`]);
+    }
+    // A check of another tag is not this one's.
+    expect(problems(`${loaded}, ${node}, { run: 'node tools/ci/browser-build.ts --image tp-worker:other' }, ${measure}`)).toEqual(['fixture.yml a: builds apps/worker/Dockerfile into tp-worker:t and never runs node tools/ci/browser-build.ts --image tp-worker:t']);
+    expect(problems(`${archived}, ${node}, ${check}, ${load}, ${measure}`)).toEqual(['fixture.yml a: checks tp-worker:t before its archive is loaded']);
+    // Node 24 before every check, whatever its cache inputs; another Node, or none, is refused.
+    expect(problems(`${loaded}, ${check}, ${measure}`)).toEqual(['fixture.yml a: checks tp-worker:t with no actions/setup-node of Node 24 before it']);
+    expect(problems(`${loaded}, { uses: 'actions/setup-node@${'1'.repeat(40)}', with: { node-version: 22 } }, ${check}`)).toEqual(['fixture.yml a: checks tp-worker:t with no actions/setup-node of Node 24 before it']);
+    expect(problems(`${loaded}, { uses: 'actions/setup-node@${'1'.repeat(40)}', with: { node-version: 24, cache: pnpm } }, ${check}`)).toEqual([]);
+    expect(problems(`${loaded}, ${check}, ${node}`)).toEqual(['fixture.yml a: checks tp-worker:t with no actions/setup-node of Node 24 before it']);
+    // A build this rule cannot follow, or into no local tag, is refused.
+    expect(problems("{ run: 'docker build -f apps/worker/Dockerfile -t tp-worker:t .' }")).toEqual(['fixture.yml a: builds apps/worker/Dockerfile in a script, which this rule cannot follow']);
+    expect(problems("{ uses: 'docker/build-push-action@x', with: { file: apps/worker/Dockerfile, push: true, tags: 'registry/w:1' } }")).toEqual(['fixture.yml a: builds apps/worker/Dockerfile into no local tag, so nothing checks its headless shell before it leaves the job']);
   });
 
   it('restores and checks the system packages before the browser install wherever Playwright installs its libraries but the release, which restores no cache (V3)', () => {

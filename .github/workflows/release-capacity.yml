@@ -69,6 +69,15 @@ jobs:
           tags: tp-worker:capacity
           cache-from: type=gha,scope=screening-capacity-worker
 
+      # The worker prints the audit report measured here with its headless shell: every file of it, inside the image
+      # built (a cached layer included), held to apps/web/e2e/browser.json before anything is installed or measured
+      # (tools/ci/browser-build.ts; docs/adr/0066, Part 3). Node 24 with no cache for it: the check imports only Node's
+      # own modules, and nothing restored runs before it.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with: { node-version: 24, package-manager-cache: false }
+      - name: Check the worker image's headless shell against browser.json
+        run: node tools/ci/browser-build.ts --image tp-worker:capacity
+
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with: { node-version: 24, cache: pnpm }
