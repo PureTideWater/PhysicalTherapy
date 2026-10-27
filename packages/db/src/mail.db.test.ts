@@ -377,6 +377,7 @@ describe('the mail tables and their grants (SEC-18)', () => {
       'screening_mail_sending()': { definer: false, grantees: [] },
       'screening_mail_gate()': { definer: true, grantees: [SCREENING_ROLE] },
       'screening_mail_status()': { definer: true, grantees: [APP_ROLE] },
+      'screening_submit_mail_refusal(text,text,text)': { definer: true, grantees: [APP_ROLE] },
       'screening_upload_mail_gate()': { definer: false, grantees: [] },
       'screening_bounce_budget_spent(text,text)': { definer: false, grantees: [] },
       'screening_contact_refused(text)': { definer: false, grantees: [] },

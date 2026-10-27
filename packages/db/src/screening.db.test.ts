@@ -584,8 +584,10 @@ describe('the roles reach the tables only through their functions', () => {
       'console_register_marketing_campaign',
       // The "sent" page's wait state (migration 20261106090000).
       'screening_wait',
-      // Whether the screening's mail is paused, and ready (migration 20261107090000; screeningOpen()).
+      // Whether the screening's mail is paused, and ready (migration 20261107090000; screeningOpen()), and its refusal of
+      // an upload before the web checks the address (review S4).
       'screening_mail_status',
+      'screening_submit_mail_refusal',
     ];
     // The nine that price a screening stay the operator's for the one release the previous image's platform task may
     // still price in (migration 20261106090000); the first schema pull request after it is deployed takes them away.
@@ -699,11 +701,18 @@ describe('the screening rules', () => {
     await pauseScreeningMail();
     await admin.query("INSERT INTO screening_mail_refusal (recipient_sha256, reason, expires_at) VALUES (mail_recipient_sha256('closed.first@synthetic.test'), 'bounced', now() + interval '1 day')");
     await expect(submit({ email: 'closed.first@synthetic.test' })).rejects.toMatchObject({ code: '23514', constraint: 'screening_closed' });
+    // The web's check before the address says so too, so nothing of the list is read while closed (S4).
+    const precheck = async () =>
+      (await as<{ refusal: string | null }>(APP_ROLE, 'SELECT screening_submit_mail_refusal($1, $2, NULL) AS refusal', ['closed.first@synthetic.test', accountSubject()]))[0]?.refusal;
+    expect(await precheck()).toBe('screening_closed');
     await resetScreeningMail();
     await publishSyntheticRelease(900001);
     expect(await as(APP_ROLE, 'SELECT * FROM screening_status()')).toEqual([{ release_no: null, place_of_service_split_id: null }]);
     await expect(as(APP_ROLE, SUBMIT, submitValues())).rejects.toMatchObject({ code: '23514', constraint: 'screening_closed' });
+    expect(await precheck()).toBe('screening_closed');
     await approveSplit();
+    // Open, the stream sending and the list reset: nothing to refuse for the mail.
+    expect(await precheck()).toBeNull();
   }, 60_000);
 
   it('opens with the release and the split in force, and refuses a ZIP the release does not map, and one whose ZIP+4 list is not loaded with or without a ZIP+4', async () => {
@@ -1535,6 +1544,36 @@ describe('PR 6b-4: the screening’s mail (migration 20261107090000; audit #76, 
       (error: unknown) => error as { message: string; detail?: string },
     );
     expect(`${failure?.message ?? ''} ${failure?.detail ?? ''}`).not.toContain('@');
+  });
+
+  it('answers the web, before it checks an address, with the refusal submit_screening() would give for the mail, in its order, writing nothing (S4)', async () => {
+    const refused = `precheck.${letters()}@synthetic.test`;
+    const budgeted = sha256(`precheck account ${randomUUID()}`);
+    const client = sha256(`precheck client ${randomUUID()}`);
+    await admin.query("INSERT INTO screening_mail_refusal (recipient_sha256, reason, expires_at) VALUES (mail_recipient_sha256($1), 'bounced', now() + interval '1 day')", [refused]);
+    await markSubject(budgeted, 'account');
+    await markSubject(client, 'client');
+    const precheck = async (email: string, account: string, clientSubject: string | null) =>
+      (await as<{ refusal: string | null }>(APP_ROLE, 'SELECT screening_submit_mail_refusal($1, $2, $3) AS refusal', [email, account, clientSubject]))[0]?.refusal;
+    const other = `precheck.other.${letters()}@synthetic.test`;
+    expect(await precheck(other, accountSubject(), null)).toBeNull();
+    expect(await precheck(` ${refused.toUpperCase()} `, accountSubject(), null)).toBe('screening_contact_undeliverable');
+    // The submitter's budget before the address, for the account and the client alike (S1).
+    expect(await precheck(refused, budgeted, null)).toBe('screening_bounce_budget');
+    expect(await precheck(other, budgeted, null)).toBe('screening_bounce_budget');
+    expect(await precheck(refused, accountSubject(), client)).toBe('screening_bounce_budget');
+    // The same answers submit_screening() gives.
+    const submitted = (options: SubmitOptions) => submit(options).then(() => null, (error: unknown) => (error as { constraint?: string }).constraint);
+    expect(await submitted({ email: refused, rateSubject: budgeted })).toBe(await precheck(refused, budgeted, null));
+    expect(await submitted({ email: refused })).toBe('screening_contact_undeliverable');
+    // Paused before the rest (closed before that: the screening rules' setup).
+    await pauseScreeningMail();
+    expect(await precheck(refused, budgeted, client)).toBe('screening_paused');
+    await resetScreeningMail();
+    // A subject not shaped as one finds no marks; nothing is written.
+    const before = (await admin.query<{ n: number }>('SELECT (SELECT count(*) FROM screening_prospect) + (SELECT count(*) FROM audit_event) AS n')).rows[0]?.n;
+    expect(await precheck(other, 'not-a-subject', 'nor-this')).toBeNull();
+    expect((await admin.query<{ n: number }>('SELECT (SELECT count(*) FROM screening_prospect) + (SELECT count(*) FROM audit_event) AS n')).rows[0]?.n).toBe(before);
   });
 
   it('records a refused upload, which is never emailed, whatever the stream’s state or the refusal list says', async () => {
