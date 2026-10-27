@@ -154,9 +154,9 @@ dispute set would fail 53200. The release-capacity run has no reconcile phase, s
 
 **How the worker runs jobs.** One worker task per environment (`infra/lib/environments.ts:111`: 0.5 vCPU, 1,024 MiB,
 `desiredCount: 1`), one Node process, one V8 heap of 560 MiB (`infra/lib/heap.ts:9`; today's automatic size, made
-explicit by ADR 0071). `startWorker` works every practice queue in that process at once (`apps/worker/src/worker.ts:224-229`),
-one job per queue at a time (`workOptions`, `apps/worker/src/jobs/registry.ts:160-162`) and `parse_835` four at a
-time. The twelve practice queues are `intake`, `parse_835`, `monitor`, `price`, `triage`, `audit_report`,
+explicit by ADR 0071). `startWorker` works every practice queue in that process at once
+(`apps/worker/src/worker.ts:224-229`), one job per queue at a time (`workOptions`,
+`apps/worker/src/jobs/registry.ts:160-162`) and `parse_835` four at a time. The twelve practice queues are `intake`, `parse_835`, `monitor`, `price`, `triage`, `audit_report`,
 `reconcile`, `digest`, `export`, `packet_export`, `roi_statement` and `report_document`. So a price job, a triage, an
 audit report and a reconcile, each possibly of a different practice, run at once in one heap. The report prints its PDF
 with Chromium, launched per report in the same task (`apps/worker/src/report/pdf.ts:23`), while it still holds its
@@ -351,7 +351,8 @@ statement.
   candidate of a pattern to group it, and the stage writes need their IDs. Probe T measured them: 107 MiB of live
   heap after judging 66,666 candidates, against 84 MiB after judging 33,332 on a re-triage, so about 720 bytes per
   candidate above a base of about 61 MiB, 46 MiB at the target. Grouping in SQL instead would move `@tp/triage`'s
-  judgement, which reads the trace in TypeScript, into the database, for memory the target does not need. (Triage's anomaly screen holds the quarter's unpriced lines, slim rows without traces, as today.)
+  judgement, which reads the trace in TypeScript, into the database, for memory the target does not need. (Triage's
+  anomaly screen holds the quarter's unpriced lines, slim rows without traces, as today.)
 
 **3. The report held whole: it streams.**
 - Recommended: **the report folds its figures batch by batch and streams its CSV.** It reads `runLines`' query through
@@ -558,7 +559,8 @@ $$;
 ```
 
 A try that fails queues nobody, so stage writers, people's reopens among them, go on as before while the migration
-waits for a moment with no stage writer in flight. If none comes in five minutes, the migration fails, the deploy
+waits for a moment with no stage writer in flight (probe N: while a writer held its transaction open, another writer's
+insert took 0.09 s, and the loop took the lock on its fifth try, once the first had ended). If none comes in five minutes, the migration fails, the deploy
 stops before any service moves (`docs/runbooks/deploy-and-rollback.md`, the migration task runs first), and the deploy
 is run again. Section 4.4 takes `claim`'s lock the same way.
 
@@ -1039,8 +1041,8 @@ connections in the practice's scope and lines from the row factory, unless a tes
 ### 8.2 The weekly workflow, and the local reproduction
 
 - **Weekly.** `release-capacity.yml` runs on Tuesdays at 03:29 UTC and on request, from the default branch
-  (`claude/build-platform`, since repository setting F1 (a)). With SUITE-CAP-1b it reads the new checks (D10) and runs the new phase (D20),
-  and under Q1 one more. On a failure it opens or comments on the issue "Release capacity test failing"
+  (`claude/build-platform`, since repository setting F1 (a)). With SUITE-CAP-1b it reads the new checks (D10) and runs
+  the new phase (D20), and under Q1 one more. On a failure it opens or comments on the issue "Release capacity test failing"
   (`docs/runbooks/ci.md:44-45`).
 - **Locally, the same harness**, under `flock /tmp/laneb-heavy.lock`:
   `pnpm exec tsx tools/release-capacity/run.ts --out <dir> --runtime process --images <dir> --admin-url
@@ -1299,8 +1301,8 @@ No web file changes in either: the Cases page reaches the new reader through `@t
 - **The report's read of the practice's whole ledger** (`ledgerEntries`, `reconcile/ledger.ts:61-64`): it grows with
   the practice's recovery history, not with a month's lines, and D18 halves it (read once, not twice). Reading only the
   run's cases' entries changes which entries the correction chains resolve against (`entriesById`), a change to how
-  the reconcile module reads the ledger that deserves its own review; D19's
-  heap line and the weekly run measure it as the history grows.
+  the reconcile module reads the ledger that deserves its own review; D19's heap line and the weekly run measure it as
+  the history grows.
 - **The worker's other queues' heap.** `parse_835` runs four at once, each bounded at 128 MiB of heap for the normalizer
   (`era-export.large.db.test.ts`), and `export`, `packet_export`, `roi_statement` and `report_document` read a
   practice's data too. None is this item's, and D19 now logs each one's live heap, so the weekly run and the alarm see
@@ -1337,6 +1339,7 @@ private cluster removed, at the end.
 | E1 | V0 after `VACUUM` of the emptied table (reltuples 0): the validated insert still running after 9.5 minutes, stopped |
 | E2 | H2 on a fresh database after `VACUUM ANALYZE` of both empty tables: 2.0 + 10.5 + 8.4 = 20.9 s, linear |
 | S (revision) | After `VACUUM ANALYZE` of the empty tables (reltuples 0), as the owner with the practice in scope: today's trigger, 4,000 events in one transaction, `pg_stat_xact_user_tables.seq_scan` on `line_status` +4,000 and 4,000 advisory locks; H2, 40,000 events, `seq_scan` +0 on `line_status` and on `line_status_head` (`idx_scan` on the head +40,000), 0 advisory locks, 3.57 s (10,000: 0.92 s) |
+| N (revision) | The lock loop of 4.2 (20 tries) while one connection held a transaction that had inserted a stage event for 4 s: a third connection's stage insert committed in 0.09 s, unqueued; the loop took `ShareRowExclusiveLock` on its fifth try, after the holder ended |
 | L1 | One transaction re-takes the practice's `ledger:` key 50,000 times: 1 lock-table entry (D8's premise) |
 | Backfill | The DISTINCT ON read of 180,000 events with every practice in scope: 0.41 s |
 | B to G2 | 100,000 lines through the job code: section 8.3 |
@@ -1361,7 +1364,7 @@ code, and the memory ones by probe, before it was taken.
 
 | Finding | Checked | Disposition |
 | --- | --- | --- |
-| **F1, concurrent large jobs share one heap** (should fix) | The structure is true. `startWorker` works every practice queue in one process (`worker.ts:224-229`; the review cited :236, the platform loop), one job per queue (`registry.ts:160-162`), on one task (`environments.ts:111`). The particular crash did not reproduce at 100,000 lines: probe T ran X's report and Y's triage together under the 560 flag with Chromium, and both completed (83.7 s; sampled heap peak 483 MiB; live heaps 154 and 107 MiB alone). Adding the two sampled peaks counts each job's uncollected garbage. The structure is as the review states, the margin was unmeasured, the sampled heap reached 86%, and the report's held lines coincided with Chromium. | **Taken**, for the margin and the measure rather than a crash at 100,000. The report now streams (D14, D17, D18): it folds its figures per batch, keeps each CSV row in a byte arena outside the heap (108 bytes of heap per line, probe M), writes the CSV before it prints, and reads deadlines and the patient balance by batch. Triage's judged candidates are its only per-line holder (2.2). New: the harness phase "large jobs together" (D20: A's report, D's triage, E's price and C's parses at once) and CAS-42.2 (a 100,000-line report and another practice's 100,000-line triage in one process under 560 MiB). The gate was considered and rejected (2.3: pg-boss's expiry runs while a fetched job waits, and small practices would wait on large ones), so it is not added. |
+| **F1, concurrent large jobs share one heap** (should fix) | The structure is true. `startWorker` works every practice queue in one process (`worker.ts:224-229`; the review cited :236, the platform loop), one job per queue (`registry.ts:160-162`), on one task (`environments.ts:111`). The particular crash did not reproduce at 100,000 lines: probe T ran X's report and Y's triage together under the 560 flag with Chromium, and both completed (83.7 s; sampled heap peak 483 MiB; live heaps 154 and 107 MiB alone). Adding the two sampled peaks counts each job's uncollected garbage. But the margin was unmeasured, the sampled heap reached 86%, and the report's held lines coincided with Chromium. | **Taken**, for the margin and the measure rather than a crash at 100,000. The report now streams (D14, D17, D18): it folds its figures per batch, keeps each CSV row in a byte arena outside the heap (108 bytes of heap per line, probe M), writes the CSV before it prints, and reads deadlines and the patient balance by batch. Triage's judged candidates are its only per-line holder (2.2). New: the harness phase "large jobs together" (D20: A's report, D's triage, E's price and C's parses at once) and CAS-42.2 (a 100,000-line report and another practice's 100,000-line triage in one process under 560 MiB). The gate was considered and rejected (2.3: pg-boss's expiry runs while a fetched job waits, and small practices would wait on large ones), so it is not added. |
 | **F2, the memory trigger measured the wrong quantity** (should fix) | True: the binding limit is the 560 MiB heap; G2's report peaked at 86% of it; the probes printed with the stand-in (`triage-world.ts:80`); #49's run peaked at 803.9 MiB. One correction: Chromium is installed in this container, at `/opt/pw-browsers` (revision 1194, the one playwright-core 1.56.1 launches), only not at Playwright's default path. | **Taken.** The 70% container trigger is gone, and so is the deferral it guarded. The heap is measured as the live heap after full collections, per job (D19), checked at 75% of the limit in the weekly run (D10) and alarmed in production (D23). CAS-42.1 runs each job alone under a 420 MiB flag (75%). Probe T re-measured with Chromium, and 8.3 states which probes used the stand-in. SUITE-CAP-1b's first slice re-runs the large tests with Chromium before anything is built (8.2). |
 | **F3, a rollback to the previous image runs out of heap** (should fix) | True: probe E is the previous image's reads on the new trigger, and it ends in a heap out-of-memory where today the report fails 53200 at 48 s. D12, D13, D14 and D16 depend on nothing in the migration. | **Taken.** Two pull requests (2.4, D21): SUITE-CAP-1a, the bounded reads, with no migration and outside the serial chain, then SUITE-CAP-1b. From launch on 1a ships in an earlier release; 4.7, ADR 0083 and the runbook say so. |
 | **F4, the deploy's lock waits behind long transactions** (nit) | True: `LOCK TABLE` waits for in-flight stage writers and queues later ones; the report prints inside its transaction; no `lock_timeout` exists (`migrate.ts` sets none). | **Taken, as a loop of `NOWAIT` tries** (D22, 4.2, 4.4) rather than `lock_timeout = '10s'`: a `NOWAIT` try queues nobody, so no reopen waits even ten seconds, and the migration fails cleanly after five minutes without a gap. 4.7 and section 12 corrected. |
