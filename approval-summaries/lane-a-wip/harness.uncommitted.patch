@@ -1,0 +1,132 @@
+diff --git a/tools/screening-capacity/measure.test.ts b/tools/screening-capacity/measure.test.ts
+index 6a0c007b..5bf27b80 100644
+--- a/tools/screening-capacity/measure.test.ts
++++ b/tools/screening-capacity/measure.test.ts
+@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
+ import { SCREENING_MAIN_HEAP_FLAG } from '../../apps/worker/src/screening/threads';
+ import { COMMANDS } from '../../infra/lib/constructs/compute';
+ import { MIB, MIN_ROUND_TRIP_MS, NETWORK_DELAY_MS, cpuLayout, postgresLimit, productionLimits } from './limits';
+-import { anonBytes, cpuThrottling, emailedLines, ioMax, median, memoryEvents, phaseLines, phasesByRun, pricedRuns, psqlTimings, workerStarted } from './measure';
++import { anonBytes, cpuThrottling, emailedLines, ioMax, median, memoryEvents, phaseLines, phasesByRun, pricedRuns, psqlTimings, untilComplete, workerStarted } from './measure';
+ import {
+   CommandError,
+   ROUND_TRIP_SCRIPT,
+@@ -100,6 +100,44 @@ describe('the consumer’s log', () => {
+   });
+ });
+ 
++describe('a result link, opened once its run commits', () => {
++  /** A clock the waits move: sleep advances it, and nothing waits for real. */
++  function clock() {
++    let at = 0;
++    return { now: () => at, sleep: (ms: number) => ((at += ms), Promise.resolve()) };
++  }
++
++  it('waits while an emailed run is still pricing (its completion not yet committed) and returns once it reads complete', async () => {
++    const time = clock();
++    // S4-1's email is in the outbox while its completion's transaction has not committed: pricing for 600 ms.
++    const reads: string[] = [];
++    const status = (upload: string) => {
++      reads.push(`${upload}@${String(time.now())}`);
++      return Promise.resolve(upload === 'S4-1' && time.now() < 600 ? 'pricing' : 'complete');
++    };
++    expect(await untilComplete(['S4-1', 'S4-2'], status, { waitMs: 30_000, ...time })).toEqual([]);
++    expect(time.now()).toBe(750);
++    // S4-2 is read once; S4-1 until it commits.
++    expect(reads).toEqual(['S4-1@0', 'S4-2@0', 'S4-1@250', 'S4-1@500', 'S4-1@750']);
++  });
++
++  it('gives up at the wait and returns the runs not complete, whose links are then opened as sent', async () => {
++    const time = clock();
++    const late = await untilComplete(['S1-1', 'S1-2', 'S1-3'], (upload) => Promise.resolve(upload === 'S1-1' ? 'complete' : upload === 'S1-2' ? 'pricing' : null), { waitMs: 1_000, ...time });
++    expect(late).toEqual(['S1-2', 'S1-3']);
++    expect(time.now()).toBe(1_000);
++  });
++
++  it('reads a status it cannot read as not complete, and waits for nothing when every run is complete or there is none', async () => {
++    const time = clock();
++    expect(await untilComplete(['S2-1'], () => Promise.reject(new Error('the connection went away')), { waitMs: 500, ...time })).toEqual(['S2-1']);
++    const still = clock();
++    expect(await untilComplete([], () => Promise.resolve(null), { waitMs: 30_000, ...still })).toEqual([]);
++    expect(await untilComplete(['S3-1'], () => Promise.resolve('complete'), { waitMs: 30_000, ...still })).toEqual([]);
++    expect(still.now()).toBe(0);
++  });
++});
++
+ describe('the services’ commands', () => {
+   it('are production’s task definitions’ own, the consumer’s with the main thread’s 512 MiB heap', () => {
+     expect(SERVICE_COMMANDS.web).toEqual(COMMANDS.web);
+diff --git a/tools/screening-capacity/measure.ts b/tools/screening-capacity/measure.ts
+index 96f4c16a..fb382e27 100644
+--- a/tools/screening-capacity/measure.ts
++++ b/tools/screening-capacity/measure.ts
+@@ -145,6 +145,34 @@ export function emailedLines(lines: Iterable<string>): EmailedLine[] {
+   return found;
+ }
+ 
++/**
++ * Waits until each upload's run reads `complete`, at most `waitMs` for them all, and returns the uploads whose run did
++ * not (in the order given). The consumer sends a result's email inside its completion's transaction and commits after
++ * the send returns (apps/worker/src/screening/job.ts), so the local outbox's file, which the harness reads its link
++ * from, can be there a moment before the run commits, and the link opens nothing until it does. The harness opens a
++ * link only once its run reads complete, so a link that does not open is a broken link, not one opened too early; a
++ * run still not complete after the wait is opened anyway, and its link's status says what a person would have seen.
++ * `status` reads a run's status (null for no run); `sleep` and `now` are the clock (the tests give their own).
++ */
++export async function untilComplete(
++  uploads: readonly string[],
++  status: (upload: string) => Promise<string | null>,
++  options: { readonly waitMs: number; readonly pollMs?: number; readonly now?: () => number; readonly sleep?: (ms: number) => Promise<void> },
++): Promise<string[]> {
++  const now = options.now ?? Date.now;
++  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
++  const until = now() + options.waitMs;
++  let waiting = [...uploads];
++  for (;;) {
++    const read = await Promise.all(waiting.map(async (upload) => ((await status(upload).catch(() => null)) === 'complete' ? null : upload)));
++    waiting = read.filter((upload): upload is string => upload !== null);
++    if (waiting.length === 0 || now() >= until) {
++      return waiting;
++    }
++    await sleep(options.pollMs ?? 250);
++  }
++}
++
+ /** The runs a container's log shows it pricing or emailing: any phase line or time-to-email line names the run. */
+ export function pricedRuns(lines: readonly string[]): Set<string> {
+   return new Set([...phaseLines(lines).map((line) => line.runId), ...emailedLines(lines).map((line) => line.runId)]);
+diff --git a/tools/screening-capacity/run.ts b/tools/screening-capacity/run.ts
+index b143b3bc..32609ab8 100644
+--- a/tools/screening-capacity/run.ts
++++ b/tools/screening-capacity/run.ts
+@@ -44,7 +44,7 @@ import {
+   productionLimits,
+   runnerTooSmall,
+ } from './limits';
+-import { anonBytes, cpuThrottling, emailedLines, memoryEvents, peak, phaseLines, phasesByRun, pricedRuns, workerStarted } from './measure';
++import { anonBytes, cpuThrottling, emailedLines, memoryEvents, peak, phaseLines, phasesByRun, pricedRuns, untilComplete, workerStarted } from './measure';
+ import {
+   ADDRESS_CHECK_CHARGE_MS,
+   type AppliedLimits,
+@@ -694,6 +694,21 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context,
+     const read = await response?.arrayBuffer().catch(() => null);
+     return read === undefined || read === null ? null : (response?.status ?? null);
+   };
++  // The consumer emails a result inside its completion's transaction, so the outbox's file can be read before the run
++  // commits: each link is opened once its run reads complete (at most LOG_WAIT_MS for them all), so a link that does
++  // not open then is broken, never one opened a moment too early (untilComplete; the 404 of S4#3 S4-1 on fb0af1d).
++  const linked = prepared.filter((entry) => entry.link !== null);
++  const notComplete = await untilComplete(
++    linked.map((entry) => entry.upload.id),
++    async (id) => {
++      const entry = linked.find((item) => item.upload.id === id);
++      return entry === undefined ? null : ((await runFacts(await owner.client(), entry.upload.contactEmail))?.status ?? null);
++    },
++    { waitMs: LOG_WAIT_MS },
++  );
++  for (const id of notComplete) {
++    say(`${label}: upload ${id} was emailed and its run was not complete after ${String(LOG_WAIT_MS / 1000)} s; its link is opened as sent`);
++  }
+   const resultStatuses = new Map<string, { readonly first: number | null; readonly last: number | null }>();
+   for (const entry of prepared) {
+     if (entry.link !== null) {
