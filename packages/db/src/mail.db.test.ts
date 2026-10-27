@@ -398,6 +398,8 @@ describe('the mail tables and their grants (SEC-18)', () => {
         grantees: [OPERATOR_ROLE],
       },
       'operator_mail_account_signal(text,text)': { definer: true, grantees: [OPERATOR_ROLE] },
+      'operator_mail_cutoff(text)': { definer: true, grantees: [OPERATOR_ROLE] },
+      'mail_stream_cutoff(text)': { definer: false, grantees: [] },
       'operator_mail_streams()': { definer: true, grantees: [OPERATOR_ROLE] },
       'operator_mail_stream_confirmed(text,boolean)': { definer: true, grantees: [OPERATOR_ROLE] },
       'operator_mail_probe_sent(text)': { definer: true, grantees: [OPERATOR_ROLE] },
@@ -677,6 +679,36 @@ describe('the screening stream’s cut-off (SCR-21; the founder’s Q9)', () => 
     await expectCounts(12, 4, 1);
     await owner.query("UPDATE mail_stream SET window_starts_at = now() WHERE stream = 'screening'");
     await expectCounts(0, 0, 0);
+  });
+
+  it('pauses on the window alone when the platform’s mail_events run asks, so a window that shrinks past the line is seen without a new bounce (M9)', async () => {
+    const cutoff = async () => (await as<{ paused: string | null }>(OPERATOR_ROLE, 'SELECT operator_mail_cutoff($1) AS paused', [request()]))[0]?.paused;
+    // Under the line: nothing.
+    await resetScreening();
+    await seedScreening(144, 6, 0);
+    expect(await cutoff()).toBeNull();
+    expect(await streamRow('screening')).toMatchObject({ paused_at: null });
+    // A window that shrank: 600 sends of 8 days ago leave it, and 29 bounces of 400 sends stay (7.25%).
+    await resetScreening();
+    await owner.query(
+      `INSERT INTO mail_send (ses_message_id, stream, kind, subject_id, state, sent_at)
+       SELECT 'old' || replace(gen_random_uuid()::text, '-', ''), 'screening', 'screening_result', gen_random_uuid(), 'delivered', now() - interval '8 days'
+         FROM generate_series(1, 600)`,
+    );
+    await seedScreening(371, 29, 0);
+    const before = await auditCount('mail_stream_paused', null, 'bounce_rate');
+    expect(await cutoff()).toBe('bounce_rate');
+    expect(await streamRow('screening')).toMatchObject({ paused_reason: 'bounce_rate', paused_by: null, pause_sends: 400, pause_bounces: 29, ses_enabled_confirmed_at: null });
+    expect(await auditCount('mail_stream_paused', null, 'bounce_rate')).toBe(before + 1);
+    // Once: paused already, a second run pauses nothing again.
+    expect(await cutoff()).toBeNull();
+    expect(await auditCount('mail_stream_paused', null, 'bounce_rate')).toBe(before + 1);
+    // Complaints the same way, by the same rule as an event's.
+    await resetScreening();
+    await seedScreening(97, 0, 3);
+    expect(await cutoff()).toBe('complaint_rate');
+    // Only the platform's role may ask.
+    expect(await code(as(APP_ROLE, 'SELECT operator_mail_cutoff($1)', [request()]))).toBe('42501');
   });
 
   it('pauses the screening alone on the account’s signals, once, and never pauses the other streams, whatever their bounces', async () => {

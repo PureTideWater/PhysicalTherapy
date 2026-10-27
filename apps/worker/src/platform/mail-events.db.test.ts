@@ -255,6 +255,26 @@ describe('the mail_events job', () => {
     expect(await stream('screening')).toMatchObject({ paused_reason: null, confirmed: true });
   });
 
+  it('pauses the screening stream on its window at each run, though no new bounce arrives, as a window that shrank past the line (M9)', async () => {
+    // 7 permanent bounces among 100 sends, recorded before this run: no event of this run re-reads the window.
+    await owner.query(
+      `INSERT INTO mail_send (ses_message_id, stream, kind, subject_id, state, bounce_kind, bounce_subtype, sent_at)
+       SELECT 'seed' || replace(gen_random_uuid()::text, '-', ''), 'screening', 'screening_result', gen_random_uuid(),
+              CASE WHEN n <= 7 THEN 'bounced' ELSE 'delivered' END, CASE WHEN n <= 7 THEN 'permanent' END, CASE WHEN n <= 7 THEN 'general' END, now() - interval '10 seconds'
+         FROM generate_series(1, 100) n`,
+    );
+    const control = new MemoryMailControl();
+    const { lines, logger } = capture();
+    const result = await run({ source: new MemoryQueue(), control }, logger);
+    expect(result.paused).toBe('bounce_rate');
+    expect(control.changes).toEqual([false]);
+    expect(await stream('screening')).toMatchObject({ paused_reason: 'bounce_rate', confirmed: false });
+    expect(lines).toEqual(expect.arrayContaining([expect.objectContaining({ level: 'error', error_code: 'MAIL_STREAM_PAUSED' })]));
+    expect(lines.filter((line) => line.error_code === 'MAIL_STREAM_DRIFT')).toEqual([]);
+    // The next run finds it paused already: no second pause.
+    expect(await run({ source: new MemoryQueue(), control })).toMatchObject({ paused: null });
+  });
+
   it('pauses only the screening stream on an account alarm (account_rate) and on SES enforcement other than HEALTHY (account_review), once each', async () => {
     const alarm = (metric: string) =>
       JSON.stringify({

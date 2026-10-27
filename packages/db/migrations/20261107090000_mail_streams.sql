@@ -8,7 +8,8 @@
 -- - mail_stream: the three SES streams (transactional, notices, screening), one seeded row each. Only the screening
 --   stream pauses (a CHECK): on its own rates over the window (permanent bounces above 3% of its sends, floor 200;
 --   complaints other than not_spam above 0.08%, floor 2,500; the window starts 7 days ago or at the last resume, whichever
---   is later), on the account's warning alarms (account_rate) or on SES's enforcement (account_review), or by hand. A
+--   is later; read at each screening bounce or complaint and once each mail_events run, operator_mail_cutoff()), on the
+--   account's warning alarms (account_rate) or on SES's enforcement (account_review), or by hand. A
 --   pause clears the SES confirmation; a resume (a platform administrator, cause_fixed or false_alarm) resets the window,
 --   makes the probes due at once and sends nothing until the platform's reconcile reads the screening set enabled again.
 --   Each row is seeded confirmed: no stream has been paused, and the platform's reconcile clears the confirmation within
@@ -893,6 +894,32 @@ BEGIN
 END;
 $$;
 
+-- The screening's cut-off (Q9), in integer arithmetic: permanent bounces above 3% of its sends (floor 200), else
+-- complaints other than not_spam above 0.08% (floor 2,500), over the window (mail_window_counts()). Pauses the stream
+-- once; the reason when this call paused it, null otherwise. Read when a screening bounce or complaint is recorded and
+-- once each mail_events run, so a window that shrinks past the line is seen without a new event (review M9). Granted
+-- to no role.
+CREATE FUNCTION mail_stream_cutoff(request text) RETURNS text
+LANGUAGE plpgsql VOLATILE SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE
+  counted record;
+BEGIN
+  SELECT w.sends, w.bounces, w.complaints INTO counted FROM mail_window_counts('screening') w;
+  IF counted.bounces::bigint * 10000 > 300 * greatest(counted.sends, 200)::bigint THEN
+    RETURN CASE WHEN mail_stream_pause('bounce_rate', NULL, request) THEN 'bounce_rate' END;
+  ELSIF counted.complaints::bigint * 100000 > 80 * greatest(counted.sends, 2500)::bigint THEN
+    RETURN CASE WHEN mail_stream_pause('complaint_rate', NULL, request) THEN 'complaint_rate' END;
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
+-- The platform's mail_events job, once a run (tp_operator): the cut-off on the window as it stands now.
+CREATE FUNCTION operator_mail_cutoff(request text) RETURNS text
+LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT mail_stream_cutoff($1)
+$$;
+
 -- One SES event of one message, recorded once (D5 step 3). The first event seen creates the message's row; a later one
 -- moves its state only forward. When the state moves: a probe sets its stream's probe columns; a notice's recipient row
 -- takes the state, and the notice's or the invoice's first undelivered recipient is reported (notice_undelivered: the
@@ -919,7 +946,6 @@ DECLARE
   touched_notice uuid;
   touched_invoice uuid;
   touched_stage text;
-  counted record;
 BEGIN
   recorded := false;
   notice_undelivered := NULL;
@@ -1057,16 +1083,7 @@ BEGIN
        WHERE v.marked IS NOT NULL
       ON CONFLICT DO NOTHING;
     END IF;
-    SELECT w.sends, w.bounces, w.complaints INTO counted FROM mail_window_counts('screening') w;
-    IF counted.bounces::bigint * 10000 > 300 * greatest(counted.sends, 200)::bigint THEN
-      IF mail_stream_pause('bounce_rate', NULL, request) THEN
-        stream_paused := 'bounce_rate';
-      END IF;
-    ELSIF counted.complaints::bigint * 100000 > 80 * greatest(counted.sends, 2500)::bigint THEN
-      IF mail_stream_pause('complaint_rate', NULL, request) THEN
-        stream_paused := 'complaint_rate';
-      END IF;
-    END IF;
+    stream_paused := mail_stream_cutoff(request);
   END IF;
   RETURN NEXT;
 END;
@@ -1501,10 +1518,10 @@ REVOKE ALL ON FUNCTION mail_recipient_canonical(text), mail_recipient_sha256(tex
   operator_support_notice_sent(uuid, uuid, text, text), operator_support_notice_failed(uuid, uuid, text, boolean, text), operator_due_support_notices(integer),
   dunning_notice_report_undelivered(uuid, text, text), billing_open_dunning_notice(uuid, text, text), billing_dunning_notices_pending(integer),
   billing_dunning_notice_claim(uuid, text, uuid), billing_dunning_notice_sent(uuid, text, uuid, text, text),
-  billing_dunning_notice_failed(uuid, text, uuid, text, boolean, text), mail_stream_pause(text, uuid, text),
+  billing_dunning_notice_failed(uuid, text, uuid, text, boolean, text), mail_stream_pause(text, uuid, text), mail_stream_cutoff(text),
   operator_record_mail_event(text, text, text, timestamptz, timestamptz, text, text, uuid, uuid, uuid, text, text, text, text),
-  operator_mail_account_signal(text, text), operator_mail_streams(), operator_mail_stream_confirmed(text, boolean), operator_mail_probe_sent(text),
-  operator_mail_expire(integer), console_mail_streams(), console_pause_mail_stream(text, text), console_resume_mail_stream(text, text),
+  operator_mail_account_signal(text, text), operator_mail_cutoff(text), operator_mail_streams(), operator_mail_stream_confirmed(text, boolean),
+  operator_mail_probe_sent(text), operator_mail_expire(integer), console_mail_streams(), console_pause_mail_stream(text, text), console_resume_mail_stream(text, text),
   console_mail_undelivered(timestamptz), console_support_grants(),
   submit_screening(text, text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], integer, integer, bigint,
     integer, bigint, bigint, text, text, text, text, text, text, text, text, timestamptz, text, text, text) FROM PUBLIC;
@@ -1512,8 +1529,8 @@ REVOKE ALL ON FUNCTION mail_recipient_canonical(text), mail_recipient_sha256(tex
 GRANT EXECUTE ON FUNCTION operator_open_support_notice(uuid, text, text), operator_support_notices_pending(integer), operator_support_notice_claim(uuid, uuid),
   operator_support_notice_sent(uuid, uuid, text, text), operator_support_notice_failed(uuid, uuid, text, boolean, text), operator_due_support_notices(integer),
   operator_record_mail_event(text, text, text, timestamptz, timestamptz, text, text, uuid, uuid, uuid, text, text, text, text),
-  operator_mail_account_signal(text, text), operator_mail_streams(), operator_mail_stream_confirmed(text, boolean), operator_mail_probe_sent(text),
-  operator_mail_expire(integer) TO tp_operator;
+  operator_mail_account_signal(text, text), operator_mail_cutoff(text), operator_mail_streams(), operator_mail_stream_confirmed(text, boolean),
+  operator_mail_probe_sent(text), operator_mail_expire(integer) TO tp_operator;
 GRANT EXECUTE ON FUNCTION billing_open_dunning_notice(uuid, text, text), billing_dunning_notices_pending(integer), billing_dunning_notice_claim(uuid, text, uuid),
   billing_dunning_notice_sent(uuid, text, uuid, text, text), billing_dunning_notice_failed(uuid, text, uuid, text, boolean, text) TO tp_billing;
 GRANT EXECUTE ON FUNCTION screening_mail_status(), screening_submit_mail_refusal(text, text, text), console_mail_streams(), console_pause_mail_stream(text, text),
