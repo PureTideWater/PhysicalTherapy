@@ -7,11 +7,19 @@ approval line or approvers.json; one schema PR open at a time; no schema PR merg
 GitHub login: PureTideWater.
 
 ## Now
-- **2026-10-27 20:58 UTC.** Machine OK (tools/setup-container.sh, every line ok, Playwright's Chromium included).
+- **2026-10-27 20:45 UTC.** Machine OK (tools/setup-container.sh, every line ok, Playwright's Chromium included).
   Worktree `/home/user/ss01` on `co-001/ss-01-suspension-refusal`, cut from #42's head 098636e3 and pushed.
   #42's fix round is on `co-001/wip-pr42-*`; its new head is merged into SS-01 with a merge commit as it moves.
-- **Next:** SS-01's build workflow: the design re-read against #42's head (one reviewer), then the builders by the
-  design's section 15 slices, then the integrator (local checks, push). The PR waits for #42 to merge.
+- **Running: wf_8ee54e2b-824 (ss01-build; script `workflow-scripts/lane-a-ss01-build-wf_8ee54e2b-824.js`), from
+  2026-10-27 20:45 UTC:** the design re-read against #42's 098636e3 (one reviewer), builder D (the migration
+  20261108090000 via the marker route, packages/db, domain model, function files), then W (worker, SS-08), C (console),
+  P (wrapper, customer surfaces, seed, e2e) and M (ADR 0080, amendments, matrix, synth) in parallel, then the
+  integrator (adversarial seam read, the full local suite once, one push; no PR). Progress files in the session's
+  scratchpad `progress/ss01-*.md`. Safety check-in trig_01CUguDmAfdnm5WQZr6UTJn7 at 2026-10-28 01:48 UTC.
+  If stopped: re-run the setup script if PostgreSQL is down, remove a leftover `/home/user/ss01/.claude/.allow-protected-edit`,
+  resume with resumeFromRunId (same session only).
+- **Next:** read the build's result; the PR waits for #42 to merge (then merge #42's head and the latest
+  claude/build-platform in, regenerate, open the draft PR, two reviews: security and tenancy, UX and brand).
 
 ## Items
 | # | Item | Branch | State |
@@ -29,4 +37,4 @@ GitHub login: PureTideWater.
   (`approval-summaries/founder-asks-2026-10-27.md`); each schema PR's domain-model approval.
 
 ## Log
-- 2026-10-27 20:58 UTC: session started; setup OK; SS-01 branch cut from #42's 098636e3 and pushed.
+- 2026-10-27 20:45 UTC: session started; setup OK; SS-01 branch cut from #42's 098636e3 and pushed; wf_8ee54e2b-824 started.
