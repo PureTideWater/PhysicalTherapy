@@ -23,3 +23,8 @@ Clone: $P/designs/ss01-author
 - Reopen: no; guards only.
 - grants view only before M12: settings.ts:46-48 confirms.
 - resumed 2026-10-27 (run 2)
+## Run 2 (resumed)
+- re-read: LANES.md (rows 180,185; Handed to Lane A :255-262), status file, SS-01..14, ux-review §5 (UX-004 only suspension item in §5; also UX-046 PR78, UX-203 PR79, UX-204 PR57 touch console org/billing pages), ADR 0050 (#42 text :67-81, :118, amendment :128-150 Q13 deferral), ADR 0055 :56-60, :68-69
+- verified again: billing.sql :268-318, :399-409; tenancy.sql :19-27, :95-118, :486-496, :593-597; hardening :165-167; effective_practice_access fn; withJobScope (job actor never a person: scope.ts:260-285); recordRun person scope (price/create.ts:129-150); invoke.ts:294-300, :500-504; next.ts:172; uploads.ts:110-117; page.tsx:132-138,:164-171; console page :54-76 (#42 head), console.ts :83-113 (#42 head); console-mail.ts house pattern (wrapper audit *_requested + definer writes reserved action)
+## Outline (doc sections)
+0 header; 1 problem+evidence (probe); 2 refusal paths table; 3 options A/B/C + rec B; 4 decisions D1..Dn; 5 schema/migration; 6 app changes; 7 words verbatim; 8 SS-08; 9 reopen; 10 founder rulings touched; 11 tests BIL-07..10; 12 domain model regen; 13 founder decisions; 14 files (+#42); 15 risks; 16 slices; 17 out of scope / handed on
