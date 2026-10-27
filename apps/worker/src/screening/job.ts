@@ -65,8 +65,10 @@ import { newScreeningToken, screeningTokenHash } from './token';
  * EXPIRED and its contact told it could not be completed (its link would open nothing).
  *
  * A send that fails rolls the completion back and the job fails; the run stays in pricing with every row recorded, and
- * the sweep claims it again once it is stale. After a third attempt the sweep fails the run, commits that, and then tells the
- * contact: a notice the mail service refuses is logged, and the run has failed anyway.
+ * the sweep claims it again once it is stale. After a third attempt the sweep fails the run and tells the contact in the
+ * failure's transaction: a notice the mail service refuses is logged, and the run has failed anyway, but a notice refused
+ * because the screening's set is disabled rolls the failure back, and the run is failed and told after the resume
+ * (review M6).
  *
  * The sweep takes each due run on its own: a run that throws (its contact's address refused by the mail service,
  * say) is logged and the sweep goes on to the next, so no one run holds up the others.
@@ -206,20 +208,35 @@ function unionDays(a: readonly IsoDate[], b: readonly IsoDate[]): IsoDate[] {
 const elapsed = (since: number): number => Math.round(performance.now() - since);
 
 /**
- * Fails a run, commits that, then tells its contact; false when it had ended already. A notice the mail service
- * refuses is logged by the run's ID alone, and the run stays failed.
+ * Fails a run and tells its contact in the failure's transaction, as the completion sends its link; false when it had
+ * ended already. A notice SES refuses because the screening's set is disabled (the stream paused since the gate was
+ * read) rolls the failure back with it and throws (screeningMailPaused()): the run waits as it was, and is failed and
+ * told after the resume, so no failure is kept without its notice (review M6). A notice the mail service refuses for
+ * any other reason does not hold the failure back: it is kept, and the notice logged by the run's ID alone.
  */
 export async function failScreeningRun(dependencies: ScreeningJobDependencies, runId: string, failureCode: string, attempt: number | null = null): Promise<boolean> {
-  const failed = await asOperator(dependencies.operator, (client) => failRun(client, runId, failureCode, dependencies.jobId, attempt));
+  const failed = await asOperator(dependencies.operator, async (client) => {
+    const row = await failRun(client, runId, failureCode, dependencies.jobId, attempt);
+    if (row === null) {
+      return null;
+    }
+    try {
+      await dependencies.mail.send({
+        ...screeningFailedMessage({ to: row.contactEmail, startOver: screeningStartLink(dependencies.appOrigin) }),
+        identity: { stream: 'screening', kind: 'screening_failed', subjectId: runId },
+      });
+    } catch (error) {
+      if (screeningMailPaused(error)) {
+        throw error;
+      }
+      return { told: false };
+    }
+    return { told: true };
+  });
   if (failed === null) {
     return false;
   }
-  try {
-    await dependencies.mail.send({
-      ...screeningFailedMessage({ to: failed.contactEmail, startOver: screeningStartLink(dependencies.appOrigin) }),
-      identity: { stream: 'screening', kind: 'screening_failed', subjectId: runId },
-    });
-  } catch {
+  if (!failed.told) {
     dependencies.logger.warn('screening run failed and its notice could not be sent', { job_id: dependencies.jobId, screening_run_id: runId, error_code: 'SCREENING_NOTICE_UNDELIVERABLE' });
   }
   return true;
