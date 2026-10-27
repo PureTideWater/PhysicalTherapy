@@ -77,3 +77,18 @@ decision, open as issue #41 (decide before launch), with this measurement as its
   scratchpad/pr42/capacity-layout.sh, DB tp_pr6b4_harness_2, advisory) to prove the web line reaches the verdict and links
   open after commit; then final checks (pnpm typecheck, unit web+tools, db routes+mail-routes, lint:copy, lint:logs);
   drop tp_pr6b4_harness_1/_2; delete refs/scratch/*.
+- e2e run 2 at aa875181 tree (screening, hardware-key, mail-cutoff, contracts, models, onboarding, packets, pricing, reports,
+  unattested): 20 passed (4.7m). Every journey that registers a hardware key passes with the new helper.
+- NEXT: capacity smoke S1 (process runtime).
+- worker build + web build (under lock) ok; layout scratchpad/pr42/capacity-images; capacity smoke S1 running
+  (DB tp_pr6b4_harness_2, out scratchpad/pr42/capacity-out, release scratchpad/pr42/capacity-release, log capacity-smoke.log).
+- smoke: release 900100 built (2,247,791 records) 15:09:42; loading the release from 15:09:44
+## Proposals / open items (draft)
+- mail.ts registerKeyAndSignInAs (mail-cutoff journey, not my file) has the same retry problem: one line,
+  registerOrRestoreKeyAndSignIn(page, { name: account.key, email: account.email }, () => signInAs(page, account)).
+- Users page 'suppressed' (and the runbook 3.4 advice): "check the address, then invite again" does not help an address
+  SES's suppression list holds; a distinct sentence for suppressed (counsel/founder wording) is proposed.
+- ops plan pr6b-plan.md G1 still says "Run 7's 41.1 s becomes about 43.1 s"; CI measured 47.7 s (orchestrator's file).
+- Integrator: routes.ts conflict with fix-db (keep fix-db's precheck, then the two timing lines before const verdict).
+- Integrator: e2e chromium-1194 present now; full e2e worth running once after integration.
+- Proposal: infra metric filter on the web log's 'screening address checked' elapsed_ms (latency of DNS+validation in production; an alarm near the 2-s bound).
