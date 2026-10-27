@@ -1,0 +1,25 @@
+# PR 42 merge progress (bring #42 current with claude/build-platform)
+- Start: HEAD 13f59b12 (clean), branch co-001/pr-06b-mail-streams, worktree /home/user/pr6b4
+## Steps
+- [ ] fetch + merge --no-ff origin/claude/build-platform
+- [x] merge --no-ff --no-commit origin/claude/build-platform (e908c214) started; conflicts: consumer.db.test.ts, ADR 0062, reconciliation-001
+- [x] consumer.db.test.ts: took base's (4009ace4 moved helpers to test-support/consumer.ts, SCR-19 to consumer-lease.db.test.ts); PR's only change there (mail config eventsDir: null, streamPrefix) applied once in test-support/consumer.ts localMail() using DEVELOPMENT_MAIL_STREAM_PREFIX
+- [x] ADR 0062: Status lists 0064, 0066 Part 2 (base) and 0065 (PR); base's 'Amendment (ADR 0066, Part 2)' kept, then PR's 'Amendment (PR 6b-4)' after it; Revisit-when addition (PR) merged clean
+- [x] reconciliation-001: both blocks kept in date order: PR 6b-4's (answers of Oct 21, request of Oct 23) then base's (F1-F7 Oct 25, Q2/Q3 Oct 25, CQ1-CQ3 Oct 26)
+- [x] clean-merged both-sides files read: apps/web/package.json (sesv2 + next 16.4.3/postcss 8.5.31 both kept), routes index/registry.test (console-mail + base's comment), compute.test.ts (#53 readGatewayConfig(process.env, { serving: 'evaluable' }) kept + PR's mail tests), test-matrix/matrix.ts/registry.ts: 206 IDs, unique, identical sets in all three
+- [x] pnpm install (10.34.8, under lock): "Lockfile is up to date"; lockfile byte-identical to the textual merge; diff vs base = exactly PR's own 33 lines (client-sesv2 in web, client-sqs + middleware-sdk-sqs in worker)
+- [x] watched.ts --write: no change from the textual merge (535 lines; = base + PR's six mail/address modules)
+- [x] fresh PG18 db tp_pr6b4_merge_1 (5433) migrated from empty (45 migrations); pnpm -s db:domain-model --out --strict: exit 0; 98 tables, 1 view, 47 registered, 226 divergence rows (23 to approve), 0 explanation problems; Cross-checks: Drizzle 97/97, none missing, 0 column diffs, catalogProblems 0
+- [x] domain model: only provenance line changed vs PR head; Document SHA-256 07c4a8ee… (unchanged); file sha256sum 432baa48...
+- [x] packages/db/functions: 369 files; 35 added (PR's new functions), 7 changed (console_support_grants, operator_due_support_notices, submit_screening + policy/trigger comment lines in app_actor_group_practice_ids, app_actor_is_platform_admin, reject_change, set_updated_at), 3 removed (billing_owner_emails, operator_practice_administrator_emails, operator_record_support_notice: dropped by the migration)
+- staged all; NEXT: quick checks
+- [x] mail-routes.db.test.ts comment: route-tests.db.test.ts (removed by base) -> route-tests/define.ts
+- [x] pnpm typecheck: passed, 22 projects
+- [x] eslint --max-warnings=0 on 119 files (PR's ts/tsx + test-support/consumer.ts + consumer-lease.db.test.ts): exit 0
+- [x] vitest unit: apps/worker/src/screening, infra/test, packages/synth, tools/screening-capacity, routes registry.test + partition.test: 53 files, 1354 tests passed
+- [x] pnpm -s db:domain-model --check: exit 0 (document and 369 function names match)
+- [x] consumer.db.test.ts + consumer-lease.db.test.ts (base's SCR-19 file, now with the PR's mail gate) on PG18 5433: 2 files, 5 tests passed (197 s)
+- NEXT: commit merge
+- [x] merge committed: 098636e3… (parents 13f59b12, e908c214)
+- [x] BASE=origin/claude/build-platform pnpm toolchain:check: passed, 0 errors 0 warnings (2 added lockfile versions, each >= 3 days, integrity and trust ok)
+- [x] pushed 13f59b12..098636e3 (pre-push: fixture guard + gitleaks clean); db tp_pr6b4_merge_1 dropped. DONE (CI to be read by the fix round)
