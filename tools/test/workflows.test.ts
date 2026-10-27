@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { isDeepStrictEqual, stripVTControlCharacters } from 'node:util';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 
 import { consistencyProblems, formProblems, parsePin } from '../check-action-pins/workflows';
@@ -14,6 +14,18 @@ import { MAX_OPENED_PER_RUN } from '../content-calendar/render';
 import { repositoryRoot } from '../content-files';
 import { REQUIRED_CHECKS } from '../required-checks';
 import { RELEASE_RUNNER } from '../screening-capacity/launch-check';
+
+/**
+ * Many of these tests run a workflow step's script, git or a fake gh as GitHub would, hundreds of processes for the
+ * notify tests, and the simulated Dependabot rewrite runs the whole file again in a vitest of its own while the rest of
+ * the unit project runs, so their time grows with the runner's load. The content-calendar notify test took 0.9 s on an
+ * idle 4-CPU container, 1.0 to 2.2 s in that nested run beside the full unit project, 1.8 s in CI's own run (job
+ * 122241596089) and over 5 s in that job's nested run, which failed it at vitest's five-second default; on one CPU
+ * shared with eight busy loops it took 7.4 s and the slowest other test 4.0 s. Thirty seconds holds four times the
+ * worst of those, and still stops a test that hangs.
+ */
+const TEST_TIMEOUT_MS = 30_000;
+vi.setConfig({ testTimeout: TEST_TIMEOUT_MS });
 
 /**
  * The workflows: ci.yml's parallel jobs behind its one gate (docs/adr/0066, Part 1), with the image and licence gates

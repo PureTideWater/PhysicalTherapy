@@ -381,7 +381,10 @@ describe('properties of the verifier', () => {
   it('fails a draft into which any count not in the input is written', () => {
     fc.assert(
       fc.property(contentArbitrary, fc.integer({ min: 2, max: 100_000 }), (generated, count) => {
-        fc.pre(!narrativeFacts(generated).numbers.has(String(count)));
+        // A five-digit count reads as a procedure code, so one equal to an input's code (97140 at seed 2019154346) is
+        // that code, in the input; every other count is not.
+        const facts = narrativeFacts(generated);
+        fc.pre(!facts.numbers.has(String(count)) && !facts.codes.has(String(count)));
         const narrative = `${draftNarrative(generated)} It affected ${String(count)} visits [3].`;
         expect(flagged(narrative, verify(narrative, generated))).toEqual([String(count)]);
       }),
@@ -425,7 +428,11 @@ describe('properties of the verifier', () => {
   it('fails a draft into which a count not in the input is written in any other digits', () => {
     fc.assert(
       fc.property(contentArbitrary, fc.integer({ min: 2, max: 100_000 }), fc.constantFrom(...READ_ALPHABETS, ...OTHER_ALPHABETS), (generated, count, alphabet) => {
-        fc.pre(!narrativeFacts(generated).numbers.has(String(count)));
+        // A count read as ASCII digits must be in neither the input's numbers nor its codes (a five-digit count reads as a
+        // code, as in the property above); a count in digits it does not read fails whatever its value.
+        const facts = narrativeFacts(generated);
+        const read = (READ_ALPHABETS as readonly (number | string)[]).includes(alphabet);
+        fc.pre(!read || (!facts.numbers.has(String(count)) && !facts.codes.has(String(count))));
         const report = verify(`${draftNarrative(generated)} It affected ${inDigits(alphabet, String(count))} visits [3].`, generated);
         expect(report.passed).toBe(false);
         expect(codes(report)).toContain((OTHER_ALPHABETS as readonly (number | string)[]).includes(alphabet) ? 'unreadable_figure' : 'figure_not_in_input');
