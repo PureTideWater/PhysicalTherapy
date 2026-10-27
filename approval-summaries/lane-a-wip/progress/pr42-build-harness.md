@@ -98,3 +98,7 @@ decision, open as issue #41 (decide before launch), with this measurement as its
   2 of 2 uploads at 2.0 to 2.0 s"); both links 200 and last pages 200 after the commit wait; verdict fails only on what a
   partial process run cannot meet (partial run, Postgres limits, cold start, S2/S3 oracles). Out: scratchpad/pr42/capacity-out.
 - NEXT: drop tp_pr6b4_harness_1; final checks.
+- tp_pr6b4_harness_1 dropped; no tp_pr6b4_harness DB left.
+- pnpm typecheck (22 projects): passed.
+- unit (apps/web, tools/screening-capacity, tools/test, tools/brand-copy, tools/lint-logs): queued behind other lanes' lock holders (log unit-harness.log).
+- final checks queued as scratchpad/pr42/final-checks.sh (each command its own lock hold), log final-checks.log; earlier queued unit run cancelled (it would have timed out waiting for the lock).

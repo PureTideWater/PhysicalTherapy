@@ -41,3 +41,7 @@ Output: /home/user/ops/designs/ledger-interest-once.md
 - WRITTEN: 5 schema (5.1 objects, 5.2 deploy/rollback, 5.3 SQL) - verify vs prototype output
 - WRITTEN: 6 application (6.1-6.4)
 - WRITTEN: 7 words
+- WRITTEN: 8 tests (8.0 placeholder PROTOTYPE_RESULTS_PLACEHOLDER to fill), 8.1 matrix rows, 8.2 synth, 8.3 table
+- WRITTEN: 9 domain model+records, 10 founder, 11 files, 12 risks, 13 slices, 14 out of scope. TODO: 8.0 prototype results; final read-through
+- Read-through done for 0-4 (fixed citations: review file approval-summaries/lane-b-pr15b-review-payment-engine.md:57-58, :24, :64-68; ledger_mig lines 153/156-162/207-214/314-374/725-733; rem:804-805). Added CONSTRAINT 'ledger_interest_line_floor' to the floor RAISE + reverse route mapping by constraint. net-zero fixture now pays line 1 2.00 more (so today's code credits again).
+- Prototype (bh2elpwyj) still queued on flock behind suitecap1 large db test (~13 min). When done: fill 8.0 PROTOTYPE_RESULTS_PLACEHOLDER; check DB tp_design_interest_3 dropped.
