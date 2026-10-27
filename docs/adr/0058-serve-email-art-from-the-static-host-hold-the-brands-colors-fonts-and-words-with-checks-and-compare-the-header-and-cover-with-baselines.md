@@ -300,9 +300,13 @@ as much as by the browser: a change under 1% would pass the journey and leave th
 committed files, regenerates them with `--update-snapshots=all --retries=0`, requires the run to pass and the pictures
 present after it to be exactly the committed set, and fails on any byte that differs from the commit, printing each
 changed picture's SHA-256 and then the picture as numbered lines of 8,000 base64 characters (`<path> <i>/<n> <chunk>`),
-so a log reader that cuts long lines still gets it whole and proves the decode. The pull request that moved to 1.64.1 records its first passing run, with the seven SHA-256s,
-as this ADR's proof that ubuntu-26.04 renders the committed bytes; if the local host and CI ever disagree, CI's bytes are
-committed and the difference is recorded here. Every new set of baselines is inspected against this ADR's brand points,
+so a log reader that cuts long lines still gets it whole and proves the decode. The pull request that moved to 1.64.1
+records its first passing run, with the seven SHA-256s, as this ADR's proof that ubuntu-26.04 renders the committed
+bytes; if the local host and CI ever disagree, CI's bytes are committed and the difference is recorded here. For 1.64.1
+the seven were regenerated on Ubuntu 24.04 with the 1248 build laid out from Google's zips and held to `browser.json`,
+and a second run wrote nothing. Six are the 141 baselines pixel for pixel and changed bytes only because 1.64.1's PNG
+encoder picks other scanline filters, so any Playwright upgrade may rewrite every file; `report-cover-without-seal`
+moved 1,611 pixels in its title, Chrome 156's antialiasing, 0.19% of the picture against the journey's 1%. Every new set of baselines is inspected against this ADR's brand points,
 image by image, before it merges (for 1.64.1, by an adversarial visual-inspection agent, whose record the pull request
 links).
 
@@ -318,6 +322,6 @@ Name), which every `expectAccessible` scan now runs. The practice switcher was n
 the practice's name, and the account control "Account menu" while it shows the address and an initial. They are now
 named "<practice>, practice switcher" and "<address>, account menu", and the initial is drawn as CSS generated content
 (`data-initial`, `before:content-[attr(data-initial)]`), not a text node; the pictures are unchanged, byte for byte under
-1.56.1 (the seven regenerated and equal). The brand journey holds every header control's accessible name to contain each
+1.56.1 (the seven regenerated and equal) and pixel for pixel under 1.64.1 (both header pictures, against the 141 ones). The brand journey holds every header control's accessible name to contain each
 piece of its visible text, generated content included, at 1280 and 390 px: at 390 px the account shows only its initial,
 for which axe answers "incomplete" rather than a violation.
