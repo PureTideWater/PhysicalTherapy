@@ -6,7 +6,7 @@ Session: the parallel Lane B session started by the orchestrator (session_01Cntu
 None. The co-founder's standing ruling of 2026-10-26 ~00:20 UTC (relayed by the orchestrator): "Don't ask for approvals anymore just build and optimize." Every choice takes the recommended option (security: the safer one), recorded with its reasons here and in the design and PR description. Founder-kept matters stay out of scope; Lane B still opens no migration PR (LANES rule 2).
 
 ## Stage
-**PR 1 (#84): merged as 88a0e4e9 on 2026-10-26 09:51 UTC. PR 2 (#120): stopped cleanly at Lane B's wind-down (the orchestrator, 10:09 UTC), built but not integrated; branch `co-001/contract-phi-check` at d7447adb, no PR. Handoff below.**
+**PR 1 (#84): merged as 88a0e4e9 on 2026-10-26 09:51 UTC. PR 2 (#120): continued 2026-10-27 (entries at the end of this section). Earlier: stopped cleanly at Lane B's wind-down (the orchestrator, 10:09 UTC), built but not integrated; branch `co-001/contract-phi-check` at d7447adb, no PR. Handoff below.**
 
 - 2026-10-25 23:40 UTC: machine set up (`tools/setup-container.sh` printed OK; `gh api user` is PureTideWater).
 - 2026-10-25 23:55 UTC: read LANES.md, lane-b.md, CLAUDE.md, reconciliation-001's checks, audit #84 and #120. #42's files: none of this item's (only the shared test-matrix and synth registry, rule 6).
@@ -45,6 +45,9 @@ None. The co-founder's standing ruling of 2026-10-26 ~00:20 UTC (relayed by the 
 - 2026-10-26 ~10:00 UTC: worktree `/home/user/contract-phi-check` at 88a0e4e9; **builders** running (wf_f44416d7-444): the gateway screen and its synthetic twins, the web and worker call paths, the upload panel; then an integrator (docs, full suite once, commits). #42's overlap: only the shared docs (its e2e helpers are left alone).
 
 - 2026-10-26 10:09 UTC: wind-down (the orchestrator: weekly usage 90%, Lane B handed to Lane A). The three builders of wf_f44416d7-444 were let finish; the workflow was stopped at ~10:23 UTC as its integrator started (it had only listed files, and edited none). The tree typechecks (22 projects). Committed in three parts and pushed: **d7447adb**. No PR opened.
+
+- 2026-10-27 ~01:43 UTC: **Continued** by a parallel Lane B item session (session_017SNqG4nQbbt6xqEG1ZDKe6), started by Lane A's orchestrator (session_01TrKDxeLbxVo7t7zwRXFzrg) on the co-founder's instruction of 2026-10-27, from `lanes/lane-b-session-brief.md`. Machine: `setup-container.sh` OK except Playwright's browser (the proxy refuses storage.googleapis.com; known); `gh api user` is PureTideWater. Worktree `/home/user/contract-phi-check` at d7447adb.
+- 2026-10-27 ~01:43 UTC: **Base merged** (rule 6): `claude/build-platform` at e908c214 (171 commits) into the branch with a merge commit, 862c9dc8 (local, not yet pushed). One conflict, `packages/synth/src/cases/workflow.ts`'s imports, both sides kept. Lockfile and `watched-paths.txt` regenerated, unchanged. Typecheck 22 projects pass. Next: the integrator (workflow).
 
 ## Handoff: `co-001/contract-phi-check` (#120), for whoever takes it
 - **Branch:** `co-001/contract-phi-check` at **d7447adb**, from `claude/build-platform` at 88a0e4e9 (#53 merged). Commits:
@@ -95,5 +98,8 @@ None. The co-founder's standing ruling of 2026-10-26 ~00:20 UTC (relayed by the 
 - **F4:** a reviewed, audited correction of a document's kind (today `source_document.kind` is immutable and a re-upload is a held duplicate).
 - LANES.md's claim row: "MOD-7 to MOD-12" reads MOD-07 to MOD-12.
 
+## Waiting on someone
+- **The person: storage.googleapis.com** (the network policy refuses Playwright's pinned Chromium). Local e2e and the UX review's screenshots wait on it; CI's e2e is the record for tests. Everything else proceeds.
+
 ## Next step
-Builders (workflow) in `/home/user/model-eval-gate` on `co-001/model-eval-gate` from the latest `claude/build-platform` (6ddd587 at start).
+The integrator (workflow) in `/home/user/contract-phi-check` on 862c9dc8: settle the parts, write the docs (ADR 0070 Part 3, the ADR 0054 amendment, PRD 14 and 16, reconciliation-001 item 16, MOD-12), synth twice, the eval gate, the full local suite once (e2e left to CI while the browser is missing), commits; then push and the draft PR.
