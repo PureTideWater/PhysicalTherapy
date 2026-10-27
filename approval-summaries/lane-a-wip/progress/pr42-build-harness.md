@@ -66,3 +66,14 @@ S4#3's 45.2, 46.0, 47.8 and 32.8 s. Ordered by each run's worst upload, the midd
 consumer's size goes to the founder before merge; open item O9). The local smoke reported earlier (S4#1 at 34.1 s, no
 time warning) is not the measurement of record. Nothing is resized here: the consumer's size stays the founder's
 decision, open as issue #41 (decide before launch), with this measurement as its input.
+- e2e run 1 (screening, hardware-key, mail-cutoff, mail-notices; chromium-1194 headless shell, PG18): 7 passed (2.9m), incl.
+  the new restore path (hardware-key.spec:71; kept credential counter 4 = register 1, sign-in 2, restore 3, sign-in 4).
+- Added to screening.spec: poll run status 'complete' after the outbox file appears (same commit race as the harness).
+- Commits: 23c077e7 (e2e flake), 872ac5bc (e2e retry), a2c7a726 (screening wording), bf5dcb68 (console wording), aa875181 (users page).
+- Merge check (git merge-tree): with fix-db 8128a036 one conflict, routes.ts around checkScreeningAddress: keep fix-db's
+  precheck block, then my two timing lines before `const verdict`; with fix-infra f972a8f0 clean.
+- e2e run 2 running (all key-registering specs + screening + mail-cutoff), log scratchpad/pr42/e2e-harness-2.log.
+- Plan after e2e run 2: capacity smoke S1 on the process runtime (worker build, web build, layout script
+  scratchpad/pr42/capacity-layout.sh, DB tp_pr6b4_harness_2, advisory) to prove the web line reaches the verdict and links
+  open after commit; then final checks (pnpm typecheck, unit web+tools, db routes+mail-routes, lint:copy, lint:logs);
+  drop tp_pr6b4_harness_1/_2; delete refs/scratch/*.
