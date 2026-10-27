@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 import { urlPhiFindings } from '@tp/observability';
@@ -506,6 +506,12 @@ const RETURN_PAGES = [
   ),
 ].map((page) => [page.replaceAll(SAMPLE_ID, '[id]'), pageFileOf(page)] as const);
 
+/** A page's source and the sources of the components it imports, where its notice may be (Coverage's is its letter's). */
+function noticeSources(file: string, source: string): string[] {
+  const imported = [...source.matchAll(/ from '((?:\.\.\/)+components\/[^']+)';/g)].map((match) => path.resolve(APP, path.dirname(file), `${match[1] ?? ''}.tsx`));
+  return [source, ...imported.filter((component) => existsSync(component)).map((component) => readFileSync(component, 'utf8'))];
+}
+
 describe('every page a download comes back to forgets a refusal it shows on its permission state (UX-DLR-05)', () => {
   it('finds the pages', () => {
     expect(RETURN_PAGES.length).toBeGreaterThanOrEqual(12);
@@ -518,7 +524,7 @@ describe('every page a download comes back to forgets a refusal it shows on its 
     expect(forbidden, `${file} has a Forbidden branch`).toBeDefined();
     expect(forbidden).toContain('downloadRefusal(await props.searchParams)');
     expect(forbidden).toMatch(/: <ForgetRefusal\b/);
-    for (const [, keys] of source.matchAll(/<DownloadRefusal\b[^>]*\bforget=\{(\w+)\}/g)) {
+    for (const [, keys] of noticeSources(file ?? '', source).flatMap((each) => [...each.matchAll(/<DownloadRefusal\b[^>]*\bforget=\{(\w+)\}/g)])) {
       expect(forbidden, `${file}: the notice forgets ${keys ?? ''}`).toContain(`<ForgetRefusal also={${keys ?? ''}} />`);
     }
   });
