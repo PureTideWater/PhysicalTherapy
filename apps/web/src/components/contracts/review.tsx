@@ -7,6 +7,7 @@ import { WINDOW_RULE_NOT_COMPUTED_TEXT, windowRuleComparison, windowText } from 
 import type { FieldReview, RecordReview, VersionReview } from '../../lib/contracts/review';
 import { utc } from '../format';
 import { Fact } from '../remittances/display';
+import { ScrollTable } from '../scroll-table';
 import { CitationText, CitedPageView, VersionStatusBadge } from './display';
 import { documentLabel } from './forms';
 
@@ -179,6 +180,9 @@ export function VersionFacts({ review, versionHref }: { readonly review: Version
   );
 }
 
+/** A record's table of fields, named after its card ("Rate record N"), so no two records' tables share a name. */
+const fieldsLabel = (index: number) => `Fields of rate record ${String(index + 1)}`;
+
 export function ReviewBody({ review, href, controls }: { readonly review: VersionReview; readonly href: (query: Record<string, string>) => string; readonly controls?: ReviewControls }) {
   const { cited, records, documents } = review;
   return (
@@ -237,22 +241,22 @@ export function ReviewBody({ review, href, controls }: { readonly review: Versio
                     Show the cited page
                   </Link>
                 )}
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm" aria-label="Fields">
+                <ScrollTable label={fieldsLabel(index)}>
+                  <table className="w-full min-w-[32rem] text-left text-sm" aria-label={fieldsLabel(index)}>
                     <tbody>
                       {record.fields.map((field) => (
                         <tr key={field.field} className="border-t align-top" data-field={field.field}>
                           <th scope="row" className="py-1 pr-3 font-medium whitespace-nowrap">
                             {field.label}
                           </th>
-                          <td className="py-1 pr-3">{field.text}</td>
-                          {/* The approval wraps between its words and keeps its time on one line: a long approver never pushes the table past its card. */}
+                          <td className="py-1 pr-3 wrap-anywhere">{field.text}</td>
+                          {/* The approval wraps between its words, and anywhere in a long approver, and keeps its time on one line. */}
                           <td className="py-1 pr-3 text-xs" data-approval>
                             {field.approvedBy === null ? (
                               <span className="text-destructive">Not approved</span>
                             ) : (
                               <span>
-                                Approved by {field.approvedBy}
+                                Approved by <span className="wrap-anywhere">{field.approvedBy}</span>
                                 {field.approvedAt === null ? null : (
                                   <>
                                     , <span className="whitespace-nowrap">{utc(field.approvedAt)}</span>
@@ -266,7 +270,7 @@ export function ReviewBody({ review, href, controls }: { readonly review: Versio
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </ScrollTable>
                 {record.verifiedBy === null ? null : (
                   <p className="text-xs text-muted-foreground">
                     Fields checked against the cited page by {record.verifiedBy}

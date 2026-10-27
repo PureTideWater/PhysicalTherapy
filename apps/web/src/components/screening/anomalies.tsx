@@ -15,6 +15,7 @@ import {
   WITHIN_REDUCTION_RANGE,
   productLabel,
 } from '../../lib/screening/labels';
+import { ScrollTable } from '../scroll-table';
 import { StatusChip } from '../status';
 import { ScreeningCount, ScreeningMoney, differenceWords } from './result-summary';
 
@@ -268,6 +269,10 @@ function OtherGroups({ others }: { readonly others: ScreeningOtherGroups }) {
   );
 }
 
+/** Each card's title, which also names its table (aria-labelledby) and the table's scroller. */
+const ANOMALIES_TITLE = 'Anomalies by code and payer product';
+const TOP_ROWS_TITLE = 'Rows with the largest differences';
+
 /**
  * The anomalies by code and payer product: one page of groups (`groups`, in the database's order), the database's
  * counts and sums (`page`), and links to the other pages at `path`, the result's own address.
@@ -276,15 +281,15 @@ export function ScreeningAnomalies({ groups, page, path }: { readonly groups: re
   return (
     <Card data-section="anomalies" data-groups={String(page.groups)} data-page={String(page.page)}>
       <CardHeader>
-        <CardTitle id="screening-anomalies">Anomalies by code and payer product</CardTitle>
+        <CardTitle id="screening-anomalies">{ANOMALIES_TITLE}</CardTitle>
         <CardDescription>{anomaliesDescription(page)}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         {page.groups === 0 ? (
           <EmptyState title="Nothing priced under Medicare" nextStep="Rows of Original Medicare and Medicare Advantage without a contract are priced; the coverage below says why none was." />
         ) : (
-          <div className="overflow-x-auto" role="region" aria-labelledby="screening-anomalies" tabIndex={0} data-scroll="anomalies">
-            <table className="w-full text-left text-sm" aria-labelledby="screening-anomalies">
+          <ScrollTable label={ANOMALIES_TITLE}>
+            <table className="w-full min-w-[54rem] text-left text-sm" aria-labelledby="screening-anomalies">
               <thead className="text-muted-foreground">
                 <tr>
                   <th className={HEAD}>Code</th>
@@ -333,7 +338,7 @@ export function ScreeningAnomalies({ groups, page, path }: { readonly groups: re
               </tbody>
               <OtherGroups others={page.others} />
             </table>
-          </div>
+          </ScrollTable>
         )}
         <GroupPages path={path} page={page} />
       </CardContent>
@@ -347,7 +352,7 @@ export function ScreeningTopRows({ rows, shown = 25 }: { readonly rows: readonly
   return (
     <Card data-section="top-rows">
       <CardHeader>
-        <CardTitle id="screening-top-rows">Rows with the largest differences</CardTitle>
+        <CardTitle id="screening-top-rows">{TOP_ROWS_TITLE}</CardTitle>
         <CardDescription>
           {listed.length === 0
             ? 'No row was priced under Medicare.'
@@ -356,8 +361,8 @@ export function ScreeningTopRows({ rows, shown = 25 }: { readonly rows: readonly
       </CardHeader>
       {listed.length === 0 ? null : (
         <CardContent>
-          <div className="overflow-x-auto" role="region" aria-labelledby="screening-top-rows" tabIndex={0} data-scroll="top-rows">
-            <table className="w-full text-left text-sm" aria-labelledby="screening-top-rows">
+          <ScrollTable label={TOP_ROWS_TITLE}>
+            <table className="w-full min-w-[54rem] text-left text-sm" aria-labelledby="screening-top-rows">
               <thead className="text-muted-foreground">
                 <tr>
                   <th className={HEAD_NUMBER}>Row</th>
@@ -423,7 +428,7 @@ export function ScreeningTopRows({ rows, shown = 25 }: { readonly rows: readonly
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollTable>
         </CardContent>
       )}
     </Card>

@@ -136,7 +136,7 @@ function Placeholder({ value }: { readonly value: string }) {
 export function LineSchedule({ content, practiceId, canOpenLines }: { readonly content: PacketContent; readonly practiceId: string; readonly canOpenLines: boolean }) {
   return (
     <ScrollTable label="Line schedule">
-      <table className="w-full text-sm" aria-label="Line schedule">
+      <table className="w-full min-w-[54rem] text-sm" aria-label="Line schedule">
         <thead>
           <tr className="border-b text-left align-bottom">
             <th className="py-1 pr-3 font-medium">Row</th>
@@ -157,7 +157,7 @@ export function LineSchedule({ content, practiceId, canOpenLines }: { readonly c
           {content.lines.map((line) => (
             <tr key={line.row} className="border-b align-top last:border-0" data-row={line.row} data-deadline={'deadline' in line ? line.deadline.status : undefined}>
               <td className="py-1 pr-3 font-mono tabular-nums">{line.row}</td>
-              <td className="py-1 pr-3 font-mono text-xs" data-placeholder="claim_control_number">
+              <td className="py-1 pr-3 font-mono text-xs wrap-anywhere" data-placeholder="claim_control_number">
                 <Placeholder value={line.claim_control_number} />
               </td>
               <td className="py-1 pr-3 font-mono text-xs" data-placeholder="patient_name">

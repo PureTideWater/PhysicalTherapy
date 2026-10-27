@@ -1,6 +1,7 @@
 import { keyText } from '../../lib/pricing/causes';
 import type { ReleaseNote } from '../../lib/releases/queries';
 import { utc } from '../format';
+import { ScrollBox, ScrollTable } from '../scroll-table';
 
 /**
  * A rule release's note (PRD 9, The release pipeline step 5; PRD 7, Internal console, Rule releases):
@@ -28,62 +29,66 @@ export function ReleaseChanges({ note }: { readonly note: ReleaseNote }) {
       {note.changes.length === 0 ? (
         <p className="text-sm text-muted-foreground">No record differs.</p>
       ) : (
-        <table className="w-full text-left text-sm" aria-label="Changes by record type">
-          <thead className="text-muted-foreground">
-            <tr>
-              <th className="py-1 pr-3 font-medium">Record type</th>
-              <th className="py-1 pr-3 text-right font-medium">Added</th>
-              <th className="py-1 pr-3 text-right font-medium">Removed</th>
-              <th className="py-1 text-right font-medium">Changed</th>
-            </tr>
-          </thead>
-          <tbody>
-            {note.changes.map((change) => (
-              <tr key={change.recordType} className="border-t" data-record-type={change.recordType}>
-                <td className="py-1 pr-3 font-mono text-xs">{change.recordType}</td>
-                <td className="py-1 pr-3 text-right font-mono tabular-nums">{change.added}</td>
-                <td className="py-1 pr-3 text-right font-mono tabular-nums">{change.removed}</td>
-                <td className="py-1 text-right font-mono tabular-nums">{change.changed}</td>
+        <ScrollTable label="Changes by record type">
+          <table className="w-full min-w-[32rem] text-left text-sm" aria-label="Changes by record type">
+            <thead className="text-muted-foreground">
+              <tr>
+                <th className="py-1 pr-3 font-medium">Record type</th>
+                <th className="py-1 pr-3 text-right font-medium">Added</th>
+                <th className="py-1 pr-3 text-right font-medium">Removed</th>
+                <th className="py-1 text-right font-medium">Changed</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {note.changes.map((change) => (
+                <tr key={change.recordType} className="border-t" data-record-type={change.recordType}>
+                  <td className="py-1 pr-3 font-mono text-xs">{change.recordType}</td>
+                  <td className="py-1 pr-3 text-right font-mono tabular-nums">{change.added}</td>
+                  <td className="py-1 pr-3 text-right font-mono tabular-nums">{change.removed}</td>
+                  <td className="py-1 text-right font-mono tabular-nums">{change.changed}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </ScrollTable>
       )}
       {note.recordChanges.length === 0 || note.previous === null ? null : (
-        <table className="w-full text-left text-sm" aria-label="Records that differ">
-          <thead className="text-muted-foreground">
-            <tr>
-              <th className="py-1 pr-3 font-medium">Record</th>
-              <th className="py-1 pr-3 font-medium">From</th>
-              <th className="py-1 font-medium">Change</th>
-            </tr>
-          </thead>
-          <tbody>
-            {note.recordChanges.map((change) => (
-              <tr key={`${change.recordType}:${keyText(change.key)}:${change.effectiveFrom}`} className="border-t align-top" data-kind={change.kind}>
-                <td className="py-1 pr-3">
-                  <span className="font-mono text-xs">{change.recordType}</span> {keyText(change.key)}
-                </td>
-                <td className="py-1 pr-3">{change.effectiveFrom}</td>
-                <td className="py-1">
-                  {change.kind === 'changed' ? (
-                    <ul className="flex flex-col gap-0.5">
-                      {change.fields.map((field) => (
-                        <li key={field.field}>
-                          <span className="font-mono text-xs">{field.field}</span>: {field.before ?? 'none'} to {field.after ?? 'none'}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : change.kind === 'added' ? (
-                    'Added'
-                  ) : (
-                    'Removed'
-                  )}
-                </td>
+        <ScrollTable label="Records that differ">
+          <table className="w-full min-w-[36rem] text-left text-sm" aria-label="Records that differ">
+            <thead className="text-muted-foreground">
+              <tr>
+                <th className="py-1 pr-3 font-medium">Record</th>
+                <th className="py-1 pr-3 font-medium">From</th>
+                <th className="py-1 font-medium">Change</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {note.recordChanges.map((change) => (
+                <tr key={`${change.recordType}:${keyText(change.key)}:${change.effectiveFrom}`} className="border-t align-top" data-kind={change.kind}>
+                  <td className="py-1 pr-3">
+                    <span className="font-mono text-xs">{change.recordType}</span> <span className="wrap-anywhere">{keyText(change.key)}</span>
+                  </td>
+                  <td className="py-1 pr-3">{change.effectiveFrom}</td>
+                  <td className="py-1">
+                    {change.kind === 'changed' ? (
+                      <ul className="flex flex-col gap-0.5">
+                        {change.fields.map((field) => (
+                          <li key={field.field}>
+                            <span className="font-mono text-xs">{field.field}</span>: {field.before ?? 'none'} to {field.after ?? 'none'}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : change.kind === 'added' ? (
+                      'Added'
+                    ) : (
+                      'Removed'
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </ScrollTable>
       )}
       {note.recordChangesTotal > note.recordChanges.length && note.previous !== null ? (
         <p className="text-xs text-muted-foreground">The first {note.recordChanges.length} of {note.recordChangesTotal} are listed.</p>
@@ -91,7 +96,9 @@ export function ReleaseChanges({ note }: { readonly note: ReleaseNote }) {
       {note.notes === '' ? null : (
         <details>
           <summary className="cursor-pointer text-sm underline">The release&apos;s notes (RELEASE.md)</summary>
-          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-md border bg-muted p-3 text-xs">{note.notes}</pre>
+          <div className="mt-2">
+            <ScrollBox label={`Release notes of release ${String(note.releaseNo)}`}>{note.notes}</ScrollBox>
+          </div>
         </details>
       )}
     </div>

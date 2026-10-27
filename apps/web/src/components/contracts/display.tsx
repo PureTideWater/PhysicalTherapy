@@ -9,6 +9,7 @@ import type { CitedPage, RecordReview } from '../../lib/contracts/review';
 import type { MappingView, Totals } from '../../lib/contracts/mapping-queries';
 import { utc } from '../format';
 import { Money } from '../remittances/display';
+import { ScrollBox } from '../scroll-table';
 
 /**
  * Display pieces of the mapping, contract, review and coverage screens (PRD 7). Money from integer
@@ -59,7 +60,7 @@ export function MappingText({ practiceId, kind, mapping }: { readonly practiceId
   );
 }
 
-/** The cited page as text, with the quote marked (PRD 7, Rate record review). */
+/** The cited page as text, with the quote marked (PRD 7, Rate record review), in a box that scrolls down and that the keyboard reaches (ScrollBox). */
 export function CitedPageView({ cited, pageHref }: { readonly cited: CitedPage; readonly pageHref: (page: number) => string }) {
   return (
     <section aria-label="Cited page" className="flex flex-col gap-2">
@@ -88,7 +89,7 @@ export function CitedPageView({ cited, pageHref }: { readonly cited: CitedPage; 
       ) : (
         <>
           {cited.recordId !== null && !cited.quoteFound ? <p className="text-sm text-destructive">The quote is not on this page.</p> : null}
-          <div className="max-h-[32rem] overflow-auto rounded-md border bg-muted/30 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap" data-page-text>
+          <ScrollBox label={`Page ${String(cited.page)} of the contract`} height="lg" tone="faint" as="div" data-page-text="">
             {cited.segments.map((segment, index) =>
               segment.quoted ? (
                 <mark key={index} className="rounded-sm bg-bg-inset px-0.5 text-foreground underline decoration-fg-muted decoration-1 underline-offset-2">
@@ -98,7 +99,7 @@ export function CitedPageView({ cited, pageHref }: { readonly cited: CitedPage; 
                 <span key={index}>{segment.text}</span>
               ),
             )}
-          </div>
+          </ScrollBox>
         </>
       )}
     </section>

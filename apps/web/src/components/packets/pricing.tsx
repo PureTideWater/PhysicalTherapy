@@ -79,7 +79,7 @@ export function PricingNowPanel({ pricing, sent = false, label = 'Pricing now' }
           )}
         </Alert>
         <ScrollTable label="Lines not on current pricing">
-          <table className="w-full text-sm" aria-label="Lines not on current pricing">
+          <table className="w-full min-w-[48rem] text-sm" aria-label="Lines not on current pricing">
             <thead>
               <tr className="border-b text-left align-bottom">
                 <th className="py-1 pr-3 font-medium">Row</th>
