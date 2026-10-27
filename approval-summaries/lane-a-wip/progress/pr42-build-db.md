@@ -63,8 +63,10 @@ Marker route: touch <clone>/.claude/.allow-protected-edit, Edit migration, rm ma
   Residual (proposal): a ZIP the DB refuses still spends one validation (not in the precheck to avoid copying 6b-2's rule).
 - f3f7e897 M8 (db: mail_window_counts returns starts_at; console_mail_streams.window_starts_at = effective start;
   console-mail.ts doc). Failing first: console test (43200 min shown vs 10080). After: mail.db + mail-routes.db 32/32.
-- (next commit) M9 (db: mail_stream_cutoff helper + operator_mail_cutoff definer for tp_operator; worker reconcile calls
+- 9acaefb7 M9 (db: mail_stream_cutoff helper + operator_mail_cutoff definer for tp_operator; worker reconcile calls
   it). Failing first: mail.db M9 (function missing), mail-events.db M9 (no pause). After: mail.db+mail-events.db+
   screening.db 109/109; tsc worker clean; eslint clean.
+- 33e1005a S6 (worker: DigestSendFailed with sendErrorName only). Failing first: digest job.test (raw MessageRejected
+  with address). After: job.test 3/3; monitor.db (uses digestHandler) 20/20; tsc worker; eslint clean.
 
 ## Checks

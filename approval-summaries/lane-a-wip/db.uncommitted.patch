@@ -1,0 +1,292 @@
+diff --git a/apps/worker/src/screening/job.ts b/apps/worker/src/screening/job.ts
+index 84579cb6..58dd618a 100644
+--- a/apps/worker/src/screening/job.ts
++++ b/apps/worker/src/screening/job.ts
+@@ -37,7 +37,7 @@ import { newScreeningToken, screeningTokenHash } from './token';
+  * one of the consumer's worker threads, as tp_screening; the web app sends it for a run once the upload is stored, at
+  * the run's priority. Every minute the sweep (screening_sweep, on the consumer's main thread, which prices nothing)
+  * sends the job again for runs queued longer than half a minute (a send that failed) and for runs whose pricing has
+- * made no progress for 2 minutes (a consumer that stopped), and fails those out of attempts; pg-boss then takes them
++ * made no progress for 2 minutes (a consumer that stopped), and finishes or fails those out of attempts; pg-boss then takes them
+  * in its order, the higher priority first, through the consumer's three slots.
+  *
+  * One run: claim it (queued to pricing, or a stale one again, at most three attempts); fail it when its pinned
+@@ -65,8 +65,11 @@ import { newScreeningToken, screeningTokenHash } from './token';
+  * EXPIRED and its contact told it could not be completed (its link would open nothing).
+  *
+  * A send that fails rolls the completion back and the job fails; the run stays in pricing with every row recorded, and
+- * the sweep claims it again once it is stale. After a third attempt the sweep fails the run, commits that, and then tells the
+- * contact: a notice the mail service refuses is logged, and the run has failed anyway.
++ * the sweep claims it again once it is stale. After a third attempt the sweep completes the run on that attempt when it
++ * priced every row (a pause kept it from completing, or it stopped just before), and otherwise fails it and tells the
++ * contact in the failure's transaction: a notice the mail service refuses is logged, and the run has failed anyway, but a
++ * notice refused because the screening's set is disabled rolls the failure back, and the run is failed and told after the
++ * resume (review M6 and M7).
+  *
+  * The sweep takes each due run on its own: a run that throws (its contact's address refused by the mail service,
+  * say) is logged and the sweep goes on to the next, so no one run holds up the others.
+@@ -78,7 +81,7 @@ import { newScreeningToken, screeningTokenHash } from './token';
+  * stream is not sending, sends its job again once the stream is resumed and SES confirms. The database refuses a claim,
+  * a completion or a failure while not sending (screening_run_mail_gate, screening_mail_paused), and SES refuses a send
+  * through a disabled set (SendingPausedException): either rolls the step back, the run waits as above, and the stale
+- * rule claims it again after the resume. A run the web received before the stream's last resume was held by the pause:
++ * rule claims it again after the resume, or, on its last attempt with every row priced, the sweep completes it. A run the web received before the stream's last resume was held by the pause:
+  * its email is logged `screening result emailed after waiting`, outside the 60-second promise's metric. Each message goes
+  * through the screening stream, from its own sender with Reply-To the support address, tagged with the run's ID.
+  *
+@@ -206,20 +209,35 @@ function unionDays(a: readonly IsoDate[], b: readonly IsoDate[]): IsoDate[] {
+ const elapsed = (since: number): number => Math.round(performance.now() - since);
+ 
+ /**
+- * Fails a run, commits that, then tells its contact; false when it had ended already. A notice the mail service
+- * refuses is logged by the run's ID alone, and the run stays failed.
++ * Fails a run and tells its contact in the failure's transaction, as the completion sends its link; false when it had
++ * ended already. A notice SES refuses because the screening's set is disabled (the stream paused since the gate was
++ * read) rolls the failure back with it and throws (screeningMailPaused()): the run waits as it was, and is failed and
++ * told after the resume, so no failure is kept without its notice (review M6). A notice the mail service refuses for
++ * any other reason does not hold the failure back: it is kept, and the notice logged by the run's ID alone.
+  */
+ export async function failScreeningRun(dependencies: ScreeningJobDependencies, runId: string, failureCode: string, attempt: number | null = null): Promise<boolean> {
+-  const failed = await asOperator(dependencies.operator, (client) => failRun(client, runId, failureCode, dependencies.jobId, attempt));
++  const failed = await asOperator(dependencies.operator, async (client) => {
++    const row = await failRun(client, runId, failureCode, dependencies.jobId, attempt);
++    if (row === null) {
++      return null;
++    }
++    try {
++      await dependencies.mail.send({
++        ...screeningFailedMessage({ to: row.contactEmail, startOver: screeningStartLink(dependencies.appOrigin) }),
++        identity: { stream: 'screening', kind: 'screening_failed', subjectId: runId },
++      });
++    } catch (error) {
++      if (screeningMailPaused(error)) {
++        throw error;
++      }
++      return { told: false };
++    }
++    return { told: true };
++  });
+   if (failed === null) {
+     return false;
+   }
+-  try {
+-    await dependencies.mail.send({
+-      ...screeningFailedMessage({ to: failed.contactEmail, startOver: screeningStartLink(dependencies.appOrigin) }),
+-      identity: { stream: 'screening', kind: 'screening_failed', subjectId: runId },
+-    });
+-  } catch {
++  if (!failed.told) {
+     dependencies.logger.warn('screening run failed and its notice could not be sent', { job_id: dependencies.jobId, screening_run_id: runId, error_code: 'SCREENING_NOTICE_UNDELIVERABLE' });
+   }
+   return true;
+@@ -259,14 +277,7 @@ async function priceWhileSending(dependencies: ScreeningJobDependencies, runId:
+   }
+   const key = `${String(claimed.releaseNo)}:${claimed.manifestSha256}`;
+   const { attempt } = claimed;
+-  const superseded = (): 'not_claimed' => {
+-    logger.info('screening run attempt stopped: a later claim took the run over, or a later screening replaced it', {
+-      job_id: dependencies.jobId,
+-      screening_run_id: runId,
+-      error_code: 'SCREENING_ATTEMPT_SUPERSEDED',
+-    });
+-    return 'not_claimed';
+-  };
++  const superseded = (): 'not_claimed' => attemptStopped(dependencies, runId);
+   const unavailable = async (): Promise<'failed' | 'not_claimed'> => {
+     // The pinned release is not there as pinned (or was withdrawn): nothing can price the run.
+     RELEASES.delete(key);
+@@ -373,6 +384,27 @@ async function priceWhileSending(dependencies: ScreeningJobDependencies, runId:
+   }
+   logger.info('screening run rows priced', { job_id: dependencies.jobId, screening_run_id: runId, elapsed_ms: Math.round(pricingMs), record_count: pricedRows });
+   logger.info('screening run rows recorded', { job_id: dependencies.jobId, screening_run_id: runId, elapsed_ms: Math.round(recordingMs), record_count: recordedRows });
++  return completeOnAttempt(dependencies, runId, attempt);
++}
++
++/** An attempt stopped by a later claim or a later screening of the practice: it fails and sends nothing. */
++function attemptStopped(dependencies: ScreeningJobDependencies, runId: string): 'not_claimed' {
++  dependencies.logger.info('screening run attempt stopped: a later claim took the run over, or a later screening replaced it', {
++    job_id: dependencies.jobId,
++    screening_run_id: runId,
++    error_code: 'SCREENING_ATTEMPT_SUPERSEDED',
++  });
++  return 'not_claimed';
++}
++
++/**
++ * Completes a run whose rows are all priced, on its attempt, with the SHA-256 of a new link token, and sends the link to
++ * its contact in the completion's transaction; logs the time to email. A run whose screening expired meanwhile is failed
++ * as EXPIRED and told. A step the screening's mail refuses throws (screeningMailPaused()), as does a send that fails:
++ * either rolls the completion back.
++ */
++async function completeOnAttempt(dependencies: ScreeningJobDependencies, runId: string, attempt: number): Promise<ScreeningPriceOutcome> {
++  const { operator, logger } = dependencies;
+   const token = (dependencies.newToken ?? newScreeningToken)();
+   let sent: (CompletedRun & { readonly gate: ScreeningMailGate }) | null;
+   try {
+@@ -391,11 +423,11 @@ async function priceWhileSending(dependencies: ScreeningJobDependencies, runId:
+     });
+   } catch (error) {
+     if (attemptSuperseded(error)) {
+-      return superseded();
++      return attemptStopped(dependencies, runId);
+     }
+     if (screeningExpired(error)) {
+       if (!(await failScreeningRun(dependencies, runId, 'EXPIRED', attempt))) {
+-        return superseded();
++        return attemptStopped(dependencies, runId);
+       }
+       logger.warn('screening run failed: its screening expired while it was priced', { job_id: dependencies.jobId, screening_run_id: runId, error_code: 'EXPIRED' });
+       return 'failed';
+@@ -425,6 +457,35 @@ async function priceWhileSending(dependencies: ScreeningJobDependencies, runId:
+   return 'complete';
+ }
+ 
++/**
++ * A stale run out of attempts (review M7). Its last attempt may have priced every row and then been kept from its
++ * completion: the database refuses a completion while the screening's mail is not sending, and SES a send through a
++ * disabled set, so a pause during pricing ends an attempt with every row recorded; or the attempt stopped between its
++ * last batch and its completion. Such a run is completed on that last attempt, which the completion's fence admits, and
++ * its link sent: the pause, not the run, stopped it. A run with rows still to price, or whose completion fails other than
++ * by the screening's mail, is failed and told (PRICING_ATTEMPTS_EXHAUSTED). A step the screening's mail refuses throws, and
++ * the run waits for the resume.
++ */
++async function finishOrFail(dependencies: ScreeningJobDependencies, run: { readonly runId: string; readonly attempts: number }): Promise<ScreeningPriceOutcome> {
++  const { logger, jobId } = dependencies;
++  const pending = await asOperator(dependencies.operator, (client) => pendingRows(client, run.runId, 0, 1, run.attempts));
++  if (pending.length === 0) {
++    try {
++      return await completeOnAttempt(dependencies, run.runId, run.attempts);
++    } catch (error) {
++      if (screeningMailPaused(error)) {
++        throw error;
++      }
++      logger.warn('screening run priced on its last attempt could not be completed; it is failed', { job_id: jobId, screening_run_id: run.runId, error_code: 'SCREENING_FINISH_FAILED' });
++    }
++  }
++  if (!(await failScreeningRun(dependencies, run.runId, 'PRICING_ATTEMPTS_EXHAUSTED'))) {
++    return 'not_claimed';
++  }
++  logger.warn('screening run failed after its last attempt', { job_id: jobId, screening_run_id: run.runId, error_code: 'PRICING_ATTEMPTS_EXHAUSTED' });
++  return 'failed';
++}
++
+ export interface SweepOptions {
+   /** Runs queued for less than this are left to their own job (0 in tests and the end-to-end journey). */
+   readonly minQueuedAgeSeconds: number;
+@@ -436,14 +497,10 @@ export interface SweepResult {
+   readonly skipped: number;
+ }
+ 
+-/** One due run of the sweep: failed when out of attempts, else priced. */
++/** One due run of the sweep: finished or failed when out of attempts (finishOrFail()), else priced. */
+ async function sweepOne(dependencies: ScreeningJobDependencies, run: { readonly runId: string; readonly status: 'queued' | 'pricing'; readonly attempts: number }): Promise<ScreeningPriceOutcome> {
+   if (run.status === 'pricing' && run.attempts >= SCREENING_MAX_ATTEMPTS) {
+-    if (!(await failScreeningRun(dependencies, run.runId, 'PRICING_ATTEMPTS_EXHAUSTED'))) {
+-      return 'not_claimed';
+-    }
+-    dependencies.logger.warn('screening run failed after its last attempt', { job_id: dependencies.jobId, screening_run_id: run.runId, error_code: 'PRICING_ATTEMPTS_EXHAUSTED' });
+-    return 'failed';
++    return finishOrFail(dependencies, run);
+   }
+   return priceScreeningRun(dependencies, run.runId);
+ }
+@@ -504,8 +561,8 @@ export interface ResendResult {
+ }
+ 
+ /**
+- * The consumer's minute sweep (screening_sweep; it prices nothing, on the main thread): fails each stale run out of
+- * attempts, and sends each other due run's job again with its singleton key, its priority and the screening heartbeat
++ * The consumer's minute sweep (screening_sweep; it prices nothing, on the main thread): completes each stale run out of
++ * attempts whose rows are all priced, or fails it (finishOrFail()), and sends each other due run's job again with its singleton key, its priority and the screening heartbeat
+  * (enqueueScreeningRun), which pg-boss refuses while the run's job is queued, waiting to retry or active; then logs the
+  * queue's gauge, `screening queue`, with the normal tier's queued runs (record_count) and its oldest one's wait since
+  * the web received it (elapsed_ms; OldestQueuedMs). Each run on its own: one whose send throws is logged by its ID
+@@ -526,8 +583,8 @@ export async function resendScreeningRuns(dependencies: ScreeningJobDependencies
+   for (const run of due) {
+     try {
+       if (run.status === 'pricing' && run.attempts >= SCREENING_MAX_ATTEMPTS) {
+-        if (await failScreeningRun(dependencies, run.runId, 'PRICING_ATTEMPTS_EXHAUSTED')) {
+-          logger.warn('screening run failed after its last attempt', { job_id: jobId, screening_run_id: run.runId, error_code: 'PRICING_ATTEMPTS_EXHAUSTED' });
++        // Completed on its last attempt when it priced every row (no pricing here), else failed and told.
++        if ((await finishOrFail(dependencies, run)) === 'failed') {
+           failed += 1;
+         }
+         continue;
+diff --git a/apps/worker/src/screening/screening.db.test.ts b/apps/worker/src/screening/screening.db.test.ts
+index 243438f1..c226f4ec 100644
+--- a/apps/worker/src/screening/screening.db.test.ts
++++ b/apps/worker/src/screening/screening.db.test.ts
+@@ -17,9 +17,11 @@ import { type JobSender } from '../jobs/enqueue';
+ import {
+   SCREENING_STALE_SECONDS,
+   type ScreeningJobDependencies,
++  failScreeningRun,
+   forgetScreeningReleases,
+   priceScreeningRun,
+   resendScreeningRuns,
++  screeningMailPaused,
+   sweepScreeningRuns,
+ } from './job';
+ import { asOperator, claimRun, failRun, runKeys, runRecords } from './operator';
+@@ -888,6 +890,61 @@ describe('the screening’s mail gate (audit #76; migration 20261107090000; D3)'
+     }
+     expect(mail.sent.map((message) => message.identity.subjectId).sort()).toEqual([paused, refusedBySes].sort());
+   });
++
++  it('fails a run and tells its contact in one step: a pause between the two rolls the failure back, and after the resume the run is failed and told (M6)', async () => {
++    const runId = await submit({ email: 'prospect.failed.paused@synthetic.test' });
++    // SES's set disabled at the moment the failure notice goes: the failure is not kept, the run waits as it was.
++    const disabled: MailSender = { send: () => Promise.reject(Object.assign(new Error('SYNTHETIC sending paused for the configuration set'), { name: 'SendingPausedException' })) };
++    const outcome = await failScreeningRun(dependencies(disabled), runId, 'RELEASE_UNAVAILABLE').then(
++      (failed) => (failed ? 'failed' : 'not failed'),
++      (error: unknown) => (screeningMailPaused(error) ? 'mail_paused' : 'other'),
++    );
++    expect(outcome).toBe('mail_paused');
++    expect(await run(runId)).toEqual({ status: 'queued', attempts: 0 });
++    expect((await owner.query("SELECT count(*)::int AS n FROM audit_event WHERE action = 'screening_failed' AND object_id = $1", [runId])).rows).toEqual([{ n: 0 }]);
++    // Sending: failed and told, once.
++    const mail = new MemoryMailSender();
++    expect(await failScreeningRun(dependencies(mail), runId, 'RELEASE_UNAVAILABLE')).toBe(true);
++    expect(await run(runId)).toMatchObject({ status: 'failed' });
++    expect(mail.sent.map((message) => [message.to[0], message.identity])).toEqual([
++      ['prospect.failed.paused@synthetic.test', { stream: 'screening', kind: 'screening_failed', subjectId: runId }],
++    ]);
++    // A notice the mail service refuses for another reason does not hold the failure back: it is kept, and logged by ID.
++    const refusedRun = await submit({ email: 'prospect.failed.refused@synthetic.test' });
++    const refusing: MailSender = { send: () => Promise.reject(Object.assign(new Error('SYNTHETIC Illegal address prospect.failed.refused@synthetic.test'), { name: 'BadRequestException' })) };
++    lines = [];
++    expect(await failScreeningRun(dependencies(refusing), refusedRun, 'RELEASE_UNAVAILABLE')).toBe(true);
++    expect(await run(refusedRun)).toMatchObject({ status: 'failed' });
++    expect(lines).toEqual([expect.objectContaining({ screening_run_id: refusedRun, error_code: 'SCREENING_NOTICE_UNDELIVERABLE' })]);
++    expect(JSON.stringify(lines)).not.toContain('synthetic.test');
++  });
++
++  it('finishes a run its last attempt priced whole but a pause kept from completing: emailed after the resume, never failed for its attempts (M7)', async () => {
++    for (const sweep of ['consumer', 'inline'] as const) {
++      const runId = await submit({ email: `prospect.last.attempt.${sweep}@synthetic.test` });
++      // Two attempts lost before (a consumer that stopped twice), then the third prices every row and the stream pauses
++      // before its completion.
++      await rewind("UPDATE screening_run SET status = 'pricing', attempts = 2, started_at = now() - interval '3 minutes', progress_at = now() - interval '3 minutes' WHERE id = $1", [runId]);
++      const mail = new MemoryMailSender();
++      expect(await priceScreeningRun(dependencies(mail, { afterKeyedRead: pause }), runId)).toBe('mail_paused');
++      expect(await run(runId)).toEqual({ status: 'pricing', attempts: 3 });
++      expect((await owner.query("SELECT count(*)::int AS n FROM screening_result WHERE run_id = $1 AND disposition = 'pending'", [runId])).rows).toEqual([{ n: 0 }]);
++      // Resumed and confirmed; the run is stale and out of attempts. The sweep completes it on its last attempt and sends
++      // the result.
++      await sending();
++      await stale(runId);
++      lines = [];
++      if (sweep === 'consumer') {
++        const queue = { send: () => Promise.resolve('job') } as unknown as JobSender;
++        expect(await resendScreeningRuns(dependencies(mail), queue, { minQueuedAgeSeconds: 0 })).toMatchObject({ failed: 0 });
++      } else {
++        expect(await sweepScreeningRuns(dependencies(mail), { minQueuedAgeSeconds: 0 })).toMatchObject({ complete: 1, failed: 0 });
++      }
++      expect(await run(runId)).toEqual({ status: 'complete', attempts: 3 });
++      expect(mail.sent.map((message) => message.identity)).toEqual([{ stream: 'screening', kind: 'screening_result', subjectId: runId }]);
++      expect(lines.map((line) => line.error_code)).not.toContain('PRICING_ATTEMPTS_EXHAUSTED');
++    }
++  });
+ });
+ 
+ describe('SCR-03: a screening expires 30 days after its upload', () => {

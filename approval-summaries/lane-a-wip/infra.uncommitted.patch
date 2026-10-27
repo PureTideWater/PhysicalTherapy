@@ -401,6 +401,22 @@ index 41cf2c52..30f7d5aa 100644
          : localAddressChecks(config.mailValidation.dailyCap, config.mailValidation.delayMs),
    });
  }
+diff --git a/apps/worker/src/platform/mail-events.ts b/apps/worker/src/platform/mail-events.ts
+index 60053762..7d69cf38 100644
+--- a/apps/worker/src/platform/mail-events.ts
++++ b/apps/worker/src/platform/mail-events.ts
+@@ -33,8 +33,9 @@ import { type NoticeClient, asOperator } from './support-notices';
+  *    delivered to every recipient is NOTICE_UNDELIVERED with its support grant's or invoice's ID; an invitation not
+  *    delivered is INVITATION_UNDELIVERED with its ID.
+  *
+- * Logs carry IDs and codes only: no address, in no log line, payload, audit event or error. Outside SES the address's
+- * only copy is the queue's encrypted message, for at most 4 days (14 in the dead-letter queue).
++ * Logs carry IDs and codes only: no address, in no log line, payload, audit event or error. Outside SES, this event
++ * path keeps the address only in the queue's encrypted message, for at most 4 days (14 in the dead-letter queue); the
++ * web's address validation is recorded in the address-validation account's event history alone (docs/adr/0065).
+  */
+ 
+ /** One message of the queue: its ID (logged when unreadable), body and what deletes it. */
 diff --git a/docs/adr/0049-run-the-compute-on-fargate-behind-an-https-only-load-balancer-and-waf-migrate-before-traffic-moves-and-egress-through-nat-for-what-has-no-endpoint.md b/docs/adr/0049-run-the-compute-on-fargate-behind-an-https-only-load-balancer-and-waf-migrate-before-traffic-moves-and-egress-through-nat-for-what-has-no-endpoint.md
 index 95833998..03f98fe6 100644
 --- a/docs/adr/0049-run-the-compute-on-fargate-behind-an-https-only-load-balancer-and-waf-migrate-before-traffic-moves-and-egress-through-nat-for-what-has-no-endpoint.md
@@ -553,6 +569,188 @@ index 5839be65..947d77e0 100644
  refusal-hash and bounce-budget wording (O4); or the capacity measurement is revisited. The address checks this pull
  request adds (DNS and SES validation, run together after the row checks, at most one 2-second timeout) fall inside the
  60-second promise, and the harness charges them (section 5, G1). How that promise is measured, the free runner with a
+diff --git a/docs/policies/data-retention.md b/docs/policies/data-retention.md
+index 4cdbe679..2408c832 100644
+--- a/docs/policies/data-retention.md
++++ b/docs/policies/data-retention.md
+@@ -33,11 +33,13 @@ and the first BAAs; a BAA that sets a different period governs for that customer
+ | A screening run's keyed client subject (`screening_run.client_subject`) | With the run: 30 days, or until a later screening of the same practice or address replaces it | Deleted with the run |
+ | An invitation's undelivered flag (`invitation.undelivered_at`, `undelivered_reason`) | With the invitation | Kept as the invitation is kept |
+ | SES events in the mail-events queue (each names its recipient's address) | 4 days in the queue, 14 days in its dead-letter queue; no EventBridge archive is kept | Expire in SQS on their own schedule |
++| AWS's record of each screening address SES validated (CloudTrail's event history in the environment's address-validation account, an AWS account that holds nothing else: the request, which names the address unless CloudTrail withholds it) | 90 days, AWS's own period, which cannot be shortened or turned off; that account's trail records writes alone, so no trail keeps it (docs/adr/0065) | Expires in AWS on its own schedule |
+ 
+-No other copy of a screening address is kept by the mail path: the screening's SES configuration set uses no suppression
+-list, so SES adds no screening address to the account's list, and the mail record holds none (docs/adr/0065). A
+-customer's address stays on the account's suppression list after a bounce or complaint until an operator removes it
+-once the person confirms the mailbox works (docs/runbooks/deliverability.md).
++The mail path keeps no copy of a screening address but those above: the screening's SES configuration set uses no
++suppression list, so SES adds no screening address to the account's list; the mail record holds none; and SES's
++validation of an address runs in the address-validation account, so the environment's own trail never holds it
++(docs/adr/0065). A customer's address stays on the account's suppression list after a bounce or complaint until an
++operator removes it once the person confirms the mailbox works (docs/runbooks/deliverability.md).
+ 
+ ## Protection while kept
+ 
+diff --git a/docs/runbooks/deliverability.md b/docs/runbooks/deliverability.md
+index 68f69f88..471db58d 100644
+--- a/docs/runbooks/deliverability.md
++++ b/docs/runbooks/deliverability.md
+@@ -48,7 +48,11 @@ a synthetic mailbox you control, and reads IDs and counts.
+   start another screening for up to 7 days, and the stream stays open.
+ - **The address checks** (Q1 (g)): the form's typo hint and unknown-ending warning; then, after the upload's own checks
+   and the rate limit, DNS (the domain takes mail) and SES's validation (the mailbox), together, at most 2 seconds;
+-  SES's at most 1,000 a day in production and 50 in staging, then DNS alone.
++  SES's at most 1,000 a day in production and 50 in staging, then DNS alone. SES's validation names the address in its
++  request, so it runs in an AWS account of its own, the environment's address-validation account
++  (`tp-<env>-address-validation`): the web assumes its one role for 15 minutes at a time, its trail records writes
++  alone, and the environment's own account never makes the call. CloudTrail's event history in that account still keeps
++  each validation's request for 90 days, which nothing can shorten or turn off (ADR 0065, "What remains").
+ - **The outboxes.** A support-access notice and a dunning notice go one message per recipient, each recorded before it
+   is sent and retried only to recipients still pending (after 1, 5, 15 and 60 minutes; failed after the fifth, or at
+   once when SES refuses the message itself, as it does from a sender not yet verified). A notice
+@@ -64,7 +68,7 @@ a synthetic mailbox you control, and reads IDs and counts.
+   the counts that paused it, or resumed and not yet confirmed), the window's sends, bounces and complaints, the last
+   probes, whether the screening is ready to open, its bounce marks, and the last 7 days' undelivered customer messages
+   (the screening's counted, never listed). It pauses the screening by hand and resumes it with a reason.
+-- **Alarms**, all to the operator topic (16):
++- **Alarms**, all to the operator topic (17):
+ 
+   | Alarm | Fires at | Section |
+   | --- | --- | --- |
+@@ -84,6 +88,7 @@ a synthetic mailbox you control, and reads IDs and counts.
+   | `MAIL_PROBE_MISSED` | a probe not back in 26 hours (platform log) | 3.7 |
+   | `MAIL_PROBE_UNSENT` | a probe that could not be sent, in each of three 5-minute periods (platform log) | 3.7 |
+   | `MAIL_VALIDATION_CAP_REACHED` | the day's validation cap reached (web log) | 3.5 |
++  | `MAIL_VALIDATION_REFUSED` | AWS refused an address validation: the address-validation role or its call (web log) | 3.8 |
+ 
+   `MAIL_EVENT_UNREADABLE` (an event the platform cannot read) is covered by the dead-letter alarm;
+   `MAIL_DOMAIN_CHECK_UNAVAILABLE` and `MAIL_VALIDATION_UNAVAILABLE` (the address checks timed out; the upload was
+@@ -95,6 +100,23 @@ a synthetic mailbox you control, and reads IDs and counts.
+    with `ImageTag=none` on a first deploy, so nothing sends yet. Cognito keeps its own default sender; the platform
+    sends no probe. If SES already holds an identity for either domain (one verified by hand under the earlier runbook),
+    the deploy runbook says what to do first.
++
++   **The address-validation account (ADR 0065).** Before the environment's first release (CloudFormation refuses one
++   while `MailValidationRoleArn` is `none`), SES's address validation needs an AWS account of its own:
++
++   1. A person who administers the company's AWS creates a new account for this environment's address validation and
++      nothing else: no IAM user, its root user under MFA and kept as the environment's own. It must not be under an AWS
++      Organizations trail that records read events (one of writes alone, or none).
++   2. With that account's credentials, bootstrap CDK in the environment's region (`cdk bootstrap
++      aws://<the account>/<region>`) and deploy its stack, naming the environment stack's `ApplicationRoleArn` output:
++
++      ```
++      cdk deploy tp-<env>-address-validation --parameters ApplicationRoleArn=<ApplicationRoleArn>
++      ```
++
++   3. Deploy the environment stack with `MailValidationRoleArn=<the AddressValidationRoleArn output>`; later deploys
++      keep it. Should the environment's application role ever be replaced (its ARN changes), deploy the validation
++      stack again with the new `ApplicationRoleArn`, or every validation is refused (`MAIL_VALIDATION_REFUSED`, 3.8).
+ 2. **The DNS records.** From the stack's outputs, set at the registrar, for each identity (`Mail…` and
+    `ScreeningMail…`): the three DKIM CNAMEs (`…DkimRecord1` to `3`), the MAIL FROM MX and SPF (`…MailFromMxRecord`,
+    `…MailFromSpfRecord`) and the DMARC record (`…DmarcRecord`). Each output is `<name> <type> <value>`. Add to the
+@@ -145,6 +167,20 @@ a synthetic mailbox you control, and reads IDs and counts.
+    - **The account's reputation metrics publish.** After a day of staging mail, `AWS/SES` `Reputation.BounceRate` with
+      no dimension has data points. If it has none at launch volume, the two account warnings never fire (missing data is
+      not a breach); the `account_review` trigger, which reads SES's enforcement status, still works. Record what you see.
++   - **SES's address validation is recorded in the address-validation account alone, and as a read.** Submit one
++     synthetic screening in staging to the synthetic mailbox. Then, with the address-validation account's credentials:
++
++     ```
++     aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,AttributeValue=GetEmailAddressInsights \
++       --max-results 1 --query 'Events[0].CloudTrailEvent' --output text \
++       | jq '{readOnly, errorCode, requestParameters: (.requestParameters // {} | keys)}'
++     ```
++
++     `readOnly` must read `true`, with no `errorCode`; record whether `requestParameters` names `emailAddress` (never
++     copy its value anywhere). With the environment account's credentials the same lookup must return no event. If
++     `readOnly` reads `false`, the address-validation account's trail keeps every validated address: stop, keep the
++     screening closed, and raise it as a change to `infra/lib/address-validation-stack.ts` (ADR 0065, "What remains",
++     point 2).
+    - **The database logs no bind value.** `aws rds describe-db-parameters --db-parameter-group-name <the instance's group>
+      --query "Parameters[?starts_with(ParameterName, 'log_parameter_max_length')].[ParameterName,ParameterValue]"`
+      reads `0` for both (the stack sets them; a failed call never writes its arguments, an address among them, to the
+@@ -237,7 +273,7 @@ stream's readiness lapses 48 hours after its last probe came back (about a day f
+ 
+ 1. the account's sending and enforcement (`aws sesv2 get-account --query '{sending: SendingEnabled, enforcement:
+    EnforcementStatus}'`: `true` and `HEALTHY`);
+-2. both identities still verified (section 2, step 2's command);
++2. both identities still verified (the command in section 2, step 2);
+ 3. the stream's set: for the screening, `aws sesv2 get-configuration-set --configuration-set-name <p>-screening
+    --query SendingOptions` reads enabled while the stream is not paused (the platform's reconcile sets it each minute);
+ 4. the operator role's `MailProbes` statement, which the probes need (`ses:SendEmail` on both identities and the three
+@@ -254,6 +290,27 @@ stream's readiness lapses 48 hours after its last probe came back (about a day f
+ 
+ Until a probe comes back, staging and production keep the screening closed.
+ 
++### 3.8 An address validation refused (`MAIL_VALIDATION_REFUSED`)
++
++AWS refused the web's address validation, so every screening address is checked by DNS alone until it is fixed (the
++uploads are accepted). The cause is the address-validation account's role or the parameters that join it to the
++environment. Check, in order:
++
++1. the environment stack's `MailValidationRoleArn` equals the validation stack's `AddressValidationRoleArn` output;
++2. the validation stack's `ApplicationRoleArn` parameter equals the environment stack's `ApplicationRoleArn` output (it
++   changes when the application role is replaced: deploy `tp-<env>-address-validation` again with the new value);
++3. in the address-validation account, the role `tp-<env>-address-validation` still allows `ses:GetEmailAddressInsights`
++   and nothing else, and the account is not suspended;
++4. each account's event history, which names the refused call's error and nothing of its request (a validation's
++   request names the address, so print only the time and the error code):
++
++   ```
++   aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,AttributeValue=AssumeRole --max-results 20 \
++     --query 'Events[].CloudTrailEvent' --output json | jq -r '.[] | fromjson | [.eventTime, (.errorCode // "allowed")] | @tsv'
++   ```
++
++   and the same with `AttributeValue=GetEmailAddressInsights` in the address-validation account.
++
+ ## 4. Rules
+ 
+ - Never resume the screening without a cause found and a reason given.
+@@ -264,6 +321,11 @@ Until a probe comes back, staging and production keep the screening closed.
+ - Never create an EventBridge archive or replay of mail events.
+ - Never send to a real person to test: use SES's simulator or a synthetic mailbox you control.
+ - Never write an address into a ticket, log, alarm note or pull request; use the IDs the platform logs.
++- Never let a role of an environment's own account call `ses:GetEmailAddressInsights`: the screening's address
++  validation runs in its address-validation account alone (ADR 0065), and the environment's trail records every read.
++- Never give the address-validation account's trail read events, data events, network activity events or a copy in
++  CloudWatch Logs, never send its events to CloudTrail Lake or CloudWatch, and never put it under an organization trail
++  that records reads: each would keep the screening's addresses past event history's 90 days.
+ 
+ ## 5. Quarterly
+ 
+diff --git a/docs/runbooks/deploy-and-rollback.md b/docs/runbooks/deploy-and-rollback.md
+index 31d5db07..26bd472d 100644
+--- a/docs/runbooks/deploy-and-rollback.md
++++ b/docs/runbooks/deploy-and-rollback.md
+@@ -57,6 +57,14 @@ run the deliverability runbook's staging checks once after phase 2 (open item O1
+ pull request. Each account needs SES production access before any customer mail (the runbook's use
+ case text).
+ 
++**The address-validation account (docs/adr/0065; deliverability runbook, section 2, step 1).** SES's validation of a
++screening address names the address in its request, so it runs in an AWS account of the environment's own that holds
++nothing else. Before the first release, a person creates that account, bootstraps CDK in it and deploys
++`tp-<env>-address-validation` there with `ApplicationRoleArn=<this stack's ApplicationRoleArn output>`; then deploy this
++stack with `MailValidationRoleArn=<that stack's AddressValidationRoleArn output>`. CloudFormation refuses a deploy whose
++`ImageTag` names a release while `MailValidationRoleArn` is `none` (rule `ReleaseNeedsAddressValidationRole`), and a
++released web refuses to start without it.
++
+ Once the environment's `StaticAssetsOrigin` output exists, set the repository variable the release builds its web image
+ with (Settings, Secrets and variables, Actions, Variables): `STAGING_STATIC_ASSET_ORIGIN` or
+ `PRODUCTION_STATIC_ASSET_ORIGIN`, the output's value. A release tagged before it is set builds that web image with no
+@@ -187,8 +195,10 @@ Each is recorded in the pull request of the release that opens it:
+   `/console/mail` reading "Ready to open" yes;
+ - SES production access granted for the account and region;
+ - staging's deliverability checks recorded (open item O11: Cognito sending through the stack's identity, the screening
+-  set neither checking nor adding to the account's suppression list, the account's reputation metrics publishing, and
+-  the database logging no bind value);
++  set neither checking nor adding to the account's suppression list, the account's reputation metrics publishing, the
++  database logging no bind value, and SES's address validation recorded as a read in the address-validation account
++  alone);
++- production's address-validation account set up and `MailValidationRoleArn` set (the release cannot run without it);
+ - counsel's review of the screening's wording recorded (docs/product/legal-surfaces.md: until then a production server
+   keeps the screening closed);
+ - the founder's own steps (open item O14): the DNS records set at the registrar, both domains registered with Google
 diff --git a/infra/lib/app.ts b/infra/lib/app.ts
 index 1989f73f..e22a80f5 100644
 --- a/infra/lib/app.ts
