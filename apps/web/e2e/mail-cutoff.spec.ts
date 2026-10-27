@@ -133,6 +133,8 @@ cutoffTest('a seventh hard bounce in a week pauses the screening stream alone; t
       const screening = admin.locator('[data-stream="screening"]');
       await expect(screening).toHaveAttribute('data-state', 'paused');
       await expect(screening).toContainText('Its bounce rate passed the cut-off');
+      // The resume form says a review SES still holds pauses it again (the platform reads SES's enforcement each minute).
+      await expect(screening.locator('[data-copy="resume-review"]')).toHaveText('If SES still has the account under review, the platform pauses it again within a minute.');
       // The customer streams never pause.
       await expect(admin.locator('[data-stream="transactional"]')).toHaveAttribute('data-state', 'sending');
       await expect(admin.locator('[data-stream="notices"]')).toHaveAttribute('data-state', 'sending');
@@ -166,6 +168,11 @@ cutoffTest('a seventh hard bounce in a week pauses the screening stream alone; t
       await admin.goto('/console/mail');
       await expect(admin.locator('[data-stream="screening"]')).toHaveAttribute('data-state', 'sending');
       await expect(admin.locator('[data-ready]')).toHaveAttribute('data-ready', 'yes');
+      // Sending, the card says when the stream pauses by itself, the floors' own counts named, and what a mark is on.
+      await expect(admin.locator('[data-stream="screening"]')).toContainText(
+        'It pauses by itself when more than 3% of its sends bounce permanently (counted over at least 200 sends, so 7 hard bounces pause it) or more than 0.08% are reported as spam (over at least 2,500, so 3 complaints pause it), within 7 days or since the last resume; on the account’s warnings; or under an SES review.',
+      );
+      await expect(admin.locator('[data-stream="screening"]')).toContainText('on email domains or mailboxes (3 refuse a fourth screening)');
       await prospect.goto('/screening');
       await expect(prospect.locator('[data-state="paused"]')).toHaveCount(0);
       await expect(prospect.getByLabel('File to screen')).toBeVisible();
