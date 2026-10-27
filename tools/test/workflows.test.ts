@@ -349,10 +349,14 @@ function workerImageProblems(file: string, parsed: Workflow): string[] {
       if (checked !== undefined && !steps.slice(0, index).some((before) => usesAction(before, 'actions/setup-node') && String(before.with?.['node-version']) === '24')) {
         problems.push(`${where}: checks ${checked} with no actions/setup-node of Node 24 before it`);
       }
-      const dockerfile = String(step.with?.file ?? '');
+      const input = (name: string): string => {
+        const value = step.with?.[name];
+        return typeof value === 'string' ? value : '';
+      };
+      const dockerfile = input('file');
       if (!usesAction(step, 'docker/build-push-action') || !(dockerfile === 'apps/worker/Dockerfile' || (dockerfile.includes('${{') && namesWorker))) return problems;
-      const tag = String(step.with?.tags ?? '').trim();
-      const archive = /(?:^|,)\s*type=docker\b/.test(String(step.with?.outputs ?? ''));
+      const tag = input('tags').trim();
+      const archive = /(?:^|,)\s*type=docker\b/.test(input('outputs'));
       if (step.with?.load !== true && !archive) return [...problems, `${where}: builds apps/worker/Dockerfile into no local tag, so nothing checks its headless shell before it leaves the job`];
       const later = steps.slice(index + 1);
       const check = later.findIndex((candidate) => imageCheckTag(candidate) === tag);
@@ -1924,7 +1928,7 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
     const named = "{ id: image, run: 'echo dockerfile=apps/worker/Dockerfile >> $GITHUB_OUTPUT' }, { uses: 'docker/build-push-action@x', with: { file: '${{ steps.image.outputs.dockerfile }}', load: true, tags: '${{ steps.image.outputs.ref }}' } }";
     const viaEnv = (run: string) => `{ env: { REF: '\${{ steps.image.outputs.ref }}' }, run: '${run}' }`;
     expect(problems(`${named}, ${node}, ${viaEnv('node tools/ci/browser-build.ts --image "$REF"')}, ${viaEnv('docker save "$REF" | gzip -1 > w.tar.gz')}`)).toEqual([]);
-    expect(problems(`${named}, ${viaEnv('docker save "$REF" | gzip -1 > w.tar.gz')}, ${node}, ${viaEnv('node tools/ci/browser-build.ts --image "$REF"')}`)).toEqual([`fixture.yml a: "docker save \"$REF\" | gzip -1 > w.tar.gz" uses \${{ steps.image.outputs.ref }} before its browser check`]);
+    expect(problems(`${named}, ${viaEnv('docker save "$REF" | gzip -1 > w.tar.gz')}, ${node}, ${viaEnv('node tools/ci/browser-build.ts --image "$REF"')}`)).toEqual([`fixture.yml a: "docker save "$REF" | gzip -1 > w.tar.gz" uses \${{ steps.image.outputs.ref }} before its browser check`]);
     // The web image needs no check.
     expect(problems("{ uses: 'docker/build-push-action@x', with: { file: apps/web/Dockerfile, load: true, tags: 'tp-web:t' } }, { run: 'run.ts --web-image tp-web:t' }")).toEqual([]);
     expect(problems(`${loaded}, ${measure}`)).toEqual(['fixture.yml a: builds apps/worker/Dockerfile into tp-worker:t and never runs node tools/ci/browser-build.ts --image tp-worker:t']);
