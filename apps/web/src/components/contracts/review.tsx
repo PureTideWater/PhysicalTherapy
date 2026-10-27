@@ -180,7 +180,11 @@ export function VersionFacts({ review, versionHref }: { readonly review: Version
   );
 }
 
-/** A record's table of fields, named after its card ("Rate record N"), so no two records' tables share a name. */
+/**
+ * A record's table of fields, named after its card ("Rate record N"), so no two records' tables share a name. The
+ * table takes no min-w: three columns, two of them wrapping, in a card half the grid's width from xl (about 418 px at
+ * 1280), which the smallest width of docs/adr/0078 (32rem) would pass.
+ */
 const fieldsLabel = (index: number) => `Fields of rate record ${String(index + 1)}`;
 
 export function ReviewBody({ review, href, controls }: { readonly review: VersionReview; readonly href: (query: Record<string, string>) => string; readonly controls?: ReviewControls }) {
@@ -242,7 +246,7 @@ export function ReviewBody({ review, href, controls }: { readonly review: Versio
                   </Link>
                 )}
                 <ScrollTable label={fieldsLabel(index)}>
-                  <table className="w-full min-w-[32rem] text-left text-sm" aria-label={fieldsLabel(index)}>
+                  <table className="w-full text-left text-sm" aria-label={fieldsLabel(index)}>
                     <tbody>
                       {record.fields.map((field) => (
                         <tr key={field.field} className="border-t align-top" data-field={field.field}>

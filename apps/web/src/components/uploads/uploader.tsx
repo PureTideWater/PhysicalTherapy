@@ -316,7 +316,7 @@ export function Uploader(props: UploaderProps) {
             before anything reads it.
           </p>
           {kinds === undefined ? null : (
-            <div className="flex flex-col gap-1">
+            <div className="flex max-w-full flex-col gap-1">
               <label htmlFor="upload-kind" className="text-sm font-medium">
                 Kind of document
               </label>
@@ -327,7 +327,7 @@ export function Uploader(props: UploaderProps) {
                   setKind(kinds.find((candidate) => candidate.kind === event.target.value) ?? kind);
                   setFormatId('');
                 }}
-                className="h-9 rounded-md border bg-background px-2 text-sm"
+                className="h-9 max-w-full rounded-md border bg-background px-2 text-sm"
               >
                 {kinds.map((candidate) => (
                   <option key={candidate.kind} value={candidate.kind}>

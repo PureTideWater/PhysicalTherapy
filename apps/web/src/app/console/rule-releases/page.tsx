@@ -104,7 +104,7 @@ export default async function RuleReleasesPage(props: Props) {
           <CardHeader>
             <CardTitle>Release {note.releaseNo}</CardTitle>
             <CardDescription>
-              <ReleaseStatusText note={note} /> Manifest <span className="font-mono text-xs">{note.manifestSha256}</span>
+              <ReleaseStatusText note={note} /> Manifest <span className="font-mono text-xs wrap-anywhere">{note.manifestSha256}</span>
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">

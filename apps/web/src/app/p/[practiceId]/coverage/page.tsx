@@ -421,9 +421,9 @@ export default async function CoveragePage(props: Props) {
             <p className="text-sm text-muted-foreground">Payers appear once their 835s load.</p>
           ) : (
             <form method="get" action={`${path}/letter`} className="grid max-w-xl gap-3" aria-label="Letter">
-              <div className="flex flex-col gap-1.5">
+              <div className="flex min-w-0 flex-col gap-1.5">
                 <Label htmlFor="letter-payer">Payer</Label>
-                <select id="letter-payer" name="payer" required className="h-9 rounded-md border bg-background px-2 text-sm">
+                <select id="letter-payer" name="payer" required className="h-9 w-full min-w-0 rounded-md border bg-background px-2 text-sm">
                   {payers.map((payer) => (
                     <option key={payer.id} value={payer.id}>
                       {payer.name}
@@ -431,9 +431,9 @@ export default async function CoveragePage(props: Props) {
                   ))}
                 </select>
               </div>
-              <div className="flex flex-col gap-1.5">
+              <div className="flex min-w-0 flex-col gap-1.5">
                 <Label htmlFor="letter-contract">The payer’s contract (optional)</Label>
-                <select id="letter-contract" name="contract" className="h-9 rounded-md border bg-background px-2 text-sm">
+                <select id="letter-contract" name="contract" className="h-9 w-full min-w-0 rounded-md border bg-background px-2 text-sm">
                   <option value="">None named</option>
                   {payers
                     .filter((payer) => contracts.some((contract) => contract.payerId === payer.id))
