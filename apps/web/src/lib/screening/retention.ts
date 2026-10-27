@@ -17,11 +17,13 @@ export { KEPT_COUNTS, KEPT_SUMMARY } from '@tp/worker/screening-wording';
 /**
  * What outlives a screening's address when its email could not be delivered or was reported as spam (audit #76; the
  * founder's Q11 (b) of 2026-10-21: a keyed hash kept 12 months, used only to refuse that address; docs/adr/0065). The
- * pages never call it deleted. A legal surface counsel reviews with the others before the screening opens (open item
+ * pages never call it deleted. It says what the hash does, refuse a new screening to the address, and not "never send to
+ * it again": the hash lapses after 12 months, and a screening already accepted for the address is still sent (the
+ * review of 2026-10-23, Wording). A legal surface counsel reviews with the others before the screening opens (open item
  * O4).
  */
 export const REFUSED_ADDRESS_KEPT =
-  'If email to the address you gave cannot be delivered, or is reported as spam, we keep a coded form of it that cannot be read back as the address, for 12 months, only so that we never send to it again.';
+  'If email to the address you gave cannot be delivered, or is reported as spam, we keep a coded form of it, which cannot be turned back into the address, for 12 months, only to refuse another screening to that address.';
 export type { KeptWith } from '@tp/worker/screening-wording';
 
 /** The result page: until when the link opens the result, what is deleted then, and what is kept, by what its summary is kept with. */
