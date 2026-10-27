@@ -32,8 +32,9 @@ type Index = Record<string, string>;
 
 /**
  * A runner: a bin directory with the stand-ins, apt's root, the restored directory and the index. The stand-in
- * `apt-cache show <spec>` prints the stanza filed under <spec>, or exits 100 as apt-cache does for a version no index
- * lists; `apt-get update` succeeds unless APT_UPDATE_FAILS is set; `sudo` runs its command and logs it.
+ * `apt-cache show <spec>` answers as apt-cache does: the stanza filed under <spec>; no record and exit 0 for a version
+ * no index lists of a package it knows; "E: No packages found" and exit 100 for a package it does not know.
+ * `apt-get update` succeeds unless APT_UPDATE_FAILS is set; `sudo` runs its command and logs it.
  */
 function runner(index: Index, options: { updateFails?: boolean } = {}) {
   const dir = mkdtempSync(path.join(scratch, 'runner-'));
@@ -44,7 +45,11 @@ function runner(index: Index, options: { updateFails?: boolean } = {}) {
   mkdirSync(bin);
   mkdirSync(root);
   mkdirSync(stanzas);
-  for (const [spec, stanza] of Object.entries(index)) writeFileSync(path.join(stanzas, encodeURIComponent(spec)), stanza);
+  mkdirSync(path.join(stanzas, 'packages'));
+  for (const [spec, stanza] of Object.entries(index)) {
+    writeFileSync(path.join(stanzas, encodeURIComponent(spec)), stanza);
+    writeFileSync(path.join(stanzas, 'packages', encodeURIComponent(spec.replace(/[:=].*$/, ''))), '');
+  }
   const stub = (name: string, body: string) => {
     writeFileSync(path.join(bin, name), `#!/usr/bin/env bash\n${body}`);
     chmodSync(path.join(bin, name), 0o755);
@@ -53,7 +58,7 @@ function runner(index: Index, options: { updateFails?: boolean } = {}) {
   stub('apt-get', `printf '%s\\n' "$*" >> '${dir}/apt-get.log'\nif [ "$1" = update ] && [ -n "\${APT_UPDATE_FAILS:-}" ]; then echo "E: Failed to fetch InRelease" >&2; exit 100; fi\nexit 0\n`);
   stub(
     'apt-cache',
-    `[ "$1" = show ] || exit 99\nfile="${stanzas}/$(node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$2")"\nif [ -f "$file" ]; then cat "$file"; else echo "E: No packages found" >&2; exit 100; fi\n`,
+    `[ "$1" = show ] || exit 99\nencode() { node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$1"; }\npackage="\${2%%=*}"\npackage="\${package%%:*}"\nif [ -f "${stanzas}/$(encode "$2")" ]; then cat "${stanzas}/$(encode "$2")"; elif [ -f "${stanzas}/packages/$(encode "$package")" ]; then exit 0; else echo "E: No packages found" >&2; exit 100; fi\n`,
   );
   const env = { PATH: `${bin}:${process.env.PATH ?? '/usr/bin:/bin'}`, APT_ARCHIVES_ROOT: root, ...(options.updateFails === true ? { APT_UPDATE_FAILS: '1' } : {}) };
   const run = (command: string, target: string = restored) => {
@@ -88,7 +93,10 @@ describe('apt-archives.sh verify', () => {
     writeFileSync(path.join(apt.restored, 'libgbm1_25.0.7-2_amd64.deb'), gbm.content);
     // Truncated: the right name, a different SHA-256.
     writeFileSync(path.join(apt.restored, 'libasound2t64_1.2.14-1_amd64.deb'), 'libasound2t64 1.2');
-    // A version the index no longer lists (a security update replaced it).
+    // A version the index no longer lists of a package it lists (a security update replaced it): apt-cache prints no
+    // record and exits 0.
+    writeFileSync(path.join(apt.restored, 'libnss3_2%3a3.98-1build1_amd64.deb'), 'libnss3 2:3.98-1build1');
+    // A package the index does not know at all: apt-cache exits 100.
     writeFileSync(path.join(apt.restored, 'libcups2t64_2.4.11-1_amd64.deb'), 'libcups2t64 2.4.11-1');
     // Not apt's file name at all.
     writeFileSync(path.join(apt.restored, 'payload.deb'), 'anything');
@@ -98,9 +106,10 @@ describe('apt-archives.sh verify', () => {
     expect(readFileSync(path.join(apt.archives, 'libnss3_2%3a3.110-1ubuntu1_amd64.deb'), 'utf8')).toBe(nss.content);
     // What was discarded is gone from the restored directory too, so the next save never carries it.
     expect(apt.listing(apt.restored)).toEqual(['fonts-liberation_1%3a2.1.5-3_all.deb', 'libnss3_2%3a3.110-1ubuntu1_amd64.deb']);
-    expect(result.output).toContain('apt archives: 2 kept (each the signed index\'s SHA-256 for its version), 4 discarded');
+    expect(result.output).toContain('apt archives: 2 kept (each the signed index\'s SHA-256 for its version), 5 discarded');
     expect(result.output).toContain(`discarded libgbm1_25.0.7-2_amd64.deb: its SHA-256 ${sha(gbm.content)} is not the index's for libgbm1:amd64=25.0.7-2`);
     expect(result.output).toContain(`discarded libasound2t64_1.2.14-1_amd64.deb: its SHA-256 ${sha('libasound2t64 1.2')} is not the index's for libasound2t64:amd64=1.2.14-1`);
+    expect(result.output).toContain('discarded libnss3_2%3a3.98-1build1_amd64.deb: the index lists no libnss3:amd64=2:3.98-1build1');
     expect(result.output).toContain('discarded libcups2t64_2.4.11-1_amd64.deb: the index lists no libcups2t64:amd64=2.4.11-1');
     expect(result.output).toContain("discarded payload.deb: its name is not apt's name_version_arch.deb");
     // The index was fetched fresh before any file was judged, and apt keeps what apt-get downloads from here on.

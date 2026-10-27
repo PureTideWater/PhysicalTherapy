@@ -31,8 +31,26 @@ export class ImageArchiveError extends Error {
   override readonly name = 'ImageArchiveError';
 }
 
-/** Entries kept in memory to be parsed: index.json, manifest.json and every blob this small (configs and manifests). */
+/**
+ * The largest regular file hashed as it passes: index.json, manifest.json, configs and manifests are far smaller, and
+ * the layers above it pass through unhashed. Of these, only a JSON document's bytes are kept to be parsed (the first
+ * byte that is not white space is `{` or `[`); a small layer's are hashed and dropped.
+ */
 const KEPT_BYTES = 4 * 1024 * 1024;
+/**
+ * The largest pax header ('x'), pax global header ('g') or GNU long name ('L') accepted, refused from its header before
+ * any of it is read: 'x' and 'L' are read into memory, since they apply to the entry after them; 'g' is skipped.
+ */
+const METADATA_LIMIT = 1024 * 1024;
+/** The most bytes kept in memory across every entry: the JSON documents, pax headers and long names together. */
+const KEPT_LIMIT = 64 * 1024 * 1024;
+
+/** The metadata entries, by type flag, as a refusal names them. */
+const METADATA: ReadonlyMap<string, string> = new Map([
+  ['x', 'a pax header'],
+  ['g', 'a pax global header'],
+  ['L', 'a GNU long name'],
+]);
 
 const BLOCK = 512;
 
@@ -64,6 +82,9 @@ function entrySize(header: Buffer): number {
   return text === '' ? 0 : Number.parseInt(text, 8);
 }
 
+/** JSON's white space, which may come before a document's first `{` or `[`. */
+const JSON_SPACE: ReadonlySet<number> = new Set([0x20, 0x09, 0x0a, 0x0d]);
+
 /** A pax extended header's records ("<length> <key>=<value>\n"). */
 function paxRecords(bytes: Buffer): Map<string, string> {
   const records = new Map<string, string>();
@@ -93,22 +114,48 @@ function gzipped(file: string): boolean {
 }
 
 /**
- * Every regular file of a tar stream up to KEPT_BYTES, by its path, with its bytes and their SHA-256, read in one pass:
- * larger entries (the layers) pass through unhashed and unkept.
+ * Every regular file of a tar stream up to KEPT_BYTES, by its path, with its SHA-256 and, for a JSON document, its bytes,
+ * read in one pass: larger entries (the layers) pass through unhashed and unkept. A pax header's `path` and `size` and a
+ * GNU long name apply to the entry after it, as GNU tar and Go's archive/tar read them. Memory is bounded: a metadata
+ * entry over METADATA_LIMIT is refused before it is read, and so is an archive whose kept bytes pass KEPT_LIMIT.
  */
 async function smallEntries(source: Readable): Promise<Map<string, Entry>> {
   const entries = new Map<string, Entry>();
   let pending: Buffer = Buffer.alloc(0);
-  // The entry being read: its header's facts, how much of its data and padding is left, and what is kept of it.
-  let current: { path: string; type: string; size: number; left: number; padding: number; hash: ReturnType<typeof createHash> | null; chunks: Buffer[] } | null = null;
+  // The entry being read: its header's facts, how much of its data and padding is left, and what is kept of it
+  // (`json`: whether a hashed file's bytes are kept, undecided until its first byte that is not white space).
+  let current: {
+    path: string;
+    type: string;
+    size: number;
+    left: number;
+    padding: number;
+    hash: ReturnType<typeof createHash> | null;
+    chunks: Buffer[];
+    json: boolean | undefined;
+  } | null = null;
   let nextPath: string | null = null;
+  let nextSize: number | null = null;
   let ended = false;
+  let kept = 0;
+
+  const keep = (entry: NonNullable<typeof current>, part: Buffer) => {
+    kept += part.length;
+    if (kept > KEPT_LIMIT) throw new ImageArchiveError('the entries this reader keeps (JSON documents, pax headers and long names) pass the limit of 64 MiB in all');
+    entry.chunks.push(Buffer.from(part));
+  };
 
   const finish = (entry: NonNullable<typeof current>) => {
     const bytes = Buffer.concat(entry.chunks);
     if (entry.type === 'x') {
       const records = paxRecords(bytes);
       nextPath = records.get('path') ?? nextPath;
+      const size = records.get('size');
+      if (size !== undefined) {
+        const value = /^[0-9]+$/.test(size) ? Number(size) : Number.NaN;
+        if (!Number.isSafeInteger(value)) throw new ImageArchiveError(`a pax header's size record ${JSON.stringify(size)} is not a decimal number`);
+        nextSize = value;
+      }
     } else if (entry.type === 'L') {
       nextPath = field(bytes, 0, bytes.length);
     } else if ((entry.type === '0' || entry.type === '\0' || entry.type === '') && entry.hash !== null) {
@@ -129,23 +176,36 @@ async function smallEntries(source: Readable): Promise<Map<string, Entry>> {
           break;
         }
         const type = String.fromCharCode(header[156] ?? 0);
-        const size = entrySize(header);
         const prefix = field(header, 257, 6) === 'ustar' ? field(header, 345, 155) : '';
         const named = prefix === '' ? field(header, 0, 100) : `${prefix}/${field(header, 0, 100)}`;
-        const meta = type === 'x' || type === 'L' || type === 'g';
-        const path = meta ? named : (nextPath ?? named);
-        if (!meta) nextPath = null;
-        const keep = meta || ((type === '0' || type === '\0') && size <= KEPT_BYTES);
-        current = { path, type, size, left: size, padding: (BLOCK - (size % BLOCK)) % BLOCK, hash: keep && !meta ? createHash('sha256') : null, chunks: [] };
+        const metadata = METADATA.get(type);
+        const size = metadata === undefined ? (nextSize ?? entrySize(header)) : entrySize(header);
+        if (metadata !== undefined && size > METADATA_LIMIT) throw new ImageArchiveError(`${metadata} of ${String(size)} bytes passes the limit of 1 MiB for a pax header or long name`);
+        const path = metadata === undefined ? (nextPath ?? named) : named;
+        if (metadata === undefined) {
+          nextPath = null;
+          nextSize = null;
+        }
+        const hashed = metadata === undefined && (type === '0' || type === '\0') && size <= KEPT_BYTES;
+        current = { path, type, size, left: size, padding: (BLOCK - (size % BLOCK)) % BLOCK, hash: hashed ? createHash('sha256') : null, chunks: [], json: undefined };
       }
       if (current.left > 0) {
         if (pending.length === 0) break;
         const take = Math.min(current.left, pending.length);
         const part = pending.subarray(0, take);
-        const keep = current.hash !== null || current.type === 'x' || current.type === 'L';
-        if (keep) {
-          current.chunks.push(Buffer.from(part));
-          current.hash?.update(part);
+        if (current.type === 'x' || current.type === 'L') keep(current, part);
+        if (current.hash !== null) {
+          current.hash.update(part);
+          if (current.json === undefined) {
+            const first = part.findIndex((byte) => !JSON_SPACE.has(byte));
+            if (first !== -1) current.json = part[first] === 0x7b || part[first] === 0x5b;
+            // White space alone so far is kept until a byte decides; a file that is no JSON document gives it back.
+            if (current.json === false) {
+              kept -= current.chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+              current.chunks = [];
+            }
+          }
+          if (current.json !== false) keep(current, part);
         }
         pending = pending.subarray(take);
         current.left -= take;
@@ -165,15 +225,20 @@ async function smallEntries(source: Readable): Promise<Map<string, Entry>> {
   return entries;
 }
 
+/** An entry's bytes as JSON, or a refusal naming it (a file that is no JSON document keeps no bytes). */
+function parsed(entry: Entry, what: string): unknown {
+  try {
+    return JSON.parse(entry.bytes.toString('utf8')) as unknown;
+  } catch {
+    throw new ImageArchiveError(`${what} is not JSON`);
+  }
+}
+
 /** A JSON entry, parsed, or a refusal naming it. */
 function json(entries: ReadonlyMap<string, Entry>, path: string): unknown {
   const entry = entries.get(path);
   if (entry === undefined) throw new ImageArchiveError(`the archive holds no ${path}`);
-  try {
-    return JSON.parse(entry.bytes.toString('utf8')) as unknown;
-  } catch {
-    throw new ImageArchiveError(`${path} is not JSON`);
-  }
+  return parsed(entry, path);
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -214,14 +279,14 @@ export function identityOf(entries: ReadonlyMap<string, Entry>): ImageIdentity {
     let manifestDescriptor = descriptor;
     if (INDEX_TYPES.has(String(descriptor.mediaType))) {
       const nested = blob(entries, descriptor.digest, 'the image index');
-      manifestDescriptor = amd64(JSON.parse(nested.bytes.toString('utf8')) as unknown, 'the image index');
+      manifestDescriptor = amd64(parsed(nested, 'the image index'), 'the image index');
     } else if (!MANIFEST_TYPES.has(String(descriptor.mediaType))) {
       throw new ImageArchiveError(`index.json's descriptor is a ${String(descriptor.mediaType)}, neither an index nor an image manifest`);
     }
     const manifestBlob = blob(entries, manifestDescriptor.digest, 'the image manifest');
     manifest = `sha256:${manifestBlob.sha256}`;
-    const parsed = JSON.parse(manifestBlob.bytes.toString('utf8')) as unknown;
-    const named = isRecord(parsed) && isRecord(parsed.config) ? parsed.config.digest : undefined;
+    const manifestJson = parsed(manifestBlob, 'the image manifest');
+    const named = isRecord(manifestJson) && isRecord(manifestJson.config) ? manifestJson.config.digest : undefined;
     config = `sha256:${blob(entries, named, 'the config').sha256}`;
   }
 

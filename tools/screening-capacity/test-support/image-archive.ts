@@ -12,6 +12,18 @@ export interface TarEntry {
   readonly data: Buffer | string;
   /** Write the path in a pax header, leaving a stand-in in the ustar name field. */
   readonly pax?: boolean;
+  /**
+   * More records for the entry's own pax header ('x'), after the path's when `pax` is set: Go's archive/tar writes `size`
+   * for an entry over 8 GiB and leaves 0 in the ustar size field.
+   */
+  readonly paxRecords?: Readonly<Record<string, string>>;
+  /** The ustar header's size field, when it is not the data's length (0 beside a pax `size` record). */
+  readonly ustarSize?: number;
+  /**
+   * The entry's type flag: a regular file ('0') unless named. A metadata type ('x' a pax header, 'g' a pax global
+   * header, 'L' a GNU long name) writes the data as that entry's own bytes under `path`.
+   */
+  readonly type?: string;
 }
 
 /** The stand-in a pax entry's ustar name field holds, which a reader must not take for its path. */
@@ -38,21 +50,30 @@ function header(name: string, size: number, type: string): Buffer {
 
 const padded = (data: Buffer) => Buffer.concat([data, Buffer.alloc((512 - (data.length % 512)) % 512)]);
 
+/** One pax record, "<length> <key>=<value>\n", its length counting its own digits. */
+export function paxRecord(key: string, value: string): string {
+  const body = (length: number) => `${String(length)} ${key}=${value}\n`;
+  let length = Buffer.byteLength(body(0));
+  while (Buffer.byteLength(body(length)) !== length) length = Buffer.byteLength(body(length));
+  return body(length);
+}
+
 /** A tar archive of these entries, ended by two zero blocks. */
 export function tar(entries: readonly TarEntry[]): Buffer {
   const blocks: Buffer[] = [];
   for (const entry of entries) {
     const data = Buffer.from(entry.data);
-    if (entry.pax === true) {
-      const body = (length: number) => `${String(length)} path=${entry.path}\n`;
-      let length = body(0).length;
-      while (body(length).length !== length) length = body(length).length;
-      const record = Buffer.from(body(length));
-      blocks.push(header('PaxHeaders/stand-in', record.length, 'x'), padded(record));
-      blocks.push(header(PAX_STAND_IN, data.length, '0'), padded(data));
-    } else {
-      blocks.push(header(entry.path, data.length, '0'), padded(data));
+    const type = entry.type ?? '0';
+    if (type !== '0') {
+      blocks.push(header(entry.path, data.length, type), padded(data));
+      continue;
     }
+    const records = [...(entry.pax === true ? [paxRecord('path', entry.path)] : []), ...Object.entries(entry.paxRecords ?? {}).map(([key, value]) => paxRecord(key, value))];
+    if (records.length > 0) {
+      const record = Buffer.from(records.join(''));
+      blocks.push(header('PaxHeaders/stand-in', record.length, 'x'), padded(record));
+    }
+    blocks.push(header(entry.pax === true ? PAX_STAND_IN : entry.path, entry.ustarSize ?? data.length, '0'), padded(data));
   }
   blocks.push(Buffer.alloc(1024));
   return Buffer.concat(blocks);

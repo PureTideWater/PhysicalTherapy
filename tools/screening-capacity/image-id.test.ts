@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { repositoryRoot } from '../content-files';
 import { ImageArchiveError, imageIdentity } from './image-id';
-import { CONFIG, INDEX_TYPE, LAYER, MANIFEST_TYPE, PAX_STAND_IN, attestedArchive, blobEntry, descriptor, manifestOf, sha, tar } from './test-support/image-archive';
+import { CONFIG, INDEX_TYPE, LAYER, MANIFEST_TYPE, PAX_STAND_IN, attestedArchive, blobEntry, descriptor, manifestOf, paxRecord, sha, tar } from './test-support/image-archive';
 
 /**
  * tools/screening-capacity/image-id.ts on synthetic archives this test writes: docker-archive and OCI layouts, plain and
@@ -100,6 +100,83 @@ describe('an image archive’s identity', () => {
     // The ustar name fields hold a stand-in, so the entries were found by the pax headers' paths alone.
     expect(archive.toString('latin1')).toContain(PAX_STAND_IN);
     expect(archive.toString('latin1')).not.toContain(`\0${config.path}\0`);
+  });
+
+  it('takes an entry’s size from its pax header’s size record, as Go’s archive/tar writes one for an entry over 8 GiB beside 0 in the ustar size field (the security review’s SEC-5)', async () => {
+    const config = blobEntry(CONFIG, true);
+    const layer = Buffer.alloc(5 * 1024 * 1024 + 123, 7);
+    const manifestList = { path: 'manifest.json', data: JSON.stringify([{ Config: config.path, RepoTags: [], Layers: [] }]) };
+    // The ustar size field says 0 for the layer and the config; only the pax records give their sizes. The entry after
+    // each reads its own header's size again.
+    const archive = tar([
+      { path: `blobs/sha256/${sha(layer)}`, data: layer, paxRecords: { size: String(layer.length) }, ustarSize: 0 },
+      { ...config, paxRecords: { size: String(CONFIG.length) }, ustarSize: 0 },
+      manifestList,
+    ]);
+    expect(await imageIdentity(write('pax-size.tar.gz', gzipSync(archive)))).toEqual({ config: config.digest });
+    // A size record that is not a decimal number is refused, naming it.
+    const malformed = tar([{ ...config, paxRecords: { size: '0x56' }, ustarSize: 0 }, manifestList]);
+    await expect(imageIdentity(write('pax-size-malformed.tar', malformed))).rejects.toThrow('a pax header\'s size record "0x56" is not a decimal number');
+  });
+
+  it('refuses a pax header, a pax global header or a GNU long name over 1 MiB before keeping it, naming the limit, and reads one of exactly 1 MiB (the security review’s SEC-5)', async () => {
+    const config = blobEntry(CONFIG);
+    const rest = [config, { path: 'manifest.json', data: JSON.stringify([{ Config: config.path, RepoTags: [], Layers: [] }]) }];
+    const MiB = 1024 * 1024;
+    // A pax header's records, one comment padded to exactly this many bytes.
+    const records = (bytes: number) => {
+      let comment = 'x'.repeat(bytes - paxRecord('comment', '').length);
+      while (Buffer.byteLength(paxRecord('comment', comment)) > bytes) comment = comment.slice(1);
+      return paxRecord('comment', comment);
+    };
+    expect(Buffer.byteLength(records(MiB))).toBe(MiB);
+    const metadata = {
+      x: { what: 'a pax header', data: (bytes: number) => records(bytes) },
+      g: { what: 'a pax global header', data: (bytes: number) => records(bytes) },
+      L: { what: 'a GNU long name', data: (bytes: number) => `${'n'.repeat(bytes - 1)}\0` },
+    };
+    for (const [type, { what, data }] of Object.entries(metadata)) {
+      // Before the oci-layout entry, whose name nothing reads, so only the limit can refuse the archive.
+      const over = tar([{ path: `PaxHeaders/${type}`, type, data: data(MiB + 1) }, { path: 'oci-layout', data: '{"imageLayoutVersion":"1.0.0"}' }, ...rest]);
+      await expect(imageIdentity(write(`meta-${type}-over.tar`, over)), type).rejects.toThrow(`${what} of ${String(MiB + 1)} bytes passes the limit of 1 MiB for a pax header or long name`);
+      const at = tar([{ path: `PaxHeaders/${type}`, type, data: data(MiB) }, { path: 'oci-layout', data: '{"imageLayoutVersion":"1.0.0"}' }, ...rest]);
+      expect(await imageIdentity(write(`meta-${type}-at.tar`, at)), type).toEqual({ config: config.digest });
+    }
+  });
+
+  it('refuses an archive whose kept entries pass 64 MiB in all, naming the limit, and keeps no bytes of a small layer (the security review’s SEC-5)', async () => {
+    const config = blobEntry(CONFIG);
+    const manifestList = { path: 'manifest.json', data: JSON.stringify([{ Config: config.path, RepoTags: [], Layers: [] }]) };
+    const MiB = 1024 * 1024;
+    // Sixteen JSON documents of 4 MiB each, the largest entry kept, reach 64 MiB; the config and manifest.json pass it.
+    const documents = Array.from({ length: 16 }, (_, index) => {
+      const data = Buffer.alloc(4 * MiB, 0x20);
+      data.write(`{"n":${String(index)}}`, 0);
+      return { path: `blobs/sha256/${sha(data)}`, data };
+    });
+    await expect(imageIdentity(write('kept-over.tar', tar([...documents, config, manifestList])))).rejects.toThrow('the entries this reader keeps (JSON documents, pax headers and long names) pass the limit of 64 MiB in all');
+    // Twenty small layers of 4 MiB, 80 MiB in all: hashed as they pass, none of their bytes kept, so no limit is met.
+    const layers = Array.from({ length: 20 }, (_, index) => {
+      const data = Buffer.alloc(4 * MiB, index + 1);
+      return { path: `blobs/sha256/${sha(data)}`, data };
+    });
+    expect(await imageIdentity(write('small-layers.tar', tar([...layers, config, manifestList])))).toEqual({ config: config.digest });
+  });
+
+  it('refuses an image manifest or index that is no JSON document as an archive it refuses, naming it', async () => {
+    const config = blobEntry(CONFIG);
+    const binary = Buffer.from([0x1f, 0x8b, 0x08, 0x00, 0x7b]);
+    const index = (mediaType: string) => JSON.stringify({ schemaVersion: 2, manifests: [{ mediaType, digest: `sha256:${sha(binary)}`, size: binary.length }] });
+    const blob = { path: `blobs/sha256/${sha(binary)}`, data: binary };
+    for (const [mediaType, what] of [
+      [MANIFEST_TYPE, 'the image manifest'],
+      [INDEX_TYPE, 'the image index'],
+    ] as const) {
+      const archive = tar([config, blob, { path: 'index.json', data: index(mediaType) }]);
+      const refused: unknown = await imageIdentity(write(`not-json-${what.replace(/ /g, '-')}.tar`, archive)).catch((error: unknown) => error);
+      expect(refused, what).toBeInstanceOf(ImageArchiveError);
+      expect((refused as Error).message, what).toBe(`${what} is not JSON`);
+    }
   });
 
   it('runs as `node tools/screening-capacity/image-id.ts <archive>`, printing the identity as JSON, and imports only node: modules', () => {

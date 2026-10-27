@@ -405,17 +405,18 @@ later default cannot turn the cache back on.
 
 **`.github/workflows/release-dry-run.yml`** (new, advisory, outside the ruleset) runs on every pull request and push
 that changes release.yml, itself, `tools/screening-capacity/image-id.ts`, either Dockerfile or the images' pnpm
-installer (`tools/check-toolchain/install-pnpm.sh`). Its `build` job
-(`contents: read`) builds the web image as release.yml does, saves it with its identity and uploads it (v7,
-`overwrite: true`, kept a day); its `push` job (`contents: read`, `packages: read`) downloads it with
-`merge-multiple` (v8), runs release.yml's identity check, loads it and logs in to ghcr.io with the job's own token. It
-names its image `ghcr.io/<repository>/web:dry-run-<run id>`, since a pull request's ref name (`<n>/merge`) is no image
-tag, and never tags, pushes or attests. Its build job also writes the image's bill of materials with release.yml's
-Trivy step and reads the file as SPDX, and its `capacity` job (`contents: read`) runs release.yml's capacity job up to
-its frozen install: the checkout, a download by name, action-setup with `cache: false`, setup-node with
-`package-manager-cache: false` and `pnpm install --frozen-lockfile`, so those inputs run on every change to the
-release, not first on a tag (the ci-infra review's N4). A test holds every step it shares with release.yml to the same action and the same
-`with:` keys, with `overwrite` and the cache inputs equal in value, so the dry run cannot drift from what a tag runs.
+installer (`tools/check-toolchain/install-pnpm.sh`). Its `build` job (`contents: read`) builds the images as
+release.yml does, saves each with its identity and uploads it (v7, `overwrite: true`, kept a day): the web image here,
+and from Part 3 on release.yml's `web` and `worker` legs as a matrix (N16). Its `push` job (`contents: read`,
+`packages: read`) downloads them with `merge-multiple` (v8), runs release.yml's identity check, loads them and logs in
+to ghcr.io with the job's own token. It names its images `ghcr.io/<repository>/<image>:dry-run-<run id>`, since a pull
+request's ref name (`<n>/merge`) is no image tag, and never tags, pushes or attests. Its build job also writes each
+image's bill of materials with release.yml's Trivy step and reads the file as SPDX, and its `capacity` job
+(`contents: read`) runs release.yml's capacity job up to its frozen install: the checkout, the downloads by name,
+action-setup with `cache: false`, setup-node with `package-manager-cache: false` and `pnpm install --frozen-lockfile`,
+so those inputs run on every change to the release, not first on a tag (the ci-infra review's N4). A test holds every
+step it shares with release.yml to the same action and the same `with:` keys, with `overwrite` and the cache inputs
+equal in value, so the dry run cannot drift from what a tag runs.
 The new majors of upload, download, login, build-push and setup-buildx therefore run on a pull request, not first on
 the founder's tag.
 
@@ -769,13 +770,16 @@ self-hosted would reverse the configuration ban and misname a hosted label). It 
 
 **The browser jobs' system packages (V3).** `unit`, every `db` and `e2e` shard, `large-zip` and
 `screening-capacity.yml`'s `capacity` (under its own runner image's key) restore `$RUNNER_TEMP/apt-archives` under
-`apt-v1-<ImageOS>-<ImageVersion>-<hash of playwright-core's browsers.json>` (the runner's own environment, through a
-step, since the `env` context holds only what a workflow sets), falling back to the image version's and the image's
-earlier keys; `tools/ci/apt-archives.sh verify` fetches the signed indexes and copies into apt's archive directory only
-a file whose SHA-256 is the index's for exactly its name, version and architecture, deleting every other, and sets
-`APT::Keep-Downloaded-Packages`; `collect` gathers what apt kept. `unit` and the capacity job save on a miss, on the
-build branch's own runs only (push, schedule, dispatch), after the browser check passed. `release.yml` restores no cache
-(Part 2), so its one install stays uncached.
+`apt-v1-<ImageOS>-<ImageVersion>-<hash of playwright-core's browsers.json>`, falling back to the image version's and the
+image's earlier keys. `<ImageOS>` and `<ImageVersion>` are the runner's `ImageOS` and `ImageVersion` environment
+variables, read through a step, since the `env` context holds only what a workflow sets; that version can differ from
+the one "Set up job" prints (in run 40534270846, the pull request's first, the `db` and `e2e` jobs' "Set up job"
+printed 20261012.163.1 and their `ImageVersion`, so their key, was 20261023.163.3), so a key is matched against
+`ImageVersion`, never against "Set up job". `tools/ci/apt-archives.sh verify` fetches the signed indexes and copies into
+apt's archive directory only a file whose SHA-256 is the index's for exactly its name, version and architecture,
+deleting every other, and sets `APT::Keep-Downloaded-Packages`; `collect` gathers what apt kept. `unit` and the capacity
+job save on a miss, on the build branch's own runs only (push, schedule, dispatch), after the browser check passed.
+`release.yml` restores no cache (Part 2), so its one install stays uncached.
 
 **The browser check.** Every step that installs Playwright's browsers, in every workflow, carries `id: browser-install`
 and is followed at once by `node tools/ci/browser-build.ts`, before any test runs or any cache is saved. In ci.yml's
@@ -806,7 +810,10 @@ tolerance.
 modules only) reads a `docker save` or buildx `type=docker` archive, plain or gzipped, as one stream, hashes the config
 blob and every manifest it follows and fails unless each equals the digest that names it, and returns the config digest,
 the linux/amd64 manifest's and the archive's top-level descriptor (`target`, what the containerd store's `.Id` names).
-Every build whose identity is checked passes `provenance: false` and `sbom: false`, so each store holds one manifest.
+It takes an entry's path and size from its pax header, as GNU tar and Go's archive/tar do (Go writes the size there for
+an entry over 8 GiB), and its memory is bounded: it keeps the bytes of JSON documents only (a small layer is hashed and
+dropped), and refuses a pax header or long name over 1 MiB before reading it and an archive whose kept bytes pass 64 MiB,
+naming the limit. Every build whose identity is checked passes `provenance: false` and `sbom: false`, so each store holds one manifest.
 `release.yml`'s `build` saves each image, reads its identity, proves the tag is that image on its store (the config
 digest on the classic store, the top-level descriptor on containerd's, from `docker info`'s `DriverStatus`), checks the
 worker's headless shell with `browser-build.ts --image` before the save, and sets `sha256_<image>`, `config_<image>` and
@@ -820,7 +827,8 @@ another's outputs. ci.yml's `images` job (26.04) builds archives, scans them wit
 config digest to buildx's `containerimage.config.digest`, loads the worker as the archive's top-level descriptor and
 checks its headless shell, so every pull request proves the reader and the containerd rule on the store the probe will
 use. `screening-capacity.yml`'s builds write archives and load them the same way. `release-dry-run.yml` carries the same
-steps, cut to its one image, without the push and the registry check. The watched list gains `tools/ci/apt-archives.sh`,
+steps on release.yml's `web` and `worker` legs, the worker's `--image` check included, without the push and the registry
+check (N16). The watched list gains `tools/ci/apt-archives.sh`,
 `tools/ci/browser-build.ts`, `browser.json` and the file lists under `browser-builds/`, which the capacity job runs or
 reads.
 
@@ -886,8 +894,21 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
   counting seven lines, so a baseline added or removed with its spec is held without an edit of the workflow.
 - **N15.** The capacity jobs stop at a red browser check, unlike ci.yml's jobs, so a measurement is never made, or
   attested, with another browser than the record's.
-- **N16.** The release's `build` and `capacity` jobs also prove each tag on their own store, and the dry run's
-  `capacity` runs release.yml's archive check, so every check a tag runs is exercised by a pull request first.
+- **N16.** The release's `build` and `capacity` jobs also prove each tag on their own store. `release-dry-run.yml`'s
+  `build` is release.yml's on two of its four legs, `web` and `worker`, as a matrix: the worker's
+  `browser-build.ts --image` step before its save, and each leg's `sha256_<image>`, `config_<image>` and
+  `target_<image>` outputs merged from the two legs as the release's four are; its `push` and `capacity` run
+  release.yml's archive checks on both archives. `workflows.test.ts` holds each of its three jobs, step for step, to
+  release.yml's with only the image list, the tag and the archive's retention cut. The tag-only steps no pull request
+  runs are: the build's scan (ci.yml's `images` job scans both images on every pull request with the same Trivy pin,
+  through `input`) and its upload of the bill of materials; the `web-staging` and `web-production` legs, which differ
+  from `web` only by the static host their repository variables name; everything in `capacity` after the frozen install
+  (the browser install and check, the scale release, the binding measurement and its upload; `screening-capacity.yml`
+  runs the same harness on a pull request that changes a watched path); `push`'s tag, push and registry read-back; and
+  the whole `report` job (the attestation and the release's assets); the founder's first tag runs them first. Every
+  other step of a tag's run runs on each pull request that changes one of the dry run's paths (release.yml, the dry run,
+  `image-id.ts`, either Dockerfile or the pnpm installer), and ci.yml's `images` job runs the worker's browser check on
+  every pull request.
 - **N17.** Both measuring jobs that build the worker image, `release-capacity.yml`'s and `screening-capacity.yml`'s
   `capacity`, check its headless shell with `browser-build.ts --image` before anything is installed or measured, beside
   `images` and the release's `build`: the weekly runs measure the image whose headless shell prints customers' reports,
