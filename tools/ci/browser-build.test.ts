@@ -346,6 +346,31 @@ exit 99
       expect(err).toEqual([`The headless shell's build holds 1 entries that no tree SHA-256 covers (neither a regular file nor a directory, or a file the check cannot read): ${DIRS['chromium-headless-shell'].dir}/deb.deps (unreadable).`]);
     });
 
+    it('fails by name when sha256sum fails on a file inside the image, never as a file the image lacks (CI-5, SEC-3)', () => {
+      // A sha256sum first on the image's PATH that cannot read icudtl.dat (as an I/O error, or a mode no user can pass,
+      // would leave it) and hashes every other file: xargs then exits 123, which sh's pipeline used to hide behind sed.
+      const env = image();
+      copyShell(REVISION);
+      const real = execFileSync('sh', ['-c', 'command -v sha256sum'], { encoding: 'utf8' }).trim();
+      writeFileSync(
+        path.join(current.dir, 'bin', 'sha256sum'),
+        `#!/bin/sh\nstatus=0\nfor file in "$@"; do\n  case "$file" in\n    */icudtl.dat) echo "sha256sum: $file: Input/output error" >&2; status=1 ;;\n    *) ${real} "$file" ;;\n  esac\ndone\nexit $status\n`,
+      );
+      chmodSync(path.join(current.dir, 'bin', 'sha256sum'), 0o755);
+      const { status, out, err } = check(['--image', 'registry.example/tp-worker:test'], env);
+      expect(status).toBe(1);
+      expect(err).toHaveLength(1);
+      expect(err[0]).toBe(
+        `The headless shell could not be hashed whole under registry.example/tp-worker:test: $PLAYWRIGHT_BROWSERS_PATH/chromium_headless_shell-${REVISION}: ` +
+          `sha256sum exited 123; 1 of 4 files found was not hashed: ${DIRS['chromium-headless-shell'].dir}/icudtl.dat. ` +
+          'Its tree SHA-256 is not compared until every file is hashed; the tool’s own message is in the log above.',
+      );
+      // Not a tree difference, and not the upgrade procedure: the file is in the image, it could not be read.
+      expect(err[0]).not.toContain('(removed)');
+      expect(err[0]).not.toContain(PROCEDURE);
+      expect(out).toContain(`The headless shell: revision ${REVISION}, ${VERSION}, 3 files under registry.example/tp-worker:test: $PLAYWRIGHT_BROWSERS_PATH/chromium_headless_shell-${REVISION}, tree SHA-256 not computed (the hash run failed), binary SHA-256 ${recorded().builds['chromium-headless-shell'].sha256}`);
+    });
+
     it('fails when the image pins another revision, and when its build is not there', () => {
       const env = image('1194');
       copyShell('1194');

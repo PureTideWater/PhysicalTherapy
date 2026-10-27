@@ -90,6 +90,9 @@ export interface FoundBuild {
   /** Entries under the build's directory no tree SHA-256 covers: neither a regular file nor a directory (a symbolic link,
    * say), or a file the check cannot read (marked "(unreadable)"). */
   readonly others: readonly string[];
+  /** What kept a file from being hashed (a tool that failed, a file found but given no line): each fails the check as a
+   * problem of its own, never as a file the build lacks, since the file is there and only its bytes are unknown. */
+  readonly faults: readonly string[];
   /** What `<binary> --version` printed, or why it did not run. */
   readonly version: string;
   /** Where the build was looked for (a folder, or an image's). */
@@ -188,7 +191,7 @@ export function installedBuild(root: string, name: BuildName, pins: { revision: 
   const base = { ...pins, where: revisionDir };
   const directories = existsSync(revisionDir) ? readdirSync(revisionDir).filter((entry) => !MARKERS.has(entry) && lstatSync(path.join(revisionDir, entry)).isDirectory()) : [];
   const dir = directories.includes(recorded.dir) ? recorded.dir : directories.length === 1 ? (directories[0] ?? null) : null;
-  if (dir === null) return { ...base, dir: null, lines: [], others: [], version: 'not run: no build there' };
+  if (dir === null) return { ...base, dir: null, lines: [], others: [], faults: [], version: 'not run: no build there' };
   const { lines, others } = treeLines(revisionDir, dir);
   const binary = path.join(revisionDir, dir, recorded.path.slice(recorded.dir.length + 1));
   let version = 'not run: no binary at the recorded path';
@@ -199,12 +202,16 @@ export function installedBuild(root: string, name: BuildName, pins: { revision: 
       version = `--version failed: ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`;
     }
   }
-  return { ...base, dir, lines, others, version };
+  // A file this process cannot read throws out of treeLines, naming it: the check fails as "could not be checked".
+  return { ...base, dir, lines, others, faults: [], version };
 }
 
 /**
- * The script the --image mode runs inside the image, as `sh -c <script> sh <revision> <dir> <binary under dir>`: the
- * build's directory, every other entry, every regular file's line in the shell form's order, and the binary's version.
+ * The script the --image mode runs inside the image, as `sh -c <script> sh <revision> <dir> <binary under dir>`, one
+ * row per fact: the build's directory (`dir`), every other entry (`other`), every file find cannot read (`unreadable`),
+ * every regular file found (`listed`, its name escaped as sha256sum escapes one), every regular file's line in the
+ * shell form's order (`file`), any tool that failed (`error <tool> <status>`: sh has no pipefail, so each stage writes a
+ * file and reports its own status rather than hiding behind the next), and the binary's version (`version`).
  */
 export const IMAGE_SCRIPT = [
   'set -eu',
@@ -212,9 +219,15 @@ export const IMAGE_SCRIPT = [
   'cd "${PLAYWRIGHT_BROWSERS_PATH:?}/chromium_headless_shell-$revision" 2>/dev/null || { echo missing; exit 0; }',
   'if [ ! -d "$dir" ]; then set -- */; if [ "$#" -eq 1 ] && [ -d "$1" ]; then dir=${1%/}; else echo missing; exit 0; fi; fi',
   'echo "dir $dir"',
-  'find "$dir" ! -type f ! -type d -exec printf \'other %s\\n\' {} \\;',
-  'find "$dir" -type f ! -readable -exec printf \'unreadable %s\\n\' {} \\;',
-  'find "$dir" -type f -print0 | LC_ALL=C sort -z | xargs -0r sha256sum | sed \'s/^/file /\'',
+  'find "$dir" ! -type f ! -type d -exec printf \'other %s\\n\' {} \\; || echo "error find $?"',
+  'find "$dir" -type f ! -readable -exec printf \'unreadable %s\\n\' {} \\; || echo "error find $?"',
+  'work=$(mktemp -d)',
+  'trap \'rm -rf "$work"\' EXIT',
+  'find "$dir" -type f -print0 > "$work/found" || echo "error find $?"',
+  'LC_ALL=C sort -z "$work/found" > "$work/sorted" || echo "error sort $?"',
+  'sed -z \'s/\\\\/\\\\\\\\/g; s/\\n/\\\\n/g; s/^/listed /\' "$work/sorted" | tr \'\\0\' \'\\n\'',
+  'xargs -0r sha256sum < "$work/sorted" > "$work/sums" || echo "error sha256sum $?"',
+  'sed \'s/^/file /\' "$work/sums"',
   'if [ -x "$dir/$binary" ]; then printf \'version %s\\n\' "$("$dir/$binary" --version 2>&1 | head -n 1 || true)"; fi',
 ].join('\n');
 
@@ -235,17 +248,25 @@ export function imageBuild(ref: string, recorded: RecordedBuild, env: NodeJS.Pro
   const where = `${ref}: $PLAYWRIGHT_BROWSERS_PATH/chromium_headless_shell-${pins.revision}`;
   const rows = output.split('\n').filter((row) => row !== '');
   const dir = rows.find((row) => row.startsWith('dir '))?.slice(4) ?? null;
-  const lines = rows.filter((row) => row.startsWith('file ')).map((row) => row.slice(5));
-  const odd = lines.filter((line) => !/^[0-9a-f]{64} {2}\S/.test(line));
+  const all = rows.filter((row) => row.startsWith('file ')).map((row) => row.slice(5));
+  const odd = all.filter((line) => !/^[0-9a-f]{64} {2}\S/.test(line));
+  const lines = all.filter((line) => !odd.includes(line));
+  const hashed = new Set(lines.map((line) => line.slice(66)));
+  const listed = rows.filter((row) => row.startsWith('listed ')).map((row) => row.slice(7));
+  const unhashed = listed.filter((name) => !hashed.has(name));
   return {
     ...pins,
     where,
     dir,
-    lines: lines.filter((line) => !odd.includes(line)),
+    lines,
     others: [
       ...rows.filter((row) => row.startsWith('other ')).map((row) => row.slice(6)),
       ...rows.filter((row) => row.startsWith('unreadable ')).map((row) => `${row.slice(11)} (unreadable)`),
       ...odd,
+    ],
+    faults: [
+      ...rows.filter((row) => row.startsWith('error ')).map((row) => row.slice(6).replace(' ', ' exited ')),
+      ...(unhashed.length === 0 ? [] : [`${String(unhashed.length)} of ${String(listed.length)} files found ${unhashed.length === 1 ? 'was' : 'were'} not hashed: ${unhashed.join(', ')}`]),
     ],
     version: rows.find((row) => row.startsWith('version '))?.slice(8) ?? 'not run: no binary at the recorded path',
   };
@@ -281,19 +302,24 @@ export function differingPaths(recorded: readonly string[], found: readonly stri
 export function compare(name: BuildName, record: BrowserRecord, recordFile: string, found: FoundBuild): { report: string[]; problems: string[]; listFiles: boolean } {
   const recorded = record.builds[name];
   const { title } = BUILDS[name];
-  const tree = found.dir === null ? `absent (no build under ${found.where})` : treeSha256(found.lines);
+  // A build some of whose files could not be hashed has no tree SHA-256 to compare: its missing lines are files whose
+  // bytes are unknown, not files the build lacks, so they are never named as removed.
+  const faulted = found.faults.length > 0;
+  const tree = found.dir === null ? `absent (no build under ${found.where})` : faulted ? 'not computed (the hash run failed)' : treeSha256(found.lines);
   const binaryPath = found.dir === null ? null : `${found.dir}/${recorded.path.slice(recorded.dir.length + 1)}`;
-  const binary = found.lines.find((line) => line.slice(66) === binaryPath)?.slice(0, 64) ?? 'absent';
+  const binary = found.lines.find((line) => line.slice(66) === binaryPath)?.slice(0, 64) ?? (faulted ? 'not computed' : 'absent');
   const report = [`${title}: ${found.version}`, `${title}: revision ${found.revision}, ${found.browserVersion}, ${String(found.lines.length)} files under ${found.where}, tree SHA-256 ${tree}, binary SHA-256 ${binary}`];
   const problems: string[] = [];
   const listed = recordedLines(recordFile, recorded);
   if (listed.problem !== null) problems.push(`browser.json's record of ${title.toLowerCase()} is inconsistent: ${listed.problem}.`);
-  const equal = found.revision === record.revision && found.browserVersion === record.browserVersion && found.dir === recorded.dir && tree === recorded.treeSha256 && binary === recorded.sha256;
-  if (!equal) {
+  const sameBuild = found.revision === record.revision && found.browserVersion === record.browserVersion && found.dir === recorded.dir;
+  const equal = sameBuild && tree === recorded.treeSha256 && binary === recorded.sha256;
+  // At the recorded build, a failed hash run is the problem (below), not a difference from the record.
+  if (!equal && !(sameBuild && faulted)) {
     let message =
       `${title} is ${found.browserVersion} (revision ${found.revision}, tree SHA-256 ${tree}, binary SHA-256 ${binary}), ` +
       `and browser.json records ${record.browserVersion} (revision ${record.revision}, tree SHA-256 ${recorded.treeSha256}, binary SHA-256 ${recorded.sha256}). ${PROCEDURE}`;
-    if (found.revision === record.revision && found.dir === recorded.dir && tree !== recorded.treeSha256 && listed.lines !== null) {
+    if (found.revision === record.revision && found.dir === recorded.dir && !faulted && tree !== recorded.treeSha256 && listed.lines !== null) {
       const paths = differingPaths(listed.lines, found.lines);
       message += ` ${String(paths.length)} files differ from ${path.relative(ROOT, listFile(recordFile, recorded))}: ${paths.join(', ')}.`;
     }
@@ -301,6 +327,9 @@ export function compare(name: BuildName, record: BrowserRecord, recordFile: stri
   }
   if (found.others.length > 0) {
     problems.push(`${title}'s build holds ${String(found.others.length)} entries that no tree SHA-256 covers (neither a regular file nor a directory, or a file the check cannot read): ${found.others.join(', ')}.`);
+  }
+  if (faulted) {
+    problems.push(`${title} could not be hashed whole under ${found.where}: ${found.faults.join('; ')}. Its tree SHA-256 is not compared until every file is hashed; the tool’s own message is in the log above.`);
   }
   if (problems.length === 0) report.push(`${title}: equal to browser.json in every file`);
   return { report, problems, listFiles: found.dir !== null && problems.length > 0 };
