@@ -74,13 +74,18 @@ export function compactIdentifier(value: string): string {
   return value.normalize('NFKC').toUpperCase().replace(/[^\p{L}\p{N}]/gu, '');
 }
 
-/** A whole-word, case-blind pattern for a member ID or claim number, however a letter spaces or hyphenates it. */
+/**
+ * A whole-word, case-blind pattern for a member ID or claim number, however a letter spaces, hyphenates or groups it:
+ * between any two of its characters, any run of white space, hyphens, dashes, minus signs, dots, slashes,
+ * underscores, asterisks and invisible characters (a soft hyphen, a zero-width space), the separators the contract
+ * screen's tokenizer joins too (identifierRuns, below).
+ */
 function identifierPattern(value: string): RegExp | null {
   const characters = [...compactIdentifier(value)];
   if (characters.length < 2) {
     return null;
   }
-  return new RegExp(`${BEFORE}${characters.map(escapeRegExp).join('[\\s\\-‐-―]*')}${AFTER}`, 'giu');
+  return new RegExp(`${BEFORE}${characters.map(escapeRegExp).join('[\\s\\p{Pd}\\u2212./_*\\p{Cf}\\p{Default_Ignorable_Code_Point}]*')}${AFTER}`, 'giu');
 }
 
 /** A whole-word, case-blind pattern for a name form, its spaces matching any run of white space. */
@@ -318,55 +323,285 @@ export function screenIdentifier(kind: ScreenIdentifierKind, value: string, floo
 }
 
 /**
- * Between two tokens, what may join them into one identifier: nothing, one space, or one hyphen or dash with at
- * most one space on either side. (Appendix A.3's `[ ]?[-]?[ ]?` also joined two spaces with no dash between them,
- * which section 5.3 rules out: two spaces are a column gap.)
+ * What a page may hold between two letters or digits that is not seen: format characters and default-ignorable code
+ * points (a soft hyphen, a zero-width space or joiner, a word joiner, a byte-order mark, a variation selector), which
+ * NFKC keeps and compactIdentifier drops. They stay token boundaries (so "ID<zero-width space>ZZ1234567" still holds
+ * the token ZZ1234567) and are taken out of the gap between two tokens before it is judged.
  */
-const JOIN = /^(?:[ \u00A0]|[ \u00A0]?[-\u2010-\u2015][ \u00A0]?)?$/u;
+const INVISIBLE = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/gu;
+const HOLDS_INVISIBLE = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/u;
+
+/**
+ * Between two tokens, once its invisible characters are taken out, what joins them into one identifier on any page:
+ * nothing; one space; one hyphen, dash or minus sign with at most one space on either side; or one dot, slash,
+ * underscore or asterisk with no space beside it ("ZZ 123 4567", "ZZ-123-4567", "ZZ - 123", "77−1200", "SYNPCN.12001",
+ * "20261234/01", "SYN_PCN_44551"). A dot or slash with a space beside it ends a sentence or separates a list
+ * ("Agreement. Section", "PT / OT"), which no identifier is printed as, so it ends the run. (Appendix A.3's
+ * `[ ]?[-]?[ ]?` also joined two spaces with no dash between them, which section 5.3 rules out: two spaces are a
+ * column gap.) After NFKC every no-break, thin or full-width space is a space.
+ */
+const JOIN = /^(?:[ ]|[ ]?[\p{Pd}\u2212][ ]?|[./_*])?$/u;
 
 const TOKEN = /[\p{L}\p{N}]+/gu;
 
 /** What upper-casing may add that compactIdentifier drops (a combining mark), so a token compacts exactly as a stored value does. */
 const NOT_IDENTIFIER = /[^\p{L}\p{N}]/gu;
+const HOLDS_NOT_IDENTIFIER = /[^\p{L}\p{N}]/u;
+
+/** A character outside ASCII: ASCII is its own NFKC form, so only a line holding one is normalized (a copy). */
+const NOT_ASCII = /[^\0-\x7F]/;
+
+/** Each maximal run of characters other than letters and digits that has a letter or digit on both sides. */
+const INNER_SEPARATOR = /(?<=[\p{L}\p{N}])[^\p{L}\p{N}]+(?=[\p{L}\p{N}])/gu;
+
+/** A value of letters and digits only, which holds no separator (most stored identifiers). */
+const LETTERS_AND_DIGITS = /^[\p{L}\p{N}]*$/u;
+
+/** A gap no stored separator may add as a join: a line break, a tab or any white space but a space, or two spaces (a column gap). */
+const NEVER_JOINS = /[^\S ]| {2}/u;
 
 /**
- * The runs of a page that could be a stored identifier, as compact identifiers (letters and digits, upper case, as
- * compactIdentifier makes them), for the contract screen (patient-records.ts):
+ * The separators inside a stored identifier that JOIN does not already accept ("ZZ#7120077" holds "#", "A12:34+5"
+ * holds ":" and "+"), each as the tokenizer reads a gap (NFKC, its invisible characters taken out), for the contract
+ * screen's set (patient-records.ts screenSet): each one the practice's kept values hold also joins two tokens on its
+ * pages, exactly as written, so a kept value written on a page exactly as it is stored is always found. A separator
+ * holding a line break, a tab or two spaces is never added: those end a run on every page (a value that holds one is
+ * found only when written without it, a recorded gap). Punctuation only: no letter or digit of the value leaves.
+ */
+export function storedSeparators(value: string): string[] {
+  if (LETTERS_AND_DIGITS.test(value)) {
+    return [];
+  }
+  const separators = new Set<string>();
+  for (const [separator] of value.normalize('NFKC').replace(INVISIBLE, '').matchAll(INNER_SEPARATOR)) {
+    if (!JOIN.test(separator) && !NEVER_JOINS.test(separator)) {
+      separators.add(separator);
+    }
+  }
+  return [...separators];
+}
+
+/** Whether the gap between two tokens joins them: JOIN, or one of the practice's own separators, with its invisible characters taken out. */
+function joinsTokens(gap: string, joins: ReadonlySet<string> | undefined): boolean {
+  const visible = HOLDS_INVISIBLE.test(gap) ? gap.replace(INVISIBLE, '') : gap;
+  return JOIN.test(visible) || (joins?.has(visible) ?? false);
+}
+
+// The runs' hashes: a polynomial hash over a run's UTF-16 code units, modulo 2^32 (Math.imul), so a run's hash comes
+// from two prefix hashes in constant time, and a run is built as a string only when a kept identifier has its length
+// and hash. A hash says only that a run may be kept; the run itself is then looked up, so a collision costs time,
+// never a match.
+const HASH_BASE = 0x0100_0193;
+
+/** The polynomial hash of a whole string, as the page side computes it for a run. */
+function hashOf(text: string): number {
+  let hash = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = (Math.imul(hash, HASH_BASE) + text.charCodeAt(index)) | 0;
+  }
+  return hash;
+}
+
+/** A run's key in the index: its hash and length mixed (murmur3's finalizer), never 0, which marks an empty slot. */
+function runKey(hash: number, length: number): number {
+  let key = hash ^ Math.imul(length, 0x9e37_79b1);
+  key = Math.imul(key ^ (key >>> 16), 0x85eb_ca6b);
+  key = Math.imul(key ^ (key >>> 13), 0xc2b2_ae35);
+  key ^= key >>> 16;
+  return key === 0 ? 1 : key;
+}
+
+/** The kept identifiers as the tokenizer compares them: their lengths, their first characters by length, and a table of their keys (open addressing). */
+export interface RunIndex {
+  /** Every kept identifier's length, shortest first. */
+  readonly lengths: readonly number[];
+  /** By length, 128 bits: which ASCII characters a kept identifier of that length starts with (`firsts[length * 4 + (unit >> 5)]`, bit `unit & 31`). */
+  readonly firsts: Uint32Array;
+  /** By length, 1 when a kept identifier of that length starts with a character outside ASCII. */
+  readonly otherFirsts: Uint8Array;
+  /** Each kept identifier's key (runKey), at most half the slots full; 0 is an empty slot. */
+  readonly keys: Int32Array;
+}
+
+/**
+ * The index of a screen set's kept identifiers (compact forms), built once per set (patient-records.ts screenSet), so
+ * the page side builds and looks up a run only where a kept identifier has its length, its first character and its
+ * hash. It holds those only, never a whole value, and lives inside the check with the set.
+ */
+export function runIndex(values: Iterable<string>): RunIndex {
+  const kept = [...values].filter((value) => value !== '');
+  const lengths = new Set<number>();
+  const longest = kept.reduce((most, value) => Math.max(most, value.length), 0);
+  const firsts = new Uint32Array((longest + 1) * 4);
+  const otherFirsts = new Uint8Array(longest + 1);
+  let size = 2;
+  while (size < 2 * kept.length) {
+    size *= 2;
+  }
+  const keys = new Int32Array(size);
+  for (const value of kept) {
+    lengths.add(value.length);
+    const first = value.charCodeAt(0);
+    if (first < 128) {
+      firsts[value.length * 4 + (first >> 5)] = (firsts[value.length * 4 + (first >> 5)] ?? 0) | (1 << (first & 31));
+    } else {
+      otherFirsts[value.length] = 1;
+    }
+    const key = runKey(hashOf(value), value.length);
+    let slot = key & (size - 1);
+    while (keys[slot] !== 0 && keys[slot] !== key) {
+      slot = (slot + 1) & (size - 1);
+    }
+    keys[slot] = key;
+  }
+  return Object.freeze({ lengths: [...lengths].sort((a, b) => a - b), firsts, otherFirsts, keys });
+}
+
+/** Whether a kept identifier of the length starts with the character: a first, cheap test before the hash. */
+function indexStarts(index: RunIndex, length: number, unit: number): boolean {
+  return unit < 128 ? (((index.firsts[length * 4 + (unit >> 5)] ?? 0) >>> (unit & 31)) & 1) === 1 : index.otherFirsts[length] === 1;
+}
+
+/** Whether the index holds a key (an identifier of that length may have that hash). */
+function indexHolds(index: RunIndex, key: number): boolean {
+  const mask = index.keys.length - 1;
+  for (let slot = key & mask; ; slot = (slot + 1) & mask) {
+    const found = index.keys[slot];
+    if (found === key) {
+      return true;
+    }
+    if (found === 0 || found === undefined) {
+      return false;
+    }
+  }
+}
+
+/** Which runs of a page the contract screen compares, and what joins two tokens beside JOIN. */
+export interface RunOptions {
+  /** The shortest run compared. */
+  readonly minLength: number;
+  /** The longest run compared: the longest kept identifier, at most SCREEN_MAX_RUN. */
+  readonly maxLength: number;
+  /** The practice's own separators (storedSeparators of its kept identifiers): each also joins two tokens, exactly as written. */
+  readonly joins?: ReadonlySet<string>;
+  /** The kept identifiers' index (runIndex): only a run of a kept length and hash is built and given to `accept`. Every run when absent. */
+  readonly index?: RunIndex;
+}
+
+/**
+ * Whether any run of a page that could be a stored identifier is one `accept` takes, for the contract screen
+ * (patient-records.ts pagesName). Each run is a compact identifier (letters and digits, upper case, as
+ * compactIdentifier makes them):
  *
- * 1. The text is NFKC-normalized (so a no-break or full-width space is a space, a full-width digit a digit).
+ * 1. The text is read a line at a time (a run never crosses a line break), each line NFKC-normalized (so a no-break
+ *    or full-width space is a space, a full-width digit a digit).
  * 2. A token is a maximal run of letters and digits; every other character is a boundary, so "Member ID:ZZ1234567",
  *    "Claim#9876543210" and "(ZZ1234567)" all hold the identifier as a token, and "ZZ1234567" is never found inside
  *    "AZZ12345678" (whole tokens only: the match is exact).
- * 3. From each token, a run extends over the following tokens while what lies between two of them is, on one line,
- *    at most one space, at most one hyphen or dash and at most one space ("ZZ 123 4567", "ZZ-123-4567", "ZZ - 123"):
- *    the ways an identifier is printed in groups. A newline, a tab, two spaces or any other character ends the run,
- *    so a table's columns and a CSV's fields never join.
- * 4. Each run's compact concatenation is kept while it is from minLength to maxLength characters long.
+ * 3. A run extends over the following tokens while the gap between two of them, its invisible characters taken out,
+ *    is one JOIN accepts or one of the practice's own separators (options.joins): the ways an identifier is printed in
+ *    groups, and every way the practice's own values are written. A newline, a tab, two spaces, two dashes, a dot or
+ *    slash beside a space or any other character ends the run, so the fields of a CSV or a workbook (joined by tabs)
+ *    never join. A PDF's columns on one line do: pdf.js reads a gap of any width as one space ("97110 59" is one
+ *    run), and the false-refusal measurement reads set v2's pages as read, so it counts those joins.
+ * 4. Each run's compact concatenation is compared while it is from minLength to maxLength characters long and, with
+ *    an index, only when a kept identifier has its length and hash.
  *
- * Nothing about a run's shape is judged here (no digit rule, no pattern for a date, an NPI, a ZIP or a code): the
- * stored side's rules (screenIdentifier) decide what is looked for. What this gives up is recorded in docs/adr/0070
- * Part 3: an identifier wrapped across lines, or spaced with two or more spaces.
+ * It streams, and stops at the first run `accept` takes. What it holds is the current line and, for the open run, the
+ * last maxLength + 1 positions' token starts, prefix hashes and characters: bounded by maxLength and the longest line,
+ * whatever the text's length. For each token it does at most one constant-time check per kept length, and builds a run
+ * only on an index hit, so its time is linear in the text. Nothing about a run's shape is judged here (no digit rule,
+ * no pattern for a date, an NPI, a ZIP or a code): the stored side's rules (screenIdentifier) decide what is looked for.
+ * What this gives up is listed in docs/adr/0070 Part 3, "What it gives up".
  */
-export function identifierRuns(text: string, options: { readonly minLength: number; readonly maxLength: number }): string[] {
-  const normal = text.normalize('NFKC');
-  const tokens = [...normal.matchAll(TOKEN)].map((match) => ({ text: match[0].toUpperCase().replace(NOT_IDENTIFIER, ''), start: match.index, end: match.index + match[0].length }));
-  const runs = new Set<string>();
-  for (let i = 0; i < tokens.length; i += 1) {
-    let joined = '';
-    for (let j = i; j < tokens.length; j += 1) {
-      const token = tokens[j];
-      const before = tokens[j - 1];
-      if (token === undefined || (j > i && (before === undefined || !JOIN.test(normal.slice(before.end, token.start))))) {
-        break;
+export function someIdentifierRun(text: string, options: RunOptions, accept: (run: string) => boolean): boolean {
+  const { minLength, maxLength, joins, index } = options;
+  const lengths = (index?.lengths ?? Array.from({ length: Math.max(0, maxLength) }, (_, at) => at + 1)).filter((length) => length >= Math.max(1, minLength) && length <= maxLength);
+  if (lengths.length === 0) {
+    return false;
+  }
+  // Positions count the compact characters of every token read so far; position p's slot is p & mask, in rings of a
+  // power of two above maxLength. A token of the open run starts at p when starts[slot] is p + 1; prefixes[slot] is the
+  // hash of every character before p; units holds the character at p. A run reaches at most maxLength positions back,
+  // so no slot it reads has been reused.
+  let ring = 2;
+  while (ring <= maxLength) {
+    ring *= 2;
+  }
+  const mask = ring - 1;
+  const starts = new Float64Array(ring);
+  const prefixes = new Int32Array(ring);
+  const units = new Uint16Array(ring);
+  const powers = new Int32Array(maxLength + 1);
+  powers[0] = 1;
+  for (let length = 1; length <= maxLength; length += 1) {
+    powers[length] = Math.imul(powers[length - 1] ?? 0, HASH_BASE);
+  }
+  const runAt = (start: number, length: number): string => {
+    let run = '';
+    for (let at = start; at < start + length; at += 1) {
+      run += String.fromCharCode(units[at & mask] ?? 0);
+    }
+    return run;
+  };
+  const token = new RegExp(TOKEN.source, TOKEN.flags);
+  let position = 0;
+  let hash = 0;
+  for (let lineStart = 0; lineStart <= text.length; ) {
+    const newline = text.indexOf('\n', lineStart);
+    const lineEnd = newline === -1 ? text.length : newline;
+    const raw = text.slice(lineStart, lineEnd);
+    const line = NOT_ASCII.test(raw) ? raw.normalize('NFKC') : raw;
+    lineStart = lineEnd + 1;
+    let runStart = position;
+    let previousEnd = -1;
+    token.lastIndex = 0;
+    for (let match = token.exec(line); match !== null; match = token.exec(line)) {
+      // One space, the commonest gap, is judged without building it.
+      const oneSpace = match.index === previousEnd + 1 && line.charCodeAt(previousEnd) === 0x20;
+      if (previousEnd === -1 || (!oneSpace && !joinsTokens(line.slice(previousEnd, match.index), joins))) {
+        runStart = position;
       }
-      joined += token.text;
-      if (joined.length > options.maxLength) {
-        break;
+      previousEnd = match.index + match[0].length;
+      const upper = match[0].toUpperCase();
+      const compact = HOLDS_NOT_IDENTIFIER.test(upper) ? upper.replace(NOT_IDENTIFIER, '') : upper;
+      starts[position & mask] = position + 1;
+      for (let at = 0; at < compact.length; at += 1) {
+        const unit = compact.charCodeAt(at);
+        prefixes[position & mask] = hash;
+        units[position & mask] = unit;
+        hash = (Math.imul(hash, HASH_BASE) + unit) | 0;
+        position += 1;
       }
-      if (joined.length >= options.minLength) {
-        runs.add(joined);
+      prefixes[position & mask] = hash;
+      // The runs that end with this token, shortest first: each starts `length` positions back, at a token start.
+      for (const length of lengths) {
+        const start = position - length;
+        if (start < runStart) {
+          break;
+        }
+        const slot = start & mask;
+        if (starts[slot] !== start + 1) {
+          continue;
+        }
+        if (index !== undefined && (!indexStarts(index, length, units[slot] ?? 0) || !indexHolds(index, runKey((hash - Math.imul(prefixes[slot] ?? 0, powers[length] ?? 0)) | 0, length)))) {
+          continue;
+        }
+        if (accept(runAt(start, length))) {
+          return true;
+        }
       }
     }
   }
+  return false;
+}
+
+/** Every distinct run of the text someIdentifierRun compares (for the tests and the measurement; the screen itself stops at the first match). */
+export function identifierRuns(text: string, options: RunOptions): string[] {
+  const runs = new Set<string>();
+  someIdentifierRun(text, options, (run) => {
+    runs.add(run);
+    return false;
+  });
   return [...runs];
 }

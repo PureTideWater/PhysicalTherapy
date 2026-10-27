@@ -31,11 +31,15 @@ export interface Verified<P> {
   readonly citations: readonly LoggedCitation[];
 }
 
+/**
+ * Every member is readonly (properties, not methods), so assigning or deleting one, the screen above all, does not
+ * compile; ./specs.ts freezes each spec as well, so it throws at run time too.
+ */
 export interface PurposeSpec<I, O, P, C = undefined> {
   readonly purpose: ModelPurpose;
   readonly prompt: PromptVersion;
   readonly output: z.ZodType<O>;
-  prepare(input: I): PreparedCall<C>;
+  readonly prepare: (input: I) => PreparedCall<C>;
   /**
    * A check of the prepared call against records outside the input (the denial-letter reader asks the
    * practice's records whether the letter names another patient; a contract's check asks whether the pages
@@ -44,6 +48,6 @@ export interface PurposeSpec<I, O, P, C = undefined> {
    * the call. The call's context says which practice the call reads, so a screen can hold its records
    * check to that practice.
    */
-  screen?(input: I, prepared: PreparedCall<C>, context: CallContext): Promise<void>;
-  verify(input: I, output: O, context: C): Verified<P>;
+  readonly screen?: (input: I, prepared: PreparedCall<C>, context: CallContext) => Promise<void>;
+  readonly verify: (input: I, output: O, context: C) => Verified<P>;
 }

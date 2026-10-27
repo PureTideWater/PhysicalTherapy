@@ -17,7 +17,10 @@ import { SCREEN_FLOORS, SCREEN_MAX_RUN, SCREEN_MIN_RUN, type ScreenIdentifierKin
  *   carries no practice's material;
  * - a practice check is bound at construction to a scope of the caller's that reaches the practice (the caller's
  *   proof of access; the design review's M7), and reads through a job scope it opens itself on the pool for exactly
- *   that practice, so no runner scoped to another practice, and no stub that returns nothing, can be supplied;
+ *   that practice, so no runner scoped to another practice can be supplied. The scope and the pool are taken by
+ *   their shape (packages/db brands neither), so this module cannot tell a stub pool that returns nothing from a
+ *   real one: no production caller supplies one, because lint.test.ts holds practiceRecordsCheck to the web's
+ *   proposal and the worker's permitted run, each on its services' pool, to ./testing.ts and to tests;
  * - every issued check is frozen, so its practice cannot be changed after the gateway's binding was made;
  * - any error while loading (the scope, a query, a decrypt) answers screen_failed, and a practice holding more
  *   identifiers than the bound answers screen_unavailable: both refuse the call (fail closed), never "clear".
@@ -27,18 +30,27 @@ import { SCREEN_FLOORS, SCREEN_MAX_RUN, SCREEN_MIN_RUN, type ScreenIdentifierKin
  * if the ID names a person), each returned row audited (readWithAudit) with purpose contract_screen and the request
  * ID `<requestId>:screen:<screenId>`. The caller records one event in the person's own name that joins to those
  * reads by that request ID (the web's contract_screen_requested), so the trail says who caused the screen without
- * saying that the person read every patient.
+ * saying that the person read every patient. The job scope returns the rows as stored (ciphertext) and commits, its
+ * audit rows with it, before any value is decrypted: no value is decrypted whose read is not audited, so a value
+ * that does not decrypt answers screen_failed with every read kept (combined audit item 120's review, F3).
  *
  * Bounded until the lookup-hash migration (the design's F3, Lane A's): before reading, the check counts, unaudited,
  * the identifiers it would read (a count, not PHI); above SCREEN_MAX_IDENTIFIERS it reads nothing and answers
- * screen_unavailable, so the audit rows, the decrypts and the plaintext held in one process per check are bounded
- * and the bound fails closed (the person enters the terms by hand).
+ * screen_unavailable. Each read is itself capped at what the bound leaves, plus one row to tell "at the bound" from
+ * "past it", so rows committed between the count and a read (an 835 load, a posting export) are never read past the
+ * bound by more than that one row, and a read that passes it answers screen_unavailable having decrypted nothing.
+ * So the audit rows, the decrypts and the plaintext held in one process per check are bounded whatever commits
+ * meanwhile, and the bound fails closed (the person enters the terms by hand).
  *
  * What leaves a check: one of four codes. Never which identifier matched, its kind, its row or how many; the
  * decrypted values live in one Set inside the check and go with it.
  */
 
-/** The most identifiers (member IDs, and two numbers per claim) a practice check reads; above it the check refuses (the design's Q1, as the session ruled it). */
+/**
+ * The most identifiers a practice check reads (each member ID, the two numbers of each claim, and each posting row's
+ * claim reference that no claim is known to carry: POSTED_ONLY); above it the check refuses (the design's Q1, as the
+ * session ruled it).
+ */
 export const SCREEN_MAX_IDENTIFIERS = 50_000;
 
 /** The audit purpose of the screen's reads, and of the event the caller records in the person's name. */
@@ -153,16 +165,21 @@ export function practiceRecordsCheck(options: PracticeRecordsOptions): PatientRe
     throw new ScopeError('requestId must be an opaque request or job identifier short enough to carry the screen’s');
   }
   let known: Promise<ScreenSet | 'too_many'> | undefined;
-  const load = () =>
-    withJobScope(pool, { jobId: screenId, practiceId }, async (scope) => {
+  const load = async (): Promise<ScreenSet | 'too_many'> => {
+    const read = await withJobScope(pool, { jobId: screenId, practiceId }, async (scope) => {
+      // Defensive: withJobScope builds exactly this scope today. Should it ever hand back another practice's, or a
+      // person's, nothing is read through it (patient-records.test.ts holds each condition).
       if (scope.practiceIds.length !== 1 || scope.practiceIds[0] !== practiceId || scope.actorKind !== 'service' || scope.actorId !== screenId) {
         throw new ScopeError('the screen’s scope is not its one practice’s');
       }
       if ((await countIdentifiers(scope, practiceId)) > SCREEN_MAX_IDENTIFIERS) {
         return 'too_many' as const;
       }
-      return loadContractScreenIdentifiers(scope, cipher, { practiceId, requestId: auditRequestId });
+      return readContractScreenRecords(scope, { practiceId, requestId: auditRequestId });
     });
+    // The reads, and their audit rows, have committed: only now is any value decrypted.
+    return read === 'too_many' ? read : decryptContractScreenRecords(read, cipher);
+  };
   return issue({
     practiceId,
     async namesPatient(texts) {
@@ -232,8 +249,23 @@ export function* identifierEntries(identifiers: ScreenIdentifiers): Generator<re
   }
 }
 
+/**
+ * The posting export's rows whose claim reference (posting_row.claim_reference, the practice's patient control number
+ * as its PM system posted it) no claim is known to carry: every row with a reference and no claim-level posting
+ * match. A row with one was matched by its reference's exact equality to that claim's own patient control number
+ * (apps/worker/src/reconcile/postings.ts claimsWithReference, for the reconcile job and a person's match alike; the
+ * claim cannot be deleted under the match), so its number is read from claim, reversed or not; leaving those rows
+ * out keeps a line-level export (one row per service line) from spending the bound on numbers already read. What is
+ * left is a paper check's claim, or a posting period whose 835s were never loaded: a number the practice holds
+ * nowhere else.
+ */
+const POSTED_ONLY = `FROM posting_row p WHERE p.practice_id = $1 AND p.claim_reference IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM ledger_match m WHERE m.posting_row_id = p.id AND m.kind = 'posting' AND m.level = 'claim')`;
+
+/** One statement, so its three counts read one snapshot. */
 const COUNT = `SELECT (SELECT count(*) FROM patient_ref WHERE practice_id = $1 AND member_id IS NOT NULL)
-  + 2 * (SELECT count(*) FROM claim WHERE practice_id = $1) AS identifiers`;
+  + 2 * (SELECT count(*) FROM claim WHERE practice_id = $1)
+  + (SELECT count(*) ${POSTED_ONLY}) AS identifiers`;
 
 /** How many identifiers the screen would read for the practice: a count, read unaudited (it is not PHI). */
 async function countIdentifiers(scope: PracticeScope<ScopeClient>, practiceId: string): Promise<number> {
@@ -258,38 +290,70 @@ interface ClaimRow {
   readonly payer_claim_control_number: string;
 }
 
+interface PostingRow {
+  readonly id: string;
+  readonly practice_id: string;
+  readonly claim_reference: string;
+}
+
+/** What the screen read, as stored (ciphertext): decrypted only once the reads' audit rows have committed. */
+interface ScreenRecords {
+  readonly patients: readonly PatientRow[];
+  readonly claims: readonly ClaimRow[];
+  readonly postings: readonly PostingRow[];
+}
+
+/** Each read's second parameter is its cap: what the bound leaves of it, plus the one row that says it was passed. */
+const PATIENTS = 'SELECT id, practice_id, member_id FROM patient_ref WHERE practice_id = $1 AND member_id IS NOT NULL LIMIT $2';
+const CLAIMS = 'SELECT id, practice_id, patient_control_number, payer_claim_control_number FROM claim WHERE practice_id = $1 LIMIT $2';
+const POSTINGS = `SELECT p.id, p.practice_id, p.claim_reference ${POSTED_ONLY} LIMIT $2`;
+
+const audited = (row: { readonly id: string; readonly practice_id: string }) => ({ objectId: row.id, practiceId: row.practice_id });
+
 /**
- * The practice's member IDs, patient control numbers and payer claim control numbers, read in the screen's own
- * scope with one audit event per row returned (purpose contract_screen; the letter screen's read pattern,
- * apps/worker/src/packets/letter-records.ts, written anew: that read is not moved, the design review's m9),
- * decrypted, and kept by screenSet's floors and stored-side rules. No claim is left out for its age (a cap is a
- * silent gap); ERA-export claims are claims. The posting export's claim reference is a patient control number
- * already in claim, and group numbers are not read: a contract carries them legitimately.
+ * The practice's member IDs, patient control numbers and payer claim control numbers, and the claim references of its
+ * posting rows that no claim is known to carry (POSTED_ONLY), read in the screen's own scope with one audit event per
+ * row returned (purpose contract_screen; the letter screen's read pattern, apps/worker/src/packets/letter-records.ts,
+ * written anew: that read is not moved, the design review's m9), and returned as stored: nothing is decrypted in the
+ * scope. Each read is capped at what the bound leaves (one identifier per member ID and posting row, two per claim)
+ * plus one row, so a practice whose rows passed the bound after the count is refused ('too_many') having read at most
+ * that one row past it. No claim is left out for its age (a cap is a silent gap); ERA-export claims are claims. Group
+ * numbers are not read: a contract carries them legitimately.
  */
-export async function loadContractScreenIdentifiers(scope: PracticeScope<ScopeClient>, cipher: PracticeCipher, read: { readonly practiceId: string; readonly requestId: string }): Promise<ScreenSet> {
+async function readContractScreenRecords(scope: PracticeScope<ScopeClient>, read: { readonly practiceId: string; readonly requestId: string }): Promise<ScreenRecords | 'too_many'> {
   const audit = { purpose: CONTRACT_SCREEN_PURPOSE, requestId: read.requestId };
-  const patients = await readWithAudit(
-    scope,
-    { objectType: 'patient_ref', ...audit },
-    async (client) => (await client.query<PatientRow>('SELECT id, practice_id, member_id FROM patient_ref WHERE practice_id = $1 AND member_id IS NOT NULL', [read.practiceId])).rows,
-    (row) => ({ objectId: row.id, practiceId: row.practice_id }),
-  );
-  const claims = await readWithAudit(
-    scope,
-    { objectType: 'claim', ...audit },
-    async (client) => (await client.query<ClaimRow>('SELECT id, practice_id, patient_control_number, payer_claim_control_number FROM claim WHERE practice_id = $1', [read.practiceId])).rows,
-    (row) => ({ objectId: row.id, practiceId: row.practice_id }),
-  );
+  let left = SCREEN_MAX_IDENTIFIERS;
+  const patients = await readWithAudit(scope, { objectType: 'patient_ref', ...audit }, async (client) => (await client.query<PatientRow>(PATIENTS, [read.practiceId, left + 1])).rows, audited);
+  if (patients.length > left) {
+    return 'too_many';
+  }
+  left -= patients.length;
+  const claims = await readWithAudit(scope, { objectType: 'claim', ...audit }, async (client) => (await client.query<ClaimRow>(CLAIMS, [read.practiceId, Math.floor(left / 2) + 1])).rows, audited);
+  if (2 * claims.length > left) {
+    return 'too_many';
+  }
+  left -= 2 * claims.length;
+  const postings = await readWithAudit(scope, { objectType: 'posting_row', ...audit }, async (client) => (await client.query<PostingRow>(POSTINGS, [read.practiceId, left + 1])).rows, audited);
+  if (postings.length > left) {
+    return 'too_many';
+  }
+  return { patients, claims, postings };
+}
+
+/** The records decrypted, after their reads have committed, and kept by screenSet's floors and stored-side rules; a posting row's claim reference is a patient control number. */
+function decryptContractScreenRecords(records: ScreenRecords, cipher: PracticeCipher): ScreenSet {
   return screenSet(
     (function* decrypted(): Generator<readonly [ScreenIdentifierKind, string]> {
-      for (const patient of patients) {
+      for (const patient of records.patients) {
         yield ['memberId', cipher.decrypt('patient_ref.member_id', patient.member_id)];
       }
-      for (const claim of claims) {
+      for (const claim of records.claims) {
         yield ['patientControlNumber', cipher.decrypt('claim.patient_control_number', claim.patient_control_number)];
         yield ['payerClaimNumber', cipher.decrypt('claim.payer_claim_control_number', claim.payer_claim_control_number)];
+      }
+      for (const posting of records.postings) {
+        yield ['patientControlNumber', cipher.decrypt('posting_row.claim_reference', posting.claim_reference)];
       }
     })(),
   );
 }
-

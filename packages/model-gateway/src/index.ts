@@ -153,7 +153,7 @@ export {
   recordReviewerDecisionIn,
   setFeatureFlag,
 } from './postgres-store';
-export { PURPOSE_SPECS, type PurposeInputs, type PurposeOutputs, type PurposeProposals, type RequestInputs, requestFor } from './specs';
+export { type PurposeInputs, type PurposeOutputs, type PurposeProposals, type RequestInputs, requestFor } from './specs';
 export {
   CONTRACT_KINDS,
   type CandidateReview,
@@ -171,6 +171,8 @@ export {
   SCREEN_UNAVAILABLE_MESSAGE,
   verifyContractTerms,
 } from './functions/contract-terms';
+// The contract screen's practice check. The synthetic check is the testing entry's (./testing.ts), so production
+// code cannot build one; lint.test.ts holds the callers of both factories.
 export {
   CONTRACT_SCREEN_PURPOSE,
   type PatientRecordsCheck,
@@ -182,7 +184,6 @@ export {
   practiceRecordsCheck,
   recordContractScreenRequested,
   screenAuditRequestId,
-  syntheticRecordsCheck,
 } from './patient-records';
 export {
   type DenialCategory,

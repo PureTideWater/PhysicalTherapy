@@ -7,13 +7,21 @@ import type { ModelRequest, ProviderKind } from './provider';
 import type { ModelPurpose } from './purposes';
 import type { PurposeSpec } from './spec';
 
-/** The four purposes' specifications, by purpose. */
-export const PURPOSE_SPECS = {
-  proposeContractTerms: contractTermsSpec,
-  readDenialLetter: denialLetterSpec,
-  draftPacketNarrative: narrativeSpec,
-  suggestEvidenceRequests: evidenceRequestsSpec,
-} as const;
+/**
+ * The four purposes' specifications, by purpose. The map and each spec are frozen when this module loads, and
+ * PurposeSpec's members are readonly (./spec.ts), so no code in the process can remove or replace a purpose's screen,
+ * preparation or verifier, or swap a spec, after the gateway's module graph has loaded: an assignment or a delete is
+ * a compile error and, at run time, a TypeError (combined audit item 120's review, F6). The map is the gateway's own
+ * and is not exported from the package's entry (./index.ts); requestFor and the gateway's methods are the surface.
+ * Freezing guards these objects only: code in the process that rewrites the gateway's prototype or a built-in is
+ * outside what any module can stop (docs/adr/0070, Part 3).
+ */
+export const PURPOSE_SPECS = Object.freeze({
+  proposeContractTerms: Object.freeze(contractTermsSpec),
+  readDenialLetter: Object.freeze(denialLetterSpec),
+  draftPacketNarrative: Object.freeze(narrativeSpec),
+  suggestEvidenceRequests: Object.freeze(evidenceRequestsSpec),
+} as const);
 
 export interface PurposeInputs {
   readonly proposeContractTerms: ContractPagesInput;
