@@ -15,7 +15,8 @@ import { type NoticeClient, asOperator } from './support-notices';
  * The platform's mail_events job (audit #76; docs/adr/0065, D5 and D6), every minute as tp_operator, which owns nothing
  * and cannot bypass row-level security. Each run, in order:
  *
- * 1. Reconcile. SES's enforcement other than HEALTHY pauses the screening stream (account_review). The screening's SES
+ * 1. Reconcile. SES's enforcement other than HEALTHY pauses the screening stream (account_review), and so does its own
+ *    cut-off on the window as it stands (operator_mail_cutoff(): a window that shrinks past the line). The screening's SES
  *    configuration set is made to match the database: disabled while the stream is paused (so nothing, a deploy
  *    included, keeps a paused set sending), enabled while it is open; the stream is confirmed sending only once SES
  *    reads the set enabled again, and the screening's runs are claimed only then (screening_run_mail_gate). Only the
@@ -336,6 +337,12 @@ export async function runMailEvents(options: MailEventsOptions): Promise<MailEve
     if (signalled.paused) {
       await pausedNow('account_review');
     }
+  }
+  // The screening's cut-off on its window as it stands (review M9): sends leave the window as it moves, so its rate can
+  // cross the line with no new bounce or complaint to read it.
+  const cut = await asOperator(client, null, async () => (await client.query('SELECT operator_mail_cutoff($1) AS paused', [requestId])).rows[0] as { paused: MailPauseReason | null });
+  if (cut.paused !== null) {
+    await pausedNow(cut.paused);
   }
   const screening = (await streams()).find((row) => row.stream === 'screening');
   let sending = await control.screeningSending();
