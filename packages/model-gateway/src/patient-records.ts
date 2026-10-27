@@ -1,6 +1,6 @@
 import { type AnyScope, type PracticeCipher, type PracticeScope, type ScopeClient, type ScopePool, ScopeError, isUuid, readWithAudit, recordAuditEvent, withJobScope } from '@tp/db/runtime';
 
-import { SCREEN_FLOORS, SCREEN_MAX_RUN, SCREEN_MIN_RUN, type ScreenIdentifierKind, identifierRuns, screenIdentifier } from './redact';
+import { type RunIndex, SCREEN_FLOORS, SCREEN_MAX_RUN, SCREEN_MIN_RUN, type ScreenIdentifierKind, runIndex, screenIdentifier, someIdentifierRun, storedSeparators } from './redact';
 
 /**
  * The contract PHI check (combined audit item 120; docs/adr/0070, Part 3): before a contract's or exhibit's pages are
@@ -74,11 +74,18 @@ export interface PracticeRecordsOptions {
   readonly requestId: string;
 }
 
-/** The identifiers a check compares, and the longest of them. */
+/** The identifiers a check compares, the longest and shortest of them, the separators they hold and their index. */
 export interface ScreenSet {
   readonly values: ReadonlySet<string>;
   readonly longest: number;
   readonly shortest: number;
+  /**
+   * The separators inside the kept values that the tokenizer does not join by itself (redact.ts storedSeparators,
+   * punctuation only): each joins two tokens on the pages too, so a kept value written exactly as stored is found.
+   */
+  readonly joins: ReadonlySet<string>;
+  /** The kept values' lengths, first characters and hashes (redact.ts runIndex), so a page run is built only where one may be kept. */
+  readonly index: RunIndex;
 }
 
 const issued = new WeakSet<object>();
@@ -98,30 +105,42 @@ export interface ScreenRules {
 
 export const SHIPPED_SCREEN_RULES: ScreenRules = { floors: SCREEN_FLOORS, dropDates: true };
 
-/** Builds the compared set from identifiers by kind, keeping each one that meets its kind's floor and the stored-side rules (redact.ts screenIdentifier). */
+/**
+ * Builds the compared set from identifiers by kind, keeping each one that meets its kind's floor and the stored-side
+ * rules (redact.ts screenIdentifier), with the separators each kept value holds as written (redact.ts storedSeparators)
+ * and the kept values' index (redact.ts runIndex).
+ */
 export function screenSet(identifiers: Iterable<readonly [ScreenIdentifierKind, string]>, rules: ScreenRules = SHIPPED_SCREEN_RULES): ScreenSet {
   const values = new Set<string>();
+  const joins = new Set<string>();
   let longest = 0;
   let shortest = Number.POSITIVE_INFINITY;
   for (const [kind, value] of identifiers) {
     const kept = screenIdentifier(kind, value, rules.floors, { dropDates: rules.dropDates });
     if (kept !== null) {
       values.add(kept);
+      for (const separator of storedSeparators(value)) {
+        joins.add(separator);
+      }
       longest = Math.max(longest, kept.length);
       shortest = Math.min(shortest, kept.length);
     }
   }
-  return { values, longest, shortest };
+  return { values, longest, shortest, joins, index: runIndex(values) };
 }
 
-/** Whether any run of any page is one of the set's identifiers (exact, whole tokens: redact.ts identifierRuns). */
+/**
+ * Whether any run of any page is one of the set's identifiers (exact, whole tokens, joined over JOIN's separators and
+ * the set's own: redact.ts someIdentifierRun), read as a stream that stops at the first match, in memory bounded by the
+ * longest run and line and in time linear in the pages.
+ */
 export function pagesName(texts: readonly string[], set: ScreenSet): boolean {
   if (set.values.size === 0) {
     return false;
   }
-  const maxLength = Math.min(set.longest, SCREEN_MAX_RUN);
-  const minLength = Math.min(SCREEN_MIN_RUN, set.shortest);
-  return texts.some((text) => identifierRuns(text, { minLength, maxLength }).some((run) => set.values.has(run)));
+  const options = { minLength: Math.min(SCREEN_MIN_RUN, set.shortest), maxLength: Math.min(set.longest, SCREEN_MAX_RUN), joins: set.joins, index: set.index };
+  const kept = (run: string) => set.values.has(run);
+  return texts.some((text) => someIdentifierRun(text, options, kept));
 }
 
 function issue(check: PatientRecordsCheck): PatientRecordsCheck {
