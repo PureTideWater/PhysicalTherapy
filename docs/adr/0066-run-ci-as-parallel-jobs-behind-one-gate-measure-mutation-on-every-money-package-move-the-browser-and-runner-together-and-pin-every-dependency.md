@@ -791,8 +791,8 @@ is red here by construction until a person runs ADR 0058's procedure (`docs/runb
 the one exception to A4 (c). A build that fails the check has every file's line printed, as `--list` prints it, and
 every path that differs from the committed list named, so one run gives all a new record needs. The `--image <tag>` form
 holds the worker image's headless shell in every job that builds that image into a local tag, before the tag is
-measured, saved, tagged or pushed: ci.yml's `images`, the release's `build`, and both measuring jobs,
-`release-capacity.yml`'s and `screening-capacity.yml`'s `capacity` (N17). It reads the image as root, offline and from
+measured, saved, tagged or pushed: ci.yml's `images`, the release's `build` and its dry run's (N16), and both measuring
+jobs, `release-capacity.yml`'s and `screening-capacity.yml`'s `capacity` (N17). It reads the image as root, offline and from
 the local tag only, and a file it cannot hash fails it by name (N21, N22). Once a build's every file equals the record,
 and only then, the check runs the binary's `--version` and fails unless it prints `Google Chrome for Testing
 <browserVersion>`, on the runner as the job's user and in the image as the image's own user, so a build that cannot

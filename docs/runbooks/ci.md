@@ -45,8 +45,8 @@ In every job that installs Chromium, `node tools/ci/browser-build.ts` follows th
 file of them, to `apps/web/e2e/browser.json` before any test runs or any cache is saved; in ci.yml's jobs the steps
 after it run when the install succeeded, whatever the check said, so a red check still shows the suite's verdict
 ("Upgrading the browser", below), while the capacity jobs stop at a red check. In every job that builds the worker
-image into a local tag (`images`, the release's `build`, and `release-capacity`'s and `screening-capacity`'s
-`capacity`), `node tools/ci/browser-build.ts --image <tag>` holds its headless shell, which prints customers' reports,
+image into a local tag (`images`, the release's `build` and `release-dry-run`'s, and `release-capacity`'s and
+`screening-capacity`'s `capacity`), `node tools/ci/browser-build.ts --image <tag>` holds its headless shell, which prints customers' reports,
 to the same record before the tag is measured, saved or pushed, on Node 24 set up before it. Either way a build whose
 every file equals the record must also start: its `--version` must print `Google Chrome for Testing <browserVersion>`
 (in the image, run as the image's own user).

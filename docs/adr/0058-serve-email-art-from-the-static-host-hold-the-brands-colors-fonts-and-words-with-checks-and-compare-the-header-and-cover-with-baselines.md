@@ -288,11 +288,12 @@ headless shell inside the image, read as root, offline and from the local tag on
 fails by name rather than reading as one the image lacks. The hashes cover bytes, not modes nor the libraries the
 system provides, so once a build's every file equals the record, and only then, the check runs its `--version` and
 fails unless it prints `Google Chrome for Testing <browserVersion>`: a build that cannot start fails here, on the
-runner as the job's user and in the image as the image's own user, the one that prints the PDFs. It runs right after every `playwright install` in every workflow, before any test and
-before any cache is saved, so a build that fails it is never cached, and on the worker image in every job that builds
-it into a local tag before the tag is measured, saved or pushed: `ci.yml`'s `images`, the release's build, and both
-measuring jobs (`release-capacity.yml`'s and `screening-capacity.yml`'s `capacity`). The steps after it still run when it fails (their condition is the install's
-success), so a Playwright upgrade's pull request shows everything the new browser does. **That pull request is red here
+runner as the job's user and in the image as the image's own user, the one that prints the PDFs. It runs right after
+every `playwright install` in every workflow, before any test and before any cache is saved, so a build that fails it
+is never cached, and on the worker image in every job that builds it into a local tag before the tag is measured,
+saved or pushed: `ci.yml`'s `images`, the release's build and its dry run's, and both measuring jobs
+(`release-capacity.yml`'s and `screening-capacity.yml`'s `capacity`). The steps after it still run when it fails (their
+condition is the install's success), so a Playwright upgrade's pull request shows everything the new browser does. **That pull request is red here
 by design**: every upgrade brings a new build, and a new browser under unchanged baselines is what this ADR forbids. It
 turns green when a person runs the procedure (`docs/runbooks/ci.md`, "Upgrading the browser"): the new build laid out
 locally, the baselines regenerated, CI's baseline step read, `browser.json`'s hashes updated. This is the one exception
