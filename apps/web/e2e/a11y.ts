@@ -43,9 +43,10 @@ async function axeViolations(page: Page, uniqueLandmarks = false): Promise<{ rea
  * Keyboard navigation (PRD 6, Cross-cutting: keyboard navigation): from the top of the page, Tab moves
  * focus through the page's links and controls in order, each focus visible to the user (an outline
  * or ring), until it reaches the target, which Enter or Space can then use. The focused element is the document's
- * active element: inside a date field, Tab moves between its parts, where no element matches `:focus`.
+ * active element: inside a date field, Tab moves between its parts, where no element matches `:focus`. A scroller's
+ * region (docs/adr/0078) shows its focus as its frame's outline, drawn on its parent (brand.css).
  */
-export async function tabTo(page: Page, target: { readonly role: 'link' | 'button'; readonly name: string | RegExp }, maxTabs = 120): Promise<void> {
+export async function tabTo(page: Page, target: { readonly role: 'link' | 'button' | 'region'; readonly name: string | RegExp }, maxTabs = 120): Promise<void> {
   await page.locator('body').focus();
   for (let index = 0; index < maxTabs; index += 1) {
     await page.keyboard.press('Tab');
@@ -59,7 +60,9 @@ export async function tabTo(page: Page, target: { readonly role: 'link' | 'butto
         const name = (element.getAttribute('aria-label') ?? element.textContent ?? '').trim();
         const pattern = wanted.pattern === null ? null : new RegExp(wanted.pattern);
         const style = getComputedStyle(element);
-        return { matches: role === wanted.role && (pattern === null ? name === wanted.name : pattern.test(name)), visible: style.outlineStyle !== 'none' || style.boxShadow !== 'none' };
+        const frame = element.hasAttribute('data-scroller') ? element.parentElement : null;
+        const ringed = style.outlineStyle !== 'none' || style.boxShadow !== 'none' || (frame !== null && getComputedStyle(frame).outlineStyle !== 'none');
+        return { matches: role === wanted.role && (pattern === null ? name === wanted.name : pattern.test(name)), visible: ringed };
       },
       { role: target.role, name: typeof target.name === 'string' ? target.name : '', pattern: typeof target.name === 'string' ? null : target.name.source },
     );

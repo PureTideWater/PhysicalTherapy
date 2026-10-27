@@ -9,10 +9,10 @@ import { asOwner } from '@tp/db/testing';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
 
 import { CONTRACT_PAGES, storeContractDocument } from '../src/lib/routes/test-support/contract-world';
-import { atPhoneWidth } from './a11y';
+import { atPhoneWidth, expectScrollersAgree, tabTo } from './a11y';
 import { E2E_DOCUMENTS_DIR, e2eDatabaseUrl } from './env';
 import { signInWithTotp, withDatabase } from './helpers';
-import { JOURNEY_PRACTICE_ADMIN, registerKeyAndSignInAgain, tourPractice, untilLoaded, uploadedEarlier, userId } from './journeys';
+import { registerKeyAndSignInAgain, tourPractice, untilLoaded, uploadedEarlier, userId } from './journeys';
 import { startLocalWorker } from './worker';
 
 /**
@@ -28,12 +28,17 @@ import { startLocalWorker } from './worker';
  * synthetic agreement, in progress; and a synthetic billing firm's grant. The console pages read the seed's own rows
  * (its terms, organizations and practices, release 900001, the split prepare.ts approves) and one synthetic ticket.
  * Each test signs in its own personas only (scripts/synthetic-personas.ts), so no sign-in or hardware key is shared
- * with a test that runs at once. Synthetic data only.
+ * with a test that runs at once: the practice's administrator too, an administrator of the other group that no other
+ * spec signs in (the journeys' own, JOURNEY_PRACTICE_ADMIN, signs in to the packets journey). On the cases, the first
+ * test also proves the cue in the browser: the region's focus outline, its arrow keys and its edge fades (TBL-01).
+ * Synthetic data only.
  */
 
 const PRACTICE = 'SYNTHETIC OTHER PRACTICE PHONE TABLES';
 const MANAGER = 'tables-manager';
 const SPECIALIST = 'tables-specialist';
+/** The tour practice's administrator here: a practice administrator of the other group, which owns the practice. */
+const ADMINISTRATOR = 'tables-practice-admin';
 const FIXTURES = path.resolve(import.meta.dirname, '../../../fixtures/synthetic');
 /** SYNTHETIC MAP-03: payer M, three lines in May, its plan never mapped here, so its dollars wait on a mapping. */
 const WAITING = [{ name: 'era-payer-m.835', mimeType: 'application/octet-stream', buffer: readFileSync(path.join(FIXTURES, 'MAP-03/remit.835')) }];
@@ -44,6 +49,70 @@ async function atRoute(page: Page, route: string, what: string, tables: readonly
   await page.goto(route);
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
   await atPhoneWidth(page, what, { tables, soft: true });
+}
+
+/**
+ * A wide table's cue in the browser (TBL-01; docs/adr/0078; the correctness review's F4 and F1), on the table named
+ * `name` at 390 px: Tab reaches its region, whose frame then draws the 2 px focus outline; scrolled to the start, only
+ * the end edge fades; an arrow key scrolls it, and in the middle both edges fade; at the end only the start edge does.
+ * Then Tab moves into the table, and its first link or control draws its ring inside its own box, in the scroller's
+ * clip, in the frame's colour. The viewport is put back as it was.
+ */
+async function cueByKeyboard(page: Page, name: string): Promise<void> {
+  const before = page.viewportSize();
+  await page.setViewportSize({ width: 390, height: 844 });
+  try {
+    const region = page.getByRole('region', { name: `${name}, scrolls sideways`, exact: true });
+    await expect(region).toBeVisible();
+    await expectScrollersAgree(page, `${name} at 390 px`);
+    await tabTo(page, { role: 'region', name: `${name}, scrolls sideways` });
+    /** The region's focus, its frame's outline, the edges its holder marks and the opacity of each fade (start, end). */
+    const cue = () =>
+      region.evaluate((scroller) => {
+        const frame = scroller.parentElement;
+        const holder = frame?.parentElement;
+        if (frame === null || holder === null || holder === undefined) {
+          return null;
+        }
+        const outline = getComputedStyle(frame);
+        return {
+          focused: document.activeElement === scroller,
+          outline: `${outline.outlineStyle} ${outline.outlineWidth}`,
+          edges: ['start', 'end'].filter((edge) => holder.hasAttribute(`data-edge-${edge}`)),
+          fades: [getComputedStyle(frame, '::before').opacity, getComputedStyle(frame, '::after').opacity],
+        };
+      });
+    await expect.poll(cue, { message: `${name}: focused at the start, only the end fades` }).toEqual({ focused: true, outline: 'solid 2px', edges: ['end'], fades: ['0', '1'] });
+    await page.keyboard.press('ArrowRight');
+    await expect.poll(() => region.evaluate((scroller) => scroller.scrollLeft), { message: `${name}: an arrow key scrolls the region` }).toBeGreaterThan(0);
+    await expect.poll(cue, { message: `${name}: in the middle, both edges fade` }).toEqual({ focused: true, outline: 'solid 2px', edges: ['start', 'end'], fades: ['1', '1'] });
+    await region.evaluate((scroller) => {
+      scroller.scrollLeft = scroller.scrollWidth;
+    });
+    await expect.poll(cue, { message: `${name}: at the end, only the start fades` }).toEqual({ focused: true, outline: 'solid 2px', edges: ['start'], fades: ['1', '0'] });
+    const frameColour = await region.evaluate((scroller) => (scroller.parentElement === null ? '' : getComputedStyle(scroller.parentElement).outlineColor));
+    await page.keyboard.press('Tab');
+    const ring = await page.evaluate(() => {
+      const control = document.activeElement;
+      const scroller = control?.closest('[data-scroller]');
+      if (control === null || control === undefined || scroller === null || scroller === undefined) {
+        return null;
+      }
+      const style = getComputedStyle(control);
+      const box = control.getBoundingClientRect();
+      const clip = scroller.getBoundingClientRect();
+      return {
+        ring: `${style.outlineStyle} ${style.outlineWidth} ${style.outlineOffset}`,
+        colour: style.outlineColor,
+        inClip: box.left >= clip.left - 0.5 && box.right <= clip.right + 0.5 && box.top >= clip.top - 0.5 && box.bottom <= clip.bottom + 0.5,
+      };
+    });
+    expect(ring, `${name}: the first link in the table draws its ring inside its box, inside the scroller`).toEqual({ ring: 'solid 2px -2px', colour: frameColour, inClip: true });
+  } finally {
+    if (before !== null) {
+      await page.setViewportSize(before);
+    }
+  }
 }
 
 /**
@@ -78,7 +147,7 @@ async function versionInProgress(practiceId: string): Promise<void> {
  * administrator (once per database), so the practice's Grants table has a row.
  */
 async function firmGrant(practiceId: string): Promise<void> {
-  const administrator = await userId(JOURNEY_PRACTICE_ADMIN);
+  const administrator = await userId(ADMINISTRATOR);
   await withDatabase(async (client) => {
     const firm = (await client.query<{ id: string }>("SELECT id FROM organization WHERE kind = 'firm' ORDER BY created_at, id LIMIT 1")).rows[0]?.id ?? '';
     await asOwner(client, [practiceId], async () => {
@@ -145,6 +214,7 @@ test('at 390 px every practice table scrolls in its own region, says so, and pas
   await test.step('the practice home, its cases, claims and anomalies', async () => {
     await atRoute(page, at(), 'the practice home', ['Agreements']);
     await atRoute(page, at('/cases'), 'cases', ['Cases']);
+    await cueByKeyboard(page, 'Cases');
     await atRoute(page, at('/claims'), 'claims and lines', ['Claims and lines']);
     await atRoute(page, at('/anomalies'), 'anomalies', ['Anomaly cohorts']);
     const cohort = (await page.getByRole('table', { name: 'Anomaly cohorts', exact: true }).locator('[data-anomaly]').first().getAttribute('data-anomaly')) ?? '';
@@ -197,7 +267,7 @@ test('at 390 px every practice table scrolls in its own region, says so, and pas
     const context = await browser.newContext();
     const admin = await context.newPage();
     try {
-      await signInWithTotp(admin, JOURNEY_PRACTICE_ADMIN);
+      await signInWithTotp(admin, ADMINISTRATOR);
       await atRoute(admin, at('/settings/access-log'), 'the access log', ['Access log']);
       await atRoute(admin, at('/settings/agreements'), 'grants and agreements', ['Grants']);
     } finally {

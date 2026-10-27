@@ -59,7 +59,10 @@ export async function userId(key: string): Promise<string> {
 
 /**
  * The practice administrator persona of the journeys' practices (the other group's, which owns them by ownership): the
- * one who sets a practice's correspondence contact (audit item #37 part 1, D6; the packets journey's E2).
+ * one who sets a practice's correspondence contact (audit item #37 part 1, D6; the packets journey's E2). Every
+ * practice administrator of the other group administers them, so a spec that may run beside the packets journey signs
+ * in one of its own instead (tables-phone.spec.ts, tables-practice-admin): two sign-ins of one persona in one 30 s TOTP
+ * step can be refused as a replay.
  */
 export const JOURNEY_PRACTICE_ADMIN = 'other-admin';
 
