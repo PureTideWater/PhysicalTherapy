@@ -805,7 +805,10 @@ tolerance.
 modules only) reads a `docker save` or buildx `type=docker` archive, plain or gzipped, as one stream, hashes the config
 blob and every manifest it follows and fails unless each equals the digest that names it, and returns the config digest,
 the linux/amd64 manifest's and the archive's top-level descriptor (`target`, what the containerd store's `.Id` names).
-Every build whose identity is checked passes `provenance: false` and `sbom: false`, so each store holds one manifest.
+It takes an entry's path and size from its pax header, as GNU tar and Go's archive/tar do (Go writes the size there for
+an entry over 8 GiB), and its memory is bounded: it keeps the bytes of JSON documents only (a small layer is hashed and
+dropped), and refuses a pax header or long name over 1 MiB before reading it and an archive whose kept bytes pass 64 MiB,
+naming the limit. Every build whose identity is checked passes `provenance: false` and `sbom: false`, so each store holds one manifest.
 `release.yml`'s `build` saves each image, reads its identity, proves the tag is that image on its store (the config
 digest on the classic store, the top-level descriptor on containerd's, from `docker info`'s `DriverStatus`), checks the
 worker's headless shell with `browser-build.ts --image` before the save, and sets `sha256_<image>`, `config_<image>` and
