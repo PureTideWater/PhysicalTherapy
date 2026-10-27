@@ -8,7 +8,7 @@ import { practiceSettings, syntheticRelease } from '@tp/pricing/testing';
 import { describe, expect, it } from 'vitest';
 
 import { COVERAGE_FORMAT, coverageOf, operatorAlerts, parseCoverage } from './coverage';
-import { ENGINE_ERRORS_MESSAGE, claimInput, lineResolver, locationStops, priceClaims, runAsOf } from './execute';
+import { ENGINE_ERRORS_MESSAGE, READ_OUTSIDE_FETCH_MESSAGE, claimInput, lineResolver, locationStops, priceClaims, runAsOf } from './execute';
 import type { StoredClaim, StoredLine } from './lines';
 import { RuleReleaseMismatchError } from './release';
 import { settingsOf } from './settings';
@@ -201,5 +201,12 @@ describe('messages', () => {
   it('logs the operator’s alert line as fixed text equal to ENGINE_ERRORS_MESSAGE (the log lint reads literals)', () => {
     const source = readFileSync(path.join(import.meta.dirname, 'execute.ts'), 'utf8');
     expect(source).toContain(`context.logger.error('${ENGINE_ERRORS_MESSAGE}'`);
+  });
+
+  it('logs a read outside the fetch as fixed text equal to READ_OUTSIDE_FETCH_MESSAGE, with the error code the later alarm reads', () => {
+    const source = readFileSync(path.join(import.meta.dirname, 'execute.ts'), 'utf8');
+    const calls = source.split(`context.logger.error('${READ_OUTSIDE_FETCH_MESSAGE}'`).slice(1);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.slice(0, calls[0].indexOf('\n'))).toContain("error_code: 'RELEASE_READ_OUTSIDE_FETCH'");
   });
 });

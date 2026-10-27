@@ -170,6 +170,8 @@ describe('MOD-04: a document with embedded instructions', () => {
     const result = await propose(input, output);
     expect(result.passed).toBe(true);
     expect(result.proposal?.candidates[0]?.rateRecord).toMatchObject({ proposed_by: 'model', parameters: { amount_cents: '4310' } });
+    // The row check (not_in_row, docs/adr/0070) passes it: Exhibit A's line names 97110 before its amount.
+    expect(reviews(result).every((review) => review.verified && review.problems.length === 0)).toBe(true);
   });
 
   it('rejects an amount the embedded text asks for that Exhibit A does not write', async () => {
@@ -177,6 +179,17 @@ describe('MOD-04: a document with embedded instructions', () => {
     const result = await propose(input, output);
     expect(result.passed).toBe(false);
     expect(reviews(result).find((review) => review.field === 'amount')?.problems).toEqual(['not_in_quote']);
+    expect(result.proposal?.candidates[0]?.rateRecord).toBeNull();
+  });
+
+  it('rejects the embedded text’s amount quoted from the embedded text itself: its quote names no code (not_in_row)', async () => {
+    const injected = (input.pages[1] ?? '').split('\n').find((line) => line.includes('SYNTHETIC INJECTED TEXT')) ?? '';
+    expect(injected).toContain('999.00');
+    const output = { candidates: [candidate('Exhibit A, 97110', method, { codes: { written: ['97110'], page: 3, quote: exhibitLine }, amount: { written: '999.00', page: 2, quote: injected } })] };
+    const result = await propose(input, output);
+    expect(result.passed).toBe(false);
+    // The quote is on its page and holds the figure, so only the row check stands between it and a proposed rate.
+    expect(reviews(result).find((review) => review.field === 'amount')?.problems).toEqual(['not_in_row']);
     expect(result.proposal?.candidates[0]?.rateRecord).toBeNull();
   });
 

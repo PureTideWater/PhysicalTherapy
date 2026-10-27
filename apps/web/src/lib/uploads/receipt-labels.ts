@@ -1,4 +1,5 @@
 import type { DocumentKind, DocumentStatus, ScanStatus } from '@tp/db/runtime';
+import { centsToString, formatUsd, negateCents, parseCents } from '@tp/money';
 
 /**
  * A document's receipt (PRD 5, J4: "a receipt per file: received, scanned, parsed, balanced, loaded,
@@ -238,12 +239,33 @@ const ERROR_TEXT: Readonly<Record<ParseErrorCode, string>> = {
   EDI_NOT_835: 'Not an 835',
 };
 
-/** Cents as dollars with two places, without a float: "-1.00". */
-export function centsText(cents: string): string {
-  const negative = cents.startsWith('-');
-  const digits = (negative ? cents.slice(1) : cents).padStart(3, '0');
-  return `${negative ? '-' : ''}${digits.slice(0, -2).replace(/^0+(?=\d)/, '')}.${digits.slice(-2)}`;
+/** Cents, as canonical integer text, as US dollars in a sentence, without a float: "-$1.00", as <Money> shows them. */
+const usd = (cents: string) => formatUsd(parseCents(cents));
+
+/**
+ * The provider adjustments' total (PLB) as which way it moved the payment, and by how much: the 835 subtracts it, so
+ * a positive total was withheld from the payment and a negative one (interest, say) added to it (edi835's balance:
+ * payment = claims paid − PLB). Null when there are none. The magnitude is canonical cents text, for <Money>.
+ */
+export function providerAdjustments(plbTotalCents: string): { readonly direction: 'withheld' | 'added'; readonly magnitudeCents: string } | null {
+  const total = parseCents(plbTotalCents);
+  if (total === 0n) {
+    return null;
+  }
+  return total > 0n ? { direction: 'withheld', magnitudeCents: centsToString(total) } : { direction: 'added', magnitudeCents: centsToString(negateCents(total)) };
 }
+
+/**
+ * Which way a balance is off, by its scope, from the sign of the parser's difference (edi835's balance): for a payment,
+ * claims paid less PLB less the payment; for a claim or a line, its charge less its adjustments less its payment; for
+ * a claim's lines, their charges less the claim's.
+ */
+const BALANCE_DIRECTION: Readonly<Record<string, { readonly over: string; readonly under: string }>> = {
+  transaction: { over: 'the payment is less than the claims paid less provider adjustments', under: 'the payment is more than the claims paid less provider adjustments' },
+  claim: { over: 'the claim’s payment and adjustments come to less than its charge', under: 'the claim’s payment and adjustments come to more than its charge' },
+  claim_lines: { over: 'its lines’ charges come to more than the claim’s charge', under: 'its lines’ charges come to less than the claim’s charge' },
+  line: { over: 'the line’s payment and adjustments come to less than its charge', under: 'the line’s payment and adjustments come to more than its charge' },
+};
 
 /** Where an error is, in words: its segment index and ID and its element (PRD 10: "segment and position"). */
 export function errorPosition(error: ParsedError): string {
@@ -251,11 +273,15 @@ export function errorPosition(error: ParsedError): string {
   return `segment ${String(error.segmentIndex)}${error.segmentId === '' ? '' : ` (${error.segmentId})`}${element}`;
 }
 
-/** One error as a sentence: what, where, and by how much for a balance. */
+/** One error as a sentence: what, where, and for a balance by how much and which way. */
 export function errorText(error: ParsedError): string {
   const what = error.code === 'EDI_SYNTAX' && error.reason === 'truncated' ? 'Cut short' : ERROR_TEXT[error.code];
-  const difference = error.differenceCents === undefined ? '' : ` by $${centsText(error.differenceCents)}`;
-  return `${what}${difference} at ${errorPosition(error)}`;
+  if (error.differenceCents === undefined) {
+    return `${what} at ${errorPosition(error)}`;
+  }
+  const difference = parseCents(error.differenceCents);
+  const way = difference === 0n || error.scope === undefined ? undefined : BALANCE_DIRECTION[error.scope]?.[difference > 0n ? 'over' : 'under'];
+  return `${what} by ${formatUsd(difference < 0n ? negateCents(difference) : difference)} at ${errorPosition(error)}${way === undefined ? '' : `: ${way}`}`;
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -382,8 +408,9 @@ function loadedText(parse: ParseSummary): string {
   if (parse.reversals > 0) {
     parts.push(`${plural(parse.reversals, 'reversal')} linked to its original where loaded`);
   }
-  if (parse.plbTotalCents !== '0') {
-    parts.push(`provider adjustments of $${centsText(parse.plbTotalCents)}`);
+  const adjustments = providerAdjustments(parse.plbTotalCents);
+  if (adjustments !== null) {
+    parts.push(`provider adjustments ${adjustments.direction} ${usd(adjustments.magnitudeCents)} ${adjustments.direction === 'withheld' ? 'from' : 'to'} the payment`);
   }
   if (parse.duplicates > 0) {
     if (parse.source === 'era_export') {

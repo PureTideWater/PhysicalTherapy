@@ -12,7 +12,7 @@ import * as par from './par';
 import * as pricing from './pricing';
 import { VARIANTS } from './variants';
 import * as workflow from './workflow';
-import { addContractSet, addNarrativeSet } from '../eval/cases';
+import { addContractSet, addContractSetV2, addNarrativeSet } from '../eval/cases';
 
 type Build = (b: CaseBuilder) => void;
 
@@ -144,6 +144,29 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'packages/db/src/location.db.test.ts',
     'apps/web/e2e/onboarding.spec.ts',
   ]),
+  // Combined audit #10 (`co-001/superseded-rerun`; docs/adr/0037, amendment of 2026-10-26): an older re-run is not accepted over newer pricing.
+  'PRC-25': none(7, 'No file of its own: SYNTHETIC 835s the pricing world already loads.', [
+    'apps/worker/src/price/rerun.db.test.ts',
+    'apps/worker/src/price/rerun-rule.property.test.ts',
+    'apps/web/src/lib/routes/reruns-routes.db.test.ts',
+    'apps/web/e2e/pricing.spec.ts',
+  ]),
+  'PRC-26': none(7, 'No file of its own: SYNTHETIC 835s the pricing world already loads.', [
+    'apps/worker/src/price/rerun.db.test.ts',
+    'apps/worker/src/price/rerun-rule.property.test.ts',
+    'apps/web/src/lib/routes/reruns-routes.db.test.ts',
+  ]),
+  'PRC-27': none(7, 'No file of its own: SYNTHETIC 835s the pricing world already loads.', [
+    'apps/worker/src/price/rerun.db.test.ts',
+    'apps/worker/src/price/rerun-rule.property.test.ts',
+    'apps/web/src/lib/routes/reruns-routes.db.test.ts',
+  ]),
+  'PRC-28': none(7, 'No file of its own: SYNTHETIC 835s the pricing world already loads.', [
+    'apps/worker/src/price/rerun.db.test.ts',
+    'apps/worker/src/price/rerun-rule.property.test.ts',
+    'apps/web/src/lib/routes/reruns-routes.db.test.ts',
+    'apps/web/e2e/pricing.spec.ts',
+  ]),
   'CAS-01': { completesIn: 6, build: workflow.cas01, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/anomaly.test.ts'] },
   'CAS-02': { completesIn: 6, build: workflow.cas02, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/anomaly.test.ts', 'apps/worker/src/report/report.db.test.ts', 'apps/web/src/lib/routes/audit-e2e.db.test.ts'] },
   'CAS-03': { completesIn: 6, build: workflow.cas03, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/patterns.test.ts', 'apps/worker/src/report/report.db.test.ts', 'apps/web/src/lib/routes/audit-e2e.db.test.ts'] },
@@ -184,6 +207,47 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/routes/unattested-submission-routes.db.test.ts',
     'apps/web/src/lib/packets/unattested.test.ts',
     'apps/web/e2e/unattested.spec.ts',
+  ]),
+  // Combined audit #38 (adopted by the founder on 2026-10-20; ADR 0072): every figure explained in words, from the stored trace.
+  'CAS-30': none(8, 'Words any priced or unpriced line from its stored trace: an output, not a fixture.', [
+    'packages/packets/src/explain/line.test.ts',
+    'packages/packets/src/explain/figures.property.test.ts',
+    'packages/packets/src/explain/golden.test.ts',
+    'apps/web/src/components/pricing/line-words.test.tsx',
+    'apps/web/src/lib/routes/line-words-routes.db.test.ts',
+    'apps/web/e2e/pricing.spec.ts',
+  ]),
+  'CAS-31': none(8, 'Opens any line’s trace as a viewer: a role, no file.', [
+    'apps/web/src/lib/routes/pricing-routes.db.test.ts',
+    'apps/web/src/lib/routes/line-words-routes.db.test.ts',
+    'apps/web/src/components/pricing/line-words.test.tsx',
+    'apps/web/e2e/viewer-phi.spec.ts',
+  ]),
+  'CAS-32': none(8, 'Reviews and exports any approved packet from its stored traces: an output, not a fixture.', [
+    'packages/packets/src/explain.test.ts',
+    'apps/worker/src/packets/export.test.ts',
+    'apps/worker/src/packets/export-attempts.db.test.ts',
+    'apps/web/src/lib/routes/payer-copy-routes.db.test.ts',
+    'apps/web/e2e/packets.spec.ts',
+  ]),
+  'CAS-33': none(8, 'Renders from any percent-of-Medicare or Medicare Advantage line’s trace: an output, not a fixture.', [
+    'packages/packets/src/explain/worksheet.test.ts',
+    'packages/packets/src/explain/golden.test.ts',
+    'apps/worker/src/packets/export.test.ts',
+  ]),
+  'CAS-34': none(8, 'A code outside a closed list, set in a test’s trace: no file.', [
+    'packages/packets/src/explain/words.test.ts',
+    'apps/worker/src/packets/export.test.ts',
+    'apps/web/src/components/packets/calculation-words.test.tsx',
+    'apps/web/src/components/pricing/line-words.test.tsx',
+  ]),
+  // Lane B (co-001/materiality-cents): settings stored in cents are shown and entered in dollars, and a form saved unchanged keeps them.
+  'CAS-38': none(8, 'A practice setting read and shown: no file.', ['apps/web/src/components/settings/defaults.test.tsx', 'apps/web/src/lib/routes/console-routes.db.test.ts', 'apps/web/e2e/triage.spec.ts']),
+  'CAS-39': none(8, 'A practice setting read and saved: no file.', [
+    'apps/web/src/lib/money-input.test.ts',
+    'apps/web/src/lib/routes/defaults-routes.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+    'apps/web/e2e/triage.spec.ts',
   ]),
   'LED-01': none(9, 'A packet marked submitted: an action that must create no entry; no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
   'LED-02': { completesIn: 9, build: workflow.led02, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts'] },
@@ -240,6 +304,46 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/worker/src/reconcile/chain.db.test.ts',
     'apps/web/src/lib/routes/reconciliation-routes.db.test.ts',
   ]),
+  // PR 15b (combined audit #12, docs/adr/0067): the payment-terms cases, each case line with a patient's share.
+  'LED-14': {
+    completesIn: 9,
+    build: workflow.led14,
+    assertedBy: [
+      'apps/worker/src/reconcile/payment-terms.db.test.ts',
+      'packages/ledger/src/payment.test.ts',
+      'apps/worker/src/reconcile/ledger-oracle.db.test.ts',
+      'apps/web/e2e/ledger-patient-share.spec.ts',
+    ],
+  },
+  'LED-15': {
+    completesIn: 9,
+    build: workflow.led15,
+    assertedBy: [
+      'apps/worker/src/reconcile/payment-terms.db.test.ts',
+      'packages/ledger/src/payment.test.ts',
+      'apps/worker/src/reconcile/ledger-oracle.db.test.ts',
+      'apps/web/e2e/ledger-patient-share.spec.ts',
+    ],
+  },
+  'LED-16': {
+    completesIn: 9,
+    build: workflow.led16,
+    assertedBy: [
+      'apps/worker/src/reconcile/payment-terms.db.test.ts',
+      'packages/ledger/src/payment.test.ts',
+      'apps/worker/src/reconcile/ledger-oracle.db.test.ts',
+    ],
+  },
+  'LED-17': {
+    completesIn: 9,
+    build: workflow.led17,
+    assertedBy: [
+      'apps/worker/src/reconcile/payment-terms.db.test.ts',
+      'packages/ledger/src/payment.test.ts',
+      'apps/worker/src/reconcile/ledger-oracle.db.test.ts',
+    ],
+  },
+  'LED-18': { completesIn: 9, build: workflow.led18, assertedBy: ['apps/worker/src/reconcile/payment-terms.db.test.ts', 'packages/ledger/src/payment.test.ts'] },
   'SEC-01': none(1, 'The catalog test reads the migrated schema.', ['packages/db/src/catalog.db.test.ts']),
   'SEC-02': none(1, 'Cross-tenant tests are generated from the schema catalog and the route registry.', ['packages/db/src/cross-tenant.db.test.ts', 'apps/web/src/lib/routes/route-tests/define.ts']),
   'SEC-03': none(1, 'Grant expiry is a database and route property.', ['packages/db/src/access.db.test.ts', 'apps/web/src/lib/routes/revocation.db.test.ts']),
@@ -448,6 +552,22 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/routes/console-routes.db.test.ts',
     'apps/web/e2e/models.spec.ts',
   ]),
+  // The model evaluation gate and per-feature serving (combined audit #84; docs/adr/0070 Parts 1 and 2).
+  'MOD-07': none(10, 'The gate’s counting rule, scored on the MOD-09 set and on permitted examples; no file of its own.', [
+    'packages/model-gateway/eval/score.test.ts',
+    'packages/model-gateway/eval/gate.golden.test.ts',
+    'packages/model-gateway/src/permitted.test.ts',
+    'apps/worker/src/models/permitted.db.test.ts',
+  ]),
+  'MOD-08': none(10, 'Faults injected into the MOD-09 set’s reference answers.', ['packages/model-gateway/eval/gate.golden.test.ts', 'packages/model-gateway/src/functions/contract-terms.test.ts']),
+  'MOD-09': { completesIn: 10, build: addContractSetV2, assertedBy: ['packages/model-gateway/eval/gate.golden.test.ts', 'packages/synth/src/eval/eval.test.ts'] },
+  'MOD-10': none(10, 'The twins and decoys are cases of the MOD-09 set.', ['packages/model-gateway/eval/gate.golden.test.ts', 'packages/model-gateway/eval/score.test.ts']),
+  'MOD-11': none(10, 'Serving is read from eval/baseline.json and eval/floors.json; no file.', [
+    'packages/model-gateway/src/config.test.ts',
+    'packages/model-gateway/src/gateway.test.ts',
+    'packages/model-gateway/eval/gate.golden.test.ts',
+    'apps/web/src/lib/routes/models-routes.db.test.ts',
+  ]),
   // Milestone 11's billing (PRD 6, 15), as combined audit item 135 orders its payment methods (docs/adr/0073).
   'BIL-01': none(11, 'The Payment Element’s options and the confirmation’s notices are built from values the test passes in memory; Stripe’s form never renders; no file.', ['apps/web/src/components/billing/billing.test.tsx']),
   'BIL-02': none(11, 'The Stripe adapter runs against a mocked SDK client that records each request; no file.', ['packages/billing/src/stripe.test.ts', 'packages/billing/src/types.test.ts']),
@@ -459,6 +579,17 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'BIL-04': none(11, 'A synthetic organization pays through the routes on the local simulator, by the simulator’s test card and bank account, and the simulator renews its plan; no file.', [
     'apps/web/src/lib/routes/billing-routes.db.test.ts',
     'packages/billing/src/local.test.ts',
+  ]),
+  'BIL-05': none(11, 'accountStanding and standingKind are pure functions of values the test passes in memory, and the routes read synthetic organizations; no file.', [
+    'packages/billing/src/standing.test.ts',
+    'apps/web/src/components/billing/account-standing.test.tsx',
+    'apps/web/src/lib/routes/billing-routes.db.test.ts',
+  ]),
+  'BIL-06': none(11, 'A synthetic organization held suspended by the seed; no file.', [
+    'apps/web/e2e/billing.spec.ts',
+    'apps/web/src/lib/routes/billing-routes.db.test.ts',
+    'apps/web/src/lib/routes/onboarding-routes.db.test.ts',
+    'apps/web/scripts/seed.db.test.ts',
   ]),
   // Milestone 0's "CI with every gate from section 18" (PRD 17), as the CI series rebuilds it (docs/adr/0066).
   'CI-01': none(0, 'The gate reads the results of the jobs it needs, which its test builds in memory; no file.', ['tools/test/ci-gate.test.ts', 'tools/test/workflows.test.ts']),
@@ -484,6 +615,40 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'CI-18': none(0, "The manifests, the lockfile, the worker's Dockerfile and the workflows are read; the browser check runs on stand-in builds and a stand-in docker in a temporary directory, and the baseline step's script in a temporary git repository; no file.", ['tools/test/browser-version.test.ts', 'tools/ci/browser-build.test.ts', 'tools/test/no-duplicated-versions.test.ts', 'tools/test/workflows.test.ts']),
   'CI-19': none(0, "The brand journey reads the header's accessible names and visible text in the browser, and every journey's axe scan reads its pages; no file.", ['apps/web/e2e/brand.spec.ts', 'apps/web/e2e/a11y.ts']),
   'CI-20': none(0, "Every workflow file is read; the release's archive check runs on stand-in archives with a stand-in docker, the apt check with stand-in apt tools, and the archive reader and the harness's image proof on synthetic archives, each in a temporary directory; no file.", ['tools/test/workflows.test.ts', 'tools/ci/apt-archives.test.ts', 'tools/screening-capacity/image-id.test.ts', 'tools/screening-capacity/measure.test.ts']),
+  // The generated function files of the combined audit's item 111 (docs/adr/0068).
+  'DBF-01': none(0, 'The function files are generated from a scratch database the drift file migrates; no file.', ['packages/db/src/domain-model/function-files.db.test.ts']),
+  'DBF-02': none(0, 'A probe migration changes a function on a scratch database; no file.', ['packages/db/src/domain-model/domain-model-drift.db.test.ts']),
+  'DBF-03': none(0, 'The files are rendered from catalog rows the test builds in memory, and from a scratch database; no file.', ['packages/db/src/domain-model/functions.test.ts', 'packages/db/src/domain-model/function-files.db.test.ts']),
+  'DBF-04': none(0, 'The directory is written and checked in a temporary directory, and the CLI run against a scratch database; no file.', ['packages/db/src/domain-model/function-files.test.ts', 'packages/db/src/domain-model/function-files.db.test.ts']),
+  'DBF-05': none(0, 'The files and the summary are rendered from catalog rows and directories the test builds; no file.', ['packages/db/src/domain-model/functions.test.ts', 'packages/db/src/domain-model/summary.test.ts']),
+  // The release content checks (docs/adr/0071).
+  'RCC-01': none(0, 'The files are written to a temporary root by the test; no file.', ['packages/rules/src/import.test.ts', 'packages/rules/src/parsers/parsers.test.ts']),
+  'RCC-02': none(0, 'The content sets are written to temporary roots, and the fixture releases are read; no file.', ['tools/verify-content/check.test.ts', 'packages/rules/src/coverage.test.ts', 'tools/release/release.test.ts']),
+  'RCC-03': none(0, 'Two numbered releases are written to a temporary root; no file.', ['tools/verify-content/check.test.ts', 'tools/release/release.test.ts', 'packages/rules/src/coverage.test.ts']),
+  'RCC-04': none(7, 'The month is seeded in a scratch database under release 900007; no file.', ['apps/worker/src/price/content.db.test.ts', 'apps/worker/src/price/content.test.ts']),
+  'RCC-05': none(7, 'The months are seeded in a scratch database; no file.', [
+    'apps/worker/src/monitor/monitor.db.test.ts',
+    'apps/web/src/lib/pricing/content.db.test.ts',
+    'apps/web/src/lib/routes/coverage-content.db.test.ts',
+    'apps/web/src/components/pricing/content.test.tsx',
+    'apps/worker/src/price/content.db.test.ts',
+  ]),
+  'RCC-06': none(7, 'The priced lines are seeded in a scratch database; no file.', ['packages/triage/src/actionable.test.ts', 'apps/worker/src/triage/triage.db.test.ts', 'apps/worker/src/report/report.test.ts']),
+  'RCC-07': none(7, 'The runs are seeded in a scratch database; the weekly run builds release 900110 outside the repository; no file.', [
+    'apps/worker/src/price/keyed-release.test.ts',
+    'apps/worker/src/price/release-source.db.test.ts',
+    'tools/release-capacity/checks.test.ts',
+    'tools/test/workflows.test.ts',
+  ]),
+  'RCC-08': none(0, 'The calendar is module data and the sources are written to a temporary root; no file.', [
+    'packages/rules/src/calendar.test.ts',
+    'tools/content-calendar/content-calendar.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+    'apps/web/src/lib/releases/content-through.db.test.ts',
+    'apps/web/src/lib/routes/reruns-routes.db.test.ts',
+    'apps/web/src/components/pricing/content.test.tsx',
+    'tools/test/workflows.test.ts',
+  ]),
 };
 
 export interface CaseDefinition {

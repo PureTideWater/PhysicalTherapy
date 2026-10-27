@@ -337,8 +337,9 @@ again when pinned (`refs/tags/vX.Y.Z^{}`):
 | `actions/attest-build-provenance` | v4.2.2 (kept) | `4d101475d8b20a2381f78447822ac1eab6504dd8` | 2026-08-06 |
 
 Two differ from #40's offer: action-setup v6.1.0, the latest release, where #40 offers v6.0.10, and login v4.7.0, where
-#40 offers v4.6.0, most likely because GitHub's default three-day cooldown held it back. login is pinned at v4.7.0 only
-once its tag commit is three days old (from 2026-10-26T15:11Z). action-setup v6.1.0 bootstraps its own pnpm and then
+#40 offers v4.6.0, most likely because GitHub's default three-day cooldown held it back. login was pinned at v4.7.0
+once its tag commit (2026-10-23T15:11:41Z) was three days old, in release.yml and the dry run together, which also
+cleared `check-action-pins`' warning that v3.7.0 runs on node20. action-setup v6.1.0 bootstraps its own pnpm and then
 runs `pnpm self-update` to `packageManager`'s version in its own directory, so the workspace's release age never
 applies to that switch, and `check-toolchain` checks `packageManager`'s version itself (below). Each new major's
 breaking changes were read against our use: none removes an input or behaviour a workflow relies on, and every `with:`
@@ -395,7 +396,9 @@ action-setup's, setup-buildx's binary cache) is code, not steps, and the check c
 assertions of release.yml's explicit inputs are the guard for JavaScript actions. Its three uploads set
 `overwrite: true`, as ci.yml's per-run uploads do (Part 1, "Artifacts"), so a re-run of a tag's failed job replaces
 what the first attempt left. Every upload of every workflow overwrites, screening-capacity's per-run report
-included, which had the same re-run conflict. release.yml and the dry run run their scripts under
+included, which had the same re-run conflict. The weekly real-size test (`release-capacity.yml`, ADR 0071) keeps its
+read-only `cache-from` of screening-capacity's worker layers: its report is advisory, never attested, and no launch
+check, deploy or required check reads it, so no layer another run built can reach a binding measurement. release.yml and the dry run run their scripts under
 `defaults: run: shell: bash`, GitHub's bash with `pipefail`: the default `bash -e` has none, so a failed `docker save`
 piped to `gzip` would pass its step. action-setup's `cache: false` is written out rather than left to its default, so a
 later default cannot turn the cache back on.
@@ -438,7 +441,7 @@ the founder's tag.
 - **The builder and the frontend by digest too** (the security review's S4). Neither Dockerfile has a
   `# syntax=docker/dockerfile:1` line, which pulled the frontend from Docker Hub by tag on every build: neither uses a
   feature the frontend built into BuildKit lacks, so the pinned builder's own frontend parses them. Every
-  setup-buildx step (ci.yml's images, release.yml, the dry run, screening-capacity) sets
+  setup-buildx step (ci.yml's images, release.yml, the dry run, screening-capacity, release-capacity) sets
   `driver-opts: image=moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c`
   (pushed 2026-10-20T21:37Z, the latest release at least three days old), where the driver ran
   `moby/buildkit:buildx-stable-1` by tag. CI-13's test holds both, that the copies are one value, that every job that
@@ -495,6 +498,10 @@ exclude:
 | fast-uri (through ajv), by refresh | 3.1.8 | 3.1.9 | 2026-10-19 |
 | qs (through typed-rest-client), by override | 6.15.1 | 6.16.1 | 2026-10-14 |
 
+The fast-uri refresh re-resolves the graph, and three moves come with it, each inside its parent's existing range and
+past the release age: rolldown 1.2.14 to 1.2.15 (vite's bundler), its fifteen `@rolldown/binding-*` platform packages
+1.2.14 to 1.2.15, and `@oxc-project/types` 0.154.0 to 0.155.0 (rolldown's).
+
 typescript-eslint moves with eslint, in lockstep. qs needs an override, `"typed-rest-client>qs": "6.16.1"` in
 `pnpm-workspace.yaml`, because Stryker 10.1.1's `typed-rest-client ~2.3.0` pins qs to exactly 6.15.1; it closes qs's
 three moderate advisories, and `check-toolchain` keeps it with its reason and its removal trigger, failing an override
@@ -503,9 +510,9 @@ whose target has left the lockfile. The selector carries no version scope: typed
 applying on a move to either and bring them back under `--audit-level=high`, which passes moderates. Only
 typed-rest-client 3.1.1 (2026-09-08) and later declare `qs: ^6.16.0`, so the trigger is Stryker on typed-rest-client
 3.1.1 or later (registry, read 2026-10-26). eslint and
-typescript-eslint join the catalog, and every manifest names each package the catalog holds as `catalog:`, root's five
-literal copies (`@types/node`, fast-check, tsx, typescript, vitest) and `tools/`'s eslint and typescript-eslint among
-them, so a Dependabot catalog update moves one line; `no-duplicated-versions.test.ts` holds it.
+typescript-eslint join the catalog, and every manifest names each package the catalog holds as `catalog:`, root's eight
+literal copies (`@types/node`, `@vitest/coverage-v8`, eslint, fast-check, tsx, typescript, typescript-eslint, vitest)
+and `tools/`'s eslint and typescript-eslint among them, so a Dependabot catalog update moves one line; `no-duplicated-versions.test.ts` holds it.
 Not taken here: Playwright and axe (Part 3); the Anthropic SDK, Node 26 and `@types/node` 26, and TypeScript 7, each a
 deliberate pull request (notice N8; typescript-eslint 8.72.0 declares `typescript <6.1.0`); stripe, aws-cdk and
 `@aws-sdk/*`, which their Dependabot groups bring.

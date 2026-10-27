@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { ActionForm } from '../../../../../../../../components/action-form';
 import { FormKeys } from '../../../../../../../../components/form-keys';
 import { utc } from '../../../../../../../../components/format';
-import { CalculationTable, Citation, DeadlineChip, DeadlineSummary, EvidenceList, Hash, InterestSection, LineSchedule } from '../../../../../../../../components/packets/display';
+import { CalculationWords } from '../../../../../../../../components/packets/calculation-words';
+import { Citation, DeadlineChip, DeadlineSummary, EvidenceList, Hash, InterestSection, LineSchedule } from '../../../../../../../../components/packets/display';
 import { PricingNowPanel } from '../../../../../../../../components/packets/pricing';
 import { StaleExportReview } from '../../../../../../../../components/packets/unattested';
 import { Money } from '../../../../../../../../components/remittances/display';
@@ -41,13 +42,17 @@ type Props = { readonly params: Promise<{ practiceId: string; caseId: string; ve
  * when, the audit flag, the regulation's confirmation, the version's SHA-256 and reference, the releases' manifests,
  * the evidence with its SHA-256 and gaps, interest line by line, and that code computed every amount) beside what the
  * payer's copy carries (the Payer's copy card: the approval line with the reference, and the contact set now).
+ *
+ * Combined audit #38 (docs/adr/0072): each line's calculation reads in the words the PDF prints (the same renderer and
+ * audience), with the fee-schedule worksheets; each trace's SHA-256 and the words version are in the internal record.
+ * The schedule links no line to its trace page, which the reviewer's role does not open.
  */
 export default async function PacketReviewPage(props: Props) {
   const page = await loadPage(packetReviewPage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="packet_reviews" roles={page.roles} message={page.message} nextStep="A packet's export is attested by a reimbursement reviewer under a support grant." />;
   }
-  const { practiceId, review, checklist, notice, sentWithoutSignOff, unattestedReason } = page.data;
+  const { practiceId, review, checklist, notice, sentWithoutSignOff, unattestedReason, canOpenLines, wordsVersion } = page.data;
   const path = `/p/${practiceId}/cases/${review.caseId}/packet/${review.versionId}/review`;
   const { content } = review;
   const blocked =
@@ -163,8 +168,13 @@ export default async function PacketReviewPage(props: Props) {
           <CardDescription>Identifiers show as placeholders here; the exported files carry them.</CardDescription>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-4">
-          <LineSchedule content={content} practiceId={practiceId} />
-          <CalculationTable content={content} />
+          <LineSchedule content={content} practiceId={practiceId} canOpenLines={canOpenLines} />
+          {review.calculationWords.state === 'none' ? null : (
+            <div className="flex min-w-0 flex-col gap-2">
+              <h3 className="text-base font-semibold">Calculation per line</h3>
+              <CalculationWords calculation={review.calculationWords} level={4} />
+            </div>
+          )}
         </CardContent>
       </Card>
       <Card role="region" aria-label="Payer’s copy">
@@ -220,6 +230,24 @@ export default async function PacketReviewPage(props: Props) {
                 </dd>
               </>
             )}
+            {content.format === 'tp-packet/2' ? (
+              <>
+                <dt className="font-medium">Traces</dt>
+                <dd>
+                  <ul className="flex flex-col gap-0.5" aria-label="Trace SHA-256 of each row">
+                    {content.lines.map((line) => (
+                      <li key={line.row}>
+                        Row {line.row}: <Hash value={line.calculation.trace_sha256} label={`Row ${String(line.row)} trace SHA-256`} />
+                      </li>
+                    ))}
+                  </ul>
+                </dd>
+              </>
+            ) : null}
+            <dt className="font-medium">Words version</dt>
+            <dd>
+              <Hash value={wordsVersion} label="Words version" /> (the renderer that worded the calculation above)
+            </dd>
             <dt className="font-medium">Rule releases</dt>
             <dd>
               {content.rule_releases.map((release) => (

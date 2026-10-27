@@ -15,15 +15,13 @@ import { WRITE_OFF_CONSEQUENCE, casePage } from '../../../../../lib/routes/triag
 import { NOTE_MAX_LENGTH } from '../../../../../lib/routes/workbench';
 import { assignFormAction, noteFormAction, reopenFormAction, writeOffFormAction } from './actions';
 import { FormKeys } from '../../../../../components/form-keys';
-import { recoveredLabel } from '../../../../../components/reconciliation/display';
+import { LineCorrectionWords, PATIENT_BALANCE_NEXT_STEP, proofLevelWords, recoveredLabel, showsBillableFact } from '../../../../../components/reconciliation/display';
 import { STATUS_TONES } from '../../../../../components/remittances/display';
 import { StatusChip } from '../../../../../components/status';
 
 export const metadata: Metadata = { title: 'Case' };
 
 type Props = { readonly params: Promise<{ practiceId: string; caseId: string }>; readonly searchParams: Promise<Record<string, string | string[] | undefined>> };
-
-const PROOF_TEXT: Readonly<Record<string, string>> = { posted: 'posted in the practice’s payment posting', deposited: 'deposited in the practice’s bank' };
 
 /**
  * A case (PRD 7, Cases: "detail with lines, trace, deadline, pursuit cost, notes, timeline"; "assign;
@@ -35,14 +33,16 @@ const PROOF_TEXT: Readonly<Record<string, string>> = { posted: 'posted in the pr
  * of everything recorded on it. A line whose pricing is no longer current (priced again since it joined, its rule
  * release withdrawn, or its contract version no longer signed off or covering its date; audit item #4) is marked
  * with the cause: it is out of the actionable figure, and the packet is written only once it is written off or
- * priced current again, since nothing refreshes the case automatically yet.
+ * priced current again, since nothing refreshes the case automatically yet. Beside the ledger and counted in no total
+ * (docs/adr/0067): what the payer's corrections left billable to the patient, each line's correction in words, and
+ * "Payer corrected; balance is the patient's" beside the stored state when the case qualifies.
  */
 export default async function CasePage(props: Props) {
   const page = await loadPage(casePage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="cases" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, case: item, detail, activity, timeline, workers, dispute, ledger, canWork, canDraft, canReadPhi } = page.data;
+  const { practiceId, case: item, detail, activity, timeline, workers, dispute, ledger, corrections, canWork, canDraft, canReadPhi } = page.data;
   const base = `/p/${practiceId}/cases/${item.id}`;
   const notes = activity.filter((entry) => entry.kind === 'note');
   return (
@@ -53,6 +53,11 @@ export default async function CasePage(props: Props) {
         </Link>
         <h1 className="flex flex-wrap items-center gap-2 text-[2rem] font-bold leading-display tracking-display">
           {item.payer}, {item.plan} <CaseStateBadge state={item.state} />
+          {corrections.patientBalance ? (
+            <StatusChip tone="neutral" data-patient-balance="yes">
+              Payer corrected; balance is the patient’s
+            </StatusChip>
+          ) : null}
         </h1>
         <p className="text-base text-muted-foreground">{item.behaviorText}.</p>
       </div>
@@ -89,8 +94,16 @@ export default async function CasePage(props: Props) {
               <span data-figure="recovered">
                 <Money value={ledger.recoveredCents} />
               </span>{' '}
-              (stage five: cash {PROOF_TEXT[ledger.proofLevel] ?? ledger.proofLevel}, net of recoupments and reversals)
+              (stage five: cash {proofLevelWords(ledger.proofLevel === 'deposited' ? 'deposited' : 'posted')}, net of recoupments and reversals)
             </Fact>
+            {showsBillableFact(corrections) ? (
+              <Fact label="Billable to the patient">
+                <span data-figure="billable">
+                  <Money value={corrections.billableCents} />
+                </span>{' '}
+                (the patient’s share of the payer’s corrections; counted in no total)
+              </Fact>
+            ) : null}
             <Fact label="Deadline (earliest open window)">
               <Deadline on={item.deadlineOn} state={item.deadline} />
             </Fact>
@@ -141,6 +154,11 @@ export default async function CasePage(props: Props) {
               ? 'Not submitted yet.'
               : `Last submitted ${dispute.latestSubmission.submittedOn}; ${dispute.latestSubmission.answered ? 'the payer has answered' : `follow-up ${dispute.latestSubmission.followUpOn}`}.`}
           </p>
+          {corrections.patientBalance ? (
+            <p className="rounded-md border border-dashed p-2" data-next-step="patient-balance">
+              {PATIENT_BALANCE_NEXT_STEP}
+            </p>
+          ) : null}
           <div className="flex flex-wrap gap-4">
             {canDraft ? (
               <Link className="underline" href={`${base}/packet`}>
@@ -172,6 +190,7 @@ export default async function CasePage(props: Props) {
                 <span>Window ends {line.windowEndsOn ?? '—'}</span>
                 {line.stage === null ? null : <StatusChip tone={STATUS_TONES[line.stage]}>{stageLabel(line.stage)}</StatusChip>}
               </div>
+              <LineCorrectionWords correction={corrections.lines[line.serviceLineId]} className="mt-1" />
               {line.writtenOffReason !== null || line.pricingCheck === 'current' ? null : (
                 <p className="flex flex-wrap items-center gap-2 pt-1 text-sm" data-pricing-check={line.pricingCheck}>
                   <StatusChip tone="danger">Pricing not current</StatusChip>

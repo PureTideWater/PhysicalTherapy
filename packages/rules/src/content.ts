@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 import { MANIFEST_FILE, type Manifest, compareManifest, manifestSchema } from './manifest';
@@ -165,4 +165,47 @@ export function readRelease(dir: string): ReleaseContents {
     }
   }
   return { manifest: parsed.data, manifestSha256: sha256(manifestBytes), records, problems };
+}
+
+/** The parents a numbered release lives in: published first, then prepared. */
+const RELEASE_PARENTS = ['content/releases', 'content/outgoing'] as const;
+
+/**
+ * Every release number in content/releases and content/outgoing, ascending, each once. A parent that does not exist yet
+ * holds none; any other failure to read it throws, so an unreadable directory never passes for a first release with
+ * nothing to compare (review m3).
+ */
+export function releaseNumbers(root: string): number[] {
+  const numbers = RELEASE_PARENTS.flatMap((parent) => {
+    let names: string[];
+    try {
+      // The content checkout is read at run time; the web server's bundler must not trace it.
+      names = readdirSync(path.join(/*turbopackIgnore: true*/ root, parent));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return [];
+      }
+      throw error;
+    }
+    return names.filter((name) => /^[1-9]\d*$/.test(name)).map((name) => Number.parseInt(name, 10));
+  });
+  return [...new Set(numbers)].sort((a, b) => a - b);
+}
+
+/** The highest release number below `release` that exists in content/releases or content/outgoing (releaseNumbers). */
+export function previousReleaseNumber(root: string, release: number): number | null {
+  const earlier = releaseNumbers(root).filter((number) => number < release);
+  return earlier.at(-1) ?? null;
+}
+
+/** The directory of release `n`: published (content/releases) first, then prepared (content/outgoing); null when neither holds it. */
+export function releaseDirOf(root: string, release: number): string | null {
+  for (const parent of RELEASE_PARENTS) {
+    // The content checkout is read at run time; the web server's bundler must not trace it.
+    const dir = path.join(/*turbopackIgnore: true*/ root, parent, String(release));
+    if (existsSync(dir)) {
+      return dir;
+    }
+  }
+  return null;
 }

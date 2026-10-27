@@ -1,14 +1,17 @@
-import { formatCents, parseCents } from '@tp/money';
-import { CASE_STATES } from '@tp/triage';
-import { Alert, AlertDescription, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Label } from '@tp/ui';
+import { centsToString } from '@tp/money';
+import { CASE_STATES, DEFAULT_TRIAGE_SETTINGS } from '@tp/triage';
+import { Alert, AlertDescription, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Label } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../components/action-form';
+import { MoneyField } from '../../../../components/money-field';
 import { Money, Pager } from '../../../../components/remittances/display';
+import { MATERIALITY_LABELS } from '../../../../components/settings/defaults';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { CASE_STATE_TEXT, CaseStateBadge, Deadline, stageLabel } from '../../../../components/triage/display';
 import { loadPage } from '../../../../lib/http/next';
+import { dollarsForInput } from '../../../../lib/money-input';
 import { casesPage } from '../../../../lib/routes/triage';
 import { MATERIALITY_CONSEQUENCE } from '../../../../lib/routes/workbench';
 import { openCaseFormAction, setMaterialityFormAction, triageRunFormAction } from './actions';
@@ -18,8 +21,6 @@ import { ReferenceSearch } from '../../../../components/packets/reference-search
 export const metadata: Metadata = { title: 'Cases' };
 
 type Props = { readonly params: Promise<{ practiceId: string }>; readonly searchParams: Promise<Record<string, string | string[] | undefined>> };
-
-const dollars = (cents: string) => formatCents(parseCents(cents));
 
 const WAITING_TEXT = {
   ready: 'Reaches the case materiality: open its case now',
@@ -163,23 +164,18 @@ export default async function CasesPage(props: Props) {
         <CardHeader>
           <CardTitle>Materiality</CardTitle>
           <CardDescription>
-            A validated line is actionable at or above the per-line threshold (<Money value={materiality.lineCents} />); a payer pattern becomes a case at or above the per-case threshold (<Money value={materiality.caseCents} />). The defaults are <Money value="500" /> and <Money value="25000" />.
+            A validated line is actionable at or above the per-line threshold (<Money value={materiality.lineCents} />); a payer pattern becomes a case at or above the per-case threshold (<Money value={materiality.caseCents} />). The defaults are <Money value={centsToString(DEFAULT_TRIAGE_SETTINGS.lineMaterialityCents)} /> and{' '}
+            <Money value={centsToString(DEFAULT_TRIAGE_SETTINGS.caseMaterialityCents)} />.
           </CardDescription>
         </CardHeader>
         {canTriage ? (
           <CardContent>
-            <ActionForm action={setMaterialityFormAction} submit="Save the thresholds" className="flex max-w-xl flex-col gap-3">
+            <ActionForm action={setMaterialityFormAction} submit="Save the thresholds" className="flex max-w-xl flex-col gap-3" labels={MATERIALITY_LABELS}>
               <FormKeys />
               <input type="hidden" name="practiceId" value={practiceId} />
               <div className="flex flex-wrap gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="line-materiality">Per line (dollars)</Label>
-                  <Input id="line-materiality" name="lineMateriality" defaultValue={dollars(materiality.lineCents)} inputMode="decimal" required />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="case-materiality">Per case (dollars)</Label>
-                  <Input id="case-materiality" name="caseMateriality" defaultValue={dollars(materiality.caseCents)} inputMode="decimal" required />
-                </div>
+                <MoneyField id="line-materiality" label="Per line" name="lineMateriality" defaultValue={dollarsForInput(materiality.lineCents)} required />
+                <MoneyField id="case-materiality" label="Per case" name="caseMateriality" defaultValue={dollarsForInput(materiality.caseCents)} required />
               </div>
               <p className="text-sm text-muted-foreground">{MATERIALITY_CONSEQUENCE}</p>
             </ActionForm>

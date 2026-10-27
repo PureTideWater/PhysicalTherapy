@@ -1,5 +1,5 @@
-import { type PracticeScope, type ScopeClient, loadPracticeCipher } from '@tp/db/runtime';
-import { type PacketContent, VERIFIER_FORMAT, type VerifierReport, draftNarrative, exportFileName, packetReference } from '@tp/packets';
+import { type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit } from '@tp/db/runtime';
+import { type PacketContent, VERIFIER_FORMAT, type VerifierReport, WORDS_VERSION, draftNarrative, exportFileName, packetReference } from '@tp/packets';
 import type { DeadlineStatus } from '@tp/triage';
 import {
   type ExportReadiness,
@@ -18,8 +18,10 @@ import {
 import type { Services } from '../server/services';
 import type { JobQueue } from '../uploads/queue';
 import { peopleEmails } from '../cases/people';
-import { NotFoundError } from '../http/route';
+import { REFUSED_FIELD } from '../cases/refusals';
+import { InputError, NotFoundError } from '../http/route';
 import { type ApprovalState, type BlockedReason, approvalState } from './approval';
+import { type CalculationWords, calculationWordsOf, wordsRefusalReason } from './calculation-words';
 import { type ContactNow, contactNow } from './contact';
 import { type ExportAttempt, exportAttempt } from './export-attempts';
 import { PRICING_BLOCKED_TEXT, type PricingNowView, pricingNow } from './pricing';
@@ -45,6 +47,12 @@ export { DEADLINE_NOT_EXPORTABLE, OUTDATED_NOT_EXPORTABLE, STALE_LEVEL_NOT_EXPOR
  * pricing now (pricingNow(): the stale lines with their figures then and now), its export readiness (the one
  * @tp/worker/packets exportReadiness() the export action and the job ask too, every reason with its fix) and
  * the latest attempt at its export (exportAttempt()); approval is blocked ahead while its pricing is not current.
+ *
+ * Combined audit #38 (docs/adr/0072): the version shown carries each line's calculation in words and its fee-schedule
+ * worksheets, as the payer's PDF words them (@tp/packets explainPacket(), the payer audience), from the stored traces
+ * its approval names, read here under the builder's purpose and never sent to the browser. A version whose words
+ * cannot be written is not approved, and an approval or export asked from a page another renderer wrote is refused
+ * (WORDS_VERSION).
  */
 
 type Scope = PracticeScope<ScopeClient>;
@@ -112,6 +120,8 @@ export interface VersionView {
   readonly exportAttempt: ExportAttempt;
   /** No one but the version's writer approves packets in the practice (a single-user practice for packets). */
   readonly singleUser: boolean;
+  /** Each line's calculation in the payer's words, with the fee-schedule worksheets (combined audit #38). */
+  readonly calculationWords: CalculationWords;
 }
 
 export interface ApprovalRequest {
@@ -202,6 +212,42 @@ export async function atCaseLevel(scope: Scope, caseId: string, content: PacketC
   return rows[0]?.level === content.dispute_level;
 }
 
+/**
+ * The stored traces of a version's lines by their priced line's ID, each an audited read (design 3.8; finding m8: under
+ * the purpose the screen already reads the version under, packet_build or packet_review, so one screen keeps one audit
+ * trail). The traces stay on the server: only their words reach a page.
+ */
+export async function packetTraces(scope: Scope, input: { readonly practiceId: string; readonly content: PacketContent; readonly purpose: 'packet_build' | 'packet_review'; readonly requestId: string }): Promise<Map<string, unknown>> {
+  const ids = input.content.lines.map((line) => line.priced_line_id);
+  const rows = await readWithAudit(
+    scope,
+    { objectType: 'priced_line', purpose: input.purpose, requestId: input.requestId },
+    async (client) =>
+      (await client.query<{ id: string; practice_id: string; trace: unknown }>('SELECT id::text AS id, practice_id, trace FROM priced_line WHERE practice_id = $1 AND id = ANY ($2::uuid[]) ORDER BY id', [input.practiceId, ids])).rows,
+    (row) => ({ objectId: row.id, practiceId: row.practice_id }),
+  );
+  return new Map(rows.map((row) => [row.id, row.trace]));
+}
+
+/** A version's calculation in the payer's words, from its stored traces (read with packetTraces()). */
+export async function calculationWords(scope: Scope, input: { readonly practiceId: string; readonly content: PacketContent; readonly purpose: 'packet_build' | 'packet_review'; readonly requestId: string }): Promise<CalculationWords> {
+  if (input.content.format !== 'tp-packet/2') {
+    return { state: 'none' };
+  }
+  return calculationWordsOf(input.content, await packetTraces(scope, input));
+}
+
+/**
+ * Refuses a step asked from a page another renderer wrote (finding M1; design 3.8): the approve and export-request
+ * forms post the WORDS_VERSION their page was rendered with, and a deploy since then may have changed the words the
+ * person read. Nothing is written.
+ */
+export function requireWordsVersion(posted: string, then: 'approve' | 'request the export'): void {
+  if (posted !== WORDS_VERSION) {
+    throw new InputError([{ field: REFUSED_FIELD, message: `the wording of the calculation changed since this page was loaded. Read the page again, then ${then}` }]);
+  }
+}
+
 interface VersionChecks {
   readonly deadlineNow: DeadlineStatus;
   readonly atCaseLevel: boolean;
@@ -210,6 +256,7 @@ interface VersionChecks {
   readonly exportAttempt: ExportAttempt;
   /** No one but the version's writer approves packets in the practice: the writer approves alone after the 24-hour delay. */
   readonly singleUser: boolean;
+  readonly calculationWords: CalculationWords;
 }
 
 function versionView(detail: PacketVersionDetail, writtenBy: string | null, attestedBy: string | null, checks: VersionChecks): VersionView {
@@ -328,6 +375,7 @@ export async function builderView(
       exportReadiness: readiness,
       exportAttempt: await exportAttempt(scope, shown.id, input.now),
       singleUser: facts[0]?.writer_alone ?? false,
+      calculationWords: await calculationWords(scope, { practiceId: input.practiceId, content: detail.content, purpose: 'packet_build', requestId: input.requestId }),
     }),
     approval,
     approvalRequest: request === undefined ? null : { at: request.created_at.toISOString(), by: person(request.created_by), message: cipher === null || request.body === null ? null : cipher.decrypt('case_activity.body', request.body) },
@@ -410,11 +458,24 @@ export async function versionOfCase(
   return { packetId: row.packet_id, approved: row.approved, current: row.current, exported: row.exported, verifierPassed: row.verifier_passed, contentSha256: row.content_sha256 };
 }
 
-/** Approves a version naming its hash, unless it is approved already (then nothing changes). The database decides the rest. */
+/**
+ * Approves a version naming its hash, unless it is approved already (then nothing changes). A version whose calculation
+ * the renderer cannot word is refused first, with the same reason the builder shows (design 3.7: a reviewer never
+ * approves wording the PDF refuses to print). The database decides the rest.
+ */
 export async function approveOnce(scope: Scope, input: { readonly practiceId: string; readonly caseId: string; readonly versionId: string; readonly versionSha256: string; readonly requestId: string }): Promise<boolean> {
   const version = await versionOfCase(scope, input.practiceId, input.caseId, input.versionId);
   if (version.approved) {
     return false;
+  }
+  const { rows } = await scope.client.query<{ content: PacketContent }>('SELECT content FROM packet_version WHERE id = $1 AND practice_id = $2', [input.versionId, input.practiceId]);
+  const content = rows[0]?.content;
+  if (content === undefined) {
+    throw new NotFoundError();
+  }
+  const words = await calculationWords(scope, { practiceId: input.practiceId, content, purpose: 'packet_build', requestId: input.requestId });
+  if (words.state === 'refused') {
+    throw new InputError([{ field: REFUSED_FIELD, message: wordsRefusalReason(words.refusal) }]);
   }
   await approvePacketVersion(scope, { practiceId: input.practiceId, versionId: input.versionId, versionSha256: input.versionSha256, requestId: input.requestId });
   return true;
@@ -482,7 +543,8 @@ export async function requestExportOnce(
   if (readiness.outcome !== 'ready') {
     return readiness;
   }
-  await queue.enqueue('packet_export', { practice_id: input.practiceId, packet_version_id: input.versionId });
+  // The words version the request was checked against (requireWordsVersion), which the job requires to be its own (finding M1).
+  await queue.enqueue('packet_export', { practice_id: input.practiceId, packet_version_id: input.versionId, words_version: WORDS_VERSION });
   return { outcome: 'queued' };
 }
 

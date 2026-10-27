@@ -30,7 +30,7 @@ describe('PACKET_CHECKLIST', () => {
     // Above the first level the files state the level's own window without a clause (review of 2026-10-21).
     expect(text.deadline).toMatch(/\(shown on this page; the payer’s files state the window’s end and, at the first level, the clause or record behind it, not its verification\)\.$/);
     expect(text.calculation).toBe(
-      'Each line’s calculation in the PDF and the CSV is its trace’s: the method, the steps, the one rounding and the patient share, shown apart from expected; each trace’s SHA-256 is on this page.',
+      'Each line’s calculation in the PDF is worded from its trace exactly as on this page: the method, each step, the fee schedule worksheet where the line used the fee schedule, the one rounding and the patient share, shown apart from expected; the CSV’s method, rounding and patient share match; each trace’s SHA-256 is on this page.',
     );
     // What each file carries: the CSV is the line schedule, its file named by the reference (review of 2026-10-21; each
     // row also leads with it, and the founder confirmed this wording as written on 2026-10-21).

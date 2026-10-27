@@ -17,16 +17,16 @@ const STATUS: Readonly<Record<string, string>> = { open: 'Open', answered: 'Answ
 
 /**
  * Support (PRD 19, Support: "a support address that creates a ticket; a published response target"; docs/adr/0053):
- * a ticket opened from the screen the help link came from, the support address beside it, and the person's own
- * tickets. Support staff never see a practice's records through a ticket: when they need to, a support grant is
- * opened for the practice, and its administrator is told.
+ * a ticket opened from the screen the help link came from (on that screen's category, where it has one), the support
+ * address beside it, and the person's own tickets. Support staff never see a practice's records through a ticket: when
+ * they need to, a support grant is opened for the practice, and its administrator is told.
  */
 export default async function SupportPage(props: { readonly searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const page = await loadPage(supportRequestPage, props);
   if (page.kind === 'forbidden') {
     return null;
   }
-  const { from, sent, supportEmail, responseTarget, categories, tickets } = page.data;
+  const { from, category, sent, supportEmail, responseTarget, categories, tickets } = page.data;
   return (
     <AppShell shell={page.shell} section="home">
       <h1 className="text-[2rem] font-bold leading-display tracking-display">Support</h1>
@@ -49,7 +49,7 @@ export default async function SupportPage(props: { readonly searchParams: Promis
           <ActionForm action={createTicketAction} submit="Open ticket" className="grid max-w-2xl gap-4">
             <FormKeys />
             <input type="hidden" name="screen" value={from} />
-            <SelectField label="What is it about" name="category" options={categories} />
+            <SelectField label="What is it about" name="category" options={categories} defaultValue={category ?? undefined} />
             <Field label="Subject" name="subject" required maxLength={200} />
             <TextAreaField label="What happened, and what you expected" name="message" required maxLength={4000} rows={6} />
           </ActionForm>

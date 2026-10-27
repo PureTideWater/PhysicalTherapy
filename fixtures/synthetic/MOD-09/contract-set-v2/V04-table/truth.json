@@ -1,0 +1,544 @@
+{
+  "format": "tp-eval-contract/2",
+  "synthetic": true,
+  "id": "V04",
+  "layout": "table",
+  "drawnAs": null,
+  "kind": "exhibit",
+  "document": "document.pdf",
+  "contentType": "application/pdf",
+  "scan": null,
+  "pages": 3,
+  "tier": "medium",
+  "pageText": "faithful",
+  "unfaithfulBecause": null,
+  "pairOf": "V03",
+  "twinOf": null,
+  "conflicts": [],
+  "records": [
+    {
+      "label": "Exhibit: 97164",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["97164"],"written":["97164"],"page":1,"quote":"97164 - - $78.28 per unit"},
+        "amount": {"value":"7828","written":"$78.28","page":1,"quote":"97164 - - $78.28 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "2026-01-01",
+          "page": 1,
+          "quote": "Fee schedule effective 2026-01-01."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 97546",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["97546"],"written":["97546"],"page":1,"quote":"97546 - - $118.61 per unit"},
+        "amount": {"value":"11861","written":"$118.61","page":1,"quote":"97546 - - $118.61 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "2026-01-01",
+          "page": 1,
+          "quote": "Fee schedule effective 2026-01-01."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 97012 POS 22",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["97012"],"written":["97012"],"page":1,"quote":"97012 - 22 $88.42 per unit"},
+        "places_of_service": {"value":["22"],"written":["22"],"page":1,"quote":"97012 - 22 $88.42 per unit"},
+        "amount": {"value":"8842","written":"$88.42","page":1,"quote":"97012 - 22 $88.42 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "2026-01-01",
+          "page": 1,
+          "quote": "Fee schedule effective 2026-01-01."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 92605 POS 11",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["92605"],"written":["92605"],"page":1,"quote":"92605 - 11 $97.60 per unit"},
+        "places_of_service": {"value":["11"],"written":["11"],"page":1,"quote":"92605 - 11 $97.60 per unit"},
+        "amount": {"value":"9760","written":"$97.60","page":1,"quote":"92605 - 11 $97.60 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "2026-01-01",
+          "page": 1,
+          "quote": "Fee schedule effective 2026-01-01."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 97016",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["97016"],"written":["97016"],"page":1,"quote":"97016 - - $115.58 per unit"},
+        "amount": {"value":"11558","written":"$115.58","page":1,"quote":"97016 - - $115.58 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "2026-01-01",
+          "page": 1,
+          "quote": "Fee schedule effective 2026-01-01."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 97035 POS 19",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["97035"],"written":["97035"],"page":1,"quote":"97035 - 19 $23.28 per unit"},
+        "places_of_service": {"value":["19"],"written":["19"],"page":1,"quote":"97035 - 19 $23.28 per unit"},
+        "amount": {"value":"2328","written":"$23.28","page":1,"quote":"97035 - 19 $23.28 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "2026-01-01",
+          "page": 1,
+          "quote": "Fee schedule effective 2026-01-01."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 97530",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["97530"],"written":["97530"],"page":1,"quote":"97530 - - $129.54 per unit"},
+        "amount": {"value":"12954","written":"$129.54","page":1,"quote":"97530 - - $129.54 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "2026-01-01",
+          "page": 1,
+          "quote": "Fee schedule effective 2026-01-01."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 96112",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["96112"],"written":["96112"],"page":1,"quote":"96112 - - $112.29 per unit"},
+        "amount": {"value":"11229","written":"$112.29","page":1,"quote":"96112 - - $112.29 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "2026-01-01",
+          "page": 1,
+          "quote": "Fee schedule effective 2026-01-01."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 97026 GP",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["97026"],"written":["97026"],"page":1,"quote":"97026 GP - $98.82 per unit"},
+        "modifiers": {"value":["GP"],"written":["GP"],"page":1,"quote":"97026 GP - $98.82 per unit"},
+        "amount": {"value":"9882","written":"$98.82","page":1,"quote":"97026 GP - $98.82 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "2026-01-01",
+          "page": 1,
+          "quote": "Fee schedule effective 2026-01-01."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 97161",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["97161"],"written":["97161"],"page":2,"quote":"97161 - - $124.83 per unit"},
+        "amount": {"value":"12483","written":"$124.83","page":2,"quote":"97161 - - $124.83 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "2026-01-01",
+          "page": 1,
+          "quote": "Fee schedule effective 2026-01-01."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 97014",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["97014"],"written":["97014"],"page":2,"quote":"97014 - - $31.74 per unit"},
+        "amount": {"value":"3174","written":"$31.74","page":2,"quote":"97014 - - $31.74 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "2026-01-01",
+          "page": 1,
+          "quote": "Fee schedule effective 2026-01-01."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 92524 KX",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["92524"],"written":["92524"],"page":2,"quote":"92524 KX - $155.81 per unit"},
+        "modifiers": {"value":["KX"],"written":["KX"],"page":2,"quote":"92524 KX - $155.81 per unit"},
+        "amount": {"value":"15581","written":"$155.81","page":2,"quote":"92524 KX - $155.81 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "2026-01-01",
+          "page": 1,
+          "quote": "Fee schedule effective 2026-01-01."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 95851 CO KX",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["95851"],"written":["95851"],"page":2,"quote":"95851 CO KX - $125.65 per unit"},
+        "modifiers": {
+          "value": ["CO","KX"],
+          "written": ["CO","KX"],
+          "page": 2,
+          "quote": "95851 CO KX - $125.65 per unit"
+        },
+        "amount": {"value":"12565","written":"$125.65","page":2,"quote":"95851 CO KX - $125.65 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "2026-01-01",
+          "page": 1,
+          "quote": "Fee schedule effective 2026-01-01."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 97760 POS 22",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["97760"],"written":["97760"],"page":2,"quote":"97760 - 22 $155.03 per unit"},
+        "places_of_service": {"value":["22"],"written":["22"],"page":2,"quote":"97760 - 22 $155.03 per unit"},
+        "amount": {"value":"15503","written":"$155.03","page":2,"quote":"97760 - 22 $155.03 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "2026-01-01",
+          "page": 1,
+          "quote": "Fee schedule effective 2026-01-01."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 97130 GO GP",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["97130"],"written":["97130"],"page":2,"quote":"97130 GO GP - $147.93 per unit"},
+        "modifiers": {
+          "value": ["GO","GP"],
+          "written": ["GO","GP"],
+          "page": 2,
+          "quote": "97130 GO GP - $147.93 per unit"
+        },
+        "amount": {"value":"14793","written":"$147.93","page":2,"quote":"97130 GO GP - $147.93 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "2026-01-01",
+          "page": 1,
+          "quote": "Fee schedule effective 2026-01-01."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 92607",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["92607"],"written":["92607"],"page":2,"quote":"92607 - - $31.34 per unit"},
+        "amount": {"value":"3134","written":"$31.34","page":2,"quote":"92607 - - $31.34 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "2026-01-01",
+          "page": 1,
+          "quote": "Fee schedule effective 2026-01-01."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 97165 CO",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["97165"],"written":["97165"],"page":2,"quote":"97165 CO - $143.40 per unit"},
+        "modifiers": {"value":["CO"],"written":["CO"],"page":2,"quote":"97165 CO - $143.40 per unit"},
+        "amount": {"value":"14340","written":"$143.40","page":2,"quote":"97165 CO - $143.40 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "2026-01-01",
+          "page": 1,
+          "quote": "Fee schedule effective 2026-01-01."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 97535",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["97535"],"written":["97535"],"page":3,"quote":"97535 - - $32.99 per unit"},
+        "amount": {"value":"3299","written":"$32.99","page":3,"quote":"97535 - - $32.99 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "2026-01-01",
+          "page": 1,
+          "quote": "Fee schedule effective 2026-01-01."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 97542 POS 11",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["97542"],"written":["97542"],"page":3,"quote":"97542 - 11 $114.37 per unit"},
+        "places_of_service": {"value":["11"],"written":["11"],"page":3,"quote":"97542 - 11 $114.37 per unit"},
+        "amount": {"value":"11437","written":"$114.37","page":3,"quote":"97542 - 11 $114.37 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "2026-01-01",
+          "page": 1,
+          "quote": "Fee schedule effective 2026-01-01."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 95992 POS 22",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["95992"],"written":["95992"],"page":3,"quote":"95992 - 22 $84.30 per unit"},
+        "places_of_service": {"value":["22"],"written":["22"],"page":3,"quote":"95992 - 22 $84.30 per unit"},
+        "amount": {"value":"8430","written":"$84.30","page":3,"quote":"95992 - 22 $84.30 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "2026-01-01",
+          "page": 1,
+          "quote": "Fee schedule effective 2026-01-01."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 95852",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["95852"],"written":["95852"],"page":3,"quote":"95852 - - $20.09 per unit"},
+        "amount": {"value":"2009","written":"$20.09","page":3,"quote":"95852 - - $20.09 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "2026-01-01",
+          "page": 1,
+          "quote": "Fee schedule effective 2026-01-01."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 97129 CO POS 12",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["97129"],"written":["97129"],"page":3,"quote":"97129 CO 12 $102.17 per unit"},
+        "modifiers": {"value":["CO"],"written":["CO"],"page":3,"quote":"97129 CO 12 $102.17 per unit"},
+        "places_of_service": {"value":["12"],"written":["12"],"page":3,"quote":"97129 CO 12 $102.17 per unit"},
+        "amount": {"value":"10217","written":"$102.17","page":3,"quote":"97129 CO 12 $102.17 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "2026-01-01",
+          "page": 1,
+          "quote": "Fee schedule effective 2026-01-01."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 97110",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["97110"],"written":["97110"],"page":3,"quote":"97110 - - $73.57 per unit"},
+        "amount": {"value":"7357","written":"$73.57","page":3,"quote":"97110 - - $73.57 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "2026-01-01",
+          "page": 1,
+          "quote": "Fee schedule effective 2026-01-01."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 97024",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["97024"],"written":["97024"],"page":3,"quote":"97024 - - $34.42 per unit"},
+        "amount": {"value":"3442","written":"$34.42","page":3,"quote":"97024 - - $34.42 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "2026-01-01",
+          "page": 1,
+          "quote": "Fee schedule effective 2026-01-01."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 92610 POS 19",
+      "role": "term",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["92610"],"written":["92610"],"page":3,"quote":"92610 - 19 $86.74 per unit"},
+        "places_of_service": {"value":["19"],"written":["19"],"page":3,"quote":"92610 - 19 $86.74 per unit"},
+        "amount": {"value":"8674","written":"$86.74","page":3,"quote":"92610 - 19 $86.74 per unit"},
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "2026-01-01",
+          "page": 1,
+          "quote": "Fee schedule effective 2026-01-01."
+        }
+      }
+    }
+  ]
+}

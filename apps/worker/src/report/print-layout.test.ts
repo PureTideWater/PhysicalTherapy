@@ -4,7 +4,7 @@ import { insertIdentifiers, type RowIdentifiers } from '@tp/packets';
 import { describe, expect, it } from 'vitest';
 
 import { packetHtml } from '../packets/html';
-import { content as packetContent, exported, payerCopy } from '../packets/test-support/exported-packet';
+import { content as packetContent, exported, payerCopy, payerWords, steppedContent, steppedExported, words } from '../packets/test-support/exported-packet';
 import { statementHtml } from '../reconcile/statement-html';
 import { brandedDocument, figureColumns } from './brand';
 import { coverageReportHtml, monthlySummaryHtml } from './documents';
@@ -125,7 +125,7 @@ function widePacket(): string {
   const identifiers = new Map<number, RowIdentifiers>(
     packetContent.lines.map((line) => [line.row, { claim_control_number: 'SYNCCN'.padEnd(38, '0'), patient_control_number: 'SYNPCN'.padEnd(38, '9'), patient_name: 'SYNTHETIC-HYPHENATED-SURNAME, PATIENT WITH SEVERAL GIVEN NAMES', member_id: 'SYNMBR'.padEnd(50, '7') }]),
   );
-  return packetHtml(insertIdentifiers(packetContent, exported.narrative, identifiers), payerCopy);
+  return packetHtml(insertIdentifiers(packetContent, exported.narrative, identifiers), payerCopy, words);
 }
 
 /** Each printed template, its cover's headline and its running header's title (BRAND.md, section 7). */
@@ -147,8 +147,14 @@ const DOCUMENTS: readonly Printed[] = [
   { name: 'the coverage report, widest figures and names', html: () => coverageReportHtml(wideCoverage(), { ...PINS, practiceName: LONG_NAME }), heading: 'Coverage report', title: 'Coverage report' },
   { name: 'the monthly summary (documents.test’s content)', html: () => monthlySummaryHtml(monthly(), PINS), heading: 'Monthly variance summary', title: 'Monthly variance summary' },
   { name: 'the monthly summary, widest figures and names', html: () => monthlySummaryHtml(wideMonthly(), { ...PINS, practiceName: LONG_NAME }), heading: 'Monthly variance summary', title: 'Monthly variance summary' },
-  { name: 'the dispute packet (export.test’s version)', html: () => packetHtml(exported, payerCopy), heading: 'Request to reprocess underpaid claims', title: `${packetContent.practice.name} · Payment dispute` },
+  { name: 'the dispute packet (export.test’s version)', html: () => packetHtml(exported, payerCopy, words), heading: 'Request to reprocess underpaid claims', title: `${packetContent.practice.name} · Payment dispute` },
   { name: 'the dispute packet, the longest identifiers', html: widePacket, heading: 'Request to reprocess underpaid claims', title: `${packetContent.practice.name} · Payment dispute` },
+  {
+    name: 'the dispute packet, percent of Medicare with every step and its fee schedule worksheet',
+    html: () => packetHtml(steppedExported, payerCopy, payerWords(steppedContent)),
+    heading: 'Request to reprocess underpaid claims',
+    title: `${packetContent.practice.name} · Payment dispute`,
+  },
 ];
 
 const PROBE_FRAME = { title: 'Probe', kicker: 'Probe', heading: 'Probe', practiceName: 'SYNTHETIC', meta: [], reference: 'Probe', reconciliation: { reconciledToCash: false, source: 'probe' } } as const;
@@ -214,6 +220,21 @@ describe.skipIf(!chromiumInstalled())('every printed document prints at full siz
       expect(sizeOf(runs, 2, document.title)).toBeCloseTo(10, 1);
     }, 60_000);
   }
+
+  it('the dispute packet never leaves the calculation table’s caption and header row at a page’s foot without its first row (UX review: the table cut at the foot of page 2)', async () => {
+    // A longer narrative moves the table down the page: with these the caption once fell at page 2's foot, its rows on
+    // page 3. The caption, the header row and row 1 now print on one page whatever the narrative's length.
+    const caption = 'Each line’s dispute window and how its expected amount is computed';
+    for (let lines = 0; lines <= 8; lines += 1) {
+      const filler = Array.from({ length: lines }, () => 'SYNTHETIC filler sentence that takes one line of the narrative.').join('\n\n');
+      const runs = await printedText(await renderer.render(packetHtml({ ...exported, narrative: `${exported.narrative}\n\n${filler}` }, payerCopy, words)));
+      const at = runs.findIndex((run) => run.text === caption);
+      const header = runs.findIndex((run, index) => index > at && run.text === 'How the expected amount is computed');
+      const first = runs.findIndex((run, index) => index > header && run.text === '1');
+      expect([at, header, first].every((index) => index !== -1), `${String(lines)} lines`).toBe(true);
+      expect([runs[header]?.page, runs[first]?.page], `${String(lines)} lines of filler`).toEqual([runs[at]?.page, runs[at]?.page]);
+    }
+  }, 180_000);
 
   it('and the check sees a print that shrank to fit', async () => {
     const runs = await printedText(await renderer.render(TOO_WIDE));

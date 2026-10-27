@@ -75,7 +75,12 @@ describe('the content workspace', () => {
 
     expect(nextReleaseNumber(root, [])).toBe(1);
     const prepared = prepareRelease(root, 1, '2026-10-21');
-    expect(prepared).toMatchObject({ dir: 'content/outgoing/1', records: 1, excluded: 1 });
+    expect(prepared).toMatchObject({
+      dir: 'content/outgoing/1',
+      records: 1,
+      excluded: 1,
+      files: ['RELEASE.md', 'COVERAGE.md', 'therapy_threshold/2026/records.json', 'therapy_threshold/2026/records.second-pass.json', 'MANIFEST.json'],
+    });
     mkdirSync(path.join(root, 'content/releases/3'), { recursive: true });
     const after = readWorkspace(root);
     expect(after.prepared).toEqual([{ release: 1, records: 1, manifestSha256: prepared.manifestSha256, notes: expect.stringContaining('# Content release 1') as string, problems: [] }]);

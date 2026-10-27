@@ -1,7 +1,8 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 
 import { repositoryRoot } from '../content-files';
 
@@ -16,6 +17,8 @@ import { repositoryRoot } from '../content-files';
  *   the worker and the tools name as `catalog:` (tools/test/browser-version.test.ts holds them and the lockfile to one
  *   version); the worker image copies the lockfile's playwright-core from its build stage and names no version, and no
  *   workflow, Dockerfile or document repeats Playwright's version.
+ * - each shared package in pnpm-workspace.yaml's catalog: every workspace manifest, the root's included, names it as
+ *   "catalog:" in dependencies and devDependencies, never a version of its own.
  * One deliberate exception: the BuildKit builder's `driver-opts: image=moby/buildkit:<version>@sha256:<digest>`, written
  * on every setup-buildx step, since a step's inputs cannot read a file. Dependabot never rewrites that string (it is no
  * `uses:` and no FROM), so no update can leave a stale copy, and workflows.test.ts holds every copy to one value.
@@ -44,6 +47,18 @@ function where(files: ReadonlyMap<string, string>, pattern: RegExp, keep: (file:
   return [...files].flatMap(([file, text]) =>
     text.split('\n').flatMap((line, index) => (pattern.test(line) && keep(file, line) ? [`${file}:${String(index + 1)}: ${line.trim()}`] : [])),
   );
+}
+
+/** The root manifest and every workspace package's, from pnpm-workspace.yaml's `packages` (a directory, or `dir/*`). */
+function manifests(patterns: readonly string[]): string[] {
+  const dirs = patterns.flatMap((pattern) =>
+    pattern.endsWith('/*')
+      ? readdirSync(path.join(repositoryRoot, pattern.slice(0, -2)), { withFileTypes: true })
+          .filter((entry) => entry.isDirectory())
+          .map((entry) => `${pattern.slice(0, -2)}/${entry.name}`)
+      : [pattern],
+  );
+  return ['package.json', ...dirs.map((dir) => `${dir}/package.json`).filter((file) => existsSync(path.join(repositoryRoot, file)))];
 }
 
 const fromImages = (text: string) =>
@@ -104,5 +119,22 @@ describe('no duplicated versions (A4 (b))', () => {
     const version = (JSON.parse(readFileSync(path.join(repositoryRoot, 'apps/web/package.json'), 'utf8')) as { devDependencies?: Record<string, string> }).devDependencies?.['@playwright/test'] ?? '';
     expect(version).toMatch(/^\d+\.\d+\.\d+$/);
     expect(where(scanned(), new RegExp(`\\b${version.replaceAll('.', '\\.')}\\b`))).toEqual([]);
+  });
+
+  it('names each catalog package as "catalog:" in every workspace manifest’s dependencies and devDependencies', () => {
+    const workspace = parse(readFileSync(path.join(repositoryRoot, 'pnpm-workspace.yaml'), 'utf8')) as { packages: string[]; catalog: Record<string, string> };
+    const catalog = Object.keys(workspace.catalog);
+    expect(catalog.length).toBeGreaterThan(0);
+    const files = manifests(workspace.packages);
+    expect(files.length).toBeGreaterThan(20);
+    const copies = files.flatMap((file) => {
+      const manifest = JSON.parse(readFileSync(path.join(repositoryRoot, file), 'utf8')) as Record<string, Record<string, string> | undefined>;
+      return (['dependencies', 'devDependencies'] as const).flatMap((field) =>
+        Object.entries(manifest[field] ?? {})
+          .filter(([name, range]) => catalog.includes(name) && range !== 'catalog:')
+          .map(([name, range]) => `${file} ${field}: ${name} ${range}`),
+      );
+    });
+    expect(copies).toEqual([]);
   });
 });

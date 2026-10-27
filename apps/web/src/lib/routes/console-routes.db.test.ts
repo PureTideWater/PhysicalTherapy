@@ -33,8 +33,9 @@ import {
   supportPage,
   unlockUser,
 } from './console';
-import { consoleModelsPage, setModelFlag } from './console-models';
+import { MODEL_VALUE_HINT, consoleModelsPage, setModelFlag } from './console-models';
 import { practiceHome, supportAccessPage } from './practice';
+import { ruleReleasesPage } from './rule-releases';
 import { csrfTokenFor } from '../http/csrf';
 
 /**
@@ -614,7 +615,7 @@ describe('the model features’ console (docs/adr/0055; test matrix MOD-05, MOD-
         );
       }
     });
-    expect((await run(setModelFlag, admin.token, { key: 'model.daily_budget_cents', target: `practice:${world.practiceId}`, value: '300' })).status).toBe('ok');
+    expect((await run(setModelFlag, admin.token, { key: 'model.daily_budget_cents', target: `practice:${world.practiceId}`, value: '3.00' })).status).toBe('ok');
     expect((await run(setModelFlag, admin.token, { key: 'model.kill_switch', target: `organization:${world.organizationId}`, value: 'on' })).status).toBe('ok');
     const page = await run(consoleModelsPage, admin.token, undefined, { notice: 'set' });
     if (page.status !== 'ok') {
@@ -631,7 +632,7 @@ describe('the model features’ console (docs/adr/0055; test matrix MOD-05, MOD-
     expect(page.data.spend.find((row) => row.practiceId === world.practiceId)).toMatchObject({ calls: 2, spentCents: '151', budgetCents: '300', percent: 50, killSwitch: true });
     expect((await run(setModelFlag, admin.token, { key: 'model.kill_switch', target: `organization:${world.organizationId}`, value: 'off' })).status).toBe('ok');
     // Refused values name the field; nothing is set.
-    expect(await run(setModelFlag, admin.token, { key: 'model.daily_budget_cents', target: 'global', value: '4.50' })).toEqual({ status: 'invalid', issues: [{ field: 'value', message: 'a budget in whole cents, such as 500 for $5.00' }] });
+    expect(await run(setModelFlag, admin.token, { key: 'model.daily_budget_cents', target: 'global', value: '4.505' })).toEqual({ status: 'invalid', issues: [{ field: 'value', message: 'an amount in dollars, such as 5.00 or 1,250.00' }] });
     expect(await run(setModelFlag, admin.token, { key: 'model.kill_switch', target: 'global', value: 'maybe' })).toEqual({ status: 'invalid', issues: [{ field: 'value', message: 'on or off' }] });
     const audited = await owner.query<{ action: string; n: number }>(
       "SELECT action, count(*)::int AS n FROM audit_event WHERE actor_id = $1 AND action IN ('model_flag_set', 'feature_flag_set') GROUP BY action ORDER BY action",
@@ -643,6 +644,35 @@ describe('the model features’ console (docs/adr/0055; test matrix MOD-05, MOD-
     ]);
     // Nobody without feature_flag.manage reads the spend, even by calling the function.
     await expect(withActor(app, world.adminUserId, (scope) => scope.client.query("SELECT * FROM console_model_spend('2026-10-17')"))).rejects.toMatchObject({ code: '42501' });
+  });
+
+  it('takes a budget in dollars, "5.00", "5" or "$5", and stores it as 500 whole cents; the hint says dollars, the flag’s name no unit (CAS-38, CAS-39)', async () => {
+    const budget = async () =>
+      (await owner.query<{ value: unknown }>("SELECT value FROM feature_flag WHERE key = 'model.daily_budget_cents' AND scope = 'practice' AND scope_id = $1", [world.practiceId])).rows[0]?.value;
+    for (const value of ['5.00', '5', ' 5.0 ', '$5', '$ 5.00']) {
+      expect((await run(setModelFlag, admin.token, { key: 'model.daily_budget_cents', target: `practice:${world.practiceId}`, value: '1.23' })).status).toBe('ok');
+      expect((await run(setModelFlag, admin.token, { key: 'model.daily_budget_cents', target: `practice:${world.practiceId}`, value })).status, value).toBe('ok');
+      expect(await budget(), value).toBe('500');
+    }
+    // The largest budget the gateway reads, with a dollar sign and commas.
+    expect((await run(setModelFlag, admin.token, { key: 'model.daily_budget_cents', target: `practice:${world.practiceId}`, value: '$ 9,999,999,999.99' })).status).toBe('ok');
+    expect(await budget()).toBe('999999999999');
+    // Above what the save takes, a sign, a third place, a misplaced comma or words: refused, the budget unchanged.
+    for (const value of ['10000000000.00', '-5.00', '5.001', '5,00', 'five']) {
+      expect(await run(setModelFlag, admin.token, { key: 'model.daily_budget_cents', target: `practice:${world.practiceId}`, value }), value).toEqual({
+        status: 'invalid',
+        issues: [{ field: 'value', message: 'an amount in dollars, such as 5.00 or 1,250.00' }],
+      });
+    }
+    expect(await budget()).toBe('999999999999');
+    expect((await run(setModelFlag, admin.token, { key: 'model.daily_budget_cents', target: `practice:${world.practiceId}`, value: '5' })).status).toBe('ok');
+    const page = await run(consoleModelsPage, admin.token);
+    if (page.status !== 'ok') {
+      throw new Error(`expected the page, got ${page.status}`);
+    }
+    expect(page.data.keys).toContainEqual({ value: 'model.daily_budget_cents', label: 'Daily budget' });
+    expect(page.data.flags).toContainEqual(expect.objectContaining({ key: 'model.daily_budget_cents', scope: 'practice', scopeId: world.practiceId, value: '500' }));
+    expect(MODEL_VALUE_HINT).toBe('on or off for a switch; a daily budget in dollars, such as 5.00');
   });
 });
 
@@ -666,5 +696,40 @@ describe('suspending and reinstating an organization (docs/adr/0055)', () => {
     // A customer may not.
     const customer = await sessionFor(target.adminUserId, 'totp');
     expect((await run(setOrganizationStatus, customer, { organizationId: target.organizationId, status: 'active' })).status).not.toBe('ok');
+  });
+});
+
+describe('Content due on the console’s Rule releases page (audit #59; docs/adr/0071; test matrix RCC-08)', () => {
+  /** The page as the platform administrator reads it, with the clock at `at`. */
+  const dueAt = async (at: string) => {
+    const page = await ruleReleasesPage.invoke({ cookies: new Jar(admin.token), params: {}, input: undefined, requestId: `test-${randomUUID()}`, userAgent: null }, { ...services, now: () => new Date(at) });
+    if (page.status !== 'ok') {
+      throw new Error(`expected the page, got ${page.status}`);
+    }
+    return page.data.contentDue;
+  };
+
+  it('judges the content calendar against the release in force on the injected date: at 2026-11-20 under 900001, the MUE ends within 45 days', async () => {
+    const due = await dueAt('2026-11-20T15:00:00Z');
+    expect(due.releaseNo).toBe(900001);
+    expect(due.items).toContainEqual(
+      expect.objectContaining({ family: 'ncci_mue', stage: 'ends_in_45', loadedThrough: '2026-12-31', title: 'Content due: Medicare unit limits (MUE), loaded content ends within 45 days (2026-12-31)' }),
+    );
+    expect(due.items.find((item) => item.family === 'ncci_mue')?.commands.at(-2)).toBe('pnpm verify-content');
+    expect(due.families).toContainEqual({ family: 'ncci_mue', title: 'Medicare unit limits (MUE)', loadedThrough: '2026-12-31', open: false, partly: false, loadedFrom: null, loaded: true });
+    // Every calendar entry ships unreviewed, and this server has no checkout: nothing is read from one.
+    expect(due.items.map((item) => item.stage)).toContain('calendar_unreviewed');
+    expect(due.problems).toEqual([]);
+  });
+
+  it('is not shown to a practice user: the practice’s own administrator is refused the page, and no content due comes back (review sec-app)', async () => {
+    const practiceToken = await sessionFor(world.adminUserId, 'totp');
+    const page = await run(ruleReleasesPage, practiceToken);
+    expect(page).toMatchObject({ status: 'forbidden', permission: 'rule_release.manage' });
+    expect(page).not.toHaveProperty('data');
+  });
+
+  it('reads the MUE as ended on a day after it runs out', async () => {
+    expect((await dueAt('2027-01-05T15:00:00Z')).items.find((item) => item.family === 'ncci_mue')).toMatchObject({ stage: 'ended', loadedThrough: '2026-12-31' });
   });
 });

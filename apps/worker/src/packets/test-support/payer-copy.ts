@@ -1,5 +1,5 @@
 import { type IdentifierKind, type PacketContent, QUALIFIED_IDENTIFIER, type RowIdentifiers, fillPlaceholders, narrativeFacts, remittanceKey } from '@tp/packets';
-import { PAYER_COPY_INTERNAL_TERMS } from '@tp/packets/testing';
+import { CODE_SHAPES, PAYER_COPY_INTERNAL_TERMS } from '@tp/packets/testing';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 // pdf.js runs its worker in this thread from the module that registers itself (as report/test-support/printed-text.ts).
 import 'pdfjs-dist/legacy/build/pdf.worker.mjs';
@@ -41,8 +41,11 @@ const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 const HEX_RUN = /[0-9a-f]{16,}/gi;
 const PRINTED_IDENTIFIERS: readonly IdentifierKind[] = ['claim_control_number', 'patient_name', 'member_id'];
 const INTERNAL_KEYS: ReadonlySet<string> = new Set(['hash', 'trace_ref', 'verified_by', 'verified_at', 'level', 'cause', 'causes', 'reasons']);
-/** A code, never printed as one (words.ts): lower-case words joined by underscores, or upper-case ones. */
-export const CODE_SHAPES: readonly RegExp[] = [/\b[a-z0-9]+(?:_[a-z0-9]+)+\b/, /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/];
+/**
+ * A code, never printed as one (words.ts): lower-case words joined by underscores, or upper-case ones. @tp/packets'
+ * own list, so the calculation words' tests scan the payer's words with the shapes this scan uses (finding M5).
+ */
+export { CODE_SHAPES };
 /** The CSV's header row: its column names are the schedule's own, the one place a code's shape is the payer's. */
 const CSV_HEADER = PACKET_CSV_COLUMNS.join(',');
 /** The verifier's own pattern (@tp/packets, ./payer.ts there), for the tests that look for one in a printed copy. */

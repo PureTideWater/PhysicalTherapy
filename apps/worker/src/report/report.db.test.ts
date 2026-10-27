@@ -435,7 +435,7 @@ describe('the run triage and an audit report read (docs/adr/0037: a re-run is in
       await w.pricing.execute(practice, created.pricingRunId);
       return created.pricingRunId;
     };
-    const accept = (pricingRunId: string) => asManager((scope) => acceptRun(scope, { practiceId: practice.practiceId, pricingRunId }));
+    const accept = (pricingRunId: string, replacesId: string) => asManager((scope) => acceptRun(scope, { practiceId: practice.practiceId, pricingRunId, replacesId , heldByIds: [] }));
     const inEffect = async (pricingRunId: string) => (await inScope<{ in_effect: boolean }>(practice, practice.manager, 'SELECT pricing_run_in_effect($1) AS in_effect', [pricingRunId]))[0]?.in_effect;
     const triagedFrom = async (pricingRunId: string) =>
       (await inScope<{ n: number }>(practice, practice.manager, 'SELECT count(*)::int AS n FROM line_status s JOIN priced_line p ON p.id = s.priced_line_id WHERE p.pricing_run_id = $1', [pricingRunId]))[0]?.n;
@@ -449,7 +449,7 @@ describe('the run triage and an audit report read (docs/adr/0037: a re-run is in
 
     // A report of the run in effect, requested; then the re-run is accepted before the report job runs.
     const queued = await w.requestReport(practice, runId);
-    await accept(pending);
+    await accept(pending, runId);
     expect([await inEffect(runId), await inEffect(pending)]).toEqual([false, true]);
     expect(await w.triage(practice, runId)).toEqual({ outcome: 'not_in_effect' });
     await expect(w.requestReport(practice, runId)).rejects.toThrow(/the pricing run in effect for its period/);
@@ -464,7 +464,7 @@ describe('the run triage and an audit report read (docs/adr/0037: a re-run is in
 
     // The database's own check when a report is made ready: its run was replaced after the request.
     const replaced = await w.requestReport(practice, pending);
-    await accept(await rerunOf(pending));
+    await accept(await rerunOf(pending), pending);
     expect(await inEffect(pending)).toBe(false);
     await expect(
       withJobScope(w.app, { jobId: randomUUID(), practiceId: practice.practiceId }, (scope) =>

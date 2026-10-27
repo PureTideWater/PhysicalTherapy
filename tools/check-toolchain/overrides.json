@@ -1,4 +1,12 @@
 {
   "$comment": "One entry per pnpm override (pnpm-workspace.yaml's overrides, package.json's pnpm.overrides and resolutions, and so the lockfile's overrides map), with its reason and removal trigger (tools/check-toolchain): selector, version, reason, removeWhen, added. An override whose target no longer appears in the lockfile fails.",
-  "entries": []
+  "entries": [
+    {
+      "selector": "typed-rest-client>qs",
+      "version": "6.16.1",
+      "reason": "Stryker 10.1.1 reaches typed-rest-client 2.3.1 (~2.3.0), which pins qs to exactly 6.15.1, inside three moderate advisories (GHSA-q8mj-m7cp-5q26, GHSA-x5fp-wj9c-mxmx, GHSA-4mjr-xmp4-gh2g) that 6.16.0 closes; no version scope on the parent, since typed-rest-client 3.0.0 still pins qs 6.15.1 and 3.1.0 pins 6.15.3 (ADR 0066 Part 2).",
+      "removeWhen": "Stryker depends on typed-rest-client 3.1.1 or later, the first to declare qs ^6.16.0",
+      "added": "2026-10-26"
+    }
+  ]
 }

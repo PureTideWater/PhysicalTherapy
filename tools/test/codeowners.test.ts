@@ -9,10 +9,12 @@ import { repositoryRoot } from '../content-files';
 
 /**
  * .github/CODEOWNERS (docs/adr/0063): the founder's review on every path (the ruling of 2026-10-20), and by name on
- * the schema and its approval, the code that decides an approval, the engine freeze (docs/adr/0064), the releases,
- * CLAUDE.md, .claude and .github, once
- * the ruleset requires code owners' review. GitHub reads the first CODEOWNERS it finds (.github/, the root, docs/),
- * and a line it cannot read is ignored, so these tests hold the file to what GitHub reads.
+ * the schema and its approval (the generated function files of docs/adr/0068 among it), the code that decides an
+ * approval, the engine freeze (docs/adr/0064), the files that decide which model features production serves and the
+ * code that judges them (docs/adr/0070, Part 2), the releases, CLAUDE.md, .claude and .github, once the ruleset
+ * requires code owners' review.
+ * GitHub reads the first CODEOWNERS it finds (.github/, the root, docs/), and a line it cannot read is ignored, so
+ * these tests hold the file to what GitHub reads.
  */
 const FILE = path.join(repositoryRoot, '.github/CODEOWNERS');
 
@@ -55,6 +57,7 @@ describe('.github/CODEOWNERS', () => {
       '/packages/db/migrations/',
       '/docs/product/domain-model.md',
       '/packages/db/domain-model/',
+      '/packages/db/functions/',
       '/packages/db/src/domain-model/',
       '/packages/db/src/cli/domain-model.ts',
       '/tools/approval-of-record/',
@@ -67,6 +70,15 @@ describe('.github/CODEOWNERS', () => {
       '/packages/synth/src/guard/',
       '/tools/check-releases-immutable.sh',
       '/tools/engine-freeze/',
+      '/packages/model-gateway/eval/baseline.json',
+      '/packages/model-gateway/eval/floors.json',
+      '/packages/model-gateway/eval/reports/',
+      '/packages/model-gateway/config/models.json',
+      '/packages/model-gateway/src/evaluated.ts',
+      '/packages/model-gateway/src/baseline-format.ts',
+      '/packages/model-gateway/src/floors-format.ts',
+      '/packages/model-gateway/eval/baseline.ts',
+      '/packages/model-gateway/eval/floors.ts',
       '/content/releases/',
       '/fixtures/synthetic/rules/release-*/',
       '/CLAUDE.md',
@@ -88,6 +100,8 @@ describe('.github/CODEOWNERS', () => {
     const owned = (file: string): boolean => rules().some(({ pattern }) => pattern !== EVERY_PATH && matcher(pattern).test(file));
     // migrate.ts names the directory of migrations; the db project of vitest.config.ts runs domain-model.db.test.ts's
     // drift case, and ci.yml's domain model job runs the approval (--require-approval), held by the line for /.github/.
+    // packages/db/functions holds the generated function files both compare (docs/adr/0068); its README, written by
+    // hand and never touched by the generator, is the file there that stays whatever functions the schema holds.
     expect(readFileSync(path.join(repositoryRoot, 'packages/db/src/migrate.ts'), 'utf8')).toContain("path.resolve(import.meta.dirname, '../migrations')");
     expect(readFileSync(path.join(repositoryRoot, 'vitest.config.ts'), 'utf8')).toContain("name: 'db'");
     const scripts = (file: string): Record<string, string> => (JSON.parse(readFileSync(path.join(repositoryRoot, file), 'utf8')) as { scripts: Record<string, string> }).scripts;
@@ -100,6 +114,7 @@ describe('.github/CODEOWNERS', () => {
       'packages/db/src/catalog.ts',
       'packages/db/src/domain-model/domain-model.db.test.ts',
       'packages/db/src/domain-model/domain-model-drift.db.test.ts',
+      'packages/db/functions/README.md',
       'vitest.config.ts',
       'package.json',
       'packages/db/package.json',
@@ -117,6 +132,29 @@ describe('.github/CODEOWNERS', () => {
     // Held by a named line, so declaring an exception, or changing the check that reads it, takes the founder's review.
     const owned = (file: string): boolean => rules().some(({ pattern }) => pattern !== EVERY_PATH && matcher(pattern).test(file));
     for (const file of ['tools/engine-freeze/exception.json', 'tools/engine-freeze/check.ts', 'tools/engine-freeze/check.test.ts', 'tools/engine-freeze/differential.test.ts']) {
+      expect(existsSync(path.join(repositoryRoot, file)), file).toBe(true);
+      expect(owned(file), file).toBe(true);
+    }
+  });
+
+  it('covers the model serving switch: the baseline, every report an entry names, the floors, the prices and the code that judges them (docs/adr/0070, Part 2)', () => {
+    // Held by named lines: a pull request that would serve a model feature in production, by changing either the
+    // switch's data or the code that decides serving from it, takes the founder's review.
+    const owned = (file: string): boolean => rules().some(({ pattern }) => pattern !== EVERY_PATH && matcher(pattern).test(file));
+    const baseline = JSON.parse(readFileSync(path.join(repositoryRoot, 'packages/model-gateway/eval/baseline.json'), 'utf8')) as { entries: { report_sha256: string }[] };
+    const reports = baseline.entries.map((entry) => `packages/model-gateway/eval/reports/${entry.report_sha256}.json`);
+    expect(reports.length).toBeGreaterThan(0);
+    const data = ['packages/model-gateway/eval/baseline.json', 'packages/model-gateway/eval/floors.json', 'packages/model-gateway/config/models.json', ...reports];
+    // The judge: evaluated.ts decides serving from the baseline, the floors and the prices, reading the first two through
+    // their parsers; eval/baseline.ts and eval/floors.ts record or refuse an entry.
+    const judge = [
+      'packages/model-gateway/src/evaluated.ts',
+      'packages/model-gateway/src/baseline-format.ts',
+      'packages/model-gateway/src/floors-format.ts',
+      'packages/model-gateway/eval/baseline.ts',
+      'packages/model-gateway/eval/floors.ts',
+    ];
+    for (const file of [...data, ...judge]) {
       expect(existsSync(path.join(repositoryRoot, file)), file).toBe(true);
       expect(owned(file), file).toBe(true);
     }

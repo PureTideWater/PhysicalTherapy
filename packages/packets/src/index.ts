@@ -3,8 +3,10 @@
  * at export, prompt-pay interest, the next dispute window, and (tp-packet/2, CO-05) each line's deadline
  * with its status and its calculation summary copied from its trace (PRD 12; milestone 8), and (audit item #37 part 1)
  * the packet's reference derived from its approved hash, the practice's correspondence contact, and the payer and plan as
- * the payer's copy names them (never in their remittance-key form). Pure functions over
- * the records a case and its approved contract hold: no database, network or model inside. The
+ * the payer's copy names them (never in their remittance-key form), and (combined audit #38, docs/adr/0072) every
+ * figure of a calculation explained in words from its stored trace (./explain: the renderer, also the browser-safe
+ * subpath @tp/packets/explain; explainPacket() binds a version's words to the traces its approval names). Pure
+ * functions over the records a case and its approved contract hold: no database, network or model inside. The
  * verifier is a hard gate with no bypass; the database refuses an approval of a version it failed.
  * Printing the export (PDF and CSV) is the worker's (apps/worker/src/packets).
  */
@@ -40,6 +42,34 @@ export {
 } from './correspondence';
 export { addDays, daysFrom, isIsoDate } from './dates';
 export { draftNarrative } from './draft';
+export { type ExplainBindingReason, ExplainBindingError, type PacketWords, type RowWords, explainPacket } from './explain';
+export {
+  AUDIENCES,
+  type Audience,
+  CODES,
+  type ExplainCitation,
+  type ExplainLineOptions,
+  ExplainShapeError,
+  ExplainWordsError,
+  type FigureForm,
+  type FigureSource,
+  type LineWords,
+  PAYER_CODES,
+  RENDERER_REVISION,
+  type Segment,
+  type Sentence,
+  type StepKind,
+  type StepWords,
+  UNPRICED_MEANING,
+  UNPRICED_REMEDY,
+  WORDS_VERSION,
+  type Worksheet,
+  type WorksheetLine,
+  type WorksheetPart,
+  explainLine,
+  feeScheduleWorksheets,
+  plainText,
+} from './explain/index';
 export { type NarrativeFacts, narrativeFacts } from './facts';
 export {
   type CalculationStep,
@@ -100,9 +130,21 @@ export {
   lineHoldsOnlyPlaceholders,
   placeholder,
 } from './placeholders';
-export { CLAIM_FILING_INDICATOR_TEXT, type PlanNaming, QUALIFIED_IDENTIFIER, type RemittanceKey, payerAndPlanText, payerText, planName, planText, remittanceKey } from './payer';
+export {
+  CLAIM_FILING_INDICATOR_TEXT,
+  MA_NONCONTRACTED_CITATION,
+  type PlanNaming,
+  QUALIFIED_IDENTIFIER,
+  type RemittanceKey,
+  payerAndPlanText,
+  payerText,
+  planName,
+  planText,
+  remittanceKey,
+} from './payer';
 export { type ReadableText, type TextSpan, readableText } from './readable';
 export { PACKET_REFERENCE_PATTERN, exportFileName, normalizePacketReference, packetReference, packetReferencePrefix, withPacketReference } from './reference';
 export { type Figure, type FigureKind, type Span, canonicalNumber, isoDate, numbersInWords, romanValue, scanText, sentenceSpans } from './scan';
 export { MISMATCH_CODES, type Mismatch, type MismatchCode, type VerifierReport, identifierForms, narrativeSha256, verifyNarrative } from './verifier';
+export { wordsVersionOf } from './words-version';
 export { type AppealLevel, type NextWindow, type NextWindowBasis, type WindowLength, nextDisputeWindow } from './windows';

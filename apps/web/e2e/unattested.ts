@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { test } from '@playwright/test';
 import { LocalKeyProvider, appDevLoginUrl, developmentMasterKey, openPool, withPracticeScope } from '@tp/db';
 import { asOwner } from '@tp/db/testing';
+import { WORDS_VERSION } from '@tp/packets';
 import { approvePacketVersion, writePacketVersion } from '@tp/worker/packets';
 import { acceptRun, createRerun } from '@tp/worker/pricing';
 
@@ -65,7 +66,7 @@ export async function staleExport(practiceId: string): Promise<StaleExport> {
     const as = <T>(actorId: string, run: Parameters<typeof withPracticeScope<typeof pool, T>>[2]) => withPracticeScope(pool, { actorId, practiceIds: [practiceId] }, run);
     const version = await as(manager, (scope) => writePacketVersion(scope, keys, { practiceId, caseId, basedOnVersionId: null, promptPayState: null, requestId: `e2e-${randomUUID()}` }));
     await as(approver, (scope) => approvePacketVersion(scope, { practiceId, versionId: version.versionId, versionSha256: version.contentSha256, requestId: `e2e-${randomUUID()}` }));
-    await queue('packet_export', { practice_id: practiceId, packet_version_id: version.versionId });
+    await queue('packet_export', { practice_id: practiceId, packet_version_id: version.versionId, words_version: WORDS_VERSION });
     await until(
       () =>
         withDatabase(async (client) =>
@@ -80,7 +81,7 @@ export async function staleExport(practiceId: string): Promise<StaleExport> {
       () => withDatabase(async (client) => (await client.query<{ status: string }>('SELECT status FROM pricing_run WHERE id = $1', [pricingRunId])).rows[0]?.status === 'complete'),
       'the re-run’s price job',
     );
-    await as(manager, (scope) => acceptRun(scope, { practiceId, pricingRunId }));
+    await as(manager, (scope) => acceptRun(scope, { practiceId, pricingRunId, replacesId: runId, heldByIds: [] }));
     return { caseId, versionId: version.versionId };
   } finally {
     await pool.end();

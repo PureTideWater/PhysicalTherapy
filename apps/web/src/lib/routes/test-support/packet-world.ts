@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { type DatabaseClient, type DatabasePool, type KeyProvider, type PracticeScope, type ScopeClient, withJobScope, withPracticeScope } from '@tp/db';
 import { asOwner } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
-import { CORRESPONDENCE_CONTACT_KEY, SYNTHETIC_CORRESPONDENCE_CONTACT } from '@tp/packets';
+import { CORRESPONDENCE_CONTACT_KEY, SYNTHETIC_CORRESPONDENCE_CONTACT, WORDS_VERSION } from '@tp/packets';
 import type { DocumentStore } from '@tp/worker/documents';
 import { approvePacketVersion, attestPacketExport, downloadPacketExport, logSubmission, writePacketVersion } from '@tp/worker/packets';
 import { packetExportHandler } from '@tp/worker/runtime';
@@ -169,7 +169,7 @@ export async function seedPackets(options: PacketWorldOptions, seeded: SeededPac
   );
   const jobId = randomUUID();
   await packetExportHandler({ documents: options.documents, keys, pdf: { render: () => Promise.resolve(standInPdf()) } })(
-    { practice_id: practiceId, packet_version_id: second.versionId },
+    { practice_id: practiceId, packet_version_id: second.versionId, words_version: WORDS_VERSION },
     { jobId, logger: createLogger({ sink: () => undefined }), transaction: (work) => withJobScope(app, { jobId, practiceId }, work), enqueue: () => Promise.resolve(null), lastAttempt: false },
   );
   const { rows: hashes } = await asOwner(owner, [practiceId], () =>

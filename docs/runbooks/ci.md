@@ -44,6 +44,17 @@ file of them, to `apps/web/e2e/browser.json` before any test runs or any cache i
 install succeeded, whatever the check said, so a red check still shows the suite's verdict ("Upgrading the browser",
 below).
 
+Beside ci.yml, two workflows of the release content checks (docs/adr/0071) run on a schedule. Neither is a required
+check, and their schedules fire only from the default branch (the founder's ruling F1 (a)); until then they run on
+request. Each issue they open holds only public references: page addresses, file names, release numbers and run links.
+
+| Workflow, job | What it runs | Timeout |
+| --- | --- | --- |
+| `content-calendar`, `check` | daily at 07:17 UTC, on request, and on a push to `claude/build-platform` or a pull request touching the calendar, `records.ts`, `tools/content-calendar` or `content/`: `tools/content-calendar/index.ts` over the calendar, the newest published release's `COVERAGE.md`, the prepared releases, the drafts and the source pages; the findings to its summary (docs/runbooks/content-updates.md). Read-only, no secret | 15 min |
+| `content-calendar`, `notify` | not on a pull request: one `content-due` issue per finding not already open under the same title (every page of the open issues read), at most 20 new ones a run with the rest listed in one "findings not filed" issue, or one saying the check failed or handed on no findings list, commented on at each later failing run. It alone holds `issues: write`, checks nothing out and runs no repository code | 5 min |
+| `release-capacity`, `capacity` | weekly on Tuesday at 03:29 UTC and on request: the worker image built, the quarterly scale release 900110 built outside the repository, and `tools/release-capacity/run.ts`, the real-size price job, triage and reports at the worker task's limits (RCC-07); its report kept as `release-capacity` | 180 min |
+| `release-capacity`, `notify` | on its failure or cancel (the 180-minute timeout among them): opens or comments on the issue "Release capacity test failing"; on a pass with an advisory (the windows query over its 5 s budget): "Release capacity advisory" (label `release-capacity`), the advisory lines in the body. It alone holds `issues: write` and checks nothing out | 5 min |
+
 Each `static` check runs once the install succeeded, whatever the check before it did, so one red step does not hide
 the others' verdicts. Every verdict a job writes to its summary it also writes to its log, which is what the verifier
 reads (the session's proxy refuses GitHub's artifact host).
@@ -86,10 +97,19 @@ differential test, which prices the base's engine and this commit's.
    - **`db (k/N)`:** the failing file and test are in the suite step's output. "Files this shard ran" lists the files
      the shard ran, with the ten slowest. Run the file locally on its own (below); every db file makes its own
      database, so a shard's failure is a file's, never the shard's order.
-   - **`domain model`:** "documents differ" means a migration without the regenerated document
-     (`pnpm db:domain-model --out`, through `/new-migration`); an approval refusal on a schema pull request means the
-     founder has not signed yet, and the job prints the SHA-256 to sign (governance runbook, "A pull request that asks
-     you to approve the domain model"). Nothing else is waiting on it: the database suite reports on its own.
+   - **`domain model`:** "documents differ", or a function file named missing, extra, differing or "ignored by git"
+     (exit 1), means a migration without the regenerated document and `packages/db/functions`
+     (`pnpm db:domain-model --out`, through `/new-migration`, then commit both; docs/adr/0068); a function file with
+     an executable bit fails it too (`chmod 644` it), and so does a stray entry (named extra) or a symlink or
+     directory (named refused). Exit 2 is a refusal, not a difference: a function file name no function could have
+     (in the summary step), a symlinked functions directory, a function in a schema other than `public`, or a git
+     failure in the summary step, printed with git's own message (a blob missing means a shallow
+     clone: the job checks out with `fetch-depth: 0`, so locally run `git fetch --unshallow`). An approval refusal on a schema pull request means the founder has not
+     signed yet, and the job prints the SHA-256 to sign (governance runbook, "A pull request that asks you to approve
+     the domain model"). The summary step writes the full "Function definitions changed since" section, diffs
+     included up to a 900,000-byte budget, to the job summary; a pull request's description carries its
+     `--function-diffs list` form, whose list must match. Nothing else is waiting on it: the database suite reports on
+     its own.
    - **`e2e (k/M)`:** the failing journey is in the step's output and annotated on the pull request. A screenshot
      comparison prints each diff and actual picture under 300 KB in the log as base64 (docs/adr/0058). A "flaky" test,
      one that passed only on its retry, fails the run by design: fix it, never re-run it to green. A refusal of the
@@ -190,7 +210,14 @@ GitHub's standard runner for a private repository has 2 CPUs and 8 GB, not 4 and
 from `github.event.repository.private`: six `db` shards and three `e2e` shards, so the wall stays near 10 minutes, at
 about 70 to 80 billed minutes a push instead of about 38 to 39 runner minutes (44 to 45 billed). The lint runner fits its groups to the host's memory (web
 alone, then the others), and the capacity measurement refuses a 2-CPU runner (docs/runbooks/screening-capacity.md, "The
-8-core runner"). Read the budget after the first private week (docs/runbooks/github-governance.md, step 1).
+8-core runner"). So does release-capacity's weekly real-size test (`run.ts` stops as RUNNER_TOO_SMALL before measuring):
+on a private repository it needs the same 4-core larger runner as screening-capacity's, which needs an organization on
+GitHub Team and is billed per minute beyond the included minutes (about 780 larger-runner minutes a month, priced
+separately); until its label changes with screening-capacity's, the weekly run fails every week without measuring.
+The daily content calendar adds about 450 standard minutes a month, plus one check run (at most 15 minutes) for each
+push to `claude/build-platform` or pull request update touching the calendar, its tool or `content/`, a few a week while
+a period's content is being loaded: together inside GitHub Team's included 3,000. Read the budget after the first
+private week (docs/runbooks/github-governance.md, step 1).
 
 ## Caches
 

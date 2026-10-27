@@ -10,13 +10,14 @@ export function counted(count: number, one: string, many = `${one}s`): string {
 }
 
 /**
- * The initialisms a code may hold, which a label keeps in capitals: the CMS edits and tables (NCCI, PTP, MUE,
- * MPPR, PFS, RVU, GPCI), the code sets and identifiers (CPT, HCPCS, NPI, ID), the 835's segments and money
- * (CAS, PLB, EFT, ERA, ACH), Medicare Advantage (MA), the place of service (POS), and the files and times
- * (CSV, PDF, SHA, UTC, ROI, EMR).
+ * The initialisms a code may hold, which a label keeps in capitals: the Centers for Medicare & Medicaid Services
+ * (CMS) and its edits and tables (NCCI, PTP, MUE, MPPR, PFS, RVU, GPCI), the alternative payment model (APM), the
+ * code sets and identifiers (CPT, HCPCS, NPI, ID), the 835's segments and money (CAS, PLB, EFT, ERA, ACH), Medicare
+ * Advantage (MA), the place of service (POS), and the files and times (CSV, PDF, SHA, UTC, ROI, EMR). CMS and APM
+ * are codes of the calculation's words too (@tp/packets/explain CODES), so a label and the words agree.
  */
 export const INITIALISMS: ReadonlySet<string> = new Set([
-  'ach', 'cas', 'cpt', 'csv', 'eft', 'emr', 'era', 'gpci', 'hcpcs', 'id', 'ma', 'mppr', 'mue', 'ncci', 'npi', 'pdf', 'pfs', 'plb', 'pos', 'ptp', 'roi', 'rvu', 'sha', 'utc',
+  'ach', 'apm', 'cas', 'cms', 'cpt', 'csv', 'eft', 'emr', 'era', 'gpci', 'hcpcs', 'id', 'ma', 'mppr', 'mue', 'ncci', 'npi', 'pdf', 'pfs', 'plb', 'pos', 'ptp', 'roi', 'rvu', 'sha', 'utc',
 ]);
 
 /**

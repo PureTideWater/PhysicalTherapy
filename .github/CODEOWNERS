@@ -12,6 +12,9 @@
 /packages/db/migrations/ @PureTideWater
 /docs/product/domain-model.md @PureTideWater
 /packages/db/domain-model/ @PureTideWater
+# The generated function files: each migration's changes to a function, read as diffs beside the document
+# (docs/adr/0068).
+/packages/db/functions/ @PureTideWater
 
 # The code that decides an approval: a pull request could otherwise pass the gate by changing its judge.
 /packages/db/src/domain-model/ @PureTideWater
@@ -33,6 +36,21 @@
 # The engine freeze (reconciliation-001; docs/adr/0064): its check, its differential test and the exception a pull
 # request declares in exception.json, so declaring one takes the founder's review.
 /tools/engine-freeze/ @PureTideWater
+
+# The switch that decides which model features a real provider serves in production (docs/adr/0070, Part 2): the
+# committed baseline, the reports each entry is recomputed from, the recall and precision floors and the confirmed
+# prices; and the code that judges them, which decides serving from them (evaluated.ts), parses them (baseline-format.ts,
+# floors-format.ts) and records or refuses an entry (eval/baseline.ts, eval/floors.ts). A pull request could otherwise
+# leave the switch's data alone and serve a feature by changing its judge.
+/packages/model-gateway/eval/baseline.json @PureTideWater
+/packages/model-gateway/eval/floors.json @PureTideWater
+/packages/model-gateway/eval/reports/ @PureTideWater
+/packages/model-gateway/config/models.json @PureTideWater
+/packages/model-gateway/src/evaluated.ts @PureTideWater
+/packages/model-gateway/src/baseline-format.ts @PureTideWater
+/packages/model-gateway/src/floors-format.ts @PureTideWater
+/packages/model-gateway/eval/baseline.ts @PureTideWater
+/packages/model-gateway/eval/floors.ts @PureTideWater
 
 # The published rule releases (content/releases is created by publish-content.yml) and the synthetic releases.
 /content/releases/ @PureTideWater

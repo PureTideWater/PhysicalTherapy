@@ -46,7 +46,7 @@ export { LARGE_CLAIMS, LARGE_FIXTURE_PATH, type LargeFixtureFacts, largeFixtureC
 export { type EftRow, type PostingRow, EFT_EXPORT_HEADER, POSTING_EXPORT_HEADER, eftExport, postingExport } from './formats/csv';
 export { type Exhibit, type ExhibitPage, EXHIBIT_BANNER, exhibitPageLines, exhibitPdf, exhibitText } from './formats/exhibit';
 export { readZip, writeZip, type ZipEntry } from './formats/zip';
-export { writePdf } from './formats/pdf';
+export { type LineSpan, type RichLine, type RichPage, helveticaWidth, writePdf, writeRichPdf } from './formats/pdf';
 
 // The EMR export formats (Change Order 001, CO-03; docs/adr/0059), every one FORMAT_UNCONFIRMED.
 export * from './formats/vendors/registry';
@@ -55,11 +55,41 @@ export { type CanonicalEraRow, ERA_SOURCES, type EraCheck, type EraSource, eraRo
 export { EMR_DIR, EXPORT_FILES, MANIFEST_FILE, type EmrFixtureSet, type EmrManifest, emrFixtureSets, emrWritable, staleEmrDirectories } from './formats/vendors/fixtures';
 export { VendorFormatError, readTable as readVendorTable, vendorCsv, writeDate, writeMoney } from './formats/vendors/table';
 
-// The model gateway's synthetic evaluation sets (test matrix MOD-01 and MOD-03).
+// The model gateway's synthetic evaluation sets (test matrix MOD-01, MOD-03 and MOD-09).
 export * from './eval/formats';
-export { CONTRACT_SET_DIR, CONTRACT_SET_SIZE, contractSetFiles, contractSetSpecs, normalizeText, writtenDate } from './eval/contract-set';
+export { CONTRACT_SET_DIR, CONTRACT_SET_SIZE, amendmentConflicts, contractSetFiles, contractSetSpecs, normalizeText, writtenDate } from './eval/contract-set';
+export {
+  CONTRACT_SET_V2_CASE,
+  CONTRACT_SET_V2_DIR,
+  CONTRACT_SET_V2_SIZE,
+  type ContractSetV2Case,
+  INJECTION_AMOUNT,
+  INJECTION_CANARY,
+  LARGE_CONTRACT_DIR,
+  V2_CODES,
+  checkTruthV2,
+  contractSetV2Committed,
+  contractSetV2Files,
+  contractSetV2Large,
+  contractSetV2Manifest,
+  injectionLines,
+} from './eval/contract-set-v2';
+export { type LargeContractFile, ensureLargeContractTier, largeContractFacts } from './eval/large-contracts';
 export { NARRATIVE_SET_DIR, NARRATIVE_SET_SIZE, narrativeSetCases, narrativeSetFiles } from './eval/narrative-set';
-export { SCAN_HEIGHT, SCAN_WIDTH, TEXTRACT_RECORDING_FORMAT, type RecordedBlock, type TextractRecording, scannedPdf, textractRecording } from './formats/scan';
+export {
+  type ReadingError,
+  SCAN_HEIGHT,
+  SCAN_WIDTH,
+  type ScannedPdfOptions,
+  TEXTRACT_RECORDING_FORMAT,
+  type RecordedBlock,
+  type TextractRecording,
+  type TextractRecordingOptions,
+  runLengthDecode,
+  runLengthEncode,
+  scannedPdf,
+  textractRecording,
+} from './formats/scan';
 
 // The screening capacity test's production-shaped SYNTHETIC release and uploads (audit #53 part 1; docs/adr/0062).
 export * from './release/scale';

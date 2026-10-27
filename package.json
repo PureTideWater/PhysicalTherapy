@@ -40,19 +40,19 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@next/eslint-plugin-next": "^16.4.1",
+    "@next/eslint-plugin-next": "^16.4.3",
     "@stryker-mutator/api": "^10.1.1",
     "@stryker-mutator/core": "^10.1.1",
     "@stryker-mutator/vitest-runner": "^10.1.1",
-    "@types/node": "^24.19.2",
-    "@vitest/coverage-v8": "^5.0.4",
-    "eslint": "^10.12.0",
+    "@types/node": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
+    "eslint": "catalog:",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "fast-check": "^4.10.2",
+    "fast-check": "catalog:",
     "globals": "^17.13.0",
-    "tsx": "^4.23.15",
-    "typescript": "^6.0.3",
-    "typescript-eslint": "^8.71.2",
-    "vitest": "^5.0.4"
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "typescript-eslint": "catalog:",
+    "vitest": "catalog:"
   }
 }

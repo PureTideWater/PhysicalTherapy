@@ -246,6 +246,8 @@ describe('GPCI (pfs_gpci)', () => {
 
 describe('ZIP5 (locality_map)', () => {
   const text = fixture('ZIP5_SYNTHETIC.txt');
+  /** An 80-character ZIP5 record: positions 1-21 as given, then blanks, and the year and quarter at 76-80. */
+  const line = (start: string, quarter = '20261') => `${start.padEnd(75, ' ')}${quarter}`;
 
   it('reads each ZIP by position', () => {
     const { rows } = parse('locality_map', text);
@@ -256,14 +258,19 @@ describe('ZIP5 (locality_map)', () => {
     expect(rows[0]?.quote).toHaveLength(80);
   });
 
-  it('reads a short line without the optional positions', () => {
-    expect(parse('locality_map', 'ZZ000119999901\n').rows[0]?.value).toEqual({
+  it('reads a line whose optional positions are blank', () => {
+    expect(parse('locality_map', `${line('ZZ000119999901')}\n`).rows[0]?.value).toEqual({
       state: 'ZZ',
       carrier: '99999',
       locality: '01',
-      rural_indicator: null,
+      rural_indicator: '',
       plus_four_required: null,
     });
+  });
+
+  it('reads a file of the quarter its window starts in', () => {
+    const window = { year: 2026, effectiveFrom: '2026-05-15', effectiveTo: '2026-06-30' };
+    expect(parse('locality_map', `${line('ZZ000119999901', '20262')}\n`, window).rows[0]?.effective_from).toBe('2026-05-15');
   });
 
   it.each([
@@ -271,8 +278,20 @@ describe('ZIP5 (locality_map)', () => {
     ['letters in the ZIP', 'ZZ0001A9999901\n', /line 1: does not fit the ZIP5 layout/],
     ['a bad rural indicator', 'ZZ000119999901X\n', /rural indicator "X"/],
     ['a bad plus-four flag', 'ZZ000119999901 01   7\n', /plus-four flag "7"/],
-    ['a ZIP twice', 'ZZ000119999901\nZZ000119999902\n', /line 2: ZIP 00011 appears twice/],
+    ['a ZIP twice', `${line('ZZ000119999901')}\n${line('ZZ000119999902')}\n`, /line 2: ZIP 00011 appears twice/],
     ['nothing', '\n\n', /no ZIP codes/],
+    // Z1 zip5_quarter_missing, in the ZIP9 parser's words.
+    ['a line with no year and quarter (Z1)', 'ZZ000119999901\n', 'line 1: year and quarter "" at 76-80 is not YYYYQ'],
+    ['a year and quarter that is not YYYYQ (Z1)', `${line('ZZ000119999901', '2026X')}\n`, 'line 1: year and quarter "2026X" at 76-80 is not YYYYQ'],
+    ['a quarter 5 (Z1)', `${line('ZZ000119999901', '20265')}\n`, 'line 1: year and quarter "20265" at 76-80 is not YYYYQ'],
+    ['a line one character longer than the record (Z1)', `${line('ZZ000119999901')} \n`, 'line 1: 81 characters; a ZIP5 record is 80 (the year and quarter at 76-80)'],
+    // Z2 zip5_quarter_mismatch, the ZIP9 parser's message with ZIP5.
+    [
+      'a file of another quarter (Z2)',
+      `${line('ZZ000119999901', '20254')}\n`,
+      "line 1: the file is of year and quarter 20254, and the import window starts 2026-01-01, in 20261: import each quarter's ZIP5 file under that quarter's window",
+    ],
+    ['a file of two quarters (Z2)', `${line('ZZ000119999901')}\n${line('ZZ000129999901', '20262')}\n`, /line 2: the file is of year and quarter 20262/],
   ])('refuses %s', (_name, input, message) => {
     expect(() => parse('locality_map', input)).toThrow(message);
   });
