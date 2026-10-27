@@ -868,8 +868,17 @@ const HELP = async (page: Page): Promise<void> => {
   await page.locator('main summary').filter({ hasText: 'Help with this screen' }).first().click();
   await expect(page.locator('main details[data-help][open]').first()).toBeVisible();
 };
+/**
+ * The header's two menus, reached by their slots (data-slot, from PR #77, which names both summaries from their content)
+ * or, on a tree before it, by their old aria-labels, so the tour runs on either side of it; each waits for its open panel.
+ */
 const ACCOUNT = async (page: Page): Promise<void> => {
-  await page.locator('summary[aria-label="Account menu"]').first().click();
+  await page.locator('header [data-slot="account-menu"], header summary[aria-label="Account menu"]').first().click();
+  await expect(page.locator('header details[open] button[type="submit"]').filter({ hasText: 'Sign out' }).first()).toBeVisible();
+};
+const SWITCHER = async (page: Page): Promise<void> => {
+  await page.locator('header [data-slot="practice-switcher"], header summary[aria-label="Practice switcher"]').first().click();
+  await expect(page.locator('header details[open] ul[aria-label="Practices"]').first()).toBeVisible();
 };
 const MENU = async (page: Page): Promise<void> => {
   await page.locator('header summary').filter({ hasText: /^Menu$/ }).first().click();
@@ -3061,6 +3070,7 @@ test('practice set-up', async ({ browser }) => {
   await cap(browser, { key: 'p.settings', route: st, persona: 'practice-admin', path: () => P('north', '/settings'), note: 'NORTH: the Getting started checklist.' });
   await cap(browser, { key: 'p.settings', route: st, persona: 'billing-manager', path: () => P('north', '/settings'), state: 'empty', note: 'A non-administrator: the heading, the role and the sections, no checklist.' });
   await cap(browser, { key: 'p.settings', route: st, persona: 'other-admin', path: () => P('packets', '/settings'), state: 'interaction:mostly-done', note: 'PACKETS: uploads and correspondence done (legacy probe settings).' });
+  await cap(browser, { key: 'p.settings', route: st, persona: 'practice-admin', path: () => P('north', '/settings'), state: 'interaction:practice-switcher', act: SWITCHER, note: 'The practice switcher open on NORTH: the practices the administrator reaches, NORTH current.' });
 
   const al = '/p/[practiceId]/settings/access-log';
   await cap(browser, { key: 'p.access-log', route: al, persona: 'other-admin', path: () => P('packets', '/settings/access-log'), note: 'Legacy tour shot 26-access-log.' });

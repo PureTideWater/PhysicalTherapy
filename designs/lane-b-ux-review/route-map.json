@@ -22,7 +22,7 @@
    "notFound": "none (no dynamic segment)"
   },
   "interactions": [
-   "Account menu: click the header summary with aria-label 'Account menu' (apps/web/src/components/shell.tsx:84); it shows the email and the sign-out button.",
+   "Account menu: click its header summary, header [data-slot='account-menu'] (AccountMenu, apps/web/src/components/shell.tsx; before PR #77, summary[aria-label='Account menu']); it shows the email and the sign-out button.",
    "At 390 px the rail folds into the header 'Menu' details (shell.tsx:322-327): click summary 'Menu' to open it.",
    "'Help with this screen' details in the page header (shell.tsx:335, data-help='home'): click its summary to expand."
   ],
@@ -220,7 +220,7 @@
   "interactions": [
    "Mobile menu: at 390 px the rail folds into the header's 'Menu' <details> (apps/web/src/components/shell.tsx:322-327); click 'Menu' to show the Internal console nav (Organizations and practices ... Model features, Support tickets).",
    "Help with this screen: click the 'Help with this screen' summary at the top of main (shell.tsx:335-349) to open HELP.organizations with 'Ask support about this screen' and 'Service status'.",
-   "Account menu in the header (AccountMenu, shell.tsx) for the signed-in platform administrator.",
+   "Account menu in the header (AccountMenu, shell.tsx: header [data-slot='account-menu']; before PR #77, summary[aria-label='Account menu']) for the signed-in platform administrator.",
    "Kind select (page.tsx:36-43): 'Practice group' / 'Billing firm' (open the select for a shot only if the review wants native select styling; it is a native <select>)."
   ],
   "notes": "This is the console's landing: page.goto('/') as platform-admin redirects here (apps/web/src/app/page.tsx:23-25); tour shot 23-console-home.png. Table 'Organizations' lists name links to /console/organizations/<id>, kind, status badge and created date. Do not submit a real create during the capture unless a shot of the new organization is wanted (it adds an organization row that later shots then list)."
@@ -2216,7 +2216,8 @@
   },
   "interactions": [
    "'Getting started' ordered list (practice-admin on NORTH): steps mfa, terms, agreements (To do: terms and data-rights addendum are not on file), team (Done), billing (To do on the seed; Done after billing.spec.ts), billing_zip (To do until a person confirms it), upload (To do on NORTH), correspondence (Done: the seed sets NORTH's contact). Each step's [data-step][data-done] badge links to its page",
-   "'Settings sections' nav with 'admin' badges: Overview, Users and roles, Grants and agreements, Notification preferences, Materiality and pursuit, Pricing settings, Proof level, Correspondence, Access log, Export and deletion, Billing"
+   "'Settings sections' nav with 'admin' badges: Overview, Users and roles, Grants and agreements, Notification preferences, Materiality and pursuit, Pricing settings, Proof level, Correspondence, Access log, Export and deletion, Billing",
+   "Practice switcher open (state interaction:practice-switcher, practice-admin on NORTH): click header [data-slot='practice-switcher'] (PracticeSwitcher, apps/web/src/components/shell.tsx; before PR #77, summary[aria-label='Practice switcher']); its 'Practices' list shows NORTH and SOUTH, NORTH current."
   ],
   "notes": "For an all-done-but-one or mostly-done checklist use other-admin on PACKETS after packets.spec (uploads and correspondence done). The 'Everything is set up.' description needs the full agreement chain plus a confirmation, which no populate spec records (onboarding.spec does)."
  },
@@ -3004,7 +3005,7 @@
   "interactions": [
    "Open a ticket on screen (populated state with the 'Ticket N opened' alert and the Tickets table), as above.",
    "No-PHI refusal with the words 'date of birth' in Subject (above).",
-   "AppShell Account menu, 390 px 'Menu' details, 'Help with this screen' (data-help='home').",
+   "AppShell Account menu (header [data-slot='account-menu']; before PR #77, summary[aria-label='Account menu']), 390 px 'Menu' details, 'Help with this screen' (data-help='home').",
    "Refusals that send nothing [co-001/ux-forms, PR #74 sample, 2026-10-27]: a dropped connection (the POST aborted by page.route) and a page out of date (the hidden csrfToken altered on the page); see states.error (3) and (4)."
   ],
   "notes": "The page uses AppShell section 'home' whatever ?from= says, so the rail highlights nothing specific. The ticket number is a sequence: fine to show. The ticket lands in /console/tickets (mapped) for the desk view: it is that page's populated row."
@@ -3032,7 +3033,7 @@
    "notFound": "none (no dynamic segment)"
   },
   "interactions": [
-   "AppShell Account menu (summary 'Account menu') and, at 390 px, the 'Menu' details; 'Help with this screen' (data-help='home').",
+   "AppShell Account menu (header [data-slot='account-menu']; before PR #77, summary[aria-label='Account menu']) and, at 390 px, the 'Menu' details; 'Help with this screen' (data-help='home').",
    "Optional, last in a run only: publish a newer SYNTHETIC terms version as platform-admin in /console/terms, then sign in as practice-admin -> redirected to /terms showing the accept form and the history line; click 'I accept these terms' -> back to the practice."
   ],
   "notes": "Shoot the seeded accepted state as practice-admin (the organization's administrator who accepts first in J1) and the internal variant as platform-admin. If the optional publish is used, it is an operator's own on-screen step with synthetic values (e.g. version 'synthetic-2026-11', reference 'terms/synthetic-2026-11', a 64-hex SHA-256 of a synthetic string), never part of the populate project."
