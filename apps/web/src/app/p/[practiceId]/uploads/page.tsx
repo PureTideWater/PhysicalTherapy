@@ -37,6 +37,7 @@ export default async function UploadsPage(props: { readonly params: Promise<{ pr
         gate={data.gate}
         limits={data.limits}
         heading="Drop 835 files or ERA exports here"
+        initialKind="x12_835"
         kinds={[
           { kind: 'x12_835', label: '835 remittance', contentTypes: data.limits.contentTypes },
           {

@@ -14,9 +14,10 @@ import { canonicalJson, sha256Hex } from './hash';
 import type { ModelPrice } from './prices';
 import { PROMPTS, modelFor } from './prompts';
 import { type ModelProvider, type ModelRequest, type ModelResponse, ProviderFailure } from './provider';
+import { NAMES_PATIENT_MESSAGE, SCREEN_UNAVAILABLE_MESSAGE } from './functions/contract-terms';
+import { practiceRecordsCheck, syntheticRecordsCheck } from './patient-records';
 import { LocalDeterministicProvider } from './providers/local';
 import { ALL_SERVED, MODEL_PURPOSES, type ModelPurpose, type ServedKey, type ServedSet, offeredPurposes } from './purposes';
-import { PURPOSE_SPECS } from './specs';
 import { type PurposeInputs, requestFor } from './specs';
 import type { CallActor } from './store';
 import {
@@ -26,7 +27,10 @@ import {
   registerOutput,
   syntheticContractInput,
   syntheticContractOutput,
+  syntheticEvaluationContractInput,
   syntheticEvidenceInput,
+  memoryPracticeRecords,
+  syntheticPracticeCheck,
   syntheticEvidenceOutput,
   syntheticLetterInput,
   syntheticLetterOutput,
@@ -233,7 +237,7 @@ describe('the PHI boundary', () => {
     const prices: ModelPrice[] = [{ provider: 'bedrock', modelId: modelFor(PROMPTS.proposeContractTerms, 'bedrock'), inputCentsPerMillion: 0n, outputCentsPerMillion: 0n, confirmed: true }];
     const evaluation = localGateway({ provider: new ScriptedProvider('bedrock', [answer(syntheticContractOutput())]), actor: { kind: 'evaluation' } });
     const evaluationGateway = new ModelGateway({ provider: new ScriptedProvider('bedrock', [answer(syntheticContractOutput())]), store: evaluation.store, logger: evaluation.logger, production: false, prices });
-    await expect(evaluationGateway.proposeContractTerms({ practiceId: null, requestKey: 'eval-1' }, syntheticContractInput())).resolves.toMatchObject({ passed: true });
+    await expect(evaluationGateway.proposeContractTerms({ practiceId: null, requestKey: 'eval-1' }, syntheticEvaluationContractInput())).resolves.toMatchObject({ passed: true });
     expect(evaluation.store.calls[0]).toMatchObject({ practiceId: null, actorKind: 'evaluation', actorId: null, provider: 'bedrock' });
     const production = localGateway({ production: true });
     // Served as if contract proposals had passed their evaluation on Bedrock (the committed baseline serves nothing there).
@@ -355,34 +359,28 @@ describe('serving each feature on its own evaluation (docs/adr/0070, Part 2)', (
     expect(() => production({ actor: { kind: 'job', jobId: 'nightly-job' }, serving: 'evaluable' }).build()).toThrow(expect.objectContaining({ code: 'serving_invalid' }) as Error);
   });
 
-  it('serves the default contract model while the larger one is off: only the ambiguous call is refused, after its preparation and before any screen (review m3, N10)', async () => {
+  it('serves the default contract model while the larger one is off: only the ambiguous call is refused, after its preparation and before the screen reads anything (review m3, N10)', async () => {
     const harness = production();
     serveOnce('proposeContractTerms/default');
     const gateway = harness.build();
-    const spec = PURPOSE_SPECS.proposeContractTerms as { screen?: (...args: unknown[]) => Promise<void> };
-    const before = spec.screen;
-    const screen = vi.fn(() => Promise.resolve());
-    // The contract purpose has no screen of its own yet; one stands in to show the order.
-    spec.screen = screen;
-    try {
-      await expect(gateway.proposeContractTerms(CONTEXT, syntheticContractInput({ ambiguous: true }))).rejects.toMatchObject({ reason: 'not_evaluated' });
-      expect(screen).not.toHaveBeenCalled();
-      // The variant is checked after the input is prepared: an input the purpose refuses is refused as that first.
-      await expect(gateway.proposeContractTerms(CONTEXT, syntheticContractInput({ ambiguous: true, pages: [] }))).rejects.toBeInstanceOf(InputRefusedError);
-      expect(harness.provider.requests).toEqual([]);
-      expect(harness.store.calls).toEqual([]);
-      // The purpose is served, so the flags were read; the default call runs, screened.
-      expect(harness.flagReads).toHaveBeenCalled();
-      await expect(gateway.proposeContractTerms(CONTEXT, syntheticContractInput())).resolves.toMatchObject({ passed: true });
-      expect(screen).toHaveBeenCalledTimes(1);
-      expect(harness.provider.requests.map((request) => request.modelId)).toEqual([modelFor(PROMPTS.proposeContractTerms, 'bedrock')]);
-    } finally {
-      if (before === undefined) {
-        delete spec.screen;
-      } else {
-        spec.screen = before;
-      }
-    }
+    // The contract screen's records, counted: an audited read would show as a connection taken.
+    const records = memoryPracticeRecords(SYNTHETIC_IDS.practice);
+    const patientRecords = practiceRecordsCheck({ authorizedBy: records.scope, pool: records.pool, cipher: records.cipher, practiceId: SYNTHETIC_IDS.practice, screenId: SYNTHETIC_IDS.screen, requestId: 'request-1' });
+    // Nor does the caller's step before the screen run (the web's screen limits and the person's event).
+    const step = vi.fn(() => Promise.resolve());
+    await expect(gateway.proposeContractTerms({ ...CONTEXT, beforeScreen: step }, syntheticContractInput({ ambiguous: true, patientRecords }))).rejects.toMatchObject({ reason: 'not_evaluated' });
+    expect(step).not.toHaveBeenCalled();
+    expect(records.reads.connects).toBe(0);
+    // The variant is checked after the input is prepared: an input the purpose refuses is refused as that first.
+    await expect(gateway.proposeContractTerms(CONTEXT, syntheticContractInput({ ambiguous: true, pages: [], patientRecords }))).rejects.toBeInstanceOf(InputRefusedError);
+    expect(records.reads.connects).toBe(0);
+    expect(harness.provider.requests).toEqual([]);
+    expect(harness.store.calls).toEqual([]);
+    // The purpose is served, so the flags were read; the default call runs, screened.
+    expect(harness.flagReads).toHaveBeenCalled();
+    await expect(gateway.proposeContractTerms(CONTEXT, syntheticContractInput({ patientRecords }))).resolves.toMatchObject({ passed: true });
+    expect(records.reads).toEqual({ connects: 1, count: 1, patients: 1, claims: 1, postings: 1 });
+    expect(harness.provider.requests.map((request) => request.modelId)).toEqual([modelFor(PROMPTS.proposeContractTerms, 'bedrock')]);
     // The other purposes stay off; the screens offer contracts, and hand entry for the rest.
     await expect(gateway.draftPacketNarrative(CONTEXT, syntheticNarrativeInput())).rejects.toMatchObject({ reason: 'not_evaluated' });
     expect(await gateway.features(SYNTHETIC_IDS.practice)).toEqual({ proposeContractTerms: true, readDenialLetter: false, draftPacketNarrative: false, suggestEvidenceRequests: false });
@@ -673,5 +671,206 @@ describe('the local provider’s fixed outputs', () => {
     const provider = new LocalDeterministicProvider();
     registerOutput(provider, 'suggestEvidenceRequests', syntheticEvidenceInput(), syntheticEvidenceOutput());
     await expect(provider.complete(requestFor('suggestEvidenceRequests', syntheticEvidenceInput()))).resolves.toMatchObject({ tokensIn: 0 });
+  });
+});
+
+describe('the contract PHI check (combined audit item 120; docs/adr/0070 Part 3; test matrix MOD-12)', () => {
+  const HELD = { memberIds: ['ZZ1234567'], patientControlNumbers: ['SYNPCN00012345'], payerClaimNumbers: ['7712345678901'] };
+  const EOB_PAGES = ['SYNTHETIC EXPLANATION OF BENEFITS filed as a contract', 'Member ID:ZZ 123 4567   CPT 97110 $32.50'];
+
+  /** A registered gateway whose store's idempotency, budget and hold steps are watched. */
+  function watched(options: Parameters<typeof localGateway>[0] = {}) {
+    const harness = registered(options);
+    const completedCall = vi.spyOn(harness.store, 'completedCall');
+    const spentSince = vi.spyOn(harness.store, 'spentSince');
+    const hold = vi.spyOn(harness.store, 'hold');
+    return { ...harness, completedCall, spentSince, hold };
+  }
+
+  const screenLines = (harness: Harness) => harness.logger.lines.filter((line) => String(line.fields.error_code).startsWith('MODEL_INPUT_'));
+
+  it('refuses a page naming a member ID, a payer claim number (as written and hyphenated) or a long patient control number, after the read-only idempotency and budget checks and before the budget hold and the call', async () => {
+    for (const page of ['Member ID:ZZ 123 4567', 'Payer claim 7712345678901', 'Payer claim 77-1234-5678901', 'Patient account SYNPCN-00012345']) {
+      const harness = watched();
+      const refusal = harness.gateway.proposeContractTerms(CONTEXT, syntheticContractInput({ pages: [SYNTHETIC_CONTRACT_PAGES[0] ?? '', page], patientRecords: syntheticPracticeCheck(SYNTHETIC_IDS.practice, HELD) }));
+      await expect(refusal, page).rejects.toMatchObject({ name: 'InputRefusedError', code: 'names_patient', message: NAMES_PATIENT_MESSAGE });
+      // The two reads that refuse a call without the screen ran first (combined audit item 120's review, S1); nothing was held.
+      expect(harness.completedCall).toHaveBeenCalledTimes(1);
+      expect(harness.spentSince).toHaveBeenCalledTimes(1);
+      expect(harness.hold).not.toHaveBeenCalled();
+      expect(harness.local.requests).toEqual([]);
+      expect(harness.store.calls).toEqual([]);
+      // One line: the practice's ID and the code, never an identifier, its kind, a count or the text.
+      expect(screenLines(harness)).toEqual([
+        { level: 'warn', message: 'a model call was refused before it was sent: its input names a patient of the practice', fields: { practice_id: SYNTHETIC_IDS.practice, error_code: 'MODEL_INPUT_NAMES_PATIENT' } },
+      ]);
+      expect(JSON.stringify(harness.logger.lines)).not.toMatch(/ZZ|1234567|7712345678901|SYNPCN/);
+    }
+  });
+
+  it('screens the text the call would send, so pages that read clean only when the screen asks for them are refused', async () => {
+    const harness = watched();
+    const named = [SYNTHETIC_CONTRACT_PAGES[0] ?? '', 'Member ID:ZZ 123 4567'];
+    // An input whose pages answer the screen with the clean contract, and everything else with a page naming a patient.
+    const input = Object.defineProperty(syntheticContractInput({ patientRecords: syntheticPracticeCheck(SYNTHETIC_IDS.practice, HELD) }), 'pages', {
+      get: () => (/screenContractPages/.test(new Error().stack ?? '') ? SYNTHETIC_CONTRACT_PAGES : named),
+    });
+    await expect(harness.gateway.proposeContractTerms(CONTEXT, input)).rejects.toMatchObject({ code: 'names_patient', message: NAMES_PATIENT_MESSAGE });
+    expect(harness.hold).not.toHaveBeenCalled();
+    expect(harness.local.requests).toEqual([]);
+    expect(harness.store.calls).toEqual([]);
+  });
+
+  it('sends a fee-schedule twin whose figures are a practice’s short codes, dates and words only', async () => {
+    const harness = registered();
+    const practice = { memberIds: ['ZZ1234567'], patientControlNumbers: ['97110', '97140', '20260101', '12312026', 'AGREEMENT'], payerClaimNumbers: ['7712345678901'] };
+    await expect(harness.gateway.proposeContractTerms(CONTEXT, syntheticContractInput({ patientRecords: syntheticPracticeCheck(SYNTHETIC_IDS.practice, practice) }))).resolves.toMatchObject({ passed: true });
+    expect(screenLines(harness)).toEqual([]);
+  });
+
+  it('refuses a check the gateway did not issue, one issued for another practice and a synthetic one on a practice call, as screen_invalid, logged by code', async () => {
+    const forged = { practiceId: SYNTHETIC_IDS.practice, namesPatient: () => Promise.resolve('clear' as const) };
+    for (const patientRecords of [forged, syntheticPracticeCheck(SYNTHETIC_IDS.otherPractice), syntheticRecordsCheck({ memberIds: [], patientControlNumbers: [], payerClaimNumbers: [] })]) {
+      const harness = watched();
+      await expect(harness.gateway.proposeContractTerms(CONTEXT, syntheticContractInput({ patientRecords }))).rejects.toMatchObject({ code: 'screen_invalid' });
+      expect(harness.hold).not.toHaveBeenCalled();
+      expect(harness.store.calls).toEqual([]);
+      expect(screenLines(harness).map((line) => line.fields)).toEqual([{ practice_id: SYNTHETIC_IDS.practice, error_code: 'MODEL_INPUT_SCREEN_INVALID' }]);
+    }
+  });
+
+  it('refuses before the call when the records cannot be read: screen_unavailable above the bound, screen_failed on a load error, one line each', async () => {
+    const cases = [
+      { options: { identifierCount: 50_001 }, code: 'screen_unavailable', logged: 'MODEL_INPUT_SCREEN_UNAVAILABLE' },
+      { options: { fault: 'query' as const }, code: 'screen_failed', logged: 'MODEL_INPUT_SCREEN_FAILED' },
+      { options: { fault: 'decrypt' as const }, code: 'screen_failed', logged: 'MODEL_INPUT_SCREEN_FAILED' },
+    ];
+    for (const { options, code, logged } of cases) {
+      const harness = watched();
+      const records = memoryPracticeRecords(SYNTHETIC_IDS.practice, HELD, options);
+      const patientRecords = practiceRecordsCheck({ authorizedBy: records.scope, pool: records.pool, cipher: records.cipher, practiceId: SYNTHETIC_IDS.practice, screenId: SYNTHETIC_IDS.screen, requestId: 'request-1' });
+      await expect(harness.gateway.proposeContractTerms(CONTEXT, syntheticContractInput({ patientRecords }))).rejects.toMatchObject({ code, message: SCREEN_UNAVAILABLE_MESSAGE });
+      expect(harness.hold).not.toHaveBeenCalled();
+      expect(harness.store.calls).toEqual([]);
+      expect(screenLines(harness).map((line) => line.fields)).toEqual([{ practice_id: SYNTHETIC_IDS.practice, error_code: logged }]);
+    }
+  });
+
+  /** A practice check over counted in-memory records, one per request as the web builds it: a connection taken is an audited read begun. */
+  const counted = (records: Parameters<typeof memoryPracticeRecords>[1] = {}) => {
+    const memory = memoryPracticeRecords(SYNTHETIC_IDS.practice, records);
+    return { memory, patientRecords: practiceRecordsCheck({ authorizedBy: memory.scope, pool: memory.pool, cipher: memory.cipher, practiceId: SYNTHETIC_IDS.practice, screenId: SYNTHETIC_IDS.screen, requestId: 'request-1' }) };
+  };
+  const BUDGET_SPENT: FlagRow = { key: 'model.daily_budget_cents', scope: 'practice', scopeId: SYNTHETIC_IDS.practice, value: '0' };
+
+  it('refuses a replay under a completed call’s key before the screen: the practice’s records are not read again (combined audit item 120’s review, S1)', async () => {
+    const harness = watched();
+    const first = counted();
+    await expect(harness.gateway.proposeContractTerms(CONTEXT, syntheticContractInput({ patientRecords: first.patientRecords }))).resolves.toMatchObject({ passed: true });
+    expect(first.memory.reads.connects).toBe(1);
+    // A job retried under the same key, with a check of its own: refused by the completed call, its records never read.
+    const replay = counted();
+    await expect(harness.gateway.proposeContractTerms(CONTEXT, syntheticContractInput({ patientRecords: replay.patientRecords }))).rejects.toBeInstanceOf(DuplicateModelCallError);
+    expect(replay.memory.reads.connects).toBe(0);
+    expect(replay.memory.audited).toEqual([]);
+    expect(harness.local.requests).toHaveLength(1);
+    expect(harness.store.calls).toHaveLength(1);
+  });
+
+  it('refuses a practice that has spent its daily budget before the screen, a page naming a patient as well: nothing read, held or sent, one line each (S1)', async () => {
+    const harness = watched({ flags: [BUDGET_SPENT] });
+    for (const pages of [SYNTHETIC_CONTRACT_PAGES, EOB_PAGES]) {
+      const { memory, patientRecords } = counted(HELD);
+      await expect(harness.gateway.proposeContractTerms(CONTEXT, syntheticContractInput({ pages, patientRecords }))).rejects.toBeInstanceOf(ModelBudgetExceededError);
+      expect(memory.reads.connects).toBe(0);
+      expect(memory.audited).toEqual([]);
+    }
+    expect(harness.hold).not.toHaveBeenCalled();
+    expect(harness.local.requests).toEqual([]);
+    expect(harness.store.calls).toEqual([]);
+    expect(harness.logger.lines.map((line) => line.fields)).toEqual(Array.from({ length: 2 }, () => ({ practice_id: SYNTHETIC_IDS.practice, error_code: 'MODEL_BUDGET_EXCEEDED' })));
+  });
+
+  it('runs the caller’s step before the screen only once nothing else refuses the call, then the screen; a step that throws refuses the call unscreened (S1; the review’s nit on the person’s event)', async () => {
+    const KILL: FlagRow = { key: 'model.kill_switch', scope: 'global', scopeId: null, value: true };
+    const completed = registered();
+    await completed.gateway.proposeContractTerms(CONTEXT, syntheticContractInput());
+    // One call in flight on a server that allows one: the next is busy.
+    const limiter = new CallLimiter({ perProcess: 1, perPractice: 1 });
+    limiter.tryAcquire(SYNTHETIC_IDS.practice);
+    const refusedFirst: readonly { readonly name: string; readonly harness: Harness; readonly pages?: readonly string[]; readonly refusal: abstract new (...args: never[]) => Error }[] = [
+      { name: 'the cap on calls in flight', harness: registered({ limiter }), refusal: ModelBusyError },
+      { name: 'the kill switch', harness: registered({ flags: [KILL] }), refusal: ModelFeatureOffError },
+      { name: 'the PHI boundary', harness: localGateway({ provider: new ScriptedProvider('bedrock', []) }), refusal: PhiBoundaryError },
+      { name: 'an input the purpose refuses', harness: registered(), pages: [], refusal: InputRefusedError },
+      { name: 'a completed call under the key', harness: completed, refusal: DuplicateModelCallError },
+      { name: 'a spent budget', harness: registered({ flags: [BUDGET_SPENT] }), refusal: ModelBudgetExceededError },
+    ];
+    for (const { name, harness, pages, refusal } of refusedFirst) {
+      const step = vi.fn(() => Promise.resolve());
+      const { memory, patientRecords } = counted(HELD);
+      await expect(harness.gateway.proposeContractTerms({ ...CONTEXT, beforeScreen: step }, syntheticContractInput({ patientRecords, ...(pages === undefined ? {} : { pages }) })), name).rejects.toBeInstanceOf(refusal);
+      expect(step, name).not.toHaveBeenCalled();
+      expect(memory.reads.connects, name).toBe(0);
+    }
+
+    // Nothing else refuses it: the step runs once, before the screen takes its first connection, and the call is made.
+    const harness = watched();
+    const clear = counted();
+    const seen: number[] = [];
+    const step = () => {
+      seen.push(clear.memory.reads.connects);
+      return Promise.resolve();
+    };
+    await expect(harness.gateway.proposeContractTerms({ ...CONTEXT, beforeScreen: step }, syntheticContractInput({ patientRecords: clear.patientRecords }))).resolves.toMatchObject({ passed: true });
+    expect(seen).toEqual([0]);
+    expect(clear.memory.reads.connects).toBe(1);
+
+    // A step that throws refuses the call with its own error: nothing is screened, held, sent or logged.
+    const thrown = new Error('SYNTHETIC screen limit');
+    const refused = watched();
+    const unread = counted(HELD);
+    await expect(refused.gateway.proposeContractTerms({ ...CONTEXT, beforeScreen: () => Promise.reject(thrown) }, syntheticContractInput({ pages: EOB_PAGES, patientRecords: unread.patientRecords }))).rejects.toBe(thrown);
+    expect(unread.memory.reads.connects).toBe(0);
+    expect(refused.hold).not.toHaveBeenCalled();
+    expect(refused.local.requests).toEqual([]);
+    expect(refused.store.calls).toEqual([]);
+    expect(refused.logger.lines).toEqual([]);
+
+    // A purpose with no screen never runs it.
+    const never = vi.fn(() => Promise.resolve());
+    await expect(registered().gateway.suggestEvidenceRequests({ ...CONTEXT, beforeScreen: never }, syntheticEvidenceInput())).resolves.toMatchObject({ passed: true });
+    expect(never).not.toHaveBeenCalled();
+  });
+
+  it('reads the caller’s context once: its own step before the screen cannot move the screen to another practice than the call is recorded under', async () => {
+    // The step is the caller's code and runs between the gateway's checks and the screen: were the screen to read the
+    // context again, a step that changed its practice would hold the check to a practice the budget, the hold and the
+    // model_call row are not (here one that holds none of the document's identifiers).
+    const harness = watched();
+    const context: { practiceId: string; requestKey: string; beforeScreen?: () => Promise<void> } = { ...CONTEXT };
+    context.beforeScreen = () => {
+      context.practiceId = SYNTHETIC_IDS.otherPractice;
+      return Promise.resolve();
+    };
+    const elsewhere = syntheticPracticeCheck(SYNTHETIC_IDS.otherPractice);
+    await expect(harness.gateway.proposeContractTerms(context, syntheticContractInput({ pages: EOB_PAGES, patientRecords: elsewhere }))).rejects.toMatchObject({ code: 'screen_invalid' });
+    expect(harness.hold).not.toHaveBeenCalled();
+    expect(harness.local.requests).toEqual([]);
+    expect(harness.store.calls).toEqual([]);
+  });
+
+  it('screens a synthetic evaluation call against its synthetic check, logged with no practice', async () => {
+    const evaluation = registered({ actor: { kind: 'evaluation' } });
+    const patientRecords = syntheticRecordsCheck(HELD);
+    await expect(evaluation.gateway.proposeContractTerms({ practiceId: null, requestKey: 'eval-1' }, syntheticContractInput({ pages: EOB_PAGES, patientRecords }))).rejects.toMatchObject({ code: 'names_patient' });
+    expect(screenLines(evaluation).map((line) => line.fields)).toEqual([{ practice_id: null, error_code: 'MODEL_INPUT_NAMES_PATIENT' }]);
+    await expect(evaluation.gateway.proposeContractTerms({ practiceId: null, requestKey: 'eval-2' }, syntheticContractInput({ patientRecords }))).resolves.toMatchObject({ passed: true });
+  });
+
+  it('logs the denial-letter reader’s refusal by its code too (the design’s 5.6)', async () => {
+    const harness = registered();
+    await expect(harness.gateway.readDenialLetter(CONTEXT, syntheticLetterInput({ text: `${syntheticLetterInput().text}\nAlso see member SYNMEMBER0099.` }))).rejects.toMatchObject({ code: 'more_than_one_patient' });
+    expect(screenLines(harness).map((line) => line.fields)).toEqual([{ practice_id: SYNTHETIC_IDS.practice, error_code: 'MODEL_INPUT_MORE_THAN_ONE_PATIENT' }]);
   });
 });

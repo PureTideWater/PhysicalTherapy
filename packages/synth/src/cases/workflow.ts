@@ -8,7 +8,11 @@ import { type Cents, centsToString, cents, formatCents, negateCents, subtractCen
 import { type CalendarDate, addDays, calendarDate } from '../core/dates';
 import { prettyJson } from '../core/json';
 import { eftExport, postingExport } from '../formats/csv';
-import { dollars, reversalOf } from '../x12/factory';
+import { writePdf } from '../formats/pdf';
+import { writeZip } from '../formats/zip';
+import { SCALE_THERAPY_CODES } from '../release/scale';
+import { MOD12_PRACTICE } from '../screen/patient-twins';
+import { dollars, reversalOf, syntheticTin } from '../x12/factory';
 import { type CasSegment, type Claim, type ServiceLine } from '../x12/model';
 import { type CaseBuilder } from './builder';
 import { therapyClaim, therapyLine, traceNumber } from './common';
@@ -1151,3 +1155,90 @@ export function mod04(b: CaseBuilder): void {
   b.outcome({ proposal: 'rates still come only from Exhibit A and are verified against the page', authority: 'the embedded text approves nothing and changes no amount' });
 }
 
+
+/** A document MOD-12 writes as a PDF and as its text (pages separated by form feeds), as intake would read it. */
+function addScreenDocument(b: CaseBuilder, name: string, pages: readonly (readonly string[])[], description: string): Uint8Array {
+  const pdf = writePdf(pages, `SYNTHETIC ${name}`);
+  b.addFile(`${name}.pdf`, pdf, 'pdf', `${description} (PDF).`);
+  b.addFile(`${name}.txt`, pages.map((lines) => lines.join('\n')).join('\n\f\n'), 'text', `${description} (text; pages separated by form feeds).`);
+  return pdf;
+}
+
+/**
+ * MOD-12 (combined audit item 120; docs/adr/0070 Part 3): a contract or exhibit that names a patient of the practice is
+ * refused before it is sent; one that only writes figures shaped like identifiers is sent.
+ */
+export function mod12(b: CaseBuilder): void {
+  const practice = MOD12_PRACTICE;
+  const base = basics(b, 'G');
+  const named = { entity: '1', last: 'SYNTHLASTMODTWELVE', first: 'SYNTHFIRST', id: { qualifier: 'MI', value: practice.memberId } } as const;
+  const claims = [
+    therapyClaim(b.world, { caseId: b.info.id, n: 1, plan: 'SYNPLAN-COMM-12', patient: named, patientControlNumber: practice.patientControlNumber, payerClaimControlNumber: practice.payerClaimNumber, lines: [therapyLine(b.world, { code: '97110', units: 2, date: base.date })] }),
+    ...practice.ignoredPatientControlNumbers.map((patientControlNumber, index) =>
+      therapyClaim(b.world, {
+        caseId: b.info.id,
+        n: index + 2,
+        plan: 'SYNPLAN-COMM-12',
+        patient: { entity: '1', last: `SYNTHLASTMODTWELVE${String(index + 2)}`, first: 'SYNTHFIRST', id: { qualifier: 'MI', value: practice.otherMemberIds[index] ?? '' } },
+        patientControlNumber,
+        payerClaimControlNumber: practice.ignoredPayerClaimNumbers[index] ?? '',
+        lines: [therapyLine(b.world, { code: '97140', units: 1, date: base.date })],
+      }),
+    ),
+  ];
+  b.add835('remit.835', file(b, oneRemittance(b, base, claims, 1), 1, base.paid), `The practice's records: a claim for member ${practice.memberId} (PCN ${practice.patientControlNumber}, payer claim ${practice.payerClaimNumber}), and four claims whose PCNs the screen leaves out (two CPT codes, a date, a word).`);
+
+  const eob = addScreenDocument(
+    b,
+    'eob-filed-as-contract',
+    [
+      [
+        'SYNTHETIC EXPLANATION OF BENEFITS',
+        `${MOD_PAYER}   Claims Department`,
+        `Patient: SYNTHLASTMODTWELVE   ${practice.memberIdWritten}`,
+        'CPT 97110   billed $128.00   allowed $86.20   paid $68.96',
+        'This statement is not a bill.',
+      ],
+    ],
+    'An EOB filed as a contract: it names the practice patient\'s member ID after a colon, spaced in groups (refused: names_patient)',
+  );
+  addScreenDocument(
+    b,
+    'exhibit-with-claim-number',
+    [
+      ['SYNTHETIC Payer G Exhibit B: rate correction', `The corrected rate applies from claim ${practice.payerClaimNumberWritten} onward.`, '97110   $43.10 per unit'],
+    ],
+    'An exhibit that writes a payer claim control number the practice holds, hyphenated (refused: names_patient)',
+  );
+  const tin = syntheticTin(b.world.random);
+  const npis = [b.world.npi(), b.world.npi()];
+  const twin = addScreenDocument(
+    b,
+    'fee-schedule-twin',
+    [
+      [
+        'SYNTHETIC Payer G fee schedule exhibit',
+        `Provider NPI ${npis[0] ?? ''} and group NPI ${npis[1] ?? ''}; TIN ${tin}.`,
+        'Remit to SYNTHVILLE NC 00013-0042 or SYNTHTOWN NC 00011-1234; phone 555-555-0142.',
+        'Effective 2026-01-01 (01/01/2026; 01-01-2026; 20260101) through December 31 2026 (12-31-2026).',
+        'This SCHEDULE is part of the AGREEMENT and governs REIMBURSEMENT.',
+      ],
+      [...SCALE_THERAPY_CODES.map((code) => `${code}   $${String(30 + (Number.parseInt(code.slice(-2), 10) % 40))}.00 per unit`)],
+    ],
+    'A fee schedule writing every therapy code, NPIs, a TIN, ZIP+4s, a phone number and dates in every form, against a practice whose short PCNs are CPT codes (sent: clear)',
+  );
+  b.addFile(
+    'contract-and-eob.zip',
+    writeZip([
+      { name: 'fee-schedule.pdf', bytes: twin },
+      { name: 'eob.pdf', bytes: eob },
+    ]),
+    'zip',
+    'A zip of a contract and an EOB filed as a contract: both entries take the kind contract, and the EOB is refused (names_patient).',
+  );
+  b.outcome({
+    refused: { 'eob-filed-as-contract.pdf': 'names_patient', 'exhibit-with-claim-number.pdf': 'names_patient', 'contract-and-eob.zip!eob.pdf': 'names_patient' },
+    sent: ['fee-schedule-twin.pdf', 'contract-and-eob.zip!fee-schedule.pdf'],
+    recorded: 'no model_call row for a refusal; one log line with the practice ID and MODEL_INPUT_NAMES_PATIENT; nothing of the match',
+  });
+}

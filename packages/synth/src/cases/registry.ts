@@ -568,6 +568,23 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'packages/model-gateway/eval/gate.golden.test.ts',
     'apps/web/src/lib/routes/models-routes.db.test.ts',
   ]),
+  // The contract PHI check (combined audit item 120; docs/adr/0070 Part 3).
+  'MOD-12': {
+    completesIn: 10,
+    build: workflow.mod12,
+    assertedBy: [
+      'packages/model-gateway/src/redact.test.ts',
+      'packages/model-gateway/src/patient-records.test.ts',
+      'packages/model-gateway/src/patient-records.db.test.ts',
+      'packages/model-gateway/src/specs.test.ts',
+      'packages/model-gateway/src/functions/contract-terms.test.ts',
+      'packages/model-gateway/src/gateway.test.ts',
+      'packages/model-gateway/src/gateway.db.test.ts',
+      'packages/model-gateway/eval/gate.golden.test.ts',
+      'apps/web/src/lib/routes/models-routes.db.test.ts',
+      'apps/worker/src/models/permitted.db.test.ts',
+    ],
+  },
   // Milestone 11's billing (PRD 6, 15), as combined audit item 135 orders its payment methods (docs/adr/0073).
   'BIL-01': none(11, 'The Payment Element’s options and the confirmation’s notices are built from values the test passes in memory; Stripe’s form never renders; no file.', ['apps/web/src/components/billing/billing.test.tsx']),
   'BIL-02': none(11, 'The Stripe adapter runs against a mocked SDK client that records each request; no file.', ['packages/billing/src/stripe.test.ts', 'packages/billing/src/types.test.ts']),

@@ -1,6 +1,7 @@
 import type { LoggedCitation } from '@tp/db/runtime';
 import type { z } from 'zod';
 
+import type { CallContext } from './gateway';
 import type { PromptVersion } from './prompts';
 import type { ModelPurpose } from './purposes';
 
@@ -30,16 +31,24 @@ export interface Verified<P> {
   readonly citations: readonly LoggedCitation[];
 }
 
+/**
+ * Every member is readonly (properties, not methods), so assigning or deleting one, the screen above all, does not
+ * compile; each spec is frozen where it is defined (./functions/*) and again by ./specs.ts, so it throws at run time too.
+ */
 export interface PurposeSpec<I, O, P, C = undefined> {
   readonly purpose: ModelPurpose;
   readonly prompt: PromptVersion;
   readonly output: z.ZodType<O>;
-  prepare(input: I): PreparedCall<C>;
+  readonly prepare: (input: I) => PreparedCall<C>;
   /**
    * A check of the prepared call against records outside the input (the denial-letter reader asks the
-   * practice's records whether the letter names another patient); it refuses by throwing, and runs
-   * before the idempotency key, the budget and the call.
+   * practice's records whether the letter names another patient; a contract's check asks whether the pages
+   * name any patient of the practice, combined audit item 120); it refuses by throwing an InputRefusedError,
+   * and runs last of the gateway's refusals: after preparation, the variant's serving check, the idempotency
+   * key's lookup, the read of the day's budget and the caller's step before the screen (CallContext.beforeScreen),
+   * and before the budget's hold and the call (gateway.ts). The call's context says which practice the call
+   * reads, so a screen can hold its records check to that practice.
    */
-  screen?(input: I, prepared: PreparedCall<C>): Promise<void>;
-  verify(input: I, output: O, context: C): Verified<P>;
+  readonly screen?: (input: I, prepared: PreparedCall<C>, context: CallContext) => Promise<void>;
+  readonly verify: (input: I, output: O, context: C) => Verified<P>;
 }

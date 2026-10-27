@@ -363,6 +363,12 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     assertion: 'That feature alone is off and hand entry works; a purpose is served only for a prompt, model and variant whose own baseline entry passes, every recall and precision floor set and met, and a contract variant only after a production permitted run of its own examples, compared with what was served',
   },
   {
+    id: 'MOD-12',
+    title: 'Contract or exhibit naming a patient of the practice',
+    assertion:
+      "Refused before it is sent (names_patient): a member ID, payer claim control number or patient control number the practice holds (from its 835s, or a posting export's line no claim carries), found as a whole token however the page spaces, hyphenates, dots, slashes or underscores it, splits it with an invisible character, or writes it exactly as stored; no model_call row; one log line with the practice and the code only; nothing of the match recorded; a records check the gateway did not issue for the call's practice refused; a practice above the bound (or one that passes it while the screen reads), or a check that cannot read the records, refused, with every read it made audited; a call the gateway refuses without the screen (a replay, a spent budget) reads none of the practice's records, a screen runs within limits per practice and per person, and the person's event is written only for a screen about to read; a fee schedule whose figures equal a practice's short PCNs, dates or words is sent",
+  },
+  {
     id: 'BIL-01',
     title: "Stripe's payment form opens on the bank account",
     assertion:

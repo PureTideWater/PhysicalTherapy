@@ -161,6 +161,15 @@ once practices have added examples, run the served side again first, in producti
 
 Before the first practice there are no examples; the run, made in production, reports none and is recorded the same way.
 
+Every contract example is checked against its practice's records before it is sent (docs/adr/0070, Part 3): one whose
+document names a patient of the practice (a payer letter or an EOB filed as a contract) is counted as
+`refused:names_patient`, apart from the misses, and is never sent. An earlier report made before that check may have
+sent such an example, so the comparison fails with `refused_rose:<variant>`: run the served side again on the current
+code, on the same examples, and compare with that run. A practice holding more than 50,000 stored identifiers is not
+read, and its examples are `refused:screen_unavailable`: such a run measures nothing for that practice and cannot be
+recorded (below) until the lookup-hash migration (ADR 0070, F3) lifts the bound; leave the practice out with
+`--practice`.
+
 ## 7. Serving it
 
 ```sh
@@ -178,7 +187,9 @@ It refuses, and records nothing, unless:
   `refused:document_kind`, `refused:no_text`, `refused:too_many_pages`, `refused:names_patient`). Anything else refuses
   the run: a failed call (`call_failed:<code>`), `refused:phi_boundary` (a run outside production),
   `refused:kill_switch`, `refused:feature_off`, `refused:not_evaluated` (for instance the ambiguous variant before its
-  own entry is evaluable), `refused:screen_unavailable`, a budget or busy refusal, or a code the list does not know.
+  own entry is evaluable), `refused:screen_unavailable`, `refused:screen_failed` or `refused:screen_invalid` (the
+  contract screen did not run, so the example was not measured), a budget or busy refusal, or a code the list does
+  not know.
   Run it again in production with the feature on and both variants evaluable. A run with examples none of which
   reached the model is refused too;
 - `--against` is given whenever anything of the provider was ever served (the baseline's served history, which a
@@ -204,5 +215,20 @@ history. Commit it by pull request: the deploy carrying that commit serves the v
   the deployed commit's `eval/baseline.json`, `eval/floors.json` and `config/models.json` (the table at the top).
 - **Every feature is off**: the configuration is refused, as before (`MODEL_PATH_UNAVAILABLE` on the web, exit 2 in the
   worker): no feature has passed for the configured provider.
+- **A contract proposal is refused before it is sent**: the gateway logs one line with `practice_id` and the code,
+  never the document or the identifier: `MODEL_INPUT_NAMES_PATIENT` (the document holds one of the practice's
+  identifiers: most often a misfiled payer letter or EOB, for which the specialist reads the version's contract or
+  asks the practice for it; also a contract that names a patient, or a collision on a TIN or ZIP+4, whose terms are
+  entered by hand), `MODEL_INPUT_SCREEN_UNAVAILABLE` (the practice holds more than 50,000 identifiers, or passed the
+  bound while the screen read), `MODEL_INPUT_SCREEN_FAILED` (the check could not read the records: a key, a query or
+  the scope; the person's notice says to try again, since the next click reads again) or `MODEL_INPUT_SCREEN_INVALID`
+  (a caller passed a records check the gateway did not issue for the practice: a defect in the code, never the
+  document; the person reads the bound's notice, never that the document is at fault). The web logs
+  `MODEL_SCREEN_LIMITED` (with `practice_id`) when the contract screen's limits stopped a proposal before its screen
+  (20 screens an hour and 60 a day per practice, 20 an hour and 100 a day per person; `contract-proposals.ts`
+  `SCREEN_LIMITS`): the person reads that the checks allowed for now are used, and tries again later or enters the
+  terms by hand. Many lines for one practice are a loop to look into, not a capacity to raise: until the lookup-hash
+  migration (ADR 0070, F3) every screen audits every identifier of the practice. A click the gateway refuses anyway
+  (the kill switch, a spent budget, a replay) reads none of the practice's records.
 - **A pull request that bumps pdf.js or the Textract reader fails `set_changed`**: step 5, before it merges.
 - **The kill switch** still turns every model feature off at once (ADR 0052); it is not part of this runbook.

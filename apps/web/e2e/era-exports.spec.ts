@@ -95,13 +95,17 @@ test('each of the four ERA export formats uploads through Uploads, is read with 
       await test.step(`${expected.vendor}: upload, read and load`, async () => {
         const practiceId = await practiceFor(expected.vendor.toUpperCase());
         await page.goto(`/p/${practiceId}/uploads`);
-        // The system's format is chosen before the files; an unconfirmed one says so.
+        // A file chosen before the system waits in this browser, the system select marked and focused; once the system
+        // is chosen (an unconfirmed one says so), Upload sends it, never the select's change (the PR #75 review's UX-1).
         await page.getByLabel('Kind of document').selectOption('era_export');
         await page.getByLabel('Choose files to upload').setInputFiles([exportFile(format)]);
-        await expect(page.getByText('Choose which system’s ERA export the files are, then choose the files again.')).toBeVisible();
-        await page.getByLabel('Which system’s export').selectOption({ label: `${expected.vendor} ERA export` });
+        const system = page.getByLabel('Which system’s export');
+        await expect(page.locator('#upload-format-error')).toHaveText('Choose which system’s ERA export this file is, then upload it.');
+        await expect(system).toBeFocused();
+        await expect(system).toHaveAttribute('aria-invalid', 'true');
+        await system.selectOption({ label: `${expected.vendor} ERA export` });
         await expect(page.getByRole('note', { name: 'Format unconfirmed' })).toContainText('placeholder layout');
-        await page.getByLabel('Choose files to upload').setInputFiles([exportFile(format)]);
+        await page.getByRole('group', { name: /^Waiting to upload/ }).getByRole('button', { name: 'Upload 1 file' }).click();
         await expect(batchLine(page, `${format}.csv`)).toContainText(new RegExp(`Loaded ${String(expected.checks.length)} remittances, \\d+ claims and ${String(expected.rows.length)} lines`), { timeout: 120_000 });
 
         // The receipt names the format and what each payment became; nothing the export holds is in the URL.

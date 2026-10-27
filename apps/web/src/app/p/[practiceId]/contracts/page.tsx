@@ -189,9 +189,9 @@ export default async function ContractsPage(props: Props) {
         )}
       </section>
 
-      <Card role="region" aria-label="Upload a contract or exhibit">
+      <Card role="region" aria-labelledby="upload-contract-title">
         <CardHeader>
-          <CardTitle>Upload a contract, exhibit or payer letter</CardTitle>
+          <CardTitle id="upload-contract-title">Upload a contract, exhibit or payer letter</CardTitle>
           <CardDescription>
             Each file goes through the same scanned intake as an 835. Once it is stored, tag it to its payer below; it then enters the contract specialist’s queue.
           </CardDescription>
@@ -203,7 +203,7 @@ export default async function ContractsPage(props: Props) {
             canUpload={upload.canUpload}
             roleNames={roleNames(roles)}
             gate={upload.gate}
-            limits={{ ...upload.limits, contentTypes: upload.kinds[0]?.contentTypes ?? [] }}
+            limits={{ ...upload.limits, contentTypes: [...new Set(upload.kinds.flatMap((kind) => kind.contentTypes))] }}
             kinds={upload.kinds.map((kind) => ({ kind: kind.kind, label: KIND_NAMES[kind.kind].replace(/^./, (first) => first.toUpperCase()), contentTypes: kind.contentTypes }))}
             heading="Drop contracts, exhibits or payer letters here"
             description="PDFs (a fee-schedule exhibit may also be a spreadsheet), one at a time or a batch, up to 2 GiB each."

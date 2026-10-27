@@ -371,6 +371,7 @@ packages/model-gateway/src/gateway.ts
 packages/model-gateway/src/hash.ts
 packages/model-gateway/src/index.ts
 packages/model-gateway/src/limiter.ts
+packages/model-gateway/src/patient-records.ts
 packages/model-gateway/src/permitted.ts
 packages/model-gateway/src/postgres-store.ts
 packages/model-gateway/src/prices.ts
@@ -491,6 +492,7 @@ packages/synth/src/guard/xlsx.ts
 packages/synth/src/identity.ts
 packages/synth/src/index.ts
 packages/synth/src/release/scale.ts
+packages/synth/src/screen/patient-twins.ts
 packages/synth/src/screening/uploads.ts
 packages/synth/src/twin/boundary.ts
 packages/synth/src/twin/roles.ts

@@ -169,6 +169,24 @@ export async function modelFeatures(scope: PracticeScope<ScopeClient>, services:
   return offeredPurposes(await featuresIn(scope.client, practiceId), servedOf(models));
 }
 
+/**
+ * The contract screen's refusals (docs/adr/0070, Part 3), by the code the gateway refuses with, each to the problem
+ * whose words give its case the next step it can take (notices.ts): the document holds an identifier from the
+ * practice's patient records (`names_patient`); it could not be checked, above the identifier bound
+ * (`screen_unavailable`: hand entry, since a second try meets the same bound); or the check's own read failed
+ * (`screen_failed`: try again, since the next click reads again). A check the gateway did not issue
+ * (`screen_invalid`) is the code's mistake, not the document's, so the person is never told the input is at fault
+ * (the generic `refused`): the document was not checked, and a second try meets the same mistake, so it reads as
+ * `screen_unavailable`; the operator's log names it apart (MODEL_INPUT_SCREEN_INVALID). Mapped before the generic
+ * `refused`, so the screen says which.
+ */
+const SCREEN_PROBLEMS: Readonly<Record<string, ModelProblem>> = {
+  names_patient: 'names_patient',
+  screen_unavailable: 'screen_unavailable',
+  screen_failed: 'screen_failed',
+  screen_invalid: 'screen_unavailable',
+};
+
 /** The problem a gateway error is, or null for an error that is not the model's (rethrown by the caller). */
 export function modelProblem(error: unknown): ModelProblem | null {
   if (error instanceof ModelFeatureOffError) {
@@ -182,6 +200,9 @@ export function modelProblem(error: unknown): ModelProblem | null {
   }
   if (error instanceof ModelCallFailedError || error instanceof DuplicateModelCallError) {
     return 'failed';
+  }
+  if (error instanceof InputRefusedError && Object.hasOwn(SCREEN_PROBLEMS, error.code)) {
+    return SCREEN_PROBLEMS[error.code] ?? 'refused';
   }
   if (error instanceof InputRefusedError || error instanceof PhiBoundaryError) {
     return 'refused';
