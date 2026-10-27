@@ -7,3 +7,6 @@
 - [ ] 4. checks
 - [ ] 5. commits
 - [ ] 6. ops designs amended (pr6b-email-streams.md, pr6b-plan.md D2), not committed
+- 2. design: probe_missed = open AND confirmed AND least(delivered-or-fallback, bounced-or-fallback) <= now()-26h; a proof counts only since resumed_at, else falls back to probe_sent_at (null -> not missed). probe_due unchanged. Job logs missed on EVERY run (not only when due) -> alarm stays ALARM until proof back.
+- 2. failing-first tests written: mail-events.db.test.ts new it (review M3) + mail.db.test.ts rows (sent-and-lost, not-sent, mixed, resume, unconfirmed). Ran on unfixed tree (scratch dbs from tp_pr6b4v_test_1): BOTH FAIL as expected (scratchpad/pr42v/failing-first.log)
+- NEXT: marker route edit of operator_mail_streams in the migration; job change in mail-events.ts; infra desc/comments + infra test; runbook; ADR 0065

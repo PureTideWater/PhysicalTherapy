@@ -1,0 +1,259 @@
+diff --git a/apps/worker/src/mail/streams.ts b/apps/worker/src/mail/streams.ts
+index de2263ab..db364415 100644
+--- a/apps/worker/src/mail/streams.ts
++++ b/apps/worker/src/mail/streams.ts
+@@ -43,7 +43,7 @@ export const MAIL_PROBE_RECIPIENTS = { delivered: `success@${MAIL_SIMULATOR_DOMA
+ /**
+  * The codes the platform logs for the operator's alarms (infra/lib/mail.ts holds its metric filters equal to these):
+  * the screening stream paused, a notice not delivered to every recipient, a notice with no recipient, an invitation not
+- * delivered, and a probe that has not come back in 26 hours. MAIL_EVENT_UNREADABLE is a warning the DLQ alarm covers.
++ * delivered, and a stream with no probe back in 26 hours. MAIL_EVENT_UNREADABLE is a warning the DLQ alarm covers.
+  */
+ export const MAIL_LOG_CODES = {
+   streamPaused: 'MAIL_STREAM_PAUSED',
+diff --git a/apps/worker/src/platform/mail-events.db.test.ts b/apps/worker/src/platform/mail-events.db.test.ts
+index 1be80096..256d1cfa 100644
+--- a/apps/worker/src/platform/mail-events.db.test.ts
++++ b/apps/worker/src/platform/mail-events.db.test.ts
+@@ -343,6 +343,57 @@ describe('the mail_events job', () => {
+     expect(mail.sent.map((message) => message.identity.stream)).toEqual(['notices', 'notices']);
+   });
+ 
++  it('logs MAIL_PROBE_MISSED on every run once the stream’s last proof is 26 hours old, whether its next probe went and was lost or could not be sent, and not for a proof from before the last resume (review M3)', async () => {
++    const missed = (stream: string) => expect.objectContaining({ level: 'error', msg: `${stream} mail probe has not come back in 26 hours`, error_code: 'MAIL_PROBE_MISSED' });
++    const unsent = expect.objectContaining({ level: 'warn', error_code: 'MAIL_PROBE_UNSENT' });
++    // Sent and lost: both probes came back 27 hours ago and the next went 3 hours ago. It is not due again for 23 hours,
++    // but the stream is missed now, 22 hours before the screening's readiness would lapse at 48, and on each run after.
++    await owner.query("UPDATE mail_stream SET probe_sent_at = now(), probe_delivered_at = now(), probe_bounced_at = now() WHERE stream <> 'screening'");
++    await owner.query("UPDATE mail_stream SET probe_sent_at = now() - interval '3 hours', probe_delivered_at = now() - interval '27 hours', probe_bounced_at = now() - interval '27 hours' WHERE stream = 'screening'");
++    const mail = new MemoryMailSender();
++    for (const attempt of ['first', 'second']) {
++      const { lines, logger } = capture();
++      expect(await run({ source: new MemoryQueue(), mail, probes: true }, logger), attempt).toMatchObject({ probed: [], probesMissed: ['screening'] });
++      expect(lines, attempt).toEqual([missed('screening')]);
++    }
++    expect(mail.sent).toEqual([]);
++    // The older of the two proofs decides: the delivery back and the bounce still 27 hours old is missed.
++    await owner.query("UPDATE mail_stream SET probe_delivered_at = now() WHERE stream = 'screening'");
++    expect(await run({ source: new MemoryQueue(), mail, probes: true })).toMatchObject({ probed: [], probesMissed: ['screening'] });
++    // Both back: nothing missed, nothing logged.
++    await owner.query("UPDATE mail_stream SET probe_bounced_at = now() WHERE stream = 'screening'");
++    const back = capture();
++    expect(await run({ source: new MemoryQueue(), mail, probes: true }, back.logger)).toMatchObject({ probed: [], probesMissed: [] });
++    expect(back.lines).toEqual([]);
++
++    // Not sent: the last probe went 28 hours ago and came back 27 hours ago, and every send since is refused. Missed
++    // from the proof's age alone, and unsent, on each run.
++    await owner.query("UPDATE mail_stream SET probe_sent_at = now() - interval '28 hours', probe_delivered_at = now() - interval '27 hours', probe_bounced_at = now() - interval '27 hours' WHERE stream = 'notices'");
++    const refusing = { send: () => Promise.reject(new Error('refused')) } as unknown as MemoryMailSender;
++    const refused = capture();
++    expect(await run({ source: new MemoryQueue(), mail: refusing, probes: true }, refused.logger)).toMatchObject({ probed: [], probesMissed: ['notices'] });
++    expect(refused.lines).toEqual([missed('notices'), unsent]);
++    // Unconfirmed (as a paused stream always is), nothing is missed: the stream is not meant to be sending.
++    await owner.query("UPDATE mail_stream SET ses_enabled_confirmed_at = NULL WHERE stream = 'notices'");
++    expect(await run({ source: new MemoryQueue(), mail, probes: true })).toMatchObject({ probed: [], probesMissed: [] });
++    await owner.query("UPDATE mail_stream SET ses_enabled_confirmed_at = now(), probe_sent_at = now(), probe_delivered_at = now(), probe_bounced_at = now() WHERE stream = 'notices'");
++
++    // A resume: the proofs from before it do not count, so they make the stream neither ready nor missed; its probes go
++    // at once.
++    await owner.query(
++      "UPDATE mail_stream SET resumed_at = now() - interval '1 minute', probe_sent_at = NULL, probe_delivered_at = now() - interval '30 hours', probe_bounced_at = now() - interval '30 hours' WHERE stream = 'screening'",
++    );
++    const resumed = capture();
++    expect(await run({ source: new MemoryQueue(), mail, probes: true }, resumed.logger)).toMatchObject({ probed: ['screening'], probesMissed: [] });
++    expect(resumed.lines).toEqual([]);
++    // A proof not back since the resume counts from the probe that went for it: 27 hours on, missed, and sent again.
++    await owner.query("UPDATE mail_stream SET resumed_at = now() - interval '28 hours', probe_sent_at = now() - interval '27 hours' WHERE stream = 'screening'");
++    const again = capture();
++    expect(await run({ source: new MemoryQueue(), mail, probes: true }, again.logger)).toMatchObject({ probed: ['screening'], probesMissed: ['screening'] });
++    expect(again.lines).toEqual([missed('screening')]);
++    expect(mail.sent.map((message) => message.identity.stream)).toEqual(['screening', 'screening', 'screening', 'screening']);
++  });
++
+   it('reports a break-glass notice not delivered to an administrator once, by the grant’s ID, from its events in any order (SEC-19)', async () => {
+     const grant = randomUUID();
+     await asOwner(owner, [world.practiceId], () =>
+diff --git a/apps/worker/src/platform/mail-events.ts b/apps/worker/src/platform/mail-events.ts
+index 08d8bea8..79c2c94e 100644
+--- a/apps/worker/src/platform/mail-events.ts
++++ b/apps/worker/src/platform/mail-events.ts
+@@ -22,8 +22,11 @@ import { type NoticeClient, asOperator } from './support-notices';
+  *    reads the set enabled again, and the screening's runs are claimed only then (screening_run_mail_gate). Only the
+  *    screening set is ever disabled: the transactional and notices streams never pause.
+  * 2. Probes, once the stack's identities are verified (phase 2): a stream due one (daily, at once after a resume, again
+- *    when one has not come back in 26 hours, which is MAIL_PROBE_MISSED) sends one message to SES's simulator's success
+- *    address and one to its bounce address, through the stream's set, and nothing else.
++ *    26 hours after one that has not come back) sends one message to SES's simulator's success address and one to its
++ *    bounce address, through the stream's set, and nothing else. A stream whose last proof is 26 hours old (the older of
++ *    its last delivered and bounced probe, since the last resume) logs MAIL_PROBE_MISSED on every run until a probe
++ *    comes back, due or not, so a probe sent and lost pages 2 hours after it went and one that cannot be sent pages too,
++ *    each 22 hours before the screening's readiness lapses (review M3).
+  * 3. Drain the queue: up to 10 messages a receive, at most 1,000 or 50 seconds a run. Each SES event is recorded once
+  *    per message and event, in any order (operator_record_mail_event(), by SES's message ID and the state's rank), in a
+  *    transaction scoped to its support notice's practice (its tp_practice tag) or to none; the message is deleted from
+@@ -219,6 +222,7 @@ export interface MailEventsResult {
+   /** Why the screening stream paused in this run, if it did. */
+   readonly paused: MailPauseReason | null;
+   readonly probed: readonly MailStream[];
++  /** The streams whose last proof is 26 hours old (operator_mail_streams().probe_missed), each logged MAIL_PROBE_MISSED. */
+   readonly probesMissed: readonly MailStream[];
+ }
+ 
+@@ -260,7 +264,7 @@ function logPaused(logger: Logger, reason: MailPauseReason, requestId: string):
+   }
+ }
+ 
+-/** A probe that has not come back in 26 hours: one fixed sentence a stream, each with MAIL_PROBE_MISSED. */
++/** No probe of the stream back in 26 hours: one fixed sentence a stream, each with MAIL_PROBE_MISSED. */
+ function logProbeMissed(logger: Logger, stream: MailStream, requestId: string): void {
+   switch (stream) {
+     case 'transactional':
+@@ -367,13 +371,15 @@ export async function runMailEvents(options: MailEventsOptions): Promise<MailEve
+   const probesMissed: MailStream[] = [];
+   if (options.probes) {
+     for (const row of await streams()) {
+-      if (!row.probe_due) {
+-        continue;
+-      }
++      // Missed is read from the stream's last proof, due or not (review M3): logged on every run while it holds, so its
++      // alarm stays raised until a probe comes back, whether the last went and was lost or none could be sent.
+       if (row.probe_missed) {
+         probesMissed.push(row.stream);
+         logProbeMissed(logger, row.stream, requestId);
+       }
++      if (!row.probe_due) {
++        continue;
++      }
+       try {
+         await options.mail.send(probeMessage(row.stream, MAIL_PROBE_RECIPIENTS.delivered));
+         await options.mail.send(probeMessage(row.stream, MAIL_PROBE_RECIPIENTS.bounced));
+diff --git a/packages/db/migrations/20261107090000_mail_streams.sql b/packages/db/migrations/20261107090000_mail_streams.sql
+index 64017df8..18ec43e3 100644
+--- a/packages/db/migrations/20261107090000_mail_streams.sql
++++ b/packages/db/migrations/20261107090000_mail_streams.sql
+@@ -1104,8 +1104,12 @@ END;
+ $$;
+ 
+ -- For the reconcile and the probes: each stream's pause and SES confirmation; a probe is due daily once the last came
+--- back, at once after a resume, and again when one has not come back in 26 hours (probe_missed), never while paused or
+--- unconfirmed.
++-- back, at once after a resume, and again 26 hours after one that has not come back, never while paused or unconfirmed.
++-- probe_missed (MAIL_PROBE_MISSED, review M3) reads the stream's last proof, not its last send: open and confirmed, and
++-- the older of its last delivered and bounced probe 26 hours old, whether a probe went since or not. A proof counts only
++-- since the last resume, as readiness counts it (screening_mail_status()); one not back since then counts from the probe
++-- last sent, and with none sent yet nothing is missed. So a daily probe sent and lost is missed 2 hours after it went,
++-- and one that cannot be sent 26 hours after the last came back: either way 22 hours before readiness lapses at 48.
+ CREATE FUNCTION operator_mail_streams() RETURNS TABLE (stream text, paused boolean, confirmed boolean, probe_due boolean, probe_missed boolean)
+ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+   SELECT s.stream, s.paused_at IS NOT NULL, s.ses_enabled_confirmed_at IS NOT NULL,
+@@ -1113,10 +1117,12 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_te
+            AND (s.probe_sent_at IS NULL
+                 OR (NOT o.outstanding AND s.probe_sent_at <= now() - interval '24 hours')
+                 OR (o.outstanding AND s.probe_sent_at <= now() - interval '26 hours')),
+-         s.paused_at IS NULL AND s.ses_enabled_confirmed_at IS NOT NULL AND o.outstanding AND s.probe_sent_at <= now() - interval '26 hours'
++         s.paused_at IS NULL AND s.ses_enabled_confirmed_at IS NOT NULL AND coalesce(p.proved_at <= now() - interval '26 hours', false)
+     FROM mail_stream s,
+          LATERAL (SELECT s.probe_sent_at IS NOT NULL
+-                         AND (coalesce(s.probe_delivered_at < s.probe_sent_at, true) OR coalesce(s.probe_bounced_at < s.probe_sent_at, true)) AS outstanding) o
++                         AND (coalesce(s.probe_delivered_at < s.probe_sent_at, true) OR coalesce(s.probe_bounced_at < s.probe_sent_at, true)) AS outstanding) o,
++         LATERAL (SELECT least(CASE WHEN s.probe_delivered_at >= coalesce(s.resumed_at, '-infinity') THEN s.probe_delivered_at ELSE s.probe_sent_at END,
++                               CASE WHEN s.probe_bounced_at >= coalesce(s.resumed_at, '-infinity') THEN s.probe_bounced_at ELSE s.probe_sent_at END) AS proved_at) p
+    ORDER BY s.stream
+ $$;
+ 
+diff --git a/packages/db/src/mail.db.test.ts b/packages/db/src/mail.db.test.ts
+index 38fa8fff..9a4c6809 100644
+--- a/packages/db/src/mail.db.test.ts
++++ b/packages/db/src/mail.db.test.ts
+@@ -16,6 +16,8 @@ import {
+   MAIL_CUTOFF,
+   MAIL_KINDS,
+   MAIL_PAUSE_REASONS,
++  MAIL_PROBE_MISSED_HOURS,
++  MAIL_PROBE_READY_HOURS,
+   MAIL_REFUSAL_REASONS,
+   MAIL_SEND_DAYS,
+   MAIL_STATES,
+@@ -782,7 +784,7 @@ describe('the screening stream’s cut-off (SCR-21; the founder’s Q9)', () =>
+     expect(await code(as(OPERATOR_ROLE, "SELECT operator_mail_stream_confirmed('elsewhere', true)"))).toBe('23514');
+   });
+ 
+-  it('is ready only with a delivered and a bounced probe come back within 48 hours and since the last resume, and the probes go daily or after 26 hours unanswered', async () => {
++  it('is ready only with a delivered and a bounced probe come back within 48 hours and since the last resume, the probes go daily or after 26 hours unanswered, and a stream is missed 26 hours after its last proof', async () => {
+     await resetScreening();
+     const status = async () => (await as<{ paused: boolean; ready: boolean }>(APP_ROLE, 'SELECT * FROM screening_mail_status()'))[0];
+     const probe = (event: string) =>
+@@ -805,16 +807,26 @@ describe('the screening stream’s cut-off (SCR-21; the founder’s Q9)', () =>
+     expect(await status()).toEqual({ paused: false, ready: true });
+     await as(OPERATOR_ROLE, 'SELECT operator_mail_account_signal($1, $2)', ['enforcement_not_healthy', request()]);
+     expect(await status()).toEqual({ paused: true, ready: false });
+-    // The schedule: daily once the last came back; again, and missed, 26 hours after one that did not.
++    // The schedule: daily once the last came back; again 26 hours after one that did not. Missed (review M3) reads the
++    // stream's last proof, the older of its delivered and bounced probe, 26 hours old, whether a probe went since or not:
++    // the daily probe goes at 24 hours, so one sent and lost is missed 2 hours later, 22 before readiness lapses at 48.
+     await resetScreening();
+     const due = async () => (await as<{ stream: string; probe_due: boolean; probe_missed: boolean }>(OPERATOR_ROLE, 'SELECT stream, probe_due, probe_missed FROM operator_mail_streams()')).find((row) => row.stream === 'screening');
+     expect(await due()).toEqual({ stream: 'screening', probe_due: true, probe_missed: false });
++    expect(MAIL_PROBE_READY_HOURS - MAIL_PROBE_MISSED_HOURS).toBe(22);
+     for (const [sent, returned, wanted] of [
+       ['23 hours', '22 hours', { probe_due: false, probe_missed: false }],
+       ['25 hours', '24 hours', { probe_due: true, probe_missed: false }],
+       ['25 hours', null, { probe_due: false, probe_missed: false }],
+       ['27 hours', null, { probe_due: true, probe_missed: true }],
+       ['27 hours', '28 hours', { probe_due: true, probe_missed: true }],
++      // Sent 24 hours after the last came back, and lost.
++      ['2 hours', `${String(MAIL_PROBE_MISSED_HOURS)} hours 1 minute`, { probe_due: false, probe_missed: true }],
++      ['2 hours', `${String(MAIL_PROBE_MISSED_HOURS - 1)} hours 59 minutes`, { probe_due: false, probe_missed: false }],
++      ['3 hours', '27 hours', { probe_due: false, probe_missed: true }],
++      // None sent since the last came back (every send refused).
++      ['28 hours', '27 hours', { probe_due: true, probe_missed: true }],
++      ['26 hours', '25 hours', { probe_due: true, probe_missed: false }],
+     ] as const) {
+       await owner.query(
+         "UPDATE mail_stream SET probe_sent_at = now() - $1::interval, probe_delivered_at = now() - $2::interval, probe_bounced_at = now() - $2::interval WHERE stream = 'screening'",
+@@ -822,6 +834,29 @@ describe('the screening stream’s cut-off (SCR-21; the founder’s Q9)', () =>
+       );
+       expect(await due(), `${sent} ${String(returned)}`).toEqual({ stream: 'screening', ...wanted });
+     }
++    // The older of the two proofs decides. A proof from before the last resume does not count: one not back since the
++    // resume counts from the probe sent after it, and with none sent yet the stream is due and not missed.
++    for (const [sent, delivered, bounced, resumed, wanted] of [
++      ['2 hours', '1 hour', '27 hours', null, { probe_due: false, probe_missed: true }],
++      ['2 hours', '27 hours', '1 hour', null, { probe_due: false, probe_missed: true }],
++      [null, '30 hours', '30 hours', '1 minute', { probe_due: true, probe_missed: false }],
++      ['1 minute', '30 hours', '30 hours', '2 minutes', { probe_due: false, probe_missed: false }],
++      ['27 hours', '30 hours', '30 hours', '28 hours', { probe_due: true, probe_missed: true }],
++      ['27 hours', '26 hours 59 minutes', '30 hours', '28 hours', { probe_due: true, probe_missed: true }],
++      ['2 hours', '1 hour', '30 hours', '28 hours', { probe_due: false, probe_missed: false }],
++    ] as const) {
++      await owner.query(
++        `UPDATE mail_stream SET probe_sent_at = now() - $1::interval, probe_delivered_at = now() - $2::interval, probe_bounced_at = now() - $3::interval,
++                                resumed_at = now() - $4::interval WHERE stream = 'screening'`,
++        [sent, delivered, bounced, resumed],
++      );
++      expect(await due(), `${String(sent)} ${delivered} ${bounced} ${String(resumed)}`).toEqual({ stream: 'screening', ...wanted });
++    }
++    // Never while unconfirmed (a paused stream always is): a stream not meant to be sending is not missed.
++    await owner.query("UPDATE mail_stream SET resumed_at = NULL, probe_sent_at = now() - interval '28 hours', probe_delivered_at = now() - interval '27 hours', probe_bounced_at = now() - interval '27 hours' WHERE stream = 'screening'");
++    expect(await due()).toEqual({ stream: 'screening', probe_due: true, probe_missed: true });
++    await owner.query("UPDATE mail_stream SET ses_enabled_confirmed_at = NULL WHERE stream = 'screening'");
++    expect(await due()).toEqual({ stream: 'screening', probe_due: false, probe_missed: false });
+   });
+ });
+ 
+diff --git a/packages/db/src/schema/operations.ts b/packages/db/src/schema/operations.ts
+index 76315894..404e238f 100644
+--- a/packages/db/src/schema/operations.ts
++++ b/packages/db/src/schema/operations.ts
+@@ -194,7 +194,10 @@ export const SCREENING_BOUNCE_MARK_KINDS = ['client', 'account'] as const;
+ export type ScreeningBounceMarkKind = (typeof SCREENING_BOUNCE_MARK_KINDS)[number];
+ /** The screening is ready once its delivered and bounced probes came back within this many hours and since the last resume. */
+ export const MAIL_PROBE_READY_HOURS = 48;
+-/** A probe goes daily, and is missed when it has not come back in 26 hours. */
++/**
++ * A probe goes daily; a stream is missed when its last proof, the older of its last delivered and bounced probe since the
++ * last resume, is this many hours old (review M3): 2 hours after a daily probe sent and lost, 22 before readiness lapses.
++ */
+ export const MAIL_PROBE_MISSED_HOURS = 26;
+ 
+ /** The pepper of the keyed hash: 32 bytes as hex, made at the migration, read only by mail_recipient_sha256(). */
