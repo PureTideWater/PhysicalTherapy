@@ -122,6 +122,7 @@ export class PlatformStack extends Stack {
       packets: this.storage.packets,
       userPool: this.identity.userPool,
       digestMail: { mailFromAddress: parameters.mailFromAddress, identityArn: mail.mailIdentity.emailIdentityArn, configurationSetArn: configurationSetArns.transactional },
+      addressValidation: { roleArn: parameters.mailValidationRoleArn, roleSet: parameters.mailValidationRoleSet },
     });
     this.supportMail = new SupportMail(this, 'SupportMail', { environmentName, key, supportEmail: parameters.supportEmail });
     this.operator = new OperatorRole(this, 'Operator', {

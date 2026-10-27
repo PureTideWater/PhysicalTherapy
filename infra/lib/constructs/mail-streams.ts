@@ -81,7 +81,7 @@ export function mailAccountAlarmsRuleName(environment: EnvironmentName): string 
  * - **Nine alarms** to the operator topic: the account's bounce rate (2.5%, the `account_rate` signal; 4%) and
  *   complaint rate (0.05%, the signal; 0.08%), the screening set's bounce (3%) and complaint (0.08%) rates, the
  *   transactional set's bounce rate (2%), a message in the dead-letter queue, and the queue's oldest message past 15
- *   minutes. Monitoring adds the seven counted from the logs. No dimension holds an address: the account's metrics have
+ *   minutes. Monitoring adds the eight counted from the logs. No dimension holds an address: the account's metrics have
  *   none, and a set's has its name.
  */
 export class MailStreams extends Construct {
