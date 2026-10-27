@@ -114,30 +114,70 @@ Each has its design and status file. Run it as a Lane B item: claim it in LANES.
 - **Times:** take every time you record from `date -u`.
 - **Shared counters,** allocated by one session only: ADR 0078, synth module 17, fixture release 900008.
 
-## 6. The message that starts Lane A's session
+## 6. How the two lanes work together from here
+- **Until Lane B's allowance resets** (Friday 2026-10-30 19:00 UTC), Lane A's orchestrator runs both lanes' work.
+  - Lane A's schema chain stays serial: one schema PR at a time, starting with #42.
+  - Lane B's no-migration items run in parallel sessions, each claimed and logged as a Lane B item: in LANES.md's
+    Claims and in `lanes/lane-b.md`.
+  - Lane A's orchestrator also takes over the shared counters (ADR 0078, synth module 17, fixture release 900008) and
+    records each allocation in the claim row.
+- **From Friday,** both accounts run side by side as one engineering team.
+  - Lane A keeps the schema chain and the founder-gated work; Lane B takes the no-migration queue.
+  - Sessions on different accounts cannot message each other. So they coordinate only through the repository:
+    LANES.md's Claims, "Handed to Lane A" and its notes for Lane B, both logs, and the status files. Pull before every
+    edit.
+  - Every PR keeps rule 6: the base is merged in with a merge commit, the PR merged second keeps both lanes' changes,
+    and generated files are regenerated.
+  - Each orchestrator writes a handoff like this one before its account stops, so the other can continue with no gap.
+- **The person's part** is only three things:
+  - paste the message below into Lane A's new chat;
+  - click the three repository settings when the session says they are due (owner-admin, so a person);
+  - have the founder approve each schema PR on GitHub (#42 first).
+  The sessions do everything else: folding Lane B's state into `HANDOFF.md`, the tracker, every PR, every merge, and
+  every record.
+
+## 7. The message that starts Lane A's session
 The co-founder pastes this into the new chat on Lane A's account:
 
 ```
-ultracode. You are the Lane A orchestrator session of the PaidWhole build, run by the co-founder from 2026-10-26 evening. Lane B (the co-founder's other account) has stopped and handed its work over. Lane A's account has most of its weekly allowance left: use it fully, without sacrificing quality.
+ultracode. You are the Lane A orchestrator of the PaidWhole build, run by the co-founder from 2026-10-27. Lane B (the co-founder's other Claude account) stopped on 2026-10-26 at ~97% of its weekly allowance and handed its work to you; it returns Friday 2026-10-30 19:00 UTC. Until then you run both lanes' work: Lane A's schema chain, and Lane B's no-migration items in parallel sessions. This account has most of its weekly allowance: use it fully, never sacrificing quality. Do everything yourself; ask me only for what a person or the founder must do.
 
 1. MACHINE. Run in the background until it prints OK:
    git -C /home/user/PhysicalTherapy fetch -q origin claude/build-ops && git -C /home/user/PhysicalTherapy show FETCH_HEAD:tools/setup-container.sh > /tmp/setup-container.sh && bash /tmp/setup-container.sh
-   Then run `gh api user --jq .login` and record the login. If GitHub refuses a push or an API call, stop and tell me.
+   Then record the login `gh api user --jq .login` prints. If GitHub refuses a push or an API call, stop and tell me.
 
-2. READ, in order: CLAUDE.md (on claude/build-platform); /home/user/ops/LANES.md; /home/user/ops/HANDOFF.md "Start here"; /home/user/ops/lanes/lane-b-handoff-to-lane-a.md (whole); /home/user/ops/lanes/lane-b.md "Start here" and "How Lane B runs".
+2. READ, in order:
+   - CLAUDE.md (on claude/build-platform);
+   - /home/user/ops/LANES.md;
+   - /home/user/ops/HANDOFF.md "Start here";
+   - /home/user/ops/lanes/lane-b-handoff-to-lane-a.md, whole;
+   - /home/user/ops/lanes/lane-b.md "Start here" and "How Lane B runs".
 
-3. DO, in the order the handoff's section 2 gives:
-   - tell me when the founder's three settings are due (you verify them; a person clicks them);
-   - fold Lane B's state into HANDOFF.md and the tracker;
-   - bring #42 (PR 6b-4) current and through its fix round;
-   - then Lane A's schema chain, starting with the blocking defects handed to Lane A (SS-01 first).
-   Run Lane B's ready no-migration items in parallel sessions as Lane B did: ux-forms, contract-phi-check, ci-browser, then the UX review's queue. Claim and log them as Lane B items.
+3. DO, in this order:
+   a. Tell me the three repository settings are due now, with the steps (designs/lane-b-settings-after-ci-deps.md). I click them; you verify each.
+   b. Fold Lane B's state into HANDOFF.md's "Start here" and the build tracker yourself. They are 14 Lane B merges behind.
+   c. #42 (PR 6b-4): bring it current and through its fix round, as the handoff's section 2 says. When it is ready for the founder's approval, tell me exactly what the founder must do.
+   d. Then Lane A's schema chain, starting with the blocking defects handed to Lane A (SS-01 first).
+   e. In parallel, Lane B's ready items, as Lane B ran them: one cloud session per item, with a status file each.
+      - ux-forms, contract-phi-check and ci-browser first, then the UX review's queue from PR 3.
+      - Claim and log each as a Lane B item.
+      - You allocate the shared counters.
 
-4. PIPELINE for every PR: design with one reviewer; builders; a draft PR from .github/pull_request_template.md; two adversarial reviews (the UX and brand review is one of the two whenever a person sees the change); a fix round with the full local suite; a fresh-clone verification that reads CI; then merge as LANES.md says. Every workflow agent keeps a progress file it continues from. After any interrupt or the 5-hour limit, resume with resumeFromRunId.
+4. PIPELINE for every PR:
+   - design with one reviewer;
+   - builders;
+   - a draft PR from .github/pull_request_template.md;
+   - two adversarial reviews; the UX and brand review is one of the two whenever a person sees the change;
+   - a fix round with the full local suite;
+   - a fresh-clone verification that reads CI;
+   - then merge as LANES.md says.
+   Every workflow agent keeps a progress file it continues from. After any interrupt or the 5-hour limit, resume with resumeFromRunId. Keep a scheduled check just after each limit reset.
 
 5. DECISIONS:
-   - The founder's (ask me; I relay them): approving docs/product/domain-model.md, which every schema PR needs as the founder's APPROVED GitHub review of its latest commit; release tags; owner-admin settings; legal text; freeze exceptions; reversing a founder ruling.
-   - Lane B's work: take the recommended option (security: the safer) and record why.
+   - The founder's (tell me; I relay them): approving docs/product/domain-model.md, which every schema PR needs as the founder's APPROVED GitHub review of its latest commit; release tags; owner-admin settings; legal text; freeze exceptions; reversing a founder ruling.
+   - Everything else, Lane B's work included: take the recommended option (security: the safer), record why, and do not ask.
+
+6. BEFORE THIS ACCOUNT STOPS, at its limit or before Friday, write a handoff for Lane B like lanes/lane-b-handoff-to-lane-a.md, so Lane B continues with no gap.
 
 NEVER:
 - sign or approve as the founder, or write the approval line or approvers.json;
