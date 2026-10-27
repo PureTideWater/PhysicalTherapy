@@ -33,11 +33,13 @@ and the first BAAs; a BAA that sets a different period governs for that customer
 | A screening run's keyed client subject (`screening_run.client_subject`) | With the run: 30 days, or until a later screening of the same practice or address replaces it | Deleted with the run |
 | An invitation's undelivered flag (`invitation.undelivered_at`, `undelivered_reason`) | With the invitation | Kept as the invitation is kept |
 | SES events in the mail-events queue (each names its recipient's address) | 4 days in the queue, 14 days in its dead-letter queue; no EventBridge archive is kept | Expire in SQS on their own schedule |
+| AWS's record of each screening address SES validated (CloudTrail's event history in the environment's address-validation account, an AWS account that holds nothing else: the request, which names the address unless CloudTrail withholds it) | 90 days, AWS's own period, which cannot be shortened or turned off; that account's trail records writes alone, so no trail keeps it (docs/adr/0065) | Expires in AWS on its own schedule |
 
-No other copy of a screening address is kept by the mail path: the screening's SES configuration set uses no suppression
-list, so SES adds no screening address to the account's list, and the mail record holds none (docs/adr/0065). A
-customer's address stays on the account's suppression list after a bounce or complaint until an operator removes it
-once the person confirms the mailbox works (docs/runbooks/deliverability.md).
+The mail path keeps no copy of a screening address but those above: the screening's SES configuration set uses no
+suppression list, so SES adds no screening address to the account's list; the mail record holds none; and SES's
+validation of an address runs in the address-validation account, so the environment's own trail never holds it
+(docs/adr/0065). A customer's address stays on the account's suppression list after a bounce or complaint until an
+operator removes it once the person confirms the mailbox works (docs/runbooks/deliverability.md).
 
 ## Protection while kept
 
