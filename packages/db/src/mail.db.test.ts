@@ -1003,6 +1003,48 @@ describe('invitations flagged by their own message alone (D10)', () => {
   });
 });
 
+describe('a message SES accepted and never sent: the address on the account’s suppression list (M1)', () => {
+  // The mail_events job reads SES's Complaint of subtype OnAccountSuppressionList, and its Bounce of that subtype, as
+  // this suppressed bounce (apps/worker/src/mail/events.ts): undelivered on every customer stream, counted on none.
+  const suppressed = { event: 'bounce', bounceKind: 'permanent', bounceSubtype: 'on_account_suppression_list' } as const;
+
+  it('reads undelivered for a dunning notice and an invitation, and for the screening counts toward nothing and refuses no address', async () => {
+    const invoice = await invoiceFor(world.organizationId);
+    expect((await as<{ recipients: number }>(BILLING_ROLE, 'SELECT recipients FROM billing_open_dunning_notice($1, $2, $3)', [invoice, 'payment_failed', request()]))[0]).toEqual({ recipients: 2 });
+    const message = messageId();
+    await inTransaction(BILLING_ROLE, {}, async (client) => {
+      await client.query('SELECT email FROM billing_dunning_notice_claim($1, $2, $3)', [invoice, 'payment_failed', world.adminUserId]);
+      await client.query('SELECT billing_dunning_notice_sent($1, $2, $3, $4, $5)', [invoice, 'payment_failed', world.adminUserId, message, request()]);
+    });
+    expect(await record({ ...suppressed, message, stream: 'notices', kind: 'dunning', subject: invoice, recipientUser: world.adminUserId })).toMatchObject({
+      recorded: true,
+      state: 'suppressed',
+      invoice_undelivered: invoice,
+    });
+    expect((await owner.query('SELECT state FROM dunning_notice_recipient WHERE ses_message_id = $1', [message])).rows).toEqual([{ state: 'suppressed' }]);
+    expect(await auditCount('notice_undelivered', invoice, 'payment_failed')).toBe(1);
+    // An invitation's Cognito message.
+    const user = await createUser(owner, { status: 'invited', mfaEnrolled: false });
+    const membership = await addMembership(owner, world.organizationId, user, 'viewer');
+    const { rows } = await owner.query<{ id: string }>(
+      `INSERT INTO invitation (organization_id, membership_id, user_id, invited_by, sent_at, expires_at, last_sent_by)
+       VALUES ($1, $2, $3, $4, now() - interval '1 minute', now() - interval '1 minute' + interval '7 days', $4) RETURNING id`,
+      [world.organizationId, membership, user, world.adminUserId],
+    );
+    expect(await record({ ...suppressed, message: messageId(), stream: 'transactional', kind: 'cognito', recipient: `${user}@synthetic.test` })).toMatchObject({
+      state: 'suppressed',
+      invitation_undelivered: rows[0]?.id,
+    });
+    expect((await owner.query('SELECT undelivered_reason FROM invitation WHERE id = $1', [rows[0]?.id])).rows).toEqual([{ undelivered_reason: 'suppressed' }]);
+    // The screening: no send, no bounce, no refusal and no mark (SES counts it toward neither rate).
+    await resetScreening();
+    const neverSent = address('never.sent');
+    expect(await record(screeningEvent('bounce', { ...suppressed, recipient: neverSent }))).toMatchObject({ state: 'suppressed', stream_paused: null });
+    expect(await windowCounts()).toEqual({ sends: 0, bounces: 0, complaints: 0 });
+    expect((await owner.query('SELECT count(*)::int AS n FROM screening_mail_refusal WHERE recipient_sha256 = mail_recipient_sha256($1)', [neverSent])).rows).toEqual([{ n: 0 }]);
+  });
+});
+
 describe('the console’s mail reads (feature_flag.manage)', () => {
   it('shows the streams and the recent undelivered customer messages to a platform administrator alone, the screening’s counted, never listed', async () => {
     await resetScreening();

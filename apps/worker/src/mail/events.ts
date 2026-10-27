@@ -36,6 +36,13 @@ export const MAIL_ACCOUNT_ALARM_METRICS: Readonly<Record<string, Exclude<MailAcc
   'Reputation.ComplaintRate': 'complaint_rate_alarm',
 };
 
+/**
+ * A Complaint event's only documented subtype (SES's Complaint.ComplaintSubType: "Can either be null or
+ * OnAccountSuppressionList. If the value is OnAccountSuppressionList, SES accepted the message, but didn't attempt to
+ * send it because it was on the account-level suppression list.").
+ */
+export const COMPLAINT_ON_ACCOUNT_SUPPRESSION_LIST = 'OnAccountSuppressionList';
+
 const MESSAGE_ID = /^[A-Za-z0-9-]{20,100}$/;
 const timestamp = z.iso.datetime({ offset: true });
 const tagList = z.array(z.string()).min(1);
@@ -52,7 +59,7 @@ const SES_EVENT = z.object({
       tags: z.record(z.string(), tagList),
     }),
     bounce: z.object({ bounceType: z.string(), bounceSubType: z.string(), timestamp: timestamp.optional() }).optional(),
-    complaint: z.object({ complaintFeedbackType: z.string().optional(), timestamp: timestamp.optional() }).optional(),
+    complaint: z.object({ complaintSubType: z.string().nullable().optional(), complaintFeedbackType: z.string().optional(), timestamp: timestamp.optional() }).optional(),
     delivery: z.object({ timestamp: timestamp.optional() }).optional(),
     deliveryDelay: z.object({ timestamp: timestamp.optional() }).optional(),
   }),
@@ -158,6 +165,7 @@ function sesEvent(parsed: z.infer<typeof SES_EVENT>, prefix: string): MailQueueE
     throw new MailEventUnreadable('a mail event of a kind its stream does not carry');
   }
   const [recipient = ''] = detail.mail.destination;
+  let recorded: MailEvent = event;
   let bounceKind: string | null = null;
   let bounceSubtype: string | null = null;
   let complaintType: string | null = null;
@@ -170,8 +178,22 @@ function sesEvent(parsed: z.infer<typeof SES_EVENT>, prefix: string): MailQueueE
     bounceSubtype = snakeCase(detail.bounce.bounceSubType);
     eventAt = at(detail.bounce.timestamp) ?? eventAt;
   } else if (event === 'complaint') {
-    complaintType = detail.complaint?.complaintFeedbackType === undefined ? null : snakeCase(detail.complaint.complaintFeedbackType);
     eventAt = at(detail.complaint?.timestamp) ?? eventAt;
+    const subtype = detail.complaint?.complaintSubType ?? null;
+    if (subtype === COMPLAINT_ON_ACCOUNT_SUPPRESSION_LIST) {
+      // SES accepted the message and never sent it: the address is on the account-level suppression list (for an earlier
+      // complaint). It is recorded as the bounce SES gives such an address, suppressed: undelivered for a notice and an
+      // invitation, and on the screening stream counted toward nothing, as SES counts it toward neither rate.
+      recorded = 'bounce';
+      bounceKind = 'permanent';
+      bounceSubtype = 'on_account_suppression_list';
+    } else if (subtype !== null) {
+      // A subtype SES gives no meaning for: whether the message reached anyone is unknown, so it is never read as
+      // delivered or as a complaint; it is left for the dead-letter queue, whose alarm brings it to a person.
+      throw new MailEventUnreadable('a complaint of a subtype this job does not read');
+    } else {
+      complaintType = detail.complaint?.complaintFeedbackType === undefined ? null : snakeCase(detail.complaint.complaintFeedbackType);
+    }
   } else if (event === 'delivery') {
     eventAt = at(detail.delivery?.timestamp) ?? eventAt;
   } else if (event === 'delivery_delay') {
@@ -182,7 +204,7 @@ function sesEvent(parsed: z.infer<typeof SES_EVENT>, prefix: string): MailQueueE
     record: {
       messageId: detail.mail.messageId,
       stream,
-      event,
+      event: recorded,
       mailAt: new Date(detail.mail.timestamp),
       eventAt,
       recipient,

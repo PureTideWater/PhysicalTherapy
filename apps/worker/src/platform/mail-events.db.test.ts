@@ -356,6 +356,55 @@ describe('the mail_events job', () => {
     expect(JSON.stringify(lines)).not.toContain('@');
   });
 
+  it('reports a break-glass notice SES never sent, its administrator on the account’s suppression list for an earlier complaint, as not delivered (SEC-19)', async () => {
+    const grant = randomUUID();
+    await asOwner(owner, [world.practiceId], () =>
+      owner.query("INSERT INTO support_grant (id, practice_id, user_id, ticket, reason, created_at, expires_at) VALUES ($1, $2, $3, 'SYN-10', 'SYNTHETIC', now(), now() + interval '4 hours')", [
+        grant,
+        world.practiceId,
+        engineer,
+      ]),
+    );
+    const mail = new MemoryMailSender();
+    const client = await operator.connect();
+    try {
+      await sendSupportGrantNotices({ client, mail, origin: 'http://localhost:3000', requestId: 'job' });
+    } finally {
+      client.release();
+    }
+    const [message] = mail.sent.filter((sent) => sent.links[0]?.endsWith(grant) === true);
+    expect(message).toBeDefined();
+    // SES accepts the message and sends nothing: its Send event, then a Complaint whose subtype is OnAccountSuppressionList
+    // and which carries no feedback report (SES's Complaint.ComplaintSubType).
+    const [sent] = localMailEvents({ messageId: message?.messageId ?? '', to: 'admin@clinic.synthetic.test', identity: message?.identity ?? screening(), streamPrefix: PREFIX, at: new Date() });
+    const complaint = {
+      ...(sent as { detail: Record<string, unknown> }),
+      'detail-type': 'Email Complaint Received',
+      detail: {
+        ...(sent as { detail: Record<string, unknown> }).detail,
+        eventType: 'Complaint',
+        complaint: { complaintSubType: 'OnAccountSuppressionList', complainedRecipients: [{ emailAddress: 'admin@clinic.synthetic.test' }], timestamp: new Date().toISOString(), feedbackId: 'synthetic' },
+      },
+    };
+    delete (complaint.detail as Record<string, unknown>).send;
+    const queue = new MemoryQueue();
+    queue.push(JSON.stringify(sent));
+    queue.push(JSON.stringify(complaint));
+    const { lines, logger } = capture();
+    expect(await run({ source: queue }, logger)).toMatchObject({ recorded: 2, unreadable: 0, notRecorded: 0 });
+    expect(lines.filter((line) => line.error_code === 'NOTICE_UNDELIVERED')).toEqual([expect.objectContaining({ level: 'error', support_grant_id: grant })]);
+    expect((await owner.query('SELECT state, bounce_kind, bounce_subtype, complaint_type FROM mail_send WHERE ses_message_id = $1', [message?.messageId])).rows).toEqual([
+      { state: 'suppressed', bounce_kind: 'permanent', bounce_subtype: 'on_account_suppression_list', complaint_type: null },
+    ]);
+    expect((await owner.query('SELECT state FROM support_grant_notice_recipient WHERE ses_message_id = $1', [message?.messageId])).rows).toEqual([{ state: 'suppressed' }]);
+    // Never "Delivered": the console counts it undelivered.
+    const counts = await withActor(app, platformAdmin, async (scope) =>
+      (await scope.client.query<Record<string, unknown>>('SELECT opened_delivered, opened_undelivered FROM console_support_grants() WHERE support_grant_id = $1', [grant])).rows,
+    );
+    expect(counts).toEqual([{ opened_delivered: 0, opened_undelivered: 1 }]);
+    expect(JSON.stringify(lines)).not.toContain('@');
+  });
+
   it('flags an invitation whose Cognito message bounced, by its ID, and keeps a refused screening address only as its keyed hash (SEC-18)', async () => {
     const invited = await createUser(owner, { status: 'invited', mfaEnrolled: false });
     const membership = await addMembership(owner, world.organizationId, invited, 'viewer');
