@@ -1,0 +1,19 @@
+# design review progress (UX PR 3 table-scroll), findings so far
+- coverage: census 87 <table> matches design; text boxes match; no #42 file edited. OK.
+- F1 focus rule: React onFocus/onBlur bubble -> child-link focus keeps region role/name/tabindex while table fits (false "scrolls sideways", extra Shift+Tab stop). Fix: count only scroller's own focus.
+- F2 pre-hydration focus: person tabbed onto scroller before hydration; measure->fits removes tabindex from activeElement -> focus to body. Fix: init focused from document.activeElement in mount effect.
+- F3 forced colors: focus-visible:outline-none + ring (box-shadow) -> no focus indicator in forced colors; ScrollBox ring-inset covered by fades. Fix: outline on frame via :has / outline-hidden.
+- F4 56rem cap breaks with classic 17px scrollbar at 1280 (909-17=892<896); StackedRows would stack at desktop. Fix cap 54rem or test at 1263.
+- F5 atPhoneWidth race: axe right after resize, tabindex added after RO->React commit; existing calls w/o tables option. Fix: poll scrollers agree with measurement before axe.
+- F6 missed locator ambiguity: packets.spec 'Version' region x7 vs "Versions, scrolls sideways"; reconciliation.spec:105 'Preview' vs "Preview rows".
+- F7 duplicated copies: RefusalTakeover/takesFocus first-mount wins (hidden copy) -> focus lost; ids helper.
+- F8 brand order silently reordered in stacked only -> table/list disagree; make it an assertion.
+- F9 line-words pre caption "more columns" false; "the engine" build word.
+- F10 print min-w overflow; container-type wrapper collapse needs w-full; markdown <label> swallowed in matrix/ADR.
+- guard: alias import/local ScrollTable fake; .ts createElement.
+- #42 head 098636e: exemption counts unchanged (1,2,1); new console/mail table already ScrollTable direct child.
+- no migration, no freeze, no founder matter.
+- F11 tables-specialist persona used in test 1 and test 2 concurrently (fullyParallel) while each deletes its hardware key: race. Fix: two personas.
+- F12 guard: one table per ScrollTable; import-resolved ScrollTable; scan .ts for createElement.
+- e2e time: shards ~5 min; test 1 likely the long pole; measure.
+- STATUS: review complete; verdict build with changes; returning output.
