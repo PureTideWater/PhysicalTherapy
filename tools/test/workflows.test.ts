@@ -164,7 +164,7 @@ function inputLabels(runsOn: string, inputs: Record<string, unknown> | undefined
 
 /**
  * Why a runs-on value does not name only pinned runner images (audit item #19). GitHub moves a -latest label to a new
- * image on its own schedule (ubuntu-latest to Ubuntu 26.04 from 2026-10-19, which Playwright 1.56.1 predates), and can
+ * image on its own schedule (ubuntu-latest to Ubuntu 26.04, announced for November 2026 in runner-images #14748), and can
  * move any hosted label without a version, so a job on one changes under a commit that changed nothing. runs-on is a
  * label, a list of labels or a group with its labels; an expression is followed only when it is one of the job's own
  * matrix values, and refused otherwise.
@@ -310,6 +310,65 @@ function chromiumProblems(file: string, parsed: Workflow): string[] {
   });
 }
 
+/** A step's script with each `$NAME`, `${NAME}` or `"$NAME"` its own env sets written out as that value. */
+function expandedRun(step: Step): string {
+  return (step.run ?? '').replace(/"?\$(?:\{(\w+)\}|(\w+))"?/g, (whole: string, braced: string | undefined, bare: string | undefined) => step.env?.[braced ?? bare ?? ''] ?? whole);
+}
+
+/** The tag a worker image's browser check names (`node tools/ci/browser-build.ts --image <tag>`), or undefined. */
+function imageCheckTag(step: Step): string | undefined {
+  return /^node tools\/ci\/browser-build\.ts --image (\S.*)$/.exec(expandedRun(step).trim())?.[1]?.trim();
+}
+
+/** Whether a step measures, saves, tags or pushes an image tag: what must wait for the image's browser check. */
+function usesImageTag(step: Step, tag: string): boolean {
+  return new RegExp(`(?:--worker-image|\\bdocker\\s+(?:image\\s+)?(?:save|tag|push))\\s+"?${escaped(tag)}"?(?=\\s|;|\\||$)`).test(expandedRun(step));
+}
+
+/**
+ * Why a job's worker image could be measured, saved, tagged or pushed with a headless shell browser.json does not
+ * record (test matrix CI-18; docs/adr/0066, Part 3). Every job that builds apps/worker/Dockerfile into a local tag (load,
+ * or a type=docker archive it then loads) runs `node tools/ci/browser-build.ts --image <that tag>` once the tag exists
+ * and before any step measures, saves, tags or pushes it; a build into no local tag, or in a script this rule cannot
+ * follow, is refused. A scan may read the image first (the release's build scans, then checks, then saves): the browser
+ * changes no scan. And every such check has actions/setup-node with Node 24 before it in its job, since it runs on
+ * Node's own type stripping (the review's S6); the cache inputs stay each job's own, since the check imports only
+ * Node's own modules. A matrix build whose Dockerfile is an expression counts as the worker's when its job names
+ * apps/worker/Dockerfile anywhere (the release's naming step).
+ */
+function workerImageProblems(file: string, parsed: Workflow): string[] {
+  return Object.entries(parsed.jobs).flatMap(([id, job]) => {
+    const steps = job.steps ?? [];
+    const where = `${file} ${id}`;
+    const namesWorker = JSON.stringify(steps).includes('apps/worker/Dockerfile');
+    return steps.flatMap((step, index) => {
+      const problems: string[] = [];
+      const run = step.run ?? '';
+      if (/\bdocker\s+(?:buildx\s+)?build\b/.test(run) && run.includes('apps/worker/Dockerfile')) problems.push(`${where}: builds apps/worker/Dockerfile in a script, which this rule cannot follow`);
+      const checked = imageCheckTag(step);
+      if (checked !== undefined && !steps.slice(0, index).some((before) => usesAction(before, 'actions/setup-node') && String(before.with?.['node-version']) === '24')) {
+        problems.push(`${where}: checks ${checked} with no actions/setup-node of Node 24 before it`);
+      }
+      const input = (name: string): string => {
+        const value = step.with?.[name];
+        return typeof value === 'string' ? value : '';
+      };
+      const dockerfile = input('file');
+      if (!usesAction(step, 'docker/build-push-action') || !(dockerfile === 'apps/worker/Dockerfile' || (dockerfile.includes('${{') && namesWorker))) return problems;
+      const tag = input('tags').trim();
+      const archive = /(?:^|,)\s*type=docker\b/.test(input('outputs'));
+      if (step.with?.load !== true && !archive) return [...problems, `${where}: builds apps/worker/Dockerfile into no local tag, so nothing checks its headless shell before it leaves the job`];
+      const later = steps.slice(index + 1);
+      const check = later.findIndex((candidate) => imageCheckTag(candidate) === tag);
+      if (check === -1) return [...problems, `${where}: builds apps/worker/Dockerfile into ${tag} and never runs node tools/ci/browser-build.ts --image ${tag}`];
+      const used = later.findIndex((candidate) => usesImageTag(candidate, tag));
+      if (used !== -1 && used < check) problems.push(`${where}: "${later[used]?.name ?? later[used]?.run?.split('\n')[0] ?? ''}" uses ${tag} before its browser check`);
+      if (archive && !later.slice(0, check).some((candidate) => /\bdocker\s+load\b/.test(candidate.run ?? ''))) problems.push(`${where}: checks ${tag} before its archive is loaded`);
+      return problems;
+    });
+  });
+}
+
 /** Script idioms that swallow a failing command: `|| true`, `|| :`, `|| exit 0`, and errexit or pipefail turned off. */
 const SWALLOWS = [/\|\|\s*(?:true\b|:(?=\s|;|\)|$)|exit\s+0\b)/m, /\bset\s+\+[a-z]*e/, /\bset\s+\+o\s+(?:errexit|pipefail)\b/];
 
@@ -426,7 +485,10 @@ describe('workflows', () => {
     expect(runners['screening-capacity.yml capacity']).toEqual([RELEASE_RUNNER.label, RUNNER]);
     expect(workflow('screening-capacity.yml').jobs.capacity?.['runs-on']).toBe(`\${{ inputs.runner || '${RELEASE_RUNNER.label}' }}`);
     expect(Object.entries(runners).filter(([job, labels]) => !RELEASE_CHAIN.includes(job) && !isDeepStrictEqual(labels, [RUNNER]))).toEqual([]);
-    expect(Object.keys(runners).filter((job) => !RELEASE_CHAIN.includes(job))).toHaveLength(18);
+    // Twenty-two on ubuntu-26.04: approval-of-record's one, ci.yml's nine, content-calendar's check and notify,
+    // large-zip's one, mutation's three, publish-content's one, release-capacity's capacity and notify (its report is
+    // advisory and never attested, so F5's chain does not hold it), and screening-capacity's changes, gate and notify.
+    expect(Object.keys(runners).filter((job) => !RELEASE_CHAIN.includes(job))).toHaveLength(22);
     // GitHub's larger runners exist only for an organization on GitHub Team or Enterprise Cloud, and PureTideWater is a
     // personal account: actionlint's configuration, which named the 8-core runner's label, is gone with it, and none
     // names ubuntu-26.04 as a self-hosted label (the actionlint test ignores that one message instead).
@@ -1824,9 +1886,67 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
         for (const after of later.slice(0, measure + 1)) expect(after.if ?? '', `${where}: ${after.name ?? after.run ?? ''}`).not.toMatch(/always\(\)|cancelled\(\)|failure\(\)/);
       }
     }
-    // The same check with --image on the worker image: in ci.yml's images job and in the release's build, before the save.
+    // The same check with --image on the worker image: in ci.yml's images job, in the release's build before the save,
+    // and in both measuring jobs that build it before the measurement (below).
     const imageChecks = workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => job.steps.filter((step) => step.run?.startsWith(`${BROWSER_CHECK} --image`) === true).map(() => `${file} ${id}`)));
-    expect(imageChecks).toEqual(['ci.yml images', 'release.yml build']);
+    expect(imageChecks).toEqual(['ci.yml images', 'release-capacity.yml capacity', 'release.yml build', 'screening-capacity.yml capacity']);
+  });
+
+  it('checks the headless shell of every worker image a job builds into a local tag with --image before the tag is measured, saved, tagged or pushed, on Node 24 (design 3.3.7; the review’s S6)', () => {
+    expect(workflowFiles().flatMap((file) => workerImageProblems(file, workflow(file)))).toEqual([]);
+    // The jobs that build it, each checked by the rule above: none is left out by a form the rule does not read.
+    const builders = workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => (JSON.stringify(job.steps).includes('apps/worker/Dockerfile') && job.steps.some((step) => usesAction(step, 'docker/build-push-action')) ? [`${file} ${id}`] : [])));
+    expect(builders).toEqual(['ci.yml images', 'release-capacity.yml capacity', 'release.yml build', 'screening-capacity.yml capacity']);
+    // The two measuring jobs check the image before anything is installed, so no installed package runs before it;
+    // release-capacity's Node 24 for it restores no cache, while its own pnpm setup keeps cache: pnpm after.
+    for (const file of ['release-capacity.yml', 'screening-capacity.yml']) {
+      const steps = workflow(file).jobs.capacity?.steps ?? [];
+      const check = stepIndex(steps, (step) => step.run === `${BROWSER_CHECK} --image tp-worker:capacity`);
+      expect(steps[check], file).toEqual({ name: "Check the worker image's headless shell against browser.json", run: `${BROWSER_CHECK} --image tp-worker:capacity` });
+      expect(check, file).toBeLessThan(stepIndex(steps, (step) => step.run === 'pnpm install --frozen-lockfile'));
+      expect(check, file).toBeLessThan(stepIndex(steps, (step) => step.run?.includes('--worker-image tp-worker:capacity') === true));
+    }
+    const weekly = workflow('release-capacity.yml').jobs.capacity?.steps ?? [];
+    const check = stepIndex(weekly, (step) => step.run === `${BROWSER_CHECK} --image tp-worker:capacity`);
+    expect(weekly[check - 1]).toEqual({ uses: pinOf('actions/setup-node'), with: { 'node-version': 24, 'package-manager-cache': false } });
+    expect(usesAction(weekly[check - 2] ?? {}, 'docker/build-push-action')).toBe(true);
+    const screening = workflow('screening-capacity.yml').jobs.capacity?.steps ?? [];
+    expect(screening[stepIndex(screening, (step) => step.run === `${BROWSER_CHECK} --image tp-worker:capacity`) - 1]?.name).toBe('Load the images as built');
+  });
+
+  it('refuses a worker image build whose headless shell is not checked before its tag is used, and a check without Node 24 before it', () => {
+    const problems = (steps: string) => workerImageProblems('fixture.yml', parse(`name: fixture\non: push\njobs: { a: { runs-on: ubuntu-24.04, steps: [${steps}] } }`) as Workflow);
+    const node = `{ uses: 'actions/setup-node@${'1'.repeat(40)}', with: { node-version: 24 } }`;
+    const loaded = "{ uses: 'docker/build-push-action@x', with: { file: apps/worker/Dockerfile, load: true, tags: 'tp-worker:t' } }";
+    const archived = "{ uses: 'docker/build-push-action@x', with: { file: apps/worker/Dockerfile, tags: 'tp-worker:t', outputs: 'type=docker,dest=/tmp/w.tar' } }";
+    const load = "{ run: 'docker load --input /tmp/w.tar' }";
+    const check = "{ run: 'node tools/ci/browser-build.ts --image tp-worker:t' }";
+    const measure = "{ run: 'pnpm exec tsx run.ts --worker-image tp-worker:t' }";
+    expect(problems(`${loaded}, ${node}, ${check}, ${measure}`)).toEqual([]);
+    expect(problems(`${archived}, ${node}, ${load}, ${check}, ${measure}`)).toEqual([]);
+    // The release's form: the Dockerfile and the tag from a naming step, the check through the step's env, then the save.
+    const named = "{ id: image, run: 'echo dockerfile=apps/worker/Dockerfile >> $GITHUB_OUTPUT' }, { uses: 'docker/build-push-action@x', with: { file: '${{ steps.image.outputs.dockerfile }}', load: true, tags: '${{ steps.image.outputs.ref }}' } }";
+    const viaEnv = (run: string) => `{ env: { REF: '\${{ steps.image.outputs.ref }}' }, run: '${run}' }`;
+    expect(problems(`${named}, ${node}, ${viaEnv('node tools/ci/browser-build.ts --image "$REF"')}, ${viaEnv('docker save "$REF" | gzip -1 > w.tar.gz')}`)).toEqual([]);
+    expect(problems(`${named}, ${viaEnv('docker save "$REF" | gzip -1 > w.tar.gz')}, ${node}, ${viaEnv('node tools/ci/browser-build.ts --image "$REF"')}`)).toEqual([`fixture.yml a: "docker save "$REF" | gzip -1 > w.tar.gz" uses \${{ steps.image.outputs.ref }} before its browser check`]);
+    // The web image needs no check.
+    expect(problems("{ uses: 'docker/build-push-action@x', with: { file: apps/web/Dockerfile, load: true, tags: 'tp-web:t' } }, { run: 'run.ts --web-image tp-web:t' }")).toEqual([]);
+    expect(problems(`${loaded}, ${measure}`)).toEqual(['fixture.yml a: builds apps/worker/Dockerfile into tp-worker:t and never runs node tools/ci/browser-build.ts --image tp-worker:t']);
+    expect(problems(`${loaded}, ${node}, ${measure}, ${check}`)).toEqual(['fixture.yml a: "pnpm exec tsx run.ts --worker-image tp-worker:t" uses tp-worker:t before its browser check']);
+    for (const use of ['docker tag tp-worker:t registry/w:1', 'docker push tp-worker:t', 'docker image save "tp-worker:t" > w.tar']) {
+      expect(problems(`${loaded}, ${node}, { run: '${use}' }, ${check}`), use).toEqual([`fixture.yml a: "${use}" uses tp-worker:t before its browser check`]);
+    }
+    // A check of another tag is not this one's.
+    expect(problems(`${loaded}, ${node}, { run: 'node tools/ci/browser-build.ts --image tp-worker:other' }, ${measure}`)).toEqual(['fixture.yml a: builds apps/worker/Dockerfile into tp-worker:t and never runs node tools/ci/browser-build.ts --image tp-worker:t']);
+    expect(problems(`${archived}, ${node}, ${check}, ${load}, ${measure}`)).toEqual(['fixture.yml a: checks tp-worker:t before its archive is loaded']);
+    // Node 24 before every check, whatever its cache inputs; another Node, or none, is refused.
+    expect(problems(`${loaded}, ${check}, ${measure}`)).toEqual(['fixture.yml a: checks tp-worker:t with no actions/setup-node of Node 24 before it']);
+    expect(problems(`${loaded}, { uses: 'actions/setup-node@${'1'.repeat(40)}', with: { node-version: 22 } }, ${check}`)).toEqual(['fixture.yml a: checks tp-worker:t with no actions/setup-node of Node 24 before it']);
+    expect(problems(`${loaded}, { uses: 'actions/setup-node@${'1'.repeat(40)}', with: { node-version: 24, cache: pnpm } }, ${check}`)).toEqual([]);
+    expect(problems(`${loaded}, ${check}, ${node}`)).toEqual(['fixture.yml a: checks tp-worker:t with no actions/setup-node of Node 24 before it']);
+    // A build this rule cannot follow, or into no local tag, is refused.
+    expect(problems("{ run: 'docker build -f apps/worker/Dockerfile -t tp-worker:t .' }")).toEqual(['fixture.yml a: builds apps/worker/Dockerfile in a script, which this rule cannot follow']);
+    expect(problems("{ uses: 'docker/build-push-action@x', with: { file: apps/worker/Dockerfile, push: true, tags: 'registry/w:1' } }")).toEqual(['fixture.yml a: builds apps/worker/Dockerfile into no local tag, so nothing checks its headless shell before it leaves the job']);
   });
 
   it('restores and checks the system packages before the browser install wherever Playwright installs its libraries but the release, which restores no cache (V3)', () => {
@@ -1863,13 +1983,24 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
       expect(index).toBeGreaterThan(stepIndex(steps, (step) => step.run?.includes("-name '*-diff.png'") === true));
       const script = baseline.run ?? '';
       expect(script.indexOf('rm -f apps/web/e2e/brand.spec.ts-snapshots/*-chromium-linux.png')).toBeLessThan(script.indexOf('playwright test'));
-      expect(script).toContain('pnpm --filter @tp/web exec playwright test e2e/brand.spec.ts --update-snapshots=all --retries=0 --reporter=list --output="$RUNNER_TEMP/baselines-results" 2>&1 | tee "$RUNNER_TEMP/baselines.log" || status=$?');
+      expect(script).toContain('pnpm --filter @tp/web exec playwright test e2e/brand.spec.ts --update-snapshots=all --retries=0 --reporter=list --output="$RUNNER_TEMP/baselines-results" 2>&1 || status=$?');
+      // The pictures written are the ones present after the run, every one removed before it: no message text of
+      // Playwright's is read, which a release may reword (the review's N5).
+      const written = 'find apps/web/e2e/brand.spec.ts-snapshots -type f -name \'*-chromium-linux.png\' | LC_ALL=C sort > "$RUNNER_TEMP/baselines-written"';
+      expect(script.indexOf(written)).toBeGreaterThan(script.indexOf('playwright test'));
+      expect(script).not.toMatch(/doesn't exist|writing actual|baselines\.log/);
       const elsewhere = workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => job.steps.filter((step) => step.run?.includes('--update-snapshots') === true).map(() => `${file} ${id}`)));
       expect(elsewhere).toEqual(['ci.yml e2e']);
     });
 
-    /** The step's script in a git repository holding two committed baselines, with a stand-in pnpm that renders by mode. */
-    function regenerate(mode: 'same' | 'changed' | 'unreached' | 'extra' | 'failed') {
+    /** A picture whose base64 takes three chunks of 8,000 characters: 12,345 bytes, 16,460 characters. */
+    const LARGE = Buffer.from(Array.from({ length: 12_345 }, (_, index) => (index * 7) % 256));
+
+    /**
+     * The step's script in a git repository holding two committed baselines, with a stand-in pnpm that renders by mode
+     * and prints none of Playwright's messages, but in 'claimed', where it claims a picture it did not write.
+     */
+    function regenerate(mode: 'same' | 'changed' | 'large' | 'unreached' | 'claimed' | 'extra' | 'failed') {
       const dir = mkdtempSync(path.join(scratch, 'baselines-'));
       const env = { HOME: dir, GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'Synthetic', GIT_AUTHOR_EMAIL: 'synthetic@example.invalid', GIT_COMMITTER_NAME: 'Synthetic', GIT_COMMITTER_EMAIL: 'synthetic@example.invalid' };
       const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env: { ...process.env, ...env }, encoding: 'utf8' });
@@ -1884,18 +2015,22 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
       const temp = path.join(dir, 'runner-temp');
       mkdirSync(bin);
       mkdirSync(temp);
-      // Playwright's own line for each missing baseline it writes under --update-snapshots=all (handleMissing).
+      writeFileSync(path.join(dir, 'large.png'), LARGE);
       writeFileSync(
         path.join(bin, 'pnpm'),
         [
           '#!/usr/bin/env bash',
           `printf '%s\\n' "$*" > '${dir}/pnpm-args'`,
           'shots="$PWD/apps/web/e2e/brand.spec.ts-snapshots"',
-          'write() { printf "%s" "$2" > "$shots/$1"; echo "  A snapshot doesn\'t exist at $shots/$1, writing actual."; }',
+          'write() { printf "%s" "$2" > "$shots/$1"; }',
+          // Playwright's own line for a missing baseline it writes under --update-snapshots=all (handleMissing).
+          'claim() { echo "  A snapshot doesn\'t exist at $shots/$1, writing actual."; }',
           `case '${mode}' in`,
           '  same|failed) write header-1280-chromium-linux.png header; write report-cover-top-chromium-linux.png cover ;;',
           '  changed) write header-1280-chromium-linux.png header; write report-cover-top-chromium-linux.png "cover, drawn otherwise" ;;',
+          `  large) write header-1280-chromium-linux.png header; cp '${dir}/large.png' "$shots/report-cover-top-chromium-linux.png" ;;`,
           '  unreached) write header-1280-chromium-linux.png header ;;',
+          '  claimed) write header-1280-chromium-linux.png header; claim header-1280-chromium-linux.png; claim report-cover-top-chromium-linux.png ;;',
           '  extra) write header-1280-chromium-linux.png header; write report-cover-top-chromium-linux.png cover; write footer-chromium-linux.png footer ;;',
           'esac',
           `[ '${mode}' = failed ] && exit 1`,
@@ -1909,9 +2044,17 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
       return { ...result, args: readFileSync(path.join(dir, 'pnpm-args'), 'utf8').trim() };
     }
 
-    const sha = (text: string) => createHash('sha256').update(text).digest('hex');
+    const sha = (data: string | Buffer) => createHash('sha256').update(data).digest('hex');
+    /** What the step printed of one picture after its path: its SHA-256 line, then its chunks. */
+    const printed = (output: string, name: string) => {
+      const prefix = `apps/web/e2e/brand.spec.ts-snapshots/${name} `;
+      return output
+        .split('\n')
+        .filter((line) => line.startsWith(prefix))
+        .map((line) => line.slice(prefix.length));
+    };
 
-    it('pass when the run writes every committed baseline from nothing, byte for byte, printing their SHA-256s', () => {
+    it('pass when the run writes every committed baseline from nothing, byte for byte, whatever Playwright prints, printing their SHA-256s', () => {
       const same = regenerate('same');
       expect(same.status, same.output).toBe(0);
       expect(same.args).toMatch(/^--filter @tp\/web exec playwright test e2e\/brand\.spec\.ts --update-snapshots=all --retries=0 --reporter=list --output=\S+\/baselines-results$/);
@@ -1920,19 +2063,34 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
       expect(same.output).not.toContain('::error');
     });
 
-    it('fail on a changed picture, printing it as its path and its base64, on a picture the run did not reach, on one more than committed, and on a failed run', () => {
+    it('fail on a changed picture, printing its SHA-256 and then the picture in numbered chunks of 8,000 base64 characters, on a picture the run did not reach, on one more than committed, and on a failed run', () => {
       const changed = regenerate('changed');
       expect(changed.status).toBe(1);
       expect(changed.output).toContain('::error title=The brand baselines::this runner renders other bytes than the committed baselines');
-      // GNU base64's -w, as the runner has; only the changed picture is printed.
+      // GNU base64's -w, as the runner has; only the changed picture is printed, its SHA-256 first.
       if (spawnSync('base64', ['-w', '0'], { input: '' }).status === 0) {
-        expect(changed.output).toContain(`apps/web/e2e/brand.spec.ts-snapshots/report-cover-top-chromium-linux.png ${Buffer.from('cover, drawn otherwise').toString('base64')}`);
-        expect(changed.output).not.toContain(`header-1280-chromium-linux.png ${Buffer.from('header').toString('base64')}`);
+        expect(printed(changed.output, 'report-cover-top-chromium-linux.png')).toEqual([`sha256 ${sha('cover, drawn otherwise')}`, `1/1 ${Buffer.from('cover, drawn otherwise').toString('base64')}`]);
+        expect(printed(changed.output, 'header-1280-chromium-linux.png')).toEqual([]);
+        // A picture past one chunk: every chunk numbered of the whole, none longer than 8,000 characters, and the chunks
+        // joined decode to the picture whose SHA-256 came first, so a log reader that cuts long lines loses nothing.
+        const large = regenerate('large');
+        expect(large.status).toBe(1);
+        const encoded = LARGE.toString('base64');
+        expect(encoded).toHaveLength(16_460);
+        const lines = printed(large.output, 'report-cover-top-chromium-linux.png');
+        expect(lines).toEqual([`sha256 ${sha(LARGE)}`, `1/3 ${encoded.slice(0, 8000)}`, `2/3 ${encoded.slice(8000, 16_000)}`, `3/3 ${encoded.slice(16_000)}`]);
+        const joined = Buffer.from(lines.slice(1).map((line) => line.split(' ')[1] ?? '').join(''), 'base64');
+        expect(sha(joined)).toBe(lines[0]?.slice('sha256 '.length));
+        expect(large.output.split('\n').every((line) => line.length <= 8000 + 'apps/web/e2e/brand.spec.ts-snapshots/report-cover-top-chromium-linux.png 3/3 '.length)).toBe(true);
       }
       const unreached = regenerate('unreached');
       expect(unreached.status).toBe(1);
       expect(unreached.output).toContain('::error title=The brand baselines::the run wrote 1 baselines from nothing, not the 2 committed');
       expect(unreached.output).toContain('  committed, not written: apps/web/e2e/brand.spec.ts-snapshots/report-cover-top-chromium-linux.png');
+      // A message claiming a picture the run did not write does not make it written.
+      const claimed = regenerate('claimed');
+      expect(claimed.status).toBe(1);
+      expect(claimed.output).toContain('::error title=The brand baselines::the run wrote 1 baselines from nothing, not the 2 committed');
       const extra = regenerate('extra');
       expect(extra.status).toBe(1);
       expect(extra.output).toContain('the run wrote 3 baselines from nothing, not the 2 committed');

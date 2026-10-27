@@ -34,15 +34,20 @@ docs/runbooks/github-governance.md, step 4A), has required them from GitHub Acti
 | `all green` | every job's result, to its log and its summary | 5 min |
 
 Every job runs on `ubuntu-26.04` but the release's capacity chain (`release.yml`'s `build`, `capacity`, `push` and
-`report`; `release-dry-run.yml`'s `build` and `push`; `screening-capacity.yml`'s `capacity`), which stays on
+`report`; `release-dry-run.yml`'s `build`, `push` and `capacity`; `screening-capacity.yml`'s `capacity`), which stays on
 `RELEASE_RUNNER.label`, `ubuntu-24.04` (the founder's F5; docs/adr/0066, Part 3); `screening-capacity.yml`'s dispatch
-input alone may run that job once on 26.04, as an advisory probe. `workflows.test.ts` holds every `runs-on`. No job uses
-`ubuntu-latest`, which moves to 26.04 in November 2026 (runner-images #14748).
+input alone may run that job once on 26.04, as an advisory probe. The two workflows below run on 26.04 too, both of
+`content-calendar`'s jobs and both of `release-capacity`'s: its report is advisory and never attested, so it is not one
+of the chain's binding measurements. `workflows.test.ts` holds every `runs-on`: eight jobs on the chain, twenty-two on
+26.04. No job uses `ubuntu-latest`, which moves to 26.04 in November 2026 (runner-images #14748).
 
 In every job that installs Chromium, `node tools/ci/browser-build.ts` follows the install and holds both builds, every
-file of them, to `apps/web/e2e/browser.json` before any test runs or any cache is saved; the steps after it run when the
-install succeeded, whatever the check said, so a red check still shows the suite's verdict ("Upgrading the browser",
-below).
+file of them, to `apps/web/e2e/browser.json` before any test runs or any cache is saved; in ci.yml's jobs the steps
+after it run when the install succeeded, whatever the check said, so a red check still shows the suite's verdict
+("Upgrading the browser", below), while the capacity jobs stop at a red check. In every job that builds the worker
+image into a local tag (`images`, the release's `build`, and `release-capacity`'s and `screening-capacity`'s
+`capacity`), `node tools/ci/browser-build.ts --image <tag>` holds its headless shell, which prints customers' reports,
+to the same record before the tag is measured, saved or pushed, on Node 24 set up before it.
 
 Beside ci.yml, two workflows of the release content checks (docs/adr/0071) run on a schedule. Neither is a required
 check, and their schedules fire only from the default branch (the founder's ruling F1 (a)); until then they run on
@@ -52,7 +57,7 @@ request. Each issue they open holds only public references: page addresses, file
 | --- | --- | --- |
 | `content-calendar`, `check` | daily at 07:17 UTC, on request, and on a push to `claude/build-platform` or a pull request touching the calendar, `records.ts`, `tools/content-calendar` or `content/`: `tools/content-calendar/index.ts` over the calendar, the newest published release's `COVERAGE.md`, the prepared releases, the drafts and the source pages; the findings to its summary (docs/runbooks/content-updates.md). Read-only, no secret | 15 min |
 | `content-calendar`, `notify` | not on a pull request: one `content-due` issue per finding not already open under the same title (every page of the open issues read), at most 20 new ones a run with the rest listed in one "findings not filed" issue, or one saying the check failed or handed on no findings list, commented on at each later failing run. It alone holds `issues: write`, checks nothing out and runs no repository code | 5 min |
-| `release-capacity`, `capacity` | weekly on Tuesday at 03:29 UTC and on request: the worker image built, the quarterly scale release 900110 built outside the repository, and `tools/release-capacity/run.ts`, the real-size price job, triage and reports at the worker task's limits (RCC-07); its report kept as `release-capacity` | 180 min |
+| `release-capacity`, `capacity` | weekly on Tuesday at 03:29 UTC and on request: the worker image built and its headless shell held to `browser.json` (`browser-build.ts --image`), the quarterly scale release 900110 built outside the repository, and `tools/release-capacity/run.ts`, the real-size price job, triage and reports at the worker task's limits (RCC-07); its report kept as `release-capacity` | 180 min |
 | `release-capacity`, `notify` | on its failure or cancel (the 180-minute timeout among them): opens or comments on the issue "Release capacity test failing"; on a pass with an advisory (the windows query over its 5 s budget): "Release capacity advisory" (label `release-capacity`), the advisory lines in the body. It alone holds `issues: write` and checks nothing out | 5 min |
 
 Each `static` check runs once the install succeeded, whatever the check before it did, so one red step does not hide
@@ -227,7 +232,7 @@ private week (docs/runbooks/github-governance.md, step 1).
 | tsc's build information, `node_modules/.cache/tsc` | `tsc-v1-<os>-<lockfile hash>-<commit>` | `static`, when its typecheck ran | `static`, by the prefix with the lockfile's hash, then any |
 | Each db shard's test durations, `node_modules/.vite/vitest` | `vitest-db-v1-<os>-<N>-<k>-<commit>` | each `db` shard, whatever its result | the same shard, by prefix |
 | Playwright's browsers, `~/.cache/ms-playwright` | `playwright-v1-<os>-<hash of playwright-core's browsers.json>` | `unit`, on a miss, after the browser build check passed | `unit`, every `db` and `e2e` shard, by the exact key |
-| The browser jobs' system packages, `$RUNNER_TEMP/apt-archives` | `apt-v1-<ImageOS>-<ImageVersion>-<hash of apps/web/e2e/browser.json>`, from the `runner-image` step's `key` and `os` outputs; restore-keys `apt-v1-<ImageOS>-<ImageVersion>-`, then `apt-v1-<ImageOS>-` | `unit`, on a miss (`tools/ci/apt-archives.sh collect`); `screening-capacity.yml`'s `capacity`, on a miss, under its own `ubuntu24` key | `unit`, every `db` and `e2e` shard, `large-zip`, `screening-capacity.yml`'s `capacity`; each file verified before apt sees it (`tools/ci/apt-archives.sh verify`) |
+| The browser jobs' system packages, `$RUNNER_TEMP/apt-archives` | `apt-v1-<ImageOS>-<ImageVersion>-<hash of playwright-core's browsers.json>`, from the `runner-image` step's `key` and `os` outputs; restore-keys `apt-v1-<ImageOS>-<ImageVersion>-`, then `apt-v1-<ImageOS>-` | `unit`, on a miss (`tools/ci/apt-archives.sh collect`); `screening-capacity.yml`'s `capacity`, on a miss, under its own `ubuntu24` key | `unit`, every `db` and `e2e` shard, `large-zip`, `screening-capacity.yml`'s `capacity`; each file verified before apt sees it (`tools/ci/apt-archives.sh verify`) |
 
 A run restores its own branch's caches and the default branch's. A pull request's caches are scoped to its own ref, and
 the default branch's are written only by runs of the build branch's own code (push, schedule, dispatch), so the first
@@ -280,7 +285,9 @@ per build:
 
 `node tools/ci/browser-build.ts` checks the builds Playwright installed (under `PLAYWRIGHT_BROWSERS_PATH`, else
 `~/.cache/ms-playwright`); `--image <ref>` checks a built worker image's headless shell inside the image; `--list`
-prints every file's line of each build it found.
+prints every file's line of each build it found. A build that fails the check has its every file's line printed
+anyway, two spaces in, as `--list` prints them, and on a tree difference at the recorded revision the message names
+every path that differs from the committed list, so one red CI run gives everything a new record needs.
 
 **The procedure,** in the upgrade's own pull request:
 1. **Lay the new build out locally.** Run `setup-container.sh` with the worktree as an argument: it lays out every
@@ -300,21 +307,35 @@ prints every file's line of each build it found.
    it again: `git status` must be clean after the second.
 4. **Fix what new rules find.** A new axe release can enable a rule (4.14.0 enabled `label-content-name-mismatch`,
    WCAG 2.5.3): every journey's `expectAccessible` runs it, so fix the finding in the page, not in the scan.
-5. **Read CI's baseline step.** `e2e (1/M)` removes the seven baselines, regenerates them from nothing with
-   `--update-snapshots=all --retries=0` on CI's runner, requires seven written files and a clean
-   `git diff --exit-code` over `apps/web/e2e/brand.spec.ts-snapshots`, and prints the seven SHA-256s. On a difference
-   it fails and prints each changed picture as a `path base64` line: decode it (`base64 -d > <path>`) and commit CI's
-   bytes, since CI is where the comparisons run, and record the local host's disagreement in ADR 0058. The step runs on
-   every pull request and every push run, whatever changed, because application code draws the pictures too.
-6. **If CI's browser differs from Google's.** CI downloads from Playwright's mirror (`cdn.playwright.dev`), whose bytes
-   are proved equal to Google's only by CI's own check. If the check fails on the first run with the new record, take
-   `treeSha256`, `sha256` and the file lists from the check's output (`--list`), keep the zip fields as the local pin,
-   and record it in ADR 0058 as a finding against "Google's build renders as Playwright's".
+5. **Read CI's baseline step.** `e2e (1/M)` removes the committed baselines, regenerates them from nothing with
+   `--update-snapshots=all --retries=0` on CI's runner, requires the pictures present after the run to be exactly the
+   committed set (no message of Playwright's is read) and a clean `git diff --exit-code` over
+   `apps/web/e2e/brand.spec.ts-snapshots`, and prints every picture's SHA-256. On a difference it fails and prints,
+   for each changed picture, a line `<path> sha256 <hex>` and then the picture's base64 as lines
+   `<path> <i>/<n> <8,000 characters>`, so a log reader that cuts long lines still gets it whole. Take every line
+   `<path> 1/<n>` to `<path> <n>/<n>` (a gap means a fuller read of the log, never a partial decode; strip the log's
+   timestamps first), join the third fields in order, decode them (`base64 -d > <path>`), require `sha256sum <path>` to
+   equal the printed `<hex>`, and commit CI's bytes, since CI is where the comparisons run; an unchanged picture's
+   committed bytes stand. Where they differ from the local regeneration, record the local host's disagreement in
+   ADR 0058. The step runs on every pull request and every push run, whatever changed, because application code draws
+   the pictures too.
+6. **If CI's browser differs from the record.** CI downloads from Playwright's mirror (`cdn.playwright.dev`), whose bytes
+   are proved equal to Google's only by CI's own check. If the check fails on the first run with the new record, its
+   output already lists every file CI installed, but CI's values are not taken on their own word: in a commit of its
+   own, a one-off step in `unit` after the check (`if: ${{ !cancelled() }}`) downloads Google's two zips
+   (`https://storage.googleapis.com/chrome-for-testing-public/<version>/linux64/<zip>`), requires their SHA-256s to be
+   `zipSha256`, unzips them into a temporary `PLAYWRIGHT_BROWSERS_PATH` layout and prints `node
+   tools/ci/browser-build.ts --list` over it. If Google's tree equals the record's and the mirror's does not, the
+   mirror serves another build: the record stands and CI installs Google's verified zips instead. If Google's equals
+   the mirror's and not the record's, the record was wrong: `treeSha256`, `sha256` and the file lists take the values
+   both agree on, the zip fields unchanged. Anything else: stop and ask. Revert the one-off commit before the next run,
+   and record the outcome in ADR 0058 against "Google's build renders as Playwright's".
 7. **Inspect every picture** before the merge: each old and new baseline at full resolution, the changed pixels counted
    exactly and under the journey's own comparator, the changed box cropped (old, new, difference), and ADR 0058's
    brand points checked on each new image (the lockup and keystone, the brand colours, the faces, the seal and its
    definition on the with-seal cover, a blank Paper foot on the without-seal cover). For the 1.64.1 upgrade an
-   adversarial visual-inspection agent did this and the pull request links its private gallery.
+   adversarial visual-inspection agent did this, and the pull request links the record (the pictures side by side,
+   both counts, the crops and the agent's verdict) by a commit-pinned URL.
 8. Commit the manifests, the lockfile, `browser.json` with its lists, the baselines and any fix together.
 
 ## Running the same checks locally

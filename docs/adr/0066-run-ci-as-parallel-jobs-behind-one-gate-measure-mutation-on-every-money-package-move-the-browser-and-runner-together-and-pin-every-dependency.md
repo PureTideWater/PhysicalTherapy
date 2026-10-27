@@ -750,43 +750,52 @@ header control's name contains its visible text at 1280 and 390 px.
 
 **Runners (the founder's F5, as recommended, relayed by the co-founder on 2026-10-25 at about 01:10 UTC).** The
 release's capacity chain stays on `RELEASE_RUNNER.label`, `ubuntu-24.04`: `release.yml`'s four jobs,
-`release-dry-run.yml`'s three, which mirror them, and `screening-capacity.yml`'s `capacity`. The other eighteen jobs move
-to `ubuntu-26.04`, `publish-content.yml`'s with its frozen copy (F4). `screening-capacity.yml`'s `workflow_dispatch`
-takes one choice input, `runner` (`ubuntu-24.04` by default, or `ubuntu-26.04`), and its `capacity` job runs on
-`${{ inputs.runner || 'ubuntu-24.04' }}`, so every event but a dispatch naming 26.04 measures on the release's runner.
-The 26.04 run is an advisory probe: `notify` opens no issue for it, the launch check refuses its report (not
-`release.yml`'s run), and its numbers, image store and `docker info` go to issue #41 for the chain's later move.
-`workflows.test.ts` holds the exact chain (`RELEASE_CHAIN`), every other job on 26.04, and resolves the
-`${{ inputs.<name> || '<label>' }}` form against its choice input only, refusing every other expression. On 26.04 the
-database jobs' `pg_dump` is 18, so the restore drill runs on CI and the db suite loses its one skip.
+`release-dry-run.yml`'s three, which mirror them, and `screening-capacity.yml`'s `capacity`. The other twenty-two jobs
+move to `ubuntu-26.04`, `publish-content.yml`'s with its frozen copy (F4), and the four of the base's
+`content-calendar.yml` and `release-capacity.yml` among them under F5's letter: release-capacity's report is advisory
+and never attested, and no launch check reads it, so it is not one of the chain's binding measurements.
+`screening-capacity.yml`'s `workflow_dispatch` takes one choice input, `runner` (`ubuntu-24.04` by default, or
+`ubuntu-26.04`), and its `capacity` job runs on `${{ inputs.runner || 'ubuntu-24.04' }}`, so every event but a dispatch
+naming 26.04 measures on the release's runner. The 26.04 run is an advisory probe: `notify` opens no issue for it, the
+launch check refuses its report (not `release.yml`'s run), and its numbers, image store and `docker info` go to issue
+#41 for the chain's later move. `workflows.test.ts` holds the exact chain (`RELEASE_CHAIN`), every other job on 26.04,
+and resolves the `${{ inputs.<name> || '<label>' }}` form against its choice input only, refusing every other
+expression. On 26.04 the database jobs' `pg_dump` is 18, so the restore drill runs on CI and the db suite loses its one
+skip.
 
 **actionlint** (1.7.7 to 1.7.12 and main) does not know `ubuntu-26.04`. The workflows' test runs it with `-ignore
 'label "ubuntu-26\.04" is unknown'`: one exact message, no configuration file (an `actionlint.yaml` naming the label
 self-hosted would reverse the configuration ban and misname a hosted label). It goes when actionlint lists the label.
 
-**The browser jobs' system packages (V3).** `unit`, every `db` and `e2e` shard, `large-zip` and both capacity jobs
-restore `$RUNNER_TEMP/apt-archives` under `apt-v1-<ImageOS>-<ImageVersion>-<hash of playwright-core's browsers.json>`
-(the runner's own environment, through a step, since the `env` context holds only what a workflow sets), falling back
-to the image version's and the image's earlier keys; `tools/ci/apt-archives.sh verify` fetches the signed indexes and
-copies into apt's archive directory only a file whose SHA-256 is the index's for exactly its name, version and
-architecture, deleting every other, and sets `APT::Keep-Downloaded-Packages`; `collect` gathers what apt kept. `unit`
-and the capacity job save on a miss, on the build branch's own runs only (push, schedule, dispatch), after the browser
-check passed. `release.yml` restores no cache (Part 2), so its one install stays uncached.
+**The browser jobs' system packages (V3).** `unit`, every `db` and `e2e` shard, `large-zip` and
+`screening-capacity.yml`'s `capacity` (under its own runner image's key) restore `$RUNNER_TEMP/apt-archives` under
+`apt-v1-<ImageOS>-<ImageVersion>-<hash of playwright-core's browsers.json>` (the runner's own environment, through a
+step, since the `env` context holds only what a workflow sets), falling back to the image version's and the image's
+earlier keys; `tools/ci/apt-archives.sh verify` fetches the signed indexes and copies into apt's archive directory only
+a file whose SHA-256 is the index's for exactly its name, version and architecture, deleting every other, and sets
+`APT::Keep-Downloaded-Packages`; `collect` gathers what apt kept. `unit` and the capacity job save on a miss, on the
+build branch's own runs only (push, schedule, dispatch), after the browser check passed. `release.yml` restores no cache
+(Part 2), so its one install stays uncached.
 
-**The browser check.** Every step that installs Playwright's browsers, in every workflow, carries `id:
-browser-install` and is followed at once by `node tools/ci/browser-build.ts`, before any test runs or any cache is
-saved. In ci.yml's jobs and large-zip every later step runs while the install succeeded, `${{ !cancelled() &&
-steps.browser-install.outcome == 'success' }}`, so a red check still shows what the new browser does to the suite; the
-capacity jobs stop at a red check instead, because a measurement made with another browser must never be attested as
-passing. Every Playwright bump is red here by construction until a person runs ADR 0058's procedure
-(`docs/runbooks/ci.md`, "Upgrading the browser"): the one exception to A4 (c).
+**The browser check.** Every step that installs Playwright's browsers, in every workflow, carries `id: browser-install`
+and is followed at once by `node tools/ci/browser-build.ts`, before any test runs or any cache is saved. In ci.yml's
+jobs and large-zip every later step runs while the install succeeded, `${{ !cancelled() && steps.browser-install.outcome
+== 'success' }}`, so a red check still shows what the new browser does to the suite; the capacity jobs stop at a red
+check instead, because a measurement made with another browser must never be attested as passing. Every Playwright bump
+is red here by construction until a person runs ADR 0058's procedure (`docs/runbooks/ci.md`, "Upgrading the browser"):
+the one exception to A4 (c). A build that fails the check has every file's line printed, as `--list` prints it, and
+every path that differs from the committed list named, so one run gives all a new record needs. The `--image <tag>` form
+holds the worker image's headless shell in every job that builds that image into a local tag, before the tag is
+measured, saved, tagged or pushed: ci.yml's `images`, the release's `build`, and both measuring jobs,
+`release-capacity.yml`'s and `screening-capacity.yml`'s `capacity` (N17).
 
 **The brand baselines, from nothing, on every run.** The first `e2e` shard of every pull request and push removes the
 committed baselines, regenerates them with `--update-snapshots=all --retries=0` into its own output directory, and fails
-on a failed run, on any set of pictures written other than the committed set, or on any byte, printing the SHA-256s and
-each changed picture as its path and base64. There is no path condition: the pictures are drawn by application code
-(the header, the worker's report covers) as well as by the browser and the runner image, and the journey's comparisons
-pass a change under their tolerance.
+on a failed run, on any set of pictures written (those present after the run) other than the committed set, or on any
+byte, printing the SHA-256s and each changed picture's SHA-256, then the picture as lines `<path> <i>/<n> <8,000 base64
+characters>` (N19). There is no path condition: the pictures are drawn by application code (the header, the worker's
+report covers) as well as by the browser and the runner image, and the journey's comparisons pass a change under their
+tolerance.
 
 **The release's images, bound by content under either image store.** `tools/screening-capacity/image-id.ts` (`node:`
 modules only) reads a `docker save` or buildx `type=docker` archive, plain or gzipped, as one stream, hashes the config
@@ -863,7 +872,9 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
 ### Notices (decided by the build under the standing rule; the founder can reverse any)
 
 - **N12.** `release-dry-run.yml`'s `capacity` job stays on the release's runner with the rest of the chain it mirrors,
-  so the chain is eight jobs, not the design's seven; eighteen move.
+  so the chain is eight jobs, not the design's seven; twenty-two move, the four jobs of the base's
+  `content-calendar.yml` and `release-capacity.yml` among them (F5's letter: release-capacity's report is advisory and
+  never attested).
 - **N13.** The apt cache key hashes playwright-core's installed `browsers.json` (the browser cache's own file, which
   moves with every Playwright build) rather than `browser.json`, and is saved by the build branch's own runs only.
 - **N14.** The baseline step compares the set of pictures written with the committed set (seven today) rather than
@@ -872,6 +883,26 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
   attested, with another browser than the record's.
 - **N16.** The release's `build` and `capacity` jobs also prove each tag on their own store, and the dry run's
   `capacity` runs release.yml's archive check, so every check a tag runs is exercised by a pull request first.
+- **N17.** Both measuring jobs that build the worker image, `release-capacity.yml`'s and `screening-capacity.yml`'s
+  `capacity`, check its headless shell with `browser-build.ts --image` before anything is installed or measured, beside
+  `images` and the release's `build`: the weekly runs measure the image whose headless shell prints customers' reports,
+  read a layer cache, and the check takes seconds. `workflows.test.ts` holds that every job building
+  `apps/worker/Dockerfile` into a local tag checks that tag before it is measured, saved, tagged or pushed, and that
+  `actions/setup-node` with Node 24 comes before every such check, each job keeping its own cache inputs (the check
+  imports only Node's own modules); release-capacity's Node for its check restores no cache.
+- **N18.** The baselines are regenerated on a local Chrome for Testing 156.0.8078.4 laid out from Google's two zips,
+  each checked against `browser.json`'s `zipSha256` and the browser check passing on it (`--update-snapshots=all`, then
+  again as the no-op), and CI's baseline step proves the committed bytes on ubuntu-26.04 on every run. Where the two
+  disagree, CI's bytes are committed, since CI is where the comparisons run, and the disagreement is recorded against
+  ADR 0058's claim that the local host renders as CI does. Should the browser check fail on CI, CI's values are not
+  adopted on its word: a one-off step downloads Google's two zips on CI, requires their `zipSha256` and lists their
+  builds; the record changes only where Google's bytes agree with CI's, and a mirror that serves other bytes than
+  Google's is replaced on CI by Google's verified build.
+- **N19.** The baseline step takes the pictures written as those present after the run, every one having been removed
+  before it, so no message text of Playwright's is read, and prints each changed picture's SHA-256 and then the picture
+  as lines `<path> <i>/<n> <8,000 base64 characters>`: a log reader that cuts long lines still gets every chunk, and the
+  SHA-256 proves each decode (where the series is built, CI's logs are read through an API that may cut a
+  66,000-character line, and the artifact and raw-log hosts are out of reach).
 
 ### Consequences
 

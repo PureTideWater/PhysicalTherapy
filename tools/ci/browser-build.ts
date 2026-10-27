@@ -25,7 +25,10 @@ import path from 'node:path';
  * and those lines are committed beside browser.json as browser-builds/<dir>.sha256, whose own SHA-256 is the recorded
  * tree SHA-256, so a build that differs is named down to its files. Playwright verifies no download and the CI
  * cache restores browsers by key alone, so every file counts: the software GL that draws the pictures, the ICU data
- * and the resources as much as the binary. Any difference fails, with what was found and what is recorded.
+ * and the resources as much as the binary. Any difference fails, with what was found and what is recorded, and prints
+ * every file's line of the build found, as --list does; on a tree difference at the recorded revision it also names
+ * every path whose line differs from the committed list. So one run gives all a new record needs (a Playwright
+ * upgrade's, or a mirror's other bytes).
  *
  * With --image it checks a built worker image instead and needs no node_modules: the image's own
  * node_modules/playwright-core/browsers.json (`docker run --rm --entrypoint cat`) and the headless shell's tree,
@@ -33,7 +36,7 @@ import path from 'node:path';
  * with that headless shell.
  *
  * Run by Node 24 directly, with no install: Node's own modules and erasable TypeScript only (browser-build.test.ts
- * holds that). --list prints every file's line of each build found.
+ * holds that). --list prints every file's line of each build found; a build that fails the check has them printed anyway.
  */
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
@@ -240,23 +243,25 @@ function recordedLines(recordFile: string, build: RecordedBuild): { lines: strin
   return { lines: text.split('\n').filter((line) => line !== ''), problem: null };
 }
 
-/** Up to ten paths whose line differs between the recorded list and the found one, each with how. */
-export function differingPaths(recorded: readonly string[], found: readonly string[]): { paths: string[]; count: number } {
+/** Every path whose line differs between the recorded list and the found one, each with how, by path bytes. */
+export function differingPaths(recorded: readonly string[], found: readonly string[]): string[] {
   const index = (lines: readonly string[]) => new Map(lines.map((line) => [line.slice(66), line.slice(0, 64)]));
   const before = index(recorded);
   const after = index(found);
   const names = [...new Set([...before.keys(), ...after.keys()])].sort((left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right)));
-  const differing = names.flatMap((name) => {
+  return names.flatMap((name) => {
     const was = before.get(name);
     const is = after.get(name);
     if (was === is) return [];
     return [`${name} (${was === undefined ? 'added' : is === undefined ? 'removed' : 'changed'})`];
   });
-  return { paths: differing.slice(0, 10), count: differing.length };
 }
 
-/** Compares one found build with the record: the lines to print, and the failures. */
-export function compare(name: BuildName, record: BrowserRecord, recordFile: string, found: FoundBuild): { report: string[]; problems: string[] } {
+/**
+ * Compares one found build with the record: the lines to print, the failures, and whether the found build's every file
+ * line is to be printed (on any failure, where a build was found).
+ */
+export function compare(name: BuildName, record: BrowserRecord, recordFile: string, found: FoundBuild): { report: string[]; problems: string[]; listFiles: boolean } {
   const recorded = record.builds[name];
   const { title } = BUILDS[name];
   const tree = found.dir === null ? `absent (no build under ${found.where})` : treeSha256(found.lines);
@@ -272,16 +277,16 @@ export function compare(name: BuildName, record: BrowserRecord, recordFile: stri
       `${title} is ${found.browserVersion} (revision ${found.revision}, tree SHA-256 ${tree}, binary SHA-256 ${binary}), ` +
       `and browser.json records ${record.browserVersion} (revision ${record.revision}, tree SHA-256 ${recorded.treeSha256}, binary SHA-256 ${recorded.sha256}). ${PROCEDURE}`;
     if (found.revision === record.revision && found.dir === recorded.dir && tree !== recorded.treeSha256 && listed.lines !== null) {
-      const { paths, count } = differingPaths(listed.lines, found.lines);
-      message += ` ${String(count)} files differ from ${path.relative(ROOT, listFile(recordFile, recorded))}${count > 10 ? ', the first ten' : ''}: ${paths.join(', ')}.`;
+      const paths = differingPaths(listed.lines, found.lines);
+      message += ` ${String(paths.length)} files differ from ${path.relative(ROOT, listFile(recordFile, recorded))}: ${paths.join(', ')}.`;
     }
     problems.push(message);
   }
   if (found.others.length > 0) {
-    problems.push(`${title}'s build holds ${String(found.others.length)} entries that are neither regular files nor directories, which no tree SHA-256 covers: ${found.others.slice(0, 10).join(', ')}.`);
+    problems.push(`${title}'s build holds ${String(found.others.length)} entries that are neither regular files nor directories, which no tree SHA-256 covers: ${found.others.join(', ')}.`);
   }
   if (problems.length === 0) report.push(`${title}: equal to browser.json in every file`);
-  return { report, problems };
+  return { report, problems, listFiles: found.dir !== null && problems.length > 0 };
 }
 
 export interface RunOptions {
@@ -325,9 +330,9 @@ export function run(options: RunOptions): number {
       builds.push(['chromium-headless-shell', imageBuild(image, record.builds['chromium-headless-shell'], options.env)]);
     }
     for (const [name, found] of builds) {
-      const { report, problems } = compare(name, record, recordFile, found);
+      const { report, problems, listFiles } = compare(name, record, recordFile, found);
       for (const line of report) options.out(line);
-      if (list) for (const line of found.lines) options.out(`  ${line}`);
+      if (list || listFiles) for (const line of found.lines) options.out(`  ${line}`);
       for (const problem of problems) options.err(problem);
       failures += problems.length;
     }

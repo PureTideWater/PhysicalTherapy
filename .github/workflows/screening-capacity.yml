@@ -221,6 +221,11 @@ jobs:
             fi
             echo "$image: config $config, loaded as $id on the $store image store"
           done
+      # The worker image measured here prints customers' reports with its headless shell: every file of it, inside the
+      # image loaded (a cached layer included), held to apps/web/e2e/browser.json before anything is installed or
+      # measured (tools/ci/browser-build.ts, node: modules only; docs/adr/0066, Part 3).
+      - name: Check the worker image's headless shell against browser.json
+        run: node tools/ci/browser-build.ts --image tp-worker:capacity
       - run: pnpm install --frozen-lockfile
       # The runner image's name and version, from the runner's own environment: the system packages' cache key, this
       # job's own (ubuntu24, or ubuntu26 for the probe).
