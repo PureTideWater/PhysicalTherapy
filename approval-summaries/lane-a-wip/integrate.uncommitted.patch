@@ -1,3 +1,100 @@
+diff --git a/apps/web/e2e/mail-cutoff.spec.ts b/apps/web/e2e/mail-cutoff.spec.ts
+index 6d4fa31a..ecbbf9d8 100644
+--- a/apps/web/e2e/mail-cutoff.spec.ts
++++ b/apps/web/e2e/mail-cutoff.spec.ts
+@@ -137,7 +137,9 @@ cutoffTest('a seventh hard bounce in a week pauses the screening stream alone; t
+       await expect(screening).toHaveAttribute('data-state', 'paused');
+       await expect(screening).toContainText('Its bounce rate passed the cut-off');
+       // The resume form says a review SES still holds pauses it again (the platform reads SES's enforcement each minute).
+-      await expect(screening.locator('[data-copy="resume-review"]')).toHaveText('If SES still has the account under review, the platform pauses it again within a minute.');
++      await expect(screening.locator('[data-copy="resume-review"]')).toHaveText(
++        'If SES still has the account under review, the platform pauses it again within a minute. Resume only once the account’s bounce and complaint rates are under their warnings: a warning still raised does not pause it again.',
++      );
+       // The customer streams never pause.
+       await expect(admin.locator('[data-stream="transactional"]')).toHaveAttribute('data-state', 'sending');
+       await expect(admin.locator('[data-stream="notices"]')).toHaveAttribute('data-state', 'sending');
+@@ -171,10 +173,12 @@ cutoffTest('a seventh hard bounce in a week pauses the screening stream alone; t
+       await admin.goto('/console/mail');
+       await expect(admin.locator('[data-stream="screening"]')).toHaveAttribute('data-state', 'sending');
+       await expect(admin.locator('[data-ready]')).toHaveAttribute('data-ready', 'yes');
+-      // Sending, the card says when the stream pauses by itself, the floors' own counts named, and what a mark is on.
++      // Sending, the card says when the stream pauses by itself, the floors' own counts named, the window as the later of
++      // its two starts, each rate and count in the mono face, and what a mark is on.
+       await expect(admin.locator('[data-stream="screening"]')).toContainText(
+-        'It pauses by itself when more than 3% of its sends bounce permanently (counted over at least 200 sends, so 7 hard bounces pause it) or more than 0.08% are reported as spam (over at least 2,500, so 3 complaints pause it), within 7 days or since the last resume; on the account’s warnings; or under an SES review.',
++        'It pauses by itself when more than 3% of its sends in the window bounce permanently (over at least 200 sends, so 7 hard bounces pause it) or more than 0.08% are reported as spam (over at least 2,500, so 3 complaints pause it); the window is the last 7 days, or since the last resume if that is later. It also pauses on the account’s warnings or under an SES review.',
+       );
++      await expect(admin.locator('[data-stream="screening"] [data-copy="cutoff"] .font-mono')).toHaveText(['3%', '200', '7', '0.08%', '2,500', '3', '7']);
+       await expect(admin.locator('[data-stream="screening"]')).toContainText('on email domains or mailboxes (3 refuse a fourth screening)');
+       await prospect.goto('/screening');
+       await expect(prospect.locator('[data-state="paused"]')).toHaveCount(0);
+diff --git a/apps/web/e2e/mail-notices.spec.ts b/apps/web/e2e/mail-notices.spec.ts
+index e69a4bea..28202a51 100644
+--- a/apps/web/e2e/mail-notices.spec.ts
++++ b/apps/web/e2e/mail-notices.spec.ts
+@@ -79,7 +79,7 @@ test('a support-access notice the suppression list stops is not delivered to 1 o
+     await page.goto(`/p/${practiceId}/notifications`);
+     const link = page.getByRole('link', { name: 'A support-access opening notice did not reach every administrator' });
+     await expect(link).toBeVisible();
+-    await expect(page.getByRole('list', { name: 'Notifications' })).toContainText("Check your administrators' email addresses.");
++    await expect(page.getByRole('list', { name: 'Notifications' })).toContainText("Check your administrators' email addresses; if an address is right, ask PaidWhole support to release it.");
+     await expect(page.getByRole('list', { name: 'Notifications' })).not.toContainText('@');
+     await expectAccessible(page, 'the notifications with an undelivered notice');
+     await atPhoneWidth(page, 'the notifications with an undelivered notice');
+diff --git a/apps/web/src/app/console/mail/page.tsx b/apps/web/src/app/console/mail/page.tsx
+index a4f07839..739cb6c4 100644
+--- a/apps/web/src/app/console/mail/page.tsx
++++ b/apps/web/src/app/console/mail/page.tsx
+@@ -34,6 +34,20 @@ function streamState(stream: MailStreamView): { readonly label: string; readonly
+  * by hand, and resumes it only with a reason. Counts, states and IDs, and a customer's user by the sign-in email the
+  * console's other screens show; never a screening address, and never SES's own record of a recipient.
+  */
++/** A figure of the cut-off sentence: a rate or a count, in the mono face with tabular numerals. */
++function Figure({ children }: { readonly children: string }) {
++  return <span className="font-mono tabular-nums">{children}</span>;
++}
++
++/** When the screening stream pauses by itself (docs/adr/0065, D6; the founder's Q9). */
++const CUTOFF_SENTENCE = (
++  <span data-copy="cutoff">
++    It pauses by itself when more than <Figure>3%</Figure> of its sends in the window bounce permanently (over at least <Figure>200</Figure> sends, so <Figure>7</Figure> hard bounces pause it)
++    or more than <Figure>0.08%</Figure> are reported as spam (over at least <Figure>2,500</Figure>, so <Figure>3</Figure> complaints pause it); the window is the last <Figure>7</Figure> days, or
++    since the last resume if that is later. It also pauses on the account’s warnings or under an SES review.
++  </span>
++);
++
+ export default async function ConsoleMailPage(props: { readonly searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+   const page = await loadPage(consoleMailPage, props);
+   if (page.kind === 'forbidden') {
+@@ -69,9 +83,10 @@ export default async function ConsoleMailPage(props: { readonly searchParams: Pr
+                   ? `Paused ${utc(stream.pausedAt)}: ${stream.pausedReason === null ? 'reason not recorded' : PAUSE_REASON_LABELS[stream.pausedReason]}.`
+                   : stream.stream === 'screening'
+                     ? // The cut-off as the database computes it (each rate over at least a floor of sends, in the window
+-                      // mail_window_counts() reads), so the floor's own count of hard bounces or complaints pauses it (7
+-                      // and 3), not only once that many sends exist.
+-                      'It pauses by itself when more than 3% of its sends bounce permanently (counted over at least 200 sends, so 7 hard bounces pause it) or more than 0.08% are reported as spam (over at least 2,500, so 3 complaints pause it), within 7 days or since the last resume; on the account’s warnings; or under an SES review.'
++                      // mail_window_counts() reads, from the later of 7 days ago and the last resume), so the floor's own
++                      // count of hard bounces or complaints pauses it (7 and 3), not only once that many sends exist; each
++                      // rate and count in the mono face (the review of 2026-10-27).
++                      CUTOFF_SENTENCE
+                     : 'It never pauses: it alarms instead.'}
+               </CardDescription>
+             </CardHeader>
+@@ -122,9 +137,12 @@ export default async function ConsoleMailPage(props: { readonly searchParams: Pr
+                   <FormKeys />
+                   <input type="hidden" name="stream" value="screening" />
+                   <SelectField label="Why it can resume" id="resume-reason" name="reason" required options={[{ value: '', label: 'Choose a reason' }, ...resumeReasons]} />
+-                  {/* The mail_events job reads SES's enforcement every minute and pauses the stream again under a review. */}
++                  {/* The mail_events job reads SES's enforcement every minute and pauses the stream again under a review; an
++                      account-rate alarm pauses it only as the alarm goes into ALARM, so one still raised does not (the
++                      review of 2026-10-27). */}
+                   <p className="text-sm text-muted-foreground" data-copy="resume-review">
+-                    If SES still has the account under review, the platform pauses it again within a minute.
++                    If SES still has the account under review, the platform pauses it again within a minute. Resume only once the account’s bounce and complaint rates are under their warnings: a
++                    warning still raised does not pause it again.
+                   </p>
+                 </ActionForm>
+               )}
 diff --git a/apps/web/src/app/settings/organizations/[organizationId]/users/page.tsx b/apps/web/src/app/settings/organizations/[organizationId]/users/page.tsx
 index b2d95245..04792ded 100644
 --- a/apps/web/src/app/settings/organizations/[organizationId]/users/page.tsx
@@ -126,6 +223,219 @@ index b2d95245..04792ded 100644
 +    </ActionForm>
 +  );
 +}
+diff --git a/apps/web/src/components/monitoring/display.test.tsx b/apps/web/src/components/monitoring/display.test.tsx
+index 446837c8..182558a1 100644
+--- a/apps/web/src/components/monitoring/display.test.tsx
++++ b/apps/web/src/components/monitoring/display.test.tsx
+@@ -32,11 +32,11 @@ function undelivered(notice: 'support_grant_opened' | 'support_grant_closed'): N
+ }
+ 
+ describe('an undelivered support-access notice', () => {
+-  it('says which notice did not reach every administrator, links to its grant and asks for the addresses to be checked', () => {
++  it('says which notice did not reach every administrator, links to its grant and asks for the addresses to be checked, and support to release a right one', () => {
+     const opening = renderToStaticMarkup(<NotificationText practiceId={PRACTICE} notification={undelivered('support_grant_opened')} />);
+     expect(opening).toContain('A support-access opening notice did not reach every administrator');
+     expect(opening).toContain(`href="/p/${PRACTICE}/support-access/${GRANT}"`);
+-    expect(opening).toContain('Check your administrators&#x27; email addresses.');
++    expect(opening).toContain('Check your administrators&#x27; email addresses; if an address is right, ask PaidWhole support to release it.');
+     const closing = renderToStaticMarkup(<NotificationText practiceId={PRACTICE} notification={undelivered('support_grant_closed')} />);
+     expect(closing).toContain('A support-access closing notice did not reach every administrator');
+     // No figure and no address: the grant's page says how many it reached.
+diff --git a/apps/web/src/components/monitoring/display.tsx b/apps/web/src/components/monitoring/display.tsx
+index e0cf0eeb..eb6cb88c 100644
+--- a/apps/web/src/components/monitoring/display.tsx
++++ b/apps/web/src/components/monitoring/display.tsx
+@@ -48,13 +48,15 @@ export function NotificationText({ practiceId, notification }: { readonly practi
+     );
+   }
+   if (notification.kind === 'support_notice_undelivered') {
+-    // Its counts and totals are empty: the grant's page says how many administrators the notice reached.
++    // Its counts and totals are empty: the grant's page says how many administrators the notice reached. A right address
++    // SES holds back with the account's suppression list (an earlier bounce or spam report) is released by PaidWhole's
++    // support (docs/runbooks/deliverability.md, 3.3; the review of 2026-10-27).
+     return (
+       <span>
+         <Link className="font-medium underline" href={`/p/${practiceId}/support-access/${notification.supportGrantId ?? ''}`}>
+           A support-access {notification.notice === 'support_grant_closed' ? 'closing' : 'opening'} notice did not reach every administrator
+         </Link>
+-        . Check your administrators&apos; email addresses.
++        . Check your administrators&apos; email addresses; if an address is right, ask PaidWhole support to release it.
+       </span>
+     );
+   }
+diff --git a/apps/web/src/components/screening/result.test.tsx b/apps/web/src/components/screening/result.test.tsx
+index 84ba2271..aa093b06 100644
+--- a/apps/web/src/components/screening/result.test.tsx
++++ b/apps/web/src/components/screening/result.test.tsx
+@@ -594,6 +594,9 @@ describe('what the result says is kept (audit #57; decisions 7, 17 and 18)', ()
+       'If email to the address you gave cannot be delivered, or is reported as spam, we keep a coded form of it, which cannot be turned back into the address, for 12 months, only to refuse another screening to that address.',
+     );
+     expect(text).not.toMatch(/\bnever send\b/);
++    // And the mail service's record of the address check, which outlives the result (docs/adr/0065, residual 1; the
++    // review of 2026-10-27): the page that says the address is deleted says this too.
++    expect(text).toContain('The mail service that checks whether the address can receive email keeps a record of that check, which can name the address, for 90 days.');
+   });
+ 
+   it('tells a prospect whose screening took over an earlier request that their details are kept with it, never that they are deleted', () => {
+diff --git a/apps/web/src/components/screening/upload-form.test.tsx b/apps/web/src/components/screening/upload-form.test.tsx
+index 4bddd274..b1cdf61b 100644
+--- a/apps/web/src/components/screening/upload-form.test.tsx
++++ b/apps/web/src/components/screening/upload-form.test.tsx
+@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest';
+ import type { ActionState } from '../../lib/http/next';
+ import { PROSPECT_SOURCE_OPTIONS } from '../../lib/routes/onboarding';
+ import { ABOUT_PRACTICE, UPLOAD_EMAIL_HINT } from '../../lib/screening/retention';
+-import { ScreeningUploadForm, ZIP_HINT } from './upload-form';
++import { SCREENING_BOUNCE_BUDGET, SCREENING_PAUSED } from '../../lib/screening/messages';
++import { ScreeningUploadForm, UploadRefusal, ZIP_HINT } from './upload-form';
+ 
+ /**
+  * The screening's upload form as the server renders it (CO-04; decisions D18 a, D20 a and D21 a): the file is read in
+@@ -79,6 +80,8 @@ describe('the screening upload form', () => {
+     expect(UPLOAD_EMAIL_HINT).toContain('keep a record of counts that names no one');
+     // What happens if the practice has, or asks for, an audit, without saying whether it has (decision 17).
+     expect(UPLOAD_EMAIL_HINT).toContain('If an audit is requested from the screening, or was requested from an earlier screening with the same practice name and ZIP code');
++    // The mail service's record of the address check outlives the deletion the hint states (the review of 2026-10-27).
++    expect(UPLOAD_EMAIL_HINT).toContain('The mail service that checks whether the address can receive email keeps a record of that check, which can name the address, for 90 days.');
+     expect(plain).toContain(ABOUT_PRACTICE);
+   });
+ 
+@@ -98,3 +101,30 @@ describe('the screening upload form', () => {
+     expect(html).toMatch(/aria-describedby="screening-template-rules"/);
+   });
+ });
++
++describe('the upload’s refusal', () => {
++  const render = (state: ActionState) => renderToStaticMarkup(<UploadRefusal state={state} />);
++  const words = (html: string) => html.replace(/<!-- -->/g, '').replace(/<[^>]+>/g, '');
++
++  it('says a refusal of the form as a whole as its own text, names no field it does not mark, and links the audit request it offers (the review of 2026-10-27)', () => {
++    for (const message of [SCREENING_PAUSED.refusal, SCREENING_BOUNCE_BUDGET]) {
++      const html = render({ error: 'Check the fields marked below.', invalid: true, issues: [{ field: 'input', message }] });
++      expect(words(html)).toBe(`Not done${message}`);
++      expect(html).not.toContain('Check the fields marked below.');
++      expect(html).not.toContain('Form:');
++      expect(html).toContain('<a class="underline" href="/request-audit">request an audit</a>');
++      expect(html).toContain('role="alert"');
++      expect(html).toContain('tabindex="-1"');
++    }
++    // A sentence with no audit request, its first letter capitalized; the words are the server's.
++    expect(words(render({ error: 'Check the fields marked below.', invalid: true, issues: [{ field: 'input', message: 'screening is not open yet; try again later' }] }))).toBe(
++      'Not doneScreening is not open yet; try again later',
++    );
++  });
++
++  it('lists a refusal of the form’s fields by the field each names, under the summary', () => {
++    const html = render({ error: 'Check the fields marked below.', invalid: true, issues: [{ field: 'zip', message: 'this ZIP code is not in the Medicare locality map in force; check it' }] });
++    expect(words(html)).toBe('Not doneCheck the fields marked below.ZIP code: this ZIP code is not in the Medicare locality map in force; check it');
++    expect(render({})).toBe('');
++  });
++});
+diff --git a/apps/web/src/components/screening/upload-form.tsx b/apps/web/src/components/screening/upload-form.tsx
+index 182e2964..9e61ef69 100644
+--- a/apps/web/src/components/screening/upload-form.tsx
++++ b/apps/web/src/components/screening/upload-form.tsx
+@@ -1,7 +1,8 @@
+ 'use client';
+ 
+ import { Alert, AlertDescription, AlertTitle, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label } from '@tp/ui';
+-import { type FormEvent, startTransition, useActionState, useEffect, useRef, useState } from 'react';
++import Link from 'next/link';
++import { type FormEvent, type ReactNode, type Ref, startTransition, useActionState, useEffect, useRef, useState } from 'react';
+ 
+ import type { ContentQuarters } from '@tp/worker/screening-format';
+ 
+@@ -130,6 +131,65 @@ function issueField(field: string): string {
+   return FIELD_NAMES[field] ?? field;
+ }
+ 
++/** The words of a refusal that link to the audit request, where the page's own link is far below. */
++const REQUEST_AN_AUDIT = 'request an audit';
++
++/** A refusal's sentence as the alert's text: its first letter capitalized, and "request an audit" linked to the form. */
++function refusalSentence(message: string): ReactNode {
++  const sentence = `${message.charAt(0).toUpperCase()}${message.slice(1)}`;
++  const at = sentence.indexOf(REQUEST_AN_AUDIT);
++  if (at < 0) {
++    return sentence;
++  }
++  return (
++    <>
++      {sentence.slice(0, at)}
++      <Link className="underline" href="/request-audit">
++        {REQUEST_AN_AUDIT}
++      </Link>
++      {sentence.slice(at + REQUEST_AN_AUDIT.length)}
++    </>
++  );
++}
++
++/**
++ * The server's refusal of an upload, which takes the focus when no field of the form is refused. A refusal of the form
++ * as a whole (every issue is "input": the screening paused or closed, or the bounce budget) is said as the alert's own
++ * text, with no "Check the fields marked below." and no "Form:" label, since no field is marked, and its "request an
++ * audit" links to the request form, the next step it names (the review of 2026-10-27). Any other refusal lists each issue
++ * by the field it names, which the form marks too.
++ */
++export function UploadRefusal({ state, ref }: { readonly state: ActionState; readonly ref?: Ref<HTMLDivElement> }) {
++  if (state.error === undefined) {
++    return null;
++  }
++  const issues = state.issues ?? [];
++  const formOnly = issues.length > 0 && issues.every((issue) => issue.field === 'input');
++  return (
++    <Alert variant="destructive" data-state="error" ref={ref} tabIndex={-1}>
++      <AlertTitle>Not done</AlertTitle>
++      <AlertDescription>
++        {formOnly ? (
++          issues.map((issue) => <p key={issue.message}>{refusalSentence(issue.message)}</p>)
++        ) : (
++          <>
++            <p>{state.error}</p>
++            {issues.length === 0 ? null : (
++              <ul className="mt-1 list-disc pl-5">
++                {issues.map((issue) => (
++                  <li key={`${issue.field}:${issue.message}`}>
++                    {issueField(issue.field)}: {issue.message}
++                  </li>
++                ))}
++              </ul>
++            )}
++          </>
++        )}
++      </AlertDescription>
++    </Alert>
++  );
++}
++
+ /** The fields of this form the server may refuse, in the form's order: a refusal moves the focus to the first. */
+ const REFUSABLE_FIELDS = ['practiceName', 'state', 'zip', 'contactEmail', 'heardFrom', 'referringFirm'] as const;
+ 
+@@ -323,23 +383,7 @@ export function ScreeningUploadForm({ action, states, maxRows, minClaimLines, se
+           ) : null}
+         </CardContent>
+       </Card>
+-      {state.error === undefined ? null : (
+-        <Alert variant="destructive" data-state="error" ref={errorRef} tabIndex={-1}>
+-          <AlertTitle>Not done</AlertTitle>
+-          <AlertDescription>
+-            <p>{state.error}</p>
+-            {state.issues === undefined || state.issues.length === 0 ? null : (
+-              <ul className="mt-1 list-disc pl-5">
+-                {state.issues.map((issue) => (
+-                  <li key={`${issue.field}:${issue.message}`}>
+-                    {issueField(issue.field)}: {issue.message}
+-                  </li>
+-                ))}
+-              </ul>
+-            )}
+-          </AlertDescription>
+-        </Alert>
+-      )}
++      <UploadRefusal state={state} ref={errorRef} />
+       <div>
+         <Button type="submit" disabled={pending || reading}>
+           {pending ? 'Sending…' : 'Screen the file'}
 diff --git a/apps/web/src/lib/routes/mail-routes.db.test.ts b/apps/web/src/lib/routes/mail-routes.db.test.ts
 index 086b8267..61799169 100644
 --- a/apps/web/src/lib/routes/mail-routes.db.test.ts
@@ -265,6 +575,69 @@ index 5c442153..1659380a 100644
   */
  
  import { canonicalMailbox, canonicalMailboxParts } from '@tp/db/runtime';
+diff --git a/apps/web/src/lib/screening/retention.ts b/apps/web/src/lib/screening/retention.ts
+index 202124c8..4907305a 100644
+--- a/apps/web/src/lib/screening/retention.ts
++++ b/apps/web/src/lib/screening/retention.ts
+@@ -1,4 +1,4 @@
+-import { KEPT_COUNTS, KEPT_IF_REQUESTED, KEPT_SUMMARY, type KeptWith, MATCHED } from '@tp/worker/screening-wording';
++import { ADDRESS_CHECK_KEPT, KEPT_COUNTS, KEPT_IF_REQUESTED, KEPT_SUMMARY, type KeptWith, MATCHED, REFUSED_ADDRESS_KEPT } from '@tp/worker/screening-wording';
+ 
+ /**
+  * What the screening's pages say is kept, and for how long (audit #57; the founder's rulings of 2026-10-20, decisions
+@@ -12,18 +12,13 @@ import { KEPT_COUNTS, KEPT_IF_REQUESTED, KEPT_SUMMARY, type KeptWith, MATCHED }
+  * legal surface counsel reviews before the screening opens (docs/product/legal-surfaces.md).
+  */
+ 
+-export { KEPT_COUNTS, KEPT_SUMMARY } from '@tp/worker/screening-wording';
+-
+ /**
+- * What outlives a screening's address when its email could not be delivered or was reported as spam (audit #76; the
+- * founder's Q11 (b) of 2026-10-21: a keyed hash kept 12 months, used only to refuse that address; docs/adr/0065). The
+- * pages never call it deleted. It says what the hash does, refuse a new screening to the address, and not "never send to
+- * it again": the hash lapses after 12 months, and a screening already accepted for the address is still sent (the
+- * review of 2026-10-23, Wording). A legal surface counsel reviews with the others before the screening opens (open item
+- * O4).
++ * What outlives a screening's address, as every surface that says the address is deleted says it (the result email
++ * too): its coded form, when its email could not be delivered or was reported as spam (REFUSED_ADDRESS_KEPT, Q11 (b)),
++ * and the mail service's 90-day record of the check that it can receive email (ADDRESS_CHECK_KEPT; docs/adr/0065,
++ * residual 1; the review of 2026-10-27).
+  */
+-export const REFUSED_ADDRESS_KEPT =
+-  'If email to the address you gave cannot be delivered, or is reported as spam, we keep a coded form of it, which cannot be turned back into the address, for 12 months, only to refuse another screening to that address.';
++export { ADDRESS_CHECK_KEPT, KEPT_COUNTS, KEPT_SUMMARY, REFUSED_ADDRESS_KEPT } from '@tp/worker/screening-wording';
+ export type { KeptWith } from '@tp/worker/screening-wording';
+ 
+ /** The result page: until when the link opens the result, what is deleted then, and what is kept, by what its summary is kept with. */
+@@ -31,7 +26,7 @@ export function resultRetention(until: string, keptWith: KeptWith, converted: bo
+   const closes = `This link still closes on ${until}, and then we delete the result’s rows and figures.`;
+   switch (keptWith) {
+     case 'none':
+-      return `This link opens it until ${until}, or until a later screening for the same practice or from the same email address replaces it. Then we delete the result: its rows and figures, and the practice name, ZIP code and email address you gave. ${REFUSED_ADDRESS_KEPT} If you request an audit from it, we keep ${KEPT_SUMMARY} with your request for 12 months from the screening. We keep a record of counts that names no one: ${KEPT_COUNTS}.`;
++      return `This link opens it until ${until}, or until a later screening for the same practice or from the same email address replaces it. Then we delete the result: its rows and figures, and the practice name, ZIP code and email address you gave. ${REFUSED_ADDRESS_KEPT} ${ADDRESS_CHECK_KEPT} If you request an audit from it, we keep ${KEPT_SUMMARY} with your request for 12 months from the screening. We keep a record of counts that names no one: ${KEPT_COUNTS}.`;
+     case 'own_request':
+       return `Because you requested an audit, we keep ${KEPT_SUMMARY} with your request for 12 months from the screening. ${closes} We also keep a record of counts for every screening that names no one: ${KEPT_COUNTS}; while we keep your request, yours can be matched to it.`;
+     case 'earlier_request':
+@@ -42,16 +37,16 @@ export function resultRetention(until: string, keptWith: KeptWith, converted: bo
+ }
+ 
+ /** The closed link's page: it cannot say whether the screening was kept with a request, so it says what happens if it was. */
+-export const CLOSED_LINK_KEPT = `A screening link opens its result for 30 days from the upload, or until a later screening for the same practice or from the same email address replaces it. Then we delete the result and the details given with it, and keep a record of counts that names no one. ${REFUSED_ADDRESS_KEPT} ${KEPT_IF_REQUESTED}`;
++export const CLOSED_LINK_KEPT = `A screening link opens its result for 30 days from the upload, or until a later screening for the same practice or from the same email address replaces it. Then we delete the result and the details given with it, and keep a record of counts that names no one. ${REFUSED_ADDRESS_KEPT} ${ADDRESS_CHECK_KEPT} ${KEPT_IF_REQUESTED}`;
+ 
+ /** The upload form's hint under the email address. */
+-export const UPLOAD_EMAIL_HINT = `The result is emailed here as a link that opens it for 30 days, or until a later screening of the practice replaces it. Then we delete the result and what you enter here, and keep a record of counts that names no one. ${REFUSED_ADDRESS_KEPT} ${KEPT_IF_REQUESTED}`;
++export const UPLOAD_EMAIL_HINT = `The result is emailed here as a link that opens it for 30 days, or until a later screening of the practice replaces it. Then we delete the result and what you enter here, and keep a record of counts that names no one. ${REFUSED_ADDRESS_KEPT} ${ADDRESS_CHECK_KEPT} ${KEPT_IF_REQUESTED}`;
+ 
+ /** The upload form's "About your practice" card. */
+ export const ABOUT_PRACTICE = 'Used to price your file at your locality and to send the result.';
+ 
+ /** The "sent" alert, after its sentences on the email. */
+-export const SENT_KEPT = `Then we delete it with your details, and keep a record of counts that names no one. ${REFUSED_ADDRESS_KEPT} ${KEPT_IF_REQUESTED}`;
++export const SENT_KEPT = `Then we delete it with your details, and keep a record of counts that names no one. ${REFUSED_ADDRESS_KEPT} ${ADDRESS_CHECK_KEPT} ${KEPT_IF_REQUESTED}`;
+ 
+ /** The audit request form, which collects how the requester heard of us and the campaign link they came from. */
+ export const REQUEST_AUDIT_KEPT =
 diff --git a/apps/web/src/lib/screening/routes.db.test.ts b/apps/web/src/lib/screening/routes.db.test.ts
 index f4273b98..22277c08 100644
 --- a/apps/web/src/lib/screening/routes.db.test.ts
@@ -648,6 +1021,460 @@ index 79c2c94e..adf9b2ea 100644
        if (row.notice_undelivered !== null) {
          logger.error('support-access notice not delivered to every administrator', { job_id: requestId, support_grant_id: row.notice_undelivered, error_code: MAIL_LOG_CODES.noticeUndelivered });
        }
+diff --git a/apps/worker/src/screening/message.test.ts b/apps/worker/src/screening/message.test.ts
+index c4de510d..6cab6f3d 100644
+--- a/apps/worker/src/screening/message.test.ts
++++ b/apps/worker/src/screening/message.test.ts
+@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
+ import { MemoryMailSender, mailBody, mailBodyHtml } from '../mail/mail';
+ import { EMAIL_LOCKUP_PATH, EMAIL_PROSPECT_LOCKUP_PATH, MAIL_FOOTERS } from '../mail/template';
+ import { SCREENING_WAITED, ScreeningMessageError, screeningFailedMessage, screeningResultLink, screeningResultMessage, screeningStartLink } from './message';
+-import { KEPT_COUNTS, KEPT_SUMMARY, emailKept } from './wording';
++import { ADDRESS_CHECK_KEPT, KEPT_COUNTS, KEPT_SUMMARY, REFUSED_ADDRESS_KEPT, emailKept } from './wording';
+ 
+ /**
+  * The screening emails (CO-04; decisions D11 and D21 a): the result's link as the prospect variant, the lockup without
+@@ -38,6 +38,10 @@ describe('the screening result email', () => {
+     expect(message.lines).toContain(emailKept('none'));
+     expect(emailKept('none')).toContain('Then we delete the result and the details you gave, unless an audit is requested from it');
+     expect(emailKept('none')).toContain(`We keep a record of counts that names no one: ${KEPT_COUNTS}.`);
++    // What outlives the address, as the pages that say it is deleted say it (the review of 2026-10-27).
++    expect(emailKept('none')).toContain(`${REFUSED_ADDRESS_KEPT} ${ADDRESS_CHECK_KEPT}`);
++    expect(emailKept('none')).toContain('we keep a coded form of it, which cannot be turned back into the address, for 12 months, only to refuse another screening to that address.');
++    expect(emailKept('none')).toContain('keeps a record of that check, which can name the address, for 90 days.');
+   });
+ 
+   it('tells a prospect whose screening took over an earlier request that their details are kept with it, and for how long', () => {
+diff --git a/apps/worker/src/screening/wording.ts b/apps/worker/src/screening/wording.ts
+index 5413c48c..49b8f226 100644
+--- a/apps/worker/src/screening/wording.ts
++++ b/apps/worker/src/screening/wording.ts
+@@ -38,12 +38,31 @@ export const MATCHED = 'while we keep the request, the record of counts of the s
+ /** Every surface shown before a screening exists, or for a link that no longer opens: what is kept with an audit request, never whether there is one. */
+ export const KEPT_IF_REQUESTED = `If an audit is requested from the screening, or was requested from an earlier screening with the same practice name and ZIP code, we keep ${KEPT_SUMMARY} with that request for 12 months from the screening.`;
+ 
++/**
++ * What outlives a screening's address when its email could not be delivered or was reported as spam (audit #76; the
++ * founder's Q11 (b) of 2026-10-21: a keyed hash kept 12 months, used only to refuse that address; docs/adr/0065). No
++ * surface calls it deleted. It says what the hash does, refuse a new screening to the address, and not "never send to
++ * it again": the hash lapses after 12 months, and a screening already accepted for the address is still sent (the review
++ * of 2026-10-23, Wording). Every surface that says the address is deleted says it, the result email too (the review of
++ * 2026-10-27). A legal surface counsel reviews with the others before the screening opens (open item O4).
++ */
++export const REFUSED_ADDRESS_KEPT =
++  'If email to the address you gave cannot be delivered, or is reported as spam, we keep a coded form of it, which cannot be turned back into the address, for 12 months, only to refuse another screening to that address.';
++
++/**
++ * What outlives a screening's address in AWS (docs/adr/0065, residual 1; docs/policies/data-retention.md): SES's check that
++ * the address can receive email is a request recorded in the address-validation account's CloudTrail event history,
++ * which keeps it 90 days, with the address in it unless CloudTrail withholds it. Every surface that says the address is
++ * deleted says it (the review of 2026-10-27). A legal surface counsel reviews before the screening opens (O4).
++ */
++export const ADDRESS_CHECK_KEPT = 'The mail service that checks whether the address can receive email keeps a record of that check, which can name the address, for 90 days.';
++
+ /** The result email's sentences on what happens when its link closes, by what this screening's summary is kept with. */
+ export function emailKept(keptWith: Exclude<KeptWith, 'own_request'>): string {
+   const opens = 'The link below opens it for 30 days from your upload, or until a later screening for the same practice or from this address replaces it.';
+   switch (keptWith) {
+     case 'none':
+-      return `${opens} Then we delete the result and the details you gave, unless an audit is requested from it: then we keep ${KEPT_SUMMARY} with the request for 12 months from the screening. We keep a record of counts that names no one: ${KEPT_COUNTS}.`;
++      return `${opens} Then we delete the result and the details you gave, unless an audit is requested from it: then we keep ${KEPT_SUMMARY} with the request for 12 months from the screening. ${REFUSED_ADDRESS_KEPT} ${ADDRESS_CHECK_KEPT} We keep a record of counts that names no one: ${KEPT_COUNTS}.`;
+     case 'earlier_request':
+       return `${opens} Then we delete the result’s rows and figures. An audit was requested for this practice from an earlier screening with the same practice name and ZIP code, so we now keep ${KEPT_SUMMARY} with that request, in place of the earlier screening’s, for 12 months from this screening. We keep a record of counts that names no one: ${KEPT_COUNTS}; ${MATCHED}.`;
+     case 'consent':
+diff --git a/docs/adr/0062-screen-prospects-from-aggregate-rows-without-phi-price-each-row-with-the-unchanged-engine-and-send-the-result-by-emailed-link.md b/docs/adr/0062-screen-prospects-from-aggregate-rows-without-phi-price-each-row-with-the-unchanged-engine-and-send-the-result-by-emailed-link.md
+index a9fbbf20..b099543f 100644
+--- a/docs/adr/0062-screen-prospects-from-aggregate-rows-without-phi-price-each-row-with-the-unchanged-engine-and-send-the-result-by-emailed-link.md
++++ b/docs/adr/0062-screen-prospects-from-aggregate-rows-without-phi-price-each-row-with-the-unchanged-engine-and-send-the-result-by-emailed-link.md
+@@ -1508,10 +1508,13 @@ function with the lead list.
+ 
+ **What is kept of a refused address (Q11 (b)).** A keyed hash (the pepper in an owner-only table no role reads) of a
+ screening address that bounced permanently or was reported as spam on the screening stream, kept 365 days from its
+-latest such outcome, used only to refuse a new screening to it. The pages say so and never call it deleted:
+-`REFUSED_ADDRESS_KEPT` joins the result page's notice (with no request), the closed link's page, the upload form's hint
+-and the "sent" alert. It is the only value derived from a screening address kept past its prospect, with the budget's
+-marks.
++latest such outcome, used only to refuse a new screening to it (a permanent bounce keyed with the address's +tag
++kept, a complaint by its mailbox: ADR 0065). The pages say so and never call it deleted: `REFUSED_ADDRESS_KEPT` joins
++the result page's notice (with no request), the closed link's page, the upload form's hint, the "sent" alert and, since
++the review of 2026-10-27, the result email. It is the only value derived from a screening address the database keeps
++past its prospect, with the budget's marks. Beside it, each of those five says the mail service keeps its record of the
++address check 90 days (`ADDRESS_CHECK_KEPT`; ADR 0065, residual 1), which the pages had left out while saying the
++address is deleted (the review of 2026-10-27).
+ 
+ **The bounce budget (Q10 (a)).** Each run keeps, for its 30 days, the rate limiter's keyed hash of the client address
+ (`client_subject`, new, passed by the web as `submit_screening()`'s last parameter) beside the email account's
+@@ -1544,7 +1547,9 @@ a work address's domain, so a colleague at the practice was told their own addre
+   domain, could not be delivered, so we cannot take another screening from them for up to 7 days. Check the email
+   address, or request an audit instead.";
+ - what is kept: "If email to the address you gave cannot be delivered, or is reported as spam, we keep a coded form of
+-  it, which cannot be turned back into the address, for 12 months, only to refuse another screening to that address."
++  it, which cannot be turned back into the address, for 12 months, only to refuse another screening to that address.";
++- and beside it (the review of 2026-10-27, for the founder's sign-off and counsel, O4): "The mail service that checks
++  whether the address can receive email keeps a record of that check, which can name the address, for 90 days."
+ 
+ **What proves it.** `apps/web/src/lib/screening/address.test.ts` and `validation.test.ts` (the hints, the DNS
+ verdicts, the validation table, the cap, the timeouts and the logs), `routes.db.test.ts` (paused and not ready closing
+diff --git a/docs/adr/0065-send-mail-in-three-ses-streams-record-each-messages-delivery-send-notices-from-an-outbox-and-pause-the-screening-stream-alone.md b/docs/adr/0065-send-mail-in-three-ses-streams-record-each-messages-delivery-send-notices-from-an-outbox-and-pause-the-screening-stream-alone.md
+index 51183c53..3ed8f382 100644
+--- a/docs/adr/0065-send-mail-in-three-ses-streams-record-each-messages-delivery-send-notices-from-an-outbox-and-pause-the-screening-stream-alone.md
++++ b/docs/adr/0065-send-mail-in-three-ses-streams-record-each-messages-delivery-send-notices-from-an-outbox-and-pause-the-screening-stream-alone.md
+@@ -89,17 +89,28 @@ reach the platform through EventBridge and an encrypted SQS queue (4 days, a dea
+   is newer than the guide read and is held to the account list's rule; staging confirms both, O11.)
+ - `mail_recipient_key` and `mail_recipient_sha256()`: the SHA-256 of a pepper made at the migration (64 hex characters
+   from two random UUIDs, 244 random bits) and the mailbox the address reaches, `mail_recipient_canonical()` (review
+-  S2): Unicode NFKC, ASCII white space and case, the domain's trailing dots, googlemail.com read as gmail.com, a +tag
+-  dropped at every domain, and Gmail's dots dropped at gmail.com alone. Every spelling of one inbox keys alike, so a
+-  mailbox that bounced or reported a screening is refused under its other spellings too. The web's rate account, which
+-  the bounce budget keys, reads the same rule from `canonicalMailbox()` (@tp/db), and a db test holds the SQL and
+-  TypeScript forms equal on a table of spellings. NFKC rather than NFC because it composes as NFC does and also reads a
+-  compatibility form (a fullwidth letter) as what it shows, as the rate account already did; case is folded for ASCII
+-  letters alone, so the key never depends on a database's locale (the form refuses any address that is not plain
+-  ASCII). Gmail's dot rule is Google's for gmail.com alone (it does not hold for Google Workspace); the +tag is dropped
+-  everywhere because the sub-address reaches the base mailbox at the providers most practices use, and the rare mailbox
+-  whose own name holds a + is refused a screening, the safer side. The canonical form is a lookup key only: the address
+-  stored and mailed is the one typed. Its only use is `screening_mail_refusal` (Q11 (b)). No role may call it.
++  S2): ASCII white space and case, the domain's trailing dots, googlemail.com read as gmail.com and me.com and mac.com
++  as icloud.com, a +tag dropped at every domain, and Gmail's dots dropped at gmail.com alone. Every spelling of one
++  inbox keys alike, so a mailbox that bounced or reported a screening is refused under its other spellings too. The
++  web's rate account, which the bounce budget keys, reads the same rule from `canonicalMailbox()` (@tp/db), and a db
++  test holds the SQL and TypeScript forms equal on a table of spellings and on every Unicode code point, at an
++  address's edges and in each of its parts. An address with any character outside ASCII stands as read (ASCII white
++  space at its ends dropped and its ASCII letters in lower case): the screening's form takes only ASCII, so such an
++  address is never stored or mailed, and no Unicode table decides a key. As first built, both rules applied NFKC, and
++  Node's (Unicode 17) and PostgreSQL 18's (Unicode 16) differed on U+A7F1, a gap each Node or ICU upgrade ahead of the
++  server would widen with no test failing (the review of 2026-10-27). Case is folded for ASCII letters alone, so the
++  key never depends on a database's locale. Gmail's dot rule is Google's for gmail.com alone (it does not hold for
++  Google Workspace). Apple's three domains reach one account's mailbox, its name reserved across all three, so no two
++  people share a key (the review of 2026-10-27: a complainer at me.com was mailed again at icloud.com). The +tag is
++  dropped everywhere because the sub-address reaches the base mailbox at the providers most practices use, so a
++  complaint from any spelling refuses the mailbox. A permanent bounce is keyed with its +tag kept
++  (`mail_recipient_sha256(address, true)`, gmail.com's still dropped, since Gmail delivers every +tag): a +tag spelling
++  bounces where the server has no sub-addressing (cPanel, DirectAdmin and older SmarterMail hosting), which says
++  nothing of the base mailbox, and as first built such a bounce refused the base mailbox for 365 days, which anyone
++  could cause on purpose (the review of 2026-10-27). `screening_contact_refused()` refuses an address whose mailbox
++  matches any row, or whose tag-kept spelling matches a bounce's: a bounce of the base address, whose tag-kept key is
++  its mailbox's, still refuses every +tag of it. The canonical form is a lookup key only: the address stored and mailed
++  is the one typed. Its only use is `screening_mail_refusal` (Q11 (b)). No role may call it.
+ - `screening_bounce_mark` (Q10 (a)) and `screening_run.client_subject`.
+ - `support_grant_notice` and `support_grant_notice_recipient`: registered tenant tables (they carry `practice_id`; no
+   PHI), read by the application role under its scope as `support_grant` is (the owning group, or a platform
+@@ -122,12 +133,21 @@ last 12 months, with nothing recorded and nothing sent. Now it gets the budget's
+ plan's D2 had put the list first; that order was the plan's own resolution, not one of the founder's rulings (which are
+ Q1, Q9, Q10 (a), Q11 (b) and Q12 above), and the safer order is taken under the co-founder's standing direction of
+ 2026-10-27. Before it asks DNS or SES's validation about an address, the web asks `screening_submit_mail_refusal()` for
+-the refusal `submit_screening()` would give for the mail, in the same order (closed, paused, the budget, the list),
+-writing nothing (review S4): none of the day's validations is spent on an upload the database refuses for its mail, and
+-no address on the list is sent to SES's validation. The typo hint comes before that check: it reads the address alone
+-and costs nothing, so a mistyped address is told its likely fix alike whether or not it is on the list. The triggers stay the backstop. A ZIP the database refuses is not in that check
+-(it would copy PR 6b-2's location rule into a second function): such an upload still spends one validation, within the
+-rate limit.
++the refusal `submit_screening()` would give for its submitter, in the same order (closed, paused, the budget), writing
++nothing (review S4): none of the day's validations is spent on an upload the database refuses for its submitter. That
++check takes no address and never reads the refusal list (the review of 2026-10-27). As first built for S4 it read the
++list too, before the address checks and before `submit_screening()`'s ZIP checks, which reopened S1's oracle wider: any
++client, with no budget spent, could name any address with a ZIP the release cannot price (or one SES rates MEDIUM) and
++learn from which refusal it drew (the list's sentence or the ZIP's, the list's or the question to keep the address)
++whether that person had reported a screening as spam or their mailbox had bounced in the last 12 months, with nothing
++recorded and nothing sent. Now the list answers only from the run's trigger, after the address checks and
++`submit_screening()`'s ZIP, row and band checks, so every path that ends without an email answers a listed address as
++any other. The price: a listed address spends one validation, within the rate limit, and SES's check of it is recorded
++in the validation account's 90-day event history, as it was at its first screening (residual 1). An AWS-internal record
++no one reads is the safer side of that trade than an open oracle. The typo hint comes before both checks: it reads the
++address alone and costs nothing, so a mistyped address is told its likely fix alike whether or not it is on the list.
++The triggers stay the backstop. A ZIP the database refuses is not in the submitter's check (it would copy PR 6b-2's
++location rule into a second function): such an upload spends one validation, within the rate limit.
+ The consumer reads `screening_mail_gate()` (tp_screening) before it claims; the web reads `screening_mail_status()`
+ (tp_app): paused, and ready only with a delivered and a bounced probe of the screening stream within 48 hours and since
+ the last resume.
+@@ -143,7 +163,14 @@ is the billing PR's).
+ 
+ **Invitations.** A Cognito message to an invited user that bounces, is suppressed, rejected or reported flags the
+ invitation with the message's own send time, only when it was sent at or after the invitation's latest send less 5
+-seconds, so the late bounce of a message a resend replaced flags nothing.
++seconds, so the late bounce of a message a resend replaced flags nothing. The users page words each reason with the
++step that can work (the review of 2026-10-27): a bounce or a rejection, check the address and invite again; one SES
++held back with the account's suppression list (an earlier bounce or spam report, which M1 now reaches) and one reported
++as spam offer no "Send again", and their resend is refused, since SES would hold the new email back too and Cognito's
++resend replaces the temporary password of the one the person may still find in their spam folder. The page names
++PaidWhole's support, who releases the address once the person confirms the mailbox and sends the invitation again
++from the console (docs/runbooks/deliverability.md, 3.4). The console's resend stays open, since it is that step. The
++in-app notice of an undelivered support-access notice says the same of a right address.
+ 
+ **Who calls what.** tp_operator: `operator_record_mail_event`, `operator_mail_account_signal`, `operator_mail_cutoff`
+ (the cut-off on the window as it stands, once each `mail_events` run, so a window that shrinks past the line as sends
+@@ -158,17 +185,24 @@ and `submit_screening`; tp_screening: `screening_mail_gate` alone. `screening_ma
+ `screening_contact_refused()` and every trigger function are granted to no role. No function sets `app.practice_ids`.
+ `operator_record_support_notice()`, `operator_practice_administrator_emails()` and `billing_owner_emails()` are dropped.
+ 
+-**When a stream's probes are missed (review M3 and its follow-up of 2026-10-27).**
+-`operator_mail_streams().probe_missed` reads the stream's last proof, not its last send: the stream open and confirmed,
+-and the older of its last delivered and bounced probe 26 hours old, whether a probe went since or not. A proof counts
+-only since the last resume, as readiness counts it; one not back since then counts from the probe last sent, and with
+-none sent yet nothing is missed, so a resume after a long pause, or phase 2's first probes, pages no one while its
+-probes are on their way. The platform logs `MAIL_PROBE_MISSED` on every `mail_events` run while it holds, due or not, so
+-its alarm stays raised until a probe comes back. The daily probe goes 24 hours after the last came back, so one sent and
+-lost pages 2 hours after it went, 22 hours before readiness lapses at 48; as first built, missed was read 26 hours after
+-the lost probe's own send, about 50 hours after the last proof and 2 hours after the screening had closed in silence. A
+-probe that cannot be sent pages within 15 minutes (`MAIL_PROBE_UNSENT`), and as missed 26 hours after the last proof.
+-The schedule is unchanged: a probe not back goes again 26 hours after it went.
++**When a stream's probes are missed (review M3, its follow-up and the review of 2026-10-27).**
++`operator_mail_streams().probe_missed` reads the stream's proofs since the last resume, as readiness counts them, never
++its last send, while the stream is open and confirmed. With both its delivered and its bounced probe back since then,
++it is missed once the older is 26 hours old, whether a probe went since or not: the daily probe goes 24 hours after the
++last came back, so one sent and lost pages 2 hours after it went, 22 hours before readiness lapses at 48 (as first
++built, missed was read 26 hours after the lost probe's own send, about 50 hours after the last proof and 2 hours after
++the screening had closed in silence), and one that cannot be sent pages within 15 minutes (`MAIL_PROBE_UNSENT`) and as
++missed 26 hours after the last proof. With one not back since the resume, it is missed an hour after the first probe
++sent since then (`mail_stream.first_probe_sent_at`, set by the first send after a resume and cleared by the resume,
++which a re-send never moves); the screening is closed until both are back, so an hour is long enough for SES's events
++and short enough not to leave it closed in silence. As the follow-up first built it, such a proof counted from the
++probe last sent, so the re-send at 26 hours cleared the alarm within five minutes and raised it again 26 hours later,
++while the screening stayed closed (the review of 2026-10-27). With none sent since the resume, nothing is missed, so a
++resume after a long pause, or phase 2's first probes, pages no one while its probes are on their way. The platform logs
++`MAIL_PROBE_MISSED` on every `mail_events` run while it holds, due or not, so its alarm stays raised until both come
++back. A probe is due at once after a resume, daily once the last came back, and hourly while the stream is missed, so
++once the event path is fixed the screening reopens within the hour rather than at the unanswered probe's next send, up
++to 26 hours later (the first unanswered send is now kept beside the last, which the Revisit list had named).
+ 
+ **Address validation in its own account (review S3; the safer option, taken on the co-founder's standing direction of
+ 2026-10-27).** SES's validation of a screening address (`GetEmailAddressInsights`, Q1 (g)) names the address in its
+@@ -207,8 +241,10 @@ or the call (`MAIL_VALIDATION_REFUSED`), which would leave every address to DNS
+    redacts it, for 90 days. Nobody can shorten or turn that off. Only a principal of that account allowed
+    `cloudtrail:LookupEvents` can read it, and nobody works in that account: its root user under MFA and CDK's bootstrap
+    roles, used only to deploy. Ninety days is longer than the screening's 30 and outside Q11 (b)'s keyed-hash-only
+-   rule, and the screening's pages tell a prospect that the email address is deleted with the result
+-   (`apps/web/src/lib/screening/retention.ts`). Counsel sees this before the screening opens (O4).
++   rule. The screening's pages and its result email, which say the email address is deleted with the result, also say
++   that the mail service keeps its record of the check 90 days (`ADDRESS_CHECK_KEPT`,
++   `apps/worker/src/screening/wording.ts`; the review of 2026-10-27). The founder signs the words off and counsel sees
++   them before the screening opens (O4).
+ 2. The validation account's trail never holds a validation only while CloudTrail reads the call as a read. Staging's
+    check (O11; docs/runbooks/deliverability.md, section 2) confirms that it does, with a mailbox the team controls. If it
+    reads as a write, the screening stays closed until that trail changes (the fallback: no trail there, its changes
+@@ -245,8 +281,13 @@ of management events, which CloudTrail does not charge) and the refused validati
+ | The refusal list keyed by the address as typed, or a +tag dropped only at free-mail domains | Another spelling of an inbox that bounced or reported a screening (a +tag, Gmail's dots, googlemail.com) was mailed again (review S2); a business domain's mailbox takes +tags as Gmail's does |
+ | Give an attempt a pause stopped back to the run (attempts less one) | It hands out an attempt number the fence already gave, so a slow earlier attempt could pass it again; a queued run must have no attempt (`screening_run_started`); and it needs PR 6b-3's `screening_run_rules` body copied. Instead the sweep completes a run out of attempts whose rows are all priced (review M7) |
+ | The web's check before the address covering the ZIP statuses too | It would copy PR 6b-2's location rule into a second function to keep in step; a ZIP refusal spends one validation, within the rate limit. Revisit if the validation cap is reached on a real day |
++| The web's check before the address reading the refusal list (as first built for S4) | Read before the address checks and the ZIP checks, it told any client whether an address was listed, by which refusal a ZIP the release cannot price or a MEDIUM mailbox drew, with nothing recorded or sent (the review of 2026-10-27); the run's trigger reads the list after them all |
++| A permanent bounce keyed by the mailbox, its +tag dropped (as first built for S2) | A bounce of a +tag spelling a server without sub-addressing does not deliver refused the base mailbox for 365 days, and anyone could cause it (the review of 2026-10-27); a complaint still keys the mailbox |
++| NFKC in both canonical rules (as first built for S2) | Node's and PostgreSQL's Unicode versions differ (U+A7F1 today), and every upgrade of either moves the key with no test failing; the form takes only ASCII, so an address outside it stands as read |
+ | A stream missed 26 hours after its last probe's send (as first built) | A daily probe sent and lost paged about 50 hours after the last proof, 2 hours after readiness had lapsed and the screening closed, and a probe never sent never paged as missed (review M3) |
+ | Missed from the last proof, counting a proof from before the last resume | A resume after a pause longer than 26 hours would page on every run until its first probes came back |
++| A proof not back since the resume counted from the probe last sent (the follow-up as first built) | Each re-send moved it, so the alarm cleared within five minutes and came back 26 hours later while the screening stayed closed (the review of 2026-10-27) |
++| A probe not back sent again only after 26 hours | A fixed event path left the screening closed until that send; hourly while missed costs a few simulator sends |
+ | `client_subject` before `request`, as PR 6b-3 placed its parameters | The previous web's submissions would fail during the deploy window; last, with a default of null, they still work, their runs held to the account's budget alone (a run with no proxy-named client address is the same) |
+ 
+ ## Consequences
+@@ -256,10 +297,12 @@ of management events, which CloudTrail does not charge) and the refused validati
+ - Neither a lost probe nor an unsendable one closes the screening in silence (review M3): one sent and lost pages 2
+   hours after it went (`MAIL_PROBE_MISSED`, from the stream's last proof), 22 hours before the stream's readiness
+   lapses, and one the platform cannot send pages within 15 minutes (`MAIL_PROBE_UNSENT` in each of three five-minute
+-  periods), about a day before. The unsent alarm adds one alarm and one log metric to Q1's figure (about $0.40 a month
+-  per environment); the missed one costs nothing more, its line logged on each minute's run only while a stream is
+-  missed. After a fix made once readiness has lapsed, the screening reopens when the unanswered probe goes again, 26
+-  hours after it went.
++  periods), about a day before. A resumed stream whose probes do not come back pages an hour after they went, and stays
++  raised, however often they go again. The unsent alarm adds one alarm and one log metric to Q1's figure (about $0.40 a
++  month per environment); the missed one costs nothing more, its line logged on each minute's run only while a stream
++  is missed. While missed, the probes go hourly (two sends to SES's simulator an hour, a stream), so after a fix the
++  screening reopens within the hour, its readiness lapsed or not. Each probe event recorded is logged by its message
++  ID and codes alone, which the staging checks read.
+ - Each environment needs a second AWS account, created by a person, bootstrapped for CDK and holding
+   `tp-<env>-address-validation`, before its first release; a release cannot run without it (the rule), and an
+   application role ever replaced must be named to that stack again, or every validation is refused and pages
+@@ -273,8 +316,11 @@ of management events, which CloudTrail does not charge) and the refused validati
+   (a)): the run's gate reads `screening_mail_sending()` in the completion's or the failure's own statement, without a
+   lock on `mail_stream`, so a completion or failure past that statement when a pause commits still sends through the
+   set, which a cut-off pause disables at once and a console pause at the next `mail_events` run. Only those already in
+-  flight can, at most one a consumer thread (three), each a result or notice owed to an upload accepted before the
+-  pause; every claim, completion and failure after the pause commits is refused. Locking `mail_stream` in the gate
++  flight can, at most one for each consumer thread and one for the sweep's main thread, which completes or fails a run
++  out of attempts (`finishOrFail`, since M7), so four for each consumer task (the review of 2026-10-27), each a result
++  or notice owed to an upload accepted before the pause; every claim, completion and failure after the pause commits
++  is refused. Whether SES refuses a send through a disabled set with `SendingPausedException`, which M6's and M7's
++  rollbacks read, is a staging check (O11; docs/runbooks/deliverability.md, section 2). Locking `mail_stream` in the gate
+   would hold the lock across SES's call and spare no reputation. Likewise accepted: the consumer's "emailed after
+   waiting" reads the web's `received_at` against the database's `resumed_at` (known item (e)); `submit_screening()`
+   holds `received_at` to the database's own time, and in staging and production the screening opens only once both
+@@ -298,10 +344,9 @@ SES's global suppression list carries on the screening set, whose suppression is
+ stream is paused in production (read the reason and the counts before resuming, and whether the floors or the budget
+ need the founder's ruling again); staging, after phase 2, shows whether Cognito needs a sending-authorization policy,
+ that the screening set's empty suppression list both adds nothing to and checks nothing against the account's list,
+-whether the account's reputation metrics publish at launch volume, and whether CloudTrail reads SES's address validation
+-as a read, in the address-validation account alone (open item O11); the validation cap is reached on a real day; a
+-`MAIL_PROBE_MISSED` is fixed after readiness lapsed and the screening stays closed until the unanswered probe's next
+-send (then send it again sooner once missed, which needs the first unanswered send kept beside the last); PR 6e adds
++whether the account's reputation metrics publish at launch volume, whether CloudTrail reads SES's address validation
++as a read, in the address-validation account alone, and whether SES refuses a send through a disabled set with
++`SendingPausedException` (open item O11); the validation cap is reached on a real day; PR 6e adds
+ reminders on the screening stream (they must read the gate and the refusal list, O13); counsel answers on the
+ refusal-hash and bounce-budget wording (O4); or the capacity measurement is revisited. The address checks this pull
+ request adds (DNS and SES validation, run together after the row checks, at most one 2-second timeout) fall inside the
+diff --git a/docs/product/legal-surfaces.md b/docs/product/legal-surfaces.md
+index e1731ff9..eea8d43d 100644
+--- a/docs/product/legal-surfaces.md
++++ b/docs/product/legal-surfaces.md
+@@ -15,10 +15,10 @@ the screening terms and the AMA notice in a legal-surfaces pull request before P
+ | --- | --- | --- | --- | --- |
+ | `good-faith-research` | The disclosure page's good-faith research statement: research that follows the page is treated as authorized, no legal action is brought or supported over it, and a third party's claim is answered by saying so; it never authorizes access to patient information or to data that is not the researcher's | `apps/web/src/app/security/page.tsx` | Counsel (the legal-surfaces pull request) | Launch, and any production deploy |
+ | `disclosure-response-times` | The disclosure page's response times: receipt confirmed within three business days, an assessment within ten, a fix aimed for within 90 days of the report, publication agreed with the reporter, no rewards | `apps/web/src/app/security/page.tsx` | The security official (with the incident-response policy) | Launch, and any production deploy |
+-| `screening-kept-result` | The screening result page's notice of what is kept: the record of counts that names no one (decision 7's plain list, every column) and, by what the screening's summary is kept with as the database says, nothing more until an audit is requested, the summary with the screening's own request, the summary with an earlier screening's request of the same practice name and ZIP code that it took over (decision 17: the later prospect's own details are what is kept), or by consent (PR 6e); that a kept request's record of counts can be matched to it (decision 18); and, with no request, that a coded form of an address whose email could not be delivered or was reported as spam is kept 12 months, only to refuse another screening to that address (the founder's Q11 (b) of 2026-10-21) | `apps/web/src/components/screening/result-summary.tsx` | Counsel (with decisions 7, 17 and 18) | The screening opens, and any production deploy |
+-| `screening-kept-email` | The result email's sentences on what is deleted when its link closes and what is kept, by the same basis as the result page | `apps/worker/src/screening/message.ts` | Counsel (with decisions 7, 17 and 18) | The screening opens, and any production deploy |
+-| `screening-kept-closed-link` | The closed link's page: what was deleted, and what is kept if an audit was requested from the screening or an earlier one of the same practice name and ZIP code (it cannot say whether one was), and the coded form of an undeliverable or reported address kept 12 months (Q11 (b)) | `apps/web/src/app/screening/results/[resultId]/not-found.tsx` | Counsel (with decisions 7 and 17) | The screening opens, and any production deploy |
+-| `screening-kept-upload` | The upload form's hint under the email address: how long the link opens the result, what is deleted, and what is kept if an audit is requested, and the coded form of an undeliverable or reported address kept 12 months (Q11 (b)) | `apps/web/src/components/screening/upload-form.tsx` | Counsel (with decisions 7 and 17) | The screening opens, and any production deploy |
++| `screening-kept-result` | The screening result page's notice of what is kept: the record of counts that names no one (decision 7's plain list, every column) and, by what the screening's summary is kept with as the database says, nothing more until an audit is requested, the summary with the screening's own request, the summary with an earlier screening's request of the same practice name and ZIP code that it took over (decision 17: the later prospect's own details are what is kept), or by consent (PR 6e); that a kept request's record of counts can be matched to it (decision 18); and, with no request, that a coded form of an address whose email could not be delivered or was reported as spam is kept 12 months, only to refuse another screening to that address (the founder's Q11 (b) of 2026-10-21); and that the mail service that checks whether the address can receive email keeps a record of that check, which can name the address, for 90 days (docs/adr/0065, residual 1; the review of 2026-10-27) | `apps/web/src/components/screening/result-summary.tsx` | Counsel (with decisions 7, 17 and 18) | The screening opens, and any production deploy |
++| `screening-kept-email` | The result email's sentences on what is deleted when its link closes and what is kept, by the same basis as the result page, with, when nothing is kept with a request, the coded form of an undeliverable or reported address kept 12 months (Q11 (b)) and the mail service's 90-day record of the address check (the review of 2026-10-27) | `apps/worker/src/screening/message.ts` | Counsel (with decisions 7, 17 and 18) | The screening opens, and any production deploy |
++| `screening-kept-closed-link` | The closed link's page: what was deleted, and what is kept if an audit was requested from the screening or an earlier one of the same practice name and ZIP code (it cannot say whether one was), and the coded form of an undeliverable or reported address kept 12 months (Q11 (b)); and that the mail service that checks whether the address can receive email keeps a record of that check, which can name the address, for 90 days (docs/adr/0065, residual 1; the review of 2026-10-27) | `apps/web/src/app/screening/results/[resultId]/not-found.tsx` | Counsel (with decisions 7 and 17) | The screening opens, and any production deploy |
++| `screening-kept-upload` | The upload form's hint under the email address: how long the link opens the result, what is deleted, and what is kept if an audit is requested, and the coded form of an undeliverable or reported address kept 12 months (Q11 (b)); and that the mail service that checks whether the address can receive email keeps a record of that check, which can name the address, for 90 days (docs/adr/0065, residual 1; the review of 2026-10-27) | `apps/web/src/components/screening/upload-form.tsx` | Counsel (with decisions 7 and 17) | The screening opens, and any production deploy |
+ | `screening-kept-sent` | The "sent" alert after an upload: the same | `apps/web/src/app/screening/page.tsx` | Counsel (with decisions 7 and 17) | The screening opens, and any production deploy |
+ | `screening-kept-convert` | The result page's request form: the summary the request keeps for 12 months, or, when the summary is already kept with an earlier request of the practice, that the new request has none of its own | `apps/web/src/components/screening/convert-form.tsx` | Counsel (with decisions 10 and 17) | The screening opens, and any production deploy |
+ | `screening-mail-paused` | The screening page while its mail stream is paused (audit #76; the founder's Q12 of 2026-10-21, the recommended wording): new screenings are paused, the screenings uploaded before the pause are kept and emailed when sending resumes if that is within 30 days of their upload, and result links already sent still work | `apps/web/src/app/screening/page.tsx` | Counsel (with the founder's Q12 of 2026-10-21) | The screening opens, and any production deploy |
+diff --git a/docs/runbooks/deliverability.md b/docs/runbooks/deliverability.md
+index 3af8b38a..01f2998d 100644
+--- a/docs/runbooks/deliverability.md
++++ b/docs/runbooks/deliverability.md
+@@ -145,16 +145,25 @@ a synthetic mailbox you control, and reads IDs and counts.
+ 4. **Staging checks (open item O11), once, in staging after its phase 2**, with a synthetic mailbox you control
+    (`<you+tp-check>@…`, never a customer's). Tag each message you send by hand `tp_kind=probe`, so the platform records
+    it as a probe and counts it toward nothing (an untagged message's events cannot be read and go to the dead-letter
+-   queue):
++   queue). **Read each one's outcome by its message ID:** `aws sesv2 send-email` prints its `MessageId`, and the
++   platform logs each event of a probe it records as `mail probe event recorded`, with that `ses_message_id`, the
++   `mail_stream_code`, the `ses_event_type` SES sent (`Send`, `Delivery`, `Bounce`, `Complaint`, ...), the
++   `mail_state_code` recorded and the `bounce_subtype_code`, and no address. The console's undelivered list leaves
++   probes out. Within a few minutes of a send:
++
++   ```
++   aws logs filter-log-events --log-group-name /tp/staging/platform --start-time $(( ($(date +%s) - 3600) * 1000 )) \
++     --filter-pattern '{ $.ses_message_id = "<MessageId>" }' --query 'events[].message' --output text
++   ```
++
+    - **Cognito sends through the stack's identity.** Invite the synthetic mailbox from the console; the invitation
+      arrives from MailFromAddress, and `aws sesv2 get-configuration-set --configuration-set-name tp-staging-transactional`
+      exists with its sends counted in CloudWatch (`AWS/SES`, `Send`, by `ses:configuration-set`). If Cognito refuses
+      (the user pool's update or the invitation fails as not authorized to send), the identity needs a sending
+      authorization policy for Cognito: stop and raise it as a change to `infra/lib/constructs/mail-streams.ts`.
+    - **The screening set checks nothing against the account's list, and adds nothing to it.** Put the synthetic
+-     mailbox on the account's list, send to it through each set, and read each message's event in the platform's log
+-     (or the console's undelivered list): through screening it is delivered, through notices it is suppressed. Then
+-     take it off:
++     mailbox on the account's list, send to it through each set, and read each message's outcome by its message ID
++     (above): through screening its `mail_state_code` reads `delivered`, through notices `suppressed`. Then take it off:
+ 
+      ```
+      aws sesv2 put-suppressed-destination --email-address <you+tp-check>@… --reason BOUNCE
+@@ -169,17 +178,30 @@ a synthetic mailbox you control, and reads IDs and counts.
+ 
+      Do the same with `--reason COMPLAINT` and the notices set alone: SES answers a send to an address the account's
+      list holds with a Bounce of subtype `OnAccountSuppressionList` or a Complaint whose `complaintSubType` is
+-     `OnAccountSuppressionList`, and the platform must record either as suppressed (not delivered, and in the console's
+-     undelivered list), never as a complaint, which would read as delivered (ADR 0065, review M1). Record which event
+-     came, then take the address off again.
++     `OnAccountSuppressionList`, and the platform must record either as suppressed (`mail_state_code` `suppressed`,
++     `bounce_subtype_code` `on_account_suppression_list`), never as a complaint, which would read as delivered (ADR
++     0065, review M1). Record which event came (its `ses_event_type`, `Bounce` or `Complaint`), then take the address
++     off again.
+ 
+      Then send through the screening set, the same way, to a mailbox that does not exist on a domain you control (a hard
+      bounce), and confirm `aws sesv2 get-suppressed-destination --email-address <that address>` answers
+      `NotFoundException`. Never send that bounce through transactional or notices: they would add it to the list.
+      Within a few minutes, send to the same address through the screening set once more and record the subtype the
+-     platform records for it (its log line or its `mail_send` row, by message ID): SES's global suppression list
+-     answers `Permanent`/`Suppressed` on a set whose own suppression is off, which the cut-off counts, as SES does; if it
+-     reads anything else, note it for ADR 0065's mapping.
++     platform records for it (the `bounce_subtype_code` of its line, by message ID): SES's global suppression list
++     answers `Permanent`/`Suppressed` on a set whose own suppression is off, which the platform records as
++     `suppressed` in state `bounced` and the cut-off counts, as SES does; if it reads anything else, note it for ADR
++     0065's mapping.
++   - **A send through a disabled set is refused as paused.** A screening result or failure notice already past the
++     run's gate when a pause commits, and the sweep's completion, roll back only when SES refuses the send with
++     `SendingPausedException` (ADR 0065, review M6 and M7; `screeningMailPaused()` in
++     `apps/worker/src/screening/job.ts`). Pause the screening on the console; within a minute the platform disables the
++     set (`aws sesv2 get-configuration-set --configuration-set-name tp-staging-screening --query
++     SendingOptions.SendingEnabled` reads `false`). Send one message through it by hand, as above (`--email-tags
++     Name=tp_kind,Value=probe`, to the synthetic mailbox), and record the error's name the command prints (`An error
++     occurred (<name>) when calling the SendEmail operation`). Then resume with "It was a false alarm" and wait until
++     "Ready to open" reads yes. If the name is not `SendingPausedException`, keep the screening closed and raise it as
++     a change to `screeningMailPaused()` and its tests: until then a result or notice a pause races is lost, or a fully
++     priced run failed.
+    - **The account's reputation metrics publish.** After a day of staging mail, `AWS/SES` `Reputation.BounceRate` with
+      no dimension has data points. If it has none at launch volume, the two account warnings never fire (missing data is
+      not a breach); the `account_review` trigger, which reads SES's enforcement status, still works. Record what you see.
+@@ -257,12 +279,31 @@ mailbox works.
+ 
+ ### 3.4 An invitation undelivered (`INVITATION_UNDELIVERED`; `TransactionalSetBounce`)
+ 
+-The users page shows the invitation "Not delivered" with its date. Tell the administrator who invited the person to
+-check the address, then invite again. An invitation the person reported as spam reads "Reported as spam" instead: it
+-reached them, and SES now holds the address back from the transactional stream, so another would not arrive. The
+-person finds the invitation in their spam folder; take the address off the suppression list (3.3) only if they need a
+-new one and confirm they expect it. A transactional bounce rate at 2% means invitations are going to bad addresses
+-at volume: look for one organization's import.
++The users page says why, and the administrator acts on it there or asks support (the review of 2026-10-27):
++
++- **"Not delivered … check the address, then invite again"** (it bounced or was rejected): the administrator checks
++  the address and sends it again. If the address is right, it may be on SES's account suppression list from an earlier
++  hard bounce: check it as below.
++- **"Not delivered …: our mail service is holding this address back"** (SES held it back with the account's
++  suppression list, after an earlier bounce or spam report): the page offers no "Send again", since SES would hold the
++  new one back too.
++- **"Reported as spam"**: the email reached the person, and SES now holds the address back from the transactional
++  stream. The person finds the invitation in their spam folder before it expires; the page offers no "Send again",
++  because SES would hold the new one back and Cognito's resend replaces the temporary password of the one they would
++  find.
++
++When the administrator asks support to release an address, first have the person confirm the mailbox is theirs and
++works, and that they expect the invitation. Then:
++
++```
++aws sesv2 get-suppressed-destination --email-address <the address> --query 'SuppressedDestination.{reason: Reason, since: LastUpdateTime}'
++aws sesv2 delete-suppressed-destination --email-address <the address>
++```
++
++(`NotFoundException` from the first means SES holds nothing back: the address itself is wrong, or the mailbox is
++gone.) Then send the invitation again from the console's organization page ("Send again" on its invitations), and
++record it in the support ticket. A transactional bounce rate at 2% means invitations are going to bad addresses at
++volume: look for one organization's import.
+ 
+ ### 3.5 The validation cap reached (`MAIL_VALIDATION_CAP_REACHED`)
+ 
+@@ -283,20 +324,23 @@ A message older than the queue's 4 days is gone; its message's state stays as la
+ 
+ ### 3.7 A probe missed, or not sent (`MAIL_PROBE_MISSED`, `MAIL_PROBE_UNSENT`)
+ 
+-`MAIL_PROBE_MISSED`: no probe of the stream has come back in 26 hours, read from the older of its last delivered and
+-bounced probe since the last resume (review M3). The daily probe goes 24 hours after the last came back, so a probe
+-that went and was lost pages 2 hours after it went, and the stream's readiness lapses 48 hours after the last came
+-back: about 22 hours after the page. The platform logs it on every run until a probe comes back, so the alarm stays
+-raised until then. With `MAIL_PROBE_UNSENT` as well, no probe was sent: follow its steps below. Alone, a probe went and
+-its events did not come back: the event path is broken somewhere. Check, in order, the identity (still verified), the
+-set's event destination, rule `<p>-mail-events` (its invocations and failed invocations), the queue and the job. The
+-console's mail page shows the stream's last probe sent, delivered and bounced. Once the path is fixed, the stream is
+-proven again when a probe's events come back: one not back goes again 26 hours after it went, so after a fix made
+-once readiness has lapsed, the screening can stay closed until that send.
++`MAIL_PROBE_MISSED`: a stream's probes have not come back (review M3 and the review of 2026-10-27), read from its
++delivered and bounced probes since the last resume. With both back since then, it is missed once the older is 26 hours
++old: the daily probe goes 24 hours after the last came back, so a probe that went and was lost pages 2 hours after it
++went, and the stream's readiness lapses 48 hours after the last came back, about 22 hours after the page. With one not
++back since a resume (or since an environment's first probes), it is missed an hour after the first probe sent since
++then; the screening is already closed, since it opens only once both are back. Re-sending a probe does not clear it:
++the platform logs it on every run until both come back, so the alarm stays raised until then, and while it is raised
++the platform sends the probes again every hour. With `MAIL_PROBE_UNSENT` as well, no probe was sent: follow its steps
++below. Alone, a probe went and its events did not come back: the event path is broken somewhere. Check, in order, the
++identity (still verified), the set's event destination, rule `<p>-mail-events` (its invocations and failed
++invocations), the queue and the job. The console's mail page shows the stream's last probe sent, delivered and bounced.
++Once the path is fixed, the next hourly probe proves it and the alarm clears; a screening whose readiness lapsed opens
++again by itself once both are back.
+ 
+ `MAIL_PROBE_UNSENT`: for 15 minutes every run's probe send was refused, so nothing goes out to come back:
+-`MAIL_PROBE_MISSED` follows 26 hours after the stream's last probe came back, and its readiness lapses at 48 (about a
+-day from now). Check, in order:
++`MAIL_PROBE_MISSED` follows 26 hours after the stream's last probe came back (an hour after the first probe since a
++resume, when none came back since), and its readiness lapses at 48 (about a day from now). Check, in order:
+ 
+ 1. the account's sending and enforcement (`aws sesv2 get-account --query '{sending: SendingEnabled, enforcement:
+    EnforcementStatus}'`: `true` and `HEALTHY`);
 diff --git a/infra/lib/constructs/monitoring.ts b/infra/lib/constructs/monitoring.ts
 index 4b9842a7..7a86ae51 100644
 --- a/infra/lib/constructs/monitoring.ts
