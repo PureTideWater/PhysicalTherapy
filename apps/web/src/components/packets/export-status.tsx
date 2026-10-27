@@ -3,11 +3,12 @@
 import { Alert, AlertDescription, AlertTitle, Button } from '@tp/ui';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { type FormEvent, type ReactNode, useActionState, useEffect, useRef } from 'react';
+import { type FormEvent, type ReactNode, useActionState, useEffect, useRef, useState } from 'react';
 
 import type { ActionState } from '../../lib/http/next';
 import type { ExportAttemptWords } from '../../lib/packets/export-attempts';
-import { PendingStatus } from '../form-issues';
+import { RefreshAfterRefusal } from '../action-form';
+import { PendingStatus, RefusalLead } from '../form-issues';
 
 /**
  * A packet version's export, as its packet page shows it (the best-option audit's item #26, the founder's ruling
@@ -17,7 +18,9 @@ import { PendingStatus } from '../form-issues';
  * the job refused or failed it, an alert with the reason and what to do. ExportRequestForm is the Export button:
  * a request the job would refuse comes back at once with every reason and its fix, and nothing is queued. While
  * a request is on its way the button keeps focus and its words (aria-disabled, a ref guarding a second press) and a
- * status beside it says "Working…" (docs/adr/0077, decision D5). Its fields are hidden: nothing typed to keep.
+ * status beside it says "Working…" (docs/adr/0077, decision D5). Its fields are hidden: nothing typed to keep. A
+ * request refused because the page was out of date (`stale`) reads the page again, as ActionForm does (D10), and says
+ * so in the same words: a press made on this page is invited again, any other post is not.
  */
 
 export function ExportStatus({ words, checkAgainHref, refreshMs }: { readonly words: ExportAttemptWords; readonly checkAgainHref: string; readonly refreshMs: number }) {
@@ -66,6 +69,9 @@ export function ExportRequestForm({
   readonly refusalCodes: readonly string[];
 }) {
   const [state, formAction, pending] = useActionState(action, {});
+  const formRef = useRef<HTMLFormElement>(null);
+  // Whether a press on this page sent the request (onSubmit runs only with JavaScript), so a stale page may invite another.
+  const [pressedHere, setPressedHere] = useState(false);
   // The one guard against a second press, even in the same frame: a disabled button would drop focus to the page.
   const inFlight = useRef(false);
   useEffect(() => {
@@ -79,11 +85,12 @@ export function ExportRequestForm({
       return;
     }
     inFlight.current = true;
+    setPressedHere(true);
   }
   const reasons = (state.issues ?? []).filter((issue) => refusalCodes.includes(issue.field));
   const others = (state.issues ?? []).filter((issue) => !refusalCodes.includes(issue.field));
   return (
-    <form action={formAction} onSubmit={onSubmit} className="flex flex-col gap-2">
+    <form ref={formRef} action={formAction} onSubmit={onSubmit} className="flex flex-col gap-2">
       {children}
       {reasons.length > 0 ? (
         <Alert variant="destructive" data-state="error" data-export-refused={reasons[0]?.field}>
@@ -102,8 +109,8 @@ export function ExportRequestForm({
         <Alert variant="destructive" data-state="error">
           <AlertTitle>Not done</AlertTitle>
           <AlertDescription>
-            {/* An invalid request's lead is about fields, and this form has none the person fills: its messages stand alone (#50's rule). */}
-            {state.invalid === true && others.length > 0 ? null : <p>{state.error}</p>}
+            {/* No field of this form is the person's to fill (none placed): an invalid request's messages stand alone (#50's rule). */}
+            <RefusalLead state={state} placed={0} fromBrowser={pressedHere} submit="Export PDF and CSV" />
             {others.length === 0 ? null : (
               <ul className="mt-1 list-disc pl-5">
                 {/* The message alone: a key is never shown, and these name no field of this form. */}
@@ -121,6 +128,7 @@ export function ExportRequestForm({
         </Button>
         <PendingStatus pending={pending} />
       </div>
+      {state.stale === true ? <RefreshAfterRefusal state={state} takeover={undefined} formRef={formRef} /> : null}
     </form>
   );
 }

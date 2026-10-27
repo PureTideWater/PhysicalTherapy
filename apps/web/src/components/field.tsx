@@ -180,24 +180,39 @@ export function CheckboxField({
 /**
  * A group of checkboxes under a legend: one question with several answers (`components[]`), or a list to confirm item
  * by item. The route names the group by `issueKey` ("components", "kept"), written on the fieldset as data-issue-for,
- * so the form's summary names the group by its legend and the focus goes to its first box. The message sits inside
- * the fieldset after the legend and hint, and the fieldset's description names both.
+ * so the form's summary names the group by its legend and the focus goes to its first box. A box the route refuses
+ * under its own name (`applyNcci`; `confirm_<id>`) is the group's too: its message shows in the group, and the summary
+ * names it by the box's own label, or by the legend when the boxes are `itemized`. The message sits inside the
+ * fieldset after the legend and hint, and the fieldset's description names both.
  */
 export function CheckboxGroup({
   legend,
   issueKey,
   options,
   hint,
+  itemized = false,
 }: {
   readonly legend: string;
   readonly issueKey: string;
   readonly options: readonly { readonly name: string; readonly value?: string; readonly label: ReactNode; readonly defaultChecked?: boolean; readonly required?: boolean }[];
   readonly hint?: string;
+  /**
+   * A list confirmed item by item, each box its own key (`confirm_<id>`) and its label a sentence, which is no name for
+   * the summary: a refused box is named by the legend.
+   */
+  readonly itemized?: boolean;
 }) {
   const id = `group-${issueKey}`;
-  const error = useFieldIssue(issueKey);
+  // The boxes' own keys (a group posting one name[] has none beyond issueKey).
+  const boxKeys = [...new Set(options.map((option) => (option.name.endsWith('[]') ? option.name.slice(0, -2) : option.name)))].filter((key) => key !== issueKey);
+  const error = useFieldIssue(issueKey, boxKeys);
   return (
-    <fieldset data-issue-for={issueKey} data-invalid={error === undefined ? undefined : ''} aria-describedby={describedBy(id, { error, hint })} className="flex min-w-0 flex-col gap-1.5">
+    <fieldset
+      data-issue-for={[issueKey, ...boxKeys].join(' ')}
+      data-invalid={error === undefined ? undefined : ''}
+      aria-describedby={describedBy(id, { error, hint })}
+      className="flex min-w-0 flex-col gap-1.5"
+    >
       <legend className="mb-1 text-sm font-medium">{legend}</legend>
       <Hint id={id} hint={hint} />
       <FieldError id={id} error={error} />
@@ -211,6 +226,7 @@ export function CheckboxGroup({
               value={option.value}
               defaultChecked={option.defaultChecked}
               required={option.required}
+              data-error-name={itemized ? legend : undefined}
               className="size-4 shrink-0"
             />
             {option.label}

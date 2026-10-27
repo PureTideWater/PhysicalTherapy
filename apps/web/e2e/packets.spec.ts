@@ -18,7 +18,7 @@ import { holdExports, startLocalWorker } from './worker';
 
 /**
  * The packet builder and the submission log in the browser (PRD 5, J9; PRD 7, Packet builder and
- * Submissions and responses; PRD 12; test matrix CAS-08, CAS-09, CAS-12; the milestone 8 done check): in
+ * Submissions and responses; PRD 12; test matrix CAS-08, CAS-09, CAS-12, FRM-01; the milestone 8 done check): in
  * a practice of its own, a billing manager uploads the SYNTHETIC CAS-08 remittance, whose case the
  * worker prices and triages (the payer's schedule abstracted and signed off beside the browser,
  * e2e/packets.ts). The drafter writes the first version from the code-built draft, adds a sentence with
@@ -38,7 +38,8 @@ import { holdExports, startLocalWorker } from './worker';
  * Correspondence (E2); the PDF downloads named by the packet's reference and prints the approval line with it and the
  * contact, and no login or SHA-256 (E3); the reviewer's page shows the internal record and the seven-item checklist (E4);
  * and on Cases the reference typed in lower case finds the packet (E5). The payer's answer (PRD 5, J10: "logs the payer's response"; LED-01) follows: a SYNTHETIC
- * payer letter is uploaded on the Contracts screen and recorded as a partial acceptance of 60.00, which
+ * payer letter is uploaded on the Contracts screen; a partial acceptance with no amount is refused, keeping the response
+ * chosen and naming the amount (FRM-01); recorded as a partial acceptance of 60.00, it
  * moves no money by itself; the next reconcile (queued as the daily schedule queues it) approves it in
  * the recovery ledger, and the dashboard shows it as payer approved, never as recovered. The adjusted
  * remittance, posting, deposit, recovered and recoupment steps of J10 are e2e/reconciliation.spec.ts.
@@ -431,7 +432,7 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
       await expect(page.getByRole('region', { name: 'Version' }).locator('[data-reference]')).toHaveAttribute('data-reference', reference);
     });
 
-    await test.step('the payer’s letter is recorded as a partial acceptance; recording moves no money, and the next reconcile approves it (J10, LED-01)', async () => {
+    await test.step('a partial acceptance with no amount is refused and keeps its response (FRM-01); the payer’s letter is recorded as a partial acceptance; recording moves no money, and the next reconcile approves it (J10, LED-01)', async () => {
       await withWorker(async () => {
         await approver.goto(`/p/${practiceId}/contracts`);
         await approver.getByLabel('Kind of document').selectOption('payer_letter');
@@ -441,8 +442,20 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
       });
       await approver.goto(`${casePath}/submissions`);
       const form = approver.getByRole('region', { name: 'Log a payer response' });
-      await form.getByLabel('Response', { exact: true }).selectOption('partial');
-      await form.getByLabel('Additional amount the payer will pay (accepted or partial only, dollars)').fill('60.00');
+      const response = form.getByLabel('Response', { exact: true });
+      const amount = form.getByLabel('Additional amount the payer will pay (accepted or partial only, dollars)');
+      await response.selectOption('partial');
+      await form.getByRole('button', { name: 'Record the response' }).click();
+      // Refused, the form keeps the response chosen: a reset would put back the first kind, and a second press would
+      // record a payer response nobody chose (narrow-practice-1-07). The amount is named by its label, marked and focused.
+      const summary = form.locator('[data-slot="refusal-summary"]');
+      await expect(summary).toContainText('Not done');
+      await expect(summary).toContainText('Additional amount the payer will pay: what the payer accepted, in dollars and cents');
+      await expect(response).toHaveValue('partial');
+      await expect(amount).toHaveAttribute('aria-invalid', 'true');
+      await expect(amount).toBeFocused();
+      await expect(approver.locator('[data-notice="recorded"]')).toHaveCount(0);
+      await amount.fill('60.00');
       await form.getByRole('button', { name: 'Record the response' }).click();
       await expect(approver.locator('[data-notice="recorded"]')).toBeVisible();
       await expect(approver.getByRole('region', { name: 'Submission log' }).locator('[data-response="partial"]')).toContainText('$60.00 the payer will pay');

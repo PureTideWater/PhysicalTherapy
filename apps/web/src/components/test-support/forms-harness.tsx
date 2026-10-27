@@ -1,23 +1,23 @@
-import { Button } from '@tp/ui';
 import { AppRouterContext, type AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
-import { Component, type ReactNode, StrictMode, useRef } from 'react';
+import { Component, type ReactNode, StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 // The brand's tokens and the shared stylesheet as written: the browser ignores the Tailwind at-rules, and the unlayered
 // rules (the refused mark, 16 px controls, scroll padding, a refused row that wraps) apply as in the app.
 import '../../../../../packages/brand/src/tokens.css';
 import '../../../../../packages/ui/src/styles.css';
+import { ActionForm, takesFocus, takesOrphanedRefusal } from '../action-form';
 import { CheckboxField, CheckboxGroup, Field, SelectField, TextAreaField } from '../field';
-import { FormIssues, PendingStatus, type RefusalState, RefusalSummary, useGuardedSubmit } from '../form-issues';
+import type { RefusalState } from '../form-issues';
+import { ExportRequestForm } from '../packets/export-status';
+import { VersionForm } from '../packets/version-form';
 import { PasswordField } from '../password-field';
+import { ScreeningSplitForm } from '../screening/split-form';
 
 /**
- * The page the forms' browser harness serves (test-support/browser.ts; design section 8.2): one form, named by
- * `?form=`, built from the real fields and the real form core, with an in-memory action the test scripts through
+ * The page the forms' browser harness serves (test-support/browser.ts; design section 8.2): one page, named by
+ * `?form=`, of real ActionForms built from the real fields, with an in-memory action the test scripts through
  * `window.harness`. Synthetic values only.
- *
- * HarnessForm is ActionForm's body as docs/adr/0077 gives it (the summary first, the fields, the button's wrapper
- * with its status): it stands in for ActionForm until the form core lands on #50's ActionForm, which then replaces it.
  */
 
 /** What the action does on one call: refuse with a state, refuse after the test releases it, drop the connection, or fail. */
@@ -65,24 +65,9 @@ async function action(_previous: RefusalState, data: FormData): Promise<RefusalS
   return step.refuse;
 }
 
-function HarnessForm({ submit, className, beforeSubmit, children }: { readonly submit: ReactNode; readonly className?: string; readonly beforeSubmit?: (form: HTMLFormElement) => boolean; readonly children?: ReactNode }) {
-  const formRef = useRef<HTMLFormElement>(null);
-  const { state, fromBrowser, pending, formAction, onSubmit } = useGuardedSubmit(action, beforeSubmit === undefined ? {} : { beforeSubmit });
-  return (
-    <FormIssues state={state}>
-      {/* data-seq: the response the form shows, so a test waits for it rather than for time. */}
-      <form ref={formRef} action={formAction} onSubmit={onSubmit} className={className ?? 'flex flex-col gap-4'} data-seq={state.seq ?? 0}>
-        <RefusalSummary state={state} fromBrowser={fromBrowser} submit={submit} formRef={formRef} />
-        {children}
-        <div className="flex flex-wrap items-center gap-2">
-          <Button type="submit" aria-disabled={pending || undefined}>
-            {submit}
-          </Button>
-          <PendingStatus pending={pending} />
-        </div>
-      </form>
-    </FormIssues>
-  );
+/** ActionForm over the harness's action, as a page renders it. */
+function HarnessForm(props: Omit<Parameters<typeof ActionForm>[0], 'action'>) {
+  return <ActionForm action={action} {...props} />;
 }
 
 /** Shows a server failure's digest, as app/error.tsx shows its reference. */
@@ -182,6 +167,15 @@ const forms: Record<string, () => ReactNode> = {
         ]}
       />
       <Field label="Recovered principal, net (posted)" name="recovered" />
+      <CheckboxGroup
+        legend="Confirm each item before you attest"
+        issueKey="confirm"
+        itemized
+        options={[
+          { name: 'confirm_coverage', label: 'Every line in the period was read.' },
+          { name: 'confirm_gaps', label: 'Each gap is listed with its reason.' },
+        ]}
+      />
     </HarnessForm>
   ),
   /** A short form under a 56 px sticky header (FRM-05: the focused field is never under it). */
@@ -196,12 +190,58 @@ const forms: Record<string, () => ReactNode> = {
       <div className="spacer" />
     </>
   ),
-  /** A form whose beforeSubmit may refuse to send (the split form, 4.6). */
+  /** A form whose beforeSubmit may refuse to send (4.6). */
   split: () => (
     <HarnessForm submit="Approve this split" beforeSubmit={() => control.allow}>
       <Field label="Facility places of service" name="facility" issueFor={['settings']} />
       <input type="hidden" name="settings" value="{}" />
     </HarnessForm>
+  ),
+  /** The screening's split form itself: it shows its own problems and sends nothing while it has any. */
+  screening: () => <ScreeningSplitForm action={action} facility="" nonFacility="" formKeys={null} />,
+  /**
+   * A form a change elsewhere can overtake (#50's Re-run): it reads the page again after a refusal, and its hidden run
+   * names an issue by its own data-error-name, as the route words it ("This run: …").
+   */
+  rerun: () => (
+    <HarnessForm submit="Re-run under release 900001" variant="outline" refreshOnError="rerun:run-1" wrapSubmit>
+      <input type="hidden" name="runId" value="run-1" data-error-name="This run" />
+      <input type="hidden" name="releaseNo" value="900001" data-error-name="Rule release" />
+      <Field label="Note" name="note" />
+    </HarnessForm>
+  ),
+  /** The packet builder's version form, which submits as ActionForm does with two actions (design 4.2). */
+  version: () => (
+    <VersionForm
+      writeAction={action}
+      modelAction={action}
+      keys={<input type="hidden" name="requestKey" value="synthetic-request-key" />}
+      practiceId="practice-1"
+      caseId="case-1"
+      basedOnVersionId={null}
+      promptPay={{ states: ['NC'], selected: '' }}
+      attachable={[]}
+      narrative={null}
+      submits={[{ intent: 'save', label: 'Save as a new version' }]}
+      model={null}
+    />
+  ),
+  /** The packet's Export button, a form of hidden fields with its own useActionState (design 4.2). */
+  export: () => (
+    <ExportRequestForm action={action} refusalCodes={['no_approved_version']}>
+      <input type="hidden" name="requestKey" value="synthetic-request-key" />
+    </ExportRequestForm>
+  ),
+  /** Two forms on one page, as the per-row forms: each has its own refusal. */
+  two: () => (
+    <>
+      <HarnessForm submit="Save first">
+        <Field label="Title" name="title" id="first-title" />
+      </HarnessForm>
+      <HarnessForm submit="Save second">
+        <Field label="Title" name="title" id="second-title" />
+      </HarnessForm>
+    </>
   ),
 };
 
@@ -217,6 +257,25 @@ const router = {
   },
   bfcacheId: 'harness',
 } satisfies AppRouterInstance;
+
+// The refusal a form hands to what takes its place after the refresh, as #50's explanations read it.
+Object.assign(window, {
+  takeover: { focus: (keys: readonly string[]) => takesFocus(keys, Date.now(), true), orphaned: (prefix: string) => takesOrphanedRefusal(prefix, [], Date.now(), true) },
+});
+
+// Each response a form shows inserts a new summary (design 3.5), counted on <body data-shown>, so a test waits for the
+// response rather than for time.
+let shown = 0;
+new MutationObserver((records) => {
+  for (const record of records) {
+    for (const node of record.addedNodes) {
+      if (node instanceof HTMLElement && (node.matches('[data-slot="refusal-summary"]') || node.querySelector('[data-slot="refusal-summary"]') !== null)) {
+        shown += 1;
+      }
+    }
+  }
+  document.body.dataset.shown = String(shown);
+}).observe(document.body, { childList: true, subtree: true });
 
 const name = new URLSearchParams(window.location.search).get('form') ?? 'keep';
 const render = forms[name];

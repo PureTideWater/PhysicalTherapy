@@ -118,13 +118,12 @@ export default async function ReleasesPage(props: Props) {
                               submit={`Re-run under release ${String(note.releaseNo)}`}
                               variant="outline"
                               className="flex flex-col gap-2"
-                              labels={{ runId: 'This run', releaseNo: 'Rule release' }}
                               refreshOnError={`rerun:${run.id}`}
                             >
                               <FormKeys />
                               <input type="hidden" name="practiceId" value={practiceId} />
-                              <input type="hidden" name="runId" value={run.id} />
-                              <input type="hidden" name="releaseNo" value={note.releaseNo} />
+                              <input type="hidden" name="runId" value={run.id} data-error-name="This run" />
+                              <input type="hidden" name="releaseNo" value={note.releaseNo} data-error-name="Rule release" />
                             </ActionForm>
                           )}
                         </div>

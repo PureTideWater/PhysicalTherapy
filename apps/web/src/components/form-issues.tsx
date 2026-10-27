@@ -307,6 +307,26 @@ function resolveIssue(form: HTMLFormElement, field: string): Placed | null {
   return resolveKey(form, field) ?? (dot > 0 ? resolveKey(form, field.slice(0, dot)) : null);
 }
 
+/**
+ * The name a hidden field gives its issue, from its own `data-error-name`: a record the form carries (the run an Accept
+ * button names), which the person never fills, so its item reads "{name}: {message}" but is never a link, never
+ * focused and never counted as placed (the route words such messages to read after it: docs/adr/0037). Null without.
+ */
+function hiddenName(form: HTMLFormElement, field: string): string | null {
+  const dot = field.indexOf('.');
+  for (const key of dot > 0 ? [field, field.slice(0, dot)] : [field]) {
+    for (const name of [key, `${key}[]`]) {
+      const item = form.elements.namedItem(name);
+      const first = item instanceof RadioNodeList ? item[0] : item;
+      const text = first instanceof HTMLInputElement && first.type === 'hidden' ? first.dataset.errorName : undefined;
+      if (text !== undefined && text.trim() !== '') {
+        return fieldName(text);
+      }
+    }
+  }
+  return null;
+}
+
 /** Empties every secret in the form (docs/adr/0077, D2): marked by its component, or by its type as the fallback. */
 function emptySecrets(form: HTMLFormElement): void {
   for (const control of form.querySelectorAll<HTMLInputElement>('input[data-secret], input[type="password"], input[autocomplete="one-time-code"]')) {
@@ -359,8 +379,9 @@ export function RefusalSummary(props: RefusalSummaryProps) {
 function Summary({ state, fromBrowser, submit, formRef }: RefusalSummaryProps) {
   const itemId = useId();
   const summaryRef = useRef<HTMLDivElement>(null);
-  // Each issue's target, read from the page for the state it was read for (null before: the server render).
-  const [placement, setPlacement] = useState<{ readonly state: FormState; readonly targets: readonly (Placed | null)[] } | null>(null);
+  // Each issue's target, read from the page for the state it was read for (null before: the server render), and the
+  // name a hidden field gives an issue with no target.
+  const [placement, setPlacement] = useState<{ readonly state: FormState; readonly targets: readonly (Placed | null)[]; readonly hidden: readonly (string | null)[] } | null>(null);
   const shown = refused(state);
   useLayoutEffect(() => {
     const form = formRef.current;
@@ -372,7 +393,7 @@ function Summary({ state, fromBrowser, submit, formRef }: RefusalSummaryProps) {
     const issues = state.issues ?? [];
     const targets = issues.map((issue) => resolveIssue(form, issue.field));
     const undo = targets.map((target, index) => (target === null ? null : markByHand(target.control, `${itemId}-${String(index)}`)));
-    setPlacement({ state, targets });
+    setPlacement({ state, targets, hidden: issues.map((issue, index) => (targets[index] === null ? hiddenName(form, issue.field) : null)) });
     const only = issues.length === 1 ? targets[0] : null;
     (only?.control ?? summaryRef.current)?.focus();
     return () => {
@@ -384,20 +405,22 @@ function Summary({ state, fromBrowser, submit, formRef }: RefusalSummaryProps) {
   if (!shown) {
     return null;
   }
-  const targets = placement?.state === state ? placement.targets : null;
+  const read = placement?.state === state ? placement : null;
+  const targets = read?.targets ?? null;
   const kind = state.locked === true ? 'locked' : state.unconfirmed === true ? 'unconfirmed' : 'error';
   return (
     <Alert variant="destructive" data-state={kind} data-slot="refusal-summary" ref={summaryRef} tabIndex={-1} className="col-span-full basis-full w-full">
       <AlertTitle>{kind === 'locked' ? 'Account locked' : kind === 'unconfirmed' ? 'Not confirmed' : 'Not done'}</AlertTitle>
       <AlertDescription>
-        <Lead state={state} placed={targets === null ? null : targets.filter((target) => target !== null).length} fromBrowser={fromBrowser} submit={submit} />
+        <RefusalLead state={state} placed={targets === null ? null : targets.filter((target) => target !== null).length} fromBrowser={fromBrowser} submit={submit} />
         {state.issues === undefined || state.issues.length === 0 ? null : (
           <ul className="mt-1 list-disc pl-5">
             {state.issues.map((issue, index) => {
               const target = targets?.[index] ?? null;
+              const hidden = read?.hidden[index] ?? null;
               return (
                 <li key={`${issue.field}:${String(index)}`} id={`${itemId}-${String(index)}`}>
-                  {target === null ? capitalised(issue.message) : <ItemLink target={target} message={issue.message} />}
+                  {target !== null ? <ItemLink target={target} message={issue.message} /> : hidden === null ? capitalised(issue.message) : `${hidden}: ${issue.message}`}
                 </li>
               );
             })}
@@ -408,19 +431,21 @@ function Summary({ state, fromBrowser, submit, formRef }: RefusalSummaryProps) {
   );
 }
 
-/** The summary's lead: the connection, the out-of-date page, or the action's error as summaryLead chooses it. */
-function Lead({ state, placed, fromBrowser, submit }: { readonly state: FormState; readonly placed: number | null; readonly fromBrowser: boolean; readonly submit: ReactNode }) {
+/**
+ * The summary's lead: the connection, the out-of-date page, or the action's error as summaryLead chooses it. Exported
+ * for a form with a summary of its own (the export form), so its leads read the same.
+ */
+export function RefusalLead({ state, placed, fromBrowser, submit }: { readonly state: FormState; readonly placed: number | null; readonly fromBrowser: boolean; readonly submit: ReactNode }) {
   if (state.unconfirmed === true) {
     return <p>The connection to PaidWhole dropped before an answer came back. What you typed is still here: check your connection, then press “{submit}” again.</p>;
   }
-  if (state.stale === true && state.error !== undefined) {
+  if (state.stale === true) {
+    // The flag, never the server's words, which end in a reload for the forms that do not read the page again (next.ts).
     // Only a press the person just made on this page may be invited again: any other post may not be theirs.
     return fromBrowser ? (
-      <p>
-        {state.error} It is up to date now: press “{submit}” again.
-      </p>
+      <p>This page was out of date, so nothing was saved. It is up to date now: press “{submit}” again.</p>
     ) : (
-      <p>{state.error} Check the form, then send it again if you still mean to.</p>
+      <p>This page was out of date, so nothing was saved. Check the form, then send it again if you still mean to.</p>
     );
   }
   const lead = summaryLead(state, placed);

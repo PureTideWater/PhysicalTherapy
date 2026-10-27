@@ -8,10 +8,11 @@ import { enterPassword, practiceId, registerKeyAndSignIn, signInWithTotp } from 
  * Forms keep what the person typed, and name the refused field (docs/adr/0077; test matrix FRM-01 to FRM-08): the public
  * audit request refused with and without JavaScript, measured and scanned at a phone's width and a desktop's; the sign-in
  * steps refused for a wrong password, a wrong code and a weak or mismatched new password; a practice's ROI form refused
- * while its post is held, so the pending button and its status can be read; the support form through a dropped
- * connection, a page out of date, a refusal and a save; and the console's incident form refused for its checkbox group.
- * Each signed-in test is its own synthetic persona's (refusals count toward the ten-failure lock, and specs run in
- * parallel), and nothing a refusal sends is written. Synthetic data only.
+ * while its post is held, so the pending button and its status can be read, then saved on another page; the support
+ * form through a dropped connection, a page out of date, a refusal and a save to the same page; and the console's
+ * incident form refused for its checkbox group, then saved to the same address (and resolved again, so the public status
+ * page reads as before). Each signed-in test is its own synthetic persona's (refusals count toward the ten-failure lock,
+ * and specs run in parallel), and nothing a refusal sends is written. Synthetic data only.
  */
 
 /** The refusal summary of a form: the first thing in it, before its fields (docs/adr/0077, D3). */
@@ -302,7 +303,7 @@ test('choosing a password: the policy is the field’s hint, Show reveals and hi
   });
 });
 
-test('a practice’s ROI form keeps the typed period, keeps its button focused and says it is working while its post is held, and sends one request per press (FRM-01, FRM-03, FRM-04, FRM-08)', async ({ page }) => {
+test('a practice’s ROI form keeps the typed period, keeps its button focused and says it is working while its post is held, sends one request per press, and starts fresh after a save that moved to another page (FRM-01, FRM-02, FRM-03, FRM-04, FRM-08)', async ({ page }) => {
   await signInWithTotp(page, 'forms-manager');
   const practice = await practiceId('other');
   const pathname = `/p/${practice}/reports/roi`;
@@ -313,6 +314,8 @@ test('a practice’s ROI form keeps the typed period, keeps its button focused a
   const generate = form.getByRole('button', { name: 'Generate the statement' });
   const status = form.locator('[data-slot="pending-status"]');
   const posts = countActionPosts(page);
+  // The period the page suggests, which the form shows before anything is typed.
+  const suggested = { from: await firstDay.inputValue(), to: await lastDay.inputValue() };
 
   await test.step('pressed with Space while its post is held, the button keeps focus and its words, is aria-disabled, and a second Space sends nothing (FRM-03)', async () => {
     await firstDay.fill('2026-09-30');
@@ -377,6 +380,22 @@ test('a practice’s ROI form keeps the typed period, keeps its button focused a
   await test.step('the refused practice form passes axe at both widths (FRM-08)', async () => {
     await expectAccessible(page, 'ROI statements, refused');
     await atPhoneWidth(page, 'ROI statements, refused');
+  });
+
+  await test.step('corrected, the statement is generated on another page; back on the list, the form shows its suggested period, no refusal and a new request key (FRM-02)', async () => {
+    await firstDay.fill(suggested.from);
+    await lastDay.fill(suggested.to);
+    const keyBefore = await form.locator('input[name="requestKey"]').inputValue();
+    await generate.click();
+    await expect(page).toHaveURL(new RegExp(`${pathname}/[0-9a-f-]{36}$`));
+    await page.getByRole('link', { name: 'ROI statements', exact: true }).first().click();
+    await expect(page).toHaveURL(new RegExp(`${pathname}$`));
+    await expect(summaryOf(form)).toHaveCount(0);
+    await expect(firstDay).toHaveValue(suggested.from);
+    await expect(lastDay).toHaveValue(suggested.to);
+    await expect(firstDay).not.toHaveAttribute('aria-invalid', 'true');
+    await expect(lastDay).not.toHaveAttribute('aria-invalid', 'true');
+    await expect(form.locator('input[name="requestKey"]')).not.toHaveValue(keyBefore);
   });
 });
 
@@ -456,7 +475,7 @@ test('the support form keeps what was typed through a dropped connection, a page
   });
 });
 
-test('the console’s incident form refused for its checkbox group keeps its text, marks the group and focuses its first box (FRM-04, FRM-05)', async ({ page }) => {
+test('the console’s incident form refused for its checkbox group keeps its text, marks the group and focuses its first box, and starts fresh after a save that returns to the same address (FRM-02, FRM-04, FRM-05)', async ({ page }) => {
   await registerKeyAndSignIn(page, 'forms-admin');
   await page.goto('/console/status');
   const form = formWith(page, 'Open incident');
@@ -473,4 +492,24 @@ test('the console’s incident form refused for its checkbox group keeps its tex
   await expect(group.locator('[data-field-error]')).toContainText('choose at least one component');
   await expect(group.getByRole('checkbox').first()).toBeFocused();
   await expect(page).toHaveURL(/\/console\/status$/);
+
+  await test.step('with a component ticked the incident opens, the page returns to the same address, and the form shows its defaults, no refusal and a new request key (FRM-02)', async () => {
+    const keyBefore = await form.locator('input[name="requestKey"]').inputValue();
+    await group.getByRole('checkbox').first().check();
+    await form.getByRole('button', { name: 'Open incident' }).click();
+    const opened = page.locator('[data-incident-status]:not([data-incident-status="resolved"])').filter({ hasText: 'SYNTHETIC forms check' }).first();
+    await expect(opened).toBeVisible();
+    await expect(page).toHaveURL(/\/console\/status$/);
+    await expect(summaryOf(form)).toHaveCount(0);
+    await expect(title).toHaveValue('');
+    await expect(update).toHaveValue('');
+    await expect(group.getByRole('checkbox', { checked: true })).toHaveCount(0);
+    await expect(group).not.toHaveAttribute('data-invalid');
+    await expect(form.locator('input[name="requestKey"]')).not.toHaveValue(keyBefore);
+    // Resolved again, so the public status page reads as it did for the specs that run beside this one.
+    await opened.getByLabel('Status', { exact: true }).selectOption('resolved');
+    await opened.getByLabel('Update', { exact: true }).fill('SYNTHETIC resolved by the forms check');
+    await opened.getByRole('button', { name: 'Post update' }).click();
+    await expect(page.locator('[data-incident-status="resolved"]').filter({ hasText: 'SYNTHETIC forms check' }).first()).toBeVisible();
+  });
 });

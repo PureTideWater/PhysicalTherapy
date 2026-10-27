@@ -5,6 +5,7 @@ import { Button } from '@tp/ui';
 import { type FormEvent, type ReactNode, useRef, useState } from 'react';
 
 import type { ActionState } from '../../lib/http/next';
+import { RefreshAfterRefusal } from '../action-form';
 import { CheckboxGroup, SelectField } from '../field';
 import { FormIssues, PendingStatus, RefusalSummary, useGuardedSubmit } from '../form-issues';
 import { NarrativeEditor } from './narrative-editor';
@@ -98,8 +99,9 @@ export function VersionForm({
   const formRef = useRef<HTMLFormElement>(null);
   const [clicked, setClicked] = useState<VersionIntent | null>(null);
   const pending = write.pending || draft.pending;
-  // What the last button sent came back with.
-  const shown = clicked === 'model_draft' ? draft : write;
+  // What the last button sent came back with. With no press seen on this page (the post without JavaScript, or a press
+  // React replayed before the page hydrated), whichever action answered: the model's button posts to its own.
+  const shown = clicked === 'model_draft' || (clicked === null && draft.state.error !== undefined && write.state.error === undefined) ? draft : write;
   const pressed = [...submits, ...(model?.submit === null || model?.submit === undefined ? [] : [model.submit])].find((submit) => submit.intent === clicked);
   function onSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
@@ -156,6 +158,8 @@ export function VersionForm({
             )}
           </div>
         )}
+        {/* A page out of date is read again in place: a fresh token and key, and what was typed stays (docs/adr/0077). */}
+        {shown.state.stale === true ? <RefreshAfterRefusal state={shown.state} takeover={undefined} formRef={formRef} /> : null}
       </form>
     </FormIssues>
   );

@@ -165,6 +165,27 @@ describe('CheckboxGroup (FRM-04)', () => {
     expect(inForm(group)).not.toContain('data-invalid');
     expect(inForm(group)).toMatch(/^<fieldset data-issue-for="components" aria-describedby="group-components-hint"/);
   });
+
+  it('takes the refusal of a box the route names by its own key, and an itemized list names its boxes by the legend', () => {
+    const confirm = (itemized: boolean) => (
+      <CheckboxGroup
+        legend="Confirm each item before you attest"
+        issueKey="confirm"
+        itemized={itemized}
+        options={[
+          { name: 'confirm_coverage', label: 'Every line in the period was read.', required: true },
+          { name: 'confirm_gaps', label: 'Each gap is listed with its reason.', required: true },
+        ]}
+      />
+    );
+    const html = inForm(confirm(true), [{ field: 'confirm_gaps', message: 'confirm this item' }]);
+    expect(html).toMatch(/^<fieldset data-issue-for="confirm confirm_coverage confirm_gaps" data-invalid="" aria-describedby="group-confirm-error"/);
+    expect(textOf(html, 'group-confirm-error')).toBe('confirm this item');
+    // The summary reads data-error-name before a box's label: a sentence is no name.
+    expect(attribute(html, 'group-confirm-1', 'data-error-name')).toBe('Confirm each item before you attest');
+    // Independent boxes keep their own labels as names (the versions page's Medicare adjustments).
+    expect(attribute(inForm(confirm(false), [{ field: 'confirm_gaps', message: 'confirm this item' }]), 'group-confirm-1', 'data-error-name')).toBeNull();
+  });
 });
 
 describe('PasswordField (FRM-07)', () => {
@@ -238,9 +259,11 @@ describe('RefusalSummary as the server renders it (FRM-04, FRM-06: the post with
   });
 
   it('says a page out of date was not saved, and invites a press again only after the person’s own press', () => {
-    const stale = { error: 'This page was out of date, so nothing was saved.', stale: true };
+    // The server's words end in a reload, for a form that does not read the page again (next.ts); the summary writes its own from the flag.
+    const stale = { error: 'This page was out of date, so nothing was saved. Reload the page and try again.', stale: true };
     expect(summary(stale)).toContain('<p>This page was out of date, so nothing was saved. Check the form, then send it again if you still mean to.</p>');
     expect(summary(stale, true)).toContain('<p>This page was out of date, so nothing was saved. It is up to date now: press “Open ticket” again.</p>');
+    expect(summary(stale, true)).not.toContain('Reload');
   });
 
   it('names a locked account and an unconfirmed save in its title and state', () => {

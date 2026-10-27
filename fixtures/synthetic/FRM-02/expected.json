@@ -7,7 +7,7 @@
   "completesIn": 1,
   "assertedBy": ["apps/web/e2e/forms-keep-input.spec.ts"],
   "codeListRelease": null,
-  "noFileReason": "A synthetic persona’s support ticket is saved after a refusal; no file.",
+  "noFileReason": "Synthetic personas save a support ticket, an ROI statement and a console incident after a refusal; no file.",
   "files": [],
   "generated": [],
   "uploads": [],

@@ -12,16 +12,21 @@ import { createViteServer } from 'vitest/node';
  * so the unlayered rules apply as in the app. Synthetic values only; nothing reaches a server but this one.
  *
  * The tests skip where Chromium is not installed, which is right on a developer's machine; on CI the unit project's
- * global setup fails the run instead (tools/test/ci-chromium.ts, CI-05), so they cannot silently skip there.
+ * global setup fails the run instead (tools/test/ci-chromium.ts, CI-05), so they cannot silently skip there. A
+ * developer without Playwright's pinned build may name another Chromium in FORMS_HARNESS_CHROMIUM: a signal for
+ * that machine only, never set on CI, whose runs are the record.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repository = path.resolve(here, '../../../../..');
 
-/** Whether Playwright's Chromium is installed here. */
+/** Another Chromium than Playwright's pinned build, for a developer's run only (unset: the pinned build). */
+const elsewhere = process.env.FORMS_HARNESS_CHROMIUM === '' ? undefined : process.env.FORMS_HARNESS_CHROMIUM;
+
+/** Whether the harness's Chromium is installed here. */
 export function chromiumInstalled(): boolean {
   try {
-    return existsSync(chromium.executablePath());
+    return existsSync(elsewhere ?? chromium.executablePath());
   } catch {
     return false;
   }
@@ -60,7 +65,7 @@ export async function startHarness(): Promise<Harness> {
   }
   let browser: Browser;
   try {
-    browser = await chromium.launch();
+    browser = await chromium.launch(elsewhere === undefined ? {} : { executablePath: elsewhere });
   } catch (error) {
     await server.close();
     throw error;

@@ -7,7 +7,7 @@ import type { ActionState } from '../../lib/http/next';
 import { dollarsForInput } from '../../lib/money-input';
 import { ActionForm } from '../action-form';
 import { Field } from '../field';
-import { MoneyField, moneyLabel } from '../money-field';
+import { MoneyField } from '../money-field';
 import { Counted, Money } from '../remittances/display';
 
 /**
@@ -15,19 +15,13 @@ import { Counted, Money } from '../remittances/display';
  * materiality thresholds and the pursuit cost, which the route returns as stored, in cents. Each amount is shown
  * through <Money> and each count of minutes in the mono face (brand: every money figure and unit count in mono), and
  * each dollar field is a <MoneyField> pre-filled with dollarsForInput, which the save's dollars field reads back to
- * the same cents. Each field takes its label from MATERIALITY_LABELS or PURSUIT_LABELS; a refusal names the field by
- * that label as the page shows it, never by its key.
+ * the same cents. A refusal names each field by the label the page shows (its "(dollars)" dropped), never by its key
+ * (docs/adr/0077).
  * Plain components: the page passes its actions and a factory of its FormKeys, called once per form so each form has
  * its own request key (docs/adr/0017).
  */
 
 type Action = (state: ActionState, form: FormData) => Promise<ActionState>;
-
-/** The label of each field of the materiality form, by its key, as the form shows it. */
-export const MATERIALITY_LABELS = { lineMateriality: moneyLabel('Per line'), caseMateriality: moneyLabel('Per case') } as const;
-
-/** The label of each field of the pursuit form, by its key, as the form shows it. */
-export const PURSUIT_LABELS = { staffRatePerHour: moneyLabel('Staff rate per hour'), minutesPerPacket: 'Minutes per packet', minutesPerFollowUp: 'Minutes per follow-up' } as const;
 
 export function MaterialityCard({
   practiceId,
@@ -109,8 +103,8 @@ export function PursuitCard({
                 All three together, or all blank to clear.
               </p>
               <MoneyField label="Staff rate per hour" name="staffRatePerHour" defaultValue={pursuit === null ? '' : dollarsForInput(pursuit.staffRateCentsPerHour)} />
-              <Field label={PURSUIT_LABELS.minutesPerPacket} name="minutesPerPacket" defaultValue={pursuit === null ? '' : String(pursuit.minutesPerPacket)} inputMode="numeric" />
-              <Field label={PURSUIT_LABELS.minutesPerFollowUp} name="minutesPerFollowUp" defaultValue={pursuit === null ? '' : String(pursuit.minutesPerFollowUp)} inputMode="numeric" />
+              <Field label="Minutes per packet" name="minutesPerPacket" defaultValue={pursuit === null ? '' : String(pursuit.minutesPerPacket)} inputMode="numeric" />
+              <Field label="Minutes per follow-up" name="minutesPerFollowUp" defaultValue={pursuit === null ? '' : String(pursuit.minutesPerFollowUp)} inputMode="numeric" />
             </fieldset>
           </ActionForm>
         ) : null}

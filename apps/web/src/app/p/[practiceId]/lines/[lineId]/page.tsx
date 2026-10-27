@@ -1,10 +1,11 @@
 import { formatUnroundedUsd } from '@tp/money';
 import { ExplainWordsError } from '@tp/packets/explain';
-import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Label } from '@tp/ui';
+import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../../components/action-form';
+import { TextAreaField } from '../../../../../components/field';
 import { utc } from '../../../../../components/format';
 import { Fact, LineStatusChip, Money, basisName, claimStatusName, period } from '../../../../../components/remittances/display';
 import { AdjustmentWords, LineSummary, LineTrace, UnpricedWords } from '../../../../../components/pricing/line-words';
@@ -292,10 +293,7 @@ export default async function LinePage(props: {
                 <FormKeys />
                 <input type="hidden" name="practiceId" value={practiceId} />
                 <input type="hidden" name="lineId" value={line.lineId} />
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="note">Note</Label>
-                  <textarea id="note" name="note" required maxLength={2000} rows={3} className="rounded-md border bg-background p-2 text-sm" />
-                </div>
+                <TextAreaField id="note" label="Note" name="note" required maxLength={2000} rows={3} />
               </ActionForm>
             ) : null}
           </CardContent>

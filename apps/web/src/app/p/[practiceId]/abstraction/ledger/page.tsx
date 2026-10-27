@@ -1,8 +1,9 @@
-import { Alert, AlertDescription, AlertTitle, EmptyState, Label } from '@tp/ui';
+import { Alert, AlertDescription, AlertTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../../components/action-form';
+import { CheckboxField, Field, TextAreaField } from '../../../../../components/field';
 import { EVIDENCE_WORDS, LedgerTotals, entryStage } from '../../../../../components/reconciliation/display';
 import { Money, Pager } from '../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../components/shell';
@@ -26,18 +27,17 @@ function AdjustForm({ practiceId, entry, idPrefix }: { readonly practiceId: stri
         <FormKeys />
         <input type="hidden" name="practiceId" value={practiceId} />
         <input type="hidden" name="entryId" value={entry.id} />
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`amount-${id}`}>Change in dollars (a minus sign lowers it)</Label>
-          <input id={`amount-${id}`} name="amount" required inputMode="decimal" pattern="-?[0-9]{1,9}([.][0-9]{1,2})?" className="rounded-md border bg-background p-2 text-sm" />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`adjust-reason-${id}`}>Why the amount is corrected</Label>
-          <textarea id={`adjust-reason-${id}`} name="reason" required maxLength={2000} rows={2} className="rounded-md border bg-background p-2 text-sm" />
-        </div>
-        <label className="flex items-start gap-2 text-sm">
-          <input type="checkbox" name="confirm" required className="mt-1" />
-          <span>{ADJUSTMENT_CONSEQUENCE} Adjust it.</span>
-        </label>
+        <Field
+          id={`amount-${id}`}
+          label="Change in dollars"
+          name="amount"
+          required
+          inputMode="decimal"
+          pattern="-?[0-9]{1,9}([.][0-9]{1,2})?"
+          hint="Dollars and cents, such as 12.50; a minus sign lowers the amount, such as -12.50."
+        />
+        <TextAreaField id={`adjust-reason-${id}`} label="Why the amount is corrected" name="reason" required maxLength={2000} rows={2} />
+        <CheckboxField id={`confirm-${id}`} name="confirm" errorName="Confirmation" required label={`${ADJUSTMENT_CONSEQUENCE} Adjust it.`} />
       </ActionForm>
     </details>
   );

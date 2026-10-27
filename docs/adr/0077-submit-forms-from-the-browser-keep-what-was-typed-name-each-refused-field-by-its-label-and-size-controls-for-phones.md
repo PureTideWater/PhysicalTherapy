@@ -63,7 +63,12 @@ refused the "123 456" an authenticator app copies; and that several fields check
   first `.`) and names it by the control's `data-error-name`, else a group's legend when the issue names a group, else
   the control's own label. One rule tidies the name: white space collapsed, one trailing parenthetical and a trailing
   colon dropped, never a parenthetical that says posted or deposited. No form keeps a table of labels, and no code path
-  prints a key. The summary is first in the form, on a line of its own in any grid or row, keyed per response so the
+  prints a key. A hidden field is no target, so its issue is the message alone, unless the field carries its own
+  `data-error-name` (the run an Accept or Re-run button names, #50's words, read after it: "This run: …"): its item
+  then reads "{name}: {message}", is never a link, is never focused and is never counted as a field placed. A box a
+  checkbox group lists under its own key (`applyNcci`, `confirm_<id>`) is the group's: its message shows inside the
+  group, and the summary names it by the box's own label, or by the legend when the group is a list confirmed item by
+  item (`itemized`), whose labels are sentences. The summary is first in the form, on a line of its own in any grid or row, keyed per response so the
   same refusal twice is announced twice; its lead counts the issues that name a field ("Fix the field listed here, then
   try again.", "Fix the fields listed here, then try again.", or none). Under each refused field the shared components
   show "Error:" and an icon beside the message, the element that describes the field holding the message alone. One
@@ -92,7 +97,9 @@ refused the "123 456" an authenticator app copies; and that several fields check
   `router.refresh()`, which renders a fresh token and key while the uncontrolled fields keep their values. Only a
   refusal of the person's own press invites pressing again ("It is up to date now: press “{submit}” again."); a post
   this page did not start reads "Check the form, then send it again if you still mean to.", because the outcome cannot
-  tell a stale token from a wrong origin.
+  tell a stale token from a wrong origin. The flag, never the words, decides: ActionForm, the version form and the
+  export form write those sentences themselves, while the server's `error` ends in "Reload the page and try again." for
+  a form that does not read the page again (the screening upload, until it adopts this pattern after #42).
 
 ## Alternatives considered
 
@@ -130,6 +137,9 @@ refused the "123 456" an authenticator app copies; and that several fields check
 - `components/field.tsx` is a client module, so its fields read the refusal from context; a server page may pass it
   only serialisable props, which TypeScript and Next's build enforce.
 - Playwright's `click()` waits on an `aria-disabled` button; a test that presses while pending uses the keyboard.
+- The summary is an `Alert` whose `data-slot` is `refusal-summary` (the props it is given come after the Alert's own
+  slot), so it carries no `[data-slot="alert"]`: `e2e/helpers.ts`'s `refusal()` matches both slots, and a locator for
+  a form's refusal uses `[data-slot="refusal-summary"]`.
 - The FRM rows of the test matrix hold the behaviour: a browser harness over the real components in the unit project,
   and `apps/web/e2e/forms-keep-input.spec.ts` with four personas of its own.
 

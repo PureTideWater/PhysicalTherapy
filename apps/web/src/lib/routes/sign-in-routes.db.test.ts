@@ -142,7 +142,7 @@ function nextCode(secret = SECRET): string {
 }
 
 describe('the password and TOTP steps', () => {
-  it('moves from the password to the code to a session, setting and clearing the cookies', async () => {
+  it('moves from the password to the code to a session, setting and clearing the cookies; a wrong code names the code, and one written with a space is taken (FRM-07)', async () => {
     const user = await person();
     const browser = new Browser();
     expect(await step(signInWithPassword, browser, { email: user.email, password: PASSWORD })).toEqual({ status: 'ok', data: { redirect: '/sign-in/mfa' } });
@@ -166,7 +166,7 @@ describe('the password and TOTP steps', () => {
     expect(await step(answerMfa, browser, { code: nextCode() })).toEqual({ status: 'ok', data: { redirect: '/sign-in?reason=step_expired' } });
   });
 
-  it('takes an invited user through a new password and enrollment', async () => {
+  it('takes an invited user through a new password and enrollment; a weak or mismatched password is an issue on its own field, and a code with a hyphen is taken (FRM-07)', async () => {
     const invited = await person({ temporary: true, totp: false });
     const browser = new Browser();
     expect(await step(signInWithPassword, browser, { email: invited.email, password: PASSWORD })).toEqual({ status: 'ok', data: { redirect: '/sign-in/new-password' } });

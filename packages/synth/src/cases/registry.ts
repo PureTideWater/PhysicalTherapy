@@ -648,10 +648,12 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   // The forms of the UX baseline review's first pull request (docs/adr/0077).
   'FRM-01': none(1, 'The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.', [
     'apps/web/src/components/action-form.browser.test.tsx',
+    'apps/web/src/lib/http/next.test.ts',
     'apps/web/e2e/forms-keep-input.spec.ts',
     'apps/web/e2e/triage.spec.ts',
+    'apps/web/e2e/packets.spec.ts',
   ]),
-  'FRM-02': none(1, 'A synthetic persona’s support ticket is saved after a refusal; no file.', ['apps/web/e2e/forms-keep-input.spec.ts']),
+  'FRM-02': none(1, 'Synthetic personas save a support ticket, an ROI statement and a console incident after a refusal; no file.', ['apps/web/e2e/forms-keep-input.spec.ts']),
   'FRM-03': none(1, 'The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.', ['apps/web/src/components/action-form.browser.test.tsx', 'apps/web/e2e/forms-keep-input.spec.ts']),
   'FRM-04': none(1, 'The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.', [
     'apps/web/src/components/action-form.browser.test.tsx',
@@ -664,6 +666,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'FRM-06': none(1, 'The public request form is posted from a browser with scripts off; no file.', ['apps/web/e2e/forms-keep-input.spec.ts']),
   'FRM-07': none(1, 'Synthetic personas sign in through the local identity provider; no file.', [
     'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/src/lib/http/next.test.ts',
     'apps/web/src/components/action-form.browser.test.tsx',
     'apps/web/e2e/forms-keep-input.spec.ts',
   ]),

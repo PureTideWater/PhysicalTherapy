@@ -7,6 +7,7 @@
   "completesIn": 1,
   "assertedBy": [
     "apps/web/src/lib/routes/sign-in-routes.db.test.ts",
+    "apps/web/src/lib/http/next.test.ts",
     "apps/web/src/components/action-form.browser.test.tsx",
     "apps/web/e2e/forms-keep-input.spec.ts"
   ],

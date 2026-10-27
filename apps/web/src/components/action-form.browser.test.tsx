@@ -6,11 +6,9 @@ import { type Harness, chromiumInstalled, startHarness } from './test-support/br
 
 /**
  * A refused form in a real browser (test matrix FRM-01, FRM-03, FRM-04, FRM-05 and FRM-07; docs/adr/0077), through the
- * in-repo harness (test-support/browser.ts): the real fields, the real form core (useGuardedSubmit, RefusalSummary,
- * FormIssues, PendingStatus) and the real stylesheet, with in-memory actions the test scripts. Synthetic values only.
- *
- * The harness's form is ActionForm's body as the ADR gives it; the cases that need ActionForm itself (its refresh of
- * an out-of-date page, its props) are the todos at the end, filled once the form core lands on #50's ActionForm.
+ * in-repo harness (test-support/browser.ts): the real ActionForm and fields (useGuardedSubmit, RefusalSummary,
+ * FormIssues, PendingStatus) and the real stylesheet, with in-memory actions the test scripts and a stand-in router
+ * that counts refreshes. Synthetic values only.
  */
 
 type Step = { readonly refuse: RefusalState } | { readonly hold: RefusalState } | { readonly drop: true } | { readonly fail: string };
@@ -21,6 +19,12 @@ interface Control {
   release: (() => void) | null;
   allow: boolean;
   refreshes: number;
+}
+
+/** #50's hand-off, as the harness page exposes it: what an explanation, or the note after a list, would take. */
+interface Takeover {
+  focus: (keys: readonly string[]) => boolean;
+  orphaned: (prefix: string) => readonly string[] | null;
 }
 
 let harness: Harness;
@@ -37,16 +41,26 @@ function calls(page: Page): Promise<Control['calls']> {
   return page.evaluate(() => (window as unknown as { harness: Control }).harness.calls);
 }
 
-/** The form's shown response number (the harness writes it as data-seq). */
-async function seq(page: Page): Promise<number> {
-  return Number(await page.locator('form').getAttribute('data-seq'));
+/** How many responses the page's forms have shown (the harness counts each summary inserted, on body[data-shown]). */
+async function shown(page: Page): Promise<number> {
+  return Number((await page.locator('body').getAttribute('data-shown')) ?? '0');
+}
+
+/** Waits until the page's forms have shown `count` responses. */
+async function shownCount(page: Page, count: number): Promise<void> {
+  await page.waitForSelector(`body[data-shown="${String(count)}"]`, { state: 'attached' });
+}
+
+/** The stand-in router's refresh() calls. */
+function refreshes(page: Page): Promise<number> {
+  return page.evaluate(() => (window as unknown as { harness: Control }).harness.refreshes);
 }
 
 /** Presses the button with these words and waits for the form to show the response. */
 async function send(page: Page, words = 'Save'): Promise<void> {
-  const before = await seq(page);
+  const before = await shown(page);
   await page.getByRole('button', { name: words, exact: true }).click();
-  await page.waitForSelector(`form[data-seq="${String(before + 1)}"]`);
+  await shownCount(page, before + 1);
 }
 
 /** Refuses the next press with `state`, presses, and waits for the refusal. */
@@ -60,6 +74,8 @@ function invalid(...issues: readonly (readonly [string, string])[]): RefusalStat
 }
 
 const SUMMARY = '[data-slot="refusal-summary"]';
+/** A page out of date, in the server's words (next.ts), which end in a reload: a form that reads the page again writes its own. */
+const STALE: RefusalState = { error: 'This page was out of date, so nothing was saved. Reload the page and try again.', stale: true };
 /** A synthetic password the tests type, joined from words so no scanner reads it as a stored secret. */
 const TYPED_PASSWORD = ['Synthetic', 'typed', 'words', '2026'].join('-');
 const ZIP = ['zip', 'five digits, or ZIP+4 such as 27601-1234'] as const;
@@ -141,7 +157,7 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     await page.fill('#field-title', 'SYNTHETIC title');
     await script(page, { refuse: { error: 'Not available to your role: harness.' } });
     await page.getByRole('button', { name: 'Save as draft', exact: true }).click();
-    await page.waitForSelector('form[data-seq="1"]');
+    await shownCount(page, 1);
     const [call] = await calls(page);
     expect(call?.entries).toEqual([
       ['title', 'SYNTHETIC title'],
@@ -176,13 +192,49 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     await page.close();
   });
 
-  it('FRM-01: a page out of date after the person’s own press invites the same press again, keeping the values', async () => {
+  it('FRM-01: a page out of date is read again once, keeps the values and the summary, and invites the person’s own press again', async () => {
     const page = await harness.open('keep');
     await page.fill('#field-zip', '27514');
-    await refusedWith(page, { error: 'This page was out of date, so nothing was saved.', stale: true });
+    await refusedWith(page, STALE);
+    await page.waitForFunction(() => (window as unknown as { harness: Control }).harness.refreshes > 0);
     expect(await page.textContent(`${SUMMARY} [data-slot="alert-description"]`)).toBe('This page was out of date, so nothing was saved. It is up to date now: press “Save” again.');
     expect(await page.inputValue('#field-zip')).toBe('27514');
     expect(await focused(page)).toBe('refusal-summary');
+    // Once for the state, though strict mode mounts the refresh twice; the next refusal of another kind reads nothing again.
+    await refusedWith(page, invalid(ZIP));
+    expect(await refreshes(page)).toBe(1);
+    expect(await page.inputValue('#field-zip')).toBe('27514');
+    await page.close();
+  });
+
+  it('FRM-01: the version form reads a page out of date again, keeps its choice, and invites the person’s own press again', async () => {
+    const page = await harness.open('version');
+    await page.selectOption('#prompt-pay-state', 'NC');
+    await refusedWith(page, STALE, 'Save as a new version');
+    await page.waitForFunction(() => (window as unknown as { harness: Control }).harness.refreshes > 0);
+    expect(await page.textContent(`${SUMMARY} [data-slot="alert-description"]`)).toBe(
+      'This page was out of date, so nothing was saved. It is up to date now: press “Save as a new version” again.',
+    );
+    expect(await page.inputValue('#prompt-pay-state')).toBe('NC');
+    // A refusal of another kind reads nothing again, and names the select by its label.
+    await refusedWith(page, invalid(['promptPayState', 'choose one of the listed states']), 'Save as a new version');
+    expect(await page.locator(`${SUMMARY} li`).allTextContents()).toEqual(['Prompt-pay state: choose one of the listed states']);
+    expect(await refreshes(page)).toBe(1);
+    expect(await page.inputValue('#prompt-pay-state')).toBe('NC');
+    await page.close();
+  });
+
+  it('FRM-01: the export form reads a page out of date again and invites the person’s own press again, in the summary’s words', async () => {
+    const page = await harness.open('export');
+    const description = '[data-state="error"] [data-slot="alert-description"]';
+    await script(page, { refuse: STALE });
+    await page.getByRole('button', { name: 'Export PDF and CSV', exact: true }).click();
+    await page.waitForFunction(() => (window as unknown as { harness: Control }).harness.refreshes > 0);
+    expect(await page.textContent(description)).toBe('This page was out of date, so nothing was saved. It is up to date now: press “Export PDF and CSV” again.');
+    await script(page, { refuse: { error: 'Not available to your role: harness.' } });
+    await page.getByRole('button', { name: 'Export PDF and CSV', exact: true }).click();
+    await page.waitForFunction((selector) => document.querySelector(selector)?.textContent === 'Not available to your role: harness.', description);
+    expect(await refreshes(page)).toBe(1);
     await page.close();
   });
 
@@ -200,6 +252,7 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     await page.waitForFunction(() => (window as unknown as { harness: Control }).harness.release !== null);
     expect(await page.textContent('[data-slot="pending-status"]')).toBe('Working…');
     expect(await button.getAttribute('aria-disabled')).toBe('true');
+    expect(await button.evaluate((element) => element.hasAttribute('disabled'))).toBe(false);
     expect(await button.textContent()).toBe('Save');
     expect(await button.evaluate((element) => element === document.activeElement)).toBe(true);
     // Space on the focused button, and Enter in a field, while pending: nothing more is sent.
@@ -213,7 +266,7 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     await page.evaluate(() => {
       (window as unknown as { harness: Control }).harness.release?.();
     });
-    await page.waitForSelector('form[data-seq="1"]');
+    await shownCount(page, 1);
     expect(await page.textContent('[data-slot="pending-status"]')).toBe('');
     expect(await button.getAttribute('aria-disabled')).toBeNull();
     expect(await calls(page)).toHaveLength(1);
@@ -360,7 +413,7 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     await script(page, { refuse: invalid(['firstDay', 'enter a date']) });
     await page.focus('#field-lastDay');
     await page.keyboard.press('Enter');
-    await page.waitForSelector('form[data-seq="1"]');
+    await shownCount(page, 1);
     expect(await focused(page)).toBe('field-firstDay');
     const [top, header] = await page.evaluate(() => [
       document.getElementById('field-firstDay')?.getBoundingClientRect().top ?? 0,
@@ -379,6 +432,18 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     expect(await group.locator('legend + [data-field-error]').textContent()).toBe('Error:choose at least one component');
     expect(await focused(page)).toBe('group-components-0');
     expect(await page.getAttribute('#group-components-0', 'aria-invalid')).toBeNull();
+    await page.close();
+  });
+
+  it('FRM-04, FRM-05: a list confirmed item by item takes a box’s own refusal into its group, names it by the legend, and focuses that box', async () => {
+    const page = await harness.open('adjustments');
+    await refusedWith(page, invalid(['confirm_gaps', 'confirm this item']), 'Save version');
+    expect(await page.locator(`${SUMMARY} li`).allTextContents()).toEqual(['Confirm each item before you attest: confirm this item']);
+    const group = page.getByRole('group', { name: 'Confirm each item before you attest' });
+    expect(await group.getAttribute('data-invalid')).toBe('');
+    expect(await group.getAttribute('aria-describedby')).toBe('group-confirm-error');
+    expect(await group.locator('legend + [data-field-error]').textContent()).toBe('Error:confirm this item');
+    expect(await focused(page)).toBe('group-confirm-1');
     await page.close();
   });
 
@@ -439,10 +504,100 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     await desk.close();
   });
 
-  it.todo('FRM-01 on ActionForm itself (after #50): every case above passes with the harness form replaced by ActionForm');
-  it.todo('FRM-01 (after #50): a stale state calls the router’s refresh() once (RefreshAfterRefusal), keeps every value and the summary, and its lead ends “press “Save” again.”');
-  it.todo('FRM-01 (after #50): a refusal of a form with refreshOnError still notes its takeover and refreshes, as #50 does');
-  it.todo('FRM-03 (after #50): ActionForm’s button is aria-disabled, never disabled, keeps its words, and PendingStatus is inside its wrapper div');
-  it.todo('FRM-04 (after #50): two ActionForms on one page never mark each other’s fields (one FormIssues provider per form)');
-  it.todo('(after #50) ActionForm’s beforeSubmit prop answering false sends nothing, and the split form shows its problems');
+  it('FRM-04: an issue on a hidden field reads after the name the field gives itself, with no lead and no link, and the summary takes the focus (#50)', async () => {
+    const page = await harness.open('rerun');
+    await page.fill('#field-note', 'SYNTHETIC note');
+    await refusedWith(page, invalid(['runId', 'is not the run in effect for its service dates.']), 'Re-run under release 900001');
+    expect(await page.locator(`${SUMMARY} li`).allTextContents()).toEqual(['This run: is not the run in effect for its service dates.']);
+    expect(await page.locator(`${SUMMARY} li a`).count()).toBe(0);
+    expect(await page.locator(`${SUMMARY} [data-slot="alert-description"] > p`).count()).toBe(0);
+    expect(await focused(page)).toBe('refusal-summary');
+    expect(await page.inputValue('#field-note')).toBe('SYNTHETIC note');
+    // A hidden field marks nothing, and a field the form places still leads: one placed, the singular.
+    await refusedWith(page, invalid(['releaseNo', 'is not the release in force; reload the page.'], ['note', 'fill this in']), 'Re-run under release 900001');
+    expect(await page.locator(`${SUMMARY} li`).allTextContents()).toEqual(['Rule release: is not the release in force; reload the page.', 'Note: fill this in']);
+    expect(await page.locator(`${SUMMARY} [data-slot="alert-description"] > p`).textContent()).toBe('Fix the field listed here, then try again.');
+    expect(await page.locator('input[type="hidden"][aria-invalid]').count()).toBe(0);
+    await page.close();
+  });
+
+  it('FRM-01: a form with refreshOnError notes its refusal, as the summary names it, then reads the page again (#50); a page out of date notes none', async () => {
+    const page = await harness.open('rerun');
+    const takeover = {
+      focus: (keys: readonly string[]) => page.evaluate((given) => (window as unknown as { takeover: Takeover }).takeover.focus(given), keys),
+      orphaned: (prefix: string) => page.evaluate((given) => (window as unknown as { takeover: Takeover }).takeover.orphaned(given), prefix),
+    };
+    await refusedWith(page, invalid(['runId', 'is not the run in effect for its service dates.']), 'Re-run under release 900001');
+    await page.waitForFunction(() => (window as unknown as { harness: Control }).harness.refreshes > 0);
+    // Its row left the list on the refresh: the note after the list takes the refusal as the person read it, once.
+    expect(await takeover.orphaned('rerun:')).toEqual(['This run: is not the run in effect for its service dates.']);
+    expect(await takeover.orphaned('rerun:')).toBeNull();
+    expect(await refreshes(page)).toBe(1);
+
+    await refusedWith(page, STALE, 'Re-run under release 900001');
+    await page.waitForFunction(() => (window as unknown as { harness: Control }).harness.refreshes > 1);
+    expect(await takeover.focus(['rerun:run-1'])).toBe(false);
+    expect(await refreshes(page)).toBe(2);
+    await page.close();
+  });
+
+  it('FRM-03: a long button label wraps, the button is never disabled, and after the response the next press is sent', async () => {
+    const page = await harness.open('rerun', { width: 320 });
+    const button = page.getByRole('button', { name: 'Re-run under release 900001', exact: true });
+    expect(await button.getAttribute('class')).toContain('whitespace-normal');
+    await script(page, { hold: { error: 'Not available to your role: harness.' } });
+    await button.press('Enter');
+    await page.waitForFunction(() => (window as unknown as { harness: Control }).harness.release !== null);
+    expect(await button.getAttribute('aria-disabled')).toBe('true');
+    expect(await button.evaluate((element) => element.hasAttribute('disabled'))).toBe(false);
+    await page.evaluate(() => {
+      (window as unknown as { harness: Control }).harness.release?.();
+    });
+    await shownCount(page, 1);
+    expect(await button.getAttribute('aria-disabled')).toBeNull();
+    await refusedWith(page, { error: 'Not available to your role: harness.' }, 'Re-run under release 900001');
+    expect(await calls(page)).toHaveLength(2);
+    await page.close();
+  });
+
+  it('FRM-04: two forms on one page never mark each other’s fields: each has its own refusal', async () => {
+    const page = await harness.open('two');
+    await page.fill('#first-title', 'SYNTHETIC first');
+    await page.fill('#second-title', 'SYNTHETIC second');
+    await refusedWith(page, invalid(['title', 'fill this in']), 'Save second');
+    expect(await page.getAttribute('#second-title', 'aria-invalid')).toBe('true');
+    expect(await page.getAttribute('#first-title', 'aria-invalid')).toBeNull();
+    expect(await page.locator('#first-title-error').count()).toBe(0);
+    expect(await page.locator(SUMMARY).count()).toBe(1);
+    expect(await page.evaluate((selector) => document.querySelector(selector)?.closest('form')?.contains(document.getElementById('second-title')), SUMMARY)).toBe(true);
+    expect(await focused(page)).toBe('second-title');
+    expect([await page.inputValue('#first-title'), await page.inputValue('#second-title')]).toEqual(['SYNTHETIC first', 'SYNTHETIC second']);
+    await page.close();
+  });
+
+  it('the split form shows its own problems and sends nothing while it has any, then sends the built split; a server issue on it names its field', async () => {
+    const page = await harness.open('screening');
+    const press = () => page.getByRole('button', { name: 'Approve this split', exact: true }).click();
+    // Both lists empty: the press shows what is missing, focuses the facility list, and sends nothing.
+    await press();
+    expect(await page.locator('#split-problems li').allTextContents()).toEqual(['List at least one place of service.']);
+    expect(await focused(page)).toBe('split-facility');
+    expect(await page.getAttribute('#split-facility', 'aria-invalid')).toBe('true');
+    await page.fill('#split-facility', '11 22');
+    await page.fill('#split-non-facility', '11');
+    await press();
+    expect(await page.locator('#split-problems li').allTextContents()).toEqual(['Place of service 11 is listed as both facility and non-facility.']);
+    expect(await calls(page)).toHaveLength(0);
+
+    await page.fill('#split-non-facility', '02');
+    await script(page, { refuse: invalid(['settings', 'list at least one place of service']) });
+    await press();
+    await shownCount(page, 1);
+    const [call] = await calls(page);
+    expect(call?.entries).toContainEqual(['settings', JSON.stringify({ '02': 'non_facility', '11': 'facility', '22': 'facility' })]);
+    expect(await page.locator(`${SUMMARY} li`).allTextContents()).toEqual(['Facility places of service: list at least one place of service']);
+    expect(await focused(page)).toBe('split-facility');
+    expect([await page.inputValue('#split-facility'), await page.inputValue('#split-non-facility')]).toEqual(['11 22', '02']);
+    await page.close();
+  });
 });
