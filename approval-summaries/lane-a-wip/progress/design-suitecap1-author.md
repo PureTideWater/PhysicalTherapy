@@ -59,3 +59,6 @@ Clone: scratchpad/designs/suitecap1-author
 - probe B waiting behind #42's screening:capacity (flock, up to 90 min from 15:08)
 - sections 7-15 written; 8.3/8.4 PENDING probe B
   - L1: 50,000 re-takes of one key = 1 lock-table entry
+  - backfill read: 180,000 events DISTINCT ON in 0.41 s (tp_owner, all practices in scope)
+- private cluster 5493 stopped and removed (15:3x)
+- dropped tp_design_suitecap1_1

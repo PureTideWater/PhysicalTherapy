@@ -35,3 +35,5 @@ Output: /home/user/ops/designs/ledger-interest-once.md
 - D12 deploy window: previous image's interest inserts refused (RAISE, fail closed, retried); no silent skip.
 - Draft migration: probes/author/20261108090000_ledger_interest_once.sql; prototype probe probes/author/interest-author-proto.mts (DB tp_design_interest_3, migs1 = base+#42, migs2 = +draft) -- running in background (bj7y8c7qu) queued on flock
 ## Next: write design doc sections (1 today cited, 2 TR3, 3 options, 4 decisions, 5 migration, 6 app, 7 words, 8 tests, 9 domain model, 10 founder, 11 files, 12 risks, 13 slices, 14 out of scope)
+- D11 DROPPED: ledger_entry_by_evidence (evidence_id) already exists (20261026090000:61; schema/ledger.ts:159). Prototype rerun after fixing draft.
+- WRITTEN: header, 0 summary, 1 today (1.1-1.8), 2 TR3 semantics

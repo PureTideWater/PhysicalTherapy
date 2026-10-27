@@ -316,7 +316,7 @@ SELECT set_config('app.practice_ids', '{}', true);
 ```
 
 The lock stops the running image's stage writes for the length of the backfill (no customer data exists before launch;
-a DISTINCT ON over a million events takes about a second), so no event can land between the backfill and the new
+the DISTINCT ON read 180,000 events in 0.4 s in the probe, so a few seconds per million with the insert), so no event can land between the backfill and the new
 trigger. The scope setting follows the house precedent for a backfill under forced row-level security
 (`20261101090000_billing_review.sql:49-51`), with every practice, deleted ones included.
 
