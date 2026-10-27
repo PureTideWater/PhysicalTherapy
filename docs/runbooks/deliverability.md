@@ -33,10 +33,14 @@ a synthetic mailbox you control, and reads IDs and counts.
   `mail_events` job reads it every minute through the SQS endpoint, records each event once by its message ID, and
   deletes it only after its record commits. There is no EventBridge archive, and there must never be one: it would keep
   addresses past every promise.
-- **The cut-off** (the founder's Q9), for the screening stream alone, in a 7-day window since its last resume:
+- **The cut-off** (the founder's Q9), for the screening stream alone, in a 7-day window since its last resume, read at
+  each screening bounce or complaint and again on every `mail_events` run, so a window that shrinks past the line as old
+  sends leave it pauses the stream without a new event:
   1. its own rates: permanent bounces above 3% of its sends (floor 200 sends: 7 bounces pause it below that), or
-     complaints other than `not_spam` above 0.08% (floor 2,500: 3 complaints pause it below that); suppressions,
-     transient bounces and probes never count;
+     complaints other than `not_spam` above 0.08% (floor 2,500: 3 complaints pause it below that). A bounce from SES's
+     global suppression list (`Permanent`/`Suppressed`) counts, as SES counts it toward the account's bounce rate; a
+     message the account's own list held back (a bounce or a complaint of subtype `OnAccountSuppressionList`, or a
+     set's override), a transient bounce and a probe never count;
   2. the account's rates (`account_rate`): the account's bounce rate at 2.5% or its complaint rate at 0.05%, half of
      SES's review levels (the two warning alarms, through the second rule);
   3. SES's review (`account_review`): the account's enforcement status anything but healthy.
@@ -161,9 +165,19 @@ a synthetic mailbox you control, and reads IDs and counts.
      aws sesv2 delete-suppressed-destination --email-address <you+tp-check>@…
      ```
 
+     Do the same with `--reason COMPLAINT` and the notices set alone: SES answers a send to an address the account's
+     list holds with a Bounce of subtype `OnAccountSuppressionList` or a Complaint whose `complaintSubType` is
+     `OnAccountSuppressionList`, and the platform must record either as suppressed (not delivered, and in the console's
+     undelivered list), never as a complaint, which would read as delivered (ADR 0065, review M1). Record which event
+     came, then take the address off again.
+
      Then send through the screening set, the same way, to a mailbox that does not exist on a domain you control (a hard
      bounce), and confirm `aws sesv2 get-suppressed-destination --email-address <that address>` answers
      `NotFoundException`. Never send that bounce through transactional or notices: they would add it to the list.
+     Within a few minutes, send to the same address through the screening set once more and record the subtype the
+     platform records for it (its log line or its `mail_send` row, by message ID): SES's global suppression list
+     answers `Permanent`/`Suppressed` on a set whose own suppression is off, which the cut-off counts, as SES does; if it
+     reads anything else, note it for ADR 0065's mapping.
    - **The account's reputation metrics publish.** After a day of staging mail, `AWS/SES` `Reputation.BounceRate` with
      no dimension has data points. If it has none at launch volume, the two account warnings never fire (missing data is
      not a breach); the `account_review` trigger, which reads SES's enforcement status, still works. Record what you see.

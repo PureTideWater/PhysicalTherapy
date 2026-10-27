@@ -252,6 +252,16 @@ of management events, which CloudTrail does not charge) and the refused validati
   completed by the sweep on that attempt, its rows all priced, instead of failed for its attempts (review M7). A
   failure and its notice go in one transaction, as a completion and its link do: a notice SES refuses because the set
   is disabled rolls the failure back, and the run is failed and told after the resume (review M6).
+- A pause does not stop a message already on its way, and the bound is accepted (the review of 2026-10-23, known item
+  (a)): the run's gate reads `screening_mail_sending()` in the completion's or the failure's own statement, without a
+  lock on `mail_stream`, so a completion or failure past that statement when a pause commits still sends through the
+  set, which a cut-off pause disables at once and a console pause at the next `mail_events` run. Only those already in
+  flight can, at most one a consumer thread (three), each a result or notice owed to an upload accepted before the
+  pause; every claim, completion and failure after the pause commits is refused. Locking `mail_stream` in the gate
+  would hold the lock across SES's call and spare no reputation. Likewise accepted: the consumer's "emailed after
+  waiting" reads the web's `received_at` against the database's `resumed_at` (known item (e)); `submit_screening()`
+  holds `received_at` to the database's own time, and in staging and production the screening opens only once both
+  probes are back after a resume, at least about a minute, so no skew AWS's time sync allows can misfile a run.
 - The refusal list and the bounce marks are the only values derived from a screening address the database keeps
   beyond the prospect's 30 days, and only as keyed hashes: a copy of the table cannot be matched against a list of
   addresses without the pepper, which no role reads. `mail.db.test.ts` scans every text column after its scenarios and
