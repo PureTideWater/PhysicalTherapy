@@ -19,3 +19,9 @@ Clone: scratchpad/designs/interest-revise (to create).
 - F8 TAKE: file list + reword Stays frozen; order kept (no new behaviour).
 - N1 TAKE (nonzero parts same sign). N2 TAKE (raise allowed; check LED-16 numbers). N3 TAKE.
 ## Next: check LED-16 fixture numbers (N2); check #42 mail_streams changed since d14f0ac5; prototype revised SQL (tp_design_interest_31) under flock; then edit design.
+
+# ROUND 2 REVISE (started 2026-10-27 ~20:1x)
+Note: round-1 revise above made no design edits; author run 2 folded F1-F8/N1-N3 (sect 15). This run folds review round 2 (R2-1..R2-9).
+Design: /home/user/ops/designs/ledger-interest-once.md (123962 bytes, 1374 lines, mtime 19:46). Backup -> progress/ledger-interest-once.pre-r2.md
+## R2 findings: verification + disposition (fill as verified)
+## Edits made (R2)

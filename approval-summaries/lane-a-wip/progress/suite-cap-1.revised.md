@@ -60,11 +60,16 @@ reads: the report's content, its CSV's bytes and its PDF's HTML stay identical.
    - the report's patient-balance step takes 616 s, from a missing index and a quadratic loop;
    - the worker runs every job type at once in one process with one heap, so a large report beside another practice's
      large triage shares 560 MiB, and the report prints with Chromium in the same 1,024 MiB task (the design review).
+     The two completed together in probe T, but with the sampled heap at 86% of the limit and nothing measuring it.
 7. **Their fixes:** a per-line indexed lookup; triage reads its candidates in batches of 2,000 and keeps only the judged
    lines; the report streams, folding its figures batch by batch and keeping each line's CSV row in a byte arena
    outside the heap, about 110 bytes of heap per line; the index `claim_by_superseded`; grouping adjustments once. No
    result changes.
-8. **With all of it, under the worker's heap flag and with Chromium:** @@T-SUMMARY@@
+8. **With all of it, under the worker's heap flag and with Chromium:** A's 100,000-line triage took 52.4 s with 107 MiB of
+   live heap after judging, and A's audit report 84.5 s, printed by Chromium (probe T, on the first design's batched
+   reads). X's report and Y's triage, two practices' 100,000-line jobs, completed together in one process in 83.7 s.
+   The stream cuts what the report keeps from about 930 bytes of heap per line to about 110 (probe M). Before, triage
+   failed and the report could not run.
 9. **Two pull requests.** The bounded reads need no migration, so they ship first (SUITE-CAP-1a). The schema PR then
    never runs beside, or rolls back to, the whole reads that run out of heap once the lock no longer stops them.
 10. **The reconcile side, under a freeze exception (Q1).** Two ledger triggers take one lock per posting or EFT row and
@@ -222,7 +227,7 @@ worker task is 0.5 vCPU and 1,024 MiB, with Node's heap at 560 MiB.
 | 2 | Triage holds every candidate's trace at once | `candidateRows` (`execute.ts:210-252`) reads `p.trace` for every candidate, and `candidateLines` (:282-323) judges them all before any is released. A trace is 4,735 bytes of JSON on average | Probe E, under `--max-old-space-size=560`: heap at 477 MiB after judging and a peak of 531 MiB, 95% of the worker's heap |
 | 3 | The report holds every line at once | `runLines` (`apps/worker/src/report/content.ts:366-410`) reads `p.trace` for every line with a shortfall; `gatherReport` maps every line to a `ReportLine`, filters the array once per figure and per case, sorts it (:620-627), and returns it to `generate.ts`, which prints the PDF (:85) and only then builds the whole CSV as one string (:86) | Probe E: "JavaScript heap out of memory" in `gatherReport`. Without a heap limit (probe C) the report's heap peaked at 1,125 MiB. With the traces dropped per batch but the lines still held (probe G2), it completed with a 483 MiB peak, 86% of the heap. A `ReportLine` alone is about 965 bytes of heap (probe M) |
 | 4 | The report's patient-balance step | `claimLines` (`apps/worker/src/reconcile/remittances.ts:249-262`) looks claims up by `superseded_by_claim_id`, which has no index (`20261016120000_remittances.sql:123`, indexes :134-136). `lineShares` (`apps/worker/src/reconcile/patient-share.ts:107-130`) filters every adjustment for each claim (:116) and for each line (:122) | Probe D: 616.0 s in this step and 693.1 s for the report. With the index (probe C) the step took 49.7 s, and `claimLines` itself 0.97 s (its plan uses the index); the rest is the filtering. With the grouping too, 3.4 s (probe G2) |
-| 5 | Large jobs of different practices share one heap and one task | Section 1.1, "How the worker runs jobs" | @@T-ROW5@@ |
+| 5 | Large jobs of different practices share one heap and one task | Section 1.1, "How the worker runs jobs" | Probe T, with the first design's batched reads, the lock fix and the index, under the 560 flag and with Chromium: X's 100,000-line report and Y's 100,000-line triage ran together in one process and both completed (83.7 s). The sampled heap peaked at 483 MiB, 86% of the limit, though the live heaps were far lower (154 MiB for the report alone after gathering, 107 MiB for triage alone after judging). Chromium added 153 to 165 MiB across six processes while the report printed, in the same task as the worker's heap and the report's held lines. So the overlap did not crash at 100,000 lines, but nothing measured it, and the report's lines and Chromium coincide |
 
 The Cases page reads the same candidates on every load: `waitingPatterns` (`apps/web/src/lib/routes/triage.ts:253` →
 `patterns.ts:63-66`) reads every validated line waiting outside a case, with its trace, in the web task (1,024 MiB, heap
@@ -343,9 +348,10 @@ statement.
   as today (`readWithAudit`, one event per row read) and judged while its traces are in hand; triage keeps the
   `CandidateLine`s and drops the traces. The order (`ORDER BY service_line_id`) and every computation are unchanged.
 - The judged candidates are then triage's one holder that grows with the month's lines: `planCases` must see every
-  candidate of a pattern to group it, and the stage writes need their IDs. @@T-TRIAGE-LIVE@@ Grouping in SQL instead
-  would move `@tp/triage`'s judgement, which reads the trace in TypeScript, into the database, for memory the target
-  does not need. (Triage's anomaly screen holds the quarter's unpriced lines, slim rows without traces, as today.)
+  candidate of a pattern to group it, and the stage writes need their IDs. Probe T measured them: 107 MiB of live
+  heap after judging 66,666 candidates, against 84 MiB after judging 33,332 on a re-triage, so about 720 bytes per
+  candidate above a base of about 61 MiB, 46 MiB at the target. Grouping in SQL instead would move `@tp/triage`'s
+  judgement, which reads the trace in TypeScript, into the database, for memory the target does not need. (Triage's anomaly screen holds the quarter's unpriced lines, slim rows without traces, as today.)
 
 **3. The report held whole: it streams.**
 - Recommended: **the report folds its figures batch by batch and streams its CSV.** It reads `runLines`' query through
@@ -362,12 +368,15 @@ statement.
   and per line its payer and plan as small integers, its line number, and its claim number and line ID as strings.
   Probe M measured 108 bytes of heap per line (10.3 MiB at 100,000) and a 0.21 s sort, against 965 bytes for a
   `ReportLine` and 437 bytes for a row kept as a string.
-- **The PDF after the CSV.** Chromium (about 150 to 180 MiB across its processes, probe T) then never runs while the
+- **The PDF after the CSV.** Chromium (145 to 180 MiB across its six processes in the probes) then never runs while the
   arena is held, and the PDF's HTML is built from the folded content exactly as today.
-- @@T-REPORT-LIVE@@
+- Probe T measured the first design's batched report, which dropped each batch's traces but kept every line: 154 MiB
+  of live heap after gathering 100,000 lines (about 930 bytes per line above the base), and a sampled peak of 419 MiB
+  alone and 483 MiB beside Y's triage. The stream keeps the arena's 108 bytes per line instead (probe M): about 10 MiB
+  of heap at 100,000 lines, plus the CSV's 24 MiB outside it.
 - Rejected: an external sort that spills sealed runs to the task's disk. It bounds memory completely, but writes PHI to
-  a local disk, needs cleanup after a crash and a disk budget, and the arena already costs a tenth of what the heap can
-  spare at the target.
+  a local disk, needs cleanup after a crash and a disk budget, and the arena's 10 MiB of heap at the target leaves it
+  little to win.
 - Rejected: ordering the CSV by what a query can sort (payer, plan, then service date and claim). It would remove the
   arena, but it changes what a person reads in the CSV, which is a product change this capacity fix does not need.
 - Rejected: a larger worker task, or a larger heap. That is a cost every month, and the whole read still grows with
@@ -388,17 +397,22 @@ statement.
   and the index makes it 0.97 s.
 
 **5. Large jobs of different practices in one heap.** With the report streaming and triage keeping only its judged
-lines, the large jobs fit together; section 2.3 says how that is measured and held.
+lines, each large job's heap grows by well under 1 KB per line, and the report no longer holds its lines while
+Chromium prints; section 2.3 says how that is measured and held.
 
 ### 2.3 The worker's heap across jobs
 
 Today a large month's triage and report stop at the lock after about 48 s, as ordinary job failures. Once the lock is
 fixed they run on, and the worker runs them beside whatever else is queued, in one heap. The design must therefore show
-that the large jobs fit the heap together, not each alone. Options:
+that the large jobs fit the heap together, not each alone. Probe T is the first such measurement: with the first
+design's reads, a 100,000-line report and another practice's 100,000-line triage completed together under the 560 flag,
+with live heaps of about 154 and 107 MiB measured alone, but a sampled heap at 483 MiB. That is room today, not a bound:
+the report's share grew with every line, the weekly run never ran the two together, and nothing in the worker or in
+production read the heap. Options:
 
 | Option | Verdict |
 | --- | --- |
-| **Bound each large job's heap by the month's lines at a small, measured cost per line (2.2), and measure the worker's live heap in every real-size run** | **Recommended** |
+| **Keep each large job's heap per line of the month small and measured (2.2), and measure the worker's live heap in every real-size run and in production** | **Recommended** |
 | A process-wide gate that runs one of price, triage, audit report and reconcile at a time | Rejected |
 | A larger worker task or heap | Rejected: a cost every month, and the sum still grows with lines |
 | A second worker service for the large jobs | Rejected: a second task's cost, and its large jobs still share its heap |
@@ -459,7 +473,7 @@ D1 to D16 keep their numbers from the first version, since other designs cite th
 | D14 | The report streams (2.2, defect 3): `runLines`' query through a cursor in batches of 2,000; per batch the deadlines, today's mapping to `ReportLine`, the running figures and the CSV arena; then the batch is released. After the last batch: the cases, headline and gaps from the folded figures, the CSV streamed, then the PDF. (1a) | Defect 3. Every figure is a sum, a count or a per-key total, so folding gives the same integers; CAS-41.1 compares the content, the CSV's bytes and the PDF's HTML with today's whole read. |
 | D15 | The migration adds `claim_by_superseded` (section 4.4). (1b) | Defect 4. Shared with the "Interest credited twice" design; the first to merge carries it. |
 | D16 | `lineShares` (`patient-share.ts:107-130`) groups the adjustments once into two maps, claim-level by claim and line-level by line, keeping their query order, and reads them from the maps. (1a) | Defect 4. The same adjustments, in the same order, reach the same arithmetic. No ledger table, ledger package, matching rule or recovered total changes, so this is not a freeze item. LED-01 to LED-17 and the oracle are its guard. |
-| D17 | The CSV keeps its order and its bytes. Each line's row (`csvRow(line).map(csvCell).join(',')` and CRLF) is appended to a byte arena of 1 MiB chunks outside the heap, with its sort key in typed arrays (payer and plan as indexes into an interned list, the line number) and two strings (the claim number and the line ID). After the last batch an index is sorted with today's comparator and the header and rows are streamed in that order through `documents.write`'s `AsyncIterable`. (1a) | 2.2, defect 3. `auditCsv` (`csv.ts:107-110`) stays as the reference the test compares against, and for the other callers. |
+| D17 | The CSV keeps its order and its bytes. Each line's row (`csvRow(line).map(csvCell).join(',')` and CRLF) is appended to a byte arena of 1 MiB chunks outside the heap, with its sort key in typed arrays (payer and plan as indexes into an interned list, the line number) and two strings (the claim number and the line ID). After the last batch an index is sorted with today's comparator and the header and rows are streamed in that order through `documents.write`'s `AsyncIterable`. (1a) | 2.2, defect 3. `auditCsv` (`csv.ts:108-110`) stays as the reference the test compares against, and for the other callers. |
 | D18 | The report's other per-line reads go by batch: `lineDeadlines` for each batch's lines (today one query for every line, `content.ts:529`); `patientBalanceCases` folded over batches of 2,000 case lines; the practice's ledger entries read once and passed to `lineCorrections`. (1a) | Each held a whole month's rows at once. The functions' answers are unchanged; CAS-41.1 compares. |
 | D19 | The worker records its live heap: a process-wide `PerformanceObserver` on major collections keeps the heap in use just after the latest one, and each practice job, as it ends (completed or failed), logs `job heap` with `job_id`, `job_type`, `heap_live_peak_mib` (the largest seen while it ran) and `heap_limit_mib` (`v8.getHeapStatistics().heap_size_limit`). IDs and numbers only. The two fields join the numeric log fields (`packages/observability/src/fields.ts`, a #42 file). (1b) | F2 of the review: a measure of the quantity that crashes the worker, from every real-size run and from production. |
 | D20 | The release-capacity run gains a phase, "the large jobs together": A's second audit report (its inline triage a re-triage), D's triage of its 100,000-line month (priced during setup), E's price job of its 100,000-line month, and C's four parses of a second set of 835s, queued within a second, with `memory.current` sampled each second until all finish. D and E are SYNTHETIC practices seeded as A is. (1b) | F1 of the review: the overlap that decides whether one practice can crash another's jobs, at real size, under `heapFlag('worker')`, with Chromium printing in the same task. |
@@ -909,23 +923,27 @@ connections in the practice's scope and lines from the row factory, unless a tes
 ### CAS-41 (SUITE-CAP-1a): a month's triage and report read in bounded memory and give the same answers
 
 1. **The same answers** (`apps/worker/src/triage/batched.db.test.ts` and `apps/worker/src/report/streamed.db.test.ts`,
-   new; `triage.db.test.ts` and `report.db.test.ts` unchanged). On the existing CAS fixtures, and on a generated
-   10,000-line run (its stage events committed in batches of 1,000, so today's trigger allows it) with several payers
-   and plans, patterns above and below materiality, held lines, window-passed lines, per-visit lines, overpaid lines,
-   unpriced lines, content gaps, deadline-unverified lines with several causes, written-off case lines, a case of
-   another run, and claim numbers that tie on payer and plan:
+   new; `triage.db.test.ts` and `report.db.test.ts` unchanged). On the existing CAS fixtures through the jobs
+   (`executeTriage`, `generateAuditReport`), and on a generated 10,000-line run through the readers alone
+   (`judgedCandidates`, `gatherReport`), with several payers and plans, patterns above and below materiality, held
+   lines, window-passed lines, per-visit lines, overpaid lines, unpriced lines, content gaps, deadline-unverified lines
+   with several causes, written-off case lines, a case of another run, and claim numbers that tie on payer and plan. The
+   generated run's stages, cases and case lines are written by the test as the owner, committed in batches of 1,000, so
+   today's trigger never holds more than 1,000 line locks while CI's other files share the cluster:
    - `judgedCandidates` returns the same `CandidateLine`s, in the same order, as `candidateLines(candidateRows(…))`;
    - the streamed report's `content` deep-equals the whole read's, its CSV is byte-identical to `auditCsv(lines)` of the
      whole read, and the HTML handed to the PDF renderer (a recording renderer) is identical. The test pins the
      report's ID and date, and keeps the whole read in the test as the reference;
    - `lineShares` and `patientBalanceCases` give the same results as the filtering versions, kept in the test;
    - the audit events are the same set, one per row read.
-2. **Bounded memory per line** (`apps/worker/src/report/streamed.db.test.ts`). On the same generated shape at 2,000
-   and at 10,000 lines, what the process holds after full collections (`heapUsed`, after two `gc()` calls, as
-   `intake.large.db.test.ts` measures it), sampled every 250 ms while `gatherReport` runs and again before the CSV is
-   written, grows by at most 400 bytes per added line between the two sizes; and the arena's buffers equal the CSV's
-   bytes within one chunk. The same for `judgedCandidates`, at most @@T-CAND-BOUND@@ bytes per added line. **Fails
-   first:** the whole read holds every line's trace and `ReportLine` (965 bytes of `ReportLine` alone, probe M).
+2. **Bounded memory per line** (`apps/worker/src/report/streamed.db.test.ts` and `triage/batched.db.test.ts`). On the
+   same generated shape at 2,000 and at 10,000 lines, the heap in use after two full collections (`heapUsed` after two
+   `gc()` calls; `intake.large.db.test.ts` adds `arrayBuffers`, which here are the arena's and are checked apart),
+   sampled every 250 ms while `gatherReport` runs and again before the CSV is written, grows by at most 400 bytes per
+   added line between the two sizes, and the arena's buffers equal the CSV's bytes within one chunk. The same for
+   `judgedCandidates`, at most 1,000 bytes per added candidate (probe T: about 720). **Fails first:** run against
+   today's readers (`gatherReport` as it is, `candidateLines(candidateRows(…))`), which hold every line's trace and
+   `ReportLine` (965 bytes of `ReportLine` alone, probe M).
 3. **The arena** (`apps/worker/src/report/csv-arena.test.ts`, unit). Rows appended in random order come out in the
    comparator's order; the stream equals `auditCsv` of the sorted lines byte for byte, across chunk boundaries, with
    non-ASCII payer names, values needing quotes or the formula prefix, and ties broken by line ID; `release()` frees
@@ -946,11 +964,13 @@ connections in the practice's scope and lines from the row factory, unless a tes
    - A's actionable write takes under 30 s;
    - the times are under the budgets in section 8.4.
 
-   **Fails first:** 53200 at the validated insert.
-2. **Together** (the same file). X's month (100,000 lines, triaged first) and Y's month (100,000 lines, priced, not
-   triaged) are seeded as A's. In one child process under `heapFlag('worker')` (560 MiB), X's audit report and Y's
-   triage run at once, as the worker runs them. Both complete, the child exits 0, and the largest heap after a full
-   collection (D19's observer) stays under 75% of the limit. **Fails first:** 53200, and @@T-TOGETHER-FAILFIRST@@
+   **Fails first:** 53200 at the validated insert. The file joins `SLOW_FIRST` (`vitest.config.ts`), so its shard starts
+   it first.
+2. **Together** (the same file). Y's month (100,000 lines, priced, not triaged) is seeded as A's. In one child process
+   under `heapFlag('worker')` (560 MiB), A's second audit report (its inline triage a re-triage) and Y's triage run at
+   once, as the worker runs them, with Chromium. Both complete, the child exits 0, and the largest heap after a full
+   collection (D19's observer) stays under 75% of the limit. **Fails first:** on SUITE-CAP-1a's merge, 53200: the lock
+   stops Y's triage at its validated insert.
 3. **Under Q1, reconcile at size** (`apps/worker/src/reconcile/reconcile.large.db.test.ts`, new): 20,000 case lines,
    each posted by one row of a SYNTHETIC posting export, reconciled in one pass. The pass completes; the 20,000 posted
    entries are written; each line reaches the stage its entries put it at; and no backend holds more than 1 advisory
@@ -1019,7 +1039,7 @@ connections in the practice's scope and lines from the row factory, unless a tes
 ### 8.2 The weekly workflow, and the local reproduction
 
 - **Weekly.** `release-capacity.yml` runs on Tuesdays at 03:29 UTC and on request, from the default branch
-  (`claude/build-platform` since F1 (a)). With SUITE-CAP-1b it reads the new checks (D10) and runs the new phase (D20),
+  (`claude/build-platform`, since repository setting F1 (a)). With SUITE-CAP-1b it reads the new checks (D10) and runs the new phase (D20),
   and under Q1 one more. On a failure it opens or comments on the issue "Release capacity test failing"
   (`docs/runbooks/ci.md:44-45`).
 - **Locally, the same harness**, under `flock /tmp/laneb-heavy.lock`:
@@ -1058,19 +1078,25 @@ full collections.
 | F | As C, harness shape | 244.1 s (actionable 196.8 s) | 112.8 s; heap peak 849 MiB |
 | G | All of the first design's fixes but D16, heap flag 560 | **53.9 s** (candidates 34.2, validated 9.3, case lines 3.9, actionable 5.3); heap peak 209 MiB | **Completes**, 187.0 s (patient balance 111.9 s); heap peak 405 MiB |
 | G2 | All of the first design's fixes (the report's traces dropped per batch, its lines still held), heap flag 560 | **49.8 s** (candidates 32.7, actionable 5.0); heap peak 213 MiB | **73.1 s** (gather 51.4, of which patient balance 3.4); heap peak 483 MiB |
-@@T-TABLE-ROWS@@
+| T | The first design's reads (G2's code), the lock fix and the index, heap flag 560, Chromium | 52.4 s; heap peak 213 MiB; live 107 MiB after judging 66,666 candidates (84 MiB after 33,332 on a re-triage) | 84.5 s (the PDF 0.7 s); heap peak 419 MiB; live 154 MiB after gathering 100,000 lines; Chromium 165 MiB across six processes |
+| T together | As T: X's report and Y's triage at once in one process | Y's triage completes | X's report completes; the pair in 83.7 s; heap peak 483 MiB; Chromium 153 MiB |
 
 Every probe held at most 1 advisory lock after the fix (the practice's `triage:` lock).
 
-@@T-NOTES@@
+Probe T ran in vitest's process, whose own code and modules hold about 250 to 350 MiB outside the heap (its resident
+memory less `heapUsed`), so its process-tree figure (910 to 919 MiB with Chromium) says little about the worker task;
+the harness measures that with the worker's production command. What T shows is the heap: live sets far below the
+sampled peaks, and sampled peaks near the limit. That is why D19 measures the live heap, and why the weekly check
+reads it rather than a sampled `heapUsed`. The stream itself was measured by its parts (probe M); CAS-41.2 and CAS-42
+hold it to its bound once built.
 
 ### 8.4 Budgets
 
 CAS-42's limits, set at about two and a half times the probes (this container's 4 CPUs are a GitHub runner's), so they
 catch a return of any defect in 1.4, each of which cost minutes or the heap, without flaking on a slow runner:
-- A's triage under 120 s (G2: 49.8 s), and its actionable write under 30 s (G2: 5.0 s; the quadratic statement took
-  196.8 s);
-- A's audit report under 180 s (G2: 73.1 s; without the index 693.1 s);
+- A's triage under 120 s (G2: 49.8 s; T: 52.4 s), and its actionable write under 30 s (G2: 5.0 s; the quadratic
+  statement took 196.8 s);
+- A's audit report under 180 s (G2: 73.1 s; T, printing with Chromium: 84.5 s; without the index 693.1 s);
 - each job alone completes under a 420 MiB heap flag, and the report and the triage together under 560 MiB;
 - the live heap after full collections under 75% of the flag in force;
 - at most 1 advisory lock held by any backend.
@@ -1145,16 +1171,17 @@ Nothing else goes to the founder:
 - The split into two pull requests and their order are the orchestrator's (LANES.md rules 2 and 7).
 - No legal text, no founder ruling reversed, no engine or content freeze exception, no product change (the CSV's order
   and bytes stay).
-- No new service and no parameter. The one cost is the heap alarm's metric and alarm (D23), a few cents a month inside
-  the monitoring the platform already runs.
+- No new service and no parameter. The one cost is the heap alarm's custom metric and alarm (D23), under a dollar a
+  month at CloudWatch's list prices, inside the monitoring the platform already runs.
 
 ---
 
 ## 11. Files
 
 #42's files are marked **(#42)**. SUITE-CAP-1b follows #42, SS-01 and SUITE-CAP-1a, so it edits their final text, and
-re-reads each file at the merged head before changing it. SUITE-CAP-1a touches no #42 file, so it can open while #42 is
-open.
+re-reads each file at the merged head before changing it. SUITE-CAP-1a changes no #42 code file, so it can open while
+#42 is open; its three shared documents and the generated watched list follow LANES.md rule 6 (the PR merged second
+resolves the documents and runs the generator again).
 
 **SUITE-CAP-1a (bounded reads)**
 - `apps/worker/src/triage/execute.ts` (`advanceStages`, `judgedCandidates`), `patterns.ts` (`planWaiting`)
@@ -1163,9 +1190,8 @@ open.
 - `apps/worker/src/reconcile/patient-share.ts` (`lineShares`, `lineCorrections`' entries)
 - `apps/worker/src/triage/batched.db.test.ts` (new), `apps/worker/src/report/streamed.db.test.ts` (new),
   `apps/worker/src/report/csv-arena.test.ts` (new)
-- `docs/adr/0083-…md` (new); `docs/product/test-matrix.md` (CAS-41); `packages/synth/src/cases/matrix.ts` and
-  `registry.ts` (CAS-41). These three are #42 files on the base only if #42 has merged by then; otherwise 1a's rows go
-  in on the base's text and rule 6 resolves the merge.
+- `docs/adr/0083-…md` (new); `docs/product/test-matrix.md` **(#42)** (CAS-41); `packages/synth/src/cases/matrix.ts`
+  **(#42)** and `registry.ts` **(#42)** (CAS-41)
 - `tools/screening-capacity/watched-paths.txt` (regenerated by `watched.ts --write`, since it watches `triage/execute.ts`,
   `report/*` and `reconcile/*`) **(#42)**: regenerated by whichever of the two merges second (LANES.md rule 6).
 
@@ -1179,10 +1205,10 @@ open.
   - `packages/db/domain-model/areas.json` **(#42)**; `docs/product/domain-model.md` (generated) **(#42)**
   - `packages/db/src/line-status.db.test.ts` (new); `catalog.db.test.ts` **(#42)**; `migrate.db.test.ts` **(#42)**
 - Worker:
-  - `apps/worker/src/heap.ts` (new), `apps/worker/src/worker.ts` (`attempt`), `worker.test.ts`
+  - `apps/worker/src/heap.ts` (new), `apps/worker/src/worker.ts` (`attempt`), `worker.test.ts` **(#42)**
   - `packages/observability/src/fields.ts` **(#42)** and `fields.test.ts`
-  - `apps/worker/src/reconcile/stage-head.db.test.ts` (new), `apps/worker/src/triage/triage.large.db.test.ts` (new);
-    under Q1, `apps/worker/src/reconcile/reconcile.large.db.test.ts` (new)
+  - `apps/worker/src/reconcile/stage-head.db.test.ts` (new), `apps/worker/src/triage/triage.large.db.test.ts` (new) and
+    `vitest.config.ts` (`SLOW_FIRST`); under Q1, `apps/worker/src/reconcile/reconcile.large.db.test.ts` (new)
 - Harness: `tools/release-capacity/run.ts`, `checks.ts`, `checks.test.ts`, `scenario.ts`, `scenario.test.ts`;
   `tools/screening-capacity/watched-paths.txt` (regenerated) **(#42)**, so the screening-capacity gate runs on this PR
 - Infra: `infra/lib/constructs/monitoring.ts` and `infra/test/monitoring.test.ts` **(#42)**
@@ -1190,7 +1216,7 @@ open.
   - `docs/adr/0083-…md` (status and the lock's section), `docs/adr/0038-…md` (the dated note)
   - `docs/product/test-matrix.md` **(#42)**; `packages/synth/src/cases/matrix.ts` **(#42)**;
     `packages/synth/src/cases/registry.ts` **(#42)** (CAS-40, CAS-42)
-  - `docs/runbooks/ci.md` (:44-45), `docs/runbooks/deploy-and-rollback.md`, `docs/runbooks/incident-response.md`
+  - `docs/runbooks/ci.md` (:44-45), `docs/runbooks/deploy-and-rollback.md` **(#42)**, `docs/runbooks/incident-response.md`
   - under Q1, `docs/product/reconciliation-001.md` **(#42)**: the exception, dated and attributed, under "Ledger
     semantics", in the form of the other granted exceptions
 
@@ -1209,11 +1235,11 @@ No web file changes in either: the Cases page reaches the new reader through `@t
 | The streamed report changes an answer | CAS-41.1 compares the content, the CSV's bytes, the PDF's HTML and the audit events with the whole read on the fixtures and a generated run that exercises every figure. The query text is shared, not copied, and the per-line mapping is today's code. |
 | A cursor outlives its use | It is declared in the job's or the request's transaction and closed after the last batch; a rollback drops it. Names are fixed per reader, so a second declare in the same transaction fails loudly. |
 | The deploy's table locks (the backfill, the index build) | The lock loop never queues a writer (D22): a person's reopen and every job go on until the migration finds a moment with no stage writer in flight; then the backfill's seconds and the index build's seconds. If no moment comes in five minutes, the migration fails before any service moves and the deploy is run again. Before launch there are no customer rows. |
-| A rollback past SUITE-CAP-1a | D21: from launch on, 1a ships in an earlier release than 1b, so the previous image reads in batches. ADR 0083 and the runbook say why a rollback past 1a needs the triage and audit report queues of large practices held first. |
+| A rollback past SUITE-CAP-1a | D21: from launch on, 1a ships in an earlier release than 1b, so the previous image reads in batches. A rollback past 1a is not a supported step on 1b's schema; ADR 0083 and the runbook's note for 1b's release say why (whole reads on the new trigger take the worker down on a large month). |
 | About 17% more time per stage event (2.7 s per 180,000) | Measured (probes V0 and H2). Triage at 100,000 lines is dominated by its reads (section 8.3). |
 | Contention on one line is today's contention | Same grain and order, so no new waits. A row-lock wait shows in `pg_stat_activity` as a `transactionid` wait instead of `advisory`; the runbook says so. |
 | Under Q1, a future ledger writer forgets `lockLedger` | The trigger still serializes it, taking the practice key late: the worst case is a detected deadlock and a retry, never a wrong amount. ADR 0083 states the rule (a ledger writer takes `lockLedger` before any row), and CAS-42.3's bound catches a writer that adds per-row locks again. |
-| A month larger than 100,000 lines | The per-line holders are small and measured: triage's judged candidates (@@T-CAND-PERLINE@@) and the report's arena index (about 110 bytes, plus the CSV's bytes outside the heap). Every job logs its live heap (D19); the weekly run fails at 75% of the heap and production alarms at the same line (D23), before the margin is used. |
+| A month larger than 100,000 lines | The per-line holders are small and measured: triage's judged candidates (about 720 bytes per candidate, probe T) and the report's arena index (about 110 bytes, plus the CSV's bytes outside the heap). Every job logs its live heap (D19); the weekly run fails at 75% of the heap and production alarms at the same line (D23), before the margin is used. |
 | Another job type grows with a month's lines | The worker's other queues (`export`, `packet_export`, `roi_statement`, `report_document`, `parse_835`) are outside this item, and each logs its live heap from SUITE-CAP-1b on, so the weekly run and the alarm see any of them that grows (section 14). |
 | The weekly run's new checks fail for another reason (a slow runner, a flaky retry) | The checks fail closed and name the job and attempt. A retry that hides a real fault is exactly what the first-attempt check exists to catch. |
 
@@ -1233,8 +1259,9 @@ No web file changes in either: the Cases page reaches the new reader through `@t
    No screen changes, so no UX and brand review is due (LANES.md rule 1).
 
 **SUITE-CAP-1b (the stage lock; after #42, SS-01 and SUITE-CAP-1a merge)**
-1. **The measurement gate** (8.2): CAS-42.1 and .2 on 1a's merge with the lock fix applied, with Chromium; the live-heap
-   peaks recorded in the PR before anything else is built.
+1. **The measurement gate** (8.2): CAS-42.1 and .2 written first, and run on 1a's merge with section 4.2 and 4.3's SQL
+   applied to the test database as a scratch script, with Chromium; the live-heap peaks recorded in the PR before
+   anything else is built.
 2. **Migration and schema** (database builder): section 4 (with 4.5 under Q1), the Drizzle mirror, the generated
    function files (five, or three without Q1), `areas.json`, the domain model and `watched-paths.txt`. Gate: `pnpm
    db:migrate` from empty, the dry run, and `pnpm test:db` (catalog, cross-tenant, migrate).
@@ -1271,7 +1298,8 @@ No web file changes in either: the Cases page reaches the new reader through `@t
   this item does not need. This design keeps the head row exact and internal, so a later performance item can rely on it.
 - **The report's read of the practice's whole ledger** (`ledgerEntries`, `reconcile/ledger.ts:61-64`): it grows with
   the practice's recovery history, not with a month's lines, and D18 halves it (read once, not twice). Reading only the
-  run's cases' entries changes how the ledger's corrections are resolved (`entriesById`), which is ledger code; D19's
+  run's cases' entries changes which entries the correction chains resolve against (`entriesById`), a change to how
+  the reconcile module reads the ledger that deserves its own review; D19's
   heap line and the weekly run measure it as the history grows.
 - **The worker's other queues' heap.** `parse_835` runs four at once, each bounded at 128 MiB of heap for the normalizer
   (`era-export.large.db.test.ts`), and `export`, `packet_export`, `roi_statement` and `report_document` read a
@@ -1333,7 +1361,7 @@ code, and the memory ones by probe, before it was taken.
 
 | Finding | Checked | Disposition |
 | --- | --- | --- |
-| **F1, concurrent large jobs share one heap** (should fix) | True. `startWorker` works every practice queue in one process (`worker.ts:224-229`; the review cited :236, the platform loop), one job per queue (`registry.ts:160-162`), on one task (`environments.ts:111`). @@T-F1-CHECK@@ | **Taken.** The report now streams (D14, D17, D18): it folds its figures per batch, keeps each CSV row in a byte arena outside the heap (108 bytes of heap per line, probe M), writes the CSV before it prints, and reads deadlines and the patient balance by batch. Triage's judged candidates are its only per-line holder (2.2). New: the harness phase "large jobs together" (D20: A's report, D's triage, E's price and C's parses at once) and CAS-42.2 (a 100,000-line report and another practice's 100,000-line triage in one process under 560 MiB). The gate was considered and rejected (2.3: pg-boss's expiry runs while a fetched job waits, and small practices would wait on large ones), so it is not added. |
+| **F1, concurrent large jobs share one heap** (should fix) | The structure is true. `startWorker` works every practice queue in one process (`worker.ts:224-229`; the review cited :236, the platform loop), one job per queue (`registry.ts:160-162`), on one task (`environments.ts:111`). The particular crash did not reproduce at 100,000 lines: probe T ran X's report and Y's triage together under the 560 flag with Chromium, and both completed (83.7 s; sampled heap peak 483 MiB; live heaps 154 and 107 MiB alone). Adding the two sampled peaks counts each job's uncollected garbage. The structure is as the review states, the margin was unmeasured, the sampled heap reached 86%, and the report's held lines coincided with Chromium. | **Taken**, for the margin and the measure rather than a crash at 100,000. The report now streams (D14, D17, D18): it folds its figures per batch, keeps each CSV row in a byte arena outside the heap (108 bytes of heap per line, probe M), writes the CSV before it prints, and reads deadlines and the patient balance by batch. Triage's judged candidates are its only per-line holder (2.2). New: the harness phase "large jobs together" (D20: A's report, D's triage, E's price and C's parses at once) and CAS-42.2 (a 100,000-line report and another practice's 100,000-line triage in one process under 560 MiB). The gate was considered and rejected (2.3: pg-boss's expiry runs while a fetched job waits, and small practices would wait on large ones), so it is not added. |
 | **F2, the memory trigger measured the wrong quantity** (should fix) | True: the binding limit is the 560 MiB heap; G2's report peaked at 86% of it; the probes printed with the stand-in (`triage-world.ts:80`); #49's run peaked at 803.9 MiB. One correction: Chromium is installed in this container, at `/opt/pw-browsers` (revision 1194, the one playwright-core 1.56.1 launches), only not at Playwright's default path. | **Taken.** The 70% container trigger is gone, and so is the deferral it guarded. The heap is measured as the live heap after full collections, per job (D19), checked at 75% of the limit in the weekly run (D10) and alarmed in production (D23). CAS-42.1 runs each job alone under a 420 MiB flag (75%). Probe T re-measured with Chromium, and 8.3 states which probes used the stand-in. SUITE-CAP-1b's first slice re-runs the large tests with Chromium before anything is built (8.2). |
 | **F3, a rollback to the previous image runs out of heap** (should fix) | True: probe E is the previous image's reads on the new trigger, and it ends in a heap out-of-memory where today the report fails 53200 at 48 s. D12, D13, D14 and D16 depend on nothing in the migration. | **Taken.** Two pull requests (2.4, D21): SUITE-CAP-1a, the bounded reads, with no migration and outside the serial chain, then SUITE-CAP-1b. From launch on 1a ships in an earlier release; 4.7, ADR 0083 and the runbook say so. |
 | **F4, the deploy's lock waits behind long transactions** (nit) | True: `LOCK TABLE` waits for in-flight stage writers and queues later ones; the report prints inside its transaction; no `lock_timeout` exists (`migrate.ts` sets none). | **Taken, as a loop of `NOWAIT` tries** (D22, 4.2, 4.4) rather than `lock_timeout = '10s'`: a `NOWAIT` try queues nobody, so no reopen waits even ten seconds, and the migration fails cleanly after five minutes without a gap. 4.7 and section 12 corrected. |
