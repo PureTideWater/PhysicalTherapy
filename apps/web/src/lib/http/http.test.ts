@@ -408,7 +408,7 @@ describe('the web configuration', () => {
     expect(() => readWebConfig({ ...base, IMAGE_TAG: 'latest:sha' })).toThrow(new ConfigError('invalid settings: IMAGE_TAG'));
   });
 
-  it('checks a screening\'s address with SES and DNS under the day\'s cap on a deployed server, and with the stand-ins elsewhere (docs/adr/0065; Q1 (g))', () => {
+  it('checks a screening\'s address with SES, as the address-validation account\'s role, and DNS under the day\'s cap on a deployed server, and with the stand-ins elsewhere (docs/adr/0065; Q1 (g); review S3)', () => {
     expect(readWebConfig(base).mailValidation).toEqual({ kind: 'local', dailyCap: 50, delayMs: 0 });
     expect(readWebConfig({ ...base, MAIL_CHECK_DELAY_MS: '2000', MAIL_VALIDATION_DAILY_CAP: '7' }).mailValidation).toEqual({ kind: 'local', dailyCap: 7, delayMs: 2000 });
     expect(() => readWebConfig({ ...base, MAIL_CHECK_DELAY_MS: '9000' })).toThrow(new ConfigError('MAIL_CHECK_DELAY_MS is at most 5000'));
@@ -440,7 +440,17 @@ describe('the web configuration', () => {
     expect(() => readWebConfig({ ...deployed, MAIL_VALIDATION: 'ses', MAIL_VALIDATION_DAILY_CAP: '50', MAIL_CHECK_DELAY_MS: '2000' })).toThrow(
       new ConfigError('MAIL_CHECK_DELAY_MS is refused in production (it slows the local stand-ins only)'),
     );
-    expect(readWebConfig({ ...deployed, MAIL_VALIDATION: 'ses', MAIL_VALIDATION_DAILY_CAP: '50' }).mailValidation).toEqual({ kind: 'ses', dailyCap: 50 });
+    // Never as the task's own role, whose account's trail would keep the address (docs/adr/0065).
+    const required = new ConfigError('MAIL_VALIDATION_ROLE_ARN is required in production (the address-validation account\'s role; docs/adr/0065)');
+    expect(() => readWebConfig({ ...deployed, MAIL_VALIDATION: 'ses', MAIL_VALIDATION_DAILY_CAP: '50' })).toThrow(required);
+    expect(() => readWebConfig({ ...deployed, MAIL_VALIDATION: 'ses', MAIL_VALIDATION_DAILY_CAP: '50', MAIL_VALIDATION_ROLE_ARN: 'none' })).toThrow(required);
+    for (const bad of ['', 'arn:aws:iam::444455556666:user/someone', 'arn:aws:sts::444455556666:assumed-role/x/y']) {
+      expect(() => readWebConfig({ ...deployed, MAIL_VALIDATION: 'ses', MAIL_VALIDATION_DAILY_CAP: '50', MAIL_VALIDATION_ROLE_ARN: bad }), bad).toThrow(new ConfigError('invalid settings: MAIL_VALIDATION_ROLE_ARN'));
+    }
+    expect(readWebConfig({ ...deployed, MAIL_VALIDATION: 'ses', MAIL_VALIDATION_DAILY_CAP: '50', MAIL_VALIDATION_ROLE_ARN: 'arn:aws:iam::444455556666:role/tp-production-address-validation' }).mailValidation).toEqual({ kind: 'ses', dailyCap: 50, roleArn: 'arn:aws:iam::444455556666:role/tp-production-address-validation' });
+    // A developer's SES check outside a deployment runs as the process's own credentials unless a role is named.
+    expect(readWebConfig({ ...base, MAIL_VALIDATION: 'ses' }).mailValidation).toEqual({ kind: 'ses', dailyCap: 50, roleArn: null });
+    expect(readWebConfig({ ...base, MAIL_VALIDATION: 'ses', MAIL_VALIDATION_ROLE_ARN: 'arn:aws:iam::444455556666:role/tp-production-address-validation' }).mailValidation).toEqual({ kind: 'ses', dailyCap: 50, roleArn: 'arn:aws:iam::444455556666:role/tp-production-address-validation' });
     // The end-to-end suite's production build checks with the stand-ins.
     expect(readWebConfig({ ...base, NODE_ENV: 'production', TP_ALLOW_LOCAL_PROVIDERS: 'e2e', TP_AUTH_PROVIDER: 'dev', TP_KEY_PROVIDER: 'local', AUTH_COOKIE_SECRET: key, TP_LOCAL_MASTER_KEY: key, BILLING_DATABASE_URL: base.DATABASE_URL }).mailValidation.kind).toBe('local');
   });
@@ -489,6 +499,7 @@ describe('the web configuration', () => {
       QUEUE_DATABASE_URL: 'postgres://tp_queue:x@db.internal:5432/tp',
       MAIL_VALIDATION: 'ses',
       MAIL_VALIDATION_DAILY_CAP: '1000',
+      MAIL_VALIDATION_ROLE_ARN: 'arn:aws:iam::444455556666:role/tp-production-address-validation',
     });
     expect(config).toMatchObject({
       origin: 'https://app.synthetic.test',
@@ -503,7 +514,7 @@ describe('the web configuration', () => {
       environment: 'production',
       esign: { kind: 'none' },
       complianceExportDir: null,
-      mailValidation: { kind: 'ses', dailyCap: 1000 },
+      mailValidation: { kind: 'ses', dailyCap: 1000, roleArn: 'arn:aws:iam::444455556666:role/tp-production-address-validation' },
     });
     expect(() => readWebConfig({ ...base, TP_AUTH_PROVIDER: 'cognito' })).toThrow('COGNITO_USER_POOL_ID is required for Cognito');
     expect(() => readWebConfig({ ...base, TP_KEY_PROVIDER: 'kms' })).toThrow('KMS_KEY_ID is required for KMS');
@@ -570,6 +581,7 @@ describe('the web configuration', () => {
       TP_ENVIRONMENT: 'staging',
       MAIL_VALIDATION: 'ses',
       MAIL_VALIDATION_DAILY_CAP: '1000',
+      MAIL_VALIDATION_ROLE_ARN: 'arn:aws:iam::444455556666:role/tp-production-address-validation',
     };
     expect(readWebConfig(production)).toMatchObject({ supportEmail: 'help@synthetic.test', environment: 'staging', esign: { kind: 'none' }, complianceExportDir: null });
     expect(() => readWebConfig({ ...production, SUPPORT_EMAIL: undefined })).toThrow(new ConfigError('SUPPORT_EMAIL is required in production'));
@@ -603,6 +615,7 @@ describe('the web configuration', () => {
       TP_ENVIRONMENT: 'production',
       MAIL_VALIDATION: 'ses',
       MAIL_VALIDATION_DAILY_CAP: '1000',
+      MAIL_VALIDATION_ROLE_ARN: 'arn:aws:iam::444455556666:role/tp-production-address-validation',
     };
     expect(readWebConfig(production)).toMatchObject({ securityEmail: 'security@synthetic.test', origin: 'https://app.synthetic.test' });
     expect(() => readWebConfig({ ...production, SECURITY_EMAIL: undefined })).toThrow(new ConfigError('SECURITY_EMAIL is required in production'));

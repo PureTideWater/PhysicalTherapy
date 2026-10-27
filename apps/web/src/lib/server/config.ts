@@ -65,6 +65,11 @@ const schema = z.object({
   // deployed server), or the local stand-ins, which call no one; and the validations a UTC day may make.
   MAIL_VALIDATION: z.enum(['ses', 'local']).optional(),
   MAIL_VALIDATION_DAILY_CAP: z.string().regex(/^[1-9][0-9]{0,5}$/, 'a whole number from 1 to 999999').optional(),
+  // The role SES's validation runs as, in the environment's address-validation account, so the call and the address in
+  // it are recorded there and never in this account's trail (docs/adr/0065; review S3); `none` before that account's
+  // stack exists, when no release runs (the stack's rule ReleaseNeedsAddressValidationRole). Required on a deployed
+  // server.
+  MAIL_VALIDATION_ROLE_ARN: z.string().regex(/^(none|arn:aws[a-z-]*:iam::[0-9]{12}:role\/[A-Za-z0-9+=,.@_/-]{1,512})$/, 'none, or an IAM role ARN').optional(),
   // The local stand-ins answer after this many milliseconds (0 to 5,000): the capacity harness charges the checks' worst
   // case, one 2-second timeout, to every upload (the plan's G1). Refused on a deployed server.
   MAIL_CHECK_DELAY_MS: z.string().regex(/^[0-9]{1,4}$/, 'a whole number of milliseconds').optional(),
@@ -74,7 +79,10 @@ const schema = z.object({
 export const DEFAULT_MAIL_VALIDATION_DAILY_CAP = 50;
 
 /** How the server checks a screening's address: SES and DNS, or the local stand-ins (after `delayMs`). */
-export type MailValidationSettings = { readonly kind: 'ses'; readonly dailyCap: number } | { readonly kind: 'local'; readonly dailyCap: number; readonly delayMs: number };
+export type MailValidationSettings =
+  /** `roleArn`: the address-validation account's role (required on a deployed server); null runs as the process's own credentials. */
+  | { readonly kind: 'ses'; readonly dailyCap: number; readonly roleArn: string | null }
+  | { readonly kind: 'local'; readonly dailyCap: number; readonly delayMs: number };
 
 export type AuthProviderSettings =
   | { readonly kind: 'dev'; readonly directory: string }
@@ -174,7 +182,7 @@ export interface WebConfig {
   readonly screeningLaunch: ScreeningLaunch;
   /** SCREENING_SLOTS: when this many screenings are queued or pricing ahead, the "sent" page says it can take minutes. */
   readonly screeningSlots: number;
-  /** MAIL_VALIDATION, MAIL_VALIDATION_DAILY_CAP and MAIL_CHECK_DELAY_MS: how the screening's address is checked. */
+  /** MAIL_VALIDATION, MAIL_VALIDATION_DAILY_CAP, MAIL_VALIDATION_ROLE_ARN and MAIL_CHECK_DELAY_MS: how the screening's address is checked. */
   readonly mailValidation: MailValidationSettings;
 }
 
@@ -209,7 +217,7 @@ function esignSettings(settings: z.output<typeof schema>, production: boolean): 
   return { kind: 'local', secret: settings.ESIGN_LOCAL_SECRET ?? DEVELOPMENT_ESIGN_SECRET, directory: settings.ESIGN_LOCAL_DIR ?? path.join(tmpdir(), 'tp-esign') };
 }
 
-/** The screening's address checks: SES and DNS on a deployed server (both settings required), the stand-ins elsewhere. */
+/** The screening's address checks: SES, as the address-validation role, and DNS on a deployed server (each setting required), the stand-ins elsewhere. */
 function mailValidationSettings(settings: z.output<typeof schema>, deployed: boolean): MailValidationSettings {
   if (!deployed) {
     const delayMs = Number.parseInt(settings.MAIL_CHECK_DELAY_MS ?? '0', 10);
@@ -217,7 +225,8 @@ function mailValidationSettings(settings: z.output<typeof schema>, deployed: boo
       throw new ConfigError('MAIL_CHECK_DELAY_MS is at most 5000');
     }
     const dailyCap = Number.parseInt(settings.MAIL_VALIDATION_DAILY_CAP ?? String(DEFAULT_MAIL_VALIDATION_DAILY_CAP), 10);
-    return settings.MAIL_VALIDATION === 'ses' ? { kind: 'ses', dailyCap } : { kind: 'local', dailyCap, delayMs };
+    const roleArn = settings.MAIL_VALIDATION_ROLE_ARN === undefined || settings.MAIL_VALIDATION_ROLE_ARN === 'none' ? null : settings.MAIL_VALIDATION_ROLE_ARN;
+    return settings.MAIL_VALIDATION === 'ses' ? { kind: 'ses', dailyCap, roleArn } : { kind: 'local', dailyCap, delayMs };
   }
   if (settings.MAIL_VALIDATION === undefined || settings.MAIL_VALIDATION_DAILY_CAP === undefined) {
     throw new ConfigError(`${settings.MAIL_VALIDATION === undefined ? 'MAIL_VALIDATION' : 'MAIL_VALIDATION_DAILY_CAP'} is required in production`);
@@ -228,7 +237,10 @@ function mailValidationSettings(settings: z.output<typeof schema>, deployed: boo
   if (settings.MAIL_CHECK_DELAY_MS !== undefined) {
     throw new ConfigError('MAIL_CHECK_DELAY_MS is refused in production (it slows the local stand-ins only)');
   }
-  return { kind: 'ses', dailyCap: Number.parseInt(settings.MAIL_VALIDATION_DAILY_CAP, 10) };
+  if (settings.MAIL_VALIDATION_ROLE_ARN === undefined || settings.MAIL_VALIDATION_ROLE_ARN === 'none') {
+    throw new ConfigError('MAIL_VALIDATION_ROLE_ARN is required in production (the address-validation account\'s role; docs/adr/0065)');
+  }
+  return { kind: 'ses', dailyCap: Number.parseInt(settings.MAIL_VALIDATION_DAILY_CAP, 10), roleArn: settings.MAIL_VALIDATION_ROLE_ARN };
 }
 
 export function readWebConfig(env: Readonly<Record<string, string | undefined>> = process.env): WebConfig {

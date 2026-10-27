@@ -26,6 +26,7 @@ import { readBillingConfig } from '../billing/config';
 import { billingProvider, memoryBillingProvider } from '../billing/provider';
 import type { BillingPool } from '@tp/worker/billing';
 import { type AddressCheckServices, localAddressChecks, sesAddressInsights, systemDomainResolver } from '../screening/validation';
+import { assumedRoleCredentials } from '../screening/validation-credentials';
 import { type JobQueue, PgBossQueue } from '../uploads/queue';
 import { LocalUploadTargets, S3UploadTargets, type UploadTargets, presigningClient } from '../uploads/targets';
 import { DEFAULT_MAIL_VALIDATION_DAILY_CAP, DEFAULT_SCREENING_SLOTS, type ScreeningLaunch, type WebConfig, readWebConfig } from './config';
@@ -243,7 +244,12 @@ export function servicesFromConfig(config: WebConfig): Services {
     screeningSlots: config.screeningSlots,
     addressChecks:
       config.mailValidation.kind === 'ses'
-        ? { resolver: systemDomainResolver(), insights: sesAddressInsights(new SESv2Client({})), dailyCap: config.mailValidation.dailyCap }
+        ? {
+            resolver: systemDomainResolver(),
+            // As the address-validation account's role (docs/adr/0065): never this account's, whose trail would keep the address.
+            insights: sesAddressInsights(new SESv2Client(config.mailValidation.roleArn === null ? {} : { credentials: assumedRoleCredentials(config.mailValidation.roleArn) })),
+            dailyCap: config.mailValidation.dailyCap,
+          }
         : localAddressChecks(config.mailValidation.dailyCap, config.mailValidation.delayMs),
   });
 }
