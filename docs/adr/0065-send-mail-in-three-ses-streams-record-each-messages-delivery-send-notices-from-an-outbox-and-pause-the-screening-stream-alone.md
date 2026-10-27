@@ -158,6 +158,18 @@ and `submit_screening`; tp_screening: `screening_mail_gate` alone. `screening_ma
 `screening_contact_refused()` and every trigger function are granted to no role. No function sets `app.practice_ids`.
 `operator_record_support_notice()`, `operator_practice_administrator_emails()` and `billing_owner_emails()` are dropped.
 
+**When a stream's probes are missed (review M3 and its follow-up of 2026-10-27).**
+`operator_mail_streams().probe_missed` reads the stream's last proof, not its last send: the stream open and confirmed,
+and the older of its last delivered and bounced probe 26 hours old, whether a probe went since or not. A proof counts
+only since the last resume, as readiness counts it; one not back since then counts from the probe last sent, and with
+none sent yet nothing is missed, so a resume after a long pause, or phase 2's first probes, pages no one while its
+probes are on their way. The platform logs `MAIL_PROBE_MISSED` on every `mail_events` run while it holds, due or not, so
+its alarm stays raised until a probe comes back. The daily probe goes 24 hours after the last came back, so one sent and
+lost pages 2 hours after it went, 22 hours before readiness lapses at 48; as first built, missed was read 26 hours after
+the lost probe's own send, about 50 hours after the last proof and 2 hours after the screening had closed in silence. A
+probe that cannot be sent pages within 15 minutes (`MAIL_PROBE_UNSENT`), and as missed 26 hours after the last proof.
+The schedule is unchanged: a probe not back goes again 26 hours after it went.
+
 **Address validation in its own account (review S3; the safer option, taken on the co-founder's standing direction of
 2026-10-27).** SES's validation of a screening address (`GetEmailAddressInsights`, Q1 (g)) names the address in its
 request, and AWS records API calls. What AWS's own documentation says, re-checked on 2026-10-27 (its documentation hosts
@@ -233,16 +245,21 @@ of management events, which CloudTrail does not charge) and the refused validati
 | The refusal list keyed by the address as typed, or a +tag dropped only at free-mail domains | Another spelling of an inbox that bounced or reported a screening (a +tag, Gmail's dots, googlemail.com) was mailed again (review S2); a business domain's mailbox takes +tags as Gmail's does |
 | Give an attempt a pause stopped back to the run (attempts less one) | It hands out an attempt number the fence already gave, so a slow earlier attempt could pass it again; a queued run must have no attempt (`screening_run_started`); and it needs PR 6b-3's `screening_run_rules` body copied. Instead the sweep completes a run out of attempts whose rows are all priced (review M7) |
 | The web's check before the address covering the ZIP statuses too | It would copy PR 6b-2's location rule into a second function to keep in step; a ZIP refusal spends one validation, within the rate limit. Revisit if the validation cap is reached on a real day |
+| A stream missed 26 hours after its last probe's send (as first built) | A daily probe sent and lost paged about 50 hours after the last proof, 2 hours after readiness had lapsed and the screening closed, and a probe never sent never paged as missed (review M3) |
+| Missed from the last proof, counting a proof from before the last resume | A resume after a pause longer than 26 hours would page on every run until its first probes came back |
 | `client_subject` before `request`, as PR 6b-3 placed its parameters | The previous web's submissions would fail during the deploy window; last, with a default of null, they still work, their runs held to the account's budget alone (a run with no proxy-named client address is the same) |
 
 ## Consequences
 
 - A screening send whose bounce capture is broken cannot count toward the cut-off, so the screening closes: readiness
   needs the day's probes back (D8).
-- A probe the platform cannot send pages the operator within 15 minutes (`MAIL_PROBE_UNSENT` in each of three
-  five-minute periods; review M3), about a day before the stream's readiness lapses: such a probe is never outstanding,
-  so `MAIL_PROBE_MISSED` would not fire, and the screening would close in silence. It adds one alarm and one log metric
-  to Q1's figure (about $0.40 a month per environment).
+- Neither a lost probe nor an unsendable one closes the screening in silence (review M3): one sent and lost pages 2
+  hours after it went (`MAIL_PROBE_MISSED`, from the stream's last proof), 22 hours before the stream's readiness
+  lapses, and one the platform cannot send pages within 15 minutes (`MAIL_PROBE_UNSENT` in each of three five-minute
+  periods), about a day before. The unsent alarm adds one alarm and one log metric to Q1's figure (about $0.40 a month
+  per environment); the missed one costs nothing more, its line logged on each minute's run only while a stream is
+  missed. After a fix made once readiness has lapsed, the screening reopens when the unanswered probe goes again, 26
+  hours after it went.
 - Each environment needs a second AWS account, created by a person, bootstrapped for CDK and holding
   `tp-<env>-address-validation`, before its first release; a release cannot run without it (the rule), and an
   application role ever replaced must be named to that stack again, or every validation is refused and pages
@@ -277,13 +294,15 @@ of management events, which CloudTrail does not charge) and the refused validati
 ## Revisit when
 
 SES offers tenants with configurable pause thresholds at a confirmed price; staging shows which subtype a bounce from
-SES's global suppression list carries on the screening set, whose suppression is overridden to none (O11); the
-screening stream is paused in
-production (read the reason and the counts before resuming, and whether the floors or the budget need the founder's
-ruling again); staging, after phase 2, shows whether Cognito needs a sending-authorization policy, that the screening
-set's empty suppression list both adds nothing to and checks nothing against the account's list, whether the account's
-reputation metrics publish at launch volume, and whether CloudTrail reads SES's address validation as a read, in the
-address-validation account alone (open item O11); the validation cap is reached on a real day; PR 6e adds reminders on the screening stream (they must read the gate and the refusal list, O13); counsel answers on the
+SES's global suppression list carries on the screening set, whose suppression is overridden to none (O11); the screening
+stream is paused in production (read the reason and the counts before resuming, and whether the floors or the budget
+need the founder's ruling again); staging, after phase 2, shows whether Cognito needs a sending-authorization policy,
+that the screening set's empty suppression list both adds nothing to and checks nothing against the account's list,
+whether the account's reputation metrics publish at launch volume, and whether CloudTrail reads SES's address validation
+as a read, in the address-validation account alone (open item O11); the validation cap is reached on a real day; a
+`MAIL_PROBE_MISSED` is fixed after readiness lapsed and the screening stays closed until the unanswered probe's next
+send (then send it again sooner once missed, which needs the first unanswered send kept beside the last); PR 6e adds
+reminders on the screening stream (they must read the gate and the refusal list, O13); counsel answers on the
 refusal-hash and bounce-budget wording (O4); or the capacity measurement is revisited. The address checks this pull
 request adds (DNS and SES validation, run together after the row checks, at most one 2-second timeout) fall inside the
 60-second promise, and the harness charges them (section 5, G1). How that promise is measured, the free runner with a

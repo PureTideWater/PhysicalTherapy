@@ -65,9 +65,11 @@ a synthetic mailbox you control, and reads IDs and counts.
   paged (`NOTICE_UNDELIVERED`). A practice with no administrator gets no message (`NOTICE_UNDELIVERABLE`).
 - **Probes.** Once the identities are verified (phase 2), the platform sends each stream a message to SES's simulator
   (`success@` and `bounce@simulator.amazonses.com`) daily, and at once after a resume. Staging and production open the
-  screening only while its delivered and bounced probes came back within 48 hours and since the last resume. A probe
-  that does not come back pages (`MAIL_PROBE_MISSED`), and so does one that cannot be sent (`MAIL_PROBE_UNSENT`, once
-  every run has failed for 15 minutes).
+  screening only while its delivered and bounced probes came back within 48 hours and since the last resume. A stream
+  with no probe back in 26 hours pages (`MAIL_PROBE_MISSED`, from the older of its last delivered and bounced probe:
+  2 hours after a daily probe that went and was lost, 22 hours before readiness lapses, and on every run until one
+  comes back), and a probe that cannot be sent pages sooner (`MAIL_PROBE_UNSENT`, once every run has failed for 15
+  minutes).
 - **The console** (`/console/mail`, a platform administrator): each stream's state (sending, paused with its reason and
   the counts that paused it, or resumed and not yet confirmed), the window's sends, bounces and complaints, the last
   probes, whether the screening is ready to open, its bounce marks, and the last 7 days' undelivered customer messages
@@ -89,7 +91,7 @@ a synthetic mailbox you control, and reads IDs and counts.
   | `NOTICE_UNDELIVERED` | a notice not delivered to every recipient (platform log) | 3.3 |
   | `NOTICE_UNDELIVERABLE` | a notice with no recipient (platform log) | 3.3 |
   | `INVITATION_UNDELIVERED` | an invitation's email undelivered (platform log) | 3.4 |
-  | `MAIL_PROBE_MISSED` | a probe not back in 26 hours (platform log) | 3.7 |
+  | `MAIL_PROBE_MISSED` | a stream with no probe back in 26 hours, 22 hours before its readiness lapses (platform log) | 3.7 |
   | `MAIL_PROBE_UNSENT` | a probe that could not be sent, in each of three 5-minute periods (platform log) | 3.7 |
   | `MAIL_VALIDATION_CAP_REACHED` | the day's validation cap reached (web log) | 3.5 |
   | `MAIL_VALIDATION_REFUSED` | AWS refused an address validation: the address-validation role or its call (web log) | 3.8 |
@@ -281,12 +283,20 @@ A message older than the queue's 4 days is gone; its message's state stays as la
 
 ### 3.7 A probe missed, or not sent (`MAIL_PROBE_MISSED`, `MAIL_PROBE_UNSENT`)
 
-`MAIL_PROBE_MISSED`: a probe went and its event did not come back in 26 hours: the event path is broken somewhere.
-Check, in order, the identity (still verified), the set's event destination, rule `<p>-mail-events` (its invocations
-and failed invocations), the queue and the job.
+`MAIL_PROBE_MISSED`: no probe of the stream has come back in 26 hours, read from the older of its last delivered and
+bounced probe since the last resume (review M3). The daily probe goes 24 hours after the last came back, so a probe
+that went and was lost pages 2 hours after it went, and the stream's readiness lapses 48 hours after the last came
+back: about 22 hours after the page. The platform logs it on every run until a probe comes back, so the alarm stays
+raised until then. With `MAIL_PROBE_UNSENT` as well, no probe was sent: follow its steps below. Alone, a probe went and
+its events did not come back: the event path is broken somewhere. Check, in order, the identity (still verified), the
+set's event destination, rule `<p>-mail-events` (its invocations and failed invocations), the queue and the job. The
+console's mail page shows the stream's last probe sent, delivered and bounced. Once the path is fixed, the stream is
+proven again when a probe's events come back: one not back goes again 26 hours after it went, so after a fix made
+once readiness has lapsed, the screening can stay closed until that send.
 
-`MAIL_PROBE_UNSENT`: for 15 minutes every run's probe send was refused, so nothing goes out to come back, and the
-stream's readiness lapses 48 hours after its last probe came back (about a day from now). Check, in order:
+`MAIL_PROBE_UNSENT`: for 15 minutes every run's probe send was refused, so nothing goes out to come back:
+`MAIL_PROBE_MISSED` follows 26 hours after the stream's last probe came back, and its readiness lapses at 48 (about a
+day from now). Check, in order:
 
 1. the account's sending and enforcement (`aws sesv2 get-account --query '{sending: SendingEnabled, enforcement:
    EnforcementStatus}'`: `true` and `HEALTHY`);
