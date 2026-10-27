@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import path from 'node:path';
 
 import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, openPracticeCipher, openPool, readDatabaseUrl, withActor, withJobScope, withPracticeScope } from '@tp/db';
-import { type MigratedDatabase, type TenantWorld, addMembership, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from '@tp/db/testing';
+import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { loadRelease } from '@tp/rules/loader';
 import type { JobPayload, JobType } from '@tp/worker/jobs';
@@ -676,26 +676,177 @@ describe('the model features’ console (docs/adr/0055; test matrix MOD-05, MOD-
   });
 });
 
-describe('suspending and reinstating an organization (docs/adr/0055)', () => {
-  it('refuses new runs for the organization’s practices by the run refusal path, keeps them readable, and lifts it at once; setting the same status changes nothing', async () => {
-    const target = await createTenantWorld(owner, 'console suspension');
-    const refusal = () => withJobScope(app, { jobId: randomUUID(), practiceId: target.practiceId }, async (scope) => (await scope.client.query<{ reason: string | null }>('SELECT practice_run_refusal($1) AS reason', [target.practiceId])).rows[0]?.reason);
+describe('suspending and reinstating an organization (docs/adr/0055; docs/adr/0080; test matrix BIL-08)', () => {
+  /** A group with a practice, a firm granted that practice, and a grant the group holds at another group's practice. */
+  async function suspensionWorld(label: string): Promise<{ group: TenantWorld; firmId: string; other: TenantWorld }> {
+    const group = await createTenantWorld(owner, label);
+    const other = await createTenantWorld(owner, `${label} other`);
+    const firmId = await createOrganization(owner, 'firm', `${label} firm`);
+    const grant = async (grantee: string, practice: TenantWorld) =>
+      asOwner(owner, [practice.practiceId], async () => {
+        const agreementId = randomUUID();
+        await owner.query(
+          `INSERT INTO agreement (id, organization_id, practice_id, kind, version, signed_at, signer, document_ref, sha256)
+           VALUES ($1, $2, $3, 'engagement', '1', now(), 'SYNTHETIC SIGNER', 'agreements/engagement', $4)`,
+          [agreementId, grantee, practice.practiceId, randomBytes(32).toString('hex')],
+        );
+        await owner.query(
+          `INSERT INTO "grant" (organization_id, practice_id, scope, ends_at, approved_by_user_id, agreement_id)
+           VALUES ($1, $2, '{"roles":["firm_principal","analyst"]}', now() + interval '30 days', $3, $4)`,
+          [grantee, practice.practiceId, practice.adminUserId, agreementId],
+        );
+      });
+    await grant(firmId, group);
+    await grant(group.organizationId, other);
+    return { group, firmId, other };
+  }
+
+  const suspend = (organizationId: string, extra: Record<string, unknown> = {}) => ({ change: 'suspend', organizationId, reason: 'security_hold', confirm: 'on', ...extra });
+  const organizationRow = async (id: string) =>
+    (await owner.query<{ status: string; status_reason: string | null; status_since: Date | null }>('SELECT status, status_reason, status_since FROM organization WHERE id = $1', [id])).rows[0];
+  const changes = async (id: string) =>
+    (await owner.query<{ from_status: string; to_status: string; reason: string; note: string | null; changed_by: string }>('SELECT from_status, to_status, reason, note, changed_by FROM organization_status_change WHERE organization_id = $1 ORDER BY at, id', [id])).rows;
+  const actions = async (id: string) =>
+    (
+      await owner.query<{ action: string; purpose: string | null }>(
+        "SELECT action, purpose FROM audit_event WHERE object_type = 'organization' AND object_id = $1 AND action IN ('organization_suspended', 'organization_reinstated', 'organization_status_set') ORDER BY at, action",
+        [id],
+      )
+    ).rows;
+  const emailOf = async (userId: string) => (await owner.query<{ email: string }>('SELECT email FROM "user" WHERE id = $1', [userId])).rows[0]?.email ?? '';
+
+  it('refuses a suspension without a reason, for nonpayment, without the tick, or with a note too long or of two lines (X1 to X5), before anything is written', async () => {
+    const target = await createTenantWorld(owner, 'console suspension refusals');
+    const id = target.organizationId;
+    expect(await run(setOrganizationStatus, admin.token, { change: 'suspend', organizationId: id, confirm: 'on' })).toEqual({ status: 'invalid', issues: [{ field: 'reason', message: 'choose why PaidWhole suspends it' }] });
+    expect(await run(setOrganizationStatus, admin.token, suspend(id, { reason: 'unpaid_invoice' }))).toEqual({ status: 'invalid', issues: [{ field: 'reason', message: 'choose why PaidWhole suspends it' }] });
+    expect(await run(setOrganizationStatus, admin.token, suspend(id, { confirm: undefined }))).toEqual({ status: 'invalid', issues: [{ field: 'confirm', message: 'tick to confirm what the suspension stops' }] });
+    expect(await run(setOrganizationStatus, admin.token, suspend(id, { note: 'x'.repeat(501) }))).toEqual({ status: 'invalid', issues: [{ field: 'note', message: 'at most 500 characters' }] });
+    expect(await run(setOrganizationStatus, admin.token, suspend(id, { note: 'SYNTHETIC\nSECOND LINE' }))).toEqual({ status: 'invalid', issues: [{ field: 'note', message: 'one line, with no line breaks' }] });
+    expect(await run(setOrganizationStatus, admin.token, { change: 'reason', organizationId: id })).toEqual({ status: 'invalid', issues: [{ field: 'reason', message: 'choose the new reason' }] });
+    expect(await run(setOrganizationStatus, admin.token, { change: 'reinstate', organizationId: id, reason: 'security_hold' })).toEqual({ status: 'invalid', issues: [{ field: 'reason', message: 'choose why it is reinstated' }] });
+    // The old form's input is no longer a change.
+    expect((await run(setOrganizationStatus, admin.token, { organizationId: id, status: 'suspended' })).status).toBe('invalid');
+    expect(await organizationRow(id)).toEqual({ status: 'active', status_reason: null, status_since: null });
+    expect(await changes(id)).toEqual([]);
+    expect(await actions(id)).toEqual([]);
+  });
+
+  it('suspends with the reason, note and time through the setter; the practice is refused new work, read as on hold in a job’s scope; the same reason again changes nothing', async () => {
+    const { group } = await suspensionWorld('console suspension');
+    const id = group.organizationId;
+    const refusal = () => withJobScope(app, { jobId: randomUUID(), practiceId: group.practiceId }, async (scope) => (await scope.client.query<{ reason: string | null }>('SELECT practice_run_refusal($1) AS reason', [group.practiceId])).rows[0]?.reason);
     expect(await refusal()).toBeNull();
-    expect((await run(setOrganizationStatus, admin.token, { organizationId: target.organizationId, status: 'suspended' })).status).toBe('ok');
-    expect(await refusal()).toMatch(/^the organization is suspended: its data stays readable/);
-    expect((await run(setOrganizationStatus, admin.token, { organizationId: target.organizationId, status: 'suspended' })).status).toBe('ok');
-    expect((await run(setOrganizationStatus, admin.token, { organizationId: target.organizationId, status: 'active' })).status).toBe('ok');
-    expect(await refusal()).toBeNull();
-    const events = await owner.query<{ n: number }>("SELECT count(*)::int AS n FROM audit_event WHERE action = 'organization_status_set' AND object_id = $1", [target.organizationId]);
-    expect(events.rows[0]?.n).toBe(3);
-    // The company's own organization, a closed one and one that does not exist are refused.
-    expect((await run(setOrganizationStatus, admin.token, { organizationId: admin.internalId, status: 'suspended' })).status).toBe('not_found');
-    expect((await run(setOrganizationStatus, admin.token, { organizationId: randomUUID(), status: 'suspended' })).status).toBe('not_found');
-    await owner.query("UPDATE organization SET status = 'closed' WHERE id = $1", [target.organizationId]);
-    expect((await run(setOrganizationStatus, admin.token, { organizationId: target.organizationId, status: 'active' })).status).toBe('invalid');
-    // A customer may not.
-    const customer = await sessionFor(target.adminUserId, 'totp');
-    expect((await run(setOrganizationStatus, customer, { organizationId: target.organizationId, status: 'active' })).status).not.toBe('ok');
+    expect(await run(setOrganizationStatus, admin.token, suspend(id, { note: '  SYNTHETIC NOTE  ' }))).toMatchObject({ status: 'ok', data: { objectId: id, redirect: `/console/organizations/${id}` } });
+    const row = await organizationRow(id);
+    expect(row).toMatchObject({ status: 'suspended', status_reason: 'security_hold' });
+    expect(row?.status_since).toBeInstanceOf(Date);
+    expect(await changes(id)).toEqual([{ from_status: 'active', to_status: 'suspended', reason: 'security_hold', note: 'SYNTHETIC NOTE', changed_by: admin.id }]);
+    expect(await actions(id)).toEqual([
+      { action: 'organization_status_set', purpose: null },
+      { action: 'organization_suspended', purpose: 'security_hold' },
+    ]);
+    // R6: a job is outside the owning organization, so it reads that the account is on hold, never why.
+    expect(await refusal()).toBe("the PaidWhole account of the practice's organization is on hold, so no new work starts here; everything here stays readable");
+    // The same reason again, with no note: the wrapper records the request, and nothing else is written.
+    expect((await run(setOrganizationStatus, admin.token, { change: 'reason', organizationId: id, reason: 'security_hold' })).status).toBe('ok');
+    expect(await changes(id)).toHaveLength(1);
+    expect((await actions(id)).filter((event) => event.action === 'organization_suspended')).toHaveLength(1);
+    // A suspension asked of an organization already suspended is a stale page (X6).
+    expect(await run(setOrganizationStatus, admin.token, suspend(id, { reason: 'customer_request' }))).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'change', message: "the organization's status changed since this page loaded; reload the page" }],
+    });
+    expect((await organizationRow(id))?.status_reason).toBe('security_hold');
+  });
+
+  it('keeps when the suspension began through a change of reason by a second administrator, and the page names each (C7; review finding F6)', async () => {
+    const { group, firmId, other } = await suspensionWorld('console reason change');
+    const id = group.organizationId;
+    const second = await platformAdmin();
+    expect((await run(setOrganizationStatus, admin.token, suspend(id, { reason: 'customer_request' }))).status).toBe('ok');
+    const began = (await organizationRow(id))?.status_since;
+    expect((await run(setOrganizationStatus, second.token, { change: 'reason', organizationId: id, reason: 'agreement_ended', note: 'SYNTHETIC SECOND NOTE' })).status).toBe('ok');
+    expect(await organizationRow(id)).toEqual({ status: 'suspended', status_reason: 'agreement_ended', status_since: began });
+    const page = await run(organizationPage, admin.token, undefined, { organizationId: id });
+    if (page.status !== 'ok') {
+      throw new Error(`expected the page, got ${page.status}`);
+    }
+    const [firstEmail, secondEmail] = [await emailOf(admin.id), await emailOf(second.id)];
+    expect(page.data.organization).toMatchObject({ id, status: 'suspended', statusReason: 'agreement_ended', statusSince: began });
+    expect(page.data.suspension).toEqual({
+      reason: 'agreement_ended',
+      since: began,
+      suspendedBy: { email: firstEmail, at: began },
+      reasonChangedBy: { email: secondEmail, at: expect.any(Date) },
+      note: 'SYNTHETIC SECOND NOTE',
+    });
+    // Its reach: the group's one active practice, and the one grant in force it holds at another group's practice.
+    expect(page.data.reach).toEqual({ practices: 1, grants: 1 });
+    expect(page.data.history).toEqual([
+      { id: expect.any(String), at: expect.any(Date), change: 'reason_changed', reason: 'agreement_ended', by: secondEmail, note: 'SYNTHETIC SECOND NOTE' },
+      { id: expect.any(String), at: began, change: 'suspended', reason: 'customer_request', by: firstEmail, note: null },
+    ]);
+    // Reinstating writes the reserved action with its reason, and the card's record of the suspension ends.
+    expect((await run(setOrganizationStatus, second.token, { change: 'reinstate', organizationId: id, reason: 'in_error' })).status).toBe('ok');
+    expect(await organizationRow(id)).toMatchObject({ status: 'active', status_reason: null });
+    expect((await actions(id)).filter((event) => event.action !== 'organization_status_set')).toEqual([
+      { action: 'organization_suspended', purpose: 'customer_request' },
+      { action: 'organization_suspended', purpose: 'agreement_ended' },
+      { action: 'organization_reinstated', purpose: 'in_error' },
+    ]);
+    const after = await run(organizationPage, admin.token, undefined, { organizationId: id });
+    expect(after).toMatchObject({ status: 'ok', data: { suspension: null, history: [{ change: 'reinstated', reason: 'in_error', by: secondEmail }, { change: 'reason_changed' }, { change: 'suspended' }] } });
+    // Reinstating an organization already active changes nothing (the route test's sample).
+    expect((await run(setOrganizationStatus, admin.token, { change: 'reinstate', organizationId: id, reason: 'resolved' })).status).toBe('ok');
+    expect(await changes(id)).toHaveLength(3);
+    // A change of reason asked of an active organization is a stale page (X6).
+    expect(await run(setOrganizationStatus, admin.token, { change: 'reason', organizationId: id, reason: 'security_hold' })).toMatchObject({ status: 'invalid', issues: [{ field: 'change' }] });
+    // The firm's page: its reach is the practices it is granted; the group's page shows the firm's grant with the firm's state (C11).
+    expect((await run(setOrganizationStatus, admin.token, suspend(firmId))).status).toBe('ok');
+    const firmPage = await run(organizationPage, admin.token, undefined, { organizationId: firmId });
+    expect(firmPage).toMatchObject({ status: 'ok', data: { organization: { kind: 'firm', status: 'suspended', statusReason: 'security_hold' }, reach: { practices: 1, grants: 1 } } });
+    expect(await run(organizationPage, admin.token, undefined, { organizationId: id })).toMatchObject({
+      status: 'ok',
+      data: { grants: expect.arrayContaining([expect.objectContaining({ granteeId: firmId, granteeStatus: 'suspended' }), expect.objectContaining({ granteeId: id, practiceId: other.practiceId, granteeStatus: 'active' })]) },
+    });
+  });
+
+  it('reads a suspension the previous image wrote directly as one whose author was not recorded (D11), and holds a direct write to closed or the internal organization in Postgres', async () => {
+    const target = await createTenantWorld(owner, 'console direct');
+    const id = target.organizationId;
+    await withActor(app, admin.id, (scope) => scope.client.query("UPDATE organization SET status = 'suspended' WHERE id = $1", [id]));
+    const page = await run(organizationPage, admin.token, undefined, { organizationId: id });
+    expect(page).toMatchObject({ status: 'ok', data: { suspension: { reason: null, since: expect.any(Date), suspendedBy: null, reasonChangedBy: null, note: null }, history: [] } });
+    // The internal organization and a closed one, even as the application role directly.
+    await expect(withActor(app, admin.id, (scope) => scope.client.query("UPDATE organization SET status = 'suspended' WHERE id = $1", [admin.internalId]))).rejects.toMatchObject({ code: '23514' });
+    await expect(withActor(app, admin.id, (scope) => scope.client.query("UPDATE organization SET status = 'closed' WHERE id = $1", [id]))).rejects.toMatchObject({ code: '23514', constraint: 'organization_closed_by_closure_only' });
+    await expect(withActor(app, admin.id, (scope) => scope.client.query("UPDATE organization SET status_reason = 'security_hold' WHERE id = $1", [id]))).rejects.toMatchObject({ code: '42501' });
+    // The route reinstates it with a reason, and the history starts there.
+    expect((await run(setOrganizationStatus, admin.token, { change: 'reinstate', organizationId: id, reason: 'resolved' })).status).toBe('ok');
+    expect(await changes(id)).toEqual([{ from_status: 'suspended', to_status: 'active', reason: 'resolved', note: null, changed_by: admin.id }]);
+  });
+
+  it('refuses the company’s own organization, a closed one, one that does not exist, and a customer', async () => {
+    const target = await createTenantWorld(owner, 'console closed');
+    expect((await run(setOrganizationStatus, admin.token, suspend(admin.internalId))).status).toBe('not_found');
+    expect((await run(setOrganizationStatus, admin.token, suspend(randomUUID()))).status).toBe('not_found');
+    // A closure is the owner's alone (organization_closed_by_closure_only).
+    await asOwner(owner, [], () => owner.query("UPDATE organization SET status = 'closed' WHERE id = $1", [target.organizationId]));
+    for (const input of [suspend(target.organizationId), { change: 'reinstate', organizationId: target.organizationId, reason: 'resolved' }, { change: 'reason', organizationId: target.organizationId, reason: 'security_hold' }]) {
+      expect(await run(setOrganizationStatus, admin.token, input)).toEqual({ status: 'invalid', issues: [{ field: 'change', message: 'a closed organization is neither suspended nor reinstated' }] });
+    }
+    expect(await organizationRow(target.organizationId)).toMatchObject({ status: 'closed', status_reason: null });
+    // A customer may not, in the handler, nor through the setter in Postgres.
+    const other = await createTenantWorld(owner, 'console customer');
+    const customer = await sessionFor(other.adminUserId, 'totp');
+    expect(await run(setOrganizationStatus, customer, suspend(other.organizationId))).toMatchObject({ status: 'forbidden', permission: 'organization.manage' });
+    await expect(
+      withActor(app, other.adminUserId, (scope) => scope.client.query("SELECT console_set_organization_status($1, 'active', 'suspended', 'security_hold', NULL)", [other.organizationId])),
+    ).rejects.toMatchObject({ code: '42501' });
+    expect(await organizationRow(other.organizationId)).toMatchObject({ status: 'active' });
+    // Nor reads the history.
+    await expect(withActor(app, other.adminUserId, (scope) => scope.client.query('SELECT * FROM organization_status_change'))).resolves.toMatchObject({ rows: [] });
   });
 });
 

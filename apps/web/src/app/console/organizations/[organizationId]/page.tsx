@@ -19,6 +19,8 @@ import {
   uploadAgreementAction,
 } from '../../actions';
 import { FormKeys } from '../../../../components/form-keys';
+import { SuspensionCard, SuspensionHistory } from '../../../../components/console/suspension-card';
+import { grantState } from '../../../../components/console/suspension-text';
 
 export const metadata: Metadata = { title: 'Organization' };
 
@@ -33,14 +35,17 @@ const AGREEMENT_KINDS = [
 /**
  * One organization in the internal console (PRD 7): its practices, members, agreements and grants,
  * and the v0 actions (create a practice, invite a member, end a membership, unlock an account,
- * record an agreement). Directory records only; no practice's data is read here.
+ * record an agreement). A group's or a firm's card suspends it, changes the suspension's reason or reinstates it, with
+ * its history (docs/adr/0080); the Grants card says when a grantee's hold stops its people's work through a grant.
+ * Directory records only; no practice's data is read here.
  */
 export default async function OrganizationPage(props: { readonly params: Promise<{ organizationId: string }> }) {
   const page = await loadPage(organizationPage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="organizations" roles={page.roles} message={page.message} nextStep="The internal console is for platform administrators." />;
   }
-  const { organization, roles, practices, members, agreements, grants, invitations, created } = page.data;
+  const { organization, suspension, reach, history, roles, practices, members, agreements, grants, invitations, created } = page.data;
+  const now = new Date();
   const practiceName = new Map(practices.map((practice) => [practice.id, practice.name]));
   return (
     <AppShell shell={page.shell} section="organizations">
@@ -52,28 +57,9 @@ export default async function OrganizationPage(props: { readonly params: Promise
       </div>
 
       {organization.kind !== 'internal' && organization.status !== 'closed' ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>{organization.status === 'suspended' ? 'Suspended' : 'Suspension'}</CardTitle>
-            <CardDescription>
-              {organization.status === 'suspended'
-                ? 'New runs are refused for every practice of the organization, with the reason; every record stays readable. Reinstating lifts it at once.'
-                : 'Suspending refuses new runs for every practice of the organization (pricing, monitoring, packet exports, reports and uploads) and leaves every record readable.'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ActionForm
-              action={setOrganizationStatusAction}
-              submit={organization.status === 'suspended' ? 'Reinstate the organization' : 'Suspend the organization'}
-              variant={organization.status === 'suspended' ? 'default' : 'destructive'}
-            >
-              <FormKeys />
-              <input type="hidden" name="organizationId" value={organization.id} />
-              <input type="hidden" name="status" value={organization.status === 'suspended' ? 'active' : 'suspended'} />
-            </ActionForm>
-          </CardContent>
-        </Card>
+        <SuspensionCard organization={{ id: organization.id, name: organization.name, kind: organization.kind, status: organization.status }} suspension={suspension} reach={reach} action={setOrganizationStatusAction} />
       ) : null}
+      {organization.kind !== 'internal' ? <SuspensionHistory history={history} /> : null}
 
       {organization.kind === 'group' ? (
         <Card>
@@ -321,7 +307,9 @@ export default async function OrganizationPage(props: { readonly params: Promise
                     <td className="py-1 pr-3">{roleNames(grant.roles)}</td>
                     <td className="py-1 pr-3">{utcDate(grant.startsAt)}</td>
                     <td className="py-1 pr-3">{utcDate(grant.endsAt)}</td>
-                    <td className="py-1">{grant.revokedAt === null ? (new Date(grant.endsAt) > new Date() ? 'in force' : 'expired') : `revoked ${utcDate(grant.revokedAt)}`}</td>
+                    <td className="py-1" data-grantee-status={grant.granteeStatus}>
+                      {grantState(grant, now)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
