@@ -79,4 +79,25 @@ Marker route: touch <clone>/.claude/.allow-protected-edit, Edit migration, rm ma
 - NEXT: broad checks under the lock: typecheck (pnpm typecheck), lint on touched files, unit tests (worker/web/db
   touched dirs), test:db files touched on a fresh migrated DB (they migrate fresh each run), lint:logs, lint:copy.
 
+- 9a88568c test-matrix rows SCR-21, SCR-22, SEC-18, SEC-19.
+
 ## Checks
+- pnpm typecheck (whole repo, 22 projects): passed.
+- eslint --max-warnings=0 on every touched .ts file: passed.
+- pnpm lint:logs: passed (1067 files). pnpm lint:copy: passed (522 files).
+- unit tests packages/db, apps/worker, apps/web/src/lib: 1569/1570 pass; the 1 failure is apps/worker/src/web-entries.test.ts,
+  PRE-EXISTING at base 098636e3 (same 13 offending modules at base and HEAD, via apps/web/src/lib/routes/route-tests/world.ts
+  -> test-support/triage-world.ts -> @tp/worker runtime.ts; checked with a copy of the test's traversal on a base worktree).
+  Not from this round: open item for the integrator.
+- next: test:db on touched files.
+
+## Proposals / open items (for the final report)
+- Runbook deliverability.md (another builder's file): staging check with --reason COMPLAINT (M1); second send to the
+  hard-bounced screening address within minutes to read whether Permanent/Suppressed arrives on the screening set (M2, O11);
+  cut-off text: global-list bounces count, account-list suppressions do not; cut-off read each run (M9).
+- ops designs/pr6b-email-streams.md lines 375, 737-743 mapping and refusal order, plan D2 order: orchestrator's.
+- web-entries.test.ts pre-existing failure at base (route-tests/world.ts -> test-support/triage-world.ts -> runtime.ts).
+- S4 residual: ZIP refusals still spend one validation.
+- M3 not mine; if its fix needs operator_mail_streams' probe_missed, it is the migration (offer).
+- known item (a) bound not recorded by me (not assigned).
+- domain model + packages/db/functions regeneration by the integrator (schema changed).
