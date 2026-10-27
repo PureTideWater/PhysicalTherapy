@@ -92,3 +92,18 @@ decision, open as issue #41 (decide before launch), with this measurement as its
 - Integrator: routes.ts conflict with fix-db (keep fix-db's precheck, then the two timing lines before const verdict).
 - Integrator: e2e chromium-1194 present now; full e2e worth running once after integration.
 - Proposal: infra metric filter on the web log's 'screening address checked' elapsed_ms (latency of DNS+validation in production; an alarm near the 2-s bound).
+- f077c048 capacity: report module comment lists the address-check checks (M4).
+- Capacity smoke S1 (process runtime, advisory, tp_pr6b4_harness_2 dropped by the harness): S1-1 38.1 s (logged 38.0),
+  S1-2 2.9 s; web measured address checks 2011 and 2002 ms read into the report ("the web measured the address checks of
+  2 of 2 uploads at 2.0 to 2.0 s"); both links 200 and last pages 200 after the commit wait; verdict fails only on what a
+  partial process run cannot meet (partial run, Postgres limits, cold start, S2/S3 oracles). Out: scratchpad/pr42/capacity-out.
+- NEXT: drop tp_pr6b4_harness_1; final checks.
+- tp_pr6b4_harness_1 dropped; no tp_pr6b4_harness DB left.
+- pnpm typecheck (22 projects): passed.
+- unit (apps/web, tools/screening-capacity, tools/test, tools/brand-copy, tools/lint-logs): queued behind other lanes' lock holders (log unit-harness.log).
+- final checks queued as scratchpad/pr42/final-checks.sh (each command its own lock hold), log final-checks.log; earlier queued unit run cancelled (it would have timed out waiting for the lock).
+- FINAL CHECKS at f077c048 (each its own lock hold): unit apps/web + tools/screening-capacity + tools/test + brand-copy +
+  lint-logs 98 files 1,329 passed; db routes.db + mail-routes.db 56 passed (PG18 5433); lint:copy 522 ok; lint:logs 1065 ok;
+  eslint on every changed .ts/.tsx (heap 6 GiB) clean. typecheck 22 projects passed (15:2x).
+- Cleanup: tp_pr6b4_harness_1 dropped, _2 dropped by the harness; e2e /tmp dirs, capacity release/images removed; scratch refs deleted.
+- DONE. Returning the result.

@@ -30,3 +30,21 @@ Output: /home/user/ops/designs/ledger-interest-once.md
 - D9 take-back (positive L6): leaning H2 negative interest entries (sign CHECK interest <>0 + trigger rules) - decide & write
 - D10 one PR (interest + N1 + seq + index); 15b stored case close stays with PR 8 (case/case_line DDL, not ledger).
 - #42 overlap: no ledger fn/table; shared generated/docs: domain-model.md, areas.json, functions/*, test-matrix.md, matrix.ts, registry.ts, reconciliation-001.md, watched-paths.txt, catalog.db.test.ts (#42 files list: progress/interest-author-42files.txt)
+- D9 DECIDED H2: negative interest entries (ledger_entry_sign interest <> 0), take-back attributed by reference or by the remittance's negative AMT I (reversal V -> V.reversal_of_claim_id lines holding interest), capped per line (net >= 0, DB floor) and per L6 (DB).
+- D11 add index ledger_entry_by_evidence (practice_id, evidence_id, stage) for the cap's per-L6 sum (and entriesOfEvidence, within_evidence) - DDL on frozen table, in exception.
+- D12 deploy window: previous image's interest inserts refused (RAISE, fail closed, retried); no silent skip.
+- Draft migration: probes/author/20261108090000_ledger_interest_once.sql; prototype probe probes/author/interest-author-proto.mts (DB tp_design_interest_3, migs1 = base+#42, migs2 = +draft) -- running in background (bj7y8c7qu) queued on flock
+## Next: write design doc sections (1 today cited, 2 TR3, 3 options, 4 decisions, 5 migration, 6 app, 7 words, 8 tests, 9 domain model, 10 founder, 11 files, 12 risks, 13 slices, 14 out of scope)
+- D11 DROPPED: ledger_entry_by_evidence (evidence_id) already exists (20261026090000:61; schema/ledger.ts:159). Prototype rerun after fixing draft.
+- WRITTEN: header, 0 summary, 1 today (1.1-1.8), 2 TR3 semantics
+- WRITTEN: 3 options (3.1-3.5), 4 decisions D1-D11
+- WRITTEN: 5 schema (5.1 objects, 5.2 deploy/rollback, 5.3 SQL) - verify vs prototype output
+- WRITTEN: 6 application (6.1-6.4)
+- WRITTEN: 7 words
+- WRITTEN: 8 tests (8.0 placeholder PROTOTYPE_RESULTS_PLACEHOLDER to fill), 8.1 matrix rows, 8.2 synth, 8.3 table
+- WRITTEN: 9 domain model+records, 10 founder, 11 files, 12 risks, 13 slices, 14 out of scope. TODO: 8.0 prototype results; final read-through
+- Read-through done for 0-4 (fixed citations: review file approval-summaries/lane-b-pr15b-review-payment-engine.md:57-58, :24, :64-68; ledger_mig lines 153/156-162/207-214/314-374/725-733; rem:804-805). Added CONSTRAINT 'ledger_interest_line_floor' to the floor RAISE + reverse route mapping by constraint. net-zero fixture now pays line 1 2.00 more (so today's code credits again).
+- Prototype (bh2elpwyj) still queued on flock behind suitecap1 large db test (~13 min). When done: fill 8.0 PROTOTYPE_RESULTS_PLACEHOLDER; check DB tp_design_interest_3 dropped.
+- PROTOTYPE DONE (tp_design_interest_3 dropped; output probes/author/proto.out): all checks as designed (seq 8 rows filled 1..8, objects owned tp_owner, ACL tp_owner only, CHECKs validated; previous image refused with nothing written; T1/T1b/T8/T9 refused; T2 dual ok seq 14/15 evidence=L6; sign/L6 bound/line floor [ledger_interest_line_floor] each refused at the right amount; superseded index used). seq/evidence plan checks INCONCLUSIVE (gen_random_uuid() volatile prevents index cond) -> rerun plan check with constants (tp_design_interest_4).
+- plans done (tp_design_interest_4 dropped); 8.0 filled
+## STATUS: DESIGN COMPLETE (run 1). /home/user/ops/designs/ledger-interest-once.md, sections 0-15 (15 = review pending). All probe DBs dropped (tp_design_interest_2/3/4). Returning StructuredOutput.
