@@ -281,10 +281,12 @@ hash alone would let any of them move.
 no install) finds the installed playwright-core through `@playwright/test` → `playwright` → `playwright-core` (pnpm
 hoists none of them), requires its `browsers.json` to pin the recorded revision and version, computes both builds' tree
 and binary SHA-256s, and fails on any difference, naming what it found, what is recorded, ADR 0058's procedure and,
-when the build is the recorded revision, the first ten files that differ. With `--image <ref>` it checks the worker
-image's headless shell inside the image. It runs right after every `playwright install` in every workflow, before any
-test and before any cache is saved, so a build that fails it is never cached, and on the worker image in `ci.yml`'s
-`images` and in the release's build. The steps after it still run when it fails (their condition is the install's
+when the build is the recorded revision, every file that differs; a build that fails it has its every file's line
+printed, as `--list` prints them, so one run gives a new record. With `--image <ref>` it checks the worker image's
+headless shell inside the image. It runs right after every `playwright install` in every workflow, before any test and
+before any cache is saved, so a build that fails it is never cached, and on the worker image in every job that builds
+it into a local tag before the tag is measured, saved or pushed: `ci.yml`'s `images`, the release's build, and both
+measuring jobs (`release-capacity.yml`'s and `screening-capacity.yml`'s `capacity`). The steps after it still run when it fails (their condition is the install's
 success), so a Playwright upgrade's pull request shows everything the new browser does. **That pull request is red here
 by design**: every upgrade brings a new build, and a new browser under unchanged baselines is what this ADR forbids. It
 turns green when a person runs the procedure (`docs/runbooks/ci.md`, "Upgrading the browser"): the new build laid out
@@ -294,13 +296,14 @@ to ADR 0066's rule that a Dependabot pull request passes unaided.
 **CI proves the bytes.** The comparisons carry tolerances (`VISUAL`, `STRICT`), so a green journey does not prove that
 CI renders the committed bytes, and CI's host is not the machine that made them. A baseline step in the first e2e shard,
 on every pull request and every push run with no condition on what changed (the pictures are drawn by application code
-as much as by the browser: a change under 1% would pass the journey and leave the baselines stale), removes the seven
-files, regenerates them with `--update-snapshots=all --retries=0`, requires the run to pass and to write exactly seven,
-and fails on any byte that differs from the commit, printing each changed picture as a `path base64` line, as the failed
-comparisons' step does. The pull request that moved to 1.64.1 records its first passing run, with the seven SHA-256s,
+as much as by the browser: a change under 1% would pass the journey and leave the baselines stale), removes the
+committed files, regenerates them with `--update-snapshots=all --retries=0`, requires the run to pass and the pictures
+present after it to be exactly the committed set, and fails on any byte that differs from the commit, printing each
+changed picture's SHA-256 and then the picture as numbered lines of 8,000 base64 characters (`<path> <i>/<n> <chunk>`),
+so a log reader that cuts long lines still gets it whole and proves the decode. The pull request that moved to 1.64.1 records its first passing run, with the seven SHA-256s,
 as this ADR's proof that ubuntu-26.04 renders the committed bytes; if the local host and CI ever disagree, CI's bytes are
 committed and the difference is recorded here. Every new set of baselines is inspected against this ADR's brand points,
-image by image, before it merges (for 1.64.1, by an adversarial visual-inspection agent whose gallery the pull request
+image by image, before it merges (for 1.64.1, by an adversarial visual-inspection agent, whose record the pull request
 links).
 
 **The worker image takes the lockfile's playwright-core.** Its build stage, which installs with
