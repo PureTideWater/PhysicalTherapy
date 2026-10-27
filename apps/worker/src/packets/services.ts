@@ -18,6 +18,7 @@ import {
   SUBMISSION_CHANNELS,
   type SubmissionChannel,
   type VerifierReport,
+  WORDS_VERSION,
   addDays,
   assemblePacket,
   draftNarrative,
@@ -433,7 +434,9 @@ export async function approvePacketVersion(scope: PracticeScope<ScopeClient>, in
  * sealed, their SHA-256 recorded on the version; CAS-12). Only a version the export job would print is
  * queued: the readiness the job asks again (exportReadiness(), ./readiness.ts; audit item #26) refuses
  * here first, with the first reason that holds in words (the database's own where it has them), so
- * nothing is queued that the job would refuse. Returns the job's ID, or null when it is already queued.
+ * nothing is queued that the job would refuse. The job carries this deploy's WORDS_VERSION, as the web's export
+ * action's does once its form's has matched (combined audit #38, finding M1). Returns the job's ID, or null when it
+ * is already queued.
  */
 export async function requestPacketExport(scope: PracticeScope<ScopeClient>, queue: JobSender, input: VersionAction): Promise<string | null> {
   const readiness = await exportReadiness(scope.client, { practiceId: input.practiceId, versionId: input.versionId, asOf: todayUtc() });
@@ -446,7 +449,7 @@ export async function requestPacketExport(scope: PracticeScope<ScopeClient>, que
   if (readiness.outcome === 'refused') {
     throw new PacketRuleError('23514', EXPORT_REQUEST_REFUSALS[readiness.reasons[0]]);
   }
-  return enqueue(queue, 'packet_export', { practice_id: input.practiceId, packet_version_id: input.versionId });
+  return enqueue(queue, 'packet_export', { practice_id: input.practiceId, packet_version_id: input.versionId, words_version: WORDS_VERSION });
 }
 
 /** The refusal of an export or an attestation whose deadline is not verified (the database's words). */

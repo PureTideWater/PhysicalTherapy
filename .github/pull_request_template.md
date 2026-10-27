@@ -1,8 +1,8 @@
 <!--
 The build fills in every section before it asks for the founder's approval (docs/adr/0063; the change-management
 policy, rule 1). Write "None" rather than leave a section out. No PHI, no real file and no document text here: name
-records by their IDs. GitHub offers this template only from main, which has none until launch; until then the build
-copies it into every pull request's description itself (CLAUDE.md).
+records by their IDs. GitHub offers this template from the default branch, which is the build branch until launch (the
+founder's F1); the build still fills it into every pull request's description itself (CLAUDE.md).
 -->
 
 ## What changes
@@ -39,9 +39,12 @@ The required checks report on this page by themselves: <!-- required-checks -->`
 ## Reviewer agents' findings
 
 <!-- The payment-engine, security and EDI reviewer agents run before anything that touches money, tenancy or parsing
-merges (PRD 17). Name the agents that ran, one row per finding, and how each was resolved: fixed (with the commit),
-not a defect (with why), or deferred (with where it is tracked). "Not run" with the reason when the change touches
-none of those. -->
+merges (PRD 17). The UX and brand reviewer (`.claude/agents/ux-brand-reviewer.md`) is one of the two adversarial
+reviews of anything that changes what a person sees, with before and after screenshots at 1280 and 390 px light and
+1280 px dark from `tools/lane-b-screen-tour` (on `claude/build-ops`), kept in a private gallery and named here by shot
+id (the co-founder, acting for the founder, 2026-10-25 ~21:10 UTC). Name the agents that ran, one row per finding, and
+how each was resolved: fixed (with the commit), not a defect (with why), or deferred (with where it is tracked). "Not
+run" with the reason when the change touches none of those. -->
 
 | Reviewer | Finding | Resolution |
 | --- | --- | --- |

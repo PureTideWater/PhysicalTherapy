@@ -1,0 +1,20 @@
+{
+  "case": "MOD-08",
+  "module": "MOD",
+  "title": "Swapped-row, cross-row and value-only faults",
+  "assertion": "Swapped rows and cross-row quotes rejected as not in the row; merged rows (their codes rejected or verified), a scope field dropped, a flipped flag, a wrong method, a wrong date, an amended figure on the original record or a struck rate taken fails the gate",
+  "synthetic": true,
+  "completesIn": 10,
+  "assertedBy": [
+    "packages/model-gateway/eval/gate.golden.test.ts",
+    "packages/model-gateway/src/functions/contract-terms.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Faults injected into the MOD-09 set’s reference answers.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

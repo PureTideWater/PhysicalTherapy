@@ -483,7 +483,9 @@ describe('support', () => {
     });
     expect(inWords.status).toBe('invalid');
     const mine = ok(await call(supportRequestPage, customer, { from: 'cases' }));
-    expect(mine).toMatchObject({ from: 'cases', supportEmail: 'help@synthetic.test' });
+    expect(mine).toMatchObject({ from: 'cases', supportEmail: 'help@synthetic.test', category: null });
+    // From the billing page's next step, the form opens on the Billing category (BIL-06).
+    expect(ok(await call(supportRequestPage, customer, { from: 'billing' }))).toMatchObject({ from: 'billing', category: 'billing' });
     expect(mine.tickets.map((ticket) => ticket.subject)).toEqual(['Export button']);
     // Another customer sees none of it.
     expect(ok(await call(supportRequestPage, await newCustomer('viewer'), {})).tickets).toEqual([]);

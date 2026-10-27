@@ -1,20 +1,27 @@
-# syntax=docker/dockerfile:1
 # The web image: Next.js standalone server. Build from the repository root, once per environment, with that
 # environment's StaticAssetsOrigin stack output (Next writes it into the build as assetPrefix; docs/adr/0055):
 #   docker build -f apps/web/Dockerfile --build-arg STATIC_ASSET_ORIGIN=https://<StaticDomainName> -t tp-web .
 # Without it, pages load their assets from the application's own host.
 
-FROM node:24-slim AS build
+# Node 24 on Debian 13 (trixie), by the index digest Dependabot's docker entry updates; both stages, both images.
+FROM node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS build
 ARG STATIC_ASSET_ORIGIN=""
 ENV NEXT_TELEMETRY_DISABLED=1 \
     STATIC_ASSET_ORIGIN=${STATIC_ASSET_ORIGIN}
-RUN npm install --global pnpm@10.28.0
 WORKDIR /repo
+# pnpm at the exact version package.json's packageManager names, so no version is written here (tools/check-toolchain
+# refuses one). install-pnpm.sh packs that version from the registry and installs the tarball only when its sha512
+# equals packageManager's +sha512 suffix, which check-toolchain holds to the registry's dist.integrity: the bytes are
+# the ones committed, not only the ones the registry's answer vouches for. The base image's corepack would need its
+# signing keys current, and Node 25 and later no longer bundle it.
+COPY package.json ./
+COPY tools/check-toolchain/install-pnpm.sh /tmp/install-pnpm.sh
+RUN sh /tmp/install-pnpm.sh package.json && rm /tmp/install-pnpm.sh
 COPY . .
 RUN pnpm install --frozen-lockfile --filter "@tp/web..."
 RUN pnpm --filter @tp/web build
 
-FROM node:24-slim AS runtime
+FROM node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS runtime
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \

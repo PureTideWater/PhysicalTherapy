@@ -21,7 +21,9 @@ import { totpCode, totpSecretFromBytes } from '../src/lib/auth/totp';
  * practice of its own; and three billing managers of the other group for the ERA export journeys, in
  * practices of their own; and two billing managers of the other group and a reimbursement reviewer for the journey of a
  * submission sent without sign-off, in a practice of its own; and a platform administrator and two people of the other
- * group for the pricing-location journey, in a group of its own the console creates; and, for the forms journey, a viewer
+ * group for the pricing-location journey, in a group of its own the console creates; and the practice administrator of
+ * SYNTHETIC SUSPENDED GROUP, a group the seed holds suspended by PaidWhole with no practice, for the billing journey of a
+ * suspended organization, so no other journey shares it and nothing reinstates it; and, for the forms journey, a viewer
  * who signs in with a wrong password and code, an invited viewer who chooses a password, a billing manager of the other
  * group and a platform administrator, each alone, because a refusal counts toward the ten-failure lock and the specs run
  * in parallel).
@@ -30,7 +32,8 @@ import { totpCode, totpSecretFromBytes } from '../src/lib/auth/totp';
  * Synthetic accounts on a development machine; never a real person.
  */
 
-export type SeedOrganization = 'group' | 'other_group' | 'firm' | 'internal';
+/** The seeded organizations: packages/db's synthetic tenancy's four, and the suspended group scripts/seed.ts adds. */
+export type SeedOrganization = 'group' | 'other_group' | 'firm' | 'internal' | 'suspended_group';
 
 export interface SyntheticPersona {
   readonly key: string;
@@ -118,6 +121,9 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   { key: 'location-admin', organization: 'internal', role: 'platform_admin' },
   { key: 'location-practice-admin', organization: 'other_group', role: 'viewer' },
   { key: 'location-manager', organization: 'other_group', role: 'billing_manager' },
+  // A suspended organization's billing page (BIL-06; the UX baseline review's UX-004): the practice administrator of the
+  // group the seed holds suspended by PaidWhole.
+  { key: 'suspended-admin', organization: 'suspended_group', role: 'practice_admin' },
   // The forms journey (docs/adr/0077): a viewer refused at sign-in, an invited viewer refused a new password (neither ever
   // saved, so each run starts from the seed), a billing manager of the other group refused on ROI and on a support ticket,
   // and a platform administrator refused an incident on the console's status page.
@@ -126,6 +132,9 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   { key: 'forms-manager', organization: 'other_group', role: 'billing_manager' },
   { key: 'forms-admin', organization: 'internal', role: 'platform_admin' },
 ];
+
+/** The group the seed holds suspended by PaidWhole (BIL-06): no practice, one administrator, never reinstated. */
+export const SYNTHETIC_SUSPENDED_GROUP = 'SYNTHETIC SUSPENDED GROUP';
 
 export const SYNTHETIC_PRACTICES = {
   north: 'SYNTHETIC PHYSICAL THERAPY NORTH',

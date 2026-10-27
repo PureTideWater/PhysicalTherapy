@@ -1,5 +1,4 @@
-import type { RoundingRule } from '@tp/money';
-import { type CitedMethod, type ContractCitation, type PacketContent, type PacketCitation, type PayerIdentification, interestExclusionText, payerAndPlanText, planName } from '@tp/packets';
+import { type ContractCitation, type PacketContent, type PacketCitation, type PayerIdentification, interestExclusionText, payerAndPlanText, planName } from '@tp/packets';
 
 /**
  * The words the payer's copy of a packet prints for its codes, one module for both files the practice sends (the
@@ -13,40 +12,25 @@ import { type CitedMethod, type ContractCitation, type PacketContent, type Packe
  * claim filing indicator prints its type in words from @tp/packets' one table of them (CLAIM_FILING_INDICATOR_TEXT,
  * "plan type Preferred Provider Organization (PPO)"), or nothing for ZZ (Mutually Defined), which names no type; an
  * indicator the table has no words for refuses the copy (payerAndPlanWords(); the founder's ruling of 2026-10-21, ADR
- * 0061, Verification fix (2026-10-21)).
+ * 0061, Verification fix (2026-10-21)). Each line's calculation in words, and the fee schedule worksheets, are
+ * @tp/packets' (explainPacket(); combined audit #38, docs/adr/0072), which refuses a code it has no words for with
+ * its own ExplainWordsError, as this module refuses one with PayerCopyWordsError.
  */
 
-/** The calculation's methods, steps and rounding rules in words. */
-export const METHOD_TEXT: Readonly<Record<CitedMethod, string>> = {
-  FIXED_SCHEDULE: 'Fixed schedule',
-  PERCENT_OF_MEDICARE: 'Percent of Medicare',
-  LESSER_OF: 'Lesser of',
-  PER_VISIT: 'Per visit',
-  MA_NONCONTRACTED: 'Medicare Advantage, non-contracted',
-};
-export const STEP_TEXT: Readonly<Record<string, string>> = {
-  unit: 'per unit',
-  visit: 'per visit',
-  schedule: 'schedule',
-  charge: 'charge',
-  base: 'base',
-  mppr: 'MPPR',
-  assistant_reduction: 'assistant reduction',
-  sequestration: 'sequestration',
-  contract_adjustment: 'contract adjustment',
-};
-export const ROUNDING_TEXT: Readonly<Record<RoundingRule, string>> = {
-  HALF_UP_CENT: 'half up to the cent',
-  HALF_EVEN_CENT: 'half even to the cent',
-  TRUNCATE: 'truncated to the cent',
-};
+/**
+ * The calculation's methods, steps and rounding rules in words: @tp/packets' one vocabulary (combined audit #38;
+ * docs/adr/0072), which words each line's calculation for the PDF, the review page and the line page, re-exported for
+ * the CSV's method column so the schedule and the letter say a method one way.
+ */
+export { METHOD_TEXT, ROUNDING_TEXT, STEP_TEXT } from '@tp/packets/explain';
 /** A release dispute-window record's program, as it reads before "dispute window". */
 export const PROGRAM_TEXT: Readonly<Record<string, string>> = { medicare: 'Medicare', commercial_default: 'commercial default' };
 
 /**
- * A code of a closed list the payer's copy has no words for: a method, step, rounding rule or program added to the
- * engine, the packet format or the rules schema without its words here. The copy is not printed rather than print a
- * code, or a code lower-cased into words no scan can tell from prose; the export job records it as a print failure.
+ * A code of a closed list the payer's copy has no words for: a method (the CSV's), a release record's program or a
+ * claim filing indicator added to the packet format, the rules schema or the parser without its words. The copy is
+ * not printed rather than print a code, or a code lower-cased into words no scan can tell from prose; the export job
+ * records it as a print failure.
  */
 export class PayerCopyWordsError extends TypeError {
   override readonly name = 'PayerCopyWordsError';
@@ -56,7 +40,7 @@ export class PayerCopyWordsError extends TypeError {
   }
 }
 
-/** A code of a closed list in its words (METHOD_TEXT, STEP_TEXT, ROUNDING_TEXT, PROGRAM_TEXT); one without them is refused. */
+/** A code of a closed list in its words (METHOD_TEXT, PROGRAM_TEXT); one without them is refused. */
 export function wordsOf(table: Readonly<Record<string, string>>, code: string, list: string): string {
   const words = Object.hasOwn(table, code) ? table[code] : undefined;
   if (words === undefined) {
@@ -85,8 +69,8 @@ export function payerAndPlanWords(payer: PayerIdentification): string {
  */
 export const exclusionWords = (code: string): string => interestExclusionText(code);
 
-/** A count and its noun, singular for one (the screen tour's C1, as the web's counted()). */
-export const counted = (count: number, one: string, many = `${one}s`): string => `${String(count)} ${count === 1 ? one : many}`;
+/** A count and its noun, singular for one (the screen tour's C1, as the web's counted()), its digits grouped by thousands ("3,650 days"). */
+export const counted = (count: number, one: string, many = `${one}s`): string => `${String(count).replace(/\B(?=(\d{3})+$)/g, ',')} ${count === 1 ? one : many}`;
 
 /**
  * Whether the rule releases supplied a Medicare fee schedule to this version (D14): a regulation's amount is Original

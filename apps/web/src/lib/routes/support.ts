@@ -63,6 +63,9 @@ export const CATEGORY_LABELS: Readonly<Record<SupportTicketCategory, string>> = 
   other: 'Something else',
 };
 
+/** The category a ticket opened from a screen starts on: from the billing page (its standing's next step), Billing. */
+const CATEGORY_FROM: Readonly<Partial<Record<string, SupportTicketCategory>>> = { billing: 'billing' };
+
 /** How far back resolved incidents stay on the status page. */
 const RESOLVED_DAYS = 14;
 
@@ -218,6 +221,7 @@ export const supportRequestPage = selfRoute({
     );
     return {
       from: params.from ?? 'home',
+      category: (params.from === undefined ? undefined : CATEGORY_FROM[params.from]) ?? null,
       sent: params.sent ?? null,
       supportEmail: services.supportEmail,
       responseTarget: RESPONSE_TARGET,

@@ -1,5 +1,5 @@
 {
-  "format": "tp-eval-contract/1",
+  "format": "tp-eval-contract/2",
   "synthetic": true,
   "id": "C13",
   "layout": "table",
@@ -9,9 +9,16 @@
   "contentType": "text/csv",
   "scan": null,
   "pages": 1,
+  "tier": "small",
+  "pageText": "faithful",
+  "unfaithfulBecause": null,
+  "pairOf": null,
+  "twinOf": null,
+  "conflicts": [],
   "records": [
     {
       "label": "CSV row: G0283 GO",
+      "role": "term",
       "fields": {
         "method": {
           "value": "PERCENT_OF_MEDICARE",
@@ -47,6 +54,7 @@
     },
     {
       "label": "CSV row: 97750 CQ",
+      "role": "term",
       "fields": {
         "method": {
           "value": "PERCENT_OF_MEDICARE",
@@ -82,6 +90,7 @@
     },
     {
       "label": "CSV row: 97035",
+      "role": "term",
       "fields": {
         "method": {
           "value": "PERCENT_OF_MEDICARE",
@@ -117,6 +126,7 @@
     },
     {
       "label": "CSV row: 97110",
+      "role": "term",
       "fields": {
         "method": {
           "value": "PERCENT_OF_MEDICARE",

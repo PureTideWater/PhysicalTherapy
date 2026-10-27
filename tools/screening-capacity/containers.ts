@@ -4,8 +4,10 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 
 import pg from 'pg';
+import { parse as parseYaml } from 'yaml';
 
 import { SCREENING_MAIN_HEAP_FLAG } from '../../apps/worker/src/screening/threads';
+import { repositoryRoot } from '../content-files';
 import { type ContainerLimit, MIB, NETWORK_DELAY_MS, type PostgresLimit } from './limits';
 import { type CgroupVersion, ioMax, median, psqlTimings } from './measure';
 import type { AppliedContainer, AppliedLimits } from './report';
@@ -74,7 +76,8 @@ async function run(command: string, args: readonly string[], options: { readonly
 
 /** A screening consumer task's service: screening-1 to screening-N, one per declared task. */
 export type ScreeningServiceName = `screening-${number}`;
-export type ServiceName = 'web' | 'platform' | ScreeningServiceName;
+/** The practice jobs' worker ('worker') runs only in the weekly real-size test (tools/release-capacity), from the worker image. */
+export type ServiceName = 'web' | 'platform' | 'worker' | ScreeningServiceName;
 
 /** The consumer's task services, one per declared task (production's desiredCount). */
 export function screeningServices(tasks: number): ScreeningServiceName[] {
@@ -88,11 +91,14 @@ export function isScreeningService(name: string): name is ScreeningServiceName {
 /**
  * What each service runs, as production's task definitions run it: the images' own commands (infra/lib/constructs/
  * compute.ts, COMMANDS), and for the screening consumer the worker's command with the main thread's heap limit
- * (SCREENING_MAIN_HEAP_FLAG, #31's explicit heap limit; its pricing threads carry their own).
+ * (SCREENING_MAIN_HEAP_FLAG, #31's explicit heap limit; its pricing threads carry their own). The practice worker's is
+ * production's as it is today, with no heap flag: the weekly real-size test adds infra/lib/heap.ts's to its own spec
+ * (tools/release-capacity/run.ts), so no file this module's closure reaches imports it (tools/screening-capacity/watched.ts).
  */
 export const SERVICE_COMMANDS = {
   web: ['node', 'apps/web/server.js'],
   platform: ['node', '--enable-source-maps', 'dist/main.js'],
+  worker: ['node', '--enable-source-maps', 'dist/main.js'],
   screening: ['node', '--enable-source-maps', SCREENING_MAIN_HEAP_FLAG, 'dist/main.js'],
 } as const;
 
@@ -194,8 +200,38 @@ export function dockerRunArgs(
   ];
 }
 
+/** The compose file whose `postgres` service names the one PostgreSQL image of dev, CI and this harness (CI-13). */
+export const COMPOSE_FILE = 'docker-compose.yml';
+
+/**
+ * The `postgres` service's image in a compose file's text: `postgres:<tag>@sha256:<64 hex>`, so the harness measures the
+ * exact image CI's database jobs run, and a Dependabot bump of the compose file moves both (and, the file being a
+ * watched path, measures the new one). Throws, naming the file, when the service is missing or its image is not pinned
+ * by digest: a tag alone could be moved under a measurement.
+ */
+export function parseComposePostgresImage(text: string, file = COMPOSE_FILE): string {
+  const compose = parseYaml(text) as { services?: { postgres?: { image?: unknown } } } | null;
+  const image = compose?.services?.postgres?.image;
+  if (typeof image !== 'string') {
+    throw new Error(`${file}: services.postgres.image is missing`);
+  }
+  if (!/^postgres:\w[\w.-]*@sha256:[0-9a-f]{64}$/.test(image)) {
+    throw new Error(`${file}: services.postgres.image ${JSON.stringify(image)} is not postgres:<tag>@sha256:<digest>`);
+  }
+  return image;
+}
+
+/** The PostgreSQL image docker-compose.yml names, read from the repository (or another root). */
+export function composePostgresImage(root: string = repositoryRoot): string {
+  return parseComposePostgresImage(readFileSync(path.join(root, COMPOSE_FILE), 'utf8'));
+}
+
 /** Docker's arguments for Postgres's container: its CPUs, memory with no swap, and gp3's baseline on the device. */
-export function postgresRunArgs(limit: PostgresLimit, storage: { readonly iops: number; readonly bytesPerSecond: number }, options: { readonly network: string; readonly device: string; readonly port: number }): string[] {
+export function postgresRunArgs(
+  limit: PostgresLimit,
+  storage: { readonly iops: number; readonly bytesPerSecond: number },
+  options: { readonly network: string; readonly device: string; readonly port: number; readonly image: string },
+): string[] {
   const memory = `${String(limit.memoryMiB)}m`;
   return [
     'run',
@@ -220,7 +256,7 @@ export function postgresRunArgs(limit: PostgresLimit, storage: { readonly iops: 
     `127.0.0.1:${String(options.port)}:5432`,
     '-e',
     'POSTGRES_PASSWORD=test',
-    'postgres:18',
+    options.image,
     '-c',
     `shared_buffers=${String(Math.floor(limit.memoryMiB / 4))}MB`,
     '-c',
@@ -301,6 +337,8 @@ export class DockerRuntime implements Runtime {
     dataHost: string,
     private readonly logDir: string,
     private readonly postgresPort = 55_432,
+    /** docker-compose.yml's PostgreSQL image, by digest: the server and the client containers alike. */
+    private readonly postgresImage: string = composePostgresImage(),
   ) {
     this.dataDir = { host: dataHost, service: '/data' };
   }
@@ -326,7 +364,7 @@ export class DockerRuntime implements Runtime {
     this.delayMs = delayMs;
     this.labels.set('postgres', 'run');
     await docker('network', 'create', this.network).catch(() => '');
-    await docker(...postgresRunArgs(limit, storage, { network: this.network, device: await this.dataDevice(), port: this.postgresPort }));
+    await docker(...postgresRunArgs(limit, storage, { network: this.network, device: await this.dataDevice(), port: this.postgresPort, image: this.postgresImage }));
     await this.waitForPostgres();
     await this.delay();
     return { harnessUrl: this.harnessUrl, serviceUrl: 'postgres://postgres:test@db:5432/postgres' };
@@ -341,7 +379,7 @@ export class DockerRuntime implements Runtime {
     await waitFor(
       'Postgres on the services’ network',
       async () => {
-        await docker('run', '--rm', '--network', this.network, 'postgres:18', 'pg_isready', '-q', '-h', 'db', '-p', '5432', '-U', 'postgres', '-t', '5');
+        await docker('run', '--rm', '--network', this.network, this.postgresImage, 'pg_isready', '-q', '-h', 'db', '-p', '5432', '-U', 'postgres', '-t', '5');
         return true;
       },
       180_000,
@@ -506,7 +544,7 @@ export class DockerRuntime implements Runtime {
     };
     const ioText = await docker('exec', 'tp-capacity-postgres', 'cat', '/sys/fs/cgroup/io.max').catch(() => '');
     const line = ioMax(ioText)[0];
-    const { stdout: timing } = await exec('sh', ['-c', `printf '%s\\n' "$1" | docker run --rm -i --network ${this.network} --cpuset-cpus=${this.clientCpuset} postgres:18 psql -X -q postgres://postgres:test@db:5432/postgres`, 'sh', ROUND_TRIP_SCRIPT]).catch(() => ({ stdout: '' }));
+    const { stdout: timing } = await exec('sh', ['-c', `printf '%s\\n' "$1" | docker run --rm -i --network ${this.network} --cpuset-cpus=${this.clientCpuset} "$2" psql -X -q postgres://postgres:test@db:5432/postgres`, 'sh', ROUND_TRIP_SCRIPT, this.postgresImage]).catch(() => ({ stdout: '' }));
     return {
       containers: [...(await Promise.all([...this.services].map((name) => inspect(name)))), await inspect('postgres')],
       ioMax: line === undefined ? null : { riops: line.riops, wiops: line.wiops, rbps: line.rbps, wbps: line.wbps },

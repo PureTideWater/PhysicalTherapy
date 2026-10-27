@@ -171,7 +171,7 @@ export const ncciMueParser: RuleFileParser = {
   parser: 'cms_ncci_mue_practitioner',
   title: 'CMS NCCI medically unlikely edits, practitioner services',
   reviewQuestions: [
-    'Is this the practitioner services MUE table for the quarter the effective window names?',
+    "Is this the practitioner services MUE table of the quarter the file states, imported for exactly that quarter, with every earlier quarter's MUE draft kept?",
     'Spot-check the MUE values and adjudication indicators of the therapy codes against the stored file.',
   ],
   parse: parseMue,

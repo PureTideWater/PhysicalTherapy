@@ -77,6 +77,9 @@ describe('the watched list', () => {
       expect(line, line).toMatch(/^[^?[\]]*$/);
     }
     expect(WATCHED_FIXED).toContain('pnpm-lock.yaml');
+    // The harness's Postgres image comes from the compose file (containers.ts), so a digest bump measures (CI-13).
+    expect(WATCHED_FIXED).toContain('docker-compose.yml');
+    expect(committed).toContain('docker-compose.yml');
   });
 
   it('is inside what a push to the build branch measures', () => {

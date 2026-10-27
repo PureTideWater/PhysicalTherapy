@@ -166,7 +166,7 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
           <AlertTitle>New runs have stopped</AlertTitle>
           <AlertDescription>
             {suspension[0]?.toUpperCase()}
-            {suspension.slice(1)}. Everything here stays readable; uploads, pricing runs, monitoring, packet exports and reports start again once it is resolved. The organization&apos;s administrator sees why in Settings, Billing.
+            {suspension.slice(1)}. Everything here stays readable; uploads, pricing runs, monitoring, packet exports and reports start again once it is resolved. The organization&apos;s administrator sees the standing and what to do next in Settings, Billing.
           </AlertDescription>
         </Alert>
       )}
@@ -210,7 +210,7 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
                 <span className={TILE_VALUE}>
                   <Money value={dashboard.headline.payerApprovedCents} />
                 </span>
-                <span className={TILE_NOTE}>what payers accepted, from the recovery ledger; not cash until it posts</span>
+                <span className={TILE_NOTE}>what payers have agreed to pay on the lines they corrected, from the recovery ledger; not cash until it posts</span>
               </Link>
               <Link href={`/p/${practice.id}/reconciliation`} className={cn(TILE, 'border-border-strong')} data-figure="recovered-total">
                 <span className={TILE_LABEL}>{recoveredLabel(dashboard.headline.proofLevel)}</span>

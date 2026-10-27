@@ -1,10 +1,11 @@
 import { DEFAULT_PROOF_LEVEL, type ReportReconciliation, reportReconciliation } from '@tp/ledger';
-import { formatUnroundedUsd, formatUsd, parseCents } from '@tp/money';
-import { type CorrespondenceContact, type ExportedPacket, type PacketContent, type PacketContentV2, correspondenceText, interestStated, lineInterestStated } from '@tp/packets';
+import { formatUsd, parseCents } from '@tp/money';
+import { type CorrespondenceContact, type ExportedPacket, type PacketContent, type PacketContentV2, type PacketWords, correspondenceText, interestStated, lineInterestStated } from '@tp/packets';
+import { type Segment, type Sentence, type Worksheet, segmentText } from '@tp/packets/explain';
 
 import { type FigureColumns, brandedDocument, figureColumns } from '../report/brand';
 import { escapeHtml, escapeWithFigures } from '../report/escape';
-import { METHOD_TEXT, PROGRAM_TEXT, ROUNDING_TEXT, STEP_TEXT, counted, exclusionWords, payerAndPlanWords, releaseText, wordsOf } from './words';
+import { PROGRAM_TEXT, counted, exclusionWords, payerAndPlanWords, releaseText, wordsOf } from './words';
 
 /**
  * The payer's copy of a packet (audit item #37 part 1; the founder's rulings of 2026-10-20; docs/adr/0061): one
@@ -22,8 +23,13 @@ import { METHOD_TEXT, PROGRAM_TEXT, ROUNDING_TEXT, STEP_TEXT, counted, exclusion
  * - the line schedule (claim control number, patient and member ID; the patient control number is not printed,
  *   Q2 (a));
  * - the dispute window's dates only (Q3 (a)), with the contract's clause or the release's record behind it, and each
- *   line's window and how its expected amount is computed (the trace's method, steps, the one rounding and the
- *   patient share, in words);
+ *   line's window and how its expected amount is computed (the method, each step, the one rounding and the patient
+ *   share, reported and never subtracted, in the words: the table has no column of its own for it, which only
+ *   repeated them);
+ * - "how its expected amount is computed" (D2) is the words @tp/packets explainPacket(..., 'payer') writes from the
+ *   stored traces the approval names, the words the review page shows the reviewer, with the fee schedule worksheets a
+ *   payer checks a percent-of-Medicare or Medicare Advantage amount against CMS's own fee schedule with, and no record
+ *   ID or SHA-256 (combined audit #38; docs/adr/0072);
  * - interest only where code computed it ("Interest stated in this request: $X"; Q4 (a));
  * - the evidence each citation marker names, by its label;
  * - the requested action, and the approval line with the packet's reference and the correspondence contact (D4 to D6).
@@ -51,14 +57,65 @@ export interface PayerCopy {
 
 const usd = (value: string) => formatUsd(parseCents(value));
 
-/** Cents as decimal text (an unrounded amount keeps its fraction of a cent) in dollars, grouped and signed as usd() is. */
-const exactUsd = (value: string): string => formatUnroundedUsd(value);
+/** A table cell: text, escaped, or the HTML of the calculation's words, already escaped. */
+type Cell = string | { readonly html: string };
 
 /** A table; `figures` names its columns (1-based) of codes and of amounts or counts, set in the mono face. */
-function table(caption: string, headers: readonly string[], rows: readonly (readonly string[])[], figures: FigureColumns = {}): string {
-  const head = headers.map((header) => `<th scope="col">${escapeHtml(header)}</th>`).join('');
-  const body = rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`).join('');
-  return `<table${figureColumns(figures)}><caption>${escapeHtml(caption)}</caption><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+function table(caption: string | null, headers: readonly Cell[], rows: readonly (readonly Cell[])[], figures: FigureColumns = {}): string {
+  const html = (cell: Cell) => (typeof cell === 'string' ? escapeHtml(cell) : cell.html);
+  const head = headers.map((header) => `<th scope="col">${html(header)}</th>`).join('');
+  const body = rows.map((row) => `<tr>${row.map((cell) => `<td>${html(cell)}</td>`).join('')}</tr>`).join('');
+  return `<table${figureColumns(figures)}>${caption === null ? '' : `<caption>${escapeHtml(caption)}</caption>`}<thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+/**
+ * One segment of the calculation's words as HTML: a figure (a value the trace holds) or a code in the mono face with
+ * tabular numerals, in the report frame's figure span, as escapeWithFigures() sets an amount in running text; a label
+ * (a row or worksheet number) and the words as text.
+ */
+function segmentHtml(segment: Segment): string {
+  const text = escapeHtml(segmentText(segment));
+  return 'figure' in segment || 'code' in segment ? `<span class="figure-amount">${text}</span>` : text;
+}
+
+const sentenceHtml = (sentence: Sentence): string => sentence.segments.map(segmentHtml).join('');
+
+/**
+ * How a row's expected amount is computed, in the payer's words: the summary, then each step's sentences, each its own
+ * paragraph. The row's fee schedule step points to its worksheet.
+ */
+function computedHtml(row: PacketWords['rows'][number]): string {
+  const paragraphs = [[row.words.summary], ...row.words.steps.map((step) => step.sentences)];
+  return paragraphs.map((sentences) => `<p>${sentences.map(sentenceHtml).join(' ')}</p>`).join('');
+}
+
+/**
+ * The fee schedule worksheets (combined audit #38; docs/adr/0072): for each distinct set of fee schedule records the
+ * rows read, the year, locality, setting, conversion factor and percentage, each part's relative value units,
+ * geographic index and amount per unit at the percentage, how they make the amount per unit, and how to check them
+ * against CMS's look-up. Every figure is one a row's trace holds; none is an amount at 100% for a contract that is not
+ * at 100%, and none is a record ID or SHA-256 (D2). None when no row read a fee schedule.
+ */
+function worksheetsSection(worksheets: readonly Worksheet[]): string {
+  if (worksheets.length === 0) {
+    return '';
+  }
+  const sheets = worksheets.map((sheet) => {
+    const parts = sheet.parts.map((part) => [{ html: sentenceHtml(part.name) }, { html: segmentHtml(part.rvu) }, { html: segmentHtml(part.gpci) }, { html: segmentHtml(part.unit) }]);
+    const total = [{ html: sentenceHtml(sheet.total.name) }, '', '', { html: segmentHtml(sheet.total.unit) }];
+    const { headings } = sheet;
+    return [
+      `<section class="worksheet">`,
+      `<h3>${sentenceHtml(sheet.title)}</h3>`,
+      sheet.rows.map((row) => `<p>${sentenceHtml(row)}</p>`).join(''),
+      table(null, [headings.part, headings.rvu, headings.gpci, headings.unit].map((heading) => ({ html: sentenceHtml(heading) })), [...parts, total], { amount: [2, 3, 4] }),
+      `<p>${sheet.formula.map(sentenceHtml).join(' ')}</p>`,
+      `<p>${sentenceHtml(sheet.reductions)}</p>`,
+      `<p>${sentenceHtml(sheet.check)}</p>`,
+      `</section>`,
+    ].join('');
+  });
+  return `<h2>Fee schedule worksheets</h2>${sheets.join('')}`;
 }
 
 /**
@@ -69,7 +126,7 @@ function table(caption: string, headers: readonly string[], rows: readonly (read
  * that window alone: the lines' first-level windows and their clauses are not this level's deadline, and are neither
  * printed nor listed per line (nor in the CSV).
  */
-function disputeWindowSection(content: PacketContentV2): string {
+function disputeWindowSection(content: PacketContentV2, words: PacketWords): string {
   const { deadline } = content;
   if (deadline.ends_on === null) {
     throw new TypeError('the payer’s copy states the dispute window’s last day; a version without one is not printed');
@@ -86,20 +143,24 @@ function disputeWindowSection(content: PacketContentV2): string {
     const program = source.program === null ? '' : `${wordsOf(PROGRAM_TEXT, source.program, 'dispute window program')} `;
     return `<li>The ${escapeHtml(program)}dispute window in effect for the service dates (release ${String(source.release_no)}).</li>`;
   });
-  const rows = content.lines.map((line) => {
-    const { calculation } = line;
-    const steps = calculation.steps.map((step) => `${wordsOf(STEP_TEXT, step.step, 'calculation step')} ${exactUsd(step.amount_cents)}`).join('; ');
-    const rounding = calculation.rounding === null ? '' : `${wordsOf(ROUNDING_TEXT, calculation.rounding.rule, 'rounding rule')}: ${exactUsd(calculation.rounding.unrounded_cents)} to ${usd(calculation.rounding.rounded_cents)}`;
-    const computed = [wordsOf(METHOD_TEXT, calculation.method, 'calculation method'), steps, rounding, calculation.patient_share_cents === null ? '' : usd(calculation.patient_share_cents)];
-    return nextLevel ? [String(line.row), ...computed] : [String(line.row), line.deadline.ends_on ?? '', ...computed];
+  // The words are this version's, row for row, or nothing is printed.
+  if (words.rows.length !== content.lines.length || words.rows.some((row, index) => row.row !== content.lines[index]?.row)) {
+    throw new TypeError('the payer’s copy words each row of its version; words of other rows are not printed');
+  }
+  // The patient share is in each row's words (reported beside the expected amount, never subtracted from it), as on the
+  // review page, so it has no column of its own.
+  const rows = content.lines.map((line, index) => {
+    const computed: Cell = { html: computedHtml(words.rows[index] as PacketWords['rows'][number]) };
+    return nextLevel ? [String(line.row), computed] : [String(line.row), line.deadline.ends_on ?? '', computed];
   });
   return [
     `<h2>Dispute window</h2>`,
     `<p><strong>${escapeHtml(window)}</strong></p>`,
     sources.length === 0 ? '' : `<ul>${sources.join('')}</ul>`,
     nextLevel
-      ? table('How each line’s expected amount is computed', ['Row', 'Method', 'Steps', 'Rounding', 'Patient share'], rows, { code: [1, 2], amount: [3, 4, 5] })
-      : table('Each line’s dispute window and how its expected amount is computed', ['Row', 'Window ends', 'Method', 'Steps', 'Rounding', 'Patient share'], rows, { code: [1, 3], date: [2], amount: [4, 5, 6] }),
+      ? table('How each line’s expected amount is computed', ['Row', 'How the expected amount is computed'], rows, { code: [1] })
+      : table('Each line’s dispute window and how its expected amount is computed', ['Row', 'Window ends', 'How the expected amount is computed'], rows, { code: [1], date: [2] }),
+    worksheetsSection(words.worksheets),
   ].join('');
 }
 
@@ -161,14 +222,26 @@ export function packetReconciliation(reference: string): ReportReconciliation {
   return reportReconciliation({ report: { kind: 'packet_version', id: reference }, proofLevel: DEFAULT_PROOF_LEVEL, statedRecoveredCents: null, recoveredEntryIds: [], ledger: new Map() });
 }
 
-// The template's own pieces, in tokens (the frame's stylesheet sets the type, tables and colors).
+// The template's own pieces, in tokens (the frame's stylesheet sets the type, tables and colors). At a page's foot a
+// heading, a table's caption or its header row never stands alone: each keeps with what follows it, a row of a table
+// is never split across two pages, and its header row prints again at the top of each page the table runs onto. The
+// frame's own table (.pages, which repeats the running header and footer) is left as it is.
 const STYLE = `
   h2 { border-bottom: 1px solid var(--pw-line); padding-bottom: 3pt; }
+  h2, h3, caption { break-after: avoid; page-break-after: avoid; }
+  table:not(.pages) > thead { display: table-header-group; break-after: avoid; page-break-after: avoid; }
+  table:not(.pages) > tbody > tr:first-child { break-before: avoid; page-break-before: avoid; }
+  table:not(.pages) > tbody > tr { break-inside: avoid; page-break-inside: avoid; }
   .meta { color: var(--pw-slate); font-size: 9pt; }
   blockquote { margin: 4pt 0 4pt 12pt; padding-left: 8pt; border-left: 2px solid var(--pw-border-strong); font-style: italic; }
   table { margin: 4pt 0 8pt; font-size: 8pt; }
   th, td { padding: 4pt 3pt; }
   .narrative p { margin: 0 0 6pt; }
+  td p { margin: 0 0 3pt; }
+  td p:last-child { margin-bottom: 0; }
+  .worksheet { break-inside: avoid; }
+  .worksheet h3 { margin: 8pt 0 3pt; }
+  .worksheet p { margin: 0 0 3pt; }
 `;
 
 /** The narrative's paragraphs as the payer's copy prints them: split on blank lines, trimmed, each its own <p>. */
@@ -179,7 +252,20 @@ export function narrativeParagraphs(narrative: string): string[] {
     .filter((paragraph) => paragraph !== '');
 }
 
-export function packetHtml(exported: ExportedPacket, payerCopy: PayerCopy, reconciliation: ReportReconciliation = packetReconciliation(payerCopy.reference)): string {
+/** A tp-packet/2 version's words, which its copy prints; none is refused rather than printed without them. */
+function required(words: PacketWords | null): PacketWords {
+  if (words === null) {
+    throw new TypeError('the payer’s copy of a tp-packet/2 version prints its calculation in words; a version without them is not printed');
+  }
+  return words;
+}
+
+/**
+ * The payer's copy of an export. `words` are the version's calculation in the payer's words (explainPacket(content,
+ * traces, 'payer'), which checks every trace against the approved content): required for a tp-packet/2 version, whose
+ * calculations the copy prints; a tp-packet/1 version prints none, so takes null.
+ */
+export function packetHtml(exported: ExportedPacket, payerCopy: PayerCopy, words: PacketWords | null, reconciliation: ReportReconciliation = packetReconciliation(payerCopy.reference)): string {
   const { content, lines, narrative } = exported;
   const { citation, practice, payer, pattern } = content;
   // The payer and plan in words, never in their remittance-key form ("2U:SYNPAYERQ", "CE:SYNPLAN-FIX-ONE", "CLP06:12"),
@@ -253,7 +339,7 @@ ${cited}
 <div class="narrative">${paragraphs}</div>
 <h2>Line schedule</h2>
 ${schedule}
-${content.format === 'tp-packet/2' ? disputeWindowSection(content) : ''}
+${content.format === 'tp-packet/2' ? disputeWindowSection(content, required(words)) : ''}
 ${interestSection(content)}
 <h2>Evidence</h2>
 <ul>${evidence.join('')}</ul>

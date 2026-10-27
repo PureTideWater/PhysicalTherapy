@@ -1,0 +1,17 @@
+{
+  "case": "RCC-01",
+  "module": "RCC",
+  "title": "A quarterly file imported",
+  "assertion": "PPRRVU, GPCI, ZIP5, ZIP9 and MUE import only with a window inside the CMS quarter the file states, read from its title lines, its name or its download address; a whole quarter and a correction's two parts of one are accepted; no window, a window leaving the quarter, another year, a start other than a stated effective day, no stated quarter or two stated quarters are refused before anything is written; an undated file's open window and an MPPR window leaving its year are refused; a ZIP5 line of another quarter is refused; a draft of the same name holding another window is never replaced",
+  "synthetic": true,
+  "completesIn": 0,
+  "assertedBy": ["packages/rules/src/import.test.ts","packages/rules/src/parsers/parsers.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "The files are written to a temporary root by the test; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

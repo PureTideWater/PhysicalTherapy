@@ -1,5 +1,5 @@
 {
-  "format": "tp-eval-contract/1",
+  "format": "tp-eval-contract/2",
   "synthetic": true,
   "id": "C36",
   "layout": "scanned",
@@ -9,9 +9,16 @@
   "contentType": "application/pdf",
   "scan": "textract.json",
   "pages": 1,
+  "tier": "small",
+  "pageText": "faithful",
+  "unfaithfulBecause": null,
+  "pairOf": null,
+  "twinOf": null,
+  "conflicts": [],
   "records": [
     {
       "label": "Exhibit: 97763",
+      "role": "term",
       "fields": {
         "method": {
           "value": "FIXED_SCHEDULE",
@@ -31,6 +38,7 @@
     },
     {
       "label": "Exhibit: 97110 KX",
+      "role": "term",
       "fields": {
         "method": {
           "value": "FIXED_SCHEDULE",
@@ -51,6 +59,7 @@
     },
     {
       "label": "Exhibit: 97750",
+      "role": "term",
       "fields": {
         "method": {
           "value": "FIXED_SCHEDULE",
@@ -70,6 +79,7 @@
     },
     {
       "label": "Exhibit: 97163 GO GP",
+      "role": "term",
       "fields": {
         "method": {
           "value": "FIXED_SCHEDULE",
@@ -90,6 +100,7 @@
     },
     {
       "label": "Exhibit: 97140 POS 19",
+      "role": "term",
       "fields": {
         "method": {
           "value": "FIXED_SCHEDULE",

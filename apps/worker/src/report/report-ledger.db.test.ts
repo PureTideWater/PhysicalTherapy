@@ -139,3 +139,32 @@ describe('an audit report generated after a recovery (N4)', () => {
     expect(caseRows.reduce((sum, cells) => sum + Number.parseInt(cells[3] ?? '', 10), 0)).toBe(content.headline.actionable_lines);
   }, 300_000);
 });
+
+describe('an audit report of a case whose correction the patient’s share took whole (LED-15; docs/adr/0067)', () => {
+  it('says after the case’s stored state that the payer corrected and the balance is the patient’s, and counts nothing for it', async () => {
+    const practice = await w.practice(`report patient balance ${randomUUID().slice(0, 8)}`, ledSettings('deposited'));
+    await w.load(practice, 'LED-15/original.835');
+    const contract = await w.triage.fixedContract(practice, SCHEDULE);
+    const march = await w.triage.pricedRun(practice, { plans: [{ key: LED_PLAN, versionId: contract.versionId }], from: '2026-03-01', to: '2026-03-31' });
+    await w.triage.triage(practice, march);
+    const [line] = await w.rows<{ case_id: string; service_line_id: string }>(practice, 'SELECT case_id, service_line_id FROM case_line');
+    const caseId = line?.case_id ?? '';
+    await w.submit(practice, caseId, '2026-05-04');
+    await w.load(practice, 'LED-15/adjusted.835');
+    await w.reconcile(practice);
+    // The correction wrote no entry, and the line is still actionable (Q1: the stored close is Lane A's).
+    expect(await w.entries(practice)).toEqual([]);
+    expect(await w.lineStage(practice, line?.service_line_id ?? '')).toBe('actionable');
+    const stored = await w.caseState(practice, caseId);
+    expect(stored).toBe('submitted');
+
+    const { content } = await generated(practice, march);
+    // The state stays as stored; the words come beside it, in a field of their own.
+    expect(content.cases).toEqual([expect.objectContaining({ case_id: caseId, state: stored, patient_balance: true, payer_approved_cents: '0', recovered_cents: '0' })]);
+    expect(content.headline).toMatchObject({ payer_approved_cents: '0', recovered_cents: '0' });
+    const html = auditHtml(content);
+    expect(html).toContain(`<td>${stored}; payer corrected, balance is the patient’s</td>`);
+    // Billable to the patient is in no figure of the report.
+    expect(JSON.stringify(content)).not.toMatch(/billable/i);
+  }, 300_000);
+});

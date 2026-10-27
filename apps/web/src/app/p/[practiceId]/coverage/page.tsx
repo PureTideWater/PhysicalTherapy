@@ -1,3 +1,4 @@
+import { quarterNameOf } from '@tp/rules';
 import { Alert, AlertDescription, AlertTitle, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Label } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -7,12 +8,14 @@ import { QuestionList, TotalsText } from '../../../../components/contracts/displ
 import { Figure } from '../../../../components/coverage/share';
 import { utc } from '../../../../components/format';
 import { ChecklistCard, HandEntryNotice, ModelNoticeAlert } from '../../../../components/models/display';
+import { MonthsWaitingOnContent } from '../../../../components/pricing/content';
 import { MonthsWaitingOnLocation } from '../../../../components/pricing/location';
 import { Money, Pager } from '../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { FormatUnconfirmedBadge } from '../../../../components/uploads/format-flag';
 import { type UnconfirmedFormatSource, unconfirmedFormatExplanation } from '../../../../lib/contracts/format-sources';
 import { REMEDY_SCREEN_NAMES, remedyPath } from '../../../../lib/contracts/remedies';
+import type { FeeSchedulePeriod } from '../../../../lib/coverage/in-effect';
 import { waitingHeadline } from '../../../../lib/pricing/location';
 import { shareOf } from '../../../../lib/pricing/view';
 import { loadPage } from '../../../../lib/http/next';
@@ -24,6 +27,11 @@ import { FormKeys } from '../../../../components/form-keys';
 export const metadata: Metadata = { title: 'Coverage' };
 
 type Props = { readonly params: Promise<{ practiceId: string }>; readonly searchParams: Promise<Record<string, string | string[] | undefined>> };
+
+/** A fee-schedule period in a person's words: a quarter as "Q4 2026 (Oct–Dec)" (UX-167), a year as "2026". */
+function periodWords(period: FeeSchedulePeriod): string {
+  return period.kind === 'quarter' ? quarterNameOf(period.label) : period.label;
+}
 
 function count(value: number, one: string, many = `${one}s`): string {
   return `${String(value)} ${value === 1 ? one : many}`;
@@ -86,16 +94,42 @@ function UnconfirmedFormats({ practiceId, sources }: { readonly practiceId: stri
  * a fixed template). Shares and counts are each line's result in its pricing in effect, across every
  * run in effect (lib/coverage/in-effect.ts, as the dashboard and the digest read them), with the run
  * that took effect last named beside them; until a run takes effect, they are zero. Lines read from an
- * ERA export of an unconfirmed format are flagged, per format, with its name and why (CO-03).
+ * ERA export of an unconfirmed format are flagged, per format, with its name and why (CO-03). The months waiting on
+ * Medicare content PaidWhole has not loaded have their own card, and each fee-schedule period not loaded its sentence
+ * below the reasons, whose remedies stay as they are (audit #7 and #59; docs/adr/0071).
  */
 export default async function CoveragePage(props: Props) {
   const page = await loadPage(coveragePage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="coverage" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, lines, priced, share, run, pricingRuns, reasons, waiting, waitingPlans, waitingOnLocation, readiness, unconfirmedFormats, obtain, payers, contracts, canGenerateReport, checklist, canSuggest, modelNotice } =
-    page.data;
+  const {
+    practiceId,
+    lines,
+    priced,
+    share,
+    run,
+    pricingRuns,
+    reasons,
+    waiting,
+    waitingPlans,
+    waitingOnLocation,
+    waitingOnContent,
+    contentHeadline,
+    feeScheduleNotLoaded,
+    readiness,
+    unconfirmedFormats,
+    obtain,
+    payers,
+    contracts,
+    canGenerateReport,
+    checklist,
+    canSuggest,
+    modelNotice,
+  } = page.data;
   const locationHeadline = waitingHeadline(waitingOnLocation);
+  // The NO_PFS_VALUE lines that wait on a fee schedule PaidWhole has not loaded, whose remedy is not the practice's (UX-3).
+  const feeScheduleWaiting = feeScheduleNotLoaded.reduce((sum, gap) => sum + gap.lines, 0);
   // The shares are of every line a run in effect priced; before one takes effect, of every line the practice holds.
   const inEffect = share.runs > 0;
   const of = inEffect ? share.of : { lines: lines.lines, chargeCents: lines.chargeCents };
@@ -179,6 +213,22 @@ export default async function CoveragePage(props: Props) {
           </CardContent>
         </Card>
       )}
+      {waitingOnContent.length === 0 ? null : (
+        <Card role="region" aria-label="Months waiting on Medicare content">
+          <CardHeader>
+            <CardTitle>
+              Months waiting on Medicare content: <Money value={contentHeadline.chargeCents} /> billed
+            </CardTitle>
+            <CardDescription>
+              <span className="font-mono tabular-nums">{contentHeadline.lines}</span> {contentHeadline.lines === 1 ? 'line' : 'lines'} in months whose terms apply Medicare’s multiple-procedure reduction or
+              unit limits on dates PaidWhole has not loaded that content for yet. They are priced by themselves once it is loaded; nothing is priced without it.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="text-sm">
+            <MonthsWaitingOnContent months={waitingOnContent} label="Months and the Medicare content each waits on" />
+          </CardContent>
+        </Card>
+      )}
       <Card role="region" aria-label="Dollars waiting on mappings">
         <CardHeader>
           <CardTitle>
@@ -233,6 +283,16 @@ export default async function CoveragePage(props: Props) {
         <p className="text-sm text-muted-foreground">
           {inEffect ? 'Lines the runs in effect priced, each by the reason its pricing in effect left it unpriced.' : 'Counts appear once a pricing run completes.'}
         </p>
+        {feeScheduleNotLoaded.map((gap) => (
+          <p key={gap.period.label} className="rounded-md border p-3 text-sm" data-fee-schedule-not-loaded={gap.period.label}>
+            PaidWhole has not loaded the {periodWords(gap.period)} Medicare fee schedule yet. <span className="font-mono tabular-nums">{gap.lines}</span>{' '}
+            {gap.lines === 1 ? 'line' : 'lines'} (<Money value={gap.chargeCents} /> billed) {gap.lines === 1 ? 'is' : 'are'} unpriced until it is, with nothing for you to check; once it is loaded,{' '}
+            <Link className="underline" href={`/p/${practiceId}/pricing-runs`}>
+              Pricing runs
+            </Link>{' '}
+            offers to price their months again.
+          </p>
+        ))}
         <table className="w-full text-left text-sm" aria-label="Unpriced reasons and their remedies">
           <thead className="text-muted-foreground">
             <tr>
@@ -249,15 +309,26 @@ export default async function CoveragePage(props: Props) {
                 <td className="py-1 pr-3">{reason.meaning}</td>
                 <td className="py-1 pr-3 text-right font-mono tabular-nums">{reason.lines}</td>
                 <td className="py-1">
-                  {reason.remedy}
-                  {reason.screen === null ? null : (
+                  {reason.reason === 'NO_PFS_VALUE' && feeScheduleWaiting > 0 ? (
+                    <span className={feeScheduleWaiting < reason.lines ? 'block' : undefined} data-state="fee-schedule-waiting">
+                      <span className="font-mono tabular-nums">{feeScheduleWaiting}</span> of these {feeScheduleWaiting === 1 ? 'waits' : 'wait'} on the{' '}
+                      {feeScheduleNotLoaded.map((gap) => periodWords(gap.period)).join(' or ')} fee schedule PaidWhole has not loaded; nothing for you to check.
+                    </span>
+                  ) : null}
+                  {reason.reason === 'NO_PFS_VALUE' && feeScheduleWaiting > 0 && feeScheduleWaiting >= reason.lines ? null : (
                     <>
-                      {' '}
-                      (
-                      <Link className="underline" href={remedyPath(practiceId, reason.screen)}>
-                        {REMEDY_SCREEN_NAMES[reason.screen]}
-                      </Link>
-                      )
+                      {reason.reason === 'NO_PFS_VALUE' && feeScheduleWaiting > 0 ? 'For the rest: ' : null}
+                      {reason.remedy}
+                      {reason.screen === null ? null : (
+                        <>
+                          {' '}
+                          (
+                          <Link className="underline" href={remedyPath(practiceId, reason.screen)}>
+                            {REMEDY_SCREEN_NAMES[reason.screen]}
+                          </Link>
+                          )
+                        </>
+                      )}
                     </>
                   )}
                 </td>

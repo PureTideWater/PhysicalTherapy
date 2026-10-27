@@ -57,8 +57,11 @@ const stateText = (state: string): string => (state in CASE_STATE_TEXT ? CASE_ST
  * A stored case's state with its submissions sent without sign-off, when it has any (the founder's ruling of
  * 2026-10-20: an export whose pricing went stale after it was made, never attested), as the report's PDF says it.
  */
-const caseStateOf = (item: AuditReportContent['cases'][number]): string =>
-  item.unattested_submissions === undefined || item.unattested_submissions === 0 ? stateText(item.state) : `${stateText(item.state)}; ${unattestedSubmissionsText(item.unattested_submissions)}`;
+const caseStateOf = (item: AuditReportContent['cases'][number]): string => {
+  // The stored state, then the payer's correction the patient's share took (docs/adr/0067), as the printed report says it.
+  const state = item.patient_balance === true ? `${stateText(item.state)}; payer corrected, balance is the patient’s` : stateText(item.state);
+  return item.unattested_submissions === undefined || item.unattested_submissions === 0 ? state : `${state}; ${unattestedSubmissionsText(item.unattested_submissions)}`;
+};
 
 /** The headline: three numbers, then flagged and validated below, each linked to its stage. */
 export function Headline({ headline, practiceId, base }: { readonly headline: AuditReportContent['headline']; readonly practiceId: string; readonly base: string }) {
@@ -70,7 +73,8 @@ export function Headline({ headline, practiceId, base }: { readonly headline: Au
     {
       label: STAGE_LABELS.payer_approved,
       amount: headline.payer_approved_cents,
-      note: approved ? 'what payers accepted, from the recovery ledger; not cash until it posts' : 'no payer approval was recorded yet',
+      // One wording with the printed report's (apps/worker/src/report/html.ts), approval or none (UX-7).
+      note: approved ? 'what payers have agreed to pay on the lines they corrected, from the recovery ledger; not cash until it posts' : 'what payers have agreed to pay on the lines they corrected; no payer approval is recorded yet',
       href: `${base}#stage-payer-approved`,
     },
     { label: STAGE_LABELS.recovered, amount: headline.recovered_cents, note: 'cash posted or deposited at the practice’s proof level, from the recovery ledger, net of recoupments and reversals', href: `${base}#stage-recovered` },

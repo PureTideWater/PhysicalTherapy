@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { CLAIM_FILING_INDICATOR_TEXT, QUALIFIED_IDENTIFIER, payerAndPlanText, payerText, planName, planText, remittanceKey } from './payer';
+import { CLAIM_FILING_INDICATOR_TEXT, MA_NONCONTRACTED_CITATION, QUALIFIED_IDENTIFIER, payerAndPlanText, payerText, planName, planText, remittanceKey } from './payer';
 import { IDS } from './test-support';
 
 /**
@@ -155,5 +155,16 @@ describe('the payer and plan in the payer’s copy', () => {
       expect(printed).not.toContain(planKey);
     }
     expect(payerAndPlanText(payer('2U:SYNPAYERQ', 'CE:SYNPLAN-FIX-ONE'))).toBe('SYNTHETIC PAYER Q (payer ID SYNPAYERQ), plan identifier SYNPLAN-FIX-ONE');
+  });
+});
+
+describe('MA_NONCONTRACTED_CITATION', () => {
+  it('cites the regulation of docs/product/rules-reference.md for a Medicare Advantage non-contracted line, as the packet prints it', () => {
+    expect(MA_NONCONTRACTED_CITATION).toEqual({
+      kind: 'regulation',
+      method: 'MA_NONCONTRACTED',
+      reference: '42 CFR 422.214',
+      statement: 'A provider with no contract with the Medicare Advantage plan must accept, as payment in full, the amount it could have collected under Original Medicare; the plan owes that amount.',
+    });
   });
 });

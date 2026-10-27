@@ -16,10 +16,18 @@
  *
  * Counts are at or above CMS's current public files (open item 9 of the design: #31 checks them against release 1's
  * real sources); each count's basis is on its field of SCALE_RELEASE_SHAPE.
+ *
+ * The quarterly shape (QUARTERLY_SCALE_RELEASE_SHAPE, release 900110; audit #30 and #31, docs/adr/0071) is the same
+ * production shape with #30's windows: each year's PPRRVU, GPCI, ZIP5, ZIP9 and MUE files are four, one per CMS quarter
+ * and windowed to it, as the importer takes them, kept for the six-year look-back and the current year. The weekly
+ * real-size test (tools/release-capacity) prices under it; the shape without `windows` renders as before, byte for byte.
  */
 
 /** The reserved release number of the scale release; no committed fixture uses it. */
 export const SCALE_RELEASE_NUMBER = 900_100;
+
+/** The reserved release number of the quarterly scale release; no committed fixture uses it, and it is never committed. */
+export const QUARTERLY_SCALE_RELEASE_NUMBER = 900_110;
 
 export interface ScaleReleaseShape {
   /** The fee schedule years the release covers, each priced over its four quarters. */
@@ -52,6 +60,13 @@ export interface ScaleReleaseShape {
   readonly rarcCodes: number;
   readonly claimStatusCodes: number;
   readonly promptPayStates: number;
+  /**
+   * How the files with no dates of their own are windowed: `year` (absent: the scale release 900100 as it has always
+   * been) gives each year's PPRRVU, GPCI, ZIP5 and ZIP9 file the calendar year; `quarter` gives each year four of each,
+   * one per CMS quarter (#30's importer), the corrected codes split inside the correction day's quarter. The MPPR list
+   * and the conversion factors stay per calendar year, the MUE tables per quarter, PTP and the code lists unchanged.
+   */
+  readonly windows?: 'year' | 'quarter';
 }
 
 /** The production shape (the design's §3.2 table). */
@@ -89,6 +104,20 @@ export const SCALE_RELEASE_SHAPE: ScaleReleaseShape = {
   rarcCodes: 1_200,
   claimStatusCodes: 300,
   promptPayStates: 51,
+};
+
+/**
+ * The production shape with #30's quarterly windows (release 900110; docs/adr/0071), seven years of them: the six-year
+ * look-back's cutoff year (lookBackCutoff('2026-12-31') is 2020-01-01) to the current year. The counts' basis: RVU
+ * 19,000 x 28 quarters (532,000) and 380 x 7 corrections (2,660), MUE 15,000 x 28 (420,000), ZIP5 42,000 x 28
+ * (1,176,000), ZIP9 1,273 split ZIPs x 28 (35,644 records, each as long as 900100's), GPCI 109 x 28 (3,052), PTP
+ * 2,000,000, and per year 150 MPPR codes and two conversion factors: about 4.17 million records against 900100's about
+ * 2.25 million.
+ */
+export const QUARTERLY_SCALE_RELEASE_SHAPE: ScaleReleaseShape = {
+  ...SCALE_RELEASE_SHAPE,
+  years: [2020, 2021, 2022, 2023, 2024, 2025, 2026],
+  windows: 'quarter',
 };
 
 /** A shape small enough for unit tests, with every feature of the production one. */
@@ -191,6 +220,16 @@ export function correctionDate(shape: ScaleReleaseShape, year: number): string {
   return `${String(year)}-${shape.correctionDay}`;
 }
 
+/** The CMS quarter (1 to 4) the corrections take effect in. */
+export function correctionQuarter(shape: ScaleReleaseShape): number {
+  return Math.floor((Number.parseInt(shape.correctionDay.slice(0, 2), 10) - 1) / 3) + 1;
+}
+
+/** The files each year has of a type with no dates of its own: one under `year` windows, four under `quarter`. */
+export function periodsPerYear(shape: ScaleReleaseShape): number {
+  return shape.windows === 'quarter' ? 4 : 1;
+}
+
 /** One payment locality: its carrier and two-digit number. */
 export interface ScaleLocality {
   readonly carrier: string;
@@ -244,8 +283,9 @@ const ZIP9_LINE_BYTES = 75 + 5 + 1;
  */
 export function scaleZip9Size(shape: ScaleReleaseShape): { readonly records: number; readonly rangesPerRecord: number; readonly linesPerYear: number; readonly bytesPerYear: number } {
   const split = scaleZips(shape).filter((zip) => zip.plusFour).length;
-  const linesPerYear = split * shape.plusFourRanges * shape.plusFourRangeCodes;
-  return { records: shape.years.length * split, rangesPerRecord: shape.plusFourRanges, linesPerYear, bytesPerYear: linesPerYear * ZIP9_LINE_BYTES };
+  const periods = periodsPerYear(shape);
+  const linesPerYear = periods * split * shape.plusFourRanges * shape.plusFourRangeCodes;
+  return { records: shape.years.length * periods * split, rangesPerRecord: shape.plusFourRanges, linesPerYear, bytesPerYear: linesPerYear * ZIP9_LINE_BYTES };
 }
 
 /** The codes on each quarter's MUE table: the first mueCodes codes. */
@@ -282,15 +322,16 @@ const PPRRVU_HEADINGS = [
   'HCPCS,MOD,DESCRIPTION,STATUS CODE,NOT USED FOR MEDICARE PAYMENT,WORK RVU,PE RVU,NA INDICATOR,PE RVU,NA INDICATOR,MP RVU,TOTAL,TOTAL,PCTC IND,GLOB DAYS,PRE OP,INTRA OP,POST OP,MULT PROC,BILAT SURG,ASST SURG,CO-SURG,TEAM SURG,ENDO BASE,CONV FACTOR,PHYSICIAN SUPERVISION OF DIAGNOSTIC PROCEDURES,CALCULATION FLAG,DIAGNOSTIC IMAGING FAMILY INDICATOR,NON-FACILITY PE USED FOR OPPS PAYMENT AMOUNT,FACILITY PE USED FOR OPPS PAYMENT AMOUNT,MP USED FOR OPPS PAYMENT AMOUNT',
 ];
 
-function pprrvu(codes: readonly { readonly code: string; readonly index: number }[], year: number, corrected: boolean, what: string): string {
+/** The relative value file; a code marked corrected carries its corrected values whatever `corrected` says (a quarter after the correction's). */
+function pprrvu(codes: readonly { readonly code: string; readonly index: number; readonly corrected?: boolean }[], year: number, corrected: boolean, what: string): string {
   const lines = [
     `SYNTHETIC physician fee schedule relative value file ${String(year)}${what} for capacity tests - invented values - not CMS data,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,`,
     '"Laid out like the CMS PPRRVU CSV, with stacked column headings; every number is invented (packages/synth/src/release/scale.ts).",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,',
     ...PPRRVU_HEADINGS,
   ];
-  for (const { code, index } of codes) {
-    const value = rvuValues(index, year, corrected);
-    const parts = rvuHundredths(index, year, corrected);
+  for (const { code, index, corrected: own = false } of codes) {
+    const value = rvuValues(index, year, corrected || own);
+    const parts = rvuHundredths(index, year, corrected || own);
     lines.push(
       [
         code,
@@ -330,9 +371,9 @@ function pprrvu(codes: readonly { readonly code: string; readonly index: number 
   return `${lines.join('\n')}\n`;
 }
 
-function gpci(shape: ScaleReleaseShape, year: number): string {
+function gpci(shape: ScaleReleaseShape, year: number, what = ''): string {
   const lines = [
-    `SYNTHETIC geographic practice cost indices ${String(year)} for capacity tests - invented values - not CMS data,,,,,,`,
+    `SYNTHETIC geographic practice cost indices ${String(year)}${what} for capacity tests - invented values - not CMS data,,,,,,`,
     `Medicare Administrative Contractor (MAC),State,Locality Number,Locality Name,${String(year)} PW GPCI (with 1.0 Floor),${String(year)} PE GPCI,${String(year)} MP GPCI`,
   ];
   for (const [index, { carrier, locality }] of scaleLocalities(shape).entries()) {
@@ -344,11 +385,11 @@ function gpci(shape: ScaleReleaseShape, year: number): string {
   return `${lines.join('\n')}\n`;
 }
 
-function zip5(shape: ScaleReleaseShape, year: number): string {
+function zip5(shape: ScaleReleaseShape, year: number, quarter = 1): string {
   const localities = scaleLocalities(shape);
   const lines = scaleZips(shape).map(({ zip, localityIndex, plusFour }) => {
     const { carrier, locality } = localities[localityIndex] as ScaleLocality;
-    return `ZZ${zip}${carrier}${locality} ${locality}   ${plusFour ? '1' : '0'}${' '.repeat(54)}${String(year)}1`;
+    return `ZZ${zip}${carrier}${locality} ${locality}   ${plusFour ? '1' : '0'}${' '.repeat(54)}${String(year)}${String(quarter)}`;
   });
   return `${lines.join('\n')}\n`;
 }
@@ -358,14 +399,14 @@ function zip5(shape: ScaleReleaseShape, year: number): string {
  * (packages/rules/src/parsers/locality-plus-four.ts): the ZIP5 positions 1-21 with the range's carrier and locality and
  * the plus-four flag 1 at 21, the code at 22-25, padded to 75, then the year and quarter.
  */
-function zip9(shape: ScaleReleaseShape, year: number): string {
+function zip9(shape: ScaleReleaseShape, year: number, quarter = 1): string {
   const localities = scaleLocalities(shape);
   const lines: string[] = [];
   for (const zip of scaleZips(shape).filter((entry) => entry.plusFour)) {
     for (const range of scalePlusFourRanges(shape, zip)) {
       const { carrier, locality } = localities[range.localityIndex] as ScaleLocality;
       for (let code = Number.parseInt(range.from, 10); code <= Number.parseInt(range.to, 10); code += 1) {
-        lines.push(`${`ZZ${zip.zip}${carrier}${locality} ${locality}   1${String(code).padStart(4, '0')}`.padEnd(75, ' ')}${String(year)}1`);
+        lines.push(`${`ZZ${zip.zip}${carrier}${locality} ${locality}   1${String(code).padStart(4, '0')}`.padEnd(75, ' ')}${String(year)}${String(quarter)}`);
       }
     }
   }
@@ -464,15 +505,60 @@ function remarkCodes(count: number): string[] {
 
 const numbered = (count: number): string[] => Array.from({ length: count }, (_, index) => String(index + 1));
 
+/** A CMS quarter's first and last day in a year. */
+function quarterBounds(year: number, quarter: number): { readonly from: string; readonly to: string } {
+  const y = String(year);
+  return { from: `${y}-${['01-01', '04-01', '07-01', '10-01'][quarter - 1] ?? '01-01'}`, to: `${y}-${['03-31', '06-30', '09-30', '12-31'][quarter - 1] ?? '12-31'}` };
+}
+
+/**
+ * One year's files under `quarter` windows (#30's importer): for each CMS quarter its relative value files, GPCIs,
+ * ZIP5, ZIP9 (their lines stating the quarter's YYYYQ) and MUE table, each windowed to the quarter. The corrected codes
+ * are split inside the correction day's quarter (the original file to the day before, the correction from the day, as
+ * the importer allows a window inside its quarter), and carry their corrected values in every later quarter's file; the
+ * quarters before carry the original values. Then the year's conversion factors and MPPR rates.
+ */
+function* quarterlyYearFiles(shape: ScaleReleaseShape, year: number, codes: readonly { readonly code: string; readonly index: number }[]): Generator<ScaleSourceFile> {
+  const y = String(year);
+  const correction = correctionDate(shape, year);
+  const dayBefore = `${y}-${shape.correctionDay.slice(0, 2)}-${String(Number.parseInt(shape.correctionDay.slice(3), 10) - 1).padStart(2, '0')}`;
+  const corrected = codes.filter(({ index }) => correctedCodeIndex(shape, index));
+  const splitQuarter = correctionQuarter(shape);
+  for (let quarter = 1; quarter <= 4; quarter += 1) {
+    const { from, to } = quarterBounds(year, quarter);
+    const q = `Q${String(quarter)}`;
+    if (quarter === splitQuarter) {
+      yield { type: 'pfs_rvu', name: `PPRRVU${y}${q}_SYNTHETIC_SCALE.csv`, year, effectiveFrom: from, effectiveTo: to, text: pprrvu(codes.filter(({ index }) => !correctedCodeIndex(shape, index)), year, false, ` ${q}`) };
+      yield { type: 'pfs_rvu', name: `PPRRVU${y}${q}_SYNTHETIC_SCALE_BEFORE_CORRECTION.csv`, year, effectiveFrom: from, effectiveTo: dayBefore, text: pprrvu(corrected, year, false, ` ${q} (codes later corrected)`) };
+      yield { type: 'pfs_rvu', name: `PPRRVU${y}${q}_SYNTHETIC_SCALE_CORRECTION.csv`, year, effectiveFrom: correction, effectiveTo: to, text: pprrvu(corrected, year, true, ` ${q} (mid-quarter correction)`) };
+    } else {
+      const after = quarter > splitQuarter;
+      const entries = codes.map((entry) => ({ ...entry, corrected: after && correctedCodeIndex(shape, entry.index) }));
+      yield { type: 'pfs_rvu', name: `PPRRVU${y}${q}_SYNTHETIC_SCALE.csv`, year, effectiveFrom: from, effectiveTo: to, text: pprrvu(entries, year, false, ` ${q}`) };
+    }
+    yield { type: 'pfs_gpci', name: `GPCI${y}${q}_SYNTHETIC_SCALE.csv`, year, effectiveFrom: from, effectiveTo: to, text: gpci(shape, year, ` ${q}`) };
+    yield { type: 'locality_map', name: `ZIP5_${y}${q}_SYNTHETIC_SCALE.txt`, year, effectiveFrom: from, effectiveTo: to, text: zip5(shape, year, quarter) };
+    // The same window as the quarter's ZIP5 file's: every flagged ZIP's ZIP+4 codes are in force whenever its flag is.
+    yield { type: 'locality_map_plus_four', name: `ZIP9_${y}${q}_SYNTHETIC_SCALE.txt`, year, effectiveFrom: from, effectiveTo: to, text: zip9(shape, year, quarter) };
+    yield { type: 'ncci_mue', name: `MUE${y}${q}_SYNTHETIC_SCALE.csv`, year, effectiveFrom: from, effectiveTo: to, text: mue(shape, year, quarter) };
+  }
+  yield { type: 'conversion_factor', name: `conversion-factor-${y}-SYNTHETIC-SCALE.csv`, year, effectiveFrom: `${y}-01-01`, effectiveTo: `${y}-12-31`, text: conversionFactors(year) };
+  yield { type: 'mppr_rate', name: `MPPR${y}_SYNTHETIC_SCALE.csv`, year, effectiveFrom: `${y}-01-01`, effectiveTo: `${y}-12-31`, text: mppr(shape, year) };
+}
+
 /**
  * Every source file of the scale release, in a fixed order, generated one at a time (the PTP files are large): for
  * each year its relative value files (the uncorrected codes for the year, the corrected codes before and after their
- * correction), GPCIs, ZIP5, ZIP9, conversion factors, MPPR rates and four quarterly MUE tables; then the PTP table's
- * files and the three code lists.
+ * correction), GPCIs, ZIP5, ZIP9, conversion factors, MPPR rates and four quarterly MUE tables, or under `quarter`
+ * windows the year's files quarter by quarter (quarterlyYearFiles); then the PTP table's files and the three code lists.
  */
 export function* scaleSourceFiles(shape: ScaleReleaseShape): Generator<ScaleSourceFile> {
   const codes = scaleCodes(shape).map((code, index) => ({ code, index }));
   for (const year of shape.years) {
+    if (shape.windows === 'quarter') {
+      yield* quarterlyYearFiles(shape, year, codes);
+      continue;
+    }
     const y = String(year);
     const correction = correctionDate(shape, year);
     const dayBefore = `${y}-${shape.correctionDay.slice(0, 2)}-${String(Number.parseInt(shape.correctionDay.slice(3), 10) - 1).padStart(2, '0')}`;
@@ -510,11 +596,13 @@ export function scalePromptPayStates(shape: ScaleReleaseShape): string[] {
 /** How many records each type of the release should hold, from the shape alone (for the release's own tests). */
 export function scaleRecordCounts(shape: ScaleReleaseShape): Readonly<Record<ScaleSourceType, number>> {
   const corrected = scaleCorrectedCodes(shape).length;
+  // Under quarter windows each year has four of each undated file; the corrected codes are split in one of them.
+  const periods = periodsPerYear(shape);
   return {
-    pfs_rvu: shape.years.length * (shape.rvuCodes + corrected),
-    pfs_gpci: shape.years.length * shape.localities,
-    locality_map: shape.years.length * shape.zips,
-    locality_map_plus_four: shape.years.length * scaleZips(shape).filter((zip) => zip.plusFour).length,
+    pfs_rvu: shape.years.length * (periods * shape.rvuCodes + corrected),
+    pfs_gpci: shape.years.length * periods * shape.localities,
+    locality_map: shape.years.length * periods * shape.zips,
+    locality_map_plus_four: shape.years.length * periods * scaleZips(shape).filter((zip) => zip.plusFour).length,
     conversion_factor: shape.years.length * 2,
     mppr_rate: shape.years.length * shape.pooledCodes,
     ncci_mue: shape.years.length * 4 * shape.mueCodes,

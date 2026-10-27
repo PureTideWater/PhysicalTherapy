@@ -711,6 +711,9 @@ copy only, and the internal record stays where it lives and is shown on the revi
   <practice> on <date>, reference <REF>." with "Correspondence about this dispute: <contact>." (D4 to D6). No login,
   approval time, specialist line, audit flag, evidence gap, status, verification, version number, trace reference or
   footer; a version without a stated last day is refused with a TypeError rather than printed.
+  - *See also (2026-10-26):* [ADR 0072](0072-word-every-calculation-from-its-stored-trace-in-one-renderer-and-render-the-fee-schedule-worksheet-at-review-and-export.md)
+    (combined audit #38): each line's "how its expected amount is computed" is now worded from its stored trace by
+    one renderer, with a fee schedule worksheet, the same words on the review page, and no record ID or SHA-256.
 - **D3. The CSV is the payer's too** (`csv.ts`): no `patient_control_number`, `trace_ref`, `deadline_status`,
   `deadline_source` or `trace_sha256` column; the method in the PDF's words; interest empty where code did not
   compute it. Both files take their words from one module (`words.ts`). Every row leads with the packet's reference,

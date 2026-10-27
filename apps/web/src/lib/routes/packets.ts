@@ -1,4 +1,5 @@
 import { rolesPermit } from '@tp/db/runtime';
+import { WORDS_VERSION } from '@tp/packets/explain';
 import { type ExportAwaitingAttestation, NARRATIVE_MAX_LENGTH, type SubmissionUnattestedReason, packetVersionUnattestedReason } from '@tp/worker/packets';
 import { z } from 'zod';
 
@@ -10,7 +11,7 @@ import { type DraftView, packetDrafts, reviewNarrativeDrafts } from '../models/n
 import { modelFeatures } from '../models/path';
 import { canSetCorrespondence } from '../packets/contact';
 import { exportRefusalText } from '../packets/export-attempts';
-import { type BuilderView, approveOnce, builderView, exportFile, exportFileNameOf, requestExportOnce, versionOfCase, writeVersionOnce } from '../packets/queries';
+import { type BuilderView, approveOnce, builderView, exportFile, exportFileNameOf, requestExportOnce, requireWordsVersion, versionOfCase, writeVersionOnce } from '../packets/queries';
 import { ATTEST_CONFIRMATIONS, PACKET_CHECKLIST, type PacketReview, attestOnce, awaitingAttestation, packetReview } from '../packets/review';
 import { sentWithoutSignOffOf } from '../packets/unattested';
 import { type CaseSummary, caseOf } from '../triage/queries';
@@ -42,7 +43,15 @@ import { opaqueId, optionalText } from './schemas';
  * (in progress, retrying, refused with its fix, failed); and a version is written through one form whose submit
  * buttons (save, the code-built draft, the model's draft) the page's one server action routes to the write or
  * the model draft below, each with its own schema, role, transaction and audit event.
+ *
+ * Combined audit #38 (docs/adr/0072): the builder and the review word each line's calculation as the payer's PDF does;
+ * the approve and export-request forms post the words version their page was rendered with (WORDS_VERSION), and a
+ * step asked from a page another renderer wrote is refused before anything is written (finding M1). The schedule's
+ * line-trace link shows only to a role that opens the line page (practice.open).
  */
+
+/** The words version a form's page was rendered with (@tp/packets WORDS_VERSION), posted beside the step it asks for. */
+const WORDS_VERSION_INPUT = z.string().regex(/^[0-9a-f]{64}$/, 'the words version of the page');
 
 const STATE_CODE = z.string().trim().toUpperCase().regex(/^[A-Z]{2}$/, 'a two-letter state code');
 
@@ -62,6 +71,10 @@ export interface BuilderPageData {
   readonly modelNotice: ModelNotice | null;
   /** Whether the viewer sets the practice's correspondence contact (the administrator, by ownership): the Export card links to it. */
   readonly canSetContact: boolean;
+  /** Whether the viewer opens the line trace page (practice.open): the schedule links each line to it only then. */
+  readonly canOpenLines: boolean;
+  /** The renderer that worded the calculation (WORDS_VERSION): the approve and export forms post it back. */
+  readonly wordsVersion: string;
 }
 
 export const packetPage = practiceRoute({
@@ -113,6 +126,8 @@ export const packetPage = practiceRoute({
       drafts: await packetDrafts(scope, practiceId, params.caseId),
       modelNotice: params.model ?? null,
       canSetContact: canSetCorrespondence(access),
+      canOpenLines: rolesPermit(access.roles, 'practice.open'),
+      wordsVersion: WORDS_VERSION,
     };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId, caseId: refs.caseId }) },
@@ -206,7 +221,9 @@ export const requestApprovalAction = practiceRoute({
  * the packet version hash"). The database refuses a version the verifier failed (CAS-08), one not
  * current or whose case changed, a person who does not approve packets, and the person who drafted or
  * last edited it (CAS-09) unless no one else may approve the practice's packets and 24 hours have
- * passed, which it flags (CAS-10). An approved version is left as it is.
+ * passed, which it flags (CAS-10). An approved version is left as it is. A version whose calculation cannot be worded
+ * is refused with the reason the builder shows, and one approved from a page another renderer wrote is refused
+ * (combined audit #38).
  */
 export const approvePacketVersionAction = practiceRoute({
   id: 'practice.cases.packet.approve',
@@ -215,9 +232,10 @@ export const approvePacketVersionAction = practiceRoute({
   phi: true,
   permission: 'packet.approve',
   params: z.object({ practiceId: opaqueId }),
-  input: z.object({ caseId: opaqueId, versionId: opaqueId, versionSha256: z.string().regex(/^[0-9a-f]{64}$/, 'the version’s SHA-256') }),
+  input: z.object({ caseId: opaqueId, versionId: opaqueId, versionSha256: z.string().regex(/^[0-9a-f]{64}$/, 'the version’s SHA-256'), wordsVersion: WORDS_VERSION_INPUT }),
   audit: { action: 'packet_approved', objectType: 'packet_version' },
   handle: async ({ scope, practiceId, input, request, services, access }): Promise<MutationResult> => {
+    requireWordsVersion(input.wordsVersion, 'approve');
     await underPacketRules(() => approveOnce(scope, { practiceId, caseId: input.caseId, versionId: input.versionId, versionSha256: input.versionSha256, requestId: request.requestId }));
     // A model draft not yet reviewed is decided by the version approved, by an approver who may review drafts.
     if (rolesPermit(access.roles, 'packet.draft')) {
@@ -225,7 +243,7 @@ export const approvePacketVersionAction = practiceRoute({
     }
     return { objectId: input.versionId, redirect: `/p/${practiceId}/cases/${input.caseId}/packet?notice=approved` };
   },
-  sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ caseId: refs.caseId, versionId: refs.packetVersionId, versionSha256: refs.packetVersionSha256 }) },
+  sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ caseId: refs.caseId, versionId: refs.packetVersionId, versionSha256: refs.packetVersionSha256, wordsVersion: WORDS_VERSION }) },
 });
 
 /**
@@ -234,7 +252,8 @@ export const approvePacketVersionAction = practiceRoute({
  * and records their SHA-256 on the version (CAS-11, CAS-12). An exported version is left as it is.
  * What the job would refuse is refused here at once, before anything is queued (the best-option audit's item
  * #26): one issue per reason that holds, its field the reason's code and its message the reason with its fix,
- * which the packet page lists. The job records its own refusals and failed tries, which the page shows.
+ * which the packet page lists. The job records its own refusals and failed tries, which the page shows. A request
+ * from a page another renderer wrote is refused, and the job is given the words version it was checked against.
  */
 export const exportPacketAction = practiceRoute({
   id: 'practice.cases.packet.export',
@@ -243,9 +262,10 @@ export const exportPacketAction = practiceRoute({
   phi: true,
   permission: 'phi.export',
   params: z.object({ practiceId: opaqueId }),
-  input: z.object({ caseId: opaqueId, versionId: opaqueId }),
+  input: z.object({ caseId: opaqueId, versionId: opaqueId, wordsVersion: WORDS_VERSION_INPUT }),
   audit: { action: 'packet_export_requested', objectType: 'packet_version' },
   handle: async ({ scope, practiceId, input, services }): Promise<MutationResult> => {
+    requireWordsVersion(input.wordsVersion, 'request the export');
     const asOf = services.now().toISOString().slice(0, 10);
     const outcome = await requestExportOnce(scope, services.queue, { practiceId, caseId: input.caseId, versionId: input.versionId, asOf });
     if (outcome.outcome === 'refused') {
@@ -254,7 +274,7 @@ export const exportPacketAction = practiceRoute({
     return { objectId: input.versionId, redirect: `/p/${practiceId}/cases/${input.caseId}/packet?version=${input.versionId}&notice=${outcome.outcome === 'queued' ? 'export_requested' : 'exported'}` };
   },
   // The world's exported version: exported already, so nothing is queued.
-  sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ caseId: refs.submittedCaseId, versionId: refs.exportedVersionId }) },
+  sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ caseId: refs.submittedCaseId, versionId: refs.exportedVersionId, wordsVersion: WORDS_VERSION }) },
 });
 
 const downloadParams = z.object({ practiceId: opaqueId, caseId: opaqueId, versionId: opaqueId });
@@ -342,6 +362,10 @@ export interface PacketReviewPageData {
   readonly sentWithoutSignOff: Awaited<ReturnType<typeof sentWithoutSignOffOf>>;
   /** Why its export may be logged without the attestation (its pricing went stale after the export); null otherwise. */
   readonly unattestedReason: SubmissionUnattestedReason | null;
+  /** Whether the viewer opens the line trace page (practice.open; the reviewer does not): the schedule links to it only then. */
+  readonly canOpenLines: boolean;
+  /** The renderer that worded the calculation (WORDS_VERSION), shown in the internal record. */
+  readonly wordsVersion: string;
 }
 
 /** The reviewer's review of one export: its content, deadline, files and their SHA-256, and the checklist to attest over them. */
@@ -352,13 +376,15 @@ export const packetReviewPage = practiceRoute({
   phi: true,
   permission: 'audit_finding.validate',
   params: z.object({ practiceId: opaqueId, caseId: opaqueId, versionId: opaqueId, notice: optionalText(z.enum(['attested'])) }),
-  handle: async ({ scope, practiceId, params, request, actor, services }): Promise<PacketReviewPageData> => ({
+  handle: async ({ scope, practiceId, params, request, actor, access, services }): Promise<PacketReviewPageData> => ({
     practiceId,
     review: await packetReview(scope, services, { practiceId, caseId: params.caseId, versionId: params.versionId, viewerId: actor.userId, requestId: request.requestId }),
     checklist: PACKET_CHECKLIST,
     notice: params.notice ?? null,
     sentWithoutSignOff: await sentWithoutSignOffOf(scope, { practiceId, versionId: params.versionId }),
     unattestedReason: await packetVersionUnattestedReason(scope.client, { practiceId, versionId: params.versionId }),
+    canOpenLines: rolesPermit(access.roles, 'practice.open'),
+    wordsVersion: WORDS_VERSION,
   }),
   sample: { params: (refs) => ({ practiceId: refs.practiceId, caseId: refs.submittedCaseId, versionId: refs.exportedVersionId }) },
 });

@@ -4,7 +4,7 @@ import { readDatabaseUrl, withPracticeScope } from '@tp/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { compareRuns } from './diff';
-import { createRerun } from './rerun';
+import { acceptRun, createRerun } from './rerun';
 import { PLUS_FOUR_RELEASE, PricingWorld } from './test-support/pricing-world';
 
 /**
@@ -78,6 +78,8 @@ describe('a re-run under another approval of the place-of-service split (review 
     const earlier = await w.approveSplit({ '11': 'non_facility', '22': 'facility' });
     const second = await rerun(first);
     const later = await w.approveSplit({ '11': 'non_facility', '21': 'facility' });
+    // Only the run in effect is priced again (PRC-28): the second run is accepted before it is re-run.
+    await scope((s) => acceptRun(s, { practiceId: target.practiceId, pricingRunId: second, replacesId: first , heldByIds: [] }));
     const third = await rerun(second);
     const added = await compare(first, second);
     expect([added.before, added.after].map((run) => [run.placeOfServiceSplitId, run.placeOfServiceSplitApprovedAt])).toEqual([

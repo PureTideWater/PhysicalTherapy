@@ -1,3 +1,4 @@
+import { CODES } from '@tp/packets/explain';
 import { describe, expect, it } from 'vitest';
 
 import { INITIALISMS, counted, labelOf, listed } from './words';
@@ -30,9 +31,18 @@ describe('a code as a label', () => {
     expect(labelOf('mue_values')).toBe('MUE values');
     expect(labelOf('apply_mppr')).toBe('Apply MPPR');
     expect(labelOf('eft_export')).toBe('EFT export');
+    expect(labelOf('cms_look_up')).toBe('CMS look up');
+    expect(labelOf('qualifying_apm')).toBe('Qualifying APM');
     expect(labelOf('patient_share_cents')).toBe('Patient share cents');
     expect(labelOf('extra')).toBe('Extra');
     expect(labelOf('')).toBe('');
+  });
+
+  it('keeps in capitals each initialism the calculation’s words name (@tp/packets/explain CODES; the modifiers CQ and CO are codes, not words)', () => {
+    for (const code of ['MPPR', 'NCCI', 'MUE', 'RVU', 'GPCI', 'APM', 'CMS'] as const) {
+      expect(CODES, code).toContain(code);
+      expect(INITIALISMS.has(code.toLowerCase()), code).toBe(true);
+    }
   });
 
   it('keeps every initialism it knows in capitals, wherever it stands', () => {

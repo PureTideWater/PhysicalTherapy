@@ -62,8 +62,8 @@ until a setting is in place, the rule that relies on it is not met.
    Not enforced by GitHub, and checked by the quarterly review instead: each pull request's description follows
    `.github/pull_request_template.md` (what changes, why, what it does not change, the checks run, the reviewer agents'
    findings and how each was resolved, the freeze-exception answer, the domain model's SHA-256 when a migration changes
-   it, and the founder's approval), which GitHub offers only from `main`, so until launch the build fills it in by its
-   own rule; and the reviewer agents (payment engine, security, EDI) run before anything that touches money, tenancy or
+   it, and the founder's approval), which GitHub offers from the default branch, the build branch until launch (the founder's
+   F1 (a), ADR 0063), so the build fills it in from there; and the reviewer agents (payment engine, security, EDI) run before anything that touches money, tenancy or
    parsing merges.
 2. **CI gates must pass:** typecheck, lint, the log lint, unit and property tests with the coverage gates, the
    database suite (the catalog test and the cross-tenant tests) on freshly migrated databases, the golden and oracle

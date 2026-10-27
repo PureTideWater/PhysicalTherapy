@@ -1,7 +1,25 @@
 import type { DisputeWindowStart, DisputeWindowUnit } from '@tp/contracts';
 import { type PracticeScope, type ScopeClient, readWithAudit } from '@tp/db/runtime';
-import type { UnpricedReason } from '@tp/pricing';
-import { ELIGIBLE_RUN, IN_EFFECT_SINCE, RUN_IN_EFFECT, type RerunReason, type RunCoverage, parseCoverage, rerunReasons } from '@tp/worker/pricing';
+import { MA_NONCONTRACTED_CITATION } from '@tp/packets';
+import { type ExplainCitation, ExplainShapeError, ExplainWordsError, type LineWords, type Worksheet, explainLine, feeScheduleWorksheets } from '@tp/packets/explain';
+import { type PricingTrace, type UnpricedReason, parseTrace } from '@tp/pricing';
+import {
+  ELIGIBLE_RUN,
+  IN_EFFECT_SINCE,
+  NEWER_BECAUSE,
+  type NewerReason,
+  OVERLAPPING_FIRST_RUN,
+  RERUN_ACCEPTANCE,
+  RUN_IN_EFFECT,
+  type RerunAcceptance,
+  type RerunReason,
+  type RunCoverage,
+  type SupersededKind,
+  parseCoverage,
+  rerunBlock,
+  rerunReasons,
+  supersededKind,
+} from '@tp/worker/pricing';
 
 /**
  * The Pricing runs, line trace, Claims and lines and Coverage reads of pricing (PRD 7; PRD 5, J7; PRD
@@ -15,6 +33,13 @@ import { ELIGIBLE_RUN, IN_EFFECT_SINCE, RUN_IN_EFFECT, type RerunReason, type Ru
  * person accepts the new run"). For a period, the run in effect is the eligible run that took effect
  * last; Claims and lines read, for each line, the eligible run that priced it last, and Coverage the
  * eligible run that took effect last.
+ *
+ * Whether a re-run can still be accepted (combined audit #10; docs/adr/0037, amendment of 2026-10-26;
+ * test matrix PRC-25 to PRC-28) is the worker's rule too: a re-run is accepted only while nothing in
+ * effect for overlapping service dates is newer than it, and only while no first run of those dates is
+ * being priced; only the run in effect for its period is re-run. Every run listed carries where its
+ * acceptance stands (RunSummary.acceptance), and a re-run's page reads the runs to name from rerunBlock,
+ * the statement acceptRun judges by, so the page and the refusal never disagree.
  */
 
 type Scope = PracticeScope<ScopeClient>;
@@ -60,7 +85,16 @@ export interface RunSummary {
   readonly inEffect: boolean;
   /** The content rollback that withdrew the run's release: the run is flagged, never changed. */
   readonly withdrawal: { readonly reinstatedReleaseNo: number; readonly withdrawnAt: string; readonly reason: string } | null;
+  /**
+   * For a complete re-run nobody has accepted: pinned to a withdrawn release, superseded (something in effect for
+   * overlapping service dates is newer, so it can no longer be accepted), waiting while a first run of overlapping
+   * dates is being priced, or awaiting a person (PRC-25 to PRC-28). Null for every other run. The worker's
+   * RERUN_ACCEPTANCE, in acceptRun's order of refusals, so no badge offers what acceptRun would refuse.
+   */
+  readonly acceptance: RerunAcceptance | null;
 }
+
+export type { NewerReason, RerunAcceptance };
 
 interface RunRow {
   readonly id: string;
@@ -83,11 +117,13 @@ interface RunRow {
   readonly reinstated_release_no: number | null;
   readonly withdrawn_at: Date | null;
   readonly withdrawal_reason: string | null;
+  readonly acceptance: RerunAcceptance | null;
 }
 
 const RUN_COLUMNS = `r.id, r.practice_id, r.period_from::text AS period_from, r.period_to::text AS period_to, r.release_no, r.engine_version, r.status,
   r.failure_code, r.created_at, r.completed_at, u.email, r.created_by_job_id IS NOT NULL AS monitoring, r.coverage, r.rerun_of_id, r.accepted_at, ua.email AS accepted_email,
-  ${RUN_IN_EFFECT('r')} AS in_effect, w.reinstated_release_no, w.withdrawn_at, w.reason AS withdrawal_reason`;
+  ${RUN_IN_EFFECT('r')} AS in_effect, w.reinstated_release_no, w.withdrawn_at, w.reason AS withdrawal_reason,
+  ${RERUN_ACCEPTANCE('r')} AS acceptance`;
 
 const RUN_FROM = `pricing_run r LEFT JOIN "user" u ON u.id = r.created_by LEFT JOIN "user" ua ON ua.id = r.accepted_by
   LEFT JOIN rule_release_withdrawal w ON w.release_no = r.release_no`;
@@ -117,6 +153,7 @@ async function summaries(scope: Scope, rows: readonly RunRow[]): Promise<RunSumm
         row.reinstated_release_no === null || row.withdrawn_at === null
           ? null
           : { reinstatedReleaseNo: row.reinstated_release_no, withdrawnAt: row.withdrawn_at.toISOString(), reason: row.withdrawal_reason ?? '' },
+      acceptance: row.acceptance,
     });
   }
   return result;
@@ -162,6 +199,100 @@ export async function latestRunInEffect(scope: Scope, practiceId: string, reques
 /** The runs that price a run again, newest first. */
 export async function rerunsOf(scope: Scope, practiceId: string, runId: string, requestId: string): Promise<RunSummary[]> {
   return summaries(scope, await readRuns(scope, requestId, 'r.practice_id = $1 AND r.rerun_of_id = $2', [practiceId, runId], 'ORDER BY r.created_at DESC, r.id'));
+}
+
+/** The runs of the practice with these IDs, in the order given (each an audited read); an ID not found is left out. */
+async function runsById(scope: Scope, practiceId: string, ids: readonly string[], requestId: string): Promise<RunSummary[]> {
+  if (ids.length === 0) {
+    return [];
+  }
+  const found = await summaries(scope, await readRuns(scope, requestId, 'r.practice_id = $1 AND r.id = ANY ($2::uuid[])', [practiceId, ids]));
+  return ids.flatMap((id) => found.filter((run) => run.id === id));
+}
+
+/** The run in effect for one exact period of the practice (RUN_IN_EFFECT), or null when none is. */
+export async function periodRunInEffect(scope: Scope, practiceId: string, periodFrom: string, periodTo: string, requestId: string): Promise<RunSummary | null> {
+  const [row] = await readRuns(scope, requestId, `r.practice_id = $1 AND r.period_from = $2::date AND r.period_to = $3::date AND ${RUN_IN_EFFECT('r')}`, [practiceId, periodFrom, periodTo]);
+  return row === undefined ? null : ((await summaries(scope, [row]))[0] ?? null);
+}
+
+/**
+ * The first runs of periods overlapping a run's that are queued or being priced, oldest first: while any is, the
+ * run is not re-run (createRerun refuses newer_run_pending), and the screens name them in the Re-run button's
+ * place. The same condition as the worker's NEWER_RUN_PENDING.
+ */
+export async function pendingFirstRuns(scope: Scope, practiceId: string, runId: string, requestId: string): Promise<RunSummary[]> {
+  return summaries(
+    scope,
+    await readRuns(
+      scope,
+      requestId,
+      `r.practice_id = $1 AND EXISTS (SELECT 1 FROM pricing_run t WHERE t.id = $2 AND t.practice_id = $1 AND ${OVERLAPPING_FIRST_RUN('r', 't', ['queued', 'running'])})`,
+      [practiceId, runId],
+      'ORDER BY r.created_at, r.id',
+    ),
+  );
+}
+
+/**
+ * Whether a complete, unaccepted re-run can be accepted now, with the runs to name (docs/adr/0037, amendment of
+ * 2026-10-26). acceptable: the run its acceptance replaces, the run in effect for its exact period, which its diff is
+ * against, and the first runs of overlapping periods still queued (acceptance does not wait for them; each takes
+ * effect after it once priced). superseded: which wording applies (supersededKind, as the worker's refusal chooses
+ * it), the runs that supersede it, newest in effect first, with why each is newer (NEWER_BECAUSE: priced after it,
+ * pinned to a later release or split, or holding lines loaded later), its original, the run in effect for its exact
+ * period (the one to re-run instead) and the first runs pending for that run (while any is, no Re-run button is
+ * offered). newer_run_pending: the first runs of overlapping periods being priced, oldest first.
+ */
+export type RerunAcceptanceView =
+  | { readonly state: 'acceptable'; readonly replaces: RunSummary; readonly queued: readonly RunSummary[] }
+  | {
+      readonly state: 'superseded';
+      readonly kind: SupersededKind;
+      readonly superseding: readonly RunSummary[];
+      /** Why each superseding run is newer than the re-run, by its ID; null when no clause reads (never while it supersedes). */
+      readonly newerBy: Readonly<Record<string, NewerReason | null>>;
+      readonly original: RunSummary | null;
+      readonly inEffect: RunSummary | null;
+      readonly inEffectPending: readonly RunSummary[];
+    }
+  | { readonly state: 'newer_run_pending'; readonly running: readonly RunSummary[] };
+
+/**
+ * rerunBlock's answer for a complete, unaccepted re-run, as run summaries for the links (each an audited read). Read
+ * in the request's scope, without acceptRun's lock: a page says what holds now, and acceptRun judges again under the
+ * lock, so a page read just before a change is refused, never wrongly accepted.
+ */
+export async function rerunAcceptance(scope: Scope, practiceId: string, run: RunSummary, requestId: string): Promise<RerunAcceptanceView> {
+  const block = await rerunBlock(scope.client, practiceId, run.id);
+  if (block.state === 'acceptable') {
+    const [replaces] = await runsById(scope, practiceId, [block.replacesId], requestId);
+    if (replaces === undefined) {
+      throw new Error('the run a re-run replaces was not read');
+    }
+    return { state: 'acceptable', replaces, queued: await pendingFirstRuns(scope, practiceId, run.id, requestId) };
+  }
+  if (block.state === 'newer_run_pending') {
+    return { state: 'newer_run_pending', running: await runsById(scope, practiceId, block.runningIds, requestId) };
+  }
+  const kind = supersededKind(block);
+  const [original] = run.rerunOfId === null ? [] : await runsById(scope, practiceId, [run.rerunOfId], requestId);
+  const [inEffect] = block.inEffectId === null ? [] : await runsById(scope, practiceId, [block.inEffectId], requestId);
+  const superseding = await runsById(scope, practiceId, kind === 'same_period' ? block.samePeriodIds : block.otherPeriodIds, requestId);
+  const { rows } = await scope.client.query<{ id: string; because: NewerReason | null }>(
+    `SELECT x.id, ${NEWER_BECAUSE('x', 'r')} AS because FROM pricing_run x JOIN pricing_run r ON r.id = $2 AND r.practice_id = x.practice_id
+      WHERE x.practice_id = $1 AND x.id = ANY ($3::uuid[])`,
+    [practiceId, run.id, superseding.map((item) => item.id)],
+  );
+  return {
+    state: 'superseded',
+    kind,
+    superseding,
+    newerBy: Object.fromEntries(superseding.map((item) => [item.id, rows.find((row) => row.id === item.id)?.because ?? null])),
+    original: original ?? null,
+    inEffect: inEffect ?? null,
+    inEffectPending: inEffect === undefined ? [] : await pendingFirstRuns(scope, practiceId, inEffect.id, requestId),
+  };
 }
 
 /** A complete run, for choosing two to compare. */
@@ -444,6 +575,91 @@ export async function pricedLineOf(scope: Scope, practiceId: string, serviceLine
         : { length: row.window_rule_length, rule: { unit: row.window_rule_unit, measuredFrom: row.window_rule_measured_from } },
     trace: row.trace,
   };
+}
+
+/** A line's calculation in words, for the line trace page: never the trace itself (finding m9). */
+export interface PricedLineWords {
+  /** The summary and each step's sentences; null when the calculation cannot be put in words. */
+  readonly words: LineWords | null;
+  /** The line's fee-schedule worksheet (at most one), for a percent-of-Medicare or Medicare Advantage line. */
+  readonly worksheets: readonly Worksheet[];
+  /** Why the calculation cannot be put in words ("timed-units rule has no words"), never a value; null when it can. */
+  readonly refusal: string | null;
+}
+
+/**
+ * The audiences a line page words a trace for: internal, for the roles that read PHI (dates shown), or viewer (no date
+ * of any kind). The payer's words are a packet's, never a line page's (docs/adr/0072).
+ */
+export type LineAudience = 'internal' | 'viewer';
+
+/**
+ * What a line's words may cite beside its trace (combined audit #38, finding m4): a Medicare Advantage non-contracted
+ * line the regulation, as its packet does; a contract line the page of the rate record that priced it, but only a
+ * signed-off (verified) record, and only the one the trace names; any other line nothing, and its words leave the
+ * page clause out.
+ */
+export function lineCitation(trace: PricingTrace, record: { readonly id: string; readonly page: number } | null): ExplainCitation {
+  if (trace.agreement?.outcome === 'MA_NONCONTRACTED') {
+    return { kind: 'regulation', reference: MA_NONCONTRACTED_CITATION.reference };
+  }
+  return record !== null && trace.agreement?.rate_record_id === record.id ? { kind: 'contract', page: record.page } : null;
+}
+
+/**
+ * A priced line's calculation in words (combined audit #38; design 3.9; docs/adr/0072), as an audited read of its own
+ * (purpose line_trace): the stored trace and its rate record's contract page are read here, worded by
+ * @tp/packets/explain for the audience, and only the words and the worksheet are returned. The return type holds no
+ * trace, so a viewer's page data cannot carry one by any path, though the words are built from it on the server
+ * (pricedLineOf still withholds the trace itself from a role without phi.read). A code the words have none for, or a
+ * trace they cannot read, is a refusal by name, never a fallback to the code (design 3.7).
+ */
+export async function pricedLineWords(
+  scope: Scope,
+  read: { readonly practiceId: string; readonly pricedLineId: string; readonly requestId: string },
+  audience: LineAudience,
+): Promise<PricedLineWords> {
+  const [row] = await readWithAudit(
+    scope,
+    { objectType: 'priced_line', purpose: 'line_trace', requestId: read.requestId },
+    async (client) =>
+      (
+        await client.query<{ id: string; practice_id: string; trace: unknown; rate_record_id: string | null; page: number | null }>(
+          `SELECT p.id, p.practice_id, p.trace, rr.id AS rate_record_id, (rr.evidence->>'page')::int AS page
+             FROM priced_line p
+             LEFT JOIN rate_record rr ON rr.practice_id = p.practice_id AND rr.id = p.rate_record_id AND rr.verified_by IS NOT NULL
+            WHERE p.practice_id = $1 AND p.id = $2`,
+          [read.practiceId, read.pricedLineId],
+        )
+      ).rows,
+    (found) => ({ objectId: found.id, practiceId: found.practice_id }),
+  );
+  if (row === undefined) {
+    return { words: null, worksheets: [], refusal: null };
+  }
+  let trace: PricingTrace;
+  try {
+    trace = parseTrace(row.trace);
+  } catch {
+    // A trace of a format the words do not read (one stored before tp-pricing-trace/2); its record stays in the disclosure.
+    return { words: null, worksheets: [], refusal: 'its record is in a format the words do not read' };
+  }
+  const citation = lineCitation(trace, row.rate_record_id === null || row.page === null ? null : { id: row.rate_record_id, page: row.page });
+  try {
+    return {
+      words: explainLine(trace, citation, audience),
+      worksheets: feeScheduleWorksheets([{ row: trace.line.line_no, trace, citation }], audience, { of: 'line' }),
+      refusal: null,
+    };
+  } catch (error) {
+    if (error instanceof ExplainWordsError) {
+      return { words: null, worksheets: [], refusal: `${error.list} has no words` };
+    }
+    if (error instanceof ExplainShapeError) {
+      return { words: null, worksheets: [], refusal: error.what };
+    }
+    throw error;
+  }
 }
 
 /** The complete runs that priced the line, newest first. */

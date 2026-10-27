@@ -370,7 +370,7 @@ Two kinds of content drive the engine, and both are treated as code: global rule
 | Record type | Source | Key fields | Refresh |
 | --- | --- | --- | --- |
 | `pfs_rvu` | CMS physician fee schedule relative value files | HCPCS, modifier, work RVU, practice-expense RVU (facility and non-facility), malpractice RVU, status, global days, multiple-procedure indicator, effective year and quarter | Each year and each quarterly update |
-| `pfs_gpci` | CMS GPCI file | Locality, work, practice-expense and malpractice indices, year | Yearly |
+| `pfs_gpci` | CMS GPCI file | Locality, work, practice-expense and malpractice indices, year | Quarterly, in each quarter's relative value zip |
 | `conversion_factor` | CMS final rule | Year, value, applicability (qualifying APM participant or not) | Yearly |
 | `mppr_rate` | CMS MPPR rate file for therapy | HCPCS, the practice-expense share reduced, effective date | When CMS updates it (the file was last updated February 24, 2026 to add 97026) |
 | `therapy_threshold` | CMS therapy page and final rule | Year, KX threshold for PT and SLP combined, KX threshold for OT, medical review threshold | Yearly |
@@ -380,9 +380,9 @@ Two kinds of content drive the engine, and both are treated as code: global rule
 | `carc`, `rarc`, `claim_status_code` | X12 external code lists | Code, description, effective and deactivation dates | Three times a year |
 | `state_prompt_pay` | State statutes and insurance departments | State, days to pay, interest rule, exclusions (self-funded plans), effective date, source | On change |
 | `dispute_window` | Medicare rules; commercial defaults | Program, window type, days | On change |
-| `locality_map` | CMS locality by ZIP | ZIP, locality code, year | Yearly |
+| `locality_map` | CMS locality by ZIP | ZIP, locality code, year | Quarterly |
 
-Every record carries `source` (title, URL, retrieved date, SHA-256 of the file), `effective_from`, `effective_to`, `verification` (L1 script-checked, L2 read against the source by a person, L3 confirmed by a reimbursement specialist), and `notes`. The checker refuses a release when any record lacks a source, any effective window overlaps another for the same key, any numeric field fails its range, or any quote does not appear in the stored source text.
+Every record carries `source` (title, URL, retrieved date, SHA-256 of the file), `effective_from`, `effective_to`, `verification` (L1 script-checked, L2 read against the source by a person, L3 confirmed by a reimbursement specialist), and `notes`. The checker refuses a release when any record lacks a source, any effective window overlaps another for the same key, any numeric field fails its range, or any quote does not appear in the stored source text. It also refuses (docs/adr/0071) a quarterly file's record (RVU, GPCI, ZIP, MUE) whose window leaves one CMS quarter, a per-code MPPR window that is open or leaves its calendar year, a hand-typed record of those types, a record outside the quarter its stored file states, a gap inside the dates a content is loaded for, and a release that stops covering a code and date the release before it covered, unless the dates are older than a six-year look-back, closed by the source's own dates, or withdrawn by a note two people signed; each release records its coverage in `COVERAGE.md`. The importer refuses a quarterly file imported for a window outside the quarter the file states.
 
 ### Contract rate records
 
@@ -517,7 +517,7 @@ A line is written off with a reason from a closed list (window passed, payer cor
 
 ### What a customer sees as the headline
 
-Three numbers, never one: actionable (what the packets ask for), payer approved (what has been accepted), recovered (what has posted, net). The flagged and validated totals are shown below them with their labels. This is the independent review's correction made into layout.
+Three numbers, never one: actionable (what the packets ask for), payer approved (what payers have agreed to pay), recovered (what has posted, net). The flagged and validated totals are shown below them with their labels. This is the independent review's correction made into layout.
 
 ## 13. Recovery ledger and reconciliation
 
@@ -527,7 +527,7 @@ The ledger is the product's proof and the thing a buyer of the company will audi
 
 | Stage | Created when | Evidence | Sign |
 | --- | --- | --- | --- |
-| `approved` | A payer response accepts an amount, or an adjusted remittance arrives for a case line with a higher paid amount than the original | Response document, or the new `remittance` and `claim` | Positive |
+| `approved` | A payer response accepts an amount the payer will pay, or an adjusted remittance arrives for a case line with a higher allowed amount than the remittances so far: the payer's payment increase on the line, never the patient's share | Response document, or the new `remittance` and `claim` | Positive |
 | `posted` | A row in the practice's payment-posting export matches the remittance by check or trace number and amount | `posting_row` | Positive |
 | `deposited` | A row in the EFT or bank export matches the trace number and amount | `eft_row` | Positive |
 | `recouped` | A later PLB (WO) or a reversal claim takes back money against a case line | `provider_adjustment` or the reversing `claim` | Negative |
@@ -538,14 +538,14 @@ The recovered total for a case, a practice, a period or a report is the sum of `
 
 ### Matching
 
-1. **Remittance to case line.** A new 835 is parsed as usual; the loader checks each claim against open case lines by payer claim control number first and by patient control number plus service date plus code second. A match with a higher observed allowed than the original creates an `approved` entry for the difference and attaches the new claim to the line; a match with the same or lower amount is recorded as a payer response of kind "reprocessed, no change".
+1. **Remittance to case line.** A new 835 is parsed as usual; the loader checks each claim against open case lines by payer claim control number first and by patient control number plus service date plus code second. A match with a higher observed allowed than the remittances so far is approved: an `approved` entry for the payer's payment increase on the line (its paid amount less what the remittances paid it so far), and no entry when the patient's share took the whole increase, which the case shows as "payer corrected; balance is the patient's", never recovered and never no change. The allowed increase and the patient's share (deductible, coinsurance, copay) are shown beside it as billable to the patient, never counted. A match with the same allowed amount, or a lower one on a line with nothing approved, is recorded as a payer response of kind "reprocessed, no change"; a lower one on an approved line takes back the payment decrease. Every ledger amount is the payer's cash: a line's share of a remittance is what it paid on the line net of the payment it replaced. A reprocessing that raises or keeps the allowed amount but pays less takes back the payment decrease from what is approved; when nothing is approved and the allowed amount is higher, it is recorded as decreased with no entry: higher allowed, lower payment, nothing approved to take back.
 2. **Remittance to posting.** The practice uploads its payment-posting export (CSV from the practice-management system; one template per system, mapped once). Rows match remittances by check or trace number and amount, with a tolerance of zero; partial postings are matched line by line where the export has lines, otherwise at the check level with the case's share allocated pro rata and flagged as allocated.
 3. **Remittance to deposit.** The practice uploads an EFT report or bank export; rows match by TRN02 and amount. Where a bank batches several EFTs into one deposit, the match is at the batch level and flagged. Practices that cannot supply deposit data set their proof level to `posted` and the ROI statement says so.
 4. **Unmatched.** Adjusted payments, postings and deposits that match nothing are listed for manual matching with the evidence side by side; a manual match records the user. Nothing unmatched counts.
 
 ### Recoupments and reversals
 
-A PLB with reason WO or a reversal claim against a case line creates a `recouped` entry at once, reduces the recovered total, reopens the case with a note, and notifies the owner. A forward balance (FB) is recorded but not counted until it resolves. Interest paid by the payer (PLB L6, or a line-level interest amount) is recorded as its own positive entry category `interest` and shown separately from recovered principal.
+A PLB with reason WO or a reversal claim against a case line creates a `recouped` entry at once, reduces the recovered total, reopens the case with a note, and notifies the owner. A reversal takes back the payment it removes above the original: its own claim's approval while an earlier payment of the line stands, every approval its payment carried when nothing stands, and nothing while a later claim of the line stands. A forward balance (FB) is recorded but not counted until it resolves. Interest paid by the payer (PLB L6, or a line-level interest amount) is recorded as its own positive entry category `interest` and shown separately from recovered principal.
 
 ### ROI statement
 
@@ -580,11 +580,11 @@ Every document is untrusted. Model calls that read documents have no tools and n
 
 ### Logging and evaluation
 
-Each call writes a `model_call` row: practice, user or job, purpose, model identifier, prompt version, input document hashes, output hash, token counts, cost, citations returned, verifier result, and later the reviewer's decision and the fields the reviewer changed. These rows live in the product's own database, never in a model-observability service. Reviewer corrections become evaluation examples under the data-rights terms. The evaluation set starts with 40 synthetic contracts and exhibits of varied layouts (tables, prose, scanned) and grows with permitted real ones; the gate for a prompt or model change is field-level precision and recall on that set with no regression, run in CI on the synthetic subset and in the PHI boundary on the rest. Narrative drafting has a zero-tolerance gate: any verifier failure on the 300-case synthetic set blocks the change.
+Each call writes a `model_call` row: practice, user or job, purpose, model identifier, prompt version, input document hashes, output hash, token counts, cost, citations returned, verifier result, and later the reviewer's decision and the fields the reviewer changed. These rows live in the product's own database, never in a model-observability service. Reviewer corrections become evaluation examples under the data-rights terms. The evaluation set starts with 40 synthetic contracts and exhibits of varied layouts (tables, prose, scanned), now 63 with long documents, contract-plus-exhibit pairs, faulty scans, struck-through rates, injected-instruction twins and decoy amendments, and grows with permitted real ones; the gate for a prompt or model change is field-level precision and recall on that set with no regression and no rise in wrong-but-verified fields (a value the verifier passed that is not the truth, counted apart from a rejected or missed one, and never allowed on a document whose text is read faithfully), above per-field recall and precision floors the founder sets with the contract specialist, run in CI on the synthetic subset and in the PHI boundary on the rest. Narrative drafting has a zero-tolerance gate: any verifier failure on the 300-case synthetic set blocks the change.
 
 ### Operational limits
 
-Timeouts of 60 seconds per call with one retry under the same idempotency key; per-practice daily budgets with alerts; a kill switch (feature flag) that turns every model feature off and leaves the product working on hand-entered records; prompt text and schemas versioned in the repository under `packages/model-gateway/prompts/`; a changelog per prompt. Cost at the plan's prices is cents per document and per narrative, under $5 a customer a month at scale, and it is measured per practice rather than assumed.
+Timeouts of 60 seconds per call with one retry under the same idempotency key; per-practice daily budgets with alerts; a kill switch (feature flag) that turns every model feature off and leaves the product working on hand-entered records; a model feature that has not passed its own evaluation for the configured model is off on its own, the same way; prompt text and schemas versioned in the repository under `packages/model-gateway/prompts/`; a changelog per prompt. Cost at the plan's prices is cents per document and per narrative, under $5 a customer a month at scale, and it is measured per practice rather than assumed.
 
 ## 15. Architecture and stack
 
@@ -642,7 +642,7 @@ therapy-platform/
 
 ### Environments
 
-`dev` (local Docker Postgres and MinIO; synthetic data only; no AWS PHI services), `staging` (a full AWS copy with synthetic data and the same policies, used for restore drills and rehearsals), `production` (PHI; access only through the application and the break-glass path; no developer database access without a ticket and a time-boxed role). Promotion is by tagged image through CI; migrations run as a job before the new image receives traffic; every deploy is reversible by redeploying the previous image, and a migration that cannot be rolled forward safely is split into add, backfill and remove steps.
+`dev` (local Docker Postgres and documents on local disk; synthetic data only; no AWS PHI services), `staging` (a full AWS copy with synthetic data and the same policies, used for restore drills and rehearsals), `production` (PHI; access only through the application and the break-glass path; no developer database access without a ticket and a time-boxed role). Promotion is by tagged image through CI; migrations run as a job before the new image receives traffic; every deploy is reversible by redeploying the previous image, and a migration that cannot be rolled forward safely is split into add, backfill and remove steps.
 
 ### Request path for a PHI page
 
@@ -753,7 +753,7 @@ The tests are the product's proof to customers, to the independent reviewer and 
 | Mutation | StrykerJS | `packages/money`, `packages/pricing`, `packages/ledger` and `packages/packets` (the verifier, interest, calculation, dates, assembly and windows) | Above 85% per package, every surviving mutant killed or recorded as equivalent |
 | Security | Custom and third-party | Log lint, secret scan, dependency audit, container scan, CDK assertions, a yearly penetration test | Gates in CI; findings tracked to closure |
 | Performance | Scripts in CI | The large fixture: 10,000 claims parse and 100,000 lines price within targets | Regression fails the build |
-| Model | Evaluation harness | Extraction precision and recall on the synthetic set; narrative verifier zero-failure on 300 cases | No regression on any prompt or model change |
+| Model | Evaluation harness | Extraction precision and recall on the synthetic set; narrative verifier zero-failure on 300 cases | No regression on any prompt or model change, and no rise in wrong-but-verified fields (none on a document read faithfully) |
 
 ### The case matrix
 
@@ -785,6 +785,7 @@ The product runs on a calendar set by fee-schedule years and renewal seasons, an
 | Break-glass access | A support ticket needing PHI | Create the grant with reason and expiry; notify the practice administrator; work; expiry; the read list goes to the administrator |
 | Incident response | A security event or a suspected breach | Contain (revoke, rotate, isolate); preserve evidence; assess scope from the audit log; notify under the BAA clocks and the HIPAA rule; customer communication; post-incident review |
 | Content release | A fee-schedule year, a code list update, a state rule change | Draft with sources; checker; pull request; publish on merge; customer release note; affected-run diffs |
+| Content updates (`docs/runbooks/content-updates.md`) | A content-due issue from the content calendar, or the console's Content due | Import the period's files with the issue's commands; verify; assemble; publish 14 days before the period starts, or within 3 business days of a late publication; review a calendar entry against its source page |
 | Practice offboarding | A deletion request | Legal-hold check; export delivered; retention window; key destruction; certificate; backup aging noted |
 | Payer pattern escalation | A pattern recurring across customers | Document aggregate evidence under the data-rights terms; counsel review; the customer's own escalation (never the company's) |
 | Job failure | Three failed attempts | Operator alert; held files and failed runs shown to the customer; manual replay with the same idempotency key |

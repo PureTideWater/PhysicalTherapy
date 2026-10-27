@@ -1,0 +1,146 @@
+name: release-capacity
+
+# The weekly real-size test (audit #31; docs/adr/0071; tools/release-capacity/run.ts): the production worker image at
+# the worker task's limits (half a vCPU and 1,024 MiB, no swap; infra/lib/environments.ts) with production's command and
+# the explicit heap limit (infra/lib/heap.ts, heapFlag('worker')), every job type's loop at once as one production
+# worker runs them, against Postgres at db.t4g.medium's 2 vCPU and 4 GiB with gp3's I/O baseline and a 1 ms delay each
+# way, under the SYNTHETIC quarterly scale release 900110 (seven years of CMS quarters, about 4.17 million records),
+# built outside the repository. A 100,000-line period prices while another practice's audit report prints and four 835s
+# parse, then triages and reports; it fails on any job not complete, the run not complete, a count other than the
+# period's lines or the 835s' claims, an OOM kill or a restart, memory.peak above 90% of the task, or a read outside the
+# keyed fetch or a job's last failed attempt in the worker's log. Times are recorded and advisory (the founder's ruling
+# of 2026-10-23 for the screening's test). The five 50,000-row screenings are screening-capacity's weekly S1 to S5.
+# Synthetic data only, no credentials. Not a required check.
+on:
+  schedule:
+    # Weekly. Schedules fire only from the default branch, so this one runs once it carries the workflows (F1 (a)).
+    - cron: "29 3 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Every run is measured, grouped by its commit and never cancelled.
+concurrency:
+  group: release-capacity-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  capacity:
+    # GitHub's free 4-CPU runner for a public repository, as screening-capacity's: Postgres keeps db.t4g.medium's 2 vCPU
+    # on 0-1, shared with the harness, and the worker its half vCPU on a CPU of its own (tools/screening-capacity/limits.ts,
+    # cpuLayout). Once the repository is private its standard runner has 2 CPUs, which run.ts refuses as RUNNER_TOO_SMALL
+    # before measuring: this label then becomes the same 4-core larger runner as screening-capacity's, which needs an
+    # organization on GitHub Team and is billed beyond the included minutes (docs/runbooks/screening-capacity.md, "The
+    # 8-core runner"; docs/adr/0071); until then a private run fails every week without measuring (fix round S5).
+    runs-on: ubuntu-24.04
+    # The larger release takes longer to build and load than the screening's: a run takes 60 to 120 minutes, and a hung
+    # one stops at 180 instead of GitHub's 360 (docs/adr/0063).
+    timeout-minutes: 180
+    # The advisory lines (the windows query's time above its budget), base64, for the notify job (fix round S3).
+    outputs:
+      advisories: ${{ steps.measure.outputs.advisories }}
+    steps:
+      # The harness calls no GitHub API and pushes nothing, so the token is not left in the checkout.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The builder by digest (BuildKit v0.34.1), the same on every setup-buildx step, not the driver's default
+      # moby/buildkit:buildx-stable-1 by tag; Dependabot cannot update this string, so tools/check-action-pins warns when a
+      # newer release is three days old (docs/runbooks/dependency-upgrades.md).
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
+
+      # The production worker image, from its Dockerfile, as screening-capacity's workflow builds it; it reads that
+      # workflow's layer cache and writes none, so the weekly run never churns the repository's Actions cache. The cache
+      # stays, unlike release.yml's (docs/adr/0066, Part 2): this run's report is advisory, never attested, and no launch
+      # check, deploy or required check reads it, so a layer another run built cannot reach a binding measurement.
+      - name: Build the worker image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: apps/worker/Dockerfile
+          load: true
+          push: false
+          tags: tp-worker:capacity
+          cache-from: type=gha,scope=screening-capacity-worker
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+
+      # The SYNTHETIC quarterly scale release, built outside the repository on every run and never cached: at about
+      # twice the screening's release it would crowd that workflow's cache out of the repository's 10 GB.
+      - name: Build the quarterly scale release
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: pnpm exec tsx tools/release/scale.ts --shape quarterly --out "$RUNNER_TEMP/quarterly-release"
+
+      # The harness and its child processes on Postgres's CPUs (0-1 on the free 4-CPU runner), never the worker's: the
+      # screening layout's own answer (limits.ts, harnessCpus). Every failing check fails this step (checks.ts).
+      - name: Measure under the worker task's limits
+        id: measure
+        run: |
+          cpus=$(pnpm -s exec tsx tools/release-capacity/run.ts --print-harness-cpus)
+          echo "harness on CPUs $cpus"
+          taskset -c "$cpus" pnpm exec tsx tools/release-capacity/run.ts \
+            --out "$RUNNER_TEMP/release-capacity" \
+            --release-dir "$RUNNER_TEMP/quarterly-release" \
+            --worker-image tp-worker:capacity
+
+      # The report and the worker's log (IDs, codes and counts by the logger's allowlist, synthetic data).
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: release-capacity
+          path: |
+            ${{ runner.temp }}/release-capacity/release-capacity.json
+            ${{ runner.temp }}/release-capacity/summary.md
+            ${{ runner.temp }}/release-capacity/logs/
+          if-no-files-found: ignore
+          retention-days: 90
+          # One name a run: a re-run of the failed job replaces what its first attempt left.
+          overwrite: true
+
+  # A failure, a cancel (the 180-minute timeout among them) or an advisory opens one issue, or comments on the one already
+  # open under its title (fix round S3, SB-7). This job holds the workflow's only write permission and runs no
+  # repository code: it checks nothing out, and every value reaches its shell through env.
+  notify:
+    needs: capacity
+    if: always() && github.event_name != 'pull_request' && (needs.capacity.result == 'failure' || needs.capacity.result == 'cancelled' || needs.capacity.outputs.advisories != '')
+    runs-on: ubuntu-24.04
+    # One call to the issues API; a hung call stops at 5 minutes instead of GitHub's 360 (docs/adr/0063).
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the release-capacity issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CAPACITY_RESULT: ${{ needs.capacity.result }}
+          ADVISORIES_B64: ${{ needs.capacity.outputs.advisories }}
+        run: |
+          set -euo pipefail
+          if [ "$CAPACITY_RESULT" = "success" ]; then
+            title="Release capacity advisory"
+            printf 'The release capacity test passed on %s at %s with an advisory: %s\n' "$GITHUB_REF_NAME" "$GITHUB_SHA" "$RUN_URL" > body.md
+          else
+            title="Release capacity test failing"
+            printf 'The release capacity test ended %s on %s at %s: %s. The artifact of the run holds release-capacity.json and summary.md with each failing check.\n' "$CAPACITY_RESULT" "$GITHUB_REF_NAME" "$GITHUB_SHA" "$RUN_URL" > body.md
+          fi
+          if [ -n "$ADVISORIES_B64" ]; then
+            { printf '\nAdvisory:\n\n'; printf '%s' "$ADVISORIES_B64" | base64 -d | sed 's/^/- /'; printf '\n'; } >> body.md
+          fi
+          gh issue list --label release-capacity --state open --json number,title > open.json
+          number=$(jq -r --arg title "$title" 'first(.[] | select(.title == $title) | .number) // empty' open.json)
+          if [ -z "$number" ]; then
+            gh label create release-capacity --description "The weekly real-size test (audit #31)" --color B60205 2>/dev/null || true
+            gh issue create --title "$title" --label release-capacity --body-file body.md
+          else
+            gh issue comment "$number" --body-file body.md
+          fi

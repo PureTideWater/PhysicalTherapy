@@ -1,0 +1,35 @@
+# fixtures/golden/claims/G43-ma-code-without-rvu.json
+
+## Line 1, internal
+Not priced: No RVU for the code in the basis year.
+  [agreement] The plan is mapped as Medicare Advantage with no contract: priced at Original Medicare’s amount under 42 CFR 422.214.
+  [terms] Medicare Advantage, non-contracted: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with Medicare’s reductions, under 42 CFR 422.214. Medicare’s reductions apply to a non-contracted Medicare Advantage line under 42 CFR 422.214: the multiple procedure payment reduction, the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Units as billed; Medicare’s pooled timed-units rule applies.
+  [fee_schedule] Fee schedule: the 2026 records in force on 2026-03-10.
+  [units] Not reached.
+  [ncci_ptp] Not reached.
+  [mppr] Not reached.
+  [assistant_reduction] Not reached.
+  [sequestration] Not reached.
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $30.00, the allowed amount the payer states for the line (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: No RVU for the code in the basis year. No relative value for the code in the basis year. The line stopped at the fee schedule. Remedy: Check the code and year; some codes are carrier-priced.
+
+## Line 1, viewer
+Not priced: No RVU for the code in the basis year.
+  [agreement] The plan is mapped as Medicare Advantage with no contract: priced at Original Medicare’s amount under 42 CFR 422.214.
+  [terms] Medicare Advantage, non-contracted: 100% of the Medicare physician fee schedule, the records in force on the service date, the practice’s locality, with Medicare’s reductions, under 42 CFR 422.214. Medicare’s reductions apply to a non-contracted Medicare Advantage line under 42 CFR 422.214: the multiple procedure payment reduction, the assistant reduction, sequestration and National Correct Coding Initiative (NCCI) edits. Units as billed; Medicare’s pooled timed-units rule applies.
+  [fee_schedule] Fee schedule: the 2026 records in force on the service date.
+  [units] Not reached.
+  [ncci_ptp] Not reached.
+  [mppr] Not reached.
+  [assistant_reduction] Not reached.
+  [sequestration] Not reached.
+  [patient_share] Not reached.
+  [rounding] Not reached.
+  [observed] Observed allowed $30.00, the allowed amount the payer states for the line (AMT B6).
+  [window] Not reached.
+  [release] Priced under rule release 900001 by engine phase-two/2.
+  [outcome] Not priced: No RVU for the code in the basis year. No relative value for the code in the basis year. The line stopped at the fee schedule. Remedy: Check the code and year; some codes are carrier-priced.

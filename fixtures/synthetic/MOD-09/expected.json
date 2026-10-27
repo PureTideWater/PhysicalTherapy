@@ -1,0 +1,387 @@
+{
+  "case": "MOD-09",
+  "module": "MOD",
+  "title": "Contract evaluation set v2",
+  "assertion": "63 documents to 60 codes and 80 pages: multi-row tables, contract-plus-exhibit pairs, scans with OCR errors or their own OCR layer, struck-through rates, each marked faithful or not; its hash covers the pages as read, and a changed set refuses comparison",
+  "synthetic": true,
+  "completesIn": 10,
+  "assertedBy": ["packages/model-gateway/eval/gate.golden.test.ts","packages/synth/src/eval/eval.test.ts"],
+  "codeListRelease": 900001,
+  "noFileReason": null,
+  "files": [
+    {
+      "path": "contract-set-v2/set.json",
+      "sha256": "31b280cf17836baa05f47bc4f8a0997bd566f69fe13875101a0405706e13228d",
+      "bytes": 16037,
+      "kind": "json",
+      "description": "The contract evaluation set v2: its 63 cases, where each is, its tier and page text, and how many records and fields each states."
+    },
+    {
+      "path": "contract-set-v2/V01-table/document.pdf",
+      "sha256": "1dc6ec5df02ae33c6f53c49be16c2fac11c10555311ff4223e05eb2c6ef6cd8a",
+      "bytes": 25308,
+      "kind": "pdf",
+      "description": "V01: a SYNTHETIC contract with its rates as a table (text PDF)."
+    },
+    {
+      "path": "contract-set-v2/V01-table/truth.json",
+      "sha256": "3a80d24709f1f133c06a211e99c3cf53244d630062e1579a7c6f2092fea50483",
+      "bytes": 20911,
+      "kind": "json",
+      "description": "V01: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
+    },
+    {
+      "path": "contract-set-v2/V02-table/exhibit.csv",
+      "sha256": "c8b354e1346568f236fa2b97d1b18de8a329ad563367395926e06a976afaca95",
+      "bytes": 2400,
+      "kind": "csv",
+      "description": "V02: a SYNTHETIC 40-row CSV fee-schedule exhibit, one row per rate."
+    },
+    {
+      "path": "contract-set-v2/V02-table/truth.json",
+      "sha256": "4e2cddb78af0a8657d848a8cdce824968a29bd0dc8c90e0cdaf7e6a8333c9a76",
+      "bytes": 42287,
+      "kind": "json",
+      "description": "V02: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
+    },
+    {
+      "path": "contract-set-v2/V03-prose/document.pdf",
+      "sha256": "7beab5a5752f4390c3f3ff75df6136617d307c1385945f93cce513bf7f784c69",
+      "bytes": 25442,
+      "kind": "pdf",
+      "description": "V03: a SYNTHETIC contract with its rates as prose (text PDF)."
+    },
+    {
+      "path": "contract-set-v2/V03-prose/truth.json",
+      "sha256": "96fe19d1447d028b8afff4bf9061d144f77b76cfcecc39edc0d9544e2b15b8fe",
+      "bytes": 2103,
+      "kind": "json",
+      "description": "V03: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
+    },
+    {
+      "path": "contract-set-v2/V04-table/document.pdf",
+      "sha256": "53cc873aa3af03bb47eb4f22f3440699abf6313b44f070d1f0ad756e1b28063f",
+      "bytes": 3864,
+      "kind": "pdf",
+      "description": "V04: a SYNTHETIC exhibit with its rates as a table (text PDF)."
+    },
+    {
+      "path": "contract-set-v2/V04-table/truth.json",
+      "sha256": "cefcd70371c194810c260d8c0ac4342dc2be48ca5450489f5343a95aededfeaa",
+      "bytes": 18890,
+      "kind": "json",
+      "description": "V04: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
+    },
+    {
+      "path": "contract-set-v2/V05-scanned/document.pdf",
+      "sha256": "23512901010a2d2efd3d79de180a9e4e4d6337d776813d3079559a2ea52c94d3",
+      "bytes": 152854,
+      "kind": "pdf",
+      "description": "V05: a SYNTHETIC contract drawn as table, scanned: page images, no text layer."
+    },
+    {
+      "path": "contract-set-v2/V05-scanned/textract.json",
+      "sha256": "df44e329d4ce6717e6b4dfd52702e51f5da4ce60d921d487dd6ca3ec1d184b69",
+      "bytes": 27905,
+      "kind": "json",
+      "description": "V05: the scan reader's recorded text detection for the scanned pages, one block per line (SYNTHETIC)."
+    },
+    {
+      "path": "contract-set-v2/V05-scanned/truth.json",
+      "sha256": "7e085b8b897ba1c14a32dfb6ab9459a2d27ea4b6d2e936a72f1245936f209e5e",
+      "bytes": 34665,
+      "kind": "json",
+      "description": "V05: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
+    },
+    {
+      "path": "contract-set-v2/V06-scanned/document.pdf",
+      "sha256": "a5bf2fdbfa999af23b6ecbe761259ac241e23c7bc05d27b8abc2dd67b39dcd6f",
+      "bytes": 92840,
+      "kind": "pdf",
+      "description": "V06: a SYNTHETIC contract drawn as table, scanned: page images under their own invisible OCR text layer."
+    },
+    {
+      "path": "contract-set-v2/V06-scanned/truth.json",
+      "sha256": "57c65af5988d95130aaa97bd2feea0c792983726f86f96f60b758aac7cb80046",
+      "bytes": 11343,
+      "kind": "json",
+      "description": "V06: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
+    },
+    {
+      "path": "contract-set-v2/V07-scanned/document.pdf",
+      "sha256": "3fc2ebaaedaf8ef9eb8b9778cc2101abfb625ebb5fa04a12cea3109e37f42841",
+      "bytes": 96735,
+      "kind": "pdf",
+      "description": "V07: a SYNTHETIC contract drawn as prose, scanned: page images under their own invisible OCR text layer."
+    },
+    {
+      "path": "contract-set-v2/V07-scanned/truth.json",
+      "sha256": "ad31c2783fe17ef0aaf32049f95be3341c9bcf91dcfe6cea4fc2c264b99f32e9",
+      "bytes": 14015,
+      "kind": "json",
+      "description": "V07: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
+    },
+    {
+      "path": "contract-set-v2/V08-table/document.pdf",
+      "sha256": "6a7f161920313e017d314814e634647cee05c9f2f83f748affa10a4e9bd57ebf",
+      "bytes": 3194,
+      "kind": "pdf",
+      "description": "V08: a SYNTHETIC contract with its rates as a table (text PDF)."
+    },
+    {
+      "path": "contract-set-v2/V08-table/truth.json",
+      "sha256": "db418986837ccf489c7fd7f51df412e0897352ea8c553ba8d7e51b2ed60dcfc9",
+      "bytes": 11077,
+      "kind": "json",
+      "description": "V08: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
+    },
+    {
+      "path": "contract-set-v2/V09-prose/document.pdf",
+      "sha256": "1bfb430f4231b0a9f8223f6f9bc0946a8b12c15ace51f8139e2fc18e628aec31",
+      "bytes": 3284,
+      "kind": "pdf",
+      "description": "V09: a SYNTHETIC contract with its rates as prose (text PDF)."
+    },
+    {
+      "path": "contract-set-v2/V09-prose/truth.json",
+      "sha256": "c7867d3c648dbd75235c32869260ede44ec13d1813a656d2e9189d6eeca8ece8",
+      "bytes": 6325,
+      "kind": "json",
+      "description": "V09: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
+    },
+    {
+      "path": "contract-set-v2/V10-table/document.pdf",
+      "sha256": "e84862ecc7fe2e0dcfb5e89ed58d373f26e897412ed5c724c35aa11d1fae45cf",
+      "bytes": 3356,
+      "kind": "pdf",
+      "description": "V10: a SYNTHETIC contract with its rates as a table (text PDF)."
+    },
+    {
+      "path": "contract-set-v2/V10-table/truth.json",
+      "sha256": "0a84f3f09842376ef80d31f2578cb406b5130eda2a802cd0c6fca2bcc2b50db4",
+      "bytes": 14939,
+      "kind": "json",
+      "description": "V10: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
+    },
+    {
+      "path": "contract-set-v2/V11-table/document.pdf",
+      "sha256": "0d21500b012cd8a7e0aa65c0872c58ff5db4814dbe5dc58e8690f2c29a401c78",
+      "bytes": 3634,
+      "kind": "pdf",
+      "description": "V11: a SYNTHETIC contract with its rates as a table (text PDF)."
+    },
+    {
+      "path": "contract-set-v2/V11-table/truth.json",
+      "sha256": "c739937aa2fdce8f4da5193ba038c48d42f83b8f40b2c0081cb7ba8a6f70a1ad",
+      "bytes": 14940,
+      "kind": "json",
+      "description": "V11: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
+    },
+    {
+      "path": "contract-set-v2/V12-prose/document.pdf",
+      "sha256": "c51c4a315b1aa6c2dd791e04febae45cbc9c489743036721bd691c833e33287c",
+      "bytes": 3071,
+      "kind": "pdf",
+      "description": "V12: a SYNTHETIC contract with its rates as prose (text PDF)."
+    },
+    {
+      "path": "contract-set-v2/V12-prose/truth.json",
+      "sha256": "7c54092f427688d20e2ec85a1920d6bf36d739da2c308a913bd060e27884c105",
+      "bytes": 8456,
+      "kind": "json",
+      "description": "V12: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
+    },
+    {
+      "path": "contract-set-v2/V13-prose/document.pdf",
+      "sha256": "a9946eedb124410d6aac721e2e2be9914af6c6e8801f7ad8f4e723b372e7e469",
+      "bytes": 3378,
+      "kind": "pdf",
+      "description": "V13: a SYNTHETIC contract with its rates as prose (text PDF)."
+    },
+    {
+      "path": "contract-set-v2/V13-prose/truth.json",
+      "sha256": "eb431e83434dcde23f2f9b78cc241d1f4f500ae3140a0f56c1ee9e170b89d87e",
+      "bytes": 8468,
+      "kind": "json",
+      "description": "V13: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
+    },
+    {
+      "path": "contract-set-v2/V14-scanned/document.pdf",
+      "sha256": "24fe3f5aa153629441af51c14c8ff6bc1aa07dbbe28af3309e0d481870d05efa",
+      "bytes": 36773,
+      "kind": "pdf",
+      "description": "V14: a SYNTHETIC contract drawn as table, scanned: page images, no text layer."
+    },
+    {
+      "path": "contract-set-v2/V14-scanned/textract.json",
+      "sha256": "ffe9351aa8ed62c4141b17342f31f20bf7337a3ba919a5f38f413da3dcd4c166",
+      "bytes": 6865,
+      "kind": "json",
+      "description": "V14: the scan reader's recorded text detection for the scanned pages, one block per line (SYNTHETIC)."
+    },
+    {
+      "path": "contract-set-v2/V14-scanned/truth.json",
+      "sha256": "256f7a4e09046323b785e0bd7b0b28820c6251b495bf19717fd1956ff2731b6d",
+      "bytes": 7397,
+      "kind": "json",
+      "description": "V14: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
+    },
+    {
+      "path": "contract-set-v2/V15-scanned/document.pdf",
+      "sha256": "177bf40e1d407ec05790f1a7902345f5e37644db84b73e2a18991bfcc8286212",
+      "bytes": 41506,
+      "kind": "pdf",
+      "description": "V15: a SYNTHETIC contract drawn as table, scanned: page images, no text layer."
+    },
+    {
+      "path": "contract-set-v2/V15-scanned/textract.json",
+      "sha256": "03cc8b7ef8d387dc1978912e193c7cabcda9344bb89b2b6c1afcf1dd58da2886",
+      "bytes": 7605,
+      "kind": "json",
+      "description": "V15: the scan reader's recorded text detection for the scanned pages, one block per line (SYNTHETIC)."
+    },
+    {
+      "path": "contract-set-v2/V15-scanned/truth.json",
+      "sha256": "66a692dfd4eda311ccd09a07d43ab102a7836d616b63937ca9fedb5251f625b9",
+      "bytes": 7398,
+      "kind": "json",
+      "description": "V15: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
+    },
+    {
+      "path": "contract-set-v2/V16-table/document.pdf",
+      "sha256": "ead9fb55ecf661b9d2e1b283a83933047ddcd1b325d78d62be9d135c35dc94ef",
+      "bytes": 3255,
+      "kind": "pdf",
+      "description": "V16: a SYNTHETIC contract with its rates as a table (text PDF)."
+    },
+    {
+      "path": "contract-set-v2/V16-table/truth.json",
+      "sha256": "d42256ff72918f749145ef40fd8809f1e76973a1992f16915b7cf8a2ddd22c2b",
+      "bytes": 12385,
+      "kind": "json",
+      "description": "V16: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
+    },
+    {
+      "path": "contract-set-v2/V17-prose/document.pdf",
+      "sha256": "2d3c4b3a18448af56f0c474615910a0829413c728c3d9a6f71f87e91259c2203",
+      "bytes": 3302,
+      "kind": "pdf",
+      "description": "V17: a SYNTHETIC contract with its rates as prose (text PDF)."
+    },
+    {
+      "path": "contract-set-v2/V17-prose/truth.json",
+      "sha256": "22d1e4f5d145d280c5504cccb5d002d5df4fff78ee99b8b66ee41af55c64fda6",
+      "bytes": 11807,
+      "kind": "json",
+      "description": "V17: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
+    },
+    {
+      "path": "contract-set-v2/V18-scanned/document.pdf",
+      "sha256": "8f5cac81c29bbb8c512e606b2992a526e7fcb6660c1dbb5585259bc6beff6b24",
+      "bytes": 40974,
+      "kind": "pdf",
+      "description": "V18: a SYNTHETIC contract drawn as prose, scanned: page images, no text layer."
+    },
+    {
+      "path": "contract-set-v2/V18-scanned/textract.json",
+      "sha256": "de25c8d8de4f7e70b64bba1442b39992d5217234f42dd853b8eda87a78d4605b",
+      "bytes": 6524,
+      "kind": "json",
+      "description": "V18: the scan reader's recorded text detection for the scanned pages, one block per line (SYNTHETIC)."
+    },
+    {
+      "path": "contract-set-v2/V18-scanned/truth.json",
+      "sha256": "bf1fe95db204d225fa571bb74c05aac38251333aa39f7c2989660f840171914f",
+      "bytes": 7674,
+      "kind": "json",
+      "description": "V18: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth)."
+    }
+  ],
+  "generated": [
+    {
+      "path": "MOD-09/generated/L01-table/document.pdf",
+      "sha256": "3d93a5e530bb47331570b72a1d2c04507384bf55d7a2c019086d7af499c5d8dd",
+      "bytes": 204538,
+      "description": "L01: a SYNTHETIC contract with its rates as a table (text PDF). Generated at test time by ensureLargeContractTier() from @tp/synth."
+    },
+    {
+      "path": "MOD-09/generated/L01-table/truth.json",
+      "sha256": "8dc1739a66d1c05cb807144bf3ead8d0c701f0b90a31a468c4317c035f507669",
+      "bytes": 44205,
+      "description": "L01: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth). Generated at test time by ensureLargeContractTier() from @tp/synth."
+    },
+    {
+      "path": "MOD-09/generated/L02-prose/document.pdf",
+      "sha256": "e22db0186240613d0849033d8c9f2fe1189c0ae623bc2876f9c5f9a5ea8e4e55",
+      "bytes": 215363,
+      "description": "L02: a SYNTHETIC contract with its rates as prose (text PDF). Generated at test time by ensureLargeContractTier() from @tp/synth."
+    },
+    {
+      "path": "MOD-09/generated/L02-prose/truth.json",
+      "sha256": "0e598cd7571c6b6d3576d5ceec223b2c372733f710af0d28da9b4b6284c252e2",
+      "bytes": 50322,
+      "description": "L02: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth). Generated at test time by ensureLargeContractTier() from @tp/synth."
+    },
+    {
+      "path": "MOD-09/generated/L03-scanned/document.pdf",
+      "sha256": "fbc3de7b9eb34034effe1d41bbd92b93afac6d061a36bda7e64f7cde137678c2",
+      "bytes": 3380628,
+      "description": "L03: a SYNTHETIC contract drawn as table, scanned: page images, no text layer. Generated at test time by ensureLargeContractTier() from @tp/synth."
+    },
+    {
+      "path": "MOD-09/generated/L03-scanned/textract.json",
+      "sha256": "3b5c81b37f85854947e694bee6858dbb5807e95e9968da14c84a74edd2656d16",
+      "bytes": 574881,
+      "description": "L03: the scan reader's recorded text detection for the scanned pages, one block per line (SYNTHETIC). Generated at test time by ensureLargeContractTier() from @tp/synth."
+    },
+    {
+      "path": "MOD-09/generated/L03-scanned/truth.json",
+      "sha256": "508127928744645394206afed28d7541601d028ed14001e288a4f1ba9c0e8143",
+      "bytes": 43967,
+      "description": "L03: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth). Generated at test time by ensureLargeContractTier() from @tp/synth."
+    },
+    {
+      "path": "MOD-09/generated/L04-prose/document.pdf",
+      "sha256": "ff4bc391c8452e9b94d431d570a72da81a3bd0d7d91d82434f39b7a92d98f2fc",
+      "bytes": 110372,
+      "description": "L04: a SYNTHETIC contract with its rates as prose (text PDF). Generated at test time by ensureLargeContractTier() from @tp/synth."
+    },
+    {
+      "path": "MOD-09/generated/L04-prose/truth.json",
+      "sha256": "7936f427f71baca32611163eb5fe67dff202901fac3e3a7fb78490c56bda06c1",
+      "bytes": 2270,
+      "description": "L04: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth). Generated at test time by ensureLargeContractTier() from @tp/synth."
+    },
+    {
+      "path": "MOD-09/generated/L05-table/document.pdf",
+      "sha256": "71faffb5bf4e7d33e08b75e147e074ce884f2f2bbd7af9f0fbef5a852b2f15ce",
+      "bytes": 93836,
+      "description": "L05: a SYNTHETIC exhibit with its rates as a table (text PDF). Generated at test time by ensureLargeContractTier() from @tp/synth."
+    },
+    {
+      "path": "MOD-09/generated/L05-table/truth.json",
+      "sha256": "850ee94701e12261d06e39e315f7241d466ea8cb7bd89e0e079491d0d9d2ee8b",
+      "bytes": 47396,
+      "description": "L05: the rate records the document states, every field with its value, page and quote (SYNTHETIC ground truth). Generated at test time by ensureLargeContractTier() from @tp/synth."
+    }
+  ],
+  "uploads": [],
+  "scenario": {
+    "contractSetV2": {
+      "dir": "contract-set-v2",
+      "generatedDir": "MOD-09/generated",
+      "cases": 63,
+      "tiers": {"small":53,"medium":5,"large":5},
+      "layouts": {"table":23,"prose":20,"scanned":20},
+      "kinds": {"contract":51,"exhibit":12},
+      "pageText": {"faithful":58,"unfaithful":5},
+      "records": 456,
+      "fields": 2615,
+      "canary": "SYNTHETIC-CANARY-MOD10"
+    }
+  },
+  "outcome": {
+    "contractSetV2": "every true field quotes its page as a person sees it, and on an unfaithful case where the text as read differs the field as a faithful copier of that text would write it; the gate counts wrong-but-verified fields apart from rejected and missed ones, holds them to zero on faithful cases, and refuses comparison when the set changes"
+  },
+  "notes": []
+}

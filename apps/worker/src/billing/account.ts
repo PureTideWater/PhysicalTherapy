@@ -59,6 +59,13 @@ export interface InvoiceView {
   readonly createdAt: Date;
 }
 
+/** The invoice that holds billing's standing (billing_standing.invoice_id): the oldest unpaid one whose payment failed. */
+export interface HoldingInvoice {
+  readonly id: string;
+  readonly number: string | null;
+  readonly amountRemainingCents: Cents;
+}
+
 export interface OrganizationBilling {
   readonly organizationId: string;
   readonly name: string;
@@ -69,6 +76,13 @@ export interface OrganizationBilling {
   readonly standing: 'good' | 'past_due' | 'suspended';
   readonly pastDueSince: Date | null;
   readonly suspendedSince: Date | null;
+  /** The invoice holding the organization past due or suspended for nonpayment, wherever it falls among the invoices; null in good standing. */
+  readonly holdingInvoice: HoldingInvoice | null;
+  /**
+   * How many unpaid invoices have held a payment failure for 30 days (billing_standing's own predicate): runs restart
+   * only once every one is paid, since paying the holding invoice moves the hold to the next.
+   */
+  readonly holdingCount: number;
   readonly subscription: SubscriptionView | null;
   readonly invoices: readonly InvoiceView[];
 }
@@ -82,6 +96,10 @@ interface OrganizationRow {
   readonly standing: OrganizationBilling['standing'];
   readonly past_due_since: Date | null;
   readonly suspended_since: Date | null;
+  readonly holding_invoice_id: string | null;
+  readonly holding_number: string | null;
+  readonly holding_remaining_cents: string | null;
+  readonly holding_count: number;
 }
 
 interface InvoiceRow {
@@ -110,8 +128,12 @@ const CURRENT_SUBSCRIPTION = `SELECT id, plan, status, current_period_end, cance
 export async function organizationBilling(client: ReadClient, organizationId: string, invoiceLimit = 24): Promise<OrganizationBilling | null> {
   const [organization] = await rows<OrganizationRow>(
     client,
-    `SELECT o.id, o.name, o.kind, o.status, o.billing_customer_ref IS NOT NULL AS has_customer, s.standing, s.past_due_since, s.suspended_since
+    `SELECT o.id, o.name, o.kind, o.status, o.billing_customer_ref IS NOT NULL AS has_customer, s.standing, s.past_due_since, s.suspended_since,
+            h.id AS holding_invoice_id, h.number AS holding_number, h.amount_remaining_cents::text AS holding_remaining_cents,
+            (SELECT count(*) FROM invoice i
+              WHERE i.organization_id = o.id AND i.status IN ('open', 'uncollectible') AND i.first_failed_at <= now() - interval '30 days')::int AS holding_count
        FROM organization o JOIN billing_standing s ON s.organization_id = o.id
+       LEFT JOIN invoice h ON h.id = s.invoice_id
       WHERE o.id = $1`,
     [organizationId],
   );
@@ -136,6 +158,11 @@ export async function organizationBilling(client: ReadClient, organizationId: st
     standing: organization.standing,
     pastDueSince: organization.past_due_since,
     suspendedSince: organization.suspended_since,
+    holdingInvoice:
+      organization.holding_invoice_id === null
+        ? null
+        : { id: organization.holding_invoice_id, number: organization.holding_number, amountRemainingCents: parseCents(organization.holding_remaining_cents ?? '0') },
+    holdingCount: organization.holding_count,
     subscription:
       subscription === undefined
         ? null
@@ -174,8 +201,17 @@ export interface BillingServices {
   readonly provider: BillingProvider;
 }
 
-async function customerOf(client: BillingClient, organizationId: string): Promise<{ readonly name: string; readonly kind: string; readonly ref: string | null } | undefined> {
-  return (await billingRows<{ name: string; kind: string; ref: string | null }>(client, 'SELECT name, kind, billing_customer_ref AS ref FROM organization WHERE id = $1', [organizationId]))[0];
+async function customerOf(
+  client: BillingClient,
+  organizationId: string,
+): Promise<{ readonly name: string; readonly kind: string; readonly status: OrganizationBilling['status']; readonly ref: string | null } | undefined> {
+  return (
+    await billingRows<{ name: string; kind: string; status: OrganizationBilling['status']; ref: string | null }>(
+      client,
+      'SELECT name, kind, status, billing_customer_ref AS ref FROM organization WHERE id = $1',
+      [organizationId],
+    )
+  )[0];
 }
 
 /** The organization's Stripe customer: created once (keyed by the organization), its reference recorded once. */
@@ -230,9 +266,13 @@ const ABANDONED_CLAIM = "interval '1 hour'";
  * place (subscription_claim), taken before Stripe is asked: two submissions made before the first one's
  * webhook arrives (two tabs, a form rendered twice) cannot both subscribe. Stripe's idempotency key is the
  * claim's, so a retry of the same claim never creates a second subscription. The claim ends when the
- * subscription does (events.ts).
+ * subscription does (events.ts). A closed organization takes no new plan (its open invoices are still paid): read
+ * first for the message, and checked again in the claim's own statement, so a closure between the two is not missed.
  */
 export async function subscribe(services: BillingServices, organizationId: string, plan: PlanInterval, _requestKey: string): Promise<string> {
+  if ((await withBilling(services.pool, (client) => customerOf(client, organizationId)))?.status === 'closed') {
+    throw new BillingRefusedError('plan', 'a closed organization takes no new plan');
+  }
   if ((await currentSubscription(services, organizationId)) !== undefined) {
     throw new BillingRefusedError('plan', 'the organization already has a plan; cancel it first to choose another');
   }
@@ -242,9 +282,20 @@ export async function subscribe(services: BillingServices, organizationId: strin
   }
   const claim = await withBilling(services.pool, async (client) => {
     await client.query(`UPDATE subscription_claim SET status = 'failed' WHERE organization_id = $1 AND status = 'pending' AND created_at < now() - ${ABANDONED_CLAIM}`, [organizationId]);
-    return (await billingRows<{ id: string }>(client, 'INSERT INTO subscription_claim (organization_id, plan) VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING id', [organizationId, plan]))[0]?.id;
+    return (
+      await billingRows<{ id: string }>(
+        client,
+        `INSERT INTO subscription_claim (organization_id, plan)
+         SELECT $1, $2 WHERE EXISTS (SELECT 1 FROM organization WHERE id = $1 AND status <> 'closed')
+         ON CONFLICT DO NOTHING RETURNING id`,
+        [organizationId, plan],
+      )
+    )[0]?.id;
   });
   if (claim === undefined) {
+    if ((await withBilling(services.pool, (client) => customerOf(client, organizationId)))?.status === 'closed') {
+      throw new BillingRefusedError('plan', 'a closed organization takes no new plan');
+    }
     throw new BillingRefusedError('plan', 'a plan is already being set up for the organization, or is in place; reload the page to see it');
   }
   let subscriptionRef: string;
