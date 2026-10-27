@@ -41,3 +41,5 @@
 - mutation at 6f23c42b: 6 shards (canary 5/5 each, stryker, gate) and the gate passed: pricing 98.67% (1934 detected, 26 undetected = 26 recorded equivalents, 12 load failures), packets 97.75% (4310 detected, 99 = 99 equivalents, 2 load failures). SUITE COMPLETE. Next: drop dbs, push.
 - 20:47 pushing 6f23c42b (38 commits over 098636e3)
 - PUSHED 6f23c42b… to co-001/pr-06b-mail-streams (20:48; hook: commits already on remote via wip-pr42-integrate push 19:12). Next: PR body update.
+- PR BODY UPDATED via MCP update_pull_request (draft kept); readback via gh api IDENTICAL to scratchpad/pr42/body-final.md (94,457 chars). Note: a first PATCH through gh api dropped the '🤖 Generated with' line, so the body was rewritten through the MCP tool. Next: watch CI on 6f23c42b, then StructuredOutput.
+- CI on 6f23c42b (partial, 20:5x): unit success (web-entries fix holds), db 1-4 success, lint/static/build/images success, domain model failure = approval only (matches schema and 375 functions; SHA b12150bb)
