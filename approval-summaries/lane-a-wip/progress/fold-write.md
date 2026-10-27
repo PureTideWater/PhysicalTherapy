@@ -1,0 +1,20 @@
+# fold-write progress (started 2026-10-27 01:43 UTC)
+- [ ] read sources (HANDOFF Start here, lane-b.md, lane-b-handoff, LANES.md, tracker)
+- [ ] Task 1a: HANDOFF.md Start here replaced
+- [ ] Task 1b: HANDOFF.md dated end section added
+- [ ] Task 2: tracker WF, MANUAL, BATCHES, HISTORY, BLOCKERS, MILESTONES, ETA
+- [ ] Task 2: run build_status.py
+- [x] read sources (01:50 UTC)
+- finding: old journals (session e7bf8d14) gone; 10 PR 6b design steps of wf_b7b1b9d1-40f fall to Queued with the new WF. Plan: tracker/frozen-work-2026-10-25.json from the last published work.json (asset 17d18bc4..., saved under scratchpad/artifact-files/a3f3fd1e-.../), journal-backed batches only; FROZEN merges both, newer wins.
+- facts verified 01:50 UTC: build-platform tip e908c21; 14 merge times (UTC, from git); open PRs #42 (head 098636e, base merged, CI running, domain model red = approval case) and #33; F1 default branch ok; F2 security updates enabled (alerts/automated-security-fixes 403); F3 403; ruleset 25837331 active; login PureTideWater; five sessions RUNNING (get_session); ux-forms at 2982890 (e908c21 merged 01:42); wf_ba2333bd-714 builders db+infra started; wf_5f09e0bd-311 ss01 scouts started
+- HISTORY: lane-b.md has no whole-PR wall-clock hours (only stage durations) -> leave HISTORY, add comment
+- ETA: re-estimate from lane-b.md's measured pace (14 merges + UX review on 6%->97%)
+- NEXT: write Start here draft at scratchpad/fold/start-here.md, splice into HANDOFF lines 5..127
+- [x] Start here drafted at scratchpad/fold/start-here.md (01:58 UTC); NEXT splice
+- [x] HANDOFF Start here spliced (01:52) and the end section appended (~01:55)
+- [x] HANDOFF updated for the 01:50 facts (F2/F3 applied, usage 94%, hold till 14:05, #33 why, pnpm pin, session states) at 01:57
+- [x] tracker/frozen-work-2026-10-25.json written (116 Done rows of 12 journal-backed batches, from the published work.json)
+- [x] tracker: WF, FROZEN (two snapshots), MILESTONES notes (M6, M9, M10, M11, CO1), FRIENDLY, MANUAL done (~02:00). NEXT: BATCHES, HISTORY comment, ETA, BLOCKERS, summary counts
+- [x] tracker: BATCHES (3 Lane A batches on top; Lane B CI, UX, queue), HISTORY comment, ETA 2026-12-20..2027-01-08, BLOCKERS, summary counts, brand-commit fallback 74 (~02:05). NEXT: run build_status.py
+- [x] build_status.py ran OK at 01:58:45Z -> scratchpad/tracker-out/{blockers,history,milestones,summary,work}.json; no regression vs published work.json
+- [x] DONE ~02:01 UTC: HANDOFF.md (Start here replaced, Last updated, end section) + tracker/build_status.py + tracker/frozen-work-2026-10-25.json; outputs in scratchpad/tracker-out. Not committed (orchestrator commits).
