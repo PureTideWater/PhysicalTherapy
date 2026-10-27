@@ -15,6 +15,10 @@ experience, accessibility, security and privacy, reliability, maintainability; n
 for wording and visible changes, within `.claude/rules/brand.md` and CO-11 without asking. Where this design departs
 from the review's fix text, the departure and its reason are stated where it is made (summarised in section 1.6).
 
+**After the design review (2026-10-27 14:20 UTC):** the one adversarial design review (wf_76fa3626-8c5,
+`designs/lane-b-ux-table-scroll-review.json`: build with changes, no migration, 16 findings) is folded in at the end, in
+section 12. **Where section 12 and an earlier section disagree, section 12 wins.**
+
 ## Contents
 
 1. Scope: what closes, every site, the files, what is left for later PRs
@@ -28,6 +32,7 @@ from the review's fix text, the departure and its reason are stated where it is 
 9. Build slices and their order
 10. Risks and open points, each with its answer
 11. Proposals outside this PR (improve as you go)
+12. After the design review: the 16 findings, each accepted, and what changes
 
 ---
 
@@ -1263,3 +1268,113 @@ keeps every hook and name, and runs the slice's unit tests.
 - **P7.** UX PR 34's design cites ADR 0078 instead of amending ADR 0056 (prs.json order 34's file list).
 - **P8.** `reports.spec.ts:46` reads north's anomalies, which another spec must load in the same shard: give it a journey
   practice of its own.
+
+---
+
+## 12. After the design review: the 16 findings, each accepted, and what changes
+
+Every finding is accepted as the reviewer proposed it, except where a line below says otherwise. Builders work from
+this section first.
+
+### 12.1 Blocking
+
+- **DR-01, the focus rule counts only the scroller's own focus.** React's `onFocus` and `onBlur` bubble, so focus on a
+  link inside a fitting table must not bring back the region. In `scroll-table.tsx`, `onFocus` sets `focused` only when
+  `event.target === event.currentTarget`, and `onBlur` clears it (then measures) only on the same condition. ADR 0078
+  Decision 2 says "holds focus" means the scroller itself, never a control inside it. Tests: `scroll-table.test.tsx`
+  gains a `regionProps` row "fits, a descendant focused: nothing" (the function takes the scroller's own focus only);
+  `layout-1280.spec.ts` Tabs to the first link of a fitting table and checks its scroller still has no `role` and no
+  `tabindex`.
+- **DR-02, two more locators become ambiguous.** Add `exact: true` at `packets.spec.ts:98, 132, 144, 282, 431, 501, 507`
+  (`'Version'` against "Versions, scrolls sideways") and `reconciliation.spec.ts:105` (`'Preview'` against "Preview rows,
+  scrolls sideways"), with the four of 5.4. Slice E runs the full check: for each `getByRole('region' | 'table', { name: X })`
+  in `apps/web/e2e` without `exact`, it fails if X is a case-insensitive substring of any new `ScrollTable` or
+  `ScrollBox` label on the same route (section 1.4), and fixes each hit. The PR description records the list.
+
+### 12.2 Should fix
+
+- **DR-03, the focus indicator is an outline on the frame.** Both scrollers drop `focus-visible:outline-none
+  focus-visible:ring-2 focus-visible:ring-ring` (and `ring-inset`). `brand.css` adds:
+  `.pw-scroll-frame:has(> [data-scroller]:focus-visible) { outline: 2px solid var(--pw-focus); outline-offset: 2px; }`
+  and `.pw-scroll-frame > [data-scroller]:focus-visible { outline: none; }`. It survives forced colours and is never
+  covered by the fades or clipped by `ScrollBox`'s frame. (`--pw-focus` is the brand's focus token; the builder checks
+  its name in `packages/brand/src/tokens.css`, and uses the token the app's `ring` maps to if it differs.)
+  `scroll-table.test.tsx` asserts the markup holds no `outline-none`. Section 8.1's forced-colours shot shows the table
+  focused by Tab.
+- **DR-04, the `min-w` cap is 54rem, not 56rem.** The content column at 1280 is 909 px, and a classic 17 px scrollbar
+  leaves 892 px. The allowed set is **32, 36, 40, 48 and 54rem** everywhere: section 1.4's rule and rows (every 56rem
+  becomes 54rem), 2.6, ADR 0078 Decision 1 ("fits at 1280 with a classic scrollbar"), `StackBelow`
+  (`'32rem' | '36rem' | '40rem' | '48rem' | '54rem'`) and the reports `Table`'s map. `layout-1280.spec.ts`'s fit checks
+  run at 1280 and again at 1263 px ("1280 less a classic 17 px scrollbar").
+- **DR-05, `atPhoneWidth` waits for every scroller to agree with its measurement before axe.** In `a11y.ts`, for every
+  call: poll until each `[data-scroller]` that overflows (`scrollWidth − clientWidth > 1`, or the block axis for
+  `data-axis="block"`) has `tabindex="0"` and `role="region"`, and each that fits has neither (unless it is focused).
+  `layout-1280.spec.ts`'s `expectFitsItsCard` does the same after its resize. Section 4.2 holds it beside the rendered
+  guard; TBL-03's assertion adds "every scroller's state agrees with its measurement before axe runs".
+- **DR-06, focus taken before hydration is kept.** In the mount effect, before the first `measure()`, set `focused` to
+  `document.activeElement === scroller`. Section 10's row "A resize that makes a focused table fit would pull focus"
+  cites it.
+- **DR-07, the renders-twice rules gain two.** (a) `ActionForm`'s refusal hand-off (`RefusalTakeover`,
+  `RefusalFallback`: `action-form.tsx:149-156, 176-185, 200-215`) must claim focus only when its element is rendered
+  (`ref.current?.getClientRects().length > 0` before clearing `refused`). `action-form.tsx` is a ux-forms file and no
+  site here renders a form twice, so this change is **UX PR 34's** (its first user of row forms in `StackedRows`):
+  ADR 0078 Decision 5 states the rule and names UX PR 34; the status file records it. (b) `stacked-rows.tsx` exports a
+  test helper `repeatedIds(html)` (ids, and `data-*` hook values other than `data-stacked-row`, that occur more than
+  once in `renderToStaticMarkup` output). Every paired caller's unit test asserts it returns nothing;
+  `stacked-rows.test.tsx` test 8 uses it.
+- **DR-08, the brand order is checked, never silently fixed.** `StackedRows` renders the fields in the order given.
+  `inBrandOrder` becomes the exported check `brandOrderProblems(fields)`: the figure roles out of order (expected, paid,
+  short) or not together. Each paired caller's unit test asserts it is empty and that the table's header order equals
+  the fields' label order (one `COLUMNS` constant read in order for both). `stacked-rows.test.tsx` test 4: the check
+  finds `[Charge, Short, Expected, Observed, Paid]` out of order and accepts the brand's order. TBL-04 reads: "expected,
+  paid and short are given together and in that order, and the stacked rows keep the table's column order". UX PR 4
+  then reorders its table's columns as well, which UX-005 asks for (a note for its design).
+- **DR-09, one persona per test.** `tables-specialist` (test 1) and `tables-console-specialist` (test 2): five
+  personas in `synthetic-personas.ts` (`tables-manager`, `tables-specialist`, `tables-console-specialist`,
+  `tables-admin`, `tables-support`).
+- **DR-10, the recorded JSON moves to `ScrollBox`.** `pricing/line-words.tsx`'s Recorded `<pre>` becomes
+  `<ScrollBox as="pre" height="md" label=…>` with `whitespace-pre-wrap wrap-anywhere`, so it never scrolls sideways
+  (its height stays audit #38's). `ScrollTable` then holds tables only (the guard's rule 4, DR-12). The words "as the
+  engine recorded it" (the summary at `line-words.tsx:105` and the label) use a build word the checklist forbids
+  (`ux-brand-reviewer.md:82`); this PR already changes the file and its pin, so it takes the wording here, under the
+  co-founder's wording ruling: the summary reads **"As PaidWhole recorded it"**, the box **"<step>, as PaidWhole
+  recorded it, scrolls"**. The builder updates every spec and test that reads the old words (grep "engine recorded"),
+  and the PR description reports it.
+
+### 12.3 Nits
+
+- **DR-11, no print rule.** The web app has no print path, so the `@media print` blocks (2.4, 2.8), section 2.9's Print
+  row and the ADR's print sentence are dropped.
+- **DR-12, the guard reads imports.** `tables.test.ts` resolves the parent tag to its import binding: a `ScrollTable`
+  whose module specifier ends in `/scroll-table` (or is `@/components/scroll-table`), whatever its local name; a local
+  component named `ScrollTable` fails. Rule 2 (`createElement` or `jsx('table', …)`) scans `.ts` and `.tsx` (tests
+  skipped). Rule 4: a `ScrollTable` element has exactly one element child, a `<table>`. Each rule gets a case in the
+  in-memory self-test, and a failure's message names the exemption line to edit (#42's author may meet it first).
+- **DR-13, the `StackedRows` wrapper is `@container w-full min-w-0`**, so it never collapses to 0 px in a shrink-to-fit
+  parent; test 9 asserts the three classes.
+- **DR-14, no `<placeholders>` in Markdown.** TBL-01 reads 'named after its table with ", scrolls sideways" added (a text
+  box: ", scrolls")'; the ADR writes 'named "Cases, scrolls sideways" (the table's name, then ", scrolls sideways")';
+  backticks wherever a placeholder must stay. `matrix.ts` stays byte-equal to the matrix.
+- **DR-15, an e2e time budget.** `tables-phone` test 1 at most the 1280 tour's 480 s, and no CI e2e shard more than 2
+  minutes longer than on e908c21. The integrator reports each shard's wall time before and after in the PR
+  description. If test 1 is over budget, the admin and specialist contexts move to a third test that builds its own
+  journey practice without the pricing tour.
+- **DR-16, names that repeat.** "Proposed fields of proposal P, candidate N" (P the proposal's position as its card
+  shows it) in `models/display.tsx`; "Fields of rate record N" in `contracts/review.tsx`, matching the card region's
+  name. "Receipts" stays (fixed by `exact: true`); dropping the section's own `aria-label` is a proposal (P10).
+
+### 12.4 Re-checked at this fold (14:20 UTC)
+
+- **Base:** `claude/build-platform` is still e908c21.
+- **#42** (`co-001/pr-06b-mail-streams`, now 098636e, 188 files): no file this design edits is #42's. Its new
+  `app/console/mail/page.tsx` table is `ScrollTable`'s direct child, so if #42 merges first the guard passes it with no
+  exemption; its three exempt files still hold 1, 2 and 1 bare tables.
+- **ux-forms** (now 4f0b526, 105 files): it also changes `components/action-form.tsx` (DR-07 (a) stays UX PR 34's), ADR
+  0056 and `synthetic-personas.ts`; the PR merged second keeps both.
+
+### 12.5 Proposals added
+
+- **P9.** The uploader cuts file names to a hover title (`uploader.tsx:419`); add "never cut to a hover title" to the
+  reviewer checklist.
+- **P10.** Drop the receipts section's own `aria-label` (`receipts.tsx:143`), so its region and table do not repeat one
+  name.
