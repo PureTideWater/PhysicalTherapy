@@ -54,5 +54,65 @@ td.pw-money,
   outline-offset: 2px;
 }
 
+/* A scroller's cue (docs/adr/0078): a fade at each edge past which content lies, drawn over the content from the
+   state ScrollTable and ScrollBox set on the frame's parent; never a style attribute (the CSP). The frame does not
+   scroll; its own stacking context keeps the fades above a sticky naming cell (z-index 1) and below the page's. */
+.pw-scroll-frame {
+  --pw-scroll-fade: 1.5rem;
+  position: relative;
+  isolation: isolate;
+  border-radius: var(--pw-radius-sm);
+}
+.pw-scroll-frame::before,
+.pw-scroll-frame::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  width: var(--pw-scroll-fade);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 2;
+}
+.pw-scroll-frame::before {
+  inset-inline-start: 0;
+  background: linear-gradient(to right, var(--pw-scroll-surface, var(--pw-bg)), transparent);
+}
+.pw-scroll-frame::after {
+  inset-inline-end: 0;
+  background: linear-gradient(to left, var(--pw-scroll-surface, var(--pw-bg)), transparent);
+}
+[data-edge-start] > .pw-scroll-frame::before,
+[data-edge-end] > .pw-scroll-frame::after { opacity: 1; }
+/* Keep a focused link or control clear of the fades (WCAG 2.4.11). */
+.pw-scroll-frame > [data-scroller] { scroll-padding-inline: var(--pw-scroll-fade); }
+/* A text box's fades are bands at its top and bottom, inside its border, from its own surface. */
+[data-axis="block"] > .pw-scroll-frame::before,
+[data-axis="block"] > .pw-scroll-frame::after { inset-inline: 0; width: auto; height: var(--pw-scroll-fade); }
+[data-axis="block"] > .pw-scroll-frame::before {
+  inset-block: 0 auto;
+  background: linear-gradient(to bottom, var(--pw-scroll-surface, var(--pw-bg)), transparent);
+}
+[data-axis="block"] > .pw-scroll-frame::after {
+  inset-block: auto 0;
+  background: linear-gradient(to top, var(--pw-scroll-surface, var(--pw-bg)), transparent);
+}
+[data-axis="block"] > .pw-scroll-frame > [data-scroller] { scroll-padding-inline: 0; scroll-padding-block: var(--pw-scroll-fade); }
+/* The scroller's focus is the frame's outline: outside the fades and the text box's clip, and kept in forced colours,
+   which drop a ring (DR-03). An engine without :has() keeps the scroller's own outline. */
+@supports selector(:has(*)) {
+  .pw-scroll-frame:has(> [data-scroller]:focus-visible) {
+    outline: 2px solid var(--pw-focus);
+    outline-offset: 2px;
+  }
+  .pw-scroll-frame > [data-scroller]:focus-visible { outline: none; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pw-scroll-frame::before, .pw-scroll-frame::after { transition: opacity 150ms ease-out; }
+}
+/* Forced colours: no fade (its colours would not be the system's); the caption and the scrollbar say it scrolls. */
+@media (forced-colors: active) {
+  .pw-scroll-frame::before, .pw-scroll-frame::after { display: none; }
+}
+
 /* Clear space around any mark: one quarter of its height on all sides */
 .pw-mark-clear { padding: 0.25em; }

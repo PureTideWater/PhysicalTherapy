@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
@@ -40,9 +41,9 @@ const caseRow = (key: string, changes: Partial<StackedRow> = {}): StackedRow => 
   key,
   hooks: { 'data-stacked-case': key },
   heading: (
-    <a className="underline" href={`/p/synthetic/cases/${key}`}>
+    <Link className="underline" href={`/p/synthetic/cases/${key}`}>
       Payer Q, SYNPLAN FIX ONE
-    </a>
+    </Link>
   ),
   fields: fields(),
   ...changes,
@@ -163,9 +164,9 @@ describe('one stacked-row layout', () => {
         rows={[
           caseRow('case-1', {
             actions: (
-              <a className="underline" href="/p/synthetic/cases/case-1/packet">
+              <Link className="underline" href="/p/synthetic/cases/case-1/packet">
                 Open the packet
-              </a>
+              </Link>
             ),
           }),
           caseRow('case-2'),

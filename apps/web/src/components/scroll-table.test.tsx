@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { frameData, ownFocus, regionProps, scrollState } from './scroll-state';
+import { frameData, ownFocus, regionProps, scrollState, stateChanged } from './scroll-state';
 import { ScrollBox, ScrollTable } from './scroll-table';
 
 /**
@@ -96,6 +96,14 @@ describe('the scroller’s state, from one measurement', () => {
   it('reads a right-to-left scroller’s negative offset as its magnitude', () => {
     expect(wide(-150)).toEqual(wide(150));
     expect(wide(-300)).toEqual(wide(300));
+  });
+
+  it('changes only when what the page shows changes, so a scroll within the middle re-renders nothing', () => {
+    expect(stateChanged(wide(150), wide(160))).toBe(false);
+    expect(stateChanged(wide(0), wide(150))).toBe(true);
+    expect(stateChanged(wide(150), wide(300))).toBe(true);
+    expect(stateChanged(unmeasured(), fitting())).toBe(true);
+    expect(stateChanged(fitting(), scrollState({ scrollSize: 400, clientSize: 400, offset: 0 }))).toBe(false);
   });
 });
 
