@@ -34,3 +34,16 @@ Clone: $P/designs/ss01-revise (to create)
 - word pins with actors: billing.db.test.ts:313,:340 job scope -> R6 now; billing-routes.db.test.ts:414-550 group admin/uploader (members) -> R1/R3 (builders check each actor); console-routes.db.test.ts:685 check actor; define.ts:154 -> R3 for group persona, R6 otherwise. worker.test.ts:325 mock unchanged query.
 - backup of pre-revision design: progress/ss-01-suspension.pre-revise.md
 - WRITING full revised design now (sections 0-18).
+- WRITTEN: full revised design at /home/user/ops/designs/ss-01-suspension.md (sections 0-18). NEXT: proofread/consistency check (grep unpaid_invoice, 'every path', line refs, H-ids), drop DB tp_design_ss01_30, StructuredOutput.
+## Dispositions (final)
+- F1 taken (per-permission hold; stopped; practice_run_refusal_for; trigger map; X/Y/Z/W tests)
+- F2 taken (drop unpaid_invoice; B5 retired; rulings named touched-and-kept)
+- F3 taken (packet_export_refusal_codes recreated, code LAST not before verifier_failed: reason given)
+- F4 taken (precise words; row 11; registry test + CONTINUES_STARTED_WORK; DB stop not built D18, handed on)
+- F5 taken (on_hold cause for non-members in PG; R6/H13; G1 neutral; property test)
+- F6 taken (C7 from row from_status active & at=status_since; reason-changed line)
+- F7 taken (C4 hint; ADR 0080)
+- F8 taken + widened (billing_held effect all stages)
+- F9 taken (4.7 rewritten; accepted in ADR 0080)
+- [x] DB tp_design_ss01_30 DROPPED
+- DONE: design revised (1289 lines, sections 0-18); fixes after proofread: BIL-07 export row (worker.test.ts gate + export-attempts db), D8 :1216-1256. Remaining: StructuredOutput.
