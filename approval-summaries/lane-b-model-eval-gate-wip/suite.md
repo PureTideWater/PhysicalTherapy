@@ -10,3 +10,28 @@
 - [x] lint: passed, 1,620 files in 3 groups, 0 errors, 0 warnings
 - [x] lint:logs: 1057 files scanned; every log call uses allowlisted fields
 - [x] lint:copy: 514 files read; the product copy keeps the brand's words
+- [x] pnpm test run 1: 2 failed | 379 passed (381 files); 2 failed | 6290 passed | 33 skipped (6325). Both this PR's, fixed:
+  - tools/brand-colors/scan.test.ts: "#120" read as a hex color in 16 PR source comments -> "audit item 120" (base's convention, e.g. "combined audit item 135")
+  - packages/edi835/src/fixtures.test.ts zip entries: MOD-12/contract-and-eob.zip has no 835 batch expectation (file.zip undefined) -> test reads only zips with a batch expectation, plus a case holding PAR-27 and PAR-28 are read
+  - targeted rerun: 2 files, 207 passed
+- [x] test:golden: 5 files, 380 passed
+- [x] test:oracle: pyx12 4.0.0 agrees with all 688 (677 valid, 11 malformed rejected); edi835 agrees on every segment
+- [x] pnpm test rerun: 381 files passed; 6292 passed | 33 skipped (6325); exit 0 (coverage on)
+- [x] test:db shard 1/4 (fresh db phi_suite_shard_1, migrated): 32 files passed; 3153 passed | 1 skipped (3154)
+- [x] test:db shard 2/4: 32 files passed; 2059 passed (2059)
+- [x] test:db shard 3/4: 32 files passed; 3094 passed | 1 skipped (3095)
+- [x] test:db shard 4/4: 32 files passed; 928 passed (928). Total 128 files, 9234 passed, 2 skipped
+- [x] pnpm build: exit 0 (web compiled in 26.2 s; worker done)
+- [x] check:fixtures: 341 files read by the guard, 3792 text files searched; exit 0
+- [x] verify-content: every content set passes
+- [x] engine-freeze vs e908c214 (pre-commit): Nothing / Problems None (re-check after commit)
+- [x] actions:check: not run (no workflow, manifest or lockfile change)
+- [x] committed 25be3ab6 (code), 11ab0b86 (docs), 9b7eadfe (test fixes)
+- [x] stryker affected post-commit: money/pricing/ledger/packets not affected; any=false packages=[] shards=[] -> gate as mutation.yml: "No money path changed: no mutation run."
+- [x] engine-freeze post-commit vs e908c214: let through Nothing; Problems None
+- [x] setup-container: OK; playwright 1.56.1 chromium-1194 present in /opt/pw-browsers -> e2e runs
+- [x] gitleaks git e908c214..HEAD: 6 commits scanned, no leaks found
+- [x] pre-push hook standalone (stdin ref line, no push): 3 commits checked, 0 files read by the fixture guard, 30 text files searched for an X12 header, gitleaks found no secret; exit 0
+- [x] diff stat: 57 files, 3847+ 123-; no migration, no #42 file, no content/releases; added lines: no model identifier (only "CLAUDE.md" mentions); identifiers synthetic (ZZ..., SYNPCN..., 77..., 555 phones, 000 ZIPs)
+- [ ] e2e running (E2E_PREBUILT=1, BUILD_COMMIT 9b7eadfe, --workers=2, DATABASE_URL 5433/postgres)
+- [x] e2e: 54 passed (8.1m), exit 0. DONE: result in scratchpad/phi/suite.md
