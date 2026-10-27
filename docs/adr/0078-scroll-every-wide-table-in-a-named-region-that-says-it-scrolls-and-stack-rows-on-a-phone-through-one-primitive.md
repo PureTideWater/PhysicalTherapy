@@ -40,7 +40,8 @@ values (emails, keys, paths, control numbers), never on a figure, code or date.
 
 **2. Its name and tab stop follow the measurement.** On the server and until the browser measures it, the scroller is a
 region named "Cases, scrolls sideways" (the table's name, then ", scrolls sideways") with `tabindex="0"`, so it is
-reachable without script. In the browser one pure function (`components/scroll-state.ts`) turns `scrollWidth`,
+reachable without script. In the browser one pure function (`scrollState`, beside the components in
+`components/scroll-table.tsx`, with no React and no DOM, so the unit project tests it in node) turns `scrollWidth`,
 `clientWidth` and `scrollLeft` into the state: a difference of 1 px or less fits. While the table fits and the scroller
 does not hold focus it has no role, name or tab stop; while it overflows, or holds focus, it is the region again.
 Holding focus means the scroller itself, never a link or control inside it: React's focus events bubble, so only an

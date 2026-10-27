@@ -1,8 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { frameData, ownFocus, regionProps, scrollState, stateChanged } from './scroll-state';
-import { ScrollBox, ScrollTable } from './scroll-table';
+import { ScrollBox, ScrollTable, frameData, ownFocus, regionProps, scrollState, stateChanged } from './scroll-table';
 
 /**
  * The scrollers (docs/adr/0078; test matrix TBL-01; UX-011, UX-079 (a); the design review's DR-01 and DR-03). The unit

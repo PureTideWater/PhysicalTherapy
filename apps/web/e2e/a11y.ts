@@ -143,7 +143,7 @@ function tablesOutsideScrollers(): string[] {
  * Each rendered scroller whose role and tab stop disagree with its measurement, by its name and what it measures. A
  * scroller in a closed disclosure is left out: Chromium skips laying out what a closed <details> holds
  * (content-visibility: hidden), so its sizes are stale until it opens, when the scroller measures itself again. A
- * difference of a pixel or less fits, as the component rounds (components/scroll-state.ts).
+ * difference of a pixel or less fits, as the component rounds (components/scroll-table.tsx, scrollState).
  */
 function scrollersAtOdds(): string[] {
   return [...document.querySelectorAll<HTMLElement>('[data-scroller]')]
