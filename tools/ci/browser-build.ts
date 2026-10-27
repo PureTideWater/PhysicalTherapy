@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -36,6 +36,15 @@ import path from 'node:path';
  * tag (a tag missing here fails, never pulled and checked in place of the image just built), as root, so the image's
  * runtime user cannot hide a file from the hash (Chrome for Testing's deb.deps and rpm.deps are mode 0600), and offline.
  * The worker prints customers' PDFs with that headless shell.
+ *
+ * The hashes cover a build's bytes, not its files' modes nor what the system provides (shared libraries, fonts), so a
+ * build equal to the record in every file can still fail to start: a library missing from the runner or the image, or
+ * a binary its user may not run. So once every file of a build equals the record, and only then (a binary is never run
+ * before its bytes are proven), the check runs `<binary> --version` and fails unless it exits 0 printing exactly
+ * "Google Chrome for Testing <browserVersion>", naming what it printed. On the runner it runs as the job's user; with
+ * --image it runs in a container of the image as the image's own user (`docker run --rm --pull never --network none`,
+ * no --user), the user the worker prints PDFs as, so the check also proves that user can start the shell, while the
+ * hashes stay root's.
  *
  * Run by Node 24 directly, with no install: Node's own modules and erasable TypeScript only (browser-build.test.ts
  * holds that). --list prints every file's line of each build found; a build that fails the check has them printed anyway.
@@ -93,10 +102,20 @@ export interface FoundBuild {
   /** What kept a file from being hashed (a tool that failed, a file found but given no line): each fails the check as a
    * problem of its own, never as a file the build lacks, since the file is there and only its bytes are unknown. */
   readonly faults: readonly string[];
-  /** What `<binary> --version` printed, or why it did not run. */
-  readonly version: string;
+  /** `<binary> --version`, run only once every file of the build equals the record: what it did, or why it was not run. */
+  readonly version: VersionRun;
   /** Where the build was looked for (a folder, or an image's). */
   readonly where: string;
+}
+
+/** `<binary> --version` as run (by whom, its first line of output, how it ended), or why it was not run. */
+export type VersionRun =
+  | { readonly ran: true; readonly by: string; readonly line: string; readonly status: number | null; readonly signal: string | null; readonly error: string | null }
+  | { readonly ran: false; readonly why: string };
+
+/** What every recorded build's binary prints for --version: Chrome for Testing's name and the recorded version. */
+export function expectedVersion(record: BrowserRecord): string {
+  return `Google Chrome for Testing ${record.browserVersion}`;
 }
 
 /** The record, read and checked for shape: a malformed record is a failure of its own, never a pass. */
@@ -185,37 +204,57 @@ export function browsersRoot(env: NodeJS.ProcessEnv, core: string): string {
   return process.platform === 'darwin' ? path.join(home, 'Library/Caches/ms-playwright') : path.join(home, '.cache/ms-playwright');
 }
 
+/** Why a build's binary is not run: it is run only once every file of the build equals the record (sameFiles). */
+const NOT_PROVEN: VersionRun = { ran: false, why: "its files are not proven to be browser.json's" };
+
+/** Whether every file of a found build equals the record, with nothing beside them: the condition for running its binary. */
+export function sameFiles(found: FoundBuild, recorded: RecordedBuild): boolean {
+  return found.dir === recorded.dir && found.others.length === 0 && found.faults.length === 0 && treeSha256(found.lines) === recorded.treeSha256;
+}
+
 /** One build as installed under a browsers root: its folder's directory (the recorded one, else the only one there). */
-export function installedBuild(root: string, name: BuildName, pins: { revision: string; browserVersion: string }, recorded: RecordedBuild, env: NodeJS.ProcessEnv): FoundBuild {
+export function installedBuild(root: string, name: BuildName, pins: { revision: string; browserVersion: string }, recorded: RecordedBuild): FoundBuild {
   const revisionDir = path.join(root, `${BUILDS[name].folder}-${pins.revision}`);
   const base = { ...pins, where: revisionDir };
   const directories = existsSync(revisionDir) ? readdirSync(revisionDir).filter((entry) => !MARKERS.has(entry) && lstatSync(path.join(revisionDir, entry)).isDirectory()) : [];
   const dir = directories.includes(recorded.dir) ? recorded.dir : directories.length === 1 ? (directories[0] ?? null) : null;
-  if (dir === null) return { ...base, dir: null, lines: [], others: [], faults: [], version: 'not run: no build there' };
-  const { lines, others } = treeLines(revisionDir, dir);
-  const binary = path.join(revisionDir, dir, recorded.path.slice(recorded.dir.length + 1));
-  let version = 'not run: no binary at the recorded path';
-  if (existsSync(binary)) {
-    try {
-      version = execFileSync(binary, ['--version'], { env, encoding: 'utf8', timeout: 60_000, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-    } catch (error) {
-      version = `--version failed: ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`;
-    }
-  }
+  if (dir === null) return { ...base, dir: null, lines: [], others: [], faults: [], version: { ran: false, why: 'no build there' } };
   // A file this process cannot read throws out of treeLines, naming it: the check fails as "could not be checked".
-  return { ...base, dir, lines, others, faults: [], version };
+  const { lines, others } = treeLines(revisionDir, dir);
+  return { ...base, dir, lines, others, faults: [], version: NOT_PROVEN };
+}
+
+/** The first non-empty line of a process's output (stdout, else stderr). */
+function firstLine(...texts: (string | null | undefined)[]): string {
+  for (const text of texts) {
+    const line = (text ?? '').split('\n').map((each) => each.trim()).find((each) => each !== '');
+    if (line !== undefined) return line;
+  }
+  return '';
+}
+
+/** A finished `--version` run, by whom it ran: its first line, exit status, signal, and why it could not start. */
+function versionRun(by: string, result: SpawnSyncReturns<string>): VersionRun {
+  return { ran: true, by, line: firstLine(result.stdout, result.stderr), status: result.status, signal: result.signal, error: result.error === undefined ? null : result.error.message.split('\n')[0] ?? '' };
+}
+
+/** `<binary> --version` of an installed build whose files equal the record, run as this process's user. */
+export function installedVersion(found: FoundBuild, recorded: RecordedBuild, env: NodeJS.ProcessEnv): VersionRun {
+  if (found.dir === null) return { ran: false, why: 'no build there' };
+  const binary = path.join(found.where, found.dir, recorded.path.slice(recorded.dir.length + 1));
+  return versionRun("this process's user", spawnSync(binary, ['--version'], { env, encoding: 'utf8', timeout: 60_000, stdio: ['ignore', 'pipe', 'pipe'] }));
 }
 
 /**
- * The script the --image mode runs inside the image, as `sh -c <script> sh <revision> <dir> <binary under dir>`, one
- * row per fact: the build's directory (`dir`), every other entry (`other`), every file find cannot read (`unreadable`),
- * every regular file found (`listed`, its name escaped as sha256sum escapes one), every regular file's line in the
- * shell form's order (`file`), any tool that failed (`error <tool> <status>`: sh has no pipefail, so each stage writes a
- * file and reports its own status rather than hiding behind the next), and the binary's version (`version`).
+ * The script the --image mode runs inside the image as root, as `sh -c <script> sh <revision> <dir>`, one row per
+ * fact: the build's directory (`dir`), every other entry (`other`), every file find cannot read (`unreadable`), every
+ * regular file found (`listed`, its name escaped as sha256sum escapes one), every regular file's line in the shell
+ * form's order (`file`), and any tool that failed (`error <tool> <status>`: sh has no pipefail, so each stage writes a
+ * file and reports its own status rather than hiding behind the next). It runs no binary of the build.
  */
 export const IMAGE_SCRIPT = [
   'set -eu',
-  'revision=$1 dir=$2 binary=$3',
+  'revision=$1 dir=$2',
   'cd "${PLAYWRIGHT_BROWSERS_PATH:?}/chromium_headless_shell-$revision" 2>/dev/null || { echo missing; exit 0; }',
   'if [ ! -d "$dir" ]; then set -- */; if [ "$#" -eq 1 ] && [ -d "$1" ]; then dir=${1%/}; else echo missing; exit 0; fi; fi',
   'echo "dir $dir"',
@@ -228,8 +267,13 @@ export const IMAGE_SCRIPT = [
   'sed -z \'s/\\\\/\\\\\\\\/g; s/\\n/\\\\n/g; s/^/listed /\' "$work/sorted" | tr \'\\0\' \'\\n\'',
   'xargs -0r sha256sum < "$work/sorted" > "$work/sums" || echo "error sha256sum $?"',
   'sed \'s/^/file /\' "$work/sums"',
-  'if [ -x "$dir/$binary" ]; then printf \'version %s\\n\' "$("$dir/$binary" --version 2>&1 | head -n 1 || true)"; fi',
 ].join('\n');
+
+/**
+ * The script the --image mode runs as the image's own user, as `sh -c <script> sh <revision> <dir> <binary under dir>`,
+ * once the hashes equal the record: the binary's --version, its exit status the container's.
+ */
+export const VERSION_SCRIPT = ['set -eu', 'cd "${PLAYWRIGHT_BROWSERS_PATH:?}/chromium_headless_shell-$1/$2"', 'exec "./$3" --version'].join('\n');
 
 /**
  * How the --image mode starts a container: from the local tag only (`--pull never`: a tag missing here fails, rather
@@ -240,11 +284,17 @@ export const IMAGE_SCRIPT = [
  */
 export const IMAGE_RUN = ['run', '--rm', '--pull', 'never', '--user', '0:0', '--network', 'none', '--entrypoint'] as const;
 
+/**
+ * How the --image mode starts the version run: as IMAGE_RUN, local tag only and offline, but with no --user, so the
+ * image's own user (the worker's `node`, which prints customers' PDFs) is the one that must start the shell.
+ */
+export const IMAGE_VERSION_RUN = ['run', '--rm', '--pull', 'never', '--network', 'none', '--entrypoint'] as const;
+
 /** The headless shell as a built image holds it, read with `docker run` (the image's own browsers.json, its tree). */
 export function imageBuild(ref: string, recorded: RecordedBuild, env: NodeJS.ProcessEnv): FoundBuild {
   const docker = (args: string[]) => execFileSync('docker', args, { env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'inherit'] });
   const pins = pinned(docker([...IMAGE_RUN, 'cat', ref, 'node_modules/playwright-core/browsers.json']), 'chromium-headless-shell');
-  const output = docker([...IMAGE_RUN, 'sh', ref, '-c', IMAGE_SCRIPT, 'sh', pins.revision, recorded.dir, recorded.path.slice(recorded.dir.length + 1)]);
+  const output = docker([...IMAGE_RUN, 'sh', ref, '-c', IMAGE_SCRIPT, 'sh', pins.revision, recorded.dir]);
   const where = `${ref}: $PLAYWRIGHT_BROWSERS_PATH/chromium_headless_shell-${pins.revision}`;
   const rows = output.split('\n').filter((row) => row !== '');
   const dir = rows.find((row) => row.startsWith('dir '))?.slice(4) ?? null;
@@ -268,8 +318,15 @@ export function imageBuild(ref: string, recorded: RecordedBuild, env: NodeJS.Pro
       ...rows.filter((row) => row.startsWith('error ')).map((row) => row.slice(6).replace(' ', ' exited ')),
       ...(unhashed.length === 0 ? [] : [`${String(unhashed.length)} of ${String(listed.length)} files found ${unhashed.length === 1 ? 'was' : 'were'} not hashed: ${unhashed.join(', ')}`]),
     ],
-    version: rows.find((row) => row.startsWith('version '))?.slice(8) ?? 'not run: no binary at the recorded path',
+    version: dir === null ? { ran: false, why: 'no build there' } : NOT_PROVEN,
   };
+}
+
+/** `<binary> --version` of an image's headless shell whose files equal the record, run as the image's own user. */
+export function imageVersion(ref: string, found: FoundBuild, recorded: RecordedBuild, env: NodeJS.ProcessEnv): VersionRun {
+  if (found.dir === null) return { ran: false, why: 'no build there' };
+  const args = [...IMAGE_VERSION_RUN, 'sh', ref, '-c', VERSION_SCRIPT, 'sh', found.revision, found.dir, recorded.path.slice(recorded.dir.length + 1)];
+  return versionRun("the image's own user", spawnSync('docker', args, { env, encoding: 'utf8', timeout: 300_000, stdio: ['ignore', 'pipe', 'pipe'] }));
 }
 
 /** The recorded lines of a build, or why they cannot be trusted (the committed list must hash to the tree SHA-256). */
@@ -308,7 +365,7 @@ export function compare(name: BuildName, record: BrowserRecord, recordFile: stri
   const tree = found.dir === null ? `absent (no build under ${found.where})` : faulted ? 'not computed (the hash run failed)' : treeSha256(found.lines);
   const binaryPath = found.dir === null ? null : `${found.dir}/${recorded.path.slice(recorded.dir.length + 1)}`;
   const binary = found.lines.find((line) => line.slice(66) === binaryPath)?.slice(0, 64) ?? (faulted ? 'not computed' : 'absent');
-  const report = [`${title}: ${found.version}`, `${title}: revision ${found.revision}, ${found.browserVersion}, ${String(found.lines.length)} files under ${found.where}, tree SHA-256 ${tree}, binary SHA-256 ${binary}`];
+  const report = [`${title}: ${versionText(found.version)}`, `${title}: revision ${found.revision}, ${found.browserVersion}, ${String(found.lines.length)} files under ${found.where}, tree SHA-256 ${tree}, binary SHA-256 ${binary}`];
   const problems: string[] = [];
   const listed = recordedLines(recordFile, recorded);
   if (listed.problem !== null) problems.push(`browser.json's record of ${title.toLowerCase()} is inconsistent: ${listed.problem}.`);
@@ -331,8 +388,41 @@ export function compare(name: BuildName, record: BrowserRecord, recordFile: stri
   if (faulted) {
     problems.push(`${title} could not be hashed whole under ${found.where}: ${found.faults.join('; ')}. Its tree SHA-256 is not compared until every file is hashed; the tool’s own message is in the log above.`);
   }
+  const expected = expectedVersion(record);
+  const { version } = found;
+  if (version.ran && (!started(version) || version.line !== expected)) {
+    const why = started(version)
+      ? "The build's every file equals the record, so browser.json's browserVersion does not name its build."
+      : "The build's every file equals the record, and the hashes cover neither modes nor what the system provides, so what stops it is outside them: a shared library the system lacks, or a mode or user that cannot run it.";
+    problems.push(`${title} does not run as browser.json's build: \`${found.where}/${String(binaryPath)} --version\`, run as ${version.by}, ${ending(version)}, where browser.json's build prints "${expected}". ${why}`);
+  } else if (!version.ran && problems.length === 0) {
+    // Never reached while sameFiles and this comparison agree; if they ever drift, an unproven start fails, not passes.
+    problems.push(`${title}'s --version was not run (${version.why}), so whether it starts is unproven.`);
+  }
   if (problems.length === 0) report.push(`${title}: equal to browser.json in every file`);
   return { report, problems, listFiles: found.dir !== null && problems.length > 0 };
+}
+
+type Ran = Extract<VersionRun, { ran: true }>;
+
+/** Whether a version run started and exited 0. */
+function started(version: Ran): boolean {
+  return version.status === 0 && version.error === null && version.signal === null;
+}
+
+/** How a version run ended: what it printed, or how it failed and what it printed. */
+function ending(version: Ran): string {
+  if (version.error !== null && version.signal === null) return `could not be started (${version.error})`;
+  const printing = version.line === '' ? 'printing nothing' : `printing "${version.line}"`;
+  if (version.signal !== null) return `was stopped by ${version.signal}, ${printing}`;
+  if (version.status === 0) return `printed "${version.line}"`;
+  return `exited ${String(version.status)}, ${printing}`;
+}
+
+/** How a version run reads in the report: what it printed, how it failed, or why it was not run. */
+function versionText(version: VersionRun): string {
+  if (!version.ran) return `--version not run: ${version.why}`;
+  return started(version) ? version.line : `--version ${ending(version)}`;
 }
 
 export interface RunOptions {
@@ -371,9 +461,15 @@ export function run(options: RunOptions): number {
       const browsersJson = readFileSync(path.join(core, 'browsers.json'), 'utf8');
       const root = browsersRoot(options.env, core);
       options.out(`playwright-core ${(JSON.parse(readFileSync(path.join(core, 'package.json'), 'utf8')) as { version: string }).version} at ${core}; browsers under ${root}`);
-      for (const name of Object.keys(BUILDS) as BuildName[]) builds.push([name, installedBuild(root, name, pinned(browsersJson, name), record.builds[name], options.env)]);
+      for (const name of Object.keys(BUILDS) as BuildName[]) {
+        const recorded = record.builds[name];
+        const found = installedBuild(root, name, pinned(browsersJson, name), recorded);
+        builds.push([name, sameFiles(found, recorded) ? { ...found, version: installedVersion(found, recorded, options.env) } : found]);
+      }
     } else {
-      builds.push(['chromium-headless-shell', imageBuild(image, record.builds['chromium-headless-shell'], options.env)]);
+      const recorded = record.builds['chromium-headless-shell'];
+      const found = imageBuild(image, recorded, options.env);
+      builds.push(['chromium-headless-shell', sameFiles(found, recorded) ? { ...found, version: imageVersion(image, found, recorded, options.env) } : found]);
     }
     for (const [name, found] of builds) {
       const { report, problems, listFiles } = compare(name, record, recordFile, found);
