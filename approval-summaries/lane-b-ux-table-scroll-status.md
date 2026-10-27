@@ -13,7 +13,7 @@
   4. the full local suite once;
   5. after shots re-taken where the fixes show.
   - Not pushed yet: one push at the end. Safety check-in 00:51 UTC (trig_01J56Fapi1UMXVELtz8pWWPz).
-- **If stopped:** in this session, resume wf_90ac8f1b-a42 with resumeFromRunId. From GitHub alone: the branch is at 35b14cd (the fix round's local commits would be lost); re-run the fix round from the findings file.
+- **If stopped:** in this session, resume wf_90ac8f1b-a42 with resumeFromRunId. From GitHub alone: the fix round's commits are on `co-001/wip-ux-table-scroll` (88a66bd at 21:25 UTC: the base merge e0557d9 and four fix commits; the suite and the re-check were still running); continue from there.
 - **Next:** one push; the fresh-clone verification reading CI; the base merged again if it moved; mark ready; merge.
 
 The UX review's PR 3 (UX-011 / C-002; UX-079 / C-043 part (a)). Run as a Lane B item by a parallel session (https://claude.ai/code/session_019VghcxKzP9LAj3WK8k6u1D), started by Lane A's orchestrator (session_01TrKDxeLbxVo7t7zwRXFzrg) on 2026-10-27. Follow-on in the same session after this merges: PR 4, `co-001/ux-screening-result-tables` (status `lane-b-ux-screening-result-tables-status.md`).

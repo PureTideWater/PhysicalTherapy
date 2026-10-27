@@ -18,6 +18,12 @@ GitHub login: PureTideWater.
   scratchpad `progress/ss01-*.md`. Safety check-in trig_01CUguDmAfdnm5WQZr6UTJn7 at 2026-10-28 01:48 UTC.
   If stopped: re-run the setup script if PostgreSQL is down, remove a leftover `/home/user/ss01/.claude/.allow-protected-edit`,
   resume with resumeFromRunId (same session only).
+  At 21:25 UTC builder D had pushed d213416b (BIL-07/08 db tests, 39 failing on the base) and 7da01015 (the migration,
+  domain model and function files); W, C, P and M were building.
+- **Running: wf_6e2dedb0-b5e (suitecap1b-reread, one agent)** from 21:26 UTC: SUITE-CAP-1b's design re-read against
+  SS-01's head, #42's and part 1a's state (light; no build yet).
+- **Never force a push, WIP branches included** (the orchestrator, 21:31 UTC): a diverged WIP ref goes to a fresh name
+  (co-001/wip-<item>-2, ...), recorded here.
 - **Next:** read the build's result; the PR waits for #42 to merge (then merge #42's head and the latest
   claude/build-platform in, regenerate, open the draft PR, two reviews: security and tenancy, UX and brand).
 
@@ -44,3 +50,4 @@ GitHub login: PureTideWater.
 ## Log
 - 2026-10-27 20:45 UTC: session started; setup OK; SS-01 branch cut from #42's 098636e3 and pushed; wf_8ee54e2b-824 started.
 - 2026-10-27 20:52 UTC: both ledger freeze exceptions granted (above); SUITE-CAP-1b's ledger part goes into its PR, no WIP branch.
+- 2026-10-27 21:26 UTC: SS-01's database slice pushed (d213416b, 7da01015); SUITE-CAP-1b re-read started (wf_6e2dedb0-b5e).
