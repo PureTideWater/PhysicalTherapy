@@ -591,6 +591,59 @@ async function refused(page: Page, text: RegExp = /Not done|Check the fields|Not
   await expect(page.locator('[data-slot="alert"], [role="alert"]').filter({ hasText: text }).first()).toBeVisible({ timeout: 15_000 });
 }
 
+/**
+ * A guard for an upload step that must send nothing (files chosen before their kind or system, PR #75): every request
+ * for upload targets is aborted and counted, and `sent()` throws when one was made, so the shot is skipped with the
+ * reason, never taken over a write.
+ */
+async function noUploadRequest(page: Page): Promise<{ readonly sent: () => void }> {
+  let count = 0;
+  await page.route(
+    (url) => url.pathname.endsWith('/uploads/request'),
+    async (route) => {
+      count += 1;
+      await route.abort();
+    },
+  );
+  return {
+    sent: () => {
+      if (count > 0) throw new Error(`${String(count)} upload request(s) were made (aborted) by a step that must send nothing: not taken`);
+    },
+  };
+}
+
+/** The Contracts upload card: named "Upload a contract or exhibit" before PR #75's fix round, by its title from it on (the review's N-3). */
+const CONTRACT_UPLOAD = /^Upload a contract(, exhibit or payer letter| or exhibit)$/;
+/** Files waiting in the browser for their kind or system, and for Upload (PR #75's fix round, the review's UX-1). */
+const WAITING = /^Waiting to upload/;
+
+/**
+ * A synthetic PDF (CON-01 version-1.pdf) chosen on the Contracts panel before its kind, on either side of PR #75's fix
+ * round: before it the file is refused in the browser ("Nothing was uploaded", "Choose the kind of document first, then
+ * choose the files again."); from it on the file waits in the browser ("Waiting to upload: 1 file"), the kind select
+ * marked invalid, described by the words under it and focused. Says which it met. A build whose panel starts with a
+ * kind would upload the file, so the step stops there before any file is chosen.
+ */
+async function noKind(page: Page): Promise<'refused' | 'held'> {
+  const panel = page.getByRole('region', { name: CONTRACT_UPLOAD });
+  const select = panel.getByLabel('Kind of document');
+  const kind = await select.inputValue();
+  if (kind !== '') throw new Error(`the panel starts with the kind ${kind}, so choosing a file would upload it: not taken on this build`);
+  await panel.getByLabel('Choose files to upload').setInputFiles({ name: 'version-1.pdf', mimeType: 'application/pdf', buffer: readFileSync(`${SCREENS}/fixtures/synthetic/CON-01/version-1.pdf`) });
+  const held = panel.getByRole('group', { name: WAITING });
+  const refusal = panel.locator('[data-state="error"]').filter({ hasText: 'Nothing was uploaded' });
+  await expect(held.or(refusal).first()).toBeVisible({ timeout: 15_000 });
+  if ((await held.count()) === 0) {
+    await expect(refusal).toContainText('Choose the kind of document first, then choose the files again.');
+    return 'refused';
+  }
+  await expect(held).toContainText('version-1.pdf');
+  await expect(panel.locator('#upload-kind-error')).toHaveText('Choose the kind of document for this file, then upload it.');
+  await expect(select).toHaveAttribute('aria-invalid', 'true');
+  await expect(select).toBeFocused();
+  return 'held';
+}
+
 /** The refusal of a page out of date: "could not be checked against your session" before co-001/ux-forms, "out of date" from it. */
 const STALE = /out of date|could not be checked/;
 
@@ -2179,9 +2232,10 @@ test('practice workflow', async ({ browser }) => {
   });
   await cap(browser, { key: 'p.abstraction-version', route: abv, persona: 'pricing-manager', path: () => L(`/abstraction/versions/${need('version')}`), state: 'error', variant: 'error-forbidden', ready: denied });
   await notice(browser, { key: 'p.abstraction-version', route: abv, persona: CS, path: () => L(`/abstraction/versions/${need('version')}?model=proposed`), name: 'model-notice', dark: true });
-  // The contract screen's two refusals (PR #75; docs/adr/0070, Part 3), opened by their URL as the notice above. A build
+  // The contract screen's refusals (PR #75; docs/adr/0070, Part 3), opened by their URL as the notice above. A build
   // that does not know a code shows no notice (the route's ?model= falls back to none), which is that build's screen.
-  for (const code of ['names_patient', 'screen_unavailable']) {
+  // screen_failed and screen_limited came with the PR's fix round (the review's UX-3).
+  for (const code of ['names_patient', 'screen_unavailable', 'screen_failed', 'screen_limited']) {
     await cap(browser, {
       key: 'p.abstraction-version',
       route: abv,
@@ -2495,8 +2549,9 @@ test('practice workflow', async ({ browser }) => {
     },
   });
   // The upload panel's kind (PR #75; docs/adr/0070, Part 3): a panel of several kinds starts with none, and a file chosen
-  // before the kind is refused in the browser. A build whose panel starts with a kind would upload the file, so the step
-  // stops there with the reason, before any file is chosen.
+  // before the kind is refused in the browser (the PR's head) or waits there for the kind and Upload (its fix round,
+  // the review's UX-1). A build whose panel starts with a kind would upload the file, so the step stops there with the
+  // reason, before any file is chosen. Any upload request is aborted, and the shot then skipped (noUploadRequest).
   await cap(browser, {
     key: 'p.contracts',
     route: ct,
@@ -2504,14 +2559,33 @@ test('practice workflow', async ({ browser }) => {
     path: () => O('/contracts'),
     state: 'interaction:no-kind',
     dark: true,
-    note: 'A synthetic PDF (CON-01 version-1.pdf) chosen before the kind: refused in the browser, nothing uploaded.',
+    note: 'A synthetic PDF (CON-01 version-1.pdf) chosen before the kind: from PR #75’s fix round it waits in the browser, the kind select marked and focused (before it, refused in the browser). Nothing uploaded.',
     act: async (page) => {
-      const panel = page.getByRole('region', { name: 'Upload a contract or exhibit' });
-      const kind = await panel.getByLabel('Kind of document').inputValue();
-      if (kind !== '') throw new Error(`the panel starts with the kind ${kind}, so choosing a file would upload it: not taken on this build`);
-      await panel.getByLabel('Choose files to upload').setInputFiles({ name: 'version-1.pdf', mimeType: 'application/pdf', buffer: readFileSync(`${SCREENS}/fixtures/synthetic/CON-01/version-1.pdf`) });
-      await refused(page, /Nothing was uploaded/);
-      await expect(panel.locator('[data-state="error"]')).toContainText('Choose the kind of document first, then choose the files again.');
+      const guard = await noUploadRequest(page);
+      await noKind(page);
+      guard.sent();
+    },
+  });
+  // From the fix round on: the same file waiting, then the kind chosen. The words under the select go and Upload 1 file
+  // shows beside Clear; the select's change sends nothing. Upload is not pressed. A build that refuses the file instead
+  // has nothing waiting, so the step stops with the reason.
+  await cap(browser, {
+    key: 'p.contracts',
+    route: ct,
+    persona: 'era-manager',
+    path: () => O('/contracts'),
+    state: 'interaction:held-ready',
+    dark: true,
+    note: 'The synthetic PDF chosen before the kind, then Contract chosen: Upload 1 file beside Clear, the words under the select gone. Upload not pressed; nothing uploaded.',
+    act: async (page) => {
+      const guard = await noUploadRequest(page);
+      if ((await noKind(page)) !== 'held') throw new Error('this build refuses a file chosen before the kind instead of keeping it, so nothing waits to upload: not taken on this build');
+      const panel = page.getByRole('region', { name: CONTRACT_UPLOAD });
+      await panel.getByLabel('Kind of document').selectOption('contract');
+      await expect(panel.locator('#upload-kind-error')).toHaveCount(0);
+      await expect(panel.getByRole('group', { name: WAITING }).getByRole('button', { name: 'Upload 1 file' })).toBeVisible();
+      await page.waitForTimeout(500);
+      guard.sent();
     },
   });
   await cap(browser, { key: 'p.contracts', route: ct, persona: CS, path: () => L('/contracts'), state: 'error', variant: 'error-forbidden', ready: denied });
@@ -3029,11 +3103,19 @@ test('practice workflow', async ({ browser }) => {
     ready: receipts,
     state: 'error',
     variant: 'error-era-system',
-    note: 'An ERA export chosen without its system: refused in the browser, nothing uploaded.',
+    note: 'An ERA export chosen without its system: from PR #75’s fix round it waits in the browser, the system select marked and focused (before it, refused in the browser). Nothing uploaded.',
     act: async (page) => {
+      const guard = await noUploadRequest(page);
       await eraKind(page);
       await page.locator('input[type="file"]').first().setInputFiles({ name: 'export.csv', mimeType: 'text/csv', buffer: Buffer.from('SYNTHETIC\n') });
-      await refused(page, /Nothing was uploaded/);
+      await refused(page, /Nothing was uploaded|then upload it/);
+      if ((await page.getByRole('group', { name: WAITING }).count()) > 0) {
+        const system = page.getByLabel('Which system’s export');
+        await expect(page.locator('#upload-format-error')).toHaveText('Choose which system’s ERA export this file is, then upload it.');
+        await expect(system).toHaveAttribute('aria-invalid', 'true');
+        await expect(system).toBeFocused();
+      }
+      guard.sent();
     },
   });
   await cap(browser, {
