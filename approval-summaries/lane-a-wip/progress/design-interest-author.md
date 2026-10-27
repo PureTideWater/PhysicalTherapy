@@ -82,3 +82,10 @@ Output: /home/user/ops/designs/ledger-interest-once.md
 - WRITTEN run 2: section 7 (entry-sign words, ROI page sentence, refusals, UX list)
 - WRITTEN run 2: section 8 (8.0 has RUN2_RESULTS_PLACEHOLDER and RUN2_SHOWS_PLACEHOLDER to fill)
 - WRITTEN run 2: section 9 updates
+- WRITTEN run 2: section 10 (exception text revised)
+- WRITTEN run 2: section 11
+- WRITTEN run 2: sections 12, 13, 14. Next: section 15 (review dispositions), 8.0 results, final read-through
+- plans2.mts (tp_design_interest_42, drops itself) running bg under flock -> run2/plans2.out; proto2 DONE (output run2/proto2.out, tp_design_interest_41 dropped)
+- WRITTEN run 2: 8.0 run-2 results + shows; PLANS2_PLACEHOLDER pending plans2.out
+- WRITTEN run 2: section 15 (review dispositions). Next: plans2 results into 8.0; final read-through
+- Read-through done for sections 0-7, 9 (fixes applied: 3.2/3.3 wording, D5 wrap, 7 reported sentence, 9.1 wrap). Waiting on plans2 (queued behind #42 mutation + golden) to fill PLANS2_PLACEHOLDER and confirm 5.1 'by which index' paragraph.
