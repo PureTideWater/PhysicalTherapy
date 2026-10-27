@@ -2,7 +2,9 @@
 
 - **Status:** accepted; the real-model gate still waits on model access (see Consequences); amended 2026-10-26 by
   [0070](0070-gate-models-on-wrong-but-verified-fields-and-people-set-floors-serve-each-model-feature-on-its-own-evaluation-and-check-contracts-against-the-practices-records-before-the-model.md), Part 1: the permitted run's report and comparison, and Part 2: production serves each model feature
-  on its own evaluation ("Amendment (`co-001/model-eval-gate`, 2026-10-26)", below)
+  on its own evaluation ("Amendment (`co-001/model-eval-gate`, 2026-10-26)", below); amended 2026-10-27 by 0070,
+  Part 3: a contract or exhibit is checked against the practice's records before the model ("Amendment
+  (`co-001/contract-phi-check`, 2026-10-27)", below)
 - **Date:** 2026-10-17
 - **Deciders:** founder (engineering)
 - **PRD sections:** 14 (Purposes and their verifiers; PHI minimization; Provider and data path; Operational limits;
@@ -263,3 +265,31 @@ serves only what the gate recorded" above).
 - `assertEvaluated`, `unevaluatedModels`, `EVALUATED_PURPOSES`, `MissingEvaluation`, `RECORDED_EVALUATIONS`,
   `RecordedEvaluation` and `assertPricesConfirmed` are removed; serving is `servingDecisions` in `src/evaluated.ts`,
   and an unconfirmed price turns off only the features whose models it prices (`price_unconfirmed`).
+
+## Amendment (`co-001/contract-phi-check`, 2026-10-27): the contract screen
+
+Combined audit #120, adopted by the founder with the whole audit on 2026-10-20, adds a step to "Terms are proposed
+from a contract or an exhibit only" and gives the contract terms reader the screen this ADR gave the letter reader
+(docs/adr/0070, Part 3, gives it in full). The text above stays as it was decided; where it differs, this amendment
+holds.
+
+- The kind check stays as it is (`document_kind`, in the specialist's proposal and in `contractTermsSpec.prepare`).
+  It trusts the kind the person chose at upload, so a payer letter or an EOB filed as a contract, or inside a zip
+  filed as one, passed it. A third check now runs after it: `contractTermsSpec.screen`.
+- `screen` takes the call's context (`screen?(input, prepared, context)`), so a screen can bind what it reads to the
+  call's own practice. The gateway's order is unchanged and the screen keeps its place: serving, the kill switch and
+  flags, the PHI boundary, `prepare` (the kind check and the framing), the variant's serving check, then `screen`,
+  before the idempotency key, the budget hold and the call. No audited read runs for a call that would be refused.
+- The contract screen asks the practice's records (`PatientRecordsCheck`, `src/patient-records.ts`) whether any run
+  of the pages is a member ID, a payer claim control number or a patient control number the practice holds. On a
+  yes the call is refused (`names_patient`). As with the letter's check, the answer is a code, never which
+  identifier, its kind or how many.
+- Unlike the letter's check, the caller cannot supply the records. `ContractPagesInput.patientRecords` is required,
+  the gateway accepts only a check its own factories issued for the call's practice (`screen_invalid` otherwise),
+  and that check opens its own job scope for the practice and reads as the service screen actor (purpose
+  `contract_screen`), not in the caller's scope as `otherPatientRecords` does. A practice holding more than 50,000
+  identifiers is refused (`screen_unavailable`) without a read, and a read that fails is refused (`screen_failed`).
+- A screen's refusal is now logged by the gateway, one line with `practice_id` and an `error_code`, for the letter's
+  `more_than_one_patient` as for the contract's codes; the screen's own message is never logged.
+- The letter reader's check, `otherPatientRecords`, is unchanged. Moving it onto the issued, practice-bound check is
+  a follow-up (0070, P9).

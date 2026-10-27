@@ -572,7 +572,7 @@ The default is Claude on AWS Bedrock inside the company's own AWS account, under
 
 ### PHI minimization
 
-Contracts carry no PHI (they are confidential, which is a separate obligation handled by the data-rights terms). Narratives are drafted from pattern-level facts with no identifiers at all; identifiers are inserted by code at export. Denial letters do carry PHI; the gateway sends the minimum text needed, strips names, dates of birth, member IDs and claim numbers by exact match before the call where the task allows it, and never sends more than one patient's material in one call. No PHI is ever sent to a model from a development environment, a test, or a CI job.
+Contracts carry no PHI (they are confidential, which is a separate obligation handled by the data-rights terms), and each contract or exhibit is checked against the practice's records before it is sent: one that holds a member ID, payer claim number or patient control number of the practice's is a misfiled payer letter or EOB, and is refused, never sent. Narratives are drafted from pattern-level facts with no identifiers at all; identifiers are inserted by code at export. Denial letters do carry PHI; the gateway sends the minimum text needed, strips names, dates of birth, member IDs and claim numbers by exact match before the call where the task allows it, and never sends more than one patient's material in one call. No PHI is ever sent to a model from a development environment, a test, or a CI job.
 
 ### Untrusted input
 
@@ -688,7 +688,7 @@ The compliance platform connects to AWS and GitHub and collects the configuratio
 
 ### Threats the design addresses by name
 
-A firm user reading a practice outside its grant (policies and tests); a developer pasting a real file into a tool (no real data on the machine; denied paths); a payer document carrying injected instructions (models have no authority); a wrong identifier in a packet (identifiers inserted by code from the record); a narrative inventing a number (verifier); a duplicate remittance counted twice (idempotency keys); a recovered total that drifts from the evidence (derived from signed entries); an operator reading PHI for curiosity (no standing access; break-glass with notice); a lost laptop (no PHI on it); a compromised dependency (scans, pinning, SBOM); a ransomware event (immutable audit copies, versioned S3, tested restores).
+A firm user reading a practice outside its grant (policies and tests); a developer pasting a real file into a tool (no real data on the machine; denied paths); a payer document carrying injected instructions (models have no authority); a payer letter or EOB filed as a contract (checked against the practice's records before the model, and refused); a wrong identifier in a packet (identifiers inserted by code from the record); a narrative inventing a number (verifier); a duplicate remittance counted twice (idempotency keys); a recovered total that drifts from the evidence (derived from signed entries); an operator reading PHI for curiosity (no standing access; break-glass with notice); a lost laptop (no PHI on it); a compromised dependency (scans, pinning, SBOM); a ransomware event (immutable audit copies, versioned S3, tested restores).
 
 ## 17. Build plan with Claude Code
 

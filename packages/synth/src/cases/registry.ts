@@ -580,6 +580,8 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
       'packages/model-gateway/src/gateway.test.ts',
       'packages/model-gateway/src/gateway.db.test.ts',
       'packages/model-gateway/eval/gate.golden.test.ts',
+      'apps/web/src/lib/routes/models-routes.db.test.ts',
+      'apps/worker/src/models/permitted.db.test.ts',
     ],
   },
   // Milestone 11's billing (PRD 6, 15), as combined audit item 135 orders its payment methods (docs/adr/0073).
