@@ -608,6 +608,45 @@ async function staleToken(form: Locator): Promise<void> {
     });
 }
 
+/**
+ * A refused download opened as a browser navigation (a link, a GET form or page.goto), on either side of UX PR 5
+ * (co-001/ux-download-refusals; designs/lane-b-ux-download-refusals.md). Before it (claude/build-platform e908c21 and
+ * earlier) the download handler answers with its raw JSON outcome at the download's own URL, a page with no frame. From
+ * it on, it answers with 303 to the page the download is opened from, with `?refused=<status>` in that page's URL and
+ * the notice (or the marked field) on it. This waits for either and says which; the shot's path records it too.
+ */
+async function downloadRefusal(page: Page): Promise<'json' | 'page'> {
+  const deadline = Date.now() + 15_000;
+  for (;;) {
+    await page.waitForLoadState('load').catch(() => undefined);
+    if (new URL(page.url()).searchParams.has('refused')) {
+      await expect(page.getByRole('heading', { level: 1 }).or(page.locator('[data-state="permission"]')).first()).toBeVisible();
+      return 'page';
+    }
+    const json = await page.evaluate(() => document.contentType === 'application/json').catch(() => false);
+    if (json) return 'json';
+    if (Date.now() > deadline) throw new Error(`neither the download handler's JSON nor a page with ?refused= came back (at ${shown(page)})`);
+    await page.waitForTimeout(250);
+  }
+}
+
+/** The letter form (the form that holds the codes field), found the same way on both sides of UX PR 5. */
+const LETTER_FORM = 'form:has(#letter-codes)';
+/**
+ * Sends the letter form past the browser's own check and waits for the server's answer on either side of UX PR 5: the
+ * form's noValidate is set first (from that PR on the codes field has a pattern that blocks a malformed code before
+ * submit; before it the form has nothing to block, so this is a no-op), then the step waits for the /coverage/letter URL
+ * (before: the raw JSON) or a /coverage URL with refused= (after: back on Coverage, the values kept, the field marked).
+ */
+async function sendLetter(page: Page): Promise<void> {
+  await page.evaluate((selector) => {
+    for (const form of document.querySelectorAll(selector)) if (form instanceof HTMLFormElement) form.noValidate = true;
+  }, LETTER_FORM);
+  await press(page.locator(LETTER_FORM).getByRole('button', { name: 'Download the letter' }).first());
+  await page.waitForURL((url) => url.pathname.endsWith('/coverage/letter') || (url.pathname.endsWith('/coverage') && url.searchParams.has('refused')), { timeout: 15_000 });
+  await downloadRefusal(page);
+}
+
 interface Cap {
   readonly key: string;
   readonly route: string;
@@ -843,8 +882,8 @@ async function shellControls(browser: Browser, c: { key: string; route: string; 
 }
 
 /** A URL notice (?notice=, ?saved=1 ...): the success alert the product shows after a write, opened without the write. */
-function notice(browser: Browser, c: { key: string; route: string; persona: string; path: () => string; name?: string; ready?: (page: Page) => Promise<void> }): Promise<void> {
-  return cap(browser, { key: c.key, route: c.route, persona: c.persona, path: c.path, state: `interaction:${c.name ?? 'notice'}`, ready: c.ready, note: 'The success alert, opened by its URL without the write that would show it.' });
+function notice(browser: Browser, c: { key: string; route: string; persona: string; path: () => string; name?: string; ready?: (page: Page) => Promise<void>; dark?: boolean }): Promise<void> {
+  return cap(browser, { key: c.key, route: c.route, persona: c.persona, path: c.path, state: `interaction:${c.name ?? 'notice'}`, ready: c.ready, dark: c.dark, note: 'The success alert, opened by its URL without the write that would show it.' });
 }
 
 /**
@@ -2129,7 +2168,20 @@ test('practice workflow', async ({ browser }) => {
     },
   });
   await cap(browser, { key: 'p.abstraction-version', route: abv, persona: 'pricing-manager', path: () => L(`/abstraction/versions/${need('version')}`), state: 'error', variant: 'error-forbidden', ready: denied });
-  await notice(browser, { key: 'p.abstraction-version', route: abv, persona: CS, path: () => L(`/abstraction/versions/${need('version')}?model=proposed`), name: 'model-notice' });
+  await notice(browser, { key: 'p.abstraction-version', route: abv, persona: CS, path: () => L(`/abstraction/versions/${need('version')}?model=proposed`), name: 'model-notice', dark: true });
+  // The contract screen's two refusals (PR #75; docs/adr/0070, Part 3), opened by their URL as the notice above. A build
+  // that does not know a code shows no notice (the route's ?model= falls back to none), which is that build's screen.
+  for (const code of ['names_patient', 'screen_unavailable']) {
+    await cap(browser, {
+      key: 'p.abstraction-version',
+      route: abv,
+      persona: CS,
+      path: () => L(`/abstraction/versions/${need('version')}?model=${code}`),
+      state: `interaction:model-${code.replace('_', '-')}`,
+      dark: true,
+      note: `The model notice ?model=${code}, opened by its URL without the model step that would show it (a build that does not know the code shows none).`,
+    });
+  }
   notReached('p.abstraction-version', 'loading', abv, 'not holdable on populated data: the versions are signed off, so neither /abstraction nor the specialist queue links to one');
   notReached('p.abstraction-version', 'draft-forms', abv, 'the draft forms need a draft or proposed version, which no populate spec leaves');
 
@@ -2234,6 +2286,35 @@ test('practice workflow', async ({ browser }) => {
   });
   await cap(browser, { key: 'p.packet', route: pkt, persona: 'packet-deadline-approver', path: () => DL(`/cases/${need('deadlinesBlockedCase')}/packet`), state: 'error', variant: 'error-export-blocked', ready: async (page) => expect(page.locator('[data-export="blocked"]').first()).toBeVisible(), note: 'PACKET DEADLINES: the export blocked by an unverified deadline, with its reason and fix.' });
   await cap(browser, { key: 'p.packet', route: pkt, persona: 'other-admin', path: packetPath, state: 'error', variant: 'error-forbidden', ready: denied });
+  // The exported PDF opened by its URL: by a role without phi.export (the practice administrator, who is refused the
+  // packet page too, so after UX PR 5 the notice lands on its permission state), and by the approver for a version that
+  // is not there (a stale link: the file not available, the page readable).
+  await cap(browser, {
+    key: 'p.packet',
+    route: pkt,
+    persona: 'other-admin',
+    path: () => `${packetPath()}/${need('packetsVersion')}/pdf`,
+    state: 'error',
+    variant: 'refused-forbidden',
+    dark: true,
+    ready: async (page) => {
+      await downloadRefusal(page);
+    },
+    note: 'The practice administrator (no phi.export) opens the exported PDF by its URL: before UX PR 5 (co-001/ux-download-refusals) the download handler’s raw 403 JSON at /pdf, with no frame; from it on, the packet page again (?refused=forbidden), which this role is refused too.',
+  });
+  await cap(browser, {
+    key: 'p.packet',
+    route: pkt,
+    persona: 'packet-approver',
+    path: () => `${packetPath()}/${NO_UUID}/pdf`,
+    state: 'error',
+    variant: 'refused-not-found',
+    dark: true,
+    ready: async (page) => {
+      await downloadRefusal(page);
+    },
+    note: 'The approver opens a PDF link of a version that is not there (a stale link): before UX PR 5 the download handler’s raw 404 JSON at /pdf, with no frame; from it on, the packet page again (?refused=not_found) with the notice.',
+  });
   // The drafter asks for approval (a write the 2026-10-25 tour made too); a second billing manager sees the approve step.
   await attempt(['p.packet.drafter.1280', 'p.packet.drafter.390', 'p.packet.approver-ready.1280', 'p.packet.approver-ready.390', 'p.packet.drafter.1280-dark'], pkt, async () => {
     const page = await (await desktopOf(browser, 'pricing-manager')).newPage();
@@ -2403,6 +2484,26 @@ test('practice workflow', async ({ browser }) => {
       await overlap(page, 'Tag to the payer');
     },
   });
+  // The upload panel's kind (PR #75; docs/adr/0070, Part 3): a panel of several kinds starts with none, and a file chosen
+  // before the kind is refused in the browser. A build whose panel starts with a kind would upload the file, so the step
+  // stops there with the reason, before any file is chosen.
+  await cap(browser, {
+    key: 'p.contracts',
+    route: ct,
+    persona: 'era-manager',
+    path: () => O('/contracts'),
+    state: 'interaction:no-kind',
+    dark: true,
+    note: 'A synthetic PDF (CON-01 version-1.pdf) chosen before the kind: refused in the browser, nothing uploaded.',
+    act: async (page) => {
+      const panel = page.getByRole('region', { name: 'Upload a contract or exhibit' });
+      const kind = await panel.getByLabel('Kind of document').inputValue();
+      if (kind !== '') throw new Error(`the panel starts with the kind ${kind}, so choosing a file would upload it: not taken on this build`);
+      await panel.getByLabel('Choose files to upload').setInputFiles({ name: 'version-1.pdf', mimeType: 'application/pdf', buffer: readFileSync(`${SCREENS}/fixtures/synthetic/CON-01/version-1.pdf`) });
+      await refused(page, /Nothing was uploaded/);
+      await expect(panel.locator('[data-state="error"]')).toContainText('Choose the kind of document first, then choose the files again.');
+    },
+  });
   await cap(browser, { key: 'p.contracts', route: ct, persona: CS, path: () => L('/contracts'), state: 'error', variant: 'error-forbidden', ready: denied });
   await cap(browser, { key: 'p.contracts', route: ct, persona: 'ledger-viewer', path: () => O('/contracts'), state: 'interaction:viewer' });
   await shellControls(browser, { key: 'p.contracts', route: ct, persona: 'era-manager', path: () => O('/contracts') });
@@ -2470,12 +2571,74 @@ test('practice workflow', async ({ browser }) => {
     path: () => L('/coverage'),
     state: 'error',
     variant: 'error-letter-codes',
-    note: 'A malformed procedure code in the letter form: the download handler answers with raw JSON, not a page (a candidate finding).',
+    dark: true,
+    note: 'A malformed procedure code (ABC) in the letter form, sent past the browser’s own check (the form’s noValidate set first), so the shot shows the server’s refusal: before UX PR 5 (co-001/ux-download-refusals) the download handler’s raw JSON at /coverage/letter, with no frame; from it on, Coverage again (?refused= in the path) with the codes kept and the field marked.',
     act: async (page) => {
-      await page.getByLabel('Procedure codes (optional)').fill('ABC');
-      await page.getByRole('button', { name: 'Download the letter' }).click();
-      await page.waitForURL(/\/coverage\/letter/, { timeout: 15_000 });
+      await page.locator('#letter-codes').fill('ABC');
+      await sendLetter(page);
     },
+  });
+  // The letter with a payer and a contract of another payer (the contract select lists every payer's contracts): on
+  // LAYOUT, payer N has no contract and payer Q's SYNTHETIC FIXED SCHEDULE AGREEMENT is listed (route map, coverage
+  // "error"). Reachable with one payer that has a contract and any other payer; the step reads both from the page.
+  const letterSeed = wantedPrefix('p.coverage.error-letter-contract')
+    ? await withDatabase(async (client) => {
+        const row = (
+          await client.query<{ payers: number; contracts: number }>(
+            'SELECT (SELECT count(*) FROM payer WHERE practice_id = $1)::int AS payers, (SELECT count(*) FROM contract WHERE practice_id = $1 AND payer_id IS NOT NULL)::int AS contracts',
+            [need('layout')],
+          )
+        ).rows[0];
+        return { payers: row?.payers ?? 0, contracts: row?.contracts ?? 0 };
+      }).catch((error: unknown) => {
+        log(`RECORDS letter seed not read: ${reasonOf(error)}`);
+        return { payers: 2, contracts: 1 };
+      })
+    : { payers: 0, contracts: 0 };
+  if (letterSeed.payers >= 2 && letterSeed.contracts >= 1) {
+    await cap(browser, {
+      key: 'p.coverage',
+      route: cg,
+      persona: 'pricing-manager',
+      path: () => L('/coverage'),
+      state: 'error',
+      variant: 'error-letter-contract',
+      dark: true,
+      note: 'The letter with a payer and a contract of another payer (the contract select lists every payer’s contracts), codes blank: before UX PR 5 the download handler’s raw JSON (field contract) at /coverage/letter; from it on, Coverage again with the payer and the contract kept and the contract marked.',
+      act: async (page) => {
+        const choice = await page.evaluate(() => {
+          const payers = [...document.querySelectorAll<HTMLOptionElement>('#letter-payer option')].map((option) => ({ value: option.value, label: (option.textContent ?? '').trim() }));
+          for (const group of document.querySelectorAll<HTMLOptGroupElement>('#letter-contract optgroup')) {
+            const contract = group.querySelector('option');
+            const other = payers.find((payer) => payer.value !== '' && payer.label !== group.label.trim());
+            if (contract !== null && other !== undefined) return { payer: other.value, payerName: other.label, contract: contract.value, contractPayer: group.label.trim() };
+          }
+          return null;
+        });
+        if (choice === null) throw new Error('not reachable on this page: no contract listed under one payer while another payer is listed');
+        log(`RECORDS letter: payer ${choice.payerName} with a contract of ${choice.contractPayer}`);
+        await page.locator('#letter-payer').selectOption(choice.payer);
+        await page.locator('#letter-contract').selectOption(choice.contract);
+        await page.locator('#letter-codes').fill('');
+        await sendLetter(page);
+      },
+    });
+  } else if (wantedPrefix('p.coverage.error-letter-contract')) {
+    notReached('p.coverage', 'error-letter-contract', cg, `not reachable on this seed: LAYOUT has ${String(letterSeed.payers)} payer(s) and ${String(letterSeed.contracts)} contract(s) with a payer; the refusal needs a contract of one payer and another payer`);
+  }
+  // The letter's URL with a payer that is not this practice's (a stale or edited link; DLR-01's unknown payer).
+  await cap(browser, {
+    key: 'p.coverage',
+    route: cg,
+    persona: 'pricing-manager',
+    path: () => L(`/coverage/letter?payer=${NO_UUID}&contract=&codes=`),
+    state: 'error',
+    variant: 'error-letter-payer',
+    dark: true,
+    ready: async (page) => {
+      await downloadRefusal(page);
+    },
+    note: 'The letter’s URL opened with a payer that is not this practice’s (a stale or edited link): before UX PR 5 the download handler’s raw JSON (not_found) at /coverage/letter; from it on, Coverage again with the payer select marked.',
   });
   await notice(browser, { key: 'p.coverage', route: cg, persona: 'pricing-manager', path: () => L('/coverage?model=proposed'), name: 'model-notice' });
   await cap(browser, { key: 'p.coverage', route: cg, persona: 'ledger-viewer', path: () => L('/coverage'), state: 'interaction:viewer' });
@@ -2744,6 +2907,21 @@ test('practice workflow', async ({ browser }) => {
   await cap(browser, { key: 'p.report', route: rpt, persona: 'reports-manager', path: () => RP(`/reports/${need('report')}`), note: 'The released audit report.' });
   await capLoading(browser, { key: 'p.report', route: rpt, persona: 'reports-manager', from: () => RP('/reports'), link: () => `a[href="${RP(`/reports/${need('report')}`)}"]` });
   await cap(browser, { key: 'p.report', route: rpt, persona: 'reports-viewer', path: () => RP(`/reports/${need('report')}`), state: 'interaction:viewer', note: 'A viewer: without the line CSV.' });
+  // The viewer opens the line CSV anyway (a shared or bookmarked link), as reports.spec.ts's refusal does, but by a
+  // navigation: the e2e reads it with page.request (no Fetch Metadata, JSON either side of UX PR 5).
+  await cap(browser, {
+    key: 'p.report',
+    route: rpt,
+    persona: 'reports-viewer',
+    path: () => RP(`/reports/${need('report')}/csv`),
+    state: 'error',
+    variant: 'refused-forbidden',
+    dark: true,
+    ready: async (page) => {
+      await downloadRefusal(page);
+    },
+    note: 'A viewer opens the report’s line CSV (phi.export) by its URL: before UX PR 5 (co-001/ux-download-refusals) the download handler’s raw 403 JSON at /csv, with no frame; from it on, the report page again (?refused=forbidden) with the notice.',
+  });
   const rpr = '/p/[practiceId]/reports/[reportId]/review';
   await cap(browser, { key: 'p.report-review', route: rpr, persona: 'reviewer', path: () => RP(`/reports/${need('report')}/review`), note: 'Signed over its files (reports.spec.ts).' });
   await cap(browser, { key: 'p.report-review', route: rpr, persona: 'reports-manager', path: () => RP(`/reports/${need('report')}/review`), state: 'error', variant: 'error-forbidden', ready: denied });

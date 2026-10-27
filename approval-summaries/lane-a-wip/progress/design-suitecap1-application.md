@@ -33,3 +33,9 @@
 - seq is GENERATED ALWAYS AS IDENTITY (20261019160000:137): probe whether assigned before BEFORE trigger lock (ordering gap).
 - PROBE done (db tp_design_suitecap1_app_1, dropped): NEW.seq already set inside BEFORE trigger (identity assigned before the trigger's lock) -> a waiter can hold a lower seq than the event it waited for; a 1000-row INSERT..SELECT with per-row trigger lock holds 1000 advisory locks.
 - STATUS: reading complete; final report composed (StructuredOutput).
+- RESUMED 2026-10-27 (run 2): spot-checked execute.ts:326-344,:396-478, migration :550-575, generate.ts:54-100, stages.ts:61-80, pass.ts:35-52 -> unchanged at e908c214; #42 head 098636e3.
+- PATH FIX: web routes are apps/web/src/lib/routes/triage.ts (reopenLineAction :503-539, triageRunAction :435-449 enqueue only) and apps/web/src/lib/routes/workbench.ts (openCaseAction :60).
+- reopenLineAction reads currentStage in TS (:527) before INSERT: the trigger's lock+re-read is what turns a concurrent stage move into 23514 'a reopen names the stage the line is at' (shown verbatim via invoke.ts 23514 mapping).
+- Worker ECS task 512 CPU / 1024 MiB (infra/lib/environments.ts:111), heap 560 MiB (infra/lib/heap.ts:9). Job singleton keys: triage by pricing_run_id, audit_report by audit_report_id (jobs/registry.ts:77-78) -> two runs of one practice can queue triage concurrently, serialized only by 'triage:'P.
+- Callers of triage: triage/job.ts:21, report/generate.ts:73, monitor/job.ts:32 (closePassedWindows).
+- STATUS: final StructuredOutput being sent (run 2).

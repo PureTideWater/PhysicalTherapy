@@ -66,7 +66,7 @@ UTC (trigger trig_01XqKZsF9KvqAG7S6pBGUmoi). Read this file first, then LANES.md
   ~01:40 UTC), adding "resume from your status file".
 
 ## 5. Also pending
-- Publish the person's two UX baseline galleries (uploaded 2026-10-27 ~01:55 UTC; 1280 px 468 shots, 390 px 389 shots)
+- The UX baseline galleries are published (2026-10-27 ~14:55 UTC): 1280 px https://claude.ai/artifact/6ufwbZwVBXm35KhLwuhTPA, 390 px https://claude.ai/artifact/M4zbLDTkfhez4g9D6uJvgo (private to this account).
   as private artifacts on this account; the copies were in the session's scratchpad (`ux-galleries/`). If the
   container is new they are gone: ask the person to upload the two zips again. Never commit them to the public
   repository without the person's word.

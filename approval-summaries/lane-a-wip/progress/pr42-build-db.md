@@ -108,3 +108,23 @@ Marker route: touch <clone>/.claude/.allow-protected-edit, Edit migration, rm ma
 - M3 not mine; if its fix needs operator_mail_streams' probe_missed, it is the migration (offer).
 - known item (a) bound not recorded by me (not assigned).
 - domain model + packages/db/functions regeneration by the integrator (schema changed).
+
+## Resume 2026-10-27 14:20 UTC (run interrupted at e2e start, log empty)
+- Clone clean at 05ad949d, branch fix-db. chromium-1194 present and genuine (Chrome for Testing 141.0.7390.37 =
+  playwright-core 1.56.1 browsers.json revision 1194). Re-running the e2e journeys under the lock (log
+  scratchpad/pr42/e2e-db.log); tp_pr6b4_db_1 left from the interrupted start, prepare.ts recreates it.
+- e2e at 05ad949d (pinned chromium-1194, PG18, tp_pr6b4_db_1): mail-cutoff, mail-notices, screening, onboarding: 9 passed (4.0m), exit 0.
+- NEW improvement (in progress): routes.ts S4 precheck moved AFTER the free typo hint (precheck-first made a mistyped
+  address on the list read ADDRESS_REFUSED while an unlisted one read the hint: a small list oracle and a lost fix-it hint).
+  Test: routes.db 'says the likely typo of a mistyped address on the refusal list as of any other'. Running fail-first.
+- 8128a036 hint-first (web routes.ts + routes.db test + ADR 0065 S4 passage). Failing first: new routes.db test (got
+  ADDRESS_REFUSED, expected the hint). After: routes.db 50/50; eslint clean; tsc apps/web clean.
+  NEXT: re-run e2e screening + mail-cutoff at 8128a036; then drop tp_pr6b4_db_1; final report.
+- e2e re-run at 8128a036 (screening + mail-cutoff, 2 workers): screening 2/2 passed; mail-cutoff FAILED "Test timeout of
+  30000ms exceeded while setting up consumer": its stream fixture waited 29.6 s for the exclusive advisory lock while
+  screening.spec's journey (shared lock, 29.6 s) ran on the other worker. Not from 8128a036 (scheduling; the fixture's
+  wait counts toward the cut-off test's default 30 s; screening.spec sets 240 s, mail-cutoff sets none; same at base).
+  Proposal for the e2e owner: give the cut-off journey a timeout that covers the wait. Re-running mail-cutoff alone.
+- lint:copy 522 files passed; lint:logs 1067 files passed (at 8128a036).
+- e2e mail-cutoff alone at 8128a036: 1 passed (12.1s). tp_pr6b4_db_1 dropped; /tmp/tp-e2e-tp_pr6b4_db_1-* removed.
+- DONE. Head 8128a036, 15 commits. Final report sent.
