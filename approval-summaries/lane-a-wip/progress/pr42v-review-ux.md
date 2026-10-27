@@ -34,3 +34,18 @@ Started 2026-10-27. Clone: /tmp/claude-0/-home-user-PhysicalTherapy/e99dbc78-96e
 - lint:copy at c37fa7cc: pass (523 files)
 - LEAD legal sign-off: LANES.md:291 founder keeps 'sign-off of legal text before it goes to counsel'; PR body Open items 'The founder' does not list the changed legal sentences -> blocking-until-signed (PR-body fix)
 - LEAD complained date: invitation.undelivered_at = held.sent_at (migration ~1063) -> 'Reported as spam {send date}' nit
+- after: 30 shots 0 skipped (22:08-22:09), tiled 108; server stopped
+- PROBE (after server): Send again on the complained row -> accepted, dev-store temp password hash replaced (JfBzRGFN7 -> WHQmJ7-D9), row then reads 'open until 2026-11-03' (pending): warning gone. Confirms F-users-complained.
+- after shots reviewed: paused alert, error-paused/budget summary 'Check the fields marked below.' + 'Form: ...' no link; users 390 667px wide (unchanged width, +100px tall); console M8 'Since 2026-10-20' with Last resumed 10-17 (fixed); resume note visible
+## Findings decided (22:2x)
+1 blocking: legal-surface text changed (screening-mail-paused text+refusal, screening-mail-address budget, screening-kept-* refused-address sentence; data-retention para) but PR 'founder's actions' (7 items) has no legal sign-off; LANES.md:291 keeps it with founder
+2 should_fix: users page complained/suppressed rows keep 'Send again'/'invite again'; probe proved resend voids temp password and row reads 'open until'
+3 should_fix: paused/budget refusals: 'Check the fields marked below.' + 'Form:' with nothing marked; 'request an audit' unlinked (link at page bottom)
+4 should_fix pre-existing: users invitations table 390 -> 667 px, dates split, complained cell ~23 lines
+5 nit: console cut-off sentence ambiguity 'within 7 days or since the last resume' + figures not mono
+6 nit: resume note covers review only; account_rate alarm re-pauses only on state change (events.ts:222-232)
+7 nit: 'Reported as spam {date}' = send date (migration :1063 held.sent_at)
+8 nit: notification 'Check your administrators' email addresses' wrong step for suppressed (M1 now routes)
+9 nit pre-existing: result email (wording.ts emailKept) omits coded-form sentence (counsel O4)
+- NEXT: cleanup (drop tp_e2e_screens, rm /tmp/tp-e2e-tp_e2e_screens-*, rm /home/user/screens, rm review-ux clone, rm auth dirs), StructuredOutput
+- CLEANUP DONE 22:2x: tp_e2e_screens dropped, /tmp/tp-e2e-tp_e2e_screens-* removed, /home/user/screens removed, review-ux clone removed, auth/test-results removed; shots kept in scratchpad/pr42v/screens-{before,after}/png + tiles; /home/user/pr6b4 clean at c37fa7cc. NEXT: StructuredOutput
