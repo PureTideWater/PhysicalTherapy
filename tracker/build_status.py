@@ -6,11 +6,17 @@ import json, os, subprocess, sys, datetime as dt
 
 OUT = sys.argv[1]
 REPO = "/home/user/PhysicalTherapy"
-WF = "/root/.claude/projects/-home-user/e7bf8d14-3b4c-5e38-9cea-a1f92a95083e/subagents/workflows"
-# The session of 2026-10-14 to 2026-10-21 kept its journals in a container that is gone. Its last published
-# work.json (2026-10-18 17:22 UTC) is kept here; a step whose journal is missing takes its state from it.
-FROZEN = {(r["batch"], r["step"]): (r["status"], r["started"], r["finished"])
-          for r in json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "frozen-work-2026-10-18.json")))}
+WF = "/root/.claude/projects/-home-user-PhysicalTherapy/e99dbc78-96e5-5013-a491-2b14e5309bfe/subagents/workflows"
+# Earlier sessions kept their journals in containers that are gone. A step whose journal is missing takes its
+# state from the last published work.json of the session that ran it, the newer snapshot winning:
+# - the session of 2026-10-14 to 2026-10-21: frozen-work-2026-10-18.json (published 2026-10-18 17:22 UTC);
+# - the session of 2026-10-21 to 2026-10-25 (e7bf8d14): frozen-work-2026-10-25.json, the Done steps of its
+#   journal-backed batches from the work.json published 2026-10-25 (asset 17d18bc4...).
+_HERE = os.path.dirname(os.path.abspath(__file__))
+FROZEN = {}
+for _snap in ("frozen-work-2026-10-18.json", "frozen-work-2026-10-25.json"):
+    FROZEN.update({(r["batch"], r["step"]): (r["status"], r["started"], r["finished"])
+                   for r in json.load(open(os.path.join(_HERE, _snap)))})
 NOW = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
 
 def iso(t): return t.astimezone(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -27,13 +33,13 @@ MILESTONES = [
   ("M3", "Intake, documents and mapping", "Audit v0", 40, 60, "Built", "Met", "2 GB zip run passed"),
   ("M4", "Contract repository", "Audit v0", 60, 90, "Built", "Met", ""),
   ("M5", "Expected-payment engine, phase one", "Audit v0", 70, 100, "Built", "Needs a person", "Specialist verifies golden lines"),
-  ("M6", "Anomalies, status model, audit report", "Audit v0", 60, 90, "Built", "Needs a person", "Three real audits to reproduce"),
+  ("M6", "Anomalies, status model, audit report", "Audit v0", 60, 90, "Built", "Needs a person", "Three real audits to reproduce. SUITE-CAP-1 (found 2026-10-26 by #49's real-size test): triage of a 100,000-line month runs out of shared memory; Lane A's fix is designing"),
   ("M7", "Engine phase two and monthly runs", "Monitoring v1", 60, 90, "Built", "Needs a person", "Specialist review; real release 2"),
   ("M8", "Workbench, cases and packets", "Monitoring v1", 90, 130, "Built", "Met", ""),
-  ("M9", "Recovery ledger and reconciliation", "Monitoring v1", 60, 90, "Built", "Met", ""),
-  ("M10", "Model gateway", "Monitoring v1", 50, 70, "Built", "Needs a person", "Evaluation gates need model access"),
-  ("M11", "Sign-in, billing, production readiness", "Monitoring v1", 60, 90, "Built", "Needs a person", "Real Stripe test ACH; AWS deploy"),
-  ("CO1", "Change order 001: pull requests 1 to 16", "Change order 001", 551, 935, "Building", "Not yet", "Step 0, PRs 1 to 6, 5b, 6b-1, 6b-2 and 6b-3, governance and the screen fixes merged. Lane A: PR 6b-4 (#42) reviewed, fix round next. Lane B: CI series (ci-speed #43 in its fix round, ci-mutation building) and PR 15 designed"),
+  ("M9", "Recovery ledger and reconciliation", "Monitoring v1", 60, 90, "Built", "Met", "Interest credited twice when a remittance carries both AMT I and PLB L6 (found 2026-10-26 by PR 15b); the fix is designing and waits for your ledger freeze exception"),
+  ("M10", "Model gateway", "Monitoring v1", 50, 70, "Built", "Needs a person", "Evaluation gates need model access; the gate (#53) ships with its floors unset, so it fails closed until you set them"),
+  ("M11", "Sign-in, billing, production readiness", "Monitoring v1", 60, 90, "Built", "Needs a person", "Real Stripe test ACH; AWS deploy. SS-01 (blocking, found 2026-10-26): a suspended firm's granted practices still run; Lane A's fix is designing"),
+  ("CO1", "Change order 001: pull requests 1 to 16", "Change order 001", 551, 935, "Building", "Not yet", "Step 0, PRs 1 to 6, 5b, 6b-1, 6b-2 and 6b-3, governance and the screen fixes merged; Lane B merged 14 more on 2026-10-25 and 26 (CI 1, 2 and 4 of 4, PR 15, 15b and nine audit and UX items; tip e908c21). Lane A: PR 6b-4 (#42) in its fix round; SS-01, SUITE-CAP-1 and the interest fix designing. Lane B's items, run by Lane A until 2026-10-30: #120, ci-browser, UX PRs 1, 3 and 5 in five sessions"),
   ("M11b", "Firm grants and minimal portfolio (change order PR 17)", "Change order 001", 34, 60, "Queued", "Not yet", "Inserted by the change order before milestone 12"),
   ("M12", "Firm organizations and portfolio", "Firm v1.5", 60, 90, "Queued", "Not yet", "Starts after the change order's 17 pull requests"),
   ("M13", "Intelligence and hardening", "Intelligence v2", 70, 100, "Queued", "Not yet", "Pen test and SOC 2 Type II are outside work"),
@@ -146,6 +152,29 @@ FRIENDLY = {
   "revise: consumer-time": "Design revised: consumer, cost and time check",
   "revise: email-streams": "Design revised: email streams",
   "plan: pr6b": "One plan: pull requests, migration, your questions in one batch",
+  # Lane A, from 2026-10-27 (this session's journals).
+  "write HANDOFF + tracker": "Fold Lane B's state into the handoff and this tracker",
+  "completeness critic": "Check the fold against both logs and GitHub",
+  "merge base into #42": "Merge the build branch (e908c21) into #42 and regenerate",
+  "build: db": "Fixes: database and jobs (S1, S2, S4, S6, M1, M2, M6 to M9)",
+  "build: infra": "Fixes: infrastructure (S3, S5, M3, M10, M11)",
+  "build: harness": "Fixes: harness, the e2e flake, the capacity race, wording (M4, M5)",
+  "integrate + full suite + push": "Bring the fixes together, full test run, push",
+  "scout ss01: database": "SS-01: read and probe the database",
+  "scout ss01: application": "SS-01: read the screens, routes and jobs",
+  "author ss01": "SS-01: write the design",
+  "review ss01": "SS-01: design review",
+  "revise ss01": "SS-01: design revised",
+  "scout suitecap1: database": "SUITE-CAP-1: read and probe the database",
+  "scout suitecap1: application": "SUITE-CAP-1: read the triage code and the capacity test",
+  "author suitecap1": "SUITE-CAP-1: write the design",
+  "review suitecap1": "SUITE-CAP-1: design review",
+  "revise suitecap1": "SUITE-CAP-1: design revised",
+  "scout interest: database": "Interest credited twice: read and probe the database",
+  "scout interest: application": "Interest credited twice: read the ledger code",
+  "author interest": "Interest credited twice: write the design",
+  "review interest": "Interest credited twice: design review",
+  "revise interest": "Interest credited twice: design revised",
 }
 CO_STEPS = [
   "Step 0: milestones 10-11 green, CI running on GitHub",
@@ -222,17 +251,56 @@ MANUAL = {
   "PR 6b-2, pricing location and onboarding: build, reviews, fix, verify, your approval, merge": ("Done", "2026-10-21T23:55:00Z", "2026-10-22T16:31:00Z"),
   "PR 6b-3, the screening's own consumer and the time check: build, reviews, fix, verify, your approval, merge": ("Done", "2026-10-22T16:51:00Z", "2026-10-23T15:21:00Z"),
   "PR 6b-4, mail streams: build, reviews, fix, verify, your approval, merge": ("Running", "2026-10-23T16:45:00Z", None),
-  # Lane B (the co-founder's sessions; lanes/lane-b.md), folded in by Lane A.
+  "PR 6b: ZIP+4 localities, so every practice can be priced (your ruling)": ("Running", "2026-10-21T19:58:01Z", None),
+  "PR 15: ledger tests LED-12 and LED-13": ("Done", "2026-10-25T01:15:00Z", "2026-10-25T20:04:05Z"),
+  # Lane A from 2026-10-27: the co-founder runs Lane A's account and, until Lane B's reset on 2026-10-30 19:00 UTC,
+  # Lane B's no-migration items too (HANDOFF.md "Start here"; lanes/lane-b.md, 2026-10-27 entries).
+  "Fresh session on Lane A's account: machine, GitHub login, settings read": ("Done", "2026-10-27T01:26:00Z", "2026-10-27T01:31:00Z"),
+  "Repository setting F7: the claude/build-platform ruleset": ("Done", "2026-10-25T14:35:00Z", "2026-10-25T21:15:00Z"),
+  "Repository setting F1 (a): default branch claude/build-platform": ("Done", "2026-10-26T21:06:13Z", "2026-10-27T01:30:00Z"),
+  "Repository settings F2 (a) and F3: Dependabot alerts and security updates; actions pinned to a full SHA": ("Done", "2026-10-26T21:06:13Z", "2026-10-27T01:50:00Z"),
+  "Claims, counters and five parallel sessions for Lane B's items": ("Done", "2026-10-27T01:35:00Z", "2026-10-27T01:42:35Z"),
+  "PR 6b-4: fresh-clone verification that reads CI": ("Queued", None, None),
+  "You approve the domain model (PR 6b-4, #42's latest commit)": ("Queued", None, None),
+  "PR 6b-4 on GitHub: CI green, then merge": ("Queued", None, None),
+  "SS-01: build, draft PR, two reviews, fix, verify, your approval, merge": ("Queued", None, None),
+  "SUITE-CAP-1: build, draft PR, two reviews, fix, verify, your approval, merge": ("Queued", None, None),
+  "You grant the ledger freeze exception for the interest fix": ("Queued", None, None),
+  "Interest credited twice: build, draft PR, two reviews, fix, verify, your approval, merge": ("Queued", None, None),
+  "The rest of \"Handed to Lane A\" (#32's notice, #54's settings steps, #38's proposals, 15b's items, #84 and #120's F3 and F4, #59's coverage function, the UX review's 19 items)": ("Queued", None, None),
+  # Lane B (the co-founder's sessions; lanes/lane-b.md), folded in by Lane A. Merge times from git.
   "Lane B: CI series design (four PRs, designs/lane-b-ci.md) and review": ("Done", "2026-10-24T21:10:00Z", "2026-10-25T00:45:00Z"),
   "You ruled F1 to F7 as recommended (relayed by the co-founder)": ("Done", "2026-10-25T00:45:00Z", "2026-10-25T01:10:00Z"),
   "ci-speed (#109): build, draft PR #43 (CI 7:26), two reviews": ("Done", "2026-10-25T01:05:00Z", "2026-10-25T06:20:00Z"),
-  "ci-speed: fix round, CI, fresh-clone verification, merge": ("Running", "2026-10-25T07:45:00Z", None),
-  "ci-mutation (#54): build, draft PR, two reviews": ("Running", "2026-10-25T02:15:00Z", None),
-  "ci-mutation: fix round, verification, merge": ("Queued", None, None),
-  "ci-deps (#112, #19's asserts, Dependabot #40, #38, #33): build to merge": ("Queued", None, None),
-  "ci-browser (#19's upgrade): build to merge": ("Queued", None, None),
+  "ci-speed: fix round, CI, fresh-clone verification, merge": ("Done", "2026-10-25T07:45:00Z", "2026-10-25T14:16:06Z"),
+  "ci-mutation (#54): build, draft PR, two reviews": ("Done", "2026-10-25T02:15:00Z", "2026-10-25T13:50:00Z"),
+  "ci-mutation: fix round, verification, merge": ("Done", "2026-10-25T13:50:00Z", "2026-10-25T18:50:08Z"),
+  "ci-deps (#112, #19's asserts, Dependabot #40, #38, #33): build to merge": ("Done", "2026-10-26T00:40:00Z", "2026-10-26T21:06:13Z"),
+  "ci-browser (#19's upgrade): build to merge": ("Running", "2026-10-26T05:05:00Z", None),
+  "ci-deps' follow-ups: pnpm 10.34.8 in the setup script; Dependabot #33 explained": ("Done", "2026-10-27T01:40:23Z", "2026-10-27T01:45:37Z"),
+  "CI follow-ups P1, P2 and P4 (designed and reviewed): build to merge": ("Queued", None, None),
+  "CI follow-up P5: one catalog line for repeated package ranges (after #42 and ci-browser)": ("Queued", None, None),
   "PR 15: design, probe and your ruling L1 (a)": ("Done", "2026-10-25T01:15:00Z", "2026-10-25T02:05:00Z"),
-  "PR 15: build (tests written), reviews, fix, verify, merge": ("Queued", None, None),
+  "PR 15: build (tests written), reviews, fix, verify, merge": ("Done", "2026-10-25T14:20:00Z", "2026-10-25T20:04:05Z"),
+  "PR 15b: ledger amounts in payment terms (#12)": ("Done", "2026-10-25T23:55:00Z", "2026-10-26T12:41:28Z"),
+  "Readable database-function diffs (#111)": ("Done", "2026-10-25T23:55:00Z", "2026-10-26T04:37:35Z"),
+  "A superseded re-run cannot be accepted (#10)": ("Done", "2026-10-25T23:55:00Z", "2026-10-26T11:06:45Z"),
+  "Every figure explained in words (#38)": ("Done", "2026-10-26T00:35:00Z", "2026-10-26T11:41:22Z"),
+  "Model evaluation gate (#84)": ("Done", "2026-10-25T23:55:00Z", "2026-10-26T09:50:07Z"),
+  "The contract PHI check before the model (#120)": ("Running", "2026-10-26T09:50:07Z", None),
+  "Bank account shown first (#135)": ("Done", "2026-10-26T00:35:00Z", "2026-10-26T03:56:38Z"),
+  "Release content checks (#7, #30, #31, #59)": ("Done", "2026-10-25T23:58:00Z", "2026-10-26T14:25:46Z"),
+  "UX/UI and brand baseline review: 857 screenshots, 11 reviewers, 208 problems, 91 PRs": ("Done", "2026-10-25T20:50:00Z", "2026-10-26T10:30:00Z"),
+  "Materiality settings showed stored cents as dollars, a money bug (#54)": ("Done", "2026-10-26T04:20:00Z", "2026-10-26T08:56:16Z"),
+  "The UX and brand reviewer checklist (#55)": ("Done", "2026-10-26T05:20:00Z", "2026-10-26T10:30:18Z"),
+  "UX PR 2: a suspended organization never reads \"In good standing\" (#56)": ("Done", "2026-10-26T09:27:00Z", "2026-10-26T12:11:37Z"),
+  "UX PR 1: forms keep what the person typed (ux-forms)": ("Running", "2026-10-26T04:35:00Z", None),
+  "UX PR 3: every table scrolls by keyboard; phones get stacked rows": ("Running", "2026-10-27T01:40:25Z", None),
+  "UX PR 5: a refused download comes back to its form": ("Running", "2026-10-27T01:40:26Z", None),
+  "UX PR 4: the screening result reads on a phone": ("Queued", None, None),
+  "UX PRs 6 and 7: sign-in time limits and recovery": ("Queued", None, None),
+  "UX PR 9: one actionable figure on the home and the ROI statement": ("Queued", None, None),
+  "UX PRs 8 and 10 to 91, in landing order (designs/lane-b-ux-review.md §3)": ("Queued", None, None),
 }
 # Steps whose label repeats across batches ("fix review findings"), kept by hand: (batch, label) -> (status, started, finished).
 BATCH_MANUAL = {
@@ -254,6 +322,9 @@ STEP_RUNS = {
 }
 BATCHES = [
   # (batch name, journal run id or None, planned labels in order)
+  ("Lane A, 2026-10-27: the co-founder runs both lanes", "wf_83d455b5-98c", ["Fresh session on Lane A's account: machine, GitHub login, settings read", "Repository setting F7: the claude/build-platform ruleset", "Repository setting F1 (a): default branch claude/build-platform", "Repository settings F2 (a) and F3: Dependabot alerts and security updates; actions pinned to a full SHA", "Claims, counters and five parallel sessions for Lane B's items", "write HANDOFF + tracker", "completeness critic"]),
+  ("PR 6b-4 (#42): fix round, verification, your approval, merge", "wf_ba2333bd-714", ["merge base into #42", "build: db", "build: infra", "build: harness", "integrate + full suite + push", "PR 6b-4: fresh-clone verification that reads CI", "You approve the domain model (PR 6b-4, #42's latest commit)", "PR 6b-4 on GitHub: CI green, then merge"]),
+  ("Lane A's schema chain after #42: SS-01, SUITE-CAP-1, interest credited twice", "wf_5f09e0bd-311", ["scout ss01: database", "scout ss01: application", "author ss01", "review ss01", "revise ss01", "scout suitecap1: database", "scout suitecap1: application", "author suitecap1", "review suitecap1", "revise suitecap1", "scout interest: database", "scout interest: application", "author interest", "review interest", "revise interest", "SS-01: build, draft PR, two reviews, fix, verify, your approval, merge", "SUITE-CAP-1: build, draft PR, two reviews, fix, verify, your approval, merge", "You grant the ledger freeze exception for the interest fix", "Interest credited twice: build, draft PR, two reviews, fix, verify, your approval, merge", "The rest of \"Handed to Lane A\" (#32's notice, #54's settings steps, #38's proposals, 15b's items, #84 and #120's F3 and F4, #59's coverage function, the UX review's 19 items)"]),
   ("PR 6b: ZIP+4 localities, the screening's own consumer, the 60-second check", "wf_b7b1b9d1-40f", ["design: zip4-settings", "design: consumer-time", "design: email-streams", "review: zip4-settings", "review: consumer-time", "review: email-streams", "revise: zip4-settings", "revise: consumer-time", "revise: email-streams", "plan: pr6b", "You approve the consumer's monthly cost and the design questions", "PR 6b-1, ZIP+4 in the engine: build, draft PR, two reviews, fix, verify, merge", "PR 6b-2, pricing location and onboarding: build, reviews, fix, verify, your approval, merge", "PR 6b-3, the screening's own consumer and the time check: build, reviews, fix, verify, your approval, merge", "PR 6b-4, mail streams: build, reviews, fix, verify, your approval, merge"]),
   ("Since the audit: rulings and small pull requests", None, ["You decide on the upgrades", "Design: PR 5 payer's copy and PR 6 screening (19 questions)", "You answered the 19 design questions", "CI pinned to ubuntu-24.04 (#24)", "Governance merged: hooks, pre-push check, approval of record (#25)", "Main: Dependabot groups and the PR template (#27)", "Images fix: Node starts as user node (#32)", "PR 5b: the payer's copy prints the plan type in words (#34)", "Fresh session: setup script, handoff, machine rebuilt"]),
   ("PR 3: EMR export fixtures", "wf_fd24ff2c-ef4", ["set up the worktree and split the work", "formats, generators, templates", "fixture guard, check, approval hook", "review: ledger and intake", "review: guard robustness", "review: guardrails and security", "fix review findings", "fresh-clone verification", "PR 3 on GitHub: CI green, then merge (after PR 2)"]),
@@ -267,8 +338,9 @@ BATCHES = [
   ("PR 5: packet deadline verification", "wf_ba5a5838-67c", ["set up the worktree and the contract", "deadline rule, window evidence, release 900005, AUDIT-01", "tp-packet/2, verifier at export, attestation, e2e", "review: engine, deadline rule and AUDIT-01", "review: attack the verifier and the hash", "review: security, attestation and tenancy", "review: guardrails and the domain model", "fix review findings", "fresh-clone verification and approval summary", "You approve the domain model (PR 5)", "PR 5 on GitHub: CI green, then merge"]),
   ("PR 4: EMR exports as intake", "wf_4afdb8f3-dff", ["set up the worktree and the contract", "schema, normalizer, loading, duplicate rule", "Coverage flag, upload and receipts, e2e", "review: loader correctness", "review: duplicates and idempotency", "review: security and tenancy", "review: guardrails and the domain model", "fix review findings", "fresh-clone verification and approval summary", "You approve the domain model (PR 4)", "PR 4 on GitHub: CI green, then merge"]),
   ("Screen-tour fixes", "wf_0291578a-a18", ["set up the worktree and split the work", "privacy: the viewer sees no service date", "numbers: coverage share, dashboard coverage, audit report", "layout and copy", "review: privacy and security", "review: correctness and UI", "fix review findings", "fresh-clone verification and re-shot tour", "Fixes on GitHub: CI green, then merge"]),
-  ("Lane B (co-founder): the CI series and PR 15", None, ["Lane B: CI series design (four PRs, designs/lane-b-ci.md) and review", "You ruled F1 to F7 as recommended (relayed by the co-founder)", "ci-speed (#109): build, draft PR #43 (CI 7:26), two reviews", "ci-speed: fix round, CI, fresh-clone verification, merge", "ci-mutation (#54): build, draft PR, two reviews", "ci-mutation: fix round, verification, merge", "ci-deps (#112, #19's asserts, Dependabot #40, #38, #33): build to merge", "ci-browser (#19's upgrade): build to merge", "PR 15: design, probe and your ruling L1 (a)", "PR 15: build (tests written), reviews, fix, verify, merge"]),
-  ("Lane B queue after the CI series and PR 15 (no migration; LANES.md)", None, ["PR 15b: ledger amounts in payment terms (#12)", "Readable database-function diffs (#111)", "A superseded re-run cannot be accepted (#10)", "The Verified seal claims only what it proves (#46)", "Every figure explained in words (#38)", "Access log pages past the first (#49)", "A narrative survives sign-out (#48)", "One unmapped plan no longer freezes a month (#32)", "Agent instructions and a ten-minute setup (#113)", "Model evaluation gate (#84) and the contract PHI check (#120)", "Bank account shown first (#135)", "Release content checks (#7, #30, #31, #59)", "Infrastructure PRs after #42 (#72/#116, #17's infrastructure, least privilege, deploy safety with #67, job platform #73, observability #75, status page, packets bucket #45, staging zones #136)", "Raw errors kept out of the queue and logs (#115), audit copy days (#117), web and worker boundary (#137), claims page (#107)", "The AMA notice and CPT records (#52)", "A code formatter (#138), when no PR is open", "The AI statement, code-checked (#122), after PR 16"]),
+  ("Lane B (co-founder): the CI series and PR 15", None, ["Lane B: CI series design (four PRs, designs/lane-b-ci.md) and review", "You ruled F1 to F7 as recommended (relayed by the co-founder)", "ci-speed (#109): build, draft PR #43 (CI 7:26), two reviews", "ci-speed: fix round, CI, fresh-clone verification, merge", "ci-mutation (#54): build, draft PR, two reviews", "ci-mutation: fix round, verification, merge", "ci-deps (#112, #19's asserts, Dependabot #40, #38, #33): build to merge", "ci-deps' follow-ups: pnpm 10.34.8 in the setup script; Dependabot #33 explained", "ci-browser (#19's upgrade): build to merge", "CI follow-ups P1, P2 and P4 (designed and reviewed): build to merge", "CI follow-up P5: one catalog line for repeated package ranges (after #42 and ci-browser)", "PR 15: design, probe and your ruling L1 (a)", "PR 15: build (tests written), reviews, fix, verify, merge"]),
+  ("Lane B (co-founder): the UX/UI and brand review and its PRs", None, ["UX/UI and brand baseline review: 857 screenshots, 11 reviewers, 208 problems, 91 PRs", "Materiality settings showed stored cents as dollars, a money bug (#54)", "The UX and brand reviewer checklist (#55)", "UX PR 2: a suspended organization never reads \"In good standing\" (#56)", "UX PR 1: forms keep what the person typed (ux-forms)", "UX PR 3: every table scrolls by keyboard; phones get stacked rows", "UX PR 5: a refused download comes back to its form", "UX PR 4: the screening result reads on a phone", "UX PRs 6 and 7: sign-in time limits and recovery", "UX PR 9: one actionable figure on the home and the ROI statement", "UX PRs 8 and 10 to 91, in landing order (designs/lane-b-ux-review.md §3)"]),
+  ("Lane B queue after the CI series and PR 15 (no migration; LANES.md)", None, ["PR 15b: ledger amounts in payment terms (#12)", "Readable database-function diffs (#111)", "CI renders the function-diff summary from the base ref (#111's proposal I2)", "A superseded re-run cannot be accepted (#10)", "The Verified seal claims only what it proves (#46)", "Every figure explained in words (#38)", "Access log pages past the first (#49)", "A narrative survives sign-out (#48)", "One unmapped plan no longer freezes a month (#32)", "Agent instructions and a ten-minute setup (#113)", "Model evaluation gate (#84)", "The contract PHI check before the model (#120)", "Bank account shown first (#135)", "Release content checks (#7, #30, #31, #59)", "Release content checks' later PR in #42's files (heap flags, content alarms, the content_due job after Lane A's coverage function), after #42", "A bank account still waiting on micro-deposits, shown on later visits (#135's proposal)", "Infrastructure PRs after #42 (#72/#116, #17's infrastructure, least privilege, deploy safety with #67, job platform #73, observability #75, status page, packets bucket #45, staging zones #136)", "Raw errors kept out of the queue and logs (#115), audit copy days (#117), web and worker boundary (#137), claims page (#107)", "The AMA notice and CPT records (#52)", "A code formatter (#138), when no PR is open", "The AI statement, code-checked (#122), after PR 16"]),
   ("Change order 001 pull requests", None, CO_STEPS),
   ("Milestones 12-13", None, ["Firm organizations, grants, invitations", "Export, deletion, legal holds", "Portfolio, per-practice billing, verified-by mark", "Calendar alerts and negotiation workspace", "Payer scorecards, OT and SLP codes, SOC 2 Type II checklist", "Reviews (security, plan, correctness)", "Fixes and full test run"]),
   ("Final pass", None, ["Runbooks", "Phone-width screens and mono figures", "Whole-plan audit", "Final fixes", "Claude Code settings file, final verification, report"]),
@@ -281,6 +353,9 @@ HISTORY = [
 ]
 # PR 5, PR 6 and governance ran across the weekly-limit pause of 2026-10-19 and several container restarts, and
 # their journals are gone with the old container, so their wall-clock hours are not measured here.
+# Lane B's 14 merges of 2026-10-25 and 26 are not here either: lanes/lane-b.md records their merge times and some
+# workflow stages' durations, but no whole-PR wall-clock hours, and most ran in parallel sessions across the
+# account's two 5-hour-limit stops of 2026-10-26, so a claim-to-merge span would not be a measured build time.
 
 # ---- Estimate of the finish, in UTC (update when a batch ends).
 # Re-estimated 2026-10-17T05:15Z after the reconciliation: change order 001 is 585-995 plan hours,
@@ -295,13 +370,29 @@ HISTORY = [
 # and 15b; four security, about eight infrastructure, billing 2 and legal-surfaces PRs; milestones 12 and 13; the final
 # pass). The week of 2026-10-20 bought about 7 such pieces with about 80% of the allowance (design, build, two reviews,
 # fix rounds, verification each), so 6 to 9 weeks, the later PRs (7, M12, M13, final pass) being the larger.
-ETA = {"low": "2026-12-03T18:00:00Z", "high": "2027-01-07T18:00:00Z"}
+# Re-estimated 2026-10-27T02:00Z from Lane B's measured pace (lanes/lane-b.md): its account went from 6% (2026-10-25
+# ~02:05 UTC) to ~97% (2026-10-26 ~21:10 UTC), and those 91 points bought 14 merged PRs (merge times from git) plus
+# the UX baseline review, five designs and three part-built branches: about 15 merged no-migration PRs per weekly
+# allowance. Lane A's pace stays the week of 2026-10-20's, about 9 schema-sized pieces per weekly allowance, serial.
+# What remains on 2026-10-27:
+# - Lane A, serial: #42; SS-01, SUITE-CAP-1, the interest fix; about 6 more from "Handed to Lane A"; 6c, 6d, 6e,
+#   4b, first-finding, release-operations, contract-integrity, alerts, legal-surfaces tables; PR 7 and 7b; PRs 8-14,
+#   16, 17; billing 2; the audit's six other schema PRs; milestones 12 and 13: about 38 pieces, 4 to 6.5 weeks
+#   from the 2026-10-27 14:00 UTC reset with the founder's approval waits, so it is not the binding lane.
+# - Lane B, in parallel: UX PR 1 and the UX review's PRs 3 to 91 (90, mostly 200 to 400 lines each, prs.json) and
+#   about 25 of LANES.md's other no-migration items: about 115, less the 5 to 8 the five sessions may merge before
+#   Lane B returns on 2026-10-30 19:00 UTC. From then, at 17 a week (Lane A's account helping while the schema chain
+#   waits on the founder) that is about 6.4 weeks; at 12 a week (each screen PR's UX review and shots) about 9 weeks.
+# - Then the final pass, about a week, once both lanes are done.
+# So 2026-12-20 to 2027-01-08. It covers the code only, not the outside items (release 1's real content, the
+# specialist, counsel, AWS, Stripe, model access, SOC 2, the pen test).
+ETA = {"low": "2026-12-20T18:00:00Z", "high": "2027-01-08T18:00:00Z"}
 
 # ---- Things only a person can do (the README holds the detail).
 BLOCKERS = [
   ("Load the real 2026 CMS fee schedule and X12 code lists into release 1", "M0, M2", "You or your team", "Download the files listed in content/sources/README.md; run the import commands; verify to L2"),
   ("Reimbursement specialist verifies the golden pricing lines", "M5, M7", "Specialist", "Answer fixtures/golden/QUESTIONS.md (45 questions); check the worksheets"),
-  ("Deploy to AWS staging and run the restore drill", "M1, M11", "You or your team", "AWS account with the BAA accepted; follow the deploy runbook"),
+  ("Deploy to AWS staging and run the restore drill", "M1, M11", "You or your team", "AWS account with the BAA accepted; follow the deploy runbook. With #42's mail: DNS, SES phase 2 and production access, Postmaster Tools and SNDS, O11 and O12, and (as #42's S3 fix is being built) one mail-validation AWS account per environment"),
   ("Run the model evaluation gates with model access", "M10", "You or your team", "Bedrock access in AWS; run the evaluation harness"),
   ("Complete a test ACH payment through real Stripe test mode", "M11", "You or your team", "Stripe account and test keys in Secrets Manager"),
   ("Reproduce the three real audits", "M6", "Founder and reviewer", "Run the first three practices through the app"),
@@ -309,12 +400,19 @@ BLOCKERS = [
   ("A GitHub identity for the build (runbook 3i), then APPROVAL_REVIEW_REQUIRED", "CO1", "You", "docs/runbooks/github-governance.md, step 3i; until then the build merges on green CI (D4 a)"),
   ("Counsel: decisions 3, 4, 7 and 17, the cookie notice, the 11-line floor, the screening terms, the campaign-code wording", "CO1", "Counsel", "Before the first real packet and before the screening opens"),
   ("Specialist: Q21 on sequestration", "M5, CO1", "Specialist", "fixtures/golden/QUESTIONS.md"),
-  ("Repository setting F7: the claude/build-platform ruleset (all green, mutation, screening-capacity gate, approval-of-record; PRs required; no force push; up to date)", "CO1", "You", "After ci-speed's (#43) first green push run on claude/build-platform; Lane B gives the exact steps"),
-  ("Repository settings F1 and F2 (a): default branch claude/build-platform, with Dependabot alerts and security updates", "CO1", "You", "When ci-deps merges, together"),
-  ("Repository setting F3: require actions pinned to a full-length commit SHA", "CO1", "You", "After ci-deps merges"),
-  ("Decide S3 on PR 6b-4: CloudTrail likely keeps every address SES validates", "CO1", "You", "Recommended: a dedicated validation account whose trail records writes only, verified on staging; approval-summaries/pr6b4-review-findings.md"),
+  ("Approve PR 6b-4's domain model (#42, mail streams) on its latest commit", "CO1", "You", "After #42's fix round and fresh-clone verification, the approval line comes as a suggested change on the PR; you commit it on GitHub, as on #39 (ADR 0063; an APPROVED review counts only after runbook 3i, and GitHub does not let PureTideWater approve its own PR); no session writes it"),
+  ("A ledger freeze exception for the interest credited twice (AMT I and PLB L6 both credited)", "M9, CO1", "You", "The fix changes the ledger's existing behaviour; its design (ADR 0084) is running, and its build waits for your exception"),
+  ("The UX review's five questions: dark mode, the terms text, the palette, two screening legal texts", "CO1", "You", "designs/lane-b-ux-review.md section 6.2, each with its options and recommendation; dark mode reverses D9 item 3, so it stays off meanwhile"),
+  ("The model evaluation gate's floors, and whether the data-rights addendum covers accepted proposals used as examples", "M10, CO1", "You", "The floors ship unset, so the gate fails closed; the addendum is legal text"),
+  ("Rulesets 4B and 4C: main's, and the v* release tags'", "CO1, launch", "You", "Owner-admin; neither exists yet. In 4B, target main by pattern, not \"Include default branch\" (lanes/lane-b.md, Waiting on someone)"),
+  ("Smaller rulings: #111's guard on packages/db/functions with a CLAUDE.md Never line; LANES.md items 3, 10 and 14; the CI design's O1 and O12", "CO1", "You", "HANDOFF.md \"Open for the founder\"; none blocks a PR today"),
   ("Revisit: how the screening's 60-second promise is measured (free runner, time advisory on PRs; issue #41)", "CO1, launch", "You", "Before the screening opens: measure on AWS staging (recommended) or an organization on GitHub Team with the 8-core runner; then the sizing question O9"),
 ]
+# Done and removed 2026-10-27: F7 (the build-branch ruleset, applied 2026-10-25 ~21:15 UTC), F1 (the default branch),
+# F2 (a) and F3 (applied by the person ~01:50 UTC; F2's alerts and F3 are not readable through the proxy, so they rest
+# on the person's word, and F3 is proved by the next workflow run), S3 (decided as the safer option under the
+# co-founder's direction of 2026-10-27, built in #42's fix round), and storage.googleapis.com (allowed by the person
+# ~02:00 UTC; it answers through the proxy at 02:03 UTC).
 
 def journal(run):
     path = os.path.join(WF, run, "journal.jsonl")
@@ -359,7 +457,11 @@ for batch, run, labels in BATCHES:
 
 def git(*a): return subprocess.run(["git", "-C", REPO, *a], capture_output=True, text=True).stdout.strip()
 commits = int(git("rev-list", "--count", "HEAD") or 0)
-brand_commits = int(subprocess.run(["git", "-C", "/home/user/pw-brand", "rev-list", "--count", "07d2670..HEAD"], capture_output=True, text=True).stdout.strip() or 0)
+# The brand clone (/home/user/pw-brand) is gone with the old containers. Its count was 74 (the summary published
+# 2026-10-25: 379 commits at 49514e8's 305), so that measured count stands in when the clone is missing.
+BRAND_COMMITS_MEASURED = 74
+brand_commits = (int(subprocess.run(["git", "-C", "/home/user/pw-brand", "rev-list", "--count", "07d2670..HEAD"], capture_output=True, text=True).stdout.strip() or 0)
+                 if os.path.isdir("/home/user/pw-brand") else BRAND_COMMITS_MEASURED)
 adrs = len([f for f in os.listdir(os.path.join(REPO, "docs/adr")) if f.endswith(".md") and not f.startswith("0000")])
 
 summary = [{
@@ -368,7 +470,7 @@ summary = [{
   "commits": commits + brand_commits,
   "adrs": adrs,
   "golden_lines": 330,
-  "unit_tests": 4524, "db_tests": 9041, "e2e_journeys": 51,
+  "unit_tests": 6265, "db_tests": 9222, "e2e_journeys": 54,  # CI on #48's head 7b6b10b, the tip e908c21's last PR head
 }]
 
 milestones = [{"id": m[0], "seq": i, "name": m[1], "release": m[2], "hours_low": m[3], "hours_high": m[4],

@@ -1,0 +1,814 @@
+[
+ {
+  "batch": "PR 6b: ZIP+4 localities, the screening's own consumer, the 60-second check",
+  "step": "Design: ZIP+4 localities, pricing settings at onboarding",
+  "status": "Done",
+  "started": "2026-10-21T19:58:01Z",
+  "finished": "2026-10-21T20:22:28Z"
+ },
+ {
+  "batch": "PR 6b: ZIP+4 localities, the screening's own consumer, the 60-second check",
+  "step": "Design: the screening's own consumer, its monthly cost, the 60-second check",
+  "status": "Done",
+  "started": "2026-10-21T19:58:01Z",
+  "finished": "2026-10-21T21:06:55Z"
+ },
+ {
+  "batch": "PR 6b: ZIP+4 localities, the screening's own consumer, the 60-second check",
+  "step": "Design: the screening's email kept apart from customer email",
+  "status": "Done",
+  "started": "2026-10-21T20:22:30Z",
+  "finished": "2026-10-21T20:43:44Z"
+ },
+ {
+  "batch": "PR 6b: ZIP+4 localities, the screening's own consumer, the 60-second check",
+  "step": "Design review: ZIP+4 and pricing settings",
+  "status": "Done",
+  "started": "2026-10-21T20:43:46Z",
+  "finished": "2026-10-21T20:59:40Z"
+ },
+ {
+  "batch": "PR 6b: ZIP+4 localities, the screening's own consumer, the 60-second check",
+  "step": "Design review: consumer, cost and time check",
+  "status": "Done",
+  "started": "2026-10-21T21:13:13Z",
+  "finished": "2026-10-21T21:28:14Z"
+ },
+ {
+  "batch": "PR 6b: ZIP+4 localities, the screening's own consumer, the 60-second check",
+  "step": "Design review: email streams",
+  "status": "Done",
+  "started": "2026-10-21T20:59:42Z",
+  "finished": "2026-10-21T21:13:11Z"
+ },
+ {
+  "batch": "PR 6b: ZIP+4 localities, the screening's own consumer, the 60-second check",
+  "step": "Design revised: ZIP+4 and pricing settings",
+  "status": "Done",
+  "started": "2026-10-21T21:06:57Z",
+  "finished": "2026-10-21T21:26:33Z"
+ },
+ {
+  "batch": "PR 6b: ZIP+4 localities, the screening's own consumer, the 60-second check",
+  "step": "Design revised: consumer, cost and time check",
+  "status": "Done",
+  "started": "2026-10-21T21:28:16Z",
+  "finished": "2026-10-21T21:41:16Z"
+ },
+ {
+  "batch": "PR 6b: ZIP+4 localities, the screening's own consumer, the 60-second check",
+  "step": "Design revised: email streams",
+  "status": "Done",
+  "started": "2026-10-21T21:26:35Z",
+  "finished": "2026-10-21T21:46:10Z"
+ },
+ {
+  "batch": "PR 6b: ZIP+4 localities, the screening's own consumer, the 60-second check",
+  "step": "One plan: pull requests, migration, your questions in one batch",
+  "status": "Done",
+  "started": "2026-10-21T21:46:12Z",
+  "finished": "2026-10-21T22:02:39Z"
+ },
+ {
+  "batch": "PR 6b: ZIP+4 localities, the screening's own consumer, the 60-second check",
+  "step": "You approve the consumer's monthly cost and the design questions",
+  "status": "Done",
+  "started": "2026-10-21T22:00:00Z",
+  "finished": "2026-10-21T22:31:00Z"
+ },
+ {
+  "batch": "PR 6b: ZIP+4 localities, the screening's own consumer, the 60-second check",
+  "step": "PR 6b-1, ZIP+4 in the engine: build, draft PR, two reviews, fix, verify, merge",
+  "status": "Done",
+  "started": "2026-10-21T22:55:00Z",
+  "finished": "2026-10-22T05:20:00Z"
+ },
+ {
+  "batch": "PR 6b: ZIP+4 localities, the screening's own consumer, the 60-second check",
+  "step": "PR 6b-2, pricing location and onboarding: build, reviews, fix, verify, your approval, merge",
+  "status": "Done",
+  "started": "2026-10-21T23:55:00Z",
+  "finished": "2026-10-22T16:31:00Z"
+ },
+ {
+  "batch": "PR 6b: ZIP+4 localities, the screening's own consumer, the 60-second check",
+  "step": "PR 6b-3, the screening's own consumer and the time check: build, reviews, fix, verify, your approval, merge",
+  "status": "Done",
+  "started": "2026-10-22T16:51:00Z",
+  "finished": "2026-10-23T15:21:00Z"
+ },
+ {
+  "batch": "PR 3: EMR export fixtures",
+  "step": "Set up and plan the work",
+  "status": "Done",
+  "started": "2026-10-17T17:51:45Z",
+  "finished": "2026-10-17T18:07:21Z"
+ },
+ {
+  "batch": "PR 3: EMR export fixtures",
+  "step": "Vendor formats, synthetic files, posting templates",
+  "status": "Done",
+  "started": "2026-10-17T18:07:23Z",
+  "finished": "2026-10-17T19:00:48Z"
+ },
+ {
+  "batch": "PR 3: EMR export fixtures",
+  "step": "Fixture guard, CI check, approval-line guard",
+  "status": "Done",
+  "started": "2026-10-17T18:07:23Z",
+  "finished": "2026-10-17T18:53:58Z"
+ },
+ {
+  "batch": "PR 3: EMR export fixtures",
+  "step": "Ledger and intake review",
+  "status": "Done",
+  "started": "2026-10-17T19:00:51Z",
+  "finished": "2026-10-17T19:15:39Z"
+ },
+ {
+  "batch": "PR 3: EMR export fixtures",
+  "step": "Try to get past the guards",
+  "status": "Done",
+  "started": "2026-10-17T19:00:52Z",
+  "finished": "2026-10-17T19:16:11Z"
+ },
+ {
+  "batch": "PR 3: EMR export fixtures",
+  "step": "Guardrails and security review",
+  "status": "Done",
+  "started": "2026-10-17T19:15:41Z",
+  "finished": "2026-10-17T19:29:57Z"
+ },
+ {
+  "batch": "PR 3: EMR export fixtures",
+  "step": "Fix review findings",
+  "status": "Done",
+  "started": "2026-10-17T19:29:59Z",
+  "finished": "2026-10-17T20:14:31Z"
+ },
+ {
+  "batch": "PR 3: EMR export fixtures",
+  "step": "Full test run in a clean checkout",
+  "status": "Done",
+  "started": "2026-10-17T20:14:34Z",
+  "finished": "2026-10-17T21:07:50Z"
+ },
+ {
+  "batch": "PR 3: EMR export fixtures",
+  "step": "PR 3 on GitHub: CI green, then merge (after PR 2)",
+  "status": "Done",
+  "started": "2026-10-17T21:16:00Z",
+  "finished": "2026-10-17T21:49:00Z"
+ },
+ {
+  "batch": "PR 2: domain model",
+  "step": "Domain model tool, document, drift test, CLAUDE.md rule",
+  "status": "Done",
+  "started": "2026-10-17T11:23:58Z",
+  "finished": "2026-10-17T12:06:41Z"
+ },
+ {
+  "batch": "PR 2: domain model",
+  "step": "Check the document against the live database",
+  "status": "Done",
+  "started": "2026-10-17T12:06:43Z",
+  "finished": "2026-10-17T12:24:13Z"
+ },
+ {
+  "batch": "PR 2: domain model",
+  "step": "Check the drift and approval tests",
+  "status": "Done",
+  "started": "2026-10-17T12:06:46Z",
+  "finished": "2026-10-17T13:13:57Z"
+ },
+ {
+  "batch": "PR 2: domain model",
+  "step": "Guardrails and CLAUDE.md review",
+  "status": "Done",
+  "started": "2026-10-17T13:26:00Z",
+  "finished": "2026-10-17T14:05:00Z"
+ },
+ {
+  "batch": "PR 2: domain model",
+  "step": "Fix review findings",
+  "status": "Done",
+  "started": "2026-10-17T13:13:59Z",
+  "finished": "2026-10-17T14:07:08Z"
+ },
+ {
+  "batch": "PR 2: domain model",
+  "step": "Full test run in a clean checkout",
+  "status": "Done",
+  "started": "2026-10-17T14:07:10Z",
+  "finished": "2026-10-17T14:56:49Z"
+ },
+ {
+  "batch": "PR 2: domain model",
+  "step": "Second round: approver list, stricter approval check, test fixes",
+  "status": "Done",
+  "started": "2026-10-17T14:08:00Z",
+  "finished": "2026-10-17T18:22:00Z"
+ },
+ {
+  "batch": "PR 2: domain model",
+  "step": "Your name on the approver list (Tyler Williams)",
+  "status": "Done",
+  "started": "2026-10-17T18:05:00Z",
+  "finished": "2026-10-17T19:14:00Z"
+ },
+ {
+  "batch": "PR 2: domain model",
+  "step": "You approve the domain model",
+  "status": "Done",
+  "started": "2026-10-17T19:05:00Z",
+  "finished": "2026-10-17T19:16:00Z"
+ },
+ {
+  "batch": "PR 2: domain model",
+  "step": "PR 2 on GitHub: CI green, then merge",
+  "status": "Done",
+  "started": "2026-10-17T19:16:00Z",
+  "finished": "2026-10-17T19:51:00Z"
+ },
+ {
+  "batch": "Urgent items from the audit",
+  "step": "You decided the four urgent items",
+  "status": "Done",
+  "started": "2026-10-18T16:10:00Z",
+  "finished": "2026-10-18T16:20:00Z"
+ },
+ {
+  "batch": "Urgent items from the audit",
+  "step": "Repair main (revert #7, Dependabot to the build branch)",
+  "status": "Done",
+  "started": "2026-10-18T16:24:00Z",
+  "finished": "2026-10-18T16:30:00Z"
+ },
+ {
+  "batch": "Urgent items from the audit",
+  "step": "Governance: hooks on, approval summary and check, your guide",
+  "status": "Done",
+  "started": "2026-10-18T16:40:00Z",
+  "finished": "2026-10-20T14:20:00Z"
+ },
+ {
+  "batch": "Urgent items from the audit",
+  "step": "Try to get past the new protections",
+  "status": "Done",
+  "started": "2026-10-20T14:20:00Z",
+  "finished": "2026-10-20T16:00:00Z"
+ },
+ {
+  "batch": "Urgent items from the audit",
+  "step": "Read your guide as you would",
+  "status": "Done",
+  "started": "2026-10-20T14:20:00Z",
+  "finished": "2026-10-20T16:00:00Z"
+ },
+ {
+  "batch": "Urgent items from the audit",
+  "step": "Fix review findings",
+  "status": "Done",
+  "started": "2026-10-20T16:00:00Z",
+  "finished": "2026-10-20T20:30:00Z"
+ },
+ {
+  "batch": "Urgent items from the audit",
+  "step": "Full test run in a clean checkout",
+  "status": "Done",
+  "started": "2026-10-20T20:30:00Z",
+  "finished": "2026-10-20T21:30:00Z"
+ },
+ {
+  "batch": "Urgent items from the audit",
+  "step": "PR 5: the audit's critical fixes (#4, #5, #26, #61)",
+  "status": "Done",
+  "started": "2026-10-18T17:20:00Z",
+  "finished": "2026-10-20T21:25:00Z"
+ },
+ {
+  "batch": "Urgent items from the audit",
+  "step": "PR 6: the audit's privacy fix (#6, 11-line floor)",
+  "status": "Done",
+  "started": "2026-10-18T16:40:00Z",
+  "finished": "2026-10-20T18:30:00Z"
+ },
+ {
+  "batch": "Best-option audit (your standing rule)",
+  "step": "Recheck decisions D1-D12 for the best option",
+  "status": "Done",
+  "started": "2026-10-18T11:48:43Z",
+  "finished": "2026-10-18T12:02:43Z"
+ },
+ {
+  "batch": "Best-option audit (your standing rule)",
+  "step": "Recheck decisions D13-D24 for the best option",
+  "status": "Done",
+  "started": "2026-10-18T11:48:46Z",
+  "finished": "2026-10-18T12:04:57Z"
+ },
+ {
+  "batch": "Best-option audit (your standing rule)",
+  "step": "Recheck decisions D25-D36 and PRs 7-17",
+  "status": "Done",
+  "started": "2026-10-18T12:02:45Z",
+  "finished": "2026-10-18T12:19:47Z"
+ },
+ {
+  "batch": "Best-option audit (your standing rule)",
+  "step": "Recheck everything deferred or left open",
+  "status": "Done",
+  "started": "2026-10-18T12:04:59Z",
+  "finished": "2026-10-18T12:21:08Z"
+ },
+ {
+  "batch": "Best-option audit (your standing rule)",
+  "step": "Look for any figure that could be wrong or misleading",
+  "status": "Done",
+  "started": "2026-10-18T12:19:49Z",
+  "finished": "2026-10-18T12:43:15Z"
+ },
+ {
+  "batch": "Best-option audit (your standing rule)",
+  "step": "Walk every role's screens for friction",
+  "status": "Done",
+  "started": "2026-10-18T12:21:10Z",
+  "finished": "2026-10-18T12:36:47Z"
+ },
+ {
+  "batch": "Best-option audit (your standing rule)",
+  "step": "Look for limits on scale and growth",
+  "status": "Done",
+  "started": "2026-10-18T12:36:49Z",
+  "finished": "2026-10-18T12:56:16Z"
+ },
+ {
+  "batch": "Best-option audit (your standing rule)",
+  "step": "Check every idea, rank the upgrades for you",
+  "status": "Done",
+  "started": "2026-10-18T15:58:10Z",
+  "finished": "2026-10-18T16:17:13Z"
+ },
+ {
+  "batch": "Best-option audit, ten more angles",
+  "step": "Security and privacy",
+  "status": "Done",
+  "started": "2026-10-18T12:49:23Z",
+  "finished": "2026-10-18T13:06:29Z"
+ },
+ {
+  "batch": "Best-option audit, ten more angles",
+  "step": "Compliance and legal",
+  "status": "Done",
+  "started": "2026-10-18T12:49:23Z",
+  "finished": "2026-10-18T13:03:52Z"
+ },
+ {
+  "batch": "Best-option audit, ten more angles",
+  "step": "Reliability and operations",
+  "status": "Done",
+  "started": "2026-10-18T13:03:54Z",
+  "finished": "2026-10-18T13:24:40Z"
+ },
+ {
+  "batch": "Best-option audit, ten more angles",
+  "step": "Cost to serve each practice",
+  "status": "Done",
+  "started": "2026-10-18T13:06:32Z",
+  "finished": "2026-10-18T13:40:51Z"
+ },
+ {
+  "batch": "Best-option audit, ten more angles",
+  "step": "Will the packets win disputes",
+  "status": "Done",
+  "started": "2026-10-18T13:24:41Z",
+  "finished": "2026-10-18T13:40:27Z"
+ },
+ {
+  "batch": "Best-option audit, ten more angles",
+  "step": "Time to a first finding, and renewals",
+  "status": "Done",
+  "started": "2026-10-18T13:40:29Z",
+  "finished": "2026-10-18T13:57:16Z"
+ },
+ {
+  "batch": "Best-option audit, ten more angles",
+  "step": "Keeping up with CMS and payer changes",
+  "status": "Done",
+  "started": "2026-10-18T13:40:53Z",
+  "finished": "2026-10-18T14:00:07Z"
+ },
+ {
+  "batch": "Best-option audit, ten more angles",
+  "step": "AI safety and model quality",
+  "status": "Done",
+  "started": "2026-10-18T13:57:18Z",
+  "finished": "2026-10-18T14:12:09Z"
+ },
+ {
+  "batch": "Best-option audit, ten more angles",
+  "step": "Code health and development speed",
+  "status": "Done",
+  "started": "2026-10-18T14:00:09Z",
+  "finished": "2026-10-18T14:22:14Z"
+ },
+ {
+  "batch": "Best-option audit, ten more angles",
+  "step": "Business model and due diligence",
+  "status": "Done",
+  "started": "2026-10-18T14:12:11Z",
+  "finished": "2026-10-18T14:28:07Z"
+ },
+ {
+  "batch": "Best-option audit, ten more angles",
+  "step": "Check every idea, merge both audits, rank for you",
+  "status": "Done",
+  "started": "2026-10-20T14:20:00Z",
+  "finished": "2026-10-20T15:00:00Z"
+ },
+ {
+  "batch": "Best-option audit, ten more angles",
+  "step": "You decide on the upgrades",
+  "status": "Done",
+  "started": "2026-10-20T15:00:00Z",
+  "finished": "2026-10-20T15:10:00Z"
+ },
+ {
+  "batch": "PR 5: your rulings",
+  "step": "You answered PR 5's questions",
+  "status": "Done",
+  "started": "2026-10-18T11:30:00Z",
+  "finished": "2026-10-18T11:37:00Z"
+ },
+ {
+  "batch": "PR 5: your rulings",
+  "step": "Sign-off only after both files are downloaded; your rulings recorded",
+  "status": "Done",
+  "started": "2026-10-18T11:28:07Z",
+  "finished": "2026-10-18T13:27:20Z"
+ },
+ {
+  "batch": "PR 5: your rulings",
+  "step": "Try to sign off without downloading",
+  "status": "Done",
+  "started": "2026-10-18T13:27:23Z",
+  "finished": "2026-10-18T13:44:38Z"
+ },
+ {
+  "batch": "PR 5: your rulings",
+  "step": "Guardrails and rulings review",
+  "status": "Done",
+  "started": "2026-10-18T13:27:23Z",
+  "finished": "2026-10-18T14:42:02Z"
+ },
+ {
+  "batch": "PR 5: your rulings",
+  "step": "Fix review findings",
+  "status": "Done",
+  "started": "2026-10-18T14:42:04Z",
+  "finished": "2026-10-18T16:07:59Z"
+ },
+ {
+  "batch": "PR 5: your rulings",
+  "step": "Full test run and the new fingerprint",
+  "status": "Done",
+  "started": "2026-10-18T16:08:01Z",
+  "finished": "2026-10-18T17:20:55Z"
+ },
+ {
+  "batch": "PR 6: your rulings",
+  "step": "You answered PR 6's questions",
+  "status": "Done",
+  "started": "2026-10-18T11:38:00Z",
+  "finished": "2026-10-18T11:41:00Z"
+ },
+ {
+  "batch": "PR 6: your rulings",
+  "step": "Two engine figures, compare before sequestration, your rulings",
+  "status": "Done",
+  "started": "2026-10-18T11:42:07Z",
+  "finished": "2026-10-18T13:15:33Z"
+ },
+ {
+  "batch": "PR 6: your rulings",
+  "step": "Engine and figures review",
+  "status": "Done",
+  "started": "2026-10-18T13:15:39Z",
+  "finished": "2026-10-18T13:28:24Z"
+ },
+ {
+  "batch": "PR 6: your rulings",
+  "step": "Guardrails and wording review",
+  "status": "Done",
+  "started": "2026-10-18T13:15:44Z",
+  "finished": "2026-10-18T13:28:30Z"
+ },
+ {
+  "batch": "PR 6: your rulings",
+  "step": "Fix review findings",
+  "status": "Done",
+  "started": "2026-10-18T13:28:32Z",
+  "finished": "2026-10-18T14:29:07Z"
+ },
+ {
+  "batch": "PR 6: your rulings",
+  "step": "Full test run in a clean checkout",
+  "status": "Done",
+  "started": "2026-10-18T14:29:09Z",
+  "finished": "2026-10-18T16:39:11Z"
+ },
+ {
+  "batch": "PR 6: free screening",
+  "step": "Set up and fix the design both builders follow",
+  "status": "Done",
+  "started": "2026-10-18T03:23:01Z",
+  "finished": "2026-10-18T03:52:57Z"
+ },
+ {
+  "batch": "PR 6: free screening",
+  "step": "Screening tables, pricing adapter, expiry, rate limits",
+  "status": "Done",
+  "started": "2026-10-18T03:53:00Z",
+  "finished": "2026-10-18T05:18:01Z"
+ },
+ {
+  "batch": "PR 6: free screening",
+  "step": "Public screening pages, upload check, results, browser tests",
+  "status": "Done",
+  "started": "2026-10-18T03:53:00Z",
+  "finished": "2026-10-18T04:51:45Z"
+ },
+ {
+  "batch": "PR 6: free screening",
+  "step": "Engine and pricing-adapter review",
+  "status": "Done",
+  "started": "2026-10-18T05:18:05Z",
+  "finished": "2026-10-18T05:30:58Z"
+ },
+ {
+  "batch": "PR 6: free screening",
+  "step": "Privacy, security and abuse review",
+  "status": "Done",
+  "started": "2026-10-18T05:18:08Z",
+  "finished": "2026-10-18T05:31:20Z"
+ },
+ {
+  "batch": "PR 6: free screening",
+  "step": "Try to get patient data through the upload",
+  "status": "Done",
+  "started": "2026-10-18T05:30:59Z",
+  "finished": "2026-10-18T05:44:22Z"
+ },
+ {
+  "batch": "PR 6: free screening",
+  "step": "Guardrails, wording and domain model review",
+  "status": "Done",
+  "started": "2026-10-18T05:31:22Z",
+  "finished": "2026-10-18T05:59:41Z"
+ },
+ {
+  "batch": "PR 6: free screening",
+  "step": "Fix review findings",
+  "status": "Done",
+  "started": "2026-10-18T05:59:43Z",
+  "finished": "2026-10-18T07:05:46Z"
+ },
+ {
+  "batch": "PR 6: free screening",
+  "step": "Full test run and your approval summary",
+  "status": "Done",
+  "started": "2026-10-18T07:05:49Z",
+  "finished": "2026-10-18T07:49:43Z"
+ },
+ {
+  "batch": "PR 6: free screening",
+  "step": "You approve the domain model (PR 6)",
+  "status": "Done",
+  "started": "2026-10-21T17:30:00Z",
+  "finished": "2026-10-21T17:35:00Z"
+ },
+ {
+  "batch": "PR 6: free screening",
+  "step": "PR 6 on GitHub: CI green, then merge",
+  "status": "Done",
+  "started": "2026-10-21T00:16:27Z",
+  "finished": "2026-10-21T18:16:26Z"
+ },
+ {
+  "batch": "PR 5: packet deadline verification",
+  "step": "Set up and fix the design both builders follow",
+  "status": "Done",
+  "started": "2026-10-18T01:15:04Z",
+  "finished": "2026-10-18T01:42:00Z"
+ },
+ {
+  "batch": "PR 5: packet deadline verification",
+  "step": "Deadline rule, contract-window evidence, synthetic release, audit check",
+  "status": "Done",
+  "started": "2026-10-18T01:42:02Z",
+  "finished": "2026-10-18T03:25:44Z"
+ },
+ {
+  "batch": "PR 5: packet deadline verification",
+  "step": "Packet format, check at export, your sign-off, browser tests",
+  "status": "Done",
+  "started": "2026-10-18T01:42:02Z",
+  "finished": "2026-10-18T03:07:58Z"
+ },
+ {
+  "batch": "PR 5: packet deadline verification",
+  "step": "Engine, deadline rule and audit review",
+  "status": "Done",
+  "started": "2026-10-18T03:25:48Z",
+  "finished": "2026-10-18T03:41:03Z"
+ },
+ {
+  "batch": "PR 5: packet deadline verification",
+  "step": "Try to export a packet with a made-up figure",
+  "status": "Done",
+  "started": "2026-10-18T03:25:50Z",
+  "finished": "2026-10-18T03:43:45Z"
+ },
+ {
+  "batch": "PR 5: packet deadline verification",
+  "step": "Security, sign-off and practice-isolation review",
+  "status": "Done",
+  "started": "2026-10-18T03:41:04Z",
+  "finished": "2026-10-18T04:11:08Z"
+ },
+ {
+  "batch": "PR 5: packet deadline verification",
+  "step": "Guardrails and domain model review",
+  "status": "Done",
+  "started": "2026-10-18T03:43:47Z",
+  "finished": "2026-10-18T04:17:07Z"
+ },
+ {
+  "batch": "PR 5: packet deadline verification",
+  "step": "Fix review findings",
+  "status": "Done",
+  "started": "2026-10-18T04:17:09Z",
+  "finished": "2026-10-18T05:34:59Z"
+ },
+ {
+  "batch": "PR 5: packet deadline verification",
+  "step": "Full test run and your approval summary",
+  "status": "Done",
+  "started": "2026-10-18T05:35:01Z",
+  "finished": "2026-10-18T06:25:30Z"
+ },
+ {
+  "batch": "PR 5: packet deadline verification",
+  "step": "You approve the domain model (PR 5)",
+  "status": "Done",
+  "started": "2026-10-21T03:30:00Z",
+  "finished": "2026-10-21T12:30:00Z"
+ },
+ {
+  "batch": "PR 5: packet deadline verification",
+  "step": "PR 5 on GitHub: CI green, then merge",
+  "status": "Done",
+  "started": "2026-10-20T23:58:05Z",
+  "finished": "2026-10-21T13:04:31Z"
+ },
+ {
+  "batch": "PR 4: EMR exports as intake",
+  "step": "Set up and fix the design both builders follow",
+  "status": "Done",
+  "started": "2026-10-17T21:18:13Z",
+  "finished": "2026-10-17T21:42:35Z"
+ },
+ {
+  "batch": "PR 4: EMR exports as intake",
+  "step": "Database change, export reader, loading, one-payment-once rule",
+  "status": "Done",
+  "started": "2026-10-17T21:42:37Z",
+  "finished": "2026-10-17T23:04:30Z"
+ },
+ {
+  "batch": "PR 4: EMR exports as intake",
+  "step": "Coverage flag, upload and receipt wording, browser tests",
+  "status": "Done",
+  "started": "2026-10-17T22:19:14Z",
+  "finished": "2026-10-17T22:25:49Z"
+ },
+ {
+  "batch": "PR 4: EMR exports as intake",
+  "step": "Check exports load exactly like 835s",
+  "status": "Done",
+  "started": "2026-10-17T23:08:24Z",
+  "finished": "2026-10-17T23:23:12Z"
+ },
+ {
+  "batch": "PR 4: EMR exports as intake",
+  "step": "Try to load one payment twice",
+  "status": "Done",
+  "started": "2026-10-17T23:08:29Z",
+  "finished": "2026-10-17T23:20:40Z"
+ },
+ {
+  "batch": "PR 4: EMR exports as intake",
+  "step": "Security and practice-isolation review",
+  "status": "Done",
+  "started": "2026-10-17T23:20:42Z",
+  "finished": "2026-10-17T23:52:24Z"
+ },
+ {
+  "batch": "PR 4: EMR exports as intake",
+  "step": "Guardrails and domain model review",
+  "status": "Done",
+  "started": "2026-10-17T23:23:14Z",
+  "finished": "2026-10-17T23:55:05Z"
+ },
+ {
+  "batch": "PR 4: EMR exports as intake",
+  "step": "Fix review findings",
+  "status": "Done",
+  "started": "2026-10-17T23:55:07Z",
+  "finished": "2026-10-18T01:05:06Z"
+ },
+ {
+  "batch": "PR 4: EMR exports as intake",
+  "step": "Full test run and your approval summary",
+  "status": "Done",
+  "started": "2026-10-18T01:05:09Z",
+  "finished": "2026-10-18T01:52:51Z"
+ },
+ {
+  "batch": "PR 4: EMR exports as intake",
+  "step": "You approve the domain model (PR 4)",
+  "status": "Done",
+  "started": "2026-10-18T01:58:00Z",
+  "finished": "2026-10-18T02:08:00Z"
+ },
+ {
+  "batch": "PR 4: EMR exports as intake",
+  "step": "PR 4 on GitHub: CI green, then merge",
+  "status": "Done",
+  "started": "2026-10-18T02:28:00Z",
+  "finished": "2026-10-18T03:21:00Z"
+ },
+ {
+  "batch": "Screen-tour fixes",
+  "step": "Set up and plan the work",
+  "status": "Done",
+  "started": "2026-10-17T19:25:04Z",
+  "finished": "2026-10-17T19:42:27Z"
+ },
+ {
+  "batch": "Screen-tour fixes",
+  "step": "Privacy: hide service dates from viewers on every page",
+  "status": "Done",
+  "started": "2026-10-17T19:42:29Z",
+  "finished": "2026-10-17T20:17:52Z"
+ },
+ {
+  "batch": "Screen-tour fixes",
+  "step": "Numbers: coverage share, dashboard coverage, audit report",
+  "status": "Done",
+  "started": "2026-10-17T19:42:29Z",
+  "finished": "2026-10-17T21:12:49Z"
+ },
+ {
+  "batch": "Screen-tour fixes",
+  "step": "Page widths, table headers, wording",
+  "status": "Done",
+  "started": "2026-10-17T20:17:54Z",
+  "finished": "2026-10-17T21:01:03Z"
+ },
+ {
+  "batch": "Screen-tour fixes",
+  "step": "Privacy and security review",
+  "status": "Done",
+  "started": "2026-10-17T21:12:52Z",
+  "finished": "2026-10-17T22:20:29Z"
+ },
+ {
+  "batch": "Screen-tour fixes",
+  "step": "Correctness and screen review",
+  "status": "Done",
+  "started": "2026-10-17T21:12:57Z",
+  "finished": "2026-10-17T21:57:29Z"
+ },
+ {
+  "batch": "Screen-tour fixes",
+  "step": "Fix review findings",
+  "status": "Done",
+  "started": "2026-10-17T22:20:31Z",
+  "finished": "2026-10-17T23:13:44Z"
+ },
+ {
+  "batch": "Screen-tour fixes",
+  "step": "Full test run and new screenshots",
+  "status": "Done",
+  "started": "2026-10-17T23:13:47Z",
+  "finished": "2026-10-18T00:10:03Z"
+ },
+ {
+  "batch": "Screen-tour fixes",
+  "step": "Fixes on GitHub: CI green, then merge",
+  "status": "Done",
+  "started": "2026-10-18T00:15:00Z",
+  "finished": "2026-10-18T01:13:00Z"
+ }
+]
