@@ -1,6 +1,6 @@
 # 0062. Screen prospects from aggregate rows without PHI, price each row with the unchanged engine, and send the result by emailed link
 
-- **Status:** accepted; amended by [0064](0064-resolve-a-split-zips-locality-from-the-zip-plus-four-files-ranges-the-one-engine-change-the-freeze-allows.md) (ZIP+4 localities and quarters outside the loaded content, PR 6b)
+- **Status:** accepted; amended by [0064](0064-resolve-a-split-zips-locality-from-the-zip-plus-four-files-ranges-the-one-engine-change-the-freeze-allows.md) (ZIP+4 localities and quarters outside the loaded content, PR 6b); amended 2026-10-26 by [0066](0066-run-ci-as-parallel-jobs-behind-one-gate-measure-mutation-on-every-money-package-move-the-browser-and-runner-together-and-pin-every-dependency.md), Part 2 (the release restores no cache, in "Amendment (ADR 0066, Part 2)" below)
 - **Date:** 2026-10-18
 - **Deciders:** the owner (D11 option a and D18 to D21 option a, in `docs/product/reconciliation-001.md`, approved 2026-10-17; the four rulings of 2026-10-18 below, by the founder, Tyler Williams, and the founder's approval of 2026-10-18 after the best-option audit, items 6 and 1, with the ruling of 11:47 UTC that supersedes ruling 3); the build (PR 6 of Change Order 001) and its review of 2026-10-20
 - **PRD sections:** 2 (what a screening must never claim), 5 (J1, the audit request), 7 (public pages), 8 (Invariants), 11 (the engine, Medicare Advantage non-contracted pricing), 15 (Request path; links only in email), 16 (Tenant isolation; logging discipline); Change Order 001, CO-04, CO-09 (SCR-01 to SCR-06, SEC-17; SCR-07 added by the founder's ruling), CO-11 and CO-12; ADRs 0014, 0019, 0029, 0034, 0038 and 0053
@@ -1351,3 +1351,31 @@ what `watched.ts` derives, and the changes job reads it from the base and the he
 above 44 s (S4's from its middle run) posts a warning annotation and the gate prints the sizing question, so it shows on
 the pull request's checks. A path filter on the trigger would leave a required check pending on every other pull request.
 
+## Amendment (ADR 0066, Part 2): the release restores no cache, so the attested report depends only on its own run
+
+Decision 13's binding report is measured by `release.yml`'s capacity job on the release's own images and attested as
+that workflow's on the tag. Until 2026-10-26 that job restored three things another run could have saved: the pnpm
+store (`setup-node … cache: pnpm`), the SYNTHETIC scale release (`actions/cache/restore`, keyed on
+`packages/synth/src/release/**`, `tools/release/scale.ts`, `packages/rules/src/**` and release 900001's directory, but
+not on the lockfile or the generator's other imports), and, through trivy-action's default `cache: 'true'`, the
+scanner's binary and its vulnerability database. A tag's run may restore caches its default branch saved, and the
+founder's F1 (a) makes `claude/build-platform`, whose push runs save all of these, the default branch until launch.
+So a cache hit could serve a scale release built by other code, and a scanner and database from another run, inside
+the measurement and the scan the attestation vouches for.
+
+From ADR 0066's Part 2 on, `release.yml` restores nothing:
+- the scale release is built in the run from the tag's commit (about 22 s; the push run 39977565861's "Build the scale
+  release" took 15:24:36 to 15:24:58 UTC);
+- setup-node takes no `cache` and sets `package-manager-cache: false`, and pnpm/action-setup keeps `cache: false`, so
+  the store is filled from the registry by the lockfile's integrity hashes;
+- both trivy-action steps set `cache: false` and a `cache-dir` under `runner.temp`, as ci.yml's `images` job does;
+- setup-buildx sets `cache-binary: false`, and no build sets `cache-from` or `cache-to`.
+
+`tools/test/workflows.test.ts` holds release.yml to each of those inputs by name, and `tools/check-action-pins`
+follows every `actions/cache*` the actions nest to the top-level input that gates it, which must be `false` in
+release.yml, failing an ungated one. Its three uploads (the bill of materials, the image and the capacity report) set
+`overwrite: true`, so a re-run of a failed job replaces what its first attempt left; the capacity report's provenance
+is unchanged, since only the report job attests, and it attests the report its own run downloaded.
+`.github/workflows/release-dry-run.yml` runs the release's build and hand-over steps on every pull request that changes
+release.yml, `tools/screening-capacity/image-id.ts` or either Dockerfile, so its actions run on a pull request before a
+tag ever runs them. The attested report then depends only on its own run, at about 22 s a tag.

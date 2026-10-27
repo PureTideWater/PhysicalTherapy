@@ -1,0 +1,22 @@
+{
+  "case": "CI-11",
+  "module": "CI",
+  "title": "Actions pinned to their release",
+  "assertion": "Every `uses:` is a full SHA with its version, one SHA per action; the SHA is the tag's and every input is declared; every action nested in a composite is pinned by SHA too; the release restores no cache",
+  "synthetic": true,
+  "completesIn": 0,
+  "assertedBy": [
+    "tools/check-action-pins/check.test.ts",
+    "tools/check-action-pins/verify.test.ts",
+    "tools/check-action-pins/workflows.test.ts",
+    "tools/test/workflows.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Every workflow file is read; the actions' tags and files are synthetic ls-remote lines and action files the tests build in memory; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

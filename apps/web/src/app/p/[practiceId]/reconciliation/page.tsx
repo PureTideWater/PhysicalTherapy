@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 
 import { ActionForm } from '../../../../components/action-form';
 import { roleNames, utc } from '../../../../components/format';
-import { EVIDENCE_WORDS, KindBadge, LedgerTotals, entryStage, exportStatusText, levelWords, outcomeWords } from '../../../../components/reconciliation/display';
+import { EVIDENCE_WORDS, KindBadge, LedgerTotals, LineCorrectionWords, correctionWords, entryStage, exportStatusText, levelWords, lineEntriesEmptyText } from '../../../../components/reconciliation/display';
 import { UnattestedSubmissions } from '../../../../components/packets/unattested';
 import { Money, Pager } from '../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../components/shell';
@@ -70,7 +70,7 @@ function MatchItem({ practiceId, match, canReconcile, phi }: { readonly practice
       <span className={match.standing ? '' : 'line-through'}>
         {evidence}
         Remittance <span className="font-mono">{match.trace}</span>, {match.payerName}, paid {match.paidOn}
-        {match.kind === 'claim' ? `: ${outcomeWords(match.outcome)}` : ''}
+        {match.kind === 'claim' ? <>: {correctionWords(match)}</> : ''}
         {match.kind === 'posting' || match.kind === 'deposit' ? ` (${levelWords(match.level, match.allocated)})` : ''}
         {match.kind === 'recoupment' ? (match.source === 'plb' ? ': PLB WO take-back' : ': reversal of the attached claim') : ''}
         {match.kind === 'interest' ? (match.source === 'plb' ? ': PLB L6 interest' : ': the claim’s interest') : ''}; matched {who(match)}, {utc(match.matchedAt)}.
@@ -131,7 +131,15 @@ function EntryRows({ entries, practiceId, phi }: { readonly entries: readonly En
   );
 }
 
-function EntryTable({ entries, practiceId, phi, label }: { readonly entries: readonly EntryView[]; readonly practiceId: string; readonly phi: boolean; readonly label: string }) {
+function EntryTable({ entries, practiceId, phi, label, empty }: { readonly entries: readonly EntryView[]; readonly practiceId: string; readonly phi: boolean; readonly label: string; readonly empty?: string }) {
+  // An empty line says so in a sentence that wraps, outside the table's horizontal scroll (RX-1: clipped at 390 px).
+  if (entries.length === 0 && empty !== undefined) {
+    return (
+      <p data-entries="none" className="text-sm text-muted-foreground">
+        {empty}
+      </p>
+    );
+  }
   return (
     <div className="overflow-x-auto">
       <table aria-label={label} className="w-full text-sm">
@@ -155,10 +163,16 @@ function EntryTable({ entries, practiceId, phi, label }: { readonly entries: rea
   );
 }
 
+/** The patient's share of the line's corrections, as text cents, when it is above zero; else null. */
+function patientShareOf(line: LinkageLine): string | null {
+  const share = line.correction.billable?.billableCents ?? '0';
+  return share === '0' ? null : share;
+}
+
 function LinkageItem({ line, practiceId, canReconcile, phi }: { readonly line: LinkageLine; readonly practiceId: string; readonly canReconcile: boolean; readonly phi: boolean }) {
   const shared = { practiceId, canReconcile, phi };
   return (
-    <li className="flex flex-col gap-3 rounded-md border p-3" data-line={line.serviceLineId}>
+    <li className="flex flex-col gap-3 rounded-md border p-3" data-line={line.serviceLineId} data-correction-kind={line.correction.kind ?? 'none'}>
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="font-medium">{phi ? `${line.procedureCode ?? ''} on ${line.serviceDate ?? '—'}` : 'Case line'}</span>
         <span data-line-stage={line.stage ?? 'none'}>{line.stage === null ? 'no stage' : stageLabel(line.stage as Parameters<typeof stageLabel>[0])}</span>
@@ -180,13 +194,20 @@ function LinkageItem({ line, practiceId, canReconcile, phi }: { readonly line: L
           <Matches title="Interest" matches={line.interest} empty="No interest paid." {...shared} />
         </div>
       )}
+      <LineCorrectionWords correction={line.correction} />
       {line.shortfallCents === null ? null : (
         <p className="rounded-md border border-dashed p-2 text-sm" data-shortfall={line.shortfallCents}>
-          Shortfall: the payer accepted <Money value={line.shortfallCents} /> more than its remittance paid on this line. It stays approved and is never taken back as a recoupment. A contract
-          specialist corrects the approval after review (under a support grant, with a reason), or the practice disputes it with a further submission.
+          Shortfall: the payer accepted <Money value={line.shortfallCents} /> more than its remittance paid on this line
+          {patientShareOf(line) === null ? null : (
+            <>
+              ; the patient’s share of the correction is <Money value={patientShareOf(line)} />, billable to the patient if the letter accepted the allowed amount
+            </>
+          )}
+          . It stays approved and is never taken back as a recoupment. A contract specialist corrects the approval after review (under a support grant, with a reason), or the practice disputes it
+          with a further submission.
         </p>
       )}
-      <EntryTable entries={line.entries} practiceId={practiceId} phi={phi} label="Entries of the line" />
+      <EntryTable entries={line.entries} practiceId={practiceId} phi={phi} label="Entries of the line" empty={lineEntriesEmptyText(line.correction.kind)} />
     </li>
   );
 }

@@ -6,7 +6,7 @@ import path from 'node:path';
 import { readDatabaseUrl, withJobScope } from '@tp/db';
 import { addMembership, asOwner, createOrganization, createUser } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
-import { SYNTHETIC_CORRESPONDENCE_CONTACT, correspondenceText, packetReference } from '@tp/packets';
+import { SYNTHETIC_CORRESPONDENCE_CONTACT, WORDS_VERSION, correspondenceText, explainPacket, packetReference } from '@tp/packets';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
 import { packetExportHandler } from '@tp/worker/runtime';
 import type { Practice } from '@tp/worker/testing';
@@ -24,7 +24,7 @@ import { EXPORT_REFUSAL_TEXT } from '../packets/export-attempts';
 import { type Services, createServices } from '../server/services';
 import { MemoryQueue } from '../uploads/queue';
 import { REFERENCE_FORMAT, caseByReferencePage } from './packet-reference';
-import { approvePacketVersionAction, exportPacketAction, packetPage, writeVersionAction } from './packets';
+import { approvePacketVersionAction, exportPacketAction, packetPage, packetReviewPage, writeVersionAction } from './packets';
 import { correspondenceSettingsPage, setCorrespondenceContactAction, settingsPage } from './settings';
 
 /**
@@ -32,8 +32,9 @@ import { correspondenceSettingsPage, setCorrespondenceContactAction, settingsPag
  * 2026-10-20; docs/adr/0061; test matrix CAS-26 to CAS-28): W1, the export refused before anything is queued while the
  * practice has no correspondence contact, with its remedy, and queued once the administrator sets it; W3, the contact's
  * page and action, set by the practice administrator by ownership alone; W6, a packet found by the reference a payer
- * quotes, only in its own practice. W2, W4 and W7 are in workbench-routes.db.test.ts, W5 in review.test.ts. SYNTHETIC
- * CAS-08 only.
+ * quotes, only in its own practice. W2, W4 and W7 are in workbench-routes.db.test.ts, W5 in review.test.ts. W8
+ * (combined audit #38; CAS-32): the builder's and the review's calculation in words, explainPacket()'s from the stored
+ * traces, the words version each step is asked under, and a trace that differs refused. SYNTHETIC CAS-08 only.
  */
 
 let w: TriageWorld;
@@ -123,8 +124,8 @@ async function internalOf(target: Practice, role: 'reviewer' | 'support'): Promi
   return id;
 }
 
-/** A practice whose CAS-08 lines triage into one case, its version written by the manager and approved by a second billing manager. */
-async function approvedCase(label: string, contact: boolean): Promise<{ practice: Practice; caseId: string; versionId: string; contentSha256: string }> {
+/** A practice whose CAS-08 lines triage into one case, its first version written by the manager, and a second billing manager who approves. */
+async function writtenCase(label: string, contact: boolean): Promise<{ practice: Practice; caseId: string; versionId: string; contentSha256: string; second: string }> {
   const practice = await w.practice(label, { case_materiality_cents: '1000' }, { contact });
   await w.load(practice, 'CAS-08/remit.835');
   const contract = await w.fixedContract(practice, FIXED);
@@ -143,15 +144,21 @@ async function approvedCase(label: string, contact: boolean): Promise<{ practice
   }
   const second = await createUser(w.owner);
   await addMembership(w.owner, practice.world.organizationId, second, 'billing_manager');
-  ok(await call(approvePacketVersionAction, second, P, { caseId, versionId: version.id, versionSha256: version.contentSha256 }));
-  return { practice, caseId, versionId: version.id, contentSha256: version.contentSha256 };
+  return { practice, caseId, versionId: version.id, contentSha256: version.contentSha256, second };
+}
+
+/** The same, its version approved by the second billing manager. */
+async function approvedCase(label: string, contact: boolean): Promise<{ practice: Practice; caseId: string; versionId: string; contentSha256: string }> {
+  const { practice, caseId, versionId, contentSha256, second } = await writtenCase(label, contact);
+  ok(await call(approvePacketVersionAction, second, { practiceId: practice.practiceId }, { caseId, versionId, versionSha256: contentSha256, wordsVersion: WORDS_VERSION }));
+  return { practice, caseId, versionId, contentSha256 };
 }
 
 /** The export job's code on the version, as the worker runs the queued job. */
 async function runExport(target: Practice, versionId: string): Promise<void> {
   const jobId = randomUUID();
   await packetExportHandler({ documents, keys: w.keys, pdf: w.pdf })(
-    { practice_id: target.practiceId, packet_version_id: versionId },
+    { practice_id: target.practiceId, packet_version_id: versionId, words_version: WORDS_VERSION },
     { jobId, logger: createLogger({ sink: () => undefined }), transaction: (work) => withJobScope(w.app, { jobId, practiceId: target.practiceId }, work), enqueue: () => Promise.resolve(null), lastAttempt: false },
   );
 }
@@ -167,7 +174,7 @@ describe('W1: no export without a correspondence contact (D7)', () => {
     expect(page.builder.version?.exportReadiness).toEqual({ outcome: 'refused', reasons: ['contact_missing'] });
     expect(page.canSetContact).toBe(false);
     const before = queue.jobs.length;
-    const refused = await call(exportPacketAction, practice.manager, P, { caseId, versionId });
+    const refused = await call(exportPacketAction, practice.manager, P, { caseId, versionId, wordsVersion: WORDS_VERSION });
     expect(refused).toMatchObject({ status: 'invalid', issues: [{ field: 'contact_missing', message: EXPORT_REFUSAL_TEXT.contact_missing }] });
     expect(EXPORT_REFUSAL_TEXT.contact_missing).toContain('Settings, Correspondence');
     expect(queue.jobs.length).toBe(before);
@@ -175,8 +182,8 @@ describe('W1: no export without a correspondence contact (D7)', () => {
     const ready = ok(await call(packetPage, practice.manager, { ...P, caseId }));
     expect(ready.builder.contact).toEqual({ state: 'set', text: correspondenceText(SYNTHETIC_CORRESPONDENCE_CONTACT) });
     expect(ready.builder.version?.exportReadiness).toEqual({ outcome: 'ready' });
-    expect(ok(await call(exportPacketAction, practice.manager, P, { caseId, versionId })).redirect).toMatch(/notice=export_requested$/);
-    expect(queue.jobs.slice(before)).toEqual([{ type: 'packet_export', payload: { practice_id: practice.practiceId, packet_version_id: versionId } }]);
+    expect(ok(await call(exportPacketAction, practice.manager, P, { caseId, versionId, wordsVersion: WORDS_VERSION })).redirect).toMatch(/notice=export_requested$/);
+    expect(queue.jobs.slice(before)).toEqual([{ type: 'packet_export', payload: { practice_id: practice.practiceId, packet_version_id: versionId, words_version: WORDS_VERSION } }]);
   });
 });
 
@@ -248,7 +255,7 @@ describe('W6: a packet found by its reference (D5; CAS-28)', () => {
     const second = ok(await call(packetPage, practice.manager, { ...P, caseId })).builder.version;
     const approver = await createUser(w.owner);
     await addMembership(w.owner, practice.world.organizationId, approver, 'billing_manager');
-    ok(await call(approvePacketVersionAction, approver, P, { caseId, versionId: second?.id ?? '', versionSha256: second?.contentSha256 ?? '' }));
+    ok(await call(approvePacketVersionAction, approver, P, { caseId, versionId: second?.id ?? '', versionSha256: second?.contentSha256 ?? '', wordsVersion: WORDS_VERSION }));
     const secondReference = packetReference(second?.contentSha256 ?? '');
     expect(secondReference).not.toBe(reference);
     expect(ok(await call(caseByReferencePage, practice.manager, { ...P, reference })).matches.map((match) => match.versionId)).toEqual([versionId]);
@@ -266,5 +273,111 @@ describe('W6: a packet found by its reference (D5; CAS-28)', () => {
     // A role without practice.open (a reimbursement reviewer under a support grant) is refused.
     const reviewer = await internalOf(practice, 'reviewer');
     expect((await call(caseByReferencePage, reviewer, { ...P, reference })).status).toBe('forbidden');
+  });
+});
+
+/** The stored traces of the given priced lines by their ID, read as the owner (what explainPacket() is given). */
+async function storedTraces(target: Practice, pricedLineIds: readonly string[]): Promise<Map<string, unknown>> {
+  const { rows } = await asOwner(w.owner, [target.practiceId], () =>
+    w.owner.query<{ id: string; trace: unknown }>('SELECT id::text AS id, trace FROM priced_line WHERE practice_id = $1 AND id = ANY ($2::uuid[])', [target.practiceId, pricedLineIds]),
+  );
+  return new Map(rows.map((row) => [row.id, row.trace]));
+}
+
+/** Runs one statement as the superuser with the triggers off (priced_line is immutable for every role). */
+async function superuser(sql: string, values: unknown[]): Promise<void> {
+  await w.owner.query('BEGIN');
+  try {
+    await w.owner.query('SET LOCAL session_replication_role = replica');
+    await w.owner.query(sql, values);
+    await w.owner.query('COMMIT');
+  } catch (error) {
+    await w.owner.query('ROLLBACK');
+    throw error;
+  }
+}
+
+/** The purposes the practice's priced lines were read under, each with the lines read. */
+async function tracePurposes(target: Practice): Promise<Map<string, Set<string>>> {
+  const { rows } = await asOwner(w.owner, [target.practiceId], () =>
+    w.owner.query<{ purpose: string; object_id: string }>("SELECT purpose, object_id::text AS object_id FROM audit_event WHERE practice_id = $1 AND action = 'read' AND object_type = 'priced_line'", [target.practiceId]),
+  );
+  const purposes = new Map<string, Set<string>>();
+  for (const row of rows) {
+    purposes.set(row.purpose, (purposes.get(row.purpose) ?? new Set()).add(row.object_id));
+  }
+  return purposes;
+}
+
+describe('W8: the calculation in words on the builder and the review (combined audit #38; docs/adr/0072; CAS-32)', () => {
+  it('words the review exactly as explainPacket() words the payer’s copy from the stored traces, the builder the same, each read audited under its screen’s purpose, no trace sent', async () => {
+    const { practice, caseId, versionId } = await approvedCase('PAYER WORDS', true);
+    const P = { practiceId: practice.practiceId };
+    await runExport(practice, versionId);
+    const reviewer = await internalOf(practice, 'reviewer');
+    const page = ok(await call(packetReviewPage, reviewer, { ...P, caseId, versionId }));
+    const traces = await storedTraces(practice, page.review.content.lines.map((line) => line.priced_line_id));
+    expect(traces.size).toBe(3);
+    // The web half of "the reviewer reads what the payer reads" (finding B2): the loader's words are explainPacket()'s, payer audience.
+    expect(page.review.calculationWords).toEqual({ state: 'worded', words: explainPacket(page.review.content, traces, 'payer') });
+    expect(page.wordsVersion).toBe(WORDS_VERSION);
+    // The reviewer does not open line trace pages (practice.open), so the schedule links none.
+    expect(page.canOpenLines).toBe(false);
+    const builder = ok(await call(packetPage, practice.manager, { ...P, caseId }));
+    expect(builder.builder.version?.calculationWords).toEqual(page.review.calculationWords);
+    expect(builder).toMatchObject({ canOpenLines: true, wordsVersion: WORDS_VERSION });
+    // The traces stay on the server: no page data holds one.
+    for (const data of [page, builder]) {
+      expect(JSON.stringify(data)).not.toMatch(/"trace":/);
+    }
+    // Each screen's reads of the traces are audited under the purpose it reads the version under (finding m8).
+    const purposes = await tracePurposes(practice);
+    expect(purposes.get('packet_review')).toEqual(new Set(traces.keys()));
+    expect(purposes.get('packet_build')).toEqual(new Set(traces.keys()));
+  });
+
+  it('refuses an approval and an export request posted from a page another renderer wrote, writing nothing and queueing nothing (finding M1)', async () => {
+    const { practice, caseId, versionId, contentSha256, second } = await writtenCase('PAYER WORDS VERSION', true);
+    const P = { practiceId: practice.practiceId };
+    const other = 'b'.repeat(64);
+    expect(await call(approvePacketVersionAction, second, P, { caseId, versionId, versionSha256: contentSha256, wordsVersion: other })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'refused', message: 'the wording of the calculation changed since this page was loaded. Read the page again, then approve' }],
+    });
+    expect((await call(approvePacketVersionAction, second, P, { caseId, versionId, versionSha256: contentSha256, wordsVersion: 'not a version' })).status).toBe('invalid');
+    expect(ok(await call(packetPage, practice.manager, { ...P, caseId })).builder.approval?.status).not.toBe('approved');
+    const approvals = async () =>
+      (await asOwner(w.owner, [practice.practiceId], () => w.owner.query<{ n: number }>("SELECT count(*)::int AS n FROM audit_event WHERE practice_id = $1 AND action = 'packet_approved'", [practice.practiceId]))).rows[0]?.n;
+    expect(await approvals()).toBe(0);
+    ok(await call(approvePacketVersionAction, second, P, { caseId, versionId, versionSha256: contentSha256, wordsVersion: WORDS_VERSION }));
+    expect(await approvals()).toBe(1);
+    const before = queue.jobs.length;
+    expect(await call(exportPacketAction, practice.manager, P, { caseId, versionId, wordsVersion: other })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'refused', message: 'the wording of the calculation changed since this page was loaded. Read the page again, then request the export' }],
+    });
+    expect(queue.jobs.length).toBe(before);
+    expect(ok(await call(exportPacketAction, practice.manager, P, { caseId, versionId, wordsVersion: WORDS_VERSION })).redirect).toMatch(/notice=export_requested$/);
+    expect(queue.jobs.slice(before)).toEqual([{ type: 'packet_export', payload: { practice_id: practice.practiceId, packet_version_id: versionId, words_version: WORDS_VERSION } }]);
+  });
+
+  it('refuses to word a version whose stored trace differs from the SHA-256 it states, on the builder and the review, and refuses its approval with the same reason', async () => {
+    const { practice, caseId, versionId, contentSha256, second } = await writtenCase('PAYER WORDS TAMPERED', true);
+    const P = { practiceId: practice.practiceId };
+    const builder = ok(await call(packetPage, practice.manager, { ...P, caseId }));
+    const row2 = builder.builder.version?.content.lines.find((line) => line.row === 2);
+    expect(row2).toBeDefined();
+    await superuser(`UPDATE priced_line SET trace = trace || '{"tampered": true}'::jsonb WHERE id = $1`, [row2?.priced_line_id]);
+    const refusal = { what: 'row 2’s calculation cannot be worded: its stored trace does not hash to the SHA-256 the version states', next: 'Ask PaidWhole support' };
+    expect(ok(await call(packetPage, practice.manager, { ...P, caseId })).builder.version?.calculationWords).toEqual({ state: 'refused', refusal });
+    const reviewer = await internalOf(practice, 'reviewer');
+    expect(ok(await call(packetReviewPage, reviewer, { ...P, caseId, versionId })).review.calculationWords).toEqual({ state: 'refused', refusal });
+    // A version whose words the PDF would refuse to print is never approved (design 3.7).
+    expect(await call(approvePacketVersionAction, second, P, { caseId, versionId, versionSha256: contentSha256, wordsVersion: WORDS_VERSION })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'refused', message: 'the payer’s copy cannot be printed: row 2’s calculation cannot be worded: its stored trace does not hash to the SHA-256 the version states. Ask PaidWhole support' }],
+    });
+    const { rows } = await asOwner(w.owner, [practice.practiceId], () => w.owner.query<{ approved: boolean }>('SELECT approved_by IS NOT NULL AS approved FROM packet_version WHERE id = $1', [versionId]));
+    expect(rows).toEqual([{ approved: false }]);
   });
 });

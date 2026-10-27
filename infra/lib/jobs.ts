@@ -23,3 +23,15 @@ export const JOB_FAILED_PERIOD_SECONDS = 300;
 export const PRICING_ENGINE_ERRORS_MESSAGE = 'pricing run recorded engine errors for the operator';
 
 export const PRICING_ENGINE_ERRORS_METRIC = { namespace: 'TherapyPlatform/Worker', metricName: 'PricingRunEngineErrors' } as const;
+
+/**
+ * The content alert contract (audit #7; docs/adr/0071): the worker logs CONTENT_NOT_LOADED_MESSAGE once per pricing
+ * run that met rule content PaidWhole has not loaded for its lines' dates, a run refused waiting_on_content_* and a
+ * complete run with lines stopped by such content alike (apps/worker/src/price/execute.ts), with error_code
+ * CONTENT_NOT_LOADED and the lines as record_count. Its metric filter and alarm come in the later pull request, with
+ * infra/lib/constructs/monitoring.ts; until then such a gap that pages as an engine error keeps paging
+ * (PRICING_ENGINE_ERRORS_MESSAGE above). infra/test/content-alert.test.ts holds the worker's text equal to this.
+ */
+export const CONTENT_NOT_LOADED_MESSAGE = 'pricing run found lines stopped by rule content not loaded for their dates';
+
+export const CONTENT_NOT_LOADED_METRIC = { namespace: 'TherapyPlatform/Worker', metricName: 'PricingRunContentNotLoaded' } as const;

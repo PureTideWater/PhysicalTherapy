@@ -1,0 +1,4 @@
+{
+  "$comment": "Advisories pnpm audit may ignore, equal to pnpm-workspace.yaml's auditConfig.ignoreGhsas (tools/check-toolchain): ghsa, reason, added and expires as UTC instants, at most 30 days apart; an entry older than 30 days fails.",
+  "entries": []
+}

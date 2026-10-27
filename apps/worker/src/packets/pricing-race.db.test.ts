@@ -85,7 +85,7 @@ async function heldAcceptance(setup: Staged): Promise<Held> {
   await w.triage.pricing.execute(setup.practice, pricingRunId);
   return hold((gate, made) =>
     w.as(setup.practice, setup.practice.manager, async (scope) => {
-      await acceptRun(scope, { practiceId: setup.practice.practiceId, pricingRunId });
+      await acceptRun(scope, { practiceId: setup.practice.practiceId, pricingRunId, replacesId: setup.runId , heldByIds: [] });
       made();
       await gate;
     }),

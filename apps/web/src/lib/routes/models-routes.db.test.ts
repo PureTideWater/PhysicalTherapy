@@ -24,7 +24,7 @@ import {
   setFeatureFlag,
 } from '@tp/model-gateway';
 import { createLogger } from '@tp/observability';
-import { dollars, draftNarrative } from '@tp/packets';
+import { WORDS_VERSION, dollars, draftNarrative } from '@tp/packets';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
 import { packetDraftInputs } from '@tp/worker/packets';
 import type { Practice } from '@tp/worker/testing';
@@ -687,8 +687,8 @@ describe('the packet builder’s narrative draft (MOD-03)', () => {
     expect(await callOf(practice.practiceId, proposal?.model_call_id ?? '')).toMatchObject({ purpose: 'draftPacketNarrative', reviewer_decision: 'accepted', reviewer_changed_fields: [], actor_id: drafter });
     // The approval rules do not change: the drafter cannot approve it; a second person does.
     const sha = version?.contentSha256 ?? '';
-    expect(refused(await call(approvePacketVersionAction, drafter, P, { caseId, versionId: version?.id, versionSha256: sha }))).toMatch(/cannot approve it/);
-    ok(await call(approvePacketVersionAction, practice.manager, P, { caseId, versionId: version?.id, versionSha256: sha }));
+    expect(refused(await call(approvePacketVersionAction, drafter, P, { caseId, versionId: version?.id, versionSha256: sha, wordsVersion: WORDS_VERSION }))).toMatch(/cannot approve it/);
+    ok(await call(approvePacketVersionAction, practice.manager, P, { caseId, versionId: version?.id, versionSha256: sha, wordsVersion: WORDS_VERSION }));
 
     // A narrative with a figure in no input record is stored as the version it is and cannot be approved; the version sent instead records the change.
     const next = await inputs();

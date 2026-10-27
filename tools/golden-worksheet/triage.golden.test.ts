@@ -73,6 +73,8 @@ function candidates(id: string, deadlineStatus: DeadlineStatus = 'verified'): { 
         // The golden lines' contract versions cover their own service dates, and no golden release is withdrawn.
         contractVersionCoversService: true,
         releaseWithdrawn: false,
+        // Priced in memory: no stored release's spans judge the trace, so the hold is off, as for content loaded for its date.
+        contentNotLoaded: false,
         writtenOff: false,
         visitVarianceCents: key === null ? null : sumCents(visits.get(key) ?? []),
         reviewFlags: result.reviewFlags.map((flag) => flag.flag),

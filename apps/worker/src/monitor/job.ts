@@ -17,6 +17,10 @@ import { type MonitorPlan, planMonitoring } from './plan';
  * nothing more. Then it reminds the case's owner of every submission whose follow-up date has come with
  * no response (in the app, once per submission; PRD 6, "follow-up dates; reminders").
  *
+ * Months left waiting are logged by what they wait on: a plan mapping and the practice's pricing location as
+ * information (the customer's steps), Medicare content PaidWhole has not loaded as a warning (WAITING_ON_CONTENT,
+ * the operator's; audit #7).
+ *
  * After a document, when the plan prices nothing (no month to price, a month waiting on a mapping, no
  * rule release in force), it queues the recovery ledger's reconcile keyed by the document
  * (reconcile:<practice>:<document>; docs/adr/0043): a remittance that reprocesses a case line or takes
@@ -57,6 +61,16 @@ export function monitorHandler(): JobHandler<'monitor'> {
           release_no: plan.releaseNo,
           error_code: 'LOCATION_NOT_READY',
           record_count: plan.waitingOnLocation.length,
+        });
+      }
+      if (plan.waitingOnContent.length > 0) {
+        // PaidWhole's step, never the customer's: the months wait, with no run, until a release in force loads the
+        // Medicare content they read (audit #7). The price job logged CONTENT_NOT_LOADED once per refused run; this is the
+        // per-plan line. Both lines' alarms come with the later pull request (docs/adr/0071).
+        context.logger.warn('monitoring left months waiting on rule content PaidWhole has not loaded', {
+          release_no: plan.releaseNo,
+          error_code: 'WAITING_ON_CONTENT',
+          record_count: plan.waitingOnContent.length,
         });
       }
       context.logger.info('monitoring planned the practice’s months', { release_no: plan.releaseNo });

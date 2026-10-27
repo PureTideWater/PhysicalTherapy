@@ -1,3 +1,4 @@
+import { type LineWords, type Sentence, type StepKind, WORD_TABLES, wordsOf } from '@tp/packets/explain';
 import { pricingTraceSchema } from '@tp/pricing';
 
 import { labelOf } from '../copy/words';
@@ -6,7 +7,8 @@ import { labelOf } from '../copy/words';
  * How pricing results read on screen (PRD 7; PRD 8, The status machine; PRD 12, From validated to
  * actionable): a line's stage from the run that priced it, priced shares as percentages worked out in
  * integers (never a float on an amount), and a stored trace as the steps of PRD 11 in the engine's own
- * order, each with the rule records and the release it read. Pure: no database.
+ * order, each in words (@tp/packets/explain; docs/adr/0072) above the rule records and the release it
+ * read, as the engine recorded them. Pure: no database.
  */
 
 /** What a line's latest complete run says about it. */
@@ -73,6 +75,11 @@ export interface TraceStepView {
 export const TRACE_REMITTANCE_DATE_NOTE =
   'The engine’s record names this date remittance_date: it is the payment date (BPR16, the check’s issue date or the EFT’s effective date), not the remittance advice’s own date.';
 
+/**
+ * Each part's title, the steps of PRD 11 numbered as one sequence in the engine's order: a part of a step that the trace
+ * records apart from it is that step "continued" (the fee schedule of step 2's method; the per-visit amount and the
+ * procedure-to-procedure edits of step 3's units).
+ */
 const TITLES: Readonly<Record<string, string>> = {
   release: 'Rule release and engine',
   as_of: 'Triage date',
@@ -81,8 +88,10 @@ const TITLES: Readonly<Record<string, string>> = {
   line: 'Line facts',
   agreement: 'Step 1: the agreement',
   terms: 'Step 2: the terms and method',
-  fee_schedule: 'Step 2: the fee schedule',
+  fee_schedule: 'Step 2, continued: the fee schedule',
   units: 'Step 3: units',
+  per_visit: 'Step 3, continued: the per-visit amount',
+  ncci_ptp: 'Step 3, continued: National Correct Coding Initiative (NCCI) procedure-to-procedure edits',
   adjustments: 'Step 4: adjustments',
   patient_share_cents: 'Step 5: patient share',
   rounding: 'Step 6: rounding',
@@ -91,7 +100,7 @@ const TITLES: Readonly<Record<string, string>> = {
   outcome: 'Outcome',
 };
 
-/** A part's title: its own, else its key as a label, initialisms in capitals ("ncci_ptp" is "NCCI PTP"; lib/copy/words.ts). */
+/** A part's title: its own, else (a part of a trace format this screen does not know) its key as a label, initialisms in capitals (lib/copy/words.ts). */
 function titleOf(key: string): string {
   return TITLES[key] ?? labelOf(key);
 }
@@ -177,4 +186,85 @@ export function traceSteps(trace: unknown): TraceStepView[] {
   }
   views.push(...Object.keys(stored).filter((key) => !known.has(key)).map((key) => step(key, stored[key])));
   return views;
+}
+
+/**
+ * The part of the trace each step's words are of, so the words sit under the step's own title: the four adjustments
+ * under "Step 4: adjustments", the observed allowed under "Step 7: variance".
+ */
+export const WORD_STEP_PART: Readonly<Record<StepKind, string>> = {
+  agreement: 'agreement',
+  terms: 'terms',
+  fee_schedule: 'fee_schedule',
+  units: 'units',
+  per_visit: 'per_visit',
+  ncci_ptp: 'ncci_ptp',
+  mppr: 'adjustments',
+  assistant_reduction: 'adjustments',
+  sequestration: 'adjustments',
+  contract_adjustment: 'adjustments',
+  patient_share: 'patient_share_cents',
+  rounding: 'rounding',
+  observed: 'variance_cents',
+  window: 'window',
+  release: 'release',
+  outcome: 'outcome',
+};
+
+/** One step of the line trace page: its title, its sentences, and, for roles that read PHI, what the engine recorded. */
+export interface LineTraceStep {
+  readonly key: string;
+  readonly title: string;
+  readonly sentences: readonly Sentence[];
+  /** The step as the engine recorded it (its rule records and JSON), for roles that read PHI; null for the others. */
+  readonly recorded: TraceStepView | null;
+}
+
+/** The parts the calculation's words are of: every numbered step, the release and the outcome (not the facts the engine read). */
+const WORDED_PARTS: ReadonlySet<string> = new Set(Object.values(WORD_STEP_PART));
+
+/**
+ * The line trace page's steps (design 3.9): each step's words under its title, in the engine's order. For roles that
+ * read PHI (`recorded`, from traceSteps) every part of the trace is a step, its words above what the engine recorded
+ * (a part with no words, such as the claim facts, shows its record only). For the others (no record) every part the
+ * words are of, with the same titles and numbering, a step with no words for this line included (the page says it
+ * does not apply, or was not reached), so a viewer reads the sentences and never the record; none when the words
+ * cannot be put (the page shows the refusal).
+ */
+export function lineTraceSteps(words: LineWords | null, recorded: readonly TraceStepView[]): LineTraceStep[] {
+  const sentencesOf = (key: string) => (words?.steps ?? []).filter((step) => WORD_STEP_PART[step.step] === key).flatMap((step) => step.sentences);
+  if (recorded.length !== 0) {
+    return recorded.map((view) => ({ key: view.key, title: view.title, sentences: sentencesOf(view.key), recorded: view }));
+  }
+  if (words === null) {
+    return [];
+  }
+  const { parts, steps } = traceOrder();
+  return parts
+    .flatMap((key) => (key === 'steps' ? steps : [key]))
+    .filter((key) => WORDED_PARTS.has(key))
+    .map((key) => ({ key, title: titleOf(key), sentences: sentencesOf(key), recorded: null }));
+}
+
+/** The Pricing card's method and adjustments in words, never their codes (design 3.9). */
+export interface PricingWords {
+  readonly method: string | null;
+  readonly adjustments: readonly { readonly name: string; readonly words: string; readonly beforeCents: string; readonly afterCents: string }[];
+}
+
+/**
+ * A priced line's method ("Percent of Medicare") and adjustments ("The multiple procedure payment reduction") in the
+ * calculation's own words; a code they have none for throws ExplainWordsError, which the page shows as a refusal.
+ */
+export function pricingWords(pricing: {
+  readonly method: string | null;
+  readonly adjustmentsApplied: readonly { readonly name: string; readonly before_cents: string; readonly after_cents: string }[];
+}): PricingWords {
+  return {
+    method: pricing.method === null ? null : wordsOf(WORD_TABLES.METHOD_TEXT, pricing.method, 'method'),
+    adjustments: pricing.adjustmentsApplied.map((item) => {
+      const words = wordsOf(WORD_TABLES.ADJUSTMENT_TEXT, item.name, 'adjustment');
+      return { name: item.name, words: `${words.charAt(0).toUpperCase()}${words.slice(1)}`, beforeCents: item.before_cents, afterCents: item.after_cents };
+    }),
+  };
 }

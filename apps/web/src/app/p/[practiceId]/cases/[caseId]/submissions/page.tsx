@@ -317,8 +317,11 @@ export default async function SubmissionsPage(props: Props) {
                     <Input id="received-on" name="receivedOn" type="date" defaultValue={asOf} min={latest.submittedOn} max={asOf} required />
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="amount">Amount accepted (accepted or partial only, dollars)</Label>
-                    <Input id="amount" name="amount" inputMode="decimal" />
+                    <Label htmlFor="amount">Additional amount the payer will pay (accepted or partial only, dollars)</Label>
+                    <Input id="amount" name="amount" inputMode="decimal" aria-describedby="amount-hint" />
+                    <p id="amount-hint" className="text-xs text-muted-foreground">
+                      The additional payment the letter states, not the allowed amount; the patient’s share is never part of it.
+                    </p>
                   </div>
                 </div>
                 <div className="flex flex-col gap-1.5">
@@ -416,7 +419,7 @@ export default async function SubmissionsPage(props: Props) {
                           {response.receivedOn}: {RESPONSE_TEXT[response.kind]}
                           {response.amountCents === null ? null : (
                             <>
-                              , <Money value={response.amountCents} /> accepted ({stageLabel('payer_approved')} once the recovery ledger approves it)
+                              , <Money value={response.amountCents} /> the payer will pay ({stageLabel('payer_approved')} once the recovery ledger approves it)
                             </>
                           )}
                           {response.denialCategory === null ? '' : `, reason ${DENIAL_TEXT[response.denialCategory] ?? response.denialCategory}`}

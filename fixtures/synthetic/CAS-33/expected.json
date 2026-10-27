@@ -1,0 +1,21 @@
+{
+  "case": "CAS-33",
+  "module": "CAS",
+  "title": "The fee schedule worksheet",
+  "assertion": "One per distinct set of records, with the year, locality, setting, RVUs, GPCIs, conversion factor and the engine’s expression; never an amount at 100% for a contract that is not at 100%",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": [
+    "packages/packets/src/explain/worksheet.test.ts",
+    "packages/packets/src/explain/golden.test.ts",
+    "apps/worker/src/packets/export.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Renders from any percent-of-Medicare or Medicare Advantage line’s trace: an output, not a fixture.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

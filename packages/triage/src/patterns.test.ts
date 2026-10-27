@@ -29,6 +29,7 @@ function candidate(variance: bigint, overrides: Partial<CandidateLine> = {}): Ca
     contractVersionStatus: 'signed_off',
     contractVersionCoversService: true,
     releaseWithdrawn: false,
+    contentNotLoaded: false,
     writtenOff: false,
     visitVarianceCents: null,
     reviewFlags: [],

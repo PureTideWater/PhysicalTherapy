@@ -12,12 +12,14 @@ import {
   CommandError,
   ROUND_TRIP_SCRIPT,
   SERVICE_COMMANDS,
+  composePostgresImage,
   delayedRoundTripMs,
   dockerRunArgs,
   interfaceByIndex,
   isScreeningService,
   masked,
   netemCommands,
+  parseComposePostgresImage,
   peerIndex,
   postgresRunArgs,
   processImagesProblems,
@@ -165,7 +167,8 @@ describe('Docker’s arguments', () => {
   });
 
   it('give Postgres its CPUs, memory with no swap and gp3’s baseline on the data root’s device', () => {
-    const args = postgresRunArgs(postgres, { iops: 3000, bytesPerSecond: 125 * MIB }, { network: 'tp-capacity', device: '/dev/sda', port: 55_432 });
+    const image = composePostgresImage();
+    const args = postgresRunArgs(postgres, { iops: 3000, bytesPerSecond: 125 * MIB }, { network: 'tp-capacity', device: '/dev/sda', port: 55_432, image });
     expect(args).toEqual(
       expect.arrayContaining([
         '--cpus=2',
@@ -178,9 +181,30 @@ describe('Docker’s arguments', () => {
         `--device-write-bps=/dev/sda:${String(125 * MIB)}`,
         // RDS has no 64 MiB cap on parallel queries' shared memory, so neither does the harness's Postgres.
         '--shm-size=1g',
-        'postgres:18',
+        image,
       ]),
     );
+    // The image comes from docker-compose.yml, by digest, the one CI's database jobs run (CI-13).
+    expect(image).toMatch(/^postgres:18-[\w.-]+@sha256:[0-9a-f]{64}$/);
+    expect(args[args.indexOf(image) - 1]).toBe('POSTGRES_PASSWORD=test');
+  });
+
+  it('read Postgres’s image from the compose file’s postgres service, refusing one that is not pinned by digest', () => {
+    const digest = `sha256:${'ab'.repeat(32)}`;
+    expect(parseComposePostgresImage(`services:\n  postgres:\n    image: postgres:18-trixie@${digest}\n`)).toBe(`postgres:18-trixie@${digest}`);
+    expect(() => parseComposePostgresImage('services:\n  postgres:\n    image: postgres:18\n')).toThrow('docker-compose.yml: services.postgres.image "postgres:18" is not postgres:<tag>@sha256:<digest>');
+    expect(() => parseComposePostgresImage(`services:\n  postgres:\n    image: postgres@${digest}\n`)).toThrow('is not postgres:<tag>@sha256:<digest>');
+    expect(() => parseComposePostgresImage(`services:\n  postgres:\n    image: mirror.example/postgres:18@${digest}\n`)).toThrow('is not postgres:<tag>@sha256:<digest>');
+    expect(() => parseComposePostgresImage('services:\n  db:\n    image: postgres:18\n')).toThrow('docker-compose.yml: services.postgres.image is missing');
+    expect(() => parseComposePostgresImage('')).toThrow('services.postgres.image is missing');
+    // Read from a root: a tree whose compose file holds another digest gives that digest.
+    const root = mkdtempSync(path.join(tmpdir(), 'compose-'));
+    try {
+      writeFileSync(path.join(root, 'docker-compose.yml'), `services:\n  postgres:\n    image: postgres:18-trixie@${digest}\n`);
+      expect(composePostgresImage(root)).toBe(`postgres:18-trixie@${digest}`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('delay both directions of Postgres’s link, so the delays add up to the round trip the verdict asks for', () => {

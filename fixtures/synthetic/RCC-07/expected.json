@@ -1,0 +1,22 @@
+{
+  "case": "RCC-07",
+  "module": "RCC",
+  "title": "A run reads only the keys it prices",
+  "assertion": "The price job, the release impact check and the dry run read each key of their claims once a run and the shared types once per release; every stored row equals the whole-release read's; a lookup outside the fetch fails the run as release_read_outside_fetch before its batch is stored; triage and reports read two types only; the keyed read uses rule_record_identity; weekly, under the quarterly scale release 900110, a 100,000-line month prices while another practice's audit report prints and four 835s parse, then triages and reports, within the worker task's memory",
+  "synthetic": true,
+  "completesIn": 7,
+  "assertedBy": [
+    "apps/worker/src/price/keyed-release.test.ts",
+    "apps/worker/src/price/release-source.db.test.ts",
+    "tools/release-capacity/checks.test.ts",
+    "tools/test/workflows.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The runs are seeded in a scratch database; the weekly run builds release 900110 outside the repository; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

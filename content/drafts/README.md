@@ -12,10 +12,22 @@ Contract rate records are never here; they live in the database under each pract
 2. **Check.** `pnpm verify-content` runs the content checker; CI runs it on every pull request. It refuses a
    release when any record lacks a source, any effective window overlaps another for the same key, any
    numeric field fails its range, or any quote does not appear in the stored source text, and it refuses
-   hand-typed records whose two transcriptions differ.
+   hand-typed records whose two transcriptions differ. It also refuses (docs/adr/0071):
+   - in real content, a quarterly record (RVU, GPCI, ZIP5, ZIP9, MUE) whose window leaves one CMS quarter, a ZIP
+     record whose quoted lines state another quarter, a per-code MPPR window that is open or leaves its calendar
+     year, a hand-typed quarterly or per-code MPPR record, records of one stored source file with different
+     windows, and an RVU, GPCI or MUE record whose window is not the quarter its stored file states;
+   - a content with a gap inside the dates it is loaded for;
+   - a prepared or published release with no `COVERAGE.md`, or one that is not exactly what the assembler writes,
+     that does not match its records and the release before it (which must match its own manifest), or that
+     covers less than that release beyond the allowances ([content/sources/README.md](../sources/README.md),
+     "Coverage"); and a release numbered below one already prepared or published;
+   - a malformed `COVERAGE-WITHDRAWN.md` here, one that withdraws a range twice, or one that names a release other
+     than the newest.
 3. **Prepare.** The `/load-release` skill runs `pnpm release:assemble <n>`, which copies the drafts at L2 or
-   higher into [`content/outgoing/<n>/`](../outgoing/README.md) with `RELEASE.md` and `MANIFEST.json`, and
-   lists the drafts it left out (still at L1) in `RELEASE.md`.
+   higher into [`content/outgoing/<n>/`](../outgoing/README.md) with `RELEASE.md`, `COVERAGE.md` and
+   `MANIFEST.json`, and lists the drafts it left out (still at L1) in `RELEASE.md`. It refuses a gap inside a
+   content, a coverage loss no allowance explains and a number below the newest release, before writing anything.
 4. **Publish.** On merge to main, CI (`.github/workflows/publish-content.yml`) runs the checker on the release,
    verifies the manifest, refuses any record below L2 or marked synthetic, moves the release to
    `content/releases/<n>/` and tags it `content-release-<n>`. Nothing else writes `content/releases`.
@@ -31,6 +43,7 @@ Contract rate records are never here; they live in the database under each pract
 | `<type>/<year>/<name>.json` | A JSON array of rule records of that type, per `packages/rules/src/schema.ts`. Parsed drafts are named after their source file and written one record per line; hand-typed drafts are `records.json`, pretty-printed |
 | `<type>/<year>/<name>.second-pass.json` | The second, independent transcription of the hand-typed records in `<name>.json`: who typed it, when, and each record's `key`, `value`, `effective_from`, `effective_to` and `quotes`. The checker compares the two field by field |
 | `<type>/<year>/<name>.review.md` | For a parsed draft: the questions a reviewer must answer to raise it to L2 |
+| `COVERAGE-WITHDRAWN.md` | Only when the next release withdraws coverage on purpose: the exact ranges, each with its reason and two named people ([content/sources/README.md](../sources/README.md), "Coverage"). The assembler copies it into the release and removes it here |
 
 Every record carries `record_type`, `key`, `value`, `effective_from`, `effective_to` (inclusive; null when
 open), `source` (title, URL, the stored file's path and SHA-256, retrieved date, how it was entered: by parser,

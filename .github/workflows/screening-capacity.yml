@@ -41,6 +41,7 @@ on:
       - package.json
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
+      - docker-compose.yml
       - .github/workflows/screening-capacity.yml
   # Every pull request: the gate decides from its changed files (the changes job's watched list) whether to measure.
   pull_request:
@@ -66,7 +67,7 @@ jobs:
     outputs:
       measure: ${{ steps.watched.outputs.measure }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -137,18 +138,23 @@ jobs:
     timeout-minutes: 100
     steps:
       # The harness calls no GitHub API and pushes nothing, so the token is not left in the checkout.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      # The builder by digest (BuildKit v0.34.1), the same on every setup-buildx step, not the driver's default
+      # moby/buildkit:buildx-stable-1 by tag; Dependabot cannot update this string, so tools/check-action-pins warns when a
+      # newer release is three days old (docs/runbooks/dependency-upgrades.md).
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
 
       # The production images, from their Dockerfiles, as ci.yml's images job builds them. Every run reads the layer cache;
       # only a push to the build branch writes it, and only the final layers (mode=min): both Dockerfiles copy the whole
       # checkout before installing, so the install and build layers change with every commit and exporting them each run
       # would churn the repository's 10 GB of Actions cache (audit #53 part 1's capacity review).
       - name: Build the web image
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: apps/web/Dockerfile
@@ -159,7 +165,7 @@ jobs:
           cache-to: ${{ github.event_name == 'push' && github.ref == 'refs/heads/claude/build-platform' && 'type=gha,mode=min,scope=screening-capacity-web' || '' }}
 
       - name: Build the worker image
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: apps/worker/Dockerfile
@@ -169,8 +175,8 @@ jobs:
           cache-from: type=gha,scope=screening-capacity-worker
           cache-to: ${{ github.event_name == 'push' && github.ref == 'refs/heads/claude/build-platform' && 'type=gha,mode=min,scope=screening-capacity-worker' || '' }}
 
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with: { node-version: 24, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       # The browser the uploads are sent from: Playwright's own Chromium, as ci.yml installs it.
@@ -180,7 +186,7 @@ jobs:
       # and saved straight after, so a measurement that fails still leaves it cached for the next run.
       - name: Restore the scale release
         id: scale-release
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/scale-release
           key: screening-scale-release-${{ hashFiles('packages/synth/src/release/**', 'tools/release/scale.ts', 'packages/rules/src/**', 'fixtures/synthetic/rules/release-synth-900001/**') }}
@@ -191,7 +197,7 @@ jobs:
         run: pnpm exec tsx tools/release/scale.ts --out "$RUNNER_TEMP/scale-release"
       - name: Save the scale release
         if: steps.scale-release.outputs.cache-hit != 'true'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/scale-release
           key: ${{ steps.scale-release.outputs.cache-primary-key }}
@@ -214,7 +220,7 @@ jobs:
 
       # The report (written after every scenario, so a run that stops still has its figures), its SHA-256 and the
       # services' logs (IDs, codes and numbers by the logger's allowlist, synthetic data, result links masked).
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: screening-capacity
@@ -225,6 +231,8 @@ jobs:
             ${{ runner.temp }}/screening-capacity/logs/
           if-no-files-found: ignore
           retention-days: 90
+          # One name a run: a re-run of the failed job replaces what its first attempt left.
+          overwrite: true
 
   # The required check (Q8): passes at once when no watched path changed, else only when the measurement passed every
   # check but time, which is advisory here (the founder's third ruling of 2026-10-23): the measuring job then succeeded,

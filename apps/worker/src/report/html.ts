@@ -1,6 +1,6 @@
 import { DEFAULT_PROOF_LEVEL, type ProofLevel, type ReportReconciliation, recoveredLabel, reportReconciliation } from '@tp/ledger';
 import { formatUsd, parseCents } from '@tp/money';
-import { STAGE_LABELS, WRITE_OFF_TEXT, type WriteOffReason } from '@tp/triage';
+import { type NotActionableReason, STAGE_LABELS, WRITE_OFF_TEXT, type WriteOffReason } from '@tp/triage';
 
 import { SUBMISSION_UNATTESTED_WORDS } from '../packets/submission-kinds';
 import { type FigureColumns, brandedDocument, figureColumns } from './brand';
@@ -33,6 +33,7 @@ const CASE_STATE_WORDS: Readonly<Record<string, string>> = {
   closed_written_off: 'closed (written off)',
 };
 
+/** The words of every reason a validated line is not in the actionable total (written off has its own, WRITE_OFF_TEXT). */
 const REASON_TEXT: Readonly<Record<string, string>> = {
   BELOW_LINE_MATERIALITY: 'Below the per-line materiality',
   WINDOW_PASSED: 'Dispute window passed on the triage date',
@@ -44,10 +45,20 @@ const REASON_TEXT: Readonly<Record<string, string>> = {
   VERSION_NOT_SIGNED_OFF: 'Contract version corrected since it was priced',
   VERSION_NOT_IN_FORCE: 'Contract version no longer covers the service date (amended since it was priced)',
   RELEASE_WITHDRAWN: 'Rule release withdrawn since it was priced',
+  CONTENT_NOT_LOADED:
+    'Priced before PaidWhole loaded Medicare’s multiple-procedure reduction list (MPPR) or unit limits (MUE) for its date; held until a re-run under a release that loads them',
   PER_VISIT_REVIEW: 'Per-visit line, judged with its visit: held for the specialist’s review',
   NCCI_REVIEW: 'An NCCI procedure-to-procedure edit stands: held for review',
   BELOW_CASE_MATERIALITY: 'Pattern below the case materiality (accumulating)',
   CASE_LINE_FROM_OTHER_RUN: 'In a case through another run’s pricing of the line (counted in that run’s report)',
+} satisfies Readonly<Record<Exclude<NotActionableReason, 'WRITTEN_OFF'> | 'BELOW_CASE_MATERIALITY' | 'CASE_LINE_FROM_OTHER_RUN', string>>;
+
+/** CONTENT_NOT_LOADED by the content the line's trace read (content.ts, contentNotLoadedReason()), named (UX-10). */
+const CONTENT_REASON_TEXT: Readonly<Record<string, string>> = {
+  'CONTENT_NOT_LOADED:mppr': 'Priced before PaidWhole loaded Medicare’s multiple-procedure reduction list (MPPR) for its date; held until a re-run under a release that loads it',
+  'CONTENT_NOT_LOADED:mue': 'Priced before PaidWhole loaded Medicare’s unit limits (MUE) for its date; held until a re-run under a release that loads them',
+  'CONTENT_NOT_LOADED:mppr_mue':
+    'Priced before PaidWhole loaded Medicare’s multiple-procedure reduction list (MPPR) and unit limits (MUE) for its date; held until a re-run under a release that loads them',
 };
 
 /**
@@ -73,9 +84,14 @@ export function unattestedSubmissionsOf(content: { readonly cases: readonly { re
   return content.cases.reduce((total, item) => total + (item.unattested_submissions ?? 0), 0);
 }
 
-/** A case's state in the report's words, with its submissions sent without sign-off when it has any. */
-export function caseStateText(item: { readonly state: string; readonly unattested_submissions?: number }): string {
-  const state = CASE_STATE_WORDS[item.state] ?? item.state;
+/**
+ * A case's state in the report's words: the stored state, then "payer corrected, balance is the patient's" when the
+ * case's corrections paid nothing more because the patient's share took them (docs/adr/0067; the state itself is
+ * unchanged), then its submissions sent without sign-off when it has any.
+ */
+export function caseStateText(item: { readonly state: string; readonly patient_balance?: true; readonly unattested_submissions?: number }): string {
+  const stored = CASE_STATE_WORDS[item.state] ?? item.state;
+  const state = item.patient_balance === true ? `${stored}; payer corrected, balance is the patient’s` : stored;
   return item.unattested_submissions === undefined || item.unattested_submissions === 0 ? state : `${state}; ${unattestedSubmissionsText(item.unattested_submissions)}`;
 }
 
@@ -84,7 +100,7 @@ export function reasonText(reason: string): string {
   if (reason.startsWith('written_off:')) {
     return `Written off: ${WRITE_OFF_TEXT[reason.slice('written_off:'.length) as WriteOffReason]}`;
   }
-  return REASON_TEXT[reason] ?? reason;
+  return REASON_TEXT[reason] ?? CONTENT_REASON_TEXT[reason] ?? reason;
 }
 
 /** A table; `figures` names its columns (1-based) of codes and of amounts or counts, set in the mono face. */
@@ -140,7 +156,13 @@ export function auditHtml(content: AuditReportContent, reconciliation: ReportRec
   const recoveredNone = parseCents(headline.recovered_cents) === 0n;
   const figures = [
     { label: labels.actionable, amount: headline.actionable_cents, note: `${count(headline.actionable_lines, 'line')} in cases still actionable, inside their dispute windows and above materiality` },
-    { label: labels.payer_approved, amount: headline.payer_approved_cents, note: approvedNone ? 'accepted by the payer; no payer approval is recorded yet' : 'accepted by the payer, from the ledger’s entries; not cash until it posts' },
+    {
+      label: labels.payer_approved,
+      amount: headline.payer_approved_cents,
+      note: approvedNone
+        ? 'what payers have agreed to pay on the lines they corrected; no payer approval is recorded yet'
+        : 'what payers have agreed to pay on the lines they corrected, from the ledger’s entries; not cash until it posts',
+    },
     {
       label: recovered,
       amount: headline.recovered_cents,

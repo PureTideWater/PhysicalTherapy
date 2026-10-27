@@ -8,13 +8,14 @@ No real PHI, real 835, real contract or real export ever enters this repository.
 
 ## Development
 
-Prerequisites: Node 24 (see `.nvmrc` and `engines`; Node 22 runs everything with an engine warning), pnpm 10.28 (`corepack enable` or
-`npm install --global pnpm@10.28.0`), and Docker for `pnpm dev`. The local database is PostgreSQL 18, the version CI's
-`postgres:18` service and production (`infra/lib/constructs/database.ts`) run; `pnpm dev` starts it from
-`docker-compose.yml`. Nothing in the test suites needs Docker: database tests use `DATABASE_URL`, defaulting to the
-docker-compose Postgres at `postgres://postgres:test@localhost:5432/postgres`. To run them as CI does against a
-PostgreSQL 18 server of your own, point `DATABASE_URL` at its superuser (a UTF-8 cluster with password logins, as the
-image initializes one); `E2E_DATABASE` and `E2E_PORT` keep an end-to-end run apart from another on the same machine:
+Prerequisites: Node 24 (see `.nvmrc` and `engines`; Node 22 runs everything with an engine warning), pnpm at the version
+`package.json`'s `packageManager` names (`corepack enable` installs it), and Docker for `pnpm dev`. The local database is
+PostgreSQL 18, the version CI and production (`infra/lib/constructs/database.ts`) run; `pnpm dev`, CI's database jobs
+and the capacity harness all start it from the one image `docker-compose.yml` pins by digest. Nothing in the test
+suites needs Docker: database tests use `DATABASE_URL`, defaulting to the docker-compose Postgres at
+`postgres://postgres:test@localhost:5432/postgres`. To run them as CI does against a PostgreSQL 18 server of your
+own, point `DATABASE_URL` at its superuser (a UTF-8 cluster with password logins, as the image initializes one);
+`E2E_DATABASE` and `E2E_PORT` keep an end-to-end run apart from another on the same machine:
 
 ```sh
 export DATABASE_URL=postgres://postgres:test@localhost:5433/postgres   # a PostgreSQL 18 superuser
@@ -34,12 +35,14 @@ pnpm test            # unit and property tests, with the 100% branch gates
 pnpm test:db         # database tests (each creates and drops its own database)
 pnpm test:e2e        # builds the web app and runs the Playwright journeys, with the axe check
 pnpm build           # web (Next.js standalone) and worker (esbuild bundle)
-pnpm dev             # Postgres and MinIO in Docker, then the web app and the worker
+pnpm dev             # PostgreSQL from docker-compose.yml in Docker, then the web app and the worker
 pnpm db:migrate      # roles, then forward-only migrations as the owner role (--dev-login: local app login)
 pnpm db:migrate --dry-run   # apply the pending migrations in one transaction and roll it back
 pnpm db:domain-model --check --strict   # the domain model and its function files against the migrated database (--out rewrites both)
 pnpm db:domain-model --summary-since origin/claude/build-platform   # what changed since the last approved document (no database)
 pnpm licenses:check  # production dependency licenses against tools/check-licenses/allowlist.json
+pnpm actions:check   # every workflow's actions pinned to their release's commit, inputs declared (networked; BASE=<ref>)
+pnpm toolchain:check # pnpm's advisories and age, the lockfile's release age, the exception lists (networked; BASE=<ref>)
 pnpm synth --all     # regenerate every synthetic fixture (deterministic; --case <id>, --large for PAR-29)
 pnpm test:oracle     # pyx12 and packages/edi835 read every synthetic 835 and must agree (TP_ORACLE_PYTHON: a python with pyx12)
 ```

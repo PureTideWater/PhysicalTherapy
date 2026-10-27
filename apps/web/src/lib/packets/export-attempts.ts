@@ -60,7 +60,7 @@ export type ExportFailureCode = PacketExportFailure | 'no_result';
 /** Why a try failed, by code (no value, no error text). */
 export const EXPORT_FAILURE_TEXT: Readonly<Record<ExportFailureCode, string>> = {
   store_mismatch: 'The document store sealed other bytes than the export printed, so nothing was recorded.',
-  render_failed: 'The PDF could not be printed.',
+  render_failed: 'The PDF could not be printed: its renderer failed, or PaidWhole was updated after the export was asked for, so the calculation’s words may differ from those on the page it was asked from.',
   store_failed: 'The files could not be stored.',
   database_refused: 'The database refused to record the export: one of its rules no longer holds for this version.',
   unexpected: 'The export stopped on an unexpected error.',

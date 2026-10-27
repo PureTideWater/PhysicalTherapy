@@ -8,8 +8,9 @@ import { repositoryRoot } from './content-files';
 const LOCAL_DATABASE_URL = 'postgres://postgres:test@localhost:5432/postgres';
 
 /**
- * `pnpm dev`: starts Postgres 18 and MinIO with Docker Compose, then the web app and the worker.
- * Without Docker it says so and starts the apps anyway against whatever DATABASE_URL points at. The
+ * `pnpm dev`: starts docker-compose.yml's PostgreSQL 18 and waits until its TCP healthcheck passes
+ * (`docker compose up --detach --wait`), then the web app and the worker. Without Docker, or when the
+ * database does not become healthy, it says so and starts the apps anyway against whatever DATABASE_URL points at. The
  * web app connects as the application role's dev login and the worker's practice jobs as the worker's
  * own (tp_app's privileges, marked as a job's by tp_job; docs/adr/0061); `pnpm db:migrate --dev-login`
  * creates both, so row-level security binds them in development as in production. Only pg-boss's own
@@ -19,7 +20,7 @@ const LOCAL_DATABASE_URL = 'postgres://postgres:test@localhost:5432/postgres';
 const compose = spawnSync('docker', ['compose', 'up', '--detach', '--wait'], { cwd: repositoryRoot, stdio: 'inherit' });
 if (compose.status !== 0) {
   process.stderr.write(
-    `dev: docker compose could not start Postgres and MinIO; continuing with DATABASE_URL=${process.env.DATABASE_URL === undefined ? 'the local default' : 'from the environment'}.\n`,
+    `dev: docker compose could not start a healthy Postgres; continuing with DATABASE_URL=${process.env.DATABASE_URL === undefined ? 'the local default' : 'from the environment'}.\n`,
   );
 }
 

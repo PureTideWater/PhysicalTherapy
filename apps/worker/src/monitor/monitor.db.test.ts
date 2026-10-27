@@ -1,3 +1,4 @@
+import { correctMapping } from '@tp/contracts';
 import { ENCRYPTED_COLUMNS, LOOKUP_COLUMNS, type PracticeScope, type ScopeClient, readDatabaseUrl, withActor, withJobScope } from '@tp/db';
 import { formatUsd, parseCents } from '@tp/money';
 import { createLogger } from '@tp/observability';
@@ -13,7 +14,7 @@ import { databaseJobRuns } from '../jobs/runs';
 import { type MailMessage, MemoryMailSender } from '../mail/mail';
 import { parseHandler } from '../parse/job';
 import { priceHandler } from '../price/job';
-import { type Practice, RELEASE, RERUN_RELEASE } from '../price/test-support/pricing-world';
+import { CONTENT_GAP_RELEASE, type Practice, RELEASE, RERUN_RELEASE } from '../price/test-support/pricing-world';
 import { reconcileHandler } from '../reconcile/job';
 import { todayUtc } from '../triage/execute';
 import { triageHandler } from '../triage/job';
@@ -21,7 +22,7 @@ import { TriageWorld } from '../triage/test-support/triage-world';
 import { JOB_FAILED_MESSAGE, type RunningWorker, startWorker } from '../worker';
 import { notifyRun } from './chain';
 import { monitorHandler } from './job';
-import { MONITOR_DELAY_SECONDS, planMonitoring } from './plan';
+import { MONITOR_DELAY_SECONDS, coversMore, planMonitoring } from './plan';
 import { MemoryQueue } from './test-support/memory-queue';
 
 /**
@@ -32,8 +33,10 @@ import { MemoryQueue } from './test-support/memory-queue';
  * job, job_run, the last-attempt alert) runs every job from a queue in memory with pg-boss's singleton
  * keys and three attempts; the SYNTHETIC CAS fixtures are parsed and loaded by parse_835, their plans
  * mapped and fixed-schedule contracts signed off through @tp/contracts' services, under SYNTHETIC
- * release 900001. Months that wait on the practice's pricing location (test matrix PRC-23; audit #33;
- * docs/adr/0064) are planned last, since the last of them publishes another release.
+ * release 900001. Months that wait on Medicare content PaidWhole has not loaded (test matrix RCC-05; audit #7;
+ * docs/adr/0071) are planned under release 900007, which their last test withdraws again; months that wait on the
+ * practice's pricing location (test matrix PRC-23; audit #33; docs/adr/0064) are planned last, since the last of them
+ * publishes another release.
  */
 
 const ORIGIN = 'http://localhost:3000';
@@ -578,6 +581,176 @@ describe('notification preferences in the user’s own settings', () => {
         { user_id: practice.manager, digest_email: true, in_app: false },
       ].sort((a, b) => (a.user_id < b.user_id ? -1 : 1)),
     );
+  });
+});
+
+describe('RCC-05: months that wait on Medicare content PaidWhole has not loaded (audit #7; docs/adr/0071)', () => {
+  const OCTOBER = { periodFrom: '2026-10-01', periodTo: '2026-10-31' };
+  /** A scratch release number for 900007's records again: a newer release that loads no more of October (as price.db.test.ts publishes 900099). */
+  const SAME_GAP_RELEASE = 900_097;
+  /** A fixed amount per line, flags off: the commercial fixed fee, which reads no Medicare content. */
+  const FIXED_FEE = { scope: {}, method: 'FIXED_SCHEDULE', parameters: { amount_cents: '5000' }, flags: { timed_units_rule: 'PER_CODE' } };
+
+  beforeAll(async () => {
+    // From here on 900007 is in force: 900001 with its per-code MPPR list and its MUE ending 2026-09-30. The last test
+    // of this block withdraws it, so PRC-23 below runs under 900001 again.
+    await w.pricing.loadContentGapRelease();
+  });
+
+  /** MAP-05's remittance with its lines on 2026-10-14 (97110 twice, 97140 and 97530 on one day), paid in November; `other` makes it another payment of other claims. */
+  async function loadOctober(target: Practice, other = false): Promise<void> {
+    await w.pricing.loadVariant(target, 'MAP-05/remit.835', [
+      ...(other ? ([['020050001', '020059001'], ['SYNEFTMAP05001', 'SYNEFTMAP95001'], ['SYNPCNMAP05', 'SYNPCNMAP95'], ['SYNCCNMAP05', 'SYNCCNMAP95']] as const) : []),
+      ['20260216', '20261014'],
+      ['20260310', '20261110'],
+      ['260311', '261111'],
+    ]);
+  }
+
+  /** An October 2026 practice whose MA plan is mapped Medicare Advantage non-contracted: every flag on, so each line reads the MPPR and the MUE. */
+  async function maOctober(label: string): Promise<Practice> {
+    const practice = await w.practice(label);
+    await loadOctober(practice);
+    await w.pricing.mapped(practice, await w.pricing.planOf(practice, 'CE:SYNPLAN-MA-05'), 'ma_noncontracted', '2026-01-01');
+    return practice;
+  }
+  const daily = (c: Chain, practice: Practice) => enqueue(c.queue.client, 'monitor', { practice_id: practice.practiceId, day: todayUtc() });
+  const ran = async (c: Chain) => (await c.queue.drain()).map((job) => [job.name, job.outcome]);
+  const runsOf = (practiceId: string) =>
+    rows<{ status: string; failure_code: string | null; release_no: number; lines: number }>(
+      `SELECT r.status, r.failure_code, r.release_no, (SELECT count(*)::int FROM priced_line p WHERE p.pricing_run_id = r.id) AS lines
+         FROM pricing_run r WHERE r.practice_id = $1 ORDER BY r.created_at, r.id`,
+      [practiceId],
+    );
+  const plan = (practice: Practice) => withJobScope(w.app, { jobId: randomUUID(), practiceId: practice.practiceId }, (scope) => planMonitoring(scope, practice.practiceId, randomUUID()));
+  const waited = { status: 'failed', failure_code: 'waiting_on_content_mppr_mue', release_no: CONTENT_GAP_RELEASE, lines: 0 };
+  const waitingLines = (c: Chain) => c.logs.filter((line) => line.error_code === 'WAITING_ON_CONTENT');
+  const priced = [
+    ['monitor', 'succeeded'],
+    ['price', 'succeeded'],
+  ];
+  const pricedThrough = [...priced, ['triage', 'succeeded'], ['reconcile', 'succeeded']];
+
+  it('fails the month with no line kept, then plans no run for it on the next trigger and warns that it waits, with no page', async () => {
+    const practice = await maOctober('CONTENT-WAIT');
+    const c = await chain();
+    try {
+      await daily(c, practice);
+      expect(await ran(c)).toEqual(priced);
+      expect(await runsOf(practice.practiceId)).toEqual([waited]);
+      // The next day's plan: the month waits with no new run.
+      await daily(c, practice);
+      expect(await ran(c)).toEqual([['monitor', 'succeeded']]);
+      expect(await runsOf(practice.practiceId)).toEqual([waited]);
+      expect(waitingLines(c)).toEqual([
+        expect.objectContaining({ level: 'warn', msg: 'monitoring left months waiting on rule content PaidWhole has not loaded', release_no: CONTENT_GAP_RELEASE, record_count: 1 }),
+      ]);
+      // The refused run alerted once (the price job's content alert); nothing failed as a job.
+      expect(c.logs.filter((line) => line.error_code === 'CONTENT_NOT_LOADED')).toEqual([expect.objectContaining({ level: 'warn', record_count: 3 })]);
+      expect(c.logs.filter((line) => line.level === 'error' || line.msg === JOB_FAILED_MESSAGE)).toEqual([]);
+    } finally {
+      await c.worker.stop();
+    }
+    expect(await plan(practice)).toMatchObject({
+      outcome: 'planned',
+      releaseNo: CONTENT_GAP_RELEASE,
+      created: [],
+      waitingOnLocation: [],
+      waitingOnContent: [{ ...OCTOBER, failureCode: 'waiting_on_content_mppr_mue', failedReleaseNo: CONTENT_GAP_RELEASE }],
+      queued: [],
+    });
+    expect(await failedRun(practice.practiceId)).toBeUndefined();
+  });
+
+  it('plans a month whose last run failed release_read_outside_fetch again at each trigger, never as waiting: it prices by itself once the defect is fixed', async () => {
+    const practice = await w.practice('OUTSIDE-FETCH-RETRY');
+    await loadOctober(practice);
+    const fixed = await w.pricing.signedContract(practice, '2026-01-01', { terms: FIXED_FEE });
+    await w.pricing.mapped(practice, await w.pricing.planOf(practice, 'CE:SYNPLAN-MA-05'), 'contract', '2026-01-01', fixed.versionId);
+    // The run as the price job leaves it when a lookup read outside the fetch (content.db.test.ts drives the job itself).
+    const runId = await w.pricing.createRun(practice, OCTOBER.periodFrom, OCTOBER.periodTo, CONTENT_GAP_RELEASE);
+    await w.pricing.owner.query("UPDATE pricing_run SET status = 'failed', failure_code = 'release_read_outside_fetch' WHERE id = $1", [runId]);
+    const planned = await plan(practice);
+    expect(planned).toMatchObject({ outcome: 'planned', created: [OCTOBER], waitingOnContent: [], waitingOnLocation: [] });
+  });
+
+  it('plans the month again when a newer line of it arrives', async () => {
+    const practice = await maOctober('CONTENT-NEW-LINE');
+    const c = await chain();
+    try {
+      await daily(c, practice);
+      await c.queue.drain();
+      await loadOctober(practice, true);
+      await daily(c, practice);
+      expect(await ran(c)).toEqual(priced);
+    } finally {
+      await c.worker.stop();
+    }
+    expect(await runsOf(practice.practiceId)).toEqual([waited, waited]);
+  });
+
+  it('plans the month again once a contract version is signed off since its run, and once its plan is remapped to a fixed fee with the flags off, which prices (review m2)', async () => {
+    const practice = await maOctober('CONTENT-TERMS');
+    const planId = await w.pricing.planOf(practice, 'CE:SYNPLAN-MA-05');
+    const c = await chain();
+    try {
+      await daily(c, practice);
+      await c.queue.drain();
+      // A contract signed off after the run: the practice's terms changed, so the month is planned again (and, its plan
+      // still mapped Medicare Advantage non-contracted, waits again).
+      const fixed = await w.pricing.signedContract(practice, '2026-01-01', { terms: FIXED_FEE });
+      await daily(c, practice);
+      expect(await ran(c)).toEqual(priced);
+      expect(await runsOf(practice.practiceId)).toEqual([waited, waited]);
+      await daily(c, practice);
+      expect(await ran(c)).toEqual([['monitor', 'succeeded']]);
+      // The plan remapped to the fixed fee: the month prices without the content.
+      const mapping = await w.pricing.one<{ id: string }>('SELECT id FROM payer_plan_mapping WHERE plan_id = $1', [planId]);
+      await w.pricing.as(practice, practice.manager, (context) =>
+        correctMapping(context, { practiceId: practice.practiceId, planId, kind: 'contract', contractVersionId: fixed.versionId, effectiveFrom: '2026-01-01', supersedesId: mapping.id }),
+      );
+      await daily(c, practice);
+      expect(await ran(c)).toEqual(pricedThrough);
+    } finally {
+      await c.worker.stop();
+    }
+    expect(await runsOf(practice.practiceId)).toEqual([waited, waited, { status: 'complete', failure_code: null, release_no: CONTENT_GAP_RELEASE, lines: 3 }]);
+  });
+
+  it('waits under a newer release that loads no more of the month, and prices it once a release in force does (last in this block: it withdraws 900097 and 900007)', async () => {
+    const practice = await maOctober('CONTENT-RELEASE');
+    const c = await chain();
+    try {
+      await daily(c, practice);
+      await c.queue.drain();
+      expect(await runsOf(practice.practiceId)).toEqual([waited]);
+      // 900007's records again under a newer number, in force: October's MPPR and MUE are still not loaded.
+      await w.pricing.owner.query("INSERT INTO rule_release (release_no, manifest_sha256, notes) VALUES ($1, $2, 'SYNTHETIC')", [SAME_GAP_RELEASE, 'e'.repeat(64)]);
+      await w.pricing.owner.query(
+        `INSERT INTO rule_record (release_no, record_type, key, value, effective_from, effective_to, source, verification, sha256)
+         SELECT $1, record_type, key, value, effective_from, effective_to, source, verification, sha256 FROM rule_record WHERE release_no = $2`,
+        [SAME_GAP_RELEASE, CONTENT_GAP_RELEASE],
+      );
+      await w.pricing.owner.query('UPDATE rule_release SET published_at = now() WHERE release_no = $1', [SAME_GAP_RELEASE]);
+      await daily(c, practice);
+      expect(await ran(c)).toEqual([['monitor', 'succeeded']]);
+      expect(await plan(practice)).toMatchObject({ releaseNo: SAME_GAP_RELEASE, created: [], waitingOnContent: [{ ...OCTOBER, failedReleaseNo: CONTENT_GAP_RELEASE }] });
+      const failure = { failureCode: 'waiting_on_content_mppr_mue', releaseNo: CONTENT_GAP_RELEASE } as const;
+      expect(await withJobScope(w.app, { jobId: randomUUID(), practiceId: practice.practiceId }, (scope) => coversMore(scope.client, failure, SAME_GAP_RELEASE, OCTOBER))).toBe(false);
+      expect(await withJobScope(w.app, { jobId: randomUUID(), practiceId: practice.practiceId }, (scope) => coversMore(scope.client, failure, RELEASE, OCTOBER))).toBe(true);
+      // Withdrawn, 900007 is in force again: the run's own release, so the month still waits.
+      await w.pricing.withdraw(SAME_GAP_RELEASE);
+      await daily(c, practice);
+      expect(await ran(c)).toEqual([['monitor', 'succeeded']]);
+      // Withdrawing 900007 puts 900001 in force, which loads all of 2026: the month is planned and prices.
+      await w.pricing.withdraw(CONTENT_GAP_RELEASE);
+      await daily(c, practice);
+      expect(await ran(c)).toEqual(pricedThrough);
+    } finally {
+      await c.worker.stop();
+    }
+    expect(await runsOf(practice.practiceId)).toEqual([waited, { status: 'complete', failure_code: null, release_no: RELEASE, lines: 3 }]);
+    expect(await plan(practice)).toMatchObject({ releaseNo: RELEASE, created: [], waitingOnContent: [] });
   });
 });
 

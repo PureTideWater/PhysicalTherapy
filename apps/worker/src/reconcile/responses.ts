@@ -34,12 +34,14 @@ export async function acceptedResponses(scope: Scope, practiceId: string): Promi
 
 /**
  * Approvals from payer responses: a response that accepts an amount approves it for the lines its
- * submission asked for, split by their variance (allocated when it covers several), each line at most
- * what it asked (its variance: an acceptance that includes the packet's interest line approves no
- * interest as principal, and the database refuses an acceptance above what was asked), and only what no
- * approval already stands for: a line a reprocessed remittance already approved is not approved twice,
- * and a later remittance paying it is compared with what is approved, so it is not approved again either
- * (it posts against the approval).
+ * submission asked for. The amount is the payer's payment, what the letter says it will pay (the form
+ * asks for it so), never the allowed amount and never the patient's share: every ledger amount is the
+ * payer's cash (docs/adr/0067), so a remittance paying the acceptance confirms it with no shortfall. It is
+ * split by the lines' variance (allocated when it covers several), each line at most what it asked (its
+ * variance: an acceptance that includes the packet's interest line approves no interest as principal, and
+ * the database refuses an acceptance above what was asked), and only what no approval already stands for:
+ * a line a reprocessed remittance already approved is not approved twice, and a later remittance paying it
+ * is compared with what is approved, so it is not approved again either (it posts against the approval).
  */
 export async function approveFromResponses(scope: Scope, practiceId: string, responses: readonly AcceptedResponse[]): Promise<number> {
   if (responses.length === 0) {

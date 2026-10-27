@@ -1,0 +1,24 @@
+{
+  "case": "CAS-30",
+  "module": "CAS",
+  "title": "A line’s calculation in words",
+  "assertion": "Every figure in the words is in the line’s trace or its rate record; a flag that is off reads only as not applied; an unpriced line reads its reason’s meaning and remedy",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": [
+    "packages/packets/src/explain/line.test.ts",
+    "packages/packets/src/explain/figures.property.test.ts",
+    "packages/packets/src/explain/golden.test.ts",
+    "apps/web/src/components/pricing/line-words.test.tsx",
+    "apps/web/src/lib/routes/line-words-routes.db.test.ts",
+    "apps/web/e2e/pricing.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Words any priced or unpriced line from its stored trace: an output, not a fixture.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

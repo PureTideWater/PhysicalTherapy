@@ -3,7 +3,7 @@ import { type Cents, ZERO_CENTS, negateCents, parseCents } from '@tp/money';
 
 import { EMPTY_LINE_LEDGER, type Scope, insertEntry, insertMatch, ledgerEntries, ledgerMatches, lineLedgers, lockLedger } from './ledger';
 import { depositDecision, postingDecision, postingRow, settleMatches } from './postings';
-import { caseLines, comparableAllowed, compareWithLine, remittanceBaseline } from './remittances';
+import { caseLines, chainContext, lineChain, paidLine, recordReprocessing, reprocessingOf } from './remittances';
 import { recordReprocessedNoChange } from './responses';
 import { syncLineStages } from './stages';
 
@@ -123,9 +123,11 @@ export async function matchDepositByHand(context: ManualContext, input: { readon
 
 /**
  * Matches an adjusted payment (a claim) to an open case line a person names: compared as the reconcile
- * step compares it (higher approves the difference, lower takes back an approval, a payment of what a
- * payer response accepted confirms it, otherwise a payer response "reprocessed, no change", recorded in
- * the person's name through the submissions' function).
+ * step compares it, through the same helpers (remittances.ts, reprocessingOf and recordReprocessing;
+ * docs/adr/0067): a higher allowed amount approves the payer's payment increase, confirms what a payer
+ * response accepted, or (paying nothing more) attaches the claim with no entry; a lower one, or a payment
+ * that falls, takes back the payment decrease from what is approved; otherwise a payer response
+ * "reprocessed, no change", recorded in the person's name through the submissions' function.
  */
 export async function matchClaimByHand(
   context: ManualContext,
@@ -149,33 +151,20 @@ export async function matchClaimByHand(
   if ((await ledgerMatches(scope, input.practiceId)).some((match) => match.kind === 'claim' && match.standing && match.claimId === input.claimId && match.serviceLineId === line.serviceLineId)) {
     throw new ReconciliationError('already_matched');
   }
-  const allowed = await comparableAllowed(scope, input.claimId, line);
-  if (allowed === null) {
+  const entries = await ledgerEntries(scope, input.practiceId);
+  const chain = lineChain(await chainContext(scope, input.practiceId, [line.claimId], entries), line);
+  const ledger = lineLedgers(entries).get(line.serviceLineId) ?? EMPTY_LINE_LEDGER;
+  const reprocessed = chain === undefined ? null : await reprocessingOf(scope, line, input.claimId, { original: paidLine(chain.original), baselines: chain.chain.current, ledger });
+  if (reprocessed === null) {
     throw new ReconciliationError('not_comparable');
   }
-  const entries = await ledgerEntries(scope, input.practiceId);
-  const ledger = lineLedgers(entries).get(line.serviceLineId) ?? EMPTY_LINE_LEDGER;
-  const baseline = await remittanceBaseline(scope, line, await ledgerMatches(scope, input.practiceId), entries);
-  const outcome = compareWithLine(line, ledger, baseline, allowed);
-  const outcomeCode = outcome.kind === 'confirmed' ? 'approved' : outcome.kind;
-  const matchId = (await insertMatch(scope, input.practiceId, { kind: 'claim', claimId: input.claimId, remittanceId: claim.remittance_id, serviceLineId: line.serviceLineId, outcome: outcomeCode, matchedBy: actor })) as string;
-  // A claim that confirms a payer response's approval writes nothing more: the response approved the amount.
-  if (outcome.kind === 'no_change') {
+  const { matchId } = (await recordReprocessing(scope, input.practiceId, line, { remittanceId: claim.remittance_id }, reprocessed, actor)) as { matchId: string };
+  // A claim that confirms a payer response's approval, or pays nothing more, writes nothing more.
+  if (reprocessed.outcome.kind === 'no_change') {
     await recordReprocessedNoChange(scope, context.keys, { practiceId: input.practiceId, caseId: line.caseId, remittanceId: claim.remittance_id, receivedOn: claim.paid_on, requestId: context.requestId });
-  } else if (outcome.kind !== 'confirmed') {
-    await insertEntry(scope, input.practiceId, {
-      caseId: line.caseId,
-      serviceLineId: line.serviceLineId,
-      stage: outcome.kind === 'approved' ? 'approved' : 'recouped',
-      amountCents: outcome.amountCents,
-      evidenceKind: 'claim',
-      evidenceId: input.claimId,
-      matchId,
-      createdBy: actor,
-    });
   }
   await finish(context, input.practiceId, actor, 'ledger_match_recorded', matchId);
-  return { matchId, outcome: outcomeCode };
+  return { matchId, outcome: reprocessed.matchOutcome };
 }
 
 /**

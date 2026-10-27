@@ -1,5 +1,6 @@
 import { type Decimal, decimal, parseCents, roundToCents, unroundedCents } from '@tp/money';
 import type { IndexedRelease, PricingTrace, TraceAdjustment } from '@tp/pricing';
+import type { RuleRecordType } from '@tp/rules';
 
 /**
  * The adjustment behavior of an underpaid line, detected from its trace (PRD 12, From validated to
@@ -39,6 +40,12 @@ export interface BehaviorReferences {
   /** The conversion factor of a year for an applicability; null when the release has none. */
   conversionFactor(applicability: string, year: number): Decimal | null;
 }
+
+/**
+ * The record types releaseReferences() reads, and all that triage and the audit report read of a release (audit #31;
+ * docs/adr/0071): they load only these, so a real-size release is never held whole for them.
+ */
+export const BEHAVIOR_RECORD_TYPES = ['mppr_rate', 'conversion_factor'] as const satisfies readonly RuleRecordType[];
 
 /**
  * The references from a run's rule release, read the way the engine reads it: a code's own

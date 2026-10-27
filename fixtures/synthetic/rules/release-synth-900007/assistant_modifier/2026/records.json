@@ -1,0 +1,72 @@
+[
+  {
+    "record_type": "assistant_modifier",
+    "key": {
+      "modifier": "CQ"
+    },
+    "value": {
+      "payment_percent": "77"
+    },
+    "effective_from": "2026-01-01",
+    "effective_to": null,
+    "source": {
+      "title": "SYNTHETIC therapy rules for tests (fixtures/synthetic/cms/synthetic-rules.md)",
+      "url": null,
+      "path": "fixtures/synthetic/cms/synthetic-rules.md",
+      "retrieved": "2026-10-15",
+      "sha256": "c5f7544336aee203acd3e0cbd5561705cc93974223a510d2331a9749e70f41af",
+      "method": "hand_typed",
+      "transcribed_by": "SYNTHETIC fixture author, first pass",
+      "transcribed_on": "2026-10-15",
+      "locator": "line 9",
+      "synthetic": true
+    },
+    "verification": {
+      "level": "L1",
+      "by": "pnpm verify-content",
+      "on": "2026-10-15",
+      "questions": [
+        "SYNTHETIC fixture: invented values, never reviewed and never used to price a real line."
+      ]
+    },
+    "quotes": [
+      "SYNTHETIC assistant modifiers CQ and CO pay 77% of the otherwise applicable amount from January 1, 2026."
+    ],
+    "notes": "SYNTHETIC invented value for tests."
+  },
+  {
+    "record_type": "assistant_modifier",
+    "key": {
+      "modifier": "CO"
+    },
+    "value": {
+      "payment_percent": "77"
+    },
+    "effective_from": "2026-01-01",
+    "effective_to": null,
+    "source": {
+      "title": "SYNTHETIC therapy rules for tests (fixtures/synthetic/cms/synthetic-rules.md)",
+      "url": null,
+      "path": "fixtures/synthetic/cms/synthetic-rules.md",
+      "retrieved": "2026-10-15",
+      "sha256": "c5f7544336aee203acd3e0cbd5561705cc93974223a510d2331a9749e70f41af",
+      "method": "hand_typed",
+      "transcribed_by": "SYNTHETIC fixture author, first pass",
+      "transcribed_on": "2026-10-15",
+      "locator": "line 9",
+      "synthetic": true
+    },
+    "verification": {
+      "level": "L1",
+      "by": "pnpm verify-content",
+      "on": "2026-10-15",
+      "questions": [
+        "SYNTHETIC fixture: invented values, never reviewed and never used to price a real line."
+      ]
+    },
+    "quotes": [
+      "SYNTHETIC assistant modifiers CQ and CO pay 77% of the otherwise applicable amount from January 1, 2026."
+    ],
+    "notes": "SYNTHETIC invented value for tests."
+  }
+]

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
@@ -16,6 +16,15 @@ import { repositoryRoot } from '../content-files';
  * temporary directory of their own.
  */
 
+/** Every unit test file directly in a directory of the CI series' tools, so a file added there later is collected too. */
+const testsIn = (dir: string): string[] =>
+  existsSync(path.join(repositoryRoot, dir))
+    ? readdirSync(path.join(repositoryRoot, dir))
+        .filter((file) => file.endsWith('.test.ts') && !file.endsWith('.db.test.ts'))
+        .sort()
+        .map((file) => `${dir}/${file}`)
+    : [];
+
 const FILES = [
   'tools/test/ci-gate.test.ts',
   'tools/test/workflows.test.ts',
@@ -26,6 +35,12 @@ const FILES = [
   'tools/typecheck/run.test.ts',
   'apps/web/scripts/build-stamp.test.ts',
   'apps/web/src/lib/routes/route-tests/partition.test.ts',
+  // ci-deps (docs/adr/0066, Part 2).
+  'tools/test/dependabot-config.test.ts',
+  'tools/test/no-duplicated-versions.test.ts',
+  ...testsIn('tools/check-action-pins'),
+  ...testsIn('tools/check-toolchain'),
+  ...testsIn('tools/ci'),
 ];
 
 /** What Node itself keeps in the temporary directory (module.enableCompileCache), not a test's. */

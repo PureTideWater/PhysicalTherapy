@@ -5,10 +5,10 @@ import type { CpuLayout } from './limits';
  * "Capacity under production limits"), and the environment each is given.
  *
  * The web container runs NODE_ENV=production with the e2e suite's TP_ALLOW_LOCAL_PROVIDERS=e2e, as the e2e suite's
- * production build does. The platform and screening containers run NODE_ENV=test with MAIL_OUTBOX_DIR, because the
- * worker refuses a local mail outbox in production (apps/worker/src/config.ts) and the test reads the emails from that
- * outbox. A production escape for the worker's mail was rejected: it would put a switch in production's configuration
- * that sends mail nowhere, for a test. The screening consumer (WORKER_JOBS=screening, PR 6b-3) runs on its own login,
+ * production build does. The platform and screening containers (and the weekly real-size test's practice worker) run
+ * NODE_ENV=test with MAIL_OUTBOX_DIR, because the worker refuses a local mail outbox in production
+ * (apps/worker/src/config.ts) and the test reads the emails from that outbox. A production escape for the worker's mail
+ * was rejected: it would put a switch in production's configuration that sends mail nowhere, for a test. The screening consumer (WORKER_JOBS=screening, PR 6b-3) runs on its own login,
  * which switches to tp_screening as production's does, with the declared concurrency; the platform beside it prices no
  * screening.
  *
@@ -89,8 +89,9 @@ export const DEPARTURES: readonly Departure[] = [
 /** The logins the migration task creates (apps/worker/src/deploy/logins.ts), for the harness's scratch database only. */
 export const HARNESS_LOGINS = {
   app: { username: 'tp_app_login', password: 'synthetic-capacity-app' },
-  // The worker's own login (docs/adr/0061): the migration task requires it, though no harness service connects as it
-  // (the platform worker connects as the operator and queue logins, and no practice job runs in the test).
+  // The worker's own login (docs/adr/0061): the migration task requires it; only the weekly real-size test's practice
+  // worker connects as it (tools/release-capacity), as production's worker task does. The platform worker connects as the
+  // operator and queue logins, and no practice job runs in the screening's test.
   worker: { username: 'tp_worker_login', password: 'synthetic-capacity-worker' },
   operator: { username: 'tp_operator_login', password: 'synthetic-capacity-operator' },
   queue: { username: 'tp_queue_login', password: 'synthetic-capacity-queue' },
@@ -177,6 +178,29 @@ export function platformEnvironment(databaseUrl: string, origin: string, dirs: H
     RESTORE_DRILL_WORK_DIR: dirs.restoreDrill,
     SUPPORT_MAIL_DIR: dirs.supportMail,
     MAIL_OUTBOX_DIR: dirs.outbox,
+    APP_ORIGIN: origin,
+  };
+}
+
+/**
+ * The practice worker's environment (WORKER_JOBS=practice), for the weekly real-size test (tools/release-capacity;
+ * audit #31): production's worker task's settings, on the worker's own login and the queue login as production's task
+ * holds them (infra/lib/constructs/compute.ts: DATABASE_URL is the worker's login, never the application login, docs/adr/
+ * 0061), with the local document store, the local key provider under the harness's master key and the local outbox in
+ * place of S3, KMS and SES (see the module comment). The worker refuses the operator and screening logins here.
+ */
+export function workerEnvironment(databaseUrl: string, origin: string, dirs: HarnessDirectories, masterKey: string, logins: HarnessLogins = HARNESS_LOGINS): Record<string, string> {
+  return {
+    NODE_ENV: 'test',
+    WORKER_JOBS: 'practice',
+    DATABASE_URL: loginUrl(databaseUrl, logins.worker),
+    QUEUE_DATABASE_URL: loginUrl(databaseUrl, logins.queue),
+    DOCUMENTS_DIR: dirs.documents,
+    TP_KEY_PROVIDER: 'local',
+    TP_LOCAL_MASTER_KEY: masterKey,
+    MAIL_OUTBOX_DIR: dirs.outbox,
+    MODEL_PROVIDER: 'local',
+    MODEL_LOCAL_FIXTURES_DIR: dirs.modelOutputs,
     APP_ORIGIN: origin,
   };
 }
