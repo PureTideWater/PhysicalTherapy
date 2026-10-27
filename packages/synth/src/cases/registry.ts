@@ -639,6 +639,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   // SS-01: whose hold stops which work, PaidWhole's stored suspension and the dunning mail's truth (docs/adr/0080).
   'BIL-07': none(11, 'Synthetic organizations, people and grants the tests write as the owner on a migrated database, and the route world’s firm; no file.', [
     'packages/db/src/suspension.db.test.ts',
+    'apps/web/src/lib/routes/suspension-refusal.db.test.ts',
     'apps/web/src/lib/routes/route-tests/define.ts',
     'apps/worker/src/packets/export-attempts.db.test.ts',
     'apps/worker/src/worker.test.ts',
@@ -649,8 +650,10 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/routes/console-routes.db.test.ts',
   ]),
   'BIL-09': none(11, 'The words are pure functions of values the test passes in memory, and the journeys read a firm, a client practice and a console firm the seed holds; no file.', [
+    'apps/web/src/lib/billing/suspension-words.test.ts',
     'apps/web/src/components/console/suspension-text.test.ts',
     'apps/web/src/components/billing/account-standing.test.tsx',
+    'apps/web/src/lib/routes/billing-routes.db.test.ts',
     'apps/web/e2e/billing.spec.ts',
   ]),
   'BIL-10': none(11, 'dunningMessage is a pure function of values the test passes in memory, and the sends run on synthetic organizations and invoices; no file.', [

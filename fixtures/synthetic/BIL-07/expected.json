@@ -7,6 +7,7 @@
   "completesIn": 11,
   "assertedBy": [
     "packages/db/src/suspension.db.test.ts",
+    "apps/web/src/lib/routes/suspension-refusal.db.test.ts",
     "apps/web/src/lib/routes/route-tests/define.ts",
     "apps/worker/src/packets/export-attempts.db.test.ts",
     "apps/worker/src/worker.test.ts"

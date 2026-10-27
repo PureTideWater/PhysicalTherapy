@@ -6,8 +6,10 @@
   "synthetic": true,
   "completesIn": 11,
   "assertedBy": [
+    "apps/web/src/lib/billing/suspension-words.test.ts",
     "apps/web/src/components/console/suspension-text.test.ts",
     "apps/web/src/components/billing/account-standing.test.tsx",
+    "apps/web/src/lib/routes/billing-routes.db.test.ts",
     "apps/web/e2e/billing.spec.ts"
   ],
   "codeListRelease": null,
