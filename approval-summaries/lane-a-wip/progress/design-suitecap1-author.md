@@ -84,3 +84,4 @@ Clone: scratchpad/designs/suitecap1-author
 - claimLines with index on db _8: 0.97 s (EXPLAIN uses claim_by_superseded_by). Remaining patientBalance 39-112 s = O(N^2) JS in lineShares (reconcile/patient-share.ts:107-130: adjustments.filter per claim :116 and per line :122). Fix: group once in Maps (order kept). Not a freeze item (no ledger table, packages/ledger untouched, semantics identical).
 - Probe G2 (G + grouping, heap 560, db _13) running from ~16:52 (task b3hr9g7zj).
 - DOC REWRITE in progress: new scope = locks (D1-D9) + D12 advanceStages LATERAL + D13 batched candidate reader (triage, open case, Cases page waitingPatterns web:253) + D14 batched report lines + D15 claim_by_superseded index (interest design D8/LED-25 shares it) + D16 lineShares grouping.
+- DOC REWRITTEN in full (17:0x) with D12-D16, 1.4 table, 2.2 options, probes table; PENDING: 8.3 G2 row, 8.4 budgets, section 0 item 8 maybe G2 report time
