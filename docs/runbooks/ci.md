@@ -296,7 +296,10 @@ every path that differs from the committed list, so one red CI run gives everyth
    `storage.googleapis.com/chrome-for-testing-public/<version>/linux64/`). By hand: download
    `chrome-linux64.zip` and `chrome-headless-shell-linux64.zip`, check their SHA-256s, unzip them into
    `$PLAYWRIGHT_BROWSERS_PATH/chromium-<revision>/` and `$PLAYWRIGHT_BROWSERS_PATH/chromium_headless_shell-<revision>/`,
-   and touch `INSTALLATION_COMPLETE` and `DEPENDENCIES_VALIDATED` in each of the two folders.
+   and touch `INSTALLATION_COMPLETE` and `DEPENDENCIES_VALIDATED` in each of the two folders. pnpm keeps the replaced
+   playwright-core in `node_modules/.pnpm` for up to seven days, and `workflows.test.ts` requires the one the lockfile
+   installs alone there (the apt cache's key hashes every `playwright-core@*`): remove it with
+   `pnpm install --frozen-lockfile --config.modules-cache-max-age=0`. CI installs into an empty `node_modules`.
 2. **Record it.** In `browser.json`, the new `revision` and `browserVersion`; for each build, the zips' SHA-256s,
    the file list (`cd "$PLAYWRIGHT_BROWSERS_PATH/chromium_headless_shell-<revision>" && find chrome-headless-shell-linux64
    -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum > <repo>/apps/web/e2e/browser-builds/chrome-headless-shell-linux64.sha256`,

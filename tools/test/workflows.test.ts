@@ -1838,9 +1838,11 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
     expect(image.run).toContain('echo "os=$ImageOS" >> "$GITHUB_OUTPUT"');
     expect(image.run).toContain('if [ -z "${ImageOS:-}" ] || [ -z "${ImageVersion:-}" ]; then');
     // The key's file is the one playwright-core this lockfile installs: it names the browser builds the install fetches.
+    // CI installs into an empty node_modules, so the glob finds one; a local install after an upgrade can keep the old
+    // playwright-core as an orphan for up to seven days, which this names with its remedy rather than passing over.
     const store = path.join(repositoryRoot, 'node_modules/.pnpm');
     const cores = readdirSync(store).filter((name) => name.startsWith('playwright-core@') && existsSync(path.join(store, name, 'node_modules/playwright-core/browsers.json')));
-    expect(cores).toEqual([`playwright-core@${(JSON.parse(readFileSync(path.join(repositoryRoot, 'apps/web/node_modules/@playwright/test/package.json'), 'utf8')) as { version: string }).version}`]);
+    expect(cores, `the apt key's glob over node_modules/.pnpm must find exactly the playwright-core the lockfile installs; an orphan of an earlier install goes with pnpm install --frozen-lockfile --config.modules-cache-max-age=0 (docs/runbooks/ci.md, "Upgrading the browser")`).toEqual([`playwright-core@${(JSON.parse(readFileSync(path.join(repositoryRoot, 'apps/web/node_modules/@playwright/test/package.json'), 'utf8')) as { version: string }).version}`]);
     // The config takes that Chromium wherever it is installed, and Google Chrome only where it is not (docs/adr/0058).
     const config = readFileSync(path.join(repositoryRoot, 'apps/web/playwright.config.ts'), 'utf8');
     expect(config).toContain('const bundledChromium = existsSync(chromium.executablePath());');
