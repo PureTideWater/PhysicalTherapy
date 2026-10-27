@@ -57,6 +57,14 @@ run the deliverability runbook's staging checks once after phase 2 (open item O1
 pull request. Each account needs SES production access before any customer mail (the runbook's use
 case text).
 
+**The address-validation account (docs/adr/0065; deliverability runbook, section 2, step 1).** SES's validation of a
+screening address names the address in its request, so it runs in an AWS account of the environment's own that holds
+nothing else. Before the first release, a person creates that account, bootstraps CDK in it and deploys
+`tp-<env>-address-validation` there with `ApplicationRoleArn=<this stack's ApplicationRoleArn output>`; then deploy this
+stack with `MailValidationRoleArn=<that stack's AddressValidationRoleArn output>`. CloudFormation refuses a deploy whose
+`ImageTag` names a release while `MailValidationRoleArn` is `none` (rule `ReleaseNeedsAddressValidationRole`), and a
+released web refuses to start without it.
+
 Once the environment's `StaticAssetsOrigin` output exists, set the repository variable the release builds its web image
 with (Settings, Secrets and variables, Actions, Variables): `STAGING_STATIC_ASSET_ORIGIN` or
 `PRODUCTION_STATIC_ASSET_ORIGIN`, the output's value. A release tagged before it is set builds that web image with no
@@ -187,8 +195,10 @@ Each is recorded in the pull request of the release that opens it:
   `/console/mail` reading "Ready to open" yes;
 - SES production access granted for the account and region;
 - staging's deliverability checks recorded (open item O11: Cognito sending through the stack's identity, the screening
-  set neither checking nor adding to the account's suppression list, the account's reputation metrics publishing, and
-  the database logging no bind value);
+  set neither checking nor adding to the account's suppression list, the account's reputation metrics publishing, the
+  database logging no bind value, and SES's address validation recorded as a read in the address-validation account
+  alone);
+- production's address-validation account set up and `MailValidationRoleArn` set (the release cannot run without it);
 - counsel's review of the screening's wording recorded (docs/product/legal-surfaces.md: until then a production server
   keeps the screening closed);
 - the founder's own steps (open item O14): the DNS records set at the registrar, both domains registered with Google

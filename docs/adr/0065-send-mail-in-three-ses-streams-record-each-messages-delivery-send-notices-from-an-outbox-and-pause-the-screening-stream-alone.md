@@ -158,6 +158,59 @@ and `submit_screening`; tp_screening: `screening_mail_gate` alone. `screening_ma
 `screening_contact_refused()` and every trigger function are granted to no role. No function sets `app.practice_ids`.
 `operator_record_support_notice()`, `operator_practice_administrator_emails()` and `billing_owner_emails()` are dropped.
 
+**Address validation in its own account (review S3; the safer option, taken on the co-founder's standing direction of
+2026-10-27).** SES's validation of a screening address (`GetEmailAddressInsights`, Q1 (g)) names the address in its
+request, and AWS records API calls. What AWS's own documentation says, re-checked on 2026-10-27 (its documentation hosts
+cannot be reached from the build, so from AWS's API models and its reference text as the SDKs ship them: CloudTrail's
+`LookupEvents` in botocore 1.43.119, the trail's field selectors in the CloudFormation reference aws-cdk-lib 2.275.0
+carries, SESv2's model in @aws-sdk/client-sesv2 3.1157.0 and botocore, and AWS's pages on CloudTrail Lake's availability
+and on SES's CloudTrail logging, read through search):
+
+- Every account keeps the last 90 days of its management events, reads and writes, in CloudTrail's event history, in
+  each region, whatever its trails do; nothing turns it off, shortens it or deletes from it.
+- SESv2 marks this request's `EmailAddress` as a plain string, not sensitive (the other insights calls'
+  `InsightsEmailAddress` is sensitive), so CloudTrail is expected to record the address as typed in `requestParameters`.
+- SES's sends are CloudTrail data events, off unless a trail asks for them and never in event history; this call is
+  not among them, so it is a management event.
+- A trail's selectors filter management events only by read or write, and leave out only KMS's or RDS Data's events.
+  Filtering them by event name is for CloudTrail Lake's event data stores, which AWS closed to new customers on
+  2026-05-31. So the environment's trail cannot leave out this one call except by dropping every read it records
+  (secrets, keys, IAM's reads), and as built it kept every validated address in its bucket, which has no expiry.
+
+So the call is made in an account of its own, one per environment, that holds nothing else: the stack
+`tp-<env>-address-validation` (`infra/lib/address-validation-stack.ts`) has one role, which only the environment's
+application role may assume (its account's root narrowed by `aws:PrincipalArn`, and never a principal of the account
+itself) and which may call `ses:GetEmailAddressInsights` and nothing else, and one trail of the write management events
+alone (every region and the global services, validated, under that account's own key). In the environment's account
+the application role is refused the call (`NoAddressValidationHere`) and the assuming of any role of its own account
+(`NoRoleOfThisAccount`), so `MailValidationRoleArn` cannot point the call back there; it may assume the validation role
+only once that parameter names it, and the rule `ReleaseNeedsAddressValidationRole` refuses a release before. Its trail
+still records every management event, read and write. The web assumes the role for 15 minutes at a time (STS's least),
+renewed 5 minutes early; the call, credentials included, stays inside its 2-second bound; and when AWS refuses the role
+or the call (`MAIL_VALIDATION_REFUSED`), which would leave every address to DNS alone, the operator is paged at once.
+
+**What remains (the residual).**
+
+1. The validation account's event history keeps each validation's request, with the address in it unless CloudTrail
+   redacts it, for 90 days. Nobody can shorten or turn that off. Only a principal of that account allowed
+   `cloudtrail:LookupEvents` can read it, and nobody works in that account: its root user under MFA and CDK's bootstrap
+   roles, used only to deploy. Ninety days is longer than the screening's 30 and outside Q11 (b)'s keyed-hash-only
+   rule, and the screening's pages tell a prospect that the email address is deleted with the result
+   (`apps/web/src/lib/screening/retention.ts`). Counsel sees this before the screening opens (O4).
+2. The validation account's trail never holds a validation only while CloudTrail reads the call as a read. Staging's
+   check (O11; docs/runbooks/deliverability.md, section 2) confirms that it does, with a mailbox the team controls. If it
+   reads as a write, the screening stays closed until that trail changes (the fallback: no trail there, its changes
+   then kept for event history's 90 days alone).
+3. A trail added to that account later that records reads, data or network activity events, a CloudWatch Logs copy, or
+   an AWS Organizations trail that records reads across the account, would keep the addresses again; the runbook's
+   rules forbid each.
+4. SES processes each address it validates, as it does each address it mails, under AWS's business associate
+   agreement; the main account's trail records the web's `AssumeRole`, which names the role and the session
+   (`tp-web-address-validation`), never an address.
+
+It costs about $1.40 a month per environment: the validation account's key ($1; its trail is that account's first copy
+of management events, which CloudTrail does not charge) and the refused validation's alarm and log metric ($0.40).
+
 ## Alternatives considered
 
 | Option | Why not (or when we would switch) |
@@ -167,6 +220,11 @@ and `submit_screening`; tp_screening: `screening_mail_gate` alone. `screening_ma
 | SES tenants, with their own automatic pause | They pause on SES's own findings (Standard, Strict or None), not at the founder's 3% and 0.08%, and their price was not confirmed. Revisit when they offer configurable thresholds at a known price |
 | A delivery-state column on `screening_prospect` | The prospect is immutable by design, and a second copy could disagree with the mail record; PR 7 reads the record (`screening_prospect_mail_state()`) |
 | A third-party address verification service, or SMTP probing | A new party receives the address, or our reputation suffers; SES's own validation goes to the sender we already use, under its BAA |
+| SES's validation from the environment's own account (as first built) | Its trail, which records every read, kept each validated address in a bucket with no expiry (review S3) |
+| The environment's trail records writes alone | It would give up the account's record of every read (secrets, keys, IAM's reads) to leave out one call |
+| A CloudTrail Lake event data store that leaves out `GetEmailAddressInsights` by name | Closed to new customers since 2026-05-31; a trail cannot filter management events by name |
+| No trail in the validation account | Its changes would be kept for event history's 90 days alone; the fallback should staging show CloudTrail reads the validation as a write |
+| No SES validation at all (DNS alone) | Nothing would be recorded anywhere, but it reverses the founder's Q1 (g): the founder's to decide should counsel find event history's 90 days unacceptable |
 | SES Auto Validation at send | It would silently drop a result the page already said was sent, and would drop a HIPAA notice on a heuristic |
 | No bounce budget (Q10) | One client could close the public screening for everyone with seven bad addresses in a week |
 | Keep a refused address's hash only as long as the prospect (Q11 (b)) | Keeps today's wording, but a known-bad or complaining address could be screened again after 30 days |
@@ -185,6 +243,10 @@ and `submit_screening`; tp_screening: `screening_mail_gate` alone. `screening_ma
   five-minute periods; review M3), about a day before the stream's readiness lapses: such a probe is never outstanding,
   so `MAIL_PROBE_MISSED` would not fire, and the screening would close in silence. It adds one alarm and one log metric
   to Q1's figure (about $0.40 a month per environment).
+- Each environment needs a second AWS account, created by a person, bootstrapped for CDK and holding
+  `tp-<env>-address-validation`, before its first release; a release cannot run without it (the rule), and an
+  application role ever replaced must be named to that stack again, or every validation is refused and pages
+  (`MAIL_VALIDATION_REFUSED`).
 - After a pause, the runs already queued wait, not fail; a run whose completion raced the pause rolls back and is
   claimed again by the stale rule after the resume, spending one attempt, and a run whose last attempt it was is
   completed by the sweep on that attempt, its rows all priced, instead of failed for its attempts (review M7). A
@@ -209,9 +271,9 @@ SES's global suppression list carries on the screening set, whose suppression is
 screening stream is paused in
 production (read the reason and the counts before resuming, and whether the floors or the budget need the founder's
 ruling again); staging, after phase 2, shows whether Cognito needs a sending-authorization policy, that the screening
-set's empty suppression list both adds nothing to and checks nothing against the account's list, and whether the
-account's reputation metrics publish at launch volume (open item O11); the validation cap is reached on a real day; PR
-6e adds reminders on the screening stream (they must read the gate and the refusal list, O13); counsel answers on the
+set's empty suppression list both adds nothing to and checks nothing against the account's list, whether the account's
+reputation metrics publish at launch volume, and whether CloudTrail reads SES's address validation as a read, in the
+address-validation account alone (open item O11); the validation cap is reached on a real day; PR 6e adds reminders on the screening stream (they must read the gate and the refusal list, O13); counsel answers on the
 refusal-hash and bounce-budget wording (O4); or the capacity measurement is revisited. The address checks this pull
 request adds (DNS and SES validation, run together after the row checks, at most one 2-second timeout) fall inside the
 60-second promise, and the harness charges them (section 5, G1). How that promise is measured, the free runner with a

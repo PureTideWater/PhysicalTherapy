@@ -34,8 +34,9 @@ import { type NoticeClient, asOperator } from './support-notices';
  *    delivered to every recipient is NOTICE_UNDELIVERED with its support grant's or invoice's ID; an invitation not
  *    delivered is INVITATION_UNDELIVERED with its ID.
  *
- * Logs carry IDs and codes only: no address, in no log line, payload, audit event or error. Outside SES the address's
- * only copy is the queue's encrypted message, for at most 4 days (14 in the dead-letter queue).
+ * Logs carry IDs and codes only: no address, in no log line, payload, audit event or error. Outside SES, this event
+ * path keeps the address only in the queue's encrypted message, for at most 4 days (14 in the dead-letter queue); the
+ * web's address validation is recorded in the address-validation account's event history alone (docs/adr/0065).
  */
 
 /** One message of the queue: its ID (logged when unreadable), body and what deletes it. */
