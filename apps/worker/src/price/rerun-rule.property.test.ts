@@ -20,7 +20,7 @@ type Step =
   | { readonly kind: 'load'; readonly month: number }
   | { readonly kind: 'correct' | 'reverse'; readonly pick: number }
   | { readonly kind: 'first'; readonly from: number; readonly months: number }
-  | { readonly kind: 'rerun' | 'price' | 'start' | 'begin' | 'read' | 'fail' | 'begin_accept' | 'finish_accept' | 'accept'; readonly pick: number }
+  | { readonly kind: 'rerun' | 'pair' | 'price' | 'start' | 'begin' | 'read' | 'fail' | 'begin_accept' | 'finish_accept' | 'accept'; readonly pick: number }
   | { readonly kind: 'race'; readonly first: number; readonly second: number }
   | { readonly kind: 'commit' | 'publish' | 'withdraw' | 'split' | 'map' };
 
@@ -31,6 +31,8 @@ const step: fc.Arbitrary<Step> = fc.oneof(
   { weight: 1, arbitrary: fc.record({ kind: fc.constantFrom('correct' as const, 'reverse' as const), pick }) },
   { weight: 3, arbitrary: fc.record({ kind: fc.constant('first' as const), from: fc.nat(MONTHS - 1), months: fc.integer({ min: 1, max: 3 }) }) },
   { weight: 4, arbitrary: fc.record({ kind: fc.constant('rerun' as const), pick }) },
+  // Two re-runs of one run, each priced: what a race needs, two complete re-runs, which single steps seldom leave.
+  { weight: 2, arbitrary: fc.record({ kind: fc.constant('pair' as const), pick }) },
   // A whole execution with nothing else holding the lock, and the four steps of executions that run at once.
   { weight: 4, arbitrary: fc.record({ kind: fc.constant('price' as const), pick }) },
   { weight: 3, arbitrary: fc.record({ kind: fc.constant('start' as const), pick }) },
@@ -66,7 +68,6 @@ const completeReruns = (model: RunModel) => model.runs.filter((run) => run.rerun
 
 /** What the sequences reached, so the property is known not to hold vacuously. */
 const seen = new Map<string, number>();
-const count = (key: string) => seen.set(key, (seen.get(key) ?? 0) + 1);
 
 /** The invariants after every step; (ii) and (iii) after an acceptance that committed. */
 function checkStep(model: RunModel, accepted: { readonly run: ModelRun; readonly before: ReadonlyMap<number, number | null> } | null): void {
@@ -78,7 +79,8 @@ function checkStep(model: RunModel, accepted: { readonly run: ModelRun; readonly
   }
 }
 
-function play(model: RunModel, steps: readonly Step[]): void {
+function play(model: RunModel, steps: readonly Step[], tally: Map<string, number> = seen): void {
+  const count = (key: string) => tally.set(key, (tally.get(key) ?? 0) + 1);
   for (const next of steps) {
     let accepted: { readonly run: ModelRun; readonly before: ReadonlyMap<number, number | null> } | null = null;
     const acceptance = (run: ModelRun | undefined, outcome: () => AcceptOutcome) => {
@@ -116,6 +118,21 @@ function play(model: RunModel, steps: readonly Step[]): void {
         if (run !== undefined) {
           const created = model.createRerun(run.id);
           count('refused' in created ? `rerun:${created.refused}` : 'rerun:created');
+        }
+        break;
+      }
+      case 'pair': {
+        const run = choose(
+          model.runs.filter((candidate) => candidate.status === 'complete'),
+          next.pick,
+        );
+        for (let made = 0; run !== undefined && made < 2; made += 1) {
+          const created = model.createRerun(run.id);
+          count('refused' in created ? `rerun:${created.refused}` : 'rerun:created');
+          if ('created' in created) {
+            model.price(created.created);
+            checkStep(model, null);
+          }
         }
         break;
       }
@@ -229,26 +246,77 @@ function play(model: RunModel, steps: readonly Step[]): void {
 // its own bound rather than the unit project's five-second default (the CI run of c637dfd stopped one at 5 s).
 const PROPERTY_TIMEOUT_MS = 60_000;
 
+/** Every outcome the rule and the steps around it can give. */
+const OUTCOMES = [
+  'accept:accepted',
+  'accept:superseded',
+  'accept:newer_run_pending',
+  'accept:changed_meanwhile',
+  'rerun:created',
+  'rerun:not_in_effect',
+  'rerun:newer_run_pending',
+  'read:read',
+  'read:restarted',
+] as const;
+
+/**
+ * One sequence that reaches every outcome, played first as the property's example, so each invariant is checked under
+ * each outcome on every run whatever the random sequences reach: two re-runs of a February run raced (accepted, then
+ * changed_meanwhile), a third re-run of that run, no longer in effect (not_in_effect), a quarter run re-run while a
+ * February first run is queued and then running (newer_run_pending twice), the February run read (read) and committed,
+ * the quarter's re-run then accepted (superseded), and a March and an April run begun in order and read in reverse
+ * (read, then restarted).
+ */
+const EVERY_OUTCOME: readonly Step[] = [
+  { kind: 'load', month: 1 },
+  { kind: 'first', from: 1, months: 1 },
+  { kind: 'price', pick: 0 },
+  { kind: 'rerun', pick: 0 },
+  { kind: 'price', pick: 0 },
+  { kind: 'rerun', pick: 0 },
+  { kind: 'price', pick: 0 },
+  { kind: 'race', first: 1, second: 0 },
+  { kind: 'rerun', pick: 0 },
+  { kind: 'first', from: 0, months: 3 },
+  { kind: 'price', pick: 0 },
+  { kind: 'rerun', pick: 3 },
+  { kind: 'price', pick: 0 },
+  { kind: 'first', from: 1, months: 1 },
+  { kind: 'rerun', pick: 3 },
+  { kind: 'start', pick: 0 },
+  { kind: 'accept', pick: 2 },
+  { kind: 'begin', pick: 0 },
+  { kind: 'read', pick: 0 },
+  { kind: 'commit' },
+  { kind: 'accept', pick: 2 },
+  { kind: 'first', from: 2, months: 1 },
+  { kind: 'first', from: 3, months: 1 },
+  { kind: 'start', pick: 0 },
+  { kind: 'start', pick: 0 },
+  { kind: 'begin', pick: 0 },
+  { kind: 'begin', pick: 0 },
+  { kind: 'read', pick: 1 },
+  { kind: 'commit' },
+  { kind: 'read', pick: 0 },
+  { kind: 'read', pick: 0 },
+  { kind: 'commit' },
+];
+
 describe('PRC-25 to PRC-28: the acceptance rule over random sequences of runs, lines, releases and acceptances', () => {
   it('keeps every priced line in effect, never regresses one, leaves an accepted re-run in effect and accepts a freshest re-run', () => {
+    const example = new Map<string, number>();
     fc.assert(
       fc.property(fc.array(step, { minLength: 20, maxLength: 80 }), (steps) => {
-        play(new RunModel(), steps);
+        play(new RunModel(), steps, steps === EVERY_OUTCOME ? example : seen);
       }),
-      { numRuns: 3_000 },
+      { numRuns: 3_000, examples: [[EVERY_OUTCOME]] },
     );
-    // The sequences reached every outcome the rule can give, so none of the invariants held vacuously.
-    for (const outcome of [
-      'accept:accepted',
-      'accept:superseded',
-      'accept:newer_run_pending',
-      'accept:changed_meanwhile',
-      'rerun:created',
-      'rerun:not_in_effect',
-      'rerun:newer_run_pending',
-      'read:read',
-      'read:restarted',
-    ]) {
+    // The example reached every outcome, so no invariant holds vacuously on any run; and so did the random sequences.
+    // Measured over 30 seeds of 3,000 sequences, each outcome is reached 28 times or more (changed_meanwhile 32 to 62
+    // times, through the pair step; 0 to 6 times without it, which once failed this check), so a random run that
+    // reaches one no time at all is a change to the steps, not chance.
+    for (const outcome of OUTCOMES) {
+      expect(example.get(outcome) ?? 0, `${outcome} in the example among ${JSON.stringify([...example])}`).toBeGreaterThan(0);
       expect(seen.get(outcome) ?? 0, `${outcome} among ${JSON.stringify([...seen])}`).toBeGreaterThan(0);
     }
   }, PROPERTY_TIMEOUT_MS);

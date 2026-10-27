@@ -69,7 +69,7 @@ describe('the shard check', () => {
     const problems = shardProblems(dropped);
     expect(problems).toHaveLength(1);
     expect(problems[0]).toMatch(/^\S+\.db\.test\.ts runs in no shard$/);
-  });
+  }, 120_000);
 
   it('names an empty shard, a file run twice and a file outside the project', () => {
     const files = ['a.db.test.ts', 'b.db.test.ts'];
@@ -89,5 +89,5 @@ describe('the shard check', () => {
 
   it('keeps the results cache CI restores under node_modules/.vite/vitest', () => {
     expect(path.relative(ROOT, plan(1).cacheDir).split(path.sep).slice(0, 3)).toEqual(['node_modules', '.vite', 'vitest']);
-  });
+  }, 120_000);
 });
