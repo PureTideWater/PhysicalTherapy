@@ -1,5 +1,12 @@
 # Status: every table scrolls by keyboard and shows that it scrolls; phones get one stacked-row layout (`co-001/ux-table-scroll`)
 
+## Resume at 14:05 UTC (written 2026-10-27 02:10 UTC; the orchestrator's hold until the weekly reset at 14:00 UTC)
+- **Branch heads:** `co-001/ux-table-scroll` pushed at e908c21 (the base, no commits yet). `claude/build-platform` e908c21.
+- **Running at the hold:** the design workflow wf_76fa3626-8c5 (script `workflow-scripts/lane-b-ux-table-scroll-design-wf_76fa3626-8c5.js`). Scouts done (notes in `approval-summaries/lane-b-ux-table-scroll-wip/design/`); the author was writing `designs/lane-b-ux-table-scroll.md`; the reviewer had not started. This entry is updated when it finishes.
+- **To continue in this session:** the check-in at 14:05 (trig_014JmG4RLDV8nbmCHPYPkTCM) re-runs `/tmp/setup-container.sh` (storage.googleapis.com is now allowed, so Playwright's Chromium should lay out), then resumes wf_76fa3626-8c5 with resumeFromRunId if it was stopped, else takes "Next" below.
+- **From GitHub alone (container gone):** cut the worktree from `origin/co-001/ux-table-scroll`; copy the wip notes to a scratchpad `design/`, rewrite the script's `SP` constant, and re-run the design workflow (its scouts' notes let the author start at once; each agent continues from its progress file in `wip/progress/`). If `designs/lane-b-ux-table-scroll.md` exists on claude/build-ops, run only the review agent.
+- **Next:** fold the design review into the design ("After the design review" section), then the build workflow.
+
 The UX review's PR 3 (UX-011 / C-002; UX-079 / C-043 part (a)). Run as a Lane B item by a parallel session (https://claude.ai/code/session_019VghcxKzP9LAj3WK8k6u1D), started by Lane A's orchestrator (session_01TrKDxeLbxVo7t7zwRXFzrg) on 2026-10-27. Follow-on in the same session after this merges: PR 4, `co-001/ux-screening-result-tables` (status `lane-b-ux-screening-result-tables-status.md`).
 
 - **Reserved:** ADR 0078 if the design needs one (shared with PR 4); test-matrix TBL-01 to TBL-04 (a new series); `packages/synth` cases the same if needed, synth module 17 (TBL).

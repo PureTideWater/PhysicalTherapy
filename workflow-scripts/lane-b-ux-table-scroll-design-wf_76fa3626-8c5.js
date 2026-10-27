@@ -1,0 +1,85 @@
+export const meta = {
+  name: 'lane-b-ux-table-scroll-design',
+  description: 'Design UX PR 3 (ux-table-scroll): three scouts, one author, one adversarial design reviewer',
+  phases: [
+    { title: 'Scout', detail: 'inventory, mechanics, tests and consumers' },
+    { title: 'Design', detail: 'one author writes designs/lane-b-ux-table-scroll.md' },
+    { title: 'Review', detail: 'one adversarial design reviewer' },
+  ],
+}
+const SP = '/tmp/claude-0/-home-user-PhysicalTherapy/13d6f1ba-32aa-5d43-bbf7-78e9ac9db9c8/scratchpad'
+const WT = '/home/user/ux-table-scroll'
+const RULES = `Rules for you:
+- Read-only on code: the worktree ${WT} (branch co-001/ux-table-scroll at claude/build-platform e908c21) and /home/user/ops (claude/build-ops) are for reading. Write only the files your task names (and your progress file). Never run git add, commit, push, checkout, reset or stash anywhere.
+- Every shell command starts with: export PATH=/opt/node24/bin:/opt/py312-ci/bin:$PATH. Heavy commands (install, build, typecheck, tests, Playwright) only under flock /tmp/laneb-heavy.lock <command>; prefer reading over running.
+- Synthetic data only. No model name or identifier in any file you write.
+- PR #42's files (${SP}/pr42-files.txt) are not to be changed by this PR, except the shared documents (test-matrix, ADRs, the synth registry and matrix). The ux-forms PR (another session, branch origin/co-001/ux-forms at 17bbb70) changes the files in ${SP}/ux-forms-files.txt; five of them are also this PR's; the PR merged second keeps both.
+- The source: /home/user/ops/designs/lane-b-ux-review.md (copy at ${SP}/uxreview.md): §3 "UX PR 3" (line ~204), "### UX-011 (C-002)" (~1781), "### UX-079 (C-043)" (~2997), and /home/user/ops/designs/lane-b-ux-review/synthesis/prs.json order 3. The review's evidence was at 4d99df8; the base is now e908c21 (PRs #49 to #56 and #48 merged since), so re-check every cited line.
+- Improve as you go (the co-founder's standing direction): an improvement inside this item's scope goes into your output; one outside goes in your notes as a proposal.`
+const SAVE = (file, what) => `Save as you go: keep ${SP}/progress/${file} up to date (${what}), so an interruption loses nothing. If it already exists when you start, an earlier run of yours was interrupted: read it, trust what it holds unless the code says otherwise, and continue from where it stopped.`
+
+phase('Scout')
+const scouts = await parallel([
+  () => agent(`You are scout 1 of 3 for the design of UX PR 3 of the PaidWhole build: "Every table scrolls by keyboard and shows that it scrolls, and phones get one stacked-row layout".
+${RULES}
+${SAVE('scout-inventory.md', 'the sites done so far')}
+Task: an exact inventory, at ${WT}, of every <table> element and every fixed-height or sideways scroll box (overflow-x-auto, overflow-auto, overflow-y-auto with a max-h or h-) in apps/web/src (tsx), and every use of ScrollTable. For each site give: file:line; the route(s) that render it (follow components to their pages); what wraps it today (ScrollTable with its label / a bare overflow div / nothing / a card); whether the table has a caption, aria-label or heading that names it; its columns (count and names) and which carry no link or control (only reachable by scrolling); its kind: working list (a person acts on rows: cases, claims and lines, flagged lines, queues), reference table (agreements, fields, versions), figure table (money lines), or text box (release notes, check problems, cited page, JSON); any long unbroken values (emails, hashes, plan keys, URLs); whether a min-w is set; whether the file is a #42 file (excluded) or an ux-forms file (shared); whether prs.json order 3 lists the file, and any file prs.json missed or lists that no longer has a table. Also note tables that are layout (not data) if any.
+Write the full inventory to ${SP}/design/inventory.md (a table, one row per site, grouped by file) and return a short summary: counts by wrapper and kind, the files prs.json missed or listed wrongly, and the #42 sites left out.`, { label: 'scout-inventory', phase: 'Scout' }),
+  () => agent(`You are scout 2 of 3 for the design of UX PR 3 of the PaidWhole build: "Every table scrolls by keyboard and shows that it scrolls, and phones get one stacked-row layout".
+${RULES}
+${SAVE('scout-mechanics.md', 'the questions answered so far')}
+Task: the mechanics the design must get right, at ${WT}, each with file:line:
+1. apps/web/src/components/scroll-table.tsx today (git log -p on it: what #50 and others added), its tests, every user. What the review asked for vs what already exists (relative, tabIndex, caption, ResizeObserver). Server rendering and hydration: is the tab stop rendered on the server? What happens without script?
+2. The edge-fade cue: is the CSS-only "background-attachment: local" scroll-shadow technique workable here? The CSP (find it: next.config, middleware, headers; is style-src nonce-based, is the style attribute allowed?), Tailwind's version and config (v3 or v4, where tokens live: apps/web/src/app/brand.css, globals), the light and dark tokens (dark is off by founder ruling D9 item 3 but tokens exist), forced-colors mode, prefers-reduced-motion. Does the fade work over a table whose cells have their own backgrounds (zebra rows, sticky headers, tinted status cells)? Alternatives (scroll-driven animations, IntersectionObserver sentinels, a JS class) with browser support, and which is best.
+3. The visible caption wording vs the review ("Scroll sideways for more columns" below sm while it overflows) vs today's ("More columns to the right: scroll the table sideways."); copy rules (.claude/rules/brand.md, docs/brand/BRAND.md, apps/web/src/lib/copy/words.ts, tools/brand-copy scan and its COPY_ROOTS); is aria-hidden right given the region name says "scrolls sideways"; should the region's name change when it fits (the tab stop drops; does the name still claim it scrolls)?
+4. ADR 0056 (docs/adr/0056-*.md) lines ~45-60 on tables and phone width; whether this PR needs ADR 0078 or a dated amendment to 0056 (how amendments are written in this repo: find one), and what it would record.
+5. Existing stacked layouts to learn from: apps/web/src/app/p/[practiceId]/cases/[caseId]/page.tsx (~160-172), components/pricing/location.tsx (~13-14, the min-w pattern), any dl/definition-list styles, the Money/figure components (components/format.ts, money display, mono face), the brand's expected-paid-short order (docs/brand/BRAND.md ~123-124, .claude/rules/brand.md ~36-37), status chips (text on tint). The breakpoint convention (sm = 640px?) and how the shell's layout constrains width.
+6. A guard that every <table> in apps/web sits inside ScrollTable or the stacked layout: how existing structural lint/render guards are written here (eslint custom rules? a vitest that scans files, e.g. tools/ or apps/web/src/**/*.test.ts that greps sources), and which is most robust (a source scan can be fooled by a component that renders a table passed elsewhere).
+Write the findings to ${SP}/design/mechanics.md and return a summary with your recommendations.`, { label: 'scout-mechanics', phase: 'Scout' }),
+  () => agent(`You are scout 3 of 3 for the design of UX PR 3 of the PaidWhole build: "Every table scrolls by keyboard and shows that it scrolls, and phones get one stacked-row layout".
+${RULES}
+${SAVE('scout-tests.md', 'the questions answered so far')}
+Task, at ${WT}, each with file:line:
+1. The e2e infrastructure: apps/web/e2e/a11y.ts (atPhoneWidth, its axe call, what it asserts: no page wider than the viewport?), apps/web/e2e/layout-1280.spec.ts, helpers.ts, journeys.ts, prepare.ts, how specs sign in as personas and reach routes, the seed (pnpm db:seed, apps/web/scripts/synthetic-personas.ts). For each route in UX-011's route list (the review, ### UX-011), which existing spec or the seed puts rows in its wide table, so a new phone-width pass sees the table populated and overflowing; which routes no spec reaches. How long e2e takes in CI and how many tests (CI totals at e908c21's push run: read .github/workflows and any approval-summaries/lane-b-*-verify.md on /home/user/ops for the counts, e.g. e2e 54). Which e2e files are #42's (excluded: env.ts, prepare.ts, screening.spec.ts, screening.ts, mail*.ts).
+2. Unit tests for components: how existing .test.tsx files render (react-dom/server renderToString? @testing-library/react with jsdom or happy-dom? find the vitest config for apps/web), so scroll-table.test.tsx can check the server-rendered tab stop and the ResizeObserver behaviour.
+3. Test-matrix and synth conventions: docs/product/test-matrix.md row format; packages/synth/src/cases/registry.ts, matrix.ts, common.ts MODULE_NUMBER (17 is reserved for TBL), what a no-file entry looks like (find FRM or BIL or DBF entries), and the fixtures test that needs one entry per matrix row (packages/synth/src/fixtures.test.ts ~36). Draft TBL-01 to TBL-04 rows fitting the four tests prs.json order 3 names.
+4. The consumers of the stacked-row primitive this PR adds, so its API serves them: UX PR 4 (prs.json order 4; ### UX-005, UX-040, UX-042, UX-043, UX-132, UX-206 in the review; apps/web/src/components/screening/anomalies.tsx and coverage.tsx: their columns, figures, statuses) and UX PR 34 (prs.json order 34; ### UX-078 (C-034); Cases, Claims and lines, the anomaly's flagged lines, the console record pages with forms in rows), and UX PR 85's stacked reference. List what each needs: a heading (link?), a definition list of label/value (mono figures, the brand order), a status on tint, a row's actions or a form, an empty state, sorting, a caption; whether the stacked view should be rendered from the same row data as the table (one source) or be a separate component; and server vs client.
+Write the findings to ${SP}/design/tests-consumers.md and return a summary.`, { label: 'scout-tests', phase: 'Scout' }),
+])
+log('scouts done: ' + scouts.map(s => (s ? 'ok' : 'null')).join(', '))
+
+phase('Design')
+const design = await agent(`You are the design author for UX PR 3 of the PaidWhole build, branch co-001/ux-table-scroll: "Every table scrolls by keyboard and shows that it scrolls, and phones get one stacked-row layout" (UX-011 / C-002; UX-079 / C-043 part (a): the scroll cue in ScrollTable, and the one stacked-row primitive that parts (b) and (c), UX-005 and UX-078 use).
+${RULES}
+${SAVE('design-author.md', 'the sections written so far')}
+Read first: the three scouts' reports, ${SP}/design/inventory.md, ${SP}/design/mechanics.md, ${SP}/design/tests-consumers.md; then the review's entries named above; then the code at ${WT}. Earlier Lane B designs to match in form: /home/user/ops/designs/lane-b-ux-suspended-standing.md and /home/user/ops/designs/lane-b-ux-forms.md.
+Write the design to /home/user/ops/designs/lane-b-ux-table-scroll.md (the only file you write besides progress). The founder's standing rule: recommend and build only the best option, never weighted by build effort, judged on accuracy, quality, user experience, accessibility, security and privacy, reliability, maintainability. Take the recommended option on every choice and record its reasons; wording and visible changes are applied within .claude/rules/brand.md and CO-11 (no asking).
+It must cover, concretely enough that builders work from it alone:
+1. Scope: what closes (UX-011's non-#42 sites, UX-079 part (a)); exactly which sites change (every site from the inventory, by file:line, with its ScrollTable label, or its text-box region name, or why it is left out: #42 files, layout tables); the files list, corrected against prs.json order 3 (note additions and removals); what is left for UX PRs 4, 34, 74 to 76 and 85.
+2. ScrollTable's behaviour, final: the region and its name (always, or only while it overflows?), the server-rendered tab stop and when it drops, the edge-fade cue (technique, token colours light and dark, forced-colors, works over cell backgrounds and sticky headers, no style attribute under the CSP), the visible caption (words, when shown, sm breakpoint, aria), relative containment, min-w per table (the location.tsx pattern) and overflow-wrap on long values; the props API (label required; maybe a minWidth class or caption override); a ScrollBox variant (or the same component) for the fixed-height text boxes with names like 'Release notes, scrolls'.
+3. The stacked-row primitive (apps/web/src/components/stacked-rows.tsx): API, markup (each row a heading, a definition list and its actions; the brand's expected, paid, short order kept), how it pairs with a table at sm and up (one data source rendering both, CSS-switched, or a separate list), server component or client, how PR 4 and PR 34 use it (show their call shape), and whether this PR adopts it at any site now (decide: a primitive with no user is untested in the product; if you adopt it, name where and why; if not, say why the unit test suffices and which PR is its first user).
+4. The guard that every <table> in apps/web/src sits inside ScrollTable or the stacked primitive, with its exemptions (#42 files, listed, so UX PRs 74 to 76 remove them), and where it runs.
+5. Tests: TBL-01 to TBL-04 (test-matrix rows drafted in the repo's format; synth no-file entries in module 17 if the fixtures test needs them), the unit tests (scroll-table.test.tsx, stacked-rows.test.tsx), the e2e phone-width pass over the changed routes (which spec, which routes, how they are populated; no #42 e2e file edited), axe at 390 px on every changed route, layout-1280; the expected change in test counts.
+6. ADR: whether ADR 0078 is needed or a dated amendment to ADR 0056 suffices (it is shared with PR 4); write its text in the design if needed.
+7. No migration (confirm). Overlaps: #42 (none edited) and ux-forms' five shared files (rule 6); what the PR description must say.
+8. The before and after screenshots the UX and brand review needs (routes and states at 1280 light, 390 light, 1280 dark), and the second adversarial review's lens (recommend one: correctness and accessibility of the component and its rollout, or another).
+9. Build slices for builders (workflow agents) that do not collide (by file), and the order (component and tests first).
+10. Risks and open points, each with the recommended answer.
+Return a summary of the design and its key decisions.`, { label: 'design-author', phase: 'Design' })
+
+phase('Review')
+const SCHEMA = { type: 'object', properties: { verdict: { type: 'string', enum: ['build as designed', 'build with changes', 'redesign'] }, needsMigration: { type: 'boolean' }, findings: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, severity: { type: 'string', enum: ['blocking', 'should-fix', 'nit'] }, area: { type: 'string' }, claim: { type: 'string' }, fix: { type: 'string' } }, required: ['id', 'severity', 'area', 'claim', 'fix'] } }, summary: { type: 'string' } }, required: ['verdict', 'needsMigration', 'findings', 'summary'] }
+const review = await agent(`You are the one adversarial design reviewer for UX PR 3 of the PaidWhole build (co-001/ux-table-scroll). Read-only: write nothing but your progress file.
+${RULES}
+${SAVE('design-review.md', 'the findings so far')}
+The design: /home/user/ops/designs/lane-b-ux-table-scroll.md. Its scouts' notes: ${SP}/design/*.md. The code: ${WT} at e908c21. The reviewer checklist that will judge the built PR: ${WT}/.claude/agents/ux-brand-reviewer.md.
+Try to break it, citing file:line:
+1. Coverage: run your own search for every <table>, overflow scroller and fixed-height text box in apps/web/src; is any site missed, mis-classified, or wrongly left out? Is any #42 file edited?
+2. ScrollTable: does the behaviour satisfy WCAG 2.1.1 (axe scrollable-region-focusable) on first paint without script, 1.4.10 reflow, 4.1.2, 2.4.7 focus visible, 1.4.11 contrast of the cue, forced-colors? Hydration mismatch risks (tabIndex differing between server and client)? Does the edge fade actually render over the repo's table cell backgrounds and in dark tokens, under the CSP? Is the caption's text and aria right, and true when the table fits?
+3. The stacked-row primitive: does its API really serve UX PR 4's screening tables and UX PR 34's working lists and console rows with forms (read their review entries)? Does duplicating content (table plus stacked list) cause duplicate IDs, duplicate form controls, double announcements, or test selectors matching twice? Is the brand order enforced or only documented?
+4. The guard: can it be fooled; are its exemptions exact and self-removing?
+5. Tests: are TBL-01 to TBL-04 real, do the e2e routes actually show an overflowing table in the states the specs create, is the e2e time added reasonable, are the matrix and synth conventions followed?
+6. Copy and brand: the visible words against .claude/rules/brand.md and the copy lint.
+7. Is any part a migration, a frozen-code change, or a founder matter?
+Return the verdict, whether a migration is needed, and findings with exact design fixes.`, { label: 'design-review', phase: 'Review', schema: SCHEMA })
+return { scouts, design, review }
