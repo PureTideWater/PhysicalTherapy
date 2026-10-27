@@ -1,0 +1,343 @@
+{
+ "pr": 79,
+ "head": "35b14cd5",
+ "correctness_and_accessibility": {
+  "verdict": "merge after fixes",
+  "summary": "Nothing blocking. The state machine in scroll-table.tsx held up in a real Chromium harness: I bundled the actual component with esbuild, ran it on React 19.3.1 in dev mode with StrictMode, and hydrated it over server-rendered markup. There were no hydration warnings, no ResizeObserver loop errors and no console errors. These all worked: DR-01 and DR-06, swapping in a re-keyed child, display:none to visible, a cell's text growing, scroll edges coalesced per frame, and unmount. Across 325 fractional widths, device scale 0.67 to 3 and CSS zoom 1.1 to 1.75, no table was falsely marked as overflowing. Inside a closed <details>, the state goes stale after a resize but corrects itself when the disclosure opens. The CSS has only tokens, no style writes and no hex. All 83 labels match their table's own name, and every min-w is in the allowed set. The guard is exact on #42's three files and runs in the unit job, and nothing breaks #42 or the screening closure. Four should-fix items. (1) The scroller clips the global focus outline of links in the first and last columns, on about 56 tables that are newly wrapped; I checked an inset-outline fix in the harness. (2) \"Entries of the line, scrolls sideways\" repeats, one region per line, on the reconciliation page and the specialist ledger page. (3) StackedRows' <ul> has no role=\"list\", so Safari and VoiceOver drop the list and its name; VoiceOver on iOS is exactly the phone audience. (4) TBL-01 claims a visible frame focus outline and edge fades that only show where content lies past an edge, but no browser test checks either. Four nits.",
+  "findings": [
+   {
+    "id": "F1",
+    "severity": "should-fix",
+    "file": "apps/web/src/app/brand.css",
+    "line": 87,
+    "claim": "The scroller (scroll-table.tsx:229, overflow-x-auto) clips the global :focus-visible outline (brand.css:52-55, 2px with offset 2px) of any link or control flush with the table's inline edges. In first-column links (cells with no left padding, e.g. claims/page.tsx:164 'py-2 pr-2') the left side of the ring is cut off; in last-column links with no right padding, the right side. This regresses the ~56 tables that had no scroller before.",
+    "scenario": "Claims and lines at 1280, billing manager: Tab to the first patient link (the same link layout-1280.spec.ts's DR-01 step focuses). The ring has no left edge: compare harness/zoom-in-scroller.png with harness/zoom-no-scroller.png (same link, scroller set to overflow visible). tabTo's 'visible' check only reads outlineStyle, so it still passes.",
+    "fix": "In brand.css, after line 87, add `.pw-scroll-frame > [data-scroller] :focus-visible { outline-offset: -2px; }` so focusables inside a scroller draw their ring inside their own box. Verified in Chromium: harness/fix-inset-outline.png shows all four sides; the region's own frame outline (lines 103-107) is unchanged. Optionally assert it in the F4 step.",
+    "shots": [
+     "<scratchpad>/review-correctness/harness/zoom-in-scroller.png",
+     "<scratchpad>/review-correctness/harness/zoom-no-scroller.png",
+     "<scratchpad>/review-correctness/harness/fix-inset-outline.png"
+    ]
+   },
+   {
+    "id": "F2",
+    "severity": "should-fix",
+    "file": "apps/web/src/app/p/[practiceId]/reconciliation/page.tsx",
+    "line": 211,
+    "claim": "One page renders many regions with the same name. Each case line's EntryTable has label=\"Entries of the line\" (ScrollTable at :145), and so does each shortfall's Entries on the specialist ledger (abstraction/ledger/page.tsx:145, ScrollTable at :49). At a phone's width every one becomes a landmark region named \"Entries of the line, scrolls sideways\". Before this PR the reconciliation tables sat in bare overflow divs and the ledger's had no region at all. DR-16 fixed repeated names in models and contracts but missed these two.",
+    "scenario": "/p/<id>/reconciliation at 390 with 3 linked case lines: a screen reader's landmarks list shows three identical 'Entries of the line, scrolls sideways' regions with nothing to tell them apart. axe's landmark-unique would flag it, but atPhoneWidth runs only the wcag2a/aa tags, so the suite passes.",
+    "fix": "Pass each item's 1-based position and use it in the label, matching visible text. In LinkageItem, show 'Case line N' in the header span and pass label={`Entries of case line ${n}`}. In the ledger shortfalls map, pass label={`Entries of shortfall ${n}`}. The AdjustForm idPrefix (`label === 'Ledger entries' ? 'ledger' : 'shortfall'`) still works. Better still, have tables.test.ts or a unit test reject a literal ScrollTable label passed inside .map."
+   },
+   {
+    "id": "F3",
+    "severity": "should-fix",
+    "file": "apps/web/src/components/stacked-rows.tsx",
+    "line": 120,
+    "claim": "The stacked list is a <ul> styled 'flex flex-col gap-3', and Tailwind's preflight sets list-style:none on it. WebKit (Safari, iOS VoiceOver) then stops exposing a list-style:none list as a list unless it has role=\"list\", so the list's role, item count and its aria-label or aria-labelledby name are lost. VoiceOver on iOS is the very phone audience this primitive exists for (UX-079 (c)), and UX PR 4 and UX PR 34 inherit the problem.",
+    "scenario": "UX PR 4 renders the screening anomalies as StackedRows labelledBy=\"screening-anomalies\". On an iPhone, VoiceOver reads the rows as loose headings and definition lists, with no 'list, 8 items' and no 'Anomalies by code and payer product'.",
+    "fix": "Add role=\"list\" to the <ul> at stacked-rows.tsx:120. jsx-a11y's no-redundant-roles may need an inline disable with this reason. Update stacked-rows.test.tsx:86, :90 and :229 to expect it."
+   },
+   {
+    "id": "F4",
+    "severity": "should-fix",
+    "file": "apps/web/e2e/tables-phone.spec.ts",
+    "line": 147,
+    "claim": "TBL-01 (docs/product/test-matrix.md:319) claims 'a visible focus outline' and 'edge fades show only at an edge with content past it'. No browser test proves either. scroll-table.test.tsx only checks that the markup has no outline-none (:55-61) and checks frameData as a pure function (:141-148). No e2e focuses a region by keyboard and reads the frame's outline, or scrolls a region and reads data-edge-start/data-edge-end or the ::before/::after opacity. A broken :has() rule, or a scroll listener that stops updating the edges, would pass the whole suite.",
+    "scenario": "Delete the @supports :has block in brand.css (lines 102-108), or make the scroll listener a no-op. Every unit test and e2e test still passes, while TBL-01 still reads as proved.",
+    "fix": "In tables-phone test 1, after atRoute(page, at('/cases'), 'cases', ['Cases']), add a step at 390 px. Tab until document.activeElement is the 'Cases, scrolls sideways' region, then assert getComputedStyle(region.parentElement).outlineStyle === 'solid' and outlineWidth === '2px'. Assert the holder has data-edge-end and no data-edge-start, and that getComputedStyle(frame,'::after').opacity is '1' and ::before is '0'. Press End (or set scrollLeft to scrollWidth), then poll for data-edge-start present and data-edge-end absent, with ::before at '1'. Optionally press ArrowRight from the start and check that scrollLeft grows (arrow keys scroll it)."
+   },
+   {
+    "id": "N1",
+    "severity": "nit",
+    "file": "apps/web/src/app/brand.css",
+    "line": 78,
+    "claim": "The fades are placed with logical properties (inset-inline-start/end) but painted with physical gradients ('to right', 'to left'). In dir=rtl each fade is reversed: transparent at the edge, solid surface toward the content.",
+    "scenario": "An RTL container: the end fade sits at the left edge with its solid colour on its inner side, banding the content instead of fading it (harness/rtl.png). The app has no RTL page today.",
+    "fix": "Add `:dir(rtl) > .pw-scroll-frame::before { background: linear-gradient(to left, \u2026) }` and the mirrored ::after rule, or a one-line comment that the fades assume LTR.",
+    "shots": [
+     "<scratchpad>/review-correctness/harness/rtl.png"
+    ]
+   },
+   {
+    "id": "N2",
+    "severity": "nit",
+    "file": "apps/web/src/components/scroll-table.tsx",
+    "line": 187,
+    "claim": "The mount effect depends only on [axis]. If the scroller element is replaced while the component stays mounted (ScrollBox's `as` changing from pre to div remounts Box), the ref callback updates scroller.current, but the observers and the scroll listener stay on the detached element and the state stops updating. Every caller passes a literal `as` today, so this is latent.",
+    "scenario": "<ScrollBox as={wide ? 'div' : 'pre'}>: after the toggle the new box never measures, so it can overflow with no tab stop.",
+    "fix": "Keep the node in state (`const [node, setNode] = useState<HTMLElement | null>(null)`; ref={setNode}) and run the effect on [axis, node]. Or make `as` part of a key on ScrollBox's frame."
+   },
+   {
+    "id": "N3",
+    "severity": "nit",
+    "file": "apps/web/src/components/stacked-rows.tsx",
+    "line": 75,
+    "claim": "Only undefined and null skip the actions box. A caller's `actions: canAct && <ActionForm\u2026/>` that evaluates to false (or '') renders an empty 'mt-3 flex' div, adding 12 px of stray space to the card.",
+    "scenario": "UX PR 34's console rows pass `actions: canEdit && <Form/>` for a read-only viewer, and each card gets an empty trailing gap.",
+    "fix": "Treat false and '' as no actions: `row.actions === undefined || row.actions === null || row.actions === false || row.actions === ''`. Or narrow the type to `ReactElement | readonly ReactElement[]`."
+   },
+   {
+    "id": "N4",
+    "severity": "nit",
+    "file": "apps/web/e2e/tables-phone.spec.ts",
+    "line": 200,
+    "claim": "DR-09 says one persona per test, but test 1 signs in 'other-admin' (JOURNEY_PRACTICE_ADMIN), which packets.spec.ts:193 also signs in. Under fullyParallel, two sign-ins in the same 30 s TOTP window can be refused as a replay. signInWithTotp's retry with the next window (helpers.ts:55-58) mostly covers this, so the flake risk is low but not zero.",
+    "scenario": "packets.spec and tables-phone start on two workers within the same 30 s. One TOTP code is refused, the retry uses the next window, and under load the retry can land on the other test's next code.",
+    "fix": "Give the tour practice a sixth tables persona as its administrator (e.g. 'tables-practice-admin') in tourPractice's options, or leave a comment that the retry is the mitigation."
+   }
+  ],
+  "checked": [
+   "Resumed from the progress file; the clone is at 35b14cd5 and clean; the lock was free; port 3297 was not in use. Unit tests from run 1 still stand: 33 files, 420 tests passed (components/, tables.test, type-scale, tools/screening-capacity).",
+   "State machine in a real Chromium harness (review-correctness/react-harness: the actual scroll-table.tsx bundled with esbuild, React 19.3.1 in dev mode, StrictMode hydrateRoot over renderToString output): no hydration mismatch warning, no 'ResizeObserver loop' error, no console error; DR-06 (server region focused before hydration while the table fits keeps role and tabindex; Tab out removes them); DR-01 (focus on a link inside a fitting table brings back nothing); re-keyed child swap narrow->wide->narrow (MutationObserver plus ResizeObserver); display:none -> block; cell text growing (subtree/characterData); scroll start, middle and end edges coalesced through rAF; unmount clean.",
+   "No re-render or ResizeObserver loop by construction: the caption changes only the holder's height, role/tabindex attribute changes are not observed (attributes is not in the MutationObserver options), and the scrollbar and caption cases settle with hysteresis.",
+   "1 px threshold: 325 fractional container widths x deviceScaleFactor 0.67, 0.8, 0.9, 1, 1.1, 1.25, 1.333, 1.5, 1.75, 2, 2.5, 3 and CSS zoom 1.1 to 1.75: no fitting table ever read 'overflows' (zoom-harness/out.txt).",
+   "Closed <details> (details-harness): ScrollTable and ScrollBox states go stale while closed after a 1280<->390 resize (Chromium's content-visibility: hidden) and correct themselves on open through the ResizeObserver; a11y.ts's checkVisibility() skip is justified.",
+   "RTL logic: Math.abs on scrollLeft is correct; only the gradient direction is wrong (N1).",
+   "CSS: a grep of the diff found no style=, .style, setProperty or CSSOM writes and no hex; tokens only (--pw-focus, --pw-bg, --pw-bg-raised, --pw-radius-sm); isolation:isolate with fades at z-index 2 sits above chip tints and below the z-30 header and z-40 menus; the :has() outline sits under @supports, and without :has the global :focus-visible applies; forced colours hide the fades and keep the outline; reduced motion is respected; the generated Tailwind output contains @container, @min-[24..54rem], the status-chip whitespace override (specificity 0,2,0) and wrap-anywhere.",
+   "Rollout: 83 ScrollTables; each label equals its table's aria-label or aria-labelledby target; every min-w is 32/36/40/48/54rem; at 1280 the content column is 959 px (909 inside a card), and the only grid-half site is contracts/review.tsx, whose min-w was dropped (that builder deviation is sound); the rate-record table fits at 390.",
+   "Hunk comparison (hunks.txt, run 1): no data-*, id, key, aria or text lost in the 56 page and component files; sr-only Actions headers added; flex <td> moved to an inner div.",
+   "All 63 wrap-anywhere sites are emails, keys, paths, control numbers, hashes or free text, matching design 1.4; none is on a money figure or a date.",
+   "Builder deviations judged sound: scroll-state functions inlined into scroll-table.tsx so the screening import closure (watched-paths.txt) is unchanged; Fields of rate record without min-w; data-stacked-figure (data-figure is a strict spec hook); repeatedIds compares across the two copies only (better than the design's any-repeat rule); ScrollBox wraps on both variants (needed: it measures the block axis only); role-dependent remittance widths.",
+   "Guard tables.test.ts: runs in the vitest unit project; no @/ alias, no .js/.jsx files under src, no package-provided <table>, no innerHTML or markdown renderer; a fragment child and a one-line whitespace child are flagged (matching React); a local component named ScrollTable, a type-only import and another module's ScrollTable are all flagged; the three #42 exemptions match 1/2/1 bare tables exactly.",
+   "Locators: re-ran the DR-02 substring check on head (20 hits, all on other routes or scoped); 190 non-exact getByLabel calls checked against the new aria-labels (all scoped to forms or on other routes); the only unnamed region count (era-exports:193) has no table in its section.",
+   "#42 (098636e3): no file of #42's is edited except the agreed shared test documents; its mail page's ScrollTable is a direct child; its specs do not read the old caption text, data-scroll=\"anomalies\" or the screening tables' region names (table names are unchanged through aria-labelledby); the substring check on #42's e2e finds hits only in specs this PR also edits.",
+   "Screening-capacity: the watched paths this PR changes are scroll-table.tsx, screening/anomalies.tsx, screening/coverage.tsx and the synth files, so the gate will run; the import closure itself is unchanged.",
+   "a11y.ts: the scroller-agreement poll runs before axe; streamed hidden empty tables are skipped; cutOff uses exact table names and only visible tables; viewport restored in finally.",
+   "atPhoneWidth coverage: every changed route except console Drafts (no content root in e2e, acknowledged) is visited by tables-phone or a one-line call.",
+   "StackedRows: its API matches design section 12; brandOrderProblems; repeatedIds parser (React escapes > and \" in attributes); heading levels 2 to 4; wrapper '@container w-full min-w-0'; literal container classes generated; the hidden table copy measures as fitting and becomes a region again when shown."
+  ],
+  "notSeen": [
+   "No Playwright e2e spec was run in this review; I relied on the builders' green runs at 35b14cd5 and on my own harnesses.",
+   "Only Chromium was used: no WebKit or Firefox run, and no real VoiceOver or NVDA session (F3 rests on documented WebKit behaviour).",
+   "Classic, non-overlay scrollbars were not exercised (headless Chromium hides them), so the scrollbar-and-caption hysteresis rests on reasoning, not a run.",
+   "Layout shift from the caption appearing after hydration at phone width was not measured.",
+   "Every one of the 73 hunks was not re-read by hand in this run; the scripted comparison from run 1 (hunks.txt) covers attributes, ids, keys and texts.",
+   "The PR description, ADR 0078's full text and the screening-capacity gate's CI behaviour on this PR were not reviewed."
+  ],
+  "proposals": [
+   "ADR 0078's 'renders twice' rule: tell consumer specs that component-part hooks repeatedIds deliberately exempts (data-slot, data-tone) will match both copies, and `.first()` picks the hidden table copy because it comes first in the DOM. screening.spec.ts:469 (`[data-section=\"anomalies\"] [data-slot=\"status-chip\"]`.first().toBeVisible()) fails at 390 once UX PR 4 pairs that table. Scope such locators to [data-stacked-copy] or use :visible.",
+   "Enable axe's best-practice rule landmark-unique in atPhoneWidth (withRules or an extra tag). It would have caught F2, and every overflowing ScrollTable is now a landmark.",
+   "Make tools/screening-capacity/watched.ts follow CSS @import from globals.css. brand.css, which this PR changes, reaches the screening page but is not watched.",
+   "models/display.tsx names each table 'Proposed fields of proposal P, candidate N', but P appears nowhere visible on the proposal card. Show the number in the card title (builder C's proposal) so the region name matches what a sighted user sees.",
+   "In tables.test.ts, flag a literal ScrollTable label inside an element or component that is rendered from .map (as F2 shows, repeats get through review)."
+  ]
+ },
+ "ux_and_brand": {
+  "verdict": "merge after fixes",
+  "findings": [
+   {
+    "id": "UX-PR79-01",
+    "severity": "should-fix",
+    "file": "apps/web/src/app/p/[practiceId]/claims/page.tsx",
+    "line": 164,
+    "claim": "Putting `wrap-anywhere` on whole table cells lowers each column's min-content to about one character. Auto table layout then narrows those columns, so names, codes and words break mid-token even in tables that fit, including at 1280 px. This replaces UX-011's 'one word per line' with 'part of a word per line' and breaks ADR 0078 Decision 1's rule that no header breaks into more than two lines and no code breaks. Sites seen: claims/page.tsx:164 (patient and claim numbers), components/packets/display.tsx:160 (Line schedule claim), components/contracts/review.tsx:256 and :263 (rate record terms), cases/page.tsx:279 (Owner), console/prospects/page.tsx:69 and :75 (Contact, Payers), contracts/page.tsx:115 (Plans), settings/billing/[organizationId]/page.tsx:149 (Invoice). The same class is on about 45 other cells in the diff.",
+    "scenario": "Claims and lines at 1280 px, a table that fits with no region. Before, the patient link read 'SYNTHLAST2E48HX, SYNTHFIRSTXD6' on two lines. After, it reads 'SYNTHLAST2E4 / 8HX, / SYNTHFIRSTXD / 6', the header 'Patient reference and claim control numbers' takes 4 lines, and the page grows from 3828 to 4888 px. At 390 px inside the 54rem scroller, the claim control numbers split mid-code ('SYNPCNCAS020 / 20', 'SYNCCNCAS020 / 020'), the header takes 5 lines and the page grows from 5 to 8 tiles. In the packet's Line schedule the placeholder reads '{{claim / _ / control / _ / number: / 1}}' at 1280 (6 lines; before 4). The rate record terms a person signs off on read 'modifier/s', 'Medicare/: the fee', 'practice'/s locality', 'qualifyin/g', 'conversi/on factor' and 'reductio/n off' at 390 (before: whole words). Cases' Owner reads 'Unassign/ed' at 1280 and 'Unassig/ned' at 390. Prospects reads 'Syntheti/c Payer One' at 390 and splits the email at '@sy/nthetic.test' at 1280. Contracts' plan key reads 'CE:SYN\u2026/N-COM\u2026' at 390.",
+    "fix": "Give every wrapped column a minimum width, and let a token break only past it. In each table cell this PR gave `wrap-anywhere`, put the value in `<span className=\"block min-w-32 wrap-anywhere\">` (8rem; `min-w-40` for an email column and for the claims patient-and-numbers cell at claims/page.tsx:164), and take the class off the `<td>`. Auto layout then cannot narrow the column below 8 to 10rem, and a token breaks only when it alone is wider than that. Cells that hold sentences of plain words take no `wrap-anywhere` at all and wrap between words: contracts/review.tsx:256's terms, contracts/page.tsx:171's Note, cases' Pattern. `wrap-break-word` alone is not enough: it does not lower min-content, but a long email would then widen Cases or Prospects past its card at 1280. Keep `wrap-anywhere` unfloored only on SHA-256 and UUID spans, in ScrollBox and in StackedRows. Amend ADR 0078 Decision 1's sentence on long values to say this. Add a rule to apps/web/src/app/tables.test.ts that fails on `wrap-anywhere` on a `<td>`/`<th>` without a minimum width. No migration, no freeze exception, no founder or brand-owner decision.",
+    "shots": [
+     "tbl.claims-fits-link-focus-detail.1280",
+     "p.claims.default.1280",
+     "p.claims.default.1280-dark",
+     "p.claims.default.390",
+     "p.packet.default.1280",
+     "p.packet.default.390",
+     "p.contract-version.default.390",
+     "p.cases.default.1280",
+     "tbl.cases-scrolled-end-detail.390",
+     "console.prospects.default.390",
+     "console.prospects.default.1280",
+     "p.contracts.default.390",
+     "settings.billing-org.default.390"
+    ]
+   },
+   {
+    "id": "UX-PR79-02",
+    "severity": "should-fix",
+    "file": "apps/web/src/components/triage/display.tsx",
+    "line": 50,
+    "claim": "Dates and 'N of M' counts still break inside the min-w this PR set. ADR 0078 Decision 1 says the width is chosen so that 'no figure, date or code breaks at all', and the checklist asks for dates whole (baseline). The cause is cells that allow a wrap at the hyphen: the Deadline date span (triage/display.tsx:50, a shrinking flex item), cases/page.tsx:268-270 (Lines), anomalies/page.tsx:76-78 (service date link), settings/billing/[organizationId]/page.tsx:160 (Issued) and console/prospects/page.tsx:77 (Received). The breaks existed at e908c21, but this PR's own width rule claims to end them and does not.",
+    "scenario": "Cases at 1280 px (the table fits): Deadline reads '2036-04- / 05' and Lines reads '3 of / 3'. At 390 px inside the 54rem scroller it reads '2036- / 04-05'. Flagged lines at 390 (48rem): '2026-04- / 04'. Billing invoices at 390 (40rem): '2026-10- / 27'. Audit requests at 1280: '2026-10- / 27 19:16 / UTC'.",
+    "fix": "Add `whitespace-nowrap` to each date and count, as claims/page.tsx:175 already does for its service period. That means the date span at triage/display.tsx:50 (`font-mono tabular-nums whitespace-nowrap`), the Lines td at cases/page.tsx:268, the service-date td at anomalies/page.tsx:76, the Issued td at settings/billing/[organizationId]/page.tsx:160 and the Received td at console/prospects/page.tsx:77. A date-time may wrap between the date and the time, never inside the date: render it as two `whitespace-nowrap` spans. The same rule applies to every other date cell in the tables this PR sized. No migration, no decision needed.",
+    "shots": [
+     "p.cases.default.1280",
+     "tbl.cases-scrolled-middle-detail.390",
+     "p.anomalies.cohort.390",
+     "settings.billing-org.default.390",
+     "console.prospects.default.1280"
+    ]
+   },
+   {
+    "id": "UX-PR79-03",
+    "severity": "should-fix",
+    "file": "apps/web/src/components/stacked-rows.tsx",
+    "line": 49,
+    "claim": "The stacked-row primitive does not fully deliver ADR 0078 Decision 5's 'a status wraps', nor the design's every-dd `min-w-0 wrap-anywhere` (3.3). VALUE releases `whitespace-nowrap` only for `[data-slot=status-chip]`. The app's other status element, Badge (`data-slot=\"badge\"`, `whitespace-nowrap`: CaseStateBadge, the design's own UX PR 34 example), never wraps. MONO (`min-w-0 font-mono tabular-nums`, :51) has no wrap at all, and the type comment says mono is for 'a code, count, key or date', so a UUID, plan key or hash passed as mono runs past a 358 px card. No site uses the primitive yet. UX PR 4 and UX PR 34 would inherit both gaps.",
+    "scenario": "UX PR 34 passes `{ label: 'State', value: <CaseStateBadge state=\"awaiting_response\" /> }` or a long screening status as a Badge, or a document UUID with `mono: true`. At 390 px the badge or key keeps one line and pushes the card, and so the page, past 390 px (WCAG 1.4.10). The harness shot cannot show it because the fixture's status fits.",
+    "fix": "stacked-rows.tsx:49: VALUE = 'min-w-0 wrap-anywhere [&_[data-slot=status-chip]]:whitespace-normal [&_[data-slot=badge]]:whitespace-normal'. stacked-rows.tsx:51: MONO = 'min-w-0 font-mono tabular-nums wrap-anywhere'. In a block dd this breaks only a token wider than the card, never a figure that fits. Update the pins at stacked-rows.test.tsx:111 and :142-146, and add a fixture row with a long Badge status and a 36-character key, asserting both classes. No migration.",
+    "shots": [
+     "tbl.stacked-rows.390",
+     "tbl.stacked-rows.390-dark"
+    ]
+   },
+   {
+    "id": "UX-PR79-04",
+    "severity": "nit",
+    "file": "apps/web/src/components/stacked-rows.tsx",
+    "line": 70,
+    "claim": "On a phone the definition list never goes side by side: the wrapper is under 24rem, so terms always sit over values. The rule `gap-y-1` puts the same 4 px between a term and its value as between one pair and the next term. Seven pairs read as fourteen equally spaced lines, so a value sits as close to the next label as to its own (recommendation: grouping by proximity).",
+    "scenario": "tbl.stacked-rows.390: 'Pattern / Paid below\u2026 / Charge / $150.00 / Expected allowed / $90.00 / Observed allowed / $60.00 / Short / $30.00 \u2026' are all evenly spaced. Telling which figure belongs to which label rests on the muted colour alone.",
+    "fix": "Give each dd `@max-[24rem]:pb-2` in both VALUE and MONO, so the pairs separate only while terms stand over values. Update the stacked-rows.test.tsx pins.",
+    "shots": [
+     "tbl.stacked-rows.390",
+     "tbl.stacked-rows.390-dark"
+    ]
+   },
+   {
+    "id": "UX-PR79-05",
+    "severity": "nit",
+    "file": "apps/web/src/components/models/display.tsx",
+    "line": 91,
+    "claim": "The table name 'Proposed fields of proposal P, candidate N' (DR-16) numbers the proposal, but nothing on the page shows that number. The proposal card's title is 'Proposed <date>' (:165), so a screen reader user hears 'proposal 2' with nothing to match it to except counting cards (recommendation; landmarks named as their titles, WCAG 2.4.6). The builder's own handover raised this.",
+    "scenario": "A contract version with two model proposals. The second proposal's first candidate table is announced 'Proposed fields of proposal 2, candidate 1, scrolls sideways', while the visible card says 'Proposed 2026-10-27 19:14 UTC'.",
+    "fix": "Show the number in the card title at models/display.tsx:165: 'Proposal {position + 1}, proposed {utc(proposal.createdAt)}'. The table name then matches what is seen. Keep the card region's name 'Model proposal' (models.spec.ts reads it exactly). Not seen by sample.",
+    "shots": []
+   },
+   {
+    "id": "UX-PR79-06",
+    "severity": "nit",
+    "file": "apps/web/src/app/p/[practiceId]/claims/page.tsx",
+    "line": 137,
+    "claim": "Claims and lines takes min-w 54rem for every role, though the viewer's table has two fewer columns (no patient, no service date). On remittances/[remittanceId], this PR sized the widths by role (54rem/48rem, 36rem/32rem). The viewer at 390 px now sees only Code, Units and Charge before the fade (before: through Observed allowed), so the brand's expected, paid and short sit behind the cue. The cue is allowed, but the spacing is wider than the columns need.",
+    "scenario": "p.claims.viewer.390: after, 'Code and modifiers' takes about a third of the frame and Expected allowed is under the fade.",
+    "fix": "claims/page.tsx:137: className={`w-full ${list.rows.some((row) => row.identifiers !== null) ? 'min-w-[54rem]' : 'min-w-[48rem]'} text-left text-sm`}, two literal classes as remittances/[remittanceId] does, with its JSDoc reason.",
+    "shots": [
+     "p.claims.viewer.390"
+    ]
+   },
+   {
+    "id": "UX-PR79-07",
+    "severity": "should-fix",
+    "file": "apps/web/src/app/p/[practiceId]/page.tsx",
+    "line": 457,
+    "claim": "Pre-existing, not caused by this PR; listed apart at its own severity. In tables this PR wrapped, a SHA-256 is cut to 12 characters with an ellipsis and its whole value sits only in a hover `title`, which a phone or keyboard cannot reach: p/[practiceId]/page.tsx:457-458 (Agreements), console/terms/page.tsx:51-52, console/organizations/[organizationId]/page.tsx:270-271. console/compliance/page.tsx:219 holds the hash only in `title` (baseline: hashes whole, never cut to a hover title; WCAG 1.4.13). UX-011 cites 'the agreements' SHA-256'. Its column is now reachable by keyboard, but the hash itself is still unreadable.",
+    "scenario": "p.home.default.1280: the Agreements SHA-256 column reads '8b0f330880dd\u2026'. At 390 px, scrolling the now-focusable region to that column still shows only 12 characters.",
+    "fix": "Show the whole hash in `<span className=\"font-mono text-xs wrap-anywhere\">{sha256}</span>`, the pattern this PR uses for the report hashes, and drop the slice, the ellipsis and the `title` in the four cells. Best taken in this PR, since it already edits these tables. Otherwise a follow-up UX PR.",
+    "shots": [
+     "p.home.default.1280",
+     "p.home.default.390"
+    ]
+   }
+  ],
+  "checked": [
+   "Read the checklist .claude/agents/ux-brand-reviewer.md whole, .claude/rules/brand.md (gradients rule applies to marks only; focus in --pw-focus), docs/brand/BRAND.md:147, CO-11 (change-order-001.md:93-97), apps/web/src/lib/copy/words.ts, ADR 0056's amendment pointer and ADR 0078 whole",
+   "The design (sections 1-3 and 12, section 12 wins) and every builder report (build-a, b1, b2, c, d, e, f, check); deviations judged: role-dependent remittance widths (good; claims should follow, UX-PR79-06); review.tsx Fields without min-w (fits at 390, but its value cell's wrap-anywhere breaks words, UX-PR79-01); state functions moved into scroll-table.tsx (no UX effect); data-stacked-figure instead of data-figure (fine); new 'No practice is active.' on console/models (true to its card description, not seen); sr-only 'Actions' header on invitations (fine)",
+   "Code: scroll-table.tsx (three states, region only while unmeasured, overflowing or focused itself; caption aria-hidden only while it overflows; ScrollBox tones from tokens), brand.css fades (tokens only, pointer-events none, scroll-padding keeps a focused control clear, hidden in forced colours, transition only under no-preference), the frame outline in --pw-focus (light #2F5DA8 about 6.5:1 on white, dark #8FB3F0 about 8:1 on #0B1626), stacked-rows.tsx, line-words.tsx ('As PaidWhole recorded it', the line trace only, never the payer's copy)",
+   "Words: 'Scroll sideways for more columns.' (plain, true at either edge, sentence case, the app's helper-line style); '<table>, scrolls sideways', '<box>, scrolls', 'Release notes of release 900001, scrolls', 'Page N of the contract', 'Fields of rate record N', every ScrollTable label (sentence case, each the table's own name); no CO-11 term; pnpm lint:copy run in the clone under the lock: passed, 515 files",
+   "Cue shots compared before and after: tbl.cases-scrolled-middle(-detail).390 (both fades, quiet), tbl.cases-scrolled-end(-detail).390 (start fade only), tbl.cases-tab-focus(-detail).390 (Tab press 18 focuses the region; blue frame outline), tbl.cases-forced-colors(-detail).390 (no fades; system outline and caption remain), tbl.cases-default.390-dark (caption and fade in dark tokens), tbl.release-notes-box.rest/end/focus.1280 and rest.1280-dark (bottom then top band inside the border, frame outline), tbl.cited-page-box.* (fits in both runs, no region, Tab passes it)",
+   "Idle stops at 1280: tbl.claims-fits-link-focus.1280 (fitting table: no role, no tabindex, Tab goes straight to the first link); no caption seen at 1280 on any sampled page; tables in grids or nested cards checked by width (reconciliation EntryTable in a list item about 931 px > 864; model proposal tables about 813 px > 768)",
+   "Phone width: every sampled 390 shot after is 390 px wide (before: prospects 938, remittance 745, contracts 664, rule releases 502, billing 422); sticky header and Menu stay put; the cut-off ends under a fade",
+   "UX-011 (C-002) on its cited screens: closed for the page scrolling sideways and for keyboard reach on p.claims.default.390, p.cases.default.390, console.prospects.default.390, p.remittance.default.390, p.home.default.390, p.contracts.default.390, settings.billing-org.default.390 and console.rule-releases.notes-open.1280 (notes box a region with a stop). Its aim that 'cells stop collapsing' is not met (UX-PR79-01). The agreements' SHA-256 is reachable but still cut (UX-PR79-07). The three #42 pages stay out of scope",
+   "UX-079 (C-043) part (a): fixed on all 8 cited screens (p.cases.deadline-14.390, p.claims.viewer.390, p.cases.default.390, p.claims.default.390, screening.default.390 (the #42 page gains the cue with no edit), console.screening.default.390, p.packet.default.390, p.anomalies.cohort.390): caption plus edge fades; parts (b) and (c) belong to UX PR 34",
+   "StackedRows harness (tbl.stacked-rows.390, .390-dark, .1280, .1280-dark): heading h3 at 16 px semibold with a link, a definition list with terms over values on a phone and side by side when wide, figures in mono with tabular numerals in the brand's order as given, the tint chip, the action last; dark in tokens",
+   "Dark tiles: p.claims.default.1280-dark, p.cases dark, the release notes box in dark: tokens only, no new colour",
+   "Money and status: no figure, stage label or status changed; expected, paid and short stay in order, behind the cue at 390"
+  ],
+  "notSeen": [
+   "Not seen, by sample (changed routes outside the tour sample): /console/billing, /console/compliance, /console/models, /console/organizations, /console/organizations/[organizationId], /console/specialist-queue, /console/status, /console/terms, /console/tickets, /support",
+   "Not seen, by sample: /p/[practiceId]/abstraction, /p/[practiceId]/abstraction/ledger, /p/[practiceId]/abstraction/versions/[versionId] (model proposals), /p/[practiceId]/contracts/[contractId], /p/[practiceId]/coverage, /p/[practiceId]/lines/[lineId] (the 'As PaidWhole recorded it' box), /p/[practiceId]/mapping, /p/[practiceId]/mapping/[planId], /p/[practiceId]/packet-reviews, /p/[practiceId]/pricing-runs/[runId] and /compare, /p/[practiceId]/reconciliation (with the template mapper), /p/[practiceId]/releases, /p/[practiceId]/remittances",
+   "Not seen, by sample: /p/[practiceId]/reports, /reports/[reportId], /reports/[reportId]/review, /reports/documents/[documentId], /reports/roi, /reports/roi/[statementId], /p/[practiceId]/settings/access-log, /settings/agreements, /settings/pricing, /p/[practiceId]/uploads and /uploads/[documentId] (receipts, uploader), /screening/results/[resultId] (screening anomalies and coverage)",
+   "tbl.checker-box.1280: not reachable (no CONTENT_ROOT on the tour server)",
+   "A cited contract page whose box overflows: not in the synthetic data (fits in both runs)",
+   "Not checked visually, judged from code: the frame outline in dark; a focused link at a fade edge (scroll-padding-inline); a StackedRows status or Badge that wraps (the fixture's status fits); the 768-1023 px band; the no-script state; reduced motion; a right-to-left page; what a screen reader announces; focus taken before hydration (DR-06)"
+  ],
+  "proposals": [
+   "Add two rules to apps/web/src/app/tables.test.ts (or a lint). It fails on `wrap-anywhere` on a <td>/<th> without a minimum width, and on a date or date-time cell without `whitespace-nowrap`. Better still, add a small DateText component that renders a date whole and a date-time as two whole parts, used by every table.",
+   "Tour and capture spec: add a shot of a link focused at a fade's edge, a Tab-focus shot in dark, a long synthetic contract exhibit page (so the cited box overflows), and a StackedRows fixture row with a long Badge status and a 36-character key. Also add 1280 crops of every fitting wide table, to catch mid-word breaks.",
+   "Add to .claude/agents/ux-brand-reviewer.md, 'At 390 px' or 'Type': 'a table that fits at 1280 keeps whole words, names and codes; `wrap-anywhere` on a cell lowers its column's min-content and breaks words where there is room'. Also add design proposal P9's 'never cut to a hover title' check for file names.",
+   "Show whole hashes in the four tables that still cut them (UX-PR79-07), in this PR or a follow-up UX PR, and drop the hover-only `title` copies.",
+   "Design P10: drop the receipts section's own aria-label (receipts.tsx), so its region and its table's scroller do not repeat 'Receipts'. Do the same check where card regions now hold scrollers that repeat their names ('Evidence gaps', 'Validated discrepancies', the ROI figure cards, 'Unpriced reasons', 'Content due').",
+   "The progress file of this review is <scratchpad>/progress/review-ux.md. Before and after tile pairs (before left, after right; 1280 at 50%) are in <scratchpad>/review-ux/tp/ and crops in <scratchpad>/review-ux/pairs/, for the fix's re-check."
+  ],
+  "summary": "The scroll cue works. At 390 px every sampled page is now 390 px wide; before, five pages were 422 to 938 px. Each wide table is a region the keyboard reaches: Tab press 18 lands on 'Cases, scrolls sideways'. It shows the plain caption 'Scroll sideways for more columns.' and quiet token fades at the edges it can scroll past, in light and dark. Its focus is a --pw-focus outline on the frame, which forced colours keep along with the caption. Tables that fit at 1280 add no region and no Tab stop. The words are plain, true and in sentence case, and pnpm lint:copy passes in the clone (515 files). UX-011 is closed on its 8 cited screens for sideways page scroll and keyboard reach, and UX-079 (a) on its 8.\n\nOne systemic defect remains, and it needs fixing before merge. The PR put `wrap-anywhere` on whole table cells, which lets auto table layout narrow those columns below a word. The result:\n- Patient names break mid-token at 1280 in a table that fits ('SYNTHLAST2E4/8HX'), with a 4-line header and the page 1060 px taller.\n- At 390, claim control numbers split mid-code.\n- The packet's Line schedule placeholder runs to 6 lines.\n- The rate record terms a person signs off on break mid-word ('qualifyin/g', 'conversi/on factor').\n- Cases' Owner reads 'Unassign/ed' at 1280.\n\nThe fix is a minimum width on each wrapped column (UX-PR79-01). Dates and 'N of M' counts also still break inside the min-w that ADR 0078 says prevents it (UX-PR79-02). StackedRows lets only StatusChip wrap, not Badge, and its mono values never wrap (UX-PR79-03, latent; no site uses it yet). There are 3 nits. Apart from the change: SHA-256s in tables this PR wrapped are still cut to 12 characters with a hover title (UX-PR79-07, pre-existing). 31 changed routes are not seen, by sample. I did not declare any screen accessible."
+ },
+ "shots": {
+  "sample": [
+   "p.cases.default.1280",
+   "p.cases.default.1280-dark",
+   "p.cases.default.390",
+   "p.claims.default.1280",
+   "p.claims.default.1280-dark",
+   "p.claims.default.390",
+   "p.home.default.1280",
+   "p.home.default.1280-dark",
+   "p.home.default.390",
+   "p.packet.default.1280",
+   "p.packet.default.1280-dark",
+   "p.packet.default.390",
+   "p.remittance.default.1280",
+   "p.remittance.default.1280-dark",
+   "p.remittance.default.390",
+   "console.prospects.default.1280",
+   "console.prospects.default.1280-dark",
+   "console.prospects.default.390",
+   "settings.billing-org.default.1280",
+   "settings.billing-org.default.1280-dark",
+   "settings.billing-org.default.390",
+   "console.rule-releases.notes-open.1280",
+   "console.rule-releases.notes-open.1280-dark",
+   "console.rule-releases.notes-open.390",
+   "p.contract-version.default.1280",
+   "p.contract-version.default.1280-dark",
+   "p.contract-version.default.390",
+   "p.contracts.default.1280",
+   "p.contracts.default.1280-dark",
+   "p.contracts.default.390",
+   "p.cases.deadline-14.1280",
+   "p.cases.deadline-14.1280-dark",
+   "p.cases.deadline-14.390",
+   "p.claims.viewer.1280",
+   "p.claims.viewer.1280-dark",
+   "p.claims.viewer.390",
+   "screening.default.1280",
+   "screening.default.1280-dark",
+   "screening.default.390",
+   "console.screening.default.1280",
+   "console.screening.default.1280-dark",
+   "console.screening.default.390",
+   "p.anomalies.cohort.1280",
+   "p.anomalies.cohort.1280-dark",
+   "p.anomalies.cohort.390",
+   "status.default.1280",
+   "status.default.1280-dark",
+   "status.default.390",
+   "request-audit.sent.1280",
+   "tbl.cases-default.390-dark",
+   "tbl.cases-scrolled-middle.390",
+   "tbl.cases-scrolled-middle-detail.390",
+   "tbl.cases-scrolled-end.390",
+   "tbl.cases-scrolled-end-detail.390",
+   "tbl.cases-tab-focus.390",
+   "tbl.cases-tab-focus-detail.390",
+   "tbl.cases-forced-colors.390",
+   "tbl.cases-forced-colors-detail.390",
+   "tbl.claims-fits-link-focus.1280",
+   "tbl.claims-fits-link-focus-detail.1280",
+   "tbl.release-notes-box.rest.1280",
+   "tbl.release-notes-box.rest.1280-dark",
+   "tbl.release-notes-box.end.1280",
+   "tbl.release-notes-box.focus.1280",
+   "tbl.release-notes-box.rest.390",
+   "tbl.cited-page-box.rest.1280",
+   "tbl.cited-page-box.rest.1280-dark",
+   "tbl.cited-page-box.end.1280",
+   "tbl.cited-page-box.focus.1280",
+   "tbl.cited-page-box.rest.390"
+  ],
+  "missing": [
+   "tbl.checker-box.1280 (both runs): not reachable. The content checker's problems box shows only on a server with a content checkout (CONTENT_ROOT) after pnpm verify-content runs. The tour server, like e2e, has neither.",
+   "tbl.stacked-rows.390, tbl.stacked-rows.390-dark, tbl.stacked-rows.1280, tbl.stacked-rows.1280-dark (before only): StackedRows does not exist at e908c214, because this PR adds it. They were taken after.",
+   "A cited contract page whose box overflows (fades, region, Tab stop): the populated synthetic contract pages are short, so the box fits in both runs. Only the release notes box shows an overflowing ScrollBox."
+  ],
+  "lockMinutes": 27.5,
+  "summary": "Both runs are complete. They used synthetic data only, and each had its own fresh prepare and the populate project, where all 11 tests passed.\n\n**Before (e908c214).** This run finished before the interruption, which the progress file had not yet recorded. The tour took 49 shots and skipped none. The capture spec took 21 shots and skipped 5. The server stopped at 17:11:43.\n\n**After (35b14cd5).** The PR head was unchanged on origin. I resumed at 19:09: port 3297 was free, the lock was free and PG 5433 was up. The run held the lock from 19:10:54 to 19:19:56. The tour took 49 shots and skipped none. The capture spec took 25 shots and skipped 1. After the stop, build.log says \"server stopped\" and fuser 3297/tcp printed nothing.\n\n**Tiles and index.**\n- Tiles before: 140 for the tour, 35 for the extras.\n- Tiles after: 145 for the tour, 47 for the extras.\n- screens-index.md lists every sample id (49 from the tour, 26 from the capture spec) with the before and after PNG and tile paths and the shots.json note. Its \"Read before comparing\" section covers the data that differs between runs.\n\n**Clean-up.** tp_e2e_screens is dropped and /tmp/tp-e2e-tp_e2e_screens-* is removed. No tracked file changed in PhysicalTherapy or ops, and tour.spec.ts needed no new cap() calls.\n\n**What the shots show.**\n- Before, five 390 pages scrolled sideways: console.prospects 938 px, p.remittance 745, p.contracts 664, console.rule-releases 502 and settings.billing-org 422. After, all are 390 px wide.\n- After, an overflowing table is a focusable region with \"Scroll sideways for more columns.\", fades at the edges it can scroll past, and a frame outline when focused by Tab. In forced colours the fades go and the outline and caption stay.\n- A table that fits (the claims table at 1280) has no region and adds no Tab stop.\n\n**Seen while checking, for the reviewer to judge.**\n- p.claims.default.1280 after is 4888 px tall (3828 before). The patient cell's new wrap-anywhere lets the table layout narrow that column, so the patient link breaks mid-token at 1280 (\"SYNTHLAST2E4 / 8HX,\"). It is visible in tbl.claims-fits-link-focus-detail.1280.\n- console.prospects.default.390 after breaks words inside its scroller (\"Syntheti c Payer One\", and the contact email in pieces).\n\n**Proposals (outside this task).**\n1. The README should say how to run a PR's own capture spec on the tour server: from $TOUR_DIR, source env.sh, then `./node_modules/.bin/playwright test --config screens.config.ts --project capture --workers 1 <spec>`. It should also say that tile.py accepts `<TOUR_DIR>/extra`. Finishing a spec before starting build.sh, or using build-only.sh and then reserve.sh, avoids holding the lock idle. The before run held it about 12 minutes past its last tour shot.\n2. Add a long synthetic contract exhibit page, through packages/synth or the contracts populate. The cited page's box could then be shot overflowing: fades, a region and a Tab stop.\n3. Move the spec's generic helpers into tour.spec.ts so the next table PRs (UX PR 34's stacking) reuse them. They are tabTo (where Tab lands), measures (the scroller's numbers for the note), detail (a clip around the frame) and the forced-colours emulation.\n4. tile.py rewrites tiles/index.json on every call, so tiling one TOUR_DIR in two calls loses the first call's entries. It should merge them."
+ }
+}
