@@ -66,3 +66,29 @@ S4#3's 45.2, 46.0, 47.8 and 32.8 s. Ordered by each run's worst upload, the midd
 consumer's size goes to the founder before merge; open item O9). The local smoke reported earlier (S4#1 at 34.1 s, no
 time warning) is not the measurement of record. Nothing is resized here: the consumer's size stays the founder's
 decision, open as issue #41 (decide before launch), with this measurement as its input.
+- e2e run 1 (screening, hardware-key, mail-cutoff, mail-notices; chromium-1194 headless shell, PG18): 7 passed (2.9m), incl.
+  the new restore path (hardware-key.spec:71; kept credential counter 4 = register 1, sign-in 2, restore 3, sign-in 4).
+- Added to screening.spec: poll run status 'complete' after the outbox file appears (same commit race as the harness).
+- Commits: 23c077e7 (e2e flake), 872ac5bc (e2e retry), a2c7a726 (screening wording), bf5dcb68 (console wording), aa875181 (users page).
+- Merge check (git merge-tree): with fix-db 8128a036 one conflict, routes.ts around checkScreeningAddress: keep fix-db's
+  precheck block, then my two timing lines before `const verdict`; with fix-infra f972a8f0 clean.
+- e2e run 2 running (all key-registering specs + screening + mail-cutoff), log scratchpad/pr42/e2e-harness-2.log.
+- Plan after e2e run 2: capacity smoke S1 on the process runtime (worker build, web build, layout script
+  scratchpad/pr42/capacity-layout.sh, DB tp_pr6b4_harness_2, advisory) to prove the web line reaches the verdict and links
+  open after commit; then final checks (pnpm typecheck, unit web+tools, db routes+mail-routes, lint:copy, lint:logs);
+  drop tp_pr6b4_harness_1/_2; delete refs/scratch/*.
+- e2e run 2 at aa875181 tree (screening, hardware-key, mail-cutoff, contracts, models, onboarding, packets, pricing, reports,
+  unattested): 20 passed (4.7m). Every journey that registers a hardware key passes with the new helper.
+- NEXT: capacity smoke S1 (process runtime).
+- worker build + web build (under lock) ok; layout scratchpad/pr42/capacity-images; capacity smoke S1 running
+  (DB tp_pr6b4_harness_2, out scratchpad/pr42/capacity-out, release scratchpad/pr42/capacity-release, log capacity-smoke.log).
+- smoke: release 900100 built (2,247,791 records) 15:09:42; loading the release from 15:09:44
+## Proposals / open items (draft)
+- mail.ts registerKeyAndSignInAs (mail-cutoff journey, not my file) has the same retry problem: one line,
+  registerOrRestoreKeyAndSignIn(page, { name: account.key, email: account.email }, () => signInAs(page, account)).
+- Users page 'suppressed' (and the runbook 3.4 advice): "check the address, then invite again" does not help an address
+  SES's suppression list holds; a distinct sentence for suppressed (counsel/founder wording) is proposed.
+- ops plan pr6b-plan.md G1 still says "Run 7's 41.1 s becomes about 43.1 s"; CI measured 47.7 s (orchestrator's file).
+- Integrator: routes.ts conflict with fix-db (keep fix-db's precheck, then the two timing lines before const verdict).
+- Integrator: e2e chromium-1194 present now; full e2e worth running once after integration.
+- Proposal: infra metric filter on the web log's 'screening address checked' elapsed_ms (latency of DNS+validation in production; an alarm near the 2-s bound).
