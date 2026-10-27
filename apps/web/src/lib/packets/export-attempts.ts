@@ -46,6 +46,9 @@ export const EXPORT_REFUSAL_TEXT: Readonly<Record<PacketExportRefusal, string>> 
     'The payer’s copy names who answers for this dispute, and the practice has no correspondence contact the payer’s copy can print, so nothing is printed. The practice’s administrator sets the correspondence contact under Settings, Correspondence; then export it.',
   verifier_failed:
     'The verifier, run again over what the export prints with the identifiers read from the records now, failed it, so nothing was printed. Write a new version of the packet, which the verifier checks as it is written, and approve it.',
+  // E1 (docs/adr/0080): the export job's gate refused it while the practice's owner was held.
+  organization_suspended:
+    "New work had stopped for the practice's organization, so the export was not made. Ask for it again once the practice's home no longer says that new work has stopped.",
 };
 
 /** A request with no answer from the job by then is shown as failed: the job answers within minutes, and retries within the hour. */
@@ -225,4 +228,5 @@ const REFUSAL_SUMMARY: Readonly<Record<PacketExportRefusal, string>> = {
   inputs_differ: 'the version no longer stated its inputs',
   contact_missing: 'the practice had no correspondence contact the payer’s copy could print',
   verifier_failed: 'the verifier failed what the export printed',
+  organization_suspended: "new work had stopped for the practice's organization",
 };

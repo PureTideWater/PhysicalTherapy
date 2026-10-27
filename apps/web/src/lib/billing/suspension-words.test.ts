@@ -204,8 +204,11 @@ const granteeHold: fc.Arbitrary<PracticeHold> = fc.record({
 const anyHold = fc.oneof(ownerHold, granteeHold);
 
 const words = (notice: HoldNotice): string => [notice.title, notice.body, notice.nextStep === null ? '' : `${notice.nextStep.link ?? ''}${notice.nextStep.text}`].join(' ');
-/** A member of the held organization reads the cause; anyone else reads that the account is on hold, or closed. */
-const member = (hold: PracticeHold): boolean => hold.viewer === 'member';
+/**
+ * A member of the held organization reads the cause; anyone else reads that the account is on hold, or closed. on_hold
+ * is Postgres's word for a reader outside the owning organization, so it is never read as a member's, whoever asks.
+ */
+const member = (hold: PracticeHold): boolean => hold.viewer === 'member' && hold.cause !== 'on_hold';
 
 describe('the notice over every hold (BIL-09, property)', () => {
   it('says "PaidWhole has suspended" or "PaidWhole suspended" exactly when PaidWhole suspended the reader’s own organization', () => {

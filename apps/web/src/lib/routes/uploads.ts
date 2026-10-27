@@ -12,7 +12,7 @@ import {
   recordAuditEvent,
   rolesPermit,
 } from '@tp/db/runtime';
-import { practiceRunRefusal } from '@tp/worker/billing';
+import { practiceRunRefusalFor } from '@tp/worker/billing';
 import { ERA_EXPORT_FORMATS, isUnconfirmed } from '@tp/worker/era-formats';
 import { z } from 'zod';
 
@@ -108,8 +108,9 @@ export const uploadsPage = practiceRoute({
   params: z.object({ practiceId: opaqueId }),
   handle: async ({ scope, practiceId, access }): Promise<UploadsPageData> => {
     const open = await baaOnFile(scope, practiceId);
-    // A suspended organization's uploads pause with the reason (docs/adr/0050); what is on file stays readable.
-    const suspension = await practiceRunRefusal(scope.client, practiceId);
+    // While new work is held, uploads pause with the database's reason (docs/adr/0050, 0080): the owner's hold, or a
+    // grantee's when only its grants let this person upload. What is on file stays readable.
+    const suspension = await practiceRunRefusalFor(scope.client, practiceId, 'file.upload');
     return {
       practiceId,
       canUpload: rolesPermit(access.roles, 'file.upload'),

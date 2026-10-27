@@ -15,7 +15,7 @@ import {
   withActor,
   withPracticeScope,
 } from '@tp/db/runtime';
-import { practiceRunRefusal } from '@tp/worker/billing';
+import { practiceRunRefusalFor } from '@tp/worker/billing';
 import { z } from 'zod';
 
 import { type ActiveSession, SESSION_COOKIE, resolveSession } from '../auth/sessions';
@@ -498,7 +498,7 @@ export function practiceRoute<P extends { readonly practiceId: string }, I, R>(s
           }
           const access = requirePracticePermission(scope, practiceId, spec.permission);
           if (RUN_STARTING_ROUTES.has(spec.id)) {
-            const reason = await practiceRunRefusal(scope.client, practiceId);
+            const reason = await practiceRunRefusalFor(scope.client, practiceId, spec.permission);
             if (reason !== null) {
               throw new SuspendedError(reason);
             }

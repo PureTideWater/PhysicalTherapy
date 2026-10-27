@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 
-import { rolesPermit } from '@tp/db';
+import { type MembershipRole, type Permission, rolesPermit } from '@tp/db';
 import { addMembership, asOwner, createOrganization, createUser } from '@tp/db/testing';
 import { beforeAll, describe, expect, it } from 'vitest';
 
@@ -39,13 +39,18 @@ interface Person {
   readonly name: string;
   readonly userId: string;
   /** The union of the person's roles at the practice, from every path. */
-  readonly roles: readonly string[];
+  readonly roles: readonly MembershipRole[];
   /** The run-starting work only the held grant gives them (the design's probe, section 17, Q-series). */
   readonly stopped: readonly RunStartingPermission[];
 }
 
 const runStarting = (): readonly Route[] => ROUTES.filter((route) => RUN_STARTING_ROUTES.has(route.id));
-const permissionOf = (route: Route): string => (route.access.kind === 'practice' ? route.access.permission : '');
+function permissionOf(route: Route): Permission {
+  if (route.access.kind !== 'practice') {
+    throw new Error(`${route.id} is not a practice route`);
+  }
+  return route.access.permission;
+}
 
 let world: World;
 let firmName: string;
@@ -58,7 +63,6 @@ let principal: Person;
 const sessions = new Map<string, SignedIn>();
 
 const GROUP_PERSONA: Persona = { kind: 'group', role: 'analyst' };
-const FIRM_PERSONA: Persona = { kind: 'firm', role: 'firm_principal' };
 
 async function session(userId: string, persona: Persona = GROUP_PERSONA): Promise<SignedIn> {
   let signed = sessions.get(userId);
@@ -98,10 +102,10 @@ async function setStatus(organizationId: string, input: Record<string, unknown>)
   expect(outcome.status, JSON.stringify(outcome)).toBe('ok');
 }
 
-async function person(name: string, memberships: readonly (readonly [string, string])[], roles: readonly string[], stopped: readonly RunStartingPermission[]): Promise<Person> {
+async function person(name: string, memberships: readonly (readonly [string, MembershipRole])[], roles: readonly MembershipRole[], stopped: readonly RunStartingPermission[]): Promise<Person> {
   const userId = await createUser(worlds.owner);
   for (const [organizationId, role] of memberships) {
-    await addMembership(worlds.owner, organizationId, userId, role as never);
+    await addMembership(worlds.owner, organizationId, userId, role);
   }
   return { name, userId, roles, stopped };
 }
@@ -170,7 +174,7 @@ describe('a person with two paths, held per permission (BIL-07; D1)', () => {
     for (const route of runStarting()) {
       const permission = permissionOf(route);
       const outcome = await call(route, one.userId);
-      if (!rolesPermit(one.roles as never, permission as never)) {
+      if (!rolesPermit(one.roles, permission)) {
         expect(outcome.status, `${one.name}: ${route.id}`).toBe('forbidden');
       } else if (one.stopped.includes(permission as RunStartingPermission)) {
         expect(outcome, `${one.name}: ${route.id}`).toEqual({ status: 'suspended', reason: R4 });

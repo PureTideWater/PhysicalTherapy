@@ -6,6 +6,7 @@ import { FormKeys } from '../../../../../components/form-keys';
 import { roleNames, utc, utcDate } from '../../../../../components/format';
 import { SettingsNav, currentOrganization } from '../../../../../components/settings/nav';
 import { AppShell, Forbidden } from '../../../../../components/shell';
+import { grantHoldState } from '../../../../../lib/billing/suspension-words';
 import { loadPage } from '../../../../../lib/http/next';
 import { AGREEMENT_CHAIN, CHAIN_LABELS, agreementsSettingsPage } from '../../../../../lib/routes/settings';
 import { confirmAgreements } from './actions';
@@ -108,7 +109,13 @@ export default async function AgreementsSettingsPage(props: { readonly params: P
                     <td className="py-1 pr-3">{roleNames(grant.roles)}</td>
                     <td className="py-1 pr-3">{utcDate(grant.startsAt)}</td>
                     <td className="py-1 pr-3">{utcDate(grant.endsAt)}</td>
-                    <td className="py-1">{grant.revokedAt !== null ? `revoked ${utcDate(grant.revokedAt)}` : grant.inForce ? 'in force' : 'not in force'}</td>
+                    <td className="py-1" data-grantee-status={grant.granteeStatus}>
+                      {grant.revokedAt !== null
+                        ? `revoked ${utcDate(grant.revokedAt)}`
+                        : grant.inForce
+                          ? (grantHoldState(grant.granteeStatus, grant.granteeName) ?? 'in force')
+                          : 'not in force'}
+                    </td>
                   </tr>
                 ))}
               </tbody>

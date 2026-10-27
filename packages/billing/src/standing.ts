@@ -5,8 +5,8 @@
  * audience's own: the customer's in apps/web/src/lib/routes/billing.ts, the operator's on the console's billing page.
  *
  * The record wins: a suspended or closed organization is never in good standing, whatever its invoices say. A firm's
- * unpaid invoice refuses no run before milestone 12 (practice_run_refusal reads only a practice's owning group, and
- * firms are billed then), so billing's suspension of a firm reads past due.
+ * unpaid invoice refuses no run before milestone 12 (practice_run_refusal never reads a grantee's billing standing,
+ * docs/adr/0080, and firms are billed then), so billing's suspension of a firm reads past due.
  */
 
 export type OrganizationStatus = 'active' | 'suspended' | 'closed';

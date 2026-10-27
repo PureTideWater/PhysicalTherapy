@@ -12,6 +12,7 @@ import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
 import { DEADLINE_WINDOW_DAYS, type Queues } from '../../../lib/dashboard/queries';
 import { stageLinesHref } from '../../../lib/reports/links';
+import { JOB_REFUSED_LABEL } from '../../../lib/billing/suspension-words';
 import { practiceHome } from '../../../lib/routes/practice';
 
 /**
@@ -134,7 +135,7 @@ const OUTCOME_NAMES: Readonly<Record<string, string>> = {
   retrying: 'Failed; retrying',
   succeeded: 'Succeeded',
   failed: 'Failed three times',
-  refused: 'Refused: the organization is suspended',
+  refused: JOB_REFUSED_LABEL,
 };
 
 /**
@@ -152,7 +153,7 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="practice" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practice, agreements, access, supportGrants, freshness, dashboard, notifications, suspension } = page.data;
+  const { practice, agreements, access, supportGrants, freshness, dashboard, notifications, hold } = page.data;
   return (
     <AppShell shell={page.shell} section="practice">
       <div className="flex flex-col gap-1">
@@ -161,12 +162,23 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
           You reach this practice through {VIA[access.via] ?? access.via}, as {roleNames(access.roles)}.
         </p>
       </div>
-      {suspension === null ? null : (
-        <Alert variant="destructive" data-notice="suspended" role="alert">
-          <AlertTitle>New runs have stopped</AlertTitle>
+      {hold === null ? null : (
+        <Alert variant="destructive" data-notice="suspended" data-hold-source={hold.source} role="alert">
+          <AlertTitle>{hold.title}</AlertTitle>
           <AlertDescription>
-            {suspension[0]?.toUpperCase()}
-            {suspension.slice(1)}. Everything here stays readable; uploads, pricing runs, monitoring, packet exports and reports start again once it is resolved. The organization&apos;s administrator sees the standing and what to do next in Settings, Billing.
+            <p>{hold.body}</p>
+            {hold.nextStep === null ? null : (
+              <p data-next-step>
+                {hold.nextStep.link === null ? null : hold.nextStep.href === null ? (
+                  hold.nextStep.link
+                ) : (
+                  <Link className="underline" href={hold.nextStep.href}>
+                    {hold.nextStep.link}
+                  </Link>
+                )}
+                {hold.nextStep.text}
+              </p>
+            )}
           </AlertDescription>
         </Alert>
       )}

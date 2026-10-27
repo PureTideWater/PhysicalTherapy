@@ -1,7 +1,7 @@
 import { BillingEventError, BillingProviderError, type CatalogPrice, type PaymentMethodSummary, type PlanCatalog, type PlanPrice, WebhookSignatureError, planCatalog, suspensionAt } from '@tp/billing';
 import { LocalBillingProvider, SIMULATOR_TEST_ROUTING } from '@tp/billing/local';
 import { STANDING_ORDER, type StandingKind, standingKind } from '@tp/billing/standing';
-import { type ScopeClient, rolesPermit } from '@tp/db/runtime';
+import { type ScopeClient, type SuspensionReason, rolesPermit } from '@tp/db/runtime';
 import type { Cents } from '@tp/money';
 import {
   type BillingServices,
@@ -218,18 +218,27 @@ function restarts(count: number): string {
     : ' below. A card payment restarts runs at once; a bank (ACH) payment restarts them once the bank settles it, usually within a few days.';
 }
 
+/** PaidWhole's stored reason on the billing page (B10's clause, B7's step), read by the organization's own administrators. */
+const SUSPENSION_WORDS: Readonly<Record<SuspensionReason, { readonly clause: string; readonly step: string }>> = {
+  customer_request: { clause: ' at your request', step: ' when you want the organization reinstated.' },
+  security_hold: { clause: ' while it looks into a security concern', step: ' to find out what PaidWhole needs from you.' },
+  agreement_ended: { clause: " because the organization's agreement with PaidWhole has ended", step: ' to discuss a new agreement.' },
+};
+
 /**
  * The standing from the record's status and billing's (standingKind, @tp/billing/standing), in the customer's words.
  * The record wins: a suspended or closed organization never reads good, and an invoice unpaid beside it is named with
  * what it holds, since reinstating the organization alone restarts nothing while billing still holds it. Closed is
  * final (the console changes no closed status), so nothing promises a reopening, and it reads in the neutral tone
- * unless an invoice is still owed. A firm's suspension, closure or unpaid invoice refuses no run before milestone 12
- * (docs/adr/0050), so a firm is told nothing about runs. "Suspended by PaidWhole" carries no date: none is stored;
- * suspendedSince is billing's (30 days after the first failed payment). Runs restart only once every invoice unpaid
- * for 30 days is paid (holdingCount, billing_standing's own predicate).
+ * unless an invoice is still owed. A firm's unpaid invoice refuses no run before milestone 12 (docs/adr/0050);
+ * PaidWhole's suspension or closure of a firm stops its people's new work through its grants (docs/adr/0080), so a firm
+ * is told that, and nothing about runs. "Suspended by PaidWhole" carries PaidWhole's stored date (statusSince) when one
+ * is stored, and the notice and the ticket's step follow its stored reason (statusReason; design SS-01, B1 to B10);
+ * suspendedSince is billing's (30 days after the first failed payment) and never dates PaidWhole's. Runs restart only
+ * once every invoice unpaid for 30 days is paid (holdingCount, billing_standing's own predicate).
  */
 export function accountStanding(
-  billing: Pick<BillingView, 'kind' | 'status' | 'standing' | 'pastDueSince' | 'suspendedSince' | 'holdingInvoice' | 'holdingCount'>,
+  billing: Pick<BillingView, 'kind' | 'status' | 'standing' | 'pastDueSince' | 'suspendedSince' | 'holdingInvoice' | 'holdingCount' | 'statusReason' | 'statusSince'>,
 ): AccountStanding {
   const kind = standingKind(billing.status, billing.standing, billing.kind);
   const firm = billing.kind === 'firm';
@@ -277,7 +286,7 @@ export function accountStanding(
       label: 'Closed',
       tone: billingHold === null ? 'neutral' : 'danger',
       title: 'The organization is closed',
-      notice: `${firm ? 'Its data stays readable.' : 'Its data stays readable, and no new run starts.'}${owed}`,
+      notice: `${firm ? "Your people start no new work through the organization's grants." : 'Its data stays readable, and no new run starts.'}${owed}`,
       alert: billingHold !== null,
       nextSteps: [CLOSURE_TICKET, ...paying],
       billingHold,
@@ -295,16 +304,17 @@ export function accountStanding(
             ? ` ${String(billing.holdingCount)} invoices have also been unpaid for 30 days since their payments failed, the oldest since ${day(billingHold.since)}; new runs stay stopped until all of them are paid as well.`
             : ` An invoice is also unpaid since ${day(billingHold.since)}; new runs stay stopped until it is paid as well.`
           : ` An invoice is also unpaid since ${day(billingHold.since)}; if it is still unpaid at ${stops}, new runs stop then, even if PaidWhole has reinstated the organization; ${ACH_SETTLES}.`;
+  const reason = billing.statusReason === null ? null : SUSPENSION_WORDS[billing.statusReason];
   return {
     kind,
-    label: 'Suspended by PaidWhole',
+    label: `Suspended by PaidWhole${since(billing.statusSince)}`,
     tone: 'danger',
     title: firm ? 'The organization is suspended' : 'New runs have stopped',
     notice: firm
-      ? `PaidWhole has suspended the organization.${held}`
-      : `PaidWhole has suspended the organization: new runs have stopped until PaidWhole reinstates it, and its data stays readable. Paying an invoice does not reinstate it.${held}`,
+      ? `PaidWhole has suspended the organization${reason?.clause ?? ''}: your people start no new work through its grants at the practices you are granted until PaidWhole reinstates the organization. Every record stays readable, and the practices' own staff carry on.${held}`
+      : `PaidWhole has suspended the organization${reason?.clause ?? ''}: new runs have stopped until PaidWhole reinstates it, and its data stays readable. Paying an invoice does not reinstate it.${held}`,
     alert: true,
-    nextSteps: [ticket(firm ? ' to find out why.' : ' to find out why and what reinstates it.'), ...paying],
+    nextSteps: [ticket(reason?.step ?? (firm ? ' to find out why.' : ' to find out why and what reinstates it.')), ...paying],
     billingHold,
     formsNote: 'Changing the plan or payment method does not reinstate an organization suspended by PaidWhole.',
     planRefusal: null,

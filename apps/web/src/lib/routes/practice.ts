@@ -1,7 +1,8 @@
 import { NOTICE_UNDELIVERED_STATES, type PracticeScope, type ScopeClient, readWithAudit, rolesPermit } from '@tp/db/runtime';
-import { practiceRunRefusal } from '@tp/worker/billing';
 import { z } from 'zod';
 
+import { practiceHold } from '../billing/hold';
+import { holdNotice } from '../billing/suspension-words';
 import { dashboard } from '../dashboard/queries';
 import { practiceRoute } from '../http/invoke';
 import { NotFoundError } from '../http/route';
@@ -248,8 +249,8 @@ export const practiceHome = practiceRoute({
       access: { via: access.via, roles: access.roles },
       supportGrants: grants,
       freshness: await freshness(scope, practiceId),
-      /** Why new runs are refused now (the organization is suspended), or null (docs/adr/0050). */
-      suspension: await practiceRunRefusal(scope.client, practiceId),
+      /** The hold on new work here for this person, in the notice's words, or null (docs/adr/0050, 0080). */
+      hold: await practiceHold(scope, practiceId).then((held) => (held === null ? null : holdNotice(held))),
       dashboard: await dashboard(scope, practiceId, services.now().toISOString().slice(0, 10)),
       notifications: { unread: await unreadNotifications(scope, practiceId), latest: await listNotifications(scope, practiceId, 3) } satisfies { unread: number; latest: NotificationView[] },
     };
