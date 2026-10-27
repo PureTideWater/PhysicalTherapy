@@ -1,0 +1,14 @@
+# fold-check progress (completeness critic; started 2026-10-27 02:00 UTC)
+- [ ] read sources: HANDOFF Start here (new), lane-b.md, lane-b-handoff, LANES.md, git log, open PRs
+- [ ] checks and fixes (list below)
+- [ ] tracker re-run if changed
+- [x] sources read 02:05 UTC (HANDOFF new Start here, lane-b.md Start here/Waiting/Rulings/How runs + log to 01:50, handoff, LANES Claims/Handed, Queues)
+- [x] git: 14 merges and UTC times all match (committer dates -04:00 converted). Tip e908c21.
+- [x] GitHub open PRs: #42 (098636e, draft) and #33 only; #40 closed 21:10, #38 closed 2026-10-25 18:57. #33 head 5fab269 committed 21:08:26Z (HANDOFF says 21:07) -> fix to 21:08
+- FINDING 1: CI on 098636e (run 40434505373): `unit` RED (job 121959832604): web-entries.test.ts:77, 13 worker modules via runtime.ts; cause: #43's routes/route-tests/world.ts (outside test-support/) imports ../test-support/*-world -> @tp/worker/runtime; guard counts it as web code. all green red with it; domain model red (expected). HANDOFF says only domain model red -> fix
+- FINDING 2: session states moved: ux-forms build 2b wf_7d776c57-f07; ux-download-refusals review wf_a85eb619-cf6; #120 integrator; check-ins 14:05 -> fix table
+- FINDING 3: storage.googleapis.com now reachable (02:03 UTC: Google's 400 at the root, not the proxy's 403); ci-browser trigger updated 02:00 "now allowed (orchestrator, 02:00 UTC)" -> HANDOFF machine/person list + tracker blocker
+- FINDING 4 (report to orchestrator, not mine to change): OLD trigger trig_01LGMZT6vtRSH1Cfsy89GHCr ("Weekly reset: PR 6b-4 fix round") still enabled, fires 14:05 into old session session_01MXvjcgRoTSrfU3V7a5MShH -> would start a second #42 fix round. Lane A's own check: trig_01XqKZsF9KvqAG7S6pBGUmoi 14:05 (not in HANDOFF) -> add
+- FINDING 5: S3 builder's choice (dedicated validation account per env; residual 90 d event history) not in HANDOFF; deploy action for the person -> add
+- FINDING 6: DST caveat on Lane A's reset dropped (next reset 2026-11-03 likely 15:00 UTC if Eastern) -> add
+- FINDING 7: handed items missing: SS-01 'reopen a closed organization' (if wanted); SUITE-CAP-1 advisory windows query 10-13 s; #49's #42-file parts (Lane B after #42); #46/#111 I2 proposal; PR 7 WCAG 2.2 one-list note -> add
