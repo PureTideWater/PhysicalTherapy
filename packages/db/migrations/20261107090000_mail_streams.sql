@@ -18,10 +18,11 @@
 --   bounce's or complaint's codes. No address and no hash of one. Kept 30 days on the screening stream and 90 on the
 --   others (mail_send_expiry). States move one way: sent, delayed, delivered, then bounced, suppressed, rejected or
 --   complained, and a lower-ranked event never overwrites a higher one, so events land in any order and once.
--- - mail_recipient_key and mail_recipient_sha256(): SHA-256 of a 32-byte pepper made at this migration and the trimmed,
---   lower-cased address. The only address-derived value kept is screening_mail_refusal's (Q11 (b)): a screening
---   address that bounced permanently or was reported as spam (not not_spam), for 365 days, read only to refuse a new
---   screening to it. No customer stream's outcome is ever on the list.
+-- - mail_recipient_key and mail_recipient_sha256(): SHA-256 of a pepper made at this migration and the mailbox the
+--   address reaches (mail_recipient_canonical(): case, white space, Unicode NFKC, a +tag, googlemail.com and Gmail's
+--   dots), so every spelling of one inbox keys alike. The only address-derived value kept is screening_mail_refusal's
+--   (Q11 (b)): a screening address that bounced permanently or was reported as spam (not not_spam), for 365 days, read
+--   only to refuse a new screening to it. No customer stream's outcome is ever on the list.
 -- - screening_bounce_mark (Q10 (a)): one 7-day mark per screening permanent bounce for each of the run's keyed subjects,
 --   its account's (screening_run.rate_subject, migration 20261106090000) and its client's (screening_run.client_subject,
 --   new: the rate limiter's keyed HMAC of the client address, null when the web had none); a subject with 3 live marks
@@ -75,8 +76,9 @@
 -- 1. The keyed hash of a screening address (D12; Q11 (b))
 -- ---------------------------------------------------------------------------------------------------
 
--- One 32-byte pepper, as 64 hex characters, made here from two random UUIDs (the repository has no pgcrypto), so a copy
--- of the refusal list alone cannot be matched against a list of addresses. The owner's alone: no role holds a privilege
+-- One pepper of 64 hex characters, made here from two random UUIDs (the repository has no pgcrypto): 244 random bits,
+-- each UUID's version and variant bits being fixed, so a copy of the refusal list alone cannot be matched against a
+-- list of addresses. The owner's alone: no role holds a privilege
 -- on it, and it never changes.
 CREATE TABLE mail_recipient_key (
   id boolean PRIMARY KEY DEFAULT true CONSTRAINT mail_recipient_key_one CHECK (id),
@@ -89,11 +91,49 @@ ALTER TABLE mail_recipient_key ENABLE ROW LEVEL SECURITY;
 ALTER TABLE mail_recipient_key FORCE ROW LEVEL SECURITY;
 CREATE POLICY mail_recipient_key_owner ON mail_recipient_key FOR ALL TO tp_owner USING (true) WITH CHECK (true);
 
--- The keyed hash of an address: SHA-256 of the pepper and the trimmed, lower-cased address, as hex. Granted to no role;
--- it runs as its caller, the owner inside the definer functions and triggers below. It never raises with its input.
+-- The mailbox an address reaches, so every spelling of one inbox keys alike (review S2): canonicalMailbox() in
+-- packages/db/src/mail-address.ts is the same rule, and mail.db.test.ts holds the two equal on a table of spellings.
+-- Unicode NFKC (which composes as NFC does); ASCII white space dropped at either end; ASCII letters in lower case (the
+-- "C" collation's rule, whatever the database's locale); split at the last @, an address with no local part or no
+-- domain standing as read so far; the domain's trailing dots dropped and googlemail.com read as gmail.com; everything
+-- from the local part's first + dropped, at every domain; and at gmail.com alone, the local part's dots dropped (Google:
+-- dots do not matter in a Gmail address, and do in a Google Workspace one). A local part those two would leave empty is
+-- kept. Used only to look an address up, never to send. Granted to no role.
+CREATE FUNCTION mail_recipient_canonical(address text) RETURNS text
+LANGUAGE plpgsql IMMUTABLE SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE
+  as_read text := lower(btrim(normalize(coalesce(address, ''), NFKC), E' \t\n\r\f' || chr(11)) COLLATE "C");
+  -- The last @, counted from the end.
+  last_at integer := strpos(reverse(as_read), '@');
+  local_part text;
+  domain_part text;
+  mailbox_part text;
+BEGIN
+  IF last_at = 0 THEN
+    RETURN as_read;
+  END IF;
+  local_part := left(as_read, length(as_read) - last_at);
+  domain_part := rtrim(right(as_read, last_at - 1), '.');
+  IF local_part = '' OR domain_part = '' THEN
+    RETURN as_read;
+  END IF;
+  IF domain_part = 'googlemail.com' THEN
+    domain_part := 'gmail.com';
+  END IF;
+  mailbox_part := split_part(local_part, '+', 1);
+  IF domain_part = 'gmail.com' THEN
+    mailbox_part := replace(mailbox_part, '.', '');
+  END IF;
+  RETURN CASE WHEN mailbox_part = '' THEN local_part ELSE mailbox_part END || '@' || domain_part;
+END;
+$$;
+
+-- The keyed hash of an address: SHA-256 of the pepper and the mailbox it reaches (mail_recipient_canonical()), as hex.
+-- Granted to no role; it runs as its caller, the owner inside the definer functions and triggers below. It never raises
+-- with its input.
 CREATE FUNCTION mail_recipient_sha256(address text) RETURNS text
 LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp AS $$
-  SELECT encode(sha256(decode(k.pepper, 'hex') || convert_to(lower(btrim(address)), 'UTF8')), 'hex') FROM mail_recipient_key k
+  SELECT encode(sha256(decode(k.pepper, 'hex') || convert_to(mail_recipient_canonical(address), 'UTF8')), 'hex') FROM mail_recipient_key k
 $$;
 
 -- ---------------------------------------------------------------------------------------------------
@@ -1416,7 +1456,7 @@ REVOKE ALL ON mail_recipient_key, mail_stream, mail_send, screening_mail_refusal
   support_grant_notice, support_grant_notice_recipient FROM PUBLIC;
 GRANT SELECT ON support_grant_notice, support_grant_notice_recipient TO tp_app;
 
-REVOKE ALL ON FUNCTION mail_recipient_sha256(text), mail_send_expiry(), mail_state_rank(text), mail_window_counts(text), screening_mail_sending(),
+REVOKE ALL ON FUNCTION mail_recipient_canonical(text), mail_recipient_sha256(text), mail_send_expiry(), mail_state_rank(text), mail_window_counts(text), screening_mail_sending(),
   screening_mail_gate(), screening_mail_status(), screening_upload_mail_gate(), screening_run_bounce_budget(), screening_run_mail_gate(),
   support_notice_administrators(uuid), support_notice_report_undelivered(uuid, text), support_notice_counts(uuid, text),
   operator_open_support_notice(uuid, text, text), operator_support_notices_pending(integer), operator_support_notice_claim(uuid, uuid),

@@ -23,6 +23,7 @@ export {
 export { readDatabaseUrl } from './config';
 export { BILLING_ROLE, ESIGN_ROLE, OPERATOR_ROLE, SCREENING_ROLE, billingDevLoginUrl, esignDevLoginUrl, screeningDevLoginUrl } from './roles';
 export * from './crypto';
+export { canonicalMailbox, canonicalMailboxParts } from './mail-address';
 export * from './schema';
 export { RETENTION_CLASSES, type RetentionClass, RetentionError, type RetentionStart, retainUntil } from './retention';
 export { CONNECTION_TIMEOUT_MS, type DatabaseClient, type DatabasePool, type DatabasePoolClient, IDLE_TIMEOUT_MS, databaseClient, openPool } from './connect';
