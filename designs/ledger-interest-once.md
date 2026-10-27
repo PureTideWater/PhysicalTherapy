@@ -1,7 +1,9 @@
 # Interest credited once: the PLB L6 is the interest, AMT I says whose it is (Lane A; handed over by PR 15b)
 
-Design contract, 2026-10-27, against `claude/build-platform` at e908c21, with PR 6b-4 (#42, `co-001/pr-06b-mail-streams`,
-head 098636e3) read for every function and generated file this item shares with it.
+Design contract, 2026-10-27, against `claude/build-platform` at e908c21, with PR 6b-4 (#42, `co-001/pr-06b-mail-streams`)
+read at its fix round's head 6f23c42b (GitHub still shows 098636e3) for every function and generated file this item
+shares with it. GitHub's `claude/build-platform` has since moved to 085299bd (#76: six test files, none of this item's).
+Revised the same day after the design review (section 15 records each finding and what changed).
 
 - **Lane:** A (a schema pull request; LANES.md rule 2). **Branch:** `co-001/ledger-interest-once`, cut from the latest
   `claude/build-platform` after #42 merges and after the founder grants the freeze exception of section 10.
@@ -11,10 +13,13 @@ head 098636e3) read for every function and generated file this item shares with 
   interest credited twice, N1 (the interest "allocated" flag), a sequence for `ledger_match`'s order within one
   reconcile, and an index on `claim.superseded_by_claim_id`. Status: `approval-summaries/lane-b-pr15b-status.md`.
 - **Scouts' notes:** `scratchpad/progress/design-interest-database.md` and `design-interest-application.md`. **The
-  author's probes:** `scratchpad/probes/author/` (each command and its output is quoted where it is used below).
+  review:** `scratchpad/progress/design-interest-review.md` (its probes in `scratchpad/probes/review/`). **The
+  author's probes:** `scratchpad/probes/author/` (run 1) and `scratchpad/probes/author/run2/` (after the review); each
+  command and its output is quoted where it is used below.
 - **Short names:** `rem` = `apps/worker/src/reconcile/remittances.ts`; `rled` = `apps/worker/src/reconcile/ledger.ts`;
   `wq` = `apps/web/src/lib/reconciliation/queries.ts`; `page` = `apps/web/src/app/p/[practiceId]/reconciliation/page.tsx`;
-  `ledger_mig` = `packages/db/migrations/20261023120000_recovery_ledger.sql`.
+  `ledger_mig` = `packages/db/migrations/20261023120000_recovery_ledger.sql`; a **chain** is a claim with its reversals
+  and corrections (D3).
 
 ---
 
@@ -29,29 +34,37 @@ lines at a later reconcile (840 cents credited for 540 of cash, probe R), and an
 (credited although the check excludes it). Recovered is never touched, because interest is never in recovered.
 
 **What this PR does.**
-- The PLB L6 is the interest. An interest entry's evidence is always the PLB L6 that paid it; the claim's AMT I only
-  says which claim (and so which case lines) the money is for. Interest that appears only once as money (an L6 with no
-  AMT I) is credited. An AMT I with no L6 behind it is shown beside the line as reported, and counted nowhere.
-- A PLB L6 that names no claim (payers' guides list L6 among the codes whose reference need not name one) is split
-  over that remittance's claims by their AMT I, never past what each claim reported. Today such an L6 is never
-  credited.
-- One PLB L6 is never credited past what it paid, however many reconciles run, in code and in Postgres.
-- A PLB L6 that takes interest back (a positive amount) becomes a negative interest entry against the lines that hold
-  that claim's interest, never below zero on a line. Today it is dropped.
-- N1: an entry is flagged allocated only when its amount was split between two or more positive parts.
+- The PLB L6 is the interest. An interest entry's evidence is always the PLB L6 that paid it or took it back; the
+  claims' AMT I only say which claim (and so which case lines) the money is for. Interest that appears only once as
+  money (an L6 with no AMT I) is credited. An AMT I with no L6 behind it is shown beside the line as reported, and
+  counted nowhere until a check pays it.
+- A PLB L6 that names no claim (payers' guides list L6 among the codes whose reference need not name one, and the guide
+  lets one L6 carry the net interest of a whole remittance) is shared among that remittance's claims by their AMT I,
+  netted per chain, so a reversal and its correction cancel and another patient's interest is never taken. When the
+  remittance's L6s equal its AMT I, as the guide requires, each claim gets exactly its AMT I. Today such an L6 is never
+  credited. A reference that carries several identifiers names the claim whose control number is among them.
+- One PLB L6 is never credited past what it moved, however many reconciles run and whatever later uploads change about
+  whom it names, in code and in Postgres; a valid reconcile is never refused by that bound.
+- A PLB L6 that takes interest back becomes a negative interest entry against the lines that hold that chain's
+  interest, never below zero on a line. Today it is dropped.
+- N1: an entry is flagged allocated only when its amount is one of two or more parts of a pro-rata split.
 - `ledger_match.seq`: the order the ledger made its matches in. Every reader orders by it instead of by
   `matched_at`, which every match of one reconcile shares, and the match's random ID.
-- An index on `claim.superseded_by_claim_id` for the correction chain's lookups.
+- An index on `claim.superseded_by_claim_id` for the correction chain's lookups, unless SUITE-CAP-1 merges it first.
+- During the deploy and after a rollback, the previous image's reconcile credits no interest and otherwise runs as
+  before; the current image then credits the interest once.
 
 **Migration: yes, one** (section 5). It changes a CHECK on `ledger_match` and one on `ledger_entry`, adds
-`ledger_match.seq`, recreates `ledger_match_rules()`, adds one trigger function on `ledger_entry`, and adds two
-indexes. It regenerates `docs/product/domain-model.md` and `packages/db/functions`.
+`ledger_match.seq` and its index, recreates `ledger_match_rules()`, adds one trigger function on `ledger_entry`, and
+adds `claim_by_superseded` if SUITE-CAP-1 has not. It regenerates `docs/product/domain-model.md` and
+`packages/db/functions`.
 
 **One pull request** for all four handed-over items (section 3.5). The PR 15b case close ("payer corrected; balance is
 the patient's") is not a ledger item and stays with PR 8's case schema, as LANES.md already places it.
 
-**The founder decides two things** (section 10): the ledger freeze exception, whose exact scope section 10 lists, and
-the domain model's approval by its SHA-256 on the pull request's latest commit. Nothing else here is the founder's.
+**The founder decides two things** (section 10): the ledger freeze exception, whose exact scope section 10 lists (it
+can be granted together with SUITE-CAP-1's Q1), and the domain model's approval by its SHA-256 on the pull request's
+latest commit. Nothing else here is the founder's.
 
 ---
 
@@ -131,6 +144,12 @@ R after a third reconcile: SUM=840
   the payer took it back.
 - **A reversal's negative AMT I** is ignored (`interest_cents > 0`, `rem:853` and `ledger_mig:370`), so a reversal and
   correction whose AMT I net to zero credit the correction's AMT I again as new money.
+- **A reference that carries more than the claim's control number** (X12's recommended "CLP01 CLP07 TRN02", or a
+  payer's "CLP01 CLP07") is hashed whole (`rem:799`), matches no claim, and is never credited.
+- **Interest folded into CLP04** (balanced by a negative claim-level adjustment, outside the guide) becomes line cash
+  in `claimLinePayments` (`packages/ledger/src/payment.ts:188-195`), so it is approved as principal, and the claim's
+  AMT I credits it again as interest (the application scout's second double-count path). No synthetic case carries
+  the shape.
 - **N1** (payment-engine review of #51, `approval-summaries/lane-b-pr15b-review-payment-engine.md:57-58`):
   `allocated = named.length > 1` is true when only one line had a weight above zero and took the whole amount.
   Probe R's first entry: one line, 540 of 540, flagged allocated, shown as "(allocated pro rata)" (`page:115`).
@@ -176,31 +195,38 @@ only gate. PR 8 still builds the guard; it lists this migration as granted (sect
 ## 2. What the 835 implementation guide says
 
 x12.org does not resolve from this machine, so the guide's interpretations were read through search summaries, not
-verbatim. They agree with each other, with ADR 0021's balancing and with synth variant V07, which the parser team
-built to the guide (`packages/synth/src/cases/variants.ts:169-178`: AMT I 4.11 on the claim and `L6:<its CLP07>*-4.11`,
-BPR02 709.96 = 611.35 + 94.50 + 4.11).
+verbatim (the author's and the reviewer's searches agree). They agree with each other, with ADR 0021's balancing and
+with synth variant V07, which the parser team built to the guide (`packages/synth/src/cases/variants.ts:169-178`: AMT I
+4.11 on the claim and `L6:<its CLP07>*-4.11`, BPR02 709.96 = 611.35 + 94.50 + 4.11).
 
 - **RFI 1705** (5010 835 interest payment): net interest under a contract is reported at the PLB with code L6; the
   claim-specific amount goes in the claim's AMT with qualifier I; AMT segments do not take part in balancing. Interest
   the patient bears goes in CAS instead, with no AMT and no PLB.
+- **TR3 1.10.2.9** (as summarised): the L6 carries the net interest of the remittance's claims, totalled in one L6 or
+  split over several.
 - **RFI 2202** (PLB L6 interest): an AMT I needs its supporting PLB L6 in the same remittance, and an L6 its AMT I; a
   remittance carrying one without the other is not compliant.
 - **RFI 1324** (interest PLB in a 5010 835): when a reversal and a correction carry AMT I that nets to zero, no
   payment moves and no L6 is sent.
 - **RFI 2184** (quoting RFI 2123): the L6 is the sum of the remittance's AMT I amounts, except when that sum is zero.
 - **What PLB03-2 carries for L6** is not fixed: payers' companion guides say the reference usually names the claim,
-  with L6 among the stated exceptions (UnitedHealthcare's PLB guide, as summarised). So an L6 may name a claim, name
-  something else, or carry nothing.
+  with L6 among the stated exceptions (UnitedHealthcare's PLB guide, as summarised), and one payer's example carries no
+  reference at all (BCBS Oklahoma). X12's guidance (RFI 2370, as summarised) recommends that PLB03-2 carry CLP01, CLP07
+  and TRN02 together, and BCBS Texas writes "CLP01 CLP07" for its WO. So an L6 may name a claim, name it among other
+  identifiers, name something else, or carry nothing.
 
 **What follows.**
 1. The PLB L6 is the money: it is in BPR02, and the bank deposit proves BPR02. AMT I is the payer's statement of how
    much of that money each claim earned.
 2. A remittance's interest is the net of its L6s. When the payer names a claim in the L6, that is the claim; when it
-   does not, the remittance's AMT I amounts say whose it is.
+   does not, the remittance's AMT I amounts say whose it is. When the L6s equal the AMT I (the guide's rule), each
+   claim's share is exactly its AMT I, whichever way it moves.
 3. An AMT I with no L6 in its check is not money in that check. Under the guide it should not happen; when it does,
-   it is either paid later (RFI 2202's case, a later remittance's L6) or not paid at all.
-4. A reversal's negative AMT I and a positive L6 are interest taken back; netting reversal and correction to zero
-   moves nothing.
+   the interest is either paid in a later check, whose L6 names the claim, or not paid at all.
+4. A reversal's negative AMT I and a positive L6 are interest taken back. A reversal and the correction it makes room
+   for report one claim's change in interest between them: their AMT I net, and netting to zero moves nothing.
+5. Interest folded into CLP04 is outside the guide. This design counts it once, as principal, as today, and never
+   again as interest, because AMT I alone credits nothing (section 14 keeps the rest of that question).
 
 ---
 
@@ -252,11 +278,51 @@ maintainability and business readiness), never on build effort.
 - All three ledger items need the same freeze exception, and each schema PR takes one place in Lane A's serial chain
   and one founder approval of the domain model's SHA-256 (LANES.md rule 2). Two PRs would recreate
   `ledger_match_rules` twice and ask the founder twice.
-- The index is on `claim`, which is not a frozen table, and is the safest part of the bundle.
+- The index is on `claim`, which is not a frozen table, and is the safest part of the bundle. SUITE-CAP-1 specifies
+  the same index under the same name (its D15, for the report's patient-balance step); whichever of the two merges
+  first carries it, and the other drops it.
+- SUITE-CAP-1's own freeze exception (its Q1) changes only the lock key of `ledger_entry_within_evidence()` and
+  `ledger_entry_within_line()`, which this PR does not touch, so the founder can grant the two together.
 
 **PR 15b's stored case close** ("payer corrected; balance is the patient's") is not a ledger item: it is DDL on `case`
 and `case_line`, `case_rules()` and `@tp/triage deriveCaseState`, needs none of this exception, and LANES.md already
 places it with PR 8's case schema beside #11. It stays there.
+
+
+### 3.6 One PLB L6 that nets several claims, and a reversal beside its correction
+
+TR3 1.10.2.9 lets one L6 carry the net interest of every claim of the remittance, and RFI 1324 has a reversal and its
+correction report one claim's change in interest between them. Two choices follow: what counts as one claim's
+reported interest, and how a net L6 is shared when its claims report interest both ways.
+
+| Option | What it gives | Why not |
+|---|---|---|
+| (a) Each claim's AMT I on its own, paid interest only (run 1 of this design) | Simple | A reversal's -5.40 and its correction's +5.40 net to nothing, yet the correction's +5.40 takes 1.46 of another patient's 2.00 from a net L6 of 2.00 (the review's F2) |
+| (b) Net per chain, then one pool per sign of the net cash | Reversal and correction cancel | When a lone reversal (-5.40) and another claim (+2.00) share one net L6 of +3.40, the reversal's lines keep 2.00 of interest the payer took back and the other claim's 2.00 is lost: right in total, wrong on the case lines, which are all the ledger counts |
+| **(c) Net per chain; when the pool's L6s equal its chains' net AMT I, each chain gets exactly its AMT I, paid or taken back; otherwise only the net moves, shared by the chains reporting interest its way (recommended)** | Exact in the guide's own case, including a net L6 over interest paid and interest taken back; conservative when the payer's figures do not reconcile (never credits interest the cash cannot show) | One PLB L6 can then carry entries of both signs, so Postgres bounds each L6 per sign, counting the interest its remittance reports the other way (D8) |
+| (d) Scale both sides in proportion | None | Invents gross amounts the payer never stated |
+
+### 3.7 Once per PLB L6, whatever changes later
+
+| Option | Why |
+|---|---|
+| (a) Once per PLB L6 and claim (run 1 of this design) | Whom an L6 names can change after it is credited: a claim with the same control number approves another line later, or the remittance holding the named claim is uploaded after the L6's (the loader links reversals that arrive first, `adoptOrphanReversals`, `apps/worker/src/parse/loader.ts:562-592`). Keyed per claim, the reconcile credits the L6 again; Postgres refuses; the whole reconcile of the practice rolls back on every retry and every day, with nothing a person can do (the review's F1) |
+| **(b) Once per PLB L6 and sign, gross, with each chain's part as a second cap (recommended)** | What an L6 has given never exceeds what its current attribution gives it, reversed entries included (a person's reversal is final, as the WO branch counts `takenBefore`, `rem:804-805`). A re-attribution writes nothing more; the first attribution stands, visible on the line. Postgres's bound is implied by it, so a valid reconcile is never refused |
+
+### 3.8 The previous image during the deploy and after a rollback
+
+| Option | Why |
+|---|---|
+| (a) Refuse its one-record interest match (run 1 of this design) | Its `claimInterest` keys its check by the claim's ID, and the current image's matches carry the L6 as their evidence, so it retries every approved AMT I claim on every reconcile, even after the current image credited it. Every reconcile of every practice with an AMT I claim on a case line then fails (approvals, postings, deposits, stages, notices, and the day job's quarterly statement) until the image rolls forward (the review's F4, probe S3) |
+| **(b) Skip exactly that shape: a match by the job carrying one of the claim and the PLB L6 is not written, with no error (recommended)** | The rest of its reconcile stands; interest waits for the current image, which credits it once. The current image never writes that shape (its type requires both, and a database test asserts every interest match it writes carries both), so the skip cannot hide a defect of its own. A person's insert of that shape is still refused |
+
+### 3.9 A PLB03-2 that carries several identifiers
+
+| Option | Why |
+|---|---|
+| (a) Hash the whole reference, as today | X12's recommended "CLP01 CLP07 TRN02" never names a claim, so a later L6 paying an earlier claim's interest is never credited (the review's F6) |
+| **(b) The whole reference first; else each token, split on spaces, commas, semicolons, vertical bars and slashes; it names a claim only when the claims it reaches belong to one chain (recommended)** | Reads the recommended and the common forms; an ambiguous reference names nothing and is shared by AMT I, which caps it. Hyphens and dots are not split, because control numbers carry them |
+| (c) Also search every claim's decrypted control number inside the reference | Finds identifiers run together with no separator, at the cost of decrypting every claim of the practice on every reconcile; no payer example shows that form (section 12) |
 
 ---
 

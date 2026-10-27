@@ -69,3 +69,10 @@ Output: /home/user/ops/designs/ledger-interest-once.md
 - N1: allocated = one of >=2 nonzero same-sign parts of a pro-rata division (pool shortfall share among units, or line split). Exact AMT I amounts are not allocated.
 - N2: net-zero.835 raises allowed AND paid on line 1 by 2.00 (same allowed+higher pay = no_change, payment.ts:390-392).
 - N3: RFI 2202 wording: same-remittance rule only; later L6 = a later payment (case E), not RFI 2202's.
+- Run 2 draft migration: probes/author/run2/draft.sql (= run2/migs2/20261110090000_ledger_interest_once.sql); prototype run2/proto2.mts on tp_design_interest_41 (drops itself; if interrupted DROP it), output run2/proto2.out, running in bg under flock (b8aoy2l19), queued behind #42 capacity run.
+- Pool rule refined (Option E): units negative always need held lines; exact only when pool cash == sum residual a_u; else net-only by sign of P.
+- Next: edit design sections 0,1.3(N3 wording),2,3,4 (D2-D6,D11 rewritten; worked cases), 5 (SQL replaced with run-2 draft), 6, 7, 8 (8.0 run-2 results; LED-23/24 cases incl. F1/F2/F3/F6/F7), 10 (exception), 11 (files), 12 (risks), 14, 15 (review dispositions).
+- Run 2: backup of run-1 design at progress/ledger-interest-once.run1.md; editing sections in place (order: header+0, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15)
+- WRITTEN run 2: header + section 0
+- WRITTEN run 2: 1.4 two bullets (reference whole; CLP04 folded), section 2 (N3, TR3 1.10.2.9, RFI 2370)
+- WRITTEN run 2: 3.5 SUITE-CAP-1 lines; 3.6 (net chains, exact/net-only), 3.7 (once per L6 gross), 3.8 (skip legacy shape), 3.9 (tokens)

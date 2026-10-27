@@ -28,3 +28,8 @@ L12 line_status_ledger_rules reads before lock
 - Backfill: head == latest for pre-migration rows (2 practices).
 ## Open now
 - 'submission:' per-case advisory locks in case triggers -> per-case lock count in triage/reconcile at many patterns?
+- (run 2, cont.) Closed: 'submission:' locks are per submission/case insert (not triage). #42 head 8aa45a46 migration: no line_status/ledger/claim overlap. SS-01: no overlap. D8: both ledger triggers check practice_in_scope before lock (no cross-tenant wait). LATERAL advanceStages uses index under empty stats (probe lateral.sql on tp_design_suitecap1rev_2: 20k actionable 2.7 s). 'extra table' divergence informational. migrationsDir option exists for CAS-40.6. PDF is summary-only (no per-line Chromium blowup). price.large runs 100k on PRs (CI precedent ok). Repo public -> 4-CPU runners.
+## Findings so far
+- F1 (should_fix): memory headroom. G2 report heap 483/560 MiB (86%) under flag, probes used stand-in PDF (no Chromium installed here: no ms-playwright cache), chain peak in #49 already 803.9 MiB (78.5%) > design's own 70% streaming trigger; trigger measured on container memory while binding limit is V8 heap 560. "Not now" for streaming contradicts its own trigger; no headroom test.
+- F2 (nit): 4.7/12 "seconds" table-lock wait: LOCK TABLE waits for in-flight triage/report txn (report holds txn while printing PDF; up to job expiry 15 min) and queues all stage writers (reopen requests -> ALB 180 s). No lock_timeout anywhere.
+- F3 (nit): 14 "a large practice's page would take seconds" vs measured 19-23 s.
