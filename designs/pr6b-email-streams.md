@@ -160,6 +160,14 @@ D5. **One platform job, `mail_events`, runs every minute on the platform task as
    - `NOTICE_UNDELIVERED` (error, with `support_grant_id` or `invoice_id`).
    - `INVITATION_UNDELIVERED` (warn, with `invitation_id`).
    - `MAIL_PROBE_MISSED` (error, with the stream) when a probe has not come back in 26 h.
+     - **Amended by the fix round of 2026-10-27** (PR #42, review M3 and its follow-up; ADR 0065): a stream is missed
+       from its last proof, not its last send: open and confirmed, and the older of its last delivered and bounced
+       probe since the last resume 26 h old, whether a probe went since or not (a proof not back since the resume
+       counts from the probe last sent; none sent yet, nothing missed). The job logs it on every run while it holds,
+       due or not, so the alarm stays raised until a probe comes back: a lost daily probe pages 2 h after it went,
+       22 h before readiness lapses at 48 h (as first built, about 50 h after the last proof, after readiness had
+       lapsed). A probe that cannot be sent also logs `MAIL_PROBE_UNSENT` (warn) on each run, alarmed when each of
+       three 5-minute periods has one. The schedule is unchanged: a probe not back goes again 26 h after it went.
 
    Logs carry IDs and codes only. The address appears in no log line, payload, audit event or error message. Outside SES, its only copy is the SQS message, encrypted, for at most 4 days (14 in the DLQ).
 
@@ -170,6 +178,7 @@ D6. **The cut-off pauses the screening stream, and only that stream. Three trigg
 (a) **The screening's own rates.** After a screening event that records a permanent bounce or a complaint, the database computes over the **window**, which starts at `greatest(now() - 7 days, mail_stream.window_starts_at)` (`window_starts_at` is the last resume):
 - `sends`: screening messages sent in the window, probes excluded, and excluding state `suppressed` and `rejected` (never handed to a mailbox);
 - `bounces`: among them, `state = 'bounced' AND bounce_kind = 'permanent'`. Every suppression subtype maps to state `suppressed` and never counts; transient and undetermined bounces never count;
+  - **Amended by the fix round of 2026-10-27** (PR #42, review M2; ADR 0065): a bounce from SES's **global** suppression list (`Permanent`/`Suppressed`) is recorded `bounced` and counts, here, on the refusal list and toward the bounce marks, as SES counts it toward the account's bounce rate. Only the account's own list (`OnAccountSuppressionList`) and a set's override (`OnConfigurationSetSuppressionList`), which SES counts toward neither rate, map to `suppressed` and never count. SES's `Undetermined` subtype is kept as named (`undetermined`). Staging confirms which subtype a global-list bounce carries on the screening set (O11);
 - `complaints`: among them, `state = 'complained'` with `complaint_type <> 'not_spam'`.
 
 It pauses when:
@@ -235,6 +244,8 @@ D9. **Address checks before a screening send**, at submit, in this order:
    - the screening stream is paused: `screening_paused`;
    - the address's keyed hash is on the **screening refusal list** (D13): `screening_contact_undeliverable`;
    - (Q7) the submitter's client address or email account has had 3 or more permanent screening bounces in 7 days: `screening_bounce_budget`.
+
+   **Amended by the fix round of 2026-10-27** (PR #42, reviews S1, S2 and S4; ADR 0065, "The refusals"; plan D2): the order is paused, then **the budget, then the list** (S1: with the list first, a client or account past its budget learned from which refusal it got whether an address it named was on the list, with nothing recorded or sent). As built, the pause is a BEFORE INSERT trigger on an accepted `screening_upload` (`screening_upload_mail_gate`; `screening_prospect` is also written by `reject_screening_upload()`), and the budget then the list one BEFORE INSERT trigger on `screening_run` (`screening_run_mail_refusal`). The list keys the mailbox an address reaches, not its spelling (`mail_recipient_canonical()`, S2). Before steps 2 and 3, after the typo hint, the web asks `screening_submit_mail_refusal()` (tp_app, writes nothing) for the refusal the database would give, in the same order (closed, paused, budget, list), so no validation is spent on an upload the database refuses and no listed address reaches SES (S4); the triggers stay the backstop.
 
 **One wording for every address refusal** (DNS, validation `LOW`, the refusal list), so the form reveals nothing about any earlier screening:
 
@@ -374,6 +385,10 @@ CREATE INDEX mail_send_by_expiry ON mail_send (expires_at);
 
 Mapping: `suppressed` = bounce subtype `OnAccountSuppressionList`, `Suppressed` or `OnConfigurationSetSuppressionList`. An unknown subtype maps to `other` and the row is `bounced`.
 
+**Amended by the fix round of 2026-10-27** (PR #42, reviews M1 and M2; ADR 0065). The mapping as built:
+- Bounce subtypes are snake-cased (`OnAccountSuppressionList` is `on_account_suppression_list`). `suppressed` state = `on_account_suppression_list` or `on_configuration_set_suppression_list` alone: SES accepted the message, sent it to no one and counts it toward neither rate. SES's **global** suppression list (`Permanent`/`Suppressed`, subtype `suppressed`) is `bounced`, counted in the cut-off's window, on the refusal list and toward the bounce marks, as SES counts it toward the account's bounce rate (M2). `Undetermined` is kept as `undetermined`; an unknown subtype is still `other` and `bounced`; an unknown bounce kind is `undetermined`.
+- A **Complaint** whose `complaintSubType` is `OnAccountSuppressionList` (SES accepted the message and did not send it, the address being on the account-level list for an earlier complaint) is recorded as a permanent bounce of subtype `on_account_suppression_list`, state `suppressed`: undelivered for a notice and an invitation, counted toward nothing on the screening stream, never a complaint (M1: as first built a break-glass or dunning notice SES never sent read "Delivered"). A complaint of any other non-null subtype is left unread for the dead-letter queue (`MAIL_EVENT_UNREADABLE`), whose alarm brings it to a person.
+
 **Retention** (`expires_at`, set by the trigger `mail_send_expiry()`): screening stream 30 days after `sent_at` (and its prospect link goes when the prospect goes); transactional and notices 90 days. The durable record of a notice's delivery is the mirrored state on its recipient row, which follows the grant or invoice.
 
 ### `screening_mail_refusal` (global, owner-only)
@@ -482,6 +497,8 @@ CREATE INDEX dunning_notice_recipient_pending ON dunning_notice_recipient (next_
 | `screening_prospect_mail_gate` | `screening_prospect` BEFORE INSERT | Raises `screening_paused`, `screening_contact_undeliverable` or (Q7) `screening_bounce_budget` as coded refusals (`check_violation` with that constraint name) |
 | `screening_run_mail_gate` | `screening_run` BEFORE UPDATE OF status | Raises `screening_mail_paused` on a claim, completion or failure while `screening_mail_sending()` is false |
 | `screening_prospect_mail_forget` | `screening_prospect` BEFORE DELETE | Only under Q6's alternative (D13) |
+
+**Amended by the fix round of 2026-10-27** (PR #42, review S1; ADR 0065): `screening_prospect_mail_gate` was built as `screening_upload_mail_gate` (`screening_upload` BEFORE INSERT of an accepted upload: `screening_paused`) and `screening_run_mail_refusal` (`screening_run` BEFORE INSERT: `screening_bounce_budget`, then `screening_contact_undeliverable`), the budget before the list.
 
 ### Functions (all `SECURITY DEFINER`, `SET search_path = pg_catalog, public, pg_temp`, `REVOKE ... FROM PUBLIC`)
 
@@ -735,10 +752,13 @@ SES moved accounts with no SES activity since 2025-06-01 onto the **Essentials p
   | 10,000 | 9 complaints | paused |
 
   **One case per bounce subtype**: `general`, `no_email`, `other` permanent → counted; `suppressed`, `on_account_suppression_list`, `on_configuration_set_suppression_list` → state `suppressed`, not counted and not in `sends`; `mailbox_full`, `message_too_large`, `content_rejected`, `attachment_rejected` with kind `transient` or `undetermined` → not counted. Also not counted: `not_spam` complaints, probes, sends before `window_starts_at`.
+
+  **Amended by the fix round of 2026-10-27** (review M2): `suppressed` (SES's global list) permanent → state `bounced`, counted; only `on_account_suppression_list` and `on_configuration_set_suppression_list` → `suppressed`, not counted and not in `sends`; a Complaint with subtype `OnAccountSuppressionList` → a suppressed bounce, never a complaint (M1).
 - **Account signals**: `operator_mail_account_signal` with each signal pauses screening only, with `account_rate` or `account_review`, writes one `mail_stream_paused`, and a repeat changes nothing.
 - **Only screening pauses**: 100% hard bounces on transactional and on notices leave `paused_at` null; `UPDATE mail_stream SET paused_at = now()` for those two fails its CHECK; while screening is paused, `operator_due_support_notices` and the support and dunning outboxes still work, `submit_screening` refuses `screening_paused`, and a claim, completion or failure of a screening run refuses `screening_mail_paused`.
 - **Resume and confirmation**: resume requires the permission, writes `mail_stream_resumed`, resets the window and makes probes due; **resumed but unconfirmed: a claim refuses and `screening_mail_sending()` is false; after `operator_mail_stream_confirmed('screening', true)` the run is claimed and completes on its next attempt**.
 - **Refusal list**: a screening permanent bounce and a screening `abuse` complaint each make `submit_screening` refuse `screening_contact_undeliverable` (case-insensitive, trimmed); a transient bounce, a `suppressed` subtype and a `not_spam` complaint do not; **a customer-stream complaint or bounce to the same address does not**; after `MAIL_REFUSAL_DAYS` it does not; (Q6 alternative) deleting the prospect deletes its row.
+  - **Amended by the fix round of 2026-10-27** (reviews M2, S1, S2): a global-list bounce (subtype `suppressed`) does list the address; only the account list's and a set's override do not. Another spelling of a listed mailbox (a +tag, Gmail's dots, googlemail.com, case, NFKC) is refused too. A submitter past its budget gets `screening_bounce_budget` whatever the address (the budget is read before the list).
 - **Screening rows and the prospect**: deleting the prospect nulls `screening_prospect_id`; the rows hold no address-derived value; `mail_expiry` deletes them after 30 days.
 - **(Q7) Bounce budget**: three permanent bounces from one `client_subject` refuse its fourth screening with `screening_bounce_budget` and leave the stream open; the same for one `account_subject`; marks expire after 7 days; seven bounces spread over three clients and three accounts pause the stream (the trade-off Q2 states).
 - **Support notices**:
@@ -765,6 +785,7 @@ SES moved accounts with no SES activity since 2025-06-01 onto the **Essentials p
   - **an alarm state-change event pauses only screening**, reason `account_rate`; `GetAccount` returning `PROBATION` pauses with `account_review`;
   - probes go only to the simulator, go at once after a resume, and are skipped while paused, unconfirmed or in phase 1;
   - `MAIL_PROBE_MISSED` after 26 h;
+    - **Amended by the fix round of 2026-10-27** (review M3's follow-up): from the stream's last proof, on every run while it holds and whether or not a probe is due: a probe sent 3 h ago after a proof 27 h old is missed; one never sent since a proof 27 h old is missed and `MAIL_PROBE_UNSENT`; a proof from before the last resume is not counted (`mail-events.db.test.ts`, `mail.db.test.ts`).
   - the log sink contains no `@`.
 - `support-notices.db.test.ts`:
   - one message per administrator, no message with two recipients;

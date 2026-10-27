@@ -559,10 +559,24 @@ It must prove:
     1. closed;
     2. A's ZIP statuses and `screening_band_outside_content`, in the body before the prospect insert;
     3. `screening_paused`;
-    4. `screening_contact_undeliverable`;
-    5. under Q10 (a), `screening_bounce_budget`.
+    4. under Q10 (a), `screening_bounce_budget`;
+    5. `screening_contact_undeliverable`.
 
     The pause trigger is a backstop, because `screeningOpen()` closes the page first.
+
+    **Amended by the fix round of 2026-10-27** (PR #42, review S1 and S4; ADR 0065, "The refusals"): the budget now
+    comes before the refusal list (steps 4 and 5 above; this plan had the list fourth and the budget fifth). With the
+    list first, a client or an email account past its budget learned, from which of the two refusals it got, whether
+    an address it named had bounced or complained in the last 12 months, with nothing recorded and nothing sent; it
+    now gets the budget's sentence whatever the address. That order was this plan's own resolution, not one of the
+    founder's rulings (Q1, Q9, Q10 (a), Q11 (b), Q12), so the safer order was taken under the co-founder's standing
+    direction of 2026-10-27. As built: an accepted upload is refused while paused by a trigger on `screening_upload`
+    (`screening_upload_mail_gate`, not on `screening_prospect`, which `reject_screening_upload()` also writes); a run
+    is refused for the budget and then for the list by one trigger on `screening_run` (`screening_run_mail_refusal`).
+    Before any address check, the web asks `screening_submit_mail_refusal()` (tp_app, writes nothing) for the refusal
+    `submit_screening()` would give for the mail, in the same order (closed, paused, the budget, the list), so none of
+    the day's validations is spent on an upload the database refuses and no listed address reaches SES's validation;
+    the typo hint comes before it. The triggers stay the backstop.
 - **D3. `held_by_pause`: a column on `complete` (B) or decided by the job (C D7): the job decides.**
   - 6b-3 cannot read `mail_stream`, which does not exist until 6b-4.
   - So 6b-3's `complete` returns `received_at` and `wait_reason`.
