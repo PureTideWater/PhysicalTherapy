@@ -68,3 +68,14 @@ A suspension is computed, not stored (the view `billing_standing`): it ends the 
 If the customer paid and runs are still refused, find the invoice's `invoice.paid` event in Stripe and resend it. Do not
 change `invoice` rows by hand. A platform administrator's own suspension of an organization (its status) is separate and
 is lifted in the console.
+
+PaidWhole's own suspension is stored (docs/adr/0080): the organization's status, its reason and when it began, with a
+history row holding the actor and PaidWhole's internal note. It is set only in the console, on the organization's
+page, with a reason from the closed list (at the customer's request, a security hold, the agreement ended), and lifted
+there with a reinstatement reason, one click each. Nonpayment is never one of its reasons: an unpaid invoice is
+billing's hold above, which the payment ends, so never suspend an organization in the console because an invoice is
+unpaid, and never expect a payment to lift PaidWhole's suspension. Do not change `organization.status`,
+`status_reason` or `organization_status_change` by hand: the setter checks the status the page showed and writes the
+audit event, and a closed organization stays closed. A security hold stops new work only; to stop a person's access,
+end their membership. A suspended group stops new work at its practices for everyone; a suspended firm stops only
+its own people's new work through its grants, and the practices' own staff carry on.
