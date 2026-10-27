@@ -918,6 +918,33 @@ describe('the screening’s mail gate (audit #76; migration 20261107090000; D3)'
     expect(lines).toEqual([expect.objectContaining({ screening_run_id: refusedRun, error_code: 'SCREENING_NOTICE_UNDELIVERABLE' })]);
     expect(JSON.stringify(lines)).not.toContain('synthetic.test');
   });
+
+  it('finishes a run its last attempt priced whole but a pause kept from completing: emailed after the resume, never failed for its attempts (M7)', async () => {
+    for (const sweep of ['consumer', 'inline'] as const) {
+      const runId = await submit({ email: `prospect.last.attempt.${sweep}@synthetic.test` });
+      // Two attempts lost before (a consumer that stopped twice), then the third prices every row and the stream pauses
+      // before its completion.
+      await rewind("UPDATE screening_run SET status = 'pricing', attempts = 2, started_at = now() - interval '3 minutes', progress_at = now() - interval '3 minutes' WHERE id = $1", [runId]);
+      const mail = new MemoryMailSender();
+      expect(await priceScreeningRun(dependencies(mail, { afterKeyedRead: pause }), runId)).toBe('mail_paused');
+      expect(await run(runId)).toEqual({ status: 'pricing', attempts: 3 });
+      expect((await owner.query("SELECT count(*)::int AS n FROM screening_result WHERE run_id = $1 AND disposition = 'pending'", [runId])).rows).toEqual([{ n: 0 }]);
+      // Resumed and confirmed; the run is stale and out of attempts. The sweep completes it on its last attempt and sends
+      // the result.
+      await sending();
+      await stale(runId);
+      lines = [];
+      if (sweep === 'consumer') {
+        const queue = { send: () => Promise.resolve('job') } as unknown as JobSender;
+        expect(await resendScreeningRuns(dependencies(mail), queue, { minQueuedAgeSeconds: 0 })).toMatchObject({ failed: 0 });
+      } else {
+        expect(await sweepScreeningRuns(dependencies(mail), { minQueuedAgeSeconds: 0 })).toMatchObject({ complete: 1, failed: 0 });
+      }
+      expect(await run(runId)).toEqual({ status: 'complete', attempts: 3 });
+      expect(mail.sent.map((message) => message.identity)).toEqual([{ stream: 'screening', kind: 'screening_result', subjectId: runId }]);
+      expect(lines.map((line) => line.error_code)).not.toContain('PRICING_ATTEMPTS_EXHAUSTED');
+    }
+  });
 });
 
 describe('SCR-03: a screening expires 30 days after its upload', () => {
