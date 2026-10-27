@@ -19,3 +19,6 @@
 - SHA map builder->branch: scratchpad/pr42/sha-map.txt
 - watched.ts --write: no change (537 lines; +validation-credentials.ts, +mail-address.ts vs base merge)
 - dm summary (pre-commit): scratchpad/pr42/dm-summary.md (59,347 chars; regenerate after commit)
+- Commits: 14392ab1 (domain model + functions), 5ef893d5 (ADR 0065 known (a)/(e) + runbook M1/M2/M9 staging checks), 869352a9 (e2e mail.ts restore helper + stream fixture timeouts)
+- PENDING: web-entries guard commit after mutation check (billing/public.ts mutated in tree! restore from scratchpad/billing-public.bak before commit)
+- Suite script: scratchpad/pr42/suite.sh (results scratchpad/pr42/suite/results.tsv)

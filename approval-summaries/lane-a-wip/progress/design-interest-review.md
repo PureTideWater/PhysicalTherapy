@@ -3,3 +3,4 @@ Started 2026-10-27. Reviewing /home/user/ops/designs/ledger-interest-once.md (87
 ## Leads opened
 ## Leads closed (sound)
 ## Findings
+- Read design fully (1068 lines) at 16:15.
