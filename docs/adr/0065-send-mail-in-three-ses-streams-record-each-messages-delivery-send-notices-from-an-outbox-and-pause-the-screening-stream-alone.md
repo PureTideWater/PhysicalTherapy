@@ -121,10 +121,11 @@ budget learned, from which of the two refusals it got, whether any address it na
 last 12 months, with nothing recorded and nothing sent. Now it gets the budget's sentence whatever the address. The
 plan's D2 had put the list first; that order was the plan's own resolution, not one of the founder's rulings (which are
 Q1, Q9, Q10 (a), Q11 (b) and Q12 above), and the safer order is taken under the co-founder's standing direction of
-2026-10-27. Before it checks an address at all, the web asks `screening_submit_mail_refusal()` for the refusal
-`submit_screening()` would give for the mail, in the same order (closed, paused, the budget, the list), writing nothing
-(review S4): none of the day's validations is spent on an upload the database refuses for its mail, and no address on
-the list is sent to SES's validation. The triggers stay the backstop. A ZIP the database refuses is not in that check
+2026-10-27. Before it asks DNS or SES's validation about an address, the web asks `screening_submit_mail_refusal()` for
+the refusal `submit_screening()` would give for the mail, in the same order (closed, paused, the budget, the list),
+writing nothing (review S4): none of the day's validations is spent on an upload the database refuses for its mail, and
+no address on the list is sent to SES's validation. The typo hint comes before that check: it reads the address alone
+and costs nothing, so a mistyped address is told its likely fix alike whether or not it is on the list. The triggers stay the backstop. A ZIP the database refuses is not in that check
 (it would copy PR 6b-2's location rule into a second function): such an upload still spends one validation, within the
 rate limit.
 The consumer reads `screening_mail_gate()` (tp_screening) before it claims; the web reads `screening_mail_status()`
