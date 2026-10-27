@@ -627,7 +627,9 @@ describe('the roles reach the tables only through their functions', () => {
       'screening_mail_sending',
       'screening_upload_mail_gate',
       'screening_run_mail_gate',
-      'screening_run_bounce_budget',
+      'screening_run_mail_refusal',
+      'screening_bounce_budget_spent',
+      'screening_contact_refused',
     ];
     for (const name of [...forApp, ...forOperator, ...forScreening, ...forNone]) {
       expect(byName[name], name).toBeDefined();
@@ -643,10 +645,12 @@ describe('the roles reach the tables only through their functions', () => {
       expect(row.definer, name).toBe(forApp.includes(name) || forOperator.includes(name) || forScreening.includes(name));
     }
     expect(rows.filter((row) => !row.definer && forNone.includes(row.name.replace(/\(.*$/, ''))).map((row) => row.name).sort()).toEqual([
+      'screening_bounce_budget_spent(text,text)',
+      'screening_contact_refused(text)',
       'screening_mail_sending()',
       'screening_queue_tier(text,integer)',
-      'screening_run_bounce_budget()',
       'screening_run_mail_gate()',
+      'screening_run_mail_refusal()',
       'screening_upload_mail_gate()',
       'screening_wait_limits()',
     ]);
@@ -1487,7 +1491,7 @@ describe('PR 6b-4: the screening’s mail (migration 20261107090000; audit #76, 
     expect((await admin.query('SELECT client_subject FROM screening_run WHERE id = $1', [previous[0]?.run_id])).rows).toEqual([{ client_subject: null }]);
   });
 
-  it('D2: refuses in its order: closed; the ZIP statuses, the rows and screening_band_outside_content; screening_paused; screening_contact_undeliverable; screening_bounce_budget', async () => {
+  it('D2: refuses in its order: closed; the ZIP statuses, the rows and screening_band_outside_content; screening_paused; screening_bounce_budget; screening_contact_undeliverable (S1)', async () => {
     const refused = `refused.${letters()}@synthetic.test`;
     const budgeted = sha256(`budgeted account ${randomUUID()}`);
     await admin.query("INSERT INTO screening_mail_refusal (recipient_sha256, reason, expires_at) VALUES (mail_recipient_sha256($1), 'bounced', now() + interval '1 day')", [refused]);
@@ -1503,13 +1507,25 @@ describe('PR 6b-4: the screening’s mail (migration 20261107090000; audit #76, 
     await resetScreeningMail();
     await admin.query("INSERT INTO screening_mail_refusal (recipient_sha256, reason, expires_at) VALUES (mail_recipient_sha256($1), 'bounced', now() + interval '1 day')", [refused]);
     await markSubject(budgeted, 'account');
-    expect(await refusal(every)).toBe('screening_contact_undeliverable');
+    // The submitter past its budget is refused before the address is read (S1): the same answer for an address on the
+    // refusal list and one off it, so no client or account past its budget can test an address against the list.
+    expect(await refusal(every)).toBe('screening_bounce_budget');
     expect(await refusal({ ...every, email: `other.${letters()}@synthetic.test` })).toBe('screening_bounce_budget');
+    expect(await refusal({ ...every, rateSubject: accountSubject() })).toBe('screening_contact_undeliverable');
     expect(await refusal({ ...every, email: `other.${letters()}@synthetic.test`, rateSubject: accountSubject() })).toBe('accepted');
     // The client's subject the same way, and a run with none is held to its account's alone.
     const client = sha256(`budgeted client ${randomUUID()}`);
     await markSubject(client, 'client');
     expect(await refusal({ email: `client.${letters()}@synthetic.test`, clientSubject: client })).toBe('screening_bounce_budget');
+    expect(await refusal({ email: every.email, clientSubject: client })).toBe('screening_bounce_budget');
+    expect(await refusal({ email: every.email, clientSubject: sha256(randomUUID()) })).toBe('screening_contact_undeliverable');
+    // Nothing of either refusal is kept: no prospect, upload, run or audit event.
+    const kept = async () =>
+      (await admin.query<{ n: number }>("SELECT (SELECT count(*) FROM screening_prospect) + (SELECT count(*) FROM screening_upload) + (SELECT count(*) FROM screening_run) + (SELECT count(*) FROM audit_event WHERE action = 'screening_submitted') AS n")).rows[0]?.n;
+    const before = await kept();
+    await refusal({ email: every.email, clientSubject: client });
+    await refusal({ email: `client.${letters()}@synthetic.test`, clientSubject: client });
+    expect(await kept()).toBe(before);
     expect(await refusal({ email: `client.${letters()}@synthetic.test`, clientSubject: sha256(randomUUID()) })).toBe('accepted');
     expect(await refusal({ email: `client.${letters()}@synthetic.test`, clientSubject: null })).toBe('accepted');
     expect(await refusal({ email: `client.${letters()}@synthetic.test`, clientSubject: 'not-a-subject' })).toBe('screening_run_client_subject');
