@@ -50,7 +50,7 @@ test('a billing manager uploads an 835 and a zip; the worker takes them in and l
   }
   // The receipts come from the server: they survive a reload, and no file name was ever sent.
   await page.reload();
-  const receipts = page.getByRole('region', { name: 'Receipts' });
+  const receipts = page.getByRole('region', { name: 'Receipts', exact: true });
   await expect(receipts.getByText('Expanded')).toBeVisible();
   await expect(page.getByText('remit.835')).toHaveCount(0);
   const stored = await withDatabase(async (client) =>

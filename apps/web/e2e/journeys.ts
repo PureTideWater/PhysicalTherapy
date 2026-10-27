@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 
-import { test } from '@playwright/test';
+import { type Page, expect, test } from '@playwright/test';
 
 import {
   EvidenceResolver,
@@ -25,8 +27,9 @@ import { createPricingRun } from '@tp/worker/pricing';
 import { PgBoss } from 'pg-boss';
 
 import { personaEmail } from '../scripts/synthetic-personas';
-import { e2eDatabaseUrl } from './env';
-import { withDatabase } from './helpers';
+import { FileDevStore } from '../src/lib/auth/dev-store';
+import { E2E_DEV_AUTH_DIR, e2eDatabaseUrl } from './env';
+import { registerKeyAndSignIn, withDatabase } from './helpers';
 
 /**
  * The journeys' shared setup on the e2e database (synthetic data only). Each journey works in a
@@ -94,6 +97,40 @@ export async function journeyPractice(options: JourneyPracticeOptions): Promise<
     });
     return id;
   });
+}
+
+/**
+ * A support grant on the practice for an internal persona, as a ticket opens one (four hours), when the persona holds
+ * none in force: for a journey's practice that was created before the persona needed it.
+ */
+export async function supportGrant(practiceId: string, key: string): Promise<void> {
+  const person = await userId(key);
+  await withDatabase((client) =>
+    asOwner(client, [practiceId], () =>
+      client.query(
+        `INSERT INTO support_grant (practice_id, user_id, ticket, reason, expires_at)
+         SELECT $1, $2, 'SYN-JOURNEY-GRANT', 'SYNTHETIC JOURNEY ACCESS', now() + interval '4 hours'
+          WHERE NOT EXISTS (SELECT 1 FROM support_grant WHERE practice_id = $1 AND user_id = $2 AND expires_at > now())`,
+        [practiceId, person],
+      ),
+    ),
+  );
+}
+
+/**
+ * An internal persona's first sign-in (e2e/helpers.ts, registerKeyAndSignIn) that a retry can repeat: on a retry the
+ * hardware key the attempt before registered, in a browser that is gone, is first taken out of the local identity
+ * provider's store (the key is never in the database), so the persona registers a key again. A first attempt has none.
+ */
+export async function registerKeyAndSignInAgain(page: Page, key: string): Promise<void> {
+  if (retrying()) {
+    const store = new FileDevStore(path.join(E2E_DEV_AUTH_DIR, 'store.json'));
+    const record = await store.byEmail(personaEmail(key));
+    if (record !== undefined) {
+      await store.update(record.sub, (current) => ({ ...current, credentials: [] }));
+    }
+  }
+  await registerKeyAndSignIn(page, key);
 }
 
 /** Queues a job on the e2e queue, as the web app or the monitoring chain does. */
@@ -397,4 +434,69 @@ export async function pricedAndTriaged(options: PeriodOptions): Promise<string> 
   } finally {
     await pool.end();
   }
+}
+
+/** The screen tour's settings: places of service 11 and 22, rounding half up to the cent, cases from $10.00 short. */
+const TOUR_SETTINGS = { place_of_service_settings: { '11': 'non_facility', '22': 'facility' }, default_rounding: 'HALF_UP_CENT', case_materiality_cents: '1000' };
+
+const TOUR_FIXTURES = path.resolve(import.meta.dirname, '../../../fixtures/synthetic');
+
+/** The tour's two remittances: SYNTHETIC CAS-08 (payer Q) and CAS-02 (payer N). */
+const TOUR_FILES = [
+  { name: 'era-payer-q.835', mimeType: 'application/octet-stream', buffer: readFileSync(path.join(TOUR_FIXTURES, 'CAS-08/remit.835')) },
+  { name: 'era-payer-n.835', mimeType: 'application/octet-stream', buffer: readFileSync(path.join(TOUR_FIXTURES, 'CAS-02/remit.835')) },
+];
+
+export interface TourPracticeOptions {
+  readonly name: string;
+  /** The billing manager persona the page is signed in as: who uploads, maps and signs off. */
+  readonly manager: string;
+  /** Internal personas who reach the practice under a support grant, beside the contract specialist. */
+  readonly supportFor?: readonly string[];
+}
+
+/**
+ * The screen tour's practice and its shape of data (the 1280 px tour, e2e/layout-1280.spec.ts, and the tables at a
+ * phone's width, e2e/tables-phone.spec.ts), in a practice of its own in the other group: the billing manager uploads
+ * SYNTHETIC CAS-08 (payer Q, three 97110 lines in March, each 30.00 short) and CAS-02 (payer N, 32 lines in April);
+ * payer Q's schedule is abstracted by the contract specialist and signed off beside the browser; payer N's plan is
+ * mapped as no agreement on screen; and March and April are priced and triaged by the worker, which the caller keeps
+ * running (a case of payer Q's three lines; payer N's lines to anomaly screening). The page is signed in as the
+ * manager. On a retry, only what the attempt before left undone. Returns the practice's ID.
+ */
+export async function tourPractice(page: Page, options: TourPracticeOptions): Promise<string> {
+  const practiceId = await journeyPractice({ name: options.name, settings: TOUR_SETTINGS, supportFor: options.supportFor });
+  const at = (screen: string) => `/p/${practiceId}${screen}`;
+  await test.step('CAS-08 and CAS-02 load; payer Q’s schedule is signed off and payer N’s plan mapped as no agreement; March and April are priced and triaged', async () => {
+    // A retry finds the attempt before's uploads: each is waited for, not uploaded again (it would be a duplicate of itself).
+    const earlier = await uploadedEarlier(practiceId, TOUR_FILES);
+    const fresh = TOUR_FILES.filter((file) => !earlier.has(file.name));
+    if (fresh.length > 0) {
+      await page.goto(at('/uploads'));
+      await page.getByLabel('Choose files to upload').setInputFiles(fresh);
+      const batch = page.getByRole('region', { name: 'This batch' });
+      for (const file of fresh) {
+        await expect(batch.getByRole('listitem').filter({ hasText: file.name })).toContainText('Loaded 1 remittance', { timeout: 120_000 });
+      }
+    }
+    for (const documentId of earlier.values()) {
+      await untilLoaded(documentId);
+    }
+    await signedOffSchedule({ practiceId, managerKey: options.manager, planKey: 'CE:SYNPLAN-FIX-ONE', disputeWindowDays: 365 });
+    const mapped = await withDatabase(
+      async (client) =>
+        ((await client.query("SELECT 1 FROM payer_plan_mapping m JOIN plan p ON p.id = m.plan_id WHERE m.practice_id = $1 AND p.plan_key = 'CE:SYNPLAN-OON-CAS'", [practiceId])).rowCount ?? 0) > 0,
+    );
+    if (!mapped) {
+      await page.goto(at('/mapping'));
+      await page.getByRole('table', { name: 'Payers and plans' }).getByRole('row').filter({ hasText: 'SYNPLAN-OON-CAS' }).getByRole('link', { name: 'CE:SYNPLAN-OON-CAS' }).click();
+      await page.getByLabel('Agreement', { exact: true }).selectOption({ label: 'No agreement (out of network)' });
+      await page.getByLabel('Effective from', { exact: true }).fill('2026-01-01');
+      await page.getByRole('button', { name: 'Save the mapping' }).click();
+      await expect(page.locator('[data-notice="mapped"]')).toBeVisible();
+    }
+    await pricedAndTriaged({ practiceId, managerKey: options.manager, periodFrom: '2026-03-01', periodTo: '2026-03-31' });
+    await pricedAndTriaged({ practiceId, managerKey: options.manager, periodFrom: '2026-04-01', periodTo: '2026-04-30' });
+  });
+  return practiceId;
 }
