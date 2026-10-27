@@ -29,6 +29,18 @@ snap() {
       fi
     fi
   done
+  # The integrator works in the PR's own worktree: its unpushed commits go to co-001/wip-pr42-integrate, never to the PR
+  # branch (one push per round), and its uncommitted changes to integrate.uncommitted.patch.
+  if [ -d /home/user/pr6b4 ]; then
+    head="$(git -C /home/user/pr6b4 rev-parse HEAD 2>/dev/null)"
+    git -C /home/user/pr6b4 diff HEAD > "$WIP/integrate.uncommitted.patch" 2>/dev/null || true
+    [ -s "$WIP/integrate.uncommitted.patch" ] || rm -f "$WIP/integrate.uncommitted.patch"
+    if [ -n "$head" ] && [ "$(git -C "$MAIN" ls-remote origin refs/heads/co-001/wip-pr42-integrate 2>/dev/null | cut -f1)" != "$head" ] \
+       && [ "$(git -C "$MAIN" rev-parse origin/co-001/pr-06b-mail-streams 2>/dev/null)" != "$head" ]; then
+      if git -C "$MAIN" push -q origin "$head:refs/heads/co-001/wip-pr42-integrate" 2>&1 | tail -2; then log "pushed co-001/wip-pr42-integrate at ${head:0:8}"
+      else log "push of co-001/wip-pr42-integrate refused or failed (not forced)"; fi
+    fi
+  fi
   # Copies, with any 40- or 64-hex hash shortened to 8 digits and an ellipsis (gitleaks reads a bare hash as a key).
   for f in "$SP"/progress/*.md; do [ -f "$f" ] && sed -E 's/\b([0-9a-f]{8})[0-9a-f]{32}([0-9a-f]{24})?\b/\1…/g' "$f" > "$WIP/progress/$(basename "$f")"; done
   for s in "$WFS"/*.js; do [ -f "$s" ] && cp -p "$s" "$OPS/workflow-scripts/lane-a-$(basename "$s")"; done
