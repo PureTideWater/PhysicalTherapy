@@ -1,0 +1,99 @@
+{
+  "verdict": "build with deltas",
+  "deltas": [
+    {
+      "section": "Header, 4 (#42 and SS-01 overlap), 9, 11, 13 slice 1: the base",
+      "code_now": "origin/co-001/ss-01-suspension-refusal = 7da01015, built on 098636e3. #42's head is 6f23c42b, 38 commits past 098636e3. Those commits change mail_streams.sql (+163/-62), infra/lib/constructs/monitoring.ts (+46), infra/test/monitoring.test.ts, docs/runbooks/deploy-and-rollback.md, docs/product/test-matrix.md, packages/synth/src/cases/matrix.ts, docs/product/domain-model.md, packages/db/src/schema/operations.ts and watched-paths.txt. SS-01's head also lacks 085299bd (#76) and all of SUITE-CAP-1a, which has no remote branch yet.",
+      "design_says": "1b follows #42, SS-01 and 1a and edits their final text; slice 1 runs CAS-42.1/.2 on 1a's merge.",
+      "builder_instruction": "Do not write 1b's files on SS-01's current head. Cut co-001/suite-cap-1-triage-locks only from a tree that holds #42's final head, SS-01's final head (rebased or merged onto #42's final) and 1a's merge. Before then, slice 1 (the measurement gate) cannot run, because it needs judgedCandidates and the streamed gatherReport. On that tree, re-read and edit monitoring.ts, monitoring.test.ts, deploy-and-rollback.md, test-matrix.md, matrix.ts, registry.ts, areas.json, schema/index.ts and watched-paths.txt. Regenerate domain-model.md and the function files from a database migrated from empty at that tree, not at 7da01015, because SS-01's domain-model.md was generated against 098636e3's mail_streams.sql."
+    },
+    {
+      "section": "4.2 line_status_head, D1, D5, 7 'Tests updated' (cross-tenant)",
+      "code_now": "packages/db/src/cross-tenant.db.test.ts:129 calls factory.primaryKey(table) for every registered table. RowFactory.primaryKey (packages/db/src/row-factory.ts, just after :480) throws 'line_status_head: the cross-tenant tests need a single-column primary key' for a composite key; a probe on the design's SQL reproduced it. All 47 registered tables today have a single-column primary key.",
+      "design_says": "PRIMARY KEY (practice_id, service_line_id), the upsert's arbiter; 'the generated cross-tenant tests cover the new table from its registry row'.",
+      "builder_instruction": "In 20261109090000_line_status_heads.sql, give line_status_head `id uuid PRIMARY KEY DEFAULT gen_random_uuid()` and `CREATE UNIQUE INDEX line_status_head_once ON line_status_head (practice_id, service_line_id)`. This keeps practice_id leading an index for catalog.ts:369-370. Keep the trigger's `ON CONFLICT (practice_id, service_line_id)`, which infers line_status_head_once. The backfill INSERT omits id. Mirror both in packages/db/src/schema/triage.ts (lineStatusHead: id primary key plus uniqueIndex('line_status_head_once')). Do not change RowFactory or cross-tenant.db.test.ts. Change the 'Primary key' wording in D1, ADR 0083 and the domain model's row to match."
+    },
+    {
+      "section": "4.2 lock loop (D22) and 4.4 claim_by_superseded",
+      "code_now": "As designed, 4.2 holds line_status IN SHARE ROW EXCLUSIVE and then 4.4 runs its own NOWAIT loop for claim's lock afterwards. Every stage writer, a person's reopen included, queues behind the held line_status lock for up to the claim loop's 300 s. A probe confirmed the alternative: one try that locks both tables in the same subtransaction releases claim's lock when line_status refuses (pg_locks showed nothing held between tries), and it took both on try 7 once the stage writer committed.",
+      "design_says": "4.4 takes claim's lock 'the same way', after 4.3.",
+      "builder_instruction": "Replace 4.2's DO block with one bounded loop whose single try is `LOCK TABLE claim IN SHARE MODE NOWAIT; LOCK TABLE line_status IN SHARE ROW EXCLUSIVE MODE NOWAIT;` inside one BEGIN \u2026 EXCEPTION WHEN lock_not_available block, with the same 300 tries and pg_sleep(1). Run it once, before the backfill. Its message names both tables, for example 'line_status or claim stayed in use for five minutes; run the deploy again (docs/adr/0083)'; use the same words in section 6, the runbook and CAS-40.8. 4.4's CREATE INDEX then runs under the held SHARE lock with no loop of its own. In CAS-40.8, also hold an open claim insert and assert that a third connection's stage insert commits while the loop retries."
+    },
+    {
+      "section": "5.4 heap line: packages/observability/src/fields.test.ts",
+      "code_now": "fields.test.ts (at both 7da01015 and 6f23c42b, :30-36) asserts `toEqual(['elapsed_ms','record_count'])` and that every NUMERIC_LOG_FIELDS name matches /^[a-z]+(_[a-z]+)*_(ms|count)$/ ('names a measure, milliseconds or a count'). NUMERIC_LOG_FIELDS is at fields.ts:54.",
+      "design_says": "fields.test.ts gains the two names.",
+      "builder_instruction": "In fields.test.ts, add 'heap_live_peak_mib' and 'heap_limit_mib' to the toEqual list. Widen the unit regex to /^[a-z]+(_[a-z]+)*_(ms|count|mib)$/ and the test title to 'milliseconds, a count or mebibytes'. Otherwise the two new fields fail the existing test."
+    },
+    {
+      "section": "5.4 and 5.6: the 'job heap' message and the alarm",
+      "code_now": "The house pattern (6f23c42b): infra/lib/jobs.ts:9-14 defines JOB_FAILED_MESSAGE and JOB_FAILED_METRIC. apps/worker/src/worker.ts:78 writes the same text out for the log lint. infra/test/monitoring.test.ts:48 asserts that worker.ts contains `export const JOB_FAILED_MESSAGE = '\u2026'`. monitoring.ts:255-286 builds the filter and alarm from those constants.",
+      "design_says": "metric filter on `$.msg = \"job heap\"`; HEAP_MIB imported from infra/lib/heap.ts.",
+      "builder_instruction": "Add JOB_HEAP_MESSAGE = 'job heap' and JOB_HEAP_METRIC (namespace 'TherapyPlatform/Worker') to infra/lib/jobs.ts, which joins 1b's files. Write `export const JOB_HEAP_MESSAGE = 'job heap';` in worker.ts and log through it. Assert the written-out copy in monitoring.test.ts the way :48 does. The filter's metricValue is '$.heap_live_peak_mib'. The alarm uses the MAXIMUM statistic over 300 s with threshold HEAP_MIB.worker * 0.75 and treatMissingData NOT_BREACHING. Wire it with `addAlarmAction(notify)` like the others. The new apps/worker/src/heap.ts must not import infra/lib/heap.ts: worker.ts is in the screening-capacity closure, and heap.ts's header says no closure file imports it. Read heap_size_limit from v8 as D19 says."
+    },
+    {
+      "section": "7 CAS-40.7 (the backfill)",
+      "code_now": "migrate() takes migrationsDir (packages/db/src/migrate.ts:77-85). packages/db/src/domain-model/domain-model-drift.db.test.ts:53-57 copies MIGRATIONS_DIR into a temp directory to migrate a partial set.",
+      "design_says": "on a database migrated to SS-01's head.",
+      "builder_instruction": "Migrate a scratch database with migrationsDir set to a temp copy of every migration that sorts before 20261109090000_line_status_heads.sql. Pick the files by name order, not by hard-coding SS-01's filename. Seed the events for two practices, then migrate again with the full directory and assert one head row per line."
+    },
+    {
+      "section": "1.1, 4.3, 4.5 citations (nits; the bodies hold)",
+      "code_now": "pg_get_functiondef/prosrc at SS-01's head is byte-identical to 20261023120000:550-577 (line_status_rules), 20261027090000:147-198 (ledger_entry_within_evidence) and :219-270 (ledger_entry_within_line). The lock lines :557, :172 and :246 are unchanged (:246 sits inside `IF NEW.service_line_id IS NOT NULL AND counted IN (...)`). All three are invoker functions owned by tp_owner, with search_path set and ACL {tp_owner=X/tp_owner}. No migration in #42 (to 6f23c42b) or SS-01 recreates line_status_rules, the ledger functions, triage_never_deleted or triage_no_truncate, or touches line_status, claim indexes, case_line or ledger_entry.",
+      "design_says": "20261023120000:550-579; 20261027090000:147-201.",
+      "builder_instruction": "Recreate the three functions on those bodies as designed. In comments and the ADR, cite :550-577 and :147-198, since the design's end lines run into the next comment. Keep the :246 replacement at its indentation inside the IF. Other shifted citations: catalog.db.test.ts's registry list now starts at :69; the Drizzle mirror check is migrate.db.test.ts:625; the triage area in areas.json is id \"pricing\" at :76-93."
+    },
+    {
+      "section": "7 CAS-42.1/.2 in CI (risk)",
+      "code_now": ".github/workflows/ci.yml:248-255: the repository is public, so the db suite runs in 4 shards on 4-CPU runners, each job with timeout-minutes 20. The shards are split by path hash (tools/test/db-shards).",
+      "design_says": "one file with B 20k plus A 100k priced, triaged and reported, then Y 100k priced, then the report and triage together; budgets of 120 s and 180 s.",
+      "builder_instruction": "Record triage.large.db.test.ts's wall time in the PR. If the file plus its shard's other files near the 20-minute job limit, split CAS-42.2 into its own file (apps/worker/src/triage/together.large.db.test.ts) and add it to SLOW_FIRST. Do not raise the job timeout."
+    }
+  ],
+  "part_1a_state": "No remote branch exists: `git ls-remote origin 'refs/heads/co-001/suite-cap-1*'` and the wip-* patterns return nothing. The status file approval-summaries/lane-b-suite-cap-1a-status.md on origin/claude/build-ops says 1a is cut from claude/build-platform 085299bd in worktree /home/user/suite-cap-1-bounded-reads (not on this machine). Build workflow wf_34688805-4ff has been running since 2026-10-27 20:37 UTC, and the base's before-figures were logged at 21:24. On the base, A's report ran out of heap at about 62 s, and the actionable advanceStages took 207.9 s for 33,334 lines. Nothing is waiting on anyone, there is no PR and nothing is merged. 1a decided that the pattern-order tie-break in the fold uses each pattern's first line's sort key.\n\nFiles both 1a and 1b touch: docs/adr/0083-\u2026.md (1a writes it, 1b completes its status and the lock section), docs/product/test-matrix.md (CAS-41, then CAS-40 and CAS-42), packages/synth/src/cases/matrix.ts and registry.ts (the same rows) and tools/screening-capacity/watched-paths.txt (regenerated). 1b's CAS-42 and slice-1 gate call 1a's readers (judgedCandidates, the streamed gatherReport, advanceStages' LATERAL lookup) through executeTriage and generateAuditReport, so 1b cannot start slice 1 before 1a merges.",
+  "files_1b": [
+    "packages/db/migrations/20261109090000_line_status_heads.sql (new; 4.1-4.5 with the combined lock loop and id PK + line_status_head_once)",
+    "packages/db/src/schema/triage.ts (lineStatusHead)",
+    "packages/db/src/schema/remittances.ts (claim_by_superseded)",
+    "packages/db/src/schema/index.ts (export; SS-01 and #42 edited it)",
+    "packages/db/functions/line_status_rules.sql (generated)",
+    "packages/db/functions/triage_never_deleted.sql (generated, header line)",
+    "packages/db/functions/triage_no_truncate.sql (generated, header line)",
+    "packages/db/functions/ledger_entry_within_evidence.sql (generated; Q1 granted)",
+    "packages/db/functions/ledger_entry_within_line.sql (generated; Q1 granted)",
+    "packages/db/domain-model/areas.json (area 'pricing' :76-93)",
+    "docs/product/domain-model.md (generated)",
+    "packages/db/src/line-status.db.test.ts (new, CAS-40.1-.5, .7-.11)",
+    "packages/db/src/catalog.db.test.ts (registry list from :69)",
+    "packages/db/src/migrate.db.test.ts (owners list; mirror at :625)",
+    "apps/worker/src/heap.ts (new; must not import infra/lib/heap.ts)",
+    "apps/worker/src/worker.ts (attempt :88-98; JOB_HEAP_MESSAGE written out)",
+    "apps/worker/src/worker.test.ts",
+    "packages/observability/src/fields.ts (NUMERIC_LOG_FIELDS :54)",
+    "packages/observability/src/fields.test.ts (list and unit regex)",
+    "apps/worker/src/reconcile/stage-head.db.test.ts (new, CAS-40.6)",
+    "apps/worker/src/triage/triage.large.db.test.ts (new, CAS-42.1/.2; split .2 out if the shard time demands)",
+    "apps/worker/src/reconcile/reconcile.large.db.test.ts (new, CAS-42.3; Q1 granted)",
+    "vitest.config.ts (SLOW_FIRST)",
+    "tools/release-capacity/run.ts",
+    "tools/release-capacity/checks.ts",
+    "tools/release-capacity/checks.test.ts",
+    "tools/release-capacity/scenario.ts (incl. step 7b reconcile; Q1 granted)",
+    "tools/release-capacity/scenario.test.ts",
+    "tools/screening-capacity/watched-paths.txt (regenerated; heap.ts joins via worker.ts)",
+    "infra/lib/jobs.ts (JOB_HEAP_MESSAGE, JOB_HEAP_METRIC; added by this review)",
+    "infra/lib/constructs/monitoring.ts",
+    "infra/test/monitoring.test.ts",
+    "docs/adr/0083-\u2026.md (status and lock section; 1a's file)",
+    "docs/adr/0038-\u2026.md (dated note under 'Who triages and when')",
+    "docs/product/test-matrix.md (CAS-40, CAS-42)",
+    "packages/synth/src/cases/matrix.ts (CAS-40, CAS-42)",
+    "packages/synth/src/cases/registry.ts (CAS-40, CAS-42)",
+    "docs/runbooks/ci.md (:44-45)",
+    "docs/runbooks/deploy-and-rollback.md (lock loop, D21 rollback note)",
+    "docs/runbooks/incident-response.md (heap alarm)",
+    "docs/product/reconciliation-001.md (Q1 exception under 'Ledger semantics', granted 2026-10-27 20:49 UTC)"
+  ],
+  "interest_overlap": "Section 4.4 and D15 stand, and 1b carries claim_by_superseded. The interest PR (designs/ledger-interest-once.md) builds after 1b. Its index (D12, object 5, the SQL at :654) is the same partial index with the same name, and its own text already says to leave it out \"if SUITE-CAP-1 has merged claim_by_superseded\" (:463-464, :558-559, :569). 1b's preflight (no index named claim_by_superseded exists) stays as designed; if the interest PR ever merged first, 1b drops 4.4 instead.\n\nInstructions for the interest builder, not 1b:\n- drop object 5, its schema/remittances.ts mirror line and its domain-model change;\n- keep LED-25's EXPLAIN assertions (chain.large.db.test.ts), which then read 1b's index;\n- drop the clause \"and the index claim_by_superseded on claim unless SUITE-CAP-1 has made it\" from the 10.1 exception text;\n- take the next free timestamp after 20261109090000 (its prototype used 20261110090000).\n\nThere is no other function overlap:\n- The interest PR recreates only ledger_match_rules(), which 1b does not touch.\n- It adds ledger_entry_within_interest(). That function takes the same `ledger:` practice key D8 moves _within_evidence and _within_line to (interest :599-603), so the two are consistent and add no lock-table entry.\n- Name order of the triggers on ledger_entry stays within_evidence, within_interest, within_line; 1b renames no trigger.\n- The interest design cites the two bodies at 20261027090000:147-271. After 1b their latest bodies are in 20261109090000, identical except the lock line, so the interest builder diffs against 1b's migration and the function files.\n\nShared documents: both PRs add a dated exception under reconciliation-001.md \"Ledger semantics\", and both touch test-matrix.md, registry.ts, matrix.ts, domain-model.md and schema/remittances.ts. The PR merged second (interest) resolves them under LANES.md rule 6.",
+  "notes": "I checked these on a PostgreSQL 18.4 database migrated from empty at SS-01's head 7da01015 (46 migrations, tp_sc1b_reread_1), then on a copy with the design's 4.2, 4.3 and 4.4 SQL applied (tp_sc1b_reread_2). Both databases and the scratch worktree are removed, and the main checkout is untouched.\n\nConfirmed by probe:\n- The design's SQL compiles. RETURNING WITH (OLD AS prior, NEW AS next) works inside PL/pgSQL, and the BEFORE trigger can reassign the GENERATED ALWAYS seq.\n- Forward refusals, multi-row statements and rollback to a savepoint behave as designed.\n- The new trigger holds 0 advisory locks.\n- Every head row equals its line's latest event.\n- tp_app reading line_status_head is refused with 42501.\n- A line of practice B written with only practice A in scope is refused at once with 42501. The message now names line_status_head, and no test asserts the old text.\n\nConfirmed by reading the code:\n- Backfill scope: tp_owner reads every practice through the practice_resolver policy, so 4.2's set_config backfill sees all practices.\n- D8 premise: every insertEntry caller (remittances, postings, responses, manual) runs after lockLedger. pass.ts:39 and manual.ts:48 take it, and reconcile/ledger.ts:17 is the only other place the `ledger:` key appears. No code pairs with the `line_status:`, `ledger_line:` or `ledger_evidence:` keys.\n- Test inserters: every direct line_status inserter in tests and e2e runs with app.practice_ids set (asOwner or a scope), so the definer's head write passes RLS.\n- D4: line_status_refresh_cases is SECURITY DEFINER (the precedent), and no sequence has a tp_app grant.\n- 5.5: TRACE_LOCK_BUCKETS = 64 (apps/worker/src/parse/loader.ts:132). run.ts jobOutcome :228-240, checks.ts:12, scenario.ts FULL_SIZE and SMALL_SIZE :76-77, worker.ts attempt :88-98, startWorker :224-229 and registry.ts:160-162 all hold.\n- claude/build-platform 085299bd (#76) changes only six test files, none of them 1b's.\n\nThe code contradicts one doc sentence. reconciliation-001.md:465 says \"a guard test on the migration set enforces\" the ledger freeze, but no such test exists (engine-freeze covers only the rule tables). So 4.5 needs only the documented exception and no guard edit.\n\nQ1 was granted, so 4.5, CAS-42.3, the reconcile phase (step 7b), the five function files and the reconciliation-001 exception all ship.\n\nProgress file: /tmp/claude-0/-home-user-PhysicalTherapy/2d6572d6-2076-5676-9f8f-7a15571707e4/scratchpad/progress/sc1b-reread.md"
+}
