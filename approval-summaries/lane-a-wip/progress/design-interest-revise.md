@@ -47,3 +47,6 @@ Design: /home/user/ops/designs/ledger-interest-once.md (123962 bytes, 1374 lines
 - NEXT: 14 handed-on renumbered reversal link; 15 pending line; NEW 16 'After the design review'; final read-through; grep for stale refs (remittanceInterest, interestLeft, interestToLines, reverse route, matchId, D16 count).
 - EDITED (R2): 14 renumbered reversal hand-on; 15 pending -> review 2 pointer; NEW 16 'After the design review' (R2-1..R2-9 all taken; R2-4 minimum + hand-on).
 - NEXT: grep stale refs; final read-through of changed sections.
+- EDITED (R2): line wraps 6.3/6.4; CONSTRAINT name note; 6.2 interestAttribution takes statement 1 result as arg; sect 0 remedy sentence. Tables checked (col counts ok). Stale refs grep clean.
+- NEXT: final skim 8.2/10.1/12/14/16; verify no model names; then StructuredOutput.
+## STATUS ROUND 2 REVISE: DESIGN COMPLETE (sections 0-16; 16 = 'After the design review', R2-1..R2-9 all taken, R2-4 = minimum + hand-on). No DB created; main checkout untouched (git status clean). Returning StructuredOutput.
