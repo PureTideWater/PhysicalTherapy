@@ -645,9 +645,6 @@ jobs:
         if: failure()
         run: docker compose logs --no-color --tail=200 postgres
 
-  # Both production images, built from their Dockerfiles and scanned with Trivy, failing on any HIGH or CRITICAL
-  # finding that has a fix (PRD 16 and 18; docs/adr/0010). One job for both, to spare a concurrency slot: the worker is
-  # built and scanned whatever the web image's result.
   # Both production images, built from their Dockerfiles into archives and scanned there with Trivy, failing on any HIGH
   # or CRITICAL finding that has a fix (PRD 16 and 18; docs/adr/0010). One job for both, to spare a concurrency slot: the
   # worker is built and scanned whatever the web image's result. On ubuntu-26.04, whose Docker keeps images in the
