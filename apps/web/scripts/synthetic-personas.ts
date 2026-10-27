@@ -23,14 +23,24 @@ import { totpCode, totpSecretFromBytes } from '../src/lib/auth/totp';
  * submission sent without sign-off, in a practice of its own; and a platform administrator and two people of the other
  * group for the pricing-location journey, in a group of its own the console creates; and the practice administrator of
  * SYNTHETIC SUSPENDED GROUP, a group the seed holds suspended by PaidWhole with no practice, for the billing journey of a
- * suspended organization, so no other journey shares it and nothing reinstates it).
+ * suspended organization, so no other journey shares it and nothing reinstates it; and, for the journeys of a firm
+ * PaidWhole suspended (BIL-09; docs/adr/0080), the principal of SYNTHETIC SUSPENDED FIRM, which the seed holds
+ * suspended with a grant in force on SYNTHETIC FIRM CLIENT PRACTICE, and the practice administrator of that practice's
+ * own group, SYNTHETIC FIRM CLIENT GROUP; and the platform administrator who suspends and reinstates SYNTHETIC CONSOLE
+ * SUSPENSION FIRM in the console, a firm with no one who signs in).
  * Their passwords and TOTP secrets are derived from their keys here rather than written down, and
  * exist only in the local identity provider's store.
  * Synthetic accounts on a development machine; never a real person.
  */
 
-/** The seeded organizations: packages/db's synthetic tenancy's four, and the suspended group scripts/seed.ts adds. */
-export type SeedOrganization = 'group' | 'other_group' | 'firm' | 'internal' | 'suspended_group';
+/**
+ * The seeded organizations: packages/db's synthetic tenancy's four, and those scripts/seed.ts adds: the suspended group,
+ * the suspended firm, its client group and the console's suspension firm.
+ */
+export type SeedOrganization = 'group' | 'other_group' | 'firm' | 'internal' | 'suspended_group' | 'suspended_firm' | 'firm_client_group' | 'console_firm';
+
+/** The organizations scripts/seed.ts adds beside packages/db's synthetic tenancy. */
+export const SCRIPT_ORGANIZATIONS: readonly SeedOrganization[] = ['suspended_group', 'suspended_firm', 'firm_client_group', 'console_firm'];
 
 export interface SyntheticPersona {
   readonly key: string;
@@ -121,10 +131,27 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   // A suspended organization's billing page (BIL-06; the UX baseline review's UX-004): the practice administrator of the
   // group the seed holds suspended by PaidWhole.
   { key: 'suspended-admin', organization: 'suspended_group', role: 'practice_admin' },
+  // A firm PaidWhole suspended (BIL-09; docs/adr/0080): its principal, who reaches SYNTHETIC FIRM CLIENT PRACTICE only
+  // through the firm's grant, and the administrator of the practice's own group, whose staff carry on.
+  { key: 'suspended-firm-principal', organization: 'suspended_firm', role: 'firm_principal' },
+  { key: 'firm-client-admin', organization: 'firm_client_group', role: 'practice_admin' },
+  // The console's suspension journey (BIL-09): the platform administrator who suspends and reinstates SYNTHETIC CONSOLE
+  // SUSPENSION FIRM, with a hardware key of its own.
+  { key: 'suspension-admin', organization: 'internal', role: 'platform_admin' },
 ];
 
 /** The group the seed holds suspended by PaidWhole (BIL-06): no practice, one administrator, never reinstated. */
 export const SYNTHETIC_SUSPENDED_GROUP = 'SYNTHETIC SUSPENDED GROUP';
+
+/** The firm the seed holds suspended by PaidWhole for a security hold (BIL-09): a grant in force, never reinstated. */
+export const SYNTHETIC_SUSPENDED_FIRM = 'SYNTHETIC SUSPENDED FIRM';
+
+/** The group that owns the practice the suspended firm is granted, and the practice (BIL-09). */
+export const SYNTHETIC_FIRM_CLIENT_GROUP = 'SYNTHETIC FIRM CLIENT GROUP';
+export const SYNTHETIC_FIRM_CLIENT_PRACTICE = 'SYNTHETIC FIRM CLIENT PRACTICE';
+
+/** The firm the console journey suspends and reinstates (BIL-09): active when seeded, with no one who signs in. */
+export const SYNTHETIC_CONSOLE_SUSPENSION_FIRM = 'SYNTHETIC CONSOLE SUSPENSION FIRM';
 
 export const SYNTHETIC_PRACTICES = {
   north: 'SYNTHETIC PHYSICAL THERAPY NORTH',

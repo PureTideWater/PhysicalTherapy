@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { openPool, readDatabaseUrl, withActor, withPracticeScope } from '@tp/db';
+import { databaseClient, openPool, readDatabaseUrl, withActor, withPracticeScope } from '@tp/db';
 import { SYNTHETIC_CORRESPONDENCE_CONTACT } from '@tp/packets';
 import { type MigratedDatabase, createMigratedDatabase, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
@@ -14,7 +14,17 @@ import { Sealer } from '../src/lib/auth/seal';
 import { SignInFlow } from '../src/lib/auth/sign-in';
 import { developmentMasterKey } from '../src/lib/server/config';
 import { SYNTHETIC_TERMS_VERSION, seed } from './seed';
-import { SYNTHETIC_PERSONAS, SYNTHETIC_SUSPENDED_GROUP, personaEmail, personaPassword, personaTotpCode } from './synthetic-personas';
+import {
+  SYNTHETIC_CONSOLE_SUSPENSION_FIRM,
+  SYNTHETIC_FIRM_CLIENT_GROUP,
+  SYNTHETIC_FIRM_CLIENT_PRACTICE,
+  SYNTHETIC_PERSONAS,
+  SYNTHETIC_SUSPENDED_FIRM,
+  SYNTHETIC_SUSPENDED_GROUP,
+  personaEmail,
+  personaPassword,
+  personaTotpCode,
+} from './synthetic-personas';
 
 /** `pnpm db:seed`: every synthetic persona can sign in with its derived credentials. */
 
@@ -81,6 +91,38 @@ describe('pnpm db:seed', () => {
       }));
       expect(held).toEqual({ practices: [], organizations: [{ name: SYNTHETIC_SUSPENDED_GROUP, status: 'suspended', role: 'practice_admin' }] });
       expect(result.organizations.suspended_group).toEqual(expect.any(String));
+      // PaidWhole's suspensions carry their stored reasons and times; the firm's grant is in force on the client
+      // practice, which its principal reaches only through it; the console's firm is active (BIL-09; docs/adr/0080).
+      const owner = databaseClient(database.url);
+      await owner.connect();
+      try {
+        const organizations = (
+          await owner.query<{ name: string; kind: string; status: string; status_reason: string | null; dated: boolean }>(
+            'SELECT name, kind, status, status_reason, status_since IS NOT NULL AS dated FROM organization WHERE name = ANY($1::text[]) ORDER BY name',
+            [[SYNTHETIC_SUSPENDED_GROUP, SYNTHETIC_SUSPENDED_FIRM, SYNTHETIC_FIRM_CLIENT_GROUP, SYNTHETIC_CONSOLE_SUSPENSION_FIRM]],
+          )
+        ).rows;
+        expect(organizations).toEqual([
+          { name: SYNTHETIC_CONSOLE_SUSPENSION_FIRM, kind: 'firm', status: 'active', status_reason: null, dated: false },
+          { name: SYNTHETIC_FIRM_CLIENT_GROUP, kind: 'group', status: 'active', status_reason: null, dated: false },
+          { name: SYNTHETIC_SUSPENDED_FIRM, kind: 'firm', status: 'suspended', status_reason: 'security_hold', dated: true },
+          { name: SYNTHETIC_SUSPENDED_GROUP, kind: 'group', status: 'suspended', status_reason: 'customer_request', dated: true },
+        ]);
+        const grants = (
+          await owner.query<{ grantee: string; practice: string; in_force: boolean }>(
+            `SELECT o.name AS grantee, p.name AS practice, (g.revoked_at IS NULL AND g.starts_at <= now() AND now() < g.ends_at) AS in_force
+               FROM "grant" g JOIN organization o ON o.id = g.organization_id JOIN practice p ON p.id = g.practice_id WHERE p.id = $1`,
+            [result.practices.firm_client],
+          )
+        ).rows;
+        expect(grants).toEqual([{ grantee: SYNTHETIC_SUSPENDED_FIRM, practice: SYNTHETIC_FIRM_CLIENT_PRACTICE, in_force: true }]);
+      } finally {
+        await owner.end();
+      }
+      const principal = result.users['suspended-firm-principal'] ?? '';
+      const clientAdmin = result.users['firm-client-admin'] ?? '';
+      expect(await withActor(pool, principal, (scope) => scope.allowedPracticeIds())).toEqual([result.practices.firm_client]);
+      expect(await withActor(pool, clientAdmin, (scope) => scope.allowedPracticeIds())).toEqual([result.practices.firm_client]);
     } finally {
       await endPool(pool);
     }

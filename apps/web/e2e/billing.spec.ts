@@ -1,8 +1,14 @@
 import { expect, test } from '@playwright/test';
 
-import { SYNTHETIC_PRACTICES, SYNTHETIC_SUSPENDED_GROUP } from '../scripts/synthetic-personas';
+import {
+  SYNTHETIC_CONSOLE_SUSPENSION_FIRM,
+  SYNTHETIC_FIRM_CLIENT_PRACTICE,
+  SYNTHETIC_PRACTICES,
+  SYNTHETIC_SUSPENDED_FIRM,
+  SYNTHETIC_SUSPENDED_GROUP,
+} from '../scripts/synthetic-personas';
 import { expectAccessible } from './a11y';
-import { signInWithTotp, withDatabase } from './helpers';
+import { refusal, registerKeyAndSignIn, signInWithTotp, withDatabase } from './helpers';
 
 /**
  * Billing in the browser (PRD 5, J18; PRD 6, Billing acceptance: "A test ACH payment completes"; PRD 7,
@@ -13,8 +19,35 @@ import { signInWithTotp, withDatabase } from './helpers';
  * and processing the webhook route uses; the webhook route itself refuses a body without Stripe's signature.
  * A suspended organization's page (BIL-06) is read on SYNTHETIC SUSPENDED GROUP, which the seed holds suspended by
  * PaidWhole and no other journey touches, so nothing here suspends or reinstates an organization another journey
- * shares; billing-routes.db.test.ts covers suspending and reinstating. Synthetic data only.
+ * shares; billing-routes.db.test.ts covers suspending and reinstating. A firm PaidWhole suspended (BIL-09; docs/adr/0080)
+ * is read on SYNTHETIC SUSPENDED FIRM and SYNTHETIC FIRM CLIENT PRACTICE, which the seed holds and nothing reinstates;
+ * the console's suspension is made and lifted on SYNTHETIC CONSOLE SUSPENSION FIRM, which no other journey reads.
+ * Synthetic data only.
  */
+
+/** A seeded organization's ID, by its name. */
+async function organizationNamed(name: string): Promise<string> {
+  return withDatabase(async (client) => {
+    const { rows } = await client.query<{ id: string }>('SELECT id FROM organization WHERE name = $1', [name]);
+    const [row] = rows;
+    if (row === undefined) {
+      throw new Error('the seeded organization is missing');
+    }
+    return row.id;
+  });
+}
+
+/** SYNTHETIC FIRM CLIENT PRACTICE's ID. */
+async function clientPractice(): Promise<string> {
+  return withDatabase(async (client) => {
+    const { rows } = await client.query<{ id: string }>('SELECT id FROM practice WHERE name = $1', [SYNTHETIC_FIRM_CLIENT_PRACTICE]);
+    const [row] = rows;
+    if (row === undefined) {
+      throw new Error('the seeded client practice is missing');
+    }
+    return row.id;
+  });
+}
 
 async function seededGroup(): Promise<{ readonly id: string; readonly name: string }> {
   return withDatabase(async (client) => {
@@ -96,11 +129,15 @@ test('a group suspended by PaidWhole reads "Suspended by PaidWhole", never "In g
   await expect(page.getByRole('heading', { level: 1, name: `Billing: ${SYNTHETIC_SUSPENDED_GROUP}` })).toBeVisible();
 
   await expect(page.locator('[data-standing]')).toHaveAttribute('data-standing', 'suspended_by_paidwhole');
-  await expect(page.locator('[data-standing]')).toContainText('Standing: Suspended by PaidWhole');
+  // The seed stores PaidWhole's reason (at the customer's request) and the trigger its time, so the label carries the
+  // date and the notice and its step follow the reason (BIL-09, B1, B3, B7).
+  await expect(page.locator('[data-standing]')).toContainText(/Standing: Suspended by PaidWhole since \d{4}-\d{2}-\d{2}/);
   await expect(page.getByText('In good standing')).toHaveCount(0);
   const notice = page.getByRole('alert').filter({ hasText: 'PaidWhole has suspended the organization' });
-  await expect(notice).toContainText('PaidWhole has suspended the organization: new runs have stopped until PaidWhole reinstates it, and its data stays readable. Paying an invoice does not reinstate it.');
-  await expect(notice).toContainText('Open a support ticket to find out why and what reinstates it.');
+  await expect(notice).toContainText(
+    'PaidWhole has suspended the organization at your request: new runs have stopped until PaidWhole reinstates it, and its data stays readable. Paying an invoice does not reinstate it.',
+  );
+  await expect(notice).toContainText('Open a support ticket when you want the organization reinstated.');
   const ticket = notice.getByRole('link', { name: 'Open a support ticket' });
   await expect(ticket).toHaveAttribute('href', '/support?from=billing');
   await expect(page.locator('[data-notice="forms"]')).toHaveText('Changing the plan or payment method does not reinstate an organization suspended by PaidWhole.');
@@ -110,6 +147,88 @@ test('a group suspended by PaidWhole reads "Suspended by PaidWhole", never "In g
   await ticket.click();
   await expect(page).toHaveURL(/\/support\?from=billing$/);
   await expect(page.getByLabel('What is it about')).toHaveValue('billing');
+});
+
+test('a firm PaidWhole suspended: its principal reads why on the client practice’s home, and starts no upload or pricing run there through its grant (BIL-09)', async ({ page }) => {
+  const practiceId = await clientPractice();
+  const firmId = await organizationNamed(SYNTHETIC_SUSPENDED_FIRM);
+  await signInWithTotp(page, 'suspended-firm-principal');
+  await page.goto(`/p/${practiceId}`);
+  const notice = page.locator('[data-notice="suspended"]');
+  await expect(notice).toHaveAttribute('data-hold-source', 'grantee');
+  await expect(notice).toContainText("Work through your organization's grant has stopped");
+  await expect(notice).toContainText(
+    new RegExp(
+      `PaidWhole suspended ${SYNTHETIC_SUSPENDED_FIRM} on \\d{4}-\\d{2}-\\d{2}, while it looks into a security concern, so you start no new pricing runs, triage, reports, ROI statements, packet exports or uploads at this practice through its grant until PaidWhole reinstates ${SYNTHETIC_SUSPENDED_FIRM}\\. You can still read everything here, and the practice's own staff carry on\\.`,
+    ),
+  );
+  // The principal holds the firm's billing (H8).
+  await expect(notice.getByRole('link', { name: 'Settings, Billing' })).toHaveAttribute('href', `/settings/billing/${firmId}`);
+  await expect(notice).toContainText('Settings, Billing shows why and what to do next.');
+  await expectAccessible(page, 'Practice home, a firm held by PaidWhole');
+
+  const paused =
+    "Uploads are paused: PaidWhole has suspended your organization, so you start no new work here through its grant until PaidWhole reinstates your organization; you can still read this practice's records.";
+  await page.goto(`/p/${practiceId}/uploads`);
+  await expect(page.getByText(paused)).toBeVisible();
+  await expectAccessible(page, 'Uploads, a firm held by PaidWhole');
+
+  await page.goto(`/p/${practiceId}/pricing-runs`);
+  await page.getByLabel('First month of service').fill('2026-09');
+  await page.getByRole('button', { name: 'Create the run' }).click();
+  await expect(refusal(page).filter({ hasText: 'Not started: ' })).toContainText(
+    "Not started: PaidWhole has suspended your organization, so you start no new work here through its grant until PaidWhole reinstates your organization; you can still read this practice's records.",
+  );
+  await expectAccessible(page, 'Pricing runs, a run refused for a firm held by PaidWhole');
+  const runs = await withDatabase(async (client) => (await client.query('SELECT 1 FROM pricing_run WHERE practice_id = $1', [practiceId])).rowCount);
+  expect(runs).toBe(0);
+
+  // The firm's own billing page says what its suspension stops (B1, B4, B7).
+  await page.goto(`/settings/billing/${firmId}`);
+  await expect(page.locator('[data-standing]')).toContainText(/Standing: Suspended by PaidWhole since \d{4}-\d{2}-\d{2}/);
+  await expect(page.getByRole('alert').filter({ hasText: 'PaidWhole has suspended the organization' })).toContainText(
+    "PaidWhole has suspended the organization while it looks into a security concern: your people start no new work through its grants at the practices you are granted until PaidWhole reinstates the organization. Every record stays readable, and the practices' own staff carry on.",
+  );
+  await expectAccessible(page, 'Organization billing, a firm suspended by PaidWhole');
+});
+
+test('the client practice’s own administrator sees no hold, and reads the held firm’s grant as on hold, never why (BIL-09, G1)', async ({ page }) => {
+  const practiceId = await clientPractice();
+  await signInWithTotp(page, 'firm-client-admin');
+  await page.goto(`/p/${practiceId}`);
+  await expect(page.getByRole('heading', { level: 1, name: SYNTHETIC_FIRM_CLIENT_PRACTICE })).toBeVisible();
+  await expect(page.locator('[data-notice="suspended"]')).toHaveCount(0);
+  await page.goto(`/p/${practiceId}/uploads`);
+  await expect(page.getByText('Uploads are paused')).toHaveCount(0);
+  await page.goto(`/p/${practiceId}/settings/agreements`);
+  const state = page.locator('[data-grantee-status="suspended"]');
+  await expect(state).toHaveText(
+    `In force. The PaidWhole account of ${SYNTHETIC_SUSPENDED_FIRM} is on hold, so its people start no new work here through this grant; your own staff carry on.`,
+  );
+  await expectAccessible(page, 'Grants and agreements, a grantee on hold');
+});
+
+test('a platform administrator suspends a firm with a reason, a note and the tick, reads who and why on its card and in its history, and reinstates it in one click (BIL-09)', async ({ page }) => {
+  const firmId = await organizationNamed(SYNTHETIC_CONSOLE_SUSPENSION_FIRM);
+  await registerKeyAndSignIn(page, 'suspension-admin');
+  await page.goto(`/console/organizations/${firmId}`);
+  const card = page.locator('[data-suspension]');
+  await expect(card).toHaveAttribute('data-suspension', 'active');
+  await expectAccessible(page, 'Console organization, an active firm');
+  await page.locator('#suspend-reason').selectOption('customer_request');
+  await page.locator('#suspend-note').fill('SYNTHETIC NOTE: the customer asked by ticket SYN-1');
+  await page.locator('#suspend-confirm').check();
+  await page.getByRole('button', { name: 'Suspend the organization' }).click();
+  await expect(card).toHaveAttribute('data-suspension', 'suspended');
+  await expect(card.locator('[data-suspended-lines]')).toContainText(/Suspended by suspension-admin@synthetic\.test on \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC\./);
+  await expect(card.locator('[data-suspended-lines]')).toContainText("Reason: At the customer's request.");
+  await expect(page.locator('tr[data-change="suspended"]')).toContainText('SYNTHETIC NOTE: the customer asked by ticket SYN-1');
+  await expectAccessible(page, 'Console organization, a suspended firm with its history');
+  await page.getByRole('button', { name: 'Reinstate: the cause is resolved' }).click();
+  await expect(card).toHaveAttribute('data-suspension', 'active');
+  await expect(page.locator('tr[data-change="reinstated"]')).toContainText('The cause is resolved');
+  const stored = await withDatabase(async (client) => (await client.query<{ status: string; status_reason: string | null }>('SELECT status, status_reason FROM organization WHERE id = $1', [firmId])).rows);
+  expect(stored).toEqual([{ status: 'active', status_reason: null }]);
 });
 
 test('the webhook route refuses a body without Stripe’s signature, and records nothing', async ({ request }) => {
