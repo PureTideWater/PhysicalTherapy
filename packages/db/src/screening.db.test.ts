@@ -1579,6 +1579,33 @@ describe('PR 6b-4: the screening’s mail (migration 20261107090000; audit #76, 
     await resetScreeningMail();
   });
 
+  it('refuses every spelling of a mailbox once one of them bounced permanently or was reported, and no other mailbox (S2)', async () => {
+    const refusal = (email: string) => submit({ email, practice: `Synthetic Spelling ${letters()}` }).then(() => 'accepted', (error: unknown) => (error as { constraint?: string }).constraint);
+    for (const [event, extra] of [
+      ['complaint', { complaintType: 'abuse' }],
+      ['bounce', { bounceSubtype: 'no_email' }],
+    ] as const) {
+      const name = letters();
+      // The screening went to one spelling; its outcome refuses the mailbox's others (a trailing dot the prospect's own CHECK
+      // refuses first; mail_recipient_canonical() reads it too: mail.db.test.ts).
+      const sent = `synthetic.${name}+screening@gmail.com`;
+      await mailEvent(await submit({ email: sent }), event, sent, extra);
+      for (const spelling of [`synthetic.${name}@gmail.com`, `Synthetic${name}@GoogleMail.com`, ` s.y.n.t.h.e.t.i.c.${name}+other@gmail.com `, `SYNTHETIC.${name.toUpperCase()}@GMAIL.COM`]) {
+        expect(await refusal(spelling), `${event} ${spelling}`).toBe('screening_contact_undeliverable');
+      }
+      // Another mailbox: another local part at Gmail, and the same one at another domain, where dots name another mailbox.
+      expect(await refusal(`synthetic.${name}.other@gmail.com`)).toBe('accepted');
+      expect(await refusal(`synthetic.${name}@clinic.synthetic.test`)).toBe('accepted');
+      expect(await refusal(`synthetic${name}@clinic.synthetic.test`)).toBe('accepted');
+    }
+    // At a business domain: a sub-address and the case join, dots do not.
+    const business = `front.desk.${letters()}`;
+    await mailEvent(await submit({ email: `${business}@clinic.synthetic.test` }), 'bounce', `${business}@clinic.synthetic.test`);
+    expect(await refusal(`${business}+screening@Clinic.Synthetic.Test`)).toBe('screening_contact_undeliverable');
+    expect(await refusal(`${business.replace(/\./g, '')}@clinic.synthetic.test`)).toBe('accepted');
+    await resetScreeningMail();
+  });
+
   it('links each screening message to its prospect, holds no address-derived value on it, and lets the link go with the prospect', async () => {
     const given = `linked.${letters()}@synthetic.test`;
     const run = await submit({ email: given });

@@ -28,7 +28,9 @@ import {
   SCREENING_BOUNCE_MARK_KINDS,
   SUPPORT_GRANT_NOTICES,
 } from './schema';
+import { canonicalMailbox } from './mail-address';
 import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from './testing';
+import { MAILBOX_SPELLINGS } from './test-support/mailbox-spellings';
 
 /**
  * The mail streams, delivery recorded by message, the notices' outboxes and the screening's cut-off (audit #76; migration
@@ -366,6 +368,7 @@ describe('the mail tables and their grants (SEC-18)', () => {
 
   it('grants every function of the migration to exactly its role, sets each one’s search path, and drops the three the outboxes replace', async () => {
     const expected: Readonly<Record<string, { readonly definer: boolean; readonly grantees: readonly string[] }>> = {
+      'mail_recipient_canonical(text)': { definer: false, grantees: [] },
       'mail_recipient_sha256(text)': { definer: false, grantees: [] },
       'mail_send_expiry()': { definer: false, grantees: [] },
       'mail_state_rank(text)': { definer: false, grantees: [] },
@@ -496,6 +499,28 @@ describe('the keyed hash of a screening address (Q11 (b); SEC-18)', () => {
       await owner.query('ROLLBACK');
     }
     expect(await hash(given)).toBe(keyed);
+  });
+
+  it('keys the mailbox an address reaches, not its spelling, by the TypeScript rule exactly (S2)', async () => {
+    const { rows } = await owner.query<{ given: string; canonical: string }>('SELECT g AS given, mail_recipient_canonical(g) AS canonical FROM unnest($1::text[]) g', [
+      MAILBOX_SPELLINGS.map(([given]) => given),
+    ]);
+    expect(rows.map((row) => [row.given, row.canonical])).toEqual(MAILBOX_SPELLINGS.map(([given, mailbox]) => [given, mailbox]));
+    for (const row of rows) {
+      expect(row.canonical, JSON.stringify(row.given)).toBe(canonicalMailbox(row.given));
+    }
+    // The keyed hash is of the mailbox: one hash for its every spelling, and the pepper and the canonical mailbox are
+    // all it hashes.
+    const hash = async (value: string) => (await owner.query<{ h: string }>('SELECT mail_recipient_sha256($1) AS h', [value])).rows[0]?.h;
+    const pepper = (await owner.query<{ pepper: string }>('SELECT pepper FROM mail_recipient_key')).rows[0]?.pepper ?? '';
+    const mailbox = await hash('synthetic.keyed@gmail.com');
+    for (const spelling of ['SyntheticKeyed@gmail.com', ' synthetic.keyed+screening@GoogleMail.com. ', 's.y.n.t.h.e.t.i.c.k.e.y.e.d@gmail.com']) {
+      expect(await hash(spelling), spelling).toBe(mailbox);
+    }
+    expect(mailbox).toBe(createHash('sha256').update(Buffer.concat([Buffer.from(pepper, 'hex'), Buffer.from('synthetickeyed@gmail.com', 'utf8')])).digest('hex'));
+    // Dots name another mailbox off gmail.com.
+    expect(await hash('synthetic.keyed@workspace.synthetic.test')).not.toBe(await hash('synthetickeyed@workspace.synthetic.test'));
+    expect(await hash('synthetic.keyed+x@workspace.synthetic.test')).toBe(await hash('synthetic.keyed@workspace.synthetic.test'));
   });
 
   it('names no address in any error a mail function raises', async () => {
