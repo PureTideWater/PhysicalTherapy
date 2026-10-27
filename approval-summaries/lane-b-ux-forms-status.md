@@ -10,29 +10,18 @@ Forms keep what the person typed, and name the refused field (the UX baseline re
 session_01VNsi2Kru6pfk8CAbQ2AaYB; stopped cleanly at 2026-10-26 10:10 UTC on the orchestrator's wind-down. The next
 session (Lane A or Lane B) continues from here.
 
-## Resume at 14:05 UTC (written 2026-10-27 02:45 UTC; the orchestrator's hold for the weekly reset)
-- **Branch heads:** `co-001/ux-forms` **4f0b526** (pushed; no PR yet): 9f9757e merge of claude/build-platform e908c21,
-  2982890 watched paths, 4f0b526 build 2b. `claude/build-ops` carries this file and the records below.
-- **Workflows:** none running. Build 2b (wf_7d776c57-f07) **completed** (builders A2 and C3, integration check, critic
-  with 11 gaps, fixer: all 11 fixed). Nothing to resume with resumeFromRunId. Results:
-  `approval-summaries/lane-b-ux-forms-build-2b.md`; agents' progress files: `approval-summaries/lane-b-ux-forms-wip/`;
-  script `workflow-scripts/lane-b-ux-forms-build-2b-wf_7d776c57-f07.js`.
-- **State of the checks on 4f0b526** (local): typecheck 22/22; full lint 0; lint:copy, lint:logs, verify-content clean;
-  unit (apps/web, ui, synth) 1039+ passed; db tests of the changed routes 81 and the 13 generated route files 6,870
-  passed; the browser unit tests 24/24 on Chromium 1243 via `FORMS_HARNESS_CHROMIUM` (dev signal only, not of record).
-  **Not yet run:** any e2e (`forms-keep-input.spec.ts`, packets, pricing, sign-in, onboarding, contracts, triage).
-- **Next, in order (from GitHub alone if this container is gone):** (1) run the setup script with
-  `co-001/ux-forms:/home/user/ux-forms` (storage.googleapis.com is now allowed: record its playwright line here);
-  (2) run the browser unit tests in the pinned Chromium and the affected e2e (E2E as lane-b.md says) under the lock;
-  (3) open the draft PR into claude/build-platform from the template (update_pull_request, read back), subscribe;
-  (4) the two reviews as one workflow: UX and brand (before at e908c21, after at the head; refused forms at 1280 and
-  390 px light, 1280 dark; tour "From another lane") and security plus accessibility (WCAG 2.1 AA, 2.2's 3.3.7, 2.4.11);
-  (5) fix round with the full local suite, one push; (6) fresh-clone verification reading CI; (7) merge per lane-b.md
-  "Merging". Then PR 6 (`co-001/ux-sign-in-time`) and PR 7.
-- **Proposals found in build 2b** (for section 11.2): document `FORMS_HARNESS_CHROMIUM`; a static test that every
-  ActionForm on a practice mutation renders `<FormKeys />`, and an e2e step submitting the coverage review; an `id` prop
-  on `CheckboxGroup`; a column layout for sentence-long checkbox labels; the console practices page's `SETTINGS_LABELS`
-  table; upload-form.tsx handling `stale` with `RefusalLead` (after #42).
+## Now (2026-10-27 14:18 UTC)
+- **PR #74** (draft, into claude/build-platform), head **4f0b526**, subscribed. Description from the template, written
+  with update_pull_request and read back identical.
+- **Machine:** setup re-run 14:11 UTC: all ok, **playwright 1.56.1: chromium-1194 and chromium_headless_shell-1194 in
+  /opt/pw-browsers (laid out from Chrome for Testing 141.0.7390.37, pinned SHA-256)**. Browser unit tests 24/24 in it.
+- **Running:** the reviews workflow wf_1a8adc67-91d (script `workflow-scripts/lane-b-ux-forms-reviews-wf_1a8adc67-91d.js`):
+  three tracks at once: the never-run e2e specs (fixes in the worktree), the security and accessibility review (fresh
+  clone), and the UX and brand review from before (e908c21) and after (4f0b526) tour shots; every finding then gets an
+  adversarial verifier. Progress files in the scratchpad `progress/{e2e,review-sec,shots,review-ux}.md`. Check-in
+  trig_01ARtLWYDPBDdRr6TDuLHGCY at 19:25 UTC (5-hour safety net).
+- **Next:** publish the shots as private galleries; commit the tour's new captures on claude/build-ops; the fix round
+  (verified findings, full local suite, one push); the fresh-clone verification reading CI; merge.
 
 ## Handoff
 - **Branch:** `co-001/ux-forms`, head **17bbb70**, pushed, on claude/build-platform 7ef421b (#54 included). Two commits:
@@ -127,3 +116,5 @@ session (Lane A or Lane B) continues from here.
 | 2026-10-27 01:44 | Resumed; base merged | Brief read. claude/build-platform (e908c21: #50, #51, #52, #49, #56, #53, #55, #48) merged into the branch with a merge commit, 9f9757e: seven conflicts, all keep-both (test matrix, matrix.ts and registry.ts RCC before FRM; synth modules RCC 14 and FRM 16; personas; the support page keeps #56's category default and the branch's hints). `watched.ts --write` regenerated (2982890: form-issues.tsx, loading-announcement.tsx). Typecheck: only split-form's 3 errors left (ActionForm's `beforeSubmit`, slice A). Next: build workflow (slice A's three files, C on the eight waiting pages, the browser tests, e2e packets step). |
 | 2026-10-27 01:51 | Build 2b running; pause | Build workflow wf_7d776c57-f07 started 01:46 (builders A2: action-form.tsx, next.ts, action-form.test.tsx, the browser todos; C3: the eight waiting pages, packets.spec step; then an integration check, a design critic and a fixer). Script `workflow-scripts/lane-b-ux-forms-build-2b-wf_7d776c57-f07.js`; progress files in this session's scratchpad `progress/build-{A2,C3}.md`, `build-2b-check.md`, `critic-2b.md`, `fix-2b.md`. **The orchestrator's pause (01:50, weekly usage 94%, reset 14:00 UTC):** this workflow finishes; then no new workflow until 14:05. Check-in scheduled 2026-10-27T14:05Z (trig_01KiYG9d8Ghh5mDSXj3MUH8V). Next: commit and push the build, then the draft PR and its reviews after 14:05. |
 | 2026-10-27 02:45 | Build 2b done; holding | wf_7d776c57-f07 completed (51 min; 5 agents): slice A on #50's files, slice C on the eight waiting pages, packets.spec refused step, FRM-02's three redirects, next.test.ts; critic's 11 gaps all fixed (version form and export form now read a stale page again; attestation lists name boxes by legend; hidden inputs named by data-error-name, recorded in ADR 0077 D3 and design 12.1). gitleaks refused a literal request key in next.test.ts once: rewritten unpushed (randomUUID), pushed 4f0b526. Holding until 14:05 UTC (check-in trig_01KiYG9d8Ghh5mDSXj3MUH8V); "Resume at 14:05 UTC" above. |
+
+| 2026-10-27 14:18 | Resumed; PR #74; reviews | Setup re-run: everything ok, Playwright's pinned Chromium 1194 laid out (storage.googleapis.com allowed). Browser unit tests 24/24 of record. Draft PR #74 opened (description read back identical), subscribed. Reviews workflow wf_1a8adc67-91d started (e2e, security and accessibility, UX and brand with shots; adversarial verification). |
