@@ -3,7 +3,8 @@
 Design contract, 2026-10-27, against `claude/build-platform` at e908c21, with PR 6b-4 (#42, `co-001/pr-06b-mail-streams`)
 read at its fix round's head 6f23c42b (GitHub still shows 098636e3) for every function and generated file this item
 shares with it. GitHub's `claude/build-platform` has since moved to 085299bd (#76: six test files, none of this item's).
-Revised the same day after the design review (section 15 records each finding and what changed).
+Revised twice the same day, after each of the two design reviews (section 15 records the first review's findings and
+section 16, "After the design review", the second's, each with what changed).
 
 - **Lane:** A (a schema pull request; LANES.md rule 2). **Branch:** `co-001/ledger-interest-once`, cut from the latest
   `claude/build-platform` after #42 merges and after the founder grants the freeze exception of section 10.
@@ -35,16 +36,22 @@ lines at a later reconcile (840 cents credited for 540 of cash, probe R), and an
 
 **What this PR does.**
 - The PLB L6 is the interest. An interest entry's evidence is always the PLB L6 that paid it or took it back; the
-  claims' AMT I only say which claim (and so which case lines) the money is for. Interest that appears only once as
-  money (an L6 with no AMT I) is credited. An AMT I with no L6 behind it is shown beside the line as reported, and
-  counted nowhere until a check pays it.
+  claims' AMT I only say which claim (and so which case lines) the money is for. A PLB L6 is credited when its
+  reference names a claim of the same payer, or when its own check's AMT I says whose it is, so interest that appears
+  only once as money is credited in either of those shapes. A PLB L6 that does neither (a reference that reaches no
+  claim, in a check that reports no AMT I) is counted nowhere, an understatement by design, and the remittance page
+  still lists it. An AMT I with no L6 behind it is shown beside the line as reported, and counted nowhere until a
+  check pays it. A PLB L6 of zero moves nothing.
 - A PLB L6 that names no claim (payers' guides list L6 among the codes whose reference need not name one, and the guide
   lets one L6 carry the net interest of a whole remittance) is shared among that remittance's claims by their AMT I,
-  netted per chain, so a reversal and its correction cancel and another patient's interest is never taken. When the
-  remittance's L6s equal its AMT I, as the guide requires, each claim gets exactly its AMT I. Today such an L6 is never
-  credited. A reference that carries several identifiers names the claim whose control number is among them.
+  netted per chain, so a reversal and its correction cancel and another patient's interest is never taken (when the
+  loader has linked the reversal to its claim; a reversal the payer renumbered is not linked today, section 12 risk 8,
+  and its link is handed on in section 14). When the remittance's L6s equal its AMT I, as the guide requires, each
+  claim gets exactly its AMT I. Today such an L6 is never credited. A reference that carries several identifiers names
+  the claim whose control number is among them.
 - One PLB L6 is never credited past what it moved, however many reconciles run and whatever later uploads change about
-  whom it names, in code and in Postgres; a valid reconcile is never refused by that bound.
+  whom it names, in code and in Postgres; a valid reconcile is never refused by that bound. The reconcile reads whom
+  each L6 is for from one moment's rows, so an upload that commits while it runs cannot tear that reading.
 - A PLB L6 that takes interest back becomes a negative interest entry against the lines that hold that chain's
   interest, never below zero on a line. Today it is dropped.
 - N1: an entry is flagged allocated only when its amount is one of two or more parts of a pro-rata split.
@@ -298,7 +305,7 @@ reported interest, and how a net L6 is shared when its claims report interest bo
 |---|---|---|
 | (a) Each claim's AMT I on its own, paid interest only (run 1 of this design) | Simple | A reversal's -5.40 and its correction's +5.40 net to nothing, yet the correction's +5.40 takes 1.46 of another patient's 2.00 from a net L6 of 2.00 (the review's F2) |
 | (b) Net per chain, then one pool per sign of the net cash | Reversal and correction cancel | When a lone reversal (-5.40) and another claim (+2.00) share one net L6 of +3.40, the reversal's lines keep 2.00 of interest the payer took back and the other claim's 2.00 is lost: right in total, wrong on the case lines, which are all the ledger counts |
-| **(c) Net per chain; when the pool's L6s equal its chains' net AMT I, each chain gets exactly its AMT I, paid or taken back; otherwise only the net moves, shared by the chains reporting interest its way (recommended)** | Exact in the guide's own case, including a net L6 over interest paid and interest taken back; conservative when the payer's figures do not reconcile (never credits interest the cash cannot show) | One PLB L6 can then carry entries of both signs, so Postgres bounds each L6 per sign, counting the interest its remittance reports the other way (D8) |
+| **(c) Net per chain; when the pool's L6s equal its chains' net AMT I, each chain gets exactly its AMT I, paid or taken back; otherwise only the net moves, shared by the chains reporting interest its way (recommended)** | Exact in the guide's own case, including a net L6 over interest paid and interest taken back; conservative when the payer's figures do not reconcile. It never credits interest the cash cannot show as long as each reversal is linked to the claim it reverses: a reversal the loader leaves unlinked (a payer that gives it its own control number, section 12 risk 8) is a chain of its own, and beside its correction the correction draws its interest again, today's double count in that one shape, closed by the link handed on in section 14 | One PLB L6 can then carry entries of both signs, so Postgres bounds each L6 per sign, counting the interest its remittance reports the other way (D8) |
 | (d) Scale both sides in proportion | None | Invents gross amounts the payer never stated |
 
 ### 3.7 Once per PLB L6, whatever changes later
@@ -334,24 +341,35 @@ signs. Cash below means the L6's `amount_cents` negated: positive when the payer
 
 **D2. Whom an L6 names.** PLB03-2 is hashed with the practice's key as `claim.payer_claim_control_number` is (as
 `rem:799` does today). If the whole reference reaches no claim, each of its tokens (split on spaces, commas, semicolons,
-vertical bars and slashes; not on hyphens or dots) is hashed. The L6 names a claim when the whole reference, or else
-its tokens, reach claims of exactly one chain; a reference reaching two chains, or none, names nothing. The hashes are
-made in memory; no token is logged or stored. (`provider_adjustment.reference` itself is plain text today, section 14.)
+vertical bars and slashes; not on hyphens or dots) is hashed. A reference reaches only the claims of the L6's own
+payer: claims whose remittance has the `payer_id` of the L6's remittance (`remittance.payer_id`, NOT NULL,
+`20261016120000_remittances.sql:70`), because a claim control number is the payer's own and is unique only within
+one payer. The L6 names a claim when the whole reference, or else its tokens, reach claims of exactly one chain; a
+reference reaching two chains, or none, names nothing. The hashes are made in memory; no token is logged or stored.
+(`provider_adjustment.reference` itself is plain text today, section 14.) The WO's naming is unchanged (D14).
 
 **D3. Chains, and what a chain reports in one remittance.** A claim's chain is the original and every reversal and
 correction linked from it, as the loader links them (`reversal_of_claim_id`; the claim a correction supersedes, by
 `superseded_by_claim_id`; out-of-order uploads included). Its root is found by walking back: a reversal to the claim
 it reverses, a correction to the claim that names it in `superseded_by_claim_id` (`claim_by_reversed` and
 `claim_by_superseded` serve both). In remittance R, a chain's reported interest `a` is the sum of the AMT I of its
-claims in R, signed. A reversal and its correction in one remittance therefore net (RFI 1324).
+claims in R, signed. A reversal and its correction in one remittance therefore net (RFI 1324). A chain whose `a` nets
+to zero reports nothing in R: it draws nothing in D4, as a chain with no AMT I does. Every chain is read within one
+moment's rows (D17).
 
-**D4. Attribution, one remittance R at a time** (pure: `remittanceInterest`, section 6.1). Inputs: R's L6s (cash,
-position, the chain each names) and R's chains with `a <> 0`. Each step below yields draws: (L6, chain, signed cents).
+**D4. Attribution, one remittance R at a time** (pure: `attributeInterest`, section 6.1). Inputs: R's L6s whose
+amount is not zero (cash, position, the chain each names), every claim of R with its chain and its AMT I (zero when it
+reports none), so that the function itself knows which chains have a claim in R and nets each chain's `a`. An L6 of
+zero and a chain whose `a` nets to zero take no part: they are left out, never refused, because stored rows hold both
+(`provider_adjustment.amount_cents` has no CHECK against zero, `20261016120000_remittances.sql:216`, and a PLB L6 of
+0.00 parses and loads, the review's probe `scratchpad/probes/review2/zero-l6.out`). The worker also reads only L6s whose
+amount is not zero (section 6.2). Each step below yields draws: (L6, chain, signed cents).
 1. **An L6 naming a chain with no claim in R** (a later check paying or taking back an earlier claim's interest): the
    whole L6 is that chain's.
 2. **An L6 naming a chain with claims in R** covers that chain first: when its cash and the chain's `a` have the same
-   sign, it draws the smaller of the two in size, and the chain's `a` and the L6's cash both shrink by it. What is left
-   of the L6 joins the pool.
+   sign, it draws the smaller of the two in size, and the chain's `a` and the L6's cash both shrink by it (a chain that
+   reports no AMT I in R, or whose AMT I nets to zero, has `a` zero and draws nothing here). What is left of the L6
+   joins the pool.
 3. **The pool**: the L6s naming nothing, and what step 2 left of the others. Its cash P is their sum; the chains'
    remaining `a` are the claims on it.
    - **P equals the sum of the chains' remaining `a`** (the guide's case, whichever way each moves): each chain draws
@@ -367,9 +385,11 @@ position, the chain each names) and R's chains with `a <> 0`. Each step below yi
    the payer named the claim and paid that much).
 5. **The rest is attributed to no chain**: counted nowhere; the remittance page still lists the L6.
 
-An AMT I with no L6 in R draws nothing: no L6, no draw (case D). The attribution reads only stored rows that never
-change (amounts, references, links), so it is the same at every reconcile until a later upload adds a claim or a link;
-D6 makes such a change write nothing twice.
+An AMT I with no L6 in R draws nothing: no L6, no draw (case D). An L6 that names nothing in a remittance whose chains
+report no AMT I draws nothing either: step 3's pool has no chain to share it, so all of it is step 5's (the worked case
+"D, then an unnamed L6 later"). The attribution reads only stored rows that never change (amounts, references, links),
+so it is the same at every reconcile until a later upload adds a claim or a link; D6 makes such a change write nothing
+twice, and D17 makes each reconcile read those rows as of one moment.
 
 **D5. Lines.** A chain's draw is split over its case lines by `allocateByWeight`:
 - **Paid** (a positive draw): the lines with a standing claim match to a claim the draw is for (the claims the L6
@@ -378,10 +398,12 @@ D6 makes such a change write nothing twice.
   `approvedRemaining` (`rled:253`), unchanged from ADR 0067. The match names the claim of the line's standing claim
   match.
 - **Taken back** (a negative draw): the lines that hold interest of the chain, that is their interest entries from
-  matches naming any claim of the chain, net of corrections and take-backs, above zero. Weights: what each holds; the
-  amount split is at most their sum, so no line gives back more than it holds (largest remainder keeps each part at most
-  its weight when the total is at most the weights' sum). The match names the claim of the line's latest standing
-  interest match of the chain.
+  matches naming any claim of the chain, net of corrections and take-backs, above zero. Weights: what each holds; a
+  line whose holding of the chain is below zero (a specialist's adjustment can lower one chain's entry on a line after
+  a take-back while the line as a whole stays at or above zero) counts as holding zero, never as an error. The amount
+  split is at most their sum, so no line gives back more than it holds (largest remainder keeps each part at most its
+  weight when the total is at most the weights' sum). The match names the claim of the line's latest standing interest
+  match of the chain.
 - A line whose weight is 0 takes nothing; when every weight is 0 nothing is credited now (ADR 0067:234), and a later
   reconcile credits it once a line has a weight.
 
@@ -392,6 +414,11 @@ what the L6 has already given that chain. The reconcile writes the smaller of th
 matched to the L6 (`everMatched`, keyed by the L6, standing or reversed), counting the entries it wrote earlier in the
 same pass. So a second reconcile writes nothing; a later reconcile never splits an L6 again past what it moved (probe
 R: 540, not 840); and when a later upload changes whom an L6 names, what it gave stands and nothing more is written.
+The per-L6-and-sign cap is the one that holds when the attribution moves to another chain (the per-chain cap alone
+would give the newly named chain its whole draw again, and Postgres would then refuse the practice's reconcile on every
+run). Both caps, the line split and the `allocated` flag are one pure function, `interestWrites` (section 6.1), called
+once per L6 with everything that L6 has written so far, so the composition is mutation-tested and property-tested as the
+worker uses it, and the worker only reads and writes.
 
 **D7. What an interest match and entry carry.** Every new interest match carries both `provider_adjustment_id` (the
 L6) and `claim_id` (D5's claim), with `remittance_id` the L6's remittance. Its `evidence_id` is then the L6
@@ -437,8 +464,8 @@ the correction chain's three lookups (section 1.7) and D3's walk back. If SUITE-
 **D13. Order within the pass.** Kept as today. The attribution of every loaded remittance is computed first (it reads
 no weight); then the provider adjustments are walked in today's order (`bpr16_date, created_at, position`, `rem:791-792`),
 WOs and L6s interleaved; at each L6 its draws are split by the lines' weights at that moment, so a WO earlier in the
-order lowers an L6's weights exactly as it does today. The only query change is that an L6 with no reference is read
-too.
+order lowers an L6's weights exactly as it does today. The only query changes are that an L6 with no reference is read
+too, an L6 of zero is not, and the walk's rows come from the same statement as the attribution's moment (D17).
 
 **D14. What does not change.** Interest is never in recovered. The weights of paid interest (`approvedRemaining`). The
 dropped interest of a line with nothing remaining (ADR 0067:234). WO recoupments (their exact-hash naming included),
@@ -459,6 +486,29 @@ skips its one-record interest matches (3.8 (b)), so it writes no interest entry 
 recoupments, postings, deposits, stages, notices, statements) is written as before. Its INSERTs leave `seq` to the
 identity and its reads order by `matched_at, id` as before. The current image then credits the interest once.
 
+**D17. One moment's rows.** The reconcile's transaction runs at READ COMMITTED (`packages/db/src/authz/scope.ts:196`:
+"A step that writes stays at READ COMMITTED"; `pass.ts:38-51`), and a load takes only its trace locks
+(`apps/worker/src/parse/loader.ts:222`), never the ledger lock, so a remittance can commit between two statements of
+one reconcile. Read statement by statement, the attribution could see R's L6 and not R's claims, take the chain the
+L6 names for one "with no claim in R" and give it the whole L6, and D6 would then keep that first attribution for good
+(the review's example: C 540 and K 200 in R, one net L6 of -7.40 naming C's control number, 740 credited to C's lines,
+200 of it K's). So the reconcile reads the attribution as of one moment:
+1. One statement (CTEs of one query, so one snapshot) returns the practice's loaded remittances, S (`id`, `payer_id`),
+   with their WO rows and their L6 rows whose amount is not zero: the loop's rows, in D13's order.
+2. Every later read of the attribution (each remittance's claims, the chain walk, the claims a reference reaches) keeps
+   only claims whose `remittance_id` is in S, and the chain walk follows only links between two claims in S.
+3. The loop walks only the rows statement 1 returned. `attributeInterest` gives no draw to an L6 whose remittance is not
+   among the remittances it is given, so an L6 is never attributed without its own remittance's claims.
+
+This is exactly statement 1's snapshot: a remittance commits whole (its claims, adjustments and links in one load
+transaction); a remittance never changes status once written (`tp_app` has no UPDATE on `remittance`,
+`20261016120000_remittances.sql:476-490`); and the only writers of `reversal_of_claim_id` and
+`superseded_by_claim_id` are the loader's three UPDATEs (`loader.ts:542`, `:555`, `:589`), each linking a claim of the
+remittance being loaded, so every link made after statement 1 has one end outside S and is ignored. The claim matches
+read earlier in the pass may lag S (a remittance in S whose claims `matchClaims` did not yet see): its draws then find
+no line, write nothing, and are written by the next reconcile, as D5 already allows. Nothing here takes a lock, so a
+load never waits for a reconcile.
+
 ### 4.1 Worked cases (cents; LED-16's two lines, weights 2400 and 3000 unless stated)
 
 C is the correction on the case lines; K is another patient's claim on no case line; X the claim a reversal V reverses.
@@ -470,6 +520,8 @@ C is the correction on the case lines; K is another patient's claim on no case l
 | C, an L6 alone | L6 -540 naming C | 540 | 540, the same split |
 | D, AMT I alone | AMT I 540; no L6; BPR02 excludes it | 540 | 0; the line shows "reports 5.40 of interest (AMT I)" |
 | E, AMT I, then a later L6 | D, then a later remittance's L6 -540 naming C | 1080 | 540, dated by the later remittance |
+| D, then an unnamed L6 later (the review's R2-7) | D, then a later remittance's L6 -540 with no reference, its own claims reporting no AMT I | 540 (from AMT I; the L6 never matched) | 0: the later L6 names nothing and its check reports no AMT I, so it is attributed to no chain; the line still shows C's reported 5.40. An understatement by design (section 12 risk 3) |
+| A PLB L6 of zero (R2-1) | A, plus a second `L6:<C's CLP07>*0` | 1080 | 240 + 300, as A; the zero L6 is never read, and the reconcile completes |
 | F, the L6 above AMT I | AMT I 540; L6 -600 naming C | 1140 | 267 + 333 (540 covers C; the other 60 returns to the claim the payer named) |
 | F', the same naming nothing | AMT I 540; L6 -600, no reference | 540 from AMT I | 540 (P 600 is not 540, so only the net moves: min(600, 540)); 60 attributed to no chain |
 | Two claims, one pool | AMT I 540 on C and 200 on K; L6 -740, no reference | 540 from AMT I | 240 + 300 (C's exact 540); K's 200 on no case line |
@@ -477,14 +529,16 @@ C is the correction on the case lines; K is another patient's claim on no case l
 | A named net L6 (review F7) | AMT I 540 on C and 200 on K; L6 -740 naming C | 1280 (740 from the L6, 540 from AMT I) | C 540 (240 + 300); the other 200 is K's |
 | A reference with three identifiers (F6) | AMT I 540 on C; L6 -540, reference "{CLP01} {C's CLP07} {TRN02}" | 540 from AMT I | 240 + 300, named by the CLP07 token |
 | R, approvals at different times | L6 -540 naming C when only line 1 has a weight; later line 2 gains one | 540, then 840 | 540 on line 1, not allocated; nothing more, ever |
-| R', the same with a later correction of the same control number (F1) | as R, line 2's approval by C3 with C's CLP07 | 540, then 840 | 540; nothing more (left 0 for the L6); the reconcile completes |
+| R', the same with a later linked correction (F1) | as R, line 2's approval by C3, a correction of C that the loader links (REF F8 naming C's control number, so `C.superseded_by_claim_id` is C3) | 540, then 840 | 540; nothing more (left 0 for the L6 and for the chain); the reconcile completes |
 | Net zero (RFI 1324) | after A: V reverses C (AMT I -540), C2 corrects C paying more (AMT I 540); no L6 | the new correction's 540 again | nothing new |
 | Net zero beside another claim (F2) | V -540 and C2 +540 of one chain, K +200; L6 -200 naming nothing | C2's 540 from AMT I | the chain reports 0; K's 200; nothing on C's lines |
 | Taken back | after A: V reverses C alone (AMT I -540); L6 +540, no reference | 1080 stays (A's) | -240 and -300; net 0 |
 | Restated, then taken back (F3) | after A: C restated as C2 (no change on either line, AMT I net 0); then V2 reverses C2 alone (AMT I -540) with L6 +540 | 1080 stays | -240 and -300 (the chain's interest is held through C) |
 | One net L6 both ways | after A: V reverses C alone (AMT I -540), K reports +200; one L6 +340 naming nothing | 1080 stays | -240 and -300 from C's lines; K's +200 on no case line (exact: 340 = 540 - 200) |
 | A take-back past what a line holds | after A: L6 +600 naming C | 1080 stays | -240 and -300 (what the lines hold of C's chain); the other 60 taken from no case line |
-| Pooled first, named later (F1) | L6 -540 referencing "Z" in R2, where K' (a correction on a case line) reports AMT I 540; later the remittance holding claim Z is uploaded | K' 540 from AMT I | K' 540 from the L6; after the upload the L6 names Z's chain, has nothing left, and writes nothing |
+| Pooled first, named later (F1, R2-2) | L6 -540 referencing "Z" in R2, where K' (a correction on a line of case 1) reports AMT I 540; later the remittance holding claim Z is uploaded, Z being a correction (of the same payer) that approves a line of case 2 | K' 540 from AMT I; after the upload, Z reports no interest and the L6 never matched | K' 540 from the L6 on case 1; after the upload the L6 names Z's chain (no claim in R2, so step 1 gives Z's chain the whole 540), but the L6's paid interest is 540 of 540 already, so nothing is written to case 2 and the reconcile completes. Keyed per chain alone, case 2 would get 540 more and Postgres would refuse the practice's reconcile on every run |
+| A torn read (R2-3) | R commits while a reconcile runs: C2 (AMT I 540, a correction of C1, which approved the case lines) and K (AMT I 200) and one L6 -740 naming C's control number | 1280 (740 from the L6 to C's lines, 540 from C2's AMT I), torn or not | The reconcile either read R in statement 1 (C 540, K 200) or not at all (R's L6 waits for the next reconcile); never 740 to C's lines |
+| A renumbered reversal (R2-4; a known gap) | after A: V reverses C under its own control number with REF F8 naming C's (the loader leaves V unlinked), AMT I -540; C2 corrects C (REF F8, linked) paying line 1 2.00 more, AMT I 540; K reports 200; one L6 -200 naming nothing | C2's 540 from AMT I again | P 200 = -540 + 540 + 200, exact: C's chain draws +540 onto line 1 (C2's approved line) and V's -540 reaches no line, so the case gains 5.40 again, as today. Closed when the loader links V (section 14); pinned by LED-24 `renumbered-reversal.835` until then |
 | The previous image, during the deploy | any of the above | | no interest written by it; the current image writes the "After" column once |
 
 ---
@@ -752,26 +806,34 @@ which replaces "interest is a PLB L6 or a claim's interest of its remittance" (t
 
 ### 6.1 `packages/ledger` (pure, mutation-tested)
 
-- **New `packages/ledger/src/interest.ts`.** The arithmetic of D2 to D6 and D10, so it is mutation-tested
+- **New `packages/ledger/src/interest.ts`.** The arithmetic of D2 to D6, D10 and D17's rule 3, so it is mutation-tested
   (`apps/worker/src/reconcile` is not; 15b design section 6). Every amount is `Cents` (bigint); nothing divides but
-  `allocateByWeight`, which takes sizes (a negative draw is split by its size and negated back); every function throws
-  `LedgerError` on a zero L6, a zero `a`, a negative weight or a write past what is left.
+  `allocateByWeight`, which takes sizes (a negative draw is split by its size and negated back). What stored rows can
+  hold is handled, never refused: an L6 of zero and a chain whose AMT I nets to zero draw nothing, a line holding less
+  than zero of a chain counts as holding zero, and a set of weights that are all zero writes nothing. `LedgerError` is
+  thrown only on an input no stored row can produce: the same L6 or claim given twice, the same line twice in one
+  chain's list, or a negative `approvedRemaining` (which `rled:253-256` floors at zero).
   - `referenceCandidates(reference)`: the whole reference, then its tokens (D2), in order and without repeats. The
     worker hashes each; the function never sees a hash or a claim.
-  - `remittanceInterest({ adjustments, chains })` for one remittance (D4). `adjustments`: each L6's `id`, `position`,
-    `cashCents` (positive paid, negative taken back), `namedChain` (the chain its reference names, or null) and
-    `namedChainInRemittance`. `chains`: each chain of the remittance with AMT I, its `chain` and `reportedCents`
-    (signed, netted per D3). Returns `draws` (`adjustmentId`, `chain`, `cents` signed, `shared`: the chain's amount was
-    a share of a short pool) and `unattributed` (`adjustmentId`, `cents`).
-  - `interestLeft({ draws, written })`: for each L6 and sign, and for each L6 and chain, what is left (D6), from the
-    draws and the interest entries already written (`adjustmentId`, `chain`, `cents`), gross.
-  - `interestToLines({ leftCents, shared, lines })`, `lines` each `serviceLineId`, `weight`, `matched`: splits
-    `leftCents` (signed; zero gives nothing) over the lines not yet matched to the L6 whose weight is above zero, by
-    `allocateByWeight`; a negative amount is first cut to the weights' sum (what the lines hold), so no part passes
-    its line's weight. Each part is flagged `allocated` when `shared` or when two or more lines took nonzero parts
-    (D10).
+  - `attributeInterest({ remittances, adjustments })` (D4). `remittances`: each remittance whose L6s are attributed,
+    its `id` and every claim of it, each with its `chain` and `interestCents` (signed AMT I, zero when it reports none).
+    `adjustments`: each L6's `id`, `remittanceId`, `position`, `cashCents` (positive paid, negative taken back) and
+    `namedChain` (the chain its reference names among the claims of its payer, or null). The function nets each
+    chain's `a` per remittance, leaves out L6s of zero and chains whose `a` is zero, decides step 1 or step 2 from
+    whether the named chain has a claim among the remittance's claims, and gives no draw to an L6 whose remittance is
+    not among `remittances` (D17). Returns `draws` (`adjustmentId`, `chain`, `cents` signed, `shared`: the chain's
+    amount was a share of a short pool) and `unattributed` (`adjustmentId`, `cents`).
+  - `interestWrites({ draws, written, lines })`, for one L6 at a time: `draws` are that L6's (from
+    `attributeInterest`); `written` every interest entry already written from it, in earlier reconciles or earlier in
+    this pass (`chain`, `serviceLineId`, `cents`, gross: reversed ones included); `lines`, per chain, the lines a paid
+    draw may reach (`serviceLineId`, `claimId`, `weight` = `approvedRemaining`) and the lines a take-back may reach
+    (`serviceLineId`, `claimId`, `held`). It applies D6 (what is left per sign, gross; then per chain), skips lines
+    already matched to the L6, splits by `allocateByWeight` (a take-back first cut to what the lines hold), and flags
+    each part `allocated` when the draw was `shared` or two or more lines took nonzero parts (D10). Returns the parts
+    to write (`chain`, `serviceLineId`, `claimId`, `cents`, `allocated`). The worker writes exactly those.
   - `interestHeld(entries, chainOfMatch)`: what each line holds of each chain, its interest entries from matches naming
-    a claim of the chain, net of their corrections (`correctedEntry`) and of take-backs; the weights of a take-back.
+    a claim of the chain, net of their corrections (`correctedEntry`) and of take-backs, floored at zero; the `held`
+    of a take-back's lines.
 - **`stages.ts`.** `STAGE_SIGN.interest` becomes `'signed'`. In `entryProblems`, a zero signed amount reads "an
   adjustment changes an amount" for an adjustment, as today, and "an interest entry moves an amount" for interest.
   `STAGE_EVIDENCE.interest`'s comment: "A PLB L6, paid or taken back; a claim (AMT I) only on entries written before
@@ -785,22 +847,28 @@ which replaces "interest is a PLB L6 or a claim's interest of its remittance" (t
 ### 6.2 The reconcile (`apps/worker/src/reconcile`)
 
 - **`rem`**:
-  - `providerAdjustments` reads L6s with no reference too: `(a.category = 'recoupment' AND a.reference IS NOT NULL)
-    OR a.category = 'interest'` (`rem:788-793`), in the same order (D13). Its WO branch is unchanged.
-  - Before the loop, a new `interestAttribution` reads, scoped by `practice_id`: every claim with `interest_cents <> 0`
-    of the practice's loaded remittances (`id, remittance_id, interest_cents, claim_status_code`); each such claim's
-    chain root and each claim a reference reaches (one recursive query up `reversal_of_claim_id` and back along
-    `superseded_by_claim_id`, served by `claim_by_reversed` and `claim_by_superseded`); and the claims each L6's
-    reference candidates reach (`referenceCandidates`, hashed with `cipher.lookupHash`, looked up by
-    `claim_by_payer_claim_control_number`). It calls `remittanceInterest` for each remittance and keeps the draws by
-    L6.
-  - In the loop, an L6 calls a new `recordInterest` in place of today's (`rem:836-841`, `rem:863-910`): for each of
-    the L6's draws, its lines (D5: the claim matches and their outcomes from `matches`; for a take-back,
-    `interestHeld` over the entries read at the start and those this pass wrote), `interestLeft` and
-    `interestToLines`; then each part with `insertMatch({ kind: 'interest', claimId, providerAdjustmentId,
-    remittanceId: <the L6's>, serviceLineId, allocated, matchedBy: null })` (a `NewInterestMatch`, which requires both
-    IDs) and `insertEntry({ stage: 'interest', amountCents, evidenceKind: 'provider_adjustment', evidenceId: <the L6>,
-    matchId, allocated, createdBy: null })`. It keeps what it wrote, so a later L6 or draw of the same pass counts it.
+  - `providerAdjustments`' query becomes D17's statement 1, one query of CTEs: the practice's loaded remittances
+    (`id`, `payer_id`) as S, and their adjustment rows `(a.category = 'recoupment' AND a.reference IS NOT NULL) OR
+    (a.category = 'interest' AND a.amount_cents <> 0)` (`rem:788-793`: an L6 with no reference is now read, an L6 of
+    zero is not), each with its `remittance_id`, in the same order (D13). The loop walks exactly these rows; its WO
+    branch is unchanged.
+  - Before the loop, a new `interestAttribution` (in the new `apps/worker/src/reconcile/interest-chains.ts`) reads,
+    scoped by `practice_id` and by D17's rule 2 (`c.remittance_id = ANY (S)`, and the walk only between two claims in
+    S): every claim of each remittance in S that holds a nonzero L6 (`id, remittance_id, interest_cents`), with its
+    chain root (one recursive query up `reversal_of_claim_id` and back along `superseded_by_claim_id`, `UNION` so a
+    cycle cannot loop, served by `claim_by_reversed` and `claim_by_superseded`); and the claims each L6's reference
+    candidates reach (`referenceCandidates`, hashed with `cipher.lookupHash`, looked up by
+    `claim_by_payer_claim_control_number`, joined to `remittance` for D2's `r.payer_id = <the L6's payer>`), with their
+    chain roots. These are at most two statements after statement 1. It calls `attributeInterest` once and keeps the
+    draws by L6.
+  - In the loop, an L6 calls a new `recordInterest` in place of today's (`rem:836-841`, `rem:863-910`): it builds
+    `interestWrites`' input (its draws; what it has written, from the entries read at the start and those this pass
+    wrote, each entry's chain from its match's claim; per chain, the paid lines from `matches` with their outcomes and
+    `approvedRemaining`, and the take-back lines with `interestHeld`), calls it, and writes each part it returns with
+    `insertMatch({ kind: 'interest', claimId, providerAdjustmentId, remittanceId: <the L6's>, serviceLineId,
+    allocated, matchedBy: null })` (a `NewInterestMatch`, which requires both IDs) and `insertEntry({ stage: 'interest',
+    amountCents, evidenceKind: 'provider_adjustment', evidenceId: <the L6>, matchId, allocated, createdBy: null })`. It
+    keeps what it wrote, so a later L6 of the same pass counts it. It decides no amount itself.
   - `claimInterest` (`rem:845-860`) is removed: AMT I credits nothing by itself (D1).
   - `Counts` gains `interestTakenBack` (entries below zero); `interest` counts the positive ones. The job logs no new
     field (`job.ts:61-65` logs no counts), so `packages/observability/src/fields.ts`, a #42 file, is untouched.
@@ -817,21 +885,30 @@ which replaces "interest is a PLB L6 or a claim's interest of its remittance" (t
 ### 6.3 The web
 
 - **`wq`**: the line's matches and the remittance's cash matches order by `m.seq` (`:482`, `:485`). `MATCH_SELECT`
-  reads, for an interest match, whether its entry is below zero, and `MatchView` gains `takesBack: boolean` (by the
-  entry's sign, not the L6's: one L6 may carry both, D1). The line view gains `reportedInterest`: each standing claim
-  match of the line whose claim has `interest_cents > 0`, with the remittance's trace, payer and paid date and the
-  amount, read from stored rows.
+  reads, for an interest match, the sign of its own entry of stage `interest` (the entry whose `match_id` is the
+  match and whose stage is `interest`; never its corrections, so a paid entry a specialist adjusted down, or one whose
+  match was reversed, still reads as paid), and `MatchView` gains `takesBack: boolean`, true when that entry is below
+  zero (by the entry's sign, not the L6's: one L6 may carry both, D1). The line view gains `reportedInterest`: for
+  each chain the line has a standing claim match to, each remittance in which that chain's claims report AMT I netting
+  to other than zero (a reversal and its correction in one remittance netted, as D3), with the remittance's trace,
+  payer and paid date and the net amount, read from stored rows; a remittance whose chain nets to zero is not shown.
+  It groups claims by chain with `interest-chains.ts`' walk, exported through `apps/worker/src/reconcile/public.ts`
+  (which the web already imports as `@tp/worker/ledger`), so the screen and the reconcile group claims alike.
 - **`page`**: the interest words of `MatchItem` (`:76`), the reported interest under the Interest list, and the
   section shown when the line has recoupments, interest or reported interest (`:191`). Words in section 7.
 - **`apps/web/src/components/reconciliation/display.tsx:88`**: the totals tile's note.
 - **`apps/web/src/app/p/[practiceId]/reports/roi/[statementId]/page.tsx:108`**: the ROI statement page's interest
   note, the same sentence as the printed statement's (section 7), so screen and paper agree.
 - **`apps/web/src/lib/routes/specialist.ts:128-129`**: `ADJUSTMENT_CONSEQUENCE`.
-- **`apps/web/src/lib/routes/reconciliation.ts`, `reverseMatchAction`** maps Postgres's refusal named
-  `ledger_interest_line_floor` (the line-floor RAISE carries that constraint name, as `submit_screening`'s coded
-  refusals do) to an input error on `matchId` (section 7), as `adjustEntryAction` maps its check violations to the
-  amount (`specialist.ts:154-158`); any other error is left as it is. The page never offers a reversal of an interest
-  match (`page:84`); the route still accepts one, which is how a person undoes an attribution they judge wrong.
+- **No screen reverses an interest match**, as today: Reconciliation offers `ReverseForm` for neither a recoupment nor
+  an interest match (`page:84`), and this PR keeps it so. A person who judges an interest entry wrong (a first
+  attribution that a later upload shows went to the wrong chain, D6; a reference token that matched the wrong claim,
+  section 12 risk 1) has one remedy, which exists on a screen today: a contract specialist's adjustment on the ledger
+  review (`adjustEntryAction`, `ledger.adjust`, `packages/db/src/authz/permissions.ts:200-203`; interest entries are
+  adjustable, `wq:348-349`), which lowers the entry toward zero with a reason. The L6 stays spent and its interest is never moved to
+  another line or case. `reverseMatchAction` and `manual.ts`' `reverseMatch` are unchanged: a reversal of an interest
+  match posted by hand, which no screen sends, meets the same Postgres rules as any other write and gets no sentence of
+  its own.
 - **`apps/web/src/lib/routes/test-support/ledger-world.ts:94-143`** seeds its 0.50 of interest as a PLB L6 of the
   adjusted remittance naming the adjusted claim, matched with both IDs; a claim-only interest match is not written now.
 
@@ -839,14 +916,15 @@ which replaces "interest is a PLB L6 or a claim's interest of its remittance" (t
 
 No route, server action or permission is added. Interest is written only by the reconcile job, in its practice-scoped
 transaction under `lockLedger`, in no one's name, and the ledger rows are its record (the job writes no audit event
-today and gains none). Two person actions reach interest entries and keep their Zod schema, role check, practice-scoped
-transaction and audit event as they are:
-- **Reverse a match** (`reverseMatchAction`, `posting.reconcile`, audit `reconciliation_reversal`): checked in the
-  handler (`manual.ts:46-50`, permission and the ledger lock) and in Postgres (`ledger_match_rules`' UPDATE branch,
-  then the reversal entries through `ledger_entry_rules`, `_within_line` and now `_within_interest`).
-- **Adjust an entry** (`adjustEntryAction`, `ledger.adjust`, audit `reconciliation_adjustment`): the same, and
-  `ledger_entry_within_line` already holds an interest adjustment between zero and the entry's own amount.
-New in Postgres for both: neither may leave a line's interest below zero once the payer has taken some back.
+today and gains none). One person action on a screen reaches interest entries, and it keeps its Zod schema, role
+check, practice-scoped transaction and audit event as they are:
+- **Adjust an entry** (`adjustEntryAction`, `ledger.adjust`, the contract specialist's, audit
+  `reconciliation_adjustment`): checked in the handler (`manual.ts:46-50` and `:228-229`, permission and the ledger lock) and in Postgres (`ledger_entry_rules`,
+  `ledger_entry_within_line`, which already holds an interest adjustment between zero and the entry's own amount, and
+  now `ledger_entry_within_interest`). New in Postgres: it may not leave a line's interest below zero once the payer has
+  taken some back; its refusal shows on the amount field (section 7).
+- **Reverse a match** (`reverseMatchAction`, `posting.reconcile`) reaches an interest match only by a request no screen
+  sends (above); Postgres holds the same line floor on its reversal entries.
 
 ---
 
@@ -865,11 +943,17 @@ each money value through `<Money>` (Plex Mono).
 | Interest a PLB L6 took back (the match's entry is below zero) | (never written) | ": interest taken back in this check (PLB L6)" |
 | An AMT I interest match written before this change (development data only) | ": the claim’s interest" | unchanged |
 
-**Reconciliation, under a line's Interest list**, one sentence for each claim the line has a standing claim match to
-that reports interest (new):
+**Reconciliation, under a line's Interest list** (new): one row for each remittance in which the claims of a chain the
+line is matched to report interest netting to other than zero (section 6.3; a reversal and its correction in one
+remittance are netted, so a restatement adds no row and a chain never shows the same interest twice):
 
-> Remittance {trace}, {payer}, paid {date}: the claim reports {amount} of interest (AMT I). Interest is counted only as
-> a check pays it (PLB L6), in the list above.
+> Remittance {trace}, {payer}, paid {date}: the claim reports {amount} of interest (AMT I).
+
+> Remittance {trace}, {payer}, paid {date}: the claim reports {amount} of interest taken back (AMT I).
+
+(the second when the net is below zero, `{amount}` then being its size), and once, after the rows:
+
+> Interest is counted only as a check pays it or takes it back (PLB L6), in the list above.
 
 The Interest list's empty text stays "No interest paid." The Recoupments and Interest pair now shows when the line has
 recoupments, interest or reported interest.
@@ -894,10 +978,8 @@ same sentence in both today): "Interest, net" and "No interest was paid in the p
 > line’s interest, net of what the payer took back, never below zero. The totals and the line’s stage follow the
 > ledger.
 
-**A reversal refused by Postgres** (`reverseMatchAction`, on the `matchId` field; new):
-
-> The payer has taken back some of this line’s interest, so this match can be reversed only after the match of that
-> take-back is reversed.
+No screen offers the reversal of an interest match (section 6.3), so no sentence is added for one; the earlier draft's
+sentence on the reverse route is withdrawn (section 16, R2-5).
 
 **Postgres's refusals** (`check_violation`; printed in the domain model's Appendix C, and the last one shown on the
 adjustment form's amount field as its existing refusals are, `specialist.ts:154-158`):
