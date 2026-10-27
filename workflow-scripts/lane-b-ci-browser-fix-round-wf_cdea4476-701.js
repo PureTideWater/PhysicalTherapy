@@ -40,7 +40,7 @@ Return: commits (short sha, subject), each finding's disposition, the check outp
 
   () => agent(`${COMMON}
 
-You are fixer F2: THE DRY RUN, THE ARCHIVE READER, AND THE COMMENTS AND CACHE TEXT. ${WT('f2')}
+RESUMED 2026-10-27 ~19:15 UTC: the account's 5-hour limit stopped this agent at ~17:15; the container restarted and PostgreSQL was restarted by the setup script. Your worktree and progress file survive: continue from them (re-run any check whose log is incomplete). Every heavy command still runs under flock /tmp/laneb-heavy.lock. You are fixer F2: THE DRY RUN, THE ARCHIVE READER, AND THE COMMENTS AND CACHE TEXT. ${WT('f2')}
 Findings:
 - CI-3: make release-dry-run.yml's build a matrix over [web, worker] exactly as release.yml's build is for those two images (per-leg outputs sha256_<image>, config_<image>, target_<image> with distinct names; the worker leg's setup-node 24 and browser-build.ts --image step before docker save; the archive identity steps), and its push (never pushes) and capacity jobs loop over both archives with the same SHA-256 checks against needs.build.outputs and the store-aware .Id compare. Keep what the dry run must not do (no registry push, no login secrets beyond what it has). Extend workflows.test.ts's dry-run equality rule to the matrix, and fix any test that counted one build (e.g. :1738, :757). If something in release.yml's other two web legs (staging, production variants) makes a full mirror wrong for the dry run, say so and mirror the worker leg only. ADR 0066 N16 then states exactly which tag-only steps no pull request runs (if any remain).
 - SEC-5: tools/screening-capacity/image-id.ts takes size from a pax 'x' record when present (as path already is), and caps the bytes kept for an 'x', 'L' or 'g' entry (1 MiB) and the total kept across entries (64 MiB), each with an ImageArchiveError naming the limit; tests in image-id.test.ts for each (failing first against daea87c0's implementation).
@@ -53,7 +53,7 @@ Return: commits, each finding's disposition, checks with counts, failing-first l
 
   () => agent(`${COMMON}
 
-You are fixer F3: THE HEADER'S NAMES, THE SPECS, AND THE TOUR. ${WT('f3')}
+RESUMED 2026-10-27 ~19:15 UTC: the account's 5-hour limit stopped this agent at ~17:15; the container restarted and PostgreSQL was restarted by the setup script. Your worktree and progress file survive: continue from them (re-run any check whose log is incomplete). Every heavy command still runs under flock /tmp/laneb-heavy.lock. You are fixer F3: THE HEADER'S NAMES, THE SPECS, AND THE TOUR. ${WT('f3')}
 Findings:
 - UX-1 and UX-2: take UX-094's naming part as the review's fix says (read the review's UX-1 fix whole, and designs/lane-b-ux-review.md's UX-094 entry and section 6.1 line on claude/build-ops): in apps/web/src/components/shell.tsx drop both summaries' aria-label and the account summary's title; the switcher's visible name followed by a visually hidden ", switch practice" inside the name's span; the account's email span sr-only below md and visible from md (as the review gives the classes), ending with a visually hidden ", account and sign out"; the generated-content initial kept; data-slot="practice-switcher" and data-slot="account-menu" on the two summaries. The 'Current' mark is NOT in this PR (UX PR 67). Change apps/web/e2e/brand.spec.ts and apps/web/e2e/sign-in.spec.ts to reach the two controls by those slots; grep every spec and test for 'Practice switcher', 'Account menu', 'practice switcher', 'account menu' and getByLabel uses of them; a match in a #42 file (apps/web/e2e/screening.spec.ts and the LANES.md list) is reported, never edited. The change must be pixel-neutral: the brand journey's header comparisons (STRICT/VISUAL) must pass unchanged against the committed baselines, and a local --update-snapshots=all into an empty directory (E2E_BASELINES_DIR, as ci.yml's step does) must give the seven committed files byte for byte.
 - UX-3: in brand.spec.ts's computed name check, the first visible piece must match at the start of the name (a leading ^), later pieces contained; widen the selector to header controls that are summary, button, [role="button"], input or select; prove it fails on the review's regression variant (an account control named "Account menu" at 390 px whose initial is 'M') and passes on the new markup at 1280 and 390.
@@ -67,7 +67,7 @@ Return: commits, each finding's disposition, run results with counts, the #42-fi
 phase('Integrate')
 const integ = await agent(`${COMMON}
 
-You are the INTEGRATOR, in /home/user/ci-browser on co-001/ci-browser (daea87c0). The fixers' results:
+RESUMED 2026-10-27 ~19:15 UTC: the account's 5-hour limit stopped this agent at ~17:15; the container restarted and PostgreSQL was restarted by the setup script. Your worktree and progress file survive: continue from them (re-run any check whose log is incomplete). Every heavy command still runs under flock /tmp/laneb-heavy.lock. You are the INTEGRATOR, in /home/user/ci-browser on co-001/ci-browser (daea87c0). The fixers' results:
 === F1 ===
 ${f1}
 === F2 ===
