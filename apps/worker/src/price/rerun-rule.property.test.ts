@@ -131,6 +131,7 @@ function play(model: RunModel, steps: readonly Step[], tally: Map<string, number
           count('refused' in created ? `rerun:${created.refused}` : 'rerun:created');
           if ('created' in created) {
             model.price(created.created);
+            checkStep(model, null);
           }
         }
         break;
@@ -261,9 +262,10 @@ const OUTCOMES = [
 /**
  * One sequence that reaches every outcome, played first as the property's example, so each invariant is checked under
  * each outcome on every run whatever the random sequences reach: two re-runs of a February run raced (accepted, then
- * changed_meanwhile), its original re-run again (not_in_effect), a quarter run re-run while a February first run is
- * queued and then running (newer_run_pending twice), that re-run accepted once the February run committed
- * (superseded), and a March and an April run begun in order and read in reverse (read, restarted).
+ * changed_meanwhile), a third re-run of that run, no longer in effect (not_in_effect), a quarter run re-run while a
+ * February first run is queued and then running (newer_run_pending twice), the February run read (read) and committed,
+ * the quarter's re-run then accepted (superseded), and a March and an April run begun in order and read in reverse
+ * (read, then restarted).
  */
 const EVERY_OUTCOME: readonly Step[] = [
   { kind: 'load', month: 1 },
