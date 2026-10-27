@@ -24,3 +24,4 @@
 - Suite script: scratchpad/pr42/suite.sh (results scratchpad/pr42/suite/results.tsv)
 - NEXT: full suite on final tree (head 15189a50), suite.sh in background
 - Suite started 16:19 UTC in background (bgj64gaot): suite.sh (typecheck..actionlint); then suite2.sh (mutation 6 shards + gate, capacity S1,S4 binding, e2e on tp_pr6b4_integrate_e2e port 4961). Mutation affected: packets-scan, packets-rest, packets-explain, pricing-engine, pricing-recompute, pricing-rest (by packages/db/src/mail-address.ts etc.)
+- unit FAILED at 15189a50: packages/synth fixtures.test (matrix.ts rows SEC-18/19, SCR-21/22 stale vs test-matrix.md). Fixed f-commit 8aa45a46. Rerun unit+typecheck+lint+synth after suite.
