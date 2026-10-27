@@ -2,7 +2,7 @@ import { textPhiFindings } from '@tp/observability';
 import { z } from 'zod';
 
 import { opaqueId } from '../routes/schemas';
-import { retryMinutes } from './rate-limit';
+import { DOWNLOAD_REFUSALS, MAX_RETRY_MINUTES, type RefusedDownload, refusedDownloadOf, refusedFields } from './download-refusal-words';
 import type { Outcome, ReturnPage, ReturnTo } from './route';
 import { signInFor } from './sign-in-for';
 
@@ -12,26 +12,23 @@ import { signInFor } from './sign-in-for';
  * route names (its returnTo), carrying closed codes only: refused=<status>, fields=<a,b> for invalid, retry=<minutes>
  * for a rate limit, and the values that page keeps, each validated with the page's own schema. The page reads them
  * back with downloadRefusal() and says the refusal in its own words, never text from the URL, so a crafted link cannot
- * put words in the product's frame. The writer and the reader of that query are both here, so they never differ; a
- * script's request keeps the JSON outcome (handler.ts).
+ * put words in the product's frame. The writer and the reader of that query are both here, on the closed codes of
+ * download-refusal-words.ts (which a client component reads too), so they never differ; a script's request keeps the
+ * JSON outcome (handler.ts).
  */
 
-/** The refusals a page shows beside its download: the closed list refused= carries. */
-export const DOWNLOAD_REFUSALS = ['invalid', 'not_found', 'forbidden', 'rate_limited', 'suspended', 'duplicate', 'csrf_refused'] as const;
-
-export type DownloadRefusalStatus = (typeof DOWNLOAD_REFUSALS)[number];
+export {
+  DOWNLOAD_REFUSALS,
+  type DownloadRefusalStatus,
+  MAX_REFUSED_FIELDS,
+  MAX_RETRY_MINUTES,
+  REFUSED_FIELD,
+  type RefusedDownload,
+  minutesWords,
+} from './download-refusal-words';
 
 /** The refusals that go where a page's refusal goes (sign-in, the terms of use, maintenance: signInFor), never back to the page. */
 export const SIGNED_OUT_REFUSALS = ['unauthenticated', 'mfa_required', 'hardware_key_required', 'terms_required', 'maintenance'] as const;
-
-/** A refused field's name as fields= carries it: a parameter or input name, never a dotted path, a value or a message. */
-export const REFUSED_FIELD = /^[a-z][A-Za-z0-9_]{0,39}$/;
-
-/** At most this many refused fields are carried; a refusal naming more is cut to its first. */
-export const MAX_REFUSED_FIELDS = 8;
-
-/** The longest wait retry= carries, in whole minutes (a day). */
-export const MAX_RETRY_MINUTES = 1440;
 
 /** The query parameters the refusal itself takes; a kept value never takes one. */
 const REFUSAL_KEYS: ReadonlySet<string> = new Set(['refused', 'fields', 'retry']);
@@ -43,20 +40,6 @@ const KEPT_KEY = /^[a-z][a-z0-9_]{0,39}$/;
 export type ReturnParams = Parameters<ReturnTo>[0];
 
 type Refused = Exclude<Outcome<unknown>, { readonly status: 'ok' }>;
-
-function isDownloadRefusal(outcome: Refused): outcome is Extract<Refused, { readonly status: DownloadRefusalStatus }> {
-  return (DOWNLOAD_REFUSALS as readonly string[]).includes(outcome.status);
-}
-
-/** The names fields= carries: those that match, each once, at most eight. */
-function refusedFields(names: readonly string[]): string[] {
-  return [...new Set(names.filter((name) => REFUSED_FIELD.test(name)))].slice(0, MAX_REFUSED_FIELDS);
-}
-
-/** The minutes, as a refusal's sentence says them ("1 minute", "3 minutes"); guardMessage and DownloadRefusal both say them so. */
-export function minutesWords(minutes: number): string {
-  return `${String(minutes)} minute${minutes === 1 ? '' : 's'}`;
-}
 
 /**
  * Whether a return page's path may go in a Location: one '/' and then route words and opaque IDs only (no '\', no
@@ -87,19 +70,16 @@ export function refusalLocation(outcome: Refused, page: ReturnPage | null, origi
   if (signIn !== undefined) {
     return signIn;
   }
-  if (page === null || !isDownloadRefusal(outcome) || !safeReturnPath(page.path, origin)) {
+  const refusal = refusedDownloadOf(outcome);
+  if (page === null || refusal === null || !safeReturnPath(page.path, origin)) {
     return '/';
   }
-  const query = new URLSearchParams({ refused: outcome.status });
-  if (outcome.status === 'invalid') {
-    const fields = refusedFields(outcome.issues.map((issue) => issue.field));
-    if (fields.length > 0) {
-      query.set('fields', fields.join(','));
-    }
+  const query = new URLSearchParams({ refused: refusal.status });
+  if (refusal.fields.length > 0) {
+    query.set('fields', refusal.fields.join(','));
   }
-  if (outcome.status === 'rate_limited') {
-    const minutes = retryMinutes(outcome.retryAfterSeconds);
-    query.set('retry', String(Number.isFinite(minutes) ? Math.min(MAX_RETRY_MINUTES, minutes) : MAX_RETRY_MINUTES));
+  if (refusal.retryMinutes !== null) {
+    query.set('retry', String(refusal.retryMinutes));
   }
   for (const [key, value] of Object.entries(page.keep ?? {})) {
     if (KEPT_KEY.test(key) && !REFUSAL_KEYS.has(key) && textPhiFindings(value).length === 0) {
@@ -107,15 +87,6 @@ export function refusalLocation(outcome: Refused, page: ReturnPage | null, origi
     }
   }
   return `${page.path}?${query.toString()}`;
-}
-
-/** What a page shows for a refused download (downloadRefusal()). */
-export interface RefusedDownload {
-  readonly status: DownloadRefusalStatus;
-  /** For invalid: the refused fields' names; the page says the ones it knows in its own words and ignores the rest. */
-  readonly fields: readonly string[];
-  /** For rate_limited: the whole minutes to wait, or null when the link carries none. */
-  readonly retryMinutes: number | null;
 }
 
 /**
@@ -223,12 +194,17 @@ const CODES = /^[A-Za-z0-9\s,;]{1,400}$/;
 
 /**
  * Kept procedure codes as typed (trimmed): letters, digits and the separators only, at most 400 characters, each token
- * at most ten, so a mistyped code comes back to its field and nothing longer or of another alphabet does; or undefined.
+ * at most ten, and none of the shapes the PHI guard knows (nine digits, a date, a phone number ...), so a mistyped code
+ * comes back to its field and nothing longer, of another alphabet or of an identifier's shape does; or undefined. The
+ * 303 and the page both keep codes through this, so a crafted link fills the field with no more than the redirect would
+ * carry. The value is read as typed, separators and all: the field's pattern sends only five-character codes, and a
+ * list of those holds none of the shapes, while reading the separators as '-' would take good lists for dates
+ * ('L1832, 0101T').
  */
 export function keptCodes(value: string | undefined): string | undefined {
   const codes = value?.trim();
   if (codes === undefined || !CODES.test(codes)) {
     return undefined;
   }
-  return codes.split(/[\s,;]+/).every((token) => token.length <= 10) ? codes : undefined;
+  return codes.split(/[\s,;]+/).every((token) => token.length <= 10) && textPhiFindings(codes).length === 0 ? codes : undefined;
 }

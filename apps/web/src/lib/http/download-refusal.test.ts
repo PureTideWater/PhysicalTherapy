@@ -389,6 +389,11 @@ describe('every download route has a safe page (DLR-03)', () => {
   it('keeps the codes as typed only within their alphabet and length, and IDs and months only when the page’s schema takes them (R07, R08)', () => {
     expect(['ABC', ' 97110, 97530 ', 'g0283;97110', '971100', 'abcdefghij'].map(keptCodes)).toEqual(['ABC', '97110, 97530', 'g0283;97110', '971100', 'abcdefghij']);
     expect(['', '   ', 'abcdefghijk', '97110-59', 'Call 555-0100', '<b>x</b>', 'ſ9711', `${'97110,'.repeat(66)}97110`, undefined].map(keptCodes)).toEqual(Array.from({ length: 9 }, () => undefined));
+    // Within the alphabet, a shape the PHI guard knows is dropped too (nine digits, a date, a phone number), by the one
+    // rule the 303 and the page both keep codes through (SEC-01).
+    expect(['123456789', '19500115', '919 555 0100'].map(keptCodes)).toEqual([undefined, undefined, undefined]);
+    // Good lists stay kept as typed: the separators are never read as a date's '-' (an orthotic code beside a Category III one).
+    expect(['L1832, 0101T', 'G2061, 0106T', 'L2000; 0512T'].map(keptCodes)).toEqual(['L1832, 0101T', 'G2061, 0106T', 'L2000; 0512T']);
     expect([PAYER.toUpperCase(), 'SYN-1', '', undefined].map(keptId)).toEqual([PAYER, undefined, undefined, undefined]);
     expect(['2026-03', ' 2026-12 ', '2026-13', '2026-00', '26-03', undefined].map(keptMonth)).toEqual(['2026-03', '2026-12', undefined, undefined, undefined, undefined]);
     expect(returnPage('/p/[practiceId]/coverage', { practiceId: PRACTICE }, { payer: undefined, codes: undefined })).toEqual({ path: `/p/${PRACTICE}/coverage` });

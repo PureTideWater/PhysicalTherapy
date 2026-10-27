@@ -299,7 +299,11 @@ export function isNavigation(request: Request): boolean {
   return prefersHtml(request.headers.get('accept'));
 }
 
-/** The request's parameters as a returnTo reads them: the strings only (a repeated query key is none). */
+/**
+ * The request's parameters as a returnTo reads them: the strings of the same params the route's schema parsed (a
+ * repeated query key is its last value, as routeRequest's Object.fromEntries keeps it; a path parameter wins over a
+ * query key of its name; a catch-all's array is dropped).
+ */
 function returnParams(params: unknown): Record<string, string> {
   const entries = typeof params === 'object' && params !== null ? Object.entries(params) : [];
   return Object.fromEntries(entries.filter((entry): entry is [string, string] => typeof entry[1] === 'string'));

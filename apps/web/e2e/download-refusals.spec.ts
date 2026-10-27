@@ -17,10 +17,18 @@ import { startLocalWorker } from './worker';
  * schedule signed off beside the browser, e2e/journeys.ts) and asks Coverage for the request-to-payer letter: a code the
  * browser's pattern would stop, sent past it, comes back to Coverage with the entries kept, the field marked, described
  * by its message and focused, and the page passes the accessibility check at 1280 and 390 px; a contract that is not
- * the payer's and a payer that is not the practice's come back marked on their own controls; the pattern stops the bad
- * code before the round trip and takes good ones; and a good letter downloads while the page stays. Then a viewer who
- * opens the audit report's line CSV as a page lands on the report with the refusal said and focused, while a script's
- * request keeps the JSON refusal. Synthetic data only.
+ * the payer's is stopped in the browser in the product's words and, sent past it, comes back marked on its control, and
+ * once corrected the letter downloads with its marks cleared and the refusal out of the address bar, so a reload shows
+ * the plain form; a payer that is not the practice's comes back marked and unanswered, its mark cleared as a payer is
+ * chosen; a refusal the form cannot mark is said in its place and takes the letter's entries out of the address bar
+ * with it; the pattern stops the bad code before the round trip and takes good ones; and a good letter downloads while
+ * the page stays. A refused file of the Reports list comes back beside that list, and the list leaves the address bar
+ * with the refusal. Then a viewer who opens the audit report's line CSV as a page lands on the report with the refusal
+ * said and focused, and still there after a router refresh that never writes the refusal back, while a script's
+ * request keeps the JSON refusal. On Uploads, a receipt's report downloads in place and its refusal is said above the
+ * receipts, focused, while the page stays (a batch still being sent would stay with it); and a viewer who opens a
+ * packet's PDF lands on the packet's permission state, told who downloads its files, with the refusal out of the
+ * address bar. Synthetic data only.
  */
 
 const FIXTURES = path.resolve(import.meta.dirname, '../../../fixtures/synthetic');
@@ -32,6 +40,29 @@ const PAYER_Q = 'SYNTHETIC PAYER Q';
 const PAYER_NONE = 'SYNTHETIC PAYER DLR';
 /** An opaque ID that names no payer of the practice. */
 const NO_PAYER = '00000000-0000-4000-8000-00000000d1e0';
+/** An opaque ID that names no generated report of the practice. */
+const NO_DOCUMENT = '00000000-0000-4000-8000-00000000d1e1';
+/** Opaque IDs of a case and a packet version: a role refused the export is refused before either is read. */
+const NO_CASE = '00000000-0000-4000-8000-00000000d1e2';
+const NO_VERSION = '00000000-0000-4000-8000-00000000d1e3';
+
+/** Does what is asked of the letter's form and holds that the browser sent no letter for it (its own checks stopped it). */
+async function sendsNoLetter(page: Page, coverage: string, act: () => Promise<void>): Promise<void> {
+  const sent: string[] = [];
+  const letters = (request: Request) => {
+    if (new URL(request.url()).pathname === `${coverage}/letter`) {
+      sent.push(request.url());
+    }
+  };
+  page.on('request', letters);
+  try {
+    await act();
+    expect(sent).toEqual([]);
+    await expect(page).toHaveURL(`${E2E_ORIGIN}${coverage}`);
+  } finally {
+    page.off('request', letters);
+  }
+}
 
 /** The page's URL holds no identifier (the PHI guard's shapes and the remittance's own values). */
 function expectNoPhiIn(page: Page): void {
@@ -80,7 +111,7 @@ test('a refused letter comes back to Coverage marked, focused and kept; a good o
     const codes = form.getByLabel('Procedure codes (optional)');
     const submit = form.getByRole('button', { name: 'Download the letter' });
 
-    await test.step('a code past the browser’s pattern comes back to Coverage, kept, marked, described and focused, and the page is accessible', async () => {
+    const payerQ = await test.step('a code past the browser’s pattern comes back to Coverage, kept, marked, described and focused, and the page is accessible', async () => {
       await page.goto(coverage);
       await expect(payer.locator('option')).toHaveText([PAYER_NONE, PAYER_Q]);
       await payer.selectOption({ label: PAYER_Q });
@@ -104,8 +135,9 @@ test('a refused letter comes back to Coverage marked, focused and kept; a good o
       await expect(codes).toHaveValue('ABC');
       await expect(codes).toHaveAttribute('aria-invalid', 'true');
       await expect(codes).toHaveAttribute('aria-describedby', 'letter-codes-error letter-codes-hint');
+      // The message says what is wrong, then the hint gives the format.
       await expect(codes).toHaveAccessibleDescription(
-        'Error: Procedure codes: enter five-character codes separated by commas, such as 97110, 97530, or leave the field blank. Five-character codes separated by commas, such as 97110, 97530. Leave blank to ask for the whole schedule.',
+        'Error: Each code must be five letters or digits. Five-character codes separated by commas, such as 97110, 97530. Leave blank to ask for the whole schedule.',
       );
       await expect(codes).toBeFocused();
       await expect(payer).toHaveValue(payerId);
@@ -115,53 +147,115 @@ test('a refused letter comes back to Coverage marked, focused and kept; a good o
       expectNoPhiIn(page);
       await expectAccessible(page, 'Coverage, a letter refused for its codes');
       await atPhoneWidth(page, 'Coverage, a letter refused for its codes');
+      return payerId;
     });
 
-    await test.step('a contract that is not the payer’s, and a payer that is not the practice’s, come back marked on their own controls', async () => {
+    /** Whether the contract select is held to the payer chosen (LetterContractCheck's custom validity). */
+    const contractHeld = () => contract.evaluate((select: HTMLSelectElement) => select.validity.customError);
+
+    await test.step('a contract that is not the payer’s is stopped in the browser, and sent past it comes back marked on its control', async () => {
       await page.goto(coverage);
       await payer.selectOption({ label: PAYER_NONE });
       await contract.selectOption({ label: 'SYNTHETIC FIXED SCHEDULE AGREEMENT' });
       await codes.fill('97110');
+      // Held to the payer chosen, in the words its refusal would be marked with; the browser sends nothing and moves the focus there.
+      await expect.poll(contractHeld).toBe(true);
+      expect(await contract.evaluate((select: HTMLSelectElement) => select.validationMessage)).toBe('Choose one of this payer’s contracts, or None named.');
+      await sendsNoLetter(page, coverage, async () => {
+        await submit.click();
+        await expect(contract).toBeFocused();
+      });
+      // The contract's own payer frees it, and another holds it again.
+      await payer.selectOption({ label: PAYER_Q });
+      expect(await contractHeld()).toBe(false);
+      await payer.selectOption({ label: PAYER_NONE });
+      expect(await contractHeld()).toBe(true);
+      // Past the browser, as one without script would send it, the route refuses the pair and the page marks the contract.
+      await form.evaluate((element: HTMLFormElement) => {
+        element.noValidate = true;
+      });
       await submit.click();
       await expect(page).toHaveURL(new RegExp(`${coverage}\\?refused=invalid&fields=contract&`));
       await expect(contract).toHaveAttribute('aria-invalid', 'true');
-      await expect(contract).toHaveAccessibleDescription('Error: The payer’s contract: choose one of this payer’s contracts, or None named.');
+      await expect(contract).toHaveAccessibleDescription('Error: Choose one of this payer’s contracts, or None named.');
       await expect(contract).toBeFocused();
       await expect(payer.locator('option:checked')).toHaveText(PAYER_NONE);
       await expect(codes).toHaveValue('97110');
       await expect(codes).not.toHaveAttribute('aria-invalid', 'true');
+      // The kept pair is held in the browser at once, so the same letter is not sent again.
+      await expect.poll(contractHeld).toBe(true);
       await expectAccessible(page, 'Coverage, a letter refused for its contract');
+    });
 
+    await test.step('once corrected, the letter downloads with its marks cleared and the refusal out of the address bar, and a reload shows the plain form', async () => {
+      // A refusal of the pair, answered by changing the payer: the contract's mark stays until the letter is sent.
+      await payer.selectOption({ label: PAYER_Q });
+      await expect(contract).toHaveAttribute('aria-invalid', 'true');
+      const [download] = await Promise.all([page.waitForEvent('download'), submit.click()]);
+      expect(download.suggestedFilename()).toMatch(/^request-to-payer-[0-9a-f-]{36}\.txt$/);
+      await expect(page).toHaveURL(`${E2E_ORIGIN}${coverage}`);
+      await expect(form.locator('[aria-invalid="true"]')).toHaveCount(0);
+      await expect(form.locator('[data-field-error]:visible')).toHaveCount(0);
+      await expect(contract).not.toHaveAttribute('aria-describedby');
+      await expect(contract).toHaveAccessibleDescription('');
+      await expect(codes).toHaveValue('97110');
+      await page.reload();
+      await expect(page.getByRole('heading', { level: 1, name: 'Coverage' })).toBeVisible();
+      await expect(page.locator('[aria-invalid="true"], [data-field-error], [data-download-refusal]')).toHaveCount(0);
+      await expect(payer.locator('option:checked')).toHaveText(PAYER_NONE);
+      await expect(contract).toHaveValue('');
+      await expect(codes).toHaveValue('');
+    });
+
+    await test.step('a payer that is not the practice’s comes back marked and unanswered, and choosing one clears the mark', async () => {
       // A link to the letter for an ID the practice has no payer of: the page, never the ID, says which control.
       await page.goto(`${coverage}/letter?payer=${NO_PAYER}&codes=97110`);
       await expect(page).toHaveURL(`${E2E_ORIGIN}${coverage}?refused=not_found&payer=${NO_PAYER}&codes=97110`);
       await expect(payer).toHaveAttribute('aria-invalid', 'true');
-      await expect(payer).toHaveAccessibleDescription('Error: Payer: choose one of the payers listed.');
+      await expect(payer).toHaveAccessibleDescription('Error: Choose one of the payers listed.');
       await expect(payer).toBeFocused();
-      await expect(payer.locator('option:checked')).toHaveText(PAYER_NONE);
+      // Never a listed payer under the mark: the choice is unanswered, and the browser holds the letter until it is made.
+      await expect(payer.locator('option:checked')).toHaveText('Choose a payer');
+      expect(await form.evaluate((element: HTMLFormElement) => element.checkValidity())).toBe(false);
       await expect(page.locator('main')).not.toContainText(NO_PAYER);
+      // The mark clears as the person chooses, before anything is sent (chosen again until the page's script has hydrated).
+      await expect(async () => {
+        await payer.selectOption({ label: PAYER_Q });
+        await expect(payer).not.toHaveAttribute('aria-invalid', { timeout: 1_000 });
+      }).toPass({ timeout: 15_000 });
+      await expect(page.locator('#letter-payer-error')).toBeHidden();
+      await expect(payer).toHaveAccessibleDescription('');
+      await expect(codes).toHaveValue('97110');
+    });
+
+    await test.step('a refusal the form cannot mark is said in its place, and the letter’s entries leave the address bar with it', async () => {
+      await page.goto(`${coverage}?refused=rate_limited&retry=3&payer=${payerQ}&codes=97110`);
+      const notice = page.locator('[data-download-refusal="rate_limited"]');
+      await expect(notice).toBeFocused();
+      await expect(notice).toContainText('Not downloaded');
+      await expect(notice).toContainText('Too many downloads in a short time. Wait 3 minutes and try again.');
+      await expect(form.locator('[aria-invalid="true"]')).toHaveCount(0);
+      // Once shown, the refusal and the entries kept beside it leave the address bar; the notice and the entries stay on screen.
+      await expect(page).toHaveURL(`${E2E_ORIGIN}${coverage}`);
+      await expect(notice).toBeVisible();
+      await expect(payer).toHaveValue(payerQ);
+      await expect(codes).toHaveValue('97110');
+      await page.reload();
+      await expect(page.getByRole('heading', { level: 1, name: 'Coverage' })).toBeVisible();
+      await expect(page.locator('[data-download-refusal]')).toHaveCount(0);
+      await expect(payer.locator('option:checked')).toHaveText(PAYER_NONE);
+      await expect(codes).toHaveValue('');
     });
 
     await test.step('the pattern stops a bad code before the round trip and takes good ones', async () => {
       await page.goto(coverage);
       await codes.fill('ABC');
       expect(await codes.evaluate((input: HTMLInputElement) => input.validity.patternMismatch)).toBe(true);
-      const sent: string[] = [];
-      const letters = (request: Request) => {
-        if (new URL(request.url()).pathname === `${coverage}/letter`) {
-          sent.push(request.url());
-        }
-      };
-      page.on('request', letters);
-      try {
+      await sendsNoLetter(page, coverage, async () => {
         await submit.click();
-        // The browser's own check refused it and moved the focus to the field; nothing was sent.
+        // The browser's own check refused it and moved the focus to the field.
         await expect(codes).toBeFocused();
-        expect(sent).toEqual([]);
-        await expect(page).toHaveURL(`${E2E_ORIGIN}${coverage}`);
-      } finally {
-        page.off('request', letters);
-      }
+      });
       await codes.fill('97110, 97530');
       expect(await codes.evaluate((input: HTMLInputElement) => input.validity.patternMismatch)).toBe(false);
       expect(await form.evaluate((element: HTMLFormElement) => element.checkValidity())).toBe(true);
@@ -190,6 +284,19 @@ test('a refused letter comes back to Coverage marked, focused and kept; a good o
       return new URL(page.url()).pathname;
     });
 
+    await test.step('a refused file of the Reports list comes back beside that list, and the list leaves the address bar with the refusal', async () => {
+      const reports = `/p/${practice}/reports`;
+      await page.goto(`${reports}/documents/${NO_DOCUMENT}/pdf?from=list`);
+      const notice = page.getByRole('region', { name: 'Generated reports' }).locator('[data-download-refusal="not_found"]');
+      await expect(notice).toBeFocused();
+      await expect(notice).toContainText('Not downloaded');
+      await expect(page.locator('[data-download-refusal]')).toHaveCount(1);
+      await expect(page).toHaveURL(`${E2E_ORIGIN}${reports}`);
+      await page.reload();
+      await expect(page.getByRole('heading', { level: 1, name: 'Reports' })).toBeVisible();
+      await expect(page.locator('[data-download-refusal]')).toHaveCount(0);
+    });
+
     await test.step('a viewer who opens the line CSV as a page lands on the report with the refusal said and focused; a script keeps the JSON refusal', async () => {
       const context = await browser.newContext();
       const viewer = await context.newPage();
@@ -202,11 +309,22 @@ test('a refused letter comes back to Coverage marked, focused and kept; a good o
         // Once shown, the refusal leaves the address bar, so a reload shows the report as it is now; the notice stays.
         await expect(viewer).toHaveURL(`${E2E_ORIGIN}${reportPath}`);
         await expect(notice).toHaveAttribute('role', 'alert');
-        await expect(notice).toContainText('Not available to your role');
-        await expect(notice).toContainText('Your role cannot download this file. Users and roles are managed by your organization’s administrator.');
+        await expect(notice).toContainText('Not downloaded');
+        await expect(notice).toContainText('Your role cannot download this file. Ask your organization’s administrator, who manages users and roles.');
         await expect(notice).toBeFocused();
         expectNoPhiIn(viewer);
         await expectAccessible(viewer, 'An audit report, its line CSV refused to a viewer');
+        // A router refresh (a live export's poll, a settled upload batch) asks for the page as it is now, never the
+        // refusal, and leaves the address bar clean; the notice stays on screen, focused, while the viewer is on the page.
+        const refreshed = viewer.waitForRequest((request) => request.headers()['rsc'] === '1' && new URL(request.url()).pathname === reportPath);
+        await viewer.evaluate(() => {
+          (window as unknown as { next: { router: { refresh(): void } } }).next.router.refresh();
+        });
+        expect(new URL((await refreshed).url()).searchParams.has('refused')).toBe(false);
+        await viewer.waitForLoadState('networkidle');
+        await expect(viewer).toHaveURL(`${E2E_ORIGIN}${reportPath}`);
+        await expect(notice).toBeVisible();
+        await expect(notice).toBeFocused();
         await viewer.reload();
         await expect(viewer.getByRole('heading', { level: 1 })).toBeVisible();
         await expect(notice).toHaveCount(0);
@@ -215,6 +333,58 @@ test('a refused letter comes back to Coverage marked, focused and kept; a good o
         expect(script.status()).toBe(403);
         expect(script.headers()['content-type']).toContain('application/json');
         expect(await script.json()).toMatchObject({ status: 'forbidden' });
+      } finally {
+        await context.close();
+      }
+    });
+
+    await test.step('a receipt’s report downloads in place on Uploads, and its refusal is said above the receipts, focused, while the page stays', async () => {
+      const uploads = `/p/${practice}/uploads`;
+      await page.goto(uploads);
+      const report = page.getByRole('region', { name: 'Receipts' }).getByRole('row').filter({ hasText: '835 remittance' }).getByRole('link', { name: 'Report' }).first();
+      // A navigation would load another document and drop this mark, as it would cut off a batch still being sent.
+      await page.evaluate(() => {
+        (window as unknown as { stayed?: boolean }).stayed = true;
+      });
+      const stayed = () => page.evaluate(() => (window as unknown as { stayed?: boolean }).stayed === true);
+      const [saved] = await Promise.all([page.waitForEvent('download'), report.click()]);
+      expect(saved.suggestedFilename()).toMatch(/^receipt-[0-9a-f-]{36}\.csv$/);
+      await expect(page).toHaveURL(`${E2E_ORIGIN}${uploads}`);
+      expect(await stayed()).toBe(true);
+      // The route's answer to a script once the export limit is spent (outcomeResponse: 429, Retry-After and the
+      // outcome), stood in for here so the limit every download of this run shares stays whole.
+      const report429 = (url: URL) => url.pathname.endsWith('/report');
+      await page.route(report429, (route) =>
+        route.fulfill({ status: 429, headers: { 'retry-after': '125' }, contentType: 'application/json', body: JSON.stringify({ status: 'rate_limited', retryAfterSeconds: 125 }) }),
+      );
+      await report.click();
+      const notice = page.locator('[data-download-refusal="rate_limited"]');
+      await expect(notice).toBeFocused();
+      await expect(notice).toHaveAttribute('role', 'alert');
+      await expect(notice).toContainText('Not downloaded');
+      await expect(notice).toContainText('Too many downloads in a short time. Wait 3 minutes and try again.');
+      await expect(page).toHaveURL(`${E2E_ORIGIN}${uploads}`);
+      expect(await stayed()).toBe(true);
+      await expectAccessible(page, 'Uploads, a receipt’s report refused in place');
+      // The next file saved takes the notice away.
+      await page.unroute(report429);
+      await Promise.all([page.waitForEvent('download'), report.click()]);
+      await expect(page.locator('[data-download-refusal]')).toHaveCount(0);
+      expect(await stayed()).toBe(true);
+    });
+
+    await test.step('a viewer who opens a packet’s PDF lands on the packet’s permission state, told who downloads its files, and the refusal leaves the address bar', async () => {
+      const context = await browser.newContext();
+      const viewer = await context.newPage();
+      try {
+        await signInWithTotp(viewer, 'refusals-viewer');
+        const packet = `/p/${practice}/cases/${NO_CASE}/packet`;
+        await viewer.goto(`${packet}/${NO_VERSION}/pdf`);
+        const state = viewer.locator('[data-state="permission"]');
+        await expect(state).toContainText('The packet’s PDF and CSV hold line-level PHI, which your role cannot download: a billing manager or a firm principal downloads them.');
+        await expect(state).not.toContainText('an analyst');
+        await expect(viewer).toHaveURL(`${E2E_ORIGIN}${packet}`);
+        await expect(viewer.locator('[data-download-refusal]')).toHaveCount(0);
       } finally {
         await context.close();
       }

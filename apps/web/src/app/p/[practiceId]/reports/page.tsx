@@ -25,6 +25,9 @@ export const metadata: Metadata = { title: 'Reports' };
 
 type Props = { readonly params: Promise<{ practiceId: string }>; readonly searchParams: Promise<Record<string, string | string[] | undefined>> };
 
+/** The screen's key that says which list a refused file was in (list=documents): it leaves the address bar with the refusal's. */
+const RETURN_ONLY = ['list'] as const;
+
 /** Where an export history entry's record is. */
 function exportHref(practiceId: string, entry: ExportRecord): string | null {
   if (entry.objectId === null) {
@@ -115,7 +118,7 @@ export default async function ReportsPage(props: Props) {
             </CardContent>
           </Card>
         ) : null}
-        <DownloadRefusal refusal={refusedInDocuments ? null : refusal} />
+        <DownloadRefusal refusal={refusedInDocuments ? null : refusal} forget={RETURN_ONLY} />
         {reports.total === 0 ? (
           <EmptyState title="No audit report yet" nextStep="A billing manager or analyst generates one from the pricing run in effect for its period." />
         ) : (
@@ -241,7 +244,7 @@ export default async function ReportsPage(props: Props) {
       </div>
       <section aria-label="Generated reports" className="flex flex-col gap-2">
         <h2 className="text-xl font-bold tracking-display">Coverage reports and monthly summaries</h2>
-        <DownloadRefusal refusal={refusedInDocuments ? refusal : null} />
+        <DownloadRefusal refusal={refusedInDocuments ? refusal : null} forget={RETURN_ONLY} />
         {documents.total === 0 ? (
           <p className="text-sm text-muted-foreground">None generated yet{canGenerate ? ': generate one above.' : '; a billing manager or analyst generates them.'}</p>
         ) : (

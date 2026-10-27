@@ -1,14 +1,20 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { LETTER_CODES_PATTERN } from '../../lib/contracts/letter';
-import { type LetterSearchParams, PayerLetter } from './letter';
+import { payerLetter } from '../../lib/routes/coverage';
+import { forgetRefusalUrl } from '../forget-refusal';
+import { LETTER_CONTROLS, type LetterSearchParams, PayerLetter } from './letter';
+import { type ContractChoice, type PayerChoice, watchLetterContract } from './letter-contract-check';
+import { type LetterMark, type MarkedControl, clearMark, describedWithout, watchLetterMarks } from './letter-marks';
 
 /**
  * Coverage's letter form, rendered as the page renders it (docs/adr/0079; test matrix DLR-04): the route's rule as the
- * codes field's pattern with its hint, and a refused letter's return marked on the control it names, its entries kept
- * only as the form's own options and the codes' alphabet allow, and never a word from the URL. Synthetic IDs only.
- * Written by hand.
+ * codes field's pattern with its hint, each contract option's payer for the check that holds the contract to the
+ * payer, and a refused letter's return marked on the control it names, a payer the route did not find unanswered, its
+ * entries kept only as the form's own options and the codes' alphabet allow, and never a word from the URL; then the
+ * marks cleared as the person edits and sends (LetterMarks), and the contract held to its payer before the letter is
+ * sent (LetterContractCheck), over fake controls (there is no DOM here). Synthetic IDs only. Written by hand.
  */
 
 const PRACTICE = '00000000-0000-4000-8000-000000000001';
@@ -59,8 +65,8 @@ function textOf(markup: string, id: string): string {
 /** The value a select shows: its option marked selected, else its first. */
 function shown(markup: string, id: string): string | undefined {
   const select = new RegExp(`<select [^>]*\\bid="${id}"[^>]*>([\\s\\S]*?)</select>`).exec(markup)?.[1] ?? '';
-  const options = [...select.matchAll(/<option value="([^"]*)"( selected="")?/g)];
-  return (options.find((option) => option[2] !== undefined) ?? options[0])?.[1];
+  const options = [...select.matchAll(/<option value="([^"]*)"[^>]*>/g)];
+  return (options.find((option) => / selected=""/.test(option[0])) ?? options[0])?.[1];
 }
 
 /** What takes the focus on arrival: each element with autofocus, by its id or its notice's status. */
@@ -82,13 +88,20 @@ describe('Coverage’s letter form', () => {
     expect(codes.get('aria-describedby')).toBe('letter-codes-hint');
     expect(codes.has('aria-invalid')).toBe(false);
     expect(codes.has('value')).toBe(false);
+    // The format and its example are the hint's; a placeholder would repeat it at 3.3:1 and read as a kept entry.
+    expect(codes.has('placeholder')).toBe(false);
     expect(textOf(page, 'letter-codes-hint')).toBe('Five-character codes separated by commas, such as 97110, 97530. Leave blank to ask for the whole schedule.');
-    // The example codes in the mono face with tabular numerals (brand.md).
-    expect(page).toContain('<span class="font-mono tabular-nums">97110, 97530</span>. Leave blank');
-    expect(page).not.toMatch(/aria-invalid=|data-field-error|data-download-refusal/);
+    // Each example code in the mono face with tabular numerals (brand.md), the separator in the sentence's.
+    expect(page).toContain('<span class="font-mono tabular-nums">97110</span>, <span class="font-mono tabular-nums">97530</span>. Leave blank');
+    expect(page).not.toMatch(/aria-invalid=|data-field-error|data-download-refusal|Choose a payer/);
+    expect(attributes(page, 'letter-payer').has('aria-describedby')).toBe(false);
+    expect(attributes(page, 'letter-contract').has('aria-describedby')).toBe(false);
     expect(autofocused(page)).toEqual([]);
     expect(shown(page, 'letter-payer')).toBe(PAYER_Q);
     expect(shown(page, 'letter-contract')).toBe('');
+    // Each contract names its payer, for the check that holds the contract to the payer chosen; None named names none.
+    expect(page).toContain(`<option value="${CONTRACT_Q}" data-payer="${PAYER_Q}">SYNTHETIC FIXED SCHEDULE AGREEMENT</option>`);
+    expect(page).toContain('<option value="">None named</option>');
   });
 
   it('marks a refused code, keeps what was asked for, describes the field by its message then its hint, and focuses it', () => {
@@ -98,8 +111,8 @@ describe('Coverage’s letter form', () => {
     expect(codes.get('aria-invalid')).toBe('true');
     expect(codes.get('aria-describedby')).toBe('letter-codes-error letter-codes-hint');
     expect(codes.get('class')).toContain('scroll-mt-18');
-    expect(textOf(page, 'letter-codes-error')).toBe('Error: Procedure codes: enter five-character codes separated by commas, such as 97110, 97530, or leave the field blank.');
-    expect(page).toContain('such as <span class="font-mono tabular-nums">97110, 97530</span>, or leave');
+    // The message says what is wrong; the label names the field and the hint, read after it, gives the format.
+    expect(textOf(page, 'letter-codes-error')).toBe('Error: Each code must be five letters or digits.');
     expect(autofocused(page)).toEqual(['letter-codes']);
     expect(shown(page, 'letter-payer')).toBe(PAYER_Q);
     expect(shown(page, 'letter-contract')).toBe(CONTRACT_Q);
@@ -115,30 +128,42 @@ describe('Coverage’s letter form', () => {
     expect(contract.get('aria-invalid')).toBe('true');
     expect(contract.get('aria-describedby')).toBe('letter-contract-error');
     expect(contract.get('class')).toContain('scroll-mt-18');
-    expect(textOf(page, 'letter-contract-error')).toBe('Error: The payer’s contract: choose one of this payer’s contracts, or None named.');
+    expect(textOf(page, 'letter-contract-error')).toBe('Error: Choose one of this payer’s contracts, or None named.');
     expect(autofocused(page)).toEqual(['letter-contract']);
     expect(shown(page, 'letter-payer')).toBe(PAYER_R);
     expect(shown(page, 'letter-contract')).toBe(CONTRACT_Q);
     expect(attributes(page, 'letter-codes').get('aria-invalid')).toBe('true');
   });
 
-  it('marks the payer when the route did not find it, and selects only a payer or contract among the form’s own options', () => {
+  it('marks the payer when the route did not find it, unanswered, and selects only a payer or contract among the form’s own options', () => {
     const page = render({ refused: 'not_found', payer: ELSEWHERE, contract: ELSEWHERE, codes: '97110, 97530' });
     const payer = attributes(page, 'letter-payer');
     expect(payer.get('aria-invalid')).toBe('true');
     expect(payer.get('aria-describedby')).toBe('letter-payer-error');
-    expect(textOf(page, 'letter-payer-error')).toBe('Error: Payer: choose one of the payers listed.');
+    expect(payer.has('required')).toBe(true);
+    expect(textOf(page, 'letter-payer-error')).toBe('Error: Choose one of the payers listed.');
     expect(autofocused(page)).toEqual(['letter-payer']);
-    expect(shown(page, 'letter-payer')).toBe(PAYER_Q);
+    // Never a listed payer under the mark: the choice starts unanswered, and required holds the next letter until it is made.
+    expect(shown(page, 'letter-payer')).toBe('');
+    expect(page).toContain('<option value="" selected="">Choose a payer</option>');
     expect(shown(page, 'letter-contract')).toBe('');
     expect(page).not.toContain(ELSEWHERE);
     expect(attributes(page, 'letter-codes').get('value')).toBe('97110, 97530');
     expect(page).not.toContain('data-download-refusal');
+    // An invalid payer (no opaque ID, so none kept) comes back the same way.
+    const invalid = render({ refused: 'invalid', fields: 'payer', payer: 'SYN-1' });
+    expect(shown(invalid, 'letter-payer')).toBe('');
+    expect(invalid).toContain('<option value="" selected="">Choose a payer</option>');
+    expect(attributes(invalid, 'letter-payer').get('aria-invalid')).toBe('true');
+    // A contract refused beside a payer the form lists keeps that payer, with no unanswered choice.
+    const contract = render({ refused: 'invalid', fields: 'contract', payer: PAYER_R, contract: CONTRACT_Q });
+    expect(shown(contract, 'letter-payer')).toBe(PAYER_R);
+    expect(contract).not.toContain('Choose a payer');
   });
 
   it.each([
     ['rate_limited', { refused: 'rate_limited', retry: '3' }, 'Too many downloads in a short time. Wait 3 minutes and try again.'],
-    ['forbidden', { refused: 'forbidden' }, 'Your role cannot download this file. Users and roles are managed by your organization’s administrator.'],
+    ['forbidden', { refused: 'forbidden' }, 'Your role cannot download this file. Ask your organization’s administrator, who manages users and roles.'],
     ['invalid, of no field the form holds', { refused: 'invalid', fields: 'practiceId' }, 'This file could not be made from what was asked. Try the download again from this page.'],
   ] as const)('says a refusal it cannot mark (%s) as the download’s notice in the card, focused', (_, searchParams, body) => {
     const page = render(searchParams);
@@ -159,6 +184,13 @@ describe('Coverage’s letter form', () => {
     expect(attributes(crafted, 'letter-codes').has('value')).toBe(false);
     expect(attributes(crafted, 'letter-codes').get('aria-invalid')).toBe('true');
     expect(crafted).not.toContain('555');
+    // Within the alphabet, an identifier's shape is dropped by the same rule the 303 keeps codes by (keptCodes; SEC-01).
+    for (const codes of ['123456789', '19500115', '919 555 0100']) {
+      const shaped = render({ refused: 'invalid', fields: 'codes', codes });
+      expect(attributes(shaped, 'letter-codes').has('value'), codes).toBe(false);
+      expect(attributes(shaped, 'letter-codes').get('aria-invalid'), codes).toBe('true');
+      expect(shaped, codes).not.toContain(codes);
+    }
     expect(attributes(render({ refused: 'invalid', fields: 'codes', codes: ['97110', 'ABC'] }), 'letter-codes').has('value')).toBe(false);
     // An unknown code is no refusal: nothing marked, no notice, none of its words.
     const unknown = render({ refused: 'Your account is closed', fields: 'codes', codes: '97110' });
@@ -166,10 +198,173 @@ describe('Coverage’s letter form', () => {
     expect(attributes(unknown, 'letter-codes').has('value')).toBe(false);
   });
 
+  it('keeps beside a refusal exactly the entries the route keeps, and a shown refusal or a sent letter takes them all out of the URL', () => {
+    const kept = payerLetter.returnTo?.({ practiceId: PRACTICE, payer: PAYER_Q, contract: CONTRACT_Q, codes: '97110' })?.keep ?? {};
+    expect(Object.keys(kept).sort()).toEqual([...LETTER_CONTROLS].sort());
+    const href = `https://app.example/p/${PRACTICE}/coverage?refused=rate_limited&retry=3&payer=${PAYER_Q}&contract=${CONTRACT_Q}&codes=97110%2C+97530&page=2#c`;
+    expect(forgetRefusalUrl(href, LETTER_CONTROLS)).toBe(`/p/${PRACTICE}/coverage?page=2#c`);
+  });
+
   it('says why there is no form before any payer has loaded, and still says a refusal there', () => {
     const empty = render({}, []);
     expect(empty).not.toContain('<form');
     expect(text(empty)).toBe('Payers appear once their 835s load.');
     expect(render({ refused: 'not_found' }, [])).toContain('data-download-refusal="not_found"');
+  });
+});
+
+/** A control's attributes and its events, as LetterMarks reads and clears them. */
+class FakeControl extends EventTarget implements MarkedControl {
+  readonly marks: Map<string, string>;
+
+  constructor(marks: Readonly<Record<string, string>>) {
+    super();
+    this.marks = new Map(Object.entries(marks));
+  }
+
+  getAttribute(name: string): string | null {
+    return this.marks.get(name) ?? null;
+  }
+
+  setAttribute(name: string, value: string): void {
+    this.marks.set(name, value);
+  }
+
+  removeAttribute(name: string): void {
+    this.marks.delete(name);
+  }
+
+  edit(type: 'input' | 'change' = 'input'): void {
+    this.dispatchEvent(new Event(type));
+  }
+}
+
+/** A control marked as letter.tsx marks it, with its message. */
+function markedControl(control: string, hint?: string): LetterMark & { readonly control: FakeControl; readonly message: { hidden: boolean } } {
+  const messageId = `letter-${control}-error`;
+  return { control: new FakeControl({ 'aria-invalid': 'true', 'aria-describedby': [messageId, hint].filter((id) => id !== undefined).join(' ') }), message: { hidden: false }, messageId };
+}
+
+describe('a refused letter’s marks, cleared once they no longer hold (LetterMarks)', () => {
+  it('takes one id out of a description, the rest kept in order, and none left is no description', () => {
+    expect(describedWithout('letter-codes-error letter-codes-hint', 'letter-codes-error')).toBe('letter-codes-hint');
+    expect(describedWithout('letter-contract-error', 'letter-contract-error')).toBeNull();
+    expect(describedWithout(null, 'letter-payer-error')).toBeNull();
+    expect(describedWithout('a  letter-codes-error b', 'letter-codes-error')).toBe('a b');
+  });
+
+  it('clears a mark once: aria-invalid, the message hidden and out of the description, the hint kept', () => {
+    const codes = markedControl('codes', 'letter-codes-hint');
+    clearMark(codes);
+    expect(codes.control.marks).toEqual(new Map([['aria-describedby', 'letter-codes-hint']]));
+    expect(codes.message.hidden).toBe(true);
+    // A control with no mark left is not touched.
+    codes.message.hidden = false;
+    clearMark(codes);
+    expect(codes.message.hidden).toBe(false);
+    const contract = markedControl('contract');
+    clearMark({ ...contract, message: null });
+    expect(contract.control.marks.size).toBe(0);
+  });
+
+  it('clears only the control the person edits, and every mark when the letter is sent, then takes the refusal out', () => {
+    const form = new EventTarget();
+    const contract = markedControl('contract');
+    const codes = markedControl('codes', 'letter-codes-hint');
+    const sent = vi.fn();
+    const stop = watchLetterMarks(form, [contract, codes], sent);
+    codes.control.edit('input');
+    expect(codes.control.getAttribute('aria-invalid')).toBeNull();
+    expect(codes.message.hidden).toBe(true);
+    // A refusal of the pair stays marked while the other control changes: it may be answered there.
+    expect(contract.control.getAttribute('aria-invalid')).toBe('true');
+    expect(contract.message.hidden).toBe(false);
+    expect(sent).not.toHaveBeenCalled();
+    form.dispatchEvent(new Event('submit'));
+    expect(contract.control.getAttribute('aria-invalid')).toBeNull();
+    expect(contract.control.getAttribute('aria-describedby')).toBeNull();
+    expect(contract.message.hidden).toBe(true);
+    expect(sent).toHaveBeenCalledTimes(1);
+    stop();
+    const again = markedControl('codes');
+    const after = watchLetterMarks(new EventTarget(), [again], sent);
+    after();
+    again.control.edit('change');
+    expect(again.control.getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it('stops listening when it is stopped', () => {
+    const form = new EventTarget();
+    const payer = markedControl('payer');
+    const sent = vi.fn();
+    watchLetterMarks(form, [payer], sent)();
+    payer.control.edit('change');
+    form.dispatchEvent(new Event('submit'));
+    expect(payer.control.getAttribute('aria-invalid')).toBe('true');
+    expect(sent).not.toHaveBeenCalled();
+  });
+});
+
+/** The payer select: its value and its change. */
+class FakePayer extends EventTarget implements PayerChoice {
+  value = '';
+
+  choose(value: string): void {
+    this.value = value;
+    this.dispatchEvent(new Event('change'));
+  }
+}
+
+/** The contract select: its chosen option's payer (none for None named), its change, and the validity the check sets. */
+class FakeContract extends EventTarget implements ContractChoice {
+  owner: string | undefined;
+  validity = '';
+
+  get selectedOptions(): ArrayLike<{ readonly dataset: Readonly<Record<string, string | undefined>> }> {
+    return [{ dataset: this.owner === undefined ? {} : { payer: this.owner } }];
+  }
+
+  setCustomValidity(message: string): void {
+    this.validity = message;
+  }
+
+  choose(owner: string | undefined): void {
+    this.owner = owner;
+    this.dispatchEvent(new Event('change'));
+  }
+}
+
+describe('the letter’s contract, held to its payer before it is sent (LetterContractCheck)', () => {
+  const MESSAGE = 'Choose one of this payer’s contracts, or None named.';
+
+  it('holds a contract of another payer at once (a kept or restored pair) and on every change of either select', () => {
+    const payer = new FakePayer();
+    const contract = new FakeContract();
+    payer.value = PAYER_R;
+    contract.owner = PAYER_Q;
+    const stop = watchLetterContract(payer, contract, MESSAGE);
+    expect(contract.validity).toBe(MESSAGE);
+    payer.choose(PAYER_Q);
+    expect(contract.validity).toBe('');
+    payer.choose(PAYER_R);
+    expect(contract.validity).toBe(MESSAGE);
+    contract.choose(undefined);
+    expect(contract.validity).toBe('');
+    contract.choose(PAYER_Q);
+    expect(contract.validity).toBe(MESSAGE);
+    stop();
+    payer.choose(PAYER_Q);
+    expect(contract.validity).toBe(MESSAGE);
+  });
+
+  it('never holds None named, nor a contract while no payer is chosen (the payer’s required stops that letter)', () => {
+    const payer = new FakePayer();
+    const contract = new FakeContract();
+    watchLetterContract(payer, contract, MESSAGE);
+    expect(contract.validity).toBe('');
+    contract.choose(PAYER_Q);
+    expect(contract.validity).toBe('');
+    payer.choose(PAYER_Q);
+    expect(contract.validity).toBe('');
   });
 });

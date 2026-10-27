@@ -4,6 +4,7 @@ import Link from 'next/link';
 
 import { ActionForm } from '../../../../../../components/action-form';
 import { DownloadRefusal } from '../../../../../../components/download-refusal';
+import { ForgetRefusal } from '../../../../../../components/forget-refusal';
 import { utc } from '../../../../../../components/format';
 import { Headline, ReportSections } from '../../../../../../components/reports/display';
 import { AppShell, Forbidden } from '../../../../../../components/shell';
@@ -26,12 +27,30 @@ type Props = { readonly params: Promise<{ practiceId: string; reportId: string }
  * files shown here; the signature is the only record the reviewer writes. A report whose rule release was
  * withdrawn since it was generated (audit item #4) is not signed: the checklist says why and the button is
  * disabled (the attest route and the database refuse it too). A refused download of the PDF or the line CSV comes back
- * here (the PDF's link says ?from=review), said below the links (docs/adr/0079).
+ * here (the PDF's link says ?from=review), said below the links (docs/adr/0079). This page takes a narrower permission
+ * than the PDF, which every role that reads reports downloads, so a refusal can come back here to a role this page
+ * refuses: its permission state then says where the report's files are, and the refusal leaves the address bar.
  */
 export default async function ReviewChecklistPage(props: Props) {
   const page = await loadPage(reviewChecklistPage, props);
   if (page.kind === 'forbidden') {
-    return <Forbidden shell={page.shell} section="reports" roles={page.roles} message={page.message} nextStep="The checklist is signed by a reimbursement reviewer under a support grant." />;
+    const refused = downloadRefusal(await props.searchParams);
+    return (
+      <>
+        <Forbidden
+          shell={page.shell}
+          section="reports"
+          roles={page.roles}
+          message={page.message}
+          nextStep={
+            refused === null
+              ? 'The checklist is signed by a reimbursement reviewer under a support grant.'
+              : 'The checklist is signed by a reimbursement reviewer under a support grant. The report’s own page lists its files for the roles that download them.'
+          }
+        />
+        {refused === null ? null : <ForgetRefusal />}
+      </>
+    );
   }
   const { practiceId, report, checklist } = page.data;
   const path = `/p/${practiceId}/reports/${report.id}`;

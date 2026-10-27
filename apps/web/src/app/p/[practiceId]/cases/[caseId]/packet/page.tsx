@@ -5,6 +5,7 @@ import Link from 'next/link';
 
 import { ActionForm } from '../../../../../../components/action-form';
 import { DownloadRefusal } from '../../../../../../components/download-refusal';
+import { ForgetRefusal } from '../../../../../../components/forget-refusal';
 import { FormKeys } from '../../../../../../components/form-keys';
 import { utc } from '../../../../../../components/format';
 import { DraftBadge, HandEntryNotice, ModelNoticeAlert, draftOf } from '../../../../../../components/models/display';
@@ -167,11 +168,31 @@ function ExportBlocked({ version }: { readonly version: VersionView }) {
  * worksheets; each trace's SHA-256 and the words version stay below them, outside the payer's words. The approve and
  * export forms post the words version the page was rendered with, so a step asked from a page another renderer wrote
  * is refused. The schedule links a line to its trace page only for a role that opens it.
+ *
+ * A refused export file comes back here (docs/adr/0079), and every role refused its line-level PHI, an analyst's
+ * aside, is refused this page too: the permission state then says who downloads the files rather than who builds
+ * packets (an analyst builds them, yet cannot download them), and the refusal leaves the address bar.
  */
 export default async function PacketPage(props: Props) {
   const page = await loadPage(packetPage, props);
   if (page.kind === 'forbidden') {
-    return <Forbidden shell={page.shell} section="cases" roles={page.roles} message={page.message} nextStep="A billing manager, an analyst or a firm principal builds packets; open the case to see its state." />;
+    const refused = downloadRefusal(await props.searchParams);
+    return (
+      <>
+        <Forbidden
+          shell={page.shell}
+          section="cases"
+          roles={page.roles}
+          message={page.message}
+          nextStep={
+            refused?.status === 'forbidden'
+              ? 'The packet’s PDF and CSV hold line-level PHI, which your role cannot download: a billing manager or a firm principal downloads them. Open the case to see its state.'
+              : 'A billing manager, an analyst or a firm principal builds packets; open the case to see its state.'
+          }
+        />
+        {refused === null ? null : <ForgetRefusal />}
+      </>
+    );
   }
   const { practiceId, case: item, builder, notice, canApprove, canExport, asOf, canDraftWithModel, drafts, modelNotice, canSetContact, canOpenLines, wordsVersion } = page.data;
   const casePath = `/p/${practiceId}/cases/${item.id}`;

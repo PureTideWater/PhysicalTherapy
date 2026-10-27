@@ -5,7 +5,7 @@ import { notFound, redirect } from 'next/navigation';
 
 import type { StepResult } from '../routes/sign-in';
 import { services } from '../server/services';
-import { minutesWords } from './download-refusal';
+import { minutesWords } from './download-refusal-words';
 import { formInput } from './form';
 import { clientAddress, retryMinutes } from './rate-limit';
 import { RECEIVED_AT_HEADER, receivedAtFrom } from './received';
