@@ -1,3 +1,418 @@
+diff --git a/apps/web/src/lib/screening/routes.db.test.ts b/apps/web/src/lib/screening/routes.db.test.ts
+index f4273b98..22277c08 100644
+--- a/apps/web/src/lib/screening/routes.db.test.ts
++++ b/apps/web/src/lib/screening/routes.db.test.ts
+@@ -1270,13 +1270,13 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
+     // An address a screening email bounced from (its keyed hash on the refusal list): the same sentence, from the database.
+     const bounced = 'Bounced.Before@Clinic-Bounced.synthetic.test';
+     await world.owner.query("INSERT INTO screening_mail_refusal (recipient_sha256, reason, expires_at) VALUES (mail_recipient_sha256($1), 'bounced', now() + interval '365 days')", [bounced]);
+-    // Another spelling of that mailbox too (S2), and neither spends one of the day's validations on an upload the database
+-    // would refuse (S4).
++    // Another spelling of that mailbox too (S2). The list answers only once the address checks and submit_screening()'s own
++    // have passed, so each spends its validation as an unlisted address does (the review of 2026-10-27).
+     calls.length = 0;
+     for (const spelling of [` ${bounced} `, 'bounced.before+screening@clinic-bounced.synthetic.test']) {
+       expect(issuesOf(await call(screeningSubmit, services, { input: submitInput({ contactEmail: spelling }) })), spelling).toEqual([{ field: 'contactEmail', message: ADDRESS_REFUSED }]);
+     }
+-    expect(calls).toEqual([]);
++    expect(calls).toEqual(['bounced.before@clinic-bounced.synthetic.test', 'bounced.before+screening@clinic-bounced.synthetic.test']);
+     expect(await prospects(bounced.toLowerCase())).toBe(0);
+     expect(await storedText()).not.toMatch(/nomail|clinic-gone|clinic-bounced/i);
+   });
+@@ -1297,17 +1297,59 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
+     const calls: string[] = [];
+     const services = withServices({ addressChecks: checks(null, () => HIGH, calls) });
+     // A mistyped address a screening email bounced from: the hint, as for one never seen, so the form says nothing of the
+-    // list and the prospect is told the likely fix; kept as typed, the list's sentence, with no validation spent (S4).
++    // list and the prospect is told the likely fix, with no validation spent; kept as typed, the list's sentence, after
++    // the address checks, as for any address (the review of 2026-10-27).
+     const listed = 'listed.typo@gmial.com';
+     await world.owner.query("INSERT INTO screening_mail_refusal (recipient_sha256, reason, expires_at) VALUES (mail_recipient_sha256($1), 'bounced', now() + interval '365 days')", [listed]);
+     const hint = [{ field: 'contactEmail', message: 'Did you mean @gmail.com? Check the address, or keep it as typed.' }];
+     expect(issuesOf(await call(screeningSubmit, services, { input: submitInput({ contactEmail: listed }) }))).toEqual(hint);
+     expect(issuesOf(await call(screeningSubmit, services, { input: submitInput({ contactEmail: 'unlisted.typo@gmial.com' }) }))).toEqual(hint);
+-    expect(issuesOf(await call(screeningSubmit, services, { input: { ...submitInput({ contactEmail: listed }), keepAddress: '1' } }))).toEqual([{ field: 'contactEmail', message: ADDRESS_REFUSED }]);
+     expect(calls).toEqual([]);
++    expect(issuesOf(await call(screeningSubmit, services, { input: { ...submitInput({ contactEmail: listed }), keepAddress: '1' } }))).toEqual([{ field: 'contactEmail', message: ADDRESS_REFUSED }]);
++    expect(calls).toEqual([listed]);
+     expect(await prospects(listed)).toBe(0);
+   });
+ 
++  it('answers a listed and an unlisted address alike on every path that ends without an email: a ZIP the release cannot price, or a mailbox SES cannot confirm (the review of 2026-10-27)', async () => {
++    const calls: string[] = [];
++    const services = withServices({ addressChecks: checks(null, (address) => (address.includes('.medium.') ? { ...HIGH, mailboxExists: 'MEDIUM' } : HIGH), calls) });
++    const list = (email: string) =>
++      world.owner.query("INSERT INTO screening_mail_refusal (recipient_sha256, reason, expires_at) VALUES (mail_recipient_sha256($1), 'complained', now() + interval '365 days')", [email]);
++    const kept = async () =>
++      (
++        await world.owner.query<{ kept: string }>(
++          "SELECT concat_ws('/', (SELECT count(*) FROM screening_prospect), (SELECT count(*) FROM screening_upload), (SELECT count(*) FROM screening_run), (SELECT count(*) FROM audit_event WHERE action = 'screening_submitted')) AS kept",
++        )
++      ).rows[0]?.kept;
++    const before = await kept();
++    const asked: string[] = [];
++    // A ZIP the locality map does not hold (00099), and one whose ZIP+4 list the release has not loaded (00012): the ZIP's
++    // sentence for both. Read before the ZIP checks, the list told a client which address was on it, with nothing recorded
++    // and nothing sent.
++    for (const [zip, sentence] of [
++      ['00099', 'this ZIP code is not in the Medicare locality map in force; check it'],
++      ['00012', SCREENING_ZIP_MESSAGES.screening_locality_not_loaded],
++    ] as const) {
++      const listed = `target.listed.zip${zip}@gmail.com`;
++      const unlisted = `target.unlisted.zip${zip}@gmail.com`;
++      await list(listed);
++      for (const email of [listed, unlisted]) {
++        expect(issuesOf(await call(screeningSubmit, services, { input: submitInput({ zip, contactEmail: email }) })), `${zip} ${email}`).toEqual([{ field: 'zip', message: sentence }]);
++        asked.push(email);
++      }
++    }
++    // A mailbox SES rates MEDIUM: the question to keep it, for both.
++    const listed = 'target.listed.medium.box@gmail.com';
++    await list(listed);
++    for (const email of [listed, 'target.unlisted.medium.box@gmail.com']) {
++      expect(issuesOf(await call(screeningSubmit, services, { input: submitInput({ contactEmail: email }) })), email).toEqual([{ field: 'contactEmail', message: MAILBOX_UNCONFIRMED }]);
++      asked.push(email);
++    }
++    // Each was checked as any address is, and none was recorded or queued.
++    expect(calls).toEqual(asked);
++    expect(await kept()).toBe(before);
++  });
++
+   it('never asks SES about an upload that fails its own checks or the rate limit', async () => {
+     const calls: string[] = [];
+     const services = withServices({ addressChecks: checks(null, () => HIGH, calls) });
+@@ -1382,12 +1424,14 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
+     expect(issuesOf(await call(screeningSubmit, counted, { input: submitInput({ contactEmail: fourth }), address }))).toEqual([{ field: 'input', message: SCREENING_BOUNCE_BUDGET }]);
+     expect(await prospects(fourth)).toBe(0);
+     // The client past its budget gets the budget's sentence for an address on the refusal list too, so it learns nothing of
+-    // the list (S1), and spends none of the day's validations (S4).
++    // the list (S1), and spends none of the day's validations (S4); another client is refused the listed address only
++    // after its address checks, as any address is checked (the review of 2026-10-27).
+     const listed = 'client.listed@clinic-client-listed.synthetic.test';
+     await world.owner.query("INSERT INTO screening_mail_refusal (recipient_sha256, reason, expires_at) VALUES (mail_recipient_sha256($1), 'complained', now() + interval '365 days')", [listed]);
+     expect(issuesOf(await call(screeningSubmit, counted, { input: submitInput({ contactEmail: listed }), address }))).toEqual([{ field: 'input', message: SCREENING_BOUNCE_BUDGET }]);
+-    expect(issuesOf(await call(screeningSubmit, counted, { input: submitInput({ contactEmail: listed }), address: '198.51.100.90' }))).toEqual([{ field: 'contactEmail', message: ADDRESS_REFUSED }]);
+     expect(calls).toEqual([]);
++    expect(issuesOf(await call(screeningSubmit, counted, { input: submitInput({ contactEmail: listed }), address: '198.51.100.90' }))).toEqual([{ field: 'contactEmail', message: ADDRESS_REFUSED }]);
++    expect(calls).toEqual([listed]);
+     // Another client is not held by this one's budget.
+     expect((await world.call(screeningSubmit, { input: submitInput({ contactEmail: 'client.other@clinic-client-other.synthetic.test' }), address: '198.51.100.89' })).status).toBe('ok');
+     expect(SCREENING_BOUNCE_BUDGET).not.toMatch(/@|198\.51/);
+diff --git a/apps/worker/src/mail/events.test.ts b/apps/worker/src/mail/events.test.ts
+index 63709a82..8ec69807 100644
+--- a/apps/worker/src/mail/events.test.ts
++++ b/apps/worker/src/mail/events.test.ts
+@@ -67,6 +67,7 @@ describe('the mail-events queue’s messages', () => {
+         messageId: MESSAGE_ID,
+         stream: 'screening',
+         event: 'send',
++        sesEventType: 'Send',
+         mailAt: new Date(SENT_AT),
+         eventAt: new Date(AT),
+         recipient: 'bounce@simulator.amazonses.com',
+@@ -87,7 +88,7 @@ describe('the mail-events queue’s messages', () => {
+       ['Complaint', { complaint: { complaintFeedbackType: 'abuse', timestamp: AT } }, 'complaint'],
+     ];
+     for (const [type, detail, event] of events) {
+-      expect(parse(sesEvent(type, detail))).toMatchObject({ type: 'event', record: { event } });
++      expect(parse(sesEvent(type, detail))).toMatchObject({ type: 'event', record: { event, sesEventType: type } });
+     }
+   });
+ 
+@@ -147,7 +148,7 @@ describe('the mail-events queue’s messages', () => {
+     const suppressed = parse(sesEvent('Complaint', { complaint: { complaintSubType: 'OnAccountSuppressionList', complainedRecipients: [{ emailAddress: 'x' }], timestamp: AT, feedbackId: 'synthetic' } }));
+     expect(suppressed).toMatchObject({
+       type: 'event',
+-      record: { event: 'bounce', bounceKind: 'permanent', bounceSubtype: 'on_account_suppression_list', complaintType: null, eventAt: new Date(AT) },
++      record: { event: 'bounce', sesEventType: 'Complaint', bounceKind: 'permanent', bounceSubtype: 'on_account_suppression_list', complaintType: null, eventAt: new Date(AT) },
+     });
+     expect(MAIL_BOUNCE_SUBTYPES).toContain('on_account_suppression_list');
+     // The same on every stream: a support notice's, a dunning notice's and Cognito's.
+diff --git a/apps/worker/src/platform/mail-events.db.test.ts b/apps/worker/src/platform/mail-events.db.test.ts
+index 0566acc8..74cc3d13 100644
+--- a/apps/worker/src/platform/mail-events.db.test.ts
++++ b/apps/worker/src/platform/mail-events.db.test.ts
+@@ -60,7 +60,7 @@ beforeEach(async () => {
+   await owner.query('DELETE FROM mail_send');
+   await owner.query('DELETE FROM screening_mail_refusal');
+   await owner.query(`UPDATE mail_stream SET paused_at = NULL, paused_reason = NULL, paused_by = NULL, pause_sends = NULL, pause_bounces = NULL,
+-                       pause_complaints = NULL, ses_enabled_confirmed_at = now(), probe_sent_at = NULL, probe_delivered_at = NULL,
++                       pause_complaints = NULL, ses_enabled_confirmed_at = now(), probe_sent_at = NULL, first_probe_sent_at = NULL, probe_delivered_at = NULL,
+                        probe_bounced_at = NULL, resumed_at = NULL, window_starts_at = now() - interval '1 minute'`);
+ });
+ 
+@@ -333,30 +333,39 @@ describe('the mail_events job', () => {
+   });
+ 
+   it('logs MAIL_PROBE_MISSED when a probe has not come back in 26 hours, and sends it again', async () => {
+-    await owner.query("UPDATE mail_stream SET probe_sent_at = now() - interval '27 hours', probe_delivered_at = NULL, probe_bounced_at = NULL WHERE stream = 'notices'");
++    await owner.query(
++      "UPDATE mail_stream SET probe_sent_at = now() - interval '27 hours', first_probe_sent_at = now() - interval '27 hours', probe_delivered_at = NULL, probe_bounced_at = NULL WHERE stream = 'notices'",
++    );
+     await owner.query("UPDATE mail_stream SET probe_sent_at = now(), probe_delivered_at = now(), probe_bounced_at = now() WHERE stream <> 'notices'");
+     const mail = new MemoryMailSender();
+     const { lines, logger } = capture();
+     const result = await run({ source: new MemoryQueue(), mail, probes: true }, logger);
+     expect(result).toMatchObject({ probed: ['notices'], probesMissed: ['notices'] });
+-    expect(lines).toEqual([expect.objectContaining({ level: 'error', msg: 'notices mail probe has not come back in 26 hours', error_code: 'MAIL_PROBE_MISSED' })]);
++    expect(lines).toEqual([expect.objectContaining({ level: 'error', msg: 'notices mail probe has not come back', error_code: 'MAIL_PROBE_MISSED' })]);
+     expect(mail.sent.map((message) => message.identity.stream)).toEqual(['notices', 'notices']);
+   });
+ 
+-  it('logs MAIL_PROBE_MISSED on every run once the stream’s last proof is 26 hours old, whether its next probe went and was lost or could not be sent, and not for a proof from before the last resume (review M3)', async () => {
+-    const missed = (stream: string): unknown => expect.objectContaining({ level: 'error', msg: `${stream} mail probe has not come back in 26 hours`, error_code: 'MAIL_PROBE_MISSED' });
++  it('logs MAIL_PROBE_MISSED on every run once the stream’s last proof is 26 hours old, whether its next probe went and was lost or could not be sent, sends it again hourly until one is back, and not for a proof from before the last resume (review M3)', async () => {
++    const missed = (stream: string): unknown => expect.objectContaining({ level: 'error', msg: `${stream} mail probe has not come back`, error_code: 'MAIL_PROBE_MISSED' });
+     const unsent = expect.objectContaining({ level: 'warn', error_code: 'MAIL_PROBE_UNSENT' });
+-    // Sent and lost: both probes came back 27 hours ago and the next went 3 hours ago. It is not due again for 23 hours,
+-    // but the stream is missed now, 22 hours before the screening's readiness would lapse at 48, and on each run after.
++    // Sent and lost: both probes came back 27 hours ago and the next went 3 hours ago. The stream is missed now, 22 hours
++    // before the screening's readiness would lapse at 48, and on each run after; its probe goes again at once and then
++    // hourly while it is missed, so a fixed event path reopens the screening within the hour.
+     await owner.query("UPDATE mail_stream SET probe_sent_at = now(), probe_delivered_at = now(), probe_bounced_at = now() WHERE stream <> 'screening'");
+     await owner.query("UPDATE mail_stream SET probe_sent_at = now() - interval '3 hours', probe_delivered_at = now() - interval '27 hours', probe_bounced_at = now() - interval '27 hours' WHERE stream = 'screening'");
+     const mail = new MemoryMailSender();
+-    for (const attempt of ['first', 'second']) {
++    for (const [attempt, probed] of [
++      ['first', ['screening']],
++      ['second', []],
++    ] as const) {
+       const { lines, logger } = capture();
+-      expect(await run({ source: new MemoryQueue(), mail, probes: true }, logger), attempt).toMatchObject({ probed: [], probesMissed: ['screening'] });
++      expect(await run({ source: new MemoryQueue(), mail, probes: true }, logger), attempt).toMatchObject({ probed, probesMissed: ['screening'] });
+       expect(lines, attempt).toEqual([missed('screening')]);
+     }
+-    expect(mail.sent).toEqual([]);
++    expect(mail.sent.map((message) => message.identity.stream)).toEqual(['screening', 'screening']);
++    await owner.query("UPDATE mail_stream SET probe_sent_at = now() - interval '61 minutes' WHERE stream = 'screening'");
++    expect(await run({ source: new MemoryQueue(), mail, probes: true })).toMatchObject({ probed: ['screening'], probesMissed: ['screening'] });
++    mail.sent.length = 0;
+     // The older of the two proofs decides: the delivery back and the bounce still 27 hours old is missed.
+     await owner.query("UPDATE mail_stream SET probe_delivered_at = now() WHERE stream = 'screening'");
+     expect(await run({ source: new MemoryQueue(), mail, probes: true })).toMatchObject({ probed: [], probesMissed: ['screening'] });
+@@ -386,12 +395,66 @@ describe('the mail_events job', () => {
+     const resumed = capture();
+     expect(await run({ source: new MemoryQueue(), mail, probes: true }, resumed.logger)).toMatchObject({ probed: ['screening'], probesMissed: [] });
+     expect(resumed.lines).toEqual([]);
+-    // A proof not back since the resume counts from the probe that went for it: 27 hours on, missed, and sent again.
+-    await owner.query("UPDATE mail_stream SET resumed_at = now() - interval '28 hours', probe_sent_at = now() - interval '27 hours' WHERE stream = 'screening'");
++    // A proof not back since the resume counts from the first probe that went after it, an hour on (the screening stays
++    // closed until both are back), and a re-send never moves that (the review of 2026-10-27: counted from the last send,
++    // the alarm cleared a minute after each re-send and came back 26 hours later). Missed on every run, re-sent or not.
++    await owner.query("UPDATE mail_stream SET resumed_at = now() - interval '62 minutes', probe_sent_at = now() - interval '61 minutes', first_probe_sent_at = now() - interval '61 minutes' WHERE stream = 'screening'");
++    for (const [attempt, probed] of [
++      ['first', ['screening']],
++      ['second', []],
++    ] as const) {
++      const hour = capture();
++      expect(await run({ source: new MemoryQueue(), mail, probes: true }, hour.logger), attempt).toMatchObject({ probed, probesMissed: ['screening'] });
++      expect(hour.lines, attempt).toEqual([missed('screening')]);
++    }
++    await owner.query("UPDATE mail_stream SET resumed_at = now() - interval '28 hours', probe_sent_at = now() - interval '27 hours', first_probe_sent_at = now() - interval '27 hours' WHERE stream = 'screening'");
+     const again = capture();
+     expect(await run({ source: new MemoryQueue(), mail, probes: true }, again.logger)).toMatchObject({ probed: ['screening'], probesMissed: ['screening'] });
+     expect(again.lines).toEqual([missed('screening')]);
+-    expect(mail.sent.map((message) => message.identity.stream)).toEqual(['screening', 'screening', 'screening', 'screening']);
++    const after = capture();
++    expect(await run({ source: new MemoryQueue(), mail, probes: true }, after.logger)).toMatchObject({ probed: [], probesMissed: ['screening'] });
++    expect(after.lines).toEqual([missed('screening')]);
++    // At the resume, an hour on, and 27 hours on: two probes each.
++    expect(mail.sent.map((message) => message.identity.stream)).toEqual(Array.from({ length: 6 }, () => 'screening'));
++    // The delivered probe back since the resume and the bounced one never: still missed, run after run.
++    await owner.query("UPDATE mail_stream SET probe_delivered_at = now() WHERE stream = 'screening'");
++    for (const attempt of ['first', 'second']) {
++      expect(await run({ source: new MemoryQueue(), mail, probes: true }), attempt).toMatchObject({ probesMissed: ['screening'] });
++    }
++    // An environment's first activation, with no proof ever: the same, from its first probe.
++    await owner.query(
++      "UPDATE mail_stream SET resumed_at = NULL, probe_sent_at = now() - interval '27 hours', first_probe_sent_at = now() - interval '27 hours', probe_delivered_at = NULL, probe_bounced_at = NULL WHERE stream = 'transactional'",
++    );
++    expect(await run({ source: new MemoryQueue(), mail, probes: true })).toMatchObject({ probed: ['transactional'], probesMissed: ['screening', 'transactional'] });
++    expect(await run({ source: new MemoryQueue(), mail, probes: true })).toMatchObject({ probed: [], probesMissed: ['screening', 'transactional'] });
++    // Both back: the alarm's line stops.
++    await owner.query("UPDATE mail_stream SET probe_delivered_at = now(), probe_bounced_at = now() WHERE stream IN ('screening', 'transactional')");
++    expect(await run({ source: new MemoryQueue(), mail, probes: true })).toMatchObject({ probed: [], probesMissed: [] });
++  });
++
++  it('logs each probe event it records by its message ID, stream, SES event type, state and bounce subtype, and no address, so a staging check reads its outcome (the review of 2026-10-27)', async () => {
++    const queue = new MemoryQueue();
++    // A probe the platform sent, delivered; and one sent by hand through the notices set to an address on the account's
++    // suppression list for an earlier complaint, which SES answers with a Complaint of subtype OnAccountSuppressionList.
++    const delivered = events(queue, MAIL_PROBE_RECIPIENTS.delivered, { stream: 'transactional', kind: 'probe' });
++    const held = `0100019a${randomUUID()}-000000`;
++    const time = new Date().toISOString();
++    const mail = { timestamp: time, messageId: held, destination: ['synthetic.operator@clinic.synthetic.test'], tags: { 'ses:configuration-set': [`${PREFIX}-notices`], tp_kind: ['probe'] } };
++    const envelope = (detail: object) => JSON.stringify({ version: '0', id: randomUUID(), 'detail-type': 'SES event', source: 'aws.ses', time, region: 'local', resources: [], detail: { mail, ...detail } });
++    queue.push(envelope({ eventType: 'Send', send: {} }));
++    queue.push(envelope({ eventType: 'Complaint', complaint: { complaintSubType: 'OnAccountSuppressionList', timestamp: time } }));
++    // A customer's message is not logged so.
++    events(queue, 'success@simulator.amazonses.com', { stream: 'transactional', kind: 'digest', subjectId: randomUUID(), recipientUserId: world.adminUserId });
++    const { lines, logger } = capture();
++    await run({ source: queue }, logger);
++    const probes = lines.filter((line) => line.msg === 'mail probe event recorded');
++    expect(probes).toEqual([
++      expect.objectContaining({ level: 'info', ses_message_id: delivered, mail_stream: 'transactional', ses_event_type: 'Send', mail_state: 'sent', bounce_subtype: null }),
++      expect.objectContaining({ level: 'info', ses_message_id: delivered, mail_stream: 'transactional', ses_event_type: 'Delivery', mail_state: 'delivered', bounce_subtype: null }),
++      expect.objectContaining({ level: 'info', ses_message_id: held, mail_stream: 'notices', ses_event_type: 'Send', mail_state: 'sent', bounce_subtype: null }),
++      expect.objectContaining({ level: 'info', ses_message_id: held, mail_stream: 'notices', ses_event_type: 'Complaint', mail_state: 'suppressed', bounce_subtype: 'on_account_suppression_list' }),
++    ]);
++    expect(JSON.stringify(lines)).not.toMatch(/@|simulator|synthetic/);
+   });
+ 
+   it('reports a break-glass notice not delivered to an administrator once, by the grant’s ID, from its events in any order (SEC-19)', async () => {
+diff --git a/packages/db/migrations/20261107090000_mail_streams.sql b/packages/db/migrations/20261107090000_mail_streams.sql
+index 18ec43e3..1ac5e7e4 100644
+--- a/packages/db/migrations/20261107090000_mail_streams.sql
++++ b/packages/db/migrations/20261107090000_mail_streams.sql
+@@ -20,10 +20,12 @@
+ --   others (mail_send_expiry). States move one way: sent, delayed, delivered, then bounced, suppressed, rejected or
+ --   complained, and a lower-ranked event never overwrites a higher one, so events land in any order and once.
+ -- - mail_recipient_key and mail_recipient_sha256(): SHA-256 of a pepper made at this migration and the mailbox the
+---   address reaches (mail_recipient_canonical(): case, white space, Unicode NFKC, a +tag, googlemail.com and Gmail's
+---   dots), so every spelling of one inbox keys alike. The only address-derived value kept is screening_mail_refusal's
+---   (Q11 (b)): a screening address that bounced permanently or was reported as spam (not not_spam), for 365 days, read
+---   only to refuse a new screening to it. No customer stream's outcome is ever on the list.
++--   address reaches (mail_recipient_canonical(): ASCII case and white space, a +tag, googlemail.com, me.com and mac.com,
++--   and Gmail's dots; an address with any character outside ASCII stands as read), so every spelling of one inbox keys
++--   alike. The only address-derived value kept is screening_mail_refusal's (Q11 (b)): a screening address reported as
++--   spam (not not_spam), keyed by its mailbox, or that bounced permanently, keyed by its mailbox with its +tag kept (a
++--   +tag spelling bounces where the server has no sub-addressing, which says nothing of the base mailbox), for 365 days,
++--   read only to refuse a new screening to it. No customer stream's outcome is ever on the list.
+ -- - screening_bounce_mark (Q10 (a)): one 7-day mark per screening permanent bounce for each of the run's keyed subjects,
+ --   its account's (screening_run.rate_subject, migration 20261106090000) and its client's (screening_run.client_subject,
+ --   new: the rate limiter's keyed HMAC of the client address, null when the web had none); a subject with 3 live marks
+@@ -41,7 +43,9 @@
+ -- - The consumer (tp_screening) reads screening_mail_gate() before it claims; the web (tp_app) reads
+ --   screening_mail_status() (paused; ready once the screening's delivered and bounced probes have come back within
+ --   48 hours and since the last resume), and screening_submit_mail_refusal() before it spends an address validation
+---   (closed, paused, the budget, the refusal list, in that order; review S4).
++--   (closed, paused, the submitter's budget, in that order; review S4). It takes no address: the refusal list answers
++--   only from the run's trigger, after the web's address checks and submit_screening()'s own, so no refusal that ends
++--   without an email tells a listed address from another (the review of 2026-10-27).
+ -- - Break-glass notices from a recorded outbox (support_grant_notice and support_grant_notice_recipient, both tenant
+ --   tables, registered, read by the application role under the practice's scope): the recipients are recorded first,
+ --   one row per current practice administrator, and each is sent in its own transaction; notice_sent is written at the
+@@ -96,23 +100,32 @@ ALTER TABLE mail_recipient_key FORCE ROW LEVEL SECURITY;
+ CREATE POLICY mail_recipient_key_owner ON mail_recipient_key FOR ALL TO tp_owner USING (true) WITH CHECK (true);
+ 
+ -- The mailbox an address reaches, so every spelling of one inbox keys alike (review S2): canonicalMailbox() in
+--- packages/db/src/mail-address.ts is the same rule, and mail.db.test.ts holds the two equal on a table of spellings.
+--- Unicode NFKC (which composes as NFC does); ASCII white space dropped at either end; ASCII letters in lower case (the
+--- "C" collation's rule, whatever the database's locale); split at the last @, an address with no local part or no
+--- domain standing as read so far; the domain's trailing dots dropped and googlemail.com read as gmail.com; everything
+--- from the local part's first + dropped, at every domain; and at gmail.com alone, the local part's dots dropped (Google:
+--- dots do not matter in a Gmail address, and do in a Google Workspace one). A local part those two would leave empty is
+--- kept. Used only to look an address up, never to send. Granted to no role.
+-CREATE FUNCTION mail_recipient_canonical(address text) RETURNS text
++-- packages/db/src/mail-address.ts is the same rule, and mail.db.test.ts holds the two equal on a table of spellings and
++-- on every Unicode code point. ASCII white space dropped at either end; ASCII letters in lower case (the "C" collation's
++-- rule, whatever the database's locale); then an address with any character outside ASCII stands as read, so no
++-- Unicode table, whose version moves with the server and with Node, decides a key (the review of 2026-10-27: NFKC
++-- differed on U+A7F1; the screening's form takes only ASCII); split at the last @, an address with no local part or no
++-- domain standing as read so far; the domain's trailing dots dropped, googlemail.com read as gmail.com, and me.com and
++-- mac.com as icloud.com (one account's mailbox under each provider's names, the names reserved across them); everything
++-- from the local part's first + dropped, at every domain, unless keep_tag; and at gmail.com alone, the local part's dots
++-- dropped (Google: dots do not matter in a Gmail address, and do in a Google Workspace one) and its +tag dropped even
++-- with keep_tag (Gmail delivers every +tag to the base mailbox). A local part those would leave empty is kept. keep_tag
++-- keys a permanent bounce (the review of 2026-10-27): a +tag spelling bounces where the server has no sub-addressing,
++-- which says nothing of the base mailbox. Used only to look an address up, never to send. Granted to no role.
++CREATE FUNCTION mail_recipient_canonical(address text, keep_tag boolean DEFAULT false) RETURNS text
+ LANGUAGE plpgsql IMMUTABLE SET search_path = pg_catalog, public, pg_temp AS $$
+ DECLARE
+-  as_read text := lower(btrim(normalize(coalesce(address, ''), NFKC), E' \t\n\r\f' || chr(11)) COLLATE "C");
+-  -- The last @, counted from the end.
+-  last_at integer := strpos(reverse(as_read), '@');
++  as_read text := lower(btrim(coalesce(address, ''), E' \t\n\r\f' || chr(11)) COLLATE "C");
++  last_at integer;
+   local_part text;
+   domain_part text;
+   mailbox_part text;
+ BEGIN
++  IF as_read ~ '[^\x01-\x7F]' THEN
++    RETURN as_read;
++  END IF;
++  -- The last @, counted from the end.
++  last_at := strpos(reverse(as_read), '@');
+   IF last_at = 0 THEN
+     RETURN as_read;
+   END IF;
+@@ -123,8 +136,10 @@ BEGIN
+   END IF;
+   IF domain_part = 'googlemail.com' THEN
+     domain_part := 'gmail.com';
++  ELSIF domain_part IN ('me.com', 'mac.com') THEN
++    domain_part := 'icloud.com';
+   END IF;
+-  mailbox_part := split_part(local_part, '+', 1);
++  mailbox_part := CASE WHEN keep_tag AND domain_part <> 'gmail.com' THEN local_part ELSE split_part(local_part, '+', 1) END;
+   IF domain_part = 'gmail.com' THEN
+     mailbox_part := replace(mailbox_part, '.', '');
+   END IF;
+@@ -132,12 +147,12 @@ BEGIN
+ END;
+ $$;
+ 
+--- The keyed hash of an address: SHA-256 of the pepper and the mailbox it reaches (mail_recipient_canonical()), as hex.
+--- Granted to no role; it runs as its caller, the owner inside the definer functions and triggers below. It never raises
+--- with its input.
+-CREATE FUNCTION mail_recipient_sha256(address text) RETURNS text
++-- The keyed hash of an address: SHA-256 of the pepper and the mailbox it reaches (mail_recipient_canonical(), its +tag
++-- kept with keep_tag), as hex. Granted to no role; it runs as its caller, the owner inside the definer functions and
++-- triggers below. It never raises with its input.
++CREATE FUNCTION mail_recipient_sha256(address text, keep_tag boolean DEFAULT false) RETURNS text
+ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp AS $$
+-  SELECT encode(sha256(decode(k.pepper, 'hex') || convert_to(mail_recipient_canonical(address), 'UTF8')), 'hex') FROM mail_recipient_key k
++  SELECT encode(sha256(decode(k.pepper, 'hex') || convert_to(mail_recipient_canonical(address, keep_tag), 'UTF8')), 'hex') FROM mail_recipient_key k
+ $$;
+ 
+ -- ---------------------------------------------------------------------------------------------------
+@@ -161,6 +176,9 @@ CREATE TABLE mail_stream (
+   -- cleared by a pause, by a resume and by a read of the set disabled. The screening's runs are claimed only with it.
+   ses_enabled_confirmed_at timestamptz,
+   probe_sent_at timestamptz,
++  -- The first probe sent since the last resume (or ever): a re-send never moves it, so a stream whose probes have not come
++  -- back since stays missed (operator_mail_streams(), the review of 2026-10-27); cleared by a resume.
++  first_probe_sent_at timestamptz,
+   probe_delivered_at timestamptz,
+   probe_bounced_at timestamptz,
+   updated_at timestamptz NOT NULL DEFAULT now(),
+@@ -330,10 +348,15 @@ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp AS $$
+       OR (SELECT count(*) FROM screening_bounce_mark b WHERE b.subject_kind = 'client' AND b.subject = $2 AND b.expires_at > now()) >= 3
+ $$;
+ 
+--- Whether a contact address's mailbox is on the refusal list (Q11 (b)). Granted to no role, as above.
++-- Whether a contact address is on the refusal list (Q11 (b)): its mailbox, for either reason, or its spelling with its
++-- +tag kept, for a permanent bounce (the review of 2026-10-27). So a bounce of the base address, whose tag-kept key is its
++-- mailbox's, refuses every +tag of it, and a bounce of a +tag the server does not deliver refuses that spelling alone.
++-- Granted to no role, as above.
+ CREATE FUNCTION screening_contact_refused(address text) RETURNS boolean
+ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp AS $$
+-  SELECT EXISTS (SELECT 1 FROM screening_mail_refusal f WHERE f.recipient_sha256 = mail_recipient_sha256($1) AND f.expires_at > now())
++  SELECT EXISTS (SELECT 1 FROM screening_mail_refusal f
++                  WHERE f.expires_at > now()
++                    AND (f.recipient_sha256 = mail_recipient_sha256($1) OR (f.reason = 'bounced' AND f.recipient_sha256 = mail_recipient_sha256($1, true))))
+ $$;
+ 
+ -- An accepted upload is refused while the screening stream is paused (D7). A refused upload is never emailed, so it is
+@@ -925,7 +948,8 @@ $$;
+ -- takes the state, and the notice's or the invoice's first undelivered recipient is reported (notice_undelivered: the
+ -- support grant's ID; invoice_undelivered: the invoice's); a Cognito message to an invited user flags the invitation
+ -- (invitation_undelivered); a screening message links its prospect, and a permanent bounce or a complaint other than
+--- not_spam puts the address's keyed hash on the refusal list, a permanent bounce marks the run's subjects, and either can
++-- not_spam puts the address's keyed hash on the refusal list (a bounce's with its +tag kept, a complaint's of its
++-- mailbox: screening_contact_refused()), a permanent bounce marks the run's subjects, and either can
+ -- pause the screening stream (stream_paused: the reason). recipient is read only to resolve a Cognito user and to hash a
+ -- refused screening address; it is never stored, logged or returned. A notice's event runs in its practice's scope.
+ CREATE FUNCTION operator_record_mail_event(message_id text, stream text, event text, mail_at timestamptz, event_at timestamptz, recipient text,
+@@ -1073,7 +1097,7 @@ BEGIN
+      AND ((held.state = 'bounced' AND held.bounce_kind = 'permanent') OR (held.state = 'complained' AND held.complaint_type <> 'not_spam')) THEN
+     IF recipient IS NOT NULL AND btrim(recipient) <> '' THEN
+       INSERT INTO screening_mail_refusal (recipient_sha256, reason, recorded_at, expires_at)
+-      VALUES (mail_recipient_sha256(recipient), CASE WHEN held.state = 'bounced' THEN 'bounced' ELSE 'complained' END, now(), now() + interval '365 days')
++      VALUES (mail_recipient_sha256(recipient, held.state = 'bounced'), CASE WHEN held.state = 'bounced' THEN 'bounced' ELSE 'complained' END, now(), now() + interval '365 days')
+       ON CONFLICT (recipient_sha256) DO UPDATE SET reason = EXCLUDED.reason, recorded_at = EXCLUDED.recorded_at, expires_at = EXCLUDED.expires_at;
+     END IF;
+     IF held.state = 'bounced' AND priced.id IS NOT NULL THEN
 diff --git a/packages/db/src/mail-address.test.ts b/packages/db/src/mail-address.test.ts
 index 3b06d3dd..25bd816c 100644
 --- a/packages/db/src/mail-address.test.ts
@@ -41,7 +456,7 @@ index 3b06d3dd..25bd816c 100644
    });
  });
 diff --git a/packages/db/src/mail.db.test.ts b/packages/db/src/mail.db.test.ts
-index 9a4c6809..8f42f170 100644
+index 9a4c6809..243b528e 100644
 --- a/packages/db/src/mail.db.test.ts
 +++ b/packages/db/src/mail.db.test.ts
 @@ -16,6 +16,7 @@ import {
@@ -173,16 +588,28 @@ index 9a4c6809..8f42f170 100644
      expect((await owner.query("SELECT actor_kind, actor_id, purpose FROM audit_event WHERE action = 'mail_stream_resumed'")).rows).toEqual([
        { actor_kind: 'user', actor_id: platformAdmin, purpose: 'cause_fixed' },
      ]);
-@@ -808,50 +861,71 @@ describe('the screening stream’s cut-off (SCR-21; the founder’s Q9)', () =>
+@@ -784,7 +837,7 @@ describe('the screening stream’s cut-off (SCR-21; the founder’s Q9)', () =>
+     expect(await code(as(OPERATOR_ROLE, "SELECT operator_mail_stream_confirmed('elsewhere', true)"))).toBe('23514');
+   });
+ 
+-  it('is ready only with a delivered and a bounced probe come back within 48 hours and since the last resume, the probes go daily or after 26 hours unanswered, and a stream is missed 26 hours after its last proof', async () => {
++  it('is ready only with a delivered and a bounced probe come back within 48 hours and since the last resume, the probes go daily and hourly while missed, and a stream is missed 26 hours after its last proof or an hour after its first unanswered probe since the resume', async () => {
+     await resetScreening();
+     const status = async () => (await as<{ paused: boolean; ready: boolean }>(APP_ROLE, 'SELECT * FROM screening_mail_status()'))[0];
+     const probe = (event: string) =>
+@@ -807,51 +860,73 @@ describe('the screening stream’s cut-off (SCR-21; the founder’s Q9)', () =>
+     expect(await status()).toEqual({ paused: false, ready: true });
      await as(OPERATOR_ROLE, 'SELECT operator_mail_account_signal($1, $2)', ['enforcement_not_healthy', request()]);
      expect(await status()).toEqual({ paused: true, ready: false });
-     // The schedule: daily once the last came back; again 26 hours after one that did not. Missed (review M3) reads the
+-    // The schedule: daily once the last came back; again 26 hours after one that did not. Missed (review M3) reads the
 -    // stream's last proof, the older of its delivered and bounced probe, 26 hours old, whether a probe went since or not:
 -    // the daily probe goes at 24 hours, so one sent and lost is missed 2 hours later, 22 before readiness lapses at 48.
-+    // stream's proofs since the last resume: with both back, the older 26 hours old, whether a probe went since or not
-+    // (the daily probe goes at 24 hours, so one sent and lost is missed 2 hours later, 22 before readiness lapses at 48);
-+    // with one not back since the resume, the first probe sent since then an hour old, which a re-send never moves (the
-+    // review of 2026-10-27: counted from the last send, the alarm cleared at each re-send and came back 26 hours later).
++    // The schedule: daily once the last came back, and hourly while the stream is missed, so a fixed event path reopens
++    // the screening within the hour. Missed (review M3) reads the stream's proofs since the last resume: with both back,
++    // the older 26 hours old, whether a probe went since or not (the daily probe goes at 24 hours, so one sent and lost is
++    // missed 2 hours later, 22 before readiness lapses at 48); with one not back since the resume, the first probe sent
++    // since then an hour old, which a re-send never moves (the review of 2026-10-27: counted from the last send, the
++    // alarm cleared at each re-send and came back 26 hours later).
      await resetScreening();
      const due = async () => (await as<{ stream: string; probe_due: boolean; probe_missed: boolean }>(OPERATOR_ROLE, 'SELECT stream, probe_due, probe_missed FROM operator_mail_streams()')).find((row) => row.stream === 'screening');
      expect(await due()).toEqual({ stream: 'screening', probe_due: true, probe_missed: false });
@@ -199,7 +626,7 @@ index 9a4c6809..8f42f170 100644
 +      ['25 hours', '30 days', '24 hours', { probe_due: true, probe_missed: false }],
 +      // Nothing back yet: missed an hour after the first probe went, and still missed after a re-send.
 +      ['59 minutes', '59 minutes', null, { probe_due: false, probe_missed: false }],
-+      ['1 hour 1 minute', '1 hour 1 minute', null, { probe_due: false, probe_missed: true }],
++      ['1 hour 1 minute', '1 hour 1 minute', null, { probe_due: true, probe_missed: true }],
 +      ['27 hours', '27 hours', null, { probe_due: true, probe_missed: true }],
 +      ['1 minute', '27 hours', null, { probe_due: false, probe_missed: true }],
 +      ['27 hours', '30 days', '28 hours', { probe_due: true, probe_missed: true }],
@@ -207,9 +634,9 @@ index 9a4c6809..8f42f170 100644
 -      ['2 hours', `${String(MAIL_PROBE_MISSED_HOURS)} hours 1 minute`, { probe_due: false, probe_missed: true }],
 -      ['2 hours', `${String(MAIL_PROBE_MISSED_HOURS - 1)} hours 59 minutes`, { probe_due: false, probe_missed: false }],
 -      ['3 hours', '27 hours', { probe_due: false, probe_missed: true }],
-+      ['2 hours', '30 days', `${String(MAIL_PROBE_MISSED_HOURS)} hours 1 minute`, { probe_due: false, probe_missed: true }],
++      ['2 hours', '30 days', `${String(MAIL_PROBE_MISSED_HOURS)} hours 1 minute`, { probe_due: true, probe_missed: true }],
 +      ['2 hours', '30 days', `${String(MAIL_PROBE_MISSED_HOURS - 1)} hours 59 minutes`, { probe_due: false, probe_missed: false }],
-+      ['3 hours', '30 days', '27 hours', { probe_due: false, probe_missed: true }],
++      ['3 hours', '30 days', '27 hours', { probe_due: true, probe_missed: true }],
        // None sent since the last came back (every send refused).
 -      ['28 hours', '27 hours', { probe_due: true, probe_missed: true }],
 -      ['26 hours', '25 hours', { probe_due: true, probe_missed: false }],
@@ -240,16 +667,16 @@ index 9a4c6809..8f42f170 100644
 +    // the resume, the first probe sent after it decides, an hour after it went, and with none sent yet the stream is due
 +    // and not missed.
 +    for (const [sent, first, delivered, bounced, resumed, wanted] of [
-+      ['2 hours', '30 days', '1 hour', '27 hours', null, { probe_due: false, probe_missed: true }],
-+      ['2 hours', '30 days', '27 hours', '1 hour', null, { probe_due: false, probe_missed: true }],
++      ['2 hours', '30 days', '1 hour', '27 hours', null, { probe_due: true, probe_missed: true }],
++      ['2 hours', '30 days', '27 hours', '1 hour', null, { probe_due: true, probe_missed: true }],
 +      [null, null, '30 hours', '30 hours', '1 minute', { probe_due: true, probe_missed: false }],
 +      ['1 minute', '1 minute', '30 hours', '30 hours', '2 minutes', { probe_due: false, probe_missed: false }],
 +      ['59 minutes', '59 minutes', '30 hours', '30 hours', '2 hours', { probe_due: false, probe_missed: false }],
-+      ['1 hour 1 minute', '1 hour 1 minute', '30 hours', '30 hours', '2 hours', { probe_due: false, probe_missed: true }],
++      ['1 hour 1 minute', '1 hour 1 minute', '30 hours', '30 hours', '2 hours', { probe_due: true, probe_missed: true }],
 +      ['27 hours', '27 hours', '30 hours', '30 hours', '28 hours', { probe_due: true, probe_missed: true }],
 +      ['1 minute', '27 hours', '30 hours', '30 hours', '28 hours', { probe_due: false, probe_missed: true }],
 +      ['27 hours', '27 hours', '26 hours 59 minutes', '30 hours', '28 hours', { probe_due: true, probe_missed: true }],
-+      ['2 hours', '2 hours', '1 hour', '30 hours', '28 hours', { probe_due: false, probe_missed: true }],
++      ['2 hours', '2 hours', '1 hour', '30 hours', '28 hours', { probe_due: true, probe_missed: true }],
 +      ['2 hours', '2 hours', '1 hour', '1 hour', '28 hours', { probe_due: false, probe_missed: false }],
      ] as const) {
        await owner.query(
