@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { MailPhiError, mailBody } from '../mail/mail';
-import { digestLink, digestMessage } from './job';
+import { createLogger } from '@tp/observability';
+
+import type { JobContext } from '../jobs/handlers';
+import { MailPhiError, type MailSender, mailBody } from '../mail/mail';
+import { digestHandler, digestLink, digestMessage } from './job';
 import type { DigestFigures } from './view';
 
 const PRACTICE = '7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01';
@@ -27,5 +30,27 @@ describe('the digest email', () => {
 
   it('is never sent with a link the PHI guard flags', () => {
     expect(() => mailBody(digestMessage(ADMIN, DIGEST, '2026-10', figures, 'https://app.synthetic.test/p/SYNTHLAST-SYNTHFIRST/digests/123456789'))).toThrow(MailPhiError);
+  });
+
+  it('carries a send the mail service refused out of the job by its error’s name alone, never its message, which pg-boss would keep (S6)', async () => {
+    const refused = Object.assign(new Error('Email address is not verified. The following identities failed the check: admin@synthetic.test'), { name: 'MessageRejected' });
+    const mail = { send: () => Promise.reject(refused) } as unknown as MailSender;
+    // The month's digest recorded; the email to its one person refused.
+    const prepared = { digestId: DIGEST, sent: false, figures, emails: [ADMIN] };
+    const context = {
+      jobId: 'job',
+      logger: createLogger({ sink: () => undefined }),
+      transaction: () => Promise.resolve(prepared),
+      enqueue: () => Promise.resolve(null),
+    } as unknown as JobContext;
+    const failure = await digestHandler({ mail, appOrigin: 'https://app.synthetic.test', now: () => new Date('2026-11-02T12:00:00Z') })({ practice_id: PRACTICE, period: '2026-10' }, context).then(
+      () => null,
+      (error: unknown) => error as Error,
+    );
+    expect(failure?.name).toBe('DigestSendFailed');
+    expect(failure?.message).toBe('the mail service refused a digest email (MessageRejected)');
+    // Nothing of the refused error rides along: not its message, nor the error itself as a property or a cause.
+    expect(JSON.stringify({ ...failure, message: failure?.message, stack: failure?.stack })).not.toContain('synthetic.test');
+    expect((failure as { cause?: unknown } | null)?.cause).toBeUndefined();
   });
 });
