@@ -33,8 +33,11 @@
 #     checksums file and a pinned SHA-256.
 #   - gitleaks through the repository's own tools/gitleaks/install.sh (/root/.cache/paidwhole/gitleaks/<version>/),
 #     also linked at /tmp/claude-0/gitleaks/gitleaks, the path older briefs use, when /tmp/claude-0 exists.
-#   - pnpm is the base image's (10.28.0 in /opt/node-tools). Only when no pnpm is on PATH: pnpm@10.28.0 from the npm
-#     registry in /opt/pnpm-10.28.0, linked at /usr/local/bin/pnpm.
+#   - pnpm 10.34.8, package.json's packageManager version, from the npm registry in /opt/pnpm-10.34.8 (pinned SHA-256
+#     and SHA-512; the SHA-512 must also equal packageManager's +sha512), compared file for file with its tarball and
+#     linked at /opt/pnpm-bin/pnpm, which every install here runs first on PATH. The base image's pnpm (10.28.0 in
+#     /opt/node22/bin) is left alone; it switches to packageManager's version by itself. To run the pinned one in a
+#     shell: export PATH=/opt/node24/bin:/opt/pnpm-bin:$PATH.
 #   - Playwright's Chromium for the version the repository pins (apps/web/package.json), and for the version each
 #     branch argument's worktree pins once its install is done (ci-browser's 1.64.1 needs 1248): the base image's builds in
 #     PLAYWRIGHT_BROWSERS_PATH when present, else laid out from Google's Chrome for Testing bucket, each zip checked
@@ -74,11 +77,12 @@ NODE_NPM=node-linux-x64
 NODE_TGZ=node-linux-x64-24.22.0.tgz
 NODE_TGZ_SHA256=eb2df9d66e51377d2812bab13836d5c43426f2541814e783ca1fcf34d9893467
 NODE_TGZ_SHA512=sha512-O8CHD5heFxunkgkYr3y7DADTb73UQBiWe4hD2xxLbxyYyKP/+ZFfexX+W5cuswtxOcgtrGSKrU2JhzATGgzFPA==
-# pnpm@10.28.0: the SHA-512 is the registry's integrity and the one in the base image's /opt/node-tools/package-lock.json.
-PNPM_VERSION=10.28.0
-PNPM_TGZ=pnpm-10.28.0.tgz
-PNPM_TGZ_SHA256=9b0b04e6e79945566917f8411bb6f65fd2f3e1590426904e8500e1acc4b33561
-PNPM_TGZ_SHA512=sha512-Bd9x0UIfITmeBT/eVnzqNNRG+gLHZXFEG/wceVbpjjYwiJgtlARl/TRIDU2QoGaLwSNi+KqIAApk6D0LDke+SA==
+# pnpm@10.34.8 (published 2026-10-23T18:06:37Z by GitHub Actions as a trusted publisher): the SHA-512 is the registry's
+# integrity, and the same digest in hex is package.json's packageManager pnpm@10.34.8+sha512.f627a8e9...
+PNPM_VERSION=10.34.8
+PNPM_TGZ=pnpm-10.34.8.tgz
+PNPM_TGZ_SHA256=5be9fac9764583af5fa07015b9b0aa930ef634535df9fa6f464020d72b195630
+PNPM_TGZ_SHA512=sha512-9ieo6XE0Ov5J39D2PQKCNCAd+oMdXLWIcz4eX42ya/FpiaMhYatcG02zsf28NzFgYGtbieAC323RmoWt+R/FqA==
 PYX12_VERSION=4.0.0
 DEFUSEDXML_VERSION=0.7.1
 PY_REQUIREMENTS="pyx12==4.0.0 --hash=sha256:8e983b5a3a76a307bea3be9203fb32f0ea1580e13cb66ed60d8b028dc015d1cc --hash=sha256:d45c572e19971f7f67d65227bc7da158b01179ece2947a7038412dd935c59660
@@ -113,14 +117,16 @@ NODE_DIR="$P/opt/node24"
 PY312_DIR="$P/opt/py312-ci"
 ORACLE_DIR="$P/root/.venvs/tp-oracle"
 PNPM_DIR="$P/opt/pnpm-$PNPM_VERSION"
-PNPM_LINK="$P/usr/local/bin/pnpm"
+PNPM_BIN="$P/opt/pnpm-bin"
+PNPM_LINK="$PNPM_BIN/pnpm"
 ACTIONLINT_DIR="$P/opt/actionlint"
 ACTIONLINT_LINK="$P/usr/local/bin/actionlint"
 CACHE_HOME="$P/root/.cache"
 LEGACY_GITLEAKS_PARENT="$P/tmp/claude-0"
 LOG_DIR="$P/tmp/setup-container"
-# The PATH pnpm and the installs run with: Node 24 first (and, under a prefix, the prefix's /usr/local/bin).
-if [ -n "$P" ]; then RUN_PATH="$NODE_DIR/bin:$P/usr/local/bin:$PATH"; else RUN_PATH="$NODE_DIR/bin:$PATH"; fi
+# The PATH pnpm and the installs run with: Node 24 first, then the pinned pnpm (and, under a prefix, the prefix's
+# /usr/local/bin).
+if [ -n "$P" ]; then RUN_PATH="$NODE_DIR/bin:$PNPM_BIN:$P/usr/local/bin:$PATH"; else RUN_PATH="$NODE_DIR/bin:$PNPM_BIN:$PATH"; fi
 BRANCH_ARGS=()
 for arg in "$@"; do BRANCH_ARGS+=("${arg%%:*}"); done
 
@@ -873,7 +879,8 @@ pnpm_version() { # pnpm's version, read from its package.json so nothing runs an
 }
 
 # pnpm_install: pnpm@PNPM_VERSION from the npm registry (pinned SHA-256 and SHA-512) in PNPM_DIR, outside
-# /opt/node24 so Node's tree stays as it is, linked at PNPM_LINK. Used only when no pnpm is on PATH.
+# /opt/node24 so Node's tree stays as it is, linked at PNPM_LINK (in its own directory, PNPM_BIN, so the tree holds
+# only the tarball's files).
 pnpm_install() {
   local dl="$P/opt/pnpm-dl" tmp="$PNPM_DIR.tmp.$$"
   npm_tarball pnpm "$PNPM_VERSION" "$dl/$PNPM_TGZ" "$PNPM_TGZ_SHA256" "$PNPM_TGZ_SHA512" || return 1
@@ -886,8 +893,11 @@ pnpm_install() {
     mv -T "$tmp" "$PNPM_DIR" || { ERR="could not move pnpm to $PNPM_DIR"; return 1; }
   fi
   if [ -L "$PNPM_LINK" ] && [ "$(readlink "$PNPM_LINK")" = "$PNPM_DIR/bin/pnpm.cjs" ]; then return 0; fi
+  if [ -L "$PNPM_LINK" ] && [[ "$(readlink "$PNPM_LINK")" == "$P/opt/pnpm-"*/bin/pnpm.cjs ]]; then
+    rm -f "$PNPM_LINK" || { ERR="could not replace $PNPM_LINK"; return 1; } # another pin's link: this one replaces it
+  fi
   if [ -e "$PNPM_LINK" ] || [ -L "$PNPM_LINK" ]; then ERR="$PNPM_LINK exists but is not pnpm $PNPM_VERSION; move it aside and run again"; return 1; fi
-  mkdir -p "$(dirname "$PNPM_LINK")" && ln -s "$PNPM_DIR/bin/pnpm.cjs" "$PNPM_LINK" || { ERR="could not link $PNPM_LINK"; return 1; }
+  mkdir -p "$PNPM_BIN" && ln -s "$PNPM_DIR/bin/pnpm.cjs" "$PNPM_LINK" || { ERR="could not link $PNPM_LINK"; return 1; }
 }
 
 # modules DIR LABEL: node_modules in DIR installed from DIR's pnpm-lock.yaml as it is now (node_modules/.modules.yaml
@@ -922,29 +932,26 @@ modules() {
 }
 
 step_pnpm() {
-  local want have out where
+  local want want512 pin512 have where
   if [ "$OK_CLONE" != 1 ] || [ "$OK_NODE" != 1 ]; then line FAIL pnpm - "skipped: needs Node 24 and the clone"; return 1; fi
   want="$(python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1]))["packageManager"].split("@")[1].split("+")[0])' "$CLONE_DIR/package.json" 2>/dev/null)"
-  have="$(pnpm_version)"
-  if [ -z "$have" ]; then
-    if checking; then line FAIL pnpm - "pnpm is not on PATH"; return 1; fi
-    if [ "$want" != "$PNPM_VERSION" ]; then line FAIL pnpm - "no pnpm on PATH, and package.json's packageManager is pnpm@$want while this script pins $PNPM_VERSION; update the PNPM_* pins"; return 1; fi
-    log "no pnpm on PATH: installing pnpm $PNPM_VERSION from the npm registry into $PNPM_DIR"
+  want512="$(python3 -I -c 'import json, sys; pm = json.load(open(sys.argv[1]))["packageManager"]; print(pm.split("+sha512.")[1] if "+sha512." in pm else "")' "$CLONE_DIR/package.json" 2>/dev/null)"
+  pin512="$(python3 -I -c 'import base64, sys; print(base64.b64decode(sys.argv[1].split("-", 1)[1]).hex())' "$PNPM_TGZ_SHA512")"
+  if [ "$want" != "$PNPM_VERSION" ]; then line FAIL pnpm - "package.json's packageManager is pnpm@${want:-?} while this script pins $PNPM_VERSION; update the PNPM_* pins"; return 1; fi
+  if [ "$want512" != "$pin512" ]; then line FAIL pnpm - "package.json's packageManager names pnpm@$want with SHA-512 '${want512:-none}', not this script's pinned $pin512; nothing installed"; return 1; fi
+  if ! { [ -f "$PNPM_DIR/bin/pnpm.cjs" ] && [ -L "$PNPM_LINK" ] && [ "$(readlink "$PNPM_LINK")" = "$PNPM_DIR/bin/pnpm.cjs" ]; }; then
+    if checking; then line FAIL pnpm - "pnpm $PNPM_VERSION is not in $PNPM_DIR, linked at $PNPM_LINK"; return 1; fi
+    log "installing pnpm $PNPM_VERSION from the npm registry into $PNPM_DIR, linked at $PNPM_LINK"
     pnpm_install || { line FAIL pnpm - "$ERR"; return 1; }
-    have="$(pnpm_version)"
-    [ "$have" = "$PNPM_VERSION" ] || { line FAIL pnpm "${have:--}" "installed pnpm $PNPM_VERSION at $PNPM_LINK, but pnpm on PATH is '${have:-missing}'"; return 1; }
   fi
+  have="$(pnpm_version)"
   where="$(pnpm_path)"
-  if [ "$(readlink -f "$where")" = "$(readlink -f "$PNPM_DIR/bin/pnpm.cjs" 2>/dev/null)" ]; then
-    tree_against pnpm "$PNPM_VERSION" "$P/opt/pnpm-dl/$PNPM_TGZ" "$PNPM_TGZ_SHA256" "$PNPM_TGZ_SHA512" package/ "$PNPM_DIR" 0 || { line FAIL pnpm "$have" "$ERR"; return 1; }
-    where="$where (from registry.npmjs.org; $TREE)"
+  if [ "$have" != "$PNPM_VERSION" ] || [ "$(readlink -f "$where")" != "$(readlink -f "$PNPM_DIR/bin/pnpm.cjs")" ]; then
+    line FAIL pnpm "${have:--}" "pnpm first on the install PATH is $where (${have:-unknown}), not $PNPM_LINK ($PNPM_VERSION)"; return 1
   fi
+  tree_against pnpm "$PNPM_VERSION" "$P/opt/pnpm-dl/$PNPM_TGZ" "$PNPM_TGZ_SHA256" "$PNPM_TGZ_SHA512" package/ "$PNPM_DIR" 0 || { line FAIL pnpm "$have" "$ERR"; return 1; }
   modules "$CLONE_DIR" main || { line FAIL pnpm "$have" "$MODULES"; return 1; }
-  if [ "$have" = "$want" ]; then
-    line ok pnpm "$have" "$where, the packageManager version; $CLONE_DIR: $MODULES"
-  else
-    line ok pnpm "$have" "$where; packageManager pins $want, which pnpm switches to by itself; $CLONE_DIR: $MODULES"
-  fi
+  line ok pnpm "$have" "$PNPM_LINK (from registry.npmjs.org; $TREE; its SHA-512 is packageManager's), the packageManager version; $CLONE_DIR: $MODULES"
   OK_MODULES=1
 }
 
