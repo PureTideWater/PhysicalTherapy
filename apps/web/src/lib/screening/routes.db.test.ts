@@ -1234,9 +1234,13 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
       await resume();
     }
     expect(ok(await world.call(screeningPage))).toMatchObject({ open: true, closedReason: null });
-    expect(SCREENING_PAUSED.text).toBe(
-      'Too many of our recent result emails could not be delivered, so we have stopped sending them while we fix it. Screenings uploaded before the pause are kept and will be emailed when we resume, if that is within 30 days of the upload. Result links already sent still work.',
-    );
+    // No cause named: a pause can follow delivered mail reported as spam, the account's rates, SES's review or a person.
+    expect(SCREENING_PAUSED).toEqual({
+      title: 'New screenings are paused',
+      text: 'We have paused new screenings while we check that our result emails are reaching people. Screenings uploaded before the pause are kept, and their results are emailed once we resume, if that is within 30 days of the upload. Result links already sent still work.',
+      refusal: 'New screenings are paused for now. Try again later, or request an audit.',
+    });
+    expect(`${SCREENING_PAUSED.text} ${SCREENING_PAUSED.refusal}`).not.toMatch(/could not be delivered|fix/);
   });
 
   it('keeps staging closed until the mail path is proven (both probes back within 48 hours, since the last resume); development ignores readiness', async () => {
@@ -1356,5 +1360,10 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
     // Another client is not held by this one's budget.
     expect((await world.call(screeningSubmit, { input: submitInput({ contactEmail: 'client.other@clinic-client-other.synthetic.test' }), address: '198.51.100.89' })).status).toBe('ok');
     expect(SCREENING_BOUNCE_BUDGET).not.toMatch(/@|198\.51/);
+    // The account is a work address's domain or a free-mail address's mailbox: the sentence names both, never "this
+    // email account" alone, which told a colleague at the same domain that their own address had failed.
+    expect(SCREENING_BOUNCE_BUDGET).toBe(
+      'Several recent screening results for this connection, or for this email address or its work domain, could not be delivered, so we cannot take another screening from them for up to 7 days. Check the email address, or request an audit instead.',
+    );
   });
 });

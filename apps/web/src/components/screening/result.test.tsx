@@ -588,6 +588,12 @@ describe('what the result says is kept (audit #57; decisions 7, 17 and 18)', () 
     expect(text).toContain('Then we delete the result: its rows and figures, and the practice name, ZIP code and email address you gave.');
     expect(text).toContain(`If you request an audit from it, we keep ${KEPT_SUMMARY} with your request for 12 months from the screening.`);
     expect(text).toContain(KEPT_COUNTS);
+    // The refused address's coded form: what it is used for and for how long, never "never" (it lapses after 12
+    // months, and a screening already accepted for the address is still sent; Q11 (b), the review of 2026-10-23).
+    expect(text).toContain(
+      'If email to the address you gave cannot be delivered, or is reported as spam, we keep a coded form of it, which cannot be turned back into the address, for 12 months, only to refuse another screening to that address.',
+    );
+    expect(text).not.toMatch(/\bnever send\b/);
   });
 
   it('tells a prospect whose screening took over an earlier request that their details are kept with it, never that they are deleted', () => {
