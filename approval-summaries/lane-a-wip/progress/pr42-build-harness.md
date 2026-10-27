@@ -93,3 +93,8 @@ decision, open as issue #41 (decide before launch), with this measurement as its
 - Integrator: e2e chromium-1194 present now; full e2e worth running once after integration.
 - Proposal: infra metric filter on the web log's 'screening address checked' elapsed_ms (latency of DNS+validation in production; an alarm near the 2-s bound).
 - f077c048 capacity: report module comment lists the address-check checks (M4).
+- Capacity smoke S1 (process runtime, advisory, tp_pr6b4_harness_2 dropped by the harness): S1-1 38.1 s (logged 38.0),
+  S1-2 2.9 s; web measured address checks 2011 and 2002 ms read into the report ("the web measured the address checks of
+  2 of 2 uploads at 2.0 to 2.0 s"); both links 200 and last pages 200 after the commit wait; verdict fails only on what a
+  partial process run cannot meet (partial run, Postgres limits, cold start, S2/S3 oracles). Out: scratchpad/pr42/capacity-out.
+- NEXT: drop tp_pr6b4_harness_1; final checks.

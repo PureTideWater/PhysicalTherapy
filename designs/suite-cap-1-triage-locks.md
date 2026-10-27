@@ -91,9 +91,11 @@ what committed before it.
 `execute.ts:480-483`), and an advisory transaction lock is released only at commit. A 100,000-line month makes up to
 100,000 validated events, then the actionable ones for the same lines (already locked), so it holds about one lock per
 line it moved. The shared lock table has `max_locks_per_transaction × (max_connections + max_prepared_transactions)`
-slots: 64 × 100 locally and in CI, 64 × 200 in the harness (`tools/screening-capacity/containers.ts:258-266`), and the
-RDS default on db.t4g.medium (`infra/lib/environments.ts:150-156`; the parameter group sets only TLS,
-`infra/lib/constructs/database.ts:128-132`).
+slots: 64 × 100 locally and in CI, 64 × 200 in the harness (`tools/screening-capacity/containers.ts:258-266`), and in
+production 64 × RDS's default connection count for db.t4g.medium, which its memory formula puts at about 400, so about
+26,000 (`infra/lib/environments.ts:150-156`; the parameter group sets only TLS, `infra/lib/constructs/database.ts:128-132`).
+Postgres lets the table borrow some spare shared memory, which is why probe A1 failed between 12,000 and 20,000 rather
+than at 6,400. A 100,000-line month exceeds every one of these.
 
 **What failed (#49's real-size run, capacity summary):** A's triage failed each of its three attempts at 48.1 s (265.5 s
 in all), and A's audit report failed each of its three at 47.2 s (309.7 s). B's 20,000-line triage passed in 10.4 s.
@@ -123,7 +125,7 @@ races it closes, among writers that can meet on one line:
 - two forward events for one line from any two writers (probe R1: the second is refused).
 
 Triage and reconcile touch disjoint lines in practice: `candidateRows` leaves out lines already in a case
-(`execute.ts:253`), and actionable is written only for lines attached in the same transaction. The database does not
+(`execute.ts:245`), and actionable is written only for lines attached in the same transaction. The database does not
 rely on that, and neither does this design.
 
 **What the lock does not protect today: the order of a line's events (probe R2).** The identity value is drawn before
@@ -190,8 +192,8 @@ case row: Postgres detects a deadlock (40P01). Today's per-line lock, and option
 
 **D. A practice lock taken first by every writer** is correct and is the fastest (probe V1: 14.9 s against today's
 15.9 s for 180,000 events). Its costs:
-- **People wait on jobs.** A person's reopen, which waits on nothing today, would wait for a whole triage, reconcile or
-  audit report. The report holds its transaction while it prints the PDF and stores it (`generate.ts:79-90`); B's
+- **People wait on jobs.** A person's reopen, which today waits only when a job holds the same line or case, would wait
+  for any whole triage, reconcile or audit report of the practice. The report holds its transaction while it prints the PDF and stores it (`generate.ts:79-90`); B's
   20,000-line report took 103 s in #49's run. No `lock_timeout` or `statement_timeout` is set anywhere
   (`packages/db/src/connect.ts`), and the load balancer gives up after 180 s (`infra/lib/constructs/edge.ts:35`), so D
   needs a lock timeout, a new refusal and new words.
@@ -244,7 +246,7 @@ statement:
 | D2 | `line_status_rules()` takes the line's lock by writing its head row with one `INSERT … ON CONFLICT (practice_id, service_line_id) DO UPDATE … RETURNING WITH (OLD AS prior, NEW AS next) prior.stage, next.seq`. The `pg_advisory_xact_lock` call is removed. | The upsert waits for any other writer of the line, then locks the row. `prior.stage` is the stage before this event (null for a line's first event), and the checks run against it, unchanged. A refusal raises and undoes the head write with the statement. PostgreSQL 18's `RETURNING OLD` is available everywhere this runs: RDS `VER_18` (`database.ts:127`), the compose and harness images (`postgres:18`), CI. |
 | D3 | `NEW.seq` is set from the head row: the identity value the row already drew for a line's first event, and a new `nextval` drawn after the lock otherwise. | A line's first event cannot race an earlier one: any committed or in-flight event of the line holds or waits on the head row, so the insert would conflict instead. Every later event draws its number while it holds the lock, so `seq` follows commit order. |
 | D4 | `line_status_rules()` becomes `SECURITY DEFINER`, owned by `tp_owner`, with `SET search_path = pg_catalog, public, pg_temp` and `REVOKE ALL … FROM PUBLIC`. `line_status_head` has no grant to any login role. | The trigger is then the only writer of the head rows, and `nextval` on `line_status_seq_seq` needs no sequence grant (none exist anywhere today). Row-level security still applies to the owner (`FORCE`) and reads the session's `app.practice_ids`, so a head row can only be written in the writer's own practice. Precedent: `line_status_refresh_cases` (`20261023090000:837-845`). |
-| D5 | No foreign keys on `line_status_head`. | The `line_status` row the trigger is checking carries the same references (`practice`, `service_line`) and is checked in the same statement, and `line_status_belongs` checks the line's practice. The two extra checks cost 3.9 s per 180,000 events (probe H1 22.4 s against H2 18.6 s). What the head row must satisfy is "equals the line's latest event", which a foreign key cannot express. CAS-40's property and a catalog-level consistency test check it. |
+| D5 | No foreign keys on `line_status_head`. | The `line_status` row the trigger is checking carries the same references (`practice`, `service_line`) and is checked in the same statement, and `line_status_belongs` checks the line's practice. The two extra checks cost 3.9 s per 180,000 events (probe H1 22.4 s against H2 18.6 s). What the head row must satisfy is "equals the line's latest event", which a foreign key cannot express. CAS-40.5's property and CAS-40.6's backfill check that. |
 | D6 | `line_status_head` has `line_status`'s guards: `never_deleted` and `no_truncate` triggers, forced row-level security with the tenant policy, and a registry row (so the cross-tenant tests cover it). | It is part of the stage log's state, and its rows go only with the log's. |
 | D7 | No writer's code changes for locking. Triage, the report, opening a case, reconcile, manual ledger work and the reopen keep their transactions, their outer locks (`triage:`, `ledger:`) and their statements. | The per-line protection moves inside the database, unchanged in grain. ADR 0038:63-66 ("an advisory lock per practice") stays true. |
 | D8 | Under Q1 (a ledger freeze exception): `ledger_entry_within_evidence()` and `ledger_entry_within_line()` take `pg_advisory_xact_lock(hashtextextended('ledger:' \|\| NEW.practice_id::text, 0))`, the same key `lockLedger` takes (`reconcile/ledger.ts:16-18`), instead of one key per evidence row and per line. Nothing else in either body changes. | Every `ledger_entry` insert runs after `lockLedger`: the reconcile pass (`pass.ts:39`) and each manual action's first statement (`manual.ts:46-50`, called at :71, :101, :136, :178, :229). There is no SQL writer of `ledger_entry`. Re-taking a lock the transaction holds adds no lock-table entry and cannot deadlock. The trigger still serializes any writer that forgets `lockLedger`, at a coarser grain. |
@@ -426,8 +428,8 @@ now with a lock that holds at any size.
      of A's actionable lines at its expected amount (`packages/synth/src/formats` writes it), uploaded through intake,
      parsed, and reconciled by the reconcile job, measured like the chain.
    - `checks.test.ts`: each new rule, failing and passing.
-2. **`docs/runbooks/screening-capacity.md`** ("Release capacity" section, where #49 documented the weekly run): the new
-   checks, and how to read a lock-count failure.
+2. **`docs/runbooks/ci.md`** (the `release-capacity` rows, :44-45): the new checks, and how to read a lock-count or
+   attempt failure.
 3. **No change to triage's or the report's code.** The probe ran the job code as it is, at 100,000 lines, within the
    worker's limits (section 8.3).
 
@@ -448,10 +450,313 @@ Under Q1 the ledger's messages ("the posted or deposited entries of a posting or
 amount", and the others in the two bodies) are unchanged too.
 
 What people stop seeing, because the cause is gone: for a large month, the practice home's failed-job notice for
-triage (`apps/web/src/app/p/[practiceId]/page.tsx:43-56`) and the report's "failed three times" state
+triage and for the audit report (`apps/web/src/app/p/[practiceId]/page.tsx:43-56` names the jobs) and the report's "failed three times" state
 (`apps/web/src/lib/reports/queries.ts:61-69`). Their words do not change.
 
 Brand rules (CO-11, BRAND.md) are therefore untouched. The words this PR adds are documents, not product copy: ADR
 0083, the migration's comments, the domain model's rows and the runbook paragraph, all in the house style.
 
 ---
+
+## 7. Tests
+
+Each test fails first on e908c21 (or on #42 and SS-01's merged head) and passes after the migration, except where it
+says it is a guard. The coordination between two connections waits on `pg_stat_activity` (the second backend's
+`wait_event_type = 'Lock'`), never on a sleep.
+
+### CAS-40: a line's stage events keep their rules and their commit order under concurrent writers
+
+`packages/db/src/line-status.db.test.ts` (new), on a database migrated from empty, two application-role connections in
+the practice's scope, lines from the row factory:
+1. **Two forward events for one line.** A writes validated and holds its transaction. B's validated waits. A commits,
+   and B is refused with "line stages move forward only; …". The line has one validated event. (A guard: passes today.)
+2. **Order follows commits.** A writes flagged. B's actionable waits. A writes validated and commits, then B commits.
+   By `seq` the events are flagged, validated, actionable; the head row says actionable at the last `seq`; a third
+   writer's actionable is refused. **Fails first:** B's event sorts before validated, and the third actionable is
+   accepted (probe R2).
+3. **A person's reopen against a forward move.** The line is at validated. A (in no one's name) writes actionable and
+   holds. B, as a person, writes a reopen from validated with a reason, and waits. A commits, and B is refused with "a
+   reopen names the stage the line is at". (A guard.)
+4. **No new deadlock.** The shapes of `execute.ts:444-446` and `triage.ts:522-528`: T1 writes a stage for line F, T2
+   updates case line X (and so its case), T1 updates case line X and waits, T2 writes a stage for line X. Both commit.
+   (A guard: a practice lock in the trigger would raise 40P01 here, probe R3.)
+5. **The rules and the head row, as a property** (fast-check, 100 runs, sequential): random sequences of events over
+   three lines (forward or reopen, a person or no one, any stage) are accepted by the database exactly when a pure model
+   of the four rules accepts them. After every step each line's head row equals its latest event by `seq`.
+6. **The backfill.** On a database migrated to SS-01's head, with events written for several lines (reopens
+   included), applying this migration leaves one head row per line, equal to its latest event.
+7. **The pieces.** `line_status_rules` is `SECURITY DEFINER`, owned by `tp_owner`, with its `search_path`;
+   `line_status_head` has forced row-level security, its registry row, no grant to any login role, and its two guards;
+   `pg_get_serial_sequence('line_status', 'seq')` is `public.line_status_seq_seq`; under Q1, each ledger body equals
+   20261027090000's except its lock line and comment.
+
+### CAS-41: no transaction holds a lock-table entry per line, and a 100,000-line month triages and reports in one transaction each
+
+1. **One transaction, 30,000 events** (`line-status.db.test.ts`). As the application's login, one `INSERT … SELECT` of
+   30,000 events completes, and the advisory locks its backend holds afterwards are 0. **Fails first:** 53200, or
+   30,000 locks where the cluster's table is larger.
+2. **Another practice is unaffected.** While practice A's transaction holds its 30,000 events open, practice B's 2,000
+   events commit. **Fails first:** 53200 (probe A2).
+3. **Empty statistics.** After `VACUUM ANALYZE` of the empty `line_status` and `line_status_head`, 40,000 events in one
+   transaction take less than six times as long as 10,000 (linear is about four times; the old plan was about
+   sixteen). **Fails first:** the old lookup's cached sequential scan (probe E1).
+4. **The jobs at real size** (`apps/worker/src/triage/triage.large.db.test.ts`, new; `TP_LARGE_TRIAGE_LINES`, 100,000 by
+   default, the shape of `price.large.db.test.ts`). The run is priced, triaged by `executeTriage` and reported by
+   `generateAuditReport`, through the job code. It asserts:
+   - both complete;
+   - every candidate's stage events are present;
+   - the advisory locks held by any backend, sampled every 25 ms (`era-export.large.db.test.ts:115-150`'s pattern), never
+     exceed 1 (the practice's `triage:` lock);
+   - the time is under the budget in section 8.4;
+   - the memory held after full collections (`intake.large.db.test.ts`'s measure) is under the bound in section 8.4.
+   **Fails first:** 53200 at the validated insert.
+5. **Under Q1, reconcile at size** (`apps/worker/src/reconcile/reconcile.large.db.test.ts`, new): 20,000 case lines,
+   each posted by one row of a SYNTHETIC posting export, reconciled in one pass. The pass completes; the 20,000 posted
+   entries are written; each line reaches the stage its entries put it at; and no backend holds more than 1 advisory
+   lock (the practice's `ledger:` lock). **Fails first:** 53200 (about 40,000 evidence and line locks, plus 20,000 stage
+   locks).
+
+### CAS-42: the weekly real-size run passes, every measured job on its first attempt, no transaction above 64 advisory locks
+
+1. **Unit** (`tools/release-capacity/checks.test.ts`): each new rule fails when it should and passes when it should:
+   a job completed on its second attempt; a backend sampled at 65 advisory locks; a chain peak above 90%; an unread
+   attempt count or lock sample fails closed.
+2. **The weekly run** (`.github/workflows/release-capacity.yml`, unchanged, at `FULL_SIZE`: A 100,000 lines, B 20,000,
+   under release 900110). A's triage and A's report (and, under Q1, A's reconcile) complete on attempt 1; no backend
+   holds more than 64 advisory locks at any sample; `memory.peak` stays at or under 90% of 1,024 MiB; the chain's peaks
+   are reported per job. **Fails first:** today's run (A's triage and report failed, capacity summary).
+3. **Before and after on the PR:** run once with `--worker-image` on the base's image and once on the head's, against
+   the same release directory (section 8.2), and put both summaries in the PR.
+
+### Tests updated, not added
+
+- `packages/db/src/catalog.db.test.ts`: the registry list (from :66) gains `line_status_head`.
+- `packages/db/src/migrate.db.test.ts`: the owners list (from :100) gains `line_status_head`. The Drizzle mirror check
+  (:596-618) passes with `lineStatusHead` added to `packages/db/src/schema/triage.ts`.
+- The generated cross-tenant tests (`cross-tenant.db.test.ts`) cover the new table from its registry row. It has no
+  application INSERT grant, which the test already handles (:212-215).
+- Unchanged and still passing: `apps/worker/src/triage/triage.db.test.ts` (:296-340 among them), the ledger tests
+  LED-01 to LED-17 and the oracle, the e2e journeys J8 (`apps/web/e2e/triage.spec.ts:41`) and J12
+  (`apps/web/e2e/reports.spec.ts:88`), and the helpers that insert stage events directly
+  (`apps/web/src/lib/routes/test-support/triage-world.ts:109`, `packet-world.ts:97`, :112, `apps/web/e2e/packets.ts:199`,
+  `apps/worker/src/packets/test-support/packet-world.ts:150`).
+- No new e2e journey: nothing a person sees changes.
+
+### Test matrix rows (`docs/product/test-matrix.md`, after CAS-39; `packages/synth/src/cases/matrix.ts` word for word)
+
+| ID | Title | Expected |
+| --- | --- | --- |
+| CAS-40 | Concurrent writers of one line's stages | The second of two forward events is refused; a reopen naming a stage that has since moved is refused; a line's events sort by commit order, so a duplicate forward event is refused; no new deadlock; every line's head row equals its latest event |
+| CAS-41 | A real-size month triages and reports | 30,000 stage events in one transaction hold no advisory lock per line, and another practice's events commit meanwhile; a 100,000-line run triages and reports in one transaction each, holding at most its practice's one advisory lock, within the time and memory budget |
+| CAS-42 | The weekly real-size run | A's triage and audit report (and reconcile) complete on their first attempt under release 900110, no backend holds more than 64 advisory locks, and the worker's memory peak stays at or under 90% |
+
+`packages/synth/src/cases/registry.ts`: `'CAS-40': none(8, 'Concurrent stage events on generated lines: no file.',
+[…])`, `'CAS-41': none(8, 'Generated at size by the test: no file.', […])` and `'CAS-42': none(8, 'The weekly run builds
+release 900110 outside the repository: no file.', […])`, each with the test files above.
+
+---
+
+## 8. The measurement
+
+### 8.1 What "within the worker task" means
+
+- The worker task: 0.5 vCPU and 1,024 MiB (`infra/lib/environments.ts:111`), Node's heap at 560 MiB (`infra/lib/heap.ts:9`).
+- A job attempt expires after pg-boss's 15 minutes. Three attempts in all (`apps/worker/src/jobs/registry.ts:110-142`).
+- The run fails above 90% of the task's memory (921.6 MiB, `tools/release-capacity/checks.ts:12`).
+- This design adds: a measured job completes on its first attempt.
+
+### 8.2 The weekly workflow, and the local reproduction
+
+- **Weekly.** `release-capacity.yml` runs Tuesdays at 03:29 UTC and on request, from the default branch
+  (`claude/build-platform` since F1 (a)). With this PR it reads three new checks (D10) and, under Q1, one more phase. On
+  a failure it opens or comments on the issue "Release capacity test failing" (`docs/runbooks/ci.md:44-45`).
+- **Locally, the same harness:** under `flock /tmp/laneb-heavy.lock`,
+  `pnpm exec tsx tools/release-capacity/run.ts --out <dir> --runtime process --images <dir> --admin-url
+  postgres://postgres:test@localhost:5433/postgres --database tp_capacity_<name> --release-dir <dir>`. The release
+  directory is built once with `tools/release/scale.ts --shape quarterly`. `--small` proves the harness end to end and
+  measures nothing.
+- **Locally, the large test alone** (CAS-41.4, minutes rather than the hour the release load takes):
+  `DATABASE_URL=postgres://postgres:test@localhost:5433/postgres pnpm exec vitest run --project db
+  apps/worker/src/triage/triage.large.db.test.ts`, under the same lock.
+
+### 8.3 The probe that stands in for CAS-41.4 now
+
+The design ran the job code at 100,000 lines on this container's PostgreSQL 18 (64 locks per transaction, 100
+connections). It is the same shape as `price.large.db.test.ts`: half Medicare Advantage non-contracted, half under a
+SYNTHETIC 110% contract with a 365-day window, encrypted SYNTHETIC claim numbers. It ran before and after the candidate
+migration (section 15, probe B). Before: PENDING. After: PENDING.
+
+### 8.4 Budgets
+
+PENDING (from probe B).
+
+---
+
+## 9. The domain model and the function files
+
+**Regenerate in this PR, on the tree with #42 and SS-01 merged:** `pnpm db:domain-model --out` from a database migrated
+from empty.
+
+**What changes in `docs/product/domain-model.md`:**
+- the new `line_status_head` table, in the "Pricing, triage and cases" area;
+- `line_status_rules`'s row: now `SECURITY DEFINER`;
+- under Q1, the two ledger functions' rows (their bodies, through the function files).
+
+**What changes in `packages/db/functions`:**
+- changed: `line_status_rules.sql`;
+- under Q1, changed: `ledger_entry_within_evidence.sql`, `ledger_entry_within_line.sql`.
+
+**Inputs the generator needs:**
+- `packages/db/domain-model/areas.json` (#42's file) places `line_status_head` in the triage area (:74-93), and the area's
+  "about" gains one clause: "each line's current stage is also kept on one head row, which orders its events".
+- `docs/product/data-dictionary.md` stays verbatim. If `--strict` asks, the builders add the
+  `divergence-explanations.json` entry it names for the new table.
+
+**Gates:**
+- `pnpm db:domain-model --check --require-approval` passes only with the founder's line.
+- The PR is opened with `pnpm db:domain-model --summary-since origin/claude/build-platform --function-diffs list`.
+- The regenerated function files are committed before the founder signs, since a commit after the approval dismisses it.
+- The approval line goes up as one suggested-change comment on that line (CLAUDE.md "Schema gate";
+  `.claude/skills/new-migration`), never written by a session, never as a review.
+
+---
+
+## 10. What the founder must approve or rule
+
+1. **Approve `docs/product/domain-model.md`** by its SHA-256, on the PR's latest commit (CO-02; ADR 0063).
+2. **Q1. A ledger freeze exception for D8.** Recommended: grant it.
+   - **The freeze** (reconciliation-001.md, "Ledger semantics"): "No migration alters, or adds a trigger or policy to,
+     `ledger_entry`, `ledger_match`, `posting_row`, `eft_row` or `roi_statement`." D8 replaces two trigger functions on
+     `ledger_entry`.
+   - **What changes:** the key of one lock in each, from one key per posting or EFT row and per line to the practice's
+     `ledger:` key, which every ledger writer already holds before it writes. No check, refusal, message, amount,
+     stage or entry changes; LED-01 to LED-17 and the oracle run unchanged; `packages/ledger` is untouched.
+   - **Why now:** with only the stage lock fixed, a reconcile that posts a large dispute set in one pass still takes
+     about two locks per line and fails 53200 like triage did. A large practice's first posting export after its
+     payers reprocess would fail three times, and it can make other practices' work fail meanwhile.
+   - **If not granted:** the stage fix ships alone. The ledger part becomes its own item (SUITE-CAP-2, handed to the
+     queue with this design's section 4.4 and CAS-41.5), and the release-capacity run gets its reconcile phase with that
+     item. Until then a real-size reconcile can fail.
+   - **With the "Interest credited twice" item** (LED-23 to LED-25, which also waits for a ledger freeze exception): the
+     two can be granted together. Whichever PR lands second recreates any shared ledger function on the first's body.
+     Neither changes the other's lines.
+
+Nothing else goes to the founder:
+- no legal text;
+- no founder ruling reversed;
+- no engine or content freeze exception;
+- no cost: no new service and no parameter.
+
+---
+
+## 11. Files
+
+#42's files are marked **(#42)**. This PR follows #42 and SS-01, so it edits their final text, and re-reads each at the
+merged head before changing it.
+
+**Database**
+- `packages/db/migrations/20261109090000_line_status_heads.sql` (new)
+- `packages/db/src/schema/triage.ts` (`lineStatusHead`); `packages/db/src/schema/index.ts` (its export) **(#42)**
+- `packages/db/functions/line_status_rules.sql` (generated); under Q1 `ledger_entry_within_evidence.sql`,
+  `ledger_entry_within_line.sql` (generated)
+- `packages/db/domain-model/areas.json` **(#42)**; `docs/product/domain-model.md` (generated) **(#42)**
+- `packages/db/src/line-status.db.test.ts` (new); `catalog.db.test.ts` **(#42)**; `migrate.db.test.ts` **(#42)**
+
+**Worker**
+- `apps/worker/src/triage/triage.large.db.test.ts` (new)
+- under Q1 `apps/worker/src/reconcile/reconcile.large.db.test.ts` (new)
+- no non-test worker file changes
+
+**Harness**
+- `tools/release-capacity/run.ts`, `checks.ts`, `checks.test.ts`; under Q1 `scenario.ts`, `scenario.test.ts`
+- `tools/screening-capacity/watched-paths.txt` (regenerated by `watched.ts --write`, since it watches the migrations)
+  **(#42)**
+
+**Documents**
+- `docs/adr/0083-…md` (new): option H, D1 to D11, and under Q1 the exception
+- `docs/adr/0038-…md`: a dated note under "Who triages and when", that the per-line lock is a row lock (0083). The
+  sentence "an advisory lock per practice" stays true.
+- `docs/product/test-matrix.md` **(#42)**; `packages/synth/src/cases/matrix.ts` **(#42)**;
+  `packages/synth/src/cases/registry.ts` **(#42)**
+- `docs/runbooks/ci.md` (:44-45)
+- under Q1 `docs/product/reconciliation-001.md` **(#42)**: the exception, dated and attributed, under "Ledger semantics",
+  in the form of the other granted exceptions
+
+---
+
+## 12. Risks
+
+| Risk | What keeps it small |
+| --- | --- |
+| The head row drifts from the latest event | One writer (the definer trigger), no grant to anyone, guards against delete and truncate; CAS-40.5's property after every step; CAS-40.6 for the backfill. Line events are append-only, so the only way to drift is the owner bypassing triggers, which no code does. |
+| An event is refused after its head row was written | The exception undoes the statement's writes, the head row included. CAS-40.1 and .3 read the head row after the refusal. |
+| The definer trigger writes outside the writer's practice | Row-level security is forced on the head table for its owner too, and reads the session's `app.practice_ids`; `line_status`'s own policy and `line_status_belongs` still apply. The cross-tenant tests cover the table. |
+| `RETURNING OLD` needs PostgreSQL 18 | Every environment runs 18 (RDS `VER_18`, the pinned `postgres:18` images, CI). A downgrade is not possible on RDS, and the migration fails to compile on an older server rather than misbehave. |
+| The backfill's table lock during the deploy | Seconds at today's size. Stage writes wait and then proceed; nothing fails. Before launch there are no customer events. |
+| About 17% more time per stage event (2.7 s per 180,000) | Measured (probe V0 against H2). The whole triage at 100,000 lines is dominated by its reads (section 8.3). |
+| Contention on one line is today's contention | Same grain and order, so no new waits. A row lock wait shows in `pg_stat_activity` as a `transactionid` wait instead of `advisory`; the runbook names it. |
+| Under Q1, a future ledger writer forgets `lockLedger` | The trigger still serializes it (correctness), taking the practice key late: the worst case is a detected deadlock and a retry, never a wrong amount. ADR 0083 states the rule (a ledger writer takes `lockLedger` before any row), and CAS-41.5's bound catches a writer that adds per-row locks again. |
+| The release-capacity run's new checks fail for another reason (a slow runner, a flaky retry) | The checks fail closed and name the job and attempt. A retry that hides a real fault is exactly what the first-attempt check exists to catch. |
+
+---
+
+## 13. The builders' slices, in order
+
+1. **Migration and schema** (database builder): section 4 (under Q1 with 4.4), the Drizzle mirror, the generated
+   function files, `areas.json`, the domain model, `watched-paths.txt`. Gate: `pnpm db:migrate` from empty, the dry
+   run, `pnpm test:db` (catalog, cross-tenant, migrate).
+2. **CAS-40 and CAS-41.1 to .3** (database tests): written first against the base to see each fail-first, then run on
+   slice 1.
+3. **CAS-41.4 and, under Q1, .5** (worker large tests), with the budgets of section 8.4.
+4. **The harness** (CAS-42): run.ts, checks.ts and checks.test.ts, then the before-and-after real-size runs on the
+   base's and the head's worker images under the lock, and, under Q1, the reconcile phase.
+5. **Documents:** ADR 0083, ADR 0038's note, test-matrix rows and the synth matrix and registry, `docs/runbooks/ci.md`,
+   and under Q1 reconciliation-001's exception.
+6. **The full local suite,** then the draft PR opened with the domain model's summary, the two adversarial reviews (a
+   database and concurrency reviewer; a payment-engine reviewer for the ledger part under Q1), the fix round, and the
+   fresh-clone verification. No screen changes, so no UX and brand review is due (LANES.md rule 1).
+
+---
+
+## 14. Handed on, and kept out (each with why)
+
+- **Stored per-content windows (#8).** D11: a different table, a different path.
+- **Reading the current stage from the head row** (the 16 TypeScript sites and the SQL functions that take the latest
+  event by `seq DESC`; `candidateRows`' DISTINCT ON over a practice's whole log, `execute.ts:217-219`). It would make
+  those reads O(1) per line, but it changes many readers for a speed this item does not need. A later performance item
+  can take it; this design keeps the head row internal to the trigger and makes it exact, so that item can rely on it.
+- **`lock_timeout` for people's requests.** Not needed: option H adds no wait. The general question (a request that
+  waits on a row a long job holds, toward the load balancer's 180 s) exists today and is unchanged.
+- **The report's long transaction** (it holds `triage:` while it prints): unchanged, and ADR 0038's promise needs it.
+- **The audit-event volume of triage's reads** (one row per line read, `readWithAudit`,
+  `packages/db/src/authz/audit.ts:59-88`): required by the audit rule, and measured inside the budget.
+
+---
+
+## 15. Probes run for this design
+
+All on SYNTHETIC rows, as the worker's login unless said, on databases migrated from empty at e908c21 (44 migrations),
+PostgreSQL 18.4. Databases `tp_design_suitecap1_1` to `_6` on 5433 and a private cluster on port 5493
+(`max_locks_per_transaction` 1,024, the same `shared_buffers`) for the comparisons today's trigger cannot run at 64.
+All dropped, and the private cluster removed, at the end.
+
+| Probe | Result |
+| --- | --- |
+| A1 | 12,000 flagged in one `INSERT … SELECT`: 0.90 s, 12,000 advisory locks held. 20,000: 53200 at `line_status_rules() line 8 at PERFORM` |
+| A2 | P1 holds 13,000; P2's 2,000-line insert: 53200 in 68 ms |
+| V0 (today) | 180,000 events in one transaction (20,000 flagged, 100,000 validated, 60,000 actionable): 1.69 + 8.57 + 5.60 = 15.9 s; 120,000 advisory locks |
+| V1 (practice lock) | 1.73 + 7.89 + 5.25 = 14.9 s; 1 advisory lock |
+| H1 (head row, with foreign keys) | 2.38 + 11.65 + 8.41 = 22.4 s; 0 |
+| **H2 (head row, the design)** | **1.82 + 9.73 + 7.03 = 18.6 s; 0 advisory locks; 40 lock-table entries; every line's head equals its latest event** |
+| H3 (H2 with fillfactor 50) | 1.93 + 10.99 + 6.76 = 19.7 s; not better |
+| FLOOR | `line_status_rules` disabled: 1.32 + 6.68 + 3.90 = 11.9 s |
+| R1 | Two concurrent validated for one line: the second refused under V0, V1 and H2 |
+| R2 | V0: flagged@…524, actionable@…525 (committed last), validated@…526, then a second actionable accepted. V1: the same order fault. H2: flagged@…541, validated@…544, actionable@…545; the second actionable refused |
+| R3 | T1 stage on line L3 then a shared row; T2 the shared row then a stage on line L4: V0 and H2 both commit; V1 40P01 "deadlock detected" |
+| E1 | V0 after `VACUUM` of the emptied table (reltuples 0): the validated insert still running after 9.5 minutes, stopped |
+| E2 | H2 on a fresh database after `VACUUM ANALYZE` of both empty tables: 2.0 + 10.5 + 8.4 = 20.9 s, linear |
+| L1 | One transaction re-takes the practice's `ledger:` key 50,000 times: 1 advisory lock-table entry (D8's premise) |
+| B | 100,000 lines through the job code, before and after: section 8.3 |
+
+The scouts' probes agree where they overlap (`progress/design-suitecap1-database.md`: 53200 between 14,000 and 16,000
+on one `INSERT`; V2, the `service_line` row lock, 11.6 s with 0 advisory locks; the ANALYZE-on-empty plan, 7 min 51 s).

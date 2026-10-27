@@ -54,3 +54,8 @@ Clone: scratchpad/designs/suitecap1-author
 - Registry: none(8, 'no file', [tests]) like CAS-38/39; matrix row format | ID | Title | Expected |
 ## OUTLINE (doc /home/user/ops/designs/suite-cap-1-triage-locks.md; style = ss-01-suspension.md)
 0 ten lines; 1 problem+evidence (1.1 code, 1.2 what lock protects, 1.3 probes); 2 options+rec; 3 decisions D1..; 4 schema (4.1 table, 4.2 fn, 4.3 ledger part, 4.4 grants, 4.5 deploy/rollback); 5 app changes (none for locks; harness; ADR 0038 unchanged); 6 sentences (none change; list verbatim); 7 tests CAS-40..42; 8 measurement (weekly + local); 9 domain model + function files; 10 founder; 11 files (#42 marked); 12 risks; 13 slices; 14 handed on/out of scope (#8 windows; reads via head; memory streaming if needed); 15 probes
+- doc sections 0-6 written (15:3x); 7-15 next; probe B pending
+- facts: Drizzle mirror required (migrate.db.test.ts:596-618) -> packages/db/src/schema/triage.ts (+ index.ts, #42 file); cross-tenant handles no-INSERT tables (cross-tenant.db.test.ts:212-215); runbook for release-capacity = docs/runbooks/ci.md:44-45; reportFailureText queries.ts:61-69
+- probe B waiting behind #42's screening:capacity (flock, up to 90 min from 15:08)
+- sections 7-15 written; 8.3/8.4 PENDING probe B
+  - L1: 50,000 re-takes of one key = 1 lock-table entry

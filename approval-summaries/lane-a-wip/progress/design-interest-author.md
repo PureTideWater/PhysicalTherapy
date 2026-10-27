@@ -30,3 +30,8 @@ Output: /home/user/ops/designs/ledger-interest-once.md
 - D9 take-back (positive L6): leaning H2 negative interest entries (sign CHECK interest <>0 + trigger rules) - decide & write
 - D10 one PR (interest + N1 + seq + index); 15b stored case close stays with PR 8 (case/case_line DDL, not ledger).
 - #42 overlap: no ledger fn/table; shared generated/docs: domain-model.md, areas.json, functions/*, test-matrix.md, matrix.ts, registry.ts, reconciliation-001.md, watched-paths.txt, catalog.db.test.ts (#42 files list: progress/interest-author-42files.txt)
+- D9 DECIDED H2: negative interest entries (ledger_entry_sign interest <> 0), take-back attributed by reference or by the remittance's negative AMT I (reversal V -> V.reversal_of_claim_id lines holding interest), capped per line (net >= 0, DB floor) and per L6 (DB).
+- D11 add index ledger_entry_by_evidence (practice_id, evidence_id, stage) for the cap's per-L6 sum (and entriesOfEvidence, within_evidence) - DDL on frozen table, in exception.
+- D12 deploy window: previous image's interest inserts refused (RAISE, fail closed, retried); no silent skip.
+- Draft migration: probes/author/20261108090000_ledger_interest_once.sql; prototype probe probes/author/interest-author-proto.mts (DB tp_design_interest_3, migs1 = base+#42, migs2 = +draft) -- running in background (bj7y8c7qu) queued on flock
+## Next: write design doc sections (1 today cited, 2 TR3, 3 options, 4 decisions, 5 migration, 6 app, 7 words, 8 tests, 9 domain model, 10 founder, 11 files, 12 risks, 13 slices, 14 out of scope)
