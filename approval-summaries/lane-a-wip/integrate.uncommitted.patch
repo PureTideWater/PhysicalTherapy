@@ -555,6 +555,41 @@ index e35a0658..70451aff 100644
      if ((await scope.client.query<{ resent: boolean }>('SELECT resend_invitation($1) AS resent', [input.invitationId])).rows[0]?.resent !== true) {
        throw new InputError([{ field: 'invitationId', message: 'this invitation was accepted, or its membership has ended' }]);
      }
+diff --git a/apps/web/src/lib/screening/rate.test.ts b/apps/web/src/lib/screening/rate.test.ts
+index b4c90bf3..248d6cf3 100644
+--- a/apps/web/src/lib/screening/rate.test.ts
++++ b/apps/web/src/lib/screening/rate.test.ts
+@@ -17,7 +17,7 @@ describe('the screening rate limit’s account', () => {
+     expect(screeningRateAccount('no-domain')).toBe('address:no-domain');
+   });
+ 
+-  it('reads one Gmail mailbox once whatever its spelling: case, dots, a plus tag, googlemail.com, a trailing dot, full-width letters', () => {
++  it('reads one Gmail mailbox once whatever its spelling: case, dots, a plus tag, googlemail.com, a trailing dot', () => {
+     const mailbox = 'address:aliasprobe@gmail.com';
+     for (const spelling of [
+       'alias.probe@gmail.com',
+@@ -30,10 +30,20 @@ describe('the screening rate limit’s account', () => {
+       'alias.probe@gmail.com.',
+       'alias.probe@gmail.com..',
+       ' alias.probe@gmail.com ',
+-      'ａｌｉａｓ.ｐｒｏｂｅ@ｇｍａｉｌ.ｃｏｍ',
+     ]) {
+       expect(screeningRateAccount(spelling), spelling).toBe(mailbox);
+     }
++    // An address with a character outside ASCII is counted as read (its ASCII letters in lower case): the form refuses it,
++    // so it is never validated or mailed, and no Unicode table decides a key (the review of 2026-10-27).
++    expect(screeningRateAccount('ＡＬＩＡＳ.ｐｒｏｂｅ@ｇｍａｉｌ.ｃｏｍ')).toBe('address:ＡＬＩＡＳ.ｐｒｏｂｅ@ｇｍａｉｌ.ｃｏｍ');
++    expect(screeningRateAccount('Alias.Probé@Gmail.com')).toBe('address:alias.probé@gmail.com');
++  });
++
++  it('reads one iCloud mailbox once under its three domains (the review of 2026-10-27)', () => {
++    for (const spelling of ['alias.probe@icloud.com', 'Alias.Probe@me.com', 'alias.probe+x@mac.com', 'alias.probe@ME.com.']) {
++      expect(screeningRateAccount(spelling), spelling).toBe('address:alias.probe@icloud.com');
++    }
++    expect(screeningRateAccount('aliasprobe@icloud.com')).toBe('address:aliasprobe@icloud.com');
+   });
+ 
+   it('drops a plus tag at every free-mail domain, and keeps the dots where they name another mailbox', () => {
 diff --git a/apps/web/src/lib/screening/rate.ts b/apps/web/src/lib/screening/rate.ts
 index 5c442153..1659380a 100644
 --- a/apps/web/src/lib/screening/rate.ts
@@ -1022,7 +1057,7 @@ index 79c2c94e..adf9b2ea 100644
          logger.error('support-access notice not delivered to every administrator', { job_id: requestId, support_grant_id: row.notice_undelivered, error_code: MAIL_LOG_CODES.noticeUndelivered });
        }
 diff --git a/apps/worker/src/screening/message.test.ts b/apps/worker/src/screening/message.test.ts
-index c4de510d..6cab6f3d 100644
+index c4de510d..d564155f 100644
 --- a/apps/worker/src/screening/message.test.ts
 +++ b/apps/worker/src/screening/message.test.ts
 @@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
@@ -1045,6 +1080,18 @@ index c4de510d..6cab6f3d 100644
    });
  
    it('tells a prospect whose screening took over an earlier request that their details are kept with it, and for how long', () => {
+@@ -80,8 +84,9 @@ describe('the screening result email', () => {
+       expect(text).not.toMatch(/\$|\bcents?\b|\d[\d,.]*\s*dollars?\b/i);
+       expect(text).not.toMatch(/\b20\d{2}-\d{2}-\d{2}\b|\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/);
+     }
+-    // The only numbers are the row count, the 30 days and the 12 months.
+-    expect(body.replace(LINK, '').match(/\d[\d,]*/g)).toEqual(['1,234', '30', '12']);
++    // The only numbers are the row count, the 30 days, the 12 months a request keeps the summary, the 12 months a refused
++    // address's coded form is kept and the 90 days the mail service keeps its address check (the review of 2026-10-27).
++    expect(body.replace(LINK, '').match(/\d[\d,]*/g)).toEqual(['1,234', '30', '12', '12', '90']);
+   });
+ 
+   it('is headed by the lockup without the tagline (D11), with the prospect’s footer, never the customer’s', () => {
 diff --git a/apps/worker/src/screening/wording.ts b/apps/worker/src/screening/wording.ts
 index 5413c48c..49b8f226 100644
 --- a/apps/worker/src/screening/wording.ts
@@ -1116,7 +1163,7 @@ index a9fbbf20..b099543f 100644
  **What proves it.** `apps/web/src/lib/screening/address.test.ts` and `validation.test.ts` (the hints, the DNS
  verdicts, the validation table, the cap, the timeouts and the logs), `routes.db.test.ts` (paused and not ready closing
 diff --git a/docs/adr/0065-send-mail-in-three-ses-streams-record-each-messages-delivery-send-notices-from-an-outbox-and-pause-the-screening-stream-alone.md b/docs/adr/0065-send-mail-in-three-ses-streams-record-each-messages-delivery-send-notices-from-an-outbox-and-pause-the-screening-stream-alone.md
-index 51183c53..3ed8f382 100644
+index 51183c53..6df1f425 100644
 --- a/docs/adr/0065-send-mail-in-three-ses-streams-record-each-messages-delivery-send-notices-from-an-outbox-and-pause-the-screening-stream-alone.md
 +++ b/docs/adr/0065-send-mail-in-three-ses-streams-record-each-messages-delivery-send-notices-from-an-outbox-and-pause-the-screening-stream-alone.md
 @@ -89,17 +89,28 @@ reach the platform through EventBridge and an encrypted SQS queue (4 days, a dea
@@ -1297,7 +1344,24 @@ index 51183c53..3ed8f382 100644
    would hold the lock across SES's call and spare no reputation. Likewise accepted: the consumer's "emailed after
    waiting" reads the web's `received_at` against the database's `resumed_at` (known item (e)); `submit_screening()`
    holds `received_at` to the database's own time, and in staging and production the screening opens only once both
-@@ -298,10 +344,9 @@ SES's global suppression list carries on the screening set, whose suppression is
+@@ -287,9 +333,13 @@ of management events, which CloudTrail does not charge) and the refused validati
+   roll back, so they wait for the new task (none is lost or sent twice); the previous web keeps submitting.
+ - What proves it: `packages/db/src/mail.db.test.ts` (the tables, grants by exact name, the keyed hash, the events'
+   order, the cut-off at its edges and its subtypes, the account signals, the resume and its confirmation, readiness and
+-  probes, the outboxes, dunning, invitations, the console reads, expiry), `screening.db.test.ts` (the refusal order,
+-  the refusal list end to end, the budget, the run's gate, D7's body diff), `hardening.db.test.ts` (the reserved
+-  actions), and the catalog and cross-tenant tests over the two notice tables.
++  probes, the outboxes, dunning, invitations, the console reads, expiry, the canonical rule against TypeScript's on
++  every code point), `screening.db.test.ts` (the refusal order, the refusal list end to end, its +tag and iCloud keys,
++  the budget, the run's gate, D7's body diff), the web's `screening/routes.db.test.ts` (one answer for a listed and an
++  unlisted address on every path that ends without an email) and `routes/mail-routes.db.test.ts` (no resend of a held
++  invitation), the worker's `mail-events.db.test.ts` (missed on every run, re-sent or not; the probe events' log
++  lines), `hardening.db.test.ts` (the reserved actions), and the catalog and cross-tenant tests over the two notice
++  tables.
+ 
+ ## Revisit when
+ 
+@@ -298,10 +348,9 @@ SES's global suppression list carries on the screening set, whose suppression is
  stream is paused in production (read the reason and the counts before resuming, and whether the floors or the budget
  need the founder's ruling again); staging, after phase 2, shows whether Cognito needs a sending-authorization policy,
  that the screening set's empty suppression list both adds nothing to and checks nothing against the account's list,
@@ -1311,6 +1375,101 @@ index 51183c53..3ed8f382 100644
  reminders on the screening stream (they must read the gate and the refusal list, O13); counsel answers on the
  refusal-hash and bounce-budget wording (O4); or the capacity measurement is revisited. The address checks this pull
  request adds (DNS and SES validation, run together after the row checks, at most one 2-second timeout) fall inside the
+diff --git a/docs/product/domain-model.md b/docs/product/domain-model.md
+index 43bce9c4..67b9c275 100644
+--- a/docs/product/domain-model.md
++++ b/docs/product/domain-model.md
+@@ -2,7 +2,7 @@
+ 
+ > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
+ 
+-- Generated at commit `90cfe8b8dc8dabecbde37e6483ddcb58df883325` on branch `co-001/pr-06b-mail-streams` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
++- Generated at commit `9664763b15352d7fa7424e67b4b19db5eee70310` on branch `co-001/pr-06b-mail-streams`, with uncommitted changes to its inputs (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+ - Migrations applied: 45; head `20261107090000_mail_streams.sql`
+ - PostgreSQL 18; schema `public`: 98 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
+ - PHI flag: 47 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 39 organization- or user-scoped tables with RLS forced; 8 global tables
+@@ -6266,9 +6266,10 @@ Invariants enforced by triggers:
+ | 9 | `resumed_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
+ | 10 | `ses_enabled_confirmed_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
+ | 11 | `probe_sent_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
+-| 12 | `probe_delivered_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
+-| 13 | `probe_bounced_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
+-| 14 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261107090000` |  |
++| 12 | `first_probe_sent_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
++| 13 | `probe_delivered_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
++| 14 | `probe_bounced_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
++| 15 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261107090000` |  |
+ 
+ Keys:
+ - Primary: (stream)
+@@ -6951,7 +6952,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
+ | `console_register_marketing_campaign(text,text)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `77e5b8145f5d7a10` |
+ | `console_release_runs()` | `TABLE(release_no integer, practice_id uuid, name text, runs bigint, runs_in_effect bigint, reruns bigint, reruns_accepted bigint, changed_lines bigint)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes | `adc1da81e4e077a8` |
+ | `console_restore_drills(integer)` | `TABLE(started_at timestamp with time zone, completed_at timestamp with time zone, duration_ms bigint, outcome text, catalog_problems integer, error_code text)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `399a93a1a8318075` |
+-| `console_resume_mail_stream(text,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `aa7deca1804d4ed7` |
++| `console_resume_mail_stream(text,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `f2458e37f39a9b9d` |
+ | `console_set_practice_location(uuid,text,text)` | `text` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes | `7958eb1f42b77e10` |
+ | `console_set_practice_settings(uuid,text,jsonb)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes | `16e2b183396953b5` |
+ | `console_support_grants()` | `TABLE(support_grant_id uuid, practice_id uuid, user_id uuid, ticket text, reason text, created_at timestamp with time zone, expires_at timestamp with time zone, notified_at timestamp with time zone, reads bigint, opened_recipients integer, opened_delivered integer, opened_undelivered integer, opened_pending integer, opened_sent_at timestamp with time zone, closed_recipients integer, closed_delivered integer, closed_undelivered integer, closed_pending integer, closed_sent_at timestamp with time zone)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `02d24b3bf405477f` |
+@@ -6999,8 +7000,8 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
+ | `line_status_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `6d34625159838cf3` |
+ | `locality_status(integer,text,text,date,date)` | `TABLE(status text, carrier text, locality text)` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `93f19de141f69e25` |
+ | `ma_dispute_route_confirmed()` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `b7b976b0230f8b43` |
+-| `mail_recipient_canonical(text)` | `text` | plpgsql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` |  |  | `3cd5ce229f5df323` |
+-| `mail_recipient_sha256(text)` | `text` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `fe2c4d71acd96c24` |
++| `mail_recipient_canonical(text,boolean)` | `text` | plpgsql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` |  |  | `72aaa3efc513682c` |
++| `mail_recipient_sha256(text,boolean)` | `text` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `f0116bf504ae08aa` |
+ | `mail_send_expiry()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `3cd6d13742c65cc1` |
+ | `mail_state_rank(text)` | `integer` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` |  |  | `72f7fbe980da4163` |
+ | `mail_stream_cutoff(text)` | `text` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `fe3e57d4187593b9` |
+@@ -7033,11 +7034,11 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
+ | `operator_mail_account_signal(text,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `2684abb0a6c123b1` |
+ | `operator_mail_cutoff(text)` | `text` | sql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `aec6c3e8b9262b47` |
+ | `operator_mail_expire(integer)` | `integer` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `faa298581d4c5479` |
+-| `operator_mail_probe_sent(text)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `eb2b3b2faa1ff637` |
++| `operator_mail_probe_sent(text)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `1d712c911dfd58cf` |
+ | `operator_mail_stream_confirmed(text,boolean)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `58a4b66cc84c84e4` |
+-| `operator_mail_streams()` | `TABLE(stream text, paused boolean, confirmed boolean, probe_due boolean, probe_missed boolean)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `bd8730bedcaddfb4` |
++| `operator_mail_streams()` | `TABLE(stream text, paused boolean, confirmed boolean, probe_due boolean, probe_missed boolean)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `2fcf2f8b70481744` |
+ | `operator_open_support_notice(uuid,text,text)` | `TABLE(notice_id uuid, recipients integer, opened boolean)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `dbbd884fcd0805f7` |
+-| `operator_record_mail_event(text,text,text,timestamp with time zone,timestamp with time zone,text,text,uuid,uuid,uuid,text,text,text,text)` | `TABLE(recorded boolean, state text, notice_undelivered uuid, invoice_undelivered uuid, invitation_undelivered uuid, stream_paused text)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `eda27a15443050cf` |
++| `operator_record_mail_event(text,text,text,timestamp with time zone,timestamp with time zone,text,text,uuid,uuid,uuid,text,text,text,text)` | `TABLE(recorded boolean, state text, notice_undelivered uuid, invoice_undelivered uuid, invitation_undelivered uuid, stream_paused text)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `3c175325fc14b48c` |
+ | `operator_record_support_mail(text,text,text,text,text,text)` | `TABLE(outcome text, ticket_number bigint)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `2903a95e22531e32` |
+ | `operator_screening_claim(uuid)` | `TABLE(release_no integer, release_manifest_sha256 text, release_available boolean, zip text, zip_plus_four text, settings jsonb, as_of date, row_count integer, attempt integer)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator, tp_screening |  | `a35a25f1df1aa1c8` |
+ | `operator_screening_complete(uuid,text,text,text,text,integer)` | `TABLE(contact_email text, row_count integer, kept_with text, received_at timestamp with time zone, wait_reason text)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator, tp_screening |  | `8220d43ccceb8bb4` |
+@@ -7169,7 +7170,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
+ | `rule_release_withdrawal_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `c0f7ed15484f7fd1` |
+ | `screening_band_days(text)` | `daterange` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `f912bb8d6e15fdd1` |
+ | `screening_bounce_budget_spent(text,text)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `3de7fd3276da7f3f` |
+-| `screening_contact_refused(text)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `276bb32fa4777583` |
++| `screening_contact_refused(text)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `656ff76ac5546175` |
+ | `screening_count_band(bigint)` | `text` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `3c43fb92e0243276` |
+ | `screening_difference_band(bigint)` | `text` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `02bf48b2aefc21ae` |
+ | `screening_freeze_lead(uuid,uuid,text,boolean,text)` | `uuid` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `0621e0dd445907d7` |
+@@ -7207,7 +7208,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
+ | `screening_run_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `f15d5e31592d5d9e` |
+ | `screening_standing(bigint,bigint,bigint,bigint)` | `text` | sql | invoker | immutable |  |  |  | `d8feb37d697d3992` |
+ | `screening_status()` | `TABLE(release_no integer, place_of_service_split_id uuid)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `00660ad1e09bf1da` |
+-| `screening_submit_mail_refusal(text,text,text)` | `text` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `eadbe9312658ab5d` |
++| `screening_submit_mail_refusal(text,text)` | `text` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `68638b412b4b2db0` |
+ | `screening_upload_mail_gate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `4bfa2e936ef0a8bb` |
+ | `screening_wait(uuid)` | `TABLE(queue_priority smallint, wait_reason text, pricing integer, queued_ahead integer)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `8b60abe3ed17d2aa` |
+ | `screening_wait_limits()` | `TABLE(account_rows integer, daily_rows integer)` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` |  |  | `9366f730bda41f40` |
+@@ -7312,7 +7313,7 @@ Every migration applied to the database, from `schema_migrations`, with the SHA-
+ | 42 | `20261104090000_free_screening.sql` | ADR 0062 | `8bc938ac54150a7d1d93255acb4610851b3d2bd85f37d6b7a521a6ed950b0a43` |
+ | 43 | `20261105090000_pricing_location_and_zip_plus_four.sql` | ADR 0013, ADR 0017, ADR 0039, ADR 0040, ADR 0062, ADR 0064 | `2182a581fe94dde7667ef5561c12c8e78969c6c4bbbe3a406aff525edd9dc293` |
+ | 44 | `20261106090000_screening_consumer.sql` | ADR 0014, ADR 0019, ADR 0049, ADR 0062 | `d6e449698132fa47d2f89ce7e27a96111efa27b1a258cde899576754f44e26b0` |
+-| 45 | `20261107090000_mail_streams.sql` | ADR 0065 | `ce6f2df5928cd3070514a7c9514ffcd62a0a5e53e62e0cb3dca5a7be40de33e1` |
++| 45 | `20261107090000_mail_streams.sql` | ADR 0065 | `744437897a65a3f88c415c637184c02906427228746434cdc3c38d98cec2f3d1` |
+ 
+ ## Cross-checks
+ 
+@@ -7330,4 +7331,4 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
+ 
+ This document describes the schema at migration head `20261107090000_mail_streams.sql` (45 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1 and C5. It does not decide C2, C3 and C4, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
+ 
+-Approved by: ________  Date: ________  Document SHA-256: `8ea57066f1a9aa50b5f54c15748ee1d46b3f89ec6681c206db0d86c21674894f`
++Approved by: ________  Date: ________  Document SHA-256: `b23fed0ec4fa9658a7751af0b6e58974acc64996343f8ae683d2149b495d2518`
 diff --git a/docs/product/legal-surfaces.md b/docs/product/legal-surfaces.md
 index e1731ff9..eea8d43d 100644
 --- a/docs/product/legal-surfaces.md
@@ -1330,6 +1489,39 @@ index e1731ff9..eea8d43d 100644
  | `screening-kept-sent` | The "sent" alert after an upload: the same | `apps/web/src/app/screening/page.tsx` | Counsel (with decisions 7 and 17) | The screening opens, and any production deploy |
  | `screening-kept-convert` | The result page's request form: the summary the request keeps for 12 months, or, when the summary is already kept with an earlier request of the practice, that the new request has none of its own | `apps/web/src/components/screening/convert-form.tsx` | Counsel (with decisions 10 and 17) | The screening opens, and any production deploy |
  | `screening-mail-paused` | The screening page while its mail stream is paused (audit #76; the founder's Q12 of 2026-10-21, the recommended wording): new screenings are paused, the screenings uploaded before the pause are kept and emailed when sending resumes if that is within 30 days of their upload, and result links already sent still work | `apps/web/src/app/screening/page.tsx` | Counsel (with the founder's Q12 of 2026-10-21) | The screening opens, and any production deploy |
+diff --git a/docs/product/test-matrix.md b/docs/product/test-matrix.md
+index e75b1f18..6f07c0f7 100644
+--- a/docs/product/test-matrix.md
++++ b/docs/product/test-matrix.md
+@@ -176,8 +176,8 @@ LED-14 to LED-18 were added by PR 15b under the founder's adoption of the combin
+ | SEC-14 | Fixture with a non-synthetic sender | Hook refuses the write |
+ | SEC-15 | Session idle past 30 minutes on a PHI screen | Expired |
+ | SEC-17 | Screening tables hold no PHI-shaped columns | Catalog read finds no name, birth date, member ID, service date or claim number column, no practice_id and no registry row; owner-only policy, no other role's privilege |
+-| SEC-18 | No screening address outlives its screening but as a keyed hash (audit #76; the founder's Q10 (a) and Q11 (b) of 2026-10-21) | The screening's SES set uses no suppression list, so SES keeps no screening address and no screening outcome silences a customer's mail; the mail record holds no address and no hash of one; the only values derived from a screening address kept past its prospect are the refusal list's keyed hash of the mailbox an address reaches (its every spelling: case, white space, a +tag, Gmail's dots, googlemail.com) that bounced permanently or was reported as spam on the screening stream, for 365 days, and the bounce budget's 7-day marks of the rate limiter's keyed subjects; the keyed hash differs from a plain SHA-256 of the address and changes with its pepper, which no role reads, and a scan of every text column after the mail scenarios finds it only on the refusal list; no address or domain appears in a log line, job payload, SES tag, audit event or error; no login role has a grant on the mail tables or may call the keyed hash; the application role may not write notice_undelivered, mail_stream_paused or mail_stream_resumed (42501) |
+-| SEC-19 | A break-glass notice, or an invitation, that reaches no one (audit #76) | A support-access notice goes one message per current practice administrator, from recipient rows recorded before any send, each sent in its own transaction with its message ID kept and retried only to pending recipients after 1, 5, 15 and 60 minutes, so no administrator gets two (a send that throws is sent again to that administrator alone); the first accepted send writes notice_sent, and each recipient's delivery is recorded by message ID in either order; a notice not delivered to every administrator writes notice_undelivered once, notifies each administrator in the app (which notice, linked to its grant, with no figure and no address), reads not delivered to n of m administrators on the grant's page and on the console's support list, and logs NOTICE_UNDELIVERED, which pages the operator; a notice with no administrator writes notice_undelivered, never notice_sent, and logs NOTICE_UNDELIVERABLE; dunning goes the same way, its undelivered stage reported once on the invoice; a message SES accepted and never sent, its administrator on the account's suppression list for an earlier bounce or complaint, reads not delivered, never delivered; an invitation whose latest message bounced, was suppressed, rejected or reported reads not delivered on the users page, and the late bounce of a message a resend replaced flags nothing |
++| SEC-18 | No screening address outlives its screening but as a keyed hash (audit #76; the founder's Q10 (a) and Q11 (b) of 2026-10-21) | The screening's SES set uses no suppression list, so SES keeps no screening address and no screening outcome silences a customer's mail; the mail record holds no address and no hash of one; the only values derived from a screening address kept past its prospect are the refusal list's keyed hash of the mailbox an address reaches (its every spelling: ASCII case and white space, a +tag, Gmail's dots, googlemail.com, and me.com and mac.com for icloud.com; an address with any other character as read) that was reported as spam, or of the address with its +tag kept that bounced permanently, on the screening stream, for 365 days, and the bounce budget's 7-day marks of the rate limiter's keyed subjects; the keyed hash differs from a plain SHA-256 of the address and changes with its pepper, which no role reads, and a scan of every text column after the mail scenarios finds it only on the refusal list; no address or domain appears in a log line, job payload, SES tag, audit event or error; no login role has a grant on the mail tables or may call the keyed hash; the application role may not write notice_undelivered, mail_stream_paused or mail_stream_resumed (42501) |
++| SEC-19 | A break-glass notice, or an invitation, that reaches no one (audit #76) | A support-access notice goes one message per current practice administrator, from recipient rows recorded before any send, each sent in its own transaction with its message ID kept and retried only to pending recipients after 1, 5, 15 and 60 minutes, so no administrator gets two (a send that throws is sent again to that administrator alone); the first accepted send writes notice_sent, and each recipient's delivery is recorded by message ID in either order; a notice not delivered to every administrator writes notice_undelivered once, notifies each administrator in the app (which notice, linked to its grant, with no figure and no address), reads not delivered to n of m administrators on the grant's page and on the console's support list, and logs NOTICE_UNDELIVERED, which pages the operator; a notice with no administrator writes notice_undelivered, never notice_sent, and logs NOTICE_UNDELIVERABLE; dunning goes the same way, its undelivered stage reported once on the invoice; a message SES accepted and never sent, its administrator on the account's suppression list for an earlier bounce or complaint, reads not delivered, never delivered; an invitation whose latest message bounced, was suppressed, rejected or reported reads not delivered on the users page, one SES held back with its suppression list or reported as spam offering no resend (a resend posted anyway is refused) and naming PaidWhole's support, which releases the address, and the late bounce of a message a resend replaced flags nothing |
+ 
+ ## Free screening (SCR)
+ 
+@@ -206,7 +206,7 @@ Added by Change Order 001 (CO-04, CO-09) in its pull request 6; SCR-07 by the fo
+ | SCR-19 | A screening whose consumer died | A run cut off while pricing (the consumer killed after a recorded batch, or a thread out of memory, its failure logged by code) is claimed again and emailed within about 3 minutes (about 15 for a job queued before the consumer first started, which carries no heartbeat), its recorded batches kept and only its pending rows priced, at most three attempts: the job's 60-second heartbeat set on the existing queue and on every send, a run stale after 2 minutes without progress, and the sweep sending due runs again at their priority |
+ | SCR-20 | Production's screening opens only for the deployed tag's binding capacity report, measured and attested by its release, that passes (decision 13) | The CDK app computes the launch value at synthesis from the report and the attestation bundle the deploy names, with the launch check, only for the tag's binding report that release.yml measured on the tag and attested in that run (GitHub's artifact attestation, verified by gh attestation verify against the bundle as signed by this repository's release.yml at refs/tags/<tag>, at the tag's commit, on a GitHub-hosted runner, then read again field by field: the report's SHA-256, the signer, the ref, the commit, the runner, the event and the run the report records; the report's recorded GITHUB_WORKFLOW_REF the tag's release.yml, its run and attempt named in the note; a report measured anywhere else, attested by another workflow, ref or repository, or edited after it was signed, refused, naming why) from the Docker runtime that passes with time enforced, as recorded and as read again in binding mode (every scenario but S4's three runs judged on time whatever repetition it records; an advisory report, a pull request's, refused whatever its verdict, the mode named), measured at the tag's commit, on both images by config digest as ECR holds them for the stack's repositories (each manifest read from the registry, an index resolved to its linux/amd64 manifest, nothing pulled, whatever the deployer's image store; a registry not read, a platform manifest not found, no linux/amd64 manifest or an unexpected media type named) and with every size production declares (the web, the platform, each consumer task and their number, Postgres, the storage and the consumer's concurrency), on the layout the release's runner gives, the free 4-CPU runner's shared CPUs (CPUs of their own refused until a release measures on 8 CPUs); anything else stops the synthesis, naming decision 13 and each reason; no report keeps the screening closed; a value set by hand is refused (context of any spelling, and no ScreeningLaunch parameter is declared); a rule refuses a deploy whose image tag is not the report's; the consumer runs whenever a launch value is set, so no deploy opens the screening without it; the web keeps production closed unless the value names the image tag it runs; staging and development are not gated |
+ | SCR-21 | The screening stream's cut-off (audit #76; the founder's Q9 of 2026-10-21) | In a 7-day window since the last resume, the screening stream pauses when its permanent bounces pass 3% of its sends with a floor of 200 (6 of 150 leave it open, 7 pause it; 30 of 1,000 open, 31 pause) or its complaints other than not_spam pass 0.08% with a floor of 2,500 (2 open and 3 pause at low volume; 8 of 10,000 open, 9 pause), a bounce from SES's global suppression list counted as SES counts it, and a message the account's own suppression list held back (its bounce or its complaint of that subtype), a transient or undetermined bounce, a probe and a send before the window never counted; the cut-off is read at each screening bounce or complaint and once each mail_events run, so a window that shrinks past the line pauses it too; it also pauses when the account's bounce or complaint rate reaches its warning alarm (2.5%, 0.05%) or SES puts the account under review; each pause writes one mail_stream_paused, a repeat changes nothing, and MAIL_STREAM_PAUSED pages the operator; the platform disables the screening's SES set alone, and disables it again whenever it reads it enabled while paused; the transactional and notices streams never pause (a CHECK refuses it, and all their mail bouncing leaves them open) and their notices still go; while paused the page says new screenings are paused and that uploads already made are kept, a submission is refused (screening_paused), and a queued run is neither claimed, completed nor failed but kept; only a platform administrator resumes it, in the console with a reason (mail_stream_resumed); a resumed stream claims nothing until the platform reads its set enabled and confirms it, and in staging and production the screening opens again only with a delivered and a bounced probe of the stream since the resume and within 48 hours |
+-| SCR-22 | The address a screening's result is sent to (audit #76; the founder's Q1 (g), Q10 (a), Q11 (b) and Q12 of 2026-10-21) | The form hints at a likely typo of a large mail provider's domain (gmial.com, yaho.com, outlok.com, hotmal.com) and warns of an ending no top-level domain uses, in the browser and again on the server, and the prospect may keep the address as typed; only after the upload's own checks, the rate limit and the database's refusals for the mail (closed, paused, the bounce budget, then the refusal list, which spend no validation), the server asks DNS whether the domain takes mail (no such domain, a null MX, or neither an MX nor an address refuses; a timeout or a failure accepts) and SES whether the mailbox exists (a LOW validity, syntax, DNS or mailbox verdict refuses, a MEDIUM validity or mailbox warns, an error or a timeout accepts), the two together, so the added worst case is one 2-second timeout, and SES no more than the day's cap (1,000 in production, 50 in staging; past it the DNS check alone, MAIL_VALIDATION_CAP_REACHED logged and alarmed); an address on the refusal list (a screening permanent bounce, a global suppression list's bounce among them, or abuse complaint in the last 365 days, matched by the mailbox it reaches: trimmed, in any case, its +tag dropped, and at Gmail its dots and googlemail.com) is refused, while a customer stream's bounce or complaint, a transient bounce, the account's own suppression and a not_spam complaint put nothing on it; every refused address, whatever refused it, gets the same one sentence, which says nothing about an earlier screening or a customer's mail; a client or an email account with 3 screening permanent bounces in 7 days is refused (screening_bounce_budget), before and whatever the address, so it learns nothing of the refusal list, and the stream stays open; no log line names the address or its domain |
++| SCR-22 | The address a screening's result is sent to (audit #76; the founder's Q1 (g), Q10 (a), Q11 (b) and Q12 of 2026-10-21) | The form hints at a likely typo of a large mail provider's domain (gmial.com, yaho.com, outlok.com, hotmal.com) and warns of an ending no top-level domain uses, in the browser and again on the server, and the prospect may keep the address as typed; only after the upload's own checks, the rate limit and the database's refusals for the submitter (closed, paused, the bounce budget, which spend no validation), the server asks DNS whether the domain takes mail (no such domain, a null MX, or neither an MX nor an address refuses; a timeout or a failure accepts) and SES whether the mailbox exists (a LOW validity, syntax, DNS or mailbox verdict refuses, a MEDIUM validity or mailbox warns, an error or a timeout accepts), the two together, so the added worst case is one 2-second timeout, and SES no more than the day's cap (1,000 in production, 50 in staging; past it the DNS check alone, MAIL_VALIDATION_CAP_REACHED logged and alarmed); an address on the refusal list (a screening permanent bounce, a global suppression list's bounce among them, matched by the address with its +tag kept, or abuse complaint, matched by the mailbox it reaches, in the last 365 days: trimmed, in any case, at Gmail its dots, its +tag and googlemail.com, and at Apple me.com and mac.com) is refused only after those checks and submit_screening()'s own, so a listed address gets the same answer as any other on every path that ends without an email (a ZIP the release cannot price, a mailbox SES cannot confirm), and a bounce of a +tag spelling refuses that spelling alone, while a customer stream's bounce or complaint, a transient bounce, the account's own suppression and a not_spam complaint put nothing on it; every refused address, whatever refused it, gets the same one sentence, which says nothing about an earlier screening or a customer's mail; a client or an email account with 3 screening permanent bounces in 7 days is refused (screening_bounce_budget), before and whatever the address, so it learns nothing of the refusal list, and the stream stays open; no log line names the address or its domain |
+ 
+ ## Jobs and monitoring (JOB)
+ 
+@@ -216,7 +216,7 @@ Added by Change Order 001 (CO-04, CO-09) in its pull request 6; SCR-07 by the fo
+ | JOB-02 | Three failures | Alert raised; dashboard shows last run failed |
+ | JOB-03 | Digest | Counts and totals only; no PHI column referenced |
+ | JOB-04 | Two heartbeats missed | Alarm |
+-| JOB-05 | A mail event delivered twice, late or out of order (audit #76) | The platform's mail_events job records each SES event once per message and event, in any order (a bounce before its send makes the message's row with SES's own send time; a delay after a delivery and a delivery after a complaint change nothing), and deletes it from the queue only after its record commits; an unreadable event is left on the queue and reaches the dead-letter queue, which alarms, as does a queue whose oldest event is 15 minutes old; the queue admits only the stack's two rules and is encrypted with the environment's key; each stream is probed at SES's simulator alone, at once after a resume and never while paused, unconfirmed or before the identities are verified, and a probe not back in 26 hours logs MAIL_PROBE_MISSED |
++| JOB-05 | A mail event delivered twice, late or out of order (audit #76) | The platform's mail_events job records each SES event once per message and event, in any order (a bounce before its send makes the message's row with SES's own send time; a delay after a delivery and a delivery after a complaint change nothing), and deletes it from the queue only after its record commits; an unreadable event is left on the queue and reaches the dead-letter queue, which alarms, as does a queue whose oldest event is 15 minutes old; the queue admits only the stack's two rules and is encrypted with the environment's key; each stream is probed at SES's simulator alone, at once after a resume, daily, and hourly while missed, never while paused, unconfirmed or before the identities are verified; a stream whose probes are not back logs MAIL_PROBE_MISSED on every run until both are, 26 hours after the older of its proofs since the last resume or an hour after the first probe sent since then, however often it goes again; and each probe event recorded is logged by its message ID and codes, no address |
+ 
+ ## Model gateway (MOD)
+ 
 diff --git a/docs/runbooks/deliverability.md b/docs/runbooks/deliverability.md
 index 3af8b38a..01f2998d 100644
 --- a/docs/runbooks/deliverability.md
@@ -1563,6 +1755,249 @@ index 0b5cfe2d..9eef59ee 100644
      expect(missed - daily).toBe(2);
      expect(missed * 3600 + MAIL_PLATFORM_ALARM_PERIOD_SECONDS).toBeLessThan(ready * 3600);
      expect(ready - missed).toBe(22);
+diff --git a/packages/db/functions/console_resume_mail_stream.sql b/packages/db/functions/console_resume_mail_stream.sql
+index d3c86d2d..2c2fb6c9 100644
+--- a/packages/db/functions/console_resume_mail_stream.sql
++++ b/packages/db/functions/console_resume_mail_stream.sql
+@@ -2,7 +2,7 @@
+ -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
+ 
+ -- console_resume_mail_stream(text,text)
+--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: aa7deca1804d4ed7
++-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: f2458e37f39a9b9d
+ -- Trigger function of: (none)
+ -- Called by policy: (none)
+ CREATE OR REPLACE FUNCTION public.console_resume_mail_stream(stream text, reason text)
+@@ -21,7 +21,7 @@ BEGIN
+   END IF;
+   UPDATE mail_stream s
+      SET paused_at = NULL, paused_reason = NULL, paused_by = NULL, pause_sends = NULL, pause_bounces = NULL, pause_complaints = NULL,
+-         window_starts_at = now(), resumed_at = now(), probe_sent_at = NULL, ses_enabled_confirmed_at = NULL
++         window_starts_at = now(), resumed_at = now(), probe_sent_at = NULL, first_probe_sent_at = NULL, ses_enabled_confirmed_at = NULL
+    WHERE s.stream = stream AND s.paused_at IS NOT NULL;
+   IF NOT FOUND THEN
+     RETURN false;
+diff --git a/packages/db/functions/mail_recipient_canonical.sql b/packages/db/functions/mail_recipient_canonical.sql
+index 50babacd..58080f42 100644
+--- a/packages/db/functions/mail_recipient_canonical.sql
++++ b/packages/db/functions/mail_recipient_canonical.sql
+@@ -1,24 +1,28 @@
+ -- Written by `pnpm db:domain-model --out` from a freshly migrated database (docs/adr/0068).
+ -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
+ 
+--- mail_recipient_canonical(text)
+--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 3cd5ce229f5df323
++-- mail_recipient_canonical(text,boolean)
++-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 72aaa3efc513682c
+ -- Trigger function of: (none)
+ -- Called by policy: (none)
+-CREATE OR REPLACE FUNCTION public.mail_recipient_canonical(address text)
++CREATE OR REPLACE FUNCTION public.mail_recipient_canonical(address text, keep_tag boolean DEFAULT false)
+  RETURNS text
+  LANGUAGE plpgsql
+  IMMUTABLE
+  SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+ AS $function$
+ DECLARE
+-  as_read text := lower(btrim(normalize(coalesce(address, ''), NFKC), E' \t\n\r\f' || chr(11)) COLLATE "C");
+-  -- The last @, counted from the end.
+-  last_at integer := strpos(reverse(as_read), '@');
++  as_read text := lower(btrim(coalesce(address, ''), E' \t\n\r\f' || chr(11)) COLLATE "C");
++  last_at integer;
+   local_part text;
+   domain_part text;
+   mailbox_part text;
+ BEGIN
++  IF as_read ~ '[^\x01-\x7F]' THEN
++    RETURN as_read;
++  END IF;
++  -- The last @, counted from the end.
++  last_at := strpos(reverse(as_read), '@');
+   IF last_at = 0 THEN
+     RETURN as_read;
+   END IF;
+@@ -29,13 +33,15 @@ BEGIN
+   END IF;
+   IF domain_part = 'googlemail.com' THEN
+     domain_part := 'gmail.com';
++  ELSIF domain_part IN ('me.com', 'mac.com') THEN
++    domain_part := 'icloud.com';
+   END IF;
+-  mailbox_part := split_part(local_part, '+', 1);
++  mailbox_part := CASE WHEN keep_tag AND domain_part <> 'gmail.com' THEN local_part ELSE split_part(local_part, '+', 1) END;
+   IF domain_part = 'gmail.com' THEN
+     mailbox_part := replace(mailbox_part, '.', '');
+   END IF;
+   RETURN CASE WHEN mailbox_part = '' THEN local_part ELSE mailbox_part END || '@' || domain_part;
+ END;
+ $function$;
+-ALTER FUNCTION public.mail_recipient_canonical(text) OWNER TO tp_owner;
+-REVOKE ALL ON FUNCTION public.mail_recipient_canonical(text) FROM PUBLIC;
++ALTER FUNCTION public.mail_recipient_canonical(text,boolean) OWNER TO tp_owner;
++REVOKE ALL ON FUNCTION public.mail_recipient_canonical(text,boolean) FROM PUBLIC;
+diff --git a/packages/db/functions/mail_recipient_sha256.sql b/packages/db/functions/mail_recipient_sha256.sql
+index 4af42275..334d4a9f 100644
+--- a/packages/db/functions/mail_recipient_sha256.sql
++++ b/packages/db/functions/mail_recipient_sha256.sql
+@@ -1,17 +1,17 @@
+ -- Written by `pnpm db:domain-model --out` from a freshly migrated database (docs/adr/0068).
+ -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
+ 
+--- mail_recipient_sha256(text)
+--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: fe2c4d71acd96c24
++-- mail_recipient_sha256(text,boolean)
++-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: f0116bf504ae08aa
+ -- Trigger function of: (none)
+ -- Called by policy: (none)
+-CREATE OR REPLACE FUNCTION public.mail_recipient_sha256(address text)
++CREATE OR REPLACE FUNCTION public.mail_recipient_sha256(address text, keep_tag boolean DEFAULT false)
+  RETURNS text
+  LANGUAGE sql
+  STABLE
+  SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+ AS $function$
+-  SELECT encode(sha256(decode(k.pepper, 'hex') || convert_to(mail_recipient_canonical(address), 'UTF8')), 'hex') FROM mail_recipient_key k
++  SELECT encode(sha256(decode(k.pepper, 'hex') || convert_to(mail_recipient_canonical(address, keep_tag), 'UTF8')), 'hex') FROM mail_recipient_key k
+ $function$;
+-ALTER FUNCTION public.mail_recipient_sha256(text) OWNER TO tp_owner;
+-REVOKE ALL ON FUNCTION public.mail_recipient_sha256(text) FROM PUBLIC;
++ALTER FUNCTION public.mail_recipient_sha256(text,boolean) OWNER TO tp_owner;
++REVOKE ALL ON FUNCTION public.mail_recipient_sha256(text,boolean) FROM PUBLIC;
+diff --git a/packages/db/functions/operator_mail_probe_sent.sql b/packages/db/functions/operator_mail_probe_sent.sql
+index a6e1a73f..8363e01b 100644
+--- a/packages/db/functions/operator_mail_probe_sent.sql
++++ b/packages/db/functions/operator_mail_probe_sent.sql
+@@ -2,7 +2,7 @@
+ -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
+ 
+ -- operator_mail_probe_sent(text)
+--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: eb2b3b2faa1ff637
++-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 1d712c911dfd58cf
+ -- Trigger function of: (none)
+ -- Called by policy: (none)
+ CREATE OR REPLACE FUNCTION public.operator_mail_probe_sent(stream text)
+@@ -16,7 +16,7 @@ BEGIN
+   IF stream IS NULL OR stream NOT IN ('transactional', 'notices', 'screening') THEN
+     RAISE EXCEPTION 'unknown mail stream' USING ERRCODE = 'check_violation', CONSTRAINT = 'mail_stream_name';
+   END IF;
+-  UPDATE mail_stream s SET probe_sent_at = now() WHERE s.stream = stream;
++  UPDATE mail_stream s SET probe_sent_at = now(), first_probe_sent_at = coalesce(s.first_probe_sent_at, now()) WHERE s.stream = stream;
+ END;
+ $function$;
+ ALTER FUNCTION public.operator_mail_probe_sent(text) OWNER TO tp_owner;
+diff --git a/packages/db/functions/operator_mail_streams.sql b/packages/db/functions/operator_mail_streams.sql
+index 1f877781..23662f6e 100644
+--- a/packages/db/functions/operator_mail_streams.sql
++++ b/packages/db/functions/operator_mail_streams.sql
+@@ -2,7 +2,7 @@
+ -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
+ 
+ -- operator_mail_streams()
+--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: bd8730bedcaddfb4
++-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 2fcf2f8b70481744
+ -- Trigger function of: (none)
+ -- Called by policy: (none)
+ CREATE OR REPLACE FUNCTION public.operator_mail_streams()
+@@ -15,13 +15,15 @@ AS $function$
+          s.paused_at IS NULL AND s.ses_enabled_confirmed_at IS NOT NULL
+            AND (s.probe_sent_at IS NULL
+                 OR (NOT o.outstanding AND s.probe_sent_at <= now() - interval '24 hours')
+-                OR (o.outstanding AND s.probe_sent_at <= now() - interval '26 hours')),
+-         s.paused_at IS NULL AND s.ses_enabled_confirmed_at IS NOT NULL AND coalesce(p.proved_at <= now() - interval '26 hours', false)
++                OR (m.missed AND s.probe_sent_at <= now() - interval '1 hour')),
++         s.paused_at IS NULL AND s.ses_enabled_confirmed_at IS NOT NULL AND m.missed
+     FROM mail_stream s,
+          LATERAL (SELECT s.probe_sent_at IS NOT NULL
+                          AND (coalesce(s.probe_delivered_at < s.probe_sent_at, true) OR coalesce(s.probe_bounced_at < s.probe_sent_at, true)) AS outstanding) o,
+-         LATERAL (SELECT least(CASE WHEN s.probe_delivered_at >= coalesce(s.resumed_at, '-infinity') THEN s.probe_delivered_at ELSE s.probe_sent_at END,
+-                               CASE WHEN s.probe_bounced_at >= coalesce(s.resumed_at, '-infinity') THEN s.probe_bounced_at ELSE s.probe_sent_at END) AS proved_at) p
++         LATERAL (SELECT CASE WHEN s.probe_delivered_at >= coalesce(s.resumed_at, '-infinity') THEN s.probe_delivered_at END AS delivered,
++                         CASE WHEN s.probe_bounced_at >= coalesce(s.resumed_at, '-infinity') THEN s.probe_bounced_at END AS bounced) p,
++         LATERAL (SELECT coalesce(CASE WHEN p.delivered IS NOT NULL AND p.bounced IS NOT NULL THEN least(p.delivered, p.bounced) <= now() - interval '26 hours'
++                                       ELSE s.first_probe_sent_at <= now() - interval '1 hour' END, false) AS missed) m
+    ORDER BY s.stream
+ $function$;
+ ALTER FUNCTION public.operator_mail_streams() OWNER TO tp_owner;
+diff --git a/packages/db/functions/operator_record_mail_event.sql b/packages/db/functions/operator_record_mail_event.sql
+index 88ded900..4c62c92e 100644
+--- a/packages/db/functions/operator_record_mail_event.sql
++++ b/packages/db/functions/operator_record_mail_event.sql
+@@ -2,7 +2,7 @@
+ -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
+ 
+ -- operator_record_mail_event(text,text,text,timestamp with time zone,timestamp with time zone,text,text,uuid,uuid,uuid,text,text,text,text)
+--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: eda27a15443050cf
++-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 3c175325fc14b48c
+ -- Trigger function of: (none)
+ -- Called by policy: (none)
+ CREATE OR REPLACE FUNCTION public.operator_record_mail_event(message_id text, stream text, event text, mail_at timestamp with time zone, event_at timestamp with time zone, recipient text, kind text, subject uuid, recipient_user uuid, practice uuid, bounce_kind text, bounce_subtype text, complaint_type text, request text)
+@@ -152,7 +152,7 @@ BEGIN
+      AND ((held.state = 'bounced' AND held.bounce_kind = 'permanent') OR (held.state = 'complained' AND held.complaint_type <> 'not_spam')) THEN
+     IF recipient IS NOT NULL AND btrim(recipient) <> '' THEN
+       INSERT INTO screening_mail_refusal (recipient_sha256, reason, recorded_at, expires_at)
+-      VALUES (mail_recipient_sha256(recipient), CASE WHEN held.state = 'bounced' THEN 'bounced' ELSE 'complained' END, now(), now() + interval '365 days')
++      VALUES (mail_recipient_sha256(recipient, held.state = 'bounced'), CASE WHEN held.state = 'bounced' THEN 'bounced' ELSE 'complained' END, now(), now() + interval '365 days')
+       ON CONFLICT (recipient_sha256) DO UPDATE SET reason = EXCLUDED.reason, recorded_at = EXCLUDED.recorded_at, expires_at = EXCLUDED.expires_at;
+     END IF;
+     IF held.state = 'bounced' AND priced.id IS NOT NULL THEN
+diff --git a/packages/db/functions/screening_contact_refused.sql b/packages/db/functions/screening_contact_refused.sql
+index d4c3e27c..1836e97c 100644
+--- a/packages/db/functions/screening_contact_refused.sql
++++ b/packages/db/functions/screening_contact_refused.sql
+@@ -2,7 +2,7 @@
+ -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
+ 
+ -- screening_contact_refused(text)
+--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 276bb32fa4777583
++-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 656ff76ac5546175
+ -- Trigger function of: (none)
+ -- Called by policy: (none)
+ CREATE OR REPLACE FUNCTION public.screening_contact_refused(address text)
+@@ -11,7 +11,9 @@ CREATE OR REPLACE FUNCTION public.screening_contact_refused(address text)
+  STABLE
+  SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+ AS $function$
+-  SELECT EXISTS (SELECT 1 FROM screening_mail_refusal f WHERE f.recipient_sha256 = mail_recipient_sha256($1) AND f.expires_at > now())
++  SELECT EXISTS (SELECT 1 FROM screening_mail_refusal f
++                  WHERE f.expires_at > now()
++                    AND (f.recipient_sha256 = mail_recipient_sha256($1) OR (f.reason = 'bounced' AND f.recipient_sha256 = mail_recipient_sha256($1, true))))
+ $function$;
+ ALTER FUNCTION public.screening_contact_refused(text) OWNER TO tp_owner;
+ REVOKE ALL ON FUNCTION public.screening_contact_refused(text) FROM PUBLIC;
+diff --git a/packages/db/functions/screening_submit_mail_refusal.sql b/packages/db/functions/screening_submit_mail_refusal.sql
+index 012c838c..06cb228c 100644
+--- a/packages/db/functions/screening_submit_mail_refusal.sql
++++ b/packages/db/functions/screening_submit_mail_refusal.sql
+@@ -1,11 +1,11 @@
+ -- Written by `pnpm db:domain-model --out` from a freshly migrated database (docs/adr/0068).
+ -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
+ 
+--- screening_submit_mail_refusal(text,text,text)
+--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: eadbe9312658ab5d
++-- screening_submit_mail_refusal(text,text)
++-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 68638b412b4b2db0
+ -- Trigger function of: (none)
+ -- Called by policy: (none)
+-CREATE OR REPLACE FUNCTION public.screening_submit_mail_refusal(email text, rate_account_subject text, client_subject text)
++CREATE OR REPLACE FUNCTION public.screening_submit_mail_refusal(rate_account_subject text, client_subject text)
+  RETURNS text
+  LANGUAGE sql
+  STABLE SECURITY DEFINER
+@@ -15,10 +15,9 @@ AS $function$
+            WHEN current_rule_release() IS NULL OR place_of_service_split_in_force() IS NULL
+                 OR NOT EXISTS (SELECT 1 FROM rule_release r WHERE r.release_no = current_rule_release() AND r.manifest_sha256 IS NOT NULL) THEN 'screening_closed'
+            WHEN NOT EXISTS (SELECT 1 FROM mail_stream s WHERE s.stream = 'screening' AND s.paused_at IS NULL) THEN 'screening_paused'
+-           WHEN screening_bounce_budget_spent($2, $3) THEN 'screening_bounce_budget'
+-           WHEN screening_contact_refused($1) THEN 'screening_contact_undeliverable'
++           WHEN screening_bounce_budget_spent($1, $2) THEN 'screening_bounce_budget'
+          END
+ $function$;
+-ALTER FUNCTION public.screening_submit_mail_refusal(text,text,text) OWNER TO tp_owner;
+-REVOKE ALL ON FUNCTION public.screening_submit_mail_refusal(text,text,text) FROM PUBLIC;
+-GRANT EXECUTE ON FUNCTION public.screening_submit_mail_refusal(text,text,text) TO tp_app;
++ALTER FUNCTION public.screening_submit_mail_refusal(text,text) OWNER TO tp_owner;
++REVOKE ALL ON FUNCTION public.screening_submit_mail_refusal(text,text) FROM PUBLIC;
++GRANT EXECUTE ON FUNCTION public.screening_submit_mail_refusal(text,text) TO tp_app;
 diff --git a/packages/db/migrations/20261107090000_mail_streams.sql b/packages/db/migrations/20261107090000_mail_streams.sql
 index 18ec43e3..1a0e0324 100644
 --- a/packages/db/migrations/20261107090000_mail_streams.sql
@@ -2480,3 +2915,41 @@ index 9c8e45fb..86989598 100644
    'error_code',
  ] as const;
  
+diff --git a/packages/synth/src/cases/matrix.ts b/packages/synth/src/cases/matrix.ts
+index 92042814..70712d19 100644
+--- a/packages/synth/src/cases/matrix.ts
++++ b/packages/synth/src/cases/matrix.ts
+@@ -221,13 +221,13 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
+     id: 'SEC-18',
+     title: "No screening address outlives its screening but as a keyed hash (audit #76; the founder's Q10 (a) and Q11 (b) of 2026-10-21)",
+     assertion:
+-      "The screening's SES set uses no suppression list, so SES keeps no screening address and no screening outcome silences a customer's mail; the mail record holds no address and no hash of one; the only values derived from a screening address kept past its prospect are the refusal list's keyed hash of the mailbox an address reaches (its every spelling: case, white space, a +tag, Gmail's dots, googlemail.com) that bounced permanently or was reported as spam on the screening stream, for 365 days, and the bounce budget's 7-day marks of the rate limiter's keyed subjects; the keyed hash differs from a plain SHA-256 of the address and changes with its pepper, which no role reads, and a scan of every text column after the mail scenarios finds it only on the refusal list; no address or domain appears in a log line, job payload, SES tag, audit event or error; no login role has a grant on the mail tables or may call the keyed hash; the application role may not write notice_undelivered, mail_stream_paused or mail_stream_resumed (42501)",
++      "The screening's SES set uses no suppression list, so SES keeps no screening address and no screening outcome silences a customer's mail; the mail record holds no address and no hash of one; the only values derived from a screening address kept past its prospect are the refusal list's keyed hash of the mailbox an address reaches (its every spelling: ASCII case and white space, a +tag, Gmail's dots, googlemail.com, and me.com and mac.com for icloud.com; an address with any other character as read) that was reported as spam, or of the address with its +tag kept that bounced permanently, on the screening stream, for 365 days, and the bounce budget's 7-day marks of the rate limiter's keyed subjects; the keyed hash differs from a plain SHA-256 of the address and changes with its pepper, which no role reads, and a scan of every text column after the mail scenarios finds it only on the refusal list; no address or domain appears in a log line, job payload, SES tag, audit event or error; no login role has a grant on the mail tables or may call the keyed hash; the application role may not write notice_undelivered, mail_stream_paused or mail_stream_resumed (42501)",
+   },
+   {
+     id: 'SEC-19',
+     title: 'A break-glass notice, or an invitation, that reaches no one (audit #76)',
+     assertion:
+-      "A support-access notice goes one message per current practice administrator, from recipient rows recorded before any send, each sent in its own transaction with its message ID kept and retried only to pending recipients after 1, 5, 15 and 60 minutes, so no administrator gets two (a send that throws is sent again to that administrator alone); the first accepted send writes notice_sent, and each recipient's delivery is recorded by message ID in either order; a notice not delivered to every administrator writes notice_undelivered once, notifies each administrator in the app (which notice, linked to its grant, with no figure and no address), reads not delivered to n of m administrators on the grant's page and on the console's support list, and logs NOTICE_UNDELIVERED, which pages the operator; a notice with no administrator writes notice_undelivered, never notice_sent, and logs NOTICE_UNDELIVERABLE; dunning goes the same way, its undelivered stage reported once on the invoice; a message SES accepted and never sent, its administrator on the account's suppression list for an earlier bounce or complaint, reads not delivered, never delivered; an invitation whose latest message bounced, was suppressed, rejected or reported reads not delivered on the users page, and the late bounce of a message a resend replaced flags nothing",
++      "A support-access notice goes one message per current practice administrator, from recipient rows recorded before any send, each sent in its own transaction with its message ID kept and retried only to pending recipients after 1, 5, 15 and 60 minutes, so no administrator gets two (a send that throws is sent again to that administrator alone); the first accepted send writes notice_sent, and each recipient's delivery is recorded by message ID in either order; a notice not delivered to every administrator writes notice_undelivered once, notifies each administrator in the app (which notice, linked to its grant, with no figure and no address), reads not delivered to n of m administrators on the grant's page and on the console's support list, and logs NOTICE_UNDELIVERED, which pages the operator; a notice with no administrator writes notice_undelivered, never notice_sent, and logs NOTICE_UNDELIVERABLE; dunning goes the same way, its undelivered stage reported once on the invoice; a message SES accepted and never sent, its administrator on the account's suppression list for an earlier bounce or complaint, reads not delivered, never delivered; an invitation whose latest message bounced, was suppressed, rejected or reported reads not delivered on the users page, one SES held back with its suppression list or reported as spam offering no resend (a resend posted anyway is refused) and naming PaidWhole's support, which releases the address, and the late bounce of a message a resend replaced flags nothing",
+   },
+   {
+     id: 'SCR-01',
+@@ -347,7 +347,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
+     id: 'SCR-22',
+     title: "The address a screening's result is sent to (audit #76; the founder's Q1 (g), Q10 (a), Q11 (b) and Q12 of 2026-10-21)",
+     assertion:
+-      "The form hints at a likely typo of a large mail provider's domain (gmial.com, yaho.com, outlok.com, hotmal.com) and warns of an ending no top-level domain uses, in the browser and again on the server, and the prospect may keep the address as typed; only after the upload's own checks, the rate limit and the database's refusals for the mail (closed, paused, the bounce budget, then the refusal list, which spend no validation), the server asks DNS whether the domain takes mail (no such domain, a null MX, or neither an MX nor an address refuses; a timeout or a failure accepts) and SES whether the mailbox exists (a LOW validity, syntax, DNS or mailbox verdict refuses, a MEDIUM validity or mailbox warns, an error or a timeout accepts), the two together, so the added worst case is one 2-second timeout, and SES no more than the day's cap (1,000 in production, 50 in staging; past it the DNS check alone, MAIL_VALIDATION_CAP_REACHED logged and alarmed); an address on the refusal list (a screening permanent bounce, a global suppression list's bounce among them, or abuse complaint in the last 365 days, matched by the mailbox it reaches: trimmed, in any case, its +tag dropped, and at Gmail its dots and googlemail.com) is refused, while a customer stream's bounce or complaint, a transient bounce, the account's own suppression and a not_spam complaint put nothing on it; every refused address, whatever refused it, gets the same one sentence, which says nothing about an earlier screening or a customer's mail; a client or an email account with 3 screening permanent bounces in 7 days is refused (screening_bounce_budget), before and whatever the address, so it learns nothing of the refusal list, and the stream stays open; no log line names the address or its domain",
++      "The form hints at a likely typo of a large mail provider's domain (gmial.com, yaho.com, outlok.com, hotmal.com) and warns of an ending no top-level domain uses, in the browser and again on the server, and the prospect may keep the address as typed; only after the upload's own checks, the rate limit and the database's refusals for the submitter (closed, paused, the bounce budget, which spend no validation), the server asks DNS whether the domain takes mail (no such domain, a null MX, or neither an MX nor an address refuses; a timeout or a failure accepts) and SES whether the mailbox exists (a LOW validity, syntax, DNS or mailbox verdict refuses, a MEDIUM validity or mailbox warns, an error or a timeout accepts), the two together, so the added worst case is one 2-second timeout, and SES no more than the day's cap (1,000 in production, 50 in staging; past it the DNS check alone, MAIL_VALIDATION_CAP_REACHED logged and alarmed); an address on the refusal list (a screening permanent bounce, a global suppression list's bounce among them, matched by the address with its +tag kept, or abuse complaint, matched by the mailbox it reaches, in the last 365 days: trimmed, in any case, at Gmail its dots, its +tag and googlemail.com, and at Apple me.com and mac.com) is refused only after those checks and submit_screening()'s own, so a listed address gets the same answer as any other on every path that ends without an email (a ZIP the release cannot price, a mailbox SES cannot confirm), and a bounce of a +tag spelling refuses that spelling alone, while a customer stream's bounce or complaint, a transient bounce, the account's own suppression and a not_spam complaint put nothing on it; every refused address, whatever refused it, gets the same one sentence, which says nothing about an earlier screening or a customer's mail; a client or an email account with 3 screening permanent bounces in 7 days is refused (screening_bounce_budget), before and whatever the address, so it learns nothing of the refusal list, and the stream stays open; no log line names the address or its domain",
+   },
+   { id: 'JOB-01', title: 'Replayed job with the same key', assertion: 'No duplicate effects' },
+   { id: 'JOB-02', title: 'Three failures', assertion: 'Alert raised; dashboard shows last run failed' },
+@@ -357,7 +357,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
+     id: 'JOB-05',
+     title: 'A mail event delivered twice, late or out of order (audit #76)',
+     assertion:
+-      "The platform's mail_events job records each SES event once per message and event, in any order (a bounce before its send makes the message's row with SES's own send time; a delay after a delivery and a delivery after a complaint change nothing), and deletes it from the queue only after its record commits; an unreadable event is left on the queue and reaches the dead-letter queue, which alarms, as does a queue whose oldest event is 15 minutes old; the queue admits only the stack's two rules and is encrypted with the environment's key; each stream is probed at SES's simulator alone, at once after a resume and never while paused, unconfirmed or before the identities are verified, and a probe not back in 26 hours logs MAIL_PROBE_MISSED",
++      "The platform's mail_events job records each SES event once per message and event, in any order (a bounce before its send makes the message's row with SES's own send time; a delay after a delivery and a delivery after a complaint change nothing), and deletes it from the queue only after its record commits; an unreadable event is left on the queue and reaches the dead-letter queue, which alarms, as does a queue whose oldest event is 15 minutes old; the queue admits only the stack's two rules and is encrypted with the environment's key; each stream is probed at SES's simulator alone, at once after a resume, daily, and hourly while missed, never while paused, unconfirmed or before the identities are verified; a stream whose probes are not back logs MAIL_PROBE_MISSED on every run until both are, 26 hours after the older of its proofs since the last resume or an hour after the first probe sent since then, however often it goes again; and each probe event recorded is logged by its message ID and codes, no address",
+   },
+   { id: 'MOD-01', title: 'Contract proposal quotes verify', assertion: 'All quotes are substrings of the page' },
+   { id: 'MOD-02', title: 'Proposal with a date not in its quote', assertion: 'Field rejected' },
