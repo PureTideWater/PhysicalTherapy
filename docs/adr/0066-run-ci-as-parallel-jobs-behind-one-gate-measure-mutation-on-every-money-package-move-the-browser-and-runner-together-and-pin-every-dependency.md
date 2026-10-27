@@ -928,7 +928,7 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
   adopted on its word: a one-off step downloads Google's two zips on CI, requires their `zipSha256` and lists their
   builds; the record changes only where Google's bytes agree with CI's, and a mirror that serves other bytes than
   Google's is replaced on CI by Google's verified build. Locally, on 2026-10-27, the check passed on both builds and the
-  second run wrote nothing; all seven files changed, six of them in bytes only (1.64.1's PNG encoder, ADR 0058).
+  second run wrote nothing; all seven files changed, six of them in bytes only (the PNG encoder of Chrome for Testing 156, the browser 1.64.1 pins; ADR 0058).
 - **N19.** The baseline step takes the pictures written as those present after the run in its own empty directory (N20),
   so no message text of Playwright's is read, and prints each changed picture's SHA-256 and then the picture
   as lines `<path> <i>/<n> <8,000 base64 characters>`: a log reader that cuts long lines still gets every chunk, and the

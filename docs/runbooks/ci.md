@@ -330,8 +330,9 @@ user that cannot run the binary.
 3. **Regenerate the baselines** with `pnpm --filter @tp/web exec playwright test e2e/brand.spec.ts
    --update-snapshots=all` (`=all` rewrites every snapshot; Playwright 1.64 renamed the bare flag's modes), then run
    it again: `git status` must be clean after the second. An upgrade can change every picture's bytes with no pixel
-   moved: `=all` rewrites any byte difference, and Playwright's PNG encoder may pick other scanline filters (1.64.1's
-   did, so six of the seven baselines changed bytes only). Commit every file it wrote, since CI's baseline step compares
+   moved: `=all` rewrites any byte difference, and the browser's PNG encoder may pick other scanline filters
+   (Playwright passes Chrome's screenshot through unchanged; Chrome for Testing 156's did, so six of the seven baselines
+   changed bytes only). Commit every file it wrote, since CI's baseline step compares
    bytes, and count changed pixels, not bytes, before reading a picture as moved (step 7).
 4. **Fix what new rules find.** A new axe release can enable a rule (4.14.0 enabled `label-content-name-mismatch`,
    WCAG 2.5.3): every journey's `expectAccessible` runs it, so fix the finding in the page, not in the scan.
