@@ -102,3 +102,8 @@ decision, open as issue #41 (decide before launch), with this measurement as its
 - pnpm typecheck (22 projects): passed.
 - unit (apps/web, tools/screening-capacity, tools/test, tools/brand-copy, tools/lint-logs): queued behind other lanes' lock holders (log unit-harness.log).
 - final checks queued as scratchpad/pr42/final-checks.sh (each command its own lock hold), log final-checks.log; earlier queued unit run cancelled (it would have timed out waiting for the lock).
+- FINAL CHECKS at f077c048 (each its own lock hold): unit apps/web + tools/screening-capacity + tools/test + brand-copy +
+  lint-logs 98 files 1,329 passed; db routes.db + mail-routes.db 56 passed (PG18 5433); lint:copy 522 ok; lint:logs 1065 ok;
+  eslint on every changed .ts/.tsx (heap 6 GiB) clean. typecheck 22 projects passed (15:2x).
+- Cleanup: tp_pr6b4_harness_1 dropped, _2 dropped by the harness; e2e /tmp dirs, capacity release/images removed; scratch refs deleted.
+- DONE. Returning the result.

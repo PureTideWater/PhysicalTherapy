@@ -739,7 +739,59 @@ the reserved LED-23 to LED-25.
 through e908c21's 44 migrations and #42's `20261107090000_mail_streams.sql`; two practices given interest by the
 current code (Z: LED-16's AMT I alone; H: AMT I with an L6 of +5.40); then the draft migration of 5.3 applied by the
 real runner; then the checks below as the job (`withJobScope`), each in a rolled-back transaction; then dropped.
-PROTOTYPE_RESULTS_PLACEHOLDER
+Output (`scratchpad/probes/author/proto.out`), abridged only by dropping the match IDs:
+
+```
+phase 1 migrated 45, last 20261107090000_mail_streams.sql
+phase 1: Z interest 1:claim:240 2:claim:300; H interest 1:claim:240 2:claim:300
+phase 2 migrated 20261108090000_ledger_interest_once.sql
+seq: [{"n":8,"distinct_seq":8,"min":1,"max":8,"all_set":true}]
+objects: [{"indexes":2,"owner":"tp_owner","acl":"{tp_owner=X/tp_owner}","evidence_valid":true,"sign_valid":true}]
+previous image reconcile refused: interest is matched from a PLB L6 of its remittance, for a claim
+Z interest after the refused reconcile: 1:claim:240 2:claim:300
+Z (L6 -540 in a later remittance naming the correction; legacy AMT I credits stand):
+  T1 claim-only interest match (the AMT I shape): refused: interest is matched from a PLB L6 of its remittance, for a claim
+  T1b L6-only interest match (the old L6 shape): refused: interest is matched from a PLB L6 of its remittance, for a claim
+  T8 claim the line has no standing approval for (its own original): refused: interest reaches a line only through a claim the line's standing approval names
+  T9 L6 of another remittance than the match: refused: interest is matched from a PLB L6 of its remittance, for a claim
+  T2 L6 and the claim, line 1: ok {"seq":"14","evidence_is_l6":true}
+  T2 L6 and the claim, line 2: ok {"seq":"15","evidence_is_l6":true}
+  T-sign negative entry on a paid L6: refused: an interest entry is positive for interest a PLB L6 paid and negative for interest it took back
+  T3 entry 240 line 1: ok
+  T3 entry 301 line 2 (541 > 540): refused: the interest entries of a PLB L6 never sum past what it paid or took back
+  T3 entry 300 line 2 (540): ok
+H (L6 +540 takes interest back; legacy AMT I credits 240 and 300 stand):
+  H dual match line 1: ok {"seq":"16","evidence_is_l6":true}
+  H dual match line 2: ok {"seq":"17","evidence_is_l6":true}
+  H positive entry on a take-back L6: refused: an interest entry is positive for interest a PLB L6 paid and negative for interest it took back
+  H -241 line 1 (line net -1): refused: a line's interest, net of what the payer took back, never goes below zero [ledger_interest_line_floor]
+  H -240 line 1 (line net 0): ok
+  H -301 line 2 (L6 sum 541 of 540): refused: the interest entries of a PLB L6 never sum past what it paid or took back
+  H -300 line 2 (line net 0, L6 sum 540): ok
+plan superseded: ... Hash Join, Hash Cond: (k.superseded_by_claim_id = n.id) -> Index Scan using claim_by_superseded on claim k ...
+dropped tp_design_interest_3
+```
+
+What it shows:
+- The migration applies after #42's on rows the current code wrote: both CHECKs validate against them, `seq` numbers
+  the 8 stored matches 1 to 8, the new function is owned by `tp_owner` with no grant beyond its owner's.
+- The previous image's reconcile of a new L6 is refused whole and writes nothing (D11); Z's old credits are untouched.
+- Every new rule refuses at the right place and accepts the exact boundary (540 of 540; a line at zero).
+- A match the previous image's way of inserting would make (naming no `seq`) is numbered next (14 to 17).
+- The superseded lookup reads `claim_by_superseded`. The order and per-L6 plans were checked again with constant
+  parameters (the first run passed a volatile `gen_random_uuid()`, which no index condition can use):
+  `scratchpad/probes/author/interest-author-plans.mts` on `tp_design_interest_4` (migrated from empty through the
+  draft, no rows, sequential scans off; dropped):
+
+  ```
+  matches in order: Index Scan using ledger_match_by_seq on ledger_match | Index Cond: (practice_id = '…'::uuid)
+  an L6 interest sum: Aggregate | -> Index Scan using ledger_entry_by_evidence on ledger_entry e | Index Cond: (evidence_id = '…'::uuid)
+  a line interest sum: Aggregate | -> Index Scan using ledger_entry_by_date on ledger_entry e | Index Cond: (practice_id = '…'::uuid)
+  adjusted payments EXISTS: Hash Semi Join | … | -> Bitmap Index Scan on claim_by_superseded
+  ```
+
+  The readers' order and the per-L6 sum use their indexes. On an empty table the line sum's choice among the
+  practice-led indexes means nothing; LED-25's large test checks it with rows (section 8.3).
 
 ### 8.1 Test matrix rows (exact; `docs/product/test-matrix.md` after LED-18, and word for word in `packages/synth/src/cases/matrix.ts`)
 
@@ -790,7 +842,7 @@ PROTOTYPE_RESULTS_PLACEHOLDER
 | `apps/worker/src/reconcile/ledger-oracle.db.test.ts` | LED-23, LED-24 | Two appended cases from the synth `expected.json`; the original six and LED-14 to LED-17 unchanged (LED-16 against its corrected fixture) | appended |
 | `payment-terms.db.test.ts:537-552`, `ledger.db.test.ts:279-294` | LED-16, PAR-18 | Same amounts; the evidence and the match's claim asserted | updated |
 | `apps/worker/src/reconcile/chain.db.test.ts` | LED-25 | Two matches inserted in one transaction whose UUIDs sort against their order read back in insertion order from `ledgerMatches`, `CHAIN_ORDER` and the web's line query; an update of `seq` is refused; an INSERT that names no `seq` (the previous image's) is numbered next | fails today: UUID order |
-| `apps/worker/src/reconcile/chain.large.db.test.ts` (new) | LED-25 | 50,000 synthetic claims bulk-inserted as the owner (one in twenty superseded), analysed: `claimLines`' recursive lookup and `unmatched.ts:187`'s EXISTS use `claim_by_superseded` (EXPLAIN) | fails today: sequential scan |
+| `apps/worker/src/reconcile/chain.large.db.test.ts` (new) | LED-25 | 50,000 synthetic claims bulk-inserted as the owner (one in twenty superseded) and 100,000 ledger entries, analysed: `claimLines`' recursive lookup and `unmatched.ts:187`'s EXISTS use `claim_by_superseded`, a practice's matches in order use `ledger_match_by_seq`, and the new trigger's per-L6 and per-line sums use `ledger_entry_by_evidence` and `ledger_entry_by_line` (EXPLAIN) | fails today: sequential scan of `claim`; no `seq` |
 | `apps/web/src/lib/routes/reconciliation-routes.db.test.ts` | LED-23, LED-24 | The line view's interest words, `takesBack`, the reported-interest rows and the reverse route's refusal on `matchId`; the route world's interest reseeded as an L6 | fails today |
 | `apps/web/e2e/ledger-interest.spec.ts` (new) | LED-23 | A billing manager opens Reconciliation for `paired.835`: the line's "interest paid in this check (PLB L6)", entries 2.40 and 3.00, the totals tile's Interest 5.40 (10.80 today); for `reported-only.835` the reported sentence and "No interest paid."; axe passes | fails today |
 | Catalog, cross-tenant, `pnpm db:domain-model --check --require-approval` | (CI) | No list changes; the regenerated model and function files are current and approved | must pass |
@@ -1006,3 +1058,11 @@ No other file of this PR is #42's: not `packages/db/src/schema/ledger.ts` or `re
   Most interest is for claims no case covers, so a plain list would be noise; a "for no case" view is a product
   proposal.
 - **Interest on a line with nothing remaining** stays dropped (ADR 0067:234).
+
+---
+
+## 15. Review
+
+Pending: one independent reviewer, on the payment-engine reviewer's checklist (`.claude/agents/payment-engine-reviewer.md`)
+and the EDI reviewer's for section 2 (`.claude/agents/edi-reviewer.md`). Each finding and its disposition is recorded
+here before the builders start, and the freeze exception of section 10.1 goes to the founder in its reviewed form.
