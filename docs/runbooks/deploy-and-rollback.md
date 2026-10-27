@@ -48,9 +48,13 @@ DKIM CNAMEs, the MAIL FROM MX and SPF and the DMARC record: `MailDkimRecord1` to
 identities read verified, then deploy again with `MailIdentitiesVerified=true` (phase 2): Cognito sends from
 MailFromAddress through the transactional set, and the platform's probes prove the event path. Later deploys keep the
 value (cdk reuses a parameter's previous value unless one is passed). Until both identities verify, SES refuses the
-platform's own mail (notices, digests) from an unverified sender and it is retried, so set the records before an
-environment's first release runs tasks. In staging, run the deliverability runbook's staging checks once after phase 2 (open item O11) and record them
-in the release's pull request. Each account needs SES production access before any customer mail (the runbook's use
+platform's own mail from an unverified sender with `MessageRejected`, a permanent error: each support-access or dunning
+notice's recipient is marked failed at once and is never sent again, and the notice is reported undelivered
+(`notice_undelivered` on the grant or the invoice, `NOTICE_UNDELIVERED`, and for a grant the administrators'
+notification); a digest's job is retried only twice, within about two minutes, by pg-boss, and then fails. So no
+release runs tasks (`ImageTag` stays `none`) until both identities read verified and phase 2 is deployed. In staging,
+run the deliverability runbook's staging checks once after phase 2 (open item O11) and record them in the release's
+pull request. Each account needs SES production access before any customer mail (the runbook's use
 case text).
 
 Once the environment's `StaticAssetsOrigin` output exists, set the repository variable the release builds its web image

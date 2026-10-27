@@ -50,7 +50,8 @@ a synthetic mailbox you control, and reads IDs and counts.
   and the rate limit, DNS (the domain takes mail) and SES's validation (the mailbox), together, at most 2 seconds;
   SES's at most 1,000 a day in production and 50 in staging, then DNS alone.
 - **The outboxes.** A support-access notice and a dunning notice go one message per recipient, each recorded before it
-  is sent and retried only to recipients still pending (after 1, 5, 15 and 60 minutes; failed after the fifth). A notice
+  is sent and retried only to recipients still pending (after 1, 5, 15 and 60 minutes; failed after the fifth, or at
+  once when SES refuses the message itself, as it does from a sender not yet verified). A notice
   not delivered to every administrator is reported once: the grant's page and the console's support list say "Not
   delivered to n of m administrators", each administrator gets a notification linked to the grant, and the operator is
   paged (`NOTICE_UNDELIVERED`). A practice with no administrator gets no message (`NOTICE_UNDELIVERABLE`).
