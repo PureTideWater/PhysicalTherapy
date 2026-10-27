@@ -313,8 +313,9 @@ records its first passing run, with the seven SHA-256s, as this ADR's proof that
 bytes; if the local host and CI ever disagree, CI's bytes are committed and the difference is recorded here. For 1.64.1
 the seven were regenerated on Ubuntu 24.04 with the 1248 build laid out from Google's zips and held to `browser.json`,
 and a second run wrote nothing. Six are the 141 baselines pixel for pixel and changed bytes only because 1.64.1's PNG
-encoder picks other scanline filters, so any Playwright upgrade may rewrite every file; `report-cover-without-seal`
-moved 1,611 pixels in its title, Chrome 156's antialiasing, 0.19% of the picture against the journey's 1%. Every new set of baselines is inspected against this ADR's brand points,
+encoder picks other scanline filters, so any Playwright upgrade may rewrite every file. On `report-cover-without-seal`
+Chrome 156 draws the title 'ROI statement' 1 px lower (1,611 pixels in 234 x 27 at 83, 418, 0.19% of the picture
+against the journey's 1%; shifted down one pixel, the old title matches exactly; nothing else on the cover moves). Every new set of baselines is inspected against this ADR's brand points,
 image by image, before it merges (for 1.64.1, by an adversarial visual-inspection agent, whose record the pull request
 links).
 
@@ -327,9 +328,17 @@ version and the Dockerfile to this form.
 
 **The header is named by what it shows.** axe-core 4.14.0 enables `label-content-name-mismatch` (WCAG 2.5.3, Label in
 Name), which every `expectAccessible` scan now runs. The practice switcher was named "Practice switcher" while it shows
-the practice's name, and the account control "Account menu" while it shows the address and an initial. They are now
-named "<practice>, practice switcher" and "<address>, account menu", and the initial is drawn as CSS generated content
-(`data-initial`, `before:content-[attr(data-initial)]`), not a text node; the pictures are unchanged, byte for byte under
-1.56.1 (the seven regenerated and equal) and pixel for pixel under 1.64.1 (both header pictures, against the 141 ones). The brand journey holds every header control's accessible name to contain each
-piece of its visible text, generated content included, at 1280 and 390 px: at 390 px the account shows only its initial,
-for which axe answers "incomplete" rather than a violation.
+the practice's name, and the account control "Account menu" while it shows the address and an initial. Both are now
+named from their content, in the words the co-founder's ruling took for them (UX-094 in the UX baseline,
+`designs/lane-b-ux-review.md` section 6.1 on `claude/build-ops`): the practice's name, then a visually hidden ", switch
+practice"; the address, visually hidden below `md` where only the initial shows, then a visually hidden ", account and
+sign out". Neither summary has an `aria-label` or a `title`, so Chromium does not also read the practice or the address
+as the control's description, and tests reach the two by `data-slot` (`practice-switcher`, `account-menu`). The span
+that holds the hidden words is their containing block (`relative`), so its truncation clips them instead of letting
+their position widen the page. The initial is drawn as CSS generated content (`data-initial`,
+`before:content-[attr(data-initial)]`), not a text node. The pictures are unchanged: the first names (an `aria-label`
+each) were byte for byte under 1.56.1 and pixel for pixel under 1.64.1, and with these names the seven regenerated under
+1.64.1 into an empty directory are the committed files byte for byte. The brand journey holds every header control's
+accessible name to start with its visible text and contain each other piece of it, generated content included, at 1280
+and 390 px (at 390 px the account shows only its initial, for which axe answers "incomplete" rather than a violation),
+and reads Chromium's own name and description of the switcher and the account.
