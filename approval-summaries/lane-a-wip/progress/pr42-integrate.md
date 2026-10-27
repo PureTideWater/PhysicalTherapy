@@ -12,3 +12,10 @@
 - [ ] 4. full suite
 - [ ] 5. push
 - [ ] 6. PR body
+- User question (ultra code): get_session read-only: Lane B sessions 01L3tN5L, 019Vghcx, 01TAgFZo, 01UzQ6wg, 017SNqG4 and this orchestrator: effort xhigh, flag ultracode=true, is_ultracode_active=true. session_019i9ifAWsQ6zhLLegnMqSdK (Lane B test flakes, created 14:32) has NO effort_level and no ultracode flag -> not in ultra code. Cannot change it from here.
+- e2e edits (integrator): mail.ts registerKeyAndSignInAs -> registerOrRestoreKeyAndSignIn (harness proposal); stream fixtures in mail-cutoff.spec.ts and screening.spec.ts get { timeout: 240_000 } (db builder proposal, CI-07)
+- Body before saved: scratchpad/pr42/pr42-body-before.md (77,305 chars; ends with session_01MXvjcg... attribution)
+- [x] 3. domain model regenerated on fresh PG18 tp_pr6b4_integrate_1 (45 migrations, --out --strict): 98 tables, 1 view, 47 registered, 226 divergence rows (23 to approve), 0 explanation problems; Cross-checks Drizzle 97/97, none missing, 0 column diffs, catalogProblems 0. functions: 375 files, 12 written, 1 removed (screening_run_bounce_budget); 7 new. NEW SHA-256 b12150bb…, approval line 7333 (blank). DB tp_pr6b4_integrate_1 still exists (drop at end)
+- SHA map builder->branch: scratchpad/pr42/sha-map.txt
+- watched.ts --write: no change (537 lines; +validation-credentials.ts, +mail-address.ts vs base merge)
+- dm summary (pre-commit): scratchpad/pr42/dm-summary.md (59,347 chars; regenerate after commit)
