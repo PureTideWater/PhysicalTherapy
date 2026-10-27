@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { SCREEN_FLOORS, SCREEN_MIN_RUN, compactIdentifier, holdsIdentifier, identifierRuns, isCompactCalendarDate, screenIdentifier } from './redact';
 
 /**
- * The contract screen's side of redact.ts (combined audit #120; docs/adr/0070, Part 3): the page tokenizer
+ * The contract screen's side of redact.ts (combined audit item 120; docs/adr/0070, Part 3): the page tokenizer
  * (identifierRuns), the floors the session ruled (Q2) and the stored-side rules (a digit in every kind; 8-digit
  * calendar dates dropped). SYNTHETIC identifiers only.
  */

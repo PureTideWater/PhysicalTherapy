@@ -39,7 +39,7 @@ export interface PurposeSpec<I, O, P, C = undefined> {
   /**
    * A check of the prepared call against records outside the input (the denial-letter reader asks the
    * practice's records whether the letter names another patient; a contract's check asks whether the pages
-   * name any patient of the practice, combined audit #120); it refuses by throwing an InputRefusedError,
+   * name any patient of the practice, combined audit item 120); it refuses by throwing an InputRefusedError,
    * and runs after preparation and the variant's serving check, before the idempotency key, the budget and
    * the call. The call's context says which practice the call reads, so a screen can hold its records
    * check to that practice.

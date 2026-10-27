@@ -54,8 +54,8 @@ describe('a test file that imports the provider directly', () => {
 });
 
 /**
- * The contract PHI check (combined audit #120; docs/adr/0070, Part 3) is accepted only when patient-records.ts issued
- * it: its WeakSet is added to in one place, called by the two factories alone, and no other source in the
+ * The contract PHI check (combined audit item 120; docs/adr/0070, Part 3) is accepted only when patient-records.ts
+ * issued it: its WeakSet is added to in one place, called by the two factories alone, and no other source in the
  * repository builds an object with a namesPatient method (a hand-made check would be refused at runtime as
  * screen_invalid; this keeps one from being written at all).
  */

@@ -272,7 +272,7 @@ export function identifierCandidates(text: string): string[] {
 // The contract screen's page runs (docs/adr/0070, Part 3)
 
 /**
- * What a stored identifier must be for the contract screen to look for it (combined audit #120; the design's Q2,
+ * What a stored identifier must be for the contract screen to look for it (combined audit item 120; the design's Q2,
  * as the session ruled it): its compact form (compactIdentifier) at least this long, with a digit in it. A shorter
  * value, or one of letters only, is too likely to be an ordinary word or figure of a contract (a five-digit patient
  * control number equal to a CPT code, a letter-only one equal to "AGREEMENT"), so the screen leaves it out rather

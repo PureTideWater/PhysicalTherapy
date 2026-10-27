@@ -568,7 +568,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'packages/model-gateway/eval/gate.golden.test.ts',
     'apps/web/src/lib/routes/models-routes.db.test.ts',
   ]),
-  // The contract PHI check (combined audit #120; docs/adr/0070 Part 3).
+  // The contract PHI check (combined audit item 120; docs/adr/0070 Part 3).
   'MOD-12': {
     completesIn: 10,
     build: workflow.mod12,

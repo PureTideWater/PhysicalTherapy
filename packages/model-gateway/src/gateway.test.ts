@@ -671,7 +671,7 @@ describe('the local provider’s fixed outputs', () => {
   });
 });
 
-describe('the contract PHI check (combined audit #120; docs/adr/0070 Part 3; test matrix MOD-12)', () => {
+describe('the contract PHI check (combined audit item 120; docs/adr/0070 Part 3; test matrix MOD-12)', () => {
   const HELD = { memberIds: ['ZZ1234567'], patientControlNumbers: ['SYNPCN00012345'], payerClaimNumbers: ['7712345678901'] };
   const EOB_PAGES = ['SYNTHETIC EXPLANATION OF BENEFITS filed as a contract', 'Member ID:ZZ 123 4567   CPT 97110 $32.50'];
 

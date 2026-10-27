@@ -91,7 +91,7 @@ export {
   textractRecording,
 } from './formats/scan';
 
-// The contract PHI check's twin practices (combined audit #120; docs/adr/0070 Part 3; test matrix MOD-12).
+// The contract PHI check's twin practices (combined audit item 120; docs/adr/0070 Part 3; test matrix MOD-12).
 export {
   COLLISION_CLASSES,
   type CollisionClass,

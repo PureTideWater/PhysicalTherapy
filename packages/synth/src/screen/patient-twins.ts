@@ -1,7 +1,7 @@
 import { Random } from '../core/random';
 
 /**
- * SYNTHETIC practices for the contract PHI check's false-refusal measurement (combined audit #120; docs/adr/0070,
+ * SYNTHETIC practices for the contract PHI check's false-refusal measurement (combined audit item 120; docs/adr/0070,
  * Part 3; test matrix MOD-12). The check refuses a contract when a run of its pages is one of the practice's stored
  * member IDs, patient control numbers or payer claim control numbers; these twins say how often an ordinary contract
  * would be refused by a large practice's records, and by records built to collide with a contract's own figures.

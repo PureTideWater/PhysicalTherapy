@@ -58,11 +58,18 @@ describe('every synthetic 835 parses exactly as its case expects', () => {
 });
 
 describe('zip entries (PAR-27, PAR-28)', () => {
-  const zips = ALL.flatMap((item) => item.expected.files.filter((file) => file.kind === 'zip').map((file) => ({ dir: item.dir, file })));
+  // The zips of 835s, which carry a batch expectation; a zip of other documents (MOD-12's contract and EOB, read
+  // by the contract screen's tests, not the parser) carries none and is not the parser's.
+  const zips = ALL.flatMap((item) =>
+    item.expected.files.flatMap((file) => (file.kind === 'zip' && file.zip !== undefined ? [{ dir: item.dir, file, zip: file.zip }] : [])),
+  );
 
-  it.each(zips.map((item) => [`${item.dir}/${item.file.path}`, item] as const))('%s: each X12 entry parses as its case says', (_name, { dir, file }) => {
+  it('reads the zips of 835s the PAR cases name', () => {
+    expect(zips.map((item) => item.dir)).toEqual(expect.arrayContaining(['PAR-27', 'PAR-28']));
+  });
+
+  it.each(zips.map((item) => [`${item.dir}/${item.file.path}`, item] as const))('%s: each X12 entry parses as its case says', (_name, { dir, file, zip }) => {
     const entries = readZip(readFileSync(path.join(syntheticRoot, dir, file.path)));
-    const zip = file.zip as NonNullable<typeof file.zip>;
     let parsed = 0;
     let held = 0;
     for (const entry of zip.entries) {

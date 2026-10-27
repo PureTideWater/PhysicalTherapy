@@ -105,7 +105,7 @@ export interface ContractPages {
 export interface ContractPagesInput extends ContractPages {
   /**
    * The practice's records, asked before anything is sent whether the pages name one of its patients (combined
-   * audit #120; ../patient-records.ts). Required, so no caller compiles without one, and the screen accepts only a
+   * audit item 120; ../patient-records.ts). Required, so no caller compiles without one, and the screen accepts only a
    * check the gateway's factories issued for the call's own practice (a synthetic one only on an evaluation call).
    */
   readonly patientRecords: PatientRecordsCheck;
@@ -483,7 +483,7 @@ export const NAMES_PATIENT_MESSAGE = 'this document names a patient of the pract
 export const SCREEN_UNAVAILABLE_MESSAGE = 'this document could not be checked for patient details and was not sent';
 
 /**
- * The contract PHI check (combined audit #120; docs/adr/0070, Part 3), run by the gateway after preparation and the
+ * The contract PHI check (combined audit item 120; docs/adr/0070, Part 3), run by the gateway after preparation and the
  * variant's serving check and before the idempotency key, the budget and the call (gateway.ts, step 4):
  * 1. the check must be one the gateway's factories issued (../patient-records.ts), else `screen_invalid`;
  * 2. it must be bound to the call's practice (a synthetic check, bound to none, only on a synthetic evaluation

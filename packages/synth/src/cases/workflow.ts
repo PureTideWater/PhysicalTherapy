@@ -1165,7 +1165,7 @@ function addScreenDocument(b: CaseBuilder, name: string, pages: readonly (readon
 }
 
 /**
- * MOD-12 (combined audit #120; docs/adr/0070 Part 3): a contract or exhibit that names a patient of the practice is
+ * MOD-12 (combined audit item 120; docs/adr/0070 Part 3): a contract or exhibit that names a patient of the practice is
  * refused before it is sent; one that only writes figures shaped like identifiers is sent.
  */
 export function mod12(b: CaseBuilder): void {

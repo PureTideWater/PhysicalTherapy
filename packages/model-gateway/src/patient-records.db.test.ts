@@ -10,7 +10,7 @@ import { CONTRACT_SCREEN_PURPOSE, type PatientRecordsCheck, SCREEN_MAX_IDENTIFIE
 import { seedScreenRecords } from './test-support/screen-world';
 
 /**
- * The contract PHI check's records on Postgres (combined audit #120; docs/adr/0070, Part 3; test matrix MOD-12):
+ * The contract PHI check's records on Postgres (combined audit item 120; docs/adr/0070, Part 3; test matrix MOD-12):
  * the reads run in the check's own job scope as the service screen actor, each row audited with purpose
  * contract_screen and joined by request ID to the person's one contract_screen_requested event (the design review's
  * M8); row-level security holds them to the one practice, so another practice's identical identifiers never match

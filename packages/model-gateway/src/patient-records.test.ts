@@ -6,7 +6,7 @@ import { CONTRACT_SCREEN_PURPOSE, SCREEN_MAX_IDENTIFIERS, type PracticeRecordsOp
 import { NO_IDENTIFIERS, SYNTHETIC_IDS, type MemoryRecords, memoryPracticeRecords, memoryRequestScope } from './testing';
 
 /**
- * The contract PHI check's records (combined audit #120; docs/adr/0070, Part 3), without a database: the memory
+ * The contract PHI check's records (combined audit item 120; docs/adr/0070, Part 3), without a database: the memory
  * pool (./testing.ts) answers the job scope's statements and holds each practice's rows apart as row-level security
  * does. patient-records.db.test.ts runs the same on Postgres. SYNTHETIC identifiers only.
  */

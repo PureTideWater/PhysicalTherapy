@@ -3,7 +3,7 @@ import { type AnyScope, type PracticeCipher, type PracticeScope, type ScopeClien
 import { SCREEN_FLOORS, SCREEN_MAX_RUN, SCREEN_MIN_RUN, type ScreenIdentifierKind, identifierRuns, screenIdentifier } from './redact';
 
 /**
- * The contract PHI check (combined audit #120; docs/adr/0070, Part 3): before a contract's or exhibit's pages are
+ * The contract PHI check (combined audit item 120; docs/adr/0070, Part 3): before a contract's or exhibit's pages are
  * framed for a model, the gateway asks the practice's own records whether any run of the pages is a member ID, a
  * payer claim control number or a patient control number the practice holds. A contract carries no patient's
  * details (PRD 14: contracts and exhibits "are sent as stored"), so a document that names one is a misfiled payer

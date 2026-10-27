@@ -457,7 +457,7 @@ describe('the row check (not_in_row, docs/adr/0070 Part 1)', () => {
   });
 });
 
-describe('the contract PHI check (combined audit #120; docs/adr/0070 Part 3)', () => {
+describe('the contract PHI check (combined audit item 120; docs/adr/0070 Part 3)', () => {
   const PRACTICE_CALL = { practiceId: SYNTHETIC_IDS.practice, requestKey: 'request-1' };
   const EVALUATION_CALL = { practiceId: null, requestKey: 'eval-1' };
   const HELD = { memberIds: ['ZZ1234567'], patientControlNumbers: ['SYNPCN00012345'], payerClaimNumbers: ['7712345678901'] };

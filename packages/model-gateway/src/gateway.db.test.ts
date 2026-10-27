@@ -495,7 +495,7 @@ describe('synthetic evaluation calls and evaluation examples', () => {
   });
 });
 
-describe('MOD-12: a contract or exhibit naming a patient of the practice (combined audit #120; docs/adr/0070 Part 3)', () => {
+describe('MOD-12: a contract or exhibit naming a patient of the practice (combined audit item 120; docs/adr/0070 Part 3)', () => {
   const MOD12 = path.resolve(import.meta.dirname, '../../../fixtures/synthetic/MOD-12');
   const pagesOf = async (bytes: Uint8Array) => {
     const read = await readDocumentPages({ bytes, contentType: 'application/pdf' });
