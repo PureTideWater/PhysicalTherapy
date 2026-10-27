@@ -34,6 +34,10 @@ GitHub login: PureTideWater.
 - **#42 moved to 6f23c42b** (38 commits past 098636e3; mail_streams.sql +163/-62). After SS-01's builders finish: merge
   it into SS-01 (merge commit), re-check the audit_event_record policy body SS-01 recreates, regenerate the domain model
   and function files, re-run the affected db tests.
+- **22:20 UTC: a container restart stopped wf_8ee54e2b-824 in its integrator** (after every builder had pushed, to
+  3b26e73f; the integrator's checks, seam read and domain-model check done: SHA-256 12b0e87d…, approval line 7407; its
+  revert of an out-of-scope comment in standing.ts committed locally as d763ba78; suite part 1 lost). Setup re-run (OK),
+  no marker left, the script given a RESUMED note and **resumed at ~22:27 UTC** (the six finished agents from cache).
 - **Next:** read the build's result; the PR waits for #42 to merge (then merge #42's head and the latest
   claude/build-platform in, regenerate, open the draft PR, two reviews: security and tenancy, UX and brand).
 
@@ -62,3 +66,4 @@ GitHub login: PureTideWater.
 - 2026-10-27 20:52 UTC: both ledger freeze exceptions granted (above); SUITE-CAP-1b's ledger part goes into its PR, no WIP branch.
 - 2026-10-27 21:26 UTC: SS-01's database slice pushed (d213416b, 7da01015); SUITE-CAP-1b re-read started (wf_6e2dedb0-b5e).
 - 2026-10-27 21:40 UTC: SUITE-CAP-1b re-read: build with deltas; #42 at 6f23c42b, to merge into SS-01 after its build.
+- 2026-10-27 22:27 UTC: container restart; setup re-run; wf_8ee54e2b-824 resumed in its integrator.
