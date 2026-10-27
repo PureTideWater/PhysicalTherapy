@@ -47,6 +47,24 @@ jobs:
     strategy:
       matrix:
         image: [web, web-staging, web-production, worker]
+    # Each image's identity, written by its own leg under its own names, so no leg overwrites another's: the gzipped
+    # archive's SHA-256, and the config digest and top-level descriptor read from the archive's bytes
+    # (tools/screening-capacity/image-id.ts). A job's outputs are fixed when it ends, and no later job can write them, so
+    # every job that loads an archive checks it against these, never against the files that travel with it: capacity
+    # runs repository code and every installed package beside push (docs/adr/0066, Part 3).
+    outputs:
+      sha256_web: ${{ steps.identity.outputs.sha256_web }}
+      config_web: ${{ steps.identity.outputs.config_web }}
+      target_web: ${{ steps.identity.outputs.target_web }}
+      sha256_web-staging: ${{ steps.identity.outputs.sha256_web-staging }}
+      config_web-staging: ${{ steps.identity.outputs.config_web-staging }}
+      target_web-staging: ${{ steps.identity.outputs.target_web-staging }}
+      sha256_web-production: ${{ steps.identity.outputs.sha256_web-production }}
+      config_web-production: ${{ steps.identity.outputs.config_web-production }}
+      target_web-production: ${{ steps.identity.outputs.target_web-production }}
+      sha256_worker: ${{ steps.identity.outputs.sha256_worker }}
+      config_worker: ${{ steps.identity.outputs.config_worker }}
+      target_worker: ${{ steps.identity.outputs.target_worker }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -79,6 +97,8 @@ jobs:
           fi
           echo "origin=$origin" >> "$GITHUB_OUTPUT"
 
+      # No attestation manifest from buildx, so either image store holds one manifest for the image (the release's
+      # attestation is the report job's, its bill of materials Trivy's below).
       - name: Build the image without pushing it
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -87,6 +107,8 @@ jobs:
           load: true
           push: false
           tags: ${{ steps.image.outputs.ref }}
+          provenance: false
+          sbom: false
           build-args: |
             STATIC_ASSET_ORIGIN=${{ steps.image.outputs.origin }}
           labels: |
@@ -122,23 +144,61 @@ jobs:
           if-no-files-found: error
           overwrite: true
 
-      # The image as scanned, kept for the jobs below, which load it and never build: docker save and docker load keep
-      # its ID, so what is measured and pushed is what was scanned.
-      - name: Save the scanned image
+      # Node 24 with no cache, for the two node:-only scripts below; nothing is installed in this job.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      # The worker prints customers' reports with its headless shell: every file of it, inside the image that ships,
+      # held to apps/web/e2e/browser.json before the image is saved (tools/ci/browser-build.ts).
+      - name: Check the worker image's headless shell against browser.json
+        if: ${{ matrix.image == 'worker' }}
+        env:
+          REF: ${{ steps.image.outputs.ref }}
+        run: node tools/ci/browser-build.ts --image "$REF"
+
+      # The image as scanned, kept for the jobs below, which load it and never build. Its identity is read from the
+      # archive's bytes, the tag is proved to be that image on this runner's image store (the config digest on the
+      # classic store, the archive's top-level descriptor on the containerd store), and the archive's SHA-256 and both
+      # digests leave as this job's outputs; the .tar.sha256 and .id beside the archive are for a person reading it.
+      - name: Save the scanned image and record its identity
+        id: identity
         env:
           REF: ${{ steps.image.outputs.ref }}
           IMAGE: ${{ matrix.image }}
         run: |
           mkdir -p "$RUNNER_TEMP/image"
           docker save "$REF" | gzip -1 > "$RUNNER_TEMP/image/$IMAGE.tar.gz"
-          docker image inspect -f '{{.Id}}' "$REF" > "$RUNNER_TEMP/image/$IMAGE.id"
-          echo "$IMAGE: $(cat "$RUNNER_TEMP/image/$IMAGE.id")"
+          identity="$(node tools/screening-capacity/image-id.ts "$RUNNER_TEMP/image/$IMAGE.tar.gz")"
+          config="$(jq -r '.config' <<< "$identity")"
+          target="$(jq -r '.target // empty' <<< "$identity")"
+          store=classic
+          if [ "$(docker info --format '{{range .DriverStatus}}{{if eq (index . 0) "driver-type"}}{{index . 1}}{{end}}{{end}}')" = io.containerd.snapshotter.v1 ]; then
+            store=containerd
+          fi
+          if [ "$store" = containerd ]; then want="$target"; else want="$config"; fi
+          id="$(docker image inspect -f '{{.Id}}' "$REF")"
+          if [ -z "$want" ] || [ "$id" != "$want" ]; then
+            echo "::error title=$IMAGE::$REF is $id on the $store image store, not its archive's ${want:-digest for it}"
+            exit 1
+          fi
+          sha="$(sha256sum "$RUNNER_TEMP/image/$IMAGE.tar.gz" | cut -d ' ' -f 1)"
+          echo "$sha  $IMAGE.tar.gz" > "$RUNNER_TEMP/image/$IMAGE.tar.sha256"
+          echo "$config" > "$RUNNER_TEMP/image/$IMAGE.id"
+          {
+            echo "sha256_$IMAGE=$sha"
+            echo "config_$IMAGE=$config"
+            echo "target_$IMAGE=$target"
+          } >> "$GITHUB_OUTPUT"
+          echo "$IMAGE: archive SHA-256 $sha, config $config, top-level descriptor ${target:-none}, on the $store image store"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: image-${{ matrix.image }}
           path: |
             ${{ runner.temp }}/image/${{ matrix.image }}.tar.gz
+            ${{ runner.temp }}/image/${{ matrix.image }}.tar.sha256
             ${{ runner.temp }}/image/${{ matrix.image }}.id
           if-no-files-found: error
           compression-level: 0
@@ -153,7 +213,10 @@ jobs:
   # production's screening (the founder's third ruling of 2026-10-23, "Free: time advisory", which made every other
   # capacity run advisory). The harness records this run (GITHUB_WORKFLOW_REF, GITHUB_RUN_ID, GITHUB_RUN_ATTEMPT) in the
   # report, which the launch check holds to this workflow on the tag. The launch check accepts only the layout this
-  # runner gives (RELEASE_RUNNER in tools/screening-capacity/launch-check.ts; workflows.test.ts holds the two together).
+  # runner gives (RELEASE_RUNNER in tools/screening-capacity/launch-check.ts; workflows.test.ts holds the two together),
+  # which stays on ubuntu-24.04 while every other workflow's jobs move to ubuntu-26.04 (the founder's F5). Unlike ci.yml's
+  # jobs, nothing here runs past a failed browser check: a measurement made with another browser than browser.json's
+  # must never be attested as passing.
   capacity:
     needs: build
     runs-on: ubuntu-24.04
@@ -172,10 +235,36 @@ jobs:
           name: image-worker
           path: ${{ runner.temp }}/image
 
-      - name: Load the production web image and the worker image
+      # Before anything is installed: each archive's SHA-256 against the build's outputs, then the load, then the loaded
+      # tag proved to be the image built on this runner's store (docs/adr/0066, Part 3).
+      - name: Check each archive against the build's outputs and load it as the image built
+        env:
+          BUILD: ${{ toJSON(needs.build.outputs) }}
         run: |
+          repository="ghcr.io/${GITHUB_REPOSITORY,,}"
+          store=classic
+          if [ "$(docker info --format '{{range .DriverStatus}}{{if eq (index . 0) "driver-type"}}{{index . 1}}{{end}}{{end}}')" = io.containerd.snapshotter.v1 ]; then
+            store=containerd
+          fi
           for image in web-production worker; do
-            docker load --input "$RUNNER_TEMP/image/$image.tar.gz"
+            archive="$RUNNER_TEMP/image/$image.tar.gz"
+            sha="$(jq -r --arg key "sha256_$image" '.[$key] // empty' <<< "$BUILD")"
+            config="$(jq -r --arg key "config_$image" '.[$key] // empty' <<< "$BUILD")"
+            target="$(jq -r --arg key "target_$image" '.[$key] // empty' <<< "$BUILD")"
+            if [ -z "$sha" ] || [ -z "$config" ]; then
+              echo "::error title=$image::the build job recorded no identity for $image"
+              exit 1
+            fi
+            echo "$sha  $archive" | sha256sum --check --strict
+            docker load --input "$archive"
+            ref="$repository/$image:$GITHUB_REF_NAME"
+            if [ "$store" = containerd ]; then want="$target"; else want="$config"; fi
+            id="$(docker image inspect -f '{{.Id}}' "$ref")"
+            if [ -z "$want" ] || [ "$id" != "$want" ]; then
+              echo "::error title=$image::$ref loaded as $id on the $store image store, not the ${want:-digest} the build recorded"
+              exit 1
+            fi
+            echo "$image: $id, the image built"
           done
 
       # pnpm and Node with no cache: the store is filled from the registry by the lockfile's integrity hashes.
@@ -187,7 +276,12 @@ jobs:
           node-version: 24
           package-manager-cache: false
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @tp/web exec playwright install --with-deps chromium
+      - id: browser-install
+        run: pnpm --filter @tp/web exec playwright install --with-deps chromium
+      # Every file of the headless shell's and Chromium's builds against apps/web/e2e/browser.json, before the
+      # measurement's browser uploads anything (tools/ci/browser-build.ts).
+      - name: Check the browser builds against browser.json
+        run: node tools/ci/browser-build.ts
 
       # The SYNTHETIC scale release, built in this run from this commit's generator, never one another run cached (about
       # 22 seconds).
@@ -227,7 +321,10 @@ jobs:
           overwrite: true
 
   # The images as built and scanned, never a rebuild: loaded from the build's artifacts and pushed under the tag and the
-  # commit. It does not wait for the capacity run (a security fix ships whatever the measurement says).
+  # commit. It does not wait for the capacity run (a security fix ships whatever the measurement says). It runs no
+  # repository code (no checkout, no Node): every archive is checked against the build's outputs and every loaded image
+  # proved the one built before the first push, and after the pushes the registry's manifests are read back, so what
+  # was pushed is what was measured, in the form the launch check reads (docs/adr/0066, Part 3).
   push:
     needs: build
     runs-on: ubuntu-24.04
@@ -248,21 +345,74 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check each archive against the build's outputs and load it as the image built
+        env:
+          BUILD: ${{ toJSON(needs.build.outputs) }}
+        run: |
+          repository="ghcr.io/${GITHUB_REPOSITORY,,}"
+          store=classic
+          if [ "$(docker info --format '{{range .DriverStatus}}{{if eq (index . 0) "driver-type"}}{{index . 1}}{{end}}{{end}}')" = io.containerd.snapshotter.v1 ]; then
+            store=containerd
+          fi
+          for image in web web-staging web-production worker; do
+            archive="$RUNNER_TEMP/image/$image.tar.gz"
+            sha="$(jq -r --arg key "sha256_$image" '.[$key] // empty' <<< "$BUILD")"
+            config="$(jq -r --arg key "config_$image" '.[$key] // empty' <<< "$BUILD")"
+            target="$(jq -r --arg key "target_$image" '.[$key] // empty' <<< "$BUILD")"
+            if [ -z "$sha" ] || [ -z "$config" ]; then
+              echo "::error title=$image::the build job recorded no identity for $image"
+              exit 1
+            fi
+            echo "$sha  $archive" | sha256sum --check --strict
+            docker load --input "$archive"
+            ref="$repository/$image:$GITHUB_REF_NAME"
+            if [ "$store" = containerd ]; then want="$target"; else want="$config"; fi
+            id="$(docker image inspect -f '{{.Id}}' "$ref")"
+            if [ -z "$want" ] || [ "$id" != "$want" ]; then
+              echo "::error title=$image::$ref loaded as $id on the $store image store, not the ${want:-digest} the build recorded"
+              exit 1
+            fi
+            echo "$image: $id, the image built"
+          done
+
       - name: Push the scanned images
         run: |
           repository="ghcr.io/${GITHUB_REPOSITORY,,}"
           for image in web web-staging web-production worker; do
-            docker load --input "$RUNNER_TEMP/image/$image.tar.gz"
             ref="$repository/$image:$GITHUB_REF_NAME"
-            id=$(docker image inspect -f '{{.Id}}' "$ref")
-            if [ "$id" != "$(cat "$RUNNER_TEMP/image/$image.id")" ]; then
-              echo "::error::$image is not the image that was scanned"
-              exit 1
-            fi
             docker tag "$ref" "$repository/$image:sha-$GITHUB_SHA"
             docker push "$ref"
             docker push "$repository/$image:sha-$GITHUB_SHA"
-            echo "$image $id"
+          done
+
+      # Each pushed tag's manifest, read back from the registry (an index followed to its linux/amd64 manifest), names
+      # the config digest the build recorded.
+      - name: Check the registry holds the images built
+        env:
+          BUILD: ${{ toJSON(needs.build.outputs) }}
+        run: |
+          repository="ghcr.io/${GITHUB_REPOSITORY,,}"
+          for image in web web-staging web-production worker; do
+            config="$(jq -r --arg key "config_$image" '.[$key] // empty' <<< "$BUILD")"
+            for ref in "$repository/$image:$GITHUB_REF_NAME" "$repository/$image:sha-$GITHUB_SHA"; do
+              raw="$(docker buildx imagetools inspect --raw "$ref")"
+              case "$(jq -r '.mediaType // empty' <<< "$raw")" in
+                application/vnd.oci.image.index.v1+json | application/vnd.docker.distribution.manifest.list.v2+json)
+                  digest="$(jq -r '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64")] | if length == 1 then .[0].digest else empty end' <<< "$raw")"
+                  if [ -z "$digest" ]; then
+                    echo "::error title=$image::$ref is an index without exactly one linux/amd64 manifest"
+                    exit 1
+                  fi
+                  raw="$(docker buildx imagetools inspect --raw "$repository/$image@$digest")"
+                  ;;
+              esac
+              pushed="$(jq -r '.config.digest // empty' <<< "$raw")"
+              if [ -z "$config" ] || [ "$pushed" != "$config" ]; then
+                echo "::error title=$image::the registry's $ref names the config ${pushed:-nothing}, not the ${config:-digest} the build recorded"
+                exit 1
+              fi
+              echo "$ref: config $pushed, the image built"
+            done
           done
 
   # The report attested and kept, with its SHA-256, its summary and the attestation's bundle, as assets of the tag's
