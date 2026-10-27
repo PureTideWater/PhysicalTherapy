@@ -2039,7 +2039,7 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
     function regenerate(mode: 'same' | 'changed' | 'large' | 'unreached' | 'claimed' | 'extra' | 'failed') {
       const dir = mkdtempSync(path.join(scratch, 'baselines-'));
       const env = { HOME: dir, GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'Synthetic', GIT_AUTHOR_EMAIL: 'synthetic@example.invalid', GIT_COMMITTER_NAME: 'Synthetic', GIT_COMMITTER_EMAIL: 'synthetic@example.invalid' };
-      const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env: { ...process.env, ...env }, encoding: 'utf8' });
+      const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env: { ...process.env, ...env }, encoding: 'utf8', timeout: TEST_TIMEOUT_MS, killSignal: 'SIGKILL' });
       const snapshots = path.join(dir, 'apps/web/e2e/brand.spec.ts-snapshots');
       mkdirSync(snapshots, { recursive: true });
       writeFileSync(path.join(snapshots, 'header-1280-chromium-linux.png'), 'header');
