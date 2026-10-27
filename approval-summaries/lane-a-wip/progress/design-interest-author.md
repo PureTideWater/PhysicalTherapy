@@ -76,3 +76,9 @@ Output: /home/user/ops/designs/ledger-interest-once.md
 - WRITTEN run 2: header + section 0
 - WRITTEN run 2: 1.4 two bullets (reference whole; CLP04 folded), section 2 (N3, TR3 1.10.2.9, RFI 2370)
 - WRITTEN run 2: 3.5 SUITE-CAP-1 lines; 3.6 (net chains, exact/net-only), 3.7 (once per L6 gross), 3.8 (skip legacy shape), 3.9 (tokens)
+- WRITTEN run 2: section 4 (D1-D16, 4.1 worked cases incl F1-F7)
+- WRITTEN run 2: section 5 (5.1-5.3 with run-2 SQL)
+- WRITTEN run 2: section 6
+- WRITTEN run 2: section 7 (entry-sign words, ROI page sentence, refusals, UX list)
+- WRITTEN run 2: section 8 (8.0 has RUN2_RESULTS_PLACEHOLDER and RUN2_SHOWS_PLACEHOLDER to fill)
+- WRITTEN run 2: section 9 updates
