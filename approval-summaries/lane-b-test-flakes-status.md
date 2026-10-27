@@ -18,11 +18,22 @@
 
 - 15:16 UTC: design review (wf_ba275191-0a9): approve-with-changes; its should-fix applied (the other-digits property now leaves out nothing for unread alphabets). Commit 0577b73 pushed to co-001/test-flakes; typecheck passed; 40 consecutive runs of the rerun property passed. **Draft PR #76** opened, description from the template, read back byte for byte; subscribed. Reviews workflow wf_abcef1ea-473 running (infra, correctness, payment-engine with the packets Stryker shard and gate). Check-in scheduled 20:26 UTC (trig_0141f5jbkroEggNLhAuDVTEx).
 
+- 16:03 UTC: CI on 0577b73 all green (mutation's packets-scan, packets-rest and packets-explain shards included). Reviews (wf_abcef1ea-473):
+  - **Infra:** pass-with-findings. Fixed: each spawned child is now bounded by 30 s, since a test timeout cannot stop a hung spawnSync. Fixed: db-shards.test.ts:67 and :90, and the golden worksheet, which each failed at 5 s when starved. The description wording is fixed too.
+  - **Correctness:** pass-with-findings. Fixed: the count properties now assert both sides, with counts biased toward the inputs' figures; the pair step checks the invariants mid-step; the EVERY_OUTCOME comment is reworded.
+  - **Payment-engine:** its agent did its work but returned no structured result. Its progress file records the precondition judgement as sound, and the packets-scan and packets-rest shards and the gate pass locally (scan 93.95%, mismatches.ts 97.30%).
+
+  Commit b02435c5 is local, not pushed. Fix-round suite wf_8d591f13-47a is running.
+
 ## Proposals (not built here)
 - `tools/stryker/affected.test.ts:601` took 55.9 s of its 120 s on CI (2.1x headroom).
 - `apps/worker/src/screening/threads.test.ts:100-112` asserts wall-clock bounds (took < 3000; active count after a 100 ms timer) under load; beside the "Not while #42 is open" screening files.
 - Process-spawning tests on the 5 s default outside the nested run, each well under it on CI today: tools/engine-freeze/check.test.ts:572 (557 ms), tools/golden-worksheet/worksheet.test.ts (1.0 s), tools/check-action-pins/verify.test.ts, tools/test/check-releases-immutable.test.ts, tools/test/publish-content.test.ts, tools/audit-worksheet. A repository-wide rule (a helper or project setting) for process-spawning tests is the general fix.
 - The Dependabot test's three nested runs share one 300 s budget while each spawn has 280 s: give each a share of a deadline so an overrun names its run (design review nit).
+
+- **Product observations from the correctness review (out of scope, for the orchestrator to queue):**
+  - (a) `packages/model-gateway/src/redact.ts`: a name part equal to another placeholder's word (Date, Birth, Member, Claim) is replaced after those placeholders are inserted. That corrupts them, e.g. `[[PATIENT_NAME]_1]`, so the model loses `[CLAIM_1]`. The fix: redact in one pass over the original text, or mask the inserted placeholders; then the property checks that the placeholders survive.
+  - (b) `packages/packets/src/facts.ts`: `quoted(source.quote, dayCounts)` sends a five-digit number in a contract-window quote to codes, not dayCounts. So "10000 visits" passes when the window says 10000 days.
 
 ## Next step
 Read the reviews; fix round with the full local suite once; one push; fresh-clone verification; merge per lanes/lane-b.md; then tell the orchestrator (session_01TrKDxeLbxVo7t7zwRXFzrg).
