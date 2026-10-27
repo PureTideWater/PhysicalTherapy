@@ -787,7 +787,11 @@ the one exception to A4 (c). A build that fails the check has every file's line 
 every path that differs from the committed list named, so one run gives all a new record needs. The `--image <tag>` form
 holds the worker image's headless shell in every job that builds that image into a local tag, before the tag is
 measured, saved, tagged or pushed: ci.yml's `images`, the release's `build`, and both measuring jobs,
-`release-capacity.yml`'s and `screening-capacity.yml`'s `capacity` (N17).
+`release-capacity.yml`'s and `screening-capacity.yml`'s `capacity` (N17). It reads the image as root, offline and from
+the local tag only, and a file it cannot hash fails it by name (N21, N22). Once a build's every file equals the record,
+and only then, the check runs the binary's `--version` and fails unless it prints `Google Chrome for Testing
+<browserVersion>`, on the runner as the job's user and in the image as the image's own user, so a build that cannot
+start fails the check rather than the first test or the first report (N22).
 
 **The brand baselines, from nothing, on every run.** The first `e2e` shard of every pull request and push regenerates
 the brand baselines with `--update-snapshots=all --retries=0` into an empty directory outside the repository
@@ -919,6 +923,21 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
   285 of 287 files and failed closed. The in-image script also names any file it cannot read, so such a failure says
   why rather than showing as a tree difference. On the same run the browser check passed on CI's own download from
   Playwright's mirror: its bytes for revision 1248 are Google's, file for file.
+- **N22.** The browser check proves the build starts, and its hash run in an image hides no failure (the reviews of
+  367a659f: CI-1, CI-4, CI-5, SEC-3, SEC-4, SEC-7). Both docker reads also take `--pull never`, so a tag missing on the
+  runner fails rather than a registry's image of that name being checked in its place. Inside the image each stage of
+  the hash run writes a file and reports its own exit status: `sh` has no pipefail, and on the first run `sed` hid
+  `sha256sum`'s failure, so the two files it could not read were named as removed. A file found but not hashed now
+  fails the check as "could not be hashed whole", naming the tool and the file, never as a file the image lacks. The
+  hashes cover bytes, not modes nor the libraries the system provides, so once every file of a build equals the
+  record, and only then (a binary is never run before its bytes are proven), the check runs its `--version` and fails
+  unless it exits 0 printing `Google Chrome for Testing <browserVersion>`, naming what it printed: on the runner as the
+  job's user, and in the image as the image's own user (`docker run --rm --pull never --network none`, no `--user`), so
+  the user that prints customers' PDFs must be able to start the shell while the hashes stay root's. Before, a shell
+  that could not start passed, and no pull-request job ever started the worker image's. `browser-build.test.ts` holds
+  each with a stand-in docker that accepts those two forms only, a stand-in `sha256sum` that fails on one file, and
+  stand-in binaries whose bytes stay equal to the record while they print another version, fail to start or lose their
+  execute bit.
 
 ### Consequences
 
@@ -931,8 +950,9 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
   `ubuntu-latest`'s November move changes nothing here, since the runner rule refuses `-latest`.
 - What cannot be verified where the series is built (no Docker daemon, no GitHub runner): the containerd `.Id` rule,
   image-id.ts on real archives, Trivy's `input`, the registry check, the apt verify against a real index, the mirror's
-  bytes against `browser.json` and the baseline step. The pull request's own runs prove them (the `images` job every
-  run, the dry run where its paths run it), and the first tag proves the push job's registry check.
+  bytes against `browser.json`, the worker image's headless shell starting as the image's own user, and the baseline
+  step. The pull request's own runs prove them (the `images` job every run, the dry run where its paths run it), and
+  the first tag proves the push job's registry check.
 
 ### Revisit when
 

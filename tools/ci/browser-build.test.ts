@@ -6,7 +6,7 @@ import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { repositoryRoot } from '../content-files';
-import { BUILDS, type BrowserRecord, type BuildName, IMAGE_SCRIPT, RECORD, listFile, playwrightCore, readRecord, run, sha256, treeLines, treeSha256 } from './browser-build';
+import { BUILDS, type BrowserRecord, type BuildName, IMAGE_SCRIPT, RECORD, compare, listFile, playwrightCore, readRecord, run, sha256, treeLines, treeSha256 } from './browser-build';
 
 /**
  * tools/ci/browser-build.ts, the browser build check (test matrix CI-18; docs/adr/0058), on stand-in builds in a
@@ -19,6 +19,10 @@ const SCRIPT = path.join(repositoryRoot, 'tools/ci/browser-build.ts');
 const REVISION = '9999';
 const VERSION = '999.0.1.2';
 const PROCEDURE = "A Playwright upgrade needs ADR 0058's baseline procedure: docs/runbooks/ci.md, 'Upgrading the browser'.";
+/** What a binary missing a shared library prints, and the check's explanation of a build that cannot start. */
+const LOADER = './chrome-headless-shell: error while loading shared libraries: libnss3.so: cannot open shared object file: No such file or directory';
+const CANNOT_START =
+  "The build's every file equals the record, and the hashes cover neither modes nor what the system provides, so what stops it is outside them: a shared library the system lacks, or a mode or user that cannot run it.";
 const DIRS: Record<BuildName, { dir: string; binary: string }> = {
   'chromium-headless-shell': { dir: 'chrome-headless-shell-linux64', binary: 'chrome-headless-shell' },
   chromium: { dir: 'chrome-linux64', binary: 'chrome' },
@@ -38,12 +42,27 @@ function shellTree(revisionDir: string, dir: string): string {
   return execFileSync('bash', ['-c', 'cd "$1" && find "$2" -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum', 'bash', revisionDir, dir], { encoding: 'utf8' }).split(' ')[0] ?? '';
 }
 
+/**
+ * A stand-in binary that answers --version as Chrome for Testing does. Its bytes never change between cases: what it
+ * does comes from the environment the check passes it, so a case can make a build whose every file equals the record
+ * fail to start (STANDIN_FAIL: printed, exit 127, as a missing shared library would), print another version
+ * (STANDIN_VERSION_LINE), or record that it ran at all (STANDIN_RAN, a file it appends its path and its user to: the
+ * stand-in docker's STANDIN_USER, else "caller").
+ */
+const STANDIN_BINARY = [
+  '#!/bin/sh',
+  '[ -z "${STANDIN_RAN:-}" ] || echo "$0 ${STANDIN_USER:-caller}" >> "$STANDIN_RAN"',
+  '[ -z "${STANDIN_FAIL:-}" ] || { echo "$STANDIN_FAIL" >&2; exit 127; }',
+  `echo "\${STANDIN_VERSION_LINE:-Google Chrome for Testing ${VERSION}}"`,
+  '',
+].join('\n');
+
 /** A stand-in build: a binary that answers --version, a library, resources in a subdirectory, and Playwright's markers. */
 function layBuild(root: string, name: BuildName, revision = REVISION): string {
   const revisionDir = path.join(root, `${BUILDS[name].folder}-${revision}`);
   const { dir, binary } = DIRS[name];
   mkdirSync(path.join(revisionDir, dir, 'resources'), { recursive: true });
-  writeFileSync(path.join(revisionDir, dir, binary), `#!/bin/sh\necho "Stand-in ${name} ${VERSION}"\n`);
+  writeFileSync(path.join(revisionDir, dir, binary), STANDIN_BINARY);
   chmodSync(path.join(revisionDir, dir, binary), 0o755);
   writeFileSync(path.join(revisionDir, dir, 'libvk_swiftshader.so'), `software GL of ${name}`);
   writeFileSync(path.join(revisionDir, dir, 'resources', 'a.pak'), 'resources');
@@ -128,8 +147,9 @@ describe('the browser build check (CI-18)', () => {
     const { status, out, err } = check();
     expect(err).toEqual([]);
     expect(status).toBe(0);
-    expect(out).toContain(`The headless shell: Stand-in chromium-headless-shell ${VERSION}`);
+    expect(out).toContain(`The headless shell: Google Chrome for Testing ${VERSION}`);
     expect(out).toContain('The headless shell: equal to browser.json in every file');
+    expect(out).toContain(`Chromium: Google Chrome for Testing ${VERSION}`);
     expect(out).toContain('Chromium: equal to browser.json in every file');
     const shell = recorded().builds['chromium-headless-shell'];
     expect(out.some((line) => line.includes(`tree SHA-256 ${shell.treeSha256}, binary SHA-256 ${shell.sha256}`))).toBe(true);
@@ -149,7 +169,7 @@ describe('the browser build check (CI-18)', () => {
 
   it('fails on a different binary with the message that names both builds and the procedure', () => {
     const binary = path.join(shellDir(), 'chrome-headless-shell');
-    writeFileSync(binary, `#!/bin/sh\necho "Stand-in chromium-headless-shell ${VERSION}"\n# another build\n`);
+    writeFileSync(binary, `${STANDIN_BINARY}# another build\n`);
     const { status, err } = check();
     expect(status).toBe(1);
     const record = recorded();
@@ -193,6 +213,52 @@ describe('the browser build check (CI-18)', () => {
     // --list prints the same lines once, not twice, beside the equal build's.
     const listed = check(['--list']).out.filter((line) => line.startsWith('  ')).map((line) => line.trim());
     expect(listed).toEqual([...found, ...readFileSync(listFile(current.record, recorded().builds.chromium), 'utf8').trim().split('\n')]);
+  });
+
+  describe('--version, run once every file of the build equals the record (SEC-4)', () => {
+    it('fails when a build whose every file equals the record prints another version, naming what it printed', () => {
+      const { status, err } = check([], { STANDIN_VERSION_LINE: 'Google Chrome for Testing 999.0.1.3' });
+      expect(status).toBe(1);
+      expect(err).toEqual([
+        `The headless shell does not run as browser.json's build: \`${shellDir()}/chrome-headless-shell --version\`, run as this process's user, printed "Google Chrome for Testing 999.0.1.3", where browser.json's build prints "Google Chrome for Testing ${VERSION}". The build's every file equals the record, so browser.json's browserVersion does not name its build.`,
+        expect.stringMatching(/^Chromium does not run as browser\.json's build: `.*\/chromium-9999\/chrome-linux64\/chrome --version`, run as this process's user, printed "Google Chrome for Testing 999\.0\.1\.3", /),
+      ]);
+    });
+
+    it('fails when a build whose every file equals the record cannot start, naming what it printed', () => {
+      const { status, err } = check([], { STANDIN_FAIL: LOADER });
+      expect(status).toBe(1);
+      expect(err).toHaveLength(2);
+      expect(err[0]).toBe(
+        `The headless shell does not run as browser.json's build: \`${shellDir()}/chrome-headless-shell --version\`, run as this process's user, exited 127, printing "${LOADER}", where browser.json's build prints "Google Chrome for Testing ${VERSION}". ${CANNOT_START}`,
+      );
+    });
+
+    it('fails when the binary, its bytes the record’s, has no mode that lets it run (modes are not hashed)', () => {
+      chmodSync(path.join(shellDir(), 'chrome-headless-shell'), 0o644);
+      const { status, out, err } = check();
+      expect(status).toBe(1);
+      expect(err).toEqual([expect.stringMatching(new RegExp(`^The headless shell does not run as browser\\.json's build: \`.*/chrome-headless-shell --version\`, run as this process's user, could not be started \\(.*EACCES.*\\), where browser\\.json's build prints "Google Chrome for Testing ${VERSION.replaceAll('.', '\\.')}"\\. `))]);
+      expect(out).toContain('Chromium: equal to browser.json in every file');
+    });
+
+    it('never runs a binary whose build differs from the record', () => {
+      const ran = path.join(current.dir, 'ran.log');
+      writeFileSync(path.join(shellDir(), 'icudtl.dat'), 'other ICU data');
+      const { status, out } = check([], { STANDIN_RAN: ran });
+      expect(status).toBe(1);
+      expect(out).toContain("The headless shell: --version not run: its files are not proven to be browser.json's");
+      // Chromium, equal in every file, ran; the headless shell did not.
+      expect(readFileSync(ran, 'utf8').trim().split('\n')).toEqual([expect.stringMatching(/\/chromium-9999\/chrome-linux64\/chrome caller$/)]);
+    });
+
+    it('fails closed when a build equal to the record reaches the comparison with its --version not run', () => {
+      const record = recorded();
+      const shell = record.builds['chromium-headless-shell'];
+      const lines = readFileSync(listFile(current.record, shell), 'utf8').trim().split('\n');
+      const found = { revision: REVISION, browserVersion: VERSION, dir: shell.dir, lines, others: [], faults: [], where: 'nowhere', version: { ran: false, why: 'a test' } } as const;
+      expect(compare('chromium-headless-shell', record, current.record, found).problems).toEqual(["The headless shell's --version was not run (a test), so whether it starts is unproven."]);
+    });
   });
 
   it('does not count Playwright’s markers beside the build', () => {
@@ -273,18 +339,27 @@ describe('the browser build check (CI-18)', () => {
 
   describe('--image, against a stand-in docker', () => {
     /**
-     * A `docker run --rm --user 0:0 --network none --entrypoint <cat|sh> <ref> …` that runs in a stand-in image: /app and
-     * /ms-playwright. Any other form is refused, so the check reads the image as root and offline.
+     * A `docker run --rm --pull never [--user 0:0] --network none --entrypoint <cat|sh> <ref> …` that runs in a stand-in
+     * image: /app and /ms-playwright. Two forms only, each offline and from the local tag (never one pulled from a
+     * registry): as root (--user 0:0, the reads), or as the image's own user (no --user, the version run). Any other
+     * form is refused. Each run is logged to DOCKER_LOG as "<root|image> <entrypoint>", and the user reaches the stand-in
+     * binary as STANDIN_USER.
      */
     const DOCKER = `#!/usr/bin/env bash
 set -eu
-[ "$1 $2 $3 $4 $5 $6 $7" = "run --rm --user 0:0 --network none --entrypoint" ] || { echo "unexpected: $*" >&2; exit 97; }
-entrypoint=$8 ref=$9; shift 9
+if [ "$1 $2 $3 $4 $5 $6 $7 $8 $9" = "run --rm --pull never --user 0:0 --network none --entrypoint" ]; then
+  user=root entrypoint=\${10} ref=\${11}; shift 11
+elif [ "$1 $2 $3 $4 $5 $6 $7" = "run --rm --pull never --network none --entrypoint" ]; then
+  user=image entrypoint=$8 ref=$9; shift 9
+else
+  echo "unexpected: $*" >&2; exit 97
+fi
 [ "$ref" = "registry.example/tp-worker:test" ] || { echo "no such image: $ref" >&2; exit 98; }
+[ -z "\${DOCKER_LOG:-}" ] || echo "$user $entrypoint" >> "$DOCKER_LOG"
 cd "$IMAGE_ROOT/app"
 case "$entrypoint" in
   cat) exec cat "$@" ;;
-  sh) PLAYWRIGHT_BROWSERS_PATH="$IMAGE_ROOT/ms-playwright" exec sh "$@" ;;
+  sh) STANDIN_USER=$user PLAYWRIGHT_BROWSERS_PATH="$IMAGE_ROOT/ms-playwright" exec sh "$@" ;;
 esac
 exit 99
 `;
@@ -314,9 +389,30 @@ exit 99
       const { status, out, err } = check(['--image', 'registry.example/tp-worker:test'], env, path.join(current.dir, 'nowhere/package.json'));
       expect(err).toEqual([]);
       expect(status).toBe(0);
-      expect(out).toContain(`The headless shell: Stand-in chromium-headless-shell ${VERSION}`);
+      expect(out).toContain(`The headless shell: Google Chrome for Testing ${VERSION}`);
       expect(out).toContain('The headless shell: equal to browser.json in every file');
       expect(out.some((line) => line.startsWith('Chromium'))).toBe(false);
+    });
+
+    it('runs --version as the image’s own user, offline and from the local tag, once the hashes, read as root, equal the record (SEC-4)', () => {
+      const env = { ...image(), DOCKER_LOG: path.join(current.dir, 'docker.log'), STANDIN_RAN: path.join(current.dir, 'ran.log') };
+      copyShell(REVISION);
+      const { status, err } = check(['--image', 'registry.example/tp-worker:test'], env);
+      expect(err).toEqual([]);
+      expect(status).toBe(0);
+      // The reads as root, then the version run as the image's user: the user the worker prints PDFs as can start it.
+      expect(readFileSync(env.DOCKER_LOG, 'utf8')).toBe('root cat\nroot sh\nimage sh\n');
+      expect(readFileSync(env.STANDIN_RAN, 'utf8').trim().split('\n')).toEqual([expect.stringMatching(/\/chrome-headless-shell image$/)]);
+    });
+
+    it('fails when the image’s headless shell, every file equal to the record, cannot start as the image’s user (SEC-4)', () => {
+      const env = { ...image(), STANDIN_FAIL: LOADER };
+      copyShell(REVISION);
+      const { status, err } = check(['--image', 'registry.example/tp-worker:test'], env);
+      expect(status).toBe(1);
+      expect(err).toEqual([
+        `The headless shell does not run as browser.json's build: \`registry.example/tp-worker:test: $PLAYWRIGHT_BROWSERS_PATH/chromium_headless_shell-${REVISION}/chrome-headless-shell-linux64/chrome-headless-shell --version\`, run as the image's own user, exited 127, printing "${LOADER}", where browser.json's build prints "Google Chrome for Testing ${VERSION}". ${CANNOT_START}`,
+      ]);
     });
 
     it('fails on the image’s build when a file differs, naming the image and the path', () => {
@@ -332,9 +428,10 @@ exit 99
       expect(out.filter((line) => line.startsWith('  ')).map((line) => line.trim())).toEqual(treeLines(revisionDir, DIRS['chromium-headless-shell'].dir).lines);
     });
 
-    it('reads the image as root with no network, and fails on a file the check cannot read, naming it', () => {
-      // The stand-in refuses any docker run without --user 0:0 --network none; this one also reports a file the script's
-      // find could not read, as it would for the image's runtime user on Chrome for Testing's mode-0600 deb.deps.
+    it('reads the image as root with no network and no pull, and fails on a file the check cannot read, naming it', () => {
+      // The stand-in refuses any docker run without --pull never --user 0:0 --network none; this one also reports a file
+      // the script's find could not read, as it would for the image's runtime user on Chrome for Testing's mode-0600
+      // deb.deps.
       const env = image();
       copyShell(REVISION);
       expect(IMAGE_SCRIPT).toContain('find "$dir" -type f ! -readable -exec printf');
@@ -342,6 +439,31 @@ exit 99
       const { status, err } = check(['--image', 'registry.example/tp-worker:test'], env);
       expect(status).toBe(1);
       expect(err).toEqual([`The headless shell's build holds 1 entries that no tree SHA-256 covers (neither a regular file nor a directory, or a file the check cannot read): ${DIRS['chromium-headless-shell'].dir}/deb.deps (unreadable).`]);
+    });
+
+    it('fails by name when sha256sum fails on a file inside the image, never as a file the image lacks (CI-5, SEC-3)', () => {
+      // A sha256sum first on the image's PATH that cannot read icudtl.dat (as an I/O error, or a mode no user can pass,
+      // would leave it) and hashes every other file: xargs then exits 123, which sh's pipeline used to hide behind sed.
+      const env = image();
+      copyShell(REVISION);
+      const real = execFileSync('sh', ['-c', 'command -v sha256sum'], { encoding: 'utf8' }).trim();
+      writeFileSync(
+        path.join(current.dir, 'bin', 'sha256sum'),
+        `#!/bin/sh\nstatus=0\nfor file in "$@"; do\n  case "$file" in\n    */icudtl.dat) echo "sha256sum: $file: Input/output error" >&2; status=1 ;;\n    *) ${real} "$file" ;;\n  esac\ndone\nexit $status\n`,
+      );
+      chmodSync(path.join(current.dir, 'bin', 'sha256sum'), 0o755);
+      const { status, out, err } = check(['--image', 'registry.example/tp-worker:test'], env);
+      expect(status).toBe(1);
+      expect(err).toHaveLength(1);
+      expect(err[0]).toBe(
+        `The headless shell could not be hashed whole under registry.example/tp-worker:test: $PLAYWRIGHT_BROWSERS_PATH/chromium_headless_shell-${REVISION}: ` +
+          `sha256sum exited 123; 1 of 4 files found was not hashed: ${DIRS['chromium-headless-shell'].dir}/icudtl.dat. ` +
+          'Its tree SHA-256 is not compared until every file is hashed; the tool’s own message is in the log above.',
+      );
+      // Not a tree difference, and not the upgrade procedure: the file is in the image, it could not be read.
+      expect(err[0]).not.toContain('(removed)');
+      expect(err[0]).not.toContain(PROCEDURE);
+      expect(out).toContain(`The headless shell: revision ${REVISION}, ${VERSION}, 3 files under registry.example/tp-worker:test: $PLAYWRIGHT_BROWSERS_PATH/chromium_headless_shell-${REVISION}, tree SHA-256 not computed (the hash run failed), binary SHA-256 ${recorded().builds['chromium-headless-shell'].sha256}`);
     });
 
     it('fails when the image pins another revision, and when its build is not there', () => {

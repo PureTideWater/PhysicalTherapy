@@ -284,7 +284,11 @@ hoists none of them), requires its `browsers.json` to pin the recorded revision 
 and binary SHA-256s, and fails on any difference, naming what it found, what is recorded, ADR 0058's procedure and,
 when the build is the recorded revision, every file that differs; a build that fails it has its every file's line
 printed, as `--list` prints them, so one run gives a new record. With `--image <ref>` it checks the worker image's
-headless shell inside the image. It runs right after every `playwright install` in every workflow, before any test and
+headless shell inside the image, read as root, offline and from the local tag only, where a file that cannot be hashed
+fails by name rather than reading as one the image lacks. The hashes cover bytes, not modes nor the libraries the
+system provides, so once a build's every file equals the record, and only then, the check runs its `--version` and
+fails unless it prints `Google Chrome for Testing <browserVersion>`: a build that cannot start fails here, on the
+runner as the job's user and in the image as the image's own user, the one that prints the PDFs. It runs right after every `playwright install` in every workflow, before any test and
 before any cache is saved, so a build that fails it is never cached, and on the worker image in every job that builds
 it into a local tag before the tag is measured, saved or pushed: `ci.yml`'s `images`, the release's build, and both
 measuring jobs (`release-capacity.yml`'s and `screening-capacity.yml`'s `capacity`). The steps after it still run when it fails (their condition is the install's
