@@ -5,11 +5,11 @@ import { shownRefusal } from '../lib/http/download-refusal-words';
 import { DownloadLink, DownloadLinks, attachmentFilename, fetchDownload, isPlainClick, saveFile } from './download-link';
 
 /**
- * A download fetched in place on a page that holds what a reload would lose (docs/adr/0079; UX review of PR #78,
- * UX-DLR-02): the file saved under the route's own name, a refusal read from the JSON outcome a script gets and said in
- * the product's words, anything else sent to the link as a navigation, and the link itself kept for a new tab or a page
- * without script. The click and the focus need a browser (the e2e runs them); the request, its reading and the save
- * are tested here. Written by hand.
+ * A download fetched in place on a page that holds what a reload would lose (docs/adr/0079; test matrix DLR-04; UX
+ * review of PR #78, UX-DLR-02): the file saved under the route's own name, a refusal read from the JSON outcome a
+ * script gets and said in the product's words, above the links or below them, anything else sent to the link as a
+ * navigation, and the link itself kept for a new tab or a page without script. The click and the focus need a browser
+ * (the e2e runs them); the request, its reading and the save are tested here. Written by hand.
  */
 
 const DOCUMENT = '00000000-0000-4000-8000-0000000000d1';
@@ -152,6 +152,23 @@ describe('a download link and the place its refusal is said', () => {
       </DownloadLinks>,
     );
     expect(markup).toBe(`<p data-arrived="true">Arrived</p><a href="${HREF}">Report</a>`);
+  });
+
+  it('says it below the links when they are in a page’s header (the reviewer checklist’s), inside another one too', () => {
+    const below = renderToStaticMarkup(
+      <DownloadLinks arrived={<p data-arrived>Arrived</p>} below>
+        <DownloadLink href={HREF}>Report</DownloadLink>
+      </DownloadLinks>,
+    );
+    expect(below).toBe(`<a href="${HREF}">Report</a><p data-arrived="true">Arrived</p>`);
+    const inner = renderToStaticMarkup(
+      <DownloadLinks>
+        <DownloadLinks arrived={<p data-arrived>Arrived</p>} below>
+          <DownloadLink href={HREF}>Report</DownloadLink>
+        </DownloadLinks>
+      </DownloadLinks>,
+    );
+    expect(inner).toBe(below);
   });
 
   it('leaves the place to the outer one when one is inside another (the Uploads screen’s, above its receipt list’s own)', () => {

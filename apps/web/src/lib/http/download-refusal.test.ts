@@ -478,6 +478,52 @@ describe('every download route declares its page (R01: the registry test refuses
   });
 });
 
+/** Every page.tsx in src/app, by its path under it. */
+const PAGE_FILES = files(APP)
+  .filter((file) => path.basename(file) === 'page.tsx')
+  .map((file) => path.relative(APP, file));
+
+/** The page.tsx that renders a path: a [param] segment takes any one segment, and a segment named in full wins over it. */
+function pageFileOf(page: string): string | undefined {
+  const segments = page.split('/').slice(1);
+  const params = (file: string) => path.dirname(file).split(path.sep).filter((part) => part.startsWith('[')).length;
+  return PAGE_FILES.filter((file) => {
+    const template = path.dirname(file).split(path.sep);
+    return template.length === segments.length && template.every((part, index) => part.startsWith('[') || part === segments[index]);
+  }).sort((a, b) => params(a) - params(b))[0];
+}
+
+/** Every ?from= a download route reads (cameFrom: list and review in reports.ts and report-documents.ts, REPORT_FROM). */
+const FROM = [undefined, 'list', 'review', 'uploads'];
+
+/** The pages the download routes come back to, for their own IDs and every ?from=, each with the page.tsx that renders it. */
+const RETURN_PAGES = [
+  ...new Set(
+    registry.ROUTES.flatMap((route) => {
+      const own = Object.fromEntries([...route.path.matchAll(/\[(\w+)\]/g)].map((match) => [match[1] ?? '', SAMPLE_ID]));
+      return FROM.map((from) => route.returnTo?.({ ...own, from })?.path ?? null).filter((page) => page !== null);
+    }),
+  ),
+].map((page) => [page.replaceAll(SAMPLE_ID, '[id]'), pageFileOf(page)] as const);
+
+describe('every page a download comes back to forgets a refusal it shows on its permission state (UX-DLR-05)', () => {
+  it('finds the pages', () => {
+    expect(RETURN_PAGES.length).toBeGreaterThanOrEqual(12);
+  });
+
+  it.each(RETURN_PAGES)('%s (%s): its Forbidden branch takes the refusal out of the address bar, with the page’s own keys its notice takes', (page, file) => {
+    expect(file, `${page} has a page.tsx`).toBeDefined();
+    const source = readFileSync(path.join(APP, file ?? ''), 'utf8');
+    const forbidden = /\n {2}if \(page\.kind === 'forbidden'\) \{\n([\s\S]*?)\n {2}\}\n/.exec(source)?.[1];
+    expect(forbidden, `${file} has a Forbidden branch`).toBeDefined();
+    expect(forbidden).toContain('downloadRefusal(await props.searchParams)');
+    expect(forbidden).toMatch(/: <ForgetRefusal\b/);
+    for (const [, keys] of source.matchAll(/<DownloadRefusal\b[^>]*\bforget=\{(\w+)\}/g)) {
+      expect(forbidden, `${file}: the notice forgets ${keys ?? ''}`).toContain(`<ForgetRefusal also={${keys ?? ''}} />`);
+    }
+  });
+});
+
 /** A seeded generator (mulberry32), so a failing case is the same on every run. */
 function seeded(seed: number): () => number {
   let state = seed >>> 0;

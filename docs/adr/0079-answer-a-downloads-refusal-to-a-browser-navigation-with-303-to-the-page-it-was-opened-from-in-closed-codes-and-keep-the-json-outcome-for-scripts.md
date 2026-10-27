@@ -121,23 +121,27 @@ gone, and 980 px wide on a phone (UX-010). The cause was general, not the letter
    without the attribute. The links in `components/uploads/receipts.tsx`, `uploads/[documentId]/page.tsx`,
    `packet/[versionId]/review/page.tsx` and `console/compliance/page.tsx` drop it; the other links had none. A link that
    keeps it by mistake gets JSON, never the app's HTML under the file's name.
-   Without the attribute, a refused link loads its page again, which would cut off an Uploads batch still being sent
-   and untick the export review's checklist. On those two pages a link is a `DownloadLink`
-   (`components/download-link.tsx`), inside a `DownloadLinks` that says its refusals. A plain primary click (no
-   modifier key) fetches the file as a script does (`Accept: application/json`, Fetch Metadata's `cors` mode and an
-   empty destination, so `isNavigation` is false and a refusal is the JSON outcome, never the 303): an attachment is
-   saved under its `Content-Disposition` name from an object URL; a refusal is read by `refusedDownloadOf()` and said
-   above the links in the words and look of a page's notice (`RefusalAlert`, 5 below), in place of the notice the page
-   arrived with, and focused as it mounts (React's `autoFocus` focuses only a form control); the next file saved takes
-   it away; anything the notice cannot settle (a signed-out session, maintenance, a body that is not an outcome, a
-   request that failed) goes to the link as a navigation, whose 303 takes sign-in's steps. The `href` stays the link's
-   own, so a new tab, a modifier click, "Save link as" or a page without script still downloads, and is still refused
-   back to its page (1 to 3). It serves the receipts' Report link (on Uploads, and in a zip's list of its
-   files) and the export review's PDF and CSV, which read the page again once a file is saved (`router.refresh()`), so
-   the checklist opens as the second file is downloaded. Once Report never navigates on a plain click, `Uploader` asks
-   before the page unloads (`beforeunload`, the browser's own question) while any file of the batch is still being
-   asked for, sent or reported complete (`stillSending`); a move inside the app does not unload the page and does not
-   ask.
+   Without the attribute, a refused link loads its page again, which would cut off an Uploads batch still being sent,
+   untick the export review's and the audit report's reviewer checklists, and lose words typed and not yet sent on the
+   packet page or in the console's evidence forms. On those pages a link is a `DownloadLink`
+   (`components/download-link.tsx`), inside a `DownloadLinks` that says its refusals. A plain primary click (no modifier
+   key) fetches the file as a script does (`Accept: application/json`, Fetch Metadata's `cors` mode and an empty
+   destination, so `isNavigation` is false and a refusal is the JSON outcome, never the 303): an attachment is saved
+   under its `Content-Disposition` name from an object URL; a refusal is read by `refusedDownloadOf()` and said above
+   the links (below them where they sit in the page's header: `below`) in the words and look of a page's notice
+   (`RefusalAlert`, 5 below), in place of the notice the page arrived with, and focused as it mounts (React's
+   `autoFocus` focuses only a form control); the next file saved takes it away; anything the notice cannot settle (a
+   signed-out session, maintenance, a body that is not an outcome, a request that failed) goes to the link as a
+   navigation, whose 303 takes sign-in's steps. The `href` stays the link's own, `?from=` and `?version=` with it, so a
+   new tab, a modifier click, "Save link as" or a page without script still downloads, and is still refused back to its
+   page (1 to 3). It serves the receipts' Report link (on Uploads, and in a zip's list of its files); the export
+   review's PDF and CSV, which read the page again once a file is saved (`router.refresh()`), so the checklist opens as
+   the second file is downloaded; the reviewer checklist's PDF and line CSV, in its header; each exported version's PDF
+   and CSV in the packet page's export history; and the console's evidence export, in the console's words
+   (`surface="console"`). Every other download link stays plain: its page holds nothing a reload would lose
+   (Alternatives considered). Once Report never navigates on a plain click, `Uploader` asks before the page unloads
+   (`beforeunload`, the browser's own question) while any file of the batch is still being asked for, sent or reported
+   complete (`stillSending`); a move inside the app does not unload the page and does not ask.
 5. **How a page says it.** Each page parses `props.searchParams` with `downloadRefusal()`, whose zod fragment
    (`downloadRefusalParams`) takes each key `.optional().catch(undefined)`, so an unknown code, a repeated key, a field
    that is not a name or a wait out of range is ignored, never a refusal of the page (R14). It is parsed in the page,
@@ -163,15 +167,16 @@ gone, and 980 px wide on a phone (UX-010). The cause was general, not the letter
      notice outlasts that refresh, still focused, while the person stays on the page (`RefusalNotice` holds the notice
      it arrived with while the page's path and query, without those keys, stay the same); another page, or other
      parameters of this one, lets it go, and a reload starts without it.
-   - **A page the person cannot open.** A person whose file was refused may not be able to open its return page
-     either, which then shows its permission state (`Forbidden`). On the case's packet page, its export review and
-     the audit report's reviewer checklist, the refusal leaves the address bar there too (a `ForgetRefusal` beside it;
-     `components/shell.tsx`, a #42 file, is not changed), and where the state's own words would be about something
-     else, it says the file's (UX-DLR-05). The packet page, which every role refused the packet's line-level PHI but
-     an analyst cannot open, says "The packet’s PDF and CSV hold line-level PHI, which your role cannot download: a
-     billing manager or a firm principal downloads them. Open the case to see its state."; the reviewer checklist,
-     whose PDF every role that reads reports downloads, adds "The report’s own page lists its files for the roles that
-     download them."; the export review, whose files take its own permission, keeps its words.
+   - **A page the person cannot open.** A person whose file was refused may not be able to open its return page either,
+     which then shows its permission state (`Forbidden`). On every return page the refusal leaves the address bar there
+     too (a `ForgetRefusal` beside `Forbidden`, with the page's own keys its notice would take: Reports' `list`, the
+     letter's entries on Coverage; `components/shell.tsx`, a #42 file, is not changed), so a reload or a copied link
+     shows the permission state alone; and where the state's own words would be about something else, it says the file's
+     (UX-DLR-05). The packet page, which every role refused the packet's line-level PHI but an analyst cannot open, says
+     "The packet’s PDF and CSV hold line-level PHI, which your role cannot download: a billing manager or a firm
+     principal downloads them. Open the case to see its state."; the reviewer checklist, whose PDF every role that reads
+     reports downloads, adds "The report’s own page lists its files for the roles that download them."; the export
+     review, whose files take its own permission, keeps its words.
    - **Coverage's letter** marks the refused control instead of a notice: `aria-invalid`, "Error: " and its message
      in `letter-<control>-error` ("Choose one of the payers listed.", "Choose one of this payer’s contracts, or None
      named.", "Each code must be five letters or digits.": what is wrong, while the label names the field and the
@@ -249,14 +254,14 @@ gone, and 980 px wide on a phone (UX-010). The cause was general, not the letter
   each says what to do on the page itself. The letter clears its own marks, a control's as the person edits it and
   all of them, with the refusal and the entries in the address bar, once the letter is sent (`LetterMarks`): ux-forms'
   `Field` does not clear a mark as the person types (`co-001/ux-forms` at 4f0b526d).
-- **Elsewhere a refused link loads its page again.** On the packet page, words typed and not yet sent, and on the
-  audit report's reviewer checklist, its ticked boxes, are lost to a refused file as they were to the JSON page
-  before: those links are plain (Revisit when).
-- **A role refused both a page and its file sees that page's permission state as before** on the nine return pages
-  whose permission is their files' own (Uploads, an upload's receipt, Reports, an audit report, a report document, an
-  ROI statement, the monthly summary, Coverage and the console's evidence checklist): the state names what the role
-  cannot do there, and `?refused=` stays in the address bar, where a reload shows the same state; no `ForgetRefusal`
-  stands beside their `Forbidden` yet.
+- **A refused plain link loads its page again**, on a page that holds nothing a reload would lose. Every page that
+  holds work beside a download link (Uploads, the export review, the audit report's reviewer checklist, the packet
+  page and the console's evidence checklist) downloads it in place (4), so a refused file leaves the ticks, the typed
+  words and a batch being sent as they were.
+- **A role refused both a page and its file sees that page's permission state**, and on every return page the
+  refusal leaves the address bar with it (5), so a reload, a bookmark or a copied link shows the permission state
+  alone. A test in `download-refusal.test.ts` finds every page a download route comes back to, for its own IDs and
+  every `?from=`, and reads that page's `Forbidden` branch for its `ForgetRefusal`, with the keys its notice forgets.
 - **A crafted link can still fill the codes field.** Coverage reads `?codes=` back only beside a refusal and only
   through `keptCodes`, so a link from another site (SameSite=Lax cookies ride a top-level GET) can place letters,
   digits and separators there ("Call 555 0100", for example), shown as the field's value, marked refused, under the
@@ -269,11 +274,11 @@ gone, and 980 px wide on a phone (UX-010). The cause was general, not the letter
 - The kept values travel in one more URL (the 303's), which the load balancer's access log records as it already
   records the GET form's.
 - The DLR rows of the test matrix hold the behaviour: `apps/web/src/lib/http/download-refusal.test.ts` (DLR-01 to
-  DLR-03, against fake routes and the registry, with every `Location` it builds checked by `urlPhiFindings`, and the
-  codes pattern held to `letterCodes` over 20,000 seeded strings), `download-refusal-words.test.ts` (the codes read
-  from an outcome as the 303 writes them, and a module that imports nothing), the notice's, the in-place download's,
-  the uploader's and the letter's unit tests, and `apps/web/e2e/download-refusals.spec.ts` (DLR-04, on a practice of
-  its own with axe at 1280 and 390 px).
+  DLR-03, against fake routes and the registry, with every `Location` it builds checked by `urlPhiFindings`, the codes
+  pattern held to `letterCodes` over 20,000 seeded strings, and every return page's `Forbidden` branch read),
+  `download-refusal-words.test.ts` (the codes read from an outcome as the 303 writes them, and a module that imports
+  nothing), the notice's, the in-place download's, the uploader's and the letter's unit tests, and
+  `apps/web/e2e/download-refusals.spec.ts` (DLR-04, on a practice of its own with axe at 1280 and 390 px).
 
 ## Not verified here
 
@@ -288,6 +293,11 @@ gone, and 980 px wide on a phone (UX-010). The cause was general, not the letter
   and the words are held by unit tests against that outcome.
 - The `beforeunload` question: it is the browser's own; a unit test holds when the guard is on (`stillSending`), and
   no end-to-end test answers it. CI saves a fetched file in Chromium only.
+- Every in-place link and every return page in a browser: the end-to-end tests click the receipts' Report, the export
+  review's files and the reviewer checklist's line CSV (its ticks kept); the packet page's export history and the
+  console's evidence export are the same `DownloadLink`, held by its unit tests and the type check. No end-to-end test
+  sends a refused file back to one of the nine return pages whose permission is their file's, as a role that page
+  refuses too; the source test in `download-refusal.test.ts` reads their `Forbidden` branches instead.
 
 ## Revisit when
 
@@ -299,8 +309,7 @@ gone, and 980 px wide on a phone (UX-010). The cause was general, not the letter
   the notice, the letter's selects and its codes field for ADR 0077 D4's page-wide `scroll-padding-top`, which would
   otherwise add to it (144 px where 72 px is meant; UX-DLR-11). The letter keeps `LetterMarks` until a shared field
   clears its own mark.
-- A page beyond Uploads and the export review holds what a reload would lose beside a download link (the packet page's
-  typed words and the audit report's reviewer checklist today): its links move onto `DownloadLink`.
+- Another page comes to hold what a reload would lose beside a download link: its links move onto `DownloadLink`.
 - A download is opened from a page `from=` does not name (a zip's file's report coming back to the zip, UX-DLR-13), or
   a route needs a page that depends on more than its own path parameters.
 - A browser changes the destination it sends for a link download or "Save link as", or Next changes how a route

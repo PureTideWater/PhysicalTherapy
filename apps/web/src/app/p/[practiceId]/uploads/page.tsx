@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 
 import { DownloadRefusal } from '../../../../components/download-refusal';
+import { ForgetRefusal } from '../../../../components/forget-refusal';
 import { roleNames } from '../../../../components/format';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { Uploader } from '../../../../components/uploads/uploader';
@@ -23,7 +24,13 @@ export const metadata: Metadata = { title: 'Uploads' };
 export default async function UploadsPage(props: { readonly params: Promise<{ practiceId: string }>; readonly searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const page = await loadPage(uploadsPage, props);
   if (page.kind === 'forbidden') {
-    return <Forbidden shell={page.shell} section="uploads" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
+    // A refused download comes back here to a role this page refuses too: the refusal leaves the address bar.
+    return (
+      <>
+        <Forbidden shell={page.shell} section="uploads" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />
+        {downloadRefusal(await props.searchParams) === null ? null : <ForgetRefusal />}
+      </>
+    );
   }
   const data = page.data;
   const refusal = downloadRefusal(await props.searchParams);

@@ -663,7 +663,9 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'DLR-04': none(11, 'A practice of its own, its SYNTHETIC CAS-08 remittance uploaded in the browser and its second payer added by the journey; no file.', [
     'apps/web/e2e/download-refusals.spec.ts',
     'apps/web/src/components/coverage/letter.test.tsx',
+    'apps/web/src/components/download-link.test.tsx',
     'apps/web/src/components/download-refusal.test.tsx',
+    'apps/web/src/components/uploads/uploader.test.tsx',
   ]),
 };
 

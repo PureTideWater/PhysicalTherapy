@@ -5,6 +5,7 @@ import Link from 'next/link';
 
 import { ActionForm } from '../../../../components/action-form';
 import { DownloadRefusal } from '../../../../components/download-refusal';
+import { ForgetRefusal } from '../../../../components/forget-refusal';
 import { roleNames, utc } from '../../../../components/format';
 import { ReleaseState, ReportStatusBadge } from '../../../../components/reports/display';
 import { DocumentStatusBadge } from '../../../../components/reports/documents';
@@ -61,7 +62,14 @@ function exportHref(practiceId: string, entry: ExportRecord): string | null {
 export default async function ReportsPage(props: Props) {
   const page = await loadPage(reportsPage, props);
   if (page.kind === 'forbidden') {
-    return <Forbidden shell={page.shell} section="reports" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
+    // A refused download comes back here to a role this page refuses too: the refusal and the list it was in leave the
+    // address bar.
+    return (
+      <>
+        <Forbidden shell={page.shell} section="reports" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />
+        {downloadRefusal(await props.searchParams) === null ? null : <ForgetRefusal also={RETURN_ONLY} />}
+      </>
+    );
   }
   const { practiceId, reports, documents, history, runs, canGenerate, canExport, canReview, lastMonth, origin, roles } = page.data;
   const path = `/p/${practiceId}/reports`;

@@ -5,8 +5,9 @@ import Link from 'next/link';
 
 import { ActionForm } from '../../../../components/action-form';
 import { QuestionList, TotalsText } from '../../../../components/contracts/display';
-import { PayerLetter } from '../../../../components/coverage/letter';
+import { LETTER_CONTROLS, PayerLetter } from '../../../../components/coverage/letter';
 import { Figure } from '../../../../components/coverage/share';
+import { ForgetRefusal } from '../../../../components/forget-refusal';
 import { utc } from '../../../../components/format';
 import { ChecklistCard, HandEntryNotice, ModelNoticeAlert } from '../../../../components/models/display';
 import { MonthsWaitingOnContent } from '../../../../components/pricing/content';
@@ -19,6 +20,7 @@ import { REMEDY_SCREEN_NAMES, remedyPath } from '../../../../lib/contracts/remed
 import type { FeeSchedulePeriod } from '../../../../lib/coverage/in-effect';
 import { waitingHeadline } from '../../../../lib/pricing/location';
 import { shareOf } from '../../../../lib/pricing/view';
+import { downloadRefusal } from '../../../../lib/http/download-refusal';
 import { loadPage } from '../../../../lib/http/next';
 import { coveragePage } from '../../../../lib/routes/coverage';
 import { generateReportDocumentFormAction } from '../reports/documents/actions';
@@ -102,7 +104,14 @@ function UnconfirmedFormats({ practiceId, sources }: { readonly practiceId: stri
 export default async function CoveragePage(props: Props) {
   const page = await loadPage(coveragePage, props);
   if (page.kind === 'forbidden') {
-    return <Forbidden shell={page.shell} section="coverage" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
+    // A refused letter comes back here to a role this page refuses too: the refusal and the letter's entries leave the
+    // address bar.
+    return (
+      <>
+        <Forbidden shell={page.shell} section="coverage" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />
+        {downloadRefusal(await props.searchParams) === null ? null : <ForgetRefusal also={LETTER_CONTROLS} />}
+      </>
+    );
   }
   const {
     practiceId,

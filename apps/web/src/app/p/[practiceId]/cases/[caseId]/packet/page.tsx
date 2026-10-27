@@ -4,6 +4,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../../../components/action-form';
+import { DownloadLink, DownloadLinks } from '../../../../../../components/download-link';
 import { DownloadRefusal } from '../../../../../../components/download-refusal';
 import { ForgetRefusal } from '../../../../../../components/forget-refusal';
 import { FormKeys } from '../../../../../../components/form-keys';
@@ -199,6 +200,7 @@ export default async function PacketPage(props: Props) {
   const version = builder.version;
   const approval = builder.approval;
   // A refused export file comes back here (docs/adr/0079): the file links name the version shown, unless it is the current one.
+  // A click downloads it in place (DownloadLink), so words typed in the version form above stay.
   const refusal = downloadRefusal(await props.searchParams);
   const shownVersion = version === null || version.current ? '' : `?version=${version.id}`;
   return (
@@ -589,78 +591,80 @@ export default async function PacketPage(props: Props) {
           <CardTitle>Versions and export history</CardTitle>
           <CardDescription>Every version of the packet, newest first; a version never changes once written.</CardDescription>
         </CardHeader>
-        <CardContent>
-          <DownloadRefusal refusal={refusal} className="mb-4" />
-          {builder.versions.length === 0 ? (
-            <EmptyState title="No version yet" nextStep="Write the first version above." />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm" aria-label="Versions">
-                <thead>
-                  <tr className="border-b text-left">
-                    <th className="px-2 py-1 font-medium">Version</th>
-                    <th className="px-2 py-1 font-medium">Written</th>
-                    <th className="px-2 py-1 font-medium">Verifier</th>
-                    <th className="px-2 py-1 font-medium">Deadline stated</th>
-                    <th className="px-2 py-1 font-medium">Approved</th>
-                    <th className="px-2 py-1 font-medium">Exported, SHA-256</th>
-                    <th className="px-2 py-1 font-medium">Files</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {builder.versions.map((entry) => (
-                    <tr key={entry.id} className="border-b align-top last:border-0" data-version={entry.versionNo}>
-                      <td className="px-2 py-1">
-                        <Link className="underline" href={`${casePath}/packet?version=${entry.id}`}>
-                          Version {entry.versionNo}
-                        </Link>
-                        {entry.current ? ' (current)' : ''}
-                        {draftOf(drafts, entry.id) === undefined ? '' : ', drafted by the model'}
-                      </td>
-                      <td className="px-2 py-1">
-                        {utc(entry.writtenAt)}, {entry.writtenBy ?? '—'}
-                      </td>
-                      <td className="px-2 py-1">{entry.verifierPassed ? 'Passed' : 'Failed'}</td>
-                      <td className="px-2 py-1">
-                        <DeadlineChip status={entry.deadlineStatus} />
-                      </td>
-                      <td className="px-2 py-1">{entry.approvedAt === null ? '—' : `${utc(entry.approvedAt)}, ${entry.approvedBy ?? '—'}${entry.approvedAlone ? ' (alone, flagged)' : ''}`}</td>
-                      <td className="px-2 py-1">
-                        {entry.exportedAt === null ? (
-                          '—'
-                        ) : (
-                          <span className="flex flex-col">
-                            <span>{utc(entry.exportedAt)}</span>
-                            <span>
-                              PDF <Hash value={entry.exportSha256} />
-                            </span>
-                            <span>
-                              CSV <Hash value={entry.exportCsvSha256} />
-                            </span>
-                            <span>{entry.attestedAt === null ? 'Not attested yet' : `Attested ${utc(entry.attestedAt)}`}</span>
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-2 py-1">
-                        {entry.exportedAt === null || !canExport ? (
-                          '—'
-                        ) : (
-                          <span className="flex flex-col">
-                            <a className="underline" href={`${casePath}/packet/${entry.id}/pdf${shownVersion}`}>
-                              PDF
-                            </a>
-                            <a className="underline" href={`${casePath}/packet/${entry.id}/csv${shownVersion}`}>
-                              CSV
-                            </a>
-                          </span>
-                        )}
-                      </td>
+        <CardContent className="flex flex-col gap-4">
+          {/* A file downloaded here says its refusal above the versions, in place of the one the page arrived with. */}
+          <DownloadLinks arrived={<DownloadRefusal refusal={refusal} />}>
+            {builder.versions.length === 0 ? (
+              <EmptyState title="No version yet" nextStep="Write the first version above." />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm" aria-label="Versions">
+                  <thead>
+                    <tr className="border-b text-left">
+                      <th className="px-2 py-1 font-medium">Version</th>
+                      <th className="px-2 py-1 font-medium">Written</th>
+                      <th className="px-2 py-1 font-medium">Verifier</th>
+                      <th className="px-2 py-1 font-medium">Deadline stated</th>
+                      <th className="px-2 py-1 font-medium">Approved</th>
+                      <th className="px-2 py-1 font-medium">Exported, SHA-256</th>
+                      <th className="px-2 py-1 font-medium">Files</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  </thead>
+                  <tbody>
+                    {builder.versions.map((entry) => (
+                      <tr key={entry.id} className="border-b align-top last:border-0" data-version={entry.versionNo}>
+                        <td className="px-2 py-1">
+                          <Link className="underline" href={`${casePath}/packet?version=${entry.id}`}>
+                            Version {entry.versionNo}
+                          </Link>
+                          {entry.current ? ' (current)' : ''}
+                          {draftOf(drafts, entry.id) === undefined ? '' : ', drafted by the model'}
+                        </td>
+                        <td className="px-2 py-1">
+                          {utc(entry.writtenAt)}, {entry.writtenBy ?? '—'}
+                        </td>
+                        <td className="px-2 py-1">{entry.verifierPassed ? 'Passed' : 'Failed'}</td>
+                        <td className="px-2 py-1">
+                          <DeadlineChip status={entry.deadlineStatus} />
+                        </td>
+                        <td className="px-2 py-1">{entry.approvedAt === null ? '—' : `${utc(entry.approvedAt)}, ${entry.approvedBy ?? '—'}${entry.approvedAlone ? ' (alone, flagged)' : ''}`}</td>
+                        <td className="px-2 py-1">
+                          {entry.exportedAt === null ? (
+                            '—'
+                          ) : (
+                            <span className="flex flex-col">
+                              <span>{utc(entry.exportedAt)}</span>
+                              <span>
+                                PDF <Hash value={entry.exportSha256} />
+                              </span>
+                              <span>
+                                CSV <Hash value={entry.exportCsvSha256} />
+                              </span>
+                              <span>{entry.attestedAt === null ? 'Not attested yet' : `Attested ${utc(entry.attestedAt)}`}</span>
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-2 py-1">
+                          {entry.exportedAt === null || !canExport ? (
+                            '—'
+                          ) : (
+                            <span className="flex flex-col">
+                              <DownloadLink className="underline" href={`${casePath}/packet/${entry.id}/pdf${shownVersion}`}>
+                                PDF
+                              </DownloadLink>
+                              <DownloadLink className="underline" href={`${casePath}/packet/${entry.id}/csv${shownVersion}`}>
+                                CSV
+                              </DownloadLink>
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </DownloadLinks>
         </CardContent>
       </Card>
     </AppShell>

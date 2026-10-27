@@ -8,14 +8,15 @@ import { RefusalAlert } from './refusal-notice';
 
 /**
  * A download on a page that holds what a reload would lose (docs/adr/0079): the Uploads screen while a batch is still
- * being sent, the export review once its checklist is ticked. A link's refusal comes back to its page by a 303, which
- * loads the page again, so here a plain click fetches the file as a script instead: the response is the file, saved
- * under the name the route gave it (Content-Disposition), or the route's JSON outcome, whose refusal is said in place,
- * in the product's words (lib/http/download-refusal-words.ts) and focused, above the links (DownloadLinks), while the
- * page and everything on it stay. What the notice cannot settle (a signed-out session, maintenance, a body that is not
- * an outcome, a request that failed) goes to the link itself, as a navigation, whose 303 takes sign-in's steps. The
- * href stays the link's own, so a new tab, a modifier click, "Save link as" or a page without script still downloads,
- * and is still refused back to its page.
+ * being sent, the export review and the audit report's reviewer checklist once their items are ticked, the packet page
+ * with words typed in its version form, the console's evidence checklist with a record being entered. A link's refusal
+ * comes back to its page by a 303, which loads the page again, so here a plain click fetches the file as a script
+ * instead: the response is the file, saved under the name the route gave it (Content-Disposition), or the route's JSON
+ * outcome, whose refusal is said in place, in the product's words (lib/http/download-refusal-words.ts) and focused,
+ * beside the links (DownloadLinks), while the page and everything on it stay. What the notice cannot settle (a
+ * signed-out session, maintenance, a body that is not an outcome, a request that failed) goes to the link itself, as a
+ * navigation, whose 303 takes sign-in's steps. The href stays the link's own, so a new tab, a modifier click, "Save
+ * link as" or a page without script still downloads, and is still refused back to its page.
  */
 
 /** What a download fetched in place came to: the file, a refusal the page says, or a navigation that settles it. */
@@ -95,12 +96,13 @@ function focusNotice(place: HTMLDivElement | null): void {
 }
 
 /**
- * Where the download links inside (DownloadLink) say their refusals: above them, in place of the notice the page
- * arrived with (arrived: its DownloadRefusal, from a 303), so the newest outcome is the one on screen; a file saved takes
- * the notice away. One inside another says nothing of its own: the outer one's place is the page's (the Uploads
- * screen's, above its receipts), and the inner one's (a receipt list's own) serves where there is none.
+ * Where the download links inside (DownloadLink) say their refusals: above them, or below them (below: links in a
+ * page's header, the reviewer checklist's, whose notice follows the header), in place of the notice the page arrived
+ * with (arrived: its DownloadRefusal, from a 303), so the newest outcome is the one on screen; a file saved takes the
+ * notice away. One inside another says nothing of its own: the outer one's place is the page's (the Uploads screen's,
+ * above its receipts), and the inner one's (a receipt list's own) serves where there is none.
  */
-export function DownloadLinks({ arrived, children }: { readonly arrived?: ReactNode; readonly children: ReactNode }) {
+export function DownloadLinks({ arrived, below = false, children }: { readonly arrived?: ReactNode; readonly below?: boolean; readonly children: ReactNode }) {
   const outer = useContext(SayRefusal);
   const [said, setSaid] = useState<Said | null>(null);
   const say = useCallback((notice: ShownRefusal | null) => {
@@ -109,21 +111,25 @@ export function DownloadLinks({ arrived, children }: { readonly arrived?: ReactN
   if (outer !== null) {
     return (
       <>
-        {arrived}
+        {below ? null : arrived}
         {children}
+        {below ? arrived : null}
       </>
     );
   }
+  const notice =
+    said === null ? (
+      arrived
+    ) : said.notice === null ? null : (
+      <div key={said.attempt} ref={focusNotice}>
+        <RefusalAlert notice={said.notice} />
+      </div>
+    );
   return (
     <SayRefusal.Provider value={say}>
-      {said === null ? (
-        arrived
-      ) : said.notice === null ? null : (
-        <div key={said.attempt} ref={focusNotice}>
-          <RefusalAlert notice={said.notice} />
-        </div>
-      )}
+      {below ? null : notice}
       {children}
+      {below ? notice : null}
     </SayRefusal.Provider>
   );
 }

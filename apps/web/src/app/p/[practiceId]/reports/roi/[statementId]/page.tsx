@@ -5,6 +5,7 @@ import Link from 'next/link';
 
 import { VerifiedSeal } from '../../../../../../components/brand';
 import { DownloadRefusal } from '../../../../../../components/download-refusal';
+import { ForgetRefusal } from '../../../../../../components/forget-refusal';
 import { utc } from '../../../../../../components/format';
 import { proofLevelWords, recoveredLabel } from '../../../../../../components/reconciliation/display';
 import { Money } from '../../../../../../components/remittances/display';
@@ -30,7 +31,13 @@ type Props = { readonly params: Promise<{ practiceId: string; statementId: strin
 export default async function RoiStatementPage(props: Props) {
   const page = await loadPage(roiStatementPage, props);
   if (page.kind === 'forbidden') {
-    return <Forbidden shell={page.shell} section="reports" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
+    // A refused download comes back here to a role this page refuses too: the refusal leaves the address bar.
+    return (
+      <>
+        <Forbidden shell={page.shell} section="reports" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />
+        {downloadRefusal(await props.searchParams) === null ? null : <ForgetRefusal />}
+      </>
+    );
   }
   const { practiceId, detail, origin } = page.data;
   const path = `/p/${practiceId}/reports/roi/${detail.id}`;

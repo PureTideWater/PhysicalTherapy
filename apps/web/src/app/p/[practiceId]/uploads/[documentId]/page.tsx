@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { DownloadRefusal } from '../../../../../components/download-refusal';
+import { ForgetRefusal } from '../../../../../components/forget-refusal';
 import { Counted, Money } from '../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { FormatUnconfirmedBadge } from '../../../../../components/uploads/format-flag';
@@ -250,7 +251,13 @@ function ExportReport({ practiceId, parse }: { readonly practiceId: string; read
 export default async function UploadDocumentPage(props: { readonly params: Promise<{ practiceId: string; documentId: string }>; readonly searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const page = await loadPage(uploadDocumentPage, props);
   if (page.kind === 'forbidden') {
-    return <Forbidden shell={page.shell} section="uploads" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
+    // A refused download comes back here to a role this page refuses too: the refusal leaves the address bar.
+    return (
+      <>
+        <Forbidden shell={page.shell} section="uploads" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />
+        {downloadRefusal(await props.searchParams) === null ? null : <ForgetRefusal />}
+      </>
+    );
   }
   const { practiceId, receipt, canUpload } = page.data;
   const refusal = downloadRefusal(await props.searchParams);

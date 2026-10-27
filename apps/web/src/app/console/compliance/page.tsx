@@ -3,8 +3,10 @@ import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardDesc
 import type { Metadata } from 'next';
 
 import { ActionForm } from '../../../components/action-form';
+import { DownloadLink, DownloadLinks } from '../../../components/download-link';
 import { DownloadRefusal } from '../../../components/download-refusal';
 import { Field, SelectField } from '../../../components/field';
+import { ForgetRefusal } from '../../../components/forget-refusal';
 import { FormKeys } from '../../../components/form-keys';
 import { roleNames } from '../../../components/format';
 import { AppShell, Forbidden } from '../../../components/shell';
@@ -90,10 +92,17 @@ function EvidenceRow({ item }: { readonly item: EvaluatedEvidence }) {
 export default async function CompliancePage(props: { readonly searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const page = await loadPage(compliancePage, props);
   if (page.kind === 'forbidden') {
-    return <Forbidden shell={page.shell} section="compliance" roles={page.roles} message={page.message} nextStep="The evidence checklist is for platform administrators." />;
+    // A refused download comes back here to a role this page refuses too: the refusal leaves the address bar.
+    return (
+      <>
+        <Forbidden shell={page.shell} section="compliance" roles={page.roles} message={page.message} nextStep="The evidence checklist is for platform administrators." />
+        {downloadRefusal(await props.searchParams) === null ? null : <ForgetRefusal />}
+      </>
+    );
   }
   const { checklist, workforce, records, recordKinds, policies, platformConnected, sent } = page.data;
-  // A refused export comes back here, said above its link in the console's words (docs/adr/0079).
+  // A refused export comes back here, said above its link in the console's words (docs/adr/0079); a click downloads it
+  // in place, so what is typed in the forms below stays (DownloadLink).
   const refusal = downloadRefusal(await props.searchParams);
   return (
     <AppShell shell={page.shell} section="compliance">
@@ -110,19 +119,20 @@ export default async function CompliancePage(props: { readonly searchParams: Pro
           <AlertDescription>The compliance platform received {sent}.</AlertDescription>
         </Alert>
       )}
-      <DownloadRefusal refusal={refusal} surface="console" />
-      <div className="flex flex-wrap items-start gap-4">
-        <a className="text-sm underline" href="/console/compliance/export">
-          Download the export (JSON)
-        </a>
-        {platformConnected ? (
-          <ActionForm action={sendEvidenceAction} submit="Send to the compliance platform" variant="outline">
-            <FormKeys />
-          </ActionForm>
-        ) : (
-          <p className="text-sm text-muted-foreground">No compliance platform is connected in this environment; give it the downloaded export.</p>
-        )}
-      </div>
+      <DownloadLinks arrived={<DownloadRefusal refusal={refusal} surface="console" />}>
+        <div className="flex flex-wrap items-start gap-4">
+          <DownloadLink className="text-sm underline" href="/console/compliance/export" surface="console">
+            Download the export (JSON)
+          </DownloadLink>
+          {platformConnected ? (
+            <ActionForm action={sendEvidenceAction} submit="Send to the compliance platform" variant="outline">
+              <FormKeys />
+            </ActionForm>
+          ) : (
+            <p className="text-sm text-muted-foreground">No compliance platform is connected in this environment; give it the downloaded export.</p>
+          )}
+        </div>
+      </DownloadLinks>
       {checklist.controls.map(({ control, status, evidence }) => (
         <Card key={control.id} data-control={control.id} data-control-status={status}>
           <CardHeader>
