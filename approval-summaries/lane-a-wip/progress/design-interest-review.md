@@ -42,3 +42,7 @@ Started 2026-10-27. Reviewing /home/user/ops/designs/ledger-interest-once.md (87
 - F7 SHOULD_FIX named net L6 (TR3 1.10.2.9) referencing one claim takes others' AMT I: C 540, K 200, L6 -740 naming C -> 740 on C's lines. Fix: AMT I first, named claim takes unexplained remainder (F unchanged).
 - F8 SHOULD_FIX exception file list misses packages/ledger/src/stages.test.ts, rules.test.ts (src is additions-only), stryker/shards.json, ledger.db.test.ts LED-06 block (PAR-18 assert), apps/worker/src/report/brand.test.ts; behaviour list misses within-R order change (WO before interest vs position order); 'Stays frozen' within_evidence/_within_line conflicts with SUITE-CAP-1 Q1.
 - NITS: N1 negative parts allocated undefined; LED-23 net-zero.835 'approved 2.00 more' needs allowed raise (probe: no_change); RFI 2202 described both as same-remittance rule and later payment.
+- allocateByWeight checks (probes/review/alloc.mts): (200,[540,200])=[146,54]; (250,[450,100])=[205,45]; (540,[0,300])=[0,540] -> no cap at weight: take-back part must be capped at sum(held) in interestToLines (spec omits; worked case implies) -> fold into F1 (bounds Postgres holds that interest.ts doesn't own).
+- CHAIN_ORDER tie-breaks (matched_at, kind class, bpr16_date, created_at, position, id) reproduce in-pass order -> seq equivalent for new rows. Sound.
+- Only LED-16 among LED fixtures carries AMT I (also V07 variant); PAR-18 is L6 named. Sound.
+## STATUS: analysis complete; writing StructuredOutput. Verdict: build with changes. All probe DBs dropped (tp_design_interest_21).
