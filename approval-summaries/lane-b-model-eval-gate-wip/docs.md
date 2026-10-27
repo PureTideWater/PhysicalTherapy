@@ -1,0 +1,17 @@
+# docs part progress
+- [x] read design, builders' notes, status handoff (2026-10-27)
+- [ ] ADR 0070 Part 3
+- [ ] ADR 0054 amendment
+- [ ] PRD 14/16
+- [ ] reconciliation-001 item 16
+- [ ] test-matrix MOD-12 + note; synth test
+- [ ] runbooks
+- [x] test-matrix MOD-12 row (verbatim from matrix.ts) + note rewritten; registry MOD-12 gains models-routes.db.test.ts and worker permitted.db.test.ts (synth test not yet run)
+- [x] pnpm synth --case MOD-12 regenerated fixtures/synthetic/MOD-12/expected.json (assertedBy only); fixtures.test 23/23 pass
+- [x] PRD 14 :575 (PHI minimization) and PRD 16 :691 (threats) edited inline
+- [x] reconciliation-001 item 16 amendment appended (2026-10-27, #120)
+- [x] ADR 0054 amendment (status line + "## Amendment (`co-001/contract-phi-check`, 2026-10-27): the contract screen")
+- [x] runbook model-evaluation.md: screen_failed/invalid in the refusing list; a paragraph on names_patient, refused_rose after the screen, screen_unavailable practices; "When it goes wrong" log codes
+- [x] ADR 0070 Part 3 spliced (from scratchpad/phi/part3.md) + header lines + N4-N6 note + P8/P9; remaining: lint:copy check, final docs.md
+- [x] ADR Part 3: added 'what is screened is prepared.user' and testing.ts lint (code agent's in-flight change, to confirm)
+- [x] DONE: result in scratchpad/phi/docs.md

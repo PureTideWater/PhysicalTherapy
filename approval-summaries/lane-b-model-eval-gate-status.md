@@ -2,6 +2,13 @@
 
 Session: the parallel Lane B session started by the orchestrator (session_01CntuGR3wkXMF6kK3at6bGh) on the co-founder's direction of 2026-10-25 ~23:40 UTC. Reserved: ADR 0070; test-matrix MOD-7 to MOD-12; `packages/synth` cases MOD-7 to MOD-12.
 
+## Resume at 14:05 UTC (2026-10-27; written 02:10 UTC, updated as things change)
+- **Branch heads:** `co-001/contract-phi-check` on origin at 862c9dc8 (the base merge of e908c214 over the builders' d7447adb). No PR yet. `claude/build-platform` was e908c214.
+- **Workflow:** wf_cedc1f41-ac5 (script `workflow-scripts/lane-b-model-eval-gate-phi-integrate-wf_cedc1f41-ac5.js`). Its settle-code and docs agents finished (results in `approval-summaries/lane-b-model-eval-gate-wip/result-*.md`); its suite agent was running (progress in `lane-b-model-eval-gate-wip/suite.md`). Its uncommitted work is in the worktree `/home/user/contract-phi-check` until the suite agent commits; once it commits, the commits are pushed to the item branch (no PR, so no CI).
+- **Continue, same container:** if the run stopped, `Workflow({scriptPath: <this session's workflows/scripts/lane-b-contract-phi-check-integrate-wf_cedc1f41-ac5.js>, resumeFromRunId: 'wf_cedc1f41-ac5'})` (its journal is in this session only).
+- **Continue, container gone:** re-run `setup-container.sh co-001/contract-phi-check:/home/user/contract-phi-check` (the browser host is now allowed: record the playwright line); the worktree comes back at the pushed head. If the suite agent's commits were not pushed, re-run the integrator from the archived script on the pushed head (its agents continue from the progress files copied to `lane-b-model-eval-gate-wip/` if placed back in the scratchpad's `phi/progress/`).
+- **Then:** push, the draft PR, the reviews (security, PHI-screen correctness, and the UX and brand review with shots), the fix round, the verification, the merge; then #32.
+
 ## Open questions
 None. The co-founder's standing ruling of 2026-10-26 ~00:20 UTC (relayed by the orchestrator): "Don't ask for approvals anymore just build and optimize." Every choice takes the recommended option (security: the safer one), recorded with its reasons here and in the design and PR description. Founder-kept matters stay out of scope; Lane B still opens no migration PR (LANES rule 2).
 
