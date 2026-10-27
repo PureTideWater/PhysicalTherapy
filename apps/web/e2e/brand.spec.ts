@@ -10,6 +10,7 @@ import { cents } from '@tp/money';
 import { mailBodyHtml } from '../../worker/src/mail/mail';
 import { EMAIL_LOCKUP_PATH } from '../../worker/src/mail/template';
 import { statementHtml } from '../../worker/src/reconcile/statement-html';
+import { personaEmail } from '../scripts/synthetic-personas';
 import { expectAccessible } from './a11y';
 import { signInWithTotp } from './helpers';
 import { journeyPractice, pricedAndTriaged, signedOffSchedule, untilLoaded, uploadedEarlier } from './journeys';
@@ -215,6 +216,43 @@ async function expectHeaderNamesHoldTheirText(header: Locator, controls: number)
   }
 }
 
+/** A string as a regular expression matches it, character for character. */
+function escaped(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * The name and the description Chromium itself gives an element, from its accessibility tree (CDP), which is what a
+ * screen reader on Chrome speaks. Playwright's own computation (toHaveAccessibleName) follows the specification, and
+ * so does not show Chromium also putting a control's content in its description when an aria-label names it.
+ */
+async function chromiumNameAndDescription(page: Page, selector: string): Promise<{ name: string; description: string }> {
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    const { root } = await cdp.send('DOM.getDocument', { depth: 0 });
+    const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector });
+    const { nodes } = await cdp.send('Accessibility.getPartialAXTree', { nodeId, fetchRelatives: false });
+    const value = (property: { value?: unknown } | undefined) => (typeof property?.value === 'string' ? property.value : '');
+    return { name: value(nodes[0]?.name), description: value(nodes[0]?.description) };
+  } finally {
+    await cdp.detach();
+  }
+}
+
+/**
+ * The practice switcher and the account are named from their content, in the words the co-founder's ruling took for
+ * them (UX-094; designs/lane-b-ux-review.md, section 6.1): what each shows (the practice's name; the address, visually
+ * hidden where only the initial shows), then a visually hidden ', switch practice' or ', account and sign out'. Neither
+ * has a description, so a screen reader does not say the practice or the address twice. Chromium puts a space before
+ * the comma, since the hidden words are an element of their own. Soft, so one run names every difference at this width.
+ */
+async function expectSwitcherAndAccountNamed(page: Page, practice: string, email: string): Promise<void> {
+  const named = (shown: string, purpose: string) => expect.stringMatching(new RegExp(`^${escaped(shown)} ?, ${purpose}$`));
+  const header = '[data-slot="app-header"]';
+  expect.soft(await chromiumNameAndDescription(page, `${header} [data-slot="practice-switcher"]`), 'the practice switcher').toEqual({ name: named(practice, 'switch practice'), description: '' });
+  expect.soft(await chromiumNameAndDescription(page, `${header} [data-slot="account-menu"]`), 'the account').toEqual({ name: named(email, 'account and sign out'), description: '' });
+}
+
 /** The page's width as the document lays it out, beside the window's: equal when nothing scrolls sideways. */
 async function pageWidths(page: Page): Promise<[number, number]> {
   return page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth] as [number, number]);
@@ -360,8 +398,10 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
     await page.goto(`/p/${practiceId}`);
     const header = page.locator('[data-slot="app-header"]');
     await expect(header.locator('[data-slot="lockup"]')).toContainText('PaidWhole');
-    await expect(header.getByLabel('Practice switcher')).toContainText(PRACTICE);
-    await expect(header.getByLabel('Account menu')).toBeVisible();
+    // The two controls are reached by their slots: getByLabel cannot find a summary named from its content.
+    await expect(header.locator('[data-slot="practice-switcher"]')).toContainText(PRACTICE);
+    await expect(header.locator('[data-slot="account-menu"]')).toBeVisible();
+    await expectSwitcherAndAccountNamed(page, PRACTICE, personaEmail('brand-manager'));
     // Each control is named by what it shows: the lockup's link, the switcher and the account (CI-19).
     await expectHeaderNamesHoldTheirText(header, 3);
     const active = page.getByRole('navigation', { name: 'Practice' }).getByRole('link', { name: 'Practice home', exact: true });
@@ -455,7 +495,8 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
     const header = page.locator('[data-slot="app-header"]');
     await expect(header.locator('[data-slot="lockup"]')).toBeVisible();
     await expect(header.getByText('Menu')).toBeVisible();
-    // The same at a phone width, where the account shows only its initial and the menu joins them (CI-19).
+    // The same names at a phone width, where the account shows only its initial and the menu joins them (CI-19).
+    await expectSwitcherAndAccountNamed(page, PRACTICE, personaEmail('brand-manager'));
     await expectHeaderNamesHoldTheirText(header, 4);
     await page.waitForLoadState('networkidle');
     await page.mouse.move(389, 843);

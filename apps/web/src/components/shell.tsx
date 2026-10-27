@@ -53,9 +53,14 @@ function PracticeSwitcher({ shell }: { readonly shell: Shell }) {
   }
   return (
     <details className="relative">
-      {/* Named by what it shows, the practice's name first (WCAG 2.5.3, Label in Name; CI-19). */}
-      <summary className={cn(SUMMARY, 'border px-2 font-medium sm:px-2.5')} aria-label={`${current?.name ?? 'Choose a practice'}, practice switcher`}>
-        <span className="max-w-[5rem] truncate sm:max-w-[14rem]">{current?.name ?? 'Choose a practice'}</span>
+      {/* Named from its content, so the name starts with what it shows (WCAG 2.5.3, Label in Name; CI-19; UX-094's words):
+          the practice's name, then a visually hidden ', switch practice' inside the name's span. That span is the hidden
+          words' containing block (relative), so its truncation clips them instead of letting them widen the page. */}
+      <summary data-slot="practice-switcher" className={cn(SUMMARY, 'border px-2 font-medium sm:px-2.5')}>
+        <span className="relative max-w-[5rem] truncate sm:max-w-[14rem]">
+          {current?.name ?? 'Choose a practice'}
+          <span className="sr-only">, switch practice</span>
+        </span>
         <Chevron />
       </summary>
       <div className={cn(DROPDOWN, 'w-72 max-w-[calc(100vw-2rem)] py-1')}>
@@ -82,15 +87,20 @@ function AccountMenu({ shell }: { readonly shell: Shell }) {
   const initial = shell.email.slice(0, 1).toUpperCase();
   return (
     <details className="relative">
-      {/* Named by what it shows, the address first (WCAG 2.5.3, Label in Name; CI-19). The initial is drawn as generated
-          content, not a text node, so the control's visible text is the address alone wherever the address shows. */}
-      <summary className={cn(SUMMARY, 'px-1 sm:px-2')} aria-label={`${shell.email}, account menu`} title={shell.email}>
+      {/* Named from its content, so the name starts with the address (WCAG 2.5.3, Label in Name; CI-19; UX-094's words): the
+          address, visible from md and visually hidden below it, where the initial alone shows, then a visually hidden
+          ', account and sign out'. From md the address's span is the hidden words' containing block (relative), so its
+          truncation clips them. The initial is drawn as generated content, not a text node, so it adds nothing to the name. */}
+      <summary data-slot="account-menu" className={cn(SUMMARY, 'px-1 sm:px-2')}>
         <span
           aria-hidden="true"
           data-initial={initial}
           className="flex size-7 items-center justify-center rounded-pill bg-bg-inset text-xs font-semibold text-fg before:content-[attr(data-initial)]"
         />
-        <span className="hidden max-w-[12rem] truncate md:inline">{shell.email}</span>
+        <span className="sr-only md:not-sr-only md:relative md:max-w-[12rem] md:truncate">
+          {shell.email}
+          <span className="sr-only">, account and sign out</span>
+        </span>
         <Chevron className="hidden sm:block" />
       </summary>
       <div className={cn(DROPDOWN, 'flex w-72 max-w-[calc(100vw-2rem)] flex-col gap-2 p-3')}>
