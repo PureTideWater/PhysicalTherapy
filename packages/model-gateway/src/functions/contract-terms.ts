@@ -515,12 +515,14 @@ export async function screenContractPages(input: ContractPagesInput, prepared: {
     case 'screen_unavailable':
     case 'screen_failed':
       throw new InputRefusedError(outcome, SCREEN_UNAVAILABLE_MESSAGE);
+    // Defensive: an issued check answers only the four codes above. Anything else is refused as a failure, never
+    // sent (patient-records.test.ts reaches this branch through a check made to pass as issued).
     default:
       throw new InputRefusedError('screen_failed', SCREEN_UNAVAILABLE_MESSAGE);
   }
 }
 
-export const contractTermsSpec: PurposeSpec<ContractPagesInput, ContractTermsOutput, ContractTermsProposal> = {
+export const contractTermsSpec = Object.freeze<PurposeSpec<ContractPagesInput, ContractTermsOutput, ContractTermsProposal>>({
   purpose: 'proposeContractTerms',
   prompt: PROMPTS.proposeContractTerms,
   output: contractTermsOutput,
@@ -548,4 +550,4 @@ export const contractTermsSpec: PurposeSpec<ContractPagesInput, ContractTermsOut
   },
   screen: screenContractPages,
   verify: verifyContractTerms,
-};
+});

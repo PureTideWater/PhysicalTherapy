@@ -376,7 +376,7 @@ describe('serving each feature on its own evaluation (docs/adr/0070, Part 2)', (
     // The purpose is served, so the flags were read; the default call runs, screened.
     expect(harness.flagReads).toHaveBeenCalled();
     await expect(gateway.proposeContractTerms(CONTEXT, syntheticContractInput({ patientRecords }))).resolves.toMatchObject({ passed: true });
-    expect(records.reads).toEqual({ connects: 1, count: 1, patients: 1, claims: 1 });
+    expect(records.reads).toEqual({ connects: 1, count: 1, patients: 1, claims: 1, postings: 1 });
     expect(harness.provider.requests.map((request) => request.modelId)).toEqual([modelFor(PROMPTS.proposeContractTerms, 'bedrock')]);
     // The other purposes stay off; the screens offer contracts, and hand entry for the rest.
     await expect(gateway.draftPacketNarrative(CONTEXT, syntheticNarrativeInput())).rejects.toMatchObject({ reason: 'not_evaluated' });

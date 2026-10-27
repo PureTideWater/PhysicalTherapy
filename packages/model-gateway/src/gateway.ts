@@ -146,6 +146,9 @@ export class ModelGateway {
     }
     this.permittedRun = serving === 'evaluable' && actor.kind === 'job' ? actor.jobId : null;
     this.served = gatewayServing(options.production, options.provider.kind, serving);
+    // Neither a method nor a setting can be shadowed on the instance after construction (the prototype is frozen
+    // below): the screen step and the call path are the class's own (combined audit item 120's review, F6).
+    Object.freeze(this);
   }
 
   /**
@@ -395,6 +398,14 @@ export class ModelGateway {
     }
   }
 }
+
+/**
+ * The gateway's methods cannot be replaced or removed once this module has loaded, so no code in the process can
+ * swap ModelGateway.prototype's screen step or call path for one that skips the purpose's screen (combined audit item
+ * 120's review, F6: the specs are frozen too, ./specs.ts). Code that rewrites a built-in is still outside what any
+ * module can stop (docs/adr/0070, Part 3).
+ */
+Object.freeze(ModelGateway.prototype);
 
 /** How long past the longest call (two attempts at the timeout) a hold stands if its process dies. */
 const HOLD_MARGIN_MS = 60_000;

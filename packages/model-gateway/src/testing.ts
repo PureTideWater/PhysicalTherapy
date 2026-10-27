@@ -71,6 +71,13 @@ export function syntheticEvaluationContractInput(overrides: Partial<ContractPage
 
 export const NO_IDENTIFIERS: ScreenIdentifiers = { memberIds: [], patientControlNumbers: [], payerClaimNumbers: [] };
 
+/**
+ * The synthetic check (patient-records.ts), for tests and the synthetic evaluation outside this package: the package's
+ * main entry does not export it, so production code cannot build one, and lint.test.ts holds its callers to this
+ * module, eval/ and tests.
+ */
+export { syntheticRecordsCheck };
+
 // ---------------------------------------------------------------------------------------------------
 // The contract screen's records, in memory
 
@@ -79,6 +86,12 @@ export interface MemoryRecords {
   readonly memberIds?: readonly string[];
   readonly patientControlNumbers?: readonly string[];
   readonly payerClaimNumbers?: readonly string[];
+  /** The claim references of posting rows that no claim-level match covers (a paper check's), as the posting export holds them. */
+  readonly postingReferences?: readonly string[];
+  /** Further rows, each kind sharing one value (member ID SYNBULK000001; claims SCHEDULE00000001 and 7700000000001; posting reference SYNPOSTBULK0001): enough to pass the bound, cheaply. */
+  readonly bulkMemberIds?: number;
+  readonly bulkClaims?: number;
+  readonly bulkPostingReferences?: number;
 }
 
 /** What a memory pool's client does wrong, for the screen's fail-closed tests. */
@@ -91,18 +104,42 @@ export interface MemoryAuditRow {
   readonly purpose: string;
   readonly requestId: string;
   readonly practiceIds: readonly string[];
+  /** How many rows the read returned (one audit_event each). */
+  readonly rows: number;
 }
+
+/** What the memory pool and its cipher did, in order: a transaction's statements, each audited read, each decrypt. */
+export type MemoryStep = 'BEGIN' | 'COMMIT' | 'ROLLBACK' | 'audit' | 'decrypt';
 
 export interface MemoryPracticeRecords {
   /** A pool whose clients answer the job scope's and the screen's statements, with each practice's rows visible only when app.practice_ids holds it (as row-level security makes them). */
   readonly pool: ScopePool<ScopeClient>;
+  /** The practice's cipher; it notes each decrypt in `steps`. */
   readonly cipher: PracticeCipher;
   /** A person's request scope that reaches the practice: the check's proof of access. */
   readonly scope: PracticeScope<ScopeClient>;
-  /** Each audited read the screen made, one per readWithAudit call with the rows' practices. */
+  /** Each audited read the screen made and kept, one per readWithAudit call with the rows' practices: as in Postgres, a read's audit rows are kept when its transaction commits and gone when it rolls back. */
   readonly audited: MemoryAuditRow[];
-  /** How many connections were taken, and how many statements of each kind ran (count, patient_ref, claim). */
-  readonly reads: { connects: number; count: number; patients: number; claims: number };
+  /** How many connections were taken, and how many statements of each kind ran (count, patient_ref, claim, posting_row). */
+  readonly reads: { connects: number; count: number; patients: number; claims: number; postings: number };
+  /** The pool's and the cipher's steps, in order (so a test can see that nothing is decrypted before the reads commit). */
+  readonly steps: MemoryStep[];
+}
+
+/** A practice's cipher that notes each decrypt, for the order the screen reads, commits and decrypts in. */
+class SteppedCipher extends PracticeCipher {
+  constructor(
+    practiceId: string,
+    dataKey: Uint8Array,
+    private readonly steps: MemoryStep[],
+  ) {
+    super(practiceId, dataKey);
+  }
+
+  override decrypt(...args: Parameters<PracticeCipher['decrypt']>): string {
+    this.steps.push('decrypt');
+    return super.decrypt(...args);
+  }
 }
 
 const NO_RESULT = { rows: [], rowCount: 0, command: '', oid: 0, fields: [] };
@@ -122,39 +159,58 @@ export function memoryRequestScope(practiceIds: readonly string[], actorId: stri
 /**
  * SYNTHETIC records for the contract screen without a database: the practice's (and, optionally, other practices')
  * identifiers encrypted with a fresh cipher per practice, served by a pool whose clients emulate the job scope's
- * statements and row-level security. For unit tests; patient-records.db.test.ts runs the same check on Postgres.
+ * statements, row-level security, a read's row cap (its LIMIT) and a transaction's audit rows (kept on COMMIT, gone on
+ * ROLLBACK). For unit tests; patient-records.db.test.ts runs the same check on Postgres.
  */
 export function memoryPracticeRecords(
   practiceId: string,
   records: MemoryRecords = {},
   options: { readonly others?: Readonly<Record<string, MemoryRecords>>; readonly fault?: MemoryRecordsFault; readonly identifierCount?: number } = {},
 ): MemoryPracticeRecords {
+  const steps: MemoryStep[] = [];
   const ciphers = new Map<string, PracticeCipher>();
   const cipherOf = (id: string) => {
     let cipher = ciphers.get(id);
     if (cipher === undefined) {
-      cipher = new PracticeCipher(id, randomBytes(32));
+      cipher = new SteppedCipher(id, randomBytes(32), steps);
       ciphers.set(id, cipher);
     }
     return cipher;
   };
-  const seal = (id: string, column: 'patient_ref.member_id' | 'claim.patient_control_number' | 'claim.payer_claim_control_number', value: string) =>
+  const seal = (id: string, column: 'patient_ref.member_id' | 'claim.patient_control_number' | 'claim.payer_claim_control_number' | 'posting_row.claim_reference', value: string) =>
     options.fault === 'decrypt' ? 'enc:v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' : cipherOf(id).encrypt(column, value);
   const all = { ...options.others, [practiceId]: records };
-  const patients = Object.entries(all).flatMap(([id, held]) => (held.memberIds ?? []).map((value) => ({ id: randomUUID(), practice_id: id, member_id: seal(id, 'patient_ref.member_id', value) })));
+  // Each bulk kind shares one sealing of its value, as screen-world.ts's bulk claims do.
+  const many = <T>(count: number | undefined, row: () => T): T[] => Array.from({ length: count ?? 0 }, row);
+  const patients = Object.entries(all).flatMap(([id, held]) => {
+    const bulk = seal(id, 'patient_ref.member_id', 'SYNBULK000001');
+    return [
+      ...(held.memberIds ?? []).map((value) => ({ id: randomUUID(), practice_id: id, member_id: seal(id, 'patient_ref.member_id', value) })),
+      ...many(held.bulkMemberIds, () => ({ id: randomUUID(), practice_id: id, member_id: bulk })),
+    ];
+  });
   const claims = Object.entries(all).flatMap(([id, held]) => {
     const pcns = held.patientControlNumbers ?? [];
     const ccns = held.payerClaimNumbers ?? [];
     // Every claim row holds both numbers; a short filler (below every floor) stands for the one a test leaves out.
-    return Array.from({ length: Math.max(pcns.length, ccns.length) }, (_, index) => ({
+    const listed = Array.from({ length: Math.max(pcns.length, ccns.length) }, (_, index) => ({
       id: randomUUID(),
       practice_id: id,
       patient_control_number: seal(id, 'claim.patient_control_number', pcns[index] ?? 'P1'),
       payer_claim_control_number: seal(id, 'claim.payer_claim_control_number', ccns[index] ?? 'C1'),
     }));
+    const bulk = { patient_control_number: seal(id, 'claim.patient_control_number', 'SCHEDULE00000001'), payer_claim_control_number: seal(id, 'claim.payer_claim_control_number', '7700000000001') };
+    return [...listed, ...many(held.bulkClaims, () => ({ id: randomUUID(), practice_id: id, ...bulk }))];
+  });
+  const postings = Object.entries(all).flatMap(([id, held]) => {
+    const bulk = seal(id, 'posting_row.claim_reference', 'SYNPOSTBULK0001');
+    return [
+      ...(held.postingReferences ?? []).map((value) => ({ id: randomUUID(), practice_id: id, claim_reference: seal(id, 'posting_row.claim_reference', value) })),
+      ...many(held.bulkPostingReferences, () => ({ id: randomUUID(), practice_id: id, claim_reference: bulk })),
+    ];
   });
   const audited: MemoryAuditRow[] = [];
-  const reads = { connects: 0, count: 0, patients: 0, claims: 0 };
+  const reads = { connects: 0, count: 0, patients: 0, claims: 0, postings: 0 };
   const pool: ScopePool<ScopeClient> = {
     connect: () => {
       reads.connects += 1;
@@ -163,11 +219,18 @@ export function memoryPracticeRecords(
       }
       let actor = '';
       let inScope: readonly string[] = [];
+      // The open transaction's audit rows: kept on COMMIT, dropped on ROLLBACK, as Postgres keeps them.
+      let pending: MemoryAuditRow[] = [];
       const client: ScopeClient = {
         release: () => undefined,
         query: (text: string, values: unknown[] = []) => {
           const result = <R>(rows: R[]) => Promise.resolve({ ...NO_RESULT, rows, rowCount: rows.length } as never);
           if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') {
+            steps.push(text);
+            if (text === 'COMMIT') {
+              audited.push(...pending);
+            }
+            pending = [];
             return result([]);
           }
           if (text.startsWith("SELECT set_config('app.actor_id'")) {
@@ -182,20 +245,41 @@ export function memoryPracticeRecords(
             return Promise.reject(new Error('SYNTHETIC statement failed'));
           }
           const visible = <T extends { readonly practice_id: string }>(rows: readonly T[]) => rows.filter((row) => inScope.includes(row.practice_id) && row.practice_id === values[0]);
+          // A read's rows under its LIMIT ($2), when it has one; Postgres refuses a negative one.
+          const capped = <T>(rows: readonly T[]) => {
+            const limit = values[1] === undefined ? undefined : typeof values[1] === 'number' ? values[1] : Number.NaN;
+            if (limit !== undefined && !(Number.isSafeInteger(limit) && limit >= 0)) {
+              return Promise.reject(new Error('SYNTHETIC memory pool: LIMIT must not be negative'));
+            }
+            return result(rows.slice(0, limit));
+          };
           if (text.includes('AS identifiers')) {
             reads.count += 1;
-            return result([{ identifiers: String(options.identifierCount ?? visible(patients).length + 2 * visible(claims).length) }]);
+            return result([{ identifiers: String(options.identifierCount ?? visible(patients).length + 2 * visible(claims).length + visible(postings).length) }]);
           }
           if (text.startsWith('SELECT id, practice_id, member_id FROM patient_ref')) {
             reads.patients += 1;
-            return result(visible(patients));
+            return capped(visible(patients));
           }
           if (text.startsWith('SELECT id, practice_id, patient_control_number, payer_claim_control_number FROM claim')) {
             reads.claims += 1;
-            return result(visible(claims));
+            return capped(visible(claims));
+          }
+          if (text.startsWith('SELECT p.id, p.practice_id, p.claim_reference FROM posting_row p')) {
+            reads.postings += 1;
+            return capped(visible(postings));
           }
           if (text.startsWith('INSERT INTO audit_event')) {
-            audited.push({ actorId: String(values[0]), actorKind: String(values[1]), objectType: String(values[3]), purpose: String(values[4]), requestId: String(values[5]), practiceIds: values[7] as string[] });
+            steps.push('audit');
+            pending.push({
+              actorId: String(values[0]),
+              actorKind: String(values[1]),
+              objectType: String(values[3]),
+              purpose: String(values[4]),
+              requestId: String(values[5]),
+              practiceIds: [...new Set(values[7] as string[])],
+              rows: (values[7] as string[]).length,
+            });
             return result([]);
           }
           return Promise.reject(new Error(`SYNTHETIC memory pool: unexpected statement for actor ${actor === '' ? 'none' : 'set'}`));
@@ -204,7 +288,7 @@ export function memoryPracticeRecords(
       return Promise.resolve(client);
     },
   };
-  return { pool, cipher: cipherOf(practiceId), scope: memoryRequestScope([practiceId]), audited, reads };
+  return { pool, cipher: cipherOf(practiceId), scope: memoryRequestScope([practiceId]), audited, reads, steps };
 }
 
 /** A practice check (issued by patient-records.ts practiceRecordsCheck, as production's is) over SYNTHETIC in-memory records. */
