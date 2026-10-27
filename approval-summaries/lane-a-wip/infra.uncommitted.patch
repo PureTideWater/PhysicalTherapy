@@ -10,6 +10,397 @@ index 6c17ab14..360bf540 100644
      "@aws-sdk/s3-request-presigner": "^3.1152.0",
      "@paidwhole/brand": "workspace:*",
      "@simplewebauthn/browser": "^14.0.0",
+diff --git a/apps/web/src/lib/http/http.test.ts b/apps/web/src/lib/http/http.test.ts
+index 2ef15e9e..6582ce3c 100644
+--- a/apps/web/src/lib/http/http.test.ts
++++ b/apps/web/src/lib/http/http.test.ts
+@@ -408,7 +408,7 @@ describe('the web configuration', () => {
+     expect(() => readWebConfig({ ...base, IMAGE_TAG: 'latest:sha' })).toThrow(new ConfigError('invalid settings: IMAGE_TAG'));
+   });
+ 
+-  it('checks a screening\'s address with SES and DNS under the day\'s cap on a deployed server, and with the stand-ins elsewhere (docs/adr/0065; Q1 (g))', () => {
++  it('checks a screening\'s address with SES, as the address-validation account\'s role, and DNS under the day\'s cap on a deployed server, and with the stand-ins elsewhere (docs/adr/0065; Q1 (g); review S3)', () => {
+     expect(readWebConfig(base).mailValidation).toEqual({ kind: 'local', dailyCap: 50, delayMs: 0 });
+     expect(readWebConfig({ ...base, MAIL_CHECK_DELAY_MS: '2000', MAIL_VALIDATION_DAILY_CAP: '7' }).mailValidation).toEqual({ kind: 'local', dailyCap: 7, delayMs: 2000 });
+     expect(() => readWebConfig({ ...base, MAIL_CHECK_DELAY_MS: '9000' })).toThrow(new ConfigError('MAIL_CHECK_DELAY_MS is at most 5000'));
+@@ -440,7 +440,17 @@ describe('the web configuration', () => {
+     expect(() => readWebConfig({ ...deployed, MAIL_VALIDATION: 'ses', MAIL_VALIDATION_DAILY_CAP: '50', MAIL_CHECK_DELAY_MS: '2000' })).toThrow(
+       new ConfigError('MAIL_CHECK_DELAY_MS is refused in production (it slows the local stand-ins only)'),
+     );
+-    expect(readWebConfig({ ...deployed, MAIL_VALIDATION: 'ses', MAIL_VALIDATION_DAILY_CAP: '50' }).mailValidation).toEqual({ kind: 'ses', dailyCap: 50 });
++    // Never as the task's own role, whose account's trail would keep the address (docs/adr/0065).
++    const required = new ConfigError('MAIL_VALIDATION_ROLE_ARN is required in production (the address-validation account\'s role; docs/adr/0065)');
++    expect(() => readWebConfig({ ...deployed, MAIL_VALIDATION: 'ses', MAIL_VALIDATION_DAILY_CAP: '50' })).toThrow(required);
++    expect(() => readWebConfig({ ...deployed, MAIL_VALIDATION: 'ses', MAIL_VALIDATION_DAILY_CAP: '50', MAIL_VALIDATION_ROLE_ARN: 'none' })).toThrow(required);
++    for (const bad of ['', 'arn:aws:iam::444455556666:user/someone', 'arn:aws:sts::444455556666:assumed-role/x/y']) {
++      expect(() => readWebConfig({ ...deployed, MAIL_VALIDATION: 'ses', MAIL_VALIDATION_DAILY_CAP: '50', MAIL_VALIDATION_ROLE_ARN: bad }), bad).toThrow(new ConfigError('invalid settings: MAIL_VALIDATION_ROLE_ARN'));
++    }
++    expect(readWebConfig({ ...deployed, MAIL_VALIDATION: 'ses', MAIL_VALIDATION_DAILY_CAP: '50', MAIL_VALIDATION_ROLE_ARN: 'arn:aws:iam::444455556666:role/tp-production-address-validation' }).mailValidation).toEqual({ kind: 'ses', dailyCap: 50, roleArn: 'arn:aws:iam::444455556666:role/tp-production-address-validation' });
++    // A developer's SES check outside a deployment runs as the process's own credentials unless a role is named.
++    expect(readWebConfig({ ...base, MAIL_VALIDATION: 'ses' }).mailValidation).toEqual({ kind: 'ses', dailyCap: 50, roleArn: null });
++    expect(readWebConfig({ ...base, MAIL_VALIDATION: 'ses', MAIL_VALIDATION_ROLE_ARN: 'arn:aws:iam::444455556666:role/tp-production-address-validation' }).mailValidation).toEqual({ kind: 'ses', dailyCap: 50, roleArn: 'arn:aws:iam::444455556666:role/tp-production-address-validation' });
+     // The end-to-end suite's production build checks with the stand-ins.
+     expect(readWebConfig({ ...base, NODE_ENV: 'production', TP_ALLOW_LOCAL_PROVIDERS: 'e2e', TP_AUTH_PROVIDER: 'dev', TP_KEY_PROVIDER: 'local', AUTH_COOKIE_SECRET: key, TP_LOCAL_MASTER_KEY: key, BILLING_DATABASE_URL: base.DATABASE_URL }).mailValidation.kind).toBe('local');
+   });
+@@ -489,6 +499,7 @@ describe('the web configuration', () => {
+       QUEUE_DATABASE_URL: 'postgres://tp_queue:x@db.internal:5432/tp',
+       MAIL_VALIDATION: 'ses',
+       MAIL_VALIDATION_DAILY_CAP: '1000',
++      MAIL_VALIDATION_ROLE_ARN: 'arn:aws:iam::444455556666:role/tp-production-address-validation',
+     });
+     expect(config).toMatchObject({
+       origin: 'https://app.synthetic.test',
+@@ -503,7 +514,7 @@ describe('the web configuration', () => {
+       environment: 'production',
+       esign: { kind: 'none' },
+       complianceExportDir: null,
+-      mailValidation: { kind: 'ses', dailyCap: 1000 },
++      mailValidation: { kind: 'ses', dailyCap: 1000, roleArn: 'arn:aws:iam::444455556666:role/tp-production-address-validation' },
+     });
+     expect(() => readWebConfig({ ...base, TP_AUTH_PROVIDER: 'cognito' })).toThrow('COGNITO_USER_POOL_ID is required for Cognito');
+     expect(() => readWebConfig({ ...base, TP_KEY_PROVIDER: 'kms' })).toThrow('KMS_KEY_ID is required for KMS');
+@@ -570,6 +581,7 @@ describe('the web configuration', () => {
+       TP_ENVIRONMENT: 'staging',
+       MAIL_VALIDATION: 'ses',
+       MAIL_VALIDATION_DAILY_CAP: '1000',
++      MAIL_VALIDATION_ROLE_ARN: 'arn:aws:iam::444455556666:role/tp-production-address-validation',
+     };
+     expect(readWebConfig(production)).toMatchObject({ supportEmail: 'help@synthetic.test', environment: 'staging', esign: { kind: 'none' }, complianceExportDir: null });
+     expect(() => readWebConfig({ ...production, SUPPORT_EMAIL: undefined })).toThrow(new ConfigError('SUPPORT_EMAIL is required in production'));
+@@ -603,6 +615,7 @@ describe('the web configuration', () => {
+       TP_ENVIRONMENT: 'production',
+       MAIL_VALIDATION: 'ses',
+       MAIL_VALIDATION_DAILY_CAP: '1000',
++      MAIL_VALIDATION_ROLE_ARN: 'arn:aws:iam::444455556666:role/tp-production-address-validation',
+     };
+     expect(readWebConfig(production)).toMatchObject({ securityEmail: 'security@synthetic.test', origin: 'https://app.synthetic.test' });
+     expect(() => readWebConfig({ ...production, SECURITY_EMAIL: undefined })).toThrow(new ConfigError('SECURITY_EMAIL is required in production'));
+diff --git a/apps/web/src/lib/releases/releases.test.ts b/apps/web/src/lib/releases/releases.test.ts
+index 39e2b0ac..5a77e5bd 100644
+--- a/apps/web/src/lib/releases/releases.test.ts
++++ b/apps/web/src/lib/releases/releases.test.ts
+@@ -77,6 +77,7 @@ describe('the content checkout of the Rule releases screen', () => {
+       TP_ENVIRONMENT: 'staging',
+       MAIL_VALIDATION: 'ses',
+       MAIL_VALIDATION_DAILY_CAP: '50',
++      MAIL_VALIDATION_ROLE_ARN: 'arn:aws:iam::444455556666:role/tp-staging-address-validation',
+     };
+     expect(readWebConfig(production).contentRoot).toBeNull();
+     const scratch = mkdtempSync(path.join(tmpdir(), 'tp-content-root-test-'));
+diff --git a/apps/web/src/lib/screening/validation.test.ts b/apps/web/src/lib/screening/validation.test.ts
+index 1bdc4598..382c5d7e 100644
+--- a/apps/web/src/lib/screening/validation.test.ts
++++ b/apps/web/src/lib/screening/validation.test.ts
+@@ -6,7 +6,20 @@ import { describe, expect, it } from 'vitest';
+ 
+ import { Sealer } from '../auth/seal';
+ import type { DomainResolver } from './address';
+-import { type AddressCheckServices, type AddressInsights, LOCAL_ADDRESS_INSIGHTS, type MailboxVerdicts, VALIDATION_BUCKET, checkScreeningAddress, localAddressChecks, validationVerdict } from './validation';
++import type { SESv2Client } from '@aws-sdk/client-sesv2';
++
++import {
++  type AddressCheckServices,
++  type AddressInsights,
++  LOCAL_ADDRESS_INSIGHTS,
++  type MailboxVerdicts,
++  VALIDATION_BUCKET,
++  VALIDATION_REFUSALS,
++  checkScreeningAddress,
++  localAddressChecks,
++  sesAddressInsights,
++  validationVerdict,
++} from './validation';
+ 
+ /**
+  * SES's validation of a screening's address and the day's cap, beside the DNS check (audit #76; docs/adr/0065, D9 step
+@@ -37,13 +50,17 @@ const ACCEPTING: DomainResolver = { resolveMx: () => Promise.resolve([{ exchange
+ const REFUSING: DomainResolver = { resolveMx: () => Promise.reject(Object.assign(new Error('nx'), { code: 'ENOTFOUND' })), resolve4: () => Promise.resolve([]), resolve6: () => Promise.resolve([]) };
+ const TIMING_OUT: DomainResolver = { resolveMx: () => new Promise(() => undefined), resolve4: () => Promise.resolve([]), resolve6: () => Promise.resolve([]) };
+ 
+-function insights(verdicts: MailboxVerdicts | 'error' | 'hang', calls: string[] = []): AddressInsights {
++function insights(verdicts: MailboxVerdicts | 'error' | 'refused' | 'hang', calls: string[] = []): AddressInsights {
+   return {
+     verdicts: (address, signal) => {
+       calls.push(address);
+       if (verdicts === 'error') {
+         return Promise.reject(new Error('ThrottlingException'));
+       }
++      if (verdicts === 'refused') {
++        // As STS answers a role whose trust does not name the caller (its message names the role, never the address).
++        return Promise.reject(Object.assign(new Error('not authorized to perform: sts:AssumeRole'), { name: 'AccessDenied' }));
++      }
+       if (verdicts === 'hang') {
+         return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('aborted'))));
+       }
+@@ -104,6 +121,44 @@ describe('the address checks together', () => {
+     expect(silent.lines.map((line) => (JSON.parse(line) as { error_code?: string }).error_code).sort()).toEqual(['MAIL_DOMAIN_CHECK_UNAVAILABLE', 'MAIL_VALIDATION_UNAVAILABLE']);
+   });
+ 
++  it('accepts when AWS refuses the address-validation role or its call, logging MAIL_VALIDATION_REFUSED, which alarms, rather than a warning (review S3)', async () => {
++    const refused = context({ resolver: ACCEPTING, insights: insights('refused'), dailyCap: 5 });
++    expect(await refused.run()).toBe('accept');
++    const [line] = refused.lines.map((text) => JSON.parse(text) as { error_code?: string; level?: string });
++    expect(line).toMatchObject({ error_code: 'MAIL_VALIDATION_REFUSED', level: 'error' });
++    expect(refused.lines).toHaveLength(1);
++    // Every refusal by name; a slow or throttled call stays a warning.
++    for (const name of VALIDATION_REFUSALS) {
++      const run = context({ resolver: ACCEPTING, insights: { verdicts: () => Promise.reject(Object.assign(new Error('refused'), { name })) }, dailyCap: 5 });
++      await run.run();
++      expect(run.lines.map((text) => (JSON.parse(text) as { error_code?: string }).error_code), name).toEqual(['MAIL_VALIDATION_REFUSED']);
++    }
++    for (const name of ['ThrottlingException', 'TooManyRequestsException', 'AbortError', 'TimeoutError', 'Error']) {
++      const run = context({ resolver: ACCEPTING, insights: { verdicts: () => Promise.reject(Object.assign(new Error('slow'), { name })) }, dailyCap: 5 });
++      await run.run();
++      expect(run.lines.map((text) => (JSON.parse(text) as { error_code?: string }).error_code), name).toEqual(['MAIL_VALIDATION_UNAVAILABLE']);
++    }
++  });
++
++  it('holds SES\'s call to the validation\'s bound even while it waits on credentials, which the SDK\'s own signal does not reach', async () => {
++    let sent = 0;
++    // A client stuck before its request (as when STS does not answer): it ignores the abort signal.
++    const stuck = { send: () => {
++      sent += 1;
++      return new Promise(() => undefined);
++    } } as unknown as SESv2Client;
++    const controller = new AbortController();
++    const asked = sesAddressInsights(stuck).verdicts(ADDRESS, controller.signal);
++    setTimeout(() => {
++      controller.abort();
++    }, 20);
++    await expect(asked).rejects.toMatchObject({ name: 'AbortError' });
++    expect(sent).toBe(1);
++    const already = new AbortController();
++    already.abort();
++    await expect(sesAddressInsights(stuck).verdicts(ADDRESS, already.signal)).rejects.toMatchObject({ name: 'AbortError' });
++  });
++
+   it('makes no call past the day\'s cap, logging MAIL_VALIDATION_CAP_REACHED, and still checks DNS', async () => {
+     const calls: string[] = [];
+     const run = context({ resolver: ACCEPTING, insights: insights({ isValid: 'LOW' }, calls), dailyCap: 2 });
+@@ -121,6 +176,7 @@ describe('the address checks together', () => {
+     const runs = [
+       context({ resolver: TIMING_OUT, insights: insights('hang'), dailyCap: 5 }),
+       context({ resolver: ACCEPTING, insights: insights('error'), dailyCap: 5 }),
++      context({ resolver: ACCEPTING, insights: insights('refused'), dailyCap: 5 }),
+       context({ resolver: ACCEPTING, insights: insights({ isValid: 'HIGH' }), dailyCap: 0 + 1 }),
+     ];
+     for (const run of runs) {
+diff --git a/apps/web/src/lib/screening/validation.ts b/apps/web/src/lib/screening/validation.ts
+index 86d999a7..133960fa 100644
+--- a/apps/web/src/lib/screening/validation.ts
++++ b/apps/web/src/lib/screening/validation.ts
+@@ -20,9 +20,16 @@ import { DOMAIN_CHECK_TIMEOUT_MS, type DomainResolver, type DomainVerdict, LOCAL
+  * - otherwise IsValid or MailboxExists MEDIUM warns, and the prospect may keep the address;
+  * - otherwise it accepts. IsRoleAddress, IsDisposable and IsRandomInput are not read: they say nothing about delivery,
+  *   and a practice's billing@ is a role address.
+- * A timeout or an error accepts and logs MAIL_VALIDATION_UNAVAILABLE; past the day's cap the call is not made and
+- * MAIL_VALIDATION_CAP_REACHED is logged, which alarms (infra/lib/mail.ts). A DNS refusal still refuses, whatever SES
+- * says (the call, made at once, still counts toward the cap). No log line names the address or its domain.
++ * A timeout or an error accepts and logs MAIL_VALIDATION_UNAVAILABLE; an error that says AWS refused the
++ * address-validation account's role or the call itself (VALIDATION_REFUSALS: it will refuse every address until the
++ * role or its parameter is fixed) accepts and logs MAIL_VALIDATION_REFUSED, which alarms; past the day's cap the call
++ * is not made and MAIL_VALIDATION_CAP_REACHED is logged, which alarms (infra/lib/mail.ts). A DNS refusal still refuses,
++ * whatever SES says (the call, made at once, still counts toward the cap). No log line names the address or its
++ * domain.
++ *
++ * On a deployed server the call runs as the role MAIL_VALIDATION_ROLE_ARN names in the environment's address-validation
++ * account (validation-credentials.ts; docs/adr/0065, "Address validation in its own account"), so CloudTrail records
++ * it, and the address in its request, in that account alone.
+  */
+ 
+ /** SES's three confidence verdicts. */
+@@ -54,13 +61,32 @@ export type AddressVerdict = 'accept' | 'warn' | 'refuse';
+ /** How long the validation call may take (one 2-second timeout, run beside the DNS check's). */
+ export const VALIDATION_TIMEOUT_MS = 2_000;
+ 
+-/** The codes the checks log (infra/lib/mail.ts holds the cap's alarm and the two warnings to these). */
++/** The codes the checks log (infra/lib/mail.ts holds the cap's and the refusal's alarms and the two warnings to these). */
+ export const MAIL_CHECK_CODES = {
+   domainUnavailable: 'MAIL_DOMAIN_CHECK_UNAVAILABLE',
+   validationUnavailable: 'MAIL_VALIDATION_UNAVAILABLE',
++  validationRefused: 'MAIL_VALIDATION_REFUSED',
+   capReached: 'MAIL_VALIDATION_CAP_REACHED',
+ } as const;
+ 
++/**
++ * The AWS errors, by name, that say the validation was refused rather than slow: STS refused the address-validation
++ * role (its trust, or MAIL_VALIDATION_ROLE_ARN naming the wrong role), SES refused the call (the role's policy), or the
++ * credentials were not good. None passes on the next try, so each is MAIL_VALIDATION_REFUSED; any other error (a
++ * timeout, throttling, a network fault) is MAIL_VALIDATION_UNAVAILABLE.
++ */
++export const VALIDATION_REFUSALS: readonly string[] = [
++  'AccessDenied',
++  'AccessDeniedException',
++  'InvalidClientTokenId',
++  'UnrecognizedClientException',
++  'SignatureDoesNotMatch',
++  'ExpiredToken',
++  'ExpiredTokenException',
++  'RegionDisabledException',
++  'ValidationCredentialsMissing',
++];
++
+ /** The rate limiter's bucket for the day's validations, and its one subject: the whole server counts as one. */
+ export const VALIDATION_BUCKET = 'screening_validation';
+ const VALIDATION_SUBJECT = 'day';
+@@ -72,11 +98,34 @@ function verdictOf(value: { readonly ConfidenceVerdict?: string } | undefined):
+   return VERDICTS.find((candidate) => candidate === verdict);
+ }
+ 
+-/** SES's validation of an address (the web task's role holds ses:GetEmailAddressInsights; infra application-role.ts). */
++/**
++ * A promise that rejects once `signal` aborts, whatever `work` is waiting on: the SDK honours the signal only once its
++ * request is under way, not while it fetches credentials, so this holds the whole call to the validation's bound.
++ */
++function bounded<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
++  return new Promise<T>((resolve, reject) => {
++    const aborted = () => {
++      reject(Object.assign(new Error('the validation did not answer in time'), { name: 'AbortError' }));
++    };
++    if (signal.aborted) {
++      aborted();
++      return;
++    }
++    signal.addEventListener('abort', aborted, { once: true });
++    void work.then(resolve, reject).finally(() => {
++      signal.removeEventListener('abort', aborted);
++    });
++  });
++}
++
++/**
++ * SES's validation of an address, through `client`: on a deployed server, one whose credentials are the
++ * address-validation account's role (services.ts; infra/lib/address-validation-stack.ts), which alone may make the call.
++ */
+ export function sesAddressInsights(client: SESv2Client): AddressInsights {
+   return {
+     verdicts: async (address, signal) => {
+-      const response = await client.send(new GetEmailAddressInsightsCommand({ EmailAddress: address }), { abortSignal: signal });
++      const response = await bounded(client.send(new GetEmailAddressInsightsCommand({ EmailAddress: address }), { abortSignal: signal }), signal);
+       const mailbox = response.MailboxValidation;
+       const evaluations = mailbox?.Evaluations;
+       const read = {
+@@ -158,6 +207,11 @@ async function takeValidation(pool: ScopePool<ScopeClient>, sealer: Sealer, dail
+   }
+ }
+ 
++/** An error's name when it is shaped like one, never its message, which can carry the address. */
++function errorName(error: unknown): string {
++  return error instanceof Error && /^[A-Za-z]{1,64}$/.test(error.name) ? error.name : '';
++}
++
+ /** SES's verdict on the mailbox, or null when it was not asked (past the cap) or could not answer. */
+ async function validated(
+   address: string,
+@@ -178,8 +232,12 @@ async function validated(
+   const timer = setTimeout(() => controller.abort(), VALIDATION_TIMEOUT_MS);
+   try {
+     return validationVerdict(await context.checks.insights.verdicts(address, controller.signal));
+-  } catch {
+-    context.logger.warn('screening address not validated: the validation did not answer', { error_code: MAIL_CHECK_CODES.validationUnavailable });
++  } catch (error) {
++    if (VALIDATION_REFUSALS.includes(errorName(error))) {
++      context.logger.error('screening address not validated: AWS refused the address-validation role or its call', { error_code: MAIL_CHECK_CODES.validationRefused });
++    } else {
++      context.logger.warn('screening address not validated: the validation did not answer', { error_code: MAIL_CHECK_CODES.validationUnavailable });
++    }
+     return null;
+   } finally {
+     clearTimeout(timer);
+diff --git a/apps/web/src/lib/server/config.ts b/apps/web/src/lib/server/config.ts
+index bcaa578e..585d0f9d 100644
+--- a/apps/web/src/lib/server/config.ts
++++ b/apps/web/src/lib/server/config.ts
+@@ -65,6 +65,11 @@ const schema = z.object({
+   // deployed server), or the local stand-ins, which call no one; and the validations a UTC day may make.
+   MAIL_VALIDATION: z.enum(['ses', 'local']).optional(),
+   MAIL_VALIDATION_DAILY_CAP: z.string().regex(/^[1-9][0-9]{0,5}$/, 'a whole number from 1 to 999999').optional(),
++  // The role SES's validation runs as, in the environment's address-validation account, so the call and the address in
++  // it are recorded there and never in this account's trail (docs/adr/0065; review S3); `none` before that account's
++  // stack exists, when no release runs (the stack's rule ReleaseNeedsAddressValidationRole). Required on a deployed
++  // server.
++  MAIL_VALIDATION_ROLE_ARN: z.string().regex(/^(none|arn:aws[a-z-]*:iam::[0-9]{12}:role\/[A-Za-z0-9+=,.@_/-]{1,512})$/, 'none, or an IAM role ARN').optional(),
+   // The local stand-ins answer after this many milliseconds (0 to 5,000): the capacity harness charges the checks' worst
+   // case, one 2-second timeout, to every upload (the plan's G1). Refused on a deployed server.
+   MAIL_CHECK_DELAY_MS: z.string().regex(/^[0-9]{1,4}$/, 'a whole number of milliseconds').optional(),
+@@ -74,7 +79,10 @@ const schema = z.object({
+ export const DEFAULT_MAIL_VALIDATION_DAILY_CAP = 50;
+ 
+ /** How the server checks a screening's address: SES and DNS, or the local stand-ins (after `delayMs`). */
+-export type MailValidationSettings = { readonly kind: 'ses'; readonly dailyCap: number } | { readonly kind: 'local'; readonly dailyCap: number; readonly delayMs: number };
++export type MailValidationSettings =
++  /** `roleArn`: the address-validation account's role (required on a deployed server); null runs as the process's own credentials. */
++  | { readonly kind: 'ses'; readonly dailyCap: number; readonly roleArn: string | null }
++  | { readonly kind: 'local'; readonly dailyCap: number; readonly delayMs: number };
+ 
+ export type AuthProviderSettings =
+   | { readonly kind: 'dev'; readonly directory: string }
+@@ -174,7 +182,7 @@ export interface WebConfig {
+   readonly screeningLaunch: ScreeningLaunch;
+   /** SCREENING_SLOTS: when this many screenings are queued or pricing ahead, the "sent" page says it can take minutes. */
+   readonly screeningSlots: number;
+-  /** MAIL_VALIDATION, MAIL_VALIDATION_DAILY_CAP and MAIL_CHECK_DELAY_MS: how the screening's address is checked. */
++  /** MAIL_VALIDATION, MAIL_VALIDATION_DAILY_CAP, MAIL_VALIDATION_ROLE_ARN and MAIL_CHECK_DELAY_MS: how the screening's address is checked. */
+   readonly mailValidation: MailValidationSettings;
+ }
+ 
+@@ -209,7 +217,7 @@ function esignSettings(settings: z.output<typeof schema>, production: boolean):
+   return { kind: 'local', secret: settings.ESIGN_LOCAL_SECRET ?? DEVELOPMENT_ESIGN_SECRET, directory: settings.ESIGN_LOCAL_DIR ?? path.join(tmpdir(), 'tp-esign') };
+ }
+ 
+-/** The screening's address checks: SES and DNS on a deployed server (both settings required), the stand-ins elsewhere. */
++/** The screening's address checks: SES, as the address-validation role, and DNS on a deployed server (each setting required), the stand-ins elsewhere. */
+ function mailValidationSettings(settings: z.output<typeof schema>, deployed: boolean): MailValidationSettings {
+   if (!deployed) {
+     const delayMs = Number.parseInt(settings.MAIL_CHECK_DELAY_MS ?? '0', 10);
+@@ -217,7 +225,8 @@ function mailValidationSettings(settings: z.output<typeof schema>, deployed: boo
+       throw new ConfigError('MAIL_CHECK_DELAY_MS is at most 5000');
+     }
+     const dailyCap = Number.parseInt(settings.MAIL_VALIDATION_DAILY_CAP ?? String(DEFAULT_MAIL_VALIDATION_DAILY_CAP), 10);
+-    return settings.MAIL_VALIDATION === 'ses' ? { kind: 'ses', dailyCap } : { kind: 'local', dailyCap, delayMs };
++    const roleArn = settings.MAIL_VALIDATION_ROLE_ARN === undefined || settings.MAIL_VALIDATION_ROLE_ARN === 'none' ? null : settings.MAIL_VALIDATION_ROLE_ARN;
++    return settings.MAIL_VALIDATION === 'ses' ? { kind: 'ses', dailyCap, roleArn } : { kind: 'local', dailyCap, delayMs };
+   }
+   if (settings.MAIL_VALIDATION === undefined || settings.MAIL_VALIDATION_DAILY_CAP === undefined) {
+     throw new ConfigError(`${settings.MAIL_VALIDATION === undefined ? 'MAIL_VALIDATION' : 'MAIL_VALIDATION_DAILY_CAP'} is required in production`);
+@@ -228,7 +237,10 @@ function mailValidationSettings(settings: z.output<typeof schema>, deployed: boo
+   if (settings.MAIL_CHECK_DELAY_MS !== undefined) {
+     throw new ConfigError('MAIL_CHECK_DELAY_MS is refused in production (it slows the local stand-ins only)');
+   }
+-  return { kind: 'ses', dailyCap: Number.parseInt(settings.MAIL_VALIDATION_DAILY_CAP, 10) };
++  if (settings.MAIL_VALIDATION_ROLE_ARN === undefined || settings.MAIL_VALIDATION_ROLE_ARN === 'none') {
++    throw new ConfigError('MAIL_VALIDATION_ROLE_ARN is required in production (the address-validation account\'s role; docs/adr/0065)');
++  }
++  return { kind: 'ses', dailyCap: Number.parseInt(settings.MAIL_VALIDATION_DAILY_CAP, 10), roleArn: settings.MAIL_VALIDATION_ROLE_ARN };
+ }
+ 
+ export function readWebConfig(env: Readonly<Record<string, string | undefined>> = process.env): WebConfig {
+diff --git a/apps/web/src/lib/server/services.ts b/apps/web/src/lib/server/services.ts
+index 41cf2c52..30f7d5aa 100644
+--- a/apps/web/src/lib/server/services.ts
++++ b/apps/web/src/lib/server/services.ts
+@@ -26,6 +26,7 @@ import { readBillingConfig } from '../billing/config';
+ import { billingProvider, memoryBillingProvider } from '../billing/provider';
+ import type { BillingPool } from '@tp/worker/billing';
+ import { type AddressCheckServices, localAddressChecks, sesAddressInsights, systemDomainResolver } from '../screening/validation';
++import { assumedRoleCredentials } from '../screening/validation-credentials';
+ import { type JobQueue, PgBossQueue } from '../uploads/queue';
+ import { LocalUploadTargets, S3UploadTargets, type UploadTargets, presigningClient } from '../uploads/targets';
+ import { DEFAULT_MAIL_VALIDATION_DAILY_CAP, DEFAULT_SCREENING_SLOTS, type ScreeningLaunch, type WebConfig, readWebConfig } from './config';
+@@ -243,7 +244,12 @@ export function servicesFromConfig(config: WebConfig): Services {
+     screeningSlots: config.screeningSlots,
+     addressChecks:
+       config.mailValidation.kind === 'ses'
+-        ? { resolver: systemDomainResolver(), insights: sesAddressInsights(new SESv2Client({})), dailyCap: config.mailValidation.dailyCap }
++        ? {
++            resolver: systemDomainResolver(),
++            // As the address-validation account's role (docs/adr/0065): never this account's, whose trail would keep the address.
++            insights: sesAddressInsights(new SESv2Client(config.mailValidation.roleArn === null ? {} : { credentials: assumedRoleCredentials(config.mailValidation.roleArn) })),
++            dailyCap: config.mailValidation.dailyCap,
++          }
+         : localAddressChecks(config.mailValidation.dailyCap, config.mailValidation.delayMs),
+   });
+ }
 diff --git a/infra/lib/app.ts b/infra/lib/app.ts
 index 1989f73f..e22a80f5 100644
 --- a/infra/lib/app.ts
@@ -234,6 +625,79 @@ index f864a9f3..31cf119d 100644
        },
        secrets: {
          AUTH_COOKIE_SECRET: ecs.Secret.fromSecretsManager(this.cookieSecret),
+diff --git a/infra/lib/constructs/mail-streams.ts b/infra/lib/constructs/mail-streams.ts
+index 3103a1d9..3faa28bc 100644
+--- a/infra/lib/constructs/mail-streams.ts
++++ b/infra/lib/constructs/mail-streams.ts
+@@ -81,7 +81,7 @@ export function mailAccountAlarmsRuleName(environment: EnvironmentName): string
+  * - **Nine alarms** to the operator topic: the account's bounce rate (2.5%, the `account_rate` signal; 4%) and
+  *   complaint rate (0.05%, the signal; 0.08%), the screening set's bounce (3%) and complaint (0.08%) rates, the
+  *   transactional set's bounce rate (2%), a message in the dead-letter queue, and the queue's oldest message past 15
+- *   minutes. Monitoring adds the seven counted from the logs. No dimension holds an address: the account's metrics have
++ *   minutes. Monitoring adds the eight counted from the logs. No dimension holds an address: the account's metrics have
+  *   none, and a set's has its name.
+  */
+ export class MailStreams extends Construct {
+diff --git a/infra/lib/constructs/monitoring.ts b/infra/lib/constructs/monitoring.ts
+index c7b30237..abfc8950 100644
+--- a/infra/lib/constructs/monitoring.ts
++++ b/infra/lib/constructs/monitoring.ts
+@@ -32,6 +32,8 @@ import {
+   MAIL_PROBE_UNSENT_ALARM,
+   MAIL_VALIDATION_CAP_CODE,
+   MAIL_VALIDATION_CAP_PERIOD_SECONDS,
++  MAIL_VALIDATION_REFUSED_CODE,
++  MAIL_VALIDATION_REFUSED_PERIOD_SECONDS,
+   type MailPlatformAlarmCode,
+   mailCodeMetricName,
+ } from '../mail';
+@@ -111,13 +113,14 @@ export interface MonitoringProps {
+  * minutes in a row; and its failed runs (any error line, or a run out of attempts). The web app's uploads sent to wait
+  * (over an account's share or the day's cap, Q7) are counted from the web's group. No metric has a dimension.
+  *
+- * The mail streams (docs/adr/0065; audit #76) add seven metric filters, each with its alarm: five codes the platform
++ * The mail streams (docs/adr/0065; audit #76) add eight metric filters, each with its alarm: five codes the platform
+  * jobs log (infra/lib/mail.ts, MAIL_PLATFORM_ALARM_CODES: the screening stream paused, a notice not delivered to a
+  * recipient, a notice with no recipient, an invitation not delivered, a probe not back), each alarmed at one in five
+  * minutes; a probe the platform could not send (MAIL_PROBE_UNSENT_ALARM), alarmed when each of three five-minute periods
+- * has one; and the web's code for the day's address validations reaching their cap, alarmed at one in a day. Each is
+- * matched on the line's `error_code` and named by it, never by a value from the line; MailStreams holds the reputation
+- * and queue alarms.
++ * has one; the web's code for an address validation AWS refused (the address-validation account's role or its call),
++ * alarmed at one in five minutes; and its code for the day's address validations reaching their cap, alarmed at one in
++ * a day. Each is matched on the line's `error_code` and named by it, never by a value from the line; MailStreams holds
++ * the reputation and queue alarms.
+  */
+ export class Monitoring extends Construct {
+   readonly operatorTopic: sns.Topic;
+@@ -141,6 +144,8 @@ export class Monitoring extends Construct {
+   readonly mailCodeAlarms: Readonly<Record<MailPlatformAlarmCode, cloudwatch.Alarm>>;
+   /** A probe that could not be sent for 15 minutes (MAIL_PROBE_UNSENT_ALARM). */
+   readonly mailProbeUnsentAlarm: cloudwatch.Alarm;
++  /** An address validation AWS refused (MAIL_VALIDATION_REFUSED_CODE). */
++  readonly mailValidationRefusedAlarm: cloudwatch.Alarm;
+   readonly mailValidationCapAlarm: cloudwatch.Alarm;
+   /** Notifies the operator topic; every alarm in the stack uses it. */
+   readonly notify: cloudwatchActions.SnsAction;
+@@ -453,6 +458,18 @@ export class Monitoring extends Construct {
+     });
+     this.mailProbeUnsentAlarm.addAlarmAction(notify);
+ 
++    const refusedMetricName = mailCodeMetricName(MAIL_VALIDATION_REFUSED_CODE);
++    const validationRefused = counted(this.webLogGroup, refusedMetricName, { namespace: MAIL_NAMESPACE, metricName: refusedMetricName }, logs.FilterPattern.stringValue('$.error_code', '=', MAIL_VALIDATION_REFUSED_CODE));
++    this.mailValidationRefusedAlarm = new cloudwatch.Alarm(this, `Mail${refusedMetricName}`, {
++      alarmDescription: `AWS refused a ${props.environmentName} screening address validation: the web cannot assume the address-validation account's role, or the role cannot call SES, so every address is checked by DNS alone until it is fixed (docs/runbooks/deliverability.md, 3.8).`,
++      metric: validationRefused.metric({ statistic: cloudwatch.Stats.SUM, period: Duration.seconds(MAIL_VALIDATION_REFUSED_PERIOD_SECONDS) }),
++      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
++      threshold: 1,
++      evaluationPeriods: 1,
++      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
++    });
++    this.mailValidationRefusedAlarm.addAlarmAction(notify);
++
+     const capMetricName = mailCodeMetricName(MAIL_VALIDATION_CAP_CODE);
+     const capReached = counted(this.webLogGroup, capMetricName, { namespace: MAIL_NAMESPACE, metricName: capMetricName }, logs.FilterPattern.stringValue('$.error_code', '=', MAIL_VALIDATION_CAP_CODE));
+     this.mailValidationCapAlarm = new cloudwatch.Alarm(this, `Mail${capMetricName}`, {
 diff --git a/infra/lib/deploy-parameters.ts b/infra/lib/deploy-parameters.ts
 index d4fab1c8..25efbf8b 100644
 --- a/infra/lib/deploy-parameters.ts
@@ -321,6 +785,25 @@ index d4fab1c8..25efbf8b 100644
      if (launch !== SCREENING_CLOSED) {
        // The value names the report of one tag: CloudFormation refuses the deploy before any change unless ImageTag is it.
        const tag = launch.slice(0, launch.lastIndexOf(':'));
+diff --git a/infra/lib/mail.ts b/infra/lib/mail.ts
+index 738833d7..b61484e6 100644
+--- a/infra/lib/mail.ts
++++ b/infra/lib/mail.ts
+@@ -112,6 +112,14 @@ export const MAIL_PROBE_UNSENT_ALARM = { code: 'MAIL_PROBE_UNSENT', periodSecond
+ export const MAIL_VALIDATION_CAP_CODE = 'MAIL_VALIDATION_CAP_REACHED';
+ export const MAIL_VALIDATION_CAP_PERIOD_SECONDS = 86_400;
+ 
++/**
++ * The web's code when AWS refuses the address validation itself (review S3): STS refuses the address-validation
++ * account's role (its trust, or MailValidationRoleArn naming the wrong role) or SES refuses the role's call. Every
++ * address is then accepted on DNS alone until it is fixed, so it is counted and alarmed at one in five minutes.
++ */
++export const MAIL_VALIDATION_REFUSED_CODE = 'MAIL_VALIDATION_REFUSED';
++export const MAIL_VALIDATION_REFUSED_PERIOD_SECONDS = 300;
++
+ /**
+  * Codes logged as warnings with no alarm of their own: an unreadable event (it reaches the dead-letter queue, whose
+  * alarm covers it), and a DNS check or an address validation that could not answer (the address is accepted).
 diff --git a/infra/lib/platform-stack.ts b/infra/lib/platform-stack.ts
 index 3693ec41..831c619c 100644
 --- a/infra/lib/platform-stack.ts
@@ -429,6 +912,107 @@ index 5393ded7..27171b0d 100644
    it('takes the consumer’s state as held or running', () => {
      expect((declared[PARAMETER_NAMES.screeningConsumer] as CfnParameter & { AllowedValues?: string[] }).AllowedValues).toEqual([...SCREENING_CONSUMER_STATES]);
      expect(SCREENING_CONSUMER_STATES).toEqual(['held', 'running']);
+diff --git a/infra/test/mail-streams.test.ts b/infra/test/mail-streams.test.ts
+index 9d8038da..0a99bc37 100644
+--- a/infra/test/mail-streams.test.ts
++++ b/infra/test/mail-streams.test.ts
+@@ -20,6 +20,8 @@ import {
+   MAIL_VALIDATION_CAP_CODE,
+   MAIL_VALIDATION_CAP_PERIOD_SECONDS,
+   MAIL_VALIDATION_DAILY_CAP,
++  MAIL_VALIDATION_REFUSED_CODE,
++  MAIL_VALIDATION_REFUSED_PERIOD_SECONDS,
+   MAIL_WARNING_CODES,
+   REPUTATION_PERIOD_SECONDS,
+   SET_REPUTATION_ALARMS,
+@@ -56,7 +58,7 @@ function sources(directory: string): string {
+ /**
+  * The mail streams (audit #76; docs/adr/0065; the founder's rulings of 2026-10-21, Q1 and Q9 to Q12; test matrix SCR-21,
+  * SEC-18 and JOB-05): three SES configuration sets, two stack-owned identities in two phases, the event path into one
+- * encrypted queue, the cut-off that can pause only the screening stream, and the sixteen alarms.
++ * encrypted queue, the cut-off that can pause only the screening stream, and the seventeen alarms.
+  */
+ describe('the mail streams\' names and codes match the worker\'s and the web\'s', () => {
+   it('names the same three streams as the database\'s closed list', () => {
+@@ -84,10 +86,10 @@ describe('the mail streams\' names and codes match the worker\'s and the web\'s'
+     // An unsendable probe is logged on each minute's run while the probe is due, and the next run tries again.
+     expect(source('apps/worker/src/platform/mail-events.ts')).toContain(`error_code: '${MAIL_PROBE_UNSENT_ALARM.code}'`);
+     const web = source('apps/web/src/lib/screening/validation.ts') + source('apps/web/src/lib/screening/address.ts');
+-    for (const code of [MAIL_VALIDATION_CAP_CODE, 'MAIL_DOMAIN_CHECK_UNAVAILABLE', 'MAIL_VALIDATION_UNAVAILABLE']) {
++    for (const code of [MAIL_VALIDATION_CAP_CODE, MAIL_VALIDATION_REFUSED_CODE, 'MAIL_DOMAIN_CHECK_UNAVAILABLE', 'MAIL_VALIDATION_UNAVAILABLE']) {
+       expect(web, code).toContain(`'${code}'`);
+     }
+-    const alarmed: readonly string[] = [...MAIL_PLATFORM_ALARM_CODES, MAIL_PROBE_UNSENT_ALARM.code];
++    const alarmed: readonly string[] = [...MAIL_PLATFORM_ALARM_CODES, MAIL_PROBE_UNSENT_ALARM.code, MAIL_VALIDATION_CAP_CODE, MAIL_VALIDATION_REFUSED_CODE];
+     expect(MAIL_WARNING_CODES.filter((code) => alarmed.includes(code))).toEqual([]);
+   });
+ 
+@@ -307,14 +309,15 @@ describe.each(ENVIRONMENTS)('%s: mail streams', (environment) => {
+     });
+   });
+ 
+-  it('counts each platform mail code, an unsent probe and the web\'s validation cap from the logs, by the code alone (seven filters)', () => {
++  it('counts each platform mail code, an unsent probe and the web\'s refused validation and validation cap from the logs, by the code alone (eight filters)', () => {
+     const filters = resourcesOf(template, 'AWS::Logs::MetricFilter').filter(([, filter]) => JSON.stringify(propertiesOf(filter).MetricTransformations).includes(MAIL_NAMESPACE));
+-    expect(filters).toHaveLength(7);
++    expect(filters).toHaveLength(8);
+     const platform = ref(logicalIdOf(stack, stack.monitoring.platformLogGroup));
+     const web = ref(logicalIdOf(stack, stack.monitoring.webLogGroup));
+     const expected = [
+       ...MAIL_PLATFORM_ALARM_CODES.map((code) => ({ code, group: platform, alarm: stack.monitoring.mailCodeAlarms[code], period: MAIL_PLATFORM_ALARM_PERIOD_SECONDS })),
+       { code: MAIL_VALIDATION_CAP_CODE, group: web, alarm: stack.monitoring.mailValidationCapAlarm, period: MAIL_VALIDATION_CAP_PERIOD_SECONDS },
++      { code: MAIL_VALIDATION_REFUSED_CODE, group: web, alarm: stack.monitoring.mailValidationRefusedAlarm, period: MAIL_VALIDATION_REFUSED_PERIOD_SECONDS },
+     ];
+     for (const { code, group, alarm, period } of expected) {
+       const metricName = mailCodeMetricName(code);
+@@ -336,6 +339,9 @@ describe.each(ENVIRONMENTS)('%s: mail streams', (environment) => {
+       });
+     }
+     expect(MAIL_VALIDATION_CAP_PERIOD_SECONDS).toBe(86_400);
++    // A refused validation refuses every address after it: at once (review S3).
++    expect(MAIL_VALIDATION_REFUSED_PERIOD_SECONDS).toBe(300);
++    expect(source('apps/web/src/lib/screening/validation.ts')).toContain(`validationRefused: '${MAIL_VALIDATION_REFUSED_CODE}'`);
+   });
+ 
+   it('alarms when a probe could not be sent in each of three five-minute periods, long before a stream\'s readiness lapses at 48 hours (review M3)', () => {
+@@ -369,12 +375,12 @@ describe.each(ENVIRONMENTS)('%s: mail streams', (environment) => {
+     expect(unsent.AlarmDescription).toContain('docs/runbooks/deliverability.md, 3.7');
+   });
+ 
+-  it('has sixteen mail alarms', () => {
++  it('has seventeen mail alarms', () => {
+     const mail = resourcesOf(template, 'AWS::CloudWatch::Alarm').filter(([, alarm]) => {
+       const properties = propertiesOf(alarm);
+       return properties.Namespace === MAIL_NAMESPACE || properties.Namespace === 'AWS/SES' || (properties.Namespace === 'AWS/SQS' && JSON.stringify(properties.Dimensions).includes('MailStreamsEvents'));
+     });
+-    expect(mail).toHaveLength(16);
++    expect(mail).toHaveLength(17);
+   });
+ 
+   it('outputs every DNS record the founder sets at the registrar, and the sets and queues', () => {
+diff --git a/infra/test/monitoring.test.ts b/infra/test/monitoring.test.ts
+index 33c52910..d34e93c0 100644
+--- a/infra/test/monitoring.test.ts
++++ b/infra/test/monitoring.test.ts
+@@ -149,8 +149,8 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
+     // Worker: heartbeat, final job failures, pricing engine errors, model budget events. Platform:
+     // heartbeat, final job failures. Screening: heartbeat, final job failures, the time to email, the oldest queued run,
+     // failed runs. Web: failed sign-in bursts, model budget events, screening uploads sent to wait. Mail (docs/adr/0065):
+-    // the platform's five codes, an unsent probe and the web's validation cap.
+-    expect(filters).toHaveLength(21);
++    // the platform's five codes, an unsent probe, and the web's refused validation and validation cap.
++    expect(filters).toHaveLength(22);
+     const alarms = [
+       stack.monitoring.screeningHeartbeatAlarm,
+       stack.monitoring.screeningTimeToEmailAlarm,
+@@ -169,6 +169,7 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
+       stack.uptime.certificateAlarm,
+       ...Object.values(stack.monitoring.mailCodeAlarms),
+       stack.monitoring.mailProbeUnsentAlarm,
++      stack.monitoring.mailValidationRefusedAlarm,
+       stack.monitoring.mailValidationCapAlarm,
+       stack.mailStreams.accountBounceWarningAlarm,
+       stack.mailStreams.accountBounceHighAlarm,
 diff --git a/infra/test/synth.ts b/infra/test/synth.ts
 index 6a16ef69..b28beb14 100644
 --- a/infra/test/synth.ts
@@ -485,3 +1069,15 @@ index b0ec3ed5..b5e4cb03 100644
        '@aws-sdk/s3-request-presigner':
          specifier: ^3.1152.0
          version: 3.1152.0
+diff --git a/tools/screening-capacity/watched-paths.txt b/tools/screening-capacity/watched-paths.txt
+index 0b1df357..efccec62 100644
+--- a/tools/screening-capacity/watched-paths.txt
++++ b/tools/screening-capacity/watched-paths.txt
+@@ -97,6 +97,7 @@ apps/web/src/lib/screening/routes.ts
+ apps/web/src/lib/screening/sent.ts
+ apps/web/src/lib/screening/template.ts
+ apps/web/src/lib/screening/tlds.ts
++apps/web/src/lib/screening/validation-credentials.ts
+ apps/web/src/lib/screening/validation.ts
+ apps/web/src/lib/server/config.ts
+ apps/web/src/lib/server/services.ts

@@ -56,5 +56,10 @@ Marker route: touch <clone>/.claude/.allow-protected-edit, Edit migration, rm ma
 - 9a99cedc S1 (db: screening_run_mail_refusal = budget then list; helpers screening_bounce_budget_spent,
   screening_contact_refused; upload gate = pause only). Failing first: D2 test (listed+budgeted gave contact_undeliverable)
   and grants test. After: screening.db + mail.db 95/95. ADR 0065 update deferred to one docs commit at the end.
+- e5dc7708 S4 (db definer screening_submit_mail_refusal(email, account, client) for tp_app: closed, paused, budget, list;
+  routes.ts calls it before the hint and address checks; clientSubject computed earlier). Failing first: routes.db SCR-21
+  tests (validations spent: 2 and 3 calls). After: screening.db + mail.db + routes.db 145/145 (70+25+49+...);
+  catalog/hardening/cross-tenant/access 1240/1240; tsc web clean; eslint clean.
+  Residual (proposal): a ZIP the DB refuses still spends one validation (not in the precheck to avoid copying 6b-2's rule).
 
 ## Checks

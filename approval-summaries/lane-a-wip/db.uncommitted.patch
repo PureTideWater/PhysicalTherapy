@@ -1,143 +1,85 @@
-diff --git a/apps/web/src/lib/screening/routes.db.test.ts b/apps/web/src/lib/screening/routes.db.test.ts
-index 76f5a93b..c464cfe4 100644
---- a/apps/web/src/lib/screening/routes.db.test.ts
-+++ b/apps/web/src/lib/screening/routes.db.test.ts
-@@ -1253,7 +1253,8 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
-   });
- 
-   it('answers a refusal by DNS, by SES\'s validation and by the refusal list with the one sentence, and stores nothing of the address', async () => {
--    const services = withServices({ addressChecks: checks('nomail.synthetic.test', (address) => (address.startsWith('gone.') ? { ...HIGH, mailboxExists: 'LOW' } : HIGH)) });
-+    const calls: string[] = [];
-+    const services = withServices({ addressChecks: checks('nomail.synthetic.test', (address) => (address.startsWith('gone.') ? { ...HIGH, mailboxExists: 'LOW' } : HIGH), calls) });
-     const refused = [
-       'someone@nomail.synthetic.test',
-       'gone.mailbox@clinic-gone.synthetic.test',
-@@ -1265,7 +1266,13 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
-     // An address a screening email bounced from (its keyed hash on the refusal list): the same sentence, from the database.
-     const bounced = 'Bounced.Before@Clinic-Bounced.synthetic.test';
-     await world.owner.query("INSERT INTO screening_mail_refusal (recipient_sha256, reason, expires_at) VALUES (mail_recipient_sha256($1), 'bounced', now() + interval '365 days')", [bounced]);
--    expect(issuesOf(await call(screeningSubmit, services, { input: submitInput({ contactEmail: ` ${bounced} ` }) }))).toEqual([{ field: 'contactEmail', message: ADDRESS_REFUSED }]);
-+    // Another spelling of that mailbox too (S2), and neither spends one of the day's validations on an upload the database
-+    // would refuse (S4).
-+    calls.length = 0;
-+    for (const spelling of [` ${bounced} `, 'bounced.before+screening@clinic-bounced.synthetic.test']) {
-+      expect(issuesOf(await call(screeningSubmit, services, { input: submitInput({ contactEmail: spelling }) })), spelling).toEqual([{ field: 'contactEmail', message: ADDRESS_REFUSED }]);
-+    }
-+    expect(calls).toEqual([]);
-     expect(await prospects(bounced.toLowerCase())).toBe(0);
-     expect(await storedText()).not.toMatch(/nomail|clinic-gone|clinic-bounced/i);
-   });
-@@ -1329,9 +1336,18 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
-         messageId,
-       ]);
-     }
-+    const calls: string[] = [];
-+    const counted = withServices({ addressChecks: checks(null, () => HIGH, calls) });
-     const fourth = 'client.fourth@clinic-client-fourth.synthetic.test';
--    expect(issuesOf(await world.call(screeningSubmit, { input: submitInput({ contactEmail: fourth }), address }))).toEqual([{ field: 'input', message: SCREENING_BOUNCE_BUDGET }]);
-+    expect(issuesOf(await call(screeningSubmit, counted, { input: submitInput({ contactEmail: fourth }), address }))).toEqual([{ field: 'input', message: SCREENING_BOUNCE_BUDGET }]);
-     expect(await prospects(fourth)).toBe(0);
-+    // The client past its budget gets the budget's sentence for an address on the refusal list too, so it learns nothing of
-+    // the list (S1), and spends none of the day's validations (S4).
-+    const listed = 'client.listed@clinic-client-listed.synthetic.test';
-+    await world.owner.query("INSERT INTO screening_mail_refusal (recipient_sha256, reason, expires_at) VALUES (mail_recipient_sha256($1), 'complained', now() + interval '365 days')", [listed]);
-+    expect(issuesOf(await call(screeningSubmit, counted, { input: submitInput({ contactEmail: listed }), address }))).toEqual([{ field: 'input', message: SCREENING_BOUNCE_BUDGET }]);
-+    expect(issuesOf(await call(screeningSubmit, counted, { input: submitInput({ contactEmail: listed }), address: '198.51.100.90' }))).toEqual([{ field: 'contactEmail', message: ADDRESS_REFUSED }]);
-+    expect(calls).toEqual([]);
-     // Another client is not held by this one's budget.
-     expect((await world.call(screeningSubmit, { input: submitInput({ contactEmail: 'client.other@clinic-client-other.synthetic.test' }), address: '198.51.100.89' })).status).toBe('ok');
-     expect(SCREENING_BOUNCE_BUDGET).not.toMatch(/@|198\.51/);
-diff --git a/apps/web/src/lib/screening/routes.ts b/apps/web/src/lib/screening/routes.ts
-index bbb92f08..8464ee25 100644
---- a/apps/web/src/lib/screening/routes.ts
-+++ b/apps/web/src/lib/screening/routes.ts
-@@ -614,10 +614,24 @@ export const screeningSubmit = publicRoute({
-       throw new InputError([{ field: 'contactEmail', message: 'an email address: the result’s link is sent there' }]);
-     }
-     const rateAccountSubject = rateSubjectHash(services.sealer, 'screening', 'account', account);
--    // The address (audit #76; docs/adr/0065, D9), only now that the upload passed its own checks and the rate limit, so
--    // nothing is asked, or paid for, for an upload those refuse. A likely typo, or an ending not in use, is said first
--    // and costs nothing; then DNS and SES's validation run together, so the time added is at most one 2-second timeout
--    // (the plan's G1). One sentence answers every refused address, here and for the database's refusal list.
-+    // The client the rate limiter counts, as it keeps it: its keyed hash, or null where no trusted proxy names one. The
-+    // database holds the run to the client's bounce budget beside the account's (Q10 (a)).
-+    const clientSubject = request.clientAddress === undefined || request.clientAddress === null ? null : rateSubjectHash(services.sealer, 'screening', 'address', request.clientAddress);
-+    // What the database would refuse for the mail, in its order (closed, paused, the submitter's bounce budget, then the
-+    // address on the refusal list), before any address check is asked or paid for (review S4): the day's validations
-+    // are never spent on an upload the database refuses for its mail, and a client or an account past its budget gets
-+    // the budget's sentence whatever the address (S1). submit_screening()'s triggers stay the backstop.
-+    const refusal = await withClient(services.pool, async (client) =>
-+      (await client.query<{ refusal: string | null }>('SELECT screening_submit_mail_refusal($1, $2, $3) AS refusal', [prospect.contactEmail, rateAccountSubject, clientSubject])).rows[0]?.refusal ?? null,
-+    );
-+    if (refusal !== null) {
-+      throw new InputError([submitIssue(refusal)]);
-+    }
-+    // The address (audit #76; docs/adr/0065, D9), only now that the upload passed its own checks, the rate limit and the
-+    // database's mail refusals, so nothing is asked, or paid for, for an upload those refuse. A likely typo, or an ending
-+    // not in use, is said first and costs nothing; then DNS and SES's validation run together, so the time added is at
-+    // most one 2-second timeout (the plan's G1). One sentence answers every refused address, here and for the database's
-+    // refusal list.
-     const kept = input.keepAddress.trim() === '1';
-     const hint = addressHint(prospect.contactEmail);
-     if (hint.message !== null && !kept) {
+diff --git a/apps/web/src/lib/routes/console-mail.ts b/apps/web/src/lib/routes/console-mail.ts
+index f9f1d644..963f059d 100644
+--- a/apps/web/src/lib/routes/console-mail.ts
++++ b/apps/web/src/lib/routes/console-mail.ts
+@@ -26,6 +26,7 @@ export interface MailStreamView {
+   readonly pausedAt: Date | null;
+   readonly pausedReason: MailPauseReason | null;
+   readonly pauseCounts: { readonly sends: number; readonly bounces: number; readonly complaints: number } | null;
++  /** Where the window's counts start: the later of 7 days ago and the last resume (console_mail_streams()). */
+   readonly windowStartsAt: Date | null;
+   readonly window: { readonly sends: number; readonly bounces: number; readonly complaints: number };
+   readonly resumedAt: Date | null;
 diff --git a/packages/db/migrations/20261107090000_mail_streams.sql b/packages/db/migrations/20261107090000_mail_streams.sql
-index 6a7aee63..da416911 100644
+index da416911..5a6c86ab 100644
 --- a/packages/db/migrations/20261107090000_mail_streams.sql
 +++ b/packages/db/migrations/20261107090000_mail_streams.sql
-@@ -39,7 +39,8 @@
- --   address against the refusal list.
- -- - The consumer (tp_screening) reads screening_mail_gate() before it claims; the web (tp_app) reads
- --   screening_mail_status() (paused; ready once the screening's delivered and bounced probes have come back within
----   48 hours and since the last resume).
-+--   48 hours and since the last resume), and screening_submit_mail_refusal() before it spends an address validation
-+--   (closed, paused, the budget, the refusal list, in that order; review S4).
- -- - Break-glass notices from a recorded outbox (support_grant_notice and support_grant_notice_recipient, both tenant
- --   tables, registered, read by the application role under the practice's scope): the recipients are recorded first,
- --   one row per current practice administrator, and each is sent in its own transaction; notice_sent is written at the
-@@ -1453,6 +1454,23 @@ BEGIN
- END;
+@@ -242,16 +242,18 @@ $$;
+ -- A stream's window (Q9): from the later of 7 days ago and its last resume, its messages SES counts toward the account's
+ -- rates (probes, those the account's own suppression list held back and rejected ones aside), the permanent bounces
+ -- among them (a bounce from SES's global suppression list included, as SES counts it) and the complaints other than
+--- not_spam.
+-CREATE FUNCTION mail_window_counts(target text) RETURNS TABLE (sends integer, bounces integer, complaints integer)
++-- not_spam; and where it starts (starts_at), which the console shows (review M8).
++CREATE FUNCTION mail_window_counts(target text) RETURNS TABLE (starts_at timestamptz, sends integer, bounces integer, complaints integer)
+ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp AS $$
+-  SELECT count(m.*)::integer,
++  SELECT w.starts_at,
++         count(m.*)::integer,
+          count(m.*) FILTER (WHERE m.state = 'bounced' AND m.bounce_kind = 'permanent')::integer,
+          count(m.*) FILTER (WHERE m.state = 'complained' AND m.complaint_type <> 'not_spam')::integer
+     FROM mail_stream s
+-    LEFT JOIN mail_send m ON m.stream = s.stream AND m.kind <> 'probe' AND m.state NOT IN ('suppressed', 'rejected')
+-                         AND m.sent_at >= greatest(now() - interval '7 days', s.window_starts_at)
++    CROSS JOIN LATERAL (SELECT greatest(now() - interval '7 days', s.window_starts_at) AS starts_at) w
++    LEFT JOIN mail_send m ON m.stream = s.stream AND m.kind <> 'probe' AND m.state NOT IN ('suppressed', 'rejected') AND m.sent_at >= w.starts_at
+    WHERE s.stream = target
++   GROUP BY w.starts_at
  $$;
  
-+-- The web's check before it spends one of the day's address validations (review S4; D9): the refusal of an accepted
-+-- upload's mail that submit_screening() would give, in its order, writing nothing: screening_closed (no release in
-+-- force, or no split approved), screening_paused, screening_bounce_budget (the submitter's keyed subjects), then
-+-- screening_contact_undeliverable (the address's mailbox); null when none applies. The submitter's budget comes before
-+-- the address, as in the run's trigger (S1), so a client or an account past it learns nothing of the list here either.
-+-- The triggers stay the backstop for a change between this read and the submission. Granted to tp_app.
-+CREATE FUNCTION screening_submit_mail_refusal(email text, rate_account_subject text, client_subject text) RETURNS text
-+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
-+  SELECT CASE
-+           WHEN current_rule_release() IS NULL OR place_of_service_split_in_force() IS NULL
-+                OR NOT EXISTS (SELECT 1 FROM rule_release r WHERE r.release_no = current_rule_release() AND r.manifest_sha256 IS NOT NULL) THEN 'screening_closed'
-+           WHEN NOT EXISTS (SELECT 1 FROM mail_stream s WHERE s.stream = 'screening' AND s.paused_at IS NULL) THEN 'screening_paused'
-+           WHEN screening_bounce_budget_spent($2, $3) THEN 'screening_bounce_budget'
-+           WHEN screening_contact_refused($1) THEN 'screening_contact_undeliverable'
-+         END
-+$$;
-+
+ -- Whether the screening's mail is sending: not paused, and SES confirmed since the last pause. The triggers below read it;
+@@ -1164,6 +1166,8 @@ $$;
+ -- 8. The console (tp_app; feature_flag.manage, as console_model_spend)
  -- ---------------------------------------------------------------------------------------------------
- -- 10. The functions the outboxes replace
- -- ---------------------------------------------------------------------------------------------------
-@@ -1470,8 +1488,9 @@ REVOKE ALL ON mail_recipient_key, mail_stream, mail_send, screening_mail_refusal
-   support_grant_notice, support_grant_notice_recipient FROM PUBLIC;
- GRANT SELECT ON support_grant_notice, support_grant_notice_recipient TO tp_app;
  
--REVOKE ALL ON FUNCTION mail_recipient_canonical(text), mail_recipient_sha256(text), mail_send_expiry(), mail_state_rank(text), mail_window_counts(text), screening_mail_sending(),
--  screening_mail_gate(), screening_mail_status(), screening_bounce_budget_spent(text, text), screening_contact_refused(text),
-+REVOKE ALL ON FUNCTION mail_recipient_canonical(text), mail_recipient_sha256(text), mail_send_expiry(), mail_state_rank(text), mail_window_counts(text),
-+  screening_mail_sending(), screening_mail_gate(), screening_mail_status(), screening_bounce_budget_spent(text, text), screening_contact_refused(text),
-+  screening_submit_mail_refusal(text, text, text),
-   screening_upload_mail_gate(), screening_run_mail_refusal(), screening_run_mail_gate(),
-   support_notice_administrators(uuid), support_notice_report_undelivered(uuid, text), support_notice_counts(uuid, text),
-   operator_open_support_notice(uuid, text, text), operator_support_notices_pending(integer), operator_support_notice_claim(uuid, uuid),
-@@ -1493,8 +1512,8 @@ GRANT EXECUTE ON FUNCTION operator_open_support_notice(uuid, text, text), operat
-   operator_mail_expire(integer) TO tp_operator;
- GRANT EXECUTE ON FUNCTION billing_open_dunning_notice(uuid, text, text), billing_dunning_notices_pending(integer), billing_dunning_notice_claim(uuid, text, uuid),
-   billing_dunning_notice_sent(uuid, text, uuid, text, text), billing_dunning_notice_failed(uuid, text, uuid, text, boolean, text) TO tp_billing;
--GRANT EXECUTE ON FUNCTION screening_mail_status(), console_mail_streams(), console_pause_mail_stream(text, text), console_resume_mail_stream(text, text),
--  console_mail_undelivered(timestamptz), console_support_grants(),
-+GRANT EXECUTE ON FUNCTION screening_mail_status(), screening_submit_mail_refusal(text, text, text), console_mail_streams(), console_pause_mail_stream(text, text),
-+  console_resume_mail_stream(text, text), console_mail_undelivered(timestamptz), console_support_grants(),
-   submit_screening(text, text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], integer, integer, bigint,
-     integer, bigint, bigint, text, text, text, text, text, text, text, text, timestamptz, text, text, text) TO tp_app;
- GRANT EXECUTE ON FUNCTION screening_mail_gate() TO tp_screening;
++-- Each stream as the console's mail page shows it. window_starts_at is where the window's counts start, the later of 7
++-- days ago and the last resume (mail_window_counts()), never a resume older than the 7 days the counts cover (review M8).
+ CREATE FUNCTION console_mail_streams() RETURNS TABLE (stream text, paused_at timestamptz, paused_reason text, paused_by uuid, pause_sends integer,
+   pause_bounces integer, pause_complaints integer, window_starts_at timestamptz, window_sends integer, window_bounces integer, window_complaints integer,
+   resumed_at timestamptz, confirmed_at timestamptz, sending boolean, ready boolean, probe_sent_at timestamptz, probe_delivered_at timestamptz,
+@@ -1174,7 +1178,7 @@ BEGIN
+     RAISE EXCEPTION 'only a platform administrator reads the mail streams' USING ERRCODE = 'insufficient_privilege';
+   END IF;
+   RETURN QUERY
+-    SELECT s.stream, s.paused_at, s.paused_reason, s.paused_by, s.pause_sends, s.pause_bounces, s.pause_complaints, s.window_starts_at,
++    SELECT s.stream, s.paused_at, s.paused_reason, s.paused_by, s.pause_sends, s.pause_bounces, s.pause_complaints, w.starts_at,
+            w.sends, w.bounces, w.complaints, s.resumed_at, s.ses_enabled_confirmed_at,
+            s.paused_at IS NULL AND s.ses_enabled_confirmed_at IS NOT NULL,
+            s.paused_at IS NULL AND s.ses_enabled_confirmed_at IS NOT NULL
+diff --git a/packages/db/src/mail.db.test.ts b/packages/db/src/mail.db.test.ts
+index 7a24d894..1e613bc3 100644
+--- a/packages/db/src/mail.db.test.ts
++++ b/packages/db/src/mail.db.test.ts
+@@ -196,7 +196,7 @@ async function streamRow(stream: string): Promise<Record<string, unknown>> {
+ }
+ 
+ async function windowCounts(): Promise<{ sends: number; bounces: number; complaints: number }> {
+-  const { rows } = await owner.query<{ sends: number; bounces: number; complaints: number }>("SELECT * FROM mail_window_counts('screening')");
++  const { rows } = await owner.query<{ sends: number; bounces: number; complaints: number }>("SELECT sends, bounces, complaints FROM mail_window_counts('screening')");
+   return rows[0] ?? { sends: -1, bounces: -1, complaints: -1 };
+ }
+ 
+@@ -1104,6 +1104,13 @@ describe('the console’s mail reads (feature_flag.manage)', () => {
+       { stream: 'screening', sending: true, window_sends: 1, window_bounces: 1, client_marks: 0, account_marks: 0 },
+       { stream: 'transactional', sending: true, window_sends: expect.any(Number) as unknown, window_bounces: expect.any(Number) as unknown, client_marks: 0, account_marks: 0 },
+     ]);
++    // Where the window's counts start (M8): the later of 7 days ago and the last resume, never a resume older than that.
++    const since = async () =>
++      (await read(platformAdmin, "SELECT round(extract(epoch FROM now() - window_starts_at) / 60)::int AS minutes FROM console_mail_streams() WHERE stream = 'screening'"))[0]?.minutes;
++    expect(await since()).toBe(7 * 24 * 60);
++    await owner.query("UPDATE mail_stream SET window_starts_at = now() - interval '2 days' WHERE stream = 'screening'");
++    expect(await since()).toBe(2 * 24 * 60);
++    expect((await owner.query<{ starts: number }>("SELECT round(extract(epoch FROM now() - starts_at) / 60)::int AS starts FROM mail_window_counts('screening')")).rows).toEqual([{ starts: 2 * 24 * 60 }]);
+     const undelivered = await read(platformAdmin, "SELECT stream, kind, state, recipient_user_id, subject_id, messages FROM console_mail_undelivered(now() - interval '1 hour')");
+     expect(undelivered).toContainEqual({ stream: 'screening', kind: 'screening_result', state: 'bounced', recipient_user_id: null, subject_id: null, messages: 1 });
+     expect(undelivered.filter((row) => row.stream === 'screening')).toHaveLength(1);
