@@ -8,3 +8,10 @@
 - TODO: run db tests (mail, screening, mail-events, worker screening), unit (events, infra), probes; harness link race; e2e timing; web routes S4 precheck; users page complained; console page
 ## Findings so far
 ## Shots taken
+- SHOT db1: 8 db files (packages/db mail+screening, worker mail-events/support-notices/screening/consumer, web mail-routes/screening routes) 203/203 pass at c37fa7cc (scratchpad/pr42v/review-mail-db1.log)
+- SHOT probes (apps/worker/src/platform/zz-review-probe.db.test.ts in clone, temp): 4/4 pass = CONFIRMED:
+  P1 after resume, probe lost: MISSED logged run 1 (probe re-sent), NOT run 2 -> alarm flaps (once per 26h, clears after 5 min)
+  P2 first activation never back: same flap
+  P3 after resume, delivered back, bounce never: same flap
+  P4 runbook M1 COMPLAINT check: tp_kind=probe hand-sent on notices -> suppressed, but console_mail_undelivered lists nothing and no log line names it
+- FINDINGS (draft): F1 should_fix M3 flap after resume/first activation (runbook 3.7 claim false; 26h silent closure after resume); F2 should_fix runbook M1/M2 staging checks name places that cannot show the result; F3 should_fix users page + runbook 3.4 'invite again' for suppressed invitation loops (M1 routes more to suppressed)
