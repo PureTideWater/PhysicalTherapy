@@ -15,22 +15,26 @@ RUN sh /tmp/install-pnpm.sh package.json && rm /tmp/install-pnpm.sh
 COPY . .
 RUN pnpm install --frozen-lockfile --filter "@tp/worker..."
 RUN pnpm --filter @tp/worker build
+# The playwright-core the lockfile resolves for the worker, whose tarball the install above checked against the lockfile's
+# integrity, copied out whole for the runtime stage, its links followed: the image names no version of its own, so it
+# cannot drift from the manifests (docs/adr/0058; test matrix CI-18).
+RUN mkdir /out && cp -RL apps/worker/node_modules/playwright-core /out/playwright-core
 
 FROM node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS runtime
 ENV NODE_ENV=production
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 WORKDIR /app
-# The audit report's PDF is printed with Chromium (docs/adr/0037): playwright-core at the version the
-# lockfile pins, beside the bundle, and its headless Chromium with the system libraries it needs.
-# Debian's security updates published since the base image come first, and npm, npx and corepack are
-# removed once Chromium is in: the image scan (ci.yml's images job) fails on any HIGH or CRITICAL finding
-# that has a fix, and the worker never runs a package manager.
+# The audit report's PDF is printed with Chromium (docs/adr/0037): the build stage's playwright-core, the one the
+# lockfile pins, beside the bundle, and the headless shell its browsers.json names, with the system libraries it needs.
+# ci.yml's images job and the release's build hold that headless shell, every file of it, to apps/web/e2e/browser.json
+# (tools/ci/browser-build.ts --image). Debian's security updates published since the base image come first, and npm,
+# npx and corepack are removed once Chromium is in: the image scan (ci.yml's images job) fails on any HIGH or CRITICAL
+# finding that has a fix, and the worker never runs a package manager.
+COPY --from=build /out/playwright-core ./node_modules/playwright-core
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends \
- && npm install --no-save --omit=dev playwright-core@1.56.1 \
- && npx playwright-core install --with-deps chromium-headless-shell \
- && npm cache clean --force \
- && rm -rf /var/lib/apt/lists/* /root/.npm \
+ && node node_modules/playwright-core/cli.js install --with-deps chromium-headless-shell \
+ && rm -rf /var/lib/apt/lists/* \
  && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
            /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 COPY --from=build --chown=node:node /repo/apps/worker/dist ./dist
