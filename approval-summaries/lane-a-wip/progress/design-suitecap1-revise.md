@@ -37,3 +37,5 @@ Backup of pre-revise design: scratchpad/progress/suite-cap-1.pre-revise.md (to m
 - F7 TAKEN: add triage_never_deleted.sql + triage_no_truncate.sql to sections 9, 11.
 - F8 TAKEN with correction: 33,332 waiting candidates (not 66,666), 20.6-23.7 s read+judge per load at 4 CPUs; web task 0.5 vCPU; ALB 180 s; proposed LANES "Handed to Lane A" entry text (storing waiting patterns = table = migration) for orchestrator.
 - Row 186 -> 188.
+- DRAFT written: scratchpad/progress/suite-cap-1.revised.md (placeholders @@T-...@@ await probe T numbers). Next: fill from full.log, verify claims (CHROMIUM_ON_CI db shards? fields.ts NUMERIC list; ledger-interest D12 ref), copy to ops.
+- PROBE T partial (20:07): B triage 20k 10.9 s; A triage alone 52.4 s, heap peak 213, LIVE after judging 66,666 = 107 MiB; re-triage 33,332 live 84 MiB (=> ~720 B/candidate, baseline live ~61); A report alone (G2 code, real Chromium) 84.5 s, heap peak 419 (sampled), LIVE after gather 154 MiB, rss 861 (vitest), tree PSS 910 MiB, Chromium children 165 MiB in 6 procs, pdf 0.7 s. Waiting on TOGETHER.
