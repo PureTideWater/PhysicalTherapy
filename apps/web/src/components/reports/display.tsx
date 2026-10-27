@@ -127,8 +127,8 @@ function minWidthOf(columns: number): string | null {
 
 /**
  * A stored report's table, scrolling sideways in its own region (ScrollTable) named by its caption; `figures` names
- * its columns (0-based) of codes, counts and amounts, set in the mono face with tabular numerals, and `wraps` its
- * columns of long text, which may break anywhere so they never set the table's width.
+ * its columns (0-based) of codes, counts, dates and amounts, set in the mono face with tabular numerals and never
+ * broken. Its words (a pattern's sentence among them) wrap between words.
  */
 function Table({
   caption,
@@ -136,20 +136,18 @@ function Table({
   rows,
   empty,
   figures = [],
-  wraps = [],
 }: {
   readonly caption: string;
   readonly headers: readonly string[];
   readonly rows: readonly (readonly ReactNode[])[];
   readonly empty: string;
   readonly figures?: readonly number[];
-  readonly wraps?: readonly number[];
 }) {
   if (rows.length === 0) {
     return <p className="text-sm text-muted-foreground">{empty}</p>;
   }
   const width = minWidthOf(headers.length);
-  const cellClass = (column: number) => (figures.includes(column) ? 'px-2 py-1 align-top font-mono tabular-nums' : wraps.includes(column) ? 'px-2 py-1 align-top wrap-anywhere' : 'px-2 py-1 align-top');
+  const cellClass = (column: number) => (figures.includes(column) ? 'px-2 py-1 align-top font-mono tabular-nums whitespace-nowrap' : 'px-2 py-1 align-top');
   return (
     <ScrollTable label={caption}>
       <table className={width === null ? 'w-full text-sm' : `w-full ${width} text-sm`} aria-label={caption}>
@@ -248,7 +246,6 @@ export function ReportSections({ content, practiceId }: { readonly content: Audi
             caption="Validated discrepancies by payer pattern"
             headers={['Payer', 'Plan', 'Pattern', 'Lines', 'Variance']}
             figures={[3]}
-            wraps={[2]}
             rows={content.validated.patterns.map((pattern) => [pattern.payer, pattern.plan, pattern.behavior_text, String(pattern.lines), <Money key="variance" value={pattern.variance_cents} />])}
             empty="No line was paid below its contract."
           />
@@ -285,7 +282,6 @@ export function ReportSections({ content, practiceId }: { readonly content: Audi
             caption="Cases"
             headers={['Payer', 'Plan', 'Pattern', 'State', 'Lines (this run)', `${STAGE_LABELS.actionable} (this run)`, 'Deadline (this run)', 'Whole case', 'Pursuit cost', 'Net expected']}
             figures={[4, 6]}
-            wraps={[2]}
             rows={content.cases.map((item) => [
               item.payer,
               item.plan,

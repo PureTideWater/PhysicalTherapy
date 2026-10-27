@@ -163,7 +163,9 @@ export default async function CompliancePage(props: { readonly searchParams: Pro
                 {checklist.policies.map((item) => (
                   <tr key={item.policy.id} className="border-t first:border-t-0" data-policy-status={item.status}>
                     <td className="py-1 pr-3">{item.policy.title}</td>
-                    <td className="py-1 pr-3 font-mono text-xs wrap-anywhere">{item.policy.file}</td>
+                    <td className="py-1 pr-3 font-mono text-xs">
+                      <span className="block min-w-32 wrap-anywhere">{item.policy.file}</span>
+                    </td>
                     <td className="py-1 pr-3">version {item.policy.version}</td>
                     <td className="py-1">
                       <Badge variant={item.status === 'approved' ? 'outline' : 'destructive'}>{item.status === 'approved' ? `Approved ${item.approvedOn ?? ''}` : item.status === 'stale' ? 'Review due' : 'Draft, awaiting approval'}</Badge>
@@ -201,23 +203,29 @@ export default async function CompliancePage(props: { readonly searchParams: Pro
           <p className="text-sm text-muted-foreground">Nothing recorded yet.</p>
         ) : (
           <ScrollTable label="Evidence records">
-            <table className="w-full min-w-[40rem] text-left text-sm" aria-label="Evidence records">
+            <table className="w-full min-w-[48rem] text-left text-sm" aria-label="Evidence records">
               <thead className="text-muted-foreground">
                 <tr>
                   <th className="py-1 pr-3 font-medium">What</th>
                   <th className="py-1 pr-3 font-medium">Subject</th>
                   <th className="py-1 pr-3 font-medium">On</th>
-                  <th className="py-1 font-medium">Reference</th>
+                  <th className="py-1 pr-3 font-medium">Reference</th>
+                  <th className="py-1 font-medium">SHA-256</th>
                 </tr>
               </thead>
               <tbody>
                 {records.map((record) => (
                   <tr key={record.id} className="border-t">
                     <td className="py-1 pr-3">{recordKinds.find((kind) => kind.value === record.kind)?.label ?? record.kind}</td>
-                    <td className="py-1 pr-3 font-mono text-xs wrap-anywhere">{workforce.find((member) => member.userId === record.subject)?.email ?? record.subject}</td>
-                    <td className="py-1 pr-3">{record.occurredOn}</td>
-                    <td className="py-1 font-mono text-xs wrap-anywhere" title={record.sha256}>
-                      {record.documentRef}
+                    <td className="py-1 pr-3 font-mono text-xs">
+                      <span className="block min-w-40 wrap-anywhere">{workforce.find((member) => member.userId === record.subject)?.email ?? record.subject}</span>
+                    </td>
+                    <td className="py-1 pr-3 whitespace-nowrap">{record.occurredOn}</td>
+                    <td className="py-1 pr-3 font-mono text-xs">
+                      <span className="block min-w-32 wrap-anywhere">{record.documentRef}</span>
+                    </td>
+                    <td className="py-1 font-mono text-xs">
+                      <span className="block min-w-32 wrap-anywhere">{record.sha256}</span>
                     </td>
                   </tr>
                 ))}

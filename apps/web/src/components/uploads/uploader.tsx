@@ -416,9 +416,8 @@ export function Uploader(props: UploaderProps) {
                 const receipt = item.documentId === undefined ? undefined : receipts.get(item.documentId);
                 return (
                   <li key={item.key} className="flex flex-wrap items-start gap-3 text-sm" data-phase={item.phase}>
-                    <span className="min-w-48 truncate" title={item.file.name}>
-                      {item.file.name}
-                    </span>
+                    {/* The whole name, never cut to a hover title a phone cannot reach: it breaks only past 12rem. */}
+                    <span className="min-w-48 wrap-anywhere">{item.file.name}</span>
                     {receipt !== undefined ? (
                       <ReceiptStatus receipt={receipt} />
                     ) : item.phase === 'failed' ? (

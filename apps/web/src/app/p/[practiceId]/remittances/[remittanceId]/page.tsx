@@ -121,8 +121,12 @@ export default async function RemittancePage(props: { readonly params: Promise<{
                     <tr key={item.position} className="border-t">
                       <td className="py-1 pr-3 font-mono text-xs">{item.reasonCode}</td>
                       <td className="py-1 pr-3">{CATEGORY_NAMES[item.category] ?? item.category}</td>
-                      <td className="py-1 pr-3">{item.fiscalPeriodDate}</td>
-                      {canReadPhi ? <td className="py-1 pr-3 font-mono text-xs wrap-anywhere">{item.reference ?? '—'}</td> : null}
+                      <td className="py-1 pr-3 whitespace-nowrap">{item.fiscalPeriodDate}</td>
+                      {canReadPhi ? (
+                        <td className="py-1 pr-3 font-mono text-xs">
+                          <span className="block min-w-32 wrap-anywhere">{item.reference ?? '—'}</span>
+                        </td>
+                      ) : null}
                       <td className="py-1 text-right">
                         <Money value={item.amountCents} />
                       </td>
@@ -166,9 +170,11 @@ export default async function RemittancePage(props: { readonly params: Promise<{
                       <td className="py-2 pr-3 font-mono tabular-nums">{claim.claimNo}</td>
                       {claim.identifiers === null ? null : <td className="py-2 pr-3">{claim.identifiers.patient}</td>}
                       {claim.identifiers === null ? null : (
-                        <td className="py-2 pr-3 font-mono text-xs wrap-anywhere">
-                          <div>Patient: {claim.identifiers.patientControlNumber}</div>
-                          <div>Payer: {claim.identifiers.payerClaimControlNumber}</div>
+                        <td className="py-2 pr-3 font-mono text-xs">
+                          <div className="min-w-32 wrap-anywhere">
+                            <div>Patient: {claim.identifiers.patientControlNumber}</div>
+                            <div>Payer: {claim.identifiers.payerClaimControlNumber}</div>
+                          </div>
                         </td>
                       )}
                       {claim.identifiers === null ? null : <td className="py-2 pr-3 whitespace-nowrap">{period(claim.identifiers.serviceFrom, claim.identifiers.serviceTo)}</td>}

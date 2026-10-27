@@ -4,6 +4,7 @@ import Link from 'next/link';
 
 import { QuestionList, VersionStatusBadge } from '../../../../components/contracts/display';
 import { PricedShare } from '../../../../components/coverage/share';
+import { WholeDates } from '../../../../components/dates';
 import { AnswerForm, TagForm, documentLabel } from '../../../../components/contracts/forms';
 import { roleNames } from '../../../../components/format';
 import { Pager } from '../../../../components/remittances/display';
@@ -112,7 +113,9 @@ export default async function ContractsPage(props: Props) {
                           {contract.title}
                         </Link>
                       </td>
-                      <td className="py-2 pr-3 wrap-anywhere">{contract.plans.length === 0 ? <span className="text-muted-foreground">None mapped</span> : contract.plans.join(', ')}</td>
+                      <td className="py-2 pr-3">
+                        {contract.plans.length === 0 ? <span className="text-muted-foreground">None mapped</span> : <span className="block min-w-32 wrap-anywhere">{contract.plans.join(', ')}</span>}
+                      </td>
                       <td className="py-2 pr-3">
                         {contract.shown === null ? (
                           '—'
@@ -123,7 +126,7 @@ export default async function ContractsPage(props: Props) {
                           </Link>
                         )}
                       </td>
-                      <td className="py-2 pr-3">{contract.shown === null ? '—' : windowText(contract.shown.effectiveFrom, contract.shown.effectiveTo)}</td>
+                      <td className="py-2 pr-3">{contract.shown === null ? '—' : <WholeDates text={windowText(contract.shown.effectiveFrom, contract.shown.effectiveTo)} />}</td>
                       <td className="py-2 pr-3">{contract.methods.length === 0 ? '—' : contract.methods.map((method) => METHOD_NAMES[method]).join(', ')}</td>
                       <td className="py-2 pr-3">{contract.latestStatus === null ? '—' : <VersionStatusBadge status={contract.latestStatus} />}</td>
                       <td className="py-2" data-coverage-share={contract.coverage === null ? 'none' : 'priced'}>
@@ -168,7 +171,9 @@ export default async function ContractsPage(props: Props) {
                         {event.contractTitle}
                       </Link>
                     </td>
-                    <td className="py-1 wrap-anywhere">{event.note ?? ''}</td>
+                    <td className="py-1">
+                      <WholeDates text={event.note ?? ''} />
+                    </td>
                   </tr>
                 ))}
               </tbody>

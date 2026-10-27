@@ -152,7 +152,7 @@ function X12Report({ practiceId, parse }: { readonly practiceId: string; readonl
                       {errorPosition(error)}
                       {error.transaction === undefined ? '' : ` (ST02 ${error.transaction.st02})`}
                     </td>
-                    <td className="py-1 wrap-anywhere">{errorText(error)}</td>
+                    <td className="py-1">{errorText(error)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -192,10 +192,12 @@ function ExportReport({ practiceId, parse }: { readonly practiceId: string; read
               <tbody>
                 {parse.transactionOutcomes.map((item) => (
                   <tr key={item.payment} className="border-t" data-outcome={item.outcome}>
-                    <td className="py-1 pr-3 wrap-anywhere">
-                      <span className="font-mono tabular-nums">{item.payment}</span>{' '}
-                      <span className="text-xs text-muted-foreground">
-                        ({item.rows === 1 ? `row ${String(item.firstRow)}` : `rows ${String(item.firstRow)} to ${String(item.firstRow + item.rows - 1)}`} below the header)
+                    <td className="py-1 pr-3">
+                      <span className="block min-w-32 wrap-anywhere">
+                        <span className="font-mono tabular-nums">{item.payment}</span>{' '}
+                        <span className="text-xs text-muted-foreground">
+                          ({item.rows === 1 ? `row ${String(item.firstRow)}` : `rows ${String(item.firstRow)} to ${String(item.firstRow + item.rows - 1)}`} below the header)
+                        </span>
                       </span>
                     </td>
                     <td className="py-1 pr-3">

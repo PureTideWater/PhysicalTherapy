@@ -67,22 +67,40 @@ export default async function ConsoleBillingPage() {
                     <td className="py-1 pr-3">
                       <Badge variant={row.standingKind === 'good' || row.standingKind === 'closed' ? 'outline' : 'destructive'}>{STANDING[row.standingKind] ?? row.standingKind}</Badge>
                       {row.standingKind === 'suspended_nonpayment' && row.suspendedSince !== null ? (
-                        <span className="ml-2 text-xs">since {utcDate(row.suspendedSince)}</span>
+                        <span className="ml-2 text-xs">
+                          since <span className="whitespace-nowrap">{utcDate(row.suspendedSince)}</span>
+                        </span>
                       ) : row.pastDueSince === null ? null : row.standingKind === 'past_due' ? (
-                        <span className="ml-2 text-xs">since {utcDate(row.pastDueSince)}</span>
+                        <span className="ml-2 text-xs">
+                          since <span className="whitespace-nowrap">{utcDate(row.pastDueSince)}</span>
+                        </span>
                       ) : row.standingKind === 'suspended_by_paidwhole' || row.standingKind === 'closed' ? (
                         // Billing's own hold in the firm-aware words the customer page uses (a firm's billing suspension reads past due).
                         <span className="ml-2 text-xs">
                           billing{' '}
-                          {standingKind('active', row.standing, row.kind) === 'suspended_nonpayment' && row.suspendedSince !== null
-                            ? `suspended for nonpayment since ${utcDate(row.suspendedSince)}`
-                            : `past due since ${utcDate(row.pastDueSince)}`}
+                          {standingKind('active', row.standing, row.kind) === 'suspended_nonpayment' && row.suspendedSince !== null ? (
+                            <>
+                              suspended for nonpayment since <span className="whitespace-nowrap">{utcDate(row.suspendedSince)}</span>
+                            </>
+                          ) : (
+                            <>
+                              past due since <span className="whitespace-nowrap">{utcDate(row.pastDueSince)}</span>
+                            </>
+                          )}
                         </span>
                       ) : null}
                     </td>
                     <td className="py-1 pr-3">{row.plan === null ? 'None' : `${row.plan === 'monthly' ? 'Monthly' : 'Annual'} (${row.subscriptionStatus ?? ''})`}</td>
                     <td className="py-1 pr-3 font-mono tabular-nums">{formatUsd(parseCents(row.openCents))}</td>
-                    <td className="py-1">{row.snapshotOn === null ? '—' : `${String(row.grantedPractices)}, ${String(row.activePractices)} on ${row.snapshotOn}`}</td>
+                    <td className="py-1">
+                      {row.snapshotOn === null ? (
+                        '—'
+                      ) : (
+                        <>
+                          {String(row.grantedPractices)}, {String(row.activePractices)} on <span className="whitespace-nowrap">{row.snapshotOn}</span>
+                        </>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

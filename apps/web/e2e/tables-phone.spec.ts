@@ -165,7 +165,7 @@ test('at 390 px every practice table scrolls in its own region, says so, and pas
   await test.step('the contracts, a version’s rate record, coverage and its report, the releases', async () => {
     await atRoute(page, at('/contracts'), 'contracts', ['Contracts']);
     await atRoute(page, at(`/contracts/${ids.contractId}`), 'a contract', ['Versions']);
-    // A rate record's fields are three columns that wrap, so they fit a phone: no table is named, and the rest is checked.
+    // A rate record's fields are two columns (each field's terms with their approval under them), so they fit a phone: no table is named, and the rest is checked.
     await atRoute(page, at(`/contracts/versions/${ids.versionId}`), 'a contract version');
     await atRoute(page, at('/coverage'), 'coverage', ['Plans waiting on mapping', 'Unpriced reasons and their remedies']);
     await page.getByRole('region', { name: 'Coverage report' }).getByRole('button', { name: 'Generate the coverage report' }).click();

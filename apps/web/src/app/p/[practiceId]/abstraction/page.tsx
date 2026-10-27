@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ActionForm } from '../../../../components/action-form';
 import { QuestionList, VersionStatusBadge } from '../../../../components/contracts/display';
 import { TagForm, documentLabel } from '../../../../components/contracts/forms';
+import { WholeDates } from '../../../../components/dates';
 import { Pager } from '../../../../components/remittances/display';
 import { ScrollTable } from '../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../components/shell';
@@ -112,8 +113,10 @@ export default async function AbstractionPage(props: Props) {
               <tbody>
                 {versions.map((version) => (
                   <tr key={version.id} className="border-t" data-version={version.id}>
-                    <td className="py-1 pr-3 wrap-anywhere">
-                      {version.contractTitle} <span className="text-muted-foreground">({version.payerName})</span>
+                    <td className="py-1 pr-3">
+                      <span className="block min-w-32 wrap-anywhere">
+                        {version.contractTitle} <span className="text-muted-foreground">({version.payerName})</span>
+                      </span>
                     </td>
                     <td className="py-1 pr-3">
                       <Link className="underline" href={`${path}/versions/${version.id}`}>
@@ -123,9 +126,14 @@ export default async function AbstractionPage(props: Props) {
                     <td className="py-1 pr-3">
                       <VersionStatusBadge status={version.status} />
                     </td>
-                    <td className="py-1 pr-3">{windowText(version.effectiveFrom, version.effectiveTo)}</td>
+                    <td className="py-1 pr-3">
+                      <WholeDates text={windowText(version.effectiveFrom, version.effectiveTo)} />
+                    </td>
                     <td className="py-1 text-right font-mono tabular-nums">
-                      {version.verified} of {version.records} verified
+                      <span className="whitespace-nowrap">
+                        {version.verified} of {version.records}
+                      </span>{' '}
+                      verified
                     </td>
                   </tr>
                 ))}

@@ -452,10 +452,12 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
                     <tr key={agreement.id} className="border-t align-top">
                       <td className="py-1 pr-3">{AGREEMENT_NAMES[agreement.kind] ?? agreement.kind}</td>
                       <td className="py-1 pr-3 font-mono text-xs whitespace-nowrap">{agreement.version}</td>
-                      <td className="py-1 pr-3 wrap-anywhere">{agreement.signer}</td>
+                      <td className="py-1 pr-3">
+                        <span className="block min-w-32 wrap-anywhere">{agreement.signer}</span>
+                      </td>
                       <td className="py-1 pr-3 font-mono text-xs whitespace-nowrap">{utcDate(agreement.signedAt)}</td>
-                      <td className="py-1 font-mono text-xs whitespace-nowrap" title={agreement.sha256}>
-                        {agreement.sha256.slice(0, 12)}…
+                      <td className="py-1 font-mono text-xs">
+                        <span className="block min-w-32 wrap-anywhere">{agreement.sha256}</span>
                       </td>
                     </tr>
                   ))}

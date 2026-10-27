@@ -259,10 +259,12 @@ export default async function CoveragePage(props: Props) {
                   {waitingPlans.plans.map((plan) => (
                     <tr key={plan.planId} className="border-t" data-plan={plan.planId}>
                       <td className="py-1 pr-3">{plan.payerName}</td>
-                      <td className="py-1 pr-3 wrap-anywhere">
-                        <Link className="underline" href={`/p/${practiceId}/mapping/${plan.planId}`}>
-                          {plan.planKey}
-                        </Link>
+                      <td className="py-1 pr-3">
+                        <span className="block min-w-32 wrap-anywhere">
+                          <Link className="underline" href={`/p/${practiceId}/mapping/${plan.planId}`}>
+                            {plan.planKey}
+                          </Link>
+                        </span>
                       </td>
                       <td className="py-1 pr-3 text-right font-mono tabular-nums">{plan.waiting.lines}</td>
                       <td className="py-1 pr-3 text-right font-mono tabular-nums">{plan.waiting.claims}</td>

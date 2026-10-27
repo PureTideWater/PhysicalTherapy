@@ -4,7 +4,7 @@ import Link from 'next/link';
 
 import { QuestionList, VersionStatusBadge } from '../../../../../components/contracts/display';
 import { AnswerForm, TagForm, documentLabel } from '../../../../../components/contracts/forms';
-import { utc } from '../../../../../components/format';
+import { UtcTime, WholeDates } from '../../../../../components/dates';
 import { ScrollTable } from '../../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { windowText } from '../../../../../lib/contracts/display';
@@ -75,26 +75,31 @@ export default async function ContractPage(props: Props) {
                     <td className="py-1 pr-3">
                       <VersionStatusBadge status={version.status} />
                     </td>
-                    <td className="py-1 pr-3">{windowText(version.effectiveFrom, version.effectiveTo)}</td>
+                    <td className="py-1 pr-3">
+                      <WholeDates text={windowText(version.effectiveFrom, version.effectiveTo)} />
+                    </td>
                     <td className="py-1 pr-3 text-right font-mono tabular-nums">
-                      {version.verified} of {version.records} verified
+                      <span className="whitespace-nowrap">
+                        {version.verified} of {version.records}
+                      </span>{' '}
+                      verified
                     </td>
                     <td className="py-1 pr-3">
                       {version.approvedAt === null ? (
                         '—'
                       ) : (
-                        <>
-                          <span className="wrap-anywhere">{version.approvedBy ?? ''}</span>, {utc(version.approvedAt)}
-                        </>
+                        <span className="block min-w-40 wrap-anywhere">
+                          {version.approvedBy ?? ''}, <UtcTime at={version.approvedAt} />
+                        </span>
                       )}
                     </td>
                     <td className="py-1">
                       {version.signedOffAt === null ? (
                         '—'
                       ) : (
-                        <>
-                          <span className="wrap-anywhere">{version.signedOffBy ?? ''}</span>, {utc(version.signedOffAt)}
-                        </>
+                        <span className="block min-w-40 wrap-anywhere">
+                          {version.signedOffBy ?? ''}, <UtcTime at={version.signedOffAt} />
+                        </span>
                       )}
                     </td>
                   </tr>

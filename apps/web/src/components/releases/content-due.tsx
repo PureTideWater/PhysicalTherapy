@@ -2,6 +2,7 @@ import { CONTENT_CALENDAR, type ContentFamilyId, type DueItem } from '@tp/rules/
 import type { ReactNode } from 'react';
 
 import type { ContentDue } from '../../lib/routes/rule-releases';
+import { WholeDates } from '../dates';
 import { ScrollBox, ScrollTable } from '../scroll-table';
 
 /**
@@ -151,7 +152,9 @@ export function ContentDueSection({ due }: { readonly due: ContentDue }) {
                   {family.title}
                 </th>
                 <td className="py-1 pr-3">{loadedThroughCell(family)}</td>
-                <td className="py-1">{dueStatus(family, due.items)}</td>
+                <td className="py-1">
+                  <WholeDates text={dueStatus(family, due.items)} />
+                </td>
               </tr>
             ))}
           </tbody>

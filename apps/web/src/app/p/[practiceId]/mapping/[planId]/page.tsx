@@ -5,8 +5,9 @@ import Link from 'next/link';
 
 import { ActionForm } from '../../../../../components/action-form';
 import { MappingText, TotalsText, VersionStatusBadge } from '../../../../../components/contracts/display';
+import { UtcTime } from '../../../../../components/dates';
 import { Field, SelectField } from '../../../../../components/field';
-import { roleNames, utc } from '../../../../../components/format';
+import { roleNames } from '../../../../../components/format';
 import { Money } from '../../../../../components/remittances/display';
 import { ScrollTable } from '../../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../../components/shell';
@@ -222,8 +223,10 @@ export default async function PlanPage(props: Props) {
                       {mapping.supersedesId === null ? null : <div className="text-xs text-muted-foreground">Corrects an earlier mapping</div>}
                     </td>
                     <td className="py-1">
-                      <span className="wrap-anywhere">{mapping.mappedBy}</span>
-                      <div className="text-xs text-muted-foreground">{utc(mapping.mappedAt)}</div>
+                      <span className="block min-w-40 wrap-anywhere">{mapping.mappedBy}</span>
+                      <div className="text-xs text-muted-foreground">
+                        <UtcTime at={mapping.mappedAt} />
+                      </div>
                     </td>
                   </tr>
                 ))}

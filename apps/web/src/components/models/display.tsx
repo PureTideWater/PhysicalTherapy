@@ -122,8 +122,10 @@ function CandidateCard({ candidate, index, proposalNo }: { readonly candidate: S
                   <th scope="row" className="py-1 pr-3 font-medium whitespace-nowrap">
                     {FIELD_NAMES[field.field] ?? field.field}
                   </th>
-                  <td className="py-1 pr-3 wrap-anywhere">{writtenText(field.written)}</td>
-                  <td className="py-1 pr-3 wrap-anywhere">
+                  <td className="py-1 pr-3">
+                    <span className="block min-w-32 wrap-anywhere">{writtenText(field.written)}</span>
+                  </td>
+                  <td className="py-1 pr-3">
                     Page {field.page}: “{field.quote}”
                   </td>
                   <td className="py-1">{field.verified ? 'Found on the page' : field.problems.map((problem) => PROBLEM_NAMES[problem] ?? problem).join('; ')}</td>

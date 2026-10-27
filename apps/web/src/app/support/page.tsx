@@ -3,9 +3,9 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../components/action-form';
+import { UtcTime } from '../../components/dates';
 import { Field, SelectField, TextAreaField } from '../../components/field';
 import { FormKeys } from '../../components/form-keys';
-import { utc } from '../../components/format';
 import { ScrollTable } from '../../components/scroll-table';
 import { AppShell } from '../../components/shell';
 import { loadPage } from '../../lib/http/next';
@@ -75,8 +75,13 @@ export default async function SupportPage(props: { readonly searchParams: Promis
                 {tickets.map((ticket) => (
                   <tr key={ticket.id} className="border-t">
                     <td className="py-1 pr-3 font-mono tabular-nums">{ticket.number}</td>
-                    <td className="py-1 pr-3 wrap-anywhere">{ticket.subject}</td>
-                    <td className="py-1 pr-3">{utc(ticket.createdAt)}</td>
+                    <td className="py-1 pr-3">
+                      {/* What the person typed: words wrap whole, and only a pasted token wider than the column breaks. */}
+                      <span className="block min-w-40 wrap-anywhere">{ticket.subject}</span>
+                    </td>
+                    <td className="py-1 pr-3">
+                      <UtcTime at={ticket.createdAt} />
+                    </td>
                     <td className="py-1">
                       <Badge variant="outline">{STATUS[ticket.status] ?? ticket.status}</Badge>
                     </td>

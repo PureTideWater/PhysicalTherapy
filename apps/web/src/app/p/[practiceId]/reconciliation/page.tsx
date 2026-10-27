@@ -4,6 +4,7 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { ActionForm } from '../../../../components/action-form';
+import { UtcTime } from '../../../../components/dates';
 import { roleNames, utc } from '../../../../components/format';
 import { EVIDENCE_WORDS, KindBadge, LedgerTotals, LineCorrectionWords, correctionWords, entryStage, exportStatusText, levelWords, lineEntriesEmptyText } from '../../../../components/reconciliation/display';
 import { UnattestedSubmissions } from '../../../../components/packets/unattested';
@@ -110,7 +111,7 @@ function EntryRows({ entries, practiceId, phi }: { readonly entries: readonly En
       {entries.map((entry) => (
         <tr key={entry.id} id={`entry-${entry.id}`} data-entry={entry.id} data-stage={entry.stage} className="border-b align-top">
           <td className="py-1 pr-3 font-mono text-xs">{entry.seq}</td>
-          <td className="py-1 pr-3">{entry.effectiveOn}</td>
+          <td className="py-1 pr-3 whitespace-nowrap">{entry.effectiveOn}</td>
           <td className="py-1 pr-3">
             {entryStage(entry.stage)}
             {entry.allocated ? ' (allocated pro rata)' : ''}
@@ -124,8 +125,11 @@ function EntryRows({ entries, practiceId, phi }: { readonly entries: readonly En
             </Link>
           </td>
           <td className="py-1 pr-3">{EVIDENCE_WORDS[entry.evidenceKind] ?? entry.evidenceKind}</td>
-          <td className="py-1 pr-3 wrap-anywhere">{entry.byJob ? 'the reconcile job' : (entry.createdBy ?? '—')}</td>
-          <td className="py-1 wrap-anywhere">{phi ? (entry.reason ?? '') : ''}</td>
+          <td className="py-1 pr-3">
+            <span className="block min-w-40 wrap-anywhere">{entry.byJob ? 'the reconcile job' : (entry.createdBy ?? '—')}</span>
+          </td>
+          {/* A person's reason: its words wrap whole, and only a token wider than the column breaks. */}
+          <td className="py-1">{phi ? <span className="block min-w-40 wrap-anywhere">{entry.reason ?? ''}</span> : ''}</td>
         </tr>
       ))}
     </>
@@ -321,7 +325,9 @@ export default async function ReconciliationPage(props: Props) {
                         <td className="py-1 pr-3">
                           <KindBadge kind={item.kind} />
                         </td>
-                        <td className="py-1 pr-3">{utc(item.uploadedAt)}</td>
+                        <td className="py-1 pr-3">
+                          <UtcTime at={item.uploadedAt} />
+                        </td>
                         <td className="py-1 pr-3">{exportStatusText(item.status, item.kind, data.template.system !== null)}</td>
                         <td className="py-1 pr-3 text-right font-mono tabular-nums">{item.rows}</td>
                         <td className="py-1 text-right font-mono tabular-nums">{item.matchedRows}</td>

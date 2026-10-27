@@ -49,8 +49,8 @@ export default async function AgreementsSettingsPage(props: { readonly params: P
                   {latest === undefined ? null : (
                     <span className="text-xs text-muted-foreground">
                       {' '}
-                      version {latest.version}, signed by {latest.signer} on {utcDate(latest.signedAt)} ({latest.scope === 'practice' ? 'this practice' : 'the whole organization'});{' '}
-                      <span className="font-mono">{latest.documentRef}</span>, SHA-256 <span className="font-mono" title={latest.sha256}>{latest.sha256.slice(0, 12)}…</span>
+                      version {latest.version}, signed by {latest.signer} on <span className="whitespace-nowrap">{utcDate(latest.signedAt)}</span> ({latest.scope === 'practice' ? 'this practice' : 'the whole organization'});{' '}
+                      <span className="font-mono wrap-anywhere">{latest.documentRef}</span>, SHA-256 <span className="font-mono wrap-anywhere">{latest.sha256}</span>
                     </span>
                   )}
                 </li>
@@ -107,10 +107,22 @@ export default async function AgreementsSettingsPage(props: { readonly params: P
                       <td className="py-1 pr-3">
                         {grant.granteeName} <span className="text-xs text-muted-foreground">({grant.granteeKind})</span>
                       </td>
-                      <td className="py-1 pr-3 wrap-anywhere">{roleNames(grant.roles)}</td>
-                      <td className="py-1 pr-3">{utcDate(grant.startsAt)}</td>
-                      <td className="py-1 pr-3">{utcDate(grant.endsAt)}</td>
-                      <td className="py-1">{grant.revokedAt !== null ? `revoked ${utcDate(grant.revokedAt)}` : grant.inForce ? 'in force' : 'not in force'}</td>
+                      <td className="py-1 pr-3">
+                        <span className="block min-w-32 wrap-anywhere">{roleNames(grant.roles)}</span>
+                      </td>
+                      <td className="py-1 pr-3 whitespace-nowrap">{utcDate(grant.startsAt)}</td>
+                      <td className="py-1 pr-3 whitespace-nowrap">{utcDate(grant.endsAt)}</td>
+                      <td className="py-1">
+                        {grant.revokedAt !== null ? (
+                          <>
+                            revoked <span className="whitespace-nowrap">{utcDate(grant.revokedAt)}</span>
+                          </>
+                        ) : grant.inForce ? (
+                          'in force'
+                        ) : (
+                          'not in force'
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

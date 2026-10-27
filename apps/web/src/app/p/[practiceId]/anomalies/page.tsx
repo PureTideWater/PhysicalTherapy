@@ -72,8 +72,12 @@ export default async function AnomaliesPage(props: Props) {
                 <tbody>
                   {open.lines.map((line, index) => (
                     <tr key={line.serviceLineId} className="border-b last:border-0">
-                      {canReadPhi ? <td className="px-2 py-1 wrap-anywhere">{line.payerClaimControlNumber}</td> : null}
-                      <td className="px-2 py-1">
+                      {canReadPhi ? (
+                        <td className="px-2 py-1">
+                          <span className="block min-w-32 wrap-anywhere">{line.payerClaimControlNumber}</span>
+                        </td>
+                      ) : null}
+                      <td className="px-2 py-1 whitespace-nowrap">
                         <Link className="underline" href={`/p/${practiceId}/lines/${line.serviceLineId}`}>
                           {line.serviceDate ?? lineName(index + 1, open.lines.length)}
                         </Link>

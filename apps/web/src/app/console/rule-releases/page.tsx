@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../components/action-form';
-import { utc } from '../../../components/format';
+import { UtcTime } from '../../../components/dates';
 import { ContentDueSection } from '../../../components/releases/content-due';
 import { ReleaseChanges, ReleaseStatusText } from '../../../components/releases/note';
 import { ScrollBox, ScrollTable } from '../../../components/scroll-table';
@@ -81,7 +81,9 @@ export default async function RuleReleasesPage(props: Props) {
                           {release.releaseNo}
                         </Link>
                       </td>
-                      <td className="py-1 pr-3">{utc(release.publishedAt)}</td>
+                      <td className="py-1 pr-3">
+                        <UtcTime at={release.publishedAt} />
+                      </td>
                       <td className="py-1 pr-3 text-right font-mono tabular-nums">{release.records}</td>
                       <td className="py-1 pr-3">
                         {release.withdrawal !== null ? <Badge variant="destructive">Withdrawn</Badge> : release.inForce ? <Badge>In force</Badge> : <span className="text-muted-foreground">Earlier</span>}
@@ -181,7 +183,9 @@ export default async function RuleReleasesPage(props: Props) {
                   <tbody>
                     {workspace.drafts.map((draft) => (
                       <tr key={draft.file} className="border-t" data-draft={draft.file}>
-                        <td className="py-1 pr-3 font-mono text-xs wrap-anywhere">{draft.file}</td>
+                        <td className="py-1 pr-3 font-mono text-xs">
+                          <span className="block min-w-32 wrap-anywhere">{draft.file}</span>
+                        </td>
                         <td className="py-1 pr-3 font-mono text-xs">{draft.recordTypes.join(', ')}</td>
                         <td className="py-1 pr-3 text-right font-mono tabular-nums">{draft.records}</td>
                         <td className="py-1 pr-3 text-right font-mono tabular-nums">{draft.levels.L1}</td>
@@ -215,7 +219,7 @@ export default async function RuleReleasesPage(props: Props) {
                   {workspace.prepared.map((release) => (
                     <li key={release.release} className="rounded-md border p-3 text-sm" data-prepared={release.release}>
                       <p>
-                        Release {release.release}: {release.records} records, manifest <span className="font-mono text-xs">{release.manifestSha256.slice(0, 12)}…</span>
+                        Release {release.release}: {release.records} records, manifest <span className="font-mono text-xs wrap-anywhere">{release.manifestSha256}</span>
                         {release.problems.length === 0 ? '' : `; ${String(release.problems.length)} problem(s)`}
                       </p>
                       <details>

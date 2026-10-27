@@ -104,7 +104,9 @@ export default async function ConsoleModelsPage(props: { readonly searchParams: 
                   {flags.map((flag) => (
                     <tr key={`${flag.key}-${flag.scope}-${flag.scopeId ?? 'global'}`} className="border-t">
                       <td className="py-1 pr-3">{keys.find((key) => key.value === flag.key)?.label ?? flag.key}</td>
-                      <td className="py-1 pr-3 wrap-anywhere">{flag.appliesTo}</td>
+                      <td className="py-1 pr-3">
+                        <span className="block min-w-32 wrap-anywhere">{flag.appliesTo}</span>
+                      </td>
                       <td className={flag.key === 'model.daily_budget_cents' ? 'py-1 font-mono tabular-nums' : 'py-1'}>{flag.key === 'model.daily_budget_cents' ? usd(flag.value) : flag.value}</td>
                     </tr>
                   ))}

@@ -3,9 +3,9 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../components/action-form';
+import { UtcTime } from '../../../components/dates';
 import { SelectField } from '../../../components/field';
 import { FormKeys } from '../../../components/form-keys';
-import { utc } from '../../../components/format';
 import { ScrollTable } from '../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
@@ -66,15 +66,20 @@ export default async function ProspectsPage(props: { readonly searchParams: Prom
               {prospects.map((prospect) => (
                 <tr key={prospect.id} className="border-t align-top" data-prospect-status={prospect.status}>
                   <td className="py-1 pr-3">{prospect.organizationName}</td>
-                  <td className="py-1 pr-3 wrap-anywhere">
-                    {prospect.contactName}
-                    <br />
-                    <span className="text-xs text-muted-foreground">{prospect.contactEmail}</span>
+                  <td className="py-1 pr-3">
+                    {/* The email is text-xs, so 8rem holds as many of its characters as 10rem of a text-sm one. */}
+                    <span className="block min-w-32 wrap-anywhere">
+                      {prospect.contactName}
+                      <br />
+                      <span className="text-xs text-muted-foreground">{prospect.contactEmail}</span>
+                    </span>
                   </td>
                   <td className="py-1 pr-3 font-mono tabular-nums">{prospect.locations}</td>
-                  <td className="py-1 pr-3 wrap-anywhere">{prospect.payers.join(', ')}</td>
+                  <td className="py-1 pr-3">{prospect.payers.join(', ')}</td>
                   <td className="py-1 pr-3">{BILLING_ARRANGEMENT_LABELS[prospect.billingArrangement]}</td>
-                  <td className="py-1 pr-3">{utc(prospect.createdAt)}</td>
+                  <td className="py-1 pr-3">
+                    <UtcTime at={prospect.createdAt} />
+                  </td>
                   <td className="py-1 pr-3">
                     <Badge variant="outline">{prospect.status}</Badge>
                     {prospect.declinedReason === null ? null : (
@@ -105,13 +110,16 @@ export default async function ProspectsPage(props: { readonly searchParams: Prom
                           <FormKeys />
                           <input type="hidden" name="prospectId" value={prospect.id} />
                           <input type="hidden" name="status" value="declined" />
-                          <SelectField
-                            label="Why declined"
-                            name="declinedReason"
-                            id={`declined-reason-${prospect.id}`}
-                            required
-                            options={[{ value: '', label: 'Choose a reason' }, ...declinedReasons]}
-                          />
+                          {/* Contained, the select takes the column's width instead of setting it to its longest reason, so the table still fits its card at 1280 px. */}
+                          <div className="contain-inline-size">
+                            <SelectField
+                              label="Why declined"
+                              name="declinedReason"
+                              id={`declined-reason-${prospect.id}`}
+                              required
+                              options={[{ value: '', label: 'Choose a reason' }, ...declinedReasons]}
+                            />
+                          </div>
                         </ActionForm>
                       </div>
                     )}

@@ -61,7 +61,7 @@ export function RoiFigure({
               <tbody>
                 {figure.entries.map((entry) => (
                   <tr key={entry.id} className="border-b" data-entry={entry.id}>
-                    <td className="py-1 pr-3">{entry.effectiveOn}</td>
+                    <td className="py-1 pr-3 whitespace-nowrap">{entry.effectiveOn}</td>
                     <td className="py-1 pr-3">
                       {entryStage(entry.stage)}
                       {entry.allocated ? ' (allocated pro rata)' : ''}

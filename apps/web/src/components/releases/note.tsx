@@ -66,9 +66,11 @@ export function ReleaseChanges({ note }: { readonly note: ReleaseNote }) {
               {note.recordChanges.map((change) => (
                 <tr key={`${change.recordType}:${keyText(change.key)}:${change.effectiveFrom}`} className="border-t align-top" data-kind={change.kind}>
                   <td className="py-1 pr-3">
-                    <span className="font-mono text-xs">{change.recordType}</span> <span className="wrap-anywhere">{keyText(change.key)}</span>
+                    <span className="block min-w-32 wrap-anywhere">
+                      <span className="font-mono text-xs">{change.recordType}</span> {keyText(change.key)}
+                    </span>
                   </td>
-                  <td className="py-1 pr-3">{change.effectiveFrom}</td>
+                  <td className="py-1 pr-3 whitespace-nowrap">{change.effectiveFrom}</td>
                   <td className="py-1">
                     {change.kind === 'changed' ? (
                       <ul className="flex flex-col gap-0.5">

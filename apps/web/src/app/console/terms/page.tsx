@@ -2,9 +2,9 @@ import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, Empty
 import type { Metadata } from 'next';
 
 import { ActionForm } from '../../../components/action-form';
+import { UtcTime } from '../../../components/dates';
 import { Field } from '../../../components/field';
 import { FormKeys } from '../../../components/form-keys';
-import { utc } from '../../../components/format';
 import { ScrollTable } from '../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
@@ -46,10 +46,14 @@ export default async function ConsoleTermsPage() {
                   <td className="py-1 pr-3">
                     {version.version} {version.inForce ? <Badge variant="outline">in force</Badge> : null}
                   </td>
-                  <td className="py-1 pr-3">{utc(version.publishedAt)}</td>
-                  <td className="py-1 pr-3 font-mono text-xs wrap-anywhere">{version.documentRef}</td>
-                  <td className="py-1 pr-3 font-mono text-xs" title={version.sha256}>
-                    {version.sha256.slice(0, 12)}…
+                  <td className="py-1 pr-3">
+                    <UtcTime at={version.publishedAt} />
+                  </td>
+                  <td className="py-1 pr-3 font-mono text-xs">
+                    <span className="block min-w-32 wrap-anywhere">{version.documentRef}</span>
+                  </td>
+                  <td className="py-1 pr-3 font-mono text-xs">
+                    <span className="block min-w-32 wrap-anywhere">{version.sha256}</span>
                   </td>
                   <td className="py-1 font-mono tabular-nums">{version.acceptances}</td>
                 </tr>

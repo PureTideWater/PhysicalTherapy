@@ -70,7 +70,8 @@ describe('Content due on the console', () => {
     expect(text(html)).toContain('Run the commands from the root of the content checkout');
     // The family's cell is its row's header (UX-12).
     expect(html).toContain('<th scope="row" class="py-1 pr-3 font-normal">Medicare unit limits (MUE)</th>');
-    expect(html).toContain('<td class="py-1">ended 2026-12-31</td>');
+    // The date stays whole in the status's words (docs/adr/0078 Decision 1).
+    expect(html).toContain('<td class="py-1">ended <span class="whitespace-nowrap">2026-12-31</span></td>');
   });
 
   it('says "partly loaded" for a family some of whose contents are loaded, as the Releases page does (UX-7)', () => {

@@ -4,6 +4,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../../../components/action-form';
+import { UtcTime } from '../../../../../../components/dates';
 import { FormKeys } from '../../../../../../components/form-keys';
 import { utc } from '../../../../../../components/format';
 import { DraftBadge, HandEntryNotice, ModelNoticeAlert, draftOf } from '../../../../../../components/models/display';
@@ -592,7 +593,9 @@ export default async function PacketPage(props: Props) {
                         {draftOf(drafts, entry.id) === undefined ? '' : ', drafted by the model'}
                       </td>
                       <td className="px-2 py-1">
-                        {utc(entry.writtenAt)}, <span className="wrap-anywhere">{entry.writtenBy ?? '—'}</span>
+                        <span className="block min-w-40 wrap-anywhere">
+                          <UtcTime at={entry.writtenAt} />, {entry.writtenBy ?? '—'}
+                        </span>
                       </td>
                       <td className="px-2 py-1">{entry.verifierPassed ? 'Passed' : 'Failed'}</td>
                       <td className="px-2 py-1">
@@ -602,25 +605,35 @@ export default async function PacketPage(props: Props) {
                         {entry.approvedAt === null ? (
                           '—'
                         ) : (
-                          <>
-                            {utc(entry.approvedAt)}, <span className="wrap-anywhere">{entry.approvedBy ?? '—'}</span>
+                          <span className="block min-w-40 wrap-anywhere">
+                            <UtcTime at={entry.approvedAt} />, {entry.approvedBy ?? '—'}
                             {entry.approvedAlone ? ' (alone, flagged)' : ''}
-                          </>
+                          </span>
                         )}
                       </td>
                       <td className="px-2 py-1">
                         {entry.exportedAt === null ? (
                           '—'
                         ) : (
-                          <span className="flex flex-col">
-                            <span>{utc(entry.exportedAt)}</span>
+                          <span className="flex min-w-32 flex-col">
+                            <span>
+                              <UtcTime at={entry.exportedAt} />
+                            </span>
                             <span>
                               PDF <Hash value={entry.exportSha256} />
                             </span>
                             <span>
                               CSV <Hash value={entry.exportCsvSha256} />
                             </span>
-                            <span>{entry.attestedAt === null ? 'Not attested yet' : `Attested ${utc(entry.attestedAt)}`}</span>
+                            <span>
+                              {entry.attestedAt === null ? (
+                                'Not attested yet'
+                              ) : (
+                                <>
+                                  Attested <UtcTime at={entry.attestedAt} />
+                                </>
+                              )}
+                            </span>
                           </span>
                         )}
                       </td>

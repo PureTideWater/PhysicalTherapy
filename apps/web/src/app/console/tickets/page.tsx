@@ -3,8 +3,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../components/action-form';
+import { UtcTime } from '../../../components/dates';
 import { FormKeys } from '../../../components/form-keys';
-import { utc } from '../../../components/format';
 import { ScrollTable } from '../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
@@ -60,21 +60,28 @@ export default async function TicketsPage(props: { readonly searchParams: Promis
               {tickets.map((ticket) => (
                 <tr key={ticket.id} className="border-t align-top" data-ticket-status={ticket.status}>
                   <td className="py-1 pr-3 font-mono tabular-nums">{ticket.number}</td>
-                  <td className="py-1 pr-3 wrap-anywhere">
-                    {ticket.requesterEmail}
-                    <br />
-                    <span className="text-xs text-muted-foreground">{ticket.organizations.join(', ')}</span>
+                  <td className="py-1 pr-3">
+                    <span className="block min-w-40 wrap-anywhere">
+                      {ticket.requesterEmail}
+                      <br />
+                      <span className="text-xs text-muted-foreground">{ticket.organizations.join(', ')}</span>
+                    </span>
                   </td>
                   <td className="py-1 pr-3">
                     {CATEGORY_LABELS[ticket.category]}
                     <br />
                     <span className="text-xs text-muted-foreground">screen: {ticket.screen}</span>
                   </td>
-                  <td className="py-1 pr-3 wrap-anywhere">
-                    <p className="font-medium">{ticket.subject}</p>
-                    <p className="whitespace-pre-wrap">{ticket.message}</p>
+                  <td className="py-1 pr-3">
+                    {/* What a customer typed: words wrap whole, and only a pasted token wider than the column breaks. */}
+                    <div className="min-w-40 wrap-anywhere">
+                      <p className="font-medium">{ticket.subject}</p>
+                      <p className="whitespace-pre-wrap">{ticket.message}</p>
+                    </div>
                   </td>
-                  <td className="py-1 pr-3">{utc(ticket.createdAt)}</td>
+                  <td className="py-1 pr-3">
+                    <UtcTime at={ticket.createdAt} />
+                  </td>
                   <td className="py-1">
                     <Badge variant="outline">{ticket.status}</Badge>
                     <div className="mt-2 flex flex-col gap-1">

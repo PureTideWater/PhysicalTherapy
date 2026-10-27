@@ -563,12 +563,14 @@ export function PatternTable({ practiceId, coverage, names, limit }: { readonly 
             const version = pattern.contract_version_id === null ? undefined : names.versions[pattern.contract_version_id];
             return (
               <tr key={`${pattern.plan_id}:${pattern.mapping_kind}:${pattern.contract_version_id ?? ''}:${pattern.rate_record_id ?? ''}`} className="border-t align-top" data-plan={pattern.plan_id}>
-                <td className="py-1 pr-3 wrap-anywhere">
-                  {names.payers[pattern.payer_id] ?? 'Payer'}
-                  <div className="font-mono text-xs">
-                    <Link className="underline" href={`/p/${practiceId}/mapping/${pattern.plan_id}`}>
-                      {names.plans[pattern.plan_id] ?? pattern.plan_id}
-                    </Link>
+                <td className="py-1 pr-3">
+                  <div className="min-w-32 wrap-anywhere">
+                    {names.payers[pattern.payer_id] ?? 'Payer'}
+                    <div className="font-mono text-xs">
+                      <Link className="underline" href={`/p/${practiceId}/mapping/${pattern.plan_id}`}>
+                        {names.plans[pattern.plan_id] ?? pattern.plan_id}
+                      </Link>
+                    </div>
                   </div>
                 </td>
                 <td className="py-1 pr-3">
@@ -579,7 +581,7 @@ export function PatternTable({ practiceId, coverage, names, limit }: { readonly 
                       {version.title}, version {version.versionNo}
                     </Link>
                   )}
-                  {pattern.rate_record_id === null ? null : <div className="font-mono text-xs text-muted-foreground">rate record {pattern.rate_record_id}</div>}
+                  {pattern.rate_record_id === null ? null : <div className="min-w-32 font-mono text-xs text-muted-foreground wrap-anywhere">rate record {pattern.rate_record_id}</div>}
                 </td>
                 <td className="py-1 pr-3 text-right font-mono tabular-nums">{pattern.lines}</td>
                 <td className="py-1 pr-3 text-right font-mono tabular-nums">{pattern.underpaid_lines}</td>

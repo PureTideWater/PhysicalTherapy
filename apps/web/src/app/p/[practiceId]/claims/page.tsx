@@ -132,9 +132,9 @@ export default async function ClaimsPage(props: Props) {
       ) : (
         <Card>
           <CardContent>
-            {/* Its own scroller at a phone's width (docs/adr/0078): the page never scrolls sideways. */}
+            {/* Its own scroller at a phone's width (docs/adr/0078): the page never scrolls sideways. Without the PHI roles' patient and service date its columns need 48rem, not 54rem. */}
             <ScrollTable label="Claims and lines">
-              <table className="w-full min-w-[54rem] text-left text-sm" aria-label="Claims and lines">
+              <table className={`w-full ${canReadPhi ? 'min-w-[54rem]' : 'min-w-[48rem]'} text-left text-sm`} aria-label="Claims and lines">
                 <thead className="text-muted-foreground">
                   <tr className="align-bottom">
                     {canReadPhi ? <th className="py-1 pr-2 font-medium">Patient reference and claim control numbers</th> : null}
@@ -161,11 +161,12 @@ export default async function ClaimsPage(props: Props) {
                     <tr key={`${row.claimId}:${row.lineId ?? 'claim'}`} className="border-t align-top" data-claim={row.claimId} data-line={row.lineId ?? ''}>
                       {/* The patient and the claim's numbers in one cell, stacked as the status and its reason are, so the PHI roles' table fits its card at a desktop width (the screen tour's L3). */}
                       {row.identifiers === null ? null : (
-                        <td className="py-2 pr-2 wrap-anywhere">
+                        <td className="py-2 pr-2">
+                          {/* The patient's name wraps between its words; a claim's numbers, codes up to 50 characters, break only past 8rem. The eleven columns then fit their card at 1280 px less a scrollbar. */}
                           <Link className="underline" href={`${path}?view=${filters.view}&patient=${row.patientRefId}`}>
                             {row.identifiers.patient}
                           </Link>
-                          <div className="pt-1 font-mono text-xs" data-identifiers="claim">
+                          <div className="min-w-32 pt-1 font-mono text-xs wrap-anywhere" data-identifiers="claim">
                             <div>{row.identifiers.patientControlNumber}</div>
                             <div>{row.identifiers.payerClaimControlNumber}</div>
                           </div>

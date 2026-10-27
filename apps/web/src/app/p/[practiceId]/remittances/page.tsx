@@ -95,7 +95,9 @@ export default async function RemittancesPage(props: Props) {
                         </div>
                       </td>
                       <td className="py-2 pr-3 whitespace-nowrap">{remittance.paymentDate}</td>
-                      <td className="py-2 pr-3 font-mono text-xs wrap-anywhere">{remittance.trace}</td>
+                      <td className="py-2 pr-3 font-mono text-xs">
+                        <span className="block min-w-32 wrap-anywhere">{remittance.trace}</span>
+                      </td>
                       <td className="py-2 pr-3 text-right">
                         <Money value={remittance.amountCents} />
                         <div className="text-xs text-muted-foreground">{remittance.method}</div>

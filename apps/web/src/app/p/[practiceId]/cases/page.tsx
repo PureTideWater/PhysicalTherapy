@@ -266,7 +266,7 @@ export default async function CasesPage(props: Props) {
                     <td className="px-2 py-1">
                       <CaseStateBadge state={item.state} />
                     </td>
-                    <td className="px-2 py-1 font-mono tabular-nums">
+                    <td className="px-2 py-1 font-mono tabular-nums whitespace-nowrap">
                       {item.openLines} of {item.lines}
                     </td>
                     <td className="px-2 py-1">
@@ -276,7 +276,9 @@ export default async function CasesPage(props: Props) {
                       <Deadline on={item.deadlineOn} state={item.state === 'resolved' || item.state === 'closed_written_off' ? 'none' : item.deadline} />
                     </td>
                     <td className="px-2 py-1">{item.pursuitCostCents === null ? 'not estimated' : <Money value={item.pursuitCostCents} />}</td>
-                    <td className="px-2 py-1 wrap-anywhere">{item.owner ?? 'Unassigned'}</td>
+                    <td className="px-2 py-1">
+                      <span className="block min-w-40 wrap-anywhere">{item.owner ?? 'Unassigned'}</span>
+                    </td>
                   </tr>
                 ))}
               </tbody>

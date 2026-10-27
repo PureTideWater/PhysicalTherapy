@@ -7,6 +7,7 @@ import { MAPPING_KIND_NAMES, TOPIC_NAMES, VERSION_STATUS_NAMES, windowText } fro
 import type { QuestionView } from '../../lib/contracts/contract-queries';
 import type { CitedPage, RecordReview } from '../../lib/contracts/review';
 import type { MappingView, Totals } from '../../lib/contracts/mapping-queries';
+import { WholeDates } from '../dates';
 import { utc } from '../format';
 import { Money } from '../remittances/display';
 import { ScrollBox } from '../scroll-table';
@@ -55,7 +56,10 @@ export function MappingText({ practiceId, kind, mapping }: { readonly practiceId
       ) : (
         MAPPING_KIND_NAMES[kind]
       )}
-      <span className="text-muted-foreground"> · {windowText(mapping.effectiveFrom, mapping.effectiveTo)}</span>
+      <span className="text-muted-foreground">
+        {' · '}
+        <WholeDates text={windowText(mapping.effectiveFrom, mapping.effectiveTo)} />
+      </span>
     </span>
   );
 }

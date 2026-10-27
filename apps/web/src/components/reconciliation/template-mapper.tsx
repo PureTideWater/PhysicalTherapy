@@ -188,8 +188,10 @@ export function TemplateMapper({ builtIn, current }: TemplateMapperProps) {
                   {preview.rows.slice(0, PREVIEW_ROWS).map((row) => (
                     <tr key={row.rowNo} className="border-b">
                       <td className="py-1 pr-3">{row.rowNo}</td>
-                      <td className="py-1 pr-3">{row.postedOn}</td>
-                      <td className="py-1 pr-3 font-mono wrap-anywhere">{row.checkOrTrace}</td>
+                      <td className="py-1 pr-3 whitespace-nowrap">{row.postedOn}</td>
+                      <td className="py-1 pr-3 font-mono">
+                        <span className="block min-w-32 wrap-anywhere">{row.checkOrTrace}</span>
+                      </td>
                       <td className="py-1 pr-3 text-right font-mono tabular-nums">{formatUsd(row.amountCents)}</td>
                       <td className="py-1 pr-3">{row.payerName ?? '—'}</td>
                       <td className="py-1 pr-3">{row.claimReference === null ? 'none (check level)' : 'present (line level)'}</td>

@@ -63,7 +63,7 @@ function Entries({ entries, practiceId, canAdjust, label }: { readonly entries: 
           {entries.map((entry) => (
             <tr key={entry.id} data-entry={entry.id} data-stage={entry.stage} className="border-b align-top">
               <td className="py-1 pr-3 font-mono text-xs">{entry.seq}</td>
-              <td className="py-1 pr-3">{entry.effectiveOn}</td>
+              <td className="py-1 pr-3 whitespace-nowrap">{entry.effectiveOn}</td>
               <td className="py-1 pr-3">
                 {entryStage(entry.stage)}
                 {entry.allocated ? ' (allocated pro rata)' : ''}
@@ -72,7 +72,9 @@ function Entries({ entries, practiceId, canAdjust, label }: { readonly entries: 
                 <Money value={entry.amountCents} />
               </td>
               <td className="py-1 pr-3">{EVIDENCE_WORDS[entry.evidenceKind] ?? entry.evidenceKind}</td>
-              <td className="py-1 pr-3 wrap-anywhere">{entry.byJob ? 'the reconcile job' : (entry.createdBy ?? '—')}</td>
+              <td className="py-1 pr-3">
+                <span className="block min-w-40 wrap-anywhere">{entry.byJob ? 'the reconcile job' : (entry.createdBy ?? '—')}</span>
+              </td>
               <td className="py-1">{canAdjust && entry.adjustable ? <AdjustForm practiceId={practiceId} entry={entry} idPrefix={label === 'Ledger entries' ? 'ledger' : 'shortfall'} /> : null}</td>
             </tr>
           ))}

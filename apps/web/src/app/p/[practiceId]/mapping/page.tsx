@@ -124,11 +124,13 @@ export default async function MappingPage(props: Props) {
                   {list.plans.map((plan) => (
                     <tr key={plan.id} className="border-t align-top" data-plan={plan.id}>
                       <td className="py-2 pr-3">{plan.payerName}</td>
-                      <td className="py-2 pr-3 wrap-anywhere">
-                        <Link className="underline" href={`${path}/${plan.id}`}>
-                          {plan.planName ?? plan.planKey}
-                        </Link>
-                        {plan.medicareAdvantage ? <div className="text-xs text-muted-foreground">Medicare Advantage</div> : null}
+                      <td className="py-2 pr-3">
+                        <div className="min-w-32 wrap-anywhere">
+                          <Link className="underline" href={`${path}/${plan.id}`}>
+                            {plan.planName ?? plan.planKey}
+                          </Link>
+                          {plan.medicareAdvantage ? <div className="text-xs text-muted-foreground">Medicare Advantage</div> : null}
+                        </div>
                       </td>
                       <td className="py-2 pr-3">
                         <Badge variant={STATUS[plan.status].variant}>{STATUS[plan.status].label}</Badge>
@@ -140,7 +142,10 @@ export default async function MappingPage(props: Props) {
                       <td className="py-2 pr-3 text-right">
                         <Money value={plan.waiting.chargeCents} />
                         <div className="text-xs text-muted-foreground">
-                          {plan.waiting.lines} of {plan.totals.lines} lines
+                          <span className="whitespace-nowrap">
+                            {plan.waiting.lines} of {plan.totals.lines}
+                          </span>{' '}
+                          lines
                         </div>
                       </td>
                       <td className="py-2">

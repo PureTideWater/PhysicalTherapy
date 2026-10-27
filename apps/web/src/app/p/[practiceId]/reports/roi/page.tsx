@@ -3,8 +3,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../../components/action-form';
+import { UtcTime } from '../../../../../components/dates';
 import { Field } from '../../../../../components/field';
-import { utc } from '../../../../../components/format';
 import { proofLevelWords } from '../../../../../components/reconciliation/display';
 import { Money, Pager } from '../../../../../components/remittances/display';
 import { ScrollTable } from '../../../../../components/scroll-table';
@@ -79,7 +79,7 @@ export default async function RoiStatementsPage(props: Props) {
                   <tr key={statement.id} className="border-b" data-statement={statement.id}>
                     <td className="py-1 pr-3">
                       <Link className="underline" href={`${path}/${statement.id}`}>
-                        {statement.periodFrom} to {statement.periodTo}
+                        <span className="whitespace-nowrap">{statement.periodFrom}</span> to <span className="whitespace-nowrap">{statement.periodTo}</span>
                       </Link>
                     </td>
                     <td className="py-1 pr-3">{statement.quarterly ? <Badge variant="secondary">Quarterly</Badge> : <Badge variant="outline">On demand</Badge>}</td>
@@ -91,15 +91,10 @@ export default async function RoiStatementsPage(props: Props) {
                     </td>
                     <td className="py-1 pr-3">{proofLevelWords(statement.proofLevel)}</td>
                     <td className="py-1 pr-3">
-                      {/* Only the email may break anywhere, never the time beside it. */}
-                      {utc(statement.generatedAt)}{' '}
-                      {statement.generatedBy === null ? (
-                        'by the reconcile job'
-                      ) : (
-                        <>
-                          by <span className="wrap-anywhere">{statement.generatedBy}</span>
-                        </>
-                      )}
+                      {/* The date and the time stay whole; only an email wider than the column breaks. */}
+                      <span className="block min-w-40 wrap-anywhere">
+                        <UtcTime at={statement.generatedAt} /> {statement.generatedBy === null ? 'by the reconcile job' : `by ${statement.generatedBy}`}
+                      </span>
                     </td>
                     <td className="py-1" data-print={statement.print}>
                       {statement.print === 'printed' ? 'Printed' : statement.print === 'failed' ? 'Print failed; the operator was alerted' : 'Being printed'}

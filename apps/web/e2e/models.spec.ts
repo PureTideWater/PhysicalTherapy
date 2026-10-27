@@ -134,7 +134,7 @@ test('the specialist verifies and approves the model’s proposal, a second pers
       await expect(record).toContainText('Proposed by the model');
       await expect(record).toContainText('Not checked');
       await expectAccessible(specialist, 'Rate record review with a model proposal');
-      // At a phone's width the proposed fields scroll in a region of their own, the record's three wrapping columns fit, and the cited page scrolls in its box (TBL-03).
+      // At a phone's width the proposed fields scroll in a region of their own, the record's two columns (each field's terms with their approval under them) fit, and the cited page scrolls in its box (TBL-03).
       await atPhoneWidth(specialist, 'Rate record review with a model proposal', { tables: ['Proposed fields of proposal 1, candidate 1'] });
       await verifyAndApprove(specialist);
       await expect(specialist.locator('[data-page-text] mark')).toHaveText(Q97110);

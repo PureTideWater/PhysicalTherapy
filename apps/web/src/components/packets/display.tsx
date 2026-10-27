@@ -108,14 +108,15 @@ export function Citation({ content }: { readonly content: PacketContent }) {
 }
 
 /**
- * A placeholder as the schedule shows it, with a place to wrap after each underscore and colon
- * ({{claim_<wbr>control_<wbr>number:<wbr>1}}), so a narrow column breaks it between its words; its text is the
+ * A placeholder as the schedule shows it, with a place to wrap after its opening braces and each underscore and colon
+ * ({{<wbr>claim_<wbr>control_<wbr>number:<wbr>1}}), so a narrow column breaks it between its words and never inside
+ * one (the twelve columns of the line schedule then fit their card at 1280 px less a scrollbar); its text is the
  * placeholder exactly.
  */
 function Placeholder({ value }: { readonly value: string }) {
   return (
     <>
-      {value.split(/(?<=[_:])/).map((part, index) => (
+      {value.split(/(?<=\{\{|[_:])/).map((part, index) => (
         <Fragment key={index}>
           {index === 0 ? null : <wbr />}
           {part}
@@ -157,7 +158,7 @@ export function LineSchedule({ content, practiceId, canOpenLines }: { readonly c
           {content.lines.map((line) => (
             <tr key={line.row} className="border-b align-top last:border-0" data-row={line.row} data-deadline={'deadline' in line ? line.deadline.status : undefined}>
               <td className="py-1 pr-3 font-mono tabular-nums">{line.row}</td>
-              <td className="py-1 pr-3 font-mono text-xs wrap-anywhere" data-placeholder="claim_control_number">
+              <td className="py-1 pr-3 font-mono text-xs" data-placeholder="claim_control_number">
                 <Placeholder value={line.claim_control_number} />
               </td>
               <td className="py-1 pr-3 font-mono text-xs" data-placeholder="patient_name">

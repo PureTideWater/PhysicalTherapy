@@ -35,8 +35,19 @@ the scroller, `relative` (so a visually hidden header stays inside it) and `over
 the table's edge is not the browser's back gesture). The table carries a `min-w-[…]` from its columns (about 6rem a
 figure, date or count, 8 to 10rem a text column, 12rem a sentence; one of 32, 36, 40, 48 or 54rem; never above 54rem,
 so it fits its card at 1280 px with a classic scrollbar: the card's content column is 909 px, 892 px beside a 17 px
-scrollbar, and 54rem is 864 px). A table of three or fewer short columns takes none. `wrap-anywhere` goes on long
-values (emails, keys, paths, control numbers), never on a figure, code or date.
+scrollbar, and 54rem is 864 px). A table of three or fewer short columns takes none. A long value (an email, key,
+hash, path or control number) breaks anywhere only past a floor: inside its cell, in a block with a `min-w` (`block
+min-w-32 wrap-anywhere`, `min-w-40` for an email), never with `wrap-anywhere` on the `<td>` or `<th>`, which lowers
+the column's min-content to a character, so auto layout narrows the column and breaks names and words even in a table
+that fits (the UX review of this pull request, UX-PR79-01). Text a person typed (a ticket's subject and message, a
+ledger entry's reason) takes the `min-w-40` floor too, since it can hold a pasted token; a sentence of the product's
+or a contract's, and a person's name, take no `wrap-anywhere` and wrap between words. A figure, code, date or count
+never breaks: a date-time renders through `UtcTime` and words with dates in them through `WholeDates`
+(`components/dates.tsx`), so a date-time may break between its date and its time, never inside either. The floors
+count toward the table's min-content, which stays within its `min-w`; where they would pass it, the cell gives way
+instead: the Cases deadline's status wraps under its date, the prospects' decline select is held by
+`contain-inline-size`, Claims and lines floors only a claim's control numbers, the line schedule's placeholders break
+only after `{{`, `_` and `:`, and a rate record's fields are two columns, each field's approval under its terms.
 
 **2. Its name and tab stop follow the measurement.** On the server and until the browser measures it, the scroller is a
 region named "Cases, scrolls sideways" (the table's name, then ", scrolls sideways") with `tabindex="0"`, so it is

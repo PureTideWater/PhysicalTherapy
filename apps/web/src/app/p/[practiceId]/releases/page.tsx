@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm, RefusalFallback, RefusalTakeover } from '../../../../components/action-form';
+import { UtcTime } from '../../../../components/dates';
 import { utc } from '../../../../components/format';
 import { ReleaseLoadedThrough } from '../../../../components/pricing/content';
 import { PendingRunsAlert, RunStateBadges } from '../../../../components/pricing/display';
@@ -58,7 +59,7 @@ export default async function ReleasesPage(props: Props) {
             <CardHeader>
               <CardTitle>Rule release {note.releaseNo}</CardTitle>
               <CardDescription>
-                <ReleaseStatusText note={note} /> {note.records} records; manifest <span className="font-mono text-xs">{note.manifestSha256.slice(0, 12)}…</span>
+                <ReleaseStatusText note={note} /> {note.records} records; manifest <span className="font-mono text-xs wrap-anywhere">{note.manifestSha256}</span>
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -170,8 +171,20 @@ export default async function ReleasesPage(props: Props) {
                         {release.releaseNo}
                       </Link>
                     </td>
-                    <td className="py-1 pr-3">{utc(release.publishedAt)}</td>
-                    <td className="py-1 pr-3">{release.withdrawal !== null ? `Withdrawn ${utc(release.withdrawal.withdrawnAt)}` : release.inForce ? 'In force' : 'Earlier'}</td>
+                    <td className="py-1 pr-3">
+                      <UtcTime at={release.publishedAt} />
+                    </td>
+                    <td className="py-1 pr-3">
+                      {release.withdrawal !== null ? (
+                        <>
+                          Withdrawn <UtcTime at={release.withdrawal.withdrawnAt} />
+                        </>
+                      ) : release.inForce ? (
+                        'In force'
+                      ) : (
+                        'Earlier'
+                      )}
+                    </td>
                     <td className="py-1 text-right font-mono tabular-nums">{runsByRelease[String(release.releaseNo)] ?? 0}</td>
                   </tr>
                 ))}

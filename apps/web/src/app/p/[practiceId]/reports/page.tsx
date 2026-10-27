@@ -4,6 +4,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../components/action-form';
+import { UtcTime } from '../../../../components/dates';
 import { roleNames, utc } from '../../../../components/format';
 import { ReleaseState, ReportStatusBadge } from '../../../../components/reports/display';
 import { DocumentStatusBadge } from '../../../../components/reports/documents';
@@ -256,8 +257,10 @@ export default async function ReportsPage(props: Props) {
                       </Link>
                     </td>
                     <td className="py-1 pr-3">
-                      {/* Only the email may break anywhere, never the time beside it. */}
-                      {utc(document.generatedAt)} by <span className="wrap-anywhere">{document.requestedBy ?? 'a member of the practice'}</span>
+                      {/* The date and the time stay whole; only an email wider than the column breaks. */}
+                      <span className="block min-w-40 wrap-anywhere">
+                        <UtcTime at={document.generatedAt} /> by {document.requestedBy ?? 'a member of the practice'}
+                      </span>
                     </td>
                     <td className="py-1 pr-3">
                       <DocumentStatusBadge status={document.status} />
@@ -303,7 +306,9 @@ export default async function ReportsPage(props: Props) {
                   const what = exportWhat(entry);
                   return (
                     <tr key={entry.eventId} className="border-t" data-export={entry.kind} data-line-level={entry.lineLevel ? 'yes' : 'no'}>
-                      <td className="py-1 pr-3">{utc(entry.downloadedAt)}</td>
+                      <td className="py-1 pr-3">
+                        <UtcTime at={entry.downloadedAt} />
+                      </td>
                       <td className="py-1 pr-3">
                         {href === null ? (
                           what
@@ -314,7 +319,9 @@ export default async function ReportsPage(props: Props) {
                         )}{' '}
                         {entry.lineLevel ? <Badge variant="outline">Line-level PHI</Badge> : null}
                       </td>
-                      <td className="py-1 wrap-anywhere">{entry.downloadedBy ?? 'a member of the practice'}</td>
+                      <td className="py-1">
+                        <span className="block min-w-40 wrap-anywhere">{entry.downloadedBy ?? 'a member of the practice'}</span>
+                      </td>
                     </tr>
                   );
                 })}

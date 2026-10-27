@@ -144,7 +144,9 @@ export default async function OrganizationPage(props: { readonly params: Promise
                 <tbody>
                   {members.map((member) => (
                     <tr key={member.membershipId} className="border-t align-top" data-member={member.email}>
-                      <td className="py-1 pr-3 wrap-anywhere">{member.email}</td>
+                      <td className="py-1 pr-3">
+                        <span className="block min-w-40 wrap-anywhere">{member.email}</span>
+                      </td>
                       <td className="py-1 pr-3">{roleName(member.role)}</td>
                       {/* The flex boxes sit inside the cells: a td that is itself a flex box is no longer a table cell. */}
                       <td className="py-1 pr-3">
@@ -212,12 +214,29 @@ export default async function OrganizationPage(props: { readonly params: Promise
                 <tbody>
                   {invitations.map((invitation) => (
                     <tr key={invitation.id} className="border-t" data-invitation={invitation.acceptedAt !== null ? 'accepted' : invitation.expired ? 'expired' : 'pending'}>
-                      <td className="py-1 pr-3 wrap-anywhere">{invitation.email}</td>
+                      <td className="py-1 pr-3">
+                        <span className="block min-w-40 wrap-anywhere">{invitation.email}</span>
+                      </td>
                       <td className="py-1 pr-3">{roleName(invitation.role)}</td>
                       <td className="py-1 pr-3">
-                        {utcDate(invitation.sentAt)} ({invitation.sends} {invitation.sends === 1 ? 'send' : 'sends'})
+                        <span className="whitespace-nowrap">{utcDate(invitation.sentAt)}</span>{' '}
+                        <span className="whitespace-nowrap">
+                          ({invitation.sends} {invitation.sends === 1 ? 'send' : 'sends'})
+                        </span>
                       </td>
-                      <td className="py-1 pr-3">{invitation.acceptedAt !== null ? `accepted ${utcDate(invitation.acceptedAt)}` : invitation.expired ? 'expired' : `open until ${utcDate(invitation.expiresAt)}`}</td>
+                      <td className="py-1 pr-3">
+                        {invitation.acceptedAt !== null ? (
+                          <>
+                            accepted <span className="whitespace-nowrap">{utcDate(invitation.acceptedAt)}</span>
+                          </>
+                        ) : invitation.expired ? (
+                          'expired'
+                        ) : (
+                          <>
+                            open until <span className="whitespace-nowrap">{utcDate(invitation.expiresAt)}</span>
+                          </>
+                        )}
+                      </td>
                       <td className="py-1">
                         {invitation.acceptedAt === null ? (
                           <ActionForm action={resendInvitationAction} submit="Send again" variant="outline" className="flex flex-col gap-1">
@@ -265,10 +284,12 @@ export default async function OrganizationPage(props: { readonly params: Promise
                       <td className="py-1 pr-3">{agreement.practiceId === null ? 'Whole organization' : (practiceName.get(agreement.practiceId) ?? 'Another organization’s practice')}</td>
                       <td className="py-1 pr-3">{agreement.version}</td>
                       <td className="py-1 pr-3">{agreement.signer}</td>
-                      <td className="py-1 pr-3">{utcDate(agreement.signedAt)}</td>
-                      <td className="py-1 pr-3 font-mono text-xs wrap-anywhere">{agreement.documentRef}</td>
-                      <td className="py-1 font-mono text-xs" title={agreement.sha256}>
-                        {agreement.sha256.slice(0, 12)}…
+                      <td className="py-1 pr-3 whitespace-nowrap">{utcDate(agreement.signedAt)}</td>
+                      <td className="py-1 pr-3 font-mono text-xs">
+                        <span className="block min-w-32 wrap-anywhere">{agreement.documentRef}</span>
+                      </td>
+                      <td className="py-1 font-mono text-xs">
+                        <span className="block min-w-32 wrap-anywhere">{agreement.sha256}</span>
                       </td>
                     </tr>
                   ))}
@@ -333,10 +354,24 @@ export default async function OrganizationPage(props: { readonly params: Promise
                     <tr key={grant.id} className="border-t">
                       <td className="py-1 pr-3">{grant.granteeName}</td>
                       <td className="py-1 pr-3">{grant.practiceName}</td>
-                      <td className="py-1 pr-3 wrap-anywhere">{roleNames(grant.roles)}</td>
-                      <td className="py-1 pr-3">{utcDate(grant.startsAt)}</td>
-                      <td className="py-1 pr-3">{utcDate(grant.endsAt)}</td>
-                      <td className="py-1">{grant.revokedAt === null ? (new Date(grant.endsAt) > new Date() ? 'in force' : 'expired') : `revoked ${utcDate(grant.revokedAt)}`}</td>
+                      <td className="py-1 pr-3">
+                        <span className="block min-w-32 wrap-anywhere">{roleNames(grant.roles)}</span>
+                      </td>
+                      <td className="py-1 pr-3 whitespace-nowrap">{utcDate(grant.startsAt)}</td>
+                      <td className="py-1 pr-3 whitespace-nowrap">{utcDate(grant.endsAt)}</td>
+                      <td className="py-1">
+                        {grant.revokedAt === null ? (
+                          new Date(grant.endsAt) > new Date() ? (
+                            'in force'
+                          ) : (
+                            'expired'
+                          )
+                        ) : (
+                          <>
+                            revoked <span className="whitespace-nowrap">{utcDate(grant.revokedAt)}</span>
+                          </>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

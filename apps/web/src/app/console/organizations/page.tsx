@@ -71,7 +71,7 @@ export default async function OrganizationsPage() {
                   <td className="py-1 pr-3">
                     <Badge variant="outline">{organization.status}</Badge>
                   </td>
-                  <td className="py-1">{utcDate(organization.createdAt)}</td>
+                  <td className="py-1 whitespace-nowrap">{utcDate(organization.createdAt)}</td>
                 </tr>
               ))}
             </tbody>

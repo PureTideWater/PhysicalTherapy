@@ -124,10 +124,12 @@ export function CoverageFigures({ practiceId, content }: { readonly practiceId: 
                 {content.waiting_plans.map((plan) => (
                   <tr key={plan.plan_id} className="border-t">
                     <td className="py-1 pr-3">{plan.payer_name}</td>
-                    <td className="py-1 pr-3 wrap-anywhere">
-                      <Link className="underline" href={`/p/${practiceId}/mapping/${plan.plan_id}`}>
-                        {plan.plan_key}
-                      </Link>
+                    <td className="py-1 pr-3">
+                      <span className="block min-w-32 wrap-anywhere">
+                        <Link className="underline" href={`/p/${practiceId}/mapping/${plan.plan_id}`}>
+                          {plan.plan_key}
+                        </Link>
+                      </span>
                     </td>
                     <td className="py-1 pr-3 text-right font-mono tabular-nums">{plan.lines}</td>
                     <td className="py-1 text-right">
@@ -302,8 +304,10 @@ export function MonthlyFigures({ practiceId, content }: { readonly practiceId: s
                             Case packet
                           </Link>
                         </td>
-                        <td className="py-1 pr-3 font-mono text-xs wrap-anywhere">{row.packet_version_id}</td>
-                        <td className="py-1 pr-3">{row.approved_on}</td>
+                        <td className="py-1 pr-3 font-mono text-xs">
+                          <span className="block min-w-32 wrap-anywhere">{row.packet_version_id}</span>
+                        </td>
+                        <td className="py-1 pr-3 whitespace-nowrap">{row.approved_on}</td>
                         <td className="py-1 font-mono tabular-nums">{row.hours_waited}</td>
                       </tr>
                     ))}

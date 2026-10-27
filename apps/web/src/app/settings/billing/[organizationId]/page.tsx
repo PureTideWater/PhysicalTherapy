@@ -5,8 +5,9 @@ import type { Metadata } from 'next';
 import { ActionForm } from '../../../../components/action-form';
 import { AccountStandingSummary, NextStepText } from '../../../../components/billing/account-standing';
 import { PAYMENT_METHOD_NAME, PaymentMethodCard } from '../../../../components/billing/payment-method-card';
+import { UtcTime } from '../../../../components/dates';
 import { SelectField } from '../../../../components/field';
-import { utc, utcDate } from '../../../../components/format';
+import { utcDate } from '../../../../components/format';
 import { Money } from '../../../../components/remittances/display';
 import { ScrollTable } from '../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../components/shell';
@@ -146,24 +147,39 @@ export default async function OrganizationBillingPage(props: { readonly params: 
                 <tbody>
                   {billing.invoices.map((invoice) => (
                     <tr key={invoice.id} className="border-t" data-invoice-status={invoice.status}>
-                      <td className="py-1 pr-3 wrap-anywhere">
-                        {invoice.hostedInvoiceUrl === null ? (
-                          (invoice.number ?? '—')
-                        ) : (
-                          <a className="underline" href={invoice.hostedInvoiceUrl} rel="noreferrer noopener" target="_blank">
-                            {invoice.number ?? 'View'}
-                            <span className="sr-only"> (opens in a new tab)</span>
-                          </a>
-                        )}
+                      <td className="py-1 pr-3">
+                        <span className="block min-w-32 wrap-anywhere">
+                          {invoice.hostedInvoiceUrl === null ? (
+                            (invoice.number ?? '—')
+                          ) : (
+                            <a className="underline" href={invoice.hostedInvoiceUrl} rel="noreferrer noopener" target="_blank">
+                              {invoice.number ?? 'View'}
+                              <span className="sr-only"> (opens in a new tab)</span>
+                            </a>
+                          )}
+                        </span>
                       </td>
                       <td className="py-1 pr-3">{KIND[invoice.kind] ?? invoice.kind}</td>
-                      <td className="py-1 pr-3">{utcDate(invoice.createdAt)}</td>
+                      <td className="py-1 pr-3 whitespace-nowrap">{utcDate(invoice.createdAt)}</td>
                       <td className="py-1 pr-3 font-mono tabular-nums">{formatUsd(parseCents(invoice.amountDueCents))}</td>
                       <td className="py-1 pr-3">
                         <Badge variant={invoice.status === 'paid' ? 'outline' : invoice.firstFailedAt === null ? 'secondary' : 'destructive'}>{INVOICE_STATUS[invoice.status] ?? invoice.status}</Badge>
-                        {invoice.firstFailedAt === null || invoice.status === 'paid' ? null : <span className="ml-2 text-xs">payment failed {utcDate(invoice.firstFailedAt)}</span>}
+                        {invoice.firstFailedAt === null || invoice.status === 'paid' ? null : (
+                          <span className="ml-2 text-xs">
+                            payment failed <span className="whitespace-nowrap">{utcDate(invoice.firstFailedAt)}</span>
+                          </span>
+                        )}
                       </td>
-                      <td className="py-1">{invoice.paidAt === null ? '—' : `${utc(invoice.paidAt)}${invoice.paymentMethodKind === null ? '' : `, ${PAYMENT_METHOD_NAME[invoice.paymentMethodKind] ?? invoice.paymentMethodKind}`}`}</td>
+                      <td className="py-1">
+                        {invoice.paidAt === null ? (
+                          '—'
+                        ) : (
+                          <>
+                            <UtcTime at={invoice.paidAt} />
+                            {invoice.paymentMethodKind === null ? '' : `, ${PAYMENT_METHOD_NAME[invoice.paymentMethodKind] ?? invoice.paymentMethodKind}`}
+                          </>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
