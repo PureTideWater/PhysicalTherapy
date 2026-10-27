@@ -148,7 +148,7 @@ CREATE TABLE mail_send (
   state text NOT NULL CONSTRAINT mail_send_state CHECK (state IN ('sent', 'delayed', 'delivered', 'bounced', 'suppressed', 'rejected', 'complained')),
   bounce_kind text CONSTRAINT mail_send_bounce_kind CHECK (bounce_kind IN ('permanent', 'transient', 'undetermined')),
   bounce_subtype text CONSTRAINT mail_send_bounce_subtype CHECK (bounce_subtype IN ('general', 'no_email', 'suppressed', 'on_account_suppression_list',
-    'on_configuration_set_suppression_list', 'mailbox_full', 'message_too_large', 'content_rejected', 'attachment_rejected', 'other')),
+    'on_configuration_set_suppression_list', 'mailbox_full', 'message_too_large', 'content_rejected', 'attachment_rejected', 'undetermined', 'other')),
   complaint_type text CONSTRAINT mail_send_complaint_type CHECK (complaint_type IN ('abuse', 'auth_failure', 'fraud', 'not_spam', 'virus', 'other', 'unspecified')),
   sent_at timestamptz NOT NULL,
   delivered_at timestamptz,
@@ -196,8 +196,10 @@ LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, public, pg_temp AS $$
                     WHEN 'complained' THEN 3 WHEN 'bounced' THEN 3 WHEN 'suppressed' THEN 3 WHEN 'rejected' THEN 3 WHEN 'failed' THEN 3 END
 $$;
 
--- A stream's window (Q9): from the later of 7 days ago and its last resume, its messages handed to a mailbox (probes,
--- suppressed and rejected ones aside), the permanent bounces among them and the complaints other than not_spam.
+-- A stream's window (Q9): from the later of 7 days ago and its last resume, its messages SES counts toward the account's
+-- rates (probes, those the account's own suppression list held back and rejected ones aside), the permanent bounces
+-- among them (a bounce from SES's global suppression list included, as SES counts it) and the complaints other than
+-- not_spam.
 CREATE FUNCTION mail_window_counts(target text) RETURNS TABLE (sends integer, bounces integer, complaints integer)
 LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp AS $$
   SELECT count(m.*)::integer,
@@ -879,9 +881,13 @@ BEGIN
   IF event = 'bounce' THEN
     given_bounce := CASE WHEN bounce_kind IN ('permanent', 'transient', 'undetermined') THEN bounce_kind ELSE 'undetermined' END;
     given_subtype := CASE WHEN bounce_subtype IN ('general', 'no_email', 'suppressed', 'on_account_suppression_list', 'on_configuration_set_suppression_list',
-                                                  'mailbox_full', 'message_too_large', 'content_rejected', 'attachment_rejected', 'other')
+                                                  'mailbox_full', 'message_too_large', 'content_rejected', 'attachment_rejected', 'undetermined', 'other')
                           THEN bounce_subtype ELSE 'other' END;
-    new_state := CASE WHEN given_subtype IN ('suppressed', 'on_account_suppression_list', 'on_configuration_set_suppression_list') THEN 'suppressed' ELSE 'bounced' END;
+    -- Suppressed by the account's own list (or a set's override of it, which only changes what goes on that list): SES
+    -- accepted the message, sent it to no one and counts it toward neither rate. A bounce from SES's global suppression
+    -- list (subtype suppressed: the address bounced recently for some sender) is counted toward the account's bounce rate
+    -- as any hard bounce is, so it is a bounce here too: the window, the refusal list and the bounce marks count it.
+    new_state := CASE WHEN given_subtype IN ('on_account_suppression_list', 'on_configuration_set_suppression_list') THEN 'suppressed' ELSE 'bounced' END;
   ELSIF event = 'complaint' THEN
     given_complaint := CASE WHEN complaint_type IS NULL THEN 'unspecified'
                             WHEN complaint_type IN ('abuse', 'auth_failure', 'fraud', 'not_spam', 'virus', 'other', 'unspecified') THEN complaint_type

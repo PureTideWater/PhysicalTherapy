@@ -147,7 +147,7 @@ export const MAIL_EVENTS = ['send', 'delivery_delay', 'delivery', 'bounce', 'com
 export type MailEvent = (typeof MAIL_EVENTS)[number];
 export const MAIL_BOUNCE_KINDS = ['permanent', 'transient', 'undetermined'] as const;
 export type MailBounceKind = (typeof MAIL_BOUNCE_KINDS)[number];
-/** SES's bounce subtypes, snake-cased; the first three suppression subtypes make the state suppressed; any other is other. */
+/** SES's bounce subtypes, snake-cased; MAIL_SUPPRESSION_SUBTYPES make the state suppressed; any other SES adds is other. */
 export const MAIL_BOUNCE_SUBTYPES = [
   'general',
   'no_email',
@@ -158,10 +158,16 @@ export const MAIL_BOUNCE_SUBTYPES = [
   'message_too_large',
   'content_rejected',
   'attachment_rejected',
+  'undetermined',
   'other',
 ] as const;
 export type MailBounceSubtype = (typeof MAIL_BOUNCE_SUBTYPES)[number];
-export const MAIL_SUPPRESSION_SUBTYPES: readonly MailBounceSubtype[] = ['suppressed', 'on_account_suppression_list', 'on_configuration_set_suppression_list'];
+/**
+ * The subtypes of a message SES held back for the account's own suppression list (or a configuration set's override of
+ * it) and counts toward neither rate: state suppressed. A bounce from SES's global suppression list (suppressed) counts
+ * toward the account's bounce rate as any hard bounce does, so it is bounced (review M2).
+ */
+export const MAIL_SUPPRESSION_SUBTYPES: readonly MailBounceSubtype[] = ['on_account_suppression_list', 'on_configuration_set_suppression_list'];
 /** SES's complaint feedback types, snake-cased; none given is unspecified, an unknown one other. */
 export const MAIL_COMPLAINT_TYPES = ['abuse', 'auth_failure', 'fraud', 'not_spam', 'virus', 'other', 'unspecified'] as const;
 export type MailComplaintType = (typeof MAIL_COMPLAINT_TYPES)[number];

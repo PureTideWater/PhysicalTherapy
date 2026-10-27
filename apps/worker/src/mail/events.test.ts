@@ -118,8 +118,9 @@ describe('the mail-events queue’s messages', () => {
       expect(parse(bounce('Permanent', ses))).toMatchObject({ type: 'event', record: { event: 'bounce', bounceKind: 'permanent', bounceSubtype: ours } });
       expect(MAIL_BOUNCE_SUBTYPES).toContain(ours);
     }
-    // Undetermined, and anything SES adds later: passed on, and recorded as other (operator_record_mail_event).
+    // Undetermined, as SES names it; anything SES adds later is passed on, and recorded as other (operator_record_mail_event).
     expect(parse(bounce('Undetermined', 'Undetermined'))).toMatchObject({ record: { bounceKind: 'undetermined', bounceSubtype: 'undetermined' } });
+    expect(MAIL_BOUNCE_SUBTYPES).toContain('undetermined');
     expect(parse(bounce('Transient', 'SomethingNew'))).toMatchObject({ record: { bounceKind: 'transient', bounceSubtype: 'something_new' } });
   });
 
