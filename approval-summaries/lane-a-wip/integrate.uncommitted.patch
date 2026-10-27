@@ -1,0 +1,352 @@
+diff --git a/apps/worker/src/price/rerun-rule.property.test.ts b/apps/worker/src/price/rerun-rule.property.test.ts
+index b81914b8..99c4ea9c 100644
+--- a/apps/worker/src/price/rerun-rule.property.test.ts
++++ b/apps/worker/src/price/rerun-rule.property.test.ts
+@@ -20,7 +20,7 @@ type Step =
+   | { readonly kind: 'load'; readonly month: number }
+   | { readonly kind: 'correct' | 'reverse'; readonly pick: number }
+   | { readonly kind: 'first'; readonly from: number; readonly months: number }
+-  | { readonly kind: 'rerun' | 'price' | 'start' | 'begin' | 'read' | 'fail' | 'begin_accept' | 'finish_accept' | 'accept'; readonly pick: number }
++  | { readonly kind: 'rerun' | 'pair' | 'price' | 'start' | 'begin' | 'read' | 'fail' | 'begin_accept' | 'finish_accept' | 'accept'; readonly pick: number }
+   | { readonly kind: 'race'; readonly first: number; readonly second: number }
+   | { readonly kind: 'commit' | 'publish' | 'withdraw' | 'split' | 'map' };
+ 
+@@ -31,6 +31,8 @@ const step: fc.Arbitrary<Step> = fc.oneof(
+   { weight: 1, arbitrary: fc.record({ kind: fc.constantFrom('correct' as const, 'reverse' as const), pick }) },
+   { weight: 3, arbitrary: fc.record({ kind: fc.constant('first' as const), from: fc.nat(MONTHS - 1), months: fc.integer({ min: 1, max: 3 }) }) },
+   { weight: 4, arbitrary: fc.record({ kind: fc.constant('rerun' as const), pick }) },
++  // Two re-runs of one run, each priced: what a race needs, two complete re-runs, which single steps seldom leave.
++  { weight: 2, arbitrary: fc.record({ kind: fc.constant('pair' as const), pick }) },
+   // A whole execution with nothing else holding the lock, and the four steps of executions that run at once.
+   { weight: 4, arbitrary: fc.record({ kind: fc.constant('price' as const), pick }) },
+   { weight: 3, arbitrary: fc.record({ kind: fc.constant('start' as const), pick }) },
+@@ -66,7 +68,6 @@ const completeReruns = (model: RunModel) => model.runs.filter((run) => run.rerun
+ 
+ /** What the sequences reached, so the property is known not to hold vacuously. */
+ const seen = new Map<string, number>();
+-const count = (key: string) => seen.set(key, (seen.get(key) ?? 0) + 1);
+ 
+ /** The invariants after every step; (ii) and (iii) after an acceptance that committed. */
+ function checkStep(model: RunModel, accepted: { readonly run: ModelRun; readonly before: ReadonlyMap<number, number | null> } | null): void {
+@@ -78,7 +79,8 @@ function checkStep(model: RunModel, accepted: { readonly run: ModelRun; readonly
+   }
+ }
+ 
+-function play(model: RunModel, steps: readonly Step[]): void {
++function play(model: RunModel, steps: readonly Step[], tally: Map<string, number> = seen): void {
++  const count = (key: string) => tally.set(key, (tally.get(key) ?? 0) + 1);
+   for (const next of steps) {
+     let accepted: { readonly run: ModelRun; readonly before: ReadonlyMap<number, number | null> } | null = null;
+     const acceptance = (run: ModelRun | undefined, outcome: () => AcceptOutcome) => {
+@@ -119,6 +121,21 @@ function play(model: RunModel, steps: readonly Step[]): void {
+         }
+         break;
+       }
++      case 'pair': {
++        const run = choose(
++          model.runs.filter((candidate) => candidate.status === 'complete'),
++          next.pick,
++        );
++        for (let made = 0; run !== undefined && made < 2; made += 1) {
++          const created = model.createRerun(run.id);
++          count('refused' in created ? `rerun:${created.refused}` : 'rerun:created');
++          if ('created' in created) {
++            model.price(created.created);
++            checkStep(model, null);
++          }
++        }
++        break;
++      }
+       case 'price': {
+         const run = choose(
+           model.runs.filter((candidate) => model.canStart(candidate)),
+@@ -229,26 +246,77 @@ function play(model: RunModel, steps: readonly Step[]): void {
+ // its own bound rather than the unit project's five-second default (the CI run of c637dfd stopped one at 5 s).
+ const PROPERTY_TIMEOUT_MS = 60_000;
+ 
++/** Every outcome the rule and the steps around it can give. */
++const OUTCOMES = [
++  'accept:accepted',
++  'accept:superseded',
++  'accept:newer_run_pending',
++  'accept:changed_meanwhile',
++  'rerun:created',
++  'rerun:not_in_effect',
++  'rerun:newer_run_pending',
++  'read:read',
++  'read:restarted',
++] as const;
++
++/**
++ * One sequence that reaches every outcome, played first as the property's example, so each invariant is checked under
++ * each outcome on every run whatever the random sequences reach: two re-runs of a February run raced (accepted, then
++ * changed_meanwhile), a third re-run of that run, no longer in effect (not_in_effect), a quarter run re-run while a
++ * February first run is queued and then running (newer_run_pending twice), the February run read (read) and committed,
++ * the quarter's re-run then accepted (superseded), and a March and an April run begun in order and read in reverse
++ * (read, then restarted).
++ */
++const EVERY_OUTCOME: readonly Step[] = [
++  { kind: 'load', month: 1 },
++  { kind: 'first', from: 1, months: 1 },
++  { kind: 'price', pick: 0 },
++  { kind: 'rerun', pick: 0 },
++  { kind: 'price', pick: 0 },
++  { kind: 'rerun', pick: 0 },
++  { kind: 'price', pick: 0 },
++  { kind: 'race', first: 1, second: 0 },
++  { kind: 'rerun', pick: 0 },
++  { kind: 'first', from: 0, months: 3 },
++  { kind: 'price', pick: 0 },
++  { kind: 'rerun', pick: 3 },
++  { kind: 'price', pick: 0 },
++  { kind: 'first', from: 1, months: 1 },
++  { kind: 'rerun', pick: 3 },
++  { kind: 'start', pick: 0 },
++  { kind: 'accept', pick: 2 },
++  { kind: 'begin', pick: 0 },
++  { kind: 'read', pick: 0 },
++  { kind: 'commit' },
++  { kind: 'accept', pick: 2 },
++  { kind: 'first', from: 2, months: 1 },
++  { kind: 'first', from: 3, months: 1 },
++  { kind: 'start', pick: 0 },
++  { kind: 'start', pick: 0 },
++  { kind: 'begin', pick: 0 },
++  { kind: 'begin', pick: 0 },
++  { kind: 'read', pick: 1 },
++  { kind: 'commit' },
++  { kind: 'read', pick: 0 },
++  { kind: 'read', pick: 0 },
++  { kind: 'commit' },
++];
++
+ describe('PRC-25 to PRC-28: the acceptance rule over random sequences of runs, lines, releases and acceptances', () => {
+   it('keeps every priced line in effect, never regresses one, leaves an accepted re-run in effect and accepts a freshest re-run', () => {
++    const example = new Map<string, number>();
+     fc.assert(
+       fc.property(fc.array(step, { minLength: 20, maxLength: 80 }), (steps) => {
+-        play(new RunModel(), steps);
++        play(new RunModel(), steps, steps === EVERY_OUTCOME ? example : seen);
+       }),
+-      { numRuns: 3_000 },
++      { numRuns: 3_000, examples: [[EVERY_OUTCOME]] },
+     );
+-    // The sequences reached every outcome the rule can give, so none of the invariants held vacuously.
+-    for (const outcome of [
+-      'accept:accepted',
+-      'accept:superseded',
+-      'accept:newer_run_pending',
+-      'accept:changed_meanwhile',
+-      'rerun:created',
+-      'rerun:not_in_effect',
+-      'rerun:newer_run_pending',
+-      'read:read',
+-      'read:restarted',
+-    ]) {
++    // The example reached every outcome, so no invariant holds vacuously on any run; and so did the random sequences.
++    // Measured over 30 seeds of 3,000 sequences, each outcome is reached 28 times or more (changed_meanwhile 32 to 62
++    // times, through the pair step; 0 to 6 times without it, which once failed this check), so a random run that
++    // reaches one no time at all is a change to the steps, not chance.
++    for (const outcome of OUTCOMES) {
++      expect(example.get(outcome) ?? 0, `${outcome} in the example among ${JSON.stringify([...example])}`).toBeGreaterThan(0);
+       expect(seen.get(outcome) ?? 0, `${outcome} among ${JSON.stringify([...seen])}`).toBeGreaterThan(0);
+     }
+   }, PROPERTY_TIMEOUT_MS);
+diff --git a/packages/model-gateway/src/functions/denial-letter.test.ts b/packages/model-gateway/src/functions/denial-letter.test.ts
+index aa2742a6..7037a2c7 100644
+--- a/packages/model-gateway/src/functions/denial-letter.test.ts
++++ b/packages/model-gateway/src/functions/denial-letter.test.ts
+@@ -67,6 +67,8 @@ describe('PHI minimization before the call', () => {
+     const number = fc.stringMatching(/^SYN[0-9]{6,10}$/);
+     fc.assert(
+       fc.property(word, word, number, number, fc.date({ min: new Date('1930-01-01T00:00:00Z'), max: new Date('2020-12-31T00:00:00Z'), noInvalidDate: true }), (first, last, member, claim, birth) => {
++        // A name spelled by its own placeholder's words is left in the redacted text and refused, as the test above shows.
++        fc.pre(![first, last].some((part) => ['PATIENT', 'NAME'].includes(part.toUpperCase())));
+         const dob = birth.toISOString().slice(0, 10);
+         const patient = { pseudonym: 'p', names: [`${first} ${last}`], datesOfBirth: [dob], memberIds: [member] };
+         const claims = [{ claimId: SYNTHETIC_IDS.claimOne, patientPseudonym: 'p', claimNumbers: [claim] }];
+diff --git a/packages/packets/src/verifier.test.ts b/packages/packets/src/verifier.test.ts
+index ff1995f6..5abf4757 100644
+--- a/packages/packets/src/verifier.test.ts
++++ b/packages/packets/src/verifier.test.ts
+@@ -352,6 +352,21 @@ const contentArbitrary = fc.array(lineArbitrary, { minLength: 1, maxLength: 8 })
+   ),
+ );
+ 
++/**
++ * Counts for the properties below: any from 2 to 100,000, and a quarter of the time one beside a figure the inputs hold
++ * (each numeric code and its neighbours, the service year and the next), where in and not in the input meet. A
++ * five-digit count reads as a procedure code, so one equal to an input's code is that code (97140 at seed 2019154346).
++ */
++const countArbitrary = fc.oneof(
++  { weight: 3, arbitrary: fc.integer({ min: 2, max: 100_000 }) },
++  { weight: 1, arbitrary: fc.constantFrom(...CODES.filter((code) => /^\d+$/.test(code)).flatMap((code) => [-1, 0, 1].map((step) => Number.parseInt(code, 10) + step)), 2026, 2027) },
++);
++/** Whether the verifier finds a count, written in ASCII digits, in the inputs: among their numbers, or their codes. */
++const inInput = (generated: PacketContent, count: number) => {
++  const facts = narrativeFacts(generated);
++  return facts.numbers.has(String(count)) || facts.codes.has(String(count));
++};
++
+ const FILLER = ['the', 'payer', 'paid', 'these', 'lines', 'under', 'its', 'contract', 'short', 'of', 'what', 'it', 'requires', 'and'] as const;
+ 
+ describe('properties of the verifier', () => {
+@@ -378,12 +393,11 @@ describe('properties of the verifier', () => {
+     );
+   });
+ 
+-  it('fails a draft into which any count not in the input is written', () => {
++  it('fails a draft into which any count not in the input is written, and passes one that is', () => {
+     fc.assert(
+-      fc.property(contentArbitrary, fc.integer({ min: 2, max: 100_000 }), (generated, count) => {
+-        fc.pre(!narrativeFacts(generated).numbers.has(String(count)));
++      fc.property(contentArbitrary, countArbitrary, (generated, count) => {
+         const narrative = `${draftNarrative(generated)} It affected ${String(count)} visits [3].`;
+-        expect(flagged(narrative, verify(narrative, generated))).toEqual([String(count)]);
++        expect(flagged(narrative, verify(narrative, generated))).toEqual(inInput(generated, count) ? [] : [String(count)]);
+       }),
+     );
+   });
+@@ -422,13 +436,21 @@ describe('properties of the verifier', () => {
+     );
+   });
+ 
+-  it('fails a draft into which a count not in the input is written in any other digits', () => {
++  it('fails a draft into which a count not in the input is written in any other digits, and any count in digits it does not read', () => {
+     fc.assert(
+-      fc.property(contentArbitrary, fc.integer({ min: 2, max: 100_000 }), fc.constantFrom(...READ_ALPHABETS, ...OTHER_ALPHABETS), (generated, count, alphabet) => {
+-        fc.pre(!narrativeFacts(generated).numbers.has(String(count)));
++      fc.property(contentArbitrary, countArbitrary, fc.constantFrom(...READ_ALPHABETS, ...OTHER_ALPHABETS), (generated, count, alphabet) => {
+         const report = verify(`${draftNarrative(generated)} It affected ${inDigits(alphabet, String(count))} visits [3].`, generated);
+-        expect(report.passed).toBe(false);
+-        expect(codes(report)).toContain((OTHER_ALPHABETS as readonly (number | string)[]).includes(alphabet) ? 'unreadable_figure' : 'figure_not_in_input');
++        if ((OTHER_ALPHABETS as readonly (number | string)[]).includes(alphabet)) {
++          // Digits it does not read fail whatever their value.
++          expect(report.passed).toBe(false);
++          expect(codes(report)).toContain('unreadable_figure');
++        } else if (inInput(generated, count)) {
++          // Read as ASCII digits, a count in the input is that figure, as in the property above.
++          expect(codes(report)).not.toContain('figure_not_in_input');
++        } else {
++          expect(report.passed).toBe(false);
++          expect(codes(report)).toContain('figure_not_in_input');
++        }
+       }),
+     );
+   });
+diff --git a/tools/golden-worksheet/worksheet.test.ts b/tools/golden-worksheet/worksheet.test.ts
+index a3dc4a3f..ef1c48ff 100644
+--- a/tools/golden-worksheet/worksheet.test.ts
++++ b/tools/golden-worksheet/worksheet.test.ts
+@@ -11,12 +11,19 @@ import { repositoryRoot } from '../content-files';
+  * packages/pricing; its unit tests are Python too. `pnpm test` runs them here, isolated (-I) so
+  * nothing from the environment or the working directory is imported.
+  */
++/**
++ * The worksheet's own tests recompute every golden claim in one Python process: 1.0 to 1.5 s on CI, about ten seconds
++ * on one CPU shared with eight busy loops, where vitest's five-second default failed it. Sixty seconds, and the child is
++ * killed after it, so a hang fails the test rather than holding it.
++ */
++const TIMEOUT_MS = 60_000;
++
+ describe('the golden worksheet', () => {
+   it('passes its own unit tests, leaving no bytecode in the source tree', () => {
+-    const result = spawnSync('python3', ['-I', '-B', 'tools/golden-worksheet/test_golden_worksheet.py'], { cwd: repositoryRoot, encoding: 'utf8' });
++    const result = spawnSync('python3', ['-I', '-B', 'tools/golden-worksheet/test_golden_worksheet.py'], { cwd: repositoryRoot, encoding: 'utf8', timeout: TIMEOUT_MS, killSignal: 'SIGKILL' });
+     expect(result.error).toBeUndefined();
+     expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+     expect(result.stderr).toMatch(/\nOK\n$/);
+     expect(existsSync(path.join(repositoryRoot, 'tools/golden-worksheet/__pycache__'))).toBe(false);
+-  });
++  }, TIMEOUT_MS);
+ });
+diff --git a/tools/test/db-shards.test.ts b/tools/test/db-shards.test.ts
+index 59048a9b..dc360dd0 100644
+--- a/tools/test/db-shards.test.ts
++++ b/tools/test/db-shards.test.ts
+@@ -69,7 +69,7 @@ describe('the shard check', () => {
+     const problems = shardProblems(dropped);
+     expect(problems).toHaveLength(1);
+     expect(problems[0]).toMatch(/^\S+\.db\.test\.ts runs in no shard$/);
+-  });
++  }, 120_000);
+ 
+   it('names an empty shard, a file run twice and a file outside the project', () => {
+     const files = ['a.db.test.ts', 'b.db.test.ts'];
+@@ -89,5 +89,5 @@ describe('the shard check', () => {
+ 
+   it('keeps the results cache CI restores under node_modules/.vite/vitest', () => {
+     expect(path.relative(ROOT, plan(1).cacheDir).split(path.sep).slice(0, 3)).toEqual(['node_modules', '.vite', 'vitest']);
+-  });
++  }, 120_000);
+ });
+diff --git a/tools/test/workflows.test.ts b/tools/test/workflows.test.ts
+index 1b1b2690..354878d1 100644
+--- a/tools/test/workflows.test.ts
++++ b/tools/test/workflows.test.ts
+@@ -6,7 +6,7 @@ import os from 'node:os';
+ import path from 'node:path';
+ import { isDeepStrictEqual, stripVTControlCharacters } from 'node:util';
+ 
+-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
++import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+ import { parse } from 'yaml';
+ 
+ import { consistencyProblems, formProblems, parsePin } from '../check-action-pins/workflows';
+@@ -15,6 +15,19 @@ import { repositoryRoot } from '../content-files';
+ import { REQUIRED_CHECKS } from '../required-checks';
+ import { RELEASE_RUNNER } from '../screening-capacity/launch-check';
+ 
++/**
++ * Many of these tests run a workflow step's script, git or a fake gh as GitHub would, hundreds of processes for the
++ * notify tests, and the simulated Dependabot rewrite runs the whole file again in a vitest of its own while the rest of
++ * the unit project runs, so their time grows with the runner's load. The content-calendar notify test took 0.9 s on an
++ * idle 4-CPU container, 1.0 to 2.2 s in that nested run beside the full unit project, 1.8 s in CI's own run (job
++ * 122241596089) and over 5 s in that job's nested run, which failed it at vitest's five-second default; on one CPU
++ * shared with eight busy loops it took 7.4 s and the slowest other test 4.0 s. Thirty seconds holds four times the
++ * worst of those. A test's timeout cannot interrupt a synchronous child process, so each one the file starts is bounded
++ * by the same thirty seconds and killed after it: a hung script, git or actionlint fails its test rather than holding it.
++ */
++const TEST_TIMEOUT_MS = 30_000;
++vi.setConfig({ testTimeout: TEST_TIMEOUT_MS });
++
+ /**
+  * The workflows: ci.yml's parallel jobs behind its one gate (docs/adr/0066, Part 1), with the image and licence gates
+  * among them (docs/adr/0010), the release and capacity workflows (docs/adr/0062), the release's dry run, the action pin
+@@ -197,7 +210,7 @@ afterAll(() => {
+ 
+ /** Runs a step's script as GitHub runs a `shell: bash` step (bash --noprofile --norc -eo pipefail), with this environment alone. */
+ function runScript(script: string, env: Record<string, string>, cwd: string): { status: number | null; output: string } {
+-  const result = spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', script], { cwd, encoding: 'utf8', env: { PATH: process.env.PATH ?? '/usr/bin:/bin', ...env } });
++  const result = spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', script], { cwd, encoding: 'utf8', env: { PATH: process.env.PATH ?? '/usr/bin:/bin', ...env }, timeout: TEST_TIMEOUT_MS, killSignal: 'SIGKILL' });
+   expect(result.error).toBeUndefined();
+   return { status: result.status, output: result.stdout + result.stderr };
+ }
+@@ -319,7 +332,7 @@ function shardWidths(matrix: Record<string, unknown> | undefined): { public: unk
+ function rangeRepository(): { dir: string; first: string; second: string; head: string; env: Record<string, string> } {
+   const dir = mkdtempSync(path.join(scratch, 'range-'));
+   const env = { HOME: dir, GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'Synthetic', GIT_AUTHOR_EMAIL: 'synthetic@example.invalid', GIT_COMMITTER_NAME: 'Synthetic', GIT_COMMITTER_EMAIL: 'synthetic@example.invalid' };
+-  const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env: { ...process.env, ...env }, encoding: 'utf8' }).trim();
++  const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env: { ...process.env, ...env }, encoding: 'utf8', timeout: TEST_TIMEOUT_MS, killSignal: 'SIGKILL' }).trim();
+   git('init', '-q', '-b', 'main');
+   const shas = ['first', 'second', 'third'].map((name) => {
+     writeFileSync(path.join(dir, `${name}.txt`), `${name}\n`);
+@@ -1668,7 +1681,7 @@ describe('approval-of-record (docs/adr/0063)', () => {
+   const actionlint = process.env.ACTIONLINT ?? spawnSync('/bin/sh', ['-c', 'command -v actionlint'], { encoding: 'utf8' }).stdout.trim();
+   it.runIf(actionlint !== '')('every workflow passes actionlint', () => {
+     const files = readdirSync(WORKFLOWS).map((name) => path.join(WORKFLOWS, name));
+-    const result = spawnSync(actionlint, ['-shellcheck=', '-pyflakes=', ...files], { encoding: 'utf8' });
++    const result = spawnSync(actionlint, ['-shellcheck=', '-pyflakes=', ...files], { encoding: 'utf8', timeout: TEST_TIMEOUT_MS, killSignal: 'SIGKILL' });
+     expect(result.error).toBeUndefined();
+     expect(result.stdout + result.stderr).toBe('');
+     expect(result.status).toBe(0);
+@@ -1788,7 +1801,8 @@ describe('mutation testing (docs/adr/0066, Part 4; CI-15 to CI-17)', () => {
+   // makes, the outputs printed after a marker.
+   const guard = (env: { CHANGES?: string; STRYKER?: string; ANY?: string; PACKAGES?: string; SHARDS?: string }) => {
+     const wrapper = 'out=$(mktemp); sum=$(mktemp); status=0; GITHUB_OUTPUT="$out" GITHUB_STEP_SUMMARY="$sum" bash -e -c "$1" || status=$?; printf "\\n--outputs--\\n%s" "$(cat "$out")"; rm -f "$out" "$sum"; exit "$status"';
+-    const ran = spawnSync('bash', ['-c', wrapper, 'guard', job('mutation').steps[0]?.run ?? ''], { encoding: 'utf8', env: { PATH: process.env.PATH ?? '/usr/bin:/bin', ...env } });
++    const ran = spawnSync('bash', ['-c', wrapper, 'guard', job('mutation').steps[0]?.run ?? ''], { encoding: 'utf8', env: { PATH: process.env.PATH ?? '/usr/bin:/bin', ...env }, timeout: TEST_TIMEOUT_MS, killSignal: 'SIGKILL' });
++    expect(ran.error).toBeUndefined();
+     const [log = '', output = ''] = ran.stdout.split('\n--outputs--\n');
+     return { status: ran.status, output, log: log + ran.stderr };
+   };
