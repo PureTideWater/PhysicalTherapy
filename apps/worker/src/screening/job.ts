@@ -596,7 +596,7 @@ export async function resendScreeningRuns(dependencies: ScreeningJobDependencies
       }
     } catch (error) {
       if (screeningMailPaused(error)) {
-        // The stream paused between the gate and a stale run's failure: it is failed after the resume.
+        // The stream paused between the gate and a stale run's completion or failure: it is finished or failed after the resume.
         mailPaused(dependencies, run.runId);
         continue;
       }
