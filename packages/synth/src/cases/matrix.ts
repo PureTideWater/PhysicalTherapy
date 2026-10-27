@@ -364,15 +364,15 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
   },
   {
     id: 'MOD-13',
-    title: "A payer letter whose patient's names, member IDs, claim numbers and date of birth are written any way a letter writes them (placeholder words or months as names, marks, `ß`, typographic apostrophes and dashes, invisible characters, spacing, initials, `_` or `.` in a number)",
+    title: "A payer letter whose patient's names, member IDs, claim numbers and date of birth are written any way a letter writes them (placeholder words or months as names, marks, `ß`, typographic apostrophes and dashes, invisible characters, spacing, a hyphen at a line break, initials, `_`, `.`, `/`, `:`, `#` or `(` in a number next to a letter, digits alone with dashes or invisible characters, a date's digits as a number, a dotted chain of initials after the name, a labeled date of birth with any dash, a backslash, `_`, `|`, spaces alone or a typographic apostrophe), and placeholder-shaped text of its own, or crafted to make redaction slow",
     assertion:
-      "No letter or digit written as an identifier is sent; every placeholder is exact and each place a claim's number was written is that claim's placeholder (the lowest of equal claims); nothing today's redaction replaced is sent, but a deadline or amount it took for an identifier; text without the patient's forms, common phrases, amounts and deadlines included, is sent unchanged; the self-check finds nothing",
+      "No letter or digit written as an identifier is sent, a digits-only number included unless its written text is a calendar date with its separators that is not the date of birth; every placeholder is exact and each place a claim's number was written is that claim's placeholder (the lowest of equal claims); the letter's own square brackets are sent as parentheses; nothing today's redaction replaced is sent, but a deadline (read as a calendar date by the test itself) or a claim's amount (after a currency sign, with cents) it took for an identifier; text without the patient's forms, common phrases, amounts and deadlines included, is sent unchanged; the self-check finds nothing; a crafted letter of 100 kB is redacted and checked within its time budget",
   },
   {
     id: 'MOD-14',
-    title: "A letter that writes another patient's member ID or claim number with `_`, `.`, a dash, spaces, an invisible character, after `ID:` or in brackets",
+    title: "A letter that writes another patient's member ID or claim number, with a letter prefix or digits alone, with a dash, spaces or an invisible character, `_`, `.`, `/`, `:`, `#` or `(` next to a letter, after `ID:`, in brackets or as a claim placeholder's digits (`[CLAIM_7654321]`)",
     assertion:
-      'The one-patient screen is offered it, in the redacted letter too; an exact placeholder, or a part of one, never',
+      "The one-patient screen is offered it, in the redacted letter too; a placeholder's word, or a redacted letter's own placeholder, never. Digits alone with `/` or `.` between them are not offered (a date's or an amount's writing; recorded in docs/adr/0054)",
   },
   {
     id: 'BIL-01',

@@ -14,21 +14,27 @@
  * - every match is found on one folded view of the letter: case folded in full (ß is SS), marks
  *   dropped (José is JOSE), and a run of invisible characters (soft hyphen, zero-width space) one
  *   character that joins inside a word and still ends one;
- * - a member ID or claim number matches with or without the white space and dashes a letter puts inside
- *   it, and the underscores and periods next to a letter ("ZZ 1234567", "ZZ-1234567", "ZZ_1234567");
- * - a name matches with or without the dashes and apostrophes inside it (O’Brien, Smith–Jones), and with
- *   a space only where each side is a capitalized piece of two letters or more ("Jo Ann", never "in a");
+ * - a member ID or claim number matches with or without the white space, dashes and invisible characters
+ *   a letter puts inside it, and the underscores, periods, slashes and colons next to a letter
+ *   ("ZZ 1234567", "ZZ-1234567", "ZZ_1234567", "ZZ/1234567");
+ * - a name matches with or without the dashes and apostrophes inside it (O’Brien, Smith–Jones), across a
+ *   dash at a line break whatever its case ("Van-⏎tree", "Jo-⏎ann"), and with a space only where each
+ *   side is a capitalized piece of two letters or more ("Jo Ann", never "in a");
  * - an initial of the patient's name next to a name ("J. Q. Vantree", "Vantree, J.") is a name;
  * - a date of birth matches in every form a letter writes a date: month first or day first, with
- *   slashes, hyphens or dots, a two- or four-digit year, compact (19610303, 03031961, 030361), and the
- *   month in words with or without a leading zero, an ordinal or a comma (March 03, 1961; 3rd March
- *   1961; 03-MAR-61). Any date a birth label introduces (DOB, date of birth, born) is replaced too,
- *   whatever its value, so a date of birth the records do not hold is not sent either.
+ *   slashes, dots, any dash or spaces alone, a two- or four-digit year with or without an apostrophe,
+ *   compact (19610303, 03031961, 030361), and the month in words with or without a leading zero, an
+ *   ordinal, a comma or slashes (March 03, 1961; 3rd March 1961; 03-MAR-61; Mar 3 ’61; 3/Mar/1961).
+ *   Any date a birth label introduces (DOB, date of birth, born) is replaced too, whatever its value, so
+ *   a date of birth the records do not hold is not sent either.
  *
  * Every match is found on the letter before anything is replaced, and overlapping matches become one
- * placeholder, so no placeholder is ever rewritten. What the task reads stays: a month word in a date
- * that is not a date of birth is not a name, and digits written as an amount, or as a date with its
- * separators, are not a number. Nothing else of the letter changes.
+ * placeholder, so no placeholder is ever rewritten. What the task reads stays: in a date that is not a
+ * date of birth, written with a separator (DATE_SEPARATOR) or a month word and with a calendar reading, a
+ * month word is not a name and digits written with its dashes are not a number; a claim's digits
+ * written as an amount, after a currency sign and with cents, are not its number. The letter's own
+ * square brackets become parentheses, so the only bracketed text sent is a placeholder. Nothing else of
+ * the letter changes.
  */
 
 export interface PatientIdentifiers {
@@ -112,15 +118,32 @@ function readings(parts: readonly { readonly year: string; readonly month: numbe
 
 const num = (text: string | undefined) => Number.parseInt(text ?? '', 10);
 
-/** The date patterns a letter writes, each with every reading of its parts (month first and day first alike). */
-const DATE_PATTERNS: readonly { readonly pattern: RegExp; readonly read: (match: RegExpExecArray) => string[] }[] = [
-  // 1961-03-03, 1961/3/3, 1961.03.03
-  { pattern: new RegExp(`${BEFORE}(\\d{4})\\s*([/.\\-])\\s*(\\d{1,2})\\s*\\2\\s*(\\d{1,2})${AFTER}`, 'gu'), read: (m) => readings([{ year: m[1] ?? '', month: num(m[3]), day: num(m[4]) }]) },
-  // 03/03/1961, 3-3-61, 3.3.1961, either order of month and day
-  {
-    pattern: new RegExp(`${BEFORE}(\\d{1,2})\\s*([/.\\-])\\s*(\\d{1,2})\\s*\\2\\s*(\\d{4}|\\d{2})${AFTER}`, 'gu'),
-    read: (m) => readings([{ year: m[4] ?? '', month: num(m[1]), day: num(m[3]) }, { year: m[4] ?? '', month: num(m[3]), day: num(m[1]) }]),
-  },
+/** What separates the numbers of a date: a slash, a backslash, a period, any dash, the minus sign, the hyphen bullet, "_" or "|". */
+const DATE_SEPARATOR = '/\\\\.\\p{Pd}\\u2212\\u2043_|';
+const SEPARATOR = `\\s*[${DATE_SEPARATOR}]\\s*`;
+/** White space inside a line: what a date written with spaces alone has between its numbers. */
+const SPACES = '[^\\S\\r\\n\\u0085\\u2028\\u2029]+';
+/** An apostrophe, straight or typographic, before a two-digit year ('61, ’61). */
+const YEAR_APOSTROPHE = "['‘’ʼ`´]?";
+
+const yearFirst = (m: RegExpExecArray) => readings([{ year: m[1] ?? '', month: num(m[2]), day: num(m[3]) }]);
+const yearLast = (m: RegExpExecArray) => readings([{ year: m[3] ?? '', month: num(m[1]), day: num(m[2]) }, { year: m[3] ?? '', month: num(m[2]), day: num(m[1]) }]);
+
+/**
+ * The date patterns a letter writes, each with every reading of its parts (month first and day first
+ * alike), and whether a date so written is separated: written with a separator (DATE_SEPARATOR) or a
+ * month word. Only a separated date that is not a date of birth stays as written; numbers written with spaces
+ * alone, or compact, are read as a date of birth but never kept as another date, since a member ID or
+ * claim number is written that way too.
+ */
+const DATE_PATTERNS: readonly { readonly pattern: RegExp; readonly read: (match: RegExpExecArray) => string[]; readonly separated: boolean }[] = [
+  // 1961-03-03, 1961/3/3, 1961.03.03, 1961–03–03
+  { pattern: new RegExp(`${BEFORE}(\\d{4})${SEPARATOR}(\\d{1,2})${SEPARATOR}(\\d{1,2})${AFTER}`, 'gu'), read: yearFirst, separated: true },
+  // 03/03/1961, 3-3-61, 3.3.1961, 03−03−’61, either order of month and day
+  { pattern: new RegExp(`${BEFORE}(\\d{1,2})${SEPARATOR}(\\d{1,2})${SEPARATOR}${YEAR_APOSTROPHE}(\\d{4}|\\d{2})${AFTER}`, 'gu'), read: yearLast, separated: true },
+  // 1961 03 03, 03 03 1961, 3 3 61: spaces alone
+  { pattern: new RegExp(`${BEFORE}(\\d{4})${SPACES}(\\d{1,2})${SPACES}(\\d{1,2})${AFTER}`, 'gu'), read: yearFirst, separated: false },
+  { pattern: new RegExp(`${BEFORE}(\\d{1,2})${SPACES}(\\d{1,2})${SPACES}${YEAR_APOSTROPHE}(\\d{4}|\\d{2})${AFTER}`, 'gu'), read: yearLast, separated: false },
   // 19610303, 03031961, 03/03 written compact with a two-digit year (030361)
   {
     pattern: new RegExp(`${BEFORE}(\\d{8}|\\d{6})${AFTER}`, 'gu'),
@@ -138,16 +161,19 @@ const DATE_PATTERNS: readonly { readonly pattern: RegExp; readonly read: (match:
         { year: d.slice(4, 6), month: num(d.slice(2, 4)), day: num(d.slice(0, 2)) },
       ]);
     },
+    separated: false,
   },
-  // March 3, 1961; Mar. 03 1961; March 3rd, '61
+  // March 3, 1961; Mar. 03 1961; March 3rd, '61; Mar 3 ’61; Mar/03/1961
   {
-    pattern: new RegExp(`${BEFORE}${MONTH_WORD}\\.?\\s*(\\d{1,2})${ORDINAL},?\\s*'?(\\d{4}|\\d{2})${AFTER}`, 'giu'),
+    pattern: new RegExp(`${BEFORE}${MONTH_WORD}\\.?[\\s${DATE_SEPARATOR}]*(\\d{1,2})${ORDINAL},?[\\s${DATE_SEPARATOR}]*${YEAR_APOSTROPHE}(\\d{4}|\\d{2})${AFTER}`, 'giu'),
     read: (m) => readings([{ year: m[3] ?? '', month: monthOf(m[1] ?? ''), day: num(m[2]) }]),
+    separated: true,
   },
-  // 3 March 1961; 3rd of March, 1961; 03-MAR-1961; 3-Mar-61
+  // 3 March 1961; 3rd of March, 1961; 03-MAR-1961; 3-Mar-61; 3/Mar/1961; 03/Mar/61
   {
-    pattern: new RegExp(`${BEFORE}(\\d{1,2})${ORDINAL}(?:\\s+of)?[\\s\\-]*${MONTH_WORD}\\.?,?[\\s\\-]*'?(\\d{4}|\\d{2})${AFTER}`, 'giu'),
+    pattern: new RegExp(`${BEFORE}(\\d{1,2})${ORDINAL}(?:\\s+of)?[\\s${DATE_SEPARATOR}]*${MONTH_WORD}\\.?,?[\\s${DATE_SEPARATOR}]*${YEAR_APOSTROPHE}(\\d{4}|\\d{2})${AFTER}`, 'giu'),
     read: (m) => readings([{ year: m[3] ?? '', month: monthOf(m[2] ?? ''), day: num(m[1]) }]),
+    separated: true,
   },
 ];
 
@@ -157,21 +183,36 @@ const BIRTH_LABEL = /(?:\bD\.?\s?O\.?\s?B\b\.?|\bdate\s+of\s+birth\b|\bbirth\s*d
 interface DateSpan {
   readonly start: number;
   readonly end: number;
+  /** Every calendar date it can be read as (none for numbers shaped like a date that no calendar holds, 12-34-56). */
   readonly dates: readonly string[];
+  /** Written with a separator (DATE_SEPARATOR) or a month word: only such a date, with a reading, stays when it is not a date of birth. */
+  readonly separated: boolean;
 }
 
-/** Every date a letter writes, longest first where two forms overlap, with each calendar date it can be read as. */
+/**
+ * Every date a letter writes, with each calendar date it can be read as. Where one form holds another,
+ * the longer is kept, unless only the shorter has a reading, so numbers that read as no date never hide
+ * one that does.
+ */
 export function datesIn(text: string): DateSpan[] {
-  const spans: DateSpan[] = [];
-  for (const { pattern, read } of DATE_PATTERNS) {
+  const all: DateSpan[] = [];
+  for (const { pattern, read, separated } of DATE_PATTERNS) {
     for (const match of text.matchAll(new RegExp(pattern.source, pattern.flags))) {
-      const span = { start: match.index, end: match.index + match[0].length, dates: read(match) };
-      if (!spans.some((other) => other.start <= span.start && span.end <= other.end)) {
-        spans.push(span);
-      }
+      all.push({ start: match.index, end: match.index + match[0].length, dates: read(match), separated });
     }
   }
-  return spans.filter((span) => !spans.some((other) => other !== span && other.start <= span.start && span.end <= other.end && other.end - other.start > span.end - span.start)).sort((a, b) => a.start - b.start);
+  // keep a span unless a longer (or equal, earlier-found) span holds it and has a reading or it has none
+  const order = all.map((span, i) => ({ span, i })).sort((a, b) => a.span.start - b.span.start || b.span.end - a.span.end || a.i - b.i);
+  const kept: DateSpan[] = [];
+  let maxEndRead = -1;
+  let maxEndAny = -1;
+  for (const { span } of order) {
+    const hidden = span.end <= maxEndRead || (span.dates.length === 0 && span.end <= maxEndAny);
+    if (!hidden) kept.push(span);
+    maxEndAny = Math.max(maxEndAny, span.end);
+    if (span.dates.length > 0) maxEndRead = Math.max(maxEndRead, span.end);
+  }
+  return kept;
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -197,7 +238,7 @@ const VANISHED = '\u00AD';
  */
 export const BARRIER = '\u0001';
 
-const PLACEHOLDER = /\[(?:PATIENT_NAME|DATE_OF_BIRTH|MEMBER_ID|CLAIM_[1-9]\d*)\]/g;
+const PLACEHOLDER = /\[(?:PATIENT_NAME|DATE_OF_BIRTH|MEMBER_ID|CLAIM_([1-9]\d*))\]/g;
 
 const foldedCodePoints = new Map<string, string>();
 
@@ -271,8 +312,6 @@ interface Range {
 /** A range of a view as the NFKC range it came from. */
 const inNormal = (view: View, start: number, end: number): Range => ({ start: view.from[start] ?? 0, end: view.to[end - 1] ?? 0 });
 
-const within = (inner: Range, outer: Range) => outer.start <= inner.start && inner.end <= outer.end;
-
 /** Whether a written code point starts a capitalized word: upper or title case, or a character with no case. */
 const capital = (codePoint: string) => codePoint !== codePoint.toLowerCase() || codePoint === codePoint.toUpperCase();
 
@@ -284,20 +323,26 @@ const writtenAt = (view: View, normal: string, index: number) => codePointAt(nor
 
 /** Dashes (with the minus sign and hyphen bullet PDF text writes for a hyphen), apostrophes, the underscore and VANISHED: they join a name anywhere. */
 const NAME_JOINERS = "\\p{Pd}\\u2212\\u2043'\\u2018\\u2019\\u02BC`\\u00B4_\\u00AD";
-/** White space, dashes and VANISHED: they join a member ID or claim number anywhere ("." and "_" only next to a letter). */
+/** White space, dashes and VANISHED: they join a member ID or claim number anywhere ("." "_" "/" ":" "#" and "(" only next to a letter). */
 const NUMBER_JOINERS = '\\s\\p{Pd}\\u2212\\u2043\\u00AD';
+/** A line break, and a dash (or VANISHED) before one: a word hyphenated at the end of a line ("Van-⏎tree"). */
+const LINE_BREAK = '(?:\\r\\n|[\\n\\r\\u0085\\u2028\\u2029])';
+const HYPHENATION = `[\\p{Pd}\\u2212\\u2043\\u00AD]${SPACES.replace('+', '*')}${LINE_BREAK}${SPACES.replace('+', '*')}`;
 
 const GAP = {
-  /** Inside a name's part, near its ends: "Van-tree", "O’Brien". */
-  tight: `[${NAME_JOINERS}]*`,
+  /** Inside a name's part, near its ends: "Van-tree", "O’Brien", "Vantr-⏎ee". */
+  tight: `(?:[${NAME_JOINERS}]|${HYPHENATION})*`,
   /** Inside a name's part, two letters or more from each end: a space or period too, if the pieces it makes pass (spacedPiecesPass). */
   spaced: `[${NAME_JOINERS}\\s.]*`,
   /** Between the parts the records hold apart: any joiner, white space, a period or a comma. */
   part: `[${NAME_JOINERS}\\s.,]*`,
   number: `[${NUMBER_JOINERS}]*`,
-  /** Between two characters of a number of which one is a letter: "SYN.555001", "ZZ_1234567" (never "150.00"). */
-  numberNearLetter: `[${NUMBER_JOINERS}._]*`,
+  /** Between two characters of a number of which one is a letter: "SYN.555001", "ZZ_1234567", "ZZ#1234567", "ZZ(1234567)" (never "150.00"). */
+  numberNearLetter: `[${NUMBER_JOINERS}._/:#(]*`,
 } as const;
+
+/** A gap that is a word hyphenated at a line break, which joins inside a part whatever the pieces' case ("Jo-⏎ann"). */
+const HYPHENATED = new RegExp(`^[${NAME_JOINERS}]*${HYPHENATION}[${NAME_JOINERS}]*$`, 'u');
 
 /** A name's words and parts as the records write them: words split by white space, ",", ";" and "/"; parts by dashes, apostrophes, "." and "_". */
 const WORD_SPLIT = /[\s,;/]+/u;
@@ -317,7 +362,7 @@ interface Form {
   readonly pattern: RegExp;
   /** For a name, whether each gap is inside a part (where a space must leave capitalized pieces of two letters or more). */
   readonly insidePart: readonly boolean[];
-  /** A number of digits only: never an amount, and not a date written with its separators. */
+  /** A number of digits only: only such a number may be a claim's amount, or the digits of a date written with its dashes. */
   readonly digitsOnly: boolean;
 }
 
@@ -426,7 +471,7 @@ function spacedPiecesPass(form: Form, view: View, normal: string, start: number,
     const codePoint = codePointAt(view.text, i);
     if (WORD_CHARACTER.test(codePoint) && codePoint !== 'ʼ') {
       if (letters.length > 0) {
-        spaced.push(/[\s.,]/u.test(gap));
+        spaced.push(/[\s.,]/u.test(gap) && !HYPHENATED.test(gap));
       }
       letters.push(i);
       gap = '';
@@ -452,8 +497,16 @@ function spacedPiecesPass(form: Form, view: View, normal: string, start: number,
   return form.insidePart.every((inside, i) => !inside || spaced[i] !== true || (passes(pieces.find(([, last]) => last === i)) && passes(pieces.find(([from]) => from === i + 1))));
 }
 
-/** Whether digits at an NFKC range are written as an amount: after a currency sign, or with cents after them. */
-const isAmount = (normal: string, range: Range) => /\p{Sc}\s*$/u.test(normal.slice(Math.max(0, range.start - 8), range.start)) || /^[.,]\d{2}(?!\d)/u.test(normal.slice(range.end, range.end + 4));
+/**
+ * Whether a claim's digits at an NFKC range are written as an amount: after a currency sign and with
+ * cents after them ("$15000.00" for claim 15000). The digits with their cents are then never the claim's
+ * own written form, which holds no cents. A member ID is never read as an amount, nor a claim's digits
+ * with only one of the two ("$15000", "15000.00" stay the claim's).
+ */
+const isAmount = (normal: string, range: Range) => /\p{Sc}\s*$/u.test(normal.slice(Math.max(0, range.start - 8), range.start)) && /^[.,]\d{2}(?!\d)/u.test(normal.slice(range.end, range.end + 4));
+
+/** A dash in a number's match: the only date separator a number may hold (an invisible character or a space is none). */
+const DASHED = /[\p{Pd}−⁃]/u;
 
 interface Found extends Range {
   readonly kind: Kind;
@@ -467,7 +520,7 @@ interface Found extends Range {
  */
 function matchesIn(normal: string, subject: Subject): Found[] {
   const found: Found[] = [];
-  // Dates on both readings of invisible characters. A date that is not a date of birth stays, and holds no name, nor a number written with its separators.
+  // Dates on both readings of invisible characters. A separated date with a calendar reading that is not a date of birth stays, and holds no name, nor a number written with its dashes.
   const otherDates: Range[] = [];
   const births = new Set(subject.datesOfBirth ?? []);
   for (const invisible of ['drop', 'space'] as const) {
@@ -476,12 +529,15 @@ function matchesIn(normal: string, subject: Subject): Found[] {
       const range = inNormal(view, span.start, span.end);
       if (subject.datesOfBirth !== null && (span.dates.some((date) => births.has(date)) || BIRTH_LABEL.test(view.text.slice(Math.max(0, span.start - 40), span.start)))) {
         found.push({ ...range, kind: 'birth', claim: 0 });
-      } else {
+      } else if (span.separated && span.dates.length > 0) {
         otherDates.push(range);
       }
     }
   }
-  const inOtherDate = (range: Range) => otherDates.some((date) => within(range, date));
+  otherDates.sort((a, b) => a.start - b.start);
+  const reach: number[] = [];
+  otherDates.forEach((date, i) => reach.push(Math.max(reach[i - 1] ?? -1, date.end)));
+  const inOtherDate = (range: Range) => (reach[firstIndex(otherDates, (date) => date.start > range.start) - 1] ?? -1) >= range.end;
   const view = viewOf(normal, 'join');
   const names: Range[] = [];
   for (const form of formsOf(subject)) {
@@ -500,7 +556,7 @@ function matchesIn(normal: string, subject: Subject): Found[] {
           continue;
         }
         names.push({ start, end });
-      } else if (form.digitsOnly && (isAmount(normal, range) || (inOtherDate(range) && match[0].length > form.compact.length))) {
+      } else if (form.digitsOnly && ((form.kind === 'claim' && isAmount(normal, range)) || (inOtherDate(range) && DASHED.test(match[0])))) {
         continue;
       }
       found.push({ ...range, kind: form.kind, claim: form.claim });
@@ -516,7 +572,8 @@ function matchesIn(normal: string, subject: Subject): Found[] {
 
 /** What may lie between an initial and the name it belongs to: white space, apostrophes, dashes, "_" and VANISHED (after the name, a comma too). */
 const INITIAL_GAP = /^[\s'‘’ʼ`´\p{Pd}−⁃_\u00AD]*$/u;
-const INITIAL_GAP_AFTER = /^[\s'‘’ʼ`´\p{Pd}−⁃_\u00AD]*,?[\s\u00AD]*$/u;
+const INITIAL_GAP_AFTER = /^[\s'‘’ʼ`´\p{Pd}−⁃_\u00AD]*(?:,[\s\u00AD]*)?$/u;
+const GAP_CHARACTER = /^[\s'‘’ʼ`´\p{Pd}−⁃_\u00AD,]$/u;
 
 /**
  * The initials of the patient's name written next to a name (view ranges), to a fixed point, so
@@ -540,37 +597,85 @@ function initialsNextToNames(view: View, normal: string, names: readonly Range[]
   }
   const written = (range: Range) => normal.slice(view.from[range.start] ?? 0, view.to[range.end - 1] ?? 0);
   const lowerCase = (range: Range) => written(range) === written(range).toLowerCase();
-  const taken: Range[] = [...names];
-  const isTaken = (range: Range) => taken.some((other) => other.start < range.end && range.start < other.end);
-  for (let added = true; added; ) {
-    added = false;
-    for (const candidate of candidates) {
-      if (isTaken(candidate)) {
-        continue;
-      }
-      const cased = (next: Range) => capital(written(candidate)) || lowerCase(next);
-      const dotted = view.text[candidate.end] === '.';
-      const resume = candidate.end + (dotted ? 1 : 0);
-      const following = taken.filter((other) => other.start >= resume).sort((a, b) => a.start - b.start)[0];
-      const preceding = taken.filter((other) => other.end <= candidate.start).sort((a, b) => b.end - a.end)[0];
-      const precedes = following !== undefined && INITIAL_GAP.test(view.text.slice(resume, following.start)) && cased(following);
-      const follows = preceding !== undefined && INITIAL_GAP_AFTER.test(view.text.slice(preceding.end, candidate.start)) && cased(preceding) && (dotted || !beforeLowerCaseWord(view, normal, candidate.end, [...taken, ...candidates]));
-      if (precedes || follows) {
-        taken.push(candidate);
-        added = true;
+  // A candidate inside a name is part of it, never an initial.
+  const depth = new Int32Array(view.text.length + 1);
+  for (const name of names) {
+    depth[name.start] = (depth[name.start] ?? 0) + 1;
+    depth[name.end] = (depth[name.end] ?? 0) - 1;
+  }
+  for (let i = 1; i < depth.length; i += 1) {
+    depth[i] = (depth[i] ?? 0) + (depth[i - 1] ?? 0);
+  }
+  const runStart = new Int32Array(view.text.length + 1);
+  for (let i = 1; i <= view.text.length; i += 1) {
+    runStart[i] = GAP_CHARACTER.test(view.text[i - 1] ?? '') ? (runStart[i - 1] ?? 0) : i;
+  }
+  const known = new Set([...names, ...candidates].map((range) => range.start));
+  // The names nearest a position on each side. Where several start (or end) at one place, the shortest is
+  // the nearest part, the one whose case the initial is read against ("p. aa, Patient" reads "aa").
+  const byStart = [...names].sort((a, b) => a.start - b.start || a.end - b.end);
+  const byEnd = [...names].sort((a, b) => a.end - b.end || a.start - b.start);
+  const nameFrom = (position: number) => byStart[firstIndex(byStart, (range) => range.start >= position)];
+  const nameUpTo = (position: number) => byEnd[firstIndex(byEnd, (range) => range.end > position) - 1];
+  // A candidate is decided by the nearest taken range on each side. Only a letter-free gap counts, so a
+  // candidate taken changes only its neighbouring candidates: they are looked at again, once each time.
+  const taken = new Set<number>();
+  const queue = candidates.map((_, index) => index);
+  const queued = new Set(queue);
+  for (let head = 0; head < queue.length; head += 1) {
+    const index = queue[head] ?? 0;
+    queued.delete(index);
+    const candidate = candidates[index];
+    if (candidate === undefined || taken.has(index) || (depth[candidate.start] ?? 0) > 0) {
+      continue;
+    }
+    const cased = (next: Range) => capital(written(candidate)) || lowerCase(next);
+    const dotted = view.text[candidate.end] === '.';
+    const resume = candidate.end + (dotted ? 1 : 0);
+    const after = taken.has(index + 1) ? candidates[index + 1] : undefined;
+    const before = taken.has(index - 1) ? candidates[index - 1] : undefined;
+    const name = nameFrom(resume);
+    const earlier = nameUpTo(candidate.start);
+    const following = after !== undefined && after.start >= resume && (name === undefined || after.start < name.start) ? after : name;
+    const preceding = before !== undefined && (earlier === undefined || before.end > earlier.end) ? before : earlier;
+    const precedes = following !== undefined && INITIAL_GAP.test(view.text.slice(resume, following.start)) && cased(following);
+    const gapFrom = preceding === undefined ? 0 : preceding.end + (preceding === before && view.text[preceding.end] === '.' ? 1 : 0);
+    const follows = preceding !== undefined && (runStart[candidate.start] ?? 0) <= gapFrom && INITIAL_GAP_AFTER.test(view.text.slice(gapFrom, candidate.start)) && cased(preceding) && (dotted || !beforeLowerCaseWord(view, normal, candidate.end, known));
+    if (precedes || follows) {
+      taken.add(index);
+      for (const neighbour of [index - 1, index + 1]) {
+        if (neighbour >= 0 && neighbour < candidates.length && !taken.has(neighbour) && !queued.has(neighbour)) {
+          queue.push(neighbour);
+          queued.add(neighbour);
+        }
       }
     }
   }
-  return taken.slice(names.length);
+  return candidates.filter((_, index) => taken.has(index));
 }
 
-/** Whether the next word after a view position is written in lower case and is neither a name nor a possible initial. */
-function beforeLowerCaseWord(view: View, normal: string, position: number, known: readonly Range[]): boolean {
+/** The first index of a sorted list at which a monotone test holds (the list's length if it never does). */
+function firstIndex<T>(list: readonly T[], test: (item: T) => boolean): number {
+  let low = 0;
+  let high = list.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (test(list[middle] as T)) {
+      high = middle;
+    } else {
+      low = middle + 1;
+    }
+  }
+  return low;
+}
+
+/** Whether the next word after a view position is written in lower case and is neither a name nor a possible initial (known: their starts). */
+function beforeLowerCaseWord(view: View, normal: string, position: number, known: ReadonlySet<number>): boolean {
   const space = /[\s\u00AD]*/uy;
   space.lastIndex = position;
   space.exec(view.text);
   const start = space.lastIndex;
-  if (start >= view.text.length || !WORD_CHARACTER.test(codePointAt(view.text, start)) || known.some((range) => range.start === start)) {
+  if (start >= view.text.length || !WORD_CHARACTER.test(codePointAt(view.text, start)) || known.has(start)) {
     return false;
   }
   return !capital(writtenAt(view, normal, start));
@@ -616,9 +721,16 @@ export function redactionForms(patient: PatientIdentifiers, claims: readonly Let
     .sort((a, b) => b.form.length - a.form.length || a.form.localeCompare(b.form) || a.placeholder.localeCompare(b.placeholder));
 }
 
+/**
+ * The letter as NFKC text with its own square brackets made parentheses, so the only square brackets
+ * sent are placeholders: a letter that writes "[CLAIM_1]" itself cannot have it cited as claim 1.
+ * Each bracket is one UTF-16 unit, so every position stays where it was.
+ */
+const unbracketed = (text: string) => text.normalize('NFKC').replace(/[[\]]/g, (bracket) => (bracket === '[' ? '(' : ')'));
+
 /** The letter as NFKC text and the spans redaction replaces in it, in order, each with its placeholder: what redactLetter writes. */
 export function redactionSpans(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): { readonly text: string; readonly spans: readonly { readonly start: number; readonly end: number; readonly placeholder: string }[] } {
-  const normal = text.normalize('NFKC');
+  const normal = unbracketed(text);
   return { text: normal, spans: merge(matchesIn(normal, letterSubject(patient, claims))) };
 }
 
@@ -634,12 +746,16 @@ export function redactLetter(text: string, patient: PatientIdentifiers, claims: 
   return { text: redacted, claims: new Map(claims.map((claim, index) => [`[CLAIM_${String(index + 1)}]`, claim.claimId])), replaced: spans.length };
 }
 
-/** NFKC text with each exact placeholder made the BARRIER, so no match reaches into or across one. */
-const masked = (text: string) => text.normalize('NFKC').replace(PLACEHOLDER, BARRIER);
+/**
+ * NFKC text with each exact placeholder made the BARRIER, so no match reaches into or across one. A
+ * claim's placeholder past the call's claims (all of them, for the screen, which knows no call) keeps its
+ * digits between two barriers: a letter's own "[CLAIM_7654321]" still holds 7654321 for every check.
+ */
+const masked = (text: string, claims = 0) => text.normalize('NFKC').replace(PLACEHOLDER, (_, claim?: string) => (claim === undefined || Number.parseInt(claim, 10) <= claims ? BARRIER : `${BARRIER}${claim}${BARRIER}`));
 
 /** Whether any of the identifiers is still in the text, in any form redaction reads (the check after redaction). */
 export function holdsIdentifier(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): boolean {
-  return matchesIn(masked(text), letterSubject(patient, claims)).length > 0;
+  return matchesIn(masked(text, claims.length), letterSubject(patient, claims)).length > 0;
 }
 
 /**
@@ -680,17 +796,19 @@ export function identifierTokenRuns(text: string, options: { readonly joins: (be
   return [...runs];
 }
 
-/** What joins two tokens of one identifier in a letter: white space, dashes and invisible characters, and "." or "_" next to a letter. */
+/** What joins two tokens of one identifier in a letter: white space, dashes and invisible characters, and ".", "_", "/", ":", "#" or "(" next to a letter. */
 function letterJoins(between: string, left: string, right: string): boolean {
-  return /^[\s\p{Pd}−⁃\u00AD._]+$/u.test(between) && (!/[._]/u.test(between) || /\p{L}\p{M}*$/u.test(left) || /^\p{L}/u.test(right));
+  return /^[\s\p{Pd}−⁃\u00AD._/:#(]+$/u.test(between) && (!/[._/:#(]/u.test(between) || /\p{L}\p{M}*$/u.test(left) || /^\p{L}/u.test(right));
 }
 
 /**
  * The runs of the redacted text that could be another patient's member ID or claim number: each token
  * with a digit in it, and each run of up to three tokens a letter may have spaced, hyphenated or joined
- * with an underscore, a period or an invisible character ("ZZ 1234567", "ZZ_7654321", "ID:ZZ7654321"),
- * as compact identifiers (letters and digits, upper case) of at least five characters. An exact
- * placeholder is never one, nor part of one.
+ * with an underscore, a period, a slash, a colon, "#", "(" or an invisible character ("ZZ 1234567",
+ * "ZZ_7654321", "ZZ/7654321", "ZZ#7654321", "ID:ZZ7654321"), as compact identifiers (letters and digits,
+ * upper case) of at least five characters. A placeholder's word is never one, nor part of one; a claim's placeholder keeps its digits
+ * (a redacted letter's [CLAIM_n] number its claims, never five digits; a letter's own "[CLAIM_7654321]"
+ * offers 7654321).
  */
 export function identifierCandidates(text: string): string[] {
   return identifierTokenRuns(masked(text), { joins: letterJoins, maxTokens: 3, keep: (run) => /\d/.test(run) && run.length >= 5 }).sort();

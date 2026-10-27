@@ -1,8 +1,8 @@
 {
   "case": "MOD-14",
   "module": "MOD",
-  "title": "A letter that writes another patient's member ID or claim number with `_`, `.`, a dash, spaces, an invisible character, after `ID:` or in brackets",
-  "assertion": "The one-patient screen is offered it, in the redacted letter too; an exact placeholder, or a part of one, never",
+  "title": "A letter that writes another patient's member ID or claim number, with a letter prefix or digits alone, with a dash, spaces or an invisible character, `_`, `.`, `/`, `:`, `#` or `(` next to a letter, after `ID:`, in brackets or as a claim placeholder's digits (`[CLAIM_7654321]`)",
+  "assertion": "The one-patient screen is offered it, in the redacted letter too; a placeholder's word, or a redacted letter's own placeholder, never. Digits alone with `/` or `.` between them are not offered (a date's or an amount's writing; recorded in docs/adr/0054)",
   "synthetic": true,
   "completesIn": 10,
   "assertedBy": [

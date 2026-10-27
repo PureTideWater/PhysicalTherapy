@@ -109,9 +109,10 @@ export function identifierKinds(input: Pick<NarrativeInput, 'identifiers' | 'nam
 /**
  * Whether any of the identifiers is in the text in a form the letter reader's redaction reads
  * (../redact.ts): a name with its case, marks, dashes and apostrophes written any way, a number with
- * its spaces, dashes, invisible characters, or a period or underscore next to a letter. An amount, or a
- * date written with its separators, is not a number, so the facts' "$1234.50" and "2026-03-05" never
- * read as a claim's 123450 or 20260305.
+ * its spaces, dashes, invisible characters, or a period, underscore, slash or colon next to a letter.
+ * Every number is read as a member ID is, never as an amount ("$12345678" is number 12345678). A period
+ * never joins digits, and a date written with its dashes that a calendar holds is a date, so the facts'
+ * "$1234.50" and "2026-03-05" never read as a claim's 123450 or 20260305.
  */
 export function mentionsIdentifier(text: string, identifiers: { readonly names: readonly string[]; readonly numbers: readonly string[] }): boolean {
   return holdsNameOrNumber(text, identifiers);

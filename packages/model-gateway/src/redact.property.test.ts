@@ -12,9 +12,13 @@ import { type LetterClaim, type PatientIdentifiers, compactIdentifier, dateForms
  * - every place a claim's number was written is a claim's placeholder, the lowest claim of those it could be;
  * - every placeholder in the output is exact and counted, and the self-check finds nothing;
  * - every letter or digit today's code (a frozen copy, below) replaces is still replaced, except in a date that is not a
- *   date of birth, or an amount (the two over-redactions the change removes on purpose);
+ *   date of birth and that this test reads as a calendar date with its separators, or a claim's digits written as an
+ *   amount (the two over-redactions the change removes on purpose);
+ * - a digits-only number written with a dash or an invisible character is replaced unless the written text is a calendar
+ *   date with its separators that is not the date of birth (the generator writes such numbers, and dates' digits as numbers);
  * - text that holds none of the patient's forms is sent unchanged, common phrases, amounts and deadlines included;
- * - the one-patient screen is offered another patient's ID however it is written, and never a placeholder.
+ * - the one-patient screen is offered another patient's ID however it is written, digits alone too, and never a
+ *   placeholder's word.
  * A fixed number of runs, as the repository's property tests use; no precondition filters a run.
  */
 
@@ -68,13 +72,23 @@ function writePart(value: string, style: Style, variant: Variant, pick: number):
   }
 }
 
-const NUMBER_JOINERS = [' ', '-', '–', '−', '\u200B', '\u00AD'];
-const NEAR_LETTER_JOINERS = ['_', '.'];
+const NUMBER_JOINERS = [' ', '-', '–', '−', '\u200B', '\u00AD', '\u2060'];
+const NEAR_LETTER_JOINERS = ['_', '.', '/', ':'];
+const DATE_DASHES = ['-', '–', '−', '‐'];
 
-/** A member ID or claim number as a letter writes it: its case, and up to two joiners (a period or underscore only next to a letter). Digits alone are written whole. */
-function writeNumber(value: string, lower: boolean, picks: readonly number[]): string {
+/**
+ * A member ID or claim number as a letter writes it: its case, and up to two joiners (a period, underscore,
+ * slash or colon only next to a letter), digits alone too. Dated, six or eight digits are cut where a date's
+ * numbers end (2027-03-15, 03–15–2027, 03-15-61), with one dash.
+ */
+function writeNumber(value: string, lower: boolean, picks: readonly number[], dated = false): string {
   const characters = [...(lower ? value.toLowerCase() : value)];
-  if (/^\d+$/.test(value) || characters.length < 2) return characters.join('');
+  if (characters.length < 2) return characters.join('');
+  if (dated && /^(\d{6}|\d{8})$/.test(value)) {
+    const dash = DATE_DASHES[(picks[0] ?? 0) % DATE_DASHES.length] ?? '-';
+    const at = value.length === 8 && (picks[1] ?? 0) % 2 === 0 ? [4, 6] : [2, 4];
+    return characters.map((character, i) => `${at.includes(i) ? dash : ''}${character}`).join('');
+  }
   const cuts = new Map<number, string>();
   for (const pick of picks) {
     const at = 1 + (pick % (characters.length - 1));
@@ -101,8 +115,41 @@ interface Case {
 
 const FILLER = ['The claim was denied because prior authorization was not obtained. ', 'Our reference number is REF-SYN-77. ', 'To appeal, submit a written request by May 30, 2026. ', 'We paid $150.00 of the billed amount. ', 'Records in a timely manner. '];
 
+const MONTH_NAMES = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+/**
+ * The calendar dates written text is, read here on its own and not by the code under test: three numbers
+ * with a slash, a period or a dash between each two (year first, or month and day in either order before
+ * the year), or a month word with a day and a year. Numbers with spaces alone, compact digits, an invisible
+ * character and a date no calendar holds read as none.
+ */
+function separatedDateReadings(written: string): string[] {
+  const valid = (year: number, month: number, day: number) => {
+    const date = new Date(Date.UTC(year, month - 1, day));
+    return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day ? date.toISOString().slice(0, 10) : null;
+  };
+  const yearsOf = (text: string) => (text.length === 2 ? [1900 + Number.parseInt(text, 10), 2000 + Number.parseInt(text, 10)] : text.length === 4 ? [Number.parseInt(text, 10)] : []);
+  const read = (orders: readonly (readonly [string, string, string])[]) => [...new Set(orders.flatMap(([year, month, day]) => yearsOf(year).map((y) => valid(y, Number.parseInt(month, 10), Number.parseInt(day, 10)))).filter((date): date is string => date !== null))];
+  const word = (written.match(/[a-z]{3,}/gi) ?? []).find((each) => MONTH_NAMES.includes(each.slice(0, 3).toLowerCase()));
+  const numbers = written.match(/\d+/g) ?? [];
+  if (/[a-z]/i.test(written)) {
+    const month = MONTH_NAMES.indexOf(word?.slice(0, 3).toLowerCase() ?? '') + 1;
+    const [day = '', year = ''] = numbers;
+    return month === 0 || numbers.length !== 2 || day.length > 2 ? [] : read([[year, String(month), day]]);
+  }
+  const parts = written.trim().split(/\s*[/.\p{Pd}\u2212\u2043]\s*/u);
+  if (parts.length !== 3 || !parts.every((part) => /^\d{1,4}$/.test(part))) return [];
+  const [a = '', b = '', c = ''] = parts;
+  return a.length === 4 ? read([[a, b, c]]) : read([[c, a, b], [c, b, a]]);
+}
+
 const nameShape = fc.record({ first: part, middle, last: part, lastFirst: fc.boolean() });
-const number = fc.oneof(fc.stringMatching(/^(ZZ|SYN|YY)[0-9]{5,8}$/), fc.stringMatching(/^[0-9]{6,9}$/));
+/** A date's digits as a number: year first or last, compact (20270315, 03152027, 031527). */
+const datedNumber = fc.tuple(fc.date({ min: new Date('1990-01-01T00:00:00Z'), max: new Date('2035-12-31T00:00:00Z'), noInvalidDate: true }), fc.nat(2)).map(([date, form]) => {
+  const [year = '', month = '', day = ''] = date.toISOString().slice(0, 10).split('-');
+  return [`${year}${month}${day}`, `${month}${day}${year}`, `${month}${day}${year.slice(2)}`][form] ?? `${year}${month}${day}`;
+});
+const number = fc.oneof(fc.stringMatching(/^(ZZ|SYN|YY)[0-9]{5,8}$/), fc.stringMatching(/^[0-9]{6,9}$/), datedNumber);
 const writing = fc.record({ style: fc.constantFrom<Style>('upper', 'title', 'lower'), variant: fc.constantFrom<Variant>('plain', 'marks', 'sharp', 'typographic', 'spaced', 'invisible'), pick: fc.nat(1000) });
 const slot = fc.record({
   kind: fc.constantFrom('name', 'name', 'name', 'member', 'claim', 'claim', 'birth', 'filler'),
@@ -110,6 +157,7 @@ const slot = fc.record({
   writing,
   picks: fc.array(fc.nat(1000), { maxLength: 2 }),
   lower: fc.boolean(),
+  dated: fc.boolean(),
   index: fc.nat(1000),
 });
 
@@ -136,7 +184,13 @@ const letterCase: fc.Arbitrary<Case> = fc
     const claims: LetterClaim[] = numbers.map((value, i) => ({ claimId: `synthetic-claim-${String(i + 1)}`, patientPseudonym: 'synthetic-patient-13', claimNumbers: [value] }));
     const segments: Segment[] = [];
     const kept = (text: string) => segments.push({ text, secret: 'none' });
-    for (const { kind, shape, writing: w, picks, lower, index } of slots) {
+    // A digits-only number written as a calendar date with its dashes, and not the date of birth, may stay (a deadline is read so).
+    const numberSegment = (value: string, secret: 'member' | 'claim', written: string, claim?: number): Segment => {
+      const readings = separatedDateReadings(written);
+      const keptAsDate = /^\d+$/.test(value) && readings.length > 0 && !readings.includes(dob);
+      return { text: written, secret: keptAsDate ? 'none' : secret, ...(claim === undefined ? {} : { claim }) };
+    };
+    for (const { kind, shape, writing: w, picks, lower, dated, index } of slots) {
       if (kind === 'name') {
         const write = (value: string) => writePart(value, w.style, w.variant, w.pick);
         const initial = (value: string) => cased([...value][0] ?? '', w.style === 'lower' ? 'lower' : 'upper');
@@ -154,12 +208,14 @@ const letterCase: fc.Arbitrary<Case> = fc
         kept([', ', '.\n', ' was seen. ', '😀 '][index % 4] ?? '');
       } else if (kind === 'member') {
         kept(['Member ID ', 'member ', 'ID:', 'Member\u200B'][index % 4] ?? '');
-        segments.push({ text: writeNumber(members[index % members.length] ?? '', lower, picks), secret: 'member' });
+        const value = members[index % members.length] ?? '';
+        segments.push(numberSegment(value, 'member', writeNumber(value, lower, picks, dated)));
         kept([';\n', ' on file. '][index % 2] ?? '');
       } else if (kind === 'claim') {
         const claim = index % numbers.length;
         kept(['Claim ', 'claim number ', 'Claim#'][index % 3] ?? '');
-        segments.push({ text: writeNumber(numbers[claim] ?? '', lower, picks), secret: 'claim', claim: claim + 1 });
+        const value = numbers[claim] ?? '';
+        segments.push(numberSegment(value, 'claim', writeNumber(value, lower, picks, dated), claim + 1));
         kept(['; ', ' was denied. '][index % 2] ?? '');
       } else if (kind === 'birth') {
         const forms = dateForms(dob);
@@ -245,10 +301,19 @@ function legacyReplaced(letter: string, patient: PatientIdentifiers, claims: rea
   return replaced;
 }
 
-/** Positions today's code replaced that the change keeps on purpose: inside a date that is not a date of birth, and an amount's digits. */
-function keptOnPurpose(normal: string, patient: PatientIdentifiers): (at: number) => boolean {
-  const dates = datesIn(normal).filter((span) => !legacyBirth(normal, span, patient.datesOfBirth));
-  const amounts = [...normal.matchAll(/\p{Sc}\s*[\d.,]+|\d+[.,]\d{2}(?!\d)/gu)].map((match) => ({ start: match.index, end: match.index + match[0].length }));
+/**
+ * Positions today's code replaced that the change keeps on purpose: inside a date that is not a date of
+ * birth and that this test reads as a calendar date with its separators (separatedDateReadings, not the
+ * code's own readings), and a claim's digits written as an amount, after a currency sign and with cents
+ * (never a member ID's).
+ */
+function keptOnPurpose(normal: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): (at: number) => boolean {
+  const dates = datesIn(normal).filter((span) => !legacyBirth(normal, span, patient.datesOfBirth) && separatedDateReadings(normal.slice(span.start, span.end)).length > 0);
+  const claimDigits = new Set(claims.flatMap((claim) => claim.claimNumbers.map(compactIdentifier)));
+  const memberDigits = new Set(patient.memberIds.map(compactIdentifier));
+  const amounts = [...normal.matchAll(/\p{Sc}\s*(\d+)[.,]\d{2}(?!\d)/gu)]
+    .filter((match) => claimDigits.has(match[1] ?? '') && !memberDigits.has(match[1] ?? ''))
+    .map((match) => ({ start: match.index, end: match.index + match[0].length }));
   return (at) => [...dates, ...amounts].some((span) => span.start <= at && at < span.end);
 }
 
@@ -295,7 +360,7 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
   it('still replaces every letter or digit today’s code replaced, but in a date that is not a date of birth or an amount (property and the design’s section 1 rows)', () => {
     const check = (text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]) => {
       const { text: normal, spans } = redactionSpans(text, patient, claims);
-      const kept = keptOnPurpose(normal, patient);
+      const kept = keptOnPurpose(normal, patient, claims);
       const missed = [...legacyReplaced(text, patient, claims)].filter((at) => /[\p{L}\p{N}]/u.test(normal[at] ?? '') && !kept(at) && !spans.some((span) => span.start <= at && at < span.end));
       expect(missed, `${JSON.stringify(text)} -> ${JSON.stringify(redactLetter(text, patient, claims).text)}`).toEqual([]);
     };
@@ -347,7 +412,8 @@ const PLACEHOLDERS = fc.oneof(fc.constantFrom('[PATIENT_NAME]', '[DATE_OF_BIRTH]
 
 describe('MOD-14: the one-patient screen sees every written form of another patient’s identifier, never a placeholder', () => {
   it('offers another patient’s ID however a letter writes it, in a redacted letter too (property)', () => {
-    const otherId = fc.tuple(fc.constantFrom('ZZ', 'YY', 'QQ', 'SYN'), fc.stringMatching(/^[0-9]{5,8}$/));
+    // With a letter prefix or digits alone; a digits-only ID is spaced, dashed or holds an invisible character, never a "/" or "." (a date's or an amount's writing).
+    const otherId = fc.tuple(fc.constantFrom('ZZ', 'YY', 'QQ', 'SYN', ''), fc.stringMatching(/^[0-9]{5,8}$/));
     const context = fc.record({ before: fc.constantFrom('ID:', 'Member ID ', '[', '(', 'also ', '[CLAIM_1] ', 'REF\u200B', 'patient\u3164'), after: fc.constantFrom(']', ')', '.', ' [MEMBER_ID]', '', ';') });
     fc.assert(
       fc.property(otherId, fc.array(fc.nat(1000), { maxLength: 2 }), fc.boolean(), context, ([prefix, digits], picks, lower, { before, after }) => {
