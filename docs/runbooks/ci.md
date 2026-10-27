@@ -247,7 +247,8 @@ list of builds the installed Playwright pins, whose install fetches any build mi
 fetches only the system libraries; in run 40166129200, whose seven installs took 18 to 29 seconds, the browsers'
 download was about 10 of `e2e (1/2)`'s 24). The image scans keep no cache: each downloads Trivy's vulnerability
 database, the data its verdict is made from, into the runner's temporary directory, outside the checkout the worker
-image is then built from.
+image is then built from. To clear one: `gh cache list --key <its key's prefix>` (`tsc-v1-`, `apt-v1-`, …) and
+`gh cache delete <id>`.
 
 The system packages' cache exists because `playwright install --with-deps` fetches Chromium's libraries and fonts from
 Ubuntu's mirror one package at a time, and about one install in nine stalled there (10 of 92 installs over 60 s, up to
@@ -264,8 +265,7 @@ key's `<ImageOS>` and `<ImageVersion>` are the runner's `ImageOS` and `ImageVers
 `runner-image` step reads, and that version can differ from the one "Set up job" prints: in run 40534270846 (pull
 request #77's first) the `db` and `e2e` jobs' "Set up job" printed 20261012.163.1 while their `ImageVersion`, and so
 their key (`apt-v1-ubuntu26-20261023.163.3-…`), was 20261023.163.3. Match a key against the job's `ImageVersion`, never
-against "Set up job". The cache can only save time: every file apt uses is one the signed index names. To clear one:
-`gh cache list --key tsc-v1-` and `gh cache delete <id>`.
+against "Set up job". The cache can only save time: every file apt uses is one the signed index names.
 
 ## Upgrading the browser
 
