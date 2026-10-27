@@ -18,3 +18,14 @@ Started 2026-10-27. Clone: /tmp/claude-0/-home-user-PhysicalTherapy/e99dbc78-96e
 
 ## Findings
 ## Shots
+## Shots setup (21:xx)
+- /home/user/screens = clone of review-ux (DELETE at end); setup.sh run with TOUR_REF=13f59b1, TOUR_DIR=scratchpad/pr42v/screens-before
+- local supplement spec: scratchpad/pr42v/pr42-capture/pr42.spec.ts (tour helpers + 3 tests: screening states, console mail default/paused, users undelivered); runner run-pr42.sh
+- ids: screening.default, screening.sent-sent, screening-result.not-found, screening.error-budget, screening.paused, screening.error-paused, screening-result.default, console.mail.default, console.mail.paused, settings.users.undelivered (x 1280, 390, 1280-dark)
+- before build started in background (bt6tv6cc8), capture waiting (bnertlyim)
+- AFTER: TOUR_DIR=scratchpad/pr42v/screens-after, TOUR_REF=c37fa7cc, setup.sh then cp pr42.spec.ts, same commands
+- CLEANUP: touch $TOUR_DIR/stop; drop tp_e2e_screens; rm -rf /tmp/tp-e2e-tp_e2e_screens-*; rm -rf /home/user/screens; rm clone
+## Findings so far (code)
+- F-users-complained: users page complained row says 'one sent again will not reach them' but row still offers 'Send again'; Cognito RESEND issues a NEW temp password (cognito-provider.ts:346-350, dev-provider.ts:304-313) -> pressing voids the spam-folder email's password AND is suppressed; no 'contact PaidWhole support' path (runbook 3.4 says operator can lift suppression). should_fix
+- F-users-suppressed: 'Not delivered: check the address, then invite again' for undelivered_reason 'suppressed' (account suppression list; M1 now routes complaint-suppressed there) -> re-send suppressed again; dead end. should_fix
+- before: 30 shots 0 skipped (22:05-22:06), server stopped, port free
