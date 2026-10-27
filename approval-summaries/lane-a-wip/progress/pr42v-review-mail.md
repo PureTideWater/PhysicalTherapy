@@ -15,3 +15,8 @@
   P3 after resume, delivered back, bounce never: same flap
   P4 runbook M1 COMPLAINT check: tp_kind=probe hand-sent on notices -> suppressed, but console_mail_undelivered lists nothing and no log line names it
 - FINDINGS (draft): F1 should_fix M3 flap after resume/first activation (runbook 3.7 claim false; 26h silent closure after resume); F2 should_fix runbook M1/M2 staging checks name places that cannot show the result; F3 should_fix users page + runbook 3.4 'invite again' for suppressed invitation loops (M1 routes more to suppressed)
+- SHOT unit1: 54 files 1101 tests pass (worker mail/platform/screening/digest, infra/test, tools/screening-capacity, web screening, db mail-address)
+- CLOSED sound: e2e screening.spec outcome-stage fix (still asserts priced+engine+shares after complete), helpers restore (throws without kept key; prepare.ts clears dev-auth dir), mail-cutoff/screening fixture timeouts; harness untilComplete + addressCheckTimes/addressCheckProblems (validation stand-in = DB take + 2000ms timer, so >=2000); M5 in PR body (S4#2 47.7, O9); M10, M11 runbook text; event names vs AWS docs (awsdocs clone); AWS docs confirm Permanent/Suppressed counted, OASL not counted, account list entries remain until removed
+- NITs drafted: F4 ADR 0065 (a) bound omits sweep main thread (finishOrFail completes, fails); F5 SendingPausedException for a disabled set unproven (SDK doc: account paused) while M6/M7 rely on it; no O11 check
+- PR body (6f23c42b) M3 row says 'still pages about 2 h after readiness lapses' -> stale vs c37fa7cc (local; to update at push) - note only
+- NEXT: maybe check deploy-window/previous image for screening_run_mail_refusal trigger rename; then StructuredOutput; cleanup clone + verify no tp_test_ dbs
