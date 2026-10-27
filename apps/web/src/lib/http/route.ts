@@ -276,6 +276,23 @@ export interface TextDocument {
   readonly text: { readonly contentType: 'text/plain; charset=utf-8'; readonly body: string };
 }
 
+/**
+ * The page a download was opened from, as its route names it (docs/adr/0079): its path, built from the route's own
+ * constants and parameters that passed opaqueId (lib/http/download-refusal.ts, returnPage), and the values that page
+ * keeps (a form's entries), each validated with that page's own schema. No fragment: a fragment would stop the
+ * browser focusing the refused field or the notice.
+ */
+export interface ReturnPage {
+  readonly path: string;
+  readonly keep?: Readonly<Record<string, string>>;
+}
+
+/**
+ * Where a browser navigation's refusal of a download goes back to, from the request's raw path and query parameters
+ * (the refusal may be that they do not validate); null when they name no page.
+ */
+export type ReturnTo = (params: Readonly<Record<string, string | undefined>>) => ReturnPage | null;
+
 interface BaseContext<P, I> {
   readonly params: P;
   readonly input: I;
@@ -334,6 +351,12 @@ interface CommonSpec<P, I> {
    * origin check. Every other public POST is checked for the application's origin.
    */
   readonly signedBySender?: boolean;
+  /**
+   * A download's page (docs/adr/0079): where a browser navigation's refusal of the download goes back to, with the
+   * refusal in closed codes; a script's request keeps the JSON outcome. Every download route declares one (the
+   * registry test in lib/http/download-refusal.test.ts refuses one without); without it, a navigation goes to /.
+   */
+  readonly returnTo?: ReturnTo;
 }
 
 export interface PublicSpec<P, I, R> extends CommonSpec<P, I> {
@@ -390,5 +413,7 @@ export interface Route<R = unknown> {
   /** Whether a session's CSRF token is required (every mutation of a signed-in user). */
   readonly csrfToken: boolean;
   readonly termsExempt: boolean;
+  /** A download's page for a navigation's refusal, or null (docs/adr/0079). */
+  readonly returnTo: ReturnTo | null;
   invoke(request: RouteRequest, services: Services): Promise<Outcome<R>>;
 }
