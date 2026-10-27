@@ -72,6 +72,7 @@ apps/web/src/lib/copy/words.ts
 apps/web/src/lib/fonts.ts
 apps/web/src/lib/http/attribution.ts
 apps/web/src/lib/http/csrf.ts
+apps/web/src/lib/http/download-refusal.ts
 apps/web/src/lib/http/form.ts
 apps/web/src/lib/http/handler.ts
 apps/web/src/lib/http/invoke.ts
@@ -80,6 +81,7 @@ apps/web/src/lib/http/rate-limit.ts
 apps/web/src/lib/http/received.ts
 apps/web/src/lib/http/route.ts
 apps/web/src/lib/http/security-headers.ts
+apps/web/src/lib/http/sign-in-for.ts
 apps/web/src/lib/legal-surfaces.ts
 apps/web/src/lib/routes/onboarding.ts
 apps/web/src/lib/routes/schemas.ts
