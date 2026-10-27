@@ -29,6 +29,7 @@ import {
   MAIL_NAMESPACE,
   MAIL_PLATFORM_ALARM_CODES,
   MAIL_PLATFORM_ALARM_PERIOD_SECONDS,
+  MAIL_PROBE_HOURS,
   MAIL_PROBE_UNSENT_ALARM,
   MAIL_VALIDATION_CAP_CODE,
   MAIL_VALIDATION_CAP_PERIOD_SECONDS,
@@ -115,8 +116,8 @@ export interface MonitoringProps {
  *
  * The mail streams (docs/adr/0065; audit #76) add eight metric filters, each with its alarm: five codes the platform
  * jobs log (infra/lib/mail.ts, MAIL_PLATFORM_ALARM_CODES: the screening stream paused, a notice not delivered to a
- * recipient, a notice with no recipient, an invitation not delivered, a probe not back), each alarmed at one in five
- * minutes; a probe the platform could not send (MAIL_PROBE_UNSENT_ALARM), alarmed when each of three five-minute periods
+ * recipient, a notice with no recipient, an invitation not delivered, a stream with no probe back in 26 hours, logged on
+ * every run while it holds), each alarmed at one in five minutes; a probe the platform could not send (MAIL_PROBE_UNSENT_ALARM), alarmed when each of three five-minute periods
  * has one; the web's code for an address validation AWS refused (the address-validation account's role or its call),
  * alarmed at one in five minutes; and its code for the day's address validations reaching their cap, alarmed at one in
  * a day. Each is matched on the line's `error_code` and named by it, never by a value from the line; MailStreams holds
@@ -426,7 +427,7 @@ export class Monitoring extends Construct {
       NOTICE_UNDELIVERED: `A ${props.environmentName} support-access or dunning notice did not reach a recipient: reach the practice or organization another way.`,
       NOTICE_UNDELIVERABLE: `A ${props.environmentName} support-access or dunning notice had no one to send to: reach the practice or organization another way.`,
       INVITATION_UNDELIVERED: `A ${props.environmentName} invitation email was not delivered: tell the inviting administrator.`,
-      MAIL_PROBE_MISSED: `A ${props.environmentName} mail probe did not come back within 26 hours: check the identity, the event destination, the rule and the queue.`,
+      MAIL_PROBE_MISSED: `No ${props.environmentName} mail probe of a stream has come back in ${String(MAIL_PROBE_HOURS.missed)} hours, whether the last went and was lost or none could be sent (then MAIL_PROBE_UNSENT too): staging and production close the screening ${String(MAIL_PROBE_HOURS.ready)} hours after the last came back; check the identity, the event destination, the rule, the queue and the job (docs/runbooks/deliverability.md, 3.7).`,
     };
     const codeAlarms: Partial<Record<MailPlatformAlarmCode, cloudwatch.Alarm>> = {};
     for (const code of MAIL_PLATFORM_ALARM_CODES) {
