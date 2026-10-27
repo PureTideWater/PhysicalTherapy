@@ -7,13 +7,22 @@ import type { ModelRequest, ProviderKind } from './provider';
 import type { ModelPurpose } from './purposes';
 import type { PurposeSpec } from './spec';
 
-/** The four purposes' specifications, by purpose. */
-export const PURPOSE_SPECS = {
-  proposeContractTerms: contractTermsSpec,
-  readDenialLetter: denialLetterSpec,
-  draftPacketNarrative: narrativeSpec,
-  suggestEvidenceRequests: evidenceRequestsSpec,
-} as const;
+/**
+ * The four purposes' specifications, by purpose. Each spec is frozen where it is defined (./functions/*), so even a
+ * module loaded before this one cannot change it, and again here with the map; PurposeSpec's members are readonly
+ * (./spec.ts), and the gateway's own prototype and instances are frozen (./gateway.ts). So no code in the process can
+ * remove or replace a purpose's screen, preparation or verifier, swap a spec, or swap the gateway's step that runs the
+ * screen: an assignment or a delete is a compile error and, at run time, a TypeError (combined audit item 120's
+ * review, F6). The map is the gateway's own and is not exported from the package's entry (./index.ts); requestFor and
+ * the gateway's methods are the surface. Code in the process that rewrites a built-in is outside what any module can
+ * stop (docs/adr/0070, Part 3).
+ */
+export const PURPOSE_SPECS = Object.freeze({
+  proposeContractTerms: Object.freeze(contractTermsSpec),
+  readDenialLetter: Object.freeze(denialLetterSpec),
+  draftPacketNarrative: Object.freeze(narrativeSpec),
+  suggestEvidenceRequests: Object.freeze(evidenceRequestsSpec),
+} as const);
 
 export interface PurposeInputs {
   readonly proposeContractTerms: ContractPagesInput;

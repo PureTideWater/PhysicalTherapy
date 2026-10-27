@@ -110,7 +110,8 @@ export default async function AbstractionVersionPage(props: Props) {
             <CardTitle>Have the model propose the terms</CardTitle>
             <CardDescription>
               The model reads one of the version’s contracts or exhibits and proposes its rate records, each field with its page and quote. Code checks every field against its
-              page; you then approve each field yourself, and nothing prices until the practice signs the version off. A payer letter is never sent to it.
+              page; you then approve each field yourself, and nothing prices until the practice signs the version off. A payer letter is never sent to it, and a contract or
+              exhibit is first checked against the practice’s patient records: one that holds an identifier from them is not sent either.
             </CardDescription>
           </CardHeader>
           <CardContent>

@@ -204,7 +204,9 @@ export async function evaluatePracticeExamples(services: PermittedEvaluationServ
   // The practice records check (docs/adr/0070, Part 3), one per practice per run: built in the run's own job scope
   // for the practice (its proof of reach, never read through), it reads in a job scope of its own on the run's
   // pool, as the run, once, and is reused for every example of the practice. Built at the first document to send,
-  // so a practice with none is not read.
+  // so a practice with none is not read; and it reads only when the gateway first screens, after every refusal the
+  // gateway makes without a screen (the kill switch, a spent budget, a retried job's completed calls), so a run
+  // whose calls are all refused that way reads none of the practice's records (combined audit item 120's review, S1).
   let built: PatientRecordsCheck | undefined;
   const patientRecords = async (): Promise<PatientRecordsCheck> =>
     (built ??= await inScope(async (scope) =>

@@ -216,10 +216,19 @@ history. Commit it by pull request: the deploy carrying that commit serves the v
 - **Every feature is off**: the configuration is refused, as before (`MODEL_PATH_UNAVAILABLE` on the web, exit 2 in the
   worker): no feature has passed for the configured provider.
 - **A contract proposal is refused before it is sent**: the gateway logs one line with `practice_id` and the code,
-  never the document or the identifier: `MODEL_INPUT_NAMES_PATIENT` (the document names a patient of the practice; it
-  is a misfiled payer letter or EOB, and its terms are entered by hand), `MODEL_INPUT_SCREEN_UNAVAILABLE` (the
-  practice holds more than 50,000 identifiers), `MODEL_INPUT_SCREEN_FAILED` (the check could not read the records: a
-  key, a query or the scope) or `MODEL_INPUT_SCREEN_INVALID` (a caller passed a records check the gateway did not
-  issue for the practice: a defect in the code, never the document).
+  never the document or the identifier: `MODEL_INPUT_NAMES_PATIENT` (the document holds one of the practice's
+  identifiers: most often a misfiled payer letter or EOB, for which the specialist reads the version's contract or
+  asks the practice for it; also a contract that names a patient, or a collision on a TIN or ZIP+4, whose terms are
+  entered by hand), `MODEL_INPUT_SCREEN_UNAVAILABLE` (the practice holds more than 50,000 identifiers, or passed the
+  bound while the screen read), `MODEL_INPUT_SCREEN_FAILED` (the check could not read the records: a key, a query or
+  the scope; the person's notice says to try again, since the next click reads again) or `MODEL_INPUT_SCREEN_INVALID`
+  (a caller passed a records check the gateway did not issue for the practice: a defect in the code, never the
+  document; the person reads the bound's notice, never that the document is at fault). The web logs
+  `MODEL_SCREEN_LIMITED` (with `practice_id`) when the contract screen's limits stopped a proposal before its screen
+  (20 screens an hour and 60 a day per practice, 20 an hour and 100 a day per person; `contract-proposals.ts`
+  `SCREEN_LIMITS`): the person reads that the checks allowed for now are used, and tries again later or enters the
+  terms by hand. Many lines for one practice are a loop to look into, not a capacity to raise: until the lookup-hash
+  migration (ADR 0070, F3) every screen audits every identifier of the practice. A click the gateway refuses anyway
+  (the kill switch, a spent budget, a replay) reads none of the practice's records.
 - **A pull request that bumps pdf.js or the Textract reader fails `set_changed`**: step 5, before it merges.
 - **The kill switch** still turns every model feature off at once (ADR 0052); it is not part of this runbook.

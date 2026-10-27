@@ -277,18 +277,23 @@ holds.
   It trusts the kind the person chose at upload, so a payer letter or an EOB filed as a contract, or inside a zip
   filed as one, passed it. A third check now runs after it: `contractTermsSpec.screen`.
 - `screen` takes the call's context (`screen?(input, prepared, context)`), so a screen can bind what it reads to the
-  call's own practice. The gateway's order is unchanged and the screen keeps its place: serving, the kill switch and
-  flags, the PHI boundary, `prepare` (the kind check and the framing), the variant's serving check, then `screen`,
-  before the idempotency key, the budget hold and the call. No audited read runs for a call that would be refused.
+  call's own practice. The screen runs last of the gateway's refusals: serving, the kill switch and flags, the PHI
+  boundary, `prepare` (the kind check and the framing), the variant's serving check, a completed call under the
+  idempotency key, a read of the day's spend against the budget and the caller's step before the screen, then
+  `screen`; after it, the budget's hold and the call. No audited read runs for a call the gateway refuses without the
+  screen (ADR 0070, Part 3; its pull request review's S1, which found the screen running before the idempotency key
+  and the budget).
 - The contract screen asks the practice's records (`PatientRecordsCheck`, `src/patient-records.ts`) whether any run
   of the pages is a member ID, a payer claim control number or a patient control number the practice holds. On a
   yes the call is refused (`names_patient`). As with the letter's check, the answer is a code, never which
   identifier, its kind or how many.
 - Unlike the letter's check, the caller cannot supply the records. `ContractPagesInput.patientRecords` is required,
-  the gateway accepts only a check its own factories issued for the call's practice (`screen_invalid` otherwise),
-  and that check opens its own job scope for the practice and reads as the service screen actor (purpose
+  the gateway accepts only a check its own factories issued for the call's practice (`screen_invalid` otherwise), and
+  that check opens its own job scope for the practice and reads as the service screen actor (purpose
   `contract_screen`), not in the caller's scope as `otherPatientRecords` does. A practice holding more than 50,000
-  identifiers is refused (`screen_unavailable`) without a read, and a read that fails is refused (`screen_failed`).
+  identifiers is refused (`screen_unavailable`) without a read (and one whose rows pass the bound while the screen
+  reads, with at most one row read past it), and a read that fails is refused (`screen_failed`), with every read it
+  made audited.
 - A screen's refusal is now logged by the gateway, one line with `practice_id` and an `error_code`, for the letter's
   `more_than_one_patient` as for the contract's codes; the screen's own message is never logged.
 - The letter reader's check, `otherPatientRecords`, is unchanged. Moving it onto the issued, practice-bound check is

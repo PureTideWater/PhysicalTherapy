@@ -170,13 +170,22 @@ export async function modelFeatures(scope: PracticeScope<ScopeClient>, services:
 }
 
 /**
- * The contract screen's refusals (docs/adr/0070, Part 3), by the code the gateway refuses with: the document
- * names a patient of the practice, or it could not be checked (`screen_unavailable`, above the identifier bound;
- * `screen_failed`, the check's own read failed), which the person meets the same way, by entering the terms by
- * hand. Mapped before the generic `refused`, so the screen says which; a check the gateway did not issue
- * (`screen_invalid`) is the code's mistake, not the document's, and stays the generic refusal.
+ * The contract screen's refusals (docs/adr/0070, Part 3), by the code the gateway refuses with, each to the problem
+ * whose words give its case the next step it can take (notices.ts): the document holds an identifier from the
+ * practice's patient records (`names_patient`); it could not be checked, above the identifier bound
+ * (`screen_unavailable`: hand entry, since a second try meets the same bound); or the check's own read failed
+ * (`screen_failed`: try again, since the next click reads again). A check the gateway did not issue
+ * (`screen_invalid`) is the code's mistake, not the document's, so the person is never told the input is at fault
+ * (the generic `refused`): the document was not checked, and a second try meets the same mistake, so it reads as
+ * `screen_unavailable`; the operator's log names it apart (MODEL_INPUT_SCREEN_INVALID). Mapped before the generic
+ * `refused`, so the screen says which.
  */
-const SCREEN_PROBLEMS: Readonly<Record<string, ModelProblem>> = { names_patient: 'names_patient', screen_unavailable: 'screen_unavailable', screen_failed: 'screen_unavailable' };
+const SCREEN_PROBLEMS: Readonly<Record<string, ModelProblem>> = {
+  names_patient: 'names_patient',
+  screen_unavailable: 'screen_unavailable',
+  screen_failed: 'screen_failed',
+  screen_invalid: 'screen_unavailable',
+};
 
 /** The problem a gateway error is, or null for an error that is not the model's (rethrown by the caller). */
 export function modelProblem(error: unknown): ModelProblem | null {

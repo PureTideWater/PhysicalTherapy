@@ -57,7 +57,10 @@ describe('a test file that imports the provider directly', () => {
  * The contract PHI check (combined audit item 120; docs/adr/0070, Part 3) is accepted only when patient-records.ts
  * issued it: its WeakSet is added to in one place, called by the two factories alone, and no other source in the
  * repository builds an object with a namesPatient method (a hand-made check would be refused at runtime as
- * screen_invalid; this keeps one from being written at all).
+ * screen_invalid; this keeps one from being written at all). The factories' callers are held too: a practice check
+ * only where the web proposes and the worker runs the permitted evaluation, each from its own scope on its services'
+ * pool; a synthetic check only in tests and the synthetic evaluation; and the testing module, which issues practice
+ * checks over in-memory practices, reached by nothing but test code.
  */
 describe('the contract screen’s records check is issued only by its two factories', () => {
   const SOURCE = /\.(?:ts|tsx|mts|cts)$/;
@@ -96,21 +99,161 @@ describe('the contract screen’s records check is issued only by its two factor
     expect(definitions.filter((file) => !/\.test\.tsx?$/.test(file))).toEqual([RECORDS]);
   });
 
-  it('leaves the testing module’s checks to tests: no other source imports it', () => {
+  const TEST_FILE = /\.test\.tsx?$/;
+  /**
+   * Tests, their support files, the generated route tests, the e2e and the synthetic evaluation (eval/: its gateway's
+   * actor is the evaluation, which carries no practice's material). A support directory counts only outside the web's
+   * route tree (apps/web/src/app/), where Next serves a page or route by its path though nothing imports it; anything
+   * that imports a support file is followed like any other importer.
+   */
+  const isTestCode = (file: string) =>
+    TEST_FILE.test(file) || /^(?:apps\/web\/e2e|packages\/model-gateway\/eval)\//.test(file) || (/\/(?:test-support|route-tests)\//.test(file) && !file.startsWith('apps/web/src/app/'));
+  const TESTING = 'packages/model-gateway/src/testing.ts';
+  const texts = new Map(files.map((file) => [relative(file), readFileSync(file, 'utf8')]));
+
+  it('leaves the testing module’s checks to tests: nothing else reaches it, by any import, re-export or dynamic import, directly or through another module', () => {
     // testing.ts's memoryPracticeRecords and syntheticPracticeCheck issue a real practice check over an in-memory
     // practice, which the screen accepts for that practice and which reads none of its records: a caller that built
-    // one would send a contract checked against nothing. Tests, their support files and the e2e may import it, and
-    // the synthetic evaluation (eval/: its gateway's actor is the evaluation, which carries no practice's material).
-    const TESTING = path.join(root, 'packages/model-gateway/src/testing.ts');
-    const SPECIFIER = /\bfrom\s+'([^']+)'|\bimport\(\s*'([^']+)'\s*\)/g;
-    const importsTesting = (file: string) =>
-      [...readFileSync(file, 'utf8').matchAll(SPECIFIER)].some(([, from, dynamic]) => {
-        const specifier = from ?? dynamic ?? '';
-        return specifier === '@tp/model-gateway/testing' || (specifier.startsWith('.') && path.resolve(path.dirname(file), specifier).replace(/\.ts$/, '') === TESTING.replace(/\.ts$/, ''));
-      });
-    const TEST_CODE = /(?:\.test\.tsx?$|\/test-support\/|\/route-tests\/|^apps\/web\/e2e\/|^packages\/model-gateway\/eval\/)/;
-    const importers = files.filter((file) => file !== TESTING && importsTesting(file)).map(relative);
-    expect(importers.length).toBeGreaterThan(0);
-    expect(importers.filter((file) => !TEST_CODE.test(file))).toEqual([]);
+    // one would send a contract checked against nothing.
+    const reaching = reachingModule(TESTING, texts, workspacePackages());
+    expect(reaching.size).toBeGreaterThan(0);
+    expect([...reaching].filter((file) => !isTestCode(file)).sort()).toEqual([]);
+  });
+
+  it('counts as test code only tests, support files outside the web’s route tree, the e2e and eval/ (the guard’s own check)', () => {
+    const test = ['apps/web/src/app/p/page.test.tsx', 'apps/web/src/lib/routes/route-tests/settings.test.ts', 'apps/web/src/lib/routes/test-support/world.ts', 'apps/worker/src/reconcile/test-support/seed.ts', 'apps/web/e2e/helpers.ts', 'packages/model-gateway/eval/harness.ts'];
+    // A page or route handler in a support directory of the route tree is served (/test-support, /route-tests).
+    const production = ['apps/web/src/app/test-support/page.tsx', 'apps/web/src/app/api/route-tests/route.ts', 'apps/web/src/app/p/test-support/layout.tsx', 'apps/web/src/lib/models/contract-proposals.ts', 'apps/web/src/lib/e2e/helpers.ts', 'packages/model-gateway/src/eval/harness.ts'];
+    expect(test.filter((file) => !isTestCode(file))).toEqual([]);
+    expect(production.filter((file) => isTestCode(file))).toEqual([]);
+  });
+
+  it('finds every form of import, and an import through another module (the guard’s own check)', () => {
+    const graph = new Map([
+      ['packages/model-gateway/src/testing.ts', ''],
+      ['packages/model-gateway/src/test-support/world.ts', "export * from '../testing';"],
+      ['apps/web/src/lib/a.ts', 'import { x } from "@tp/model-gateway/testing";'],
+      ['apps/web/src/lib/b.ts', "import '@tp/model-gateway/testing';"],
+      ['apps/web/src/lib/c.ts', 'export { y } from "../../../../packages/model-gateway/src/testing.js";'],
+      ['apps/web/src/lib/d.ts', 'const m = await import(`@tp/model-gateway/testing`);'],
+      ['apps/web/src/lib/e.ts', "const m = require('@tp/model-gateway/testing');"],
+      ['apps/web/src/lib/f.ts', "import type { MemoryRecords } from '@tp/model-gateway/testing';"],
+      ['apps/web/src/lib/g.ts', "import { world } from '../../../../packages/model-gateway/src/test-support/world';"],
+      ['apps/web/src/lib/h.ts', "import { g } from './g';"],
+      ['apps/web/src/lib/clean.ts', "import { requestFor } from '@tp/model-gateway'; // not '@tp/model-gateway/testing'"],
+    ]);
+    const packages = new Map([['@tp/model-gateway', { root: 'packages/model-gateway', exports: { '.': './src/index.ts', './testing': './src/testing.ts' } }]]);
+    expect([...reachingModule('packages/model-gateway/src/testing.ts', graph, packages)].sort()).toEqual([
+      'apps/web/src/lib/a.ts',
+      'apps/web/src/lib/b.ts',
+      'apps/web/src/lib/c.ts',
+      'apps/web/src/lib/d.ts',
+      'apps/web/src/lib/e.ts',
+      'apps/web/src/lib/f.ts',
+      'apps/web/src/lib/g.ts',
+      'apps/web/src/lib/h.ts',
+      'packages/model-gateway/src/test-support/world.ts',
+    ]);
+  });
+
+  it('builds a practice check only in the web’s proposal and the worker’s permitted run, from the caller’s scope on the services’ pool, besides testing.ts and tests', () => {
+    // The check takes its scope and pool by their shape (packages/db brands neither), so a stub pool that returns
+    // nothing would make a check over nothing: no production caller may pass one. Any naming of the factory counts (an
+    // import, a namespace's member, a re-export).
+    const CALLERS: Readonly<Record<string, RegExp>> = {
+      'apps/web/src/lib/models/contract-proposals.ts': /^\{ authorizedBy: scope, pool: services\.modelPool, cipher, practiceId: input\.practiceId, screenId, requestId: input\.requestId \}$/,
+      'apps/worker/src/models/permitted.ts': /^\{ authorizedBy: scope, pool: services\.pool, cipher: await loadPracticeCipher\(scope, services\.keys, practiceId\), practiceId, screenId: runId, requestId \}$/,
+    };
+    const naming = [...texts].filter(([file, text]) => file !== relative(import.meta.filename) && /\bpracticeRecordsCheck\b/.test(text)).map(([file]) => file);
+    expect(naming.filter((file) => !TEST_FILE.test(file)).sort()).toEqual([...Object.keys(CALLERS), RECORDS, 'packages/model-gateway/src/index.ts', TESTING].sort());
+    for (const [file, call] of Object.entries(CALLERS)) {
+      const calls = [...(texts.get(file) ?? '').matchAll(/\bpracticeRecordsCheck\((\{[^{}]*\})\)/g)].map((match) => match[1]);
+      expect(calls, file).toHaveLength(1);
+      expect(calls[0], file).toMatch(call);
+    }
+  });
+
+  it('builds a synthetic check only in testing.ts, the synthetic evaluation and tests: the package’s entry does not export it', () => {
+    // A synthetic check is accepted on an evaluation call, which an evaluation actor's gateway makes in production code.
+    const naming = [...texts].filter(([file, text]) => file !== relative(import.meta.filename) && /\bsyntheticRecordsCheck\b/.test(text)).map(([file]) => file);
+    expect(naming.filter((file) => !TEST_FILE.test(file) && !file.startsWith('packages/model-gateway/eval/')).sort()).toEqual([RECORDS, TESTING].sort());
   });
 });
+
+/** A workspace package's root and its exports, by name (from each package.json under apps/ and packages/, and tools/ and infra/). */
+interface WorkspacePackage {
+  readonly root: string;
+  readonly exports: Readonly<Record<string, string>>;
+}
+
+function workspacePackages(): Map<string, WorkspacePackage> {
+  const roots = ['apps', 'packages'].flatMap((top) => (existsSync(path.join(root, top)) ? readdirSync(path.join(root, top)).map((name) => `${top}/${name}`) : [])).concat(['tools', 'infra']);
+  const packages = new Map<string, WorkspacePackage>();
+  for (const dir of roots) {
+    const manifest = path.join(root, dir, 'package.json');
+    if (existsSync(manifest)) {
+      const parsed = JSON.parse(readFileSync(manifest, 'utf8')) as { name?: string; exports?: string | Record<string, unknown> };
+      const exported = typeof parsed.exports === 'string' ? { '.': parsed.exports } : Object.fromEntries(Object.entries(parsed.exports ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
+      if (parsed.name !== undefined) {
+        packages.set(parsed.name, { root: dir, exports: exported });
+      }
+    }
+  }
+  return packages;
+}
+
+/**
+ * Every module specifier a source names: a static import or re-export (`from '…'`), a side-effect import, a dynamic
+ * import and a require, in any quotes (a template literal without a substitution too). A specifier computed at run time
+ * cannot be read here; no source outside tools/test does that.
+ */
+function specifiers(text: string): string[] {
+  const SPECIFIER = /\b(?:from|import)\s*\(?\s*(['"`])([^'"`$\n]+)\1|\brequire\s*\(\s*(['"`])([^'"`$\n]+)\3/g;
+  return [...text.matchAll(SPECIFIER)].map((match) => match[2] ?? match[4] ?? '');
+}
+
+const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts'];
+
+/** The repository-relative source a specifier names from `file`, or undefined for a package outside the workspace. */
+function resolveSpecifier(file: string, specifier: string, known: ReadonlyMap<string, string>, packages: ReadonlyMap<string, WorkspacePackage>): string | undefined {
+  let target: string | undefined;
+  if (specifier.startsWith('.')) {
+    target = path.posix.normalize(path.posix.join(path.posix.dirname(file), specifier));
+  } else {
+    for (const [name, workspace] of packages) {
+      if (specifier === name || specifier.startsWith(`${name}/`)) {
+        const exported = workspace.exports[specifier === name ? '.' : `./${specifier.slice(name.length + 1)}`];
+        target = exported === undefined ? undefined : path.posix.normalize(path.posix.join(workspace.root, exported));
+      }
+    }
+  }
+  if (target === undefined) {
+    return undefined;
+  }
+  const stem = target.replace(/\.(?:js|jsx|mjs|cjs)$/, '');
+  return [target, ...SOURCE_EXTENSIONS.map((extension) => `${stem}${extension}`), ...SOURCE_EXTENSIONS.map((extension) => `${target}/index${extension}`)].find((candidate) => known.has(candidate));
+}
+
+/** Every source (repository-relative) that imports `module`, directly or through other sources. */
+function reachingModule(module: string, texts: ReadonlyMap<string, string>, packages: ReadonlyMap<string, WorkspacePackage>): Set<string> {
+  const importers = new Map<string, string[]>();
+  for (const [file, text] of texts) {
+    for (const specifier of specifiers(text)) {
+      const target = resolveSpecifier(file, specifier, texts, packages);
+      if (target !== undefined && target !== file) {
+        importers.set(target, [...(importers.get(target) ?? []), file]);
+      }
+    }
+  }
+  const reached = new Set<string>();
+  const queue = [module];
+  for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+    for (const importer of importers.get(next) ?? []) {
+      if (!reached.has(importer) && importer !== module) {
+        reached.add(importer);
+        queue.push(importer);
+      }
+    }
+  }
+  return reached;
+}

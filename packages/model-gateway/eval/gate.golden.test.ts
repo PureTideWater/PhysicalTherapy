@@ -93,12 +93,22 @@ beforeAll(async () => {
  * identifiers the set's own pages yield and how many of its 63 documents a practice holding them would have refused,
  * with the stored-side rules and without them. TIN and ZIP+4 collisions are refused either way (fail closed: a member
  * ID equal to the practice's own TIN is a collision the check cannot tell from a patient).
+ *
+ * The tokenizer's joins over one dot, slash, underscore or asterisk (phi-screen F1) add three classes. A date written
+ * with slashes is joined as a hyphenated one is: as patient control numbers (slashDate) the 8-digit date rule and the
+ * floor of 8 leave none (9 refused without the rules); as member IDs (dateMemberId) an unpadded date such as 1/1/2026
+ * (112026) is above the member ID floor and is no 8-digit date, so 17 documents are refused with the rules, where the
+ * hyphenated dates alone refused none (fail closed, counted as TIN and ZIP+4 are). No number set v2 writes with points
+ * (decimal) is 6 digits long, so that class keeps none.
  */
 const MEASURED = {
   date: { identifiers: 219, withRules: 0, withoutRules: 7 },
   tin: { identifiers: 513, withRules: 10, withoutRules: 10 },
   zip4: { identifiers: 500, withRules: 10, withoutRules: 10 },
   word: { identifiers: 79, withRules: 0, withoutRules: 63 },
+  slashDate: { identifiers: 267, withRules: 0, withoutRules: 9 },
+  dateMemberId: { identifiers: 486, withRules: 17, withoutRules: 24 },
+  decimal: { identifiers: 1453, withRules: 0, withoutRules: 0 },
 };
 
 /** Every field's floor at one value (SYNTHETIC: a test floors file; the committed values are the founder's and the specialist's). */
@@ -397,15 +407,42 @@ describe('the contract PHI check over the set (test matrix MOD-12; docs/adr/0070
     expect(screenTwinRecords()).toBe(screenTwinRecords());
   });
 
-  it('the false-refusal measurement: zero refusals over the twin practice at the ruled floors (6/6/8), and at 6/6/6 and 6/6/10', () => {
+  it('the false-refusal measurement: zero refusals over the twin practice at the ruled floors (6/6/8), and at 6/6/6 and 6/6/10; without the stored-side rules, three (its date-shaped patient control numbers)', () => {
     const twin = screenTwinIdentifiers();
     expect(twin.memberIds).toHaveLength(80_000);
     expect(twin.patientControlNumbers).toHaveLength(201_000);
     expect(twin.payerClaimNumbers).toHaveLength(200_000);
-    expect({ ruled: refusedCases(twin, SHIPPED_SCREEN_RULES), pcn6: refusedCases(twin, floors(6)), pcn10: refusedCases(twin, floors(10)) }).toEqual({ ruled: [], pcn6: [], pcn10: [] });
-  });
+    // Without the rules, the twin's sequential patient control numbers that are dates (10012026 is 10/01/2026) meet a
+    // slash date the tokenizer now joins (phi-screen F1; none was refused at 9b7eadfe): the 8-digit date rule is what
+    // keeps the twin at zero.
+    expect({ ruled: refusedCases(twin, SHIPPED_SCREEN_RULES), pcn6: refusedCases(twin, floors(6)), pcn10: refusedCases(twin, floors(10)), withoutRules: refusedCases(twin, NO_RULES) }).toEqual({
+      ruled: [],
+      pcn6: [],
+      pcn10: [],
+      withoutRules: ['V03', 'L02', 'L04'],
+    });
+  }, 60_000);
 
-  it('the adversarial collision classes (review M12): the stored-side rules bring dates and words to zero; TIN and ZIP+4 collisions stay refused and are counted', () => {
+  it('a practice that writes separators inside its values (phi-screen F1): its pages join over the separators the tokenizer does not join itself, at no cost over set v2, and a value written as stored is refused', () => {
+    // The twin written with eight separators in turn: the dot, slash, underscore and asterisk join on every page; the
+    // others only for a practice whose values hold them.
+    const written = screenTwinIdentifiers(['.', '/', '_', '*', '#', ':', '+', ',']);
+    const set = screenSet(identifierEntries(written));
+    expect([...set.joins].sort()).toEqual(['#', '+', ',', ':']);
+    expect(set.values).toEqual(screenSet(identifierEntries(screenTwinIdentifiers())).values);
+    expect({ ruled: refusedCases(written, SHIPPED_SCREEN_RULES), pcn6: refusedCases(written, floors(6)), pcn10: refusedCases(written, floors(10)), withoutRules: refusedCases(written, NO_RULES) }).toEqual({
+      ruled: [],
+      pcn6: [],
+      pcn10: [],
+      withoutRules: ['V03', 'L02', 'L04'],
+    });
+    const v01 = caseOf('V01');
+    for (const value of [written.memberIds[4], written.patientControlNumbers[5], written.payerClaimNumbers[6], written.memberIds[7], written.memberIds[0], written.patientControlNumbers[1]]) {
+      expect(pagesName([...v01.input.pages, `Patient Acct: ${value ?? ''} on file`], set), value).toBe(true);
+    }
+  }, 60_000);
+
+  it('the adversarial collision classes (review M12; phi-screen F1): the stored-side rules bring dates as patient control numbers and words to zero; TIN, ZIP+4 and short-date member ID collisions stay refused and are counted', () => {
     const classes = screenCollisionIdentifiers(contracts.cases.flatMap((item) => item.input.pages));
     const counts = Object.fromEntries(
       COLLISION_CLASSES.map((name) => [name, { identifiers: classes[name].memberIds.length + classes[name].patientControlNumbers.length, withRules: refusedCases(classes[name], SHIPPED_SCREEN_RULES).length, withoutRules: refusedCases(classes[name], NO_RULES).length }]),

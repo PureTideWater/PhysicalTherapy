@@ -7,9 +7,11 @@ import { Random } from '../core/random';
  * would be refused by a large practice's records, and by records built to collide with a contract's own figures.
  *
  * Every value is invented here, seeded, and never written to a file: no value is a real format's
- * check-digit-valid number, and the shapes stay where real identifiers are never issued (a "ZZ" prefix; nine digits
- * starting 9, an area no Social Security number has; claim numbers starting 77). Nothing here is derived from a
- * real file.
+ * check-digit-valid number, and the shapes stay where real identifiers are never issued: a "ZZ" prefix; nine digits
+ * in an area from 900 to 999 with group 00, which no Social Security number has (neither that area nor group 00 is
+ * ever issued) and no ITIN or ATIN has (their groups are 50 to 65, 70 to 88 and 90 to 99); eleven letters and digits
+ * holding a B, L, S or Z, letters no Medicare Beneficiary Identifier holds; claim numbers starting 77. Nothing here is
+ * derived from a real file.
  */
 
 export interface ScreenTwinIdentifiers {
@@ -27,14 +29,29 @@ export const SHORT_PCNS_EQUAL_TO_CODES: readonly string[] = ['97110', '97112', '
 let twins: ScreenTwinIdentifiers | undefined;
 
 /**
- * A large SYNTHETIC practice's identifiers: 80,000 member IDs (a third "ZZ" and 7 digits, a third 9 digits starting
- * 9, a third 11 letters and digits), 200,000 patient control numbers (sequential 8-digit numbers from 10000001) and
- * 1,000 five-digit ones below the floor (the CPT codes of SHORT_PCNS_EQUAL_TO_CODES among them), and 200,000
- * 13-digit payer claim control numbers. The same on every machine; built once per process.
+ * A large SYNTHETIC practice's identifiers: 80,000 member IDs (a third "ZZ" and 7 digits, a third 9 digits in an
+ * area 9NN with group 00, a third 11 letters and digits holding a B, L, S or Z), 200,000 patient control numbers
+ * (sequential 8-digit numbers from 10000001) and 1,000 five-digit ones below the floor (the CPT codes of
+ * SHORT_PCNS_EQUAL_TO_CODES among them), and 200,000 13-digit payer claim control numbers. The same on every machine;
+ * built once per process.
+ *
+ * With `separators`, the same practice as a system that writes separators inside its values stores it (phi-screen
+ * F1): each value written with one of them, in turn, after its second character ("ZZ#7120034", "10.000001"). Its
+ * compact values are the ordinary twin's, so a measurement over it counts only what those separators' joins cost
+ * (the screen joins a page's tokens over every separator the practice's values hold).
  */
-export function screenTwinIdentifiers(): ScreenTwinIdentifiers {
+export function screenTwinIdentifiers(separators: readonly string[] = []): ScreenTwinIdentifiers {
   twins ??= buildTwins();
-  return twins;
+  if (separators.length === 0) {
+    return twins;
+  }
+  let turn = 0;
+  const written = (value: string) => {
+    const separator = separators[turn % separators.length] ?? '';
+    turn += 1;
+    return `${value.slice(0, 2)}${separator}${value.slice(2)}`;
+  };
+  return { memberIds: twins.memberIds.map(written), patientControlNumbers: twins.patientControlNumbers.map(written), payerClaimNumbers: twins.payerClaimNumbers.map(written) };
 }
 
 function buildTwins(): ScreenTwinIdentifiers {
@@ -45,11 +62,11 @@ function buildTwins(): ScreenTwinIdentifiers {
     members.add(`ZZ${random.digits(7)}`);
   }
   while (members.size < 2 * third) {
-    members.add(`9${random.digits(8)}`);
+    members.add(`9${random.digits(2)}00${random.digits(4)}`);
   }
   while (members.size < SCREEN_TWIN_COUNTS.memberIds) {
     const value = random.alphanumeric(11);
-    if (/\d/.test(value) && /[A-Z]/.test(value)) {
+    if (/\d/.test(value) && /[A-Z]/.test(value) && /[BLSZ]/.test(value)) {
       members.add(value);
     }
   }
@@ -68,11 +85,16 @@ function buildTwins(): ScreenTwinIdentifiers {
   return { memberIds: [...members], patientControlNumbers: [...pcns, ...short], payerClaimNumbers: [...ccns] };
 }
 
-/** The adversarial collision classes of the design review's M12. */
-export const COLLISION_CLASSES = ['date', 'tin', 'zip4', 'word'] as const;
+/**
+ * The adversarial collision classes: the design review's M12 (date, tin, zip4, word), and those the tokenizer's joins
+ * over a dot and a slash add (phi-screen F1: slashDate, dateMemberId, decimal).
+ */
+export const COLLISION_CLASSES = ['date', 'tin', 'zip4', 'word', 'slashDate', 'dateMemberId', 'decimal'] as const;
 export type CollisionClass = (typeof COLLISION_CLASSES)[number];
 
 const DASH = '[-\\u2010-\\u2015]';
+/** A dot or a slash between a date's parts: what the tokenizer joins since phi-screen F1, as it joins a hyphen. */
+const DOT_OR_SLASH = '[./]';
 const NOT_BEFORE = '(?<![\\p{L}\\p{N}])';
 const NOT_AFTER = '(?![\\p{L}\\p{N}])';
 
@@ -90,15 +112,24 @@ function validDate(year: number, month: number, day: number): boolean {
  * - tin: nine-digit member IDs equal to every TIN the pages write (NN-NNNNNNN, joined over its hyphen);
  * - zip4: nine-digit member IDs equal to every ZIP+4 the pages write (NNNNN-NNNN, joined);
  * - word: letter-only patient control numbers equal to every word of 8 or more letters the pages write
- *   ("REIMBURSEMENT", "AGREEMENT").
- * The stored-side rules (a digit in every kind; 8-digit calendar dates dropped) should bring date and word to zero
- * refusals; TIN and ZIP+4 collisions stay refused (fail closed) and are counted.
+ *   ("REIMBURSEMENT", "AGREEMENT");
+ * - slashDate: patient control numbers equal to every date the pages write with slashes or dots, as the tokenizer
+ *   joins it ("1/1/2026" is 112026, "12/31/2026" is 12312026, "2026.01.01" is 20260101);
+ * - dateMemberId: member IDs equal to every date of date and slashDate (the member ID floor is 6, the patient control
+ *   number floor 8, so a short date such as 112026 is looked for only as a member ID or a payer claim number);
+ * - decimal: member IDs equal to every number the pages write with points between its groups of digits, joined over
+ *   them (an amount "1234.56" is 123456, a section "4.2.1" is 421).
+ * The stored-side rules (a digit in every kind; 8-digit calendar dates dropped) should bring date, slashDate and word
+ * to zero refusals; TIN and ZIP+4 collisions, and a member ID equal to a short date or a decimal, stay refused (fail
+ * closed) and are counted.
  */
 export function screenCollisionIdentifiers(pages: readonly string[]): Readonly<Record<CollisionClass, ScreenTwinIdentifiers>> {
   const dates = new Set<string>();
   const tins = new Set<string>();
   const zips = new Set<string>();
   const words = new Set<string>();
+  const slashDates = new Set<string>();
+  const decimals = new Set<string>();
   for (const page of pages) {
     const text = page.normalize('NFKC');
     for (const match of text.matchAll(new RegExp(`${NOT_BEFORE}(\\d{4})${DASH}(\\d{1,2})${DASH}(\\d{1,2})${NOT_AFTER}`, 'gu'))) {
@@ -112,6 +143,22 @@ export function screenCollisionIdentifiers(pages: readonly string[]): Readonly<R
       if (validDate(int(year), int(month), int(day)) || validDate(int(year), int(day), int(month))) {
         dates.add(whole.replace(/\D/g, ''));
       }
+    }
+    for (const match of text.matchAll(new RegExp(`${NOT_BEFORE}(\\d{4})(${DOT_OR_SLASH})(\\d{1,2})\\2(\\d{1,2})${NOT_AFTER}`, 'gu'))) {
+      const [whole, year = '', , month = '', day = ''] = match;
+      if (validDate(int(year), int(month), int(day))) {
+        slashDates.add(whole.replace(/\D/g, ''));
+      }
+    }
+    for (const match of text.matchAll(new RegExp(`${NOT_BEFORE}(\\d{1,2})(${DOT_OR_SLASH})(\\d{1,2})\\2(\\d{4}|\\d{2})${NOT_AFTER}`, 'gu'))) {
+      const [whole, month = '', , day = '', written = ''] = match;
+      const year = written.length === 2 ? 2000 + int(written) : int(written);
+      if (validDate(year, int(month), int(day)) || validDate(year, int(day), int(month))) {
+        slashDates.add(whole.replace(/\D/g, ''));
+      }
+    }
+    for (const match of text.matchAll(new RegExp(`${NOT_BEFORE}\\d+(?:\\.\\d+)+${NOT_AFTER}`, 'gu'))) {
+      decimals.add(match[0].replace(/\D/g, ''));
     }
     for (const match of text.matchAll(new RegExp(`${NOT_BEFORE}\\d{2}${DASH}\\d{7}${NOT_AFTER}`, 'gu'))) {
       tins.add(match[0].replace(/\D/g, ''));
@@ -129,6 +176,9 @@ export function screenCollisionIdentifiers(pages: readonly string[]): Readonly<R
     tin: { memberIds: [...tins].sort(), patientControlNumbers: none, payerClaimNumbers: none },
     zip4: { memberIds: [...zips].sort(), patientControlNumbers: none, payerClaimNumbers: none },
     word: { memberIds: none, patientControlNumbers: [...words].sort(), payerClaimNumbers: none },
+    slashDate: { memberIds: none, patientControlNumbers: [...slashDates].sort(), payerClaimNumbers: none },
+    dateMemberId: { memberIds: [...new Set([...dates, ...slashDates])].sort(), patientControlNumbers: none, payerClaimNumbers: none },
+    decimal: { memberIds: [...decimals].sort(), patientControlNumbers: none, payerClaimNumbers: none },
   };
 }
 

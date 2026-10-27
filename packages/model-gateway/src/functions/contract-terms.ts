@@ -477,14 +477,19 @@ export function verifyContractTerms(input: ContractPages, output: ContractTermsO
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-/** The sentence a person reads when a contract names a patient (docs/adr/0070, Part 3): no identifier, kind or count. */
-export const NAMES_PATIENT_MESSAGE = 'this document names a patient of the practice and was not sent';
+/**
+ * The refusal's sentence when a contract holds one of the practice's identifiers (docs/adr/0070, Part 3): no identifier,
+ * kind or count. The person reads the web's notice for the code (apps/web/src/lib/models/notices.ts), not this; both name
+ * the records one way.
+ */
+export const NAMES_PATIENT_MESSAGE = 'this document holds an identifier from the practice’s patient records and was not sent';
 /** The sentence for a check that could not run (the bound, or a load error): the call is refused, never sent unchecked. */
-export const SCREEN_UNAVAILABLE_MESSAGE = 'this document could not be checked for patient details and was not sent';
+export const SCREEN_UNAVAILABLE_MESSAGE = 'this document could not be checked against the practice’s patient records and was not sent';
 
 /**
- * The contract PHI check (combined audit item 120; docs/adr/0070, Part 3), run by the gateway after preparation and the
- * variant's serving check and before the idempotency key, the budget and the call (gateway.ts, step 4):
+ * The contract PHI check (combined audit item 120; docs/adr/0070, Part 3), run by the gateway last of its refusals: after
+ * preparation, the variant's serving check, the idempotency key's lookup, the read of the day's budget and the caller's
+ * step before the screen, and before the budget's hold and the call (gateway.ts, step 8; the review's S1):
  * 1. the check must be one the gateway's factories issued (../patient-records.ts), else `screen_invalid`;
  * 2. it must be bound to the call's practice (a synthetic check, bound to none, only on a synthetic evaluation
  *    call), else `screen_invalid`;
@@ -496,9 +501,10 @@ export const SCREEN_UNAVAILABLE_MESSAGE = 'this document could not be checked fo
  * The check reads the prepared request's own text (`prepared.user`), not the input's pages a second time, so what is
  * screened is exactly what would leave, even for an input whose pages read differently each time they are asked for
  * (a getter or a proxy), which would otherwise pass the screen clean and frame a page that names a patient. The
- * frame adds no run the screen could take for an identifier: each page sits between lines of its own (a newline ends
- * a run, ../redact.ts identifierRuns), the frame's words have no digit, which every kept identifier has
- * (SCREEN_FLOORS), and its page numbers and count stand alone, below every floor.
+ * frame adds no run the screen could take for an identifier: each page sits between lines of its own (a run never
+ * crosses a line break, ../redact.ts someIdentifierRun), the frame's words have no digit, which every kept identifier
+ * has (SCREEN_FLOORS), and its page numbers and count stand alone, below every floor (the `="` before each one joins
+ * two tokens only for a practice whose own identifiers hold it: ../redact.ts storedSeparators).
  */
 export async function screenContractPages(input: ContractPagesInput, prepared: { readonly user: string }, context: CallContext): Promise<void> {
   const check: unknown = input.patientRecords;
@@ -514,12 +520,14 @@ export async function screenContractPages(input: ContractPagesInput, prepared: {
     case 'screen_unavailable':
     case 'screen_failed':
       throw new InputRefusedError(outcome, SCREEN_UNAVAILABLE_MESSAGE);
+    // Defensive: an issued check answers only the four codes above. Anything else is refused as a failure, never
+    // sent (patient-records.test.ts reaches this branch through a check made to pass as issued).
     default:
       throw new InputRefusedError('screen_failed', SCREEN_UNAVAILABLE_MESSAGE);
   }
 }
 
-export const contractTermsSpec: PurposeSpec<ContractPagesInput, ContractTermsOutput, ContractTermsProposal> = {
+export const contractTermsSpec = Object.freeze<PurposeSpec<ContractPagesInput, ContractTermsOutput, ContractTermsProposal>>({
   purpose: 'proposeContractTerms',
   prompt: PROMPTS.proposeContractTerms,
   output: contractTermsOutput,
@@ -547,4 +555,4 @@ export const contractTermsSpec: PurposeSpec<ContractPagesInput, ContractTermsOut
   },
   screen: screenContractPages,
   verify: verifyContractTerms,
-};
+});

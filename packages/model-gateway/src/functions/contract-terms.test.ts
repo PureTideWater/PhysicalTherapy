@@ -479,7 +479,7 @@ describe('the contract PHI check (combined audit item 120; docs/adr/0070 Part 3)
       const refusal = screen(syntheticPracticeCheck(SYNTHETIC_IDS.practice, HELD), [SYNTHETIC_CONTRACT_PAGES[0] ?? '', page]);
       await expect(refusal, page).rejects.toMatchObject({ name: 'InputRefusedError', code: 'names_patient', message: NAMES_PATIENT_MESSAGE });
     }
-    expect(NAMES_PATIENT_MESSAGE).toBe('this document names a patient of the practice and was not sent');
+    expect(NAMES_PATIENT_MESSAGE).toBe('this document holds an identifier from the practice’s patient records and was not sent');
   });
 
   it('refuses a check the gateway did not issue, or issued for another practice, as screen_invalid', async () => {
@@ -503,7 +503,7 @@ describe('the contract PHI check (combined audit item 120; docs/adr/0070 Part 3)
     };
     await expect(screen(memory({ identifierCount: 50_001 }))).rejects.toMatchObject({ code: 'screen_unavailable', message: SCREEN_UNAVAILABLE_MESSAGE });
     await expect(screen(memory({ fault: 'decrypt' }))).rejects.toMatchObject({ code: 'screen_failed', message: SCREEN_UNAVAILABLE_MESSAGE });
-    expect(SCREEN_UNAVAILABLE_MESSAGE).toBe('this document could not be checked for patient details and was not sent');
+    expect(SCREEN_UNAVAILABLE_MESSAGE).toBe('this document could not be checked against the practice’s patient records and was not sent');
   });
 
   it('a fee-schedule twin is not refused by a practice whose short patient control numbers are CPT codes and whose others are dates and words', async () => {

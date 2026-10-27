@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { type Page, expect, test } from '@playwright/test';
+import { type Page, type Request, expect, test } from '@playwright/test';
 import { assertNoPhi } from '@tp/observability';
 
 import { SYNTHETIC_PRACTICES, personaEmail } from '../scripts/synthetic-personas';
@@ -71,23 +71,57 @@ test('a contract abstracted by hand, approved and signed off becomes the version
   await test.step('the billing manager uploads the agreement and tags it to its payer', async () => {
     const response = await page.goto(`/p/${other}/contracts`);
     expect(response?.headers()['cache-control']).toMatch(/private.*no-store|no-store.*private/);
-    // The panel offers several kinds and starts with none (docs/adr/0070, Part 3): a file dropped or chosen before the
-    // kind is refused in the browser and nothing is uploaded, so a payer letter is never filed as a contract by default.
-    const panel = page.getByRole('region', { name: 'Upload a contract or exhibit' });
-    await expect(panel.getByLabel('Kind of document')).toHaveValue('');
+    // The panel offers several kinds, starts with none and says a kind cannot be changed once uploaded (docs/adr/0070,
+    // Part 3): a file dropped or chosen before the kind is kept in this browser, the kind select is marked, described
+    // and focused, and nothing is uploaded until the person chooses the kind and presses Upload, so a payer letter is
+    // never filed as a contract by default, nor by an arrow key on the select (the PR #75 review's UX-1).
+    const panel = page.getByRole('region', { name: 'Upload a contract, exhibit or payer letter' });
+    const kind = panel.getByLabel('Kind of document');
+    await expect(kind).toHaveValue('');
+    await expect(kind).toHaveAccessibleDescription('A document’s kind cannot be changed once it is uploaded.');
+    const requested: string[] = [];
+    const onRequest = (request: Request) => {
+      if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/uploads/request')) {
+        requested.push(request.url());
+      }
+    };
+    page.on('request', onRequest);
+    const agreement = { name: 'version-1.pdf', mimeType: 'application/pdf', buffer: readFileSync(path.join(FIXTURES, 'CON-01', 'version-1.pdf')) };
     const dropped = await page.evaluateHandle(() => {
       const transfer = new DataTransfer();
       transfer.items.add(new File(['%PDF-1.4 SYNTHETIC'], 'dropped.pdf', { type: 'application/pdf' }));
       return transfer;
     });
     await panel.getByRole('region', { name: 'Drop zone' }).dispatchEvent('drop', { dataTransfer: dropped });
-    const refused = panel.locator('[data-state="error"]');
-    await expect(refused).toContainText('Nothing was uploaded');
-    await expect(refused).toContainText('Choose the kind of document first, then choose the files again.');
-    await panel.getByLabel('Choose files to upload').setInputFiles([{ name: 'version-1.pdf', mimeType: 'application/pdf', buffer: readFileSync(path.join(FIXTURES, 'CON-01', 'version-1.pdf')) }]);
-    await expect(refused).toContainText('Choose the kind of document first, then choose the files again.');
+    const waiting = panel.getByRole('group', { name: /^Waiting to upload/ });
+    await expect(waiting).toContainText('dropped.pdf');
+    await expect(kind).toBeFocused();
+    await expect(kind).toHaveAttribute('aria-invalid', 'true');
+    await expect(kind).toHaveAccessibleDescription(/^Choose the kind of document for this file, then upload it\. A document’s kind cannot be changed/);
+    // A second choice joins the first and changes the words under the select, so they are announced again.
+    await panel.getByLabel('Choose files to upload').setInputFiles([agreement]);
+    await expect(waiting).toContainText('version-1.pdf');
+    await expect(panel.locator('#upload-kind-error')).toHaveText('Choose the kind of document for these 2 files, then upload them.');
+    // Clear: neither is uploaded (the SYNTHETIC dropped.pdf is not the agreement), and focus goes back to Choose files.
+    await waiting.getByRole('button', { name: 'Clear' }).click();
+    await expect(waiting).toHaveCount(0);
+    await expect(panel.getByRole('button', { name: 'Choose files', exact: true })).toBeFocused();
+    await expect(kind).not.toHaveAttribute('aria-invalid', 'true');
+    // The agreement chosen before its kind, then the kind: the choice starts nothing; Upload sends it as a contract.
+    await panel.getByLabel('Choose files to upload').setInputFiles([agreement]);
+    await kind.selectOption('contract');
+    await expect(panel.locator('#upload-kind-error')).toHaveCount(0);
+    await expect(waiting.getByRole('button', { name: 'Upload 1 file' })).toBeVisible();
+    expect(requested).toEqual([]);
     await expect(panel.getByRole('region', { name: 'This batch' })).toHaveCount(0);
-    await uploadContract(page, 'version-1.pdf');
+    await uploadWithWorker(page, async () => {
+      await waiting.getByRole('button', { name: 'Upload 1 file' }).click();
+      const batch = panel.getByRole('region', { name: 'This batch' });
+      await expect(batch).toBeFocused();
+      await expect(batch.getByRole('listitem').filter({ hasText: 'version-1.pdf' })).toContainText('Stored', { timeout: 90_000 });
+    });
+    page.off('request', onRequest);
+    expect(requested).toHaveLength(1);
     const untagged = page.getByRole('list', { name: 'Untagged documents' }).getByRole('listitem');
     await expect(untagged).toHaveCount(1, { timeout: 30_000 });
     await untagged.getByLabel('Payer').selectOption({ label: 'SYNTHETIC PAYER C' });

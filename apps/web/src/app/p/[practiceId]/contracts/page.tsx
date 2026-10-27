@@ -189,9 +189,9 @@ export default async function ContractsPage(props: Props) {
         )}
       </section>
 
-      <Card role="region" aria-label="Upload a contract or exhibit">
+      <Card role="region" aria-labelledby="upload-contract-title">
         <CardHeader>
-          <CardTitle>Upload a contract, exhibit or payer letter</CardTitle>
+          <CardTitle id="upload-contract-title">Upload a contract, exhibit or payer letter</CardTitle>
           <CardDescription>
             Each file goes through the same scanned intake as an 835. Once it is stored, tag it to its payer below; it then enters the contract specialist’s queue.
           </CardDescription>

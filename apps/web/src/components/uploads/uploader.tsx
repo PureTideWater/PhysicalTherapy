@@ -2,8 +2,9 @@
 
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PermissionState } from '@tp/ui';
 import { useRouter } from 'next/navigation';
-import { type DragEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { type DragEvent, type RefObject, useCallback, useEffect, useRef, useState } from 'react';
 
+import { counted } from '../../lib/copy/words';
 import { spreadsheetExportProblem } from '../../lib/uploads/csv-exports';
 import { type Receipt, formatBytes, receiptState } from '../../lib/uploads/receipt-labels';
 import { FormatUnconfirmedBadge } from './format-flag';
@@ -14,6 +15,12 @@ import { ReceiptList, type ReceiptPage, ReceiptStatus } from './receipts';
  * server for one upload URL per file, PUTs each file straight to it (S3, or the local receiver), and
  * reports each PUT complete; the server's receipts then take over. File names stay in this browser:
  * they are shown here while the batch uploads and never sent anywhere.
+ *
+ * Files dropped or chosen before the panel can file them (no kind chosen, or an ERA export with no system chosen) are
+ * kept here and wait, listed by name, with nothing sent: the select that waits is marked invalid, described by what to
+ * do and focused, and once the choice is made the files upload when the person presses Upload, never on the select's
+ * change, since an arrow key on a closed select changes it once a press and a kind, once recorded, never changes
+ * (docs/adr/0070, Part 3; the PR #75 review's UX-1, which closes the baseline's UX-049 for the ERA system too).
  */
 
 interface UploadTarget {
@@ -83,11 +90,104 @@ export interface UploaderProps {
 /** The kind a panel without `kinds` takes: an 835, with the limits' types. */
 const DEFAULT_835 = { kind: 'x12_835', label: '835 remittance' } as const;
 
-/** The refusal of a batch dropped or chosen before the kind is (design 5.9; docs/adr/0070, Part 3). */
-export const CHOOSE_KIND_FIRST = 'Choose the kind of document first, then choose the files again.';
-
 /** The kind select's first, disabled option, shown while no kind is chosen. */
 export const CHOOSE_KIND_PLACEHOLDER = 'Choose the kind of document';
+
+/** The kind select's help, under it on every panel that offers kinds: a kind is the person's choice before the upload (UX-4). */
+export const KIND_HELP = 'A document’s kind cannot be changed once it is uploaded.';
+
+/** A file as the panel weighs it: what the browser says of it, and when it last changed (File's own fields). */
+interface ChosenFile {
+  readonly name: string;
+  readonly type: string;
+  readonly size: number;
+  readonly lastModified: number;
+}
+
+/** What a panel waits for before its files can upload: the kind, or an ERA export's system (its format). */
+export type Waiting = 'kind' | 'format';
+
+/**
+ * What the panel waits for: the kind while none is chosen (a panel of several kinds that names none: startingKind),
+ * else, for a kind read with a system's layout (an ERA export), the system while none is chosen, else nothing. Each is
+ * recorded with the document for good, and decides what reads it (a contract's terms may go to the model), so each is
+ * the person's choice before the upload, never a default.
+ */
+export function waitingFor(kind: UploadKind | null, format: UploadFormat | undefined): Waiting | null {
+  if (kind === null) {
+    return 'kind';
+  }
+  return kind.formats !== undefined && format === undefined ? 'format' : null;
+}
+
+/** What the select that waits says, under it: the choice to make for the files waiting, then the upload. */
+export function waitingText(waiting: Waiting, count: number): string {
+  const these = count === 1 ? 'this file' : `these ${counted(count, 'file')}`;
+  const them = count === 1 ? 'it' : 'them';
+  return waiting === 'kind' ? `Choose the kind of document for ${these}, then upload ${them}.` : `Choose which system’s ERA export ${these} ${count === 1 ? 'is' : 'are'}, then upload ${them}.`;
+}
+
+/** One file, dropped or chosen again: the same name, size and last change. */
+function fileKey(file: Pick<ChosenFile, 'name' | 'size' | 'lastModified'>): string {
+  return `${file.name}\u0000${String(file.size)}\u0000${String(file.lastModified)}`;
+}
+
+/** The files waiting, with those chosen now that are not already among them, in the order they came. */
+export function heldWith<T extends Pick<ChosenFile, 'name' | 'size' | 'lastModified'>>(held: readonly T[], chosen: readonly T[]): T[] {
+  const seen = new Set(held.map(fileKey));
+  const added = chosen.filter((file) => {
+    const key = fileKey(file);
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+  return [...held, ...added];
+}
+
+/** What a drop or a choice of files does: start the batch, keep the files waiting (focusing what they wait for), or refuse them. */
+export type ChosenStep<T> =
+  | { readonly step: 'start'; readonly files: readonly T[] }
+  | { readonly step: 'hold'; readonly held: readonly T[]; readonly focus: Waiting | 'upload' | null }
+  | { readonly step: 'refuse'; readonly problems: readonly string[] };
+
+/**
+ * What files dropped or chosen now do, beside those already waiting. A batch's own problems (batchProblems), or more
+ * files waiting than a batch takes, refuse the files chosen now and keep what waits. Otherwise, on a panel with
+ * nothing to wait for and nothing waiting, the batch starts at once, as it always has; else the files join those
+ * waiting, a file dropped again held once (heldWith), and focus goes to what they wait for, or to Upload. A batch
+ * never starts but by the person's Upload once a file waits.
+ */
+export function afterChoosing<T extends ChosenFile>(
+  held: readonly T[],
+  chosen: readonly T[],
+  kind: UploadKind | null,
+  format: UploadFormat | undefined,
+  limits: { readonly maxFiles: number; readonly maxBytes: number },
+): ChosenStep<T> {
+  if (chosen.length === 0) {
+    return { step: 'hold', held, focus: null };
+  }
+  const waiting = waitingFor(kind, format);
+  const merged = heldWith(held, chosen);
+  const found = batchProblems(chosen, kind, limits);
+  if (merged.length > limits.maxFiles && chosen.length <= limits.maxFiles) {
+    found.unshift(tooMany(limits));
+  }
+  if (found.length > 0) {
+    return { step: 'refuse', problems: found };
+  }
+  if (waiting === null && held.length === 0) {
+    return { step: 'start', files: chosen };
+  }
+  return { step: 'hold', held: merged, focus: waiting ?? 'upload' };
+}
+
+/** The refusal of more files than a batch takes. */
+function tooMany(limits: { readonly maxFiles: number }): string {
+  return `At most ${String(limits.maxFiles)} files at once; zip the rest and upload the zip.`;
+}
 
 /**
  * The kind a panel starts with: the one the page names, else the only one offered, else an 835 when none is offered.
@@ -107,27 +207,19 @@ export function startingKind(kinds: readonly UploadKind[] | undefined, initialKi
 }
 
 /**
- * What stops a batch before the server is asked for anything, each in the uploader's words: too many files; no kind
- * chosen; an ERA export's system not chosen; and, file by file by its place in the batch, an empty file, one too large,
- * or a spreadsheet chosen as a CSV-only export (docs/adr/0059 and 0060). Names no file: names stay in this browser.
+ * What stops a batch before the server is asked for anything, each in the uploader's words: too many files; and, file
+ * by file by its place in the batch, an empty file, one too large, or a spreadsheet chosen as a CSV-only export
+ * (docs/adr/0059 and 0060). Names no file: names stay in this browser. A choice still to make (the kind, an ERA
+ * export's system) is no problem of the batch's: the files wait for it (waitingFor).
  */
 export function batchProblems(
   chosen: readonly { readonly name: string; readonly type: string; readonly size: number }[],
   kind: UploadKind | null,
-  format: UploadFormat | undefined,
   limits: { readonly maxFiles: number; readonly maxBytes: number },
 ): string[] {
   const found: string[] = [];
   if (chosen.length > limits.maxFiles) {
-    found.push(`At most ${String(limits.maxFiles)} files at once; zip the rest and upload the zip.`);
-  }
-  // The kind decides what reads the file (a contract's terms may go to the model), so the person names it first.
-  if (kind === null && chosen.length > 0) {
-    found.push(CHOOSE_KIND_FIRST);
-  }
-  // An ERA export is read with its system's layout, so the person says which system's export it is first.
-  if (kind?.formats !== undefined && format === undefined && chosen.length > 0) {
-    found.push('Choose which system’s ERA export the files are, then choose the files again.');
+    found.push(tooMany(limits));
   }
   chosen.forEach((file, index) => {
     // A spreadsheet chosen as a posting, EFT or ERA export: those are read as CSV only (docs/adr/0059 and 0060).
@@ -208,6 +300,115 @@ function put(file: File, target: UploadTarget, csrfToken: string, onProgress: (s
   });
 }
 
+/**
+ * The kind select, its label, what it waits for and its help (UX-1, UX-4). While files wait for the kind, the select is
+ * marked invalid and described first by what to do, the words under it as an alert, re-inserted at each attempt
+ * (`attempt`) so a second drop of the same files is announced too; its help is read after them. The select's change
+ * only sets the kind: nothing uploads on it.
+ */
+export function KindField({
+  kinds,
+  kind,
+  startedUnchosen,
+  problem,
+  attempt,
+  onChange,
+  selectRef,
+}: {
+  readonly kinds: readonly UploadKind[];
+  readonly kind: UploadKind | null;
+  /** Whether the panel started with no kind: the select then leads with the disabled placeholder. */
+  readonly startedUnchosen: boolean;
+  /** What to do while files wait for the kind (waitingText), else null. */
+  readonly problem: string | null;
+  readonly attempt: number;
+  readonly onChange: (kind: UploadKind) => void;
+  readonly selectRef: RefObject<HTMLSelectElement | null>;
+}) {
+  return (
+    <div className="flex min-w-0 max-w-full flex-col gap-1">
+      <label htmlFor="upload-kind" className="text-sm font-medium">
+        Kind of document
+      </label>
+      <select
+        ref={selectRef}
+        id="upload-kind"
+        value={kind?.kind ?? ''}
+        required
+        aria-invalid={problem === null ? undefined : true}
+        aria-describedby={problem === null ? 'upload-kind-help' : 'upload-kind-error upload-kind-help'}
+        onChange={(event) => {
+          const chosen = kinds.find((candidate) => candidate.kind === event.target.value);
+          if (chosen !== undefined) {
+            onChange(chosen);
+          }
+        }}
+        className="h-9 max-w-full rounded-md border bg-background px-2 text-sm aria-invalid:border-destructive"
+      >
+        {startedUnchosen ? (
+          <option value="" disabled>
+            {CHOOSE_KIND_PLACEHOLDER}
+          </option>
+        ) : null}
+        {kinds.map((candidate) => (
+          <option key={candidate.kind} value={candidate.kind}>
+            {candidate.label}
+          </option>
+        ))}
+      </select>
+      {problem === null ? null : (
+        <p key={attempt} id="upload-kind-error" role="alert" className="max-w-prose text-xs text-destructive">
+          {problem}
+        </p>
+      )}
+      <p id="upload-kind-help" className="max-w-prose text-xs text-muted-foreground">
+        {KIND_HELP}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * The files waiting, by name (names stay in this browser), and what to do with them: Upload, once nothing waits for a
+ * choice (`ready`), and Clear. Upload is the one way a waiting file is sent.
+ */
+export function HeldFiles({
+  files,
+  ready,
+  onUpload,
+  onClear,
+  uploadRef,
+}: {
+  readonly files: readonly Pick<ChosenFile, 'name' | 'size' | 'lastModified'>[];
+  readonly ready: boolean;
+  readonly onUpload: () => void;
+  readonly onClear: () => void;
+  readonly uploadRef: RefObject<HTMLButtonElement | null>;
+}) {
+  return (
+    <div role="group" aria-labelledby="upload-held-title" className="flex min-w-0 max-w-full flex-col gap-2">
+      <p id="upload-held-title" className="text-sm font-medium">
+        {`Waiting to upload: ${counted(files.length, 'file')}`}
+      </p>
+      <ul className="flex max-w-prose flex-col gap-1 break-all text-xs">
+        {files.map((file) => (
+          <li key={fileKey(file)}>{file.name}</li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap gap-2">
+        {ready ? (
+          <Button ref={uploadRef} type="button" onClick={onUpload}>
+            {`Upload ${counted(files.length, 'file')}`}
+          </Button>
+        ) : null}
+        <Button type="button" variant="outline" onClick={onClear}>
+          Clear
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function Uploader(props: UploaderProps) {
   const { practiceId, canUpload, gate, limits, kinds, csrfToken } = props;
   const router = useRouter();
@@ -220,10 +421,31 @@ export function Uploader(props: UploaderProps) {
   const format = kind?.formats?.find((candidate) => candidate.id === formatId);
   const [batch, setBatch] = useState<BatchFile[]>([]);
   const [problems, setProblems] = useState<string[]>([]);
+  /** Files dropped or chosen that wait for a choice or for Upload: kept in this browser, nothing sent. */
+  const [held, setHeld] = useState<readonly File[]>([]);
+  /** Each drop or choice that leaves files waiting, so the words under the select are announced every time. */
+  const [attempt, setAttempt] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [receipts, setReceipts] = useState<ReadonlyMap<string, Receipt>>(new Map());
   const input = useRef<HTMLInputElement>(null);
+  const kindSelect = useRef<HTMLSelectElement>(null);
+  const formatSelect = useRef<HTMLSelectElement>(null);
+  const uploadButton = useRef<HTMLButtonElement>(null);
+  const chooseButton = useRef<HTMLButtonElement>(null);
+  const batchCard = useRef<HTMLDivElement>(null);
+  /** Where focus goes once the next render is drawn: never left on a control that went away (WCAG 2.4.3). */
+  const focusNext = useRef<Waiting | 'upload' | 'choose' | 'batch' | null>(null);
+
+  useEffect(() => {
+    const target = focusNext.current;
+    if (target === null) {
+      return;
+    }
+    focusNext.current = null;
+    const element = { kind: kindSelect, format: formatSelect, upload: uploadButton, choose: chooseButton, batch: batchCard }[target].current;
+    element?.focus();
+  });
 
   const update = useCallback((key: string, change: Partial<BatchFile>) => {
     setBatch((files) => files.map((item) => (item.key === key ? { ...item, ...change } : item)));
@@ -250,9 +472,9 @@ export function Uploader(props: UploaderProps) {
 
   const start = useCallback(
     async (chosen: readonly File[]) => {
-      const found = batchProblems(chosen, kind, format, limits);
+      const found = batchProblems(chosen, kind, limits);
       setProblems(found);
-      if (found.length > 0 || chosen.length === 0 || kind === null) {
+      if (found.length > 0 || chosen.length === 0 || waitingFor(kind, format) !== null || kind === null) {
         return;
       }
       const items: BatchFile[] = chosen.map((file) => ({ key: crypto.randomUUID(), file, phase: 'waiting', progress: 0 }));
@@ -265,6 +487,9 @@ export function Uploader(props: UploaderProps) {
       } catch (error) {
         setProblems([(error as Error).message]);
         setBatch([]);
+        // A refusal keeps the files: they wait again, for Upload or Clear.
+        setHeld((waitingNow) => heldWith(chosen, waitingNow));
+        focusNext.current = 'upload';
         return;
       }
       const queue = items.map((item, index) => ({ item, document: answer.documents[index] }));
@@ -333,10 +558,47 @@ export function Uploader(props: UploaderProps) {
     };
   }, [pending, practiceId, receipts, watched]);
 
+  /** What the files waiting wait for, if anything (waitingFor). */
+  const waiting = waitingFor(kind, format);
+
+  /** A drop or a choice of files: started, kept waiting, or refused (afterChoosing). */
+  const choose = (chosen: readonly File[]) => {
+    const next = afterChoosing(held, chosen, kind, format, limits);
+    if (next.step === 'start') {
+      void start(next.files);
+    } else if (next.step === 'refuse') {
+      setProblems([...next.problems]);
+    } else if (chosen.length > 0) {
+      setProblems([]);
+      setHeld(next.held);
+      setAttempt((count) => count + 1);
+      focusNext.current = next.focus;
+    }
+  };
+
+  /** Upload: the files waiting, under the kind (and system) now chosen; a problem keeps them waiting. */
+  const uploadHeld = () => {
+    const found = batchProblems(held, kind, limits);
+    if (found.length > 0 || waiting !== null) {
+      setProblems(found);
+      return;
+    }
+    const files = held;
+    setHeld([]);
+    focusNext.current = 'batch';
+    void start(files);
+  };
+
+  const clearHeld = () => {
+    setHeld([]);
+    setProblems([]);
+    focusNext.current = 'choose';
+  };
+
   const onDrop = (event: DragEvent<HTMLElement>) => {
     event.preventDefault();
     setDragging(false);
-    void start([...event.dataTransfer.files]);
+    choose([...event.dataTransfer.files]);
   };
 
   const sent = batch.filter((item) => item.phase === 'sent').length;
@@ -374,47 +636,42 @@ export function Uploader(props: UploaderProps) {
             before anything reads it.
           </p>
           {kinds === undefined ? null : (
-            <div className="flex flex-col gap-1">
-              <label htmlFor="upload-kind" className="text-sm font-medium">
-                Kind of document
-              </label>
-              <select
-                id="upload-kind"
-                value={kind?.kind ?? ''}
-                required
-                onChange={(event) => {
-                  setKind(kinds.find((candidate) => candidate.kind === event.target.value) ?? kind);
-                  setFormatId('');
-                }}
-                className="h-9 rounded-md border bg-background px-2 text-sm"
-              >
-                {startedUnchosen ? (
-                  <option value="" disabled>
-                    {CHOOSE_KIND_PLACEHOLDER}
-                  </option>
-                ) : null}
-                {kinds.map((candidate) => (
-                  <option key={candidate.kind} value={candidate.kind}>
-                    {candidate.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <KindField
+              kinds={kinds}
+              kind={kind}
+              startedUnchosen={startedUnchosen}
+              problem={held.length > 0 && waiting === 'kind' ? waitingText('kind', held.length) : null}
+              attempt={attempt}
+              onChange={(chosen) => {
+                setKind(chosen);
+                setFormatId('');
+                // What was said of the files waiting was said under the kind before; they are checked again on Upload.
+                if (held.length > 0) {
+                  setProblems([]);
+                }
+              }}
+              selectRef={kindSelect}
+            />
           )}
           {kind?.formats === undefined ? null : (
-            <div className="flex flex-col gap-1">
+            <div className="flex min-w-0 max-w-full flex-col gap-1">
               <label htmlFor="upload-format" className="text-sm font-medium">
                 Which system’s export
               </label>
               <select
+                ref={formatSelect}
                 id="upload-format"
                 value={formatId}
                 required
-                aria-describedby="upload-format-help"
+                aria-invalid={held.length > 0 && waiting === 'format' ? true : undefined}
+                aria-describedby={held.length > 0 && waiting === 'format' ? 'upload-format-error upload-format-help' : 'upload-format-help'}
                 onChange={(event) => {
                   setFormatId(event.target.value);
+                  if (held.length > 0) {
+                    setProblems([]);
+                  }
                 }}
-                className="h-9 rounded-md border bg-background px-2 text-sm"
+                className="h-9 max-w-full rounded-md border bg-background px-2 text-sm aria-invalid:border-destructive"
               >
                 <option value="">Choose the system</option>
                 {kind.formats.map((candidate) => (
@@ -423,6 +680,11 @@ export function Uploader(props: UploaderProps) {
                   </option>
                 ))}
               </select>
+              {held.length > 0 && waiting === 'format' ? (
+                <p key={attempt} id="upload-format-error" role="alert" className="max-w-prose text-xs text-destructive">
+                  {waitingText('format', held.length)}
+                </p>
+              ) : null}
               <p id="upload-format-help" className="max-w-prose text-xs text-muted-foreground">
                 The practice-management system the ERA export came from. Each file of the batch is read with its layout; a CSV export only.
               </p>
@@ -445,13 +707,14 @@ export function Uploader(props: UploaderProps) {
             className="sr-only"
             aria-label="Choose files to upload"
             onChange={(event) => {
-              void start([...(event.target.files ?? [])]);
+              choose([...(event.target.files ?? [])]);
               event.target.value = '';
             }}
           />
-          <Button type="button" onClick={() => input.current?.click()}>
+          <Button ref={chooseButton} type="button" variant={held.length > 0 ? 'outline' : 'default'} onClick={() => input.current?.click()}>
             Choose files
           </Button>
+          {held.length === 0 ? null : <HeldFiles files={held} ready={waiting === null} onUpload={uploadHeld} onClear={clearHeld} uploadRef={uploadButton} />}
         </section>
       )}
       {problems.length === 0 ? null : (
@@ -467,7 +730,7 @@ export function Uploader(props: UploaderProps) {
         </Alert>
       )}
       {batch.length === 0 ? null : (
-        <Card role="region" aria-label="This batch">
+        <Card ref={batchCard} tabIndex={-1} role="region" aria-label="This batch">
           <CardHeader>
             <CardTitle>This batch</CardTitle>
             <CardDescription role="status" aria-live="polite">
