@@ -21,6 +21,7 @@ import {
   MAIL_STATES,
   MAIL_STREAMS,
   MAIL_STREAM_KINDS,
+  MAIL_SUPPRESSION_SUBTYPES,
   NOTICE_RECIPIENT_STATES,
   NOTICE_RETRY_MINUTES,
   NOTIFICATION_KINDS,
@@ -546,12 +547,18 @@ describe('an event, recorded once per message, in any order (JOB-05)', () => {
       await owner.query('SELECT state, bounce_kind, bounce_subtype, sent_at, extract(day FROM expires_at - sent_at)::int AS kept FROM mail_send WHERE ses_message_id = $1', [early.message])
     ).rows;
     expect(bounced).toEqual([{ state: 'bounced', bounce_kind: 'transient', bounce_subtype: 'mailbox_full', sent_at: sentAt, kept: MAIL_SEND_DAYS.screening }]);
-    // An unknown subtype is other; a suppression subtype is suppressed; a rejection and a rendering failure are rejected.
+    // An unknown subtype is other; the account's or a set's suppression is suppressed, every other subtype (the global
+    // suppression list's included) bounced; a rejection and a rendering failure are rejected.
     expect(await record(screeningEvent('bounce', { bounceKind: 'permanent', bounceSubtype: 'new_in_ses' }))).toMatchObject({ state: 'bounced' });
-    expect(await record(screeningEvent('bounce', { bounceKind: 'permanent', bounceSubtype: 'on_account_suppression_list' }))).toMatchObject({ state: 'suppressed' });
+    for (const subtype of MAIL_BOUNCE_SUBTYPES) {
+      expect((await record(screeningEvent('bounce', { bounceKind: 'permanent', bounceSubtype: subtype }))).state, subtype).toBe(
+        MAIL_SUPPRESSION_SUBTYPES.includes(subtype) ? 'suppressed' : 'bounced',
+      );
+    }
+    expect(MAIL_SUPPRESSION_SUBTYPES).toEqual(['on_account_suppression_list', 'on_configuration_set_suppression_list']);
     expect(await record(screeningEvent('reject'))).toMatchObject({ state: 'rejected' });
     expect(await record(screeningEvent('rendering_failure'))).toMatchObject({ state: 'rejected' });
-    expect((await owner.query("SELECT count(*)::int AS n FROM mail_send WHERE bounce_subtype = 'other'")).rows).toEqual([{ n: 1 }]);
+    expect((await owner.query("SELECT count(*)::int AS n FROM mail_send WHERE bounce_subtype = 'other'")).rows).toEqual([{ n: 2 }]);
   });
 
   it('refuses an event its stream does not carry, a screening message naming a user, and an unknown event', async () => {
@@ -602,37 +609,44 @@ describe('the screening stream’s cut-off (SCR-21; the founder’s Q9)', () => 
     expect(await auditCount('mail_stream_paused')).toBe(before);
   });
 
-  it('counts a permanent bounce of every subtype that reached a mailbox, never a suppression, a transient or undetermined bounce, a not_spam complaint, a probe or a send before the window', async () => {
+  it('counts a permanent bounce of every subtype SES counts toward the account’s bounce rate, the global suppression list’s among them, never the account’s or the set’s suppression, a transient or undetermined bounce, a not_spam complaint, a probe or a send before the window', async () => {
     await resetScreening();
     const expectCounts = async (sends: number, bounces: number, complaints: number) => expect(await windowCounts()).toEqual({ sends, bounces, complaints });
     for (const subtype of ['general', 'no_email', 'other']) {
       await record(screeningEvent('bounce', { bounceKind: 'permanent', bounceSubtype: subtype }));
     }
     await expectCounts(3, 3, 0);
-    for (const subtype of ['suppressed', 'on_account_suppression_list', 'on_configuration_set_suppression_list']) {
+    // SES's global suppression list (Permanent/Suppressed: the address bounced recently for any sender) counts toward the
+    // account's bounce rate as any hard bounce does, so it is a bounce here too (M2).
+    expect(await record(screeningEvent('bounce', { bounceKind: 'permanent', bounceSubtype: 'suppressed' }))).toMatchObject({ state: 'bounced' });
+    await expectCounts(4, 4, 0);
+    // The account's own list, and a set's override of it: SES did not send, and counts it toward no rate.
+    for (const subtype of ['on_account_suppression_list', 'on_configuration_set_suppression_list']) {
       expect(await record(screeningEvent('bounce', { bounceKind: 'permanent', bounceSubtype: subtype }))).toMatchObject({ state: 'suppressed' });
     }
-    await expectCounts(3, 3, 0);
+    await expectCounts(4, 4, 0);
     for (const [kind, subtype] of [
       ['transient', 'mailbox_full'],
       ['transient', 'message_too_large'],
       ['transient', 'content_rejected'],
       ['transient', 'attachment_rejected'],
-      ['undetermined', 'other'],
+      ['undetermined', 'undetermined'],
       ['undetermined', 'mailbox_full'],
     ]) {
       await record(screeningEvent('bounce', { bounceKind: kind, bounceSubtype: subtype }));
     }
-    await expectCounts(9, 3, 0);
+    await expectCounts(10, 4, 0);
+    // SES's Undetermined/Undetermined is kept as SES names it.
+    expect((await owner.query("SELECT count(*)::int AS n FROM mail_send WHERE stream = 'screening' AND bounce_kind = 'undetermined' AND bounce_subtype = 'undetermined'")).rows).toEqual([{ n: 1 }]);
     await record(screeningEvent('complaint', { complaintType: 'not_spam' }));
-    await expectCounts(10, 3, 0);
+    await expectCounts(11, 4, 0);
     await record(screeningEvent('complaint', { complaintType: 'abuse' }));
-    await expectCounts(11, 3, 1);
+    await expectCounts(12, 4, 1);
     await record({ ...screeningEvent('bounce', { bounceKind: 'permanent', bounceSubtype: 'general' }), kind: 'probe', subject: null });
-    await expectCounts(11, 3, 1);
+    await expectCounts(12, 4, 1);
     // A send before the window starts (the last resume) is outside it.
     await record(screeningEvent('bounce', { bounceKind: 'permanent', bounceSubtype: 'general', mailAt: new Date(Date.now() - 40 * 24 * 3600_000) }));
-    await expectCounts(11, 3, 1);
+    await expectCounts(12, 4, 1);
     await owner.query("UPDATE mail_stream SET window_starts_at = now() WHERE stream = 'screening'");
     await expectCounts(0, 0, 0);
   });
@@ -786,8 +800,8 @@ describe('break-glass notices from a recorded outbox (SEC-19; D10)', () => {
       bounceSubtype: subtype,
     });
     expect(await record(event(world.adminUserId, 'delivery'))).toMatchObject({ recorded: true, state: 'delivered', notice_undelivered: null });
-    expect(await record(event(secondAdmin, 'bounce', 'suppressed'))).toMatchObject({ recorded: true, state: 'suppressed', notice_undelivered: grant });
-    expect(await record(event(secondAdmin, 'bounce', 'suppressed'))).toMatchObject({ recorded: false, notice_undelivered: null });
+    expect(await record(event(secondAdmin, 'bounce', 'on_account_suppression_list'))).toMatchObject({ recorded: true, state: 'suppressed', notice_undelivered: grant });
+    expect(await record(event(secondAdmin, 'bounce', 'on_account_suppression_list'))).toMatchObject({ recorded: false, notice_undelivered: null });
     expect(await auditCount('notice_undelivered', grant, 'support_grant_opened')).toBe(1);
     expect(await notifications(notice)).toEqual(
       [world.adminUserId, secondAdmin].sort().map((user) => ({ user_id: user, practice_id: world.practiceId, counts: {}, totals_cents: {} })),

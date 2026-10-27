@@ -1558,7 +1558,11 @@ describe('PR 6b-4: the screening’s mail (migration 20261107090000; audit #76, 
     expect(await outcome('complaint', { complaintType: 'not_spam' })).toBe('accepted');
     expect(await outcome('bounce', { bounceKind: 'transient', bounceSubtype: 'mailbox_full' })).toBe('accepted');
     expect(await outcome('bounce', { bounceKind: 'undetermined', bounceSubtype: 'other' })).toBe('accepted');
-    expect(await outcome('bounce', { bounceSubtype: 'suppressed' })).toBe('accepted');
+    // SES's global suppression list: a hard bounce SES counts toward the account's rate, so a refusal too (M2); the
+    // account's own list and a set's override are SES's own suppression, sent to no one and counted toward nothing.
+    expect(await outcome('bounce', { bounceSubtype: 'suppressed' })).toBe('screening_contact_undeliverable');
+    expect(await outcome('bounce', { bounceSubtype: 'on_account_suppression_list' })).toBe('accepted');
+    expect(await outcome('bounce', { bounceSubtype: 'on_configuration_set_suppression_list' })).toBe('accepted');
     expect(await outcome('delivery')).toBe('accepted');
     // A customer stream's bounce or complaint to the same address refuses nothing: the form reveals nothing of a customer's mail.
     expect(await outcome('bounce', { stream: 'transactional', kind: 'digest' })).toBe('accepted');
@@ -1593,9 +1597,13 @@ describe('PR 6b-4: the screening’s mail (migration 20261107090000; audit #76, 
     // A transient bounce marks nothing.
     const transient = `transient.${letters()}@synthetic.test`;
     await mailEvent(await submit({ email: transient, rateSubject: account, clientSubject: client }), 'bounce', transient, { bounceKind: 'transient', bounceSubtype: 'mailbox_full' });
-    for (let index = 0; index < 3; index += 1) {
+    // Nor does the account's own suppression, which SES sends to no one and counts toward nothing.
+    const accountListed = `account.listed.${letters()}@synthetic.test`;
+    await mailEvent(await submit({ email: accountListed, rateSubject: account, clientSubject: client }), 'bounce', accountListed, { bounceSubtype: 'on_account_suppression_list' });
+    // A bounce from SES's global suppression list marks as any hard bounce does (M2): the third of three.
+    for (const subtype of ['general', 'no_email', 'suppressed']) {
       const given = `marked.${letters()}@synthetic.test`;
-      const result = await mailEvent(await submit({ email: given, rateSubject: account, clientSubject: client }), 'bounce', given);
+      const result = await mailEvent(await submit({ email: given, rateSubject: account, clientSubject: client }), 'bounce', given, { bounceSubtype: subtype });
       expect(result).toMatchObject({ recorded: true, state: 'bounced', stream_paused: null });
     }
     const marks = await admin.query<{ subject_kind: string; n: number; week: boolean }>(
