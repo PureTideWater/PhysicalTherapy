@@ -60,10 +60,12 @@ import { REPEATED_SCENARIO, REPORT_FORMAT, type Report, type TimeRule, type Work
  * - the tag's commit;
  * - both images, by config digest: each image's config digest as ECR's manifest names it (`docker buildx imagetools
  *   inspect --raw`, an index resolved to its one linux/amd64 image manifest, the platform the release builds and ECS
- *   runs) equals the ID the report measured, which the harness reads on the runner's classic (overlay2) image store
- *   (`docker image inspect -f {{.Id}}`), where an image's ID is its config's SHA-256 (CI's capacity log shows it equal to
- *   buildx's containerimage.config.digest), so the web image measured, built with production's static origin, is the
- *   one deployed, and the worker image too. Nothing is pulled and the deployer's local image store is never read: under
+ *   runs) equals the ID the report measured, which the harness reads on the release runner's classic (overlay2) image
+ *   store (`docker image inspect -f {{.Id}}`), where an image's ID is its config's SHA-256 (CI's capacity log shows it
+ *   equal to buildx's containerimage.config.digest), and which release.yml's capacity job, before anything is installed,
+ *   proves to be the config digest its build read from the saved archive's bytes and left as a job output
+ *   (tools/screening-capacity/image-id.ts; docs/adr/0066, Part 3), so the web image measured, built with production's
+ *   static origin, is the one deployed, and the worker image too. Nothing is pulled and the deployer's local image store is never read: under
  *   Docker's containerd image store (the default for new Docker Desktop and Docker Engine 29 installs) `{{.Id}}` is the
  *   manifest's or the index's digest, which would never match. A registry that cannot be read, a platform manifest not
  *   found, an index with no linux/amd64 manifest or an unexpected media type is named as the reason;
@@ -97,9 +99,10 @@ export const RELEASE_REPOSITORY = 'PureTideWater/PhysicalTherapy';
 export const RELEASE_WORKFLOW = '.github/workflows/release.yml';
 /**
  * The runner release.yml's capacity job measures on: GitHub's free ubuntu-24.04 runner for a public repository, 4 CPUs
- * (the founder's third ruling of 2026-10-23, "Free: time advisory"). The launch check accepts only the layout the harness
- * gives it, the shared one; workflows.test.ts holds release.yml's runs-on to this label, so a release moved to an 8-CPU
- * runner fails there until this, and with it the layout accepted, moves too.
+ * (the founder's third ruling of 2026-10-23, "Free: time advisory"), on which the release's whole capacity chain stays
+ * while every other job runs on ubuntu-26.04 (the founder's F5; docs/adr/0066, Part 3). The launch check accepts only the
+ * layout the harness gives it, the shared one; workflows.test.ts holds release.yml's runs-on to this label, so a release
+ * moved to another runner fails there until this, and with it the layout accepted, moves too.
  */
 export const RELEASE_RUNNER = { label: 'ubuntu-24.04', cpus: 4 } as const;
 /** GitHub, the issuer of the OIDC token Fulcio certifies, and the predicate actions/attest-build-provenance writes. */
@@ -397,9 +400,11 @@ const INDEX_TYPES: ReadonlySet<string> = new Set(['application/vnd.oci.image.ind
 const CONFIG_TYPES: ReadonlySet<string> = new Set(['application/vnd.oci.image.config.v1+json', 'application/vnd.docker.container.image.v1+json']);
 
 /**
- * The platform the images are built for and ECS runs: both workflows build them on ubuntu-24.04's native linux/amd64 with
- * no platform named (release.yml, screening-capacity.yml; FROM node:24-trixie-slim by digest), and every task definition declares X86_64
- * on Linux (infra/lib/constructs/compute.ts).
+ * The platform the images are built for and ECS runs: linux/amd64, native to every runner that builds them, with no
+ * platform named (FROM node:24-trixie-slim by digest). release.yml builds them on RELEASE_RUNNER.label, and
+ * screening-capacity.yml does too but for a dispatched ubuntu-26.04 probe (the founder's F5), whose report is advisory
+ * and not release.yml's run, so the launch check refuses it. Every task definition declares X86_64 on Linux
+ * (infra/lib/constructs/compute.ts).
  */
 const IMAGE_PLATFORM = { os: 'linux', architecture: 'amd64' } as const;
 
