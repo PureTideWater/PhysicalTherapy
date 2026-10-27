@@ -1,0 +1,119 @@
+{
+ "verdict": "build with changes",
+ "needsMigration": false,
+ "findings": [
+  {
+   "id": "DR-01",
+   "severity": "blocking",
+   "area": "ScrollTable focus rule (design 2.3; 4.1.2, 2.4.3)",
+   "claim": "The design sets focused from React onFocus and clears it on onBlur. React's onFocus and onBlur bubble (focusin and focusout), so they fire when focus lands on a link inside the table. On a table that fits, which is most tables at 1280, Tab onto the table's first link sets focused, so regionProps puts back role=region, the name '<label>, scrolls sideways' and tabIndex 0. The person then hears a false 'scrolls sideways' (the untruth section 1.6 item 1 is meant to remove), and Shift+Tab from that link lands on a tab stop that did not exist a moment before. TBL-02's 'a table that fits has no tab stop' is checked only with nothing focused, so it would not catch this.",
+   "fix": "In scroll-table.tsx (section 2.3), count only the scroller's own focus. onFocus sets focused only when event.target === event.currentTarget. onBlur clears it only when event.target === event.currentTarget, then measures. Add to scroll-table.test.tsx a regionProps row for 'fits, a descendant focused': it returns nothing. Add to ADR 0078 Decision 2: 'holds focus' means the scroller itself, never a control inside it. Add a step to tables-phone or layout-1280: at 1280, Tab to the first link of a fitting table and check its scroller still has no role and no tabindex."
+  },
+  {
+   "id": "DR-02",
+   "severity": "blocking",
+   "area": "e2e locators made ambiguous (design 5.4)",
+   "claim": "The design fixes four substring locators. It misses two more names that become substrings of a new region name. (1) packets.spec.ts:98, :132, :144, :282, :431, :501 and :507 use getByRole('region', { name: 'Version' }). On the packet page, the Versions table (packet/page.tsx:570-571) becomes a region named 'Versions, scrolls sideways': always before hydration, and at 390 while it overflows. (2) reconciliation.spec.ts:105 uses getByRole('region', { name: 'Preview' }), and template-mapper's table becomes 'Preview rows, scrolls sideways'. Both give a strict-mode violation that depends on timing. On CI, failOnFlakyTests fails the run (playwright.config.ts:83-84), and section 5.4 already edits both spec files.",
+   "fix": "In section 5.4's 'Region names that become ambiguous', add exact: true at packets.spec.ts:98, 132, 144, 282, 431, 501 and 507, and at reconciliation.spec.ts:105. Name the full check in slice E: for each getByRole('region' or 'table', { name: X }) in apps/web/e2e without exact, fail if X is a case-insensitive substring of any new ScrollTable or ScrollBox label (section 1.4) on the same route. Record the result in the PR description."
+  },
+  {
+   "id": "DR-03",
+   "severity": "should-fix",
+   "area": "ScrollTable and ScrollBox focus indicator (2.4.7, forced colours; brand.md 'focus visible with --pw-focus')",
+   "claim": "The scroller keeps 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring' (scroll-table.tsx:48). In Tailwind 4, outline-none is outline-style: none, and forced-colours mode drops box-shadow, so under forced colours the region has no focus indicator at all. Section 2.5 says the caption is the cue that remains there, but the focus ring does not. In ScrollBox, the ring is ring-inset (an inset box-shadow inside the region) and the frame is overflow-hidden. The top and bottom fades are opaque surface at the edge and sit at z-index 2 above the region, so they paint over the ring wherever data-edge-start or data-edge-end is set.",
+   "fix": "Draw the indicator on the frame, outside the fades and the frame's clip. In brand.css: '.pw-scroll-frame:has(> [data-scroller]:focus-visible) { outline: 2px solid var(--pw-focus); outline-offset: 2px; }' and '.pw-scroll-frame > [data-scroller]:focus-visible { outline: none; }'. Drop the ring utilities from both scrollers. An outline survives forced colours (the system colour replaces it) and is never covered by the frame's own pseudo-elements. Add to scroll-table.test.tsx a check that the markup holds no 'outline-none'. Add to section 8.1's forced-colours shot: the table focused by Tab."
+  },
+  {
+   "id": "DR-04",
+   "severity": "should-fix",
+   "area": "min-w cap at 1280 (design 1.4 rule; ADR 0078 Decision 1; StackedRows threshold)",
+   "claim": "The cap assumes a 912 px column. The real figure at e908c21 is 1280 \u2212 256 rail \u2212 1 rail border (shell.tsx:331) \u2212 64 main padding (:334) \u2212 48 CardContent \u2212 2 card border = 909 px. Headless Chromium has no layout scrollbar, so layout-1280.spec passes. A Windows desktop (Chrome, Edge, Firefox) or macOS set to always show scrollbars takes 15 to 17 px, which leaves 892 px, less than 56rem (896 px). Every 56rem table (Cases, Claims and lines, Line schedule, Cases' neighbours, and 12 more) then overflows at 1280 for the billing staff's usual setup: caption and fade at desktop width. And once UX PR 34 pairs StackedRows at stackBelow '56rem', Cases and Claims would show as stacked cards on a 1280 Windows desktop.",
+   "fix": "Lower the cap to 54rem (864 px, a 28 px margin for a classic scrollbar and zoom rounding). Change the allowed set to 32, 36, 40, 48 and 54rem in section 1.4, 2.6, ADR 0078 Decision 1, StackBelow ('54rem' in place of '56rem') and the reports Table map. Run layout-1280.spec.ts's fit checks at a 1263 px viewport ('1280 less a classic 17 px scrollbar') as well as 1280, or emulate the scrollbar. State in the ADR that the rule is 'fits at 1280 with a classic scrollbar'."
+  },
+  {
+   "id": "DR-05",
+   "severity": "should-fix",
+   "area": "atPhoneWidth race with the new tab-stop state (e2e/a11y.ts:53-66)",
+   "claim": "Before this change the tab stop was static. Now, after setViewportSize(390), a scroller that fitted at 1280 becomes a region with tabIndex 0 only after the ResizeObserver callback and a React commit. atPhoneWidth runs axe right after the page-width poll, which says nothing about the scrollers' state. The new 'tables' option waits only for the tables a call names. Existing calls with no tables option (pricing.spec.ts:144 and :193, viewer-phi.spec.ts:155, contracts.spec.ts:167, the packets calls) can run axe before the commit. scrollable-region-focusable then flags an overflowing scroller that has no tabindex yet. That is a flake, and CI-07 fails the run on it.",
+   "fix": "In a11y.ts, before axe and for every call, poll until each [data-scroller] agrees with its measurement: (scrollWidth \u2212 clientWidth > 1, or scrollHeight \u2212 clientHeight > 1 for data-axis=block) implies the scroller has tabindex=0 and role=region. Do the same in layout-1280's expectFitsItsCard after its own resize. Put it in section 4.2 beside the rendered guard, and add 'every scroller's state agrees with its measurement before axe' to TBL-03's assertion."
+  },
+  {
+   "id": "DR-06",
+   "severity": "should-fix",
+   "area": "ScrollTable before hydration (2.4.3, design 2.3)",
+   "claim": "On a slow load, a keyboard user can Tab onto a server-rendered scroller (tabindex=0) before hydration. React's onFocus never fired for that focus, so focused is false. The first measurement then finds 'fits' and removes tabindex from document.activeElement. Chromium's focus fixup then moves focus to body: focus is lost at 1280 for anyone who tabbed in early.",
+   "fix": "In the mount effect, before the first measure(), set focused to (document.activeElement === scroller). Add that to section 2.3, and to section 10's risk row 'A resize that makes a focused table fit would pull focus'."
+  },
+  {
+   "id": "DR-07",
+   "severity": "should-fix",
+   "area": "StackedRows renders twice: refusal hand-off and ids (design 3.5; ADR 0078 Decision 5)",
+   "claim": "The renders-twice rules cover ids, spec hooks and request keys. FormKeys already gives each copy its own randomUUID (form-keys.tsx:14), so the request-key rule holds by itself. They miss ActionForm's refreshOnError hand-off. RefusalTakeover and RefusalFallback take focus through a module-level 'refused' that the first explanation to mount clears (action-form.tsx:149-156, 176-185, 200-215). UX PR 34's row forms render a takeover in both copies under the same key. The hidden table copy comes first in DOM order, so it mounts first, takesFocus returns true, and ref.focus() on a display:none element does nothing. 'refused' is now null, so the visible stacked copy never takes focus, and focus drops to body (2.4.3, the review's 'focus never drops to the page'). The id rule is also stated but nothing enforces it.",
+   "fix": "Add to section 3.5 and ADR 0078: (a) takesFocus and takesOrphanedRefusal claim the hand-off only when the explanation's element is rendered: check ref.current?.getClientRects().length > 0 before clearing 'refused'. That one-line change to action-form.tsx belongs to UX PR 34, its first user, so record it there (or here if this PR's StackedRows test exercises it). (b) Export a test helper from stacked-rows (repeatedIds(html): ids that occur more than once in renderToStaticMarkup output). Make 'a paired StackedRows renders no repeated id and no repeated data-* hook' a required assertion in every caller's unit test, and add it to stacked-rows.test.tsx's test 8."
+  },
+  {
+   "id": "DR-08",
+   "severity": "should-fix",
+   "area": "Brand order in StackedRows (design 3.2, 3.6; brand.md:36-37; UX-005)",
+   "claim": "inBrandOrder reorders the figures at render time, and only in the stacked copy. The table copy keeps whatever order the caller wrote. The two copies of one data set then disagree. UX PR 4's own example shows it: the table reads Medicare, Reduced, Allowed, Difference, while the cards read Medicare, Allowed, Difference, Reduced, and proposal P6 (Flagged lines: observed, mode, short) is another case. The rule is never enforced on the table, where UX-005 says the separation is the defect ('a scroll cue alone would still leave expected, allowed and difference apart'). A silent fix-up also hides a wrong order from review.",
+   "fix": "Render the fields in the order given. Keep inBrandOrder as the check: export brandOrderProblems(fields), which returns the roles out of order or apart. Require each paired caller's unit test to assert brandOrderProblems(fields) is empty, and that the table's header order equals the fields' label order (one COLUMNS constant, read in order for both). stacked-rows.test.tsx test 4 then checks that the function finds [Charge, Short, Expected, Observed, Paid] out of order and accepts the brand order. Update TBL-04 to read 'expected, paid and short are given together and in that order, and the stacked rows keep the table's column order'. UX PR 4 then reorders its table columns too, which UX-005 asks for."
+  },
+  {
+   "id": "DR-09",
+   "severity": "should-fix",
+   "area": "e2e personas (design 5.4)",
+   "claim": "tables-specialist is used in tables-phone test 1 (the third context: /abstraction and /abstraction/ledger) and in test 2 (/console/specialist-queue). Under fullyParallel the two tests run at once. Each internal sign-in first deletes that persona's registered hardware key, so one test can delete the key the other just registered, and their sign-ins race. The design names exactly this race as its reason for a per-test persona (tables-manager rather than pricing-manager).",
+   "fix": "Use two personas: tables-specialist (test 1) and tables-console-specialist (test 2), five lines in synthetic-personas.ts. Or move /console/specialist-queue into test 1's specialist context. Update section 5.4's persona count and the PR description."
+  },
+  {
+   "id": "DR-10",
+   "severity": "should-fix",
+   "area": "ScrollTable around a <pre> (pricing/line-words.tsx:117-119; caption words)",
+   "claim": "The one non-table use of ScrollTable is the recorded JSON. Its new caption 'Scroll sideways for more columns.' is false there: a pre has no columns. Its name, '<step>, as the engine recorded it, scrolls sideways', carries a build word the checklist forbids ('No build words or internal names (\"the engine\")', ux-brand-reviewer.md:82). This PR moves that file's pin anyway (line-words.test.tsx:113).",
+   "fix": "Move Recorded to ScrollBox (as='pre', height 'md'), whose name is '<label>, scrolls' and which has no caption. Give the pre 'whitespace-pre-wrap wrap-anywhere' so it never scrolls sideways (its height stays audit #38's). ScrollTable then holds tables only. Make the guard's rule 1 the converse as well: every ScrollTable's single child is a <table> (see DR-12). The wording 'as the engine recorded it' (the summary at line-words.tsx:105 and the label) goes to proposals as 'As the pricing recorded it', for the PR that owns that copy, unless the builder takes it here as an in-scope wording change under the co-founder's rulings."
+  },
+  {
+   "id": "DR-11",
+   "severity": "nit",
+   "area": "Print rule (design 2.4, 2.9; ADR 0078 Decision 3)",
+   "claim": "'Print: every column on the page' is not true. The print block sets overflow: visible on the scroller, but the table keeps min-w-[48rem] or [56rem] (768 to 896 px), wider than a Letter or A4 printable width of about 720 px, so the last columns print off the paper. The web app has no print path (no print: classes; reports print in the worker), so nothing tests the claim either.",
+   "fix": "Either drop the @media print block and the Print row of 2.9 and the ADR, or make it true: in the same base-layer block add '.pw-scroll-frame > [data-scroller] > table { min-width: 0 !important; }'. An !important in the base layer beats a utility's normal declaration, so it overrides min-w. Prefer dropping it, since no print path exists."
+  },
+  {
+   "id": "DR-12",
+   "severity": "nit",
+   "area": "The source guard (design 4.1)",
+   "claim": "Three ways the guard can be fooled. (a) The rule matches the tag name 'ScrollTable', so a local component with that name, or an import from anywhere, passes, and an aliased import ('ScrollTable as Scroller') fails falsely. (b) Rule 2 (createElement or jsx('table')) reads only .tsx, but .ts files can call createElement. (c) Two tables inside one ScrollTable pass. The exemption check is exact and self-removing, and #42's head (098636e) keeps 1, 2 and 1 bare tables in the three exempt files; its new console/mail/page.tsx table is already ScrollTable's direct child, so no new exemption is needed.",
+   "fix": "In tables.test.ts: resolve the parent's tag to an import binding whose module specifier ends in '/scroll-table' (or '@/components/scroll-table'), whatever local name it has. Scan .ts and .tsx (skipping tests) for rule 2. Add rule 4: a ScrollTable element has exactly one element child, and it is a <table>. Add each of these to the in-memory self-test. Make a failure's message name the exemption line to edit, since #42's author may be the one to meet it."
+  },
+  {
+   "id": "DR-13",
+   "severity": "nit",
+   "area": "StackedRows wrapper (design 3.3)",
+   "claim": "'@container' sets container-type: inline-size, so the wrapper's width no longer comes from its content. Placed in a shrink-to-fit context (a flex row item without flex-1, a w-fit box, a grid auto column), it collapses to 0 px wide. The stacked rows then always show (0 is below every threshold) and the content is squeezed.",
+   "fix": "Give the wrapper 'w-full min-w-0' beside '@container' in section 3.3's markup, and assert both classes in stacked-rows.test.tsx test 9."
+  },
+  {
+   "id": "DR-14",
+   "severity": "nit",
+   "area": "Matrix and ADR text (5.1, 6)",
+   "claim": "The TBL-01 cell and ADR 0078's Decision 2 write placeholders such as '\"<the table's name>, scrolls sideways\"' and '\"<label>, scrolls sideways\"' in plain Markdown. GitHub drops an unknown <tag>, so the rendered matrix and ADR read '\"\", scrolls sideways\"'. The matrix row must stay byte-equal to the synth matrix, so the fix has to go in both.",
+   "fix": "Write the placeholders in words: 'named after its table with \", scrolls sideways\" added' (TBL-01), and in the ADR 'named \"Cases, scrolls sideways\" (the table's name, then \", scrolls sideways\")'. Use backticks wherever a placeholder must stay. Keep matrix.ts byte-equal."
+  },
+  {
+   "id": "DR-15",
+   "severity": "nit",
+   "area": "e2e time (design 5.5)",
+   "claim": "The estimate leaves out that CI's e2e shards run about 5 minutes each (ci.yml:416, three shards on private runners). tables-phone test 1 has the tour setup (2 to 3 min), a local worker, three sign-ins (two of them hardware-key personas) and about 30 routes with axe at 390, under a 600 s timeout. It will probably be the suite's longest test and set one shard's floor. A retry (retries: 1) doubles it.",
+   "fix": "In section 5.5, set a budget: test 1 at most the 1280 tour's (480 s), and no shard more than 2 min longer. Have the integrator report each shard's wall time before and after in the PR description. If test 1 is over budget, move the admin and specialist contexts into a third test that builds its own journey practice without the pricing tour (Grants, Access log and the abstraction pages need no priced months), so they run in parallel."
+  },
+  {
+   "id": "DR-16",
+   "severity": "nit",
+   "area": "Repeated region names (design 1.4)",
+   "claim": "Some new labels repeat on one page, or repeat their container's name. 'Proposed fields of candidate 1' repeats across the model proposals on one version page (models/display.tsx:158-174: every proposal has a candidate 1). 'Receipts' becomes a section region 'Receipts' (receipts.tsx:143) holding a region 'Receipts, scrolls sideways' holding a table 'Receipts'. 'Fields of record N' sits inside the card region 'Rate record N' (review.tsx:224).",
+   "fix": "Use 'Proposed fields of proposal P, candidate N' (P = the proposal's position as its card shows it), and 'Fields of rate record N' to match the card region's name. Leave Receipts, which is fixed by exact: true; drop the section's aria-label only in a later PR, and record that as a proposal."
+  }
+ ],
+ "summary": "Verdict: build with changes. No migration is needed. No frozen code is touched (engine, ledger and content pipeline are untouched). Nothing needs the founder: no legal text, and the five departures from the review's fix text are wording and visible choices inside the co-founder's delegation.\n\nEvery cited line was re-checked at e908c21. The coverage holds. My own search finds the same 87 tables outside tests: the 10 already in ScrollTable, 2 hand-rolled regions, 15 bare overflow-x-auto divs, 60 with no scroller (4 of them in #42's files). It also finds the same five fixed-height boxes, plus the line-words pre already in ScrollTable. The only scrollers left out are the shell drawer (a #42 file) and the textareas (form fields). Nothing is misclassified. No #42 file is edited. At #42's head (098636e) the three exempt files still hold 1, 2 and 1 bare tables, so the exemption counts match. #42's new console/mail table is already ScrollTable's direct child.\n\nThe core design is sound:\n- Three states, with server and first client render identical, so no hydration mismatch.\n- Fades drawn as overlays in tokens: no style attribute, and they follow dark mode.\n- The caption shows only while the table overflows.\n- Exemptions are exact and fail when stale.\n- The synth and matrix conventions are followed.\n- The copy passes brand.md and the copy lint.\n\nWhat to change before the build:\n- **Blocking, DR-01:** onFocus and onBlur bubble, so focusing a link in a table that fits puts back a false 'scrolls sideways' region and an extra tab stop. Count only the scroller's own focus.\n- **Blocking, DR-02:** two sets of spec locators become ambiguous and are not in the design's list: packets.spec 'Version' at seven lines (against 'Versions, scrolls sideways') and reconciliation.spec:105 'Preview' (against 'Preview rows'). With failOnFlakyTests, that fails CI.\n- **Should fix:**\n  - DR-03: under forced colours the scroller has no focus indicator, and in ScrollBox the fades cover the inset ring. Put an outline on the frame.\n  - DR-04: the 56rem cap overflows at 1280 on a desktop with a classic 17 px scrollbar (909 \u2212 17 = 892 px). Cap at 54rem and also test at 1263 px.\n  - DR-05: atPhoneWidth can run axe before the tab stop is added after a resize. Poll that every scroller agrees with its measurement first.\n  - DR-06: someone who tabs in before hydration loses focus when the tab stop is removed.\n  - DR-07: the duplicated copies break the RefusalTakeover focus hand-off (the hidden copy claims it), and the no-repeated-id rule needs an enforcing helper.\n  - DR-08: the brand order is reordered silently in the cards only, so the table and cards disagree. Make it an assertion on both.\n  - DR-09: the tables-specialist persona is used by two parallel tests.\n  - DR-10: the caption says 'more columns' over the JSON pre, and its name carries 'the engine'.\n- **Nits:** the print claim (DR-11); ways the guard can be fooled (DR-12); the container wrapper can collapse to 0 px (DR-13); Markdown drops the <placeholders> in the matrix and ADR (DR-14); an e2e time budget (DR-15); repeated names (DR-16).\n\nProposals outside this PR:\n- File names are cut to a hover title in the uploader (uploader.tsx:419): 'never cut to a hover title' in the checklist.\n- The wording 'as the engine recorded it' (line-words.tsx:105) belongs to the PR that owns that copy.\n\nProgress file: /tmp/claude-0/-home-user-PhysicalTherapy/13d6f1ba-32aa-5d43-bbf7-78e9ac9db9c8/scratchpad/progress/design-review.md"
+}
