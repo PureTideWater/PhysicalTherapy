@@ -40,7 +40,7 @@
   - the main checkout fast-forwarded and installed;
   - the worktree, the local branch and the review clones removed (the remote branch stays).
 
-  Push runs on 085299b are being read.
+  Push runs on 085299b: ci, mutation and screening-capacity all succeeded.
 
 ## Proposals (not built here)
 - `tools/stryker/affected.test.ts:601` took 55.9 s of its 120 s on CI (2.1x headroom).
