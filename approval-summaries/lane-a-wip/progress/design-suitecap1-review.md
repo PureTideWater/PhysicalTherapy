@@ -17,3 +17,14 @@ L11 pgboss retry_count / archive
 L12 line_status_ledger_rules reads before lock
 ## Leads closed (sound)
 ## Findings so far
+- (run 2) DB tp_design_suitecap1rev_1 on 5433 migrated at e908c21 + design mig.sql (probes/suitecap1rev/). DROP AT END.
+## Closed sound (run 2)
+- L1: test helpers use asOwner (sets app.practice_ids) -> definer head insert passes RLS. tp_owner NOBYPASSRLS; practice_resolver lets owner read all practices (backfill OK).
+- L6: all stage writers READ COMMITTED (oneSnapshot refused for mutations invoke.ts:465; jobs plain BEGIN).
+- L7: insertStage no savepoints.
+- L3: 'ledger_line:'/'ledger_evidence:' only in the two triggers; all insertEntry callers under lockLedger (pass.ts:39, manual.ts:48).
+- L11: pg-boss 12 has retry_count.
+- Probes (race.cjs): r1 refused, r2 order fixed + 3rd refused, first-event race (rollback/commit) OK, multirow same line OK, cross-tenant -> immediate 42501 on line_status_head (no wait; better than today), person reopen vs forward refused, savepoint rollback releases.
+- Backfill: head == latest for pre-migration rows (2 practices).
+## Open now
+- 'submission:' per-case advisory locks in case triggers -> per-case lock count in triage/reconcile at many patterns?
