@@ -1,444 +1,294 @@
-diff --git a/apps/web/src/lib/screening/routes.db.test.ts b/apps/web/src/lib/screening/routes.db.test.ts
-index 76f5a93b..23d07367 100644
---- a/apps/web/src/lib/screening/routes.db.test.ts
-+++ b/apps/web/src/lib/screening/routes.db.test.ts
-@@ -33,7 +33,7 @@ import {
- } from './routes';
- import { parseScreeningBytes } from './parse';
- import { screeningRateAccount } from './rate';
--import { type AddressCheckServices, type MailboxVerdicts } from './validation';
-+import { type AddressCheckServices, type MailboxVerdicts, localAddressChecks } from './validation';
- import { pageRequest } from './test-support/page-services';
- import { ScreeningWorld, SCREENING_HEADERS, SAMPLE_ROWS, practiceName, screeningRow, submitInput } from './test-support/screening-world';
- 
-@@ -1299,6 +1299,27 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
-     expect(calls).toEqual(['clean@clinic-clean.synthetic.test']);
-   });
- 
-+  it('logs the address checks\' measured time with the stored run, and nothing of the address (the capacity harness\'s G1)', async () => {
-+    // The stand-ins slowed as the harness slows them (MAIL_CHECK_DELAY_MS): the line measures the delay, never copies it.
-+    const services = withServices({ addressChecks: localAddressChecks(1_000, 300) });
-+    const email = 'timed.checks@clinic-timed.synthetic.test';
-+    const from = world.logLines.length;
-+    expect(await call(screeningSubmit, services, { input: submitInput({ contactEmail: email }) })).toEqual({ status: 'ok', data: { redirect: SENT } });
-+    const { rows } = await world.owner.query<{ id: string }>(
-+      'SELECT r.id FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1',
-+      [email],
-+    );
-+    const checked = world.logLines.slice(from).filter((line) => line.msg === 'screening address checked');
-+    expect(checked).toEqual([expect.objectContaining({ level: 'info', screening_run_id: rows[0]?.id, elapsed_ms: expect.any(Number) as number })]);
-+    expect(Number(checked[0]?.elapsed_ms)).toBeGreaterThanOrEqual(300);
-+    expect(Number(checked[0]?.elapsed_ms)).toBeLessThan(5_000);
-+    expect(JSON.stringify(checked)).not.toMatch(/timed|clinic/);
-+    // An upload the checks refuse stores no run, and logs no such line.
-+    const refusedFrom = world.logLines.length;
-+    expect((await call(screeningSubmit, services, { input: submitInput({ contactEmail: 'invalid.mailbox@clinic-timed.synthetic.test' }) })).status).toBe('invalid');
-+    expect(world.logLines.slice(refusedFrom).filter((line) => line.msg === 'screening address checked')).toEqual([]);
-+  });
-+
-   it('keeps the client\'s keyed subject with the run, and refuses a client past its bounce budget with the budget\'s sentence, naming no address', async () => {
-     const address = '198.51.100.88';
-     const email = 'client.subject@clinic-client.synthetic.test';
-diff --git a/apps/web/src/lib/screening/routes.ts b/apps/web/src/lib/screening/routes.ts
-index bbb92f08..0e105cad 100644
---- a/apps/web/src/lib/screening/routes.ts
-+++ b/apps/web/src/lib/screening/routes.ts
-@@ -623,7 +623,10 @@ export const screeningSubmit = publicRoute({
-     if (hint.message !== null && !kept) {
-       throw new InputError([{ field: 'contactEmail', message: hint.message }]);
-     }
-+    // Their time, measured here, is logged with the run once it is stored (below).
-+    const checksStarted = performance.now();
-     const verdict = await checkScreeningAddress(prospect.contactEmail, { checks: services.addressChecks, pool: services.pool, sealer: services.sealer, logger: services.logger, kept });
-+    const addressCheckMs = Math.round(performance.now() - checksStarted);
-     if (verdict === 'refuse') {
-       throw new InputError([{ field: 'contactEmail', message: ADDRESS_REFUSED }]);
-     }
-@@ -679,6 +682,10 @@ export const screeningSubmit = publicRoute({
-       }
-       throw error;
-     }
-+    // How long the address checks took for this upload, by its run alone (never the address or its domain): the capacity
-+    // harness reads the line and holds every measured upload to the checks' worst case, one 2-second timeout (the plan's
-+    // G1), so a change that skips or shortens them on its path fails the gate instead of passing it about 2 s fast.
-+    services.logger.info('screening address checked', { screening_run_id: runId, elapsed_ms: addressCheckMs });
-     // Where the run stands in the queue: its tier (Q7), and how many runs are pricing or ahead of it.
-     let wait: ScreeningQueuePlace | null;
-     try {
-diff --git a/tools/screening-capacity/measure.test.ts b/tools/screening-capacity/measure.test.ts
-index 5bf27b80..fd104010 100644
---- a/tools/screening-capacity/measure.test.ts
-+++ b/tools/screening-capacity/measure.test.ts
-@@ -7,7 +7,22 @@ import { describe, expect, it } from 'vitest';
- import { SCREENING_MAIN_HEAP_FLAG } from '../../apps/worker/src/screening/threads';
- import { COMMANDS } from '../../infra/lib/constructs/compute';
- import { MIB, MIN_ROUND_TRIP_MS, NETWORK_DELAY_MS, cpuLayout, postgresLimit, productionLimits } from './limits';
--import { anonBytes, cpuThrottling, emailedLines, ioMax, median, memoryEvents, phaseLines, phasesByRun, pricedRuns, psqlTimings, untilComplete, workerStarted } from './measure';
-+import {
-+  ADDRESS_CHECKED_MESSAGE,
-+  addressCheckTimes,
-+  anonBytes,
-+  cpuThrottling,
-+  emailedLines,
-+  ioMax,
-+  median,
-+  memoryEvents,
-+  phaseLines,
-+  phasesByRun,
-+  pricedRuns,
-+  psqlTimings,
-+  untilComplete,
-+  workerStarted,
-+} from './measure';
- import {
-   CommandError,
-   ROUND_TRIP_SCRIPT,
-@@ -100,6 +115,24 @@ describe('the consumer’s log', () => {
-   });
+diff --git a/apps/web/e2e/hardware-key.spec.ts b/apps/web/e2e/hardware-key.spec.ts
+index 2f6f7bfd..d1db838f 100644
+--- a/apps/web/e2e/hardware-key.spec.ts
++++ b/apps/web/e2e/hardware-key.spec.ts
+@@ -53,13 +53,25 @@ test('makes an internal role use a hardware key, and lets the platform administr
+   await other.close();
  });
  
-+describe('the web’s log', () => {
-+  it('reads the address checks’ measured time by run, numbers only, a run’s first line kept', () => {
-+    const lines = [
-+      'not json',
-+      JSON.stringify({ request_id: 'q-1', screening_run_id: 'r-1', elapsed_ms: 2_004, time: '2026-10-27T12:00:02.000Z', level: 'info', msg: 'screening address checked' }),
-+      JSON.stringify({ screening_run_id: 'r-2', elapsed_ms: 2_131, time: '2026-10-27T12:00:03.000Z', level: 'info', msg: 'screening address checked' }),
-+      JSON.stringify({ screening_run_id: 'r-1', elapsed_ms: 9, time: '2026-10-27T12:00:04.000Z', level: 'info', msg: 'screening address checked' }),
-+      JSON.stringify({ screening_run_id: 'r-3', elapsed_ms: 'slow', time: '2026-10-27T12:00:04.000Z', level: 'info', msg: 'screening address checked' }),
-+      JSON.stringify({ screening_run_id: 'r-4', error_code: 'SCREENING_NOT_QUEUED', time: '2026-10-27T12:00:05.000Z', level: 'warn', msg: 'screening run not queued; the sweep will send it' }),
-+    ];
-+    expect([...addressCheckTimes(lines)]).toEqual([
-+      ['r-1', 2_004],
-+      ['r-2', 2_131],
-+    ]);
-+    expect(ADDRESS_CHECKED_MESSAGE).toBe('screening address checked');
-+  });
-+});
+-test('shows an internal role without the permission the permission state', async ({ page }) => {
++test('shows an internal role without the permission the permission state', async ({ page, browser }) => {
+   await registerKeyAndSignIn(page, 'contract-specialist');
+   // A contract specialist starts at the specialist queue, which reaches no practice without a grant.
+   await expect(page.getByRole('heading', { level: 1, name: 'Specialist queue' })).toBeVisible();
+   await page.goto('/console/support');
+   await expect(page.getByText('Not available to your role')).toBeVisible();
+   await expect(page.getByRole('button', { name: 'Create support grant' })).toHaveCount(0);
 +
- describe('a result link, opened once its run commits', () => {
-   /** A clock the waits move: sleep advances it, and nothing waits for real. */
-   function clock() {
-diff --git a/tools/screening-capacity/measure.ts b/tools/screening-capacity/measure.ts
-index fb382e27..bbbb6194 100644
---- a/tools/screening-capacity/measure.ts
-+++ b/tools/screening-capacity/measure.ts
-@@ -145,6 +145,27 @@ export function emailedLines(lines: Iterable<string>): EmailedLine[] {
-   return found;
++  // A retried test's first sign-in, in a fresh browser, finds the key its first attempt registered: the provider asks
++  // for that key, and the key the attempt kept signs in (helpers.ts, registerOrRestoreKeyAndSignIn), so a retry of any
++  // journey that registers a key can run again.
++  const retried = await browser.newContext();
++  try {
++    const again = await retried.newPage();
++    await registerKeyAndSignIn(again, 'contract-specialist');
++    await expect(again.getByRole('heading', { level: 1, name: 'Specialist queue' })).toBeVisible();
++  } finally {
++    await retried.close();
++  }
+ });
+ 
+ test('ends support access at four hours (SEC-05)', async ({ page }) => {
+diff --git a/apps/web/e2e/helpers.ts b/apps/web/e2e/helpers.ts
+index af30eeb3..c5e45cf0 100644
+--- a/apps/web/e2e/helpers.ts
++++ b/apps/web/e2e/helpers.ts
+@@ -1,8 +1,11 @@
++import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
++import path from 'node:path';
++
+ import { type DatabaseClient, databaseClient } from '@tp/db';
+-import { type Page, expect } from '@playwright/test';
++import { type CDPSession, type Page, expect } from '@playwright/test';
+ 
+ import { SYNTHETIC_PRACTICES, personaEmail, personaPassword, personaTotpCode } from '../scripts/synthetic-personas';
+-import { e2eDatabaseUrl } from './env';
++import { E2E_DEV_AUTH_DIR, e2eDatabaseUrl } from './env';
+ 
+ /** The e2e database, as its superuser: to find records and to move clocks the tests cannot wait for. */
+ export async function withDatabase<T>(run: (client: DatabaseClient) => Promise<T>): Promise<T> {
+@@ -64,13 +67,20 @@ export function refusal(page: Page) {
+   return page.locator('[data-slot="alert"]');
  }
  
-+/**
-+ * The web's line for each stored upload (apps/web/src/lib/screening/routes.ts): how long its address checks, DNS and
-+ * SES's validation run together, took on the web's own clock, by the upload's run.
-+ */
-+export const ADDRESS_CHECKED_MESSAGE = 'screening address checked';
-+
-+/**
-+ * The address checks' measured milliseconds by run, from the web's log lines (JSON lines; anything else is skipped);
-+ * a run logged twice keeps its first line.
-+ */
-+export function addressCheckTimes(lines: Iterable<string>): Map<string, number> {
-+  const found = new Map<string, number>();
-+  for (const line of lines) {
-+    const entry = jsonLine(line);
-+    if (entry?.msg === ADDRESS_CHECKED_MESSAGE && typeof entry.screening_run_id === 'string' && typeof entry.elapsed_ms === 'number' && !found.has(entry.screening_run_id)) {
-+      found.set(entry.screening_run_id, entry.elapsed_ms);
-+    }
-+  }
-+  return found;
++/** A virtual hardware key in a page's browser: the DevTools session that holds it, and its authenticator's ID. */
++export interface VirtualKey {
++  readonly cdp: CDPSession;
++  readonly authenticatorId: string;
 +}
 +
- /**
-  * Waits until each upload's run reads `complete`, at most `waitMs` for them all, and returns the uploads whose run did
-  * not (in the order given). The consumer sends a result's email inside its completion's transaction and commits after
-diff --git a/tools/screening-capacity/report.test.ts b/tools/screening-capacity/report.test.ts
-index 12f570a4..0c4f520b 100644
---- a/tools/screening-capacity/report.test.ts
-+++ b/tools/screening-capacity/report.test.ts
-@@ -17,6 +17,8 @@ import {
-   TIME_MODES,
-   type TimeMode,
-   type TimeRule,
-+  type UploadMeasure,
-+  addressCheckSpan,
-   jobResult,
-   limitProblems,
-   mailHeldLines,
-@@ -472,11 +474,26 @@ describe('the checks the build controls fail the run', () => {
-     ['a CPU quota not applied', measured({ applied: applied({ containers: applied().containers.map((item) => (item.name === 'platform' ? { ...item, nanoCpus: null } : item)) }) }), /^limit not applied: platform: CPU quota none/],
-     ['a memory limit not applied', measured({ applied: applied({ containers: applied().containers.map((item) => (item.name === 'web' ? { ...item, memorySwapBytes: (item.memoryBytes ?? 0) * 2 } : item)) }) }), /^limit not applied: web: memory/],
-     ['io.max not applied', measured({ applied: applied({ ioMax: null }) }), /^limit not applied: postgres: io\.max not set/],
--    // The screening's mail (PR 6b-4): the address checks' worst case charged to every upload (G1), no run held by the gate.
--    ['the address checks not charged', measured({ mail: { addressCheckMs: 0, screeningReady: true, heldLines: 0 } }), /^address checks not charged: the web's DNS check and address validation answered after 0 ms; every upload is charged their worst case, 2000 ms, inside its time to email \(G1\)$/],
--    ['a report written before the mail streams', measured({ mail: undefined }), /^address checks not charged: the web's DNS check and address validation answered after no ms/],
--    ['the screening stream not seeded ready', measured({ mail: { addressCheckMs: 2_000, screeningReady: false, heldLines: 0 } }), /^screening mail not ready: /],
--    ['a run held by the mail gate', measured({ mail: { addressCheckMs: 2_000, screeningReady: true, heldLines: 1 } }), /^screening mail held runs: the consumer logged 1 line of a run waiting while the screening's mail was not sending$/],
-+    // The screening's mail (PR 6b-4): the address checks' worst case charged to every upload as the web measured it (G1;
-+    // review M4: never the delay the harness configured), no run held by the gate.
-+    [
-+      'an upload whose address checks the web did not measure (no line for its run)',
-+      measured({ scenarios: withUpload('S2-1', { addressCheckMs: null }) }),
-+      /^address checks not measured: S2-1 has no line of the web's measured address checks for its run, so its time to email may not carry their worst case \(G1\)$/,
-+    ],
-+    [
-+      'an upload of S4\'s run that is not the middle one whose address checks the web did not measure',
-+      measured({ scenarios: withUpload('S4-4', { addressCheckMs: null }, 'S4#3') }),
-+      /^address checks not measured: S4#3 S4-4 has no line/,
-+    ],
-+    [
-+      'an upload whose address checks answered under their worst case (a stand-in skipped or shortened)',
-+      measured({ scenarios: withUpload('S1-1', { addressCheckMs: ADDRESS_CHECK_CHARGE_MS - 1 }) }),
-+      /^address checks not charged: S1-1's DNS check and address validation took 1999 ms on the web; every upload is charged their worst case, 2000 ms, inside its time to email \(G1\)$/,
-+    ],
-+    ['the screening stream not seeded ready', measured({ mail: { screeningReady: false, heldLines: 0 } }), /^screening mail not ready: /],
-+    ['a report written before the mail streams', measured({ mail: undefined }), /^screening mail not ready: /],
-+    ['a run held by the mail gate', measured({ mail: { screeningReady: true, heldLines: 1 } }), /^screening mail held runs: the consumer logged 1 line of a run waiting while the screening's mail was not sending$/],
-     ['a round trip under 2 ms', measured({ applied: applied({ roundTripMedianMs: 0.4 }) }), /^limit not applied: postgres: median round trip 0\.40 ms, under 2 ms$/],
-     ['a runner too small', measured({ runnerProblems: ['the runner has 1 CPU; the test needs 2'] }), /^runner too small: the runner has 1 CPU/],
-     ['a wrong row count', measured({ scenarios: withS1(scenario({}, [upload({ storedRows: 49_999 })])) }), /^row count: S1-1 stored 49999 of 50000$/],
-@@ -556,13 +573,32 @@ describe('the report', () => {
-     const full = report(measured(), ENFORCED);
-     expect(full.workflow).toEqual(SYNTHETIC_RUN);
-     expect(markdown(full, ENFORCED)).toContain(`Measured by ${SYNTHETIC_RUN.ref}, run ${SYNTHETIC_RUN.runId}, attempt 1.`);
--    // The screening's mail as the harness ran it (PR 6b-4): the address checks charged, the stream seeded ready.
-+    // The screening's mail as the harness ran it (PR 6b-4): the address checks as the web measured them, the stream seeded ready.
-     expect(markdown(full, ENFORCED)).toContain(
--      "Screening mail: every upload's address checks answered after 2.0 s, inside its time to email (G1); the screening stream was seeded sending and ready, and 0 run lines waited on the mail gate.",
-+      'Screening mail: the web measured the address checks of 16 of 16 uploads at 2.0 to 2.0 s, inside each time to email (G1); the screening stream was seeded sending and ready, and 0 run lines waited on the mail gate.',
+ /** A virtual hardware key (CTAP2, USB, user verification) in this page's browser. */
+-export async function addVirtualKey(page: Page): Promise<void> {
++export async function addVirtualKey(page: Page): Promise<VirtualKey> {
+   const cdp = await page.context().newCDPSession(page);
+   await cdp.send('WebAuthn.enable');
+-  await cdp.send('WebAuthn.addVirtualAuthenticator', {
++  const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', {
+     options: { protocol: 'ctap2', transport: 'usb', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true },
+   });
++  return { cdp, authenticatorId };
+ }
+ 
+ export async function signInWithKey(page: Page, key: string): Promise<void> {
+@@ -80,12 +90,68 @@ export async function signInWithKey(page: Page, key: string): Promise<void> {
+   await page.waitForURL((url) => !url.pathname.startsWith('/sign-in'));
+ }
+ 
+-/** An internal persona's first sign-in: password and TOTP, register a key, then sign in with it. */
++/**
++ * Where an account's virtual key is kept between a test's attempts: beside the local identity provider's store that
++ * registered it, which prepare.ts empties with it before every run, so a key never outlives the registration it matches.
++ * SYNTHETIC accounts and a virtual authenticator's own keys only.
++ */
++export function keptKeyPath(account: string): string {
++  if (!/^[a-z0-9-]{1,64}$/.test(account)) {
++    throw new Error('a kept key is named by an account key of lowercase letters, digits and hyphens');
++  }
++  return path.join(E2E_DEV_AUTH_DIR, 'virtual-keys', `${account}.json`);
++}
++
++/** The authenticator's credentials, kept for a later attempt: after the registration, and again after each sign-in. */
++async function keepKey(key: VirtualKey, account: string): Promise<void> {
++  const { credentials } = await key.cdp.send('WebAuthn.getCredentials', { authenticatorId: key.authenticatorId });
++  mkdirSync(path.dirname(keptKeyPath(account)), { recursive: true });
++  writeFileSync(keptKeyPath(account), JSON.stringify(credentials), { mode: 0o600 });
++}
++
++/**
++ * The key an earlier attempt registered and kept, put back in this browser's authenticator; false when none was kept.
++ * Its counter goes one past the kept one: at most one sign-in (the one after the last keeping) can have moved the
++ * provider's counter since, and the provider refuses a counter that does not move forward.
++ */
++async function restoreKey(key: VirtualKey, account: string): Promise<boolean> {
++  if (!existsSync(keptKeyPath(account))) {
++    return false;
++  }
++  // As WebAuthn.getCredentials gave them, which WebAuthn.addCredential takes back.
++  const credentials = JSON.parse(readFileSync(keptKeyPath(account), 'utf8')) as { readonly credentialId: string; readonly isResidentCredential: boolean; readonly privateKey: string; readonly signCount: number }[];
++  for (const credential of credentials) {
++    await key.cdp.send('WebAuthn.addCredential', { authenticatorId: key.authenticatorId, credential: { ...credential, signCount: credential.signCount + 1 } });
++  }
++  return credentials.length > 0;
++}
++
++/**
++ * An internal account's first sign-in with its hardware key, safe to retry: password and TOTP (`signIn`), then register
++ * a key and sign in with it. A test's retry runs in a fresh browser, while the local identity provider still holds the
++ * key the first attempt registered, so the TOTP sign-in asks for that key instead of offering to register one; the key
++ * the attempt kept is put back in this browser's authenticator and signs in, as a person brings back the key they
++ * registered. Without a kept key the account's key is unknown to the run, and the call fails saying so.
++ */
++export async function registerOrRestoreKeyAndSignIn(page: Page, account: { readonly name: string; readonly email: string }, signIn: () => Promise<void>): Promise<void> {
++  const key = await addVirtualKey(page);
++  await signIn();
++  await expect(page).toHaveURL(/\/sign-in\/(?:register-key|hardware-key\?reason=hardware_key_required)$/);
++  if (new URL(page.url()).pathname === '/sign-in/register-key') {
++    await page.getByRole('button', { name: 'Register hardware key' }).click();
++    await expect(page).toHaveURL(/\/sign-in\/hardware-key\?reason=key_registered$/);
++    await keepKey(key, account.name);
++  } else if (!(await restoreKey(key, account.name))) {
++    throw new Error(`${account.name} has a hardware key that no attempt of this run kept; run e2e/prepare.ts for a fresh database`);
++  }
++  await page.goto('/sign-in/hardware-key');
++  await page.getByLabel('Email').fill(account.email);
++  await page.getByRole('button', { name: 'Sign in with hardware key' }).click();
++  await page.waitForURL((url) => !url.pathname.startsWith('/sign-in'));
++  await keepKey(key, account.name);
++}
++
++/** An internal persona's first sign-in: password and TOTP, register a key, then sign in with it (safe to retry). */
+ export async function registerKeyAndSignIn(page: Page, key: string): Promise<void> {
+-  await addVirtualKey(page);
+-  await signInWithTotp(page, key);
+-  await expect(page).toHaveURL(/\/sign-in\/register-key$/);
+-  await page.getByRole('button', { name: 'Register hardware key' }).click();
+-  await expect(page).toHaveURL(/\/sign-in\/hardware-key\?reason=key_registered$/);
+-  await signInWithKey(page, key);
++  await registerOrRestoreKeyAndSignIn(page, { name: key, email: personaEmail(key) }, () => signInWithTotp(page, key));
+ }
+diff --git a/apps/web/e2e/screening.spec.ts b/apps/web/e2e/screening.spec.ts
+index fe33d9a2..3ef80504 100644
+--- a/apps/web/e2e/screening.spec.ts
++++ b/apps/web/e2e/screening.spec.ts
+@@ -345,17 +345,25 @@ screeningTest('a specialist approves the split; a file with patient information
+     expect(small).toBe('0');
+     // The prospect keeps how they heard of us, the cookie's codes and kind of click, and the firm; the outcome keeps
+     // bands, the channel the database computed, the listed campaign and the release, never a name, email or ZIP (SCR-10, SCR-12).
++    // The consumer prices the upload as soon as the web sends its job, so it may be priced already: the outcome is read in
++    // one statement with its run's status, and its stage is the one that status gives (submit_screening writes it
++    // accepted; the completion moves the run to complete and the outcome to priced in one transaction). The next step
++    // reads it priced once the consumer has finished.
+     const kept = await withDatabase(
+       async (client) =>
+         (
+           await client.query<Record<string, unknown>>(
+             `SELECT p.source, p.utm_source, p.utm_medium, p.utm_campaign, p.paid_click, p.referring_firm, o.stage, o.channel, o.campaign, o.row_band, o.left_out_band,
+-                    o.release_no IS NOT NULL AS pinned, o.screened_month = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM') AS this_month, (to_jsonb(o) - 'id' - 'upload_id')::text AS outcome
+-               FROM screening_prospect p JOIN screening_upload u ON u.prospect_id = p.id JOIN screening_outcome o ON o.upload_id = u.id WHERE p.contact_email = $1`,
++                    o.release_no IS NOT NULL AS pinned, o.screened_month = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM') AS this_month, (to_jsonb(o) - 'id' - 'upload_id')::text AS outcome,
++                    r.status AS run_status
++               FROM screening_prospect p JOIN screening_upload u ON u.prospect_id = p.id JOIN screening_outcome o ON o.upload_id = u.id JOIN screening_run r ON r.upload_id = u.id
++              WHERE p.contact_email = $1`,
+             [CONTACT],
+           )
+         ).rows,
      );
-     expect(ADDRESS_CHECK_CHARGE_MS).toBe(2_000);
++    const runStatus = kept[0]?.run_status;
++    expect(['queued', 'pricing', 'complete'], 'the run is waiting, being priced or complete').toContain(runStatus);
+     expect(kept).toEqual([
+       expect.objectContaining({
+         source: 'billing_firm',
+@@ -364,7 +372,7 @@ screeningTest('a specialist approves the split; a file with patient information
+         utm_campaign: CAMPAIGN,
+         paid_click: 'paid_search',
+         referring_firm: FIRM,
+-        stage: 'accepted',
++        stage: runStatus === 'complete' ? 'priced' : 'accepted',
+         channel: 'email',
+         campaign: CAMPAIGN,
+         row_band: '1_100',
+@@ -396,6 +404,18 @@ screeningTest('a specialist approves the split; a file with patient information
+         ).rows,
+     );
+     expect(priced).toEqual([{ status: 'complete', attempts: 1, received: true, job_state: 'completed', job_priority: 0 }]);
++    // The counts-only outcome moved from accepted to priced with the completion, its figures the database's own bands.
++    const outcome = await withDatabase(
++      async (client) =>
++        (
++          await client.query<{ stage: string; engine: boolean; shares: boolean }>(
++            `SELECT o.stage, o.engine_version IS NOT NULL AS engine, o.priced_share_pct IS NOT NULL AND o.anomaly_band IS NOT NULL AS shares
++               FROM screening_prospect p JOIN screening_upload u ON u.prospect_id = p.id JOIN screening_outcome o ON o.upload_id = u.id WHERE p.contact_email = $1`,
++            [CONTACT],
++          )
++        ).rows,
++    );
++    expect(outcome).toEqual([{ stage: 'priced', engine: true, shares: true }]);
+     const [message, ...more] = outboxFor(CONTACT);
+     expect(more).toEqual([]);
+     expect(message?.subject).toBe('Your screening is ready | PaidWhole');
+diff --git a/apps/web/src/lib/screening/messages.ts b/apps/web/src/lib/screening/messages.ts
+index d15f71e6..9596fdfb 100644
+--- a/apps/web/src/lib/screening/messages.ts
++++ b/apps/web/src/lib/screening/messages.ts
+@@ -209,18 +209,23 @@ export const FILE_MESSAGES = {
+ /**
+  * What the screening says while its mail stream is paused (audit #76; docs/adr/0065, D7; the founder's Q12 of
+  * 2026-10-21: the recommended wording, for counsel to confirm before the screening opens): the page's alert, and the
+- * refusal of an upload that raced the pause.
++ * refusal of an upload that raced the pause. Neither names a cause: the stream pauses on its own bounce rate, on its
++ * complaint rate (mail that was delivered and reported as spam), on the account's rates or SES's review, or by hand, so
++ * "could not be delivered" would be untrue of most pauses (the review of 2026-10-23, Wording).
+  */
+ export const SCREENING_PAUSED = {
+   title: 'New screenings are paused',
+-  text: 'Too many of our recent result emails could not be delivered, so we have stopped sending them while we fix it. Screenings uploaded before the pause are kept and will be emailed when we resume, if that is within 30 days of the upload. Result links already sent still work.',
+-  refusal: 'New screenings are paused while we fix our result emails. Try again later.',
++  text: 'We have paused new screenings while we check that our result emails are reaching people. Screenings uploaded before the pause are kept, and their results are emailed once we resume, if that is within 30 days of the upload. Result links already sent still work.',
++  refusal: 'New screenings are paused for now. Try again later, or request an audit.',
+ } as const;
+ 
+ /**
+- * What the screening says when the client or the email account it is counted under has had 3 screening results that
++ * What the screening says when the client, or the email account it is counted under, has had 3 screening results that
+  * could not be delivered in 7 days (the bounce budget; the founder's Q10 (a) of 2026-10-21): the recommended wording,
+- * for counsel to confirm before the screening opens. It names no address and nothing about any one screening.
++ * for counsel to confirm before the screening opens. The account is a work address's domain, or a free-mail address's
++ * own mailbox (rate.ts, screeningRateAccount), so the sentence names both, and a colleague at the same practice's domain
++ * is not told that their own address failed (the review of 2026-10-23, Wording). It names no address and nothing about
++ * any one screening.
+  */
+ export const SCREENING_BOUNCE_BUDGET =
+-  'Several recent screening results sent from this connection, or to this email account, could not be delivered, so we cannot take another screening from it for up to 7 days. Check the email address, or request an audit instead.';
++  'Several recent screening results for this connection, or for this email address or its work domain, could not be delivered, so we cannot take another screening from them for up to 7 days. Check the email address, or request an audit instead.';
+diff --git a/apps/web/src/lib/screening/retention.ts b/apps/web/src/lib/screening/retention.ts
+index 6a60697b..202124c8 100644
+--- a/apps/web/src/lib/screening/retention.ts
++++ b/apps/web/src/lib/screening/retention.ts
+@@ -17,11 +17,13 @@ export { KEPT_COUNTS, KEPT_SUMMARY } from '@tp/worker/screening-wording';
+ /**
+  * What outlives a screening's address when its email could not be delivered or was reported as spam (audit #76; the
+  * founder's Q11 (b) of 2026-10-21: a keyed hash kept 12 months, used only to refuse that address; docs/adr/0065). The
+- * pages never call it deleted. A legal surface counsel reviews with the others before the screening opens (open item
++ * pages never call it deleted. It says what the hash does, refuse a new screening to the address, and not "never send to
++ * it again": the hash lapses after 12 months, and a screening already accepted for the address is still sent (the
++ * review of 2026-10-23, Wording). A legal surface counsel reviews with the others before the screening opens (open item
+  * O4).
+  */
+ export const REFUSED_ADDRESS_KEPT =
+-  'If email to the address you gave cannot be delivered, or is reported as spam, we keep a coded form of it that cannot be read back as the address, for 12 months, only so that we never send to it again.';
++  'If email to the address you gave cannot be delivered, or is reported as spam, we keep a coded form of it, which cannot be turned back into the address, for 12 months, only to refuse another screening to that address.';
+ export type { KeptWith } from '@tp/worker/screening-wording';
+ 
+ /** The result page: until when the link opens the result, what is deleted then, and what is kept, by what its summary is kept with. */
+diff --git a/apps/web/src/lib/screening/routes.db.test.ts b/apps/web/src/lib/screening/routes.db.test.ts
+index 23d07367..37716a1d 100644
+--- a/apps/web/src/lib/screening/routes.db.test.ts
++++ b/apps/web/src/lib/screening/routes.db.test.ts
+@@ -1234,9 +1234,13 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
+       await resume();
+     }
+     expect(ok(await world.call(screeningPage))).toMatchObject({ open: true, closedReason: null });
+-    expect(SCREENING_PAUSED.text).toBe(
+-      'Too many of our recent result emails could not be delivered, so we have stopped sending them while we fix it. Screenings uploaded before the pause are kept and will be emailed when we resume, if that is within 30 days of the upload. Result links already sent still work.',
+-    );
++    // No cause named: a pause can follow delivered mail reported as spam, the account's rates, SES's review or a person.
++    expect(SCREENING_PAUSED).toEqual({
++      title: 'New screenings are paused',
++      text: 'We have paused new screenings while we check that our result emails are reaching people. Screenings uploaded before the pause are kept, and their results are emailed once we resume, if that is within 30 days of the upload. Result links already sent still work.',
++      refusal: 'New screenings are paused for now. Try again later, or request an audit.',
++    });
++    expect(`${SCREENING_PAUSED.text} ${SCREENING_PAUSED.refusal}`).not.toMatch(/could not be delivered|fix/);
    });
  
-+  it('judges the address checks by the time the web measured on each upload, never the delay the harness set (review M4)', () => {
-+    // Exactly the worst case passes; the summary gives the span measured and how many uploads had a line.
-+    const atLine = measured({ scenarios: withUpload('S1-1', { addressCheckMs: ADDRESS_CHECK_CHARGE_MS }) });
-+    expect(verdict(atLine, ENFORCED).reasons).toEqual([]);
-+    const spread = measured({ scenarios: withUpload('S3-1', { addressCheckMs: 2_456 }, null, withUpload('S1-1', { addressCheckMs: ADDRESS_CHECK_CHARGE_MS })) });
-+    expect(addressCheckSpan(spread.scenarios)).toEqual({ measured: 16, uploads: 16, leastMs: 2_000, mostMs: 2_456 });
-+    expect(markdown(report(spread, ENFORCED), ENFORCED)).toContain('Screening mail: the web measured the address checks of 16 of 16 uploads at 2.0 to 2.5 s, inside each time to email (G1);');
-+    // No line on any upload (a web that skips the checks on the harness's path, or no longer logs them): every upload
-+    // fails, whatever the harness gave the stand-ins, and the summary says none was measured.
-+    const none = measured({ scenarios: measured().scenarios.map((item) => ({ ...item, uploads: item.uploads.map((entry) => ({ ...entry, addressCheckMs: null })) })) });
-+    const reasons = verdict(none, ADVISORY).reasons;
-+    expect(reasons.filter((reason) => reason.startsWith('address checks not measured: '))).toHaveLength(16);
-+    expect(verdict(none, ADVISORY).pass).toBe(false);
-+    expect(markdown(report(none, ADVISORY), ADVISORY)).toContain("Screening mail: the web measured no upload's address checks (16 uploads);");
-+    // A report written before this round has no field on its uploads: read as no line.
-+    const before = measured({ scenarios: withUpload('S5-1', {}, null, measured().scenarios).map((item) => ({ ...item, uploads: item.uploads.map(({ addressCheckMs: _ms, ...rest }) => rest as UploadMeasure) })) });
-+    expect(verdict(before, ENFORCED).reasons).toContain("address checks not measured: S5-1 has no line of the web's measured address checks for its run, so its time to email may not carry their worst case (G1)");
-+  });
-+
-   it('counts the consumers’ lines of a run the mail gate held, by the worker’s own code', () => {
-     expect(SCREENING_MAIL_HELD_CODE).toBe(SCREENING_MAIL_PAUSED_CODE);
-     const lines = [
-diff --git a/tools/screening-capacity/report.ts b/tools/screening-capacity/report.ts
-index 3877514d..9c47fd9f 100644
---- a/tools/screening-capacity/report.ts
-+++ b/tools/screening-capacity/report.ts
-@@ -268,6 +268,12 @@ export interface UploadMeasure {
-    * normal line or the waiting tier's; null when no consumer logged one.
-    */
-   readonly logged: { readonly elapsedMs: number; readonly atMs: number; readonly tier: 'normal' | 'waiting' } | null;
-+  /**
-+   * How long the web's address checks (the DNS check and SES's validation, run together, D9) took for this upload, as
-+   * the web measured and logged them with its run (`screening address checked`; PR 6b-4), inside its time to email;
-+   * null when the web logged no such line for the run (absent from a report written before this round, read the same).
-+   */
-+  readonly addressCheckMs: number | null;
- }
- 
- export interface ContainerMeasure {
-@@ -390,20 +396,21 @@ export interface Measurements {
-   /** A step that could not finish, with what stopped it (a code and a short reason of the harness's own). */
-   readonly aborted: string | null;
-   /**
--   * The screening's mail as the harness ran it (PR 6b-4; audit #76): the time the web's address checks (the DNS check
--   * and SES's validation, run together, D9) took to answer on every upload, charged inside each time to email (the
--   * plan's G1: ADDRESS_CHECK_CHARGE_MS, their worst case, one 2-second timeout); whether the screening stream was seeded
--   * sending and ready (its delivered and bounced probes back), so the mail gate holds no run; and how many lines the
--   * consumers logged of a run waiting on the mail gate, which must be none. Absent from a report written before PR 6b-4,
--   * which the verdict fails.
-+   * The screening's mail as the harness ran it (PR 6b-4; audit #76): whether the screening stream was seeded sending and
-+   * ready (its delivered and bounced probes back), so the mail gate holds no run; and how many lines the consumers
-+   * logged of a run waiting on the mail gate, which must be none. Absent from a report written before PR 6b-4, which the
-+   * verdict fails. The address checks' time is each upload's own, as the web measured it (UploadMeasure.addressCheckMs).
-    */
--  readonly mail?: { readonly addressCheckMs: number; readonly screeningReady: boolean; readonly heldLines: number };
-+  readonly mail?: { readonly screeningReady: boolean; readonly heldLines: number };
- }
- 
- /**
-- * How long the web's stand-in address checks take to answer on every measured upload (MAIL_CHECK_DELAY_MS): the worst
-- * case of the DNS check and SES's validation, run together after the row checks and the rate limit, each bounded by one
-- * 2-second timeout (the plan's section 5, G1). Run 7's 41.1 s becomes about 43.1 s; the 48-s line is unchanged.
-+ * The least time the web's address checks may take on a measured upload (the harness slows its stand-ins to it with
-+ * MAIL_CHECK_DELAY_MS): the worst case of the DNS check and SES's validation, run together after the row checks and the
-+ * rate limit, each bounded by one 2-second timeout (the plan's section 5, G1). The verdict reads the time the web
-+ * measured on each upload, never the delay the harness set, so a change that skips or shortens the checks on the
-+ * measured path fails it (review M4). The 48-s line is unchanged; with the checks charged, CI's run on 13f59b1 measured
-+ * S4's middle run (S4#2) at a worst upload of 47.7 s, 0.3 s under it, which raised the sizing question O9 (issue #41).
-  */
- export const ADDRESS_CHECK_CHARGE_MS = 2_000;
- 
-@@ -568,13 +575,9 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
-     reasons.push(`deadline: ${measured.notStarted.join(', ')} not started inside the harness's budget`);
-   }
-   reasons.push(...measured.runnerProblems.map((problem) => `runner too small: ${problem}`));
--  // The screening's mail (PR 6b-4): every upload charged the address checks' worst case, and no run held by the mail gate.
-+  // The screening's mail (PR 6b-4): no run held by the mail gate; each upload's address checks, as the web measured
-+  // them, are judged with the upload below.
-   const mail = measured.mail;
--  if ((mail?.addressCheckMs ?? 0) < ADDRESS_CHECK_CHARGE_MS) {
--    reasons.push(
--      `address checks not charged: the web's DNS check and address validation answered after ${String(mail?.addressCheckMs ?? 'no')} ms; every upload is charged their worst case, ${String(ADDRESS_CHECK_CHARGE_MS)} ms, inside its time to email (G1)`,
--    );
--  }
-   if (mail?.screeningReady !== true) {
-     reasons.push("screening mail not ready: the harness seeds the screening stream sending with its probes back, so the mail gate holds no measured run");
-   }
-@@ -665,6 +668,7 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
-       } else if (upload.lastPageStatus !== 200) {
-         reasons.push(`result's last page of groups did not open: ${where} (HTTP ${String(upload.lastPageStatus)})`);
-       }
-+      reasons.push(...addressCheckProblems(upload, where));
-       if (upload.storedRows !== upload.rows) {
-         reasons.push(`row count: ${where} stored ${String(upload.storedRows)} of ${String(upload.rows)}`);
-       }
-@@ -743,6 +747,35 @@ export function timeMetricProblems(upload: UploadMeasure, harnessMs: number, whe
-   return [];
- }
- 
-+/**
-+ * Whether an upload's time to email carries the address checks' worst case (the plan's G1): the web's own measured time
-+ * for its run, which must be there and at least ADDRESS_CHECK_CHARGE_MS. An upload the page never took, or with no run,
-+ * has no line and fails here as well as where its missing email fails.
-+ */
-+export function addressCheckProblems(upload: Pick<UploadMeasure, 'addressCheckMs'>, where: string): string[] {
-+  // A report written before the web measured them has no field: read as no line.
-+  const measuredMs = typeof upload.addressCheckMs === 'number' ? upload.addressCheckMs : null;
-+  if (measuredMs === null) {
-+    return [`address checks not measured: ${where} has no line of the web's measured address checks for its run, so its time to email may not carry their worst case (G1)`];
-+  }
-+  if (measuredMs < ADDRESS_CHECK_CHARGE_MS) {
-+    return [`address checks not charged: ${where}'s DNS check and address validation took ${String(measuredMs)} ms on the web; every upload is charged their worst case, ${String(ADDRESS_CHECK_CHARGE_MS)} ms, inside its time to email (G1)`];
-+  }
-+  return [];
-+}
-+
-+/** The least and the most address-check time the web measured across the run's uploads, and how many it measured. */
-+export function addressCheckSpan(scenarios: readonly ScenarioMeasure[]): { readonly measured: number; readonly uploads: number; readonly leastMs: number | null; readonly mostMs: number | null } {
-+  const times = scenarios.flatMap((scenario) => scenario.uploads.map((upload) => (typeof upload.addressCheckMs === 'number' ? upload.addressCheckMs : null)));
-+  const measured = times.filter((ms): ms is number => ms !== null);
-+  return {
-+    measured: measured.length,
-+    uploads: times.length,
-+    leastMs: measured.length === 0 ? null : Math.min(...measured),
-+    mostMs: measured.length === 0 ? null : Math.max(...measured),
-+  };
-+}
-+
- export interface Report extends Measurements {
-   readonly format: typeof REPORT_FORMAT;
-   /** Whether time failed this run (binding: a release's) or only warned (advisory: every other run's). */
-@@ -797,9 +830,7 @@ export function markdown(full: Report, rule: TimeRule): string {
-     '',
-     `Layout: ${layoutText(full.expected.layout)}; the harness ran on CPUs ${String(full.harnessAffinity)}.`,
-     '',
--    full.mail === undefined
--      ? 'Screening mail: not recorded (a report written before PR 6b-4).'
--      : `Screening mail: every upload's address checks answered after ${(full.mail.addressCheckMs / 1000).toFixed(1)} s, inside its time to email (G1); the screening stream ${full.mail.screeningReady ? 'was seeded sending and ready' : 'was not ready'}, and ${String(full.mail.heldLines)} run line${full.mail.heldLines === 1 ? '' : 's'} waited on the mail gate.`,
-+    full.mail === undefined ? 'Screening mail: not recorded (a report written before PR 6b-4).' : `Screening mail: ${addressCheckLine(full.scenarios)}; the screening stream ${full.mail.screeningReady ? 'was seeded sending and ready' : 'was not ready'}, and ${String(full.mail.heldLines)} run line${full.mail.heldLines === 1 ? '' : 's'} waited on the mail gate.`,
-     '',
-     full.workflow.ref === null
-       ? 'Measured outside GitHub Actions (no GITHUB_WORKFLOW_REF).'
-@@ -851,6 +882,15 @@ export function markdown(full: Report, rule: TimeRule): string {
-   return lines.join('\n');
- }
- 
-+/** The address checks as the summary states them: what the web measured on how many uploads, inside each time to email. */
-+function addressCheckLine(scenarios: readonly ScenarioMeasure[]): string {
-+  const span = addressCheckSpan(scenarios);
-+  if (span.leastMs === null || span.mostMs === null) {
-+    return `the web measured no upload's address checks (${String(span.uploads)} upload${span.uploads === 1 ? '' : 's'})`;
-+  }
-+  return `the web measured the address checks of ${String(span.measured)} of ${String(span.uploads)} uploads at ${(span.leastMs / 1000).toFixed(1)} to ${(span.mostMs / 1000).toFixed(1)} s, inside each time to email (G1)`;
-+}
-+
- /** The consumer as the summary states it. */
- function consumerLine(full: Report): string {
-   const consumer = full.consumer;
-diff --git a/tools/screening-capacity/run.ts b/tools/screening-capacity/run.ts
-index 32609ab8..c0a97782 100644
---- a/tools/screening-capacity/run.ts
-+++ b/tools/screening-capacity/run.ts
-@@ -44,7 +44,7 @@ import {
-   productionLimits,
-   runnerTooSmall,
- } from './limits';
--import { anonBytes, cpuThrottling, emailedLines, memoryEvents, peak, phaseLines, phasesByRun, pricedRuns, untilComplete, workerStarted } from './measure';
-+import { addressCheckTimes, anonBytes, cpuThrottling, emailedLines, memoryEvents, peak, phaseLines, phasesByRun, pricedRuns, untilComplete, workerStarted } from './measure';
- import {
-   ADDRESS_CHECK_CHARGE_MS,
-   type AppliedLimits,
-@@ -748,6 +748,9 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context,
-   const phases = phasesByRun(consumerPhases);
-   const emailed = emailedLines(consumerLog);
-   const platformRuns = pricedRuns(await runtime.logs('platform'));
-+  // The web's measured address checks, by run (read before the next scenario restarts the web): the verdict holds each
-+  // upload's to their worst case, never the delay the harness gave the stand-ins (review M4).
-+  const addressChecks = addressCheckTimes(await runtime.logs('web'));
-   const runs = new Map<string, string>();
-   const uploads: UploadMeasure[] = [];
-   const client = await owner.client();
-@@ -784,6 +787,7 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context,
-       waitReason: facts?.waitReason ?? null,
-       queuePriority: facts?.queuePriority ?? null,
-       logged: logged === undefined ? null : { elapsedMs: logged.elapsedMs, atMs: Date.parse(logged.at) - scenarioStart, tier: logged.tier },
-+      addressCheckMs: facts === null ? null : (addressChecks.get(facts.id) ?? null),
-     });
-   }
-   for (const entry of prepared) {
-@@ -853,9 +857,9 @@ async function main(): Promise<number> {
-   // The ZIP9 file's size (open item O8): the release is built at the production shape.
-   let release: Measurements['release'] = { releaseNo: SCALE_RELEASE_NUMBER, manifestSha256: '', records: 0, zip9: scaleZip9Size(SCALE_RELEASE_SHAPE) };
-   let aborted: string | null = null;
--  // The screening's mail as the harness runs it (PR 6b-4): the address checks' charge given to the web, the stream seeded
--  // ready, and the consumers' lines of a run the mail gate held (none, or the run is not production's).
--  let mail: NonNullable<Measurements['mail']> = { addressCheckMs: 0, screeningReady: false, heldLines: 0 };
-+  // The screening's mail as the harness runs it (PR 6b-4): the stream seeded ready, and the consumers' lines of a run the
-+  // mail gate held (none, or the run is not production's). The address checks' time is each upload's, read from the web.
-+  let mail: NonNullable<Measurements['mail']> = { screeningReady: false, heldLines: 0 };
-   // The commit measured: the images' checkout for the process runtime (built outside this one), else this checkout.
-   const measuredCheckout = opts.runtime === 'process' && opts.images !== null ? path.join(opts.images, 'worker') : repositoryRoot;
-   const commit = (await exec('git', ['rev-parse', 'HEAD'], { cwd: measuredCheckout }).catch(() => ({ stdout: 'unknown' }))).stdout.trim();
-@@ -977,7 +981,6 @@ async function main(): Promise<number> {
-       cpuset: layout.consumer,
-       command: serviceCommand(name),
-     }));
--    mail = { ...mail, addressCheckMs: Number(web.env.MAIL_CHECK_DELAY_MS ?? '0') };
-     say(`starting web, platform and the screening consumer (${String(consumers.length)} task of ${String(screening.cpus)} vCPU and ${String(screening.memoryMiB)} MiB, ${String(limits.screeningConcurrency)} at once)`);
-     await startWeb(runtime, web, 'setup');
-     await startWorker(runtime, platform, 'setup');
-diff --git a/tools/screening-capacity/test-support/measurements.ts b/tools/screening-capacity/test-support/measurements.ts
-index 4e0c3ee2..d78c9f73 100644
---- a/tools/screening-capacity/test-support/measurements.ts
-+++ b/tools/screening-capacity/test-support/measurements.ts
-@@ -127,6 +127,8 @@ export function uploadBase(overrides: Partial<UploadMeasure>): UploadMeasure {
-     waitReason: null,
-     queuePriority: 0,
-     logged: null,
-+    // The web's measured address checks: the stand-ins' 2-second delay and a few milliseconds of the web's own (G1).
-+    addressCheckMs: ADDRESS_CHECK_CHARGE_MS + 13,
-     ...overrides,
-   };
- }
-@@ -219,8 +221,8 @@ export function measured(overrides: Partial<Measurements> = {}): Measurements {
-     only: [],
-     notStarted: [],
-     aborted: null,
--    // The address checks' worst case charged to every upload, the screening stream seeded ready, no run held (PR 6b-4).
--    mail: { addressCheckMs: ADDRESS_CHECK_CHARGE_MS, screeningReady: true, heldLines: 0 },
-+    // The screening stream seeded ready, no run held (PR 6b-4); each upload's address checks are its own (uploadBase).
-+    mail: { screeningReady: true, heldLines: 0 },
-     ...overrides,
-   };
- }
+   it('keeps staging closed until the mail path is proven (both probes back within 48 hours, since the last resume); development ignores readiness', async () => {
+@@ -1356,5 +1360,10 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
+     // Another client is not held by this one's budget.
+     expect((await world.call(screeningSubmit, { input: submitInput({ contactEmail: 'client.other@clinic-client-other.synthetic.test' }), address: '198.51.100.89' })).status).toBe('ok');
+     expect(SCREENING_BOUNCE_BUDGET).not.toMatch(/@|198\.51/);
++    // The account is a work address's domain or a free-mail address's mailbox: the sentence names both, never "this
++    // email account" alone, which told a colleague at the same domain that their own address had failed.
++    expect(SCREENING_BOUNCE_BUDGET).toBe(
++      'Several recent screening results for this connection, or for this email address or its work domain, could not be delivered, so we cannot take another screening from them for up to 7 days. Check the email address, or request an audit instead.',
++    );
+   });
+ });

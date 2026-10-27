@@ -28,8 +28,9 @@ founder ruling (section 9). It touches no money computation, no pricing or ledge
    append-only history row with an internal note, actor and time. One definer setter writes it, with a person check, a
    platform-permission check and an audit action `tp_app` may not write. The console form asks for the reason, the note
    and a consequence tick.
-4. **The words.** Every refusal says "PaidWhole", never "a platform administrator". Each one says whose suspension it is
-   and what restarts the work. No organization name goes into a database message.
+4. **The words.** A refusal for PaidWhole's suspension says "PaidWhole", never "a platform administrator". Every
+   refusal says whose hold it is and what restarts the work, or that nothing does. No organization name goes into a
+   database message.
 5. **SS-08.** The dunning mail chooses its words when it is sent, from the organization's kind and status. It never
    says "New runs have started again" while PaidWhole's suspension or a closure holds, and it never promises a firm, or
    a closed group, anything about runs.
@@ -45,7 +46,7 @@ founder ruling (section 9). It touches no money computation, no pricing or ledge
 
 ## 1. The problem, with evidence
 
-### 1.1 What the code does (e908c21; #42 changes none of it)
+### 1.1 What the code does (e908c21; `console.ts` and `dunning.ts` as #42's head has them)
 
 | What | Where | What it does |
 | --- | --- | --- |
@@ -130,9 +131,9 @@ truth, and leverage between tenants. C breaks "can read" and duplicates the cons
   owner's, as today.
 - **Jobs:** a job's actor is never a person (`scope.ts:278-281`), so only the owner's hold applies. A job is the
   practice's work, not the grantee's.
-- **A packet export a grantee's person asked for before the suspension:** it finishes. The request was refused at
-  the route after the suspension. The print the job makes is a document inside the product, approved by two people,
-  and the grantee's people may still read it. The submission to the payer is a person's logged act, and the gate does
+- **A packet export a grantee's person asked for before the suspension:** it finishes. A request made after the
+  suspension is refused at the route. The print the job makes is a document inside the product, approved under the
+  two-person rule, and the grantee's people may still read it. The submission to the payer is a person's logged act, and the gate does
   not cover submissions for any hold, the owner's included. ADR 0050's "work already started finishes" covers it. The
   alternative would re-evaluate the requester's access inside the job. That would duplicate `effective_practice_access`
   for a person who is not the actor, a second access definition that could drift.
@@ -158,7 +159,7 @@ truth, and leverage between tenants. C breaks "can read" and duplicates the cons
 | D10 | Suspend takes UX-046's consequence tick, checked in the route (`confirm`), with the real count. | It is this card's change. UX PR 78 drops its suspend part (section 16). |
 | D11 | `tp_app` keeps `UPDATE (status)` and `INSERT (…, status)` for one release, guarded by a trigger: only between `active` and `suspended`, never the internal organization, never into or out of `closed`. The next schema PR after this one is deployed revokes them. | ADR 0009:42-43 (add, backfill, remove: "A migration that could not run under the previous image is split") and ADR 0019:145-147's precedent. Without it, the previous image's Suspend and, worse, Reinstate fail during a deploy and after a rollback. The trigger closes the reopen and internal holes now, in Postgres. |
 | D12 | No reopen of a closed organization (section 8). | Closure has no lifecycle yet. A reopen now would be a promise with nothing behind it (#56's SSC-02). |
-| D13 | SS-08 is decided at send time in `sendOne`, from `organization.kind` and `status`, which `tp_billing` already reads (billing.sql:238). No migration, and no new definer function for `tp_billing`. | Retries come minutes later, and the status may change between the stage and the send. Under B a group that pays has no practice held by its firm, so no counts function is needed. |
+| D13 | SS-08 is decided at send time in `sendOne`, from `organization.kind` and `status`, which `tp_billing` already reads (billing.sql:238). No migration, and no new definer function for `tp_billing`. | Retries come minutes later, and the status may change between the stage and the send. Under B a group that pays has no practice held by its firm, so no counts function is needed. SS-08 alone needs no migration and could ship after #42 on its own. It stays here because its words depend on this PR's rule and on its stored suspension: two PRs would review the same sentences twice, and the first could only guess at the second's states. |
 | D14 | ADR 0080 holds the decision. ADRs 0050 and 0055 get dated amendments on #42's final text. | 0050 owns billing's suspension and the refusal paths. 0055 owns the console's. The new rule (whose hold, for whom) and the stored reason are one decision across both. |
 | D15 | Suspension and reinstatement mail, and Q13, get their own schema PR, the next in the chain after this one. | Both extend #42's outbox: a new kind in `mail_send_kind` and `mail_send_stream_kind`, an outbox table, `operator_record_mail_event` recreated. That needs the deliverability review, not this PR's tenancy and security lenses. Q13 reads the same delivery states. The customer meanwhile reads the suspension on every surface the moment it holds (sections 5 and 6). |
 
@@ -170,9 +171,10 @@ It comes after #42's `20261107090000_mail_streams.sql`. The builders take the ne
 SUITE-CAP-1 comes after it. Every function is `SET search_path = pg_catalog, public, pg_temp`, owned by `tp_owner`
 (the migration runs as the owner), `REVOKE ALL … FROM PUBLIC`, and granted exactly as listed. The functions this
 migration recreates are byte-identical on e908c21 and at #42's head: the database scout compared md5(prosrc), and #42's
-migration names none of them. The two objects it recreates **on #42's body** are the `audit_event_record` policy
-(mail_streams.sql:803-810) and nothing else of #42's. The builders re-read both at #42's final merged head before
-writing.
+migration names none of them. The one object of #42's it recreates **on #42's body** is the `audit_event_record` policy
+(mail_streams.sql:803-810). No #42 function is recreated: `practice_run_refusal`, `refuse_new_work_while_suspended`
+and `practice_grants` are not in #42's file list, and #42's dunning functions are only read. The builders re-read the policy, and every #42 file this PR edits, at
+#42's final merged head before writing.
 
 ### 4.1 Preflight
 
@@ -257,8 +259,9 @@ GRANT SELECT ON organization_status_change TO tp_app;
   `tp_billing`, `tp_operator`, `tp_screening`, `tp_esign` and `tp_job` have no privilege on it.
 - **The note.** The guard is the form's words ("Seen only by PaidWhole's platform administrators. No patient details.",
   section 6), the length and control-character CHECK, and the rule that the note is never logged, exported, mailed or
-  shown to a customer. A move from suspended to suspended is a change of reason. It is append-only like `audit_event`,
-  and is kept as long as the organization's record.
+  shown to a customer.
+- **Its rows.** A move from suspended to suspended is a change of reason, or a note added. The table is append-only
+  like `audit_event`, and its rows are kept as long as the organization's record.
 - **Area.** `packages/db/domain-model/areas.json` (a #42 file) places it in `tenancy`, and the area's "about" sentence
   gains "and PaidWhole's suspensions and reinstatements of an organization, with their reasons".
 
@@ -325,8 +328,10 @@ writes the row.
    organization") unless `app_actor_id()` is set, `app_actor_is_person()` and `app_actor_platform_permitted('organization.manage')`.
 2. **The row.** It locks the row `FOR UPDATE` where `kind IN ('group', 'firm')`. Not found raises `no_data_found`.
 3. **Closed.** `closed` raises `check_violation`, CONSTRAINT `organization_closed_by_closure_only`.
-4. **The status the person saw.** `current.status <> from_status` raises `check_violation`, CONSTRAINT
-   `organization_status_changed_meanwhile`.
+4. **The status the person saw.** A reinstatement of an organization that is already active returns `false` and
+   writes nothing, as today's no-op does. Any other `current.status <> from_status` raises `check_violation`,
+   CONSTRAINT `organization_status_changed_meanwhile`. So a suspension with one reason can never silently replace
+   another administrator's suspension with a different one.
 5. **The moves it allows:**
    - `active` to `suspended` with a suspension reason;
    - `suspended` to `suspended` with a different suspension reason, or with a note (a change of reason);
@@ -421,7 +426,8 @@ input: z.discriminatedUnion('change', [
   `apps/web/src/lib/http/invoke.ts:433`). Its gates exempt maintenance and terms for platform routes, as today.
 - **Audit.** The wrapper still writes `organization_status_set`, the request as the person made it. The setter writes
   `organization_suspended` or `organization_reinstated`, with the reason as purpose, only when something changed.
-- **Route-test sample:** `{ change: 'reinstate', organizationId, reason: 'resolved' }`.
+- **Route-test sample:** `{ change: 'reinstate', organizationId, reason: 'resolved' }`. On the world's active
+  organization it is a no-op, as today's `status: 'active'` sample is.
 
 ### 5.2 The console's organization page (`apps/web/src/app/console/organizations/[organizationId]/page.tsx`; its data from `organizationPage`, console.ts:183-260)
 
@@ -525,8 +531,9 @@ is the firm's.
 
 The rules:
 - **The name.** It is "PaidWhole", never "a platform administrator".
-- **The verb.** "lifts the suspension" is the customer's verb on every surface. "Reinstate" is the console's operator
-  word.
+- **The verb.** "reinstates", with its object named, is the verb on every surface. #56 chose it to match the database's
+  words (its review's UX-8), so BIL-05's and BIL-06's verb stands. BIL-05's row changes in one phrase only: "with no
+  date" becomes "with the date PaidWhole suspended it, when one is stored".
 - **No figures, and nothing CO-11 forbids.** No amount, no "AI", no "recovered". The work is listed the same way
   everywhere: pricing runs, triage, reports, packet exports, uploads, and monitoring where the jobs stop.
 - **A person's own organization is named; another tenant's is not.**
@@ -541,15 +548,15 @@ the JSON 402 `reason`, and as the 55000 message.
 
 | ID | Hold | Sentence |
 | --- | --- | --- |
-| R1 | owner, suspended by PaidWhole | PaidWhole has suspended the practice's organization, so no new work starts here until PaidWhole lifts the suspension; everything here stays readable |
+| R1 | owner, suspended by PaidWhole | PaidWhole has suspended the practice's organization, so no new work starts here until PaidWhole reinstates the organization; everything here stays readable |
 | R2 | owner, closed | the practice's organization is closed, so no new work starts here; everything here stays readable |
 | R3 | owner, nonpayment | an invoice of the practice's organization has been unpaid for 30 days since its payment failed, so no new work starts here until it is paid; everything here stays readable |
-| R4 | grantee, suspended | PaidWhole has suspended your organization, so you start no new work at this practice until PaidWhole lifts the suspension; you can still read its records |
+| R4 | grantee, suspended | PaidWhole has suspended your organization, so you start no new work at this practice until PaidWhole reinstates your organization; you can still read its records |
 | R5 | grantee, closed | your organization is closed, so you start no new work at this practice |
 
 They replace `functions/organization_run_refusal.sql:15-17`. For example: "Not started: PaidWhole has suspended your
-organization, so you start no new work at this practice until PaidWhole lifts the suspension; you can still read its
-records."
+organization, so you start no new work at this practice until PaidWhole reinstates your organization; you can still
+read its records."
 
 ### 6.2 The practice home's notice (H1 to H12; `role="alert"`, destructive, as today)
 
@@ -558,12 +565,12 @@ records."
 
 | ID | Case | Title | Body |
 | --- | --- | --- | --- |
-| H1 | owner, suspended, reason and date known (members only see the reason) | New runs have stopped | PaidWhole suspended {org} on {date}{reason clause}. Pricing runs, triage, reports, packet exports, uploads and monitoring do not start until PaidWhole lifts the suspension. Everything here stays readable. |
-| H2 | owner, suspended, no date recorded | New runs have stopped | PaidWhole has suspended {org}{reason clause}. Pricing runs, triage, reports, packet exports, uploads and monitoring do not start until PaidWhole lifts the suspension. Everything here stays readable. |
+| H1 | owner, suspended, reason and date known (members only see the reason) | New runs have stopped | PaidWhole suspended {org} on {date}{reason clause}. Pricing runs, triage, reports, packet exports, uploads and monitoring do not start until PaidWhole reinstates {org}. Everything here stays readable. |
+| H2 | owner, suspended, no date recorded | New runs have stopped | PaidWhole has suspended {org}{reason clause}. Pricing runs, triage, reports, packet exports, uploads and monitoring do not start until PaidWhole reinstates {org}. Everything here stays readable. |
 | H3 | owner, closed | No new runs start | {Org} is closed, so pricing runs, triage, reports, packet exports, uploads and monitoring do not start. Everything here stays readable. |
 | H4 | owner, nonpayment | New runs have stopped | An invoice of {org} has been unpaid for 30 days since its payment failed, so pricing runs, triage, reports, packet exports, uploads and monitoring do not start until it is paid. Everything here stays readable. |
-| H5 | grantee, suspended, date known | You cannot start new work here | PaidWhole suspended {firm} on {date}{reason clause}, so you start no new pricing runs, triage, reports, packet exports or uploads at this practice until PaidWhole lifts the suspension. You can still read everything here, and the practice's own staff carry on. |
-| H6 | grantee, suspended, no date | You cannot start new work here | PaidWhole has suspended {firm}{reason clause}, so you start no new pricing runs, triage, reports, packet exports or uploads at this practice until PaidWhole lifts the suspension. You can still read everything here, and the practice's own staff carry on. |
+| H5 | grantee, suspended, date known | You cannot start new work here | PaidWhole suspended {firm} on {date}{reason clause}, so you start no new pricing runs, triage, reports, packet exports or uploads at this practice until PaidWhole reinstates {firm}. You can still read everything here, and the practice's own staff carry on. |
+| H6 | grantee, suspended, no date | You cannot start new work here | PaidWhole has suspended {firm}{reason clause}, so you start no new pricing runs, triage, reports, packet exports or uploads at this practice until PaidWhole reinstates {firm}. You can still read everything here, and the practice's own staff carry on. |
 | H7 | grantee, closed | You cannot start new work here | {Firm} is closed, so you start no new pricing runs, triage, reports, packet exports or uploads at this practice. |
 
 The reason clause is given to the held organization's own members only (D6):
@@ -601,12 +608,12 @@ These replace #56's words where they differ. Every other line of #56 stands.
 | --- | --- | --- |
 | B1 | label, suspended by PaidWhole, date known | Suspended by PaidWhole since {date} |
 | B2 | label, no date recorded | Suspended by PaidWhole |
-| B3 | group notice | PaidWhole has suspended the organization{reason clause}: new runs have stopped until PaidWhole lifts the suspension, and its data stays readable. {lift sentence}{billing hold sentence, as #56} |
-| B4 | firm notice (title "The organization is suspended") | PaidWhole has suspended the organization{reason clause}: your people start no new work at the practices you are granted until PaidWhole lifts the suspension. Every record stays readable, and the practices' own staff carry on.{" An invoice is also unpaid since {date}." when billing holds one} |
-| B5 | lift sentence, `unpaid_invoice` | Paying the invoice does not lift it by itself: open a support ticket once it is paid. |
-| B6 | lift sentence, any other reason or none | Paying an invoice does not lift it. |
-| B7 | next steps by reason (after "Pay {invoice}" when billing holds one, as #56) | `unpaid_invoice`: **Open a support ticket** once it is paid, so PaidWhole can lift the suspension. · `customer_request`: **Open a support ticket** when you want the suspension lifted. · `security_hold`: **Open a support ticket** to find out what PaidWhole needs from you. · `agreement_ended`: **Open a support ticket** to discuss a new agreement. · none: **Open a support ticket** to find out why and what lifts it. |
-| B8 | forms note | Changing the plan or payment method does not lift a suspension by PaidWhole. |
+| B3 | group notice | PaidWhole has suspended the organization{reason clause}: new runs have stopped until PaidWhole reinstates it, and its data stays readable. {payment sentence}{billing hold sentence, as #56} |
+| B4 | firm notice (title "The organization is suspended") | PaidWhole has suspended the organization{reason clause}: your people start no new work at the practices you are granted until PaidWhole reinstates the organization. Every record stays readable, and the practices' own staff carry on.{" An invoice is also unpaid since {date}." when billing holds one} |
+| B5 | payment sentence, `unpaid_invoice` | Paying the invoice does not reinstate it by itself: open a support ticket once it is paid. |
+| B6 | payment sentence, any other reason or none | Paying an invoice does not reinstate it. (#56's words, unchanged) |
+| B7 | next steps by reason (after "Pay {invoice}" when billing holds one, as #56) | `unpaid_invoice`: **Open a support ticket** once it is paid, so PaidWhole can reinstate the organization. · `customer_request`: **Open a support ticket** when you want the organization reinstated. · `security_hold`: **Open a support ticket** to find out what PaidWhole needs from you. · `agreement_ended`: **Open a support ticket** to discuss a new agreement. · none, group: **Open a support ticket** to find out why and what reinstates it. (#56's words) · none, firm: **Open a support ticket** to find out why. (#56's words) |
+| B8 | forms note | Changing the plan or payment method does not reinstate an organization suspended by PaidWhole. (#56's words, unchanged) |
 | B9 | closed firm notice | Your people start no new work at the practices you are granted.{owed, as #56} |
 | B10 | reason clause on this page | `unpaid_invoice` " for an unpaid invoice"; `customer_request` " at your request"; `security_hold` " while it looks into a security concern"; `agreement_ended` " because the organization's agreement with PaidWhole has ended"; none: nothing |
 
@@ -662,8 +669,8 @@ outbox and the delivery states are unchanged.
 | payment_failed | unchanged | The payment for {invoice} ({owed}) failed. · Update the payment method or pay the invoice from the billing page. · New runs are already stopped while PaidWhole's suspension of the organization lasts. | The payment for {invoice} ({owed}) failed. · Update the payment method or pay the invoice from the billing page. |
 | second_notice, third_notice | unchanged | {Invoice} ({owed}) is still unpaid. · Pay it, or update the payment method, from the billing page. · New runs are already stopped while PaidWhole's suspension of the organization lasts. | {Invoice} ({owed}) is still unpaid. · Pay it, or update the payment method, from the billing page. |
 | final_notice | unchanged | as second_notice, `held` | as second_notice, `none` |
-| suspended | unchanged | {Invoice} ({owed}) has been unpaid for 30 days since its payment failed. · New runs stay stopped until it is paid and PaidWhole lifts its own suspension of the organization. | {Invoice} ({owed}) has been unpaid for 30 days since its payment failed. · Pay it from the billing page. |
-| reinstated | {Invoice} is paid. New runs have started again. | {Invoice} is paid. · PaidWhole has also suspended the organization, so new runs stay stopped until PaidWhole lifts that suspension. The billing page says why and what to do next. | {Invoice} is paid. |
+| suspended | unchanged | {Invoice} ({owed}) has been unpaid for 30 days since its payment failed. · New runs stay stopped until it is paid and PaidWhole reinstates the organization. | {Invoice} ({owed}) has been unpaid for 30 days since its payment failed. · Pay it from the billing page. |
+| reinstated | {Invoice} is paid. New runs have started again. | {Invoice} is paid. · PaidWhole has also suspended the organization, so new runs stay stopped until PaidWhole reinstates it. The billing page says why and what to do next. | {Invoice} is paid. |
 
 | Stage | Subject, `runs` (unchanged) | Subject, `held` and `none` |
 | --- | --- | --- |
@@ -730,3 +737,284 @@ refuses only its work.
   `organization_reinstated`.
 - Paying an invoice lifts billing's hold at once and never lifts PaidWhole's, as before. The only change is that the
   mail stops claiming runs restarted when PaidWhole's own suspension still holds them.
+
+---
+
+## 10. Tests
+
+Each test is written first and fails on today's tree (the "fails first" column), then passes on the build. The IDs are
+the reserved BIL-07 to BIL-10. `packages/synth` gets four no-file entries, `none(11, …)` with `assertedBy`, and their
+matrix text is identical to `docs/product/test-matrix.md` (SS-10's pattern; `registry.ts:628-640`, `matrix.ts:420-431`,
+both #42 files). Synthetic data only.
+
+### BIL-07: a suspended or closed organization's people start no new work where they reach only through its grants
+
+| Part | Where | What it proves | Fails first because |
+| --- | --- | --- | --- |
+| Per route | `apps/web/src/lib/routes/route-tests/define.ts`, beside :146-160, for every `RUN_STARTING_ROUTES` ID. The world already has a firm with a grant in force (`route-tests/world.ts:384-432`). | With the world's firm suspended by the owner, a firm persona allowed on the route gets `{ status: 'suspended', reason: /^PaidWhole has suspended your organization/ }` and the world's tenant rows do not change. The firm is set active again afterwards. | The route answers ok and the rows change |
+| The database | a new `apps/web/src/lib/routes/suspension-refusal.db.test.ts` | It writes each trigger table a person writes, in that person's transaction, through the house row factory and around the route gate: `source_document`, `pricing_run`, `audit_report`, `report_document`, `roi_statement`. Each insert:<br>• by the suspended firm's principal fails 55000 with R4;<br>• by the group's administrator is recorded;<br>• in a job's scope (`withJobScope`) is recorded, `digest` and the packet export included.<br>The owner's hold refuses all three with R1 to R3, jobs included. | The firm principal's rows are recorded |
+| The decision | same file | • Someone in a suspended firm and in an active firm with a grant in force is not refused; once both are held, they are.<br>• Revoking the grant takes the practice out of the person's scope (`insufficient_privilege`).<br>• A closed grantee gives R5.<br>• `practice_run_hold` gives `(grantee, firm, suspended, security_hold, since)` to the firm's people, and the owner's reason to the owner's members only (null to a firm's person at an owner-held practice).<br>• A firm's billing-suspended standing holds nothing on its granted practice (status only, D1). | `practice_run_hold` does not exist; the person in two firms is not distinguished |
+| Catalog | same file, or the catalog test | `practice_work_hold` and `practice_work_refusal` are executable by the owner alone; the `tp_billing` and `tp_screening` definer lists are unchanged. | The functions do not exist |
+| Capacity | same file | A firm granted 2,000 practices of one group: `practice_run_refusal` as its principal stays under 100 ms, and returns R4. This guards against a per-row scan of grants; the probe measured 2.7 to 5.4 ms against `open_practice_scope`'s 3.9 ms. | It returns null |
+
+### BIL-08: PaidWhole's suspension is set only through its setter, with its reason, note and time, checked in the handler and in Postgres
+
+| Part | Where | What it proves | Fails first because |
+| --- | --- | --- | --- |
+| The route | `apps/web/src/lib/routes/console-routes.db.test.ts:679-701`, rewritten | • Zod refuses a suspension without a reason, without the tick, or with a note over 500 characters or with a line break (X1 to X5).<br>• A customer administrator is refused.<br>• Suspend writes `status`, `status_reason`, `status_since`, one history row with the note, `organization_suspended` (purpose the reason) and the wrapper's `organization_status_set`.<br>• The same reason again writes no history and no reserved action.<br>• A change of reason keeps `status_since`.<br>• Reinstating writes `organization_reinstated`.<br>• A stale `from` gives X6.<br>• Closed, internal and missing organizations are refused as today. | The route takes `status` only and stores nothing |
+| The setter | same file | The setter refuses: a job's actor; a person without `organization.manage`; closed; internal; a reason from the wrong list; a stale `from_status`. | It does not exist |
+| Postgres, without the handler | same file | • As `tp_app`, a platform administrator's direct `UPDATE organization SET status = 'closed'`, its reopening, and suspending the internal organization are refused.<br>• `UPDATE … SET status_reason` is denied.<br>• The previous image's direct suspend still works and stamps `status_since` (D11).<br>• `tp_app` cannot insert `audit_event` with action `organization_suspended`. | Today all four direct writes succeed |
+| Who reads the note | same file | `organization_status_change` reads no rows for a customer administrator, a firm principal or `tp_billing`, and all rows for a platform administrator. `tp_billing` reads `status_reason` and `status_since`. | The table does not exist |
+
+### BIL-09: every place a person reads a suspension says it is PaidWhole's, whose it is, why, and what restarts the work
+
+| Part | Where | What it proves | Fails first because |
+| --- | --- | --- | --- |
+| Words, unit | a new `apps/web/src/lib/billing/suspension-words.test.ts` | H1 to H12, J1, C6 to C12, G1 and G2, exactly, for each source, cause, reason (or none), date (or none) and viewer | The module does not exist |
+| Words, property | same file (fast-check, as the repository's property tests) | Over every combination:<br>• "PaidWhole" appears exactly when the cause is PaidWhole's suspension;<br>• "platform administrator" never appears;<br>• no reason clause reaches someone outside the held organization;<br>• "your organization" is never said to a non-member about an owner's hold;<br>• no closed case promises a restart;<br>• every non-closed case names what restarts it. | The module does not exist |
+| The billing page | `apps/web/src/components/billing/account-standing.test.tsx` and BIL-05's unit tests, extended | B1 to B10: the label carries the date when one is stored; the notice and next step follow the reason; a firm's PaidWhole suspension names its people's stop; a firm's nonpayment still claims no run | B1's date and B4's words are missing |
+| The database's words | `billing.db.test.ts:313, :340`; `billing-routes.db.test.ts:415, 430, 441, 489, 504, 550`; `define.ts:154` | R1 to R3 in place of today's, starting "PaidWhole has suspended the practice's organization", "an invoice of the practice's organization" | Today's words |
+| The journey | `apps/web/e2e/billing.spec.ts`, new journeys beside BIL-06, on the seeded SYNTHETIC SUSPENDED FIRM, SYNTHETIC FIRM CLIENT PRACTICE and SYNTHETIC CONSOLE SUSPENSION FIRM | (a) The suspended firm's principal opens the client practice: the home shows H5 and H8 or H9, Uploads shows "Uploads are paused: PaidWhole has suspended your organization…", and asking for a pricing run shows "Not started: …".<br>(b) The client group's administrator at the same practice sees no notice, and Uploads is open.<br>(c) The platform administrator suspends the console firm with a reason, a note and the tick; the card shows C7 and the history; then "Reinstate: the cause is resolved".<br>Each page passes axe. | (a) shows no notice and an open Uploads |
+
+### BIL-10: the dunning mail never claims runs started or stopped when they did not
+
+| Part | Where | What it proves | Fails first because |
+| --- | --- | --- | --- |
+| Words, unit | a new `apps/worker/src/billing/dunning-words.test.ts` (dunningMessage is pure; `billing.db.test.ts`, #42's, is today its only test) | `dunningMessage` for each stage and each `effect` (group active, group suspended by PaidWhole, group closed, firm): section 7's lines and subjects, exactly. "started again" appears only for `runs`. | Today's single wording |
+| The send | `apps/worker/src/billing/billing.db.test.ts` (#42's) | • A group suspended by PaidWhole pays an invoice held 31 days: the stage is `reinstated`, the audit is `billing_reinstated`, and the message the local outbox holds reads "… is paid." with the PaidWhole sentence, never "New runs have started again".<br>• Reinstated by PaidWhole between the stage and the send, the message reads "New runs have started again".<br>• A firm's notices never contain "runs". | The message reads "New runs have started again" |
+
+### Tests updated, not added
+
+`apps/worker/src/worker.test.ts:325` (#42's), with the mocked reason's text only. `apps/web/src/components/billing/account-standing.test.tsx`
+for the firm cases, which now assert a run sentence for PaidWhole's suspension. `e2e/billing.spec.ts:90-107` (BIL-06):
+the seed adds a reason, so the label carries a date. The `domain-model` tests and the function files' check pass on the
+regenerated output. The catalog test and the cross-tenant test pass unchanged: the new table has no `practice_id` and
+forces RLS. The cross-tenant generator has no tenant table to add.
+
+---
+
+## 11. The domain model and the function files
+
+**Regenerate in this PR, on the tree with #42 merged:** run `pnpm db:domain-model --out` from a database migrated from
+empty.
+
+**What changes in `docs/product/domain-model.md`:**
+- the `organization` table: two columns, three constraints, the trigger;
+- the new `organization_status_change` table (Tenancy area);
+- the `audit_event_record` policy text;
+- the functions' rows: `practice_run_refusal` and `refuse_new_work_while_suspended` changed, `organization_run_refusal`
+  gone, and the new functions added;
+- the seven trigger lines that name `refuse_new_work_while_suspended`;
+- `practice_grants`'s return type.
+
+**What changes in `packages/db/functions`:**
+- added: `practice_work_hold.sql`, `practice_work_refusal.sql`, `practice_run_hold.sql`,
+  `console_set_organization_status.sql`, `organization_status_rules.sql`;
+- changed: `practice_run_refusal.sql`, `refuse_new_work_while_suspended.sql`, `practice_grants.sql`;
+- removed: `organization_run_refusal.sql`.
+
+**Inputs the generator needs:**
+- `packages/db/domain-model/areas.json` (#42's) places `organization_status_change` in `tenancy` and widens the area's
+  "about" (section 4.3);
+- `docs/product/data-dictionary.md` stays verbatim (it is the planning document's import; #42's tables are not in it
+  either). The generator reports the new table and columns as informational, and `divergence-explanations.json` needs
+  no entry unless `--strict` asks for one; the builders add the entry it names, if any;
+- one sentence in Appendix C's introduction pointing to the function files, if #42 has not already added it (#111's
+  hand-over).
+
+**Gates:**
+- `pnpm db:domain-model --check --require-approval` passes only with the founder's line.
+- The PR is opened with `pnpm db:domain-model --summary-since origin/claude/build-platform --function-diffs list`.
+- The regenerated function files are committed **before** the founder signs, since a commit after their approval
+  dismisses it.
+- The approval line goes up as one suggested-change comment on that line (CLAUDE.md "Schema gate";
+  `.claude/skills/new-migration`), never written by a session, never as a review.
+
+---
+
+## 12. What the founder must approve or rule
+
+1. **Approve `docs/product/domain-model.md`** by its SHA-256, on the PR's latest commit (CO-02; ADR 0063). This is the
+   only founder decision this PR needs.
+
+Nothing else goes to the founder:
+- **No freeze exception.** The design touches no pricing, ledger or engine code, and no `content/releases`.
+- **No legal text.**
+- **No founder ruling reversed** (section 9).
+
+The one point the founder should see while approving, named in ADR 0080 and in the PR's description: PaidWhole's own
+suspension of a firm now stops that firm's people at its granted practices. That decides early part of what ADR
+0050:118 deferred to milestone 12. A firm's nonpayment stays deferred. It decides a deferred point; it reverses
+nothing.
+
+---
+
+## 13. Files
+
+#42's files are marked **(#42)**. This PR follows #42, so it edits #42's final text and re-reads each one at #42's
+merged head before writing.
+
+**Database and generated:**
+- `packages/db/migrations/20261108090000_suspension_refusal.sql` (new)
+- `packages/db/src/schema/tenancy.ts` **(#42)**: columns, table, reason lists
+- `packages/db/src/runtime.ts` / `index.ts`: export the reason lists
+- `packages/db/domain-model/areas.json` **(#42)**
+- `docs/product/domain-model.md` **(#42)**, regenerated
+- `packages/db/functions/*.sql` **(#42's set)**, regenerated (section 11)
+
+**Web:**
+- `apps/web/src/lib/routes/console.ts` **(#42)**: the route (5.1) and the page's data (5.2)
+- `apps/web/src/app/console/organizations/[organizationId]/page.tsx` and `apps/web/src/app/console/actions.ts`: the
+  card, forms and history
+- `apps/web/src/app/console/billing/page.tsx`: O1
+- `apps/web/src/lib/billing/hold.ts` and `apps/web/src/lib/billing/suspension-words.ts` (new, with tests)
+- `apps/web/src/lib/routes/practice.ts` **(#42)** and `apps/web/src/app/p/[practiceId]/page.tsx`: the home
+- `apps/web/src/lib/routes/billing.ts` and `apps/worker/src/billing/account.ts`: the billing page (5.5)
+- `apps/web/src/lib/routes/settings.ts` **(#42)** and `apps/web/src/app/p/[practiceId]/settings/agreements/page.tsx`:
+  G1 and G2
+- `apps/web/src/lib/packets/export-attempts.ts`: E1
+
+**Worker:**
+- `apps/worker/src/worker.ts`: the export's refused audit
+- `apps/worker/src/packets/readiness.ts`: `organization_suspended`
+- `apps/worker/src/billing/dunning.ts` **(#42)**: SS-08
+
+**Seeds:**
+- `apps/web/scripts/seed.ts` and `apps/web/scripts/synthetic-personas.ts`
+
+**Tests:**
+- `apps/web/src/lib/routes/route-tests/define.ts`
+- `apps/web/src/lib/routes/console-routes.db.test.ts`
+- `apps/web/src/lib/routes/billing-routes.db.test.ts`
+- `apps/web/src/lib/routes/suspension-refusal.db.test.ts` (new)
+- `apps/web/src/components/billing/account-standing.test.tsx`
+- `apps/web/e2e/billing.spec.ts`
+- `apps/worker/src/billing/billing.db.test.ts` **(#42)**
+- `apps/worker/src/billing/dunning-words.test.ts` (new)
+- `apps/worker/src/worker.test.ts` **(#42)**
+
+**Documents and registries:**
+- `docs/product/test-matrix.md` **(#42)**: BIL-07 to BIL-10, and BIL-05's one phrase (section 6)
+- `packages/synth/src/cases/matrix.ts` and `registry.ts` **(#42)**
+- `docs/adr/0080-…md` (new), and dated amendments to `docs/adr/0050-…md` **(#42)** and `docs/adr/0055-…md` **(#42)**
+- `docs/runbooks/billing.md`: under "A suspension is computed, not stored" (:67-70), a paragraph that PaidWhole's
+  suspension is stored, set only in the console with a reason, and never lifted by a payment
+
+Not touched:
+- `apps/web/src/lib/http/invoke.ts`, `next.ts` and `handler.ts`
+- `apps/web/src/lib/billing/runs.ts`
+- `apps/worker/src/billing/refusal.ts`
+- `apps/web/src/lib/routes/uploads.ts`
+- `packages/billing/src/standing.ts`
+- `docs/product/data-dictionary.md`
+- the pricing, ledger and rules packages
+
+---
+
+## 14. Risks
+
+| Risk | Mitigation |
+| --- | --- |
+| A person reaches the practice through a path B does not see (a new access branch later) | The paths come from `effective_practice_access()` itself. A new branch is seen at once, held only if it is a grant of a held organization. BIL-07 covers ownership, grant and support. |
+| The trigger's cost on hot inserts | Only top-level documents, runs, reports, statements, digests and the first export fire it, as today. The extra work is the person's own paths: 2.7 to 5.4 ms at 2,001 grants, and the job path does none. BIL-07's capacity guard. |
+| A free-text note collects PHI | One line, 500 characters, the form's hint, platform-only reads, never logged, mailed or exported. Ticket-style screens and opaque IDs only, as the support form. |
+| The previous image during a deploy | Section 4.7. Its words repeat one clause for minutes. Its suspend writes no reason, which the page reads as "no reason was recorded". |
+| `from_status` refusals annoy an administrator | Only when another administrator changed the status since the page loaded. The message says to reload. |
+| A grantee's person keeps a packet export asked for before the suspension | Section 2: deliberate, documented in ADR 0080, and no different from "work already started finishes" (ADR 0050). |
+| #42's fix round changes `console.ts`, `dunning.ts`, `practice.ts`, `settings.ts`, `tenancy.ts`, `areas.json`, the matrix, the registry, the ADRs or the `audit_event_record` policy again | The builders start from #42's merged head and re-read each before editing. The migration recreates the policy from #42's final text, not from this document's quote. |
+| UX PR 78 and 79 change the same card | Section 16: this PR takes the suspend tick; UX PR 78 drops its suspend part; UX PR 79 reorders after this merges. |
+| Q13 lands later and changes `billing_standing` | `practice_work_hold` reads `billing_standing` by name, so Q13's change flows through. Its PR adds its own tests on the holds. |
+
+---
+
+## 15. The builders' slices, in order
+
+Each slice is one commit or more on `co-001/ss-01-suspension-refusal`, cut from `claude/build-platform` after #42
+merges.
+
+1. **Tests first.**
+   - BIL-07's database and per-route tests, BIL-08's route, setter and Postgres tests, and BIL-10's word tests, all
+     failing on the base.
+   - The test-matrix rows and the synth registry and matrix entries for BIL-07 to BIL-10.
+2. **The migration** (section 4), with:
+   - the Drizzle mirror and the reason lists;
+   - `areas.json`;
+   - the regenerated domain model and function files.
+
+   BIL-07's and BIL-08's database parts pass. The catalog, cross-tenant, domain-model and function-file tests pass.
+3. **The console** (5.1, 5.2, O1): the route, the page, the forms, the tick, the history and the Grants state. BIL-08's
+   route parts pass.
+4. **The customer surfaces** (5.3 to 5.6):
+   - the words module and the hold read;
+   - the home, the job label and the export refusal;
+   - the billing page and the practice's grants.
+
+   BIL-09's unit, property and component tests pass, and the updated word assertions pass.
+5. **SS-08** (section 7). BIL-10 passes.
+6. **Seed and journeys:** the seeded firm, client group, practice and console firm; BIL-09's e2e journeys; BIL-06 kept
+   green.
+7. **Documents:**
+   - ADR 0080: the rule (option B and why), the stored reason and history, the setter, the words' rules, the one-release
+     grant and its revoke, no reopen, and the open points for milestone 12;
+   - the dated amendments to ADRs 0050 and 0055 on #42's text;
+   - the runbook paragraph;
+   - LANES.md's hand-overs (section 16), through the orchestrator.
+8. **The full local suite:** unit and property, db, golden, e2e, lint, `lint:copy`, `lint:logs`, typecheck,
+   `verify-content`, synth, `db:domain-model --check`. Then the screenshots for the UX review: the console organization
+   page (active group, active firm, suspended with reason, history), the practice home (owner-held, grantee-held), Uploads
+   (grantee-held), the billing page (group and firm, suspended with reason and date) and Settings' grants, at 1280 and
+   390 px, light and dark (LANES.md rule 1).
+
+**The reviews.** Two adversarial reviews, as the pipeline runs them:
+- **tenancy and security:** the actor-scoped decision against every access path, the definer functions, the grants,
+  the reserved actions, the note's privacy, and the previous image during a deploy;
+- **UX and brand:** `.claude/agents/ux-brand-reviewer.md`, over section 6's words and the shots.
+
+The fix round runs the full suite, and the fresh-clone verification reads CI. The founder's approval line comes last,
+on the final commit.
+
+---
+
+## 16. Handed on, and kept out (each with why)
+
+| Item | Where it goes | Why not here |
+| --- | --- | --- |
+| Mail to the organization's administrators when PaidWhole suspends or reinstates it, and **Q13** (suspension waits for a delivered dunning notice or a recorded contact) | One schema PR, next in Lane A's chain after this one. Claim it now. | Both extend #42's outbox (a new kind in `mail_send_kind` and `mail_send_stream_kind`, an outbox table, `operator_record_mail_event` recreated) and read its delivery states. A recorded contact is also what Q13 counts. Its review lens is deliverability; this PR's is tenancy and security. |
+| `REVOKE UPDATE (status), INSERT (status) ON organization FROM tp_app` | The first schema PR after this one is deployed (the mail PR, if this one is live by then). Recorded in ADR 0080 and under LANES.md "Handed to Lane A". | The previous image must keep working for one release (D11). |
+| The closure lifecycle: closure ends grants, memberships and sessions; the Stripe subscription; export and deletion; reopening | Milestone 12's offboarding PR | Section 8 |
+| A group grantee's nonpayment at the practices it is granted, and a firm's own invoices and suspension rules | Milestone 12's firm billing (ADR 0050:118) | Status only, D1 |
+| UX PR 78 (`co-001/ux-console-confirm`, UX-046) | It drops its "Suspend …" tick, which this PR builds in B's words (C6). The rest of UX-046 stands. Record in LANES.md. | Same card, same route |
+| UX PR 79 (`co-001/ux-console-org-page`, UX-203) | It lands after this PR and keeps the Suspension card's content, moving it to the foot. The Grants state (C11, C12) is built here. | Same page |
+| UX PR 57 (`co-001/ux-console-records`, UX-204) | It may link "Suspended by PaidWhole: {reason}" (O1) to the organization's card | Same table, no conflict |
+| Model calls under a suspension (`model_proposal`, `model_budget_hold`) | Recorded in ADR 0080 as not refused, with the reason (section 1.3). A later product decision if wanted. | Not run-starting work under ADR 0050 |
+
+---
+
+## 17. Probes run for this design
+
+- **The database.** `tp_design_ss01_10`, created empty and migrated through #42's 45 migrations (head 098636e3) with
+  `probes/migrate42.mts`. It was dropped when done.
+- **The world.** `probes/ss01-world.sql`: group G, practice P with its BAA and location, firm F and a second firm F2,
+  engagement letters, F's grant in force. It is synthetic.
+- **`probes/ss01-author-proto.sql`**, run in one transaction and rolled back. It builds the section 4 prototype (with
+  an earlier wording of R1 to R5; section 6's words are final). Results:
+
+  | # | State | Result |
+  | --- | --- | --- |
+  | P1, P2 | today | A suspended firm's principal is not refused, and their upload row is recorded |
+  | A1 to A5 | the setter | It suspends with a reason and a note (true); the same reason again changes nothing (false); the history row holds the note; `status_reason` and `status_since` are set |
+  | B1 to B3 | the firm principal | Refused with the grantee sentence. The hold reads `(grantee, firm, suspended, security_hold, since)`. They read no history. Their upload fails 55000 from the trigger. |
+  | C1, C2 | the group's administrator | Not refused; the upload is recorded |
+  | D1, D2 | a person in F and F2 | Not refused while F2 is active; refused once both are suspended |
+  | E1 to E4 | jobs and the owner | A job is not refused by the firm's hold. The group's own suspension refuses the job. The owner's hold wins over the firm's. Reinstating clears the reason. |
+  | F1 to F3 | the previous image | Its direct suspend works and stamps the time. `closed` (organization_closed_by_closure_only), the internal organization (organization_internal_active) and writing `status_reason` are refused. |
+  | setter refusals | | Refused with no reason, and for a firm principal |
+
+- **Capacity.** `probes/ss01-author-capacity.sql` and `-timing.sql`: the firm granted 2,001 practices.
+  `practice_run_refusal` as its principal took 5.4, 3.0 and 2.7 ms; `open_practice_scope` took 3.9 ms.
+- **Static checks:**
+  - #42's file list at 098636e3 (188 files; `progress/ss01-author-pr42files-now.txt`);
+  - #42's migration, for the `audit_event_record` policy (:803-810) and the console pause and resume pattern
+    (:1134-1176);
+  - every writer of the seven trigger tables;
+  - every test that pins today's words (section 10).

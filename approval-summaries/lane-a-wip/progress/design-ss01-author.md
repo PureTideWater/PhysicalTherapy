@@ -40,3 +40,9 @@ Clone: $P/designs/ss01-author
 - WRITTEN: section 6 words. NEXT: 7 SS-08
 - WRITTEN: section 7 SS-08. NEXT: 8 reopen, 9 rulings
 - WRITTEN: sections 8, 9. NEXT: 10 tests
+- verb decision: customer verb 'reinstates' (keep #56's UX-8 choice; BIL-05/06 text stands); replaced in doc
+- WRITTEN: section 10 tests. NEXT: 11 domain model, 12 founder, 13 files, 14 risks, 15 slices, 16 handed on, 17 probes
+- WRITTEN: 11,12,13,14. NEXT: 15 slices, 16 handed on, 17 probes; then review whole doc
+- WRITTEN: 15,16,17. NEXT: full read-through review; drop DB; return
+- proofread through section 6; fixes: reinstate-noop on active (route sample), BIL-05 phrase, 4.x wording
+- DONE: design complete at /home/user/ops/designs/ss-01-suspension.md (1020 lines); probe DB tp_design_ss01_10 dropped. Remaining: return StructuredOutput.
