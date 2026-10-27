@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { isDeepStrictEqual, stripVTControlCharacters } from 'node:util';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 
 import { consistencyProblems, formProblems, parsePin } from '../check-action-pins/workflows';
@@ -14,6 +14,19 @@ import { MAX_OPENED_PER_RUN } from '../content-calendar/render';
 import { repositoryRoot } from '../content-files';
 import { REQUIRED_CHECKS } from '../required-checks';
 import { RELEASE_RUNNER } from '../screening-capacity/launch-check';
+
+/**
+ * Many of these tests run a workflow step's script, git or a fake gh as GitHub would, hundreds of processes for the
+ * notify tests, and the simulated Dependabot rewrite runs the whole file again in a vitest of its own while the rest of
+ * the unit project runs, so their time grows with the runner's load. The content-calendar notify test took 0.9 s on an
+ * idle 4-CPU container, 1.0 to 2.2 s in that nested run beside the full unit project, 1.8 s in CI's own run (job
+ * 122241596089) and over 5 s in that job's nested run, which failed it at vitest's five-second default; on one CPU
+ * shared with eight busy loops it took 7.4 s and the slowest other test 4.0 s. Thirty seconds holds four times the
+ * worst of those. A test's timeout cannot interrupt a synchronous child process, so each one the file starts is bounded
+ * by the same thirty seconds and killed after it: a hung script, git or actionlint fails its test rather than holding it.
+ */
+const TEST_TIMEOUT_MS = 30_000;
+vi.setConfig({ testTimeout: TEST_TIMEOUT_MS });
 
 /**
  * The workflows: ci.yml's parallel jobs behind its one gate (docs/adr/0066, Part 1), with the image and licence gates
@@ -197,7 +210,7 @@ afterAll(() => {
 
 /** Runs a step's script as GitHub runs a `shell: bash` step (bash --noprofile --norc -eo pipefail), with this environment alone. */
 function runScript(script: string, env: Record<string, string>, cwd: string): { status: number | null; output: string } {
-  const result = spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', script], { cwd, encoding: 'utf8', env: { PATH: process.env.PATH ?? '/usr/bin:/bin', ...env } });
+  const result = spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', script], { cwd, encoding: 'utf8', env: { PATH: process.env.PATH ?? '/usr/bin:/bin', ...env }, timeout: TEST_TIMEOUT_MS, killSignal: 'SIGKILL' });
   expect(result.error).toBeUndefined();
   return { status: result.status, output: result.stdout + result.stderr };
 }
@@ -319,7 +332,7 @@ function shardWidths(matrix: Record<string, unknown> | undefined): { public: unk
 function rangeRepository(): { dir: string; first: string; second: string; head: string; env: Record<string, string> } {
   const dir = mkdtempSync(path.join(scratch, 'range-'));
   const env = { HOME: dir, GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'Synthetic', GIT_AUTHOR_EMAIL: 'synthetic@example.invalid', GIT_COMMITTER_NAME: 'Synthetic', GIT_COMMITTER_EMAIL: 'synthetic@example.invalid' };
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env: { ...process.env, ...env }, encoding: 'utf8' }).trim();
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env: { ...process.env, ...env }, encoding: 'utf8', timeout: TEST_TIMEOUT_MS, killSignal: 'SIGKILL' }).trim();
   git('init', '-q', '-b', 'main');
   const shas = ['first', 'second', 'third'].map((name) => {
     writeFileSync(path.join(dir, `${name}.txt`), `${name}\n`);
@@ -1668,7 +1681,7 @@ describe('approval-of-record (docs/adr/0063)', () => {
   const actionlint = process.env.ACTIONLINT ?? spawnSync('/bin/sh', ['-c', 'command -v actionlint'], { encoding: 'utf8' }).stdout.trim();
   it.runIf(actionlint !== '')('every workflow passes actionlint', () => {
     const files = readdirSync(WORKFLOWS).map((name) => path.join(WORKFLOWS, name));
-    const result = spawnSync(actionlint, ['-shellcheck=', '-pyflakes=', ...files], { encoding: 'utf8' });
+    const result = spawnSync(actionlint, ['-shellcheck=', '-pyflakes=', ...files], { encoding: 'utf8', timeout: TEST_TIMEOUT_MS, killSignal: 'SIGKILL' });
     expect(result.error).toBeUndefined();
     expect(result.stdout + result.stderr).toBe('');
     expect(result.status).toBe(0);
@@ -1788,7 +1801,8 @@ describe('mutation testing (docs/adr/0066, Part 4; CI-15 to CI-17)', () => {
   // makes, the outputs printed after a marker.
   const guard = (env: { CHANGES?: string; STRYKER?: string; ANY?: string; PACKAGES?: string; SHARDS?: string }) => {
     const wrapper = 'out=$(mktemp); sum=$(mktemp); status=0; GITHUB_OUTPUT="$out" GITHUB_STEP_SUMMARY="$sum" bash -e -c "$1" || status=$?; printf "\\n--outputs--\\n%s" "$(cat "$out")"; rm -f "$out" "$sum"; exit "$status"';
-    const ran = spawnSync('bash', ['-c', wrapper, 'guard', job('mutation').steps[0]?.run ?? ''], { encoding: 'utf8', env: { PATH: process.env.PATH ?? '/usr/bin:/bin', ...env } });
+    const ran = spawnSync('bash', ['-c', wrapper, 'guard', job('mutation').steps[0]?.run ?? ''], { encoding: 'utf8', env: { PATH: process.env.PATH ?? '/usr/bin:/bin', ...env }, timeout: TEST_TIMEOUT_MS, killSignal: 'SIGKILL' });
+    expect(ran.error).toBeUndefined();
     const [log = '', output = ''] = ran.stdout.split('\n--outputs--\n');
     return { status: ran.status, output, log: log + ran.stderr };
   };
