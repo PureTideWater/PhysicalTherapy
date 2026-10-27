@@ -29,7 +29,8 @@ import { MEASURED_SCENARIOS, REPEATED_SCENARIO, REPETITIONS, scenarioLabel } fro
  * the consumer measured at a size other than the one declared, a runner too small, a wrong or unfinished result, a
  * stalled run, a small upload not queued behind the large ones, the consumer's slots not used at once, the platform
  * pricing a screening, an upload in the waiting tier, a time metric missing or outside its bounds, a request
- * that left for the static origin, a submission time not captured, an oracle mismatch or an oracle that compared fewer
+ * that left for the static origin, a submission time not captured, an upload whose address checks the web did not
+ * measure or measured under their 2-second worst case (G1), an oracle mismatch or an oracle that compared fewer
  * rows than the upload's Medicare rows, a partial run: every one of S1 to S5 must be measured, S4 three times, and a
  * declared screening consumer the harness does not run as production will). Time is judged by timeVerdict(): "open, PR 6b" while
  * environments.ts declares no screening consumer; with it declared (PR 6b-3), above 48 s on the runner fails
