@@ -89,7 +89,14 @@ Marker route: touch <clone>/.claude/.allow-protected-edit, Edit migration, rm ma
   PRE-EXISTING at base 098636e3 (same 13 offending modules at base and HEAD, via apps/web/src/lib/routes/route-tests/world.ts
   -> test-support/triage-world.ts -> @tp/worker runtime.ts; checked with a copy of the test's traversal on a base worktree).
   Not from this round: open item for the integrator.
-- next: test:db on touched files.
+- test:db on touched files: 22 files, 1550 tests passed (fresh migrated DBs, PG18). Files: (packages/db mail, screening, catalog, cross-tenant, hardening,
+  access, location, migrate, screening-queue; worker mail-events, support-notices, billing, screening/*, monitor; web
+  mail-routes, screening/*; tools oracle).
+- d16941bc capacity watched list (+packages/db/src/mail-address.ts); 05ad949d job.ts comment. tools/screening-capacity unit
+  7 files 191 passed; eslint job.ts clean.
+- /opt/pw-browsers/chromium-1194 EXISTS: running e2e mail-cutoff, mail-notices, screening, onboarding with
+  PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers E2E_DATABASE=tp_pr6b4_db_1 E2E_PORT=4936 (PG18 5433); log
+  scratchpad/pr42/e2e-db.log. Drop tp_pr6b4_db_1 afterwards.
 
 ## Proposals / open items (for the final report)
 - Runbook deliverability.md (another builder's file): staging check with --reason COMPLAINT (M1); second send to the
