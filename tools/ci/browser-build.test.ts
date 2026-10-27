@@ -133,6 +133,8 @@ describe('the browser build check (CI-18)', () => {
     expect(out).toContain('Chromium: equal to browser.json in every file');
     const shell = recorded().builds['chromium-headless-shell'];
     expect(out.some((line) => line.includes(`tree SHA-256 ${shell.treeSha256}, binary SHA-256 ${shell.sha256}`))).toBe(true);
+    // No file's line without --list when every build is equal.
+    expect(out.filter((line) => line.startsWith('  '))).toEqual([]);
   });
 
   it('computes the tree SHA-256 exactly as the shell form does, on the same directory', () => {
@@ -173,6 +175,26 @@ describe('the browser build check (CI-18)', () => {
     expect(err[0]).toContain(`${shell.dir}/${named}`);
   });
 
+  it('on a tree difference names every path that differs, and on any difference prints every file found, as --list does, with no --list (design 3.3.7)', () => {
+    const extra = Array.from({ length: 12 }, (_, index) => `resources/extra-${String(index).padStart(2, '0')}.pak`);
+    for (const name of extra) writeFileSync(path.join(shellDir(), name), name);
+    const { status, out, err } = check();
+    expect(status).toBe(1);
+    expect(err).toHaveLength(1);
+    const shell = recorded().builds['chromium-headless-shell'];
+    // Every one of the twelve, not the first ten: one CI run gives everything a new record needs.
+    expect(err[0]).toContain(`12 files differ from ${path.relative(repositoryRoot, listFile(current.record, shell))}: ${extra.map((name) => `${shell.dir}/${name} (added)`).join(', ')}.`);
+    expect(err[0]).not.toContain('the first ten');
+    // The found build's every line, in the shell form's order, so a person can commit it as browser-builds/<dir>.sha256;
+    // the equal build's lines are not printed.
+    const found = execFileSync('bash', ['-c', 'cd "$1" && find "$2" -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum', 'bash', path.join(current.root, `chromium_headless_shell-${REVISION}`), shell.dir], { encoding: 'utf8' }).trim().split('\n');
+    expect(found).toHaveLength(16);
+    expect(out.filter((line) => line.startsWith('  ')).map((line) => line.trim())).toEqual(found);
+    // --list prints the same lines once, not twice, beside the equal build's.
+    const listed = check(['--list']).out.filter((line) => line.startsWith('  ')).map((line) => line.trim());
+    expect(listed).toEqual([...found, ...readFileSync(listFile(current.record, recorded().builds.chromium), 'utf8').trim().split('\n')]);
+  });
+
   it('does not count Playwright’s markers beside the build', () => {
     const revisionDir = path.join(current.root, `chromium_headless_shell-${REVISION}`);
     writeFileSync(path.join(revisionDir, 'INSTALLATION_COMPLETE'), 'written at another time');
@@ -185,17 +207,26 @@ describe('the browser build check (CI-18)', () => {
     const { status, err } = check();
     expect(status).toBe(1);
     expect(err).toEqual([expect.stringMatching(/^The headless shell's build holds 1 entries that are neither regular files nor directories, which no tree SHA-256 covers: chrome-headless-shell-linux64\/resources\/link\.pak\.$/)]);
+    // Every one is named, not the first ten.
+    const links = Array.from({ length: 11 }, (_, index) => `resources/link-${String(index).padStart(2, '0')}.pak`);
+    for (const name of links) symlinkSync('/etc/hostname', path.join(shellDir(), name));
+    const named = [...links, 'resources/link.pak'].map((name) => `chrome-headless-shell-linux64/${name}`).sort();
+    expect(check().err).toEqual([`The headless shell's build holds 12 entries that are neither regular files nor directories, which no tree SHA-256 covers: ${named.join(', ')}.`]);
   });
 
   it('fails when the installed playwright-core pins another revision or version than the record, naming what it found', () => {
     for (const name of Object.keys(BUILDS) as BuildName[]) layBuild(current.root, name, '1194');
     const from = layWorkspace(path.join(current.dir, 'older'), '1194', '141.0.7390.37');
-    const { status, err } = check([], {}, from);
+    const { status, out, err } = check([], {}, from);
     expect(status).toBe(1);
     expect(err).toHaveLength(2);
     expect(err[0]).toMatch(new RegExp(`^The headless shell is 141\\.0\\.7390\\.37 \\(revision 1194, tree SHA-256 [0-9a-f]{64}, binary SHA-256 [0-9a-f]{64}\\), and browser.json records ${VERSION.replaceAll('.', '\\.')} \\(revision ${REVISION}, `));
     expect(err[0]).not.toContain('files differ');
     expect(err[1]).toMatch(/^Chromium is 141\.0\.7390\.37 \(revision 1194, /);
+    // A new build, as a Playwright upgrade brings: every file of both is printed, the record's next lists.
+    expect(out.filter((line) => line.startsWith('  ')).map((line) => line.trim())).toEqual(
+      (Object.keys(BUILDS) as BuildName[]).flatMap((name) => treeLines(path.join(current.root, `${BUILDS[name].folder}-1194`), DIRS[name].dir).lines),
+    );
     const sameRevision = layWorkspace(path.join(current.dir, 'other-version'), REVISION, '999.0.1.3');
     expect(check([], {}, sameRevision).err[0]).toMatch(/^The headless shell is 999\.0\.1\.3 \(revision 9999, /);
   });
@@ -289,10 +320,13 @@ exit 99
       const env = image();
       copyShell(REVISION);
       writeFileSync(path.join(current.dir, 'image/ms-playwright', `chromium_headless_shell-${REVISION}`, DIRS['chromium-headless-shell'].dir, 'icudtl.dat'), 'other ICU data');
-      const { status, err } = check(['--image', 'registry.example/tp-worker:test'], env);
+      const { status, out, err } = check(['--image', 'registry.example/tp-worker:test'], env);
       expect(status).toBe(1);
       expect(err).toHaveLength(1);
       expect(err[0]).toContain('chrome-headless-shell-linux64/icudtl.dat (changed)');
+      // Every file the image holds, as --list prints it.
+      const revisionDir = path.join(current.dir, 'image/ms-playwright', `chromium_headless_shell-${REVISION}`);
+      expect(out.filter((line) => line.startsWith('  ')).map((line) => line.trim())).toEqual(treeLines(revisionDir, DIRS['chromium-headless-shell'].dir).lines);
     });
 
     it('fails when the image pins another revision, and when its build is not there', () => {
