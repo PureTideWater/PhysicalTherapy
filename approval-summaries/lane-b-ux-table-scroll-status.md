@@ -13,6 +13,7 @@ The UX review's PR 3 (UX-011 / C-002; UX-079 / C-043 part (a)). Run as a Lane B 
 
 ## Log
 - 2026-10-27 01:42 UTC: setup done; branch `co-001/ux-table-scroll` cut at e908c21 in `/home/user/ux-table-scroll`, installed. Next: the design workflow (scouts, author, one reviewer).
+- 2026-10-27 01:50 UTC: design workflow wf_76fa3626-8c5 running (three scouts: inventory, mechanics, tests and consumers; one author writing `designs/lane-b-ux-table-scroll.md`; one adversarial reviewer). Notes in this session's scratchpad `design/`. If this session ends mid-run, a new session re-runs the design stage.
 
 ## Waiting on someone
 - The person: allow storage.googleapis.com (Playwright's Chromium) for the before and after shots.
