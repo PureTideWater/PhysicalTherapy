@@ -5,9 +5,9 @@
 - [x] 1. cherry-pick db: 15 commits, clean (to d8abd613)
 - [x] 1. cherry-pick infra: 8 commits, clean (to a3aed2d9)
 - [x] 1. cherry-pick harness: 9 commits (to d14f0ac5); one conflict routes.ts (99ae18a8): kept db precheck block then harness checksStarted timing; comment merged. pnpm install --frozen-lockfile linked client-sts (lockfile unchanged)
-- [ ] 1. review combined diff
+- [x] 1. review combined diff (integrator fixes: ADR 0065 known (a)/(e), runbook M1/M2/M9, e2e helpers/timeouts)
 - [x] 2. CI on 098636e3 (run 40434505373 etc.): red = unit (web-entries.test.ts:77, 13 worker modules via route-tests/world.ts -> test-support/*-world.ts -> @tp/worker/runtime) and domain model (expected: approval names no person; SHA 07c4a8ee...). Green: lint, static, build, images, db 1-4, e2e 1/2 2/2, capacity, screening-capacity gate, mutation (6 stryker shards), approval-of-record. all green = failure (from unit + domain model)
-- [~] 2. web-entries guard fix: walk now seeds from Next entries (apps/web/src/app/** + modules at apps/web/src root = proxy.ts), 2 fixture cases added; 3/3 pass. Mutation check (billing/public.ts + @tp/db import) running (bgl0gct8b) -- billing/public.ts restored after from scratchpad/billing-public.bak
+- [x] 2. web-entries guard fix: 15189a50 (seeds from Next entries; 3/3 pass; mutation check: billing/public.ts + @tp/db import -> guard names it, imported by lib/http/invoke.ts; file restored)
 - [ ] 3. regenerate domain model
 - [ ] 4. full suite
 - [ ] 5. push
@@ -22,3 +22,5 @@
 - Commits: 14392ab1 (domain model + functions), 5ef893d5 (ADR 0065 known (a)/(e) + runbook M1/M2/M9 staging checks), 869352a9 (e2e mail.ts restore helper + stream fixture timeouts)
 - PENDING: web-entries guard commit after mutation check (billing/public.ts mutated in tree! restore from scratchpad/billing-public.bak before commit)
 - Suite script: scratchpad/pr42/suite.sh (results scratchpad/pr42/suite/results.tsv)
+- NEXT: full suite on final tree (head 15189a50), suite.sh in background
+- Suite started 16:19 UTC in background (bgj64gaot): suite.sh (typecheck..actionlint); then suite2.sh (mutation 6 shards + gate, capacity S1,S4 binding, e2e on tp_pr6b4_integrate_e2e port 4961). Mutation affected: packets-scan, packets-rest, packets-explain, pricing-engine, pricing-recompute, pricing-rest (by packages/db/src/mail-address.ts etc.)
