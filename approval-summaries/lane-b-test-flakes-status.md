@@ -16,5 +16,13 @@
 
 - 15:00 to 15:03 UTC: all three reproduced (1: notify 7.4 s on one starved CPU, timed out at 5 s; 2: changed_meanwhile 0 in 1 of 40 seeds, median 4; 3: seed 2019154346 fails on 97140). Fixes in the worktree (uncommitted): workflows.test.ts 30 s file timeout; rerun property `examples:` EVERY_OUTCOME plus a `pair` step (changed_meanwhile median 45, every outcome min 28); verifier fc.pre leaves out codes. Sweep (read-only agent): two more proved by injection and fixed (verifier "any other digits" codes in read alphabets; denial-letter names "Patient"/"Name"). Design `designs/lane-b-test-flakes.md`; design review workflow wf_ba275191-0a9 running.
 
+- 15:16 UTC: design review (wf_ba275191-0a9): approve-with-changes; its should-fix applied (the other-digits property now leaves out nothing for unread alphabets). Commit 0577b73 pushed to co-001/test-flakes; typecheck passed; 40 consecutive runs of the rerun property passed. **Draft PR #76** opened, description from the template, read back byte for byte; subscribed. Reviews workflow wf_abcef1ea-473 running (infra, correctness, payment-engine with the packets Stryker shard and gate). Check-in scheduled 20:26 UTC (trig_0141f5jbkroEggNLhAuDVTEx).
+
+## Proposals (not built here)
+- `tools/stryker/affected.test.ts:601` took 55.9 s of its 120 s on CI (2.1x headroom).
+- `apps/worker/src/screening/threads.test.ts:100-112` asserts wall-clock bounds (took < 3000; active count after a 100 ms timer) under load; beside the "Not while #42 is open" screening files.
+- Process-spawning tests on the 5 s default outside the nested run, each well under it on CI today: tools/engine-freeze/check.test.ts:572 (557 ms), tools/golden-worksheet/worksheet.test.ts (1.0 s), tools/check-action-pins/verify.test.ts, tools/test/check-releases-immutable.test.ts, tools/test/publish-content.test.ts, tools/audit-worksheet. A repository-wide rule (a helper or project setting) for process-spawning tests is the general fix.
+- The Dependabot test's three nested runs share one 300 s budget while each spawn has 280 s: give each a share of a deadline so an overrun names its run (design review nit).
+
 ## Next step
-Read the design review, apply it, commit on co-001/test-flakes, push, open the draft PR.
+Read the reviews; fix round with the full local suite once; one push; fresh-clone verification; merge per lanes/lane-b.md; then tell the orchestrator (session_01TrKDxeLbxVo7t7zwRXFzrg).
