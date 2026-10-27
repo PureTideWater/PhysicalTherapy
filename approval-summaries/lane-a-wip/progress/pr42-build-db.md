@@ -68,5 +68,15 @@ Marker route: touch <clone>/.claude/.allow-protected-edit, Edit migration, rm ma
   screening.db 109/109; tsc worker clean; eslint clean.
 - 33e1005a S6 (worker: DigestSendFailed with sendErrorName only). Failing first: digest job.test (raw MessageRejected
   with address). After: job.test 3/3; monitor.db (uses digestHandler) 20/20; tsc worker; eslint clean.
+- 8389f6e0 M6 + d1b51bff M7 (split from one working state; M6-only state tested: worker screening.db 23/23; full state
+  29/29 with consumer tests; unit screening 73/73; eslint clean). Was: (in progress) M6+M7 in apps/worker/src/screening/job.ts: failScreeningRun sends inside the failure's transaction
+  (pause -> rethrow -> rollback); completeOnAttempt helper; finishOrFail for out-of-attempts stale runs (complete on last
+  attempt when no pending rows; else fail PRICING_ATTEMPTS_EXHAUSTED; SCREENING_FINISH_FAILED warn when completion fails).
+  Failing first: worker screening.db M6 ('failed' instead of 'mail_paused') and M7 (failed: 1). Tests written; running.
+- b827846c ADR 0065 docs commit (done). Was TODO: ADR 0065 docs commit (S1 order, S2 canonical key + NFKC, S4 precheck + ZIP residual, M1/M2 mapping,
+  M7 finish, M8, M9, Revisit: global-suppression on screening set in O11); broad checks; final report.
+
+- NEXT: broad checks under the lock: typecheck (pnpm typecheck), lint on touched files, unit tests (worker/web/db
+  touched dirs), test:db files touched on a fresh migrated DB (they migrate fresh each run), lint:logs, lint:copy.
 
 ## Checks
