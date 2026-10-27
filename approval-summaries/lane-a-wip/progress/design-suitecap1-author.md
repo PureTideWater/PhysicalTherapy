@@ -24,3 +24,9 @@ Clone: scratchpad/designs/suitecap1-author
 - probes dir: clone/tmp-probe (seed.mts); db tp_design_suitecap1_author_1
 ## Run 2 (resumed after interruption)
 - probe DB tp_design_suitecap1_author_1 not present (never created or dropped); tmp-probe/seed.mts exists in clone
+## Run 2 decisions forming (2026-10-27 ~14:45)
+- Re-read: LANES :18-19 (rule 2), :186 claim, :264-270 hand-over; status file :38 (stored windows with #8); capacity summary (A triage 48.1 s/attempt failed, report 47.2 s failed, peak 803.9 MiB whole run vs 556.7 concurrent).
+- Ledger freeze (reconciliation-001.md:464-466) lists ledger_entry, ledger_match, posting_row, eft_row, roi_statement: line_status is NOT frozen -> line_status_rules change needs no exception. ledger_entry trigger fns (ledger_evidence :172, ledger_line :246 in 20261027090000) ARE frozen.
+- Leaning: per-line ROW lock on a new head table (line_stage_head: one row per line, current stage + seq) taken in line_status_rules; seq reassigned after the lock (fixes inversion); zero advisory locks; no writer changes; no new waits for people; no new deadlock shapes. Practice lock (V1/V3) rejected: reopen/manual wait behind report PDF (~100 s), lazy=deadlock (scout repro), needs lock_timeout+refusal copy. service_line row lock (V2) rejected: dirties immutable PHI heap, multixacts with concurrent FK KEY SHARE (pricing rerun), VM bits, definer per row. RDS param rejected.
+- Ledger part: check every ledger_entry writer holds ledger:P up front; if so recommend trigger key -> 'ledger:'||practice (re-entrant, 1 slot) under a founder freeze exception; else follow-up.
+- Memory: triage holds 100k traces (candidateRows reads p.trace for all) -> consider cursor chunks keeping only CandidateLine.
