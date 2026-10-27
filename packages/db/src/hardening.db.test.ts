@@ -350,8 +350,20 @@ describe('the audit log', () => {
     expect(await insert('user', 'membership_created')).toBe('accepted');
     expect(await insert('system', 'membership_created')).toBe('42501');
     // And, since migration 20261107090000, the three the mail record writes: a notice no one received, and the
-    // screening stream's pause and resume (audit #76), which only its definer functions write.
-    for (const reserved of ['notice_sent', 'security_event', 'sign_in_failed', 'data_key_destroyed', 'notice_undelivered', 'mail_stream_paused', 'mail_stream_resumed']) {
+    // screening stream's pause and resume (audit #76), which only its definer functions write; since migration
+    // 20261108090000, PaidWhole's suspension and reinstatement of an organization, which only
+    // console_set_organization_status writes (docs/adr/0080).
+    for (const reserved of [
+      'notice_sent',
+      'security_event',
+      'sign_in_failed',
+      'data_key_destroyed',
+      'notice_undelivered',
+      'mail_stream_paused',
+      'mail_stream_resumed',
+      'organization_suspended',
+      'organization_reinstated',
+    ]) {
       expect(await insert('user', reserved), reserved).toBe('42501');
       expect(await insert('service', reserved), reserved).toBe('42501');
     }
