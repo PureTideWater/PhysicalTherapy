@@ -225,3 +225,88 @@ Other departures:
 - The differential and oracle checks compare letters and digits only: a comma or space the old whole-name form
   swallowed is not PHI.
 - The existing property test's `fc.pre` (excluding names `PATIENT`/`NAME`) is removed: those names now redact.
+
+### Fix round (the PR #80 reviews, 2026-10-27)
+
+Each finding of the correctness and security reviews, and how it was applied. Every reproduction is a named test in
+`functions/denial-letter.test.ts`; the properties were extended so the old code fails them (checked: on the PR head's
+`redact.ts` the extended MOD-13 properties fail on `Claim 19900<ZWSP>101` and `Claim 0101-19-90`, and MOD-14 on
+`ZZ/000000`).
+
+1. **Digits-only IDs with an invisible character exempted as dates (blocking; security 1).** Applied. A digits-only
+   number inside a date that is not a date of birth is kept only when its match holds a dash and the date span is
+   separated (a slash, a period, a dash or a month word) with a calendar reading. An invisible character or a space is
+   no separator. `Claim 1234<ZWSP>5678`, `Claim 1234<SHY>5678`, `Member 123<ZWSP>456` and `Claim 2027<ZWSP>0315` are
+   replaced, and the narrative check refuses them.
+2. **Lower-case initial missed on a tie (blocking).** Applied. The range next to an initial is the nearest part: of
+   the names starting at one place the shortest, of those ending at one place the latest start. Named tests: the two
+   counterexamples (`AA, PATIENT` / `Dear p. aa, Patient:`; `PATIENT CLAIM` / `RE: Patient claim, p.`).
+3. **Date-shaped spans with no reading exempted numbers and month words (should fix).** Applied. Only a separated span
+   with a calendar reading is kept as another date; `12-34-56`, `1234-56-78`, `8765-43-21`, `44-55-66` as IDs and MAY in
+   `May 45, 2027` are replaced. The differential oracle's kept-on-purpose rule now reads each span on its own
+   (`separatedDateReadings` in the test, not the code's `readings`), so it no longer mirrors the exemption. Residual
+   recorded: a digits-only ID that is a real calendar date written with dashes (`03-15-61` for 031561) is sent.
+4. **Amount exemption regressions (should fix; security 2 and 7).** Applied, the safer rule: a member ID is never an
+   amount; a claim's digits are an amount only after a currency sign and with cents (`$15000.00`), which with their
+   cents are never the claim's own written form. `555001.01`, `555001,12`, `$555001`, `member $12345678`,
+   `member $12345678.00` and `Claim 87654321.00` are replaced; `$150.00` and `$15000.00` for claim 15000 are kept. The
+   narrative check reads every number as a member ID, so `$12345678` is refused again. The oracle's amounts are a claim's
+   digits after a currency sign and before cents, never a member's.
+5. **Quadratic initials loop (nit).** Applied. The nearest names are found by binary search over two sorted lists,
+   names' cover by a prefix sum, and a candidate is looked at again only when a neighbouring candidate is taken (a
+   worklist), so a run is linear up to the sorts. 20 000 initials on either side of a name take under 0.1 s (21 s
+   before); a named test runs both directions.
+6. **MOD-14 coverage (nit; security 6).** Applied. `/` and `:` join a number next to a letter, in the matcher and the
+   screen (`ZZ/1234567`, `ZZ:1234567` replaced; `ZZ/7654321` offered). MOD-14 generates digits-only IDs written with
+   spaces, dashes and invisible characters, and `/` and `:` next to a letter. Digits alone with `/` or `.` between them
+   (`12/34/5678`, `1234.5678`) stay out, being how dates and amounts are written: recorded as a residual.
+7. **Line-break hyphenation (security 3).** Applied. A dash (or an invisible character) followed by a line break, with
+   optional spaces, joins inside a part whatever the case: `Van-⏎tree`, `Vantr-⏎ee`, `Van–⏎  tree`, `Jo-⏎ann`.
+   Lower-case `jo ann` stays a recorded residual.
+8. **Labeled dates of birth not read (security 4).** Applied. Separators are any dash (U+2212, U+2043 too), a slash
+   or a period, without the backreference; spaces alone between numbers; an apostrophe, straight or typographic, before
+   a two-digit year; `/`, `.` and dashes around a month word. Spaces-alone and compact dates are read as dates of birth
+   but never kept as other dates. `datesIn` keeps a shorter form over a longer one when only the shorter has a reading.
+   Named tests for `03–03–1961`, `03−03−1961`, `03 03 1961`, `Mar 3 ’61`, `3/Mar/1961`, `03/Mar/61`, with and without the
+   records' date of birth.
+9. **The screen masked `[CLAIM_7654321]`; placeholder-shaped text in a letter (security 5).** Applied, the safer
+   options. The mask hides a placeholder's word only: a claim placeholder past the call's claims keeps its digits
+   between two barriers (all of them, for the screen), so `[CLAIM_7654321]` offers 7654321 and `[CLAIM_555001]` fails
+   the self-check for claim 555001. Before matching, the letter's own `[` and `]` become `(` and `)`, so the only square
+   brackets sent are placeholders and `[CLAIM_1]`, `[claim_2]` or a full-width `［MEMBER_ID］` written by the letter can
+   never be cited as a claim. Recorded in the ADR amendment.
+
+The MOD-13 generator now writes digits-only numbers with dashes and invisible characters, and dates' digits as numbers
+(compact, or cut where a date's numbers end with one dash); its oracle requires each replaced unless the written text
+is a calendar date with its separators that is not the date of birth. The five properties were run once over 60 seeds
+at 400 runs each (zero failures; scratchpad `progress/fix1-sweep.log`) before keeping the repository's fixed run counts
+(400, 200, 200, 300, 300) unseeded.
+
+### Second fix round (the PR #80 security review, 2026-10-27)
+
+Each finding of the second security review, and how it was applied. Every reproduction is a named test in
+`functions/denial-letter.test.ts`, checked to fail on the first fix round's `redact.ts`.
+
+1. **Quadratic time on a crafted letter (blocking).** Applied, the reviewer's fix. The gap after a name
+   (`INITIAL_GAP_AFTER`) is one starred class with an optional comma tail, so a failing match no longer backtracks
+   over two overlapping classes; a prefix array (`runStart`) records where each run of gap characters starts, so a
+   candidate initial is tested only when its run reaches back to the name or initial it would follow. `datesIn` keeps
+   its spans in one sweep in order of start (longest first), tracking the furthest end of a span with a reading and
+   of any span, which gives the pairwise rule's result since holding is transitive. `inOtherDate` is a binary search
+   over the other dates by start with a running maximum of their ends. Named test "redacts a letter crafted to be slow
+   in time linear in its length", five 100 kB letters, each with a budget of 3 s for the redaction, the self-check and
+   the narrative check: on the first round's code they took 95 s (a 2 000-space gap after a name, then 49 000
+   initials), 4.5 s, 9.0 s (`1/1/11 ` repeated), 9.5 s (`1 1 11 `) and 5.9 s (dates and a claim's digits); each now
+   takes well under a second.
+2. **A dotted chain of initials after the name (should fix).** Applied. After a taken initial the gap is measured
+   past its `.`, so `Vantree J.Q.`, `Vantree J. Q.`, `Vantree, J.Q.`, `Vantree Q.J.` and `Vantree J.Q` are taken
+   whole (named test "takes every initial of a dotted chain after the name").
+3. **Separators not read (nit).** Applied, the safer option, in code rather than as residuals: a date is read with
+   `_`, a backslash or `|` between its numbers (`03_03_1961`, `03\03\1961`, `03|03|1961`), and a number joins with
+   `#` or `(` next to a letter (`ZZ#1234567`, `ZZ(1234567)`), in the matcher and the screen alike (named test "joins
+   a number with "#" or "(" next to a letter, and reads a date written with "_", "\" or "|""). Recorded as residuals
+   in the ADR: a date of birth with its day or month spelled out (`MARCH THIRD 1961`), and the `)` sent after
+   `[MEMBER_ID]` for `ZZ(1234567)`, which holds no digit.
+
+The ADR 0054 amendment gains a "Time linear in the letter" rule, and the MOD-13 and MOD-14 rows name the new forms
+and the time budget.
