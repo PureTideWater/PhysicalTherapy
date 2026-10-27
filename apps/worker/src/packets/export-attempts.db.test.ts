@@ -14,6 +14,7 @@ import { EXPORT_WORDS_CHANGED, type PacketExportServices, exportFailureCode, exp
 import { PACKET_EXPORT_FAILURES, PACKET_EXPORT_REFUSALS, type PacketExportRefusal, exportReadiness } from './readiness';
 import { EXPORT_REQUEST_REFUSALS, approvePacketVersion, requestPacketExport, writePacketVersion } from './services';
 import { PacketWorld } from './test-support/packet-world';
+import { refusedByHold } from '../worker';
 
 /**
  * The export's refusals and failures, recorded and read back (the best-option audit's item #26, the founder's
@@ -161,8 +162,10 @@ describe('the codes', () => {
       scope.client.query<{ refusals: string[]; failures: string[] }>('SELECT packet_export_refusal_codes() AS refusals, packet_export_failure_codes() AS failures'),
     );
     expect(rows[0]).toEqual({ refusals: [...PACKET_EXPORT_REFUSALS], failures: [...PACKET_EXPORT_FAILURES] });
-    // Every reason the request can give has its words, and each is a rule's, never a value.
-    expect(Object.keys(EXPORT_REQUEST_REFUSALS)).toEqual(PACKET_EXPORT_REFUSALS.filter((code) => code !== 'verifier_failed'));
+    // Every reason the request can give has its words, and each is a rule's, never a value. The verifier's and the
+    // worker gate's are the job's alone: the request never gives them (the route wrapper refuses a held practice first).
+    expect(PACKET_EXPORT_REFUSALS.at(-1)).toBe('organization_suspended');
+    expect(Object.keys(EXPORT_REQUEST_REFUSALS)).toEqual(PACKET_EXPORT_REFUSALS.filter((code) => code !== 'verifier_failed' && code !== 'organization_suspended'));
   });
 
   it('are what a failed try is classed as: the store’s integrity, the renderer, the store, a database rule, anything else', () => {
@@ -179,7 +182,7 @@ describe('each refusal of the export job', () => {
   async function refusedFor(setup: Setup, versionId: string, reason: PacketExportRefusal, asOf?: string): Promise<void> {
     const queued: unknown[] = [];
     const queue = { send: (...args: unknown[]) => Promise.resolve(String(queued.push(args))) } as never;
-    if (asOf === undefined && reason !== 'verifier_failed') {
+    if (asOf === undefined && reason !== 'verifier_failed' && reason !== 'organization_suspended') {
       const refusal = await errorOf(w.as(setup.practice, setup.practice.manager, (scope) => requestPacketExport(scope, queue, { practiceId: setup.practice.practiceId, versionId, requestId: 'test-request' })));
       expect((refusal as Error).message).toBe(EXPORT_REQUEST_REFUSALS[reason]);
       expect(queued).toHaveLength(0);
@@ -480,6 +483,47 @@ describe('the events', () => {
     // The billing manager asking again is a new attempt.
     await requested(setup, versionId);
     expect(await read()).toEqual([{ state: 'in_progress', code: null }]);
+  });
+});
+
+describe('a packet export the worker gate refuses for the practice’s hold (BIL-07, F3; docs/adr/0080)', () => {
+  it('is recorded on the version in the job’s name with organization_suspended, and the page reads it refused with that code', async () => {
+    const setup = await cas08('attempt-held');
+    const versionId = await approved(setup);
+    await requested(setup, versionId);
+    const { organizationId } = setup.practice.world;
+    // The practice's owning group suspended by PaidWhole, as the owner writes it (the setter's own tests are the database's).
+    await asOwner(w.owner, [], () => w.owner.query("UPDATE organization SET status = 'suspended', status_reason = 'security_hold' WHERE id = $1", [organizationId]));
+    try {
+      const jobId = randomUUID();
+      const refused = await withJobScope(w.worker, { jobId, practiceId: setup.practice.practiceId }, (scope) =>
+        refusedByHold(scope, 'packet_export', { practice_id: setup.practice.practiceId, packet_version_id: versionId }, jobId),
+      );
+      expect(refused).toBe(true);
+      expect(await attemptEvents(setup, versionId)).toEqual([
+        {
+          actor_id: jobId,
+          actor_kind: 'service',
+          action: 'packet_export_refused',
+          object_type: 'packet_version',
+          object_id: versionId,
+          practice_id: setup.practice.practiceId,
+          grant_id: null,
+          purpose: 'organization_suspended',
+          request_id: jobId,
+        },
+      ]);
+      // Refused, where it read "in progress" and, an hour on, that no result came back.
+      expect((await attempt(setup, setup.practice.manager, versionId)).map((row) => ({ state: row.state, code: row.code }))).toEqual([{ state: 'refused', code: 'organization_suspended' }]);
+      // Any other run-starting job refused by the hold records no export refusal.
+      expect(await withJobScope(w.worker, { jobId: randomUUID(), practiceId: setup.practice.practiceId }, (scope) => refusedByHold(scope, 'digest', { practice_id: setup.practice.practiceId, period: '2026-10' }, randomUUID()))).toBe(true);
+      expect(await attemptEvents(setup, versionId)).toHaveLength(1);
+    } finally {
+      await asOwner(w.owner, [], () => w.owner.query("UPDATE organization SET status = 'active' WHERE id = $1", [organizationId]));
+    }
+    // Reinstated: nothing holds the practice, and nothing is recorded.
+    expect(await withJobScope(w.worker, { jobId: randomUUID(), practiceId: setup.practice.practiceId }, (scope) => refusedByHold(scope, 'packet_export', { practice_id: setup.practice.practiceId, packet_version_id: versionId }, randomUUID()))).toBe(false);
+    expect(await attemptEvents(setup, versionId)).toHaveLength(1);
   });
 });
 
