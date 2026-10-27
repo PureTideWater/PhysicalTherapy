@@ -61,5 +61,10 @@ Marker route: touch <clone>/.claude/.allow-protected-edit, Edit migration, rm ma
   tests (validations spent: 2 and 3 calls). After: screening.db + mail.db + routes.db 145/145 (70+25+49+...);
   catalog/hardening/cross-tenant/access 1240/1240; tsc web clean; eslint clean.
   Residual (proposal): a ZIP the DB refuses still spends one validation (not in the precheck to avoid copying 6b-2's rule).
+- f3f7e897 M8 (db: mail_window_counts returns starts_at; console_mail_streams.window_starts_at = effective start;
+  console-mail.ts doc). Failing first: console test (43200 min shown vs 10080). After: mail.db + mail-routes.db 32/32.
+- (next commit) M9 (db: mail_stream_cutoff helper + operator_mail_cutoff definer for tp_operator; worker reconcile calls
+  it). Failing first: mail.db M9 (function missing), mail-events.db M9 (no pause). After: mail.db+mail-events.db+
+  screening.db 109/109; tsc worker clean; eslint clean.
 
 ## Checks
