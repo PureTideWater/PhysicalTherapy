@@ -39,7 +39,11 @@ import { statesItsInputs } from './records';
  * the pricing and the deadline (packet_version_export_guard). Codes only: no reason carries a value.
  */
 
-/** Every code a refusal of the export job names, in readiness order and then the verifier's (packet_export_refusal_codes()). */
+/**
+ * Every code a refusal of the export job names, in readiness order, then the verifier's, then the worker gate's
+ * (packet_export_refusal_codes()): organization_suspended, recorded when the practice's hold refuses the job before it
+ * runs (docs/adr/0080).
+ */
 export const PACKET_EXPORT_REFUSALS = [
   'not_approved',
   'not_current',
@@ -53,6 +57,7 @@ export const PACKET_EXPORT_REFUSALS = [
   'inputs_differ',
   'contact_missing',
   'verifier_failed',
+  'organization_suspended',
 ] as const;
 export type PacketExportRefusal = (typeof PACKET_EXPORT_REFUSALS)[number];
 
@@ -60,8 +65,11 @@ export type PacketExportRefusal = (typeof PACKET_EXPORT_REFUSALS)[number];
 export const PACKET_EXPORT_FAILURES = ['store_mismatch', 'render_failed', 'store_failed', 'database_refused', 'unexpected'] as const;
 export type PacketExportFailure = (typeof PACKET_EXPORT_FAILURES)[number];
 
-/** The reasons readiness checks before anything is printed: every refusal but the verifier's. */
-export type ExportReadinessReason = Exclude<PacketExportRefusal, 'verifier_failed'>;
+/**
+ * The reasons readiness checks before anything is printed: every refusal but the verifier's and the worker gate's (the
+ * request never gives organization_suspended: the route wrapper refuses a held practice first).
+ */
+export type ExportReadinessReason = Exclude<PacketExportRefusal, 'verifier_failed' | 'organization_suspended'>;
 
 export type ExportReadiness =
   | { readonly outcome: 'ready' }

@@ -1,4 +1,5 @@
 import { type BillingProvider, BillingProviderError, type PaymentMethodSummary, type PlanInterval } from '@tp/billing';
+import type { SuspensionReason } from '@tp/db/runtime';
 import { type Cents, parseCents } from '@tp/money';
 
 import { type BillingClient, type BillingPool, billingRows, withBilling } from './scope';
@@ -70,8 +71,12 @@ export interface OrganizationBilling {
   readonly organizationId: string;
   readonly name: string;
   readonly kind: 'group' | 'firm' | 'internal';
-  /** The organization's record status: a platform administrator may hold it suspended or closed. */
+  /** The organization's record status: PaidWhole may hold it suspended, and only its closure closes it. */
   readonly status: 'active' | 'suspended' | 'closed';
+  /** Why PaidWhole suspended it (docs/adr/0080): null unless suspended, and null for a suspension recorded without one. */
+  readonly statusReason: SuspensionReason | null;
+  /** When the current status began; null when it has not changed since migration 20261108090000. */
+  readonly statusSince: Date | null;
   readonly hasCustomer: boolean;
   readonly standing: 'good' | 'past_due' | 'suspended';
   readonly pastDueSince: Date | null;
@@ -92,6 +97,8 @@ interface OrganizationRow {
   readonly name: string;
   readonly kind: OrganizationBilling['kind'];
   readonly status: OrganizationBilling['status'];
+  readonly status_reason: SuspensionReason | null;
+  readonly status_since: Date | null;
   readonly has_customer: boolean;
   readonly standing: OrganizationBilling['standing'];
   readonly past_due_since: Date | null;
@@ -128,7 +135,7 @@ const CURRENT_SUBSCRIPTION = `SELECT id, plan, status, current_period_end, cance
 export async function organizationBilling(client: ReadClient, organizationId: string, invoiceLimit = 24): Promise<OrganizationBilling | null> {
   const [organization] = await rows<OrganizationRow>(
     client,
-    `SELECT o.id, o.name, o.kind, o.status, o.billing_customer_ref IS NOT NULL AS has_customer, s.standing, s.past_due_since, s.suspended_since,
+    `SELECT o.id, o.name, o.kind, o.status, o.status_reason, o.status_since, o.billing_customer_ref IS NOT NULL AS has_customer, s.standing, s.past_due_since, s.suspended_since,
             h.id AS holding_invoice_id, h.number AS holding_number, h.amount_remaining_cents::text AS holding_remaining_cents,
             (SELECT count(*) FROM invoice i
               WHERE i.organization_id = o.id AND i.status IN ('open', 'uncollectible') AND i.first_failed_at <= now() - interval '30 days')::int AS holding_count
@@ -154,6 +161,8 @@ export async function organizationBilling(client: ReadClient, organizationId: st
     name: organization.name,
     kind: organization.kind,
     status: organization.status,
+    statusReason: organization.status_reason,
+    statusSince: organization.status_since,
     hasCustomer: organization.has_customer,
     standing: organization.standing,
     pastDueSince: organization.past_due_since,
@@ -358,6 +367,9 @@ export interface ConsoleBillingRow {
   readonly name: string;
   readonly kind: 'group' | 'firm';
   readonly status: 'active' | 'suspended' | 'closed';
+  /** PaidWhole's reason for a suspension in force, or null (docs/adr/0080). */
+  readonly statusReason: SuspensionReason | null;
+  readonly statusSince: Date | null;
   readonly standing: 'good' | 'past_due' | 'suspended';
   readonly pastDueSince: Date | null;
   readonly suspendedSince: Date | null;
@@ -376,6 +388,8 @@ export async function consoleBillingStatus(client: ReadClient): Promise<ConsoleB
     name: string;
     kind: 'group' | 'firm';
     status: ConsoleBillingRow['status'];
+    status_reason: SuspensionReason | null;
+    status_since: Date | null;
     standing: ConsoleBillingRow['standing'];
     past_due_since: Date | null;
     suspended_since: Date | null;
@@ -387,7 +401,7 @@ export async function consoleBillingStatus(client: ReadClient): Promise<ConsoleB
     snapshot_on: string | null;
   }>(
     client,
-    `SELECT o.id AS organization_id, o.name, o.kind, o.status, s.standing, s.past_due_since, s.suspended_since,
+    `SELECT o.id AS organization_id, o.name, o.kind, o.status, o.status_reason, o.status_since, s.standing, s.past_due_since, s.suspended_since,
             sub.plan, sub.status AS subscription_status,
             (SELECT coalesce(sum(i.amount_remaining_cents), 0) FROM invoice i WHERE i.organization_id = o.id AND i.status IN ('open', 'uncollectible'))::text AS open_cents,
             u.granted_practices, u.active_practices, u.date::text AS snapshot_on
@@ -403,6 +417,8 @@ export async function consoleBillingStatus(client: ReadClient): Promise<ConsoleB
     name: row.name,
     kind: row.kind,
     status: row.status,
+    statusReason: row.status_reason,
+    statusSince: row.status_since,
     standing: row.standing,
     pastDueSince: row.past_due_since,
     suspendedSince: row.suspended_since,

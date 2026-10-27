@@ -24,8 +24,26 @@ interface RefusalClient {
   query(text: string, values?: unknown[]): Promise<{ rows: unknown[] }>;
 }
 
-/** Why the practice's organization may not start new work now, or null (the practice must be in the scope). */
+/**
+ * Why no new work of any kind starts at the practice now, or null (the practice must be in the scope). In a
+ * job's scope only the owner's hold applies (docs/adr/0080), so the worker's gate asks this.
+ */
 export async function practiceRunRefusal(client: RefusalClient, practiceId: string): Promise<string | null> {
   const { rows } = await client.query('SELECT practice_run_refusal($1) AS reason', [practiceId]);
+  return (rows[0] as { reason: string | null } | undefined)?.reason ?? null;
+}
+
+/**
+ * Why the scope's person starts no new work needing `permission` at the practice now, or null (docs/adr/0080):
+ * the owner's hold, or a suspended or closed grantee's hold when only its grants give the person that
+ * permission. The permission is one of run_starting_permissions(), else Postgres raises 22023; the practice
+ * must be in the scope, else 42501. The route wrapper asks it with the route's permission.
+ */
+export async function practiceRunRefusalFor(
+  client: RefusalClient,
+  practiceId: string,
+  permission: string,
+): Promise<string | null> {
+  const { rows } = await client.query('SELECT practice_run_refusal_for($1, $2) AS reason', [practiceId, permission]);
   return (rows[0] as { reason: string | null } | undefined)?.reason ?? null;
 }
