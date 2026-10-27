@@ -1,0 +1,16 @@
+export const meta = {
+  name: 'lane-b-redact-placeholders-verify',
+  description: 'Fresh-clone verification of PR #80 at its head, reading CI',
+  phases: [{ title: 'Verify' }],
+}
+const SP = '/tmp/claude-0/-home-user-PhysicalTherapy/c2897427-570e-5954-bd7a-54cacd103451/scratchpad'
+const DIR = SP + '/verify-80'
+phase('Verify')
+const v = await agent(`Fresh-clone verification of PR #80 (PureTideWater/PhysicalTherapy, branch co-001/redact-placeholders, head 351262e: the fix round 25759c0 plus a merge of claude/build-platform at ecebdc9) before it merges. You are independent: check, do not trust, the PR description (read it with \`gh api repos/PureTideWater/PhysicalTherapy/pulls/80 --jq .body\`), the design /home/user/ops/designs/lane-b-redact-placeholders.md and the status file /home/user/ops/approval-summaries/lane-b-redact-placeholders-status.md.
+1. Clone fresh: if ${DIR} does not exist, \`git clone -q https://github.com/PureTideWater/PhysicalTherapy.git ${DIR} && git -C ${DIR} checkout -q 351262e\` (if the HTTPS clone fails, clone /home/user/PhysicalTherapy and fetch the branch from origin). \`export PATH=/opt/node24/bin:/opt/py312-ci/bin:$PATH\`; every heavy command under \`flock /tmp/laneb-heavy.lock\`. pnpm install --frozen-lockfile.
+2. In the clone: run the model-gateway unit tests (not *.db.test.ts), the synth tests, typecheck, lint on the changed files, lint:logs, verify-content. Confirm the claims: the A1/A2 placeholder corruption is gone (write a temporary probe test you delete: names ['CLAIM DATE'] / ['NAME ID'], the letters from the design's section 1 table; every row of that table redacted), the redact.property.test.ts properties run with the repository's run counts, no fc.pre that can exhaust, timing rows present; the diff (git diff origin/claude/build-platform...351262e) contains nothing beyond what the description says, no PHI-looking data (synthetic only), no model identifier, no edit to a file in LANES.md's "Not while #42 is open" list (/home/user/ops/LANES.md), no migration, no change under packages/pricing, packages/ledger or content/.
+3. CI on 351262e: wait until every check run on that commit has completed (poll \`gh api "repos/PureTideWater/PhysicalTherapy/commits/351262e2/check-runs?per_page=50"\` — use the full sha from git rev-parse — every 2 minutes with a background until-loop; the Bash tool refuses a long foreground sleep; give up after 75 minutes and report), then read them: every required check (all green, mutation, screening-capacity gate, approval-of-record) success; read the unit job's log (MCP get_job_logs if available via ToolSearch, else gh run view --log for the job) for the redact.property and denial-letter test lines and their durations.
+Save as you go: keep ${SP}/progress/verify-80.md up to date (each check and result), so an interruption loses nothing; if it exists when you start, continue from it.
+No model name or identifier in anything you write. Do not push, comment, approve or merge.
+Return passed (true only if everything above holds) and the evidence.`, { label: 'verify-80', phase: 'Verify', schema: { type: 'object', required: ['passed', 'evidence', 'problems'], properties: { passed: { type: 'boolean' }, evidence: { type: 'string' }, problems: { type: 'string' } } } })
+return v
