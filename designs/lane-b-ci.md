@@ -88,9 +88,10 @@ scout's measurement. Section 10 lists where this plan departs from a scout, and 
 | A5 | Pins | Every `uses:` is `owner/repo@<40 hex> # vX.Y.Z`, the SHA is that tag's commit, and every `with:` key is an input the action declares at that commit. Every `uses:` inside a composite action, followed recursively at its pinned SHA, is a full SHA too (today: trivy-action pins setup-trivy and actions/cache, setup-trivy pins actions/cache/restore and actions/checkout, attest-build-provenance pins actions/attest, all by SHA, read at the pinned commits). Every base and service image carries an `@sha256:` digest | `tools/check-action-pins` (networked) on every run; `tools/test/workflows.test.ts` | ci-deps |
 | A6 | Toolchain security | `pnpm audit --prod` gives 0 and `pnpm audit --audit-level=high` passes. The pnpm in `packageManager` has no moderate or worse advisory; 10.28.0 has 23, 11 of them high [S4 §9] | `tools/check-toolchain` on every run | ci-deps |
 | A7 | Mutation, per package | The CI gate, on the ci-mutation PR's own full run and on the first push run, requires every package > 85%. Today's measurements (10.1.1, with aliases): money 93.22, ledger 92.19, packets (widened) 85.40, pricing (with golden tests) 91.70 [S2 §3.5]. **Zero unexplained survivors:** every Survived or NoCoverage mutant is killed by a test or recorded as equivalent, with a reason and a reviewer. A recorded equivalent stays in the score's denominator as Survived, so recording one never raises a score. The canary reports 5 of 5 cases as expected in every shard that ran, and no shard takes over 15 minutes | The `mutation` gate's log and summary, per package and per file | ci-mutation |
-| A8 | ubuntu-26.04 | Every job's `runs-on` is `ubuntu-26.04`, except the jobs the F5 ruling keeps on `RELEASE_RUNNER.label` (§3.3.1 gives the exact set for each F5 answer). Every job log's "Runner Image" line confirms it | `workflows.test.ts`; the "Set up job" log lines | ci-browser |
-| A9 | Baselines | All seven regenerated with Chrome for Testing 156.0.8078.4 under Playwright 1.64.1, and committed. A second `--update-snapshots=all` on that build leaves `git status` clean, locally and **on CI's ubuntu-26.04**: the baseline step (§3.3.1) regenerates them on the runner whenever a PR changes the baselines, `browser.json` or `brand.spec.ts`, then runs `git diff --exit-code` over the snapshots and prints the seven SHA-256s, and the PR records that run as ADR 0058's proof. CI's headless-shell SHA-256 equals the recorded build's (`4fa61f0b…d9f6`, [S3] M7). A person inspects them in the PR's image diff, against the per-image pixel counts and the crop of the changed band (today: six at 0 px, the without-seal cover at 1,611 px, [S3] M5), and the PR records who did and when | The brand journey and the baseline step in CI; a local no-op regeneration; the PR description | ci-browser |
-| A10 | Accessibility | No axe violation under 4.14.0 with the WCAG 2.0/2.1 A and AA tags. A computed check holds every header control's accessible name to contain its visible text | e2e (every spec runs `a11y.ts:12`) | ci-browser |
+| A8 | ubuntu-26.04 | Every job's `runs-on` is `ubuntu-26.04` except eight on `RELEASE_RUNNER.label` (`ubuntu-24.04`): `release.yml`'s `build`, `capacity`, `push`, `report`; `release-dry-run.yml`'s `build`, `push`, `capacity`; `screening-capacity.yml`'s `capacity`, whose dispatch input alone may choose 26.04 (§3.3.1; 3.3.7; 3.3.8: `release-capacity.yml`'s and `content-calendar.yml`'s jobs move with every other job, under F5's letter). Every job log's "Runner Image" line confirms it | `workflows.test.ts`; the "Set up job" log lines | ci-browser |
+| A9 | Baselines | All seven regenerated with Chrome for Testing 156.0.8078.4 (revision 1248) under Playwright 1.64.1, and committed from CI's baseline step while no local 1248 exists (3.3.7). **On CI's ubuntu-26.04** the baseline step (every pull request and every push run) regenerates all seven byte for byte from nothing and prints their SHA-256s; the PR records that run as ADR 0058's proof. A local second `--update-snapshots=all` leaving `git status` clean follows once the person allows storage.googleapis.com. CI's headless shell and Chromium equal `browser.json`'s tree SHA-256s (`333985b3…54172e`, `2f991090…129545`) and binary SHA-256s (`4fa61f0b…e5f9d6`, `377a9fc0…5f025`) after every install in every workflow, and the worker image's headless shell in `images`, in the release's build and in screening-capacity's and release-capacity's measuring jobs. The inspection (the co-founder's, taken as recommended, 2026-10-27) is recorded in `designs/lane-b-ci/ci-browser-a9.md`, its pictures in `designs/lane-b-ci/ci-browser-a9/` with a `SHA256SUMS` (3.3.8): old and new side by side, exact and comparator pixel counts, crops of the changed box (2026-10-24: six at 0 px, the without-seal cover at 1,611 px, [S3] M5) and the adversarial visual-inspection agent's verdict; it does not block the merge | The baseline step and the browser check in CI; the A9 note linked from the PR description; the local no-op once a local 1248 exists | ci-browser |
+| A10 | Accessibility | No axe violation under 4.14.0 with the WCAG 2.0/2.1 A and AA tags on any page a journey scans (72 calls in 14 specs at 2ab2b15). A computed check holds every header control's accessible name to contain its visible text, at 1280 and 390 px | e2e (every `expectAccessible` runs `a11y.ts:12`; the check in `brand.spec.ts`) | ci-browser |
+| A11 | The browser jobs' setup | With the apt cache hit, no `playwright install --with-deps` over 60 s, against 10 of 92 over it (86-612 s) in the 14 ci.yml runs before 6ddd587's; every restored archive verified against the signed index before apt uses it | The install step's duration in each job's steps (`gh api …/runs/<run>/jobs`), on the PR's runs and the first five push runs after the merge; `apt-archives.sh verify`'s kept and discarded counts | ci-browser |
 
 ---
 
@@ -1711,30 +1712,33 @@ layout (§3.3.1, "Local browsers").
   | Package | Where (at 6ddd587) | From | To | Published (UTC) | Three days old from |
   |---|---|---|---|---|---|
   | `@playwright/test` | `apps/web/package.json:48` | 1.56.1 | **1.64.1** | 2026-10-14 11:58:13 | 2026-10-17 |
-  | `playwright-core` | `apps/worker/package.json:53`, `tools/package.json:33` (`:32` at 49514e8) | 1.56.1 | **1.64.1**, as one catalog line | 2026-10-14 11:54:58 | 2026-10-17 |
+  | `playwright-core` | `apps/worker/package.json:53`, `tools/package.json:33` (`:32` at 49514e8; `:34` at 2ab2b15, 3.3.7) | 1.56.1 | **1.64.1**, as one catalog line | 2026-10-14 11:54:58 | 2026-10-17 |
   | `playwright` (through `@playwright/test`) | lockfile | 1.56.1 | 1.64.1 | 2026-10-14 11:54:49 | 2026-10-17 |
   | `@axe-core/playwright` | `apps/web/package.json:47` | 4.13.0 | **4.14.0** | 2026-10-15 13:33:17 | 2026-10-18 |
-  | `axe-core` (through it, `~4.14.0`) | lockfile (`pnpm-lock.yaml:2490`) | 4.13.0 | 4.14.0 | 2026-10-05 17:43:36 | 2026-10-08 |
+  | `axe-core` (through it, `~4.14.0`) | lockfile (`pnpm-lock.yaml:2490`; `:2537` at 2ab2b15, 3.3.7) | 4.13.0 | 4.14.0 | 2026-10-05 17:43:36 | 2026-10-08 |
 
   - All are npm `latest`; no stable release follows 1.64.1 (`git ls-remote --tags https://github.com/microsoft/playwright
-    'v1.64*' 'v1.65*'`: v1.64.0 and v1.64.1 only; `next` is 1.65.0-alpha-2026-10-25). axe's later tags are
-    prereleases only.
+    'v1.64*' 'v1.65*'`: v1.64.0 and v1.64.1 only; `next` is 1.65.0-alpha-2026-10-25; on 2026-10-27 it is 1.65.0-alpha-2026-10-26, axe's `next` and `rc` are 4.14.1
+    prereleases, and no 1.64.2, 1.65.0 or 4.14.1 stable exists, 3.3.7). axe's later tags are prereleases only.
   - **ci-deps' gates pass them with no exclude.** `minimumReleaseAge: 4320`: every version is over three days old.
     `trustPolicy: no-downgrade`: every one is published by a GitHub Actions trusted publisher with SLSA v1 provenance,
     as were 1.56.1 and 4.13.0, so no evidence drops ([SV] §2, scored from the full packuments with
-    `scratchpad/ci-browser/scripts/trust.js`). No `trustPolicyExclude` or `minimumReleaseAgeExclude` entry is added,
-    and `check-toolchain`'s lockfile rule passes.
+    `scratchpad/ci-browser/scripts/trust.js`). From 1.64.0 and 4.14.0 the publisher's `oidcConfigId` drops its `oidc:`
+    prefix with the same UUID; phase 2's install under the gates proves pnpm reads that as no downgrade (3.3.7). No
+    `trustPolicyExclude` or `minimumReleaseAgeExclude` entry is added (the file's `semver@6.3.1` exclude and qs override
+    are ci-deps' and untouched, 3.3.7), and `check-toolchain`'s lockfile rule passes.
   - **No new transitive package, and one fewer.** `@playwright/test` 1.64.1 depends on `playwright` 1.64.1, which
     depends on `playwright-core` 1.64.1 alone: 1.64.1 has no `optionalDependencies` (`npm view playwright@1.64.1
     dependencies optionalDependencies --json` → `{"playwright-core": "1.64.1"}`), where 1.56.1 had `fsevents` 2.3.2.
-    `fsevents@2.3.2` is referenced only by playwright (`pnpm-lock.yaml:2877, :5946, :6376`, moves with ci-deps), so the
+    `fsevents@2.3.2` is referenced only by playwright (`pnpm-lock.yaml:2877, :5946, :6376`; `:2924, :6001, :6431` at 2ab2b15, 3.3.7), so the
     lockfile loses it; `fsevents@2.3.3` stays for its other users. `@axe-core/playwright` 4.14.0 depends on
     `axe-core ~4.14.0`, peers on `playwright-core >=1.0.0`, and needs Node >=22.12.0, which `package.json:6-8`'s `>=24`
     meets. next 16.4.3's optional peer `@playwright/test ^1.51.1` holds. The lockfile diff is version swaps plus
     `fsevents` 2.3.2 removed (§3.3.6, N1), written by pnpm 10.34.8 under the gates.
   - **`playwright-core` becomes one catalog line.** The worker and the tools name it with the same literal today, and
     ci-deps' `no-duplicated-versions.test.ts` requires every catalog package to be `catalog:` in every manifest
-    (§3.2.3). So `pnpm-workspace.yaml`'s catalog gains `playwright-core: 1.64.1`, and both manifests say `catalog:`.
+    (§3.2.3; `no-duplicated-versions.test.ts:124-139` at 2ab2b15, root included, 3.3.7). So `pnpm-workspace.yaml`'s
+    catalog gains `playwright-core: 1.64.1` (between `pg` and `react`, 3.3.7), and both manifests say `catalog:`.
     That takes P5's playwright-core pair (§3.2.6) here, where the lines change anyway. `@playwright/test` and
     `@axe-core/playwright` have one manifest each and stay literal. Dependabot's `browser-tests` group (ci-deps)
     updates catalog entries as it does vitest's.
@@ -1769,7 +1773,7 @@ layout (§3.3.1, "Local browsers").
 - **WCAG 2.5.3 fixes: real findings of axe 4.14.** `label-content-name-mismatch` loses its `experimental` tag in 4.14.0
   (axe-core 4.13.0 and 4.14.0 `axe.js`; CHANGELOG at v4.14.0:11, "Enable rule by default (#5421)"), so every
   `AxeBuilder` scan with `wcag21a` runs it ([SV] §7). `a11y.ts:12` scans with `['wcag2a','wcag2aa','wcag21a','wcag21aa']`,
-  and twelve specs call `expectAccessible` on shell pages, 66 calls in all ([SF] §3), so the fix is needed for the whole
+  and fourteen specs call `expectAccessible` on shell pages, 72 calls in all at 2ab2b15 (twelve and 66 at 6ddd587; 3.3.7), so the fix is needed for the whole
   suite, not only for brand. Both findings are in `apps/web/src/components/shell.tsx` (unchanged since 49514e8):
   - `:56` `<summary … aria-label="Practice switcher">`, whose visible text is the practice's name (`:57`) →
     ``aria-label={`${current?.name ?? 'Choose a practice'}, practice switcher`}``;
@@ -1786,13 +1790,13 @@ layout (§3.3.1, "Local browsers").
     [SF] §3);
   - a computed check in `brand.spec.ts`'s header step (`:325-345`), at 1280 and 390 px, holds each header control's
     accessible name to contain its visible text, lower-cased and whitespace-folded, as WCAG 2.5.3 reads (CI-19). One
-    mechanism each (§3.3.6, N9): the **name** from Playwright's accessibility tree (`locator.ariaSnapshot()`, the
-    `summary`'s name); the **visible text** from `locator.evaluate` as `innerText` plus each descendant's
+    mechanism each (§3.3.6, N9): the **name** by `toHaveAccessibleName` (3.3.7: an aria snapshot prints a `summary`'s text, not
+    its name, `brand.spec.ts:189`); the **visible text** from `locator.evaluate` as `innerText` plus each descendant's
     `getComputedStyle(el, '::before').content` (unquoted, `none` dropped), so the initial drawn as generated content
     counts. At 390 px the account control's only visible text is that initial, which `innerText` alone would miss, and
     axe answers "incomplete", not a violation, for a one-letter label (axe-core 4.14.0 `axe.js:30885-30886`,
     `is_human_interpretable < 1`), so this check is the only guard there. It is a step of the existing journey, not a
-    new test, so e2e stays 51 tests.
+    new test, so e2e stays at the base's count (51 at 6ddd587; 54 at e908c21, 3.3.7).
 - **The browser build, recorded and checked.**
   - Playwright 1.64.1 pins chromium and chromium-headless-shell at **revision 1248, Chrome for Testing 156.0.8078.4**
     (`raw.githubusercontent.com/microsoft/playwright/v1.64.1/packages/playwright-core/browsers.json`; the published
@@ -1828,7 +1832,7 @@ layout (§3.3.1, "Local browsers").
       `DEPENDENCIES_VALIDATED`) sit beside `dir`, not under it, so they are outside the tree.
     - Three hashes per build, because CI hashes the unpacked tree (Playwright deletes the zip after unpacking), the
       message names the binary, and the local layout is pinned by the zip (`setup-container.sh`'s `CFT_BUILDS`,
-      `:957-960` on claude/build-ops 99b2e05, whose two 1248 rows equal these zip SHA-256s). The binary hashes were
+      `:957-960` on claude/build-ops 99b2e05, `:967-968` on c2041dfc (3.3.7), whose two 1248 rows equal these zip SHA-256s). The binary hashes were
       read through `zipfile` with no extraction (`python3 -I scratchpad/ci-browser/scripts/zsha.py <zip> <member>`).
   - **`tools/ci/browser-build.ts`** (new; `node:` imports only, run as `node tools/ci/browser-build.ts`, with Node 24's
     type stripping). It reads `browser.json` and the installed playwright-core's `browsers.json`, requires their
@@ -1844,15 +1848,19 @@ layout (§3.3.1, "Local browsers").
       `/app/node_modules/playwright-core/browsers.json` (`docker run --rm --entrypoint cat <ref> …`) and computes the
       headless shell's tree inside the image (`docker run --rm --entrypoint sh <ref> -c 'cd
       /ms-playwright/chromium_headless_shell-<rev> && find … | sha256sum'`, the command above), against the same
-      record. Every job that runs it takes `actions/setup-node` with Node 24 and no cache (`package-manager-cache:
-      false`), so the type stripping does not depend on the runner image's own Node.
+      record. Every job that runs it takes `actions/setup-node` with Node 24 before it, so the type stripping does not
+      depend on the runner image's own Node (3.3.8, S6: the rule is the Node, not the cache inputs; the check imports
+      only `node:` modules, so a restored pnpm store cannot reach it). The cache inputs stay each job's own: off in
+      `ci.yml`'s `images` (`:719-723`) and the release's build (`release.yml:148-151`, ci-deps' no-cache rule), `cache:
+      pnpm` as they stand in the two weekly capacity jobs (`screening-capacity.yml:201`, `release-capacity.yml:72`).
     - **Where it runs** (§3.3.6, S4): the step **right after every `CHROMIUM_INSTALL`** in every workflow: `unit`,
       every `db` and `e2e` shard (`ci.yml:191, :267, :429`), `large-zip.yml:37`, `release.yml`'s `capacity` (`:157`)
       and `screening-capacity.yml`'s `capacity` (`:177`), before any test and before any cache is saved, so a build
       that fails the check is never cached. With `--image` on the worker image: in `ci.yml`'s `images`, and in
       `release.yml`'s and `release-dry-run.yml`'s `build` before `docker save`, so the worker image that ships is held
       to the record, not only another build of its Dockerfile (both builds already run repository code; `push` and
-      `report` stay clean). The worker prints customers' PDFs with that headless shell.
+      `report` stay clean). The worker prints customers' PDFs with that headless shell. Also on the two measured worker images,
+      `release-capacity.yml`'s and `screening-capacity.yml`'s `capacity` (3.3.7).
     - **The tests still run after a red check** (§3.3.6, S9). The steps after the check (the tests, the db shards, the
       journeys, the baseline step) take `if: ${{ !cancelled() && steps.browser-install.outcome == 'success' }}`, the
       install step carrying `id: browser-install`: a failed browser check leaves the job red but still shows what the
@@ -1866,8 +1874,9 @@ layout (§3.3.1, "Local browsers").
     - The message: "The headless shell is <found version> (revision <found>, tree SHA-256 <found>, binary SHA-256
       <found>), and browser.json records <expected version> (revision <expected>, tree SHA-256 <expected>, binary
       SHA-256 <expected>). A Playwright upgrade needs ADR 0058's baseline procedure: docs/runbooks/ci.md, 'Upgrading
-      the browser'." (and the same form for chromium). When only the tree differs, it also names the first ten paths
-      whose SHA-256 differs from the zip's list, which it prints in full under `--list`.
+      the browser'." (and the same form for chromium). When only the tree differs, it names every path whose SHA-256 differs from the
+      committed list (`apps/web/e2e/browser-builds/<dir>.sha256`) and prints the found list in full, as `--list` does, so
+      one CI run gives a new record (3.3.7).
   - **Where CI downloads from.** `playwright install` fetches the build from `cdn.playwright.dev/builds/cft/156.0.8078.4/linux64/*.zip`,
     Playwright's mirror of CfT, not Google's bucket (`coreBundle.js:33999-34006, 34225, 34260`).
     `PLAYWRIGHT_CHROMIUM_DOWNLOAD_HOST` cannot point it at Google: the override keeps the `builds/cft/<ver>/…` path
@@ -1880,7 +1889,8 @@ layout (§3.3.1, "Local browsers").
 - **The baselines.**
   - Regenerated with `pnpm --filter @tp/web exec playwright test e2e/brand.spec.ts --update-snapshots=all` on CfT
     156.0.8078.4 under 1.64.1 (`=all` rewrites every snapshot, matching or not; 1.64 renamed the bare flag's modes),
-    on the local 1248 layout (below). All seven are committed (`apps/web/e2e/brand.spec.ts-snapshots/`, at 6ddd587:
+    on CI's 1248 through the baseline step while no local layout can be made (3.3.7; the procedure in §3.3.7). All
+    seven are committed (`apps/web/e2e/brand.spec.ts-snapshots/`, at 6ddd587:
     header-1280 9,995 bytes, blob f1837c27; header-390 5,418, ca184879; header-lockup-1280 2,797, ac324b65;
     header-lockup-390 2,802, 163dd863; report-cover-top 4,638, 99d56128; report-cover-with-seal 49,661, b7cc1b6e;
     report-cover-without-seal 35,355, a8659238; [SF] §3).
@@ -1910,17 +1920,20 @@ layout (§3.3.1, "Local browsers").
          --retries=0`, its output kept, and its exit status required to be 0 (kept in a variable so the pictures are
          still printed, then enforced at the end). `--retries=0` because `playwright.config.ts:83` retries once on CI,
          and a retried attempt would find the first attempt's files and print other lines;
-      3. exactly seven lines `A snapshot doesn't exist at <path>, writing actual.` in that output, one per baseline
+      3. (3.3.7: replaced by the set written equal to `git ls-files` of the committed baselines, `ci.yml:607, :623`)
+         exactly seven lines `A snapshot doesn't exist at <path>, writing actual.` in that output, one per baseline
          (the message of a missing file under `all`, `expect.js:12484-12487`; the review's "is re-generated" is the
          message for an existing file that differs, which step 1 rules out);
       4. `git diff --exit-code -- apps/web/e2e/brand.spec.ts-snapshots` (a deleted or changed file fails), and the seven
          files' SHA-256s printed.
     - **On a difference or a failure** it fails and prints each changed picture as a `path base64` line, in the form
       of the failed comparisons' step (`ci.yml:453-462` at 6ddd587, moves with ci-deps; the 2026-10-24 text's
-      `:103-108`), so a person can commit CI's bytes and inspect them.
+      `:103-108`), so a person can commit CI's bytes and inspect them (3.3.7: in chunks, `<path> <i>/<n> <8,000 characters>`,
+      each picture's SHA-256 first).
     - The ci-browser pull request records its passing run, with the seven SHA-256s, as ADR 0058's proof that CI renders
       the committed bytes.
-  - **A local no-op too.** A second `--update-snapshots=all` on the local layout leaves `git status` clean. If the local
+  - **A local no-op too** (3.3.7: waiting on the person, storage.googleapis.com; CI's from-nothing run is the proof
+    until then). A second `--update-snapshots=all` on the local layout leaves `git status` clean. If the local
     host and CI disagree, CI's bytes are committed (CI is where comparisons run) and the disagreement is recorded as a
     finding against ADR 0058's host-independence claim (`:162-176`), which is amended with it.
   - **A9: the inspection, by an adversarial visual-inspection agent** (the 00:20 ruling). Once the baseline step has
@@ -1933,8 +1946,8 @@ layout (§3.3.1, "Local browsers").
       For comparison, [S3] M5 measured six at 0 px and the without-seal cover at 1,611 px between 141 and 156;
     - its verdict per image is pass or a finding; a finding is fixed in the PR (regenerated, or the cause fixed)
       before the merge;
-    - the session publishes the pictures, counts and crops as a **private artifact gallery** (the form of the UX
-      review's, `lanes/lane-b.md:95`) and puts its URL in the PR description and `lanes/lane-b.md`. The co-founder may
+    - (3.3.7) the session records the pictures side by side, the counts, the crops and the agent's verdict in
+      `designs/lane-b-ci/ci-browser-a9.md`, which the PR links, in place of a private gallery. The co-founder may
       look at it; it does not block the merge.
 - **The browser jobs' system packages, cached and verified (V3).**
   - **Measured** ([SF] §6, `scratchpad/ci-browser/logs/`): push runs install in 12-29 s, but #45's pull-request run
@@ -1955,7 +1968,8 @@ layout (§3.3.1, "Local browsers").
        `os=$ImageOS` (§3.3.6, N3). These are the runner's environment variables, not the `env` context, which holds
        only what a workflow sets, so `${{ env.ImageOS }}` would be empty ([SF] §6's key form).
     2. `actions/cache/restore` (ci-deps' pin) of `$RUNNER_TEMP/apt-archives`, key
-       `apt-v1-${{ steps.runner-image.outputs.key }}-${{ hashFiles('apps/web/e2e/browser.json') }}`, restore-keys
+       `apt-v1-${{ steps.runner-image.outputs.key }}-${{ hashFiles('node_modules/.pnpm/playwright-core@*/node_modules/playwright-core/browsers.json') }}`
+       (3.3.7: the installed `browsers.json`, as the browsers' cache key), restore-keys
        `apt-v1-${{ steps.runner-image.outputs.key }}-` and `apt-v1-${{ steps.runner-image.outputs.os }}-` (the image's
        weekly update and a rollout that mixes image versions still reuse last week's files).
     3. `tools/ci/apt-archives.sh verify "$RUNNER_TEMP/apt-archives"`: `sudo apt-get update` (the signed `InRelease`
@@ -1968,7 +1982,8 @@ layout (§3.3.1, "Local browsers").
     4. The install (`CHROMIUM_INSTALL`, `tools/test/ci-chromium.ts:12`), unchanged but for `id: browser-install`
        (§3.3.1, the browser check): it now downloads only what the cache lacked.
     5. The browser check (above).
-    6. In `unit` only, on a miss (`cache-hit != 'true'`, as the browsers' save, `ci.yml:192-197`): `apt-archives.sh
+    6. In `unit` only, on a miss (`cache-hit != 'true'`, as the browsers' save, `ci.yml:192-197`) and off
+       `pull_request` (3.3.7): `apt-archives.sh
        collect "$RUNNER_TEMP/apt-archives"` copies `/var/cache/apt/archives/*.deb` there and gives it to the runner's
        user, then `actions/cache/save` under the primary key. `apt-get` keeps what it downloads
        (`APT::Keep-Downloaded-Packages` defaults to false only for the `apt` binary); `verify` also writes
@@ -1977,7 +1992,8 @@ layout (§3.3.1, "Local browsers").
   - **Where:** `ci.yml`'s `unit` (restore, verify, save), every `db` shard and every `e2e` shard (restore and verify);
     `large-zip.yml` (restore and verify; 26.04, as unit); `screening-capacity.yml`'s `capacity`, which stays on 24.04 and
     so has its own key (`ImageOS` `ubuntu24`): restore, verify, and save on a miss. `release.yml` takes no cache, by
-    ci-deps' rule (§3.2.1), and its one install stays uncached.
+    ci-deps' rule (§3.2.1), and its one install stays uncached. content-calendar and release-capacity take none: neither
+    installs a browser on the runner (3.3.7).
   - **The capacity job watches what it runs** (§3.3.6, N7). `screening-capacity.yml`'s `capacity` runs
     `tools/ci/apt-archives.sh` and `tools/ci/browser-build.ts`, but neither its push `paths` (`:29-43`) nor the watched
     list names `tools/ci/**`, so a change to either would not run on that job's 24.04 image until a later push or the
@@ -1992,7 +2008,7 @@ layout (§3.3.1, "Local browsers").
     Caches paragraph (`docs/runbooks/ci.md:148-149`, "only push runs on the build branch write the base branch's") is
     reworded to match.
   - **Invalidation:** the key changes with the runner image (`ImageOS`, `ImageVersion`, weekly) and with the browser
-    build (`browser.json`, which moves with every Playwright bump and so with Playwright's dependency list). A security
+    build (playwright-core's installed `browsers.json`, 3.3.7, which moves with every Playwright bump and so with Playwright's dependency list). A security
     update in the archive is a new version: its file is missing from the cache, so apt fetches it, and the next miss in
     `unit` saves it. About 26 MB per image.
   - **Not chosen:** a hand-kept `.deb` set installed with `dpkg -i` (loses the index check and goes stale with every
@@ -2005,10 +2021,12 @@ layout (§3.3.1, "Local browsers").
     ci.yml `:34` static, `:156` lint, `:169` unit, `:231` db, `:319` domain-model, `:360` build, `:395` e2e, `:468`
     images, `:527` all-green; large-zip `:18`; mutation `:42` changes, `:72` stryker, `:116` mutation; publish-content
     `:23`; release `:29` build, `:131` capacity, `:204` push, `:251` report; screening-capacity `:64` changes, `:132`
-    capacity, `:241` gate, `:277` notify. ci-deps' `release-dry-run.yml` adds `build` and `push`: **25 jobs**.
-  - **7 stay on `RELEASE_RUNNER.label`**, which stays `ubuntu-24.04` (`tools/screening-capacity/launch-check.ts:104`):
-    `release.yml`'s `build`, `capacity`, `push` and `report`; `release-dry-run.yml`'s `build` and `push`;
-    `screening-capacity.yml`'s `capacity`. **18 move to `ubuntu-26.04`**, `publish-content.yml`'s `publish` with its
+    capacity, `:241` gate, `:277` notify. ci-deps' `release-dry-run.yml` adds `build` and `push`: **25 jobs** (3.3.7: and `capacity`, 26; the base's #49 adds
+    four more, **30 at 2ab2b15**).
+  - **8 stay on `RELEASE_RUNNER.label`** (3.3.7 and 3.3.8; 7 in the 2026-10-26 text), which stays `ubuntu-24.04`
+    (`tools/screening-capacity/launch-check.ts:107` at 2ab2b15): `release.yml`'s `build`, `capacity`, `push` and
+    `report`; `release-dry-run.yml`'s `build`, `push` and `capacity`; `screening-capacity.yml`'s `capacity`. **22 move to
+    `ubuntu-26.04`** (3.3.8; content-calendar's two jobs and release-capacity's two among them), `publish-content.yml`'s `publish` with its
     frozen copy (F4).
   - **Why 26.04 needs 1.64.1, together.** 1.64.1 is the first of the two versions to support Ubuntu 26.04
     (`coreBundle.js:9230`, `isOfficiallySupportedPlatform … "26.04"`; `:32773`, the `ubuntu26.04-x64` table). 1.56.1's
@@ -2020,13 +2038,15 @@ layout (§3.3.1, "Local browsers").
     image is generally available (its announcement #14747); `ubuntu-latest` moves to it in November 2026 (#14748),
     which changes nothing here, since the runner rule refuses `-latest` ([SV] §5, correction 7). The 24.04 jobs run
     image 20261012.334.1 today (job logs 121270018490, 121281841727); 20261023.334.3 is current, with Docker 28.0.4,
-    Compose 2.38.2 and PostgreSQL 16.15.
+    Compose 2.38.2 and PostgreSQL 16.15. (3.3.7: on 2026-10-27 the newest are `ubuntu26/20261026.180`, image
+    20261026.180.1, Node 24.22.1, Buildx 0.38.1, Docker, Compose and PostgreSQL as above, and 24.04's 20261026.354.1;
+    `ubuntu-latest`'s November move is not re-verified, `README.md:25` still mapping it to 24.04.)
   - **The restore drill runs.** `restore-drill.db.test.ts:96-102` skips when the client tools are older than the
     server (`:191-192`); on 24.04 `pg_dump` is 16 against server 18, which is db's one skip. On 26.04 the client is
     18.6, so the drill runs: db goes from 9,049 passed and 1 skipped to **9,050 and 0** (plus whatever ci-deps adds; it
-    adds no db test). The comment at `:73-75` (reworded by ci-deps, moves with it) then says the drill runs on CI.
+    adds no db test). At e908c21: 9,222 and 1 → **9,223 and 0** (3.3.7). The comment at `:73-75` (reworded by ci-deps, moves with it) then says the drill runs on CI.
   - **`workflows.test.ts`.** The rule "every job on ubuntu-24.04" (`:349-360`; the 2026-10-24 text's `:160-171`)
-    becomes: every job is on `ubuntu-26.04` except the named set `RELEASE_CHAIN` (the seven above, by file and job),
+    becomes: every job is on `ubuntu-26.04` except the named set `RELEASE_CHAIN` (the eight above, 3.3.8, by file and job),
     each of which is on `RELEASE_RUNNER.label`; the set is exact, so a job added to a release workflow must be placed by
     a test edit. It still refuses `-latest`, unversioned and larger runners (`:146-163`, `:362-405`; their fixtures
     keep 24.04 literals). The release capacity test (`:478-487`) holds both capacity jobs to `RELEASE_RUNNER.label`, as
@@ -2035,7 +2055,7 @@ layout (§3.3.1, "Local browsers").
     ci-deps' `no-duplicated-versions.test.ts` scans workflow comments.
   - **actionlint does not know `ubuntu-26.04`.** actionlint 1.7.7 (this machine's) fails a `runs-on: ubuntu-26.04` job
     with `label "ubuntu-26.04" is unknown … [runner-label]`, exit 1; `rule_runner_label.go` at v1.7.7, v1.7.12 (the
-    latest release) and main lists 22.04 and 24.04 only ([SF] §0 item 1). `workflows.test.ts:1285-1293` runs actionlint
+    latest release, still on 2026-10-27, 3.3.7) and main lists 22.04 and 24.04 only ([SF] §0 item 1). `workflows.test.ts:1285-1293` runs actionlint
     wherever it is installed and forbids its configuration file (`:355-359`). **The fix:** the test spawns actionlint
     with `-ignore 'label "ubuntu-26\.04" is unknown'`: one exact label, no configuration file, the ban kept, and
     removed when actionlint lists 26.04. Not chosen: an `actionlint.yaml` with `self-hosted-runner.labels`, which would
@@ -2114,7 +2134,8 @@ layout (§3.3.1, "Local browsers").
       archive is loaded, its `.Id` must equal `target` (the store-aware compare `push` runs, here on the containerd
       store), and `browser-build.ts --image` checks its headless shell. Each pull request then proves the reader and
       the containerd rule on the store the probe will use.
-  - **The harness proves the loaded tag is the archive.** `run.ts:825-826` (outside every #42 hunk: `-813,6` ends at
+  - **The harness proves the loaded tag is the archive.** (3.3.7: `run.ts`'s flags and its `.Id` read move to the
+    follow-up after #42; `containers.ts`' `proveLoadedImage`, `:379`, is built and tested now.) `run.ts:825-826` (outside every #42 hunk: `-813,6` ends at
     `:818`, `-853,6` starts at `:853`) calls one function in `containers.ts`: with `--image-archive`, it reads the
     archive with image-id.ts (and, with `--expect-image`, requires its config digest to equal the expected one);
     without (a local run), it streams `docker save <tag>` into it. It then reads the store from `docker info`
@@ -2123,14 +2144,14 @@ layout (§3.3.1, "Local browsers").
     both. `run.ts`'s options gain `imageArchives` and `expectImages` beside `webImage` and `workerImage` (`:127-128`,
     parsed at `:181-182`; the usage line `:1060`), all outside #42's hunks (`-46,6`, `-58,6`, `-288,6`, `-813,6`,
     `-853,6`, `-903,6`, `-912,7`, `-926,6`, `-948,6`; [SF] §4).
-  - **The report** (`report.ts`, a #42 file): `REPORT_FORMAT` (`:56`) moves to **`tp-screening-capacity/9`** (8 today;
+  - **The report** (`report.ts`, a #42 file; 3.3.7: in the follow-up after #42): `REPORT_FORMAT` (`:56`) moves to **`tp-screening-capacity/9`** (8 today;
     #42 adds `Measurements.mail` without a bump). `WorkflowRun` (`workflowRun`, `:339-346`, called at `run.ts:833`)
     gains `imageOS` and `imageVersion` from the runner's environment; the measurements gain `imageStore` (driver and
     snapshotter) and `imageSource` (`archive` with each archive's SHA-256, or `save`). They go beside `workflow` and
     `images` (`:327-357`), never at the `Measurements` interface's end, the verdict's end or the markdown's `Layout:`
     line, where #42's hunks are (`-389,6`, `-529,6`, `-745,6`). `test-support/measurements.ts` gains them in
     `measured()` beside `workflow` and `images`, away from #42's `:218`.
-  - **The launch check** (`launch-check.ts`): `RELEASE_RUNNER` (`:104`) gains `imageOS: 'ubuntu24'` (GitHub's
+  - **The launch check** (`launch-check.ts`; 3.3.7: its refusals in the follow-up after #42, comments now): `RELEASE_RUNNER` (`:104`) gains `imageOS: 'ubuntu24'` (GitHub's
     `ImageOS` for 24.04). `launchCheck()` refuses a binding report whose `imageOS` is not `RELEASE_RUNNER.imageOS`, or
     whose `imageSource` is not `archive`; it already refuses another format (`:166-168`). The doc text at `:61-70`,
     `:85-88` and `:526`, and `report.ts:354-357`, say the images are config digests read from the archive.
@@ -2164,7 +2185,8 @@ layout (§3.3.1, "Local browsers").
     records the numbers, the report's `imageStore` and `docker info` on issue #41, for the founder's later move.
 - **Conditional work.**
   - **O6, the axe sweep over #42's journeys.** #42 is a draft (head 13f59b1, base 49514e8, `mergeable_state: dirty`,
-    last updated 2026-10-23T20:51Z; [SF] §0 item 12). Whichever of the two merges second runs axe 4.14 over #42's
+    last updated 2026-10-23T20:51Z; [SF] §0 item 12; 3.3.7: on 2026-10-27 head 098636e3, base e908c21, 188 files,
+    `mergeable_state: blocked`, updated 2026-10-27T01:45:57Z). Whichever of the two merges second runs axe 4.14 over #42's
     console mail page and its two journeys (`mail-cutoff.spec.ts`, `mail-notices.spec.ts`) in its own CI, because every
     spec's `expectAccessible` runs it, and fixes any Label-in-Name finding in that pull request. If #42 merges first,
     ci-browser merges the build branch in (the ruleset's "up to date"), runs the full e2e, and fixes #42's findings in
@@ -2182,7 +2204,8 @@ layout (§3.3.1, "Local browsers").
     not.
 - **Local browsers (the browser layout).** The CfT 156 layout of the 2026-10-24 text
   (`scratchpad/ci-design/pwr/browsers/ms-playwright`) was in an earlier session's scratchpad and is gone;
-  `/opt/pw-browsers` (`PLAYWRIGHT_BROWSERS_PATH`) holds 1194 and the image's 1243 only ([SV] correction 6).
+  `/opt/pw-browsers` (`PLAYWRIGHT_BROWSERS_PATH`) holds 1194 and the image's 1243 only ([SV] correction 6; 3.3.7: on 2026-10-27, 1243 only, the verified zips are gone
+  and both hosts are refused, so no local 1248 until the person allows storage.googleapis.com).
   - **The fix, on `claude/build-ops`** (`/home/user/ops/tools/setup-container.sh` at 99b2e05; a session commit there,
     not part of this pull request). `step_playwright` (`:999-1029`) reads only `$CLONE_DIR/apps/web/package.json`
     (`:1001-1003`) and that version's `browsers.json` (`:1004`), and runs once at `:1087`, before the argument worktrees
@@ -2211,7 +2234,7 @@ layout (§3.3.1, "Local browsers").
 
 At 6ddd587 unless "(ci-deps)": the file exists only once ci-deps merges, or ci-deps changes the lines named.
 - **Browser, app and baselines:**
-  - `apps/web/package.json` (`:47-48`), `apps/worker/package.json` (`:53`), `tools/package.json` (`:33`),
+  - `apps/web/package.json` (`:47-48`), `apps/worker/package.json` (`:53`), `tools/package.json` (`:33`; `:34` at 2ab2b15, 3.3.7),
     `pnpm-workspace.yaml` (the catalog's `playwright-core` line; ci-deps), `pnpm-lock.yaml` (ci-deps);
   - `apps/worker/Dockerfile` (the runtime stage's install; ci-deps moves `:23`);
   - `apps/web/src/components/shell.tsx` (`:56`, `:84-87`);
@@ -2221,7 +2244,9 @@ At 6ddd587 unless "(ci-deps)": the file exists only once ci-deps merges, or ci-d
   - `tools/test/browser-version.test.ts` (new); `tools/test/no-duplicated-versions.test.ts` (ci-deps): the worker's
     playwright-core source becomes the catalog line, which ci-deps names "once ci-browser adds it".
 - **Runners, CI steps and binding:**
-  - every workflow's `runs-on` (the 18 of §3.3.1, `release-dry-run.yml`'s included as unchanged) and
+  - every workflow's `runs-on` (the 22 of §3.3.1 as of 3.3.8, `content-calendar.yml:43, :68` and
+    `release-capacity.yml:36, :114` among them; `release-dry-run.yml`'s unchanged), the
+    worker `--image` steps in `release-capacity.yml` and `screening-capacity.yml` (3.3.7), and
     `tools/test/frozen/publish-content.yml`'s `runs-on` (F4; ci-deps);
   - `ci.yml`: the runner-image, apt restore, verify and save steps; `id: browser-install`, the browser check after
     each install and the later steps' `if:`; the baseline step (every run, no diff condition); in `images` the archive
@@ -2236,7 +2261,9 @@ At 6ddd587 unless "(ci-deps)": the file exists only once ci-deps merges, or ci-d
   - `tools/screening-capacity/watched.ts` (`WATCHED_FIXED`, `:62`) and `watched-paths.txt` (regenerated; a #42 file);
   - `tools/ci/apt-archives.sh` and its test, with stub `apt-get`, `apt-cache` and `sudo` on `PATH` (new);
   - `tools/test/workflows.test.ts`; `tools/test/collection.test.ts`'s `FILES` (ci-deps) gains the new unit test files;
-  - `tools/screening-capacity/{image-id.ts (new), containers.ts, run.ts, report.ts, launch-check.ts}`, their tests
+  - (3.3.7: `run.ts`, `report.ts`, `report.test.ts`, `launch-check.test.ts` and `test-support/measurements.ts` move to
+    the follow-up after #42; `launch-check.ts` changes in comments only)
+    `tools/screening-capacity/{image-id.ts (new), containers.ts, run.ts, report.ts, launch-check.ts}`, their tests
     (`image-id.test.ts` new, `measure.test.ts`, `report.test.ts`, `launch-check.test.ts`) and
     `tools/screening-capacity/test-support/measurements.ts` (the 2026-10-24 text's "`test-support/measurements.ts`";
     no root `test-support/` exists);
@@ -2280,7 +2307,8 @@ At 6ddd587 unless "(ci-deps)": the file exists only once ci-deps merges, or ci-d
     CI-11 to CI-14), and the reservation note (`:211-212`, which ci-deps edits) says the series is complete.
 - **Outside the pull request:** `/home/user/ops/tools/setup-container.sh` (`claude/build-ops`; §3.3.1, "Local
   browsers").
-- **The files #42 also changes** (§3.3.6, S6). #42 (head 13f59b1, 143 files, `scratchpad/pr42-files.txt`; hunks from
+- **The files #42 also changes** (§3.3.6, S6; 3.3.7: at head 098636e3 the table is §3.3.7's, where ADR 0062 is a sure
+  conflict at the end of the file, both amendments kept in merge order). #42 (head 13f59b1, 143 files, `scratchpad/pr42-files.txt`; hunks from
   `gh api repos/PureTideWater/PhysicalTherapy/pulls/42/files?per_page=100&page=1..2`, saved in
   `scratchpad/ci-browser/pr42f/`) touches 13 of ci-browser's files. Neither waits for the other; whichever merges
   second merges the build branch in and resolves as below.
@@ -2322,26 +2350,29 @@ CI_TREE="$tmp" pnpm exec vitest run --project unit tools/test/workflows.test.ts 
 
 **Failing first, for the behaviours `CI_TREE` cannot reach** (§3.3.6, S8). `CI_TREE` reroutes file reads only
 (§3.2.3); the harness and launch-check tests import modules. So a second red run, in a worktree at the merge base with
-the head's three test files and its test support copied in:
+the head's test file and its test support copied in (3.3.8, N8: `measure.test.ts` and `test-support/image-archive.ts`;
+`report.test.ts`, `launch-check.test.ts` and `test-support/measurements.ts` follow #42):
 
 ```
 mb=$(git merge-base origin/claude/build-platform HEAD); tmp=$(mktemp -d)/base
 git worktree add --detach "$tmp" "$mb"
-cp tools/screening-capacity/{measure,report,launch-check}.test.ts "$tmp/tools/screening-capacity/"
-cp tools/screening-capacity/test-support/measurements.ts "$tmp/tools/screening-capacity/test-support/"
+cp tools/screening-capacity/measure.test.ts "$tmp/tools/screening-capacity/"
+cp tools/screening-capacity/test-support/image-archive.ts "$tmp/tools/screening-capacity/test-support/"
 (cd "$tmp" && pnpm install --frozen-lockfile && pnpm exec vitest run --project unit tools/screening-capacity \
   -t '<each name below>'); git worktree remove --force "$tmp"
 ```
 Each named test must fail there, on an assertion (not on a missing export, which the PR description would show as
 an import error and which does not count): the loaded tag proved per store (`config` on classic, `target` on
 containerd) and `--expect-image` refused on a different archive (`measure.test.ts`); format 9 and the four new fields
-(`report.test.ts`); another `ImageOS`, `imageSource: save` and format 8 refused (`launch-check.test.ts`). Where a test
+(`report.test.ts`); another `ImageOS`, `imageSource: save` and format 8 refused (`launch-check.test.ts`). (3.3.7: the `report` and
+`launch-check` cases move with their code to the follow-up after #42; this PR's worktree run covers `measure.test.ts`; 3.3.8: `proveLoadedImage` and `loadedImageProblems` are new exports of
+`containers.ts`, so their cases can fail at e908c21 only on the missing export, and the PR names them so.) Where a test
 can only fail on a missing export, the PR names it and why. The PR description records this run beside the `CI_TREE`
 run.
 
 The tests:
 - `workflows.test.ts`:
-  - runners: the exact `RELEASE_CHAIN` on `RELEASE_RUNNER.label`, every other job on `ubuntu-26.04`, and
+  - runners: the exact `RELEASE_CHAIN` (eight jobs, 3.3.8) on `RELEASE_RUNNER.label`, every other job on `ubuntu-26.04`, and
     `runnerProblems`' `inputs.<name> || '<label>'` form (resolved, and an unresolvable expression still refused);
   - the install test (`:1205-1225`) in its new order, for `unit`, `db` and `e2e`: browsers restore, runner image
     outputs (`key` and `os`, both named), apt restore (its key and both restore-keys exactly), `apt-archives.sh
@@ -2353,14 +2384,19 @@ The tests:
   - **every** step whose `run` is `CHROMIUM_INSTALL`, in every workflow, is followed directly by `node
     tools/ci/browser-build.ts` (§3.3.6, S4), and every later test step of that job has `if: ${{ !cancelled() &&
     steps.browser-install.outcome == 'success' }}` (S9);
-  - `--image` on the worker in `images` and in `release.yml`'s and `release-dry-run.yml`'s `build` before `docker
-    save`, each job with setup-node 24 and both cache inputs off;
+  - `--image` on the worker in `images` and in `release.yml`'s `build` before `docker save` (3.3.8, N9: the dry run
+    builds `web` only, `release-dry-run.yml:81`); (3.3.7) every job that builds `apps/worker/Dockerfile` into a local
+    tag runs `--image <that tag>` before using it; and (3.3.8, S6) every job that runs `--image` has an
+    `actions/setup-node` step with `node-version: 24` before that step, the release's build keeping both cache inputs
+    off under ci-deps' release rule;
   - `images`: archive outputs, Trivy's `input:`, the image-id equality with build-push's metadata, the store-aware
     `.Id` compare;
   - the baseline step: in `e2e` only, run by `matrix.shard == 1`, after the shard's tests, with **no diff condition**
     (its `if:` exactly the one above), the seven PNGs removed first, `--update-snapshots=all --retries=0`, the exit
-    status enforced, seven "doesn't exist … writing actual" lines counted, `git diff --exit-code` over the snapshots,
-    the SHA-256 print and the `path base64` form (§3.3.6, B1);
+    status enforced, the written set, taken as the PNGs present after the run (3.3.8, N5: every one was removed first, so no Playwright
+    message text is read, as `ci.yml:611` still does at 2ab2b15), equal to `git ls-files` of the committed baselines (3.3.7; was seven "doesn't exist … writing actual"
+    lines counted), `git diff --exit-code` over the snapshots,
+    the SHA-256 print and the chunked base64 form (3.3.7; §3.3.6, B1);
   - the dispatch input's shape, the capacity job's `runs-on` expression and `notify`'s exact condition (N6);
   - `pushPaths` with `tools/ci/apt-archives.sh` and `tools/ci/browser-build.ts`, and `watched.test.ts` with both in
     `WATCHED_FIXED` (N7);
@@ -2374,7 +2410,7 @@ The tests:
   `browser.json`: every hash equal passes; a binary difference fails with the exact message; **a changed, added or
   removed file beside an equal binary fails** with the tree message naming the path (S3); the marker files beside
   `dir` do not count; the tree hash equals the shell form's on the same directory; a revision or version that differs
-  from the installed `browsers.json` fails; a missing build fails; playwright-core found through the
+  from the installed `browsers.json` fails; a missing build fails; on a tree difference every found file line is printed (3.3.7); playwright-core found through the
   `@playwright/test` → `playwright` → `playwright-core` chain in a stand-in pnpm layout with nothing hoisted (S5);
   `--image` with a stub `docker` that serves the image's `browsers.json` and tree, and needs no `node_modules`.
 - `tools/ci/apt-archives.sh`'s test, with stub `sudo`, `apt-get`, `apt-cache` and a temporary archive directory: a
@@ -2393,8 +2429,8 @@ The tests:
   attested index stops the run (S2); any other `.Id` stops the run; `--expect-image` with a different config digest
   stops the run (S1); no archive streams `docker save`. `workerPlaywrightVersion()` reads the installed package; `:225`'s message
   regex names the copy; `:232` goes (to `browser-version.test.ts`).
-- `report.test.ts`: format 9; `imageOS`, `imageVersion`, `imageStore` and `imageSource` recorded.
-- `launch-check.test.ts`: a binding report from another `ImageOS`, or with `imageSource: save`, is refused; format 8
+- (after #42, 3.3.7) `report.test.ts`: format 9; `imageOS`, `imageVersion`, `imageStore` and `imageSource` recorded.
+- (after #42, 3.3.7) `launch-check.test.ts`: a binding report from another `ImageOS`, or with `imageSource: save`, is refused; format 8
   is refused; `:227, :231` hold `RELEASE_RUNNER`'s new field.
 - `brand.spec.ts`: the computed name check at both widths, the visible text including `::before` content (N9).
 - `collection.test.ts`: the new unit test files in `FILES`.
@@ -2407,31 +2443,38 @@ The tests:
    empty. `publish-content.yml` differs from its base only in `runs-on`, and so does its frozen copy (F4):
    `diff <(git show <mb>:tools/test/frozen/publish-content.yml) tools/test/frozen/publish-content.yml` shows that one
    line.
-2. `pnpm exec vitest run tools/test tools/ci tools/screening-capacity`, with actionlint installed (the `-ignore`
+2. `pnpm exec vitest run --project unit tools/test tools/ci tools/screening-capacity packages/synth` (3.3.7: the bare form
+   also collects a db test), with actionlint installed (the `-ignore`
    exercised); then `pnpm typecheck` and `pnpm lint`.
 3. **Failing first:** §3.3.3's two commands against the merge base (the `CI_TREE` run and the worktree run) fail on
-   each named test, and pass on the head; the PR description records both.
-4. **Locally, on the 1248 layout** (§3.3.1, "Local browsers"), with an e2e database `tp_laneb_<name>_e2e`:
+   each named test, and pass on the head; the PR description records both (3.3.8, B1: the merge base is e908c21 since
+   the merge, so both run there, phase 1's red run of `watched.test.ts` at 123b8fa not counting; `brand.spec.ts`'s
+   computed-name red run on the base's `shell.tsx` per phase 2's step 8).
+4. **Locally, on the 1248 layout** (§3.3.1, "Local browsers"; 3.3.7: waiting on the person, storage.googleapis.com,
+   and not blocking the PR), with an e2e database `tp_laneb_<name>_e2e`:
    - `node tools/ci/browser-build.ts` passes against `browser.json`, both `treeSha256` included (the hand layout
      unzips the same zips the values were computed from);
    - `pnpm --filter @tp/web exec playwright test e2e/brand.spec.ts --update-snapshots=all`, then again: `git status`
      is clean after the second;
-   - the specs that reach a header control or scan a shell page: `sign-in` and the twelve with `expectAccessible`
-     (billing, brand, era-exports, models, monitoring, onboarding, packets, reports, screening, security, triage,
-     unattested), `--workers=2 --retries=0`; the full e2e once in the fix round (§6).
+   - the specs that reach a header control or scan a shell page: `sign-in` and the fourteen with `expectAccessible`
+     (billing, brand, era-exports, models, monitoring, onboarding, packets, pricing, reports, screening, security, triage,
+     unattested, viewer-phi; 3.3.7), `--workers=2 --retries=0`; the full e2e once in the fix round (§6).
 5. **The worker image** builds only on CI (no Docker daemon here, §6): the `images` job's browser check passes on it,
    its image-id equality holds, its loaded `.Id` equals `target` on 26.04's containerd store, and both Trivy scans
    read the archives.
 6. **CI**, the four required checks of "Protect the build branch" on the head, branches up to date:
-   - `all green`: every moved job's "Set up job" log names the ubuntu-26.04 image (20261023.163.3 or later), and the
-     release chain's jobs the 24.04 image (A8); the browser
+   - `all green`: every moved job's "Set up job" log names the ubuntu-26.04 image (20261026.180.1 or later, 3.3.7), and the
+     release chain's jobs the 24.04 image (A8; 3.3.7: content-calendar's `check` runs on the PR, its own path being
+     the workflow, while its `notify` and release-capacity's jobs show only after the merge or by dispatch; 3.3.8: release-capacity's
+     dispatch on the PR's head shows its `capacity` on 26.04); the browser
      check passes in `unit`, every `db` and `e2e` shard and `images`; e2e passes, brand included; **the baseline step
      ran** (it runs on every pull request), wrote seven files, `git diff --exit-code` passed, and its seven SHA-256s
      equal `sha256sum apps/web/e2e/brand.spec.ts-snapshots/*.png` at the head; its duration goes in ci.md; the apt
      steps logged files kept and discarded;
    - `mutation`: all six shards on 26.04 (`mutation.yml` is a global input); O7's table from that run;
-   - `screening-capacity gate`: the capacity job on 24.04 with `--image-archive` and the browser check passing, its
-     report at format 9 naming `ubuntu24`, `overlay2` and `archive`;
+   - `screening-capacity gate`: the capacity job on 24.04 with its archive builds, the store-aware load, the browser
+     check and the worker's `--image` check passing (3.3.7; `--image-archive` and the report at format 9 naming
+     `ubuntu24`, `overlay2` and `archive` come with the follow-up after #42);
    - `large-zip` (where its paths run it): the browser check passes after its install;
    - `approval-of-record`, on 26.04.
 
@@ -2439,15 +2482,19 @@ The tests:
    to them), the SHA-256 check against the outputs, the load and the store-aware `.Id` compare in push.
 
    **Counts, from CI's logs:** unit = ci-deps' merged count, plus ci-browser's new tests by name, with 1 skipped
-   (actionlint); db = ci-deps' count + 1 passed, 0 skipped (the restore drill); e2e 51; golden 188. The PR description
+   (actionlint); db = ci-deps' count + 1 passed, 0 skipped (the restore drill); e2e 54; golden 376 (3.3.7: was e2e 51 and golden 188; at e908c21 unit 6,265 and db 9,222 + 1
+   skipped, so unit 6,331 plus phase 2's tests (3.3.8, S1: was 6,320), and db 9,223 + 0; §3.3.7). The PR description
    does the sum.
 7. **V3, measured:** the PR's own runs and the first five push runs after the merge give each install's duration; no
    install over 60 s on a cache hit, and the stalled-mirror case (a cold key) still passes. The numbers go in ci.md.
-8. **A9:** the visual-inspection agent's verdict per image, its counts and crops, and the gallery's URL in the PR
-   description; any finding fixed before the merge. The gallery does not block the merge.
+8. **A9** (3.3.7): `designs/lane-b-ci/ci-browser-a9.md` with the old and new pictures side by side, both pixel counts,
+   the crops and the visual-inspection agent's verdict per image, the pictures in `designs/lane-b-ci/ci-browser-a9/` with
+   their SHA-256s (3.3.8, S7), linked from the PR description by a commit-pinned URL; any finding fixed
+   before the merge. It does not block the merge.
 9. **Reviews:** two adversarial reviews, one of them the UX and brand review (`lanes/lane-b.md:143`; it changes
    `shell.tsx` and the brand baselines), run from `.claude/agents/ux-brand-reviewer.md` if the checklist pull request
-   has merged, otherwise from `designs/lane-b-ux-review-brief.md` and `.claude/rules/brand.md` (§3.3), with before and after screenshots at 1280 and 390 px; the other under §2's
+   has merged, otherwise from `designs/lane-b-ux-review-brief.md` and `.claude/rules/brand.md` (§3.3), with before and after screenshots at 1280 and 390 px (3.3.7: 1280 and 390 px light and 1280 px dark; the checklist
+   merged as #55, so the agent file is the reviewer, and its shots wait on the person, storage.googleapis.com); the other under §2's
    brand-and-accessibility and release-binding checklists.
 10. **After the merge:** the session dispatches the 26.04 probe once and records its report, `imageStore` and
     `docker info` on issue #41 (O5); the next weekly Dependabot `browser-tests` run, if any, is red on the browser check,
@@ -2724,6 +2771,377 @@ proposed. The sections above carry each change, marked "§3.3.6".
 the mirror's bytes against `browser.json`'s tree hashes (first run), the containerd `.Id` rule on 26.04 (`images`,
 every run, and the probe), and the baseline step's cost (measured on the PR).
 
+#### 3.3.7 Re-read at e908c21 (2026-10-27)
+
+**Sources and method.** ci-deps (#48) merged as e908c21 with nine other pull requests behind it (#46, #49 to #56), and
+the session merged it into ci-browser as 2ab2b15 (`git log -1 2ab2b15`; pushed, 3.3.8: `git ls-remote origin refs/heads/co-001/ci-browser` gives 2ab2b15 at 02:24 UTC, and no CI run exists for it yet, `gh api …/actions/runs?head_sha=2ab2b15…` total 0). This re-read takes two
+scout reports of 2026-10-27, `scratchpad/reread2/scout-files.md` and `scratchpad/reread2/scout-versions.md` (cited as
+[RF] and [RV]), the phase-1 summary (`approval-summaries/lane-b-ci-browser-build-summary.md`, cited as [BS]), the
+status file (`approval-summaries/lane-b-ci-deps-status.md`) and the rules (`LANES.md:84-92`, rule 6;
+`lanes/lane-b-session-brief.md:9, :30-60`). Every claim was checked again at 2ab2b15 in `/home/user/ci-browser`
+before it went in: `grep -n runs-on .github/workflows/*.yml` (30 jobs), `workflows.test.ts:205-210, :415-429`,
+`release-capacity.yml:1-140`, `content-calendar.yml:1-75`, `screening-capacity.yml:186-262`, the apt keys
+(`grep -n "apt-v1-"`), the baseline step (`ci.yml:595-645`), `brand.spec.ts:189, :213`, the lockfile and manifest
+lines, the documents' anchors, `grep -o "expectAccessible(" apps/web/e2e/*.spec.ts` (14 files, 72 calls), #42 by `gh
+api repos/PureTideWater/PhysicalTherapy/pulls/42` (GET, 2026-10-27 02:02 UTC), and the unit delta by `vitest list
+--project unit --json` on e908c21 (the main checkout) and on 2ab2b15 (`scratchpad/reread2/revise/list-{base,head}.json`).
+Where a fact could not be checked here it says "not verified". Cites in this subsection read at 2ab2b15 unless they
+name another commit; the earlier subsections keep 6ddd587's cites, except where an edit marked "(3.3.7)" corrects a
+fact that is now wrong.
+
+**What changed from the 2026-10-26 text, and why.** "Adopted" means the built or found form is now the design's text,
+with the reason it is the better option; "reverted" means the build goes back to the design.
+
+| § | Change | Evidence |
+|---|---|---|
+| 3.3.1 Runners | **30 jobs at 2ab2b15** (the base's `content-calendar.yml` and `release-capacity.yml` add four). **8 stay** on `RELEASE_RUNNER.label` (`ubuntu-24.04`): `release.yml`'s four; `release-dry-run.yml`'s `build`, `push` and `capacity`; `screening-capacity.yml`'s `capacity`. **22 move** to `ubuntu-26.04`, among them content-calendar's `check` and `notify` and release-capacity's `capacity` and `notify` (3.3.8, B2: F5's letter; the 2026-10-27 text kept release-capacity's `capacity` on 24.04). Reason under "The new workflows" below. | `grep -n runs-on` (18 lines on 26.04, 12 on 24.04 or the probe expression); `release-dry-run.yml:219`; `workflows.test.ts:210, :429` |
+| 3.3.1 Runners | **Adopted: `RELEASE_CHAIN` holds the dry run's `capacity`** ([BS] P2; ADR 0066 N12, `:865-866`). The dry run's `capacity` existed at 8b38f48 and mirrors release.yml's measuring job, so it measures on the same runner; the design's "seven" missed it. | `release-dry-run.yml:219`; `workflows.test.ts:210` |
+| 3.3.1 Runners | The 18-count (`workflows.test.ts:429`) becomes **22** (3.3.8; the 2026-10-27 text's 21); `RELEASE_CHAIN` (`:210`) and its comment (`:205-209`) stay as they are. | `workflows.test.ts:205-210, :429` |
+| 3.3.1 Runners | The 26.04 image: `ubuntu26/20261026.180` (e2ea192b), image 20261026.180.1, kernel 7.0.0-1017-azure, Node 24.22.1, Docker 29.4.2, Compose 5.1.3, Buildx 0.38.1, PostgreSQL 18.6 (service disabled). The 24.04 image: 20261026.354.1, Node 22.23.4, Docker 28.0.4, Compose 2.38.2, PostgreSQL 16.15. | [RV] §3: `Ubuntu2604-Readme.md:9-11, :25, :72-75, :161-164`; `Ubuntu2404-Readme.md:9-11, :26, :75-78, :173` at those tags |
+| 3.3.1 Runners | "Docker 29 reaches 24.04 only by a toolset change" stands: re-checked 2026-10-27, `toolset-2404.json:199-206` still pins docker-ce and docker-ce-cli 28.0.4 at the newest tag and at main (6d35e161). | [RV] §3 |
+| 3.3.1 Runners | "`ubuntu-latest` moves to 26.04 in November 2026 (#14748)": **not re-verified** on 2026-10-27 (the issue is unreadable from here); `README.md:25` still maps `ubuntu-latest` to 24.04 with no date. Nothing changes, since the runner rule refuses `-latest`. | [RV] §3 |
+| 3.3.1 Runners | actionlint: v1.7.12 is still the latest release (main 011a6d15, 2026-04-19); `rule_runner_label.go:44-47, :85-88` lists 22.04 and 24.04 only. The `-ignore` stays. | [RV] §4 |
+| 3.3.1 Restore drill | db at e908c21: **9,222 passed and 1 skipped** over 127 files (the skip is the drill on 24.04). On 26.04: **9,223 and 0**. | CI run 40401493722, db jobs 121848211735, 121848211680, 121848211747, 121848211603 ([RF] §3); `restore-drill.db.test.ts:73-76, :103, :194` |
+| 3.3.1 Versions | Unchanged: 1.64.1 and 4.14.0 are still npm `latest`. `@playwright/test`'s `next` is 1.65.0-alpha-2026-10-26; axe's `next` and `rc` are 4.14.1 prereleases; no 1.64.2, 1.65.0 or 4.14.1 stable. `browsers.json` in the 1.64.1 tarball (integrity equal to the registry's) still names 1248, CfT 156.0.8078.4. | `npm view … dist-tags time`, `git ls-remote --tags`, 2026-10-27 01:49-02:05 UTC ([RV] §1) |
+| 3.3.1 Versions | Trust: from 1.64.0 and 4.14.0 the trusted publisher's `oidcConfigId` drops its `oidc:` prefix, with the same UUID; no evidence is lost. pnpm 10.34.8's trust check reads only whether `_npmUser.trustedPublisher` is present (`getTrustEvidence`, `/opt/pnpm-10.34.8/dist/pnpm.cjs:67239-67241`), never `oidcConfigId`, and all five bumped versions carry it with SLSA provenance (3.3.8, N1). | the packuments ([RV] §1); `npm view <pkg>@<v> _npmUser.trustedPublisher dist.attestations.provenance.predicateType`, 2026-10-27 02:23 UTC |
+| 3.3.1 Versions | `tools/package.json:33` → **`:34`**; `axe-core@4.13.0` at `pnpm-lock.yaml:2537` (snapshot `:5673`); `fsevents@2.3.2` at `:2924, :6001` (playwright's reference `:6431`); `playwright-core@1.56.1` `:3452, :6425`; `playwright@1.56.1` `:3457, :6427`; `@playwright/test@1.56.1` `:2055, :5197`. ci-deps changed no Playwright, axe or fsevents entry. | `grep -n` at 2ab2b15 |
+| 3.3.1 Versions | `pnpm-workspace.yaml` already carries `trustPolicyExclude: [semver@6.3.1]` and the override `typed-rest-client>qs: 6.16.1` (ci-deps'); the bump adds no exclude and touches neither. | `pnpm-workspace.yaml`; [RF] §1 |
+| 3.3.1 Versions | The catalog rule now lives in `no-duplicated-versions.test.ts:124-139` (every catalog package is `catalog:` in every workspace manifest, root included). `playwright-core: 1.64.1` goes between `pg` (`pnpm-workspace.yaml:21`) and `react` (`:22`), the keys being sorted. The only `playwright-core` entries are `apps/worker/package.json:53` and `tools/package.json:34`. | `grep -n playwright-core` |
+| 3.3.1 Versions | next is `^16.4.3` (`apps/web/package.json:39`); its optional peer `@playwright/test ^1.51.1` (`pnpm-lock.yaml:3323`) holds for 1.64.1, and the `next@16.4.3(…)(@playwright/test@1.56.1)` snapshot re-resolves with the bump. | `sed -n` at 2ab2b15 |
+| 3.3.1 Worker image | **Adopted: `RUN mkdir /out && cp -RL …`** (`apps/worker/Dockerfile:21`), and `/root/.npm` no longer removed ([BS] P1). Nothing writes `/root/.npm` once npm installs nothing, so removing it was dead code; `mkdir` makes the copy's target explicit. | `Dockerfile:21` |
+| 3.3.1 Worker image | `workerPlaywrightVersion` moved to `containers.ts:661`, `processImagesProblems` to `:671` (the base added `ServiceName` `'worker'`). `processImagesProblems` has a second caller, `tools/release-capacity/run.ts:20, :359`; its copy wording serves both. | [RF] §1; `grep -n processImagesProblems` |
+| 3.3.1 WCAG 2.5.3 | Reach: **14 specs, 72 calls** (was 12 and 66): `pricing.spec.ts` (4) and `viewer-phi.spec.ts` (1) are new, `billing.spec.ts` went from 3 to 4. `shell.tsx` is unchanged by the base; no new header control (`:328` "Menu" and `:341` "Help with this screen" show their text and carry no `aria-label`). | `grep -o "expectAccessible("`; [RF] §3 |
+| 3.3.1 WCAG 2.5.3 | **Adopted: `toHaveAccessibleName`, not `ariaSnapshot()`** ([BS] P1; `brand.spec.ts:189, :213`). A `<summary>` has no role in Playwright's aria snapshot, which prints its text, not its name, so `ariaSnapshot()` cannot read the name the check needs; `toHaveAccessibleName` reads the computed name directly and is a web-first assertion that retries. | `brand.spec.ts:189` |
+| 3.3.1 WCAG 2.5.3 | e2e at e908c21 is **54**, not 51 (the check is a step, so ci-browser adds none). | jobs 121849065662 and 121849065557, 27 each ([RF] §3) |
+| 3.3.1 Browser check | **Adopted: `apps/web/e2e/browser-builds/<dir>.sha256`** ([BS] P1): each build's file list (`<sha256>  <path>` lines) is committed and must hash to `treeSha256`, so a difference names the files, not only the tree. The design's "names the first ten paths … from the zip's list" needed that list in the repository anyway; now it is one, held by the tree hash. | `ls apps/web/e2e/browser-builds/` |
+| 3.3.1 Browser check | **Adopted:** `browser-build.ts` fails on a non-regular entry (a symlink or device in a build), runs the binary's `--version` and prints it, names the only directory present when the recorded `dir` is absent, and uses `xargs -0r` in the image ([BS] P1; `browser-build.ts:141, :183, :191, :210-211`). Each is stricter or clearer than the design, at no cost. | as cited |
+| 3.3.1 Browser check | **Changed: on any tree difference it prints every file line**, as `--list` does (about 590 lines, only on a red check), not the first ten. With no local browser, one CI run must give everything needed to rewrite `browser.json` and `browser-builds/*.sha256` if Playwright's mirror serves other bytes than Google's; the workflows run it without `--list` (`ci.yml:241, :353, :552`). | `browser-build.ts:243-255, :274-276, :330` ([RV] §5) |
+| 3.3.1 Browser check | **Added: `--image` on the two measured worker images that lacked it**: `release-capacity.yml`'s `capacity` (after its build and setup-node) and `screening-capacity.yml`'s `capacity` (after "Load the images as built"). Both measure the worker image whose headless shell prints the PDFs, and the check takes seconds. A `workflows.test.ts` rule holds that every job that builds `apps/worker/Dockerfile` into a local tag runs `browser-build.ts --image <that tag>` before the tag is used. | `release-capacity.yml:60-73`; `screening-capacity.yml:186-221`; `ci.yml:762`, `release.yml:159` |
+| 3.3.1 Browser check | **Adopted: the capacity jobs keep the default condition past the browser check** ([BS] P2). A measurement on a browser that fails the record is not a result of record, and a red capacity job opens an issue; `ci.yml`'s test jobs keep `!cancelled() && steps.browser-install.outcome == 'success'`, where seeing a bump's other failures is the point (S9). | [BS] P2; `screening-capacity.yml:254-255` |
+| 3.3.1 Baselines | **Adopted: the step compares the set written with `git ls-files` of the committed baselines** ([BS] P2; ADR 0066 N14, `:869`; `ci.yml:607, :623, :630`), with its own `--output` and after the failed-pictures step. It is held by the committed set, not by a message text a Playwright release may reword or a count of seven a new baseline would break; its own `--output` keeps the shard's results for the failed-pictures step, which prints first. | `ci.yml:595-645` |
+| 3.3.1 Baselines | **Changed: the bytes of record come from CI's baseline step, not from a local 1248 layout**, which cannot be made here (`storage.googleapis.com` and `cdn.playwright.dev` refused, 01:50 UTC; `/opt/pw-browsers` holds 1194 (laid out 2026-10-27 02:00 UTC) and 1243, not 1248, `ls -la --time-style=full-iso /opt/pw-browsers`; the verified zips of 2026-10-26 are gone). CI's 1248, held to `browser.json`'s hashes by the browser check, is the build of record, not a stand-in (brief `:9`). Procedure under "Phase 2 on this base". | [RV] §2, §5 |
+| 3.3.1 Baselines | **Changed: the picture print is chunked**, `<path> <i>/<n> <base64 chunk of 8,000 characters>`, with each picture's SHA-256 printed first. CI artifacts and the REST log endpoint redirect to `productionresultssa18.blob.core.windows.net`, which the proxy refuses; the GitHub MCP `get_job_logs` works, and whether a 66,216-character line survives it is not verified. Chunks make that question moot, and the printed SHA-256 proves each decode. | [RV] §5 |
+| 3.3.1 Baselines | The local no-op (acceptance 4) **waits on the person: storage.googleapis.com**. It adds only ADR 0058's host-independence finding (`:162-176`) and does not block the PR; CI's from-nothing run is the proof until then. | brief `:9` |
+| 3.3.1 A9 | **Changed (the 2026-10-27 direction):** the inspection is the co-founder's, taken as recommended by the session and recorded with its evidence in `designs/lane-b-ci/ci-browser-a9.md` (side-by-side old and new images and pixel counts); the visual-inspection agent still runs and its verdict goes in the note. The private gallery is no longer the record. | the task's direction of 2026-10-27 |
+| 3.3.1 V3 | **Adopted: the apt key hashes playwright-core's installed `browsers.json`** (`hashFiles('node_modules/.pnpm/playwright-core@*/node_modules/playwright-core/browsers.json')`, `ci.yml:229, :341, :540`, `large-zip.yml:53`, `screening-capacity.yml:243`; ADR 0066 N13, `:867-868`), as the browsers' own cache does (`ci.yml:209`). It follows the build Playwright actually installs, including on a `browser-tests` bump whose `browser.json` still names the old one, so the cache never mixes two builds' dependency sets. | as cited |
+| 3.3.1 V3 | **Adopted: the apt cache is saved only off `pull_request`** ([BS] P2; `ci.yml:251, :254`), in `unit` and in screening-capacity's `capacity`. The safer form: only runs of the build branch's own code write a cache a pull request reads. | as cited |
+| 3.3.1 V3 | Where: content-calendar and release-capacity take no apt cache, since neither installs a browser on the runner (the image's apt runs inside `docker build`, `Dockerfile:34-36`). | `grep -n "playwright install"` |
+| 3.3.1 Binding | **Adopted: the after-#42 split** ([BS] "After #42"; ADR 0066 `:813-823`). Built now: image-id.ts, `provenance: false`/`sbom: false`, the build's per-image outputs, the archive SHA-256 checks against them, the store-aware `.Id` compare, `release.yml`'s `push` checking all four archives before any push (stronger than per-image-then-push: no partial push), the registry check, release and dry-run builds proving the saved tag, screening-capacity's archive builds and loads, `images`' archive scan, and `containers.ts`' `proveLoadedImage` (`:379`) with its tests. Moved to a follow-up cut after #42 merges (or when GitHub moves 24.04's docker-ce past 28, first): `run.ts`'s `--image-archive`/`--expect-image` and its `.Id` read, report format 9 and its four fields, the launch check's `imageOS`/`imageSource`/format-8 refusals, and `release.yml`'s and screening-capacity's harness flags. Reason: `run.ts` and `report.ts` are on the "Not while #42 is open" list (`LANES.md:90`), and under F5 the binding chain stays on 24.04's classic store, where `.Id` is the config digest, so the deferred checks protect nothing until the probe or the toolset change. | [BS]; `containers.ts:379`; `LANES.md:84-92` |
+| 3.3.1 Binding | release-capacity's build is not an identity build: it reads no `.Id`, its `run.ts` uses only `DockerRuntime` and `processImagesProblems` (`tools/release-capacity/run.ts:20, :359`), and nothing binds its report (`workflows.test.ts:1231-1233`). Its read-only `cache-from` stays (ADR 0066 `:399-401`). `provenance`/`sbom` there: not added (no identity reads it; the `--image` check needs a loaded tag, which `load: true` gives). | as cited |
+| 3.3.1 BuildKit, login | No effect: the BuildKit pin is now on five setup-buildx steps (`release-capacity.yml:54` added); `docker/login-action` v4.7.0 (`release.yml:342`, `release-dry-run.yml:175`) clears phase 1's node20 warning. | [RF] §1 |
+| 3.3.1 O6 | #42: draft, open, head **098636e3**, base **e908c21**, 188 files, 17 commits, `mergeable: true`, `mergeable_state: blocked`, updated 2026-10-27T01:45:57Z. It adds `mail-cutoff.spec.ts` and `mail-notices.spec.ts` with 2 `expectAccessible` calls each, which O6 covers. | `gh api …/pulls/42`, 02:02 UTC |
+| 3.3.1 Local browsers | `setup-container.sh` reads every argument worktree's revisions (`:42-44`; the 01:45 run named the main checkout and the worktree); `CFT_BUILDS`' 1248 rows are `:967-968` (table `:965-968`) on claude/build-ops c2041dfc. The hand layout is impossible: the verified zips of 2026-10-26 are gone and both hosts are refused. | `grep -n 1248 tools/setup-container.sh`; status file 01:45 UTC |
+| 3.3.2 | Files: `tools/package.json:34`; **`content-calendar.yml:43, :68` and `release-capacity.yml:36, :114` (`runs-on`; 3.3.8 adds `:36`), `release-capacity.yml`'s `--image` step, `screening-capacity.yml`'s worker `--image` step** join the list. `browser.json` and `browser-builds/*` are in `WATCHED_FIXED` (`watched.ts:65-68`; [BS] P2 and integrator), adopted because they change what the capacity job's check holds Chromium to. | `watched.ts:62-89` |
+| 3.3.2 Documents | 3.3.8 (B2): with every new job on 26.04, F5's wording in ADR 0062 `:1391-1393`, ADR 0063 `:485-486`, reconciliation-001 `:646`, `screening-capacity.md:312-313` and CI-20 (`test-matrix.md:280`, `matrix.ts:420`) is already right and none of them changes; the counts change: ADR 0066 `:753` ("The other eighteen jobs") and N12 `:866` ("eighteen move") become twenty-two as of 2ab2b15, and `docs/runbooks/ci.md:36-40` gains the dry run's `capacity`, which it omits today. CI-18 (`test-matrix.md:278`, `matrix.ts:418`) gains the two weekly capacity jobs' `--image` check (S2). Moved anchors: ADR 0066 Part 3 `:715`; reconciliation F5 `:646`, Q2 `:651`, the capacity line `:569`; CI-18 to CI-20 `test-matrix.md:278-280`, the series note `:252-257`; `matrix.ts:418-420`; `registry.ts:615-617`; ci.md `## Caches` `:222`, `## Upgrading the browser` `:258`. | `grep -n` at 2ab2b15 |
+| 3.3.2 #42 table | Updated to 098636e3 below ("The files #42 also changes, now"). The ADR 0062 row becomes a **sure conflict** at the end of the file. | [RF] §4 |
+| 3.3.3 | The runner rule with 8 and 22 (3.3.8); the `--image` rule; the full-list print; the chunked picture print; the baseline step's set compare (not a count of seven lines); the second red run covers `measure.test.ts` only (report and launch-check moved after #42). | this table |
+| 3.3.4 | Acceptance 4 waits on the person; acceptance 6's image 20261026.180.1 or later, its counts (below), and which new jobs run on the PR's own runs; acceptance 8 the A9 note; acceptance 9 the merged `ux-brand-reviewer.md` (#55) with its shots waiting on the person. | below |
+| §1, §3.5 | A8 to A10 still carried pre-§3.3.5 text and A11 was absent; CI-18 to CI-20 likewise. Replaced with the text as built (`test-matrix.md:278-280`) plus CI-18's capacity-job clause (3.3.8: CI-20 back to its text at 2ab2b15). | `sed -n 91,93p`, `:2988-2990` before this edit |
+
+Not taken from the scouts: [RF]'s acceptance-6 note that neither new workflow runs on the PR is half right.
+`content-calendar.yml`'s `pull_request` paths (`:26-32`) name the workflow file itself, so the PR runs its `check` on
+26.04; its `notify` skips on `pull_request` (`:67`). `release-capacity.yml` has no `pull_request` trigger (`:14-18`).
+[RV]'s P16 (the runner rule) is inside ci-browser and is the runner change above, not a proposal.
+
+**The new workflows under ci-browser's rules**
+
+`content-calendar.yml` (#49): no Docker, no browser, no image, no measurement.
+- `check` (`:42-60`; `runs-on` `:43`): checkout without credentials, pnpm, setup-node 24 with `cache: pnpm`, `pnpm
+  install`, `tsx tools/content-calendar/index.ts`; findings as a job output. **26.04.** It reads files and depends on
+  nothing in the host. Runs on this PR (its own path), so the PR's log shows its 26.04 image.
+- `notify` (`:65-75`; `runs-on` `:68`; `issues: write`): shell and `gh`, no checkout. **26.04.** Runs after the merge
+  (daily schedule `:16`) or by dispatch.
+- Rules that apply: the runner rule (both outside `RELEASE_CHAIN`, so 26.04). None of the browser rules (no
+  `CHROMIUM_INSTALL`), no apt cache, no `--image`, no binding. actionlint's `-ignore` covers their labels.
+
+`release-capacity.yml` (#49): weekly (`:17`) and on dispatch; advisory and not a required check
+(`workflows.test.ts:1231-1233`).
+- `capacity` (`:29-106`; `runs-on` `:36`; 180 min): builds the worker image (`:60-68`, `load: true`, tag
+  `tp-worker:capacity`, read-only `cache-from`), installs, builds the synthetic release 900110, runs
+  `tools/release-capacity/run.ts --worker-image` under `taskset`, and fails on an OOM, a restart, `memory.peak` above
+  90%, a count mismatch or an out-of-fetch read (`:3-13`); its audit report prints a PDF from the image's headless
+  shell. **Moves to `ubuntu-26.04`** (3.3.8, B2;
+  the 2026-10-27 text kept it on 24.04 in `RELEASE_CHAIN`). F5's letter moves every job of every workflow but the chain
+  it names (`reconciliation-001.md:646`), and its recorded reason is the binding measurement, made only on the image the
+  launch check accepts. This job's report is advisory, never attested, and no launch check, deploy or required check
+  reads it (`release-capacity.yml:56-59`; ADR 0066 `:399-401`); its failing checks are an OOM, a restart, `memory.peak`,
+  counts and reads, with times recorded and advisory (`:8-12`), so it does not fail on host-sensitive timings. Keeping it
+  on 24.04 would extend a founder ruling on the session's authority (brief §6); moving it applies the ruling as written
+  and costs nothing binding. The PR-head dispatch below proves it on 26.04 (Docker 29's containerd store, kernel 7.0)
+  before the merge; a red result there that the PR causes is fixed in the PR, and one the host causes is recorded on #41
+  as a data point, never by moving the job back without the founder.
+  - Browser rules: no `CHROMIUM_INSTALL`, so no runner browser check and no apt cache. **`--image tp-worker:capacity`**
+    after the build and setup-node (adopted above): the weekly run's PDFs come from that headless shell, and the check
+    catches a mirror build that changed between pull requests. `browser-build.ts --image` reads only the image and
+    `browser.json`, so it needs no `pnpm install` and can run before it.
+  - Binding: not an identity build (above); no `provenance`/`sbom` change; its `cache-from` stays.
+- `notify` (`:111-146`; `runs-on` `:114`): no checkout, shell and `gh`. **26.04.**
+- Its jobs never run on a pull request. **Recommended:** after the PR's CI is green, the session dispatches it once on
+  the PR's head (`gh workflow run release-capacity.yml --ref co-001/ci-browser`), so the `--image` step and the job on
+  26.04 are proved before the merge; a failure there opens the advisory issue, which the session closes with the run's
+  link if the cause is the PR's. Dispatch from the branch works (3.3.8, N3): the default branch is
+  `claude/build-platform` (`gh api repos/PureTideWater/PhysicalTherapy --jq .default_branch`, 02:24 UTC), it carries
+  `release-capacity.yml` (contents API at that ref, blob 486e36f5), and `workflow_dispatch` (`:18`) has no branch
+  filter; the run uses the branch's copy of the workflow.
+
+**Phase 2 on this base, in order** (3.3.8 folded in)
+
+Needs no local 1248 (each heavy command under `flock /tmp/laneb-heavy.lock`, with Node 24 first on `PATH`):
+1. **Runners.** `content-calendar.yml:43, :68` and `release-capacity.yml:36, :114` to `ubuntu-26.04` (3.3.8, B2: F5's
+   letter); `RELEASE_CHAIN` (`workflows.test.ts:210`) keeps its eight; `:429` 18 → 22. Check: `pnpm exec vitest run
+   --project unit tools/test/workflows.test.ts` turns the runner rule and the simulated Dependabot rewrite (`:2742`)
+   green.
+2. **`--image` on the measured worker images** (release-capacity's `capacity` after its build and setup-node,
+   screening-capacity's after "Load the images as built"), with the rule over every local worker build and the rule
+   that every `--image` step has setup-node 24 before it (3.3.8, S6); the full-list print in `browser-build.ts`; in the
+   baseline step, the written set taken as the PNGs present after the run (3.3.8, N5) and the chunked picture print
+   (`<path> <i>/<n> <chunk>`, each picture's SHA-256 first); each with its test (failing first through `CI_TREE` for the
+   workflow rules; `browser-build.test.ts` for the print). Check: the tools vitest run in step 7.
+3. **The bump.** `apps/web/package.json:47-48` → `@axe-core/playwright` 4.14.0, `@playwright/test` 1.64.1;
+   `pnpm-workspace.yaml`'s catalog gains `playwright-core: 1.64.1` between `pg` and `react`;
+   `apps/worker/package.json:53` and `tools/package.json:34` → `catalog:`.
+4. **The lockfile under the gates.** `pnpm install` with pnpm 10.34.8, adding no exclude (its trust check needs only
+   `_npmUser.trustedPublisher`, which all five versions carry; 3.3.8, N1); then `git diff pnpm-lock.yaml` holds only the
+   version swaps (playwright, playwright-core, @playwright/test, @axe-core/playwright, axe-core), `fsevents@2.3.2`
+   removed, next's snapshot re-resolved, and one `playwright-core`; then `pnpm install --frozen-lockfile`,
+   `BASE=origin/claude/build-platform pnpm toolchain:check` (networked: age, trust, host, integrity, overrides;
+   `check.ts:558-786`) and `pnpm actions:check`. Check: `browser-version.test.ts`'s catalog line and
+   `no-duplicated-versions.test.ts:124-139` green.
+5. **`browser.json` stays** (1248, 156.0.8078.4; `browser.json:2-3`).
+6. **Documents** (3.3.2 Documents row above, as 3.3.8 left it): ADR 0066 `:753` and N12 `:866` "eighteen" →
+   "twenty-two"; `ci.md:36-40` gains the dry run's `capacity`; CI-18's §3.5 text into `test-matrix.md:278` and
+   `matrix.ts:418`, without the design's cross-references (3.3.8, S2, N7); CI-20 stays as it is at 2ab2b15; ADR 0066
+   Part 3 records the `--image` additions, the CI-first baselines with the Google-zip check, and the chunked print as
+   notices after N14.
+7. **Regenerate and check.** `pnpm synth --all`: it writes `fixtures/synthetic/CI-18/expected.json` only, its
+   `assertion` (`:5`) taking CI-18's new text; any other file written is a finding (3.3.8, S2). `pnpm exec tsx
+   tools/screening-capacity/watched.ts --write` (expected no-op; `git status` shows only intended files). `pnpm
+   typecheck`, `pnpm lint`, `pnpm exec vitest run --project unit tools/test tools/ci tools/screening-capacity
+   packages/synth --reporter=json --outputFile=<scratchpad>/head-subset.json` (697 tests at 2ab2b15 plus phase 2's, 0
+   failed; the delta from `numTotalTests`, 3.3.8, S1), actionlint with the `-ignore`, then `pnpm test` once. Local
+   counts carry the printing tests' skips (`tools/test/ci-chromium.ts` does nothing off CI and no 1248 is installed;
+   3.3.8, S5); CI's counts are the record.
+8. **Failing first at the merge base e908c21** (acceptance 3; 3.3.8, B1), on the finished head, before the push:
+   - §3.3.3's `CI_TREE` command over `workflows.test.ts` and `browser-version.test.ts` with each named test (the runner
+     rule, the browser-check step, the apt steps, the baseline step, the dispatch input, the `--image` rules, the release
+     identity rules, the Dockerfile and catalog literals);
+   - §3.3.3's worktree command with `measure.test.ts` and `test-support/image-archive.ts` only (N8);
+   - `brand.spec.ts`'s computed name check on e908c21's `shell.tsx`: the base pins 1.56.1, whose build is 1194, and
+     `/opt/pw-browsers` holds 1194 (laid out 2026-10-27 02:00 UTC), so it runs here as phase 1's 10-pass run did ([BS]
+     `:55-56`), with an e2e database `tp_laneb_cibrowser_e2e` dropped after. If that layout is not one
+     `setup-container.sh` verified (not verified here), this one run is recorded as "waiting on the person:
+     storage.googleapis.com" instead;
+   - each log saved in the session's scratchpad with its command and UTC time; the PR description lists each named
+     test red on the base and green on the head, and names the cases that can fail only on a missing export
+     (`proveLoadedImage`, `loadedImageProblems`, `image-id.ts`).
+9. **Push** and open the draft PR (template, every section).
+
+**Local runs after the bump** (3.3.8, S5). With no 1248, `apps/web/playwright.config.ts:30, :93` would fall back to the
+`chrome` channel, another browser build (absent here, but a silent switch wherever Chrome is installed). So: no local
+e2e on the bumped tree until a verified 1248 exists; e2e results come from CI; the fix round's "full local suite" is
+unit, db, typecheck, lint and golden, with the printing tests' skips stated beside the counts, and the e2e part recorded
+as waiting.
+
+Waits on a local Chromium 1248, recorded as **"waiting on the person: storage.googleapis.com"**:
+- the 1248 layout from the zips checked against `CFT_BUILDS` (`setup-container.sh:967-968`), then `node
+  tools/ci/browser-build.ts` green locally;
+- the local regeneration no-op (acceptance 4; ADR 0058's host-independence finding);
+- sign-in and the 14 specs with `expectAccessible` on 1.64.1 and axe 4.14, `--workers=2 --retries=0` (not a gate: CI's
+  e2e is the record for tests, brief `:9`), and any other local e2e on the bumped tree (S5);
+- the computed name check run locally at 1280 and 390 px on 1.64.1 (CI runs it in the brand journey);
+- the UX and brand review's before and after shots at 1280 and 390 px light and 1280 px dark (the review waits; P16 and
+  N10's alternative below).
+
+**The baselines with no local browser.** CI's baseline step (`ci.yml:595-645`, e2e shard 1, every run) is the source
+of the committed bytes:
+1. **Run 1:** push phase 2 with the old PNGs. The browser check passes if the mirror's bytes equal the record (the
+   first proof of it). If it fails on a tree or binary difference, CI's values are **not** adopted on their own word
+   (3.3.8, S3): a one-off step, in a commit of its own, runs in `unit` after the check (`if: ${{ !cancelled() }}`),
+   downloads Google's two zips (`https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.4/linux64/<zip>`,
+   the URLs `setup-container.sh:969` uses; CI reaches the host), requires `sha256sum` to equal `browser.json`'s
+   `zipSha256`, unzips each into a temporary `PLAYWRIGHT_BROWSERS_PATH` layout and prints `node
+   tools/ci/browser-build.ts --list` over it. Then: (a) Google's tree equals `browser.json`'s and the mirror's does not:
+   the mirror serves another build, so the record stands and CI installs Google's verified zips instead of the
+   mirror's (an install-step change, built and proved in the PR, recorded under the co-founder's 2026-10-26 ruling);
+   (b) Google's tree equals the mirror's and not `browser.json`'s: the record's tree values (from the 2026-10-26 local
+   unpack) were wrong, and `treeSha256`, `sha256` and `browser-builds/*.sha256` take the values the two sources agree
+   on, the zip fields unchanged; (c) anything else: stop and report. The one-off commit is reverted before run 2. The
+   brand journey may be red against the old baselines (one cover differed by 1,611 px between 141 and 156, [S3] M5);
+   that is expected. The baseline step fails and prints each changed picture's SHA-256 and its chunks.
+2. The session reads the e2e shard 1 log with the GitHub MCP `get_job_logs` (`job_id`, `return_content: true`,
+   `tail_lines` above the job's whole line count, since the default is the last 500 lines and the database's log step
+   (`ci.yml:639-641`) and the post-job lines follow the baseline step; 3.3.8, S4), requires every `<path> <i>/<n>` for
+   i = 1..n and each picture's printed SHA-256 before decoding (a gap means a larger `tail_lines` and a new read, never a
+   partial decode), joins and decodes each picture, requires `sha256sum` to equal the printed value, and commits CI's
+   bytes (an unchanged picture's committed bytes stand).
+3. **Run 2:** all seven regenerate from nothing, byte for byte: ADR 0058's proof, its seven SHA-256s in the PR. Both
+   runs on the same `ImageVersion` (the "Set up job" line), so a weekly image does not move a font between them;
+   otherwise run 2 is repeated.
+- Cost: two full ci.yml runs (three if run 1's check fails and its outcome needs its own proof), one PNG commit. The
+  local no-op is recorded as waiting.
+
+**A9 under the 2026-10-27 direction.** Once run 2 is green, the session takes the recommended option and records it in
+`designs/lane-b-ci/ci-browser-a9.md` on claude/build-ops (synthetic brand pictures only). Its evidence goes in
+`designs/lane-b-ci/ci-browser-a9/` beside it (3.3.8, S7): per baseline `<name>.old.png` (the 6ddd587 blob, §3.3.1),
+`<name>.new.png` (CI's bytes), `<name>.side.png` (`convert old.png new.png +append`; ImageMagick is on this machine),
+`<name>.diff.png` and `<name>.crop-<k>.png` for each changed box, and a `SHA256SUMS` over the directory, whose old and
+new lines must equal the blobs' and run 2's printed values. The note gives per picture the exact changed-pixel count
+(`compare -metric AE`), the count under the journey's comparator settings (`VISUAL` or `STRICT`, `brand.spec.ts:69,
+:77`) through playwright-core's own comparator, `require('playwright-core/lib/coreBundle').utils.getComparator('image/png')`
+(exported as `./lib/coreBundle`, the 1.64.1 tarball's `package.json:26`; `coreBundle.js:8506, :11494, :77995`; read from
+the tarball, not yet run, 3.3.8, N2; if it does not load, the note says exact counts only), and ADR 0058's brand points
+checked. The header pictures have two causes, `shell.tsx`'s change and the browser: phase 1's 1194 run with the new
+`shell.tsx` passed the header comparisons ([BS] `:55-56`), so the note marks the box of each control whose text
+`shell.tsx` changed, attributes changes inside it to both and changes outside it to the browser, and gives the counts
+per box. The adversarial visual-inspection agent still runs over the same pictures and its per-image verdict goes in
+the note; a finding is fixed in the PR before the merge. The session commits and pushes the note and directory on
+claude/build-ops (its pre-push hook), and the PR description links them by the commit-pinned URL
+(`https://github.com/PureTideWater/PhysicalTherapy/blob/<commit>/designs/lane-b-ci/ci-browser-a9.md`). It does not
+block the merge.
+
+**The counts the PR must reach** (from e908c21's CI, run 40401493722, plus ci-browser's changes):
+- **unit: 6,265 + 66 = 6,331 passed, 1 skipped** (actionlint, absent on CI), plus phase 2's new tests (3.3.8, S1: the
+  2026-10-27 text's 55 came from `vitest list`, which lists an `it.each` once). The 66 are the run delta of `vitest run
+  --project unit tools/test tools/ci tools/screening-capacity packages/synth --reporter=json` between e908c21 (631) and
+  2ab2b15 (697, of which 3 fail until phase 2): `apt-archives.test.ts` +5, `browser-build.test.ts` +19,
+  `image-id.test.ts` +6, `measure.test.ts` +6, `browser-version.test.ts` +16, `no-duplicated-versions.test.ts` +1,
+  `workflows.test.ts` +13 (`scratchpad/reread2/review/{base,head}-subset.json`). The PR states the exact sum from its
+  own `numTotalTests` delta. Base: job 121848211472.
+- **db: 9,223 passed, 0 skipped** (the restore drill runs on 26.04), 127 files.
+- **e2e: 54** (27 per shard); plus #42's journeys if #42 merges first (its count **not verified**).
+- **golden: 376**, unchanged (status file, fresh-clone verification of #48, `lane-b-ci-deps-status.md:29`).
+
+**The files #42 also changes, now** (head 098636e3, base e908c21, 188 files; hunks from `pulls/42/files`, saved in
+`scratchpad/reread2/pr42-files.json`; `git merge-tree` not run, since #42's head is not in the local object store, so
+the verdicts come from hunk ranges):
+
+| File | #42's hunks | ci-browser's hunks | Verdict |
+|---|---|---|---|
+| `shell.tsx` | `-156`, `-259` | `-53`, `-81` | clean |
+| ADR 0062 | `-1,6`, `-863`, `-1379,3` (+100 at the end) | `-1049`, `-1093`, `-1163`, `-1322`, `-1379,3` (+54 at the end) | **sure conflict at the end**: both amendments kept, in merge order (rule 6) |
+| reconciliation-001 | `-638,6` (+10) | `-478`, `-566`, `-594`, `-643,10` | lines 641-645 separate them; likely clean, both kept |
+| test-matrix | `-176`, `-203`, `-212` | `-252`, `-273` | clean |
+| `matrix.ts` | `-217`, `-325` | `-415` | clean |
+| `registry.ts` | `-360`, `-506`, `-516` | `-611` | clean |
+| `watched-paths.txt` | 4 hunks | 2 hunks | regenerated (`watched.ts --write`), never hand-merged |
+| `apps/web/package.json`, `apps/worker/package.json` | `-14`, `-36` | `:47-48`, `:53` (phase 2) | disjoint |
+| `pnpm-lock.yaml` | six hunks, +33 | phase 2's re-resolve | re-resolved under the gates, never hand-merged (Q2) |
+| `run.ts`, `report.ts`, `report.test.ts`, `measurements.ts` | 9, 3, 4, 2 hunks | none now (after #42) | the deferral stands (`LANES.md:90`) |
+
+#42 touches no workflow, no `tools/test`, no Dockerfile, no `pnpm-workspace.yaml` and no `tools/package.json`.
+
+**Engineering choices made here** (each reversible; the recommended option under the co-founder's rulings):
+- release-capacity's two jobs and content-calendar's two on 26.04 under F5's letter, `RELEASE_CHAIN` kept at eight
+  (3.3.8, B2);
+- `--image` on every measured worker image (release-capacity, screening-capacity), held by a rule over every local
+  worker build;
+- the full file list printed on any tree difference;
+- the chunked, SHA-256-checked picture print, read whole (every chunk, `tail_lines` set), and CI's baseline step as the
+  source of the committed bytes while no local 1248 exists, with run 2 as the proof;
+- on a browser-check difference, Google's zips checked on CI against `zipSha256` before any record changes, and
+  Google's build installed rather than the mirror's if they differ (3.3.8, S3);
+- the baseline step's written set read from the files, not from Playwright's message (3.3.8, N5);
+- the failing-first runs at e908c21 before the push, the brand one on the base's own 1194 (3.3.8, B1);
+- A9 recorded in a design note with side-by-side images and both pixel counts, the agent's verdict in it, its pictures
+  committed beside it with their SHA-256s and linked by a commit-pinned URL (3.3.8, S7);
+- dispatching release-capacity once on the PR's head before the merge;
+- the phase-1 deviations adopted above (the dry run's `capacity` in the chain, `toHaveAccessibleName`, the committed
+  file lists, the apt key and its off-PR save, the set compare, the capacity jobs' default condition, the all-archives
+  check before any push, the after-#42 split, `browser.json` and its lists in `WATCHED_FIXED`).
+
+Security trade-offs: none weakened. The `--image` checks and the off-PR cache save add checks; the chunked print adds a
+SHA-256 proof per picture; the Google-zip check keeps the browser record anchored to Google's published bytes, never to
+the mirror's first answer (3.3.8, S3). Moving release-capacity's `capacity` to 26.04 changes no binding measurement: its
+report is advisory and never attested (`release-capacity.yml:56-59`), and the release chain the launch check reads stays
+on 24.04.
+
+**Proposed improvements outside ci-browser** (continuing P13):
+- **P14: withdrawn** (3.3.8, B2): release-capacity's `capacity` runs on 26.04 every week, which gives #41 the data
+  point P14 was for.
+- **P15 (ops):** move `setup-container.sh`'s actionlint pin from 1.7.7 to 1.7.12 (`:90-93`). Currency only; it does not
+  fix 26.04. Recommended.
+- **P16:** ask the person to also allow `productionresultssa18.blob.core.windows.net`, so CI artifacts and REST logs can
+  be read here: the baseline bytes would come from the artifact, and the UX review's shots from CI's 1248 run
+  (`brand.spec.ts:376-463` writes them; `ci.yml:580` uploads them). Whether CI's shots meet the brief's "local
+  screenshots" (`:9`) is the co-founder's call. Note: e908c21's "before" artifact expires 2026-11-02T21:13:55Z.
+  Alternatives without the blob host (3.3.8, N10): the "after" shots through the same chunked, SHA-256-checked print, as
+  a one-off step over `brand-screenshots/` in a commit reverted before the merge's last run (whether CI's shots count
+  stays the co-founder's call); the "before" shots taken locally now at e908c21, whose 1.56.1 uses the 1194 build laid
+  out here (`brand.spec.ts` at e908c21 writes them to `brand-screenshots/`, `:24, :34`), the dark and 390 px ones by the
+  reviewer's own capture.
+- **P17:** once storage.googleapis.com is allowed, run the local no-op and record ADR 0058's host-independence result
+  (24.04 host against CI's 26.04), and P11's mirror comparison with it.
+
+#### 3.3.8 Review of the re-read at e908c21 (2026-10-27)
+
+Review: `designs/lane-b-ci/ci-browser-reread2-review.md`, scouts `designs/lane-b-ci/scout-ci-browser-reread2-files.md` and
+`scout-ci-browser-reread2-versions.md`. Each finding was checked again at 2ab2b15 in `/home/user/ci-browser`, on the npm
+registry and on GitHub (GET only), 2026-10-27 02:20-02:30 UTC, before any text changed; edits are in 3.3.7 or in place
+marked "(3.3.8)".
+
+**Totals: 19 findings (2 blocking, 7 should fix, 10 nits): 18 Fixed, 1 Fixed by another means, 0 Not taken; none
+wrong.**
+
+- **B1. Fixed by another means.** Real: phase 1 recorded only `watched.test.ts`'s red run (build summary `:20`) and left
+  "Failing first at the merge base" open (`:111`); the merge base is now e908c21. Phase 2's new step 8 runs §3.3.3's
+  `CI_TREE` and worktree commands at e908c21 before the push and records both logs (acceptance 3 edited). The other
+  means: `brand.spec.ts`'s red run does not wait on the person, since e908c21 pins 1.56.1, whose build 1194 is laid out
+  in `/opt/pw-browsers` (02:00 UTC, `ls --time-style=full-iso`), as phase 1's local brand run used (build summary
+  `:55-56`); it waits only if that layout proves unverified.
+- **B2. Fixed** (the recommended option). Real: F5 moves every job but the chain it names (`reconciliation-001.md:646` at
+  2ab2b15); release-capacity's report is advisory and never attested (`release-capacity.yml:56-59`; ADR 0066
+  `:399-401`), its failing checks are OOM, restart, `memory.peak`, counts and reads with times advisory (`:8-12`), and
+  reversing a founder ruling is the founder's (brief `:38`). `release-capacity.yml:36` moves to 26.04; `RELEASE_CHAIN`
+  stays at eight; `workflows.test.ts:429` 18 → 22; P14 withdrawn; A8, §3.3.1, §3.3.2, §3.3.3, the table, the new-workflows
+  text, the document list (only ADR 0066 `:753`, `:866` and `ci.md:36-40` change) and CI-20 (back to `test-matrix.md:280`)
+  updated. The PR-head dispatch proves the job on 26.04 before the merge.
+- **S1. Fixed.** Real: `review/{base,head}-subset.json` give `numTotalTests` 631 and 697; per file +5, +19, +6, +6, +16,
+  +1, +13 (`browser-build.test.ts:161` 3 cases, `browser-version.test.ts:119` 10). Target 6,331 plus phase 2's, 1
+  skipped, the delta taken from the json reporter (counts and acceptance 6).
+- **S2. Fixed.** Real: `fixtures/synthetic/CI-18/expected.json:5` holds the assertion text, and CI-18 changes
+  (`test-matrix.md:278`, `matrix.ts:418`). After B2 CI-20 does not change, so `pnpm synth --all` writes CI-18's file only;
+  step 6 and step 7 say so, and any other file written is a finding.
+- **S3. Fixed.** Real: with no local layout, CI's values would rest on the mirror alone. Run 1 now checks Google's zips on
+  CI against `zipSha256` (`browser.json:11, :18`; URLs as `setup-container.sh:969`) and lists their tree; the record
+  changes only where Google's bytes agree, and a mirror that differs from Google's is replaced on CI by Google's build.
+- **S4. Fixed.** Real: `get_job_logs`' `tail_lines` defaults to 500 (the tool's schema), and the database-log step
+  (`ci.yml:639-641`) follows the baseline step. The read sets `tail_lines` above the job's line count and requires every
+  `i/n` chunk and each SHA-256 before decoding.
+- **S5. Fixed.** Real: `tools/test/ci-chromium.ts` does nothing off CI, and `apps/web/playwright.config.ts:30, :93` falls
+  back to the `chrome` channel without Playwright's build. "Local runs after the bump" states the skips, CI's e2e as the
+  record, no local e2e on the bumped tree until 1248, and the wait.
+- **S6. Fixed.** Real: §3.3.1's "no cache" rule against `cache: pnpm` at `screening-capacity.yml:201` and
+  `release-capacity.yml:72`. The rule is now Node 24 before every `--image` step (the check imports only `node:`
+  modules); the cache stays each job's own, off in `images` (`ci.yml:719-723`) and the release build
+  (`release.yml:148-151`); the test holds exactly that.
+- **S7. Fixed.** Real. The evidence goes in `designs/lane-b-ci/ci-browser-a9/` on claude/build-ops (on GitHub,
+  `git ls-remote` 60b09c67) with a `SHA256SUMS`, linked from the PR by a commit-pinned URL; the header's two causes are
+  attributed per changed box, using phase 1's 1194 pass with the new `shell.tsx` (build summary `:55-56`).
+- **N1. Fixed.** `getTrustEvidence` reads only `_npmUser.trustedPublisher`'s presence (`/opt/pnpm-10.34.8/dist/pnpm.cjs:67239-67241`);
+  all five versions carry it and SLSA provenance (`npm view`, 02:23 UTC). "Not verified" dropped.
+- **N2. Fixed.** The 1.64.1 tarball exports `./lib/coreBundle` (`package.json:26`), with `getComparator` at
+  `coreBundle.js:8506, :11494, :77995`; named in the A9 text, read and not run.
+- **N3. Fixed.** Default branch `claude/build-platform`, `release-capacity.yml` on it (blob 486e36f5), `workflow_dispatch`
+  (`:18`) with no filter (`gh api`, 02:24 UTC).
+- **N4. Fixed.** `git ls-remote` gives 2ab2b15 for `co-001/ci-browser`; no run exists for it (`actions/runs?head_sha=`,
+  total 0, 02:24 UTC).
+- **N5. Fixed.** `ci.yml:611` parses Playwright's "doesn't exist … writing actual" text. The written set is now the PNGs
+  present after the run (§3.3.3 and phase 2 step 2).
+- **N6. Fixed.** `RELEASE_RUNNER` is `launch-check.ts:107` at 2ab2b15; §3.3.1's line edited (the 6ddd587 table in §3.3.5
+  keeps its own cite).
+- **N7. Fixed.** CI-18's "(moved from CI-12, §3.2.7)" and CI-20's "§3.3.7" clause leave the rows for a note under the
+  §3.5 table; CI-20's text now equals `test-matrix.md:280`.
+- **N8. Fixed.** The worktree command copies `measure.test.ts` and `test-support/image-archive.ts` only (the head's new
+  test support, `git diff --stat e908c21 2ab2b15 -- tools/screening-capacity/test-support/`), and names the
+  missing-export cases (`proveLoadedImage`, `loadedImageProblems`).
+- **N9. Fixed.** `release-dry-run.yml:81` builds `apps/web/Dockerfile` only; §3.3.3's `--image` rule no longer names the
+  dry run's `build`.
+- **N10. Fixed.** Recorded under P16: the "after" shots through a one-off chunked print, whether they count still the
+  co-founder's call; and, found here, the "before" shots taken locally now at e908c21 on 1194 (`brand.spec.ts` at
+  e908c21 writes them, `:24, :34`), so they no longer depend on the artifact that expires 2026-11-02.
+
+Also corrected while folding: `/opt/pw-browsers` holds 1194 and 1243, not "1243 only" (the 3.3.1 Baselines row).
+
 ### 3.4 `co-001/ci-mutation` (audit #54)
 
 #### 3.4.1 What changes
@@ -2985,9 +3403,15 @@ Each row is a `none(0, …)` registry case with `assertedBy`. Milestone 0 is "CI
 | CI-15 | The mutation canary | In every shard, each of its five cases reports its expected status before any score | ci-mutation |
 | CI-16 | The mutation gate | Each fully-run money package above 85%, recorded equivalents still counted as survivors in the score, no survivor not recorded as equivalent, no runtime error but a test file's load failure | ci-mutation |
 | CI-17 | Mutation where the money code changed | A push runs every package; a pull request runs exactly the packages whose closure (imports, data files, third-party packages) it changes, each package's shards all or none | ci-mutation |
-| CI-18 | One browser build everywhere | The web tests, the worker, the tools, the lockfile and the worker image name one Playwright version; CI's headless shell is the baselines' build, and CI regenerates the baselines byte for byte when they change; a browser-tests PR is red on the browser build check by design, until the baseline procedure runs (moved from CI-12, §3.2.7) | ci-browser |
-| CI-19 | Header controls named by their visible text | Each header control's accessible name contains its visible text (WCAG 2.5.3); axe finds no violation | ci-browser |
-| CI-20 | Runner images | Every job on ubuntu-26.04 but the release's capacity chain on the release runner; the release binds images by config digest under either image store, and its push and report jobs run no repository code | ci-browser |
+| CI-18 | One browser build everywhere | The web tests, the worker, the tools and the lockfile name one Playwright version (playwright-core one catalog line), and the worker image installs the lockfile's playwright-core with no version of its own; every step that installs the browser, in every workflow, is followed by the check that holds every file of the headless shell's and Chromium's builds to `browser.json`'s tree SHA-256s before any test runs or any cache is saved, and the worker image's headless shell is held to it in `images` and in the release's build before it is saved and in screening-capacity's and release-capacity's measuring jobs before it is measured; CI regenerates the committed brand baselines from nothing, byte for byte, on every pull request and every push; a browser-tests pull request is red on the browser check by design until the baseline procedure runs, and its other steps still run | ci-browser |
+| CI-19 | Header controls named by their visible text | Each header control's accessible name contains its visible text (WCAG 2.5.3) at 1280 and 390 px; axe 4.14 with the WCAG 2.0/2.1 A and AA tags finds no violation on any page a journey scans | ci-browser |
+| CI-20 | Runner images | Every job on ubuntu-26.04 but the release's capacity chain, on the release runner; the probe's runner comes only from its dispatch input; the browser jobs' cached system packages are used only after each matches the signed index's SHA-256; the release binds images by the config digest hashed from the saved archive under either image store, carries each image's identities from the build as job outputs no later job can rewrite, proves the measured image, the loaded image before any push and the pushed image are that one, builds every checked image with no attestation manifest, and its push and report jobs run no repository code; the image scan reads the built archive | ci-browser |
+
+Notes to the rows above, not part of any row's text (3.3.8, N7): the Assertion column is copied verbatim into
+`test-matrix.md` and `matrix.ts`, so cross-references stay here. CI-18's last clause moved from CI-12 (§3.2.7), and its
+capacity-job clause is ci-browser's (3.3.7, 3.3.8, S2). CI-20 is its text at 2ab2b15 (`test-matrix.md:280`), unchanged by
+ci-browser after 3.3.8's B2; the report's runner image and image store and the launch check's refusals join it after #42
+(§3.3.7, "After #42").
 
 ---
 
