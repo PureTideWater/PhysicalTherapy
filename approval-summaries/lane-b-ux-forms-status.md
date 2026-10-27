@@ -1,4 +1,10 @@
-# Lane B: ux-forms status (co-001/ux-forms): HANDOFF
+# Lane B: ux-forms status (co-001/ux-forms)
+
+**Continued 2026-10-27 01:20 UTC** by session_01TAgFZo3SGSTBEfKRjX1jeG (a Lane B item session started by Lane A's
+orchestrator, session_01TrKDxeLbxVo7t7zwRXFzrg). GitHub login: PureTideWater. Machine: setup-container OK except the
+Playwright browser (storage.googleapis.com refused; **waiting on the person: storage.googleapis.com** for local browser
+tests of record and the UX review's screenshots). Then the UX review's PR 6 and PR 7 in the same session.
+
 
 Forms keep what the person typed, and name the refused field (the UX baseline review's first PR). Built by
 session_01VNsi2Kru6pfk8CAbQ2AaYB; stopped cleanly at 2026-10-26 10:10 UTC on the orchestrator's wind-down. The next
@@ -94,4 +100,4 @@ session (Lane A or Lane B) continues from here.
 - Secrets (password, one-time code) emptied after a refusal, with a note under each.
 - 16 px controls below 48rem; a pasted code with spaces accepted, client and server.
 - Show password: yes (hidden until mounted, spell check and autocapitalise off, re-hidden before submit).
-
+| 2026-10-27 01:44 | Resumed; base merged | Brief read. claude/build-platform (e908c21: #50, #51, #52, #49, #56, #53, #55, #48) merged into the branch with a merge commit, 9f9757e: seven conflicts, all keep-both (test matrix, matrix.ts and registry.ts RCC before FRM; synth modules RCC 14 and FRM 16; personas; the support page keeps #56's category default and the branch's hints). `watched.ts --write` regenerated (2982890: form-issues.tsx, loading-announcement.tsx). Typecheck: only split-form's 3 errors left (ActionForm's `beforeSubmit`, slice A). Next: build workflow (slice A's three files, C on the eight waiting pages, the browser tests, e2e packets step). |
