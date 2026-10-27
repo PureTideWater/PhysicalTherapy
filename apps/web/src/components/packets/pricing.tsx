@@ -22,6 +22,7 @@ import { PRICING_CAUSE_TEXT, type PricingNowView, type PricingTotals } from '../
  */
 
 const NOT_PRICED_AGAIN = 'Not priced again yet';
+const PRICING_NOW = 'Pricing now';
 
 /** A line's figure now, or why there is none. */
 function NowFigure({ line, figure }: { readonly line: LinePricingNow; readonly figure: 'expectedCents' | 'varianceCents' }) {
@@ -47,15 +48,17 @@ function TotalNow({ pricing, figure }: { readonly pricing: PricingNowView; reado
   return <span className="text-fg-muted">{waiting ? NOT_PRICED_AGAIN : 'Not stated: a line is no longer priced'}</span>;
 }
 
-export function PricingNowPanel({ pricing, sent = false, label = 'Pricing now' }: { readonly pricing: PricingNowView; readonly sent?: boolean; readonly label?: string }) {
+export function PricingNowPanel({ pricing, sent = false, label = PRICING_NOW }: { readonly pricing: PricingNowView; readonly sent?: boolean; readonly label?: string }) {
   if (pricing.status === 'current') {
     return null;
   }
   const one = pricing.lines.length === 1;
+  // Where a page shows several panels (a case's submissions), the table is named after its own, so no two share a name.
+  const linesLabel = label === PRICING_NOW ? 'Lines not on current pricing' : `${label}: lines not on current pricing`;
   return (
     <Card role="region" aria-label={label} data-pricing-check={pricing.status}>
       <CardHeader>
-        <CardTitle>Pricing now</CardTitle>
+        <CardTitle>{PRICING_NOW}</CardTitle>
         <CardDescription>
           A packet is written, approved, exported and attested only on the pricing in effect. Since this version was written, {one ? 'one line is' : `${String(pricing.lines.length)} lines are`} no longer on it.
         </CardDescription>
@@ -78,8 +81,8 @@ export function PricingNowPanel({ pricing, sent = false, label = 'Pricing now' }
             </AlertDescription>
           )}
         </Alert>
-        <ScrollTable label="Lines not on current pricing">
-          <table className="w-full min-w-[48rem] text-sm" aria-label="Lines not on current pricing">
+        <ScrollTable label={linesLabel}>
+          <table className="w-full min-w-[48rem] text-sm" aria-label={linesLabel}>
             <thead>
               <tr className="border-b text-left align-bottom">
                 <th className="py-1 pr-3 font-medium">Row</th>

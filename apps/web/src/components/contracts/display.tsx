@@ -64,10 +64,14 @@ export function MappingText({ practiceId, kind, mapping }: { readonly practiceId
   );
 }
 
-/** The cited page as text, with the quote marked (PRD 7, Rate record review), in a box that scrolls down and that the keyboard reaches (ScrollBox). */
+/**
+ * The cited page as text, with the quote marked (PRD 7, Rate record review), in a box that scrolls down and that the
+ * keyboard reaches (ScrollBox). No landmark of its own: the card it sits in is the "Cited page" region, and two of one
+ * name tell a screen reader's list of landmarks nothing (axe's landmark-unique).
+ */
 export function CitedPageView({ cited, pageHref }: { readonly cited: CitedPage; readonly pageHref: (page: number) => string }) {
   return (
-    <section aria-label="Cited page" className="flex flex-col gap-2">
+    <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
         <span className="font-medium">
           Document {cited.documentId.slice(0, 8)}, page {cited.page}
@@ -106,7 +110,7 @@ export function CitedPageView({ cited, pageHref }: { readonly cited: CitedPage; 
           </ScrollBox>
         </>
       )}
-    </section>
+    </div>
   );
 }
 

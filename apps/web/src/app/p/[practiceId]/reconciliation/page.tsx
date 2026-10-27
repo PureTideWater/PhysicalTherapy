@@ -14,6 +14,7 @@ import { AppShell, Forbidden } from '../../../../components/shell';
 import { stageLabel } from '../../../../components/triage/display';
 import { Uploader } from '../../../../components/uploads/uploader';
 import { loadPage } from '../../../../lib/http/next';
+import type { ListPage } from '../../../../lib/http/paging';
 import type { EntryView, LinkageLine, MatchView, RemittanceChoice } from '../../../../lib/reconciliation/queries';
 import { REVERSAL_CONSEQUENCE, type ReconciliationNotice, reconciliationPage } from '../../../../lib/routes/reconciliation';
 import { matchClaimFormAction, matchDepositFormAction, matchPostingFormAction, reverseMatchFormAction } from './actions';
@@ -174,12 +175,21 @@ function patientShareOf(line: LinkageLine): string | null {
   return share === '0' ? null : share;
 }
 
-function LinkageItem({ line, practiceId, canReconcile, phi }: { readonly line: LinkageLine; readonly practiceId: string; readonly canReconcile: boolean; readonly phi: boolean }) {
+/**
+ * The place of a page's first item in the whole list: every page but the last is full, so the last page starts at the
+ * total less its own items. A case line is named by its place, unique on the page and not PHI.
+ */
+function firstPlace(list: ListPage<unknown>): number {
+  return (list.page === list.pages ? list.total - list.items.length : (list.page - 1) * list.items.length) + 1;
+}
+
+function LinkageItem({ line, place, total, practiceId, canReconcile, phi }: { readonly line: LinkageLine; readonly place: number; readonly total: number; readonly practiceId: string; readonly canReconcile: boolean; readonly phi: boolean }) {
   const shared = { practiceId, canReconcile, phi };
+  const name = `Case line ${String(place)} of ${String(total)}`;
   return (
     <li className="flex flex-col gap-3 rounded-md border p-3" data-line={line.serviceLineId} data-correction-kind={line.correction.kind ?? 'none'}>
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="font-medium">{phi ? `${line.procedureCode ?? ''} on ${line.serviceDate ?? '—'}` : 'Case line'}</span>
+        <span className="font-medium">{phi ? `${name}, ${line.procedureCode ?? ''} on ${line.serviceDate ?? '—'}` : name}</span>
         <span data-line-stage={line.stage ?? 'none'}>{line.stage === null ? 'no stage' : stageLabel(line.stage as Parameters<typeof stageLabel>[0])}</span>
         <Link className="underline" href={`/p/${practiceId}/cases/${line.caseId}`}>
           Case
@@ -212,7 +222,7 @@ function LinkageItem({ line, practiceId, canReconcile, phi }: { readonly line: L
           with a further submission.
         </p>
       )}
-      <EntryTable entries={line.entries} practiceId={practiceId} phi={phi} label="Entries of the line" empty={lineEntriesEmptyText(line.correction.kind)} />
+      <EntryTable entries={line.entries} practiceId={practiceId} phi={phi} label={`Entries of case line ${String(place)}`} empty={lineEntriesEmptyText(line.correction.kind)} />
     </li>
   );
 }
@@ -455,8 +465,8 @@ export default async function ReconciliationPage(props: Props) {
           <EmptyState title="No case line has a ledger entry or a match yet" nextStep="Adjusted remittances are matched to case lines after they load; posting and EFT exports after they are uploaded." />
         ) : (
           <ul aria-label="Case lines" className="flex flex-col gap-3">
-            {data.linkage.items.map((line) => (
-              <LinkageItem key={line.serviceLineId} line={line} {...shared} />
+            {data.linkage.items.map((line, index) => (
+              <LinkageItem key={line.serviceLineId} line={line} place={firstPlace(data.linkage) + index} total={data.linkage.total} {...shared} />
             ))}
           </ul>
         )}

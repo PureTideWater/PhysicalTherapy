@@ -86,7 +86,7 @@ const UNSTATED_SCOPE: readonly (readonly [field: string, reads: string])[] = [
 
 const writtenText = (written: StoredCandidate['fields'][number]['written']) => (written === null ? '' : Array.isArray(written) ? written.join(', ') : String(written));
 
-/** A candidate's card; its table of fields is named by the proposal's place in the list and its own, so no two on a page share a name. */
+/** A candidate's card; its table of fields is named by the proposal's place in the list (its card's title shows it) and its own, so no two on a page share a name. */
 function CandidateCard({ candidate, index, proposalNo }: { readonly candidate: StoredCandidate; readonly index: number; readonly proposalNo: number }) {
   const fieldsLabel = `Proposed fields of proposal ${String(proposalNo)}, candidate ${String(index + 1)}`;
   return (
@@ -165,7 +165,7 @@ export function ProposalList({ proposals, reject }: { readonly proposals: readon
         <Card key={proposal.id} role="region" aria-label="Model proposal" data-proposal={proposal.id} data-decision={proposal.decision?.decision ?? 'awaiting'}>
           <CardHeader>
             <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-              Proposed {utc(proposal.createdAt)}
+              Proposal {position + 1}, proposed {utc(proposal.createdAt)}
               <Badge variant={proposal.passed ? 'outline' : 'secondary'}>{proposal.passed ? 'Every field checked' : 'Some fields did not check'}</Badge>
               <Badge variant="secondary">{decisionText(proposal.decision?.decision ?? null)}</Badge>
               <Badge variant="outline" data-variant={proposal.ambiguous ? 'ambiguous' : 'default'}>

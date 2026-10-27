@@ -132,8 +132,10 @@ export default async function LedgerReviewPage(props: Props) {
           <EmptyState title="No shortfall on this page of case lines" nextStep="A shortfall appears when a payer's remittance pays part of what its response accepted." />
         ) : (
           <ul aria-label="Shortfalls" className="flex flex-col gap-3">
-            {shortfalls.map((line) => (
+            {shortfalls.map((line, index) => (
               <li key={line.serviceLineId} className="flex flex-col gap-2 rounded-md border p-3" data-shortfall={line.shortfallCents}>
+                {/* Numbered so that each entries table's name is its own: "Entries of shortfall 2". */}
+                <h3 className="text-sm font-medium">Shortfall {index + 1}</h3>
                 <p className="text-sm">
                   The payer accepted <Money value={line.shortfallCents} /> more than its remittance paid on this case line. Correct the approval, or leave it for the practice to dispute.
                   {(line.correction.billable?.billableCents ?? '0') === '0' ? null : (
@@ -144,7 +146,7 @@ export default async function LedgerReviewPage(props: Props) {
                     </>
                   )}
                 </p>
-                <Entries entries={line.entries} practiceId={practiceId} canAdjust={canAdjust} label="Entries of the line" />
+                <Entries entries={line.entries} practiceId={practiceId} canAdjust={canAdjust} label={`Entries of shortfall ${String(index + 1)}`} />
               </li>
             ))}
           </ul>

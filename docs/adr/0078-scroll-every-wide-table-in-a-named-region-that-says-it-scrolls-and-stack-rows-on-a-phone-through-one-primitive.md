@@ -113,12 +113,19 @@ first to render row forms in both copies. The fourth pull request (the screening
 tests and test support, and fails on a `<table>` whose parent is not `ScrollTable`, on a `ScrollTable` whose children
 are not exactly one `<table>`, on `createElement('table')` or `jsx('table')`, and on a table in markup for
 `dangerouslySetInnerHTML`. It knows `ScrollTable` by its import from `components/scroll-table`, under whatever local
-name, so a local component of that name does not pass. Its exemptions are the #42 pages (console support, the users
-page, support access), each with the pull request that wraps it and its exact count of bare tables; an exemption that
-no longer matches fails, and each failure names the line to edit. In the end-to-end suite `atPhoneWidth` also checks
-that every rendered table sits in a `ScrollTable`, and before axe runs it waits until every scroller's state agrees
-with its measurement (a scroller whose content overflows is a region with a tab stop; one whose content fits, and that
-is not focused, is neither), so axe never judges a scroller between a resize and React's commit.
+name, so a local component of that name does not pass. Two rules more keep tables apart and their words whole: it
+fails on `wrap-anywhere` on a `<td>` or `<th>`, or inside one on an element that has no `min-w` and sits in none (a
+block's: a min-width holds no inline box); and on a `ScrollTable` label that is the same in every row of a list, a
+plain literal (or one built from literals and props alone) inside a `.map` callback or in a component rendered from
+one, followed through props and relative imports (F2 of the correctness review: one "Entries of the line" region per
+case line). Its exemptions are the #42 pages (console support, the users page, support access), each with the pull
+request that wraps it and its exact count of bare tables; an exemption that no longer matches fails, and each failure
+names the line to edit. In the end-to-end suite `atPhoneWidth` also checks that every rendered table sits in a
+`ScrollTable`, and before axe runs it waits until every scroller's state agrees with its measurement (a scroller whose
+content overflows is a region with a tab stop; one whose content fits, and that is not focused, is neither), so axe
+never judges a scroller between a resize and React's commit. There axe runs its best-practice rule `landmark-unique`
+beside the WCAG rules, so two landmarks of one role and name fail at 390 px (every wide table is a region there); on
+the routes the suite visits at that width, the only repeats were this pull request's own.
 
 ## Alternatives considered
 

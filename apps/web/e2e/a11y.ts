@@ -12,10 +12,31 @@ export async function expectAccessible(page: Page, what: string): Promise<void> 
   expect(await axeViolations(page), `${what}: axe-core WCAG 2.1 AA violations`).toEqual([]);
 }
 
-/** axe-core's WCAG 2.1 A and AA violations on the page as it stands: each rule, its impact and its first five elements. */
-async function axeViolations(page: Page): Promise<{ readonly rule: string; readonly impact: string | null | undefined; readonly nodes: readonly string[] }[]> {
-  const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
-  return results.violations.map((violation) => ({ rule: violation.id, impact: violation.impact, nodes: violation.nodes.map((node) => node.target.join(' ')).slice(0, 5) }));
+/**
+ * axe-core's WCAG 2.1 A and AA violations on the page as it stands: each rule, its impact and its first five elements.
+ * With `uniqueLandmarks`, axe's best-practice rule landmark-unique too, each repeat by its role and name and then the
+ * landmarks that repeat it: no two landmarks of a role share a name, so a person tells them apart in a screen reader's
+ * list of landmarks.
+ */
+async function axeViolations(page: Page, uniqueLandmarks = false): Promise<{ readonly rule: string; readonly impact: string | null | undefined; readonly nodes: readonly string[] }[]> {
+  const builder = new AxeBuilder({ page });
+  // options() before withTags(): options() replaces every option set so far, and a rule enabled there runs beside the tags.
+  const results = await (uniqueLandmarks ? builder.options({ rules: { 'landmark-unique': { enabled: true } } }) : builder).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
+  return results.violations.map((violation) => ({
+    rule: violation.id,
+    impact: violation.impact,
+    nodes: violation.nodes
+      .map((node) => {
+        const [check] = node.any;
+        const data: unknown = check?.data;
+        if (violation.id !== 'landmark-unique' || typeof data !== 'object' || data === null || !('role' in data) || !('accessibleText' in data)) {
+          return node.target.join(' ');
+        }
+        const repeats = (check?.relatedNodes ?? []).map((related) => related.target.join(' '));
+        return `${node.target.join(' ')} (${String(data.role)} “${String(data.accessibleText)}”, repeated by ${repeats.join(', ')})`;
+      })
+      .slice(0, 5),
+  }));
 }
 
 /**
@@ -69,8 +90,10 @@ export interface PhoneWidthOptions {
  * table on it sits in a ScrollTable (the rendered half of src/app/tables.test.ts's guard, for a table its source walk
  * cannot see); each table named in `tables` is there, overflowing and saying so; every scroller's role and tab stop
  * agree with what it measures; and then axe-core finds no violation, a scrollable region a keyboard cannot reach among
- * them. The scrollers are waited for before axe because a scroller that fitted at the width before becomes a region
- * only once its ResizeObserver has fired and React has committed. The viewport is put back as it was.
+ * them, and no two landmarks of a role share a name (its best-practice rule landmark-unique: at this width every wide
+ * table is a region named after it, so a table repeated in each row of a list would repeat one name). The scrollers
+ * are waited for before axe because a scroller that fitted at the width before becomes a region only once its
+ * ResizeObserver has fired and React has committed. The viewport is put back as it was.
  */
 export async function atPhoneWidth(page: Page, what: string, options: PhoneWidthOptions = {}): Promise<void> {
   const check = options.soft === true ? expect.configure({ soft: true }) : expect;
@@ -84,7 +107,7 @@ export async function atPhoneWidth(page: Page, what: string, options: PhoneWidth
     }
     await expectScrollersAgree(page, `${what}, at 390 px`, options);
     if (options.axe !== false) {
-      check(await axeViolations(page), `${what}, at 390 px: axe-core WCAG 2.1 AA violations`).toEqual([]);
+      check(await axeViolations(page, true), `${what}, at 390 px: axe-core WCAG 2.1 AA violations and landmarks of one role and name`).toEqual([]);
     }
   } finally {
     if (before !== null) {
