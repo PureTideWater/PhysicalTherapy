@@ -17,9 +17,11 @@ const STATUS: Readonly<Record<string, string>> = { open: 'Open', answered: 'Answ
 
 /**
  * The rule a ticket keeps, in the hint of each field a person types into, so the field itself says it (docs/adr/0077).
- * Mail to the support address opens a ticket too, and no hint reaches it: the card says the rule for the mail.
+ * Mail to the support address opens a ticket too, and no hint reaches it: the card says the rule for the mail, and
+ * describes the address's link with it, so a person who tabs to the link hears it.
  */
 const NO_PATIENT_INFORMATION = 'No patient names, dates of birth, member IDs or claim numbers. Name the screen and the record’s ID.';
+const MAIL_RULE = 'Your mail takes no patient information either: no names, dates of birth, member IDs or claim numbers. Name the screen and the record’s ID.';
 
 /**
  * Support (PRD 19, Support: "a support address that creates a ticket; a published response target"; docs/adr/0053):
@@ -46,8 +48,11 @@ export default async function SupportPage(props: { readonly searchParams: Promis
         <CardHeader>
           <CardTitle>Open a ticket</CardTitle>
           <CardDescription>
-            We answer within {responseTarget}. Or write to <a className="underline" href={`mailto:${supportEmail}`}>{supportEmail}</a> from the address you sign in with: the mail opens a ticket
-            here too. Your mail takes no patient information either: no names, dates of birth, member IDs or claim numbers. Name the screen and the record’s ID.
+            We answer within {responseTarget}. Or write to{' '}
+            <a className="underline" href={`mailto:${supportEmail}`} aria-describedby="support-mail-rule">
+              {supportEmail}
+            </a>{' '}
+            from the address you sign in with: the mail opens a ticket here too. <span id="support-mail-rule">{MAIL_RULE}</span>
           </CardDescription>
         </CardHeader>
         <CardContent>

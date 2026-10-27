@@ -369,12 +369,16 @@ export const consoleStatusPage = platformRoute({
   sample: { params: () => ({}) },
 });
 
-/** What staff write on the public page is screened like a ticket: the page is public. */
-function publicText(field: string, text: string): string {
-  if (writtenPhiFindings(text).length > 0) {
-    throw new InputError([{ field, message: 'the status page is public: write no identifier, date of birth or phone number' }]);
+/**
+ * What staff write on the public page is screened like a ticket: the page is public. Every field that holds an
+ * identifier is named at once, so all are fixed before the next press.
+ */
+function publicText<K extends string>(fields: Readonly<Record<K, string>>): Readonly<Record<K, string>> {
+  const refused = Object.entries<string>(fields).filter(([, text]) => writtenPhiFindings(text).length > 0);
+  if (refused.length > 0) {
+    throw new InputError(refused.map(([field]) => ({ field, message: 'the status page is public: write no identifier, date of birth or phone number' })));
   }
-  return text;
+  return fields;
 }
 
 export const setComponentStatus = platformRoute({
@@ -409,8 +413,7 @@ export const openIncident = platformRoute({
   input: z.object({ title: requiredText(120), impact: z.enum(STATUS_INCIDENT_IMPACTS), components: componentList, message: requiredText(1000) }),
   audit: { action: 'status_incident_opened', objectType: 'status_incident' },
   handle: async ({ scope, input }): Promise<MutationResult> => {
-    const title = publicText('title', input.title);
-    const message = publicText('message', input.message);
+    const { title, message } = publicText({ title: input.title, message: input.message });
     const { rows } = await scope.client.query<{ id: string }>('INSERT INTO status_incident (title, impact, components, created_by) VALUES ($1, $2, $3, app_actor_id()) RETURNING id', [
       title,
       input.impact,
@@ -436,7 +439,7 @@ export const updateIncident = platformRoute({
   input: z.object({ incidentId: opaqueId, status: z.enum(STATUS_INCIDENT_STATUSES), message: requiredText(1000) }),
   audit: { action: 'status_incident_updated', objectType: 'status_incident' },
   handle: async ({ scope, input }): Promise<MutationResult> => {
-    const message = publicText('message', input.message);
+    const { message } = publicText({ message: input.message });
     const found = await scope.client.query('SELECT 1 FROM status_incident WHERE id = $1', [input.incidentId]);
     if (found.rows.length === 0) {
       throw new NotFoundError();

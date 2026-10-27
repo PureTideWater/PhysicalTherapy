@@ -207,29 +207,40 @@ export interface GuardedSubmit {
  * that press and keeps the pin; a redirect (saved) or a failure lets it go. A form with several actions passes one
  * ref to each hook, as it does `inFlight`, and lets it go itself when the page shows another person
  * (useClearedForAnotherPerson).
+ *
+ * The `seq` ref numbers the browser's responses: a form with several actions passes one to each hook, so no two of its
+ * responses share a number, whichever action gave them; the form shows the one numbered last, and each inserts a
+ * summary of its own (RefusalSummary's key). Without it, each hook numbers its own.
  */
 export function useGuardedSubmit(
   action: FormAction,
-  options: { readonly beforeSubmit?: (form: HTMLFormElement) => boolean; readonly inFlight?: RefObject<boolean>; readonly heldKey?: RefObject<string | null> } = {},
+  options: {
+    readonly beforeSubmit?: (form: HTMLFormElement) => boolean;
+    readonly inFlight?: RefObject<boolean>;
+    readonly heldKey?: RefObject<string | null>;
+    readonly seq?: RefObject<number>;
+  } = {},
 ): GuardedSubmit {
   const ownHold = useRef<string | null>(null);
   const held = options.heldKey ?? ownHold;
+  const numbered = options.seq;
   const [serverState, formAction, serverPending] = useActionState(action, {});
   const [browserState, dispatch, browserPending] = useActionState(async (previous: FormState, data: FormData): Promise<FormState> => {
-    const seq = (previous.seq ?? 0) + 1;
+    // Numbered when the answer comes, so the number says which came last.
+    const next = (): number => (numbered === undefined ? (previous.seq ?? 0) + 1 : (numbered.current += 1));
     const key = data.get('requestKey');
     try {
       const answer = await action(previous, data);
       if (answer.duplicate === true && typeof key === 'string') {
         held.current = key;
       }
-      return { ...answer, seq };
+      return { ...answer, seq: next() };
     } catch (error) {
       if (error instanceof TypeError && !('digest' in error)) {
         if (typeof key === 'string') {
           held.current = key;
         }
-        return { unconfirmed: true, seq };
+        return { unconfirmed: true, seq: next() };
       }
       held.current = null;
       unstable_rethrow(error);

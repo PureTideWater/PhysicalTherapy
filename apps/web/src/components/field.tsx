@@ -56,7 +56,9 @@ export function Hint({ id, hint, className }: { readonly id: string; readonly hi
 
 /**
  * A labelled input. A one-time code (`autoComplete="one-time-code"`) is a secret: its form empties it after a refusal
- * (data-secret), and the field says so under it.
+ * (data-secret), and the field says so under it. Like a password (PasswordField), it turns off spell checking,
+ * autocorrect and autocapitalisation, so no browser's spelling service reads it, and writes those and its marker after
+ * the caller's props, so none undoes them.
  */
 export function Field({ label, name, hint, error, errorName, issueFor, id: given, ...props }: FieldProps & ComponentProps<'input'>) {
   const id = given ?? `field-${name}`;
@@ -64,10 +66,11 @@ export function Field({ label, name, hint, error, errorName, issueFor, id: given
   const message = error ?? shown;
   const secret: SecretKind | undefined = props.autoComplete === 'one-time-code' ? 'code' : undefined;
   const emptied = useEmptied(secret);
+  const secretMarks = secret === undefined ? {} : ({ 'data-secret': '', spellCheck: false, autoCorrect: 'off', autoCapitalize: 'none' } as const);
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       <Label htmlFor={id}>{label}</Label>
-      <Input id={id} name={name} data-secret={secret === undefined ? undefined : ''} {...controlMarks(id, { error: message, hint, emptied, errorName, issueFor })} {...props} />
+      <Input id={id} name={name} {...controlMarks(id, { error: message, hint, emptied, errorName, issueFor })} {...props} {...secretMarks} />
       <FieldError id={id} error={message} />
       <EmptiedNote id={id} secret={secret} />
       <Hint id={id} hint={hint} />
@@ -101,8 +104,8 @@ function cutChoice(select: HTMLSelectElement): string | null {
 /**
  * What `showChosen` shows: the select's chosen text while the select cuts it short. Read from the page, not the props,
  * so a value the person chose, kept after a refusal or restored by the browser counts; measured once mounted, on each
- * change, after the form resets, when the select's size or the window's changes (16 px below md, 14 px above), and once
- * the fonts load.
+ * change, after the form resets, when the select's size changes, when the controls' text size does (16 px below md,
+ * 14 px above, which may leave the box as it was), and once the fonts load.
  */
 function useCutChoice(id: string, enabled: boolean, shape: string): string | null {
   const [cut, setCut] = useState<string | null>(null);
@@ -117,24 +120,26 @@ function useCutChoice(id: string, enabled: boolean, shape: string): string | nul
         setCut(cutChoice(select));
       }
     };
-    // The reset event comes before the form's values go back: measure once they have.
+    // The reset event comes before the form's values go back, and a reset button's press runs a microtask before they
+    // do too: measure in a task of its own, once they have.
     const afterReset = () => {
-      queueMicrotask(measure);
+      setTimeout(measure, 0);
     };
     const form = select.form;
     const resized = new ResizeObserver(measure);
+    const textSize = window.matchMedia('(width < 48rem)');
     measure();
     resized.observe(select);
     select.addEventListener('change', measure);
     form?.addEventListener('reset', afterReset);
-    window.addEventListener('resize', measure);
+    textSize.addEventListener('change', measure);
     void document.fonts.ready.then(measure);
     return () => {
       live = false;
       resized.disconnect();
       select.removeEventListener('change', measure);
       form?.removeEventListener('reset', afterReset);
-      window.removeEventListener('resize', measure);
+      textSize.removeEventListener('change', measure);
     };
   }, [id, enabled, shape]);
   return cut;
@@ -190,8 +195,8 @@ export function SelectField({
   const id = given ?? `field-${name}`;
   const shown = useFieldIssue(name, issueFor);
   const message = error ?? shown;
-  // Measured again when the options or a controlled value change.
-  const shape = options.flatMap((option) => ('group' in option ? [option.group, ...option.options.map(choiceText)] : [choiceText(option)])).join('\u0001');
+  // Measured again when the options or a controlled value change; read only for a select that shows its choice.
+  const shape = showChosen ? options.flatMap((option) => ('group' in option ? [option.group, ...option.options.map(choiceText)] : [choiceText(option)])).join('\u0001') : '';
   const chosen = useCutChoice(id, showChosen, `${shape}\u0002${String(props.value)}`);
   return (
     <div className="flex min-w-0 flex-col gap-1.5">

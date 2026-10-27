@@ -236,8 +236,13 @@ export async function runAction(route: Route<MutationResult>, form: FormData, pa
   if (outcome.status === 'suspended') {
     return { error: `Not started: ${outcome.reason}.` };
   }
-  // The one outcome left: the request key was used before (invoke.ts), so an earlier post with it saved.
-  return { error: 'This form was already sent, so nothing new was saved. Reload the page to see the result.', duplicate: true };
+  if (outcome.status === 'duplicate') {
+    // The request key was used before (invoke.ts), so an earlier post with it saved.
+    return { error: 'This form was already sent, so nothing new was saved. Reload the page to see the result.', duplicate: true };
+  }
+  // No outcome is left today. One added later reads as a refusal ("Not done") until it has words of its own, never as
+  // "Already sent" over a record that may not exist.
+  return { error: 'Reload the page and try again.' };
 }
 
 /** Runs a sign-in step from a form: on to the next step, or the step's error. */

@@ -130,6 +130,11 @@ describe('a request key used before (U-UX-4)', () => {
     const state = await runAction(answering<MutationResult>({ status: 'duplicate' }), formOf(TICKET));
     expect(state).toEqual({ error: 'This form was already sent, so nothing new was saved. Reload the page to see the result.', duplicate: true });
   });
+
+  it('flags only a used key: an outcome this adapter has no words for yet is a plain refusal, never "Already sent"', async () => {
+    const unknown = { status: 'synthetic_future_status' } as unknown as Outcome<MutationResult>;
+    expect(await runAction(answering<MutationResult>(unknown), formOf(TICKET))).toEqual({ error: 'Reload the page and try again.' });
+  });
 });
 
 describe('a sign-in step no press of its form can mend (S-A11Y-2, U-UX-3; docs/adr/0077, D2)', () => {

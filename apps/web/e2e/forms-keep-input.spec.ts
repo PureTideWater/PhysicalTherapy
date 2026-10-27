@@ -413,6 +413,11 @@ test('a practice’s ROI form keeps the typed period, keeps its button focused a
 test('the support form keeps what was typed through a dropped connection, a page out of date and a refusal, and starts fresh once the ticket is saved; a press whose answer was lost is never saved twice, and a page read again under another person clears the form (FRM-01, FRM-02, FRM-05)', async ({ page }) => {
   await signInWithTotp(page, 'forms-manager');
   await page.goto('/support?from=remittances');
+  // Mail to the support address opens a ticket that no field's hint reaches: the card says the rule, and the address's
+  // link is described by it, so a person who tabs to it hears it (U-UX-5).
+  const mailRule = 'Your mail takes no patient information either: no names, dates of birth, member IDs or claim numbers. Name the screen and the record’s ID.';
+  await expect(page.locator('#support-mail-rule')).toHaveText(mailRule);
+  await expect(page.locator('a[href^="mailto:"][aria-describedby="support-mail-rule"]')).toHaveAccessibleDescription(mailRule);
   const form = formWith(page, 'Open ticket');
   const category = form.getByLabel('What is it about', { exact: true });
   const subject = form.getByLabel('Subject', { exact: true });

@@ -117,6 +117,12 @@ const REASONS = [
   { value: 'other', label: 'Other' },
 ];
 
+/** A short run's name, and one too long for a phone's select, as a triage run's with its release is. */
+const RUNS = [
+  { value: 'q1', label: 'Q1' },
+  { value: 'long', label: 'SYNTHETIC REMITTANCES OF THE FIRST QUARTER (release 3)' },
+];
+
 /** Each form, rendered from the page's keys (a refresh renders it again with the keys the server gives then). */
 const forms: Record<string, (page: PageKeys) => ReactNode> = {
   /** Every kind of control a refusal must keep, and every secret it must empty (FRM-01). */
@@ -221,6 +227,15 @@ const forms: Record<string, (page: PageKeys) => ReactNode> = {
       </HarnessForm>
       <div className="spacer" />
     </>
+  ),
+  /** A select that cuts a long choice in a narrow column, and a reset button (U-UX-8: the line under it follows both). */
+  chosen: () => (
+    <div className="narrow">
+      <HarnessForm submit="Save">
+        <SelectField label="Pricing run" name="run" defaultValue="q1" showChosen options={RUNS} />
+        <button type="reset">Start again</button>
+      </HarnessForm>
+    </div>
   ),
   /** A form whose beforeSubmit may refuse to send (4.6). */
   split: () => (

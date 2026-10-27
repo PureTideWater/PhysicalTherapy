@@ -51,11 +51,14 @@ refused the "123 456" an authenticator app copies; and that several fields check
   export's status, a page out of date), until a press is saved (the redirect) or fails on the server, or the page shows
   another person (D10), because the server may have saved under it and only the same key makes another press do
   nothing (ADR 0017). A refusal keeps the pin, since it can come before the key is read and so says nothing of the
-  dropped press; the version form's two actions share one pin, as they share the guard below. A key used before is
-  answered `duplicate`, which pins it too and is titled "Already sent", never "Not done", over the server's words "This
-  form was already sent, so nothing new was saved. Reload the page to see the result."; nothing reads the page again
-  for it, so no fresh key sits under the kept values. A success resets the
-  form through Next's redirect remount, with no reset code of its own. Two conditions keep that true, and
+  dropped press; the version form's two actions share one pin, as they share the guard below, and one count of
+  responses, so the form shows the answer that came last and, while one button's press is out, never the other's older
+  answer. A key used before is answered `duplicate`, which pins it too and is titled "Already sent", never "Not done"
+  (nor is the note a Re-run's row leaves when the refresh removes it), over the server's words "This form was already
+  sent, so nothing new was saved. Reload the page to see the result."; only a form with `refreshOnError` (Re-run,
+  Accept) reads the page again for it, whose fields are all hidden and whose pin holds, so no fresh key is ever sent
+  under the kept values. An outcome the adapter has no words for is a plain refusal, never "Already sent". A success
+  resets the form through Next's redirect remount, with no reset code of its own. Two conditions keep that true, and
   `components/action-form.tsx`'s header comment states both: the hook on `<form action>` takes the server action
   itself, never a client wrapper; and `<FormKeys/>` is rendered by pages, never by a layout, or a second submit after a
   success would replay the old request key. A ref, not React state, guards a second press: it is the only guard that
@@ -71,7 +74,8 @@ refused the "123 456" an authenticator app copies; and that several fields check
   again. Never a refusal whose words are a wrong password's, which would tell which addresses have accounts. After a
   dropped connection on a form that held a secret, the lead says what went: "What you typed is still here, except
   passwords and codes: check your connection, type them again, then press “{submit}” again." Both secret components
-  stay uncontrolled.
+  stay uncontrolled. A code, like a password (D8), turns off spell checking, autocorrect and autocapitalisation, which
+  `Field` writes with `data-secret` after the caller's props.
 - **D3. A refused field is named by the label the person sees, read from the page.** The summary resolves each issue
   to its control (the name, the name with `[]`, a `data-issue-for` that lists the key, then the key's part before its
   first `.`) and names it by the control's `data-error-name`, else a group's legend when the issue names a group, else
@@ -86,8 +90,10 @@ refused the "123 456" an authenticator app copies; and that several fields check
   row, keyed per response so the same refusal twice is announced twice. A row form wraps while it shows a refusal (one
   unlayered rule), so the summary takes a line of its own above the controls; a column form (`flex-col`,
   `flex-col-reverse`) never does, because Chromium sizes a wrapping column's line to its widest item, and a select
-  with a long option then pushes the page past a phone's width. The hardware-key sign-in, a form of its own, shows its
-  problem first too, before the email. The summary's lead counts the issues that name a field ("Fix the field listed
+  with a long option then pushes the page past a phone's width; `form-hints.test.ts` fails on a form whose direction
+  is set behind a breakpoint, which the rule's classes could not read. The hardware-key sign-in, a form of its own,
+  shows its problem first too, before the email, and is a post, so a press before the page is live never puts the
+  email in the address. The summary's lead counts the issues that name a field ("Fix the field listed
   here, then try again.", "Fix the fields listed here, then try again.", or none). Under each refused field the shared
   components show "Error:" and an icon beside the message, the element that describes the field holding the message
   alone. One unlayered CSS rule marks every refused control with a 2 px border in the danger color, and a refused
@@ -122,9 +128,10 @@ refused the "123 456" an authenticator app copies; and that several fields check
   turned back to `type=password`, through its own state, before the form's data is read. No caller can undo that: the
   props type leaves out `type`, `spellCheck`, `autoCorrect`, `autoCapitalize` and `ref`, and the component writes them,
   with `data-secret`, after the caller's props, so a cast cannot either (a caller's `ref` would replace the one that
-  hides the password before the data is read). Pressed, the toggle looks pressed: an Ink rule on the inset surface
-  (`aria-pressed:border-foreground aria-pressed:bg-secondary` on the outline button), its word "Show" and its name
-  unchanged.
+  hides the password before the data is read). Pressed, the toggle looks pressed: a rule in the text's colour on the
+  inset surface (`aria-pressed:border-foreground aria-pressed:bg-secondary` on the outline button), its word "Show"
+  and its name unchanged; in forced colours (a Windows contrast theme), whose palette would make both looks one, a
+  pressed button takes the system's `Highlight` and `HighlightText` (one unlayered rule).
 - **D9. Every field checked by `pattern` states its format in its hint**, held by `components/form-hints.test.ts`. A
   hint is 14 px (`text-sm`), the size of the message beside it on 0056's type scale, because the password policy, the
   no-patient-information rule and the formats are read there. A hint written beside a hand-written control uses the
@@ -217,8 +224,8 @@ refused the "123 456" an authenticator app copies; and that several fields check
 - `SelectField` takes option groups (`{ group, options }`), so a raw select with `optgroup`s (Coverage's contract) is a
   `SelectField` like any other.
 - Mail to the support address opens a ticket and no field hint reaches it, so the support card says the
-  no-patient-information rule for mail; a ticket refused for patient information names every field that holds it at
-  once.
+  no-patient-information rule for mail and describes the address's link with it; a ticket refused for patient
+  information, and a status-page incident refused for an identifier, name every field that holds one at once.
 - The FRM rows of the test matrix hold the behaviour: a browser harness over the real components in the unit project,
   and `apps/web/e2e/forms-keep-input.spec.ts` with five personas of its own.
 
@@ -232,9 +239,10 @@ refused the "123 456" an authenticator app copies; and that several fields check
 - **Without JavaScript, what was typed is lost on a refusal.** The post still reaches the action once, and the page
   comes back with the summary and each field's own message, but every field is empty and a new request key is
   rendered: keeping the values would mean echoing them from the server, which D1 rules out.
-- **A hand-written form outside `ActionForm`, the version form, the export form and the split form** (#42's upload
-  form) neither pins its key after a dropped press nor watches the person's mark, until it adopts this pattern after
-  #42.
+- **A hand-written form outside `ActionForm` and the version form** pins no key after a dropped press. The export form
+  needs none: a drop there shows the error screen, which invites no press, and `requestExportOnce` makes a repeated
+  request one; it does watch the person's mark (D10), as the split form, an `ActionForm`, does. #42's upload form
+  neither pins its key nor watches the mark, until it adopts this pattern after #42.
 
 ## Not verified here
 

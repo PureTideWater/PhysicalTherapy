@@ -6,6 +6,8 @@
   "synthetic": true,
   "completesIn": 1,
   "assertedBy": [
+    "apps/web/src/components/action-form.browser.test.tsx",
+    "apps/web/src/components/form-hints.test.ts",
     "apps/web/e2e/forms-keep-input.spec.ts",
     "apps/web/e2e/packets.spec.ts",
     "apps/web/e2e/uploads.spec.ts"

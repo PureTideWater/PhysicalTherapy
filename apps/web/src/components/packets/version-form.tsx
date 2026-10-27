@@ -21,7 +21,8 @@ import { NarrativeEditor } from './narrative-editor';
  * one route. The server writes, verifies and stores the version, and alone decides whether it may be approved.
  *
  * It submits as ActionForm does (docs/adr/0077): from onSubmit, so a refusal keeps the narrative, the prompt-pay
- * state and the ticks, with one guard across both actions; the submitter chooses the action (its data-intent), and
+ * state and the ticks, with one guard across both actions, and the form shows the answer that came last, so while one
+ * button's press is out the other's older answer never shows; the submitter chooses the action (its data-intent), and
  * the buttons keep their formAction and intent, so the post without JavaScript still reaches the right one. A refusal
  * shows the shared summary first in the form, naming each field by its label, and marks the fields. A press whose
  * connection dropped pins its request key for the next press of either button, so the export status's refresh beside
@@ -96,18 +97,26 @@ export function VersionForm({
   readonly model: ModelDraftGroup | null;
 }) {
   // One guard across both actions: a press for either sends nothing while the other is out. One pinned request key too:
-  // a retry by either button after a dropped press sends the key that press carried.
+  // a retry by either button after a dropped press sends the key that press carried. One count of responses, so no two
+  // share a number, whichever action gave them.
   const inFlight = useRef(false);
   const heldKey = useRef<string | null>(null);
-  const write = useGuardedSubmit(writeAction, { inFlight, heldKey });
-  const draft = useGuardedSubmit(modelAction, { inFlight, heldKey });
+  const seq = useRef(0);
+  const write = useGuardedSubmit(writeAction, { inFlight, heldKey, seq });
+  const draft = useGuardedSubmit(modelAction, { inFlight, heldKey, seq });
   const formRef = useRef<HTMLFormElement>(null);
-  const [clicked, setClicked] = useState<VersionIntent | null>(null);
+  // The button pressed last, and the one before it: while a press is out, the answer shown is the one before's.
+  const [presses, setPresses] = useState<{ readonly last: VersionIntent | null; readonly before: VersionIntent | null }>({ last: null, before: null });
+  const clicked = presses.last;
   const pending = write.pending || draft.pending;
-  // What the last button sent came back with. With no press seen on this page (the post without JavaScript, or a press
+  // The answer that came last, so a press of the other button, while it works, leaves the form as it was (as ActionForm
+  // does), never showing that action's older answer. With no answer numbered (the post without JavaScript, or a press
   // React replayed before the page hydrated), whichever action answered: the model's button posts to its own.
-  const shown = clicked === 'model_draft' || (clicked === null && draft.state.error !== undefined && write.state.error === undefined) ? draft : write;
-  const pressed = [...submits, ...(model?.submit === null || model?.submit === undefined ? [] : [model.submit])].find((submit) => submit.intent === clicked);
+  const writeSeq = write.state.seq ?? 0;
+  const draftSeq = draft.state.seq ?? 0;
+  const shown = draftSeq > writeSeq || (draftSeq === writeSeq && draft.state.error !== undefined && write.state.error === undefined) ? draft : write;
+  const answered = pending ? presses.before : presses.last;
+  const pressed = [...submits, ...(model?.submit === null || model?.submit === undefined ? [] : [model.submit])].find((submit) => submit.intent === answered);
   const { shown: state, generation } = useClearedForAnotherPerson(formRef, shown.state, heldKey);
   function onSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
@@ -117,7 +126,7 @@ export function VersionForm({
     inFlight.current = true;
     const submitter = (event.nativeEvent as SubmitEvent).submitter;
     const intent = (submitter?.dataset.intent ?? 'save') as VersionIntent;
-    setClicked(intent);
+    setPresses((before) => ({ last: intent, before: before.last }));
     (intent === 'model_draft' ? draft : write).send(new FormData(event.currentTarget, submitter));
   }
   const button = (submit: VersionSubmit) => <Submit key={submit.intent} submit={submit} formAction={submit.intent === 'model_draft' ? draft.formAction : undefined} pending={pending} />;

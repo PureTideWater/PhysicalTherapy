@@ -8,9 +8,10 @@ import { describe, expect, it } from 'vitest';
  * Every field the browser checks by `pattern` states its format in words (test matrix FRM-04; docs/adr/0077,
  * decision D9; WCAG 3.3.2): its `hint`, or an `aria-describedby` naming text the page writes, so the browser's
  * generic "Please match the requested format" is never the only guide. And every hint is 14 px, the size of the
- * message beside it (D9): text a control's description names is never written by hand at 12 px. Read from the source
- * with the TypeScript compiler, so a field added later without a hint, or a hint written small, fails here rather than
- * waiting for a reviewer.
+ * message beside it (D9): text a control's description names is never written by hand at 12 px. And no form sets its
+ * flex direction behind a breakpoint (D3), which the stylesheet's wrap rule reads by class. Read from the source with
+ * the TypeScript compiler, so a field added later without a hint, a hint written small, or a form that turns at a
+ * breakpoint fails here rather than waiting for a reviewer.
  */
 
 const SOURCE = path.resolve(import.meta.dirname, '..');
@@ -164,5 +165,47 @@ describe('hints at 14 px (FRM-04; docs/adr/0077, D9)', () => {
   it('keeps its allowlist short: each file on it still has a description at 12 px', () => {
     const stale = [...SMALL_ALLOWED.keys()].filter((file) => !DESCRIBED.some((found) => found.file === file && found.small));
     expect(stale).toEqual([]);
+  });
+});
+
+interface FormClasses {
+  readonly where: string;
+  readonly classes: string;
+}
+
+/** The classes each form's source writes: a `<form>`'s, an ActionForm's, or any `…Form` component's, which passes them on. */
+function formClasses(file: string, text: string): FormClasses[] {
+  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const found: FormClasses[] = [];
+  const visit = (node: ts.Node): void => {
+    if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && /^(?:form|[A-Z]\w*Form)$/.test(node.tagName.getText(source))) {
+      const where = `${file}:${String(source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1)}`;
+      for (const attribute of node.attributes.properties) {
+        if (ts.isJsxAttribute(attribute) && attribute.name.getText(source) === 'className') {
+          found.push(...attributeTexts(source, attribute.initializer).map((classes) => ({ where, classes })));
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return found;
+}
+
+const FORM_CLASSES = sources(SOURCE).flatMap((file) => formClasses(path.relative(SOURCE, file).split(path.sep).join('/'), readFileSync(file, 'utf8')));
+
+/** A flex direction set behind a breakpoint or another variant: `md:flex-row`, `max-md:flex-col`. */
+const DIRECTION_BY_VARIANT = /(^|\s)[\w-]+(:[\w-]+)*:flex-(row|col)(-reverse)?(\s|$)/;
+
+describe('column forms that never wrap (FRM-08; docs/adr/0077, D3)', () => {
+  it('finds the forms it checks', () => {
+    expect(FORM_CLASSES.length).toBeGreaterThan(50);
+  });
+
+  // A refused form wraps unless its classes say flex-col or flex-col-reverse (packages/ui/src/styles.css), and a
+  // wrapping column sizes its line to a select's longest option, past a phone's width (U-UX-1). A form whose direction
+  // changes at a breakpoint would wrap as a column, or stay unwrapped as a row.
+  it('sets no form’s direction behind a breakpoint or another variant', () => {
+    expect(FORM_CLASSES.filter(({ classes }) => DIRECTION_BY_VARIANT.test(classes)).map(({ where, classes }) => `${where} ${classes}`)).toEqual([]);
   });
 });

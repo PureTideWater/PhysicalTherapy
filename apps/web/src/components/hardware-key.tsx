@@ -104,7 +104,11 @@ export function HardwareKeySignIn() {
   }
 
   return (
+    // A post, though nothing is sent through it: a press before the page is live, or with JavaScript off, submits the
+    // form natively, and a GET would put the email in the address, the history and the logs. A post to a page with no
+    // server action renders the page again.
     <form
+      method="post"
       className="flex flex-col gap-4"
       onSubmit={(event) => {
         event.preventDefault();

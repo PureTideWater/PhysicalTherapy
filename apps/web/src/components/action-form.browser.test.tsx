@@ -32,7 +32,7 @@ interface Control {
 /** #50's hand-off, as the harness page exposes it: what an explanation, or the note after a list, would take. */
 interface Takeover {
   focus: (keys: readonly string[]) => boolean;
-  orphaned: (prefix: string) => readonly string[] | null;
+  orphaned: (prefix: string) => { readonly lines: readonly string[]; readonly kind: string } | null;
 }
 
 let harness: Harness;
@@ -445,6 +445,29 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     await page.close();
   });
 
+  it('FRM-01, FRM-03: while the version form’s other button works, the form keeps the answer it shows and the focus, never that button’s older answer; each answer is a new summary', async () => {
+    const page = await harness.open('version');
+    await refusedWith(page, { error: 'SYNTHETIC first refusal of the model’s draft.' }, 'Draft with the model');
+    await refusedWith(page, { error: 'SYNTHETIC refusal of the save.' }, 'Save as a new version');
+    expect(await page.textContent(DESCRIPTION)).toBe('SYNTHETIC refusal of the save.');
+    await script(page, { hold: { error: 'SYNTHETIC second refusal of the model’s draft.' } });
+    const model = page.getByRole('button', { name: 'Draft with the model', exact: true });
+    await model.click();
+    await page.waitForFunction(() => (window as unknown as { harness: Control }).harness.release !== null);
+    expect(await page.textContent(DESCRIPTION)).toBe('SYNTHETIC refusal of the save.');
+    expect(await model.evaluate((element) => element === document.activeElement)).toBe(true);
+    expect(await page.locator('[data-slot="pending-status"]').allTextContents()).toEqual(['', 'Working…']);
+    await page.evaluate(() => {
+      (window as unknown as { harness: Control }).harness.release?.();
+    });
+    // The model's answer, though its action numbers it as the save's was, inserts a summary of its own.
+    await shownCount(page, 3);
+    expect(await page.textContent(DESCRIPTION)).toBe('SYNTHETIC second refusal of the model’s draft.');
+    expect(await focused(page)).toBe('refusal-summary');
+    expect(await page.locator(SUMMARY).count()).toBe(1);
+    await page.close();
+  });
+
   it('FRM-01: the export form reads a page out of date again and invites the person’s own press again, in the summary’s words', async () => {
     const page = await harness.open('export');
     const description = '[data-state="error"] [data-slot="alert-description"]';
@@ -494,7 +517,7 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     await page.close();
   });
 
-  it('FRM-04: the summary is first, on a line of its own: a grid keeps its columns and a row wraps', async () => {
+  it('FRM-04: the summary is first, on a line of its own: a grid keeps its columns, a row wraps and a column never does', async () => {
     const grid = await harness.open('grid');
     const columns = () =>
       grid.evaluate(() => ['tag', 'value', 'tagNote'].map((name) => (document.getElementById(`field-${name}`)?.getBoundingClientRect().x ?? 0) - (document.querySelector('form')?.getBoundingClientRect().x ?? 0)));
@@ -512,6 +535,16 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     const [summaryBottom, selectTop] = await row.evaluate((selector) => [document.querySelector(selector)?.getBoundingClientRect().bottom ?? 0, document.getElementById('field-status')?.getBoundingClientRect().top ?? 0], SUMMARY);
     expect(selectTop).toBeGreaterThanOrEqual(summaryBottom ?? 0);
     await row.close();
+
+    // A column form never wraps, refused or not: a wrapping column sizes its line to a select's longest option and
+    // pushes a phone's page sideways (U-UX-1).
+    const column = await harness.open('keep');
+    await refusedWith(column, invalid(ZIP));
+    expect(await column.evaluate(() => [document.querySelector('form')?.className, getComputedStyle(document.querySelector('form') as HTMLFormElement).flexWrap])).toEqual([
+      'flex flex-col gap-4',
+      'nowrap',
+    ]);
+    await column.close();
   });
 
   it('FRM-04: the lead counts the fields the page places; each item names its field by the label the person sees, never by its key', async () => {
@@ -712,6 +745,30 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     await page.close();
   });
 
+  it('FRM-07: in forced colours (a Windows contrast theme) a pressed Show takes the system’s highlight, so it still looks pressed (U-A11Y-3)', async () => {
+    const page = await harness.open('keep');
+    await page.emulateMedia({ forcedColors: 'active' });
+    const show = page.getByRole('button', { name: 'Show password', exact: true });
+    const look = () => show.evaluate((element) => [getComputedStyle(element).backgroundColor, getComputedStyle(element).color]);
+    const highlight = await page.evaluate(() => {
+      const probe = document.createElement('span');
+      probe.style.backgroundColor = 'Highlight';
+      probe.style.color = 'HighlightText';
+      document.body.append(probe);
+      const colours = [getComputedStyle(probe).backgroundColor, getComputedStyle(probe).color];
+      probe.remove();
+      return colours;
+    });
+    const unpressed = await look();
+    expect(unpressed).not.toEqual(highlight);
+    await show.click();
+    expect(await show.getAttribute('aria-pressed')).toBe('true');
+    expect(await look()).toEqual(highlight);
+    await show.click();
+    expect(await look()).toEqual(unpressed);
+    await page.close();
+  });
+
   it('FRM-08: below the md breakpoint controls are at least 16 px; at 1280 px an input keeps its 14 px', async () => {
     const sizes = (page: Page) =>
       page.evaluate(() => ['#field-zip', '#field-reason', '#field-why', '#raw-note'].map((selector) => Number.parseFloat(getComputedStyle(document.querySelector(selector) as HTMLElement).fontSize)));
@@ -723,6 +780,21 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     const desk = await harness.open('keep');
     expect((await sizes(desk))[0]).toBe(14);
     await desk.close();
+  });
+
+  it('FRM-08: a select that cuts its choice shows it whole on a line under it, which follows a change and a reset button the person presses (U-UX-8)', async () => {
+    const page = await harness.open('chosen');
+    const line = '[data-slot="chosen-text"]';
+    // "Q1" fits the narrow select: no line repeats it.
+    expect(await page.locator(line).count()).toBe(0);
+    await page.selectOption('#field-run', 'long');
+    await page.waitForSelector(line);
+    expect([await page.textContent(line), await page.getAttribute(line, 'aria-hidden')]).toEqual(['SYNTHETIC REMITTANCES OF THE FIRST QUARTER (release 3)', 'true']);
+    // A reset button's press runs a microtask before the form's values go back, so the line is measured after them.
+    await page.getByRole('button', { name: 'Start again', exact: true }).click();
+    await page.waitForSelector(line, { state: 'detached' });
+    expect(await page.inputValue('#field-run')).toBe('q1');
+    await page.close();
   });
 
   it('FRM-04: an issue on a hidden field reads after the name the field gives itself, with no lead and no link, and the summary takes the focus (#50)', async () => {
@@ -751,7 +823,7 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     await refusedWith(page, invalid(['runId', 'is not the run in effect for its service dates.']), 'Re-run under release 900001');
     await page.waitForFunction(() => (window as unknown as { harness: Control }).harness.refreshes > 0);
     // Its row left the list on the refresh: the note after the list takes the refusal as the person read it, once.
-    expect(await takeover.orphaned('rerun:')).toEqual(['This run: is not the run in effect for its service dates.']);
+    expect(await takeover.orphaned('rerun:')).toEqual({ lines: ['This run: is not the run in effect for its service dates.'], kind: 'error' });
     expect(await takeover.orphaned('rerun:')).toBeNull();
     expect(await refreshes(page)).toBe(1);
 
@@ -759,6 +831,11 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     await page.waitForFunction(() => (window as unknown as { harness: Control }).harness.refreshes > 1);
     expect(await takeover.focus(['rerun:run-1'])).toBe(false);
     expect(await refreshes(page)).toBe(2);
+
+    // A key used before reads the page again too; the note after the list titles it as the summary did.
+    await refusedWith(page, DUPLICATE, 'Re-run under release 900001');
+    await page.waitForFunction(() => (window as unknown as { harness: Control }).harness.refreshes > 2);
+    expect(await takeover.orphaned('rerun:')).toEqual({ lines: [], kind: 'duplicate' });
     await page.close();
   });
 
@@ -822,7 +899,7 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     await page.close();
   });
 
-  it('FRM-05: a refused hardware-key sign-in shows its problem first in the form, before the email, and focuses it (U-UX-10)', async () => {
+  it('FRM-04, FRM-05: a refused hardware-key sign-in shows its problem first in the form, before the email, and focuses it (U-UX-10)', async () => {
     const page = await harness.open('hardwareKey');
     // The server's answer to the ceremony's first step: no key to ask, with the sign-in's own words.
     await page.route('**/api/sign-in/hardware-key/options', (route) =>
@@ -839,6 +916,23 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     ]);
     expect(await page.evaluate(() => document.activeElement?.getAttribute('role') ?? '')).toBe('alert');
     expect(await page.inputValue('#key-email')).toBe('forms-harness@synthetic.test');
+    await page.close();
+  });
+
+  it('a hardware-key sign-in submitted natively, as a press before the page is live is, posts the email and never puts it in the address', async () => {
+    const page = await harness.open('hardwareKey');
+    await page.fill('#key-email', 'forms-harness@synthetic.test');
+    await page.route(
+      (url) => url.pathname.endsWith('/forms-harness.html'),
+      (route) => route.abort(),
+    );
+    const native = page.waitForRequest((request) => request.isNavigationRequest());
+    // The browser's own submission, with no submit event: what React never sees before it hydrates the form.
+    await page.evaluate(() => {
+      HTMLFormElement.prototype.submit.call(document.querySelector('form'));
+    });
+    const request = await native;
+    expect([request.method(), new URL(request.url()).search, request.postData()]).toEqual(['POST', '?form=hardwareKey', 'email=forms-harness%40synthetic.test']);
     await page.close();
   });
 });

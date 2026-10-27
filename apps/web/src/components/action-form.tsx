@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Fragment, type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type { ActionState } from '../lib/http/next';
-import { FormIssues, PendingStatus, RefusalSummary, useClearedForAnotherPerson, useGuardedSubmit } from './form-issues';
+import { FormIssues, PendingStatus, RefusalSummary, SUMMARY_TITLES, type SummaryKind, summaryKind, useClearedForAnotherPerson, useGuardedSubmit } from './form-issues';
 
 export { summaryLead } from './form-issues';
 
@@ -91,14 +91,15 @@ export function ActionForm({
 const TAKEOVER_MS = 15_000;
 
 /**
- * The form refused last that asked for a refresh, by its key, when, and its refusal as the form showed it (each issue
- * after its field's name), read when it is taken: one per page, in this browser tab's memory.
+ * The form refused last that asked for a refresh, by its key, when, its refusal as the form showed it (each issue
+ * after its field's name, read when it is taken) and its kind (a key used before is "Already sent", never "Not done"):
+ * one per page, in this browser tab's memory.
  */
-let refused: { readonly key: string; readonly at: number; readonly lines: () => readonly string[] } | null = null;
+let refused: { readonly key: string; readonly at: number; readonly lines: () => readonly string[]; readonly kind: SummaryKind } | null = null;
 
-/** Records a refusal of the form with this key, before its refresh (RefreshAfterRefusal), with its lines. */
-export function noteRefusal(key: string, at: number, lines: readonly string[] = []): void {
-  refused = { key, at, lines: () => lines };
+/** Records a refusal of the form with this key, before its refresh (RefreshAfterRefusal), with its lines and its kind. */
+export function noteRefusal(key: string, at: number, lines: readonly string[] = [], kind: SummaryKind = 'error'): void {
+  refused = { key, at, lines: () => lines, kind };
 }
 
 /**
@@ -114,18 +115,24 @@ export function takesFocus(keys: readonly string[], at: number, focusLost: boole
   return true;
 }
 
+/** A refusal handed to the note after a list (RefusalFallback): its lines, and its kind, which titles it. */
+export interface OrphanedRefusal {
+  readonly lines: readonly string[];
+  readonly kind: SummaryKind;
+}
+
 /**
  * The refusal of a form whose key starts with `prefix` but names none of `present` (its row left the list on the
- * refresh, so no explanation takes its place), within TAKEOVER_MS, when the focus fell to the page: its lines, which
- * ends the hand-off. Null otherwise (an explanation of its own took it, or none is due).
+ * refresh, so no explanation takes its place), within TAKEOVER_MS, when the focus fell to the page: its lines and its
+ * kind, which ends the hand-off. Null otherwise (an explanation of its own took it, or none is due).
  */
-export function takesOrphanedRefusal(prefix: string, present: readonly string[], at: number, focusLost: boolean): readonly string[] | null {
+export function takesOrphanedRefusal(prefix: string, present: readonly string[], at: number, focusLost: boolean): OrphanedRefusal | null {
   if (refused === null || !focusLost || !refused.key.startsWith(prefix) || present.includes(refused.key) || at - refused.at > TAKEOVER_MS) {
     return null;
   }
-  const { lines } = refused;
+  const { lines, kind } = refused;
   refused = null;
-  return lines();
+  return { lines: lines(), kind };
 }
 
 /**
@@ -158,7 +165,7 @@ export function RefusalTakeover({ keys, children, className }: { readonly keys: 
  */
 export function RefusalFallback({ prefix, present, lead }: { readonly prefix: string; readonly present: readonly string[]; readonly lead: string }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [lines, setLines] = useState<readonly string[] | null>(null);
+  const [taken, setTaken] = useState<OrphanedRefusal | null>(null);
   const presentList = present.join(' ');
   // Read from the page the wrapper is in (its document's focus), after the list's own explanations had their turn.
   useLayoutEffect(() => {
@@ -167,31 +174,32 @@ export function RefusalFallback({ prefix, present, lead }: { readonly prefix: st
       return;
     }
     const active = page.activeElement;
-    const taken = takesOrphanedRefusal(prefix, presentList.split(' '), Date.now(), active === null || active === page.body);
-    if (taken !== null) {
-      setLines(taken);
+    const orphaned = takesOrphanedRefusal(prefix, presentList.split(' '), Date.now(), active === null || active === page.body);
+    if (orphaned !== null) {
+      setTaken(orphaned);
     }
   }, [prefix, presentList]);
   useEffect(() => {
-    if (lines !== null) {
+    if (taken !== null) {
       ref.current?.focus();
     }
-  }, [lines]);
+  }, [taken]);
   return (
     <div
       ref={ref}
-      tabIndex={lines === null ? undefined : -1}
-      data-takes-over={lines === null ? undefined : `${prefix}*`}
+      tabIndex={taken === null ? undefined : -1}
+      data-takes-over={taken === null ? undefined : `${prefix}*`}
       className="rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      {lines === null ? null : (
+      {taken === null ? null : (
         <Alert variant="destructive" data-state="refused-row-gone">
-          <AlertTitle>Not done</AlertTitle>
+          {/* Titled as the form's summary was: a key used before is "Already sent", its row gone or not. */}
+          <AlertTitle>{SUMMARY_TITLES[taken.kind]}</AlertTitle>
           <AlertDescription>
             <p>{lead}</p>
-            {lines.length === 0 ? null : (
+            {taken.lines.length === 0 ? null : (
               <ul className="mt-1 list-disc pl-5">
-                {lines.map((line) => (
+                {taken.lines.map((line) => (
                   <li key={line}>{line}</li>
                 ))}
               </ul>
@@ -229,7 +237,7 @@ export function RefreshAfterRefusal({ state, takeover, formRef }: { readonly sta
     }
     done.current = state;
     if (takeover !== undefined) {
-      refused = { key: takeover, at: Date.now(), lines: summaryLines(formRef.current) };
+      refused = { key: takeover, at: Date.now(), lines: summaryLines(formRef.current), kind: summaryKind(state) };
     }
     router.refresh();
   }, [state, router, takeover, formRef]);

@@ -70,6 +70,16 @@ describe('Field (FRM-04)', () => {
     expect(attribute(inForm(<Field label="Email" name="email" type="email" />), 'field-email', 'data-secret')).toBeNull();
   });
 
+  it('keeps a one-time code from a spelling service, as a password is, whatever the caller passes (S-SEC-3’s follow-up)', () => {
+    const marks = (html: string) => ['data-secret', 'spellcheck', 'autocorrect', 'autocapitalize'].map((name) => attribute(html, 'field-code', name));
+    expect(marks(inForm(<Field label="Six-digit code" name="code" autoComplete="one-time-code" />))).toEqual(['', 'false', 'off', 'none']);
+    // A spread cast past the props type (TypeScript reads no hyphenated name) undoes none of them.
+    const forced = { 'data-secret': undefined, spellCheck: true, autoCorrect: 'on', autoCapitalize: 'sentences' } as object;
+    expect(marks(inForm(<Field label="Six-digit code" name="code" autoComplete="one-time-code" {...forced} />))).toEqual(['', 'false', 'off', 'none']);
+    // Any other field is left as the caller writes it.
+    expect(['spellcheck', 'autocorrect'].map((name) => attribute(inForm(<Field label="Email" name="email" type="email" />), 'field-email', name))).toEqual([null, null]);
+  });
+
   it('says a refused code was emptied, after the error and before the hint', () => {
     const issue = { field: 'code', message: 'enter the code your authenticator app shows now' };
     const html = inForm(<Field label="Six-digit code" name="code" autoComplete="one-time-code" hint="Six digits. Spaces are fine." />, [issue]);

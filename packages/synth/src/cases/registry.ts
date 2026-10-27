@@ -660,6 +660,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/components/action-form.browser.test.tsx',
     'apps/web/src/components/action-form.test.tsx',
     'apps/web/src/components/form-issues.test.ts',
+    'apps/web/src/components/form-hints.test.ts',
     'apps/web/src/components/fields.test.tsx',
     'apps/web/e2e/forms-keep-input.spec.ts',
   ]),
@@ -673,6 +674,8 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/e2e/forms-keep-input.spec.ts',
   ]),
   'FRM-08': none(1, 'The public request form, synthetic practices’ forms, the uploads drop zone and the console’s status page are measured and scanned in the browser; no file.', [
+    'apps/web/src/components/action-form.browser.test.tsx',
+    'apps/web/src/components/form-hints.test.ts',
     'apps/web/e2e/forms-keep-input.spec.ts',
     'apps/web/e2e/packets.spec.ts',
     'apps/web/e2e/uploads.spec.ts',

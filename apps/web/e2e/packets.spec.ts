@@ -445,6 +445,12 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
         // The release is what tells two runs of one period apart, and 16 px cuts it off the select.
         expect(run).toMatch(/ \(release \d+\)$/);
         await expect(shown).toHaveText(run);
+        // Back at a desktop's width, now that the page is live (the line proves it), the line goes: the count of 0 above
+        // could have been read before the page hydrated.
+        await page.setViewportSize({ width: 1280, height: 720 });
+        await expect(shown).toHaveCount(0);
+        await page.setViewportSize({ width: 390, height: 844 });
+        await expect(shown).toHaveText(run);
         await atPhoneWidth(page, 'Cases');
         await page.goto(`/p/${practiceId}/coverage`);
         const letter = page.getByRole('form', { name: 'Letter' });

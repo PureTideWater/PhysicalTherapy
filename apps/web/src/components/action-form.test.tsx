@@ -103,9 +103,16 @@ describe('a refused row that leaves the list on the refresh (UX recheck of PR #5
     expect(takesOrphanedRefusal('rerun:', ['rerun:run-4', 'rerun:run-5'], 1_100, true)).toBeNull();
     expect(takesOrphanedRefusal('accept:', ['accept:run-5'], 1_100, true)).toBeNull();
     expect(takesOrphanedRefusal('rerun:', ['rerun:run-5'], 1_100, false)).toBeNull();
-    expect(takesOrphanedRefusal('rerun:', ['rerun:run-5'], 1_200, true)).toEqual(['This run: is not the run in effect for its service dates.']);
+    expect(takesOrphanedRefusal('rerun:', ['rerun:run-5'], 1_200, true)).toEqual({ lines: ['This run: is not the run in effect for its service dates.'], kind: 'error' });
     // Taken once.
     expect(takesOrphanedRefusal('rerun:', ['rerun:run-5'], 1_300, true)).toBeNull();
+  });
+
+  it('keeps the refusal’s kind, so a key used before is titled "Already sent" there too, never "Not done" (U-UX-4)', () => {
+    noteRefusal('rerun:run-7', 1_000, [], 'duplicate');
+    const taken = takesOrphanedRefusal('rerun:', [], 1_100, true);
+    expect(taken).toEqual({ lines: [], kind: 'duplicate' });
+    expect(SUMMARY_TITLES[taken?.kind ?? 'error']).toBe('Already sent');
   });
 
   it('expires as the hand-off does, and renders nothing until it takes a refusal', () => {

@@ -114,6 +114,20 @@
 }
 
 /*
+ * A pressed toggle (aria-pressed, such as a password's Show) in forced colours (Windows contrast themes): the system's
+ * palette replaces every colour, so the pressed look (a rule in the text's colour on the inset surface) would match the
+ * unpressed one. A pressed button takes the system's highlight instead, its words in the highlight's text colour
+ * (docs/adr/0077, D8).
+ */
+@media (forced-colors: active) {
+  button[aria-pressed='true'] {
+    border-color: Highlight;
+    background-color: Highlight;
+    color: HighlightText;
+  }
+}
+
+/*
  * Below the md breakpoint, where the rail folds into the header's Menu (ADR 0056), form controls are 16 px, so iOS
  * Safari does not zoom the page on focus (ADR 0077); from md up they keep the dense 14 px. The viewport's
  * maximum-scale stays unset (WCAG 1.4.4).
