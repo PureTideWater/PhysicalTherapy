@@ -20,3 +20,10 @@
 - 6. ops designs amended (uncommitted, claude/build-ops worktree /home/user/ops): pr6b-plan.md D2 (order: paused, budget, list + note); pr6b-email-streams.md D5 probe_missed note, D6(a) global list counted, mapping section (M1, M2), D9 step 4 order + as-built triggers + precheck, triggers table note, test plan subtypes/refusal list/probe notes. All 'Amended by the fix round of 2026-10-27'.
 - 4. first checks run at 741fcbbc: typecheck 0; eslint 1 (mail-events.db.test.ts:347 no-unsafe-return of expect.objectContaining). Stopped the run. Fixed (`(stream: string): unknown =>`), eslint on file 0. Folded into the worker commit (not pushed): COMMITS NOW 90cfe8b8 (db), 0cbd4540 (domain model), a0357f15 (worker), aaf8f34f (infra), c37fa7cc (docs). Tree diff vs old 741fcbbc = only that line. Branch co-001/pr-06b-mail-streams at c37fa7cc.
 - 4. RESTARTED all checks at c37fa7cc (checks.sh, results appended to checks/results.tsv)
+- 4. typecheck 0 (28 s) at c37fa7cc
+- 4. eslint (14 changed .ts files) 0 at c37fa7cc
+- 4. unit 0 at c37fa7cc: 62 files, 1322 tests (#76's 6 files, every unit file matching mail or screening, infra/ whole)
+- 4. db 0 at c37fa7cc: 10 files (apps/worker/src/platform x5, packages/db/src screening.db, screening-queue.db, mail.db, domain-model-drift.db, function-files.db), 165 passed, 1 skipped (restore-drill pg_dump drill: pg_dump 16 client vs PG 18 server, environment), db tp_pr6b4v_db_1 migrated from empty, dropped
+- 4. domain-model --check 0 at c37fa7cc (fresh tp_pr6b4v_dmc_1 from empty, dropped): document matches schema at 20261107090000_mail_streams.sql; 375 function files match
+- 4. synth --all 0 at c37fa7cc: 241 cases, 0 written, 633 unchanged; 8 EMR formats 0 written, 16 unchanged; git diff --exit-code fixtures/synthetic clean
+- ALL CHECKS PASS at c37fa7cc. Tree clean, marker absent, no tp_pr6b4v_* database left. Not pushed. DONE except StructuredOutput.
