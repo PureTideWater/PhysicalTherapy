@@ -22,3 +22,5 @@ Clone: scratchpad/designs/suitecap1-author
 - Isolation: writers are READ COMMITTED (only read-only snapshots use RR; rerun.ts:286-306 asserts RC for acceptRun).
 - other per-practice advisory: pricing_current (shared/excl) 20261103090000:757-767.
 - probes dir: clone/tmp-probe (seed.mts); db tp_design_suitecap1_author_1
+## Run 2 (resumed after interruption)
+- probe DB tp_design_suitecap1_author_1 not present (never created or dropped); tmp-probe/seed.mts exists in clone

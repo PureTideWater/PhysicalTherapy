@@ -117,3 +117,6 @@ Marker route: touch <clone>/.claude/.allow-protected-edit, Edit migration, rm ma
 - NEW improvement (in progress): routes.ts S4 precheck moved AFTER the free typo hint (precheck-first made a mistyped
   address on the list read ADDRESS_REFUSED while an unlisted one read the hint: a small list oracle and a lost fix-it hint).
   Test: routes.db 'says the likely typo of a mistyped address on the refusal list as of any other'. Running fail-first.
+- 8128a036 hint-first (web routes.ts + routes.db test + ADR 0065 S4 passage). Failing first: new routes.db test (got
+  ADDRESS_REFUSED, expected the hint). After: routes.db 50/50; eslint clean; tsc apps/web clean.
+  NEXT: re-run e2e screening + mail-cutoff at 8128a036; then drop tp_pr6b4_db_1; final report.
