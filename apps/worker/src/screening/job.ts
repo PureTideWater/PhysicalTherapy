@@ -37,7 +37,7 @@ import { newScreeningToken, screeningTokenHash } from './token';
  * one of the consumer's worker threads, as tp_screening; the web app sends it for a run once the upload is stored, at
  * the run's priority. Every minute the sweep (screening_sweep, on the consumer's main thread, which prices nothing)
  * sends the job again for runs queued longer than half a minute (a send that failed) and for runs whose pricing has
- * made no progress for 2 minutes (a consumer that stopped), and fails those out of attempts; pg-boss then takes them
+ * made no progress for 2 minutes (a consumer that stopped), and finishes or fails those out of attempts; pg-boss then takes them
  * in its order, the higher priority first, through the consumer's three slots.
  *
  * One run: claim it (queued to pricing, or a stale one again, at most three attempts); fail it when its pinned
@@ -65,10 +65,11 @@ import { newScreeningToken, screeningTokenHash } from './token';
  * EXPIRED and its contact told it could not be completed (its link would open nothing).
  *
  * A send that fails rolls the completion back and the job fails; the run stays in pricing with every row recorded, and
- * the sweep claims it again once it is stale. After a third attempt the sweep fails the run and tells the contact in the
- * failure's transaction: a notice the mail service refuses is logged, and the run has failed anyway, but a notice refused
- * because the screening's set is disabled rolls the failure back, and the run is failed and told after the resume
- * (review M6).
+ * the sweep claims it again once it is stale. After a third attempt the sweep completes the run on that attempt when it
+ * priced every row (a pause kept it from completing, or it stopped just before), and otherwise fails it and tells the
+ * contact in the failure's transaction: a notice the mail service refuses is logged, and the run has failed anyway, but a
+ * notice refused because the screening's set is disabled rolls the failure back, and the run is failed and told after the
+ * resume (review M6 and M7).
  *
  * The sweep takes each due run on its own: a run that throws (its contact's address refused by the mail service,
  * say) is logged and the sweep goes on to the next, so no one run holds up the others.
@@ -80,7 +81,7 @@ import { newScreeningToken, screeningTokenHash } from './token';
  * stream is not sending, sends its job again once the stream is resumed and SES confirms. The database refuses a claim,
  * a completion or a failure while not sending (screening_run_mail_gate, screening_mail_paused), and SES refuses a send
  * through a disabled set (SendingPausedException): either rolls the step back, the run waits as above, and the stale
- * rule claims it again after the resume. A run the web received before the stream's last resume was held by the pause:
+ * rule claims it again after the resume, or, on its last attempt with every row priced, the sweep completes it. A run the web received before the stream's last resume was held by the pause:
  * its email is logged `screening result emailed after waiting`, outside the 60-second promise's metric. Each message goes
  * through the screening stream, from its own sender with Reply-To the support address, tagged with the run's ID.
  *
@@ -276,14 +277,7 @@ async function priceWhileSending(dependencies: ScreeningJobDependencies, runId: 
   }
   const key = `${String(claimed.releaseNo)}:${claimed.manifestSha256}`;
   const { attempt } = claimed;
-  const superseded = (): 'not_claimed' => {
-    logger.info('screening run attempt stopped: a later claim took the run over, or a later screening replaced it', {
-      job_id: dependencies.jobId,
-      screening_run_id: runId,
-      error_code: 'SCREENING_ATTEMPT_SUPERSEDED',
-    });
-    return 'not_claimed';
-  };
+  const superseded = (): 'not_claimed' => attemptStopped(dependencies, runId);
   const unavailable = async (): Promise<'failed' | 'not_claimed'> => {
     // The pinned release is not there as pinned (or was withdrawn): nothing can price the run.
     RELEASES.delete(key);
@@ -390,6 +384,27 @@ async function priceWhileSending(dependencies: ScreeningJobDependencies, runId: 
   }
   logger.info('screening run rows priced', { job_id: dependencies.jobId, screening_run_id: runId, elapsed_ms: Math.round(pricingMs), record_count: pricedRows });
   logger.info('screening run rows recorded', { job_id: dependencies.jobId, screening_run_id: runId, elapsed_ms: Math.round(recordingMs), record_count: recordedRows });
+  return completeOnAttempt(dependencies, runId, attempt);
+}
+
+/** An attempt stopped by a later claim or a later screening of the practice: it fails and sends nothing. */
+function attemptStopped(dependencies: ScreeningJobDependencies, runId: string): 'not_claimed' {
+  dependencies.logger.info('screening run attempt stopped: a later claim took the run over, or a later screening replaced it', {
+    job_id: dependencies.jobId,
+    screening_run_id: runId,
+    error_code: 'SCREENING_ATTEMPT_SUPERSEDED',
+  });
+  return 'not_claimed';
+}
+
+/**
+ * Completes a run whose rows are all priced, on its attempt, with the SHA-256 of a new link token, and sends the link to
+ * its contact in the completion's transaction; logs the time to email. A run whose screening expired meanwhile is failed
+ * as EXPIRED and told. A step the screening's mail refuses throws (screeningMailPaused()), as does a send that fails:
+ * either rolls the completion back.
+ */
+async function completeOnAttempt(dependencies: ScreeningJobDependencies, runId: string, attempt: number): Promise<ScreeningPriceOutcome> {
+  const { operator, logger } = dependencies;
   const token = (dependencies.newToken ?? newScreeningToken)();
   let sent: (CompletedRun & { readonly gate: ScreeningMailGate }) | null;
   try {
@@ -408,11 +423,11 @@ async function priceWhileSending(dependencies: ScreeningJobDependencies, runId: 
     });
   } catch (error) {
     if (attemptSuperseded(error)) {
-      return superseded();
+      return attemptStopped(dependencies, runId);
     }
     if (screeningExpired(error)) {
       if (!(await failScreeningRun(dependencies, runId, 'EXPIRED', attempt))) {
-        return superseded();
+        return attemptStopped(dependencies, runId);
       }
       logger.warn('screening run failed: its screening expired while it was priced', { job_id: dependencies.jobId, screening_run_id: runId, error_code: 'EXPIRED' });
       return 'failed';
@@ -442,6 +457,35 @@ async function priceWhileSending(dependencies: ScreeningJobDependencies, runId: 
   return 'complete';
 }
 
+/**
+ * A stale run out of attempts (review M7). Its last attempt may have priced every row and then been kept from its
+ * completion: the database refuses a completion while the screening's mail is not sending, and SES a send through a
+ * disabled set, so a pause during pricing ends an attempt with every row recorded; or the attempt stopped between its
+ * last batch and its completion. Such a run is completed on that last attempt, which the completion's fence admits, and
+ * its link sent: the pause, not the run, stopped it. A run with rows still to price, or whose completion fails other than
+ * by the screening's mail, is failed and told (PRICING_ATTEMPTS_EXHAUSTED). A step the screening's mail refuses throws, and
+ * the run waits for the resume.
+ */
+async function finishOrFail(dependencies: ScreeningJobDependencies, run: { readonly runId: string; readonly attempts: number }): Promise<ScreeningPriceOutcome> {
+  const { logger, jobId } = dependencies;
+  const pending = await asOperator(dependencies.operator, (client) => pendingRows(client, run.runId, 0, 1, run.attempts));
+  if (pending.length === 0) {
+    try {
+      return await completeOnAttempt(dependencies, run.runId, run.attempts);
+    } catch (error) {
+      if (screeningMailPaused(error)) {
+        throw error;
+      }
+      logger.warn('screening run priced on its last attempt could not be completed; it is failed', { job_id: jobId, screening_run_id: run.runId, error_code: 'SCREENING_FINISH_FAILED' });
+    }
+  }
+  if (!(await failScreeningRun(dependencies, run.runId, 'PRICING_ATTEMPTS_EXHAUSTED'))) {
+    return 'not_claimed';
+  }
+  logger.warn('screening run failed after its last attempt', { job_id: jobId, screening_run_id: run.runId, error_code: 'PRICING_ATTEMPTS_EXHAUSTED' });
+  return 'failed';
+}
+
 export interface SweepOptions {
   /** Runs queued for less than this are left to their own job (0 in tests and the end-to-end journey). */
   readonly minQueuedAgeSeconds: number;
@@ -453,14 +497,10 @@ export interface SweepResult {
   readonly skipped: number;
 }
 
-/** One due run of the sweep: failed when out of attempts, else priced. */
+/** One due run of the sweep: finished or failed when out of attempts (finishOrFail()), else priced. */
 async function sweepOne(dependencies: ScreeningJobDependencies, run: { readonly runId: string; readonly status: 'queued' | 'pricing'; readonly attempts: number }): Promise<ScreeningPriceOutcome> {
   if (run.status === 'pricing' && run.attempts >= SCREENING_MAX_ATTEMPTS) {
-    if (!(await failScreeningRun(dependencies, run.runId, 'PRICING_ATTEMPTS_EXHAUSTED'))) {
-      return 'not_claimed';
-    }
-    dependencies.logger.warn('screening run failed after its last attempt', { job_id: dependencies.jobId, screening_run_id: run.runId, error_code: 'PRICING_ATTEMPTS_EXHAUSTED' });
-    return 'failed';
+    return finishOrFail(dependencies, run);
   }
   return priceScreeningRun(dependencies, run.runId);
 }
@@ -521,8 +561,8 @@ export interface ResendResult {
 }
 
 /**
- * The consumer's minute sweep (screening_sweep; it prices nothing, on the main thread): fails each stale run out of
- * attempts, and sends each other due run's job again with its singleton key, its priority and the screening heartbeat
+ * The consumer's minute sweep (screening_sweep; it prices nothing, on the main thread): completes each stale run out of
+ * attempts whose rows are all priced, or fails it (finishOrFail()), and sends each other due run's job again with its singleton key, its priority and the screening heartbeat
  * (enqueueScreeningRun), which pg-boss refuses while the run's job is queued, waiting to retry or active; then logs the
  * queue's gauge, `screening queue`, with the normal tier's queued runs (record_count) and its oldest one's wait since
  * the web received it (elapsed_ms; OldestQueuedMs). Each run on its own: one whose send throws is logged by its ID
@@ -543,8 +583,8 @@ export async function resendScreeningRuns(dependencies: ScreeningJobDependencies
   for (const run of due) {
     try {
       if (run.status === 'pricing' && run.attempts >= SCREENING_MAX_ATTEMPTS) {
-        if (await failScreeningRun(dependencies, run.runId, 'PRICING_ATTEMPTS_EXHAUSTED')) {
-          logger.warn('screening run failed after its last attempt', { job_id: jobId, screening_run_id: run.runId, error_code: 'PRICING_ATTEMPTS_EXHAUSTED' });
+        // Completed on its last attempt when it priced every row (no pricing here), else failed and told.
+        if ((await finishOrFail(dependencies, run)) === 'failed') {
           failed += 1;
         }
         continue;
