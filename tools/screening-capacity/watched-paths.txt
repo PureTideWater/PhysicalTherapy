@@ -294,6 +294,7 @@ packages/db/src/crypto/key-provider.ts
 packages/db/src/crypto/kms-key-provider.ts
 packages/db/src/crypto/practice-keys.ts
 packages/db/src/index.ts
+packages/db/src/mail-address.ts
 packages/db/src/migrate.ts
 packages/db/src/retention.ts
 packages/db/src/roles.ts
