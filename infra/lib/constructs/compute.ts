@@ -136,7 +136,8 @@ interface ContainerSpec {
  * (`tp-<env>`); the screening consumer and the platform's probes send the screening's results from
  * SCREENING_MAIL_FROM (results@screening.<domain>, Q12) with Reply-To the support address (SCREENING_REPLY_TO); the
  * platform drains MAIL_EVENTS_QUEUE_URL and sends probes only once MAIL_IDENTITIES_VERIFIED is `true` (phase 2); the web
- * validates a screening's address with SES (MAIL_VALIDATION=ses) at most MAIL_VALIDATION_DAILY_CAP times a UTC day.
+ * validates a screening's address with SES (MAIL_VALIDATION=ses) at most MAIL_VALIDATION_DAILY_CAP times a UTC day, as
+ * MAIL_VALIDATION_ROLE_ARN in the environment's address-validation account (docs/adr/0065).
  *
  * Secrets reach a container only from Secrets Manager (ECS reads them at start through each task's
  * execution role); every other setting is plain configuration. The worker and platform tasks beat
@@ -258,9 +259,12 @@ export class Compute extends Construct {
         // Screenings priced at once across the consumer: more queued and pricing than this, and the "sent" page says
         // it can take a few minutes (Q12).
         SCREENING_SLOTS: String(screeningSlots(compute.screening)),
-        // A screening's address is checked with SES at submit, at most this many times a UTC day (Q1 (g)).
+        // A screening's address is checked with SES at submit, at most this many times a UTC day (Q1 (g)), as the role
+        // the web assumes in the environment's address-validation account (`none` only while no release runs; the
+        // rule ReleaseNeedsAddressValidationRole), so the call is recorded there and never in this account's trail.
         MAIL_VALIDATION: 'ses',
         MAIL_VALIDATION_DAILY_CAP: String(MAIL_VALIDATION_DAILY_CAP[environmentName]),
+        MAIL_VALIDATION_ROLE_ARN: parameters.mailValidationRoleArn,
       },
       secrets: {
         AUTH_COOKIE_SECRET: ecs.Secret.fromSecretsManager(this.cookieSecret),

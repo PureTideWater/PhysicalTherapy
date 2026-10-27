@@ -12,7 +12,7 @@ import {
 import { Construct } from 'constructs';
 
 import type { EnvironmentName } from '../environments';
-import { privateBucket } from './storage';
+import { accountTrail } from './account-trail';
 
 /** GuardDuty findings at this severity or above reach the operator (4 is the start of Medium). */
 export const FINDING_ALERT_SEVERITY = 4;
@@ -36,8 +36,9 @@ export interface AccountSecurityProps {
  * PRD 19, monitoring). Each environment is its own account, so each stack owns its trail and its
  * detector.
  *
- * - CloudTrail: one multi-region trail with global service events and log file validation, log
- *   files encrypted under the environment key in a private, TLS-only, versioned bucket.
+ * - CloudTrail: one multi-region trail of every management event, read and write, with global service
+ *   events and log file validation, log files encrypted under the environment key in a private, TLS-only,
+ *   versioned bucket (accountTrail).
  * - GuardDuty: a detector with S3 data-event and RDS login-activity monitoring, and Malware
  *   Protection for S3 on the documents bucket, which tags every new object with its scan result
  *   (the application gates parsing on it, milestone 3). Findings of Medium severity or higher go to
@@ -51,43 +52,11 @@ export class AccountSecurity extends Construct {
 
   constructor(scope: Construct, id: string, props: AccountSecurityProps) {
     super(scope, id);
-    const stack = Stack.of(this);
-    const trailName = `tp-${props.environmentName}-account`;
-
-    this.trailBucket = privateBucket(this, 'TrailBucket', props.key);
-    const trailArn = `arn:${stack.partition}:cloudtrail:${stack.region}:${stack.account}:trail/${trailName}`;
-    const cloudtrailPrincipal = new iam.ServicePrincipal('cloudtrail.amazonaws.com');
-    props.key.addToResourcePolicy(
-      new iam.PolicyStatement({
-        sid: 'CloudTrailEncryptLogs',
-        principals: [cloudtrailPrincipal],
-        actions: ['kms:GenerateDataKey*'],
-        resources: ['*'],
-        conditions: {
-          StringEquals: { 'aws:SourceArn': trailArn },
-          StringLike: { 'kms:EncryptionContext:aws:cloudtrail:arn': `arn:${stack.partition}:cloudtrail:*:${stack.account}:trail/*` },
-        },
-      }),
-    );
-    props.key.addToResourcePolicy(
-      new iam.PolicyStatement({
-        sid: 'CloudTrailDescribeKey',
-        principals: [cloudtrailPrincipal],
-        actions: ['kms:DescribeKey'],
-        resources: ['*'],
-        conditions: { StringEquals: { 'aws:SourceArn': trailArn } },
-      }),
-    );
-    this.trail = new cloudtrail.Trail(this, 'Trail', {
-      trailName,
-      bucket: this.trailBucket,
-      encryptionKey: props.key,
-      isMultiRegionTrail: true,
-      includeGlobalServiceEvents: true,
-      enableFileValidation: true,
-      managementEvents: cloudtrail.ReadWriteType.ALL,
-      sendToCloudWatchLogs: false,
-    });
+    // Every management event, read and write. The screening's address validation, a read whose request names a
+    // prospect's address, runs in its own account (docs/adr/0065; AddressValidationStack), so this trail never holds it.
+    const { bucket, trail } = accountTrail(this, { trailName: `tp-${props.environmentName}-account`, key: props.key, managementEvents: cloudtrail.ReadWriteType.ALL });
+    this.trailBucket = bucket;
+    this.trail = trail;
 
     this.detector = new guardduty.CfnDetector(this, 'Detector', {
       enable: true,

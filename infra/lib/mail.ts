@@ -113,6 +113,14 @@ export const MAIL_VALIDATION_CAP_CODE = 'MAIL_VALIDATION_CAP_REACHED';
 export const MAIL_VALIDATION_CAP_PERIOD_SECONDS = 86_400;
 
 /**
+ * The web's code when AWS refuses the address validation itself (review S3): STS refuses the address-validation
+ * account's role (its trust, or MailValidationRoleArn naming the wrong role) or SES refuses the role's call. Every
+ * address is then accepted on DNS alone until it is fixed, so it is counted and alarmed at one in five minutes.
+ */
+export const MAIL_VALIDATION_REFUSED_CODE = 'MAIL_VALIDATION_REFUSED';
+export const MAIL_VALIDATION_REFUSED_PERIOD_SECONDS = 300;
+
+/**
  * Codes logged as warnings with no alarm of their own: an unreadable event (it reaches the dead-letter queue, whose
  * alarm covers it), and a DNS check or an address validation that could not answer (the address is accepted).
  */

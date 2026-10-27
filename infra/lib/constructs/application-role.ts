@@ -1,4 +1,4 @@
-import { Stack, type aws_cognito as cognito, aws_iam as iam, type aws_kms as kms, type aws_s3 as s3 } from 'aws-cdk-lib';
+import { type CfnCondition, Stack, type aws_cognito as cognito, aws_iam as iam, type aws_kms as kms, type aws_s3 as s3 } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
 import { bedrockModelArns, pinnedBedrockModels } from '../models';
@@ -19,7 +19,11 @@ export const MODEL_INVOKE_ACTIONS = ['bedrock:InvokeModel'] as const;
 /** The Textract calls intake's scan reader makes (packages/contracts/src/evidence/scan.ts: TextractPageReader). */
 export const TEXTRACT_ACTIONS = ['textract:StartDocumentTextDetection', 'textract:GetDocumentTextDetection'] as const;
 
-/** The SES call the screening's submit makes to check a prospect's address (apps/web/src/lib/screening/validation.ts; Q1 (g)). */
+/**
+ * The SES call the screening's submit makes to check a prospect's address (apps/web/src/lib/screening/validation.ts;
+ * Q1 (g)), only in the environment's address-validation account (AddressValidationStack; docs/adr/0065): this role is
+ * refused it here.
+ */
 export const ADDRESS_VALIDATION_ACTIONS = ['ses:GetEmailAddressInsights'] as const;
 
 export interface ApplicationRoleProps {
@@ -29,6 +33,8 @@ export interface ApplicationRoleProps {
   readonly userPool: cognito.IUserPool;
   /** The digests' sender and stream (docs/adr/0065): MailFromAddress, its identity and the transactional set. */
   readonly digestMail: { readonly mailFromAddress: string; readonly identityArn: string; readonly configurationSetArn: string };
+  /** The address-validation account's role (MailValidationRoleArn) and the condition true once it is set. */
+  readonly addressValidation: { readonly roleArn: string; readonly roleSet: CfnCondition };
 }
 
 /**
@@ -54,9 +60,13 @@ export interface ApplicationRoleProps {
  * - Digest email (PRD 5, J17; docs/adr/0039): the worker sends a practice's digests through SES
  *   (SESv2 SendEmail) through MailFromAddress's identity and the transactional stream's set only, from
  *   MailFromAddress alone (docs/adr/0065). A digest carries counts and a sign-in link, never a patient's data.
- * - Address validation (Q1 (g); docs/adr/0065, D9): the screening's submit asks SES whether a prospect's address
- *   can receive mail (GetEmailAddressInsights, $0.01 a call, under the web's daily cap). The action takes no
- *   resource. The worker shares this role and never calls it.
+ * - Address validation (Q1 (g); docs/adr/0065, D9 and "Address validation in its own account"): the screening's
+ *   submit asks SES whether a prospect's address can receive mail (GetEmailAddressInsights, $0.01 a call, under the
+ *   web's daily cap) as the role MailValidationRoleArn names in the environment's address-validation account, which
+ *   this role may assume once the parameter is set (the policy AddressValidationRole, under its condition), so the
+ *   call and the address in it are recorded in that account and never in this one's trail. Here the call is refused
+ *   (`NoAddressValidationHere`), and so is assuming any role of this account (`NoRoleOfThisAccount`), so the
+ *   parameter cannot point the call back here. The worker shares this role and never calls either.
  * - The user pool (docs/adr/0049): the three administrative calls the web app makes, on this
  *   environment's pool only (USER_POOL_ADMIN_ACTIONS).
  * - Models (PRD 14, Provider and data path; docs/adr/0048 and 0054): bedrock:InvokeModel, the one call
@@ -119,9 +129,16 @@ export class ApplicationRole extends Construct {
         conditions: { StringEquals: { 'ses:FromAddress': props.digestMail.mailFromAddress } },
       }),
       new iam.PolicyStatement({
-        sid: 'ScreeningAddressValidation',
+        sid: 'NoAddressValidationHere',
+        effect: iam.Effect.DENY,
         actions: [...ADDRESS_VALIDATION_ACTIONS],
         resources: ['*'],
+      }),
+      new iam.PolicyStatement({
+        sid: 'NoRoleOfThisAccount',
+        effect: iam.Effect.DENY,
+        actions: ['sts:AssumeRole'],
+        resources: [`arn:${stack.partition}:iam::${stack.account}:role/*`],
       }),
       new iam.PolicyStatement({
         sid: 'UserPoolAdministration',
@@ -142,5 +159,18 @@ export class ApplicationRole extends Construct {
     for (const statement of statements) {
       this.role.addToPolicy(statement);
     }
+
+    // Only once MailValidationRoleArn names a role: before, there is no role to name.
+    const validation = new iam.Policy(this, 'AddressValidationRole', {
+      roles: [this.role],
+      statements: [
+        new iam.PolicyStatement({
+          sid: 'AssumeAddressValidationRole',
+          actions: ['sts:AssumeRole'],
+          resources: [props.addressValidation.roleArn],
+        }),
+      ],
+    });
+    (validation.node.defaultChild as iam.CfnPolicy).cfnOptions.condition = props.addressValidation.roleSet;
   }
 }
