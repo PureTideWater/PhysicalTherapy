@@ -384,7 +384,10 @@ every path that differs from the committed list, so one red CI run gives everyth
   before its first database step, with "The database's log" last (`workflows.test.ts` holds the order); no workflow
   declares `services:`.
 - A change to `release.yml`, the Dockerfiles or their pnpm installer runs `release-dry-run.yml` (advisory) on its pull
-  request: read it, since no tag runs the release before the founder's.
+  request: read it, since no tag runs the release before the founder's. It runs release.yml's build on the `web` and
+  `worker` legs (the worker's headless shell check included) and its `push` and `capacity` jobs up to the push and the
+  frozen install; a change to `release.yml` changes the dry run's matching step too, or `workflows.test.ts` fails. What
+  only a tag runs is listed in docs/adr/0066, Part 3, N16.
 
 ## Mutation testing
 
