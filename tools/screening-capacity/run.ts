@@ -44,7 +44,7 @@ import {
   productionLimits,
   runnerTooSmall,
 } from './limits';
-import { anonBytes, cpuThrottling, emailedLines, memoryEvents, peak, phaseLines, phasesByRun, pricedRuns, untilComplete, workerStarted } from './measure';
+import { addressCheckTimes, anonBytes, cpuThrottling, emailedLines, memoryEvents, peak, phaseLines, phasesByRun, pricedRuns, untilComplete, workerStarted } from './measure';
 import {
   ADDRESS_CHECK_CHARGE_MS,
   type AppliedLimits,
@@ -748,6 +748,9 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
   const phases = phasesByRun(consumerPhases);
   const emailed = emailedLines(consumerLog);
   const platformRuns = pricedRuns(await runtime.logs('platform'));
+  // The web's measured address checks, by run (read before the next scenario restarts the web): the verdict holds each
+  // upload's to their worst case, never the delay the harness gave the stand-ins (review M4).
+  const addressChecks = addressCheckTimes(await runtime.logs('web'));
   const runs = new Map<string, string>();
   const uploads: UploadMeasure[] = [];
   const client = await owner.client();
@@ -784,6 +787,7 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
       waitReason: facts?.waitReason ?? null,
       queuePriority: facts?.queuePriority ?? null,
       logged: logged === undefined ? null : { elapsedMs: logged.elapsedMs, atMs: Date.parse(logged.at) - scenarioStart, tier: logged.tier },
+      addressCheckMs: facts === null ? null : (addressChecks.get(facts.id) ?? null),
     });
   }
   for (const entry of prepared) {
@@ -853,9 +857,9 @@ async function main(): Promise<number> {
   // The ZIP9 file's size (open item O8): the release is built at the production shape.
   let release: Measurements['release'] = { releaseNo: SCALE_RELEASE_NUMBER, manifestSha256: '', records: 0, zip9: scaleZip9Size(SCALE_RELEASE_SHAPE) };
   let aborted: string | null = null;
-  // The screening's mail as the harness runs it (PR 6b-4): the address checks' charge given to the web, the stream seeded
-  // ready, and the consumers' lines of a run the mail gate held (none, or the run is not production's).
-  let mail: NonNullable<Measurements['mail']> = { addressCheckMs: 0, screeningReady: false, heldLines: 0 };
+  // The screening's mail as the harness runs it (PR 6b-4): the stream seeded ready, and the consumers' lines of a run the
+  // mail gate held (none, or the run is not production's). The address checks' time is each upload's, read from the web.
+  let mail: NonNullable<Measurements['mail']> = { screeningReady: false, heldLines: 0 };
   // The commit measured: the images' checkout for the process runtime (built outside this one), else this checkout.
   const measuredCheckout = opts.runtime === 'process' && opts.images !== null ? path.join(opts.images, 'worker') : repositoryRoot;
   const commit = (await exec('git', ['rev-parse', 'HEAD'], { cwd: measuredCheckout }).catch(() => ({ stdout: 'unknown' }))).stdout.trim();
@@ -977,7 +981,6 @@ async function main(): Promise<number> {
       cpuset: layout.consumer,
       command: serviceCommand(name),
     }));
-    mail = { ...mail, addressCheckMs: Number(web.env.MAIL_CHECK_DELAY_MS ?? '0') };
     say(`starting web, platform and the screening consumer (${String(consumers.length)} task of ${String(screening.cpus)} vCPU and ${String(screening.memoryMiB)} MiB, ${String(limits.screeningConcurrency)} at once)`);
     await startWeb(runtime, web, 'setup');
     await startWorker(runtime, platform, 'setup');

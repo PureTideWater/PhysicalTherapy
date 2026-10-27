@@ -623,7 +623,10 @@ export const screeningSubmit = publicRoute({
     if (hint.message !== null && !kept) {
       throw new InputError([{ field: 'contactEmail', message: hint.message }]);
     }
+    // Their time, measured here, is logged with the run once it is stored (below).
+    const checksStarted = performance.now();
     const verdict = await checkScreeningAddress(prospect.contactEmail, { checks: services.addressChecks, pool: services.pool, sealer: services.sealer, logger: services.logger, kept });
+    const addressCheckMs = Math.round(performance.now() - checksStarted);
     if (verdict === 'refuse') {
       throw new InputError([{ field: 'contactEmail', message: ADDRESS_REFUSED }]);
     }
@@ -679,6 +682,10 @@ export const screeningSubmit = publicRoute({
       }
       throw error;
     }
+    // How long the address checks took for this upload, by its run alone (never the address or its domain): the capacity
+    // harness reads the line and holds every measured upload to the checks' worst case, one 2-second timeout (the plan's
+    // G1), so a change that skips or shortens them on its path fails the gate instead of passing it about 2 s fast.
+    services.logger.info('screening address checked', { screening_run_id: runId, elapsed_ms: addressCheckMs });
     // Where the run stands in the queue: its tier (Q7), and how many runs are pricing or ahead of it.
     let wait: ScreeningQueuePlace | null;
     try {
