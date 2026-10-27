@@ -10,6 +10,7 @@ split"; 1b completes it), test-matrix CAS-41, `packages/synth` case CAS-41 (modu
 - 2026-10-27 20:35 UTC: machine set up (setup-container.sh: every line ok, Chromium included); branch cut and installed. The design
   stage is done (designed and reviewed, nine findings taken); re-read against 085299bd: none of 1a's files changed
   since the design's base e908c21. Next: the build workflow (slices of section 13, 1a).
+- 2026-10-27 20:37 UTC: build workflow wf_34688805-4ff running (script `workflow-scripts/lane-b-suite-cap-1a-build-wf_34688805-4ff.js`): the real-size reproduction on the base in a scratch clone (a private cluster with 1,024 locks per transaction for the defects behind the lock, as the design's probes did), beside the five build slices in order, then a check that re-runs the probe on the head. Safety check-in scheduled for 2026-10-28 01:47 UTC (trig_01LLGSsPuwpPuqUKg1frFo17). If stopped: resume with resumeFromRunId wf_34688805-4ff (this session only); the agents keep progress files in the session scratchpad's progress/.
 
 ## Decisions taken (recommended option, with reasons)
 - Pattern order in the fold: today's patterns sort by payer, plan, behavior and rate record, and ties keep the order of
@@ -20,4 +21,5 @@ split"; 1b completes it), test-matrix CAS-41, `packages/synth` case CAS-41 (modu
 - None.
 
 ## Log
+- 2026-10-27 20:37 UTC: build workflow wf_34688805-4ff launched.
 - 2026-10-27 20:35 UTC: started; setup OK; worktree and install done.
