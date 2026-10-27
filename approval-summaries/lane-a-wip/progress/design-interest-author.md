@@ -89,3 +89,6 @@ Output: /home/user/ops/designs/ledger-interest-once.md
 - WRITTEN run 2: 8.0 run-2 results + shows; PLANS2_PLACEHOLDER pending plans2.out
 - WRITTEN run 2: section 15 (review dispositions). Next: plans2 results into 8.0; final read-through
 - Read-through done for sections 0-7, 9 (fixes applied: 3.2/3.3 wording, D5 wrap, 7 reported sentence, 9.1 wrap). Waiting on plans2 (queued behind #42 mutation + golden) to fill PLANS2_PLACEHOLDER and confirm 5.1 'by which index' paragraph.
+- 19:44 waiting for plans2 (monitor blwh0f8dl); everything else in the design is written
+- plans2 DONE (tp_design_interest_42 dropped); 8.0 filled; LED-25 large test over 20 practices
+## STATUS RUN 2: DESIGN COMPLETE (revised after review; sections 0-15). Probe DBs tp_design_interest_41/42 dropped. Returning StructuredOutput.

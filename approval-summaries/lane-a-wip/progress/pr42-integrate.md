@@ -35,3 +35,4 @@
 - e2e at 6f23c42b: 56 passed (10.1m), pinned chromium-1194, PG18 tp_pr6b4_integrate_e2e
 - capacity smoke at 6f23c42b (process runtime, time binding, S1,S4): exit 1 = verdict 'fail' only on environment checks (partial run, docker limits not applied, cold start not applied, S2/S3 oracle not run); every judged upload passes time: S1-1 32.6, S1-2 2.6; S4#1 38.0/38.8/34.4/25.6 (middle, 38.8), S4#2 37.0/38.6/37.7/28.0, S4#3 41.2/39.0/37.0/29.0; address checks measured on 14 of 14 uploads at 2.0-2.3 s. Summary: scratchpad/pr42/capacity-out-int/summary.md
 - e2e 56 passed; lint-copy 0, lint-logs 0 at 6f23c42b (rerun of light steps in bd1udgdmi)
+- light reruns at 6f23c42b all 0 (lint-copy, lint-logs, engine-freeze, golden, oracle, verify-content); mutation packets-scan done (canary/stryker/gate 0), packets-rest running

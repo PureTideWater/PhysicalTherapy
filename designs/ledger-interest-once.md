@@ -944,8 +944,8 @@ interest by the current code (Z: LED-16's AMT I alone; H: AMT I with an L6 of +5
 by the real runner as `20261110090000`; then the previous image's reconcile (this checkout's worker, e908c21) run for
 real on Z and on a third practice M staged after the migration; then the checks below as the job (`withJobScope`) or
 as the billing manager, each job block in a rolled-back transaction; then dropped. Output
-(`scratchpad/probes/author/run2/proto2.out`), without the plan lines (the empty tables' plans say nothing; section
-8.0's last block has them with rows):
+(`scratchpad/probes/author/run2/proto2.out`), without the plan lines (the empty tables' plans say nothing; the next
+block has them with rows):
 
 ```
 phase 1 migrated 45, last 20261107090000_mail_streams.sql
@@ -1006,7 +1006,27 @@ What it shows:
 - An interest entry whose evidence is a claim is refused first by the frozen `ledger_entry_rules` (its evidence must be
   the match's, the L6); the new trigger's own refusal stands behind it.
 
-PLANS2_PLACEHOLDER
+**Plans with rows** (`scratchpad/probes/author/run2/plans2.mts` on `tp_design_interest_42`: migrated from empty
+through section 5.3's SQL, then 50,000 claims over 1,000 remittances, 50,000 claim matches over 10,000 lines and
+100,000 entries in two practices, bulk-inserted as the superuser with triggers off, analysed; dropped):
+
+```
+migrated 46, last 20261110090000_ledger_interest_once.sql
+rows {"claims":50000,"matches":50000,"entries":100000}
+plan superseded (walk back from a correction): Index Scan using claim_by_superseded on claim | Index Cond: (superseded_by_claim_id = '…')
+plan matches in order: Sort | Sort Key: seq | ->  Seq Scan on ledger_match | Filter: (practice_id = '…')
+plan an L6 interest sum: Aggregate | ->  Index Scan using ledger_entry_by_evidence on ledger_entry e | Index Cond: (evidence_id = '…') | Filter: ((practice_id = '…') AND (stage = 'interest'::text))
+plan a remittance reported interest: Aggregate | ->  Bitmap Heap Scan on claim c | Recheck Cond: (remittance_id = '…') | Filter: (practice_id = '…') | ->  Bitmap Index Scan on claim_once | Index Cond: (remittance_id = '…')
+plan a claim reaching a line: Index Scan using ledger_match_by_line on ledger_match c | Index Cond: ((practice_id = '…') AND (service_line_id = '…')) | Filter: ((reversed_at IS NULL) AND (kind = ANY ('{claim,interest}'::text[])) AND (claim_id = '…'))
+plan a line interest sum: Aggregate | ->  Index Scan using ledger_entry_by_line on ledger_entry e | Index Cond: ((practice_id = '…') AND (service_line_id = '…')) | Filter: (stage = 'interest'::text)
+dropped tp_design_interest_42
+```
+
+Every new lookup reads its index: the walk back from a correction (`claim_by_superseded`), the L6's entries
+(`ledger_entry_by_evidence`), the remittance's reported interest (`claim_once`), a claim reaching a line
+(`ledger_match_by_line`) and a line's interest (`ledger_entry_by_line`). A practice's matches in order were read by a
+scan and a sort, the right plan when one practice holds half the table; LED-25's large test spreads its rows over
+twenty practices, where `ledger_match_by_seq` serves the order.
 
 ### 8.1 Test matrix rows (exact; `docs/product/test-matrix.md` after LED-18, and word for word in `packages/synth/src/cases/matrix.ts`)
 
@@ -1073,7 +1093,7 @@ one practice per variant; "another patient's claim" is a claim on no case line.
 | `apps/worker/src/reconcile/ledger-oracle.db.test.ts` | LED-23, LED-24 | Two appended cases from the synth `expected.json`; the original six and LED-14 to LED-17 unchanged (LED-16 against its corrected fixture) | appended |
 | `payment-terms.db.test.ts:537-552`, `ledger.db.test.ts:279-294` (LED-06's PAR-18 block) | LED-16, PAR-18 | Same amounts; the evidence and the match's claim asserted | updated |
 | `apps/worker/src/reconcile/chain.db.test.ts` | LED-25 | Two matches inserted in one transaction whose UUIDs sort against their order read back in insertion order from `ledgerMatches`, `CHAIN_ORDER` and the web's line query; an update of `seq` is refused; an INSERT that names no `seq` (the previous image's) is numbered next | fails today: UUID order |
-| `apps/worker/src/reconcile/chain.large.db.test.ts` (new) | LED-25 | 50,000 synthetic claims bulk-inserted as the owner (one in twenty superseded) and 100,000 ledger entries, analysed: `claimLines`' recursive lookup, `unmatched.ts:187`'s EXISTS and the attribution's walk back use `claim_by_superseded`; a practice's matches in order use `ledger_match_by_seq`; the new trigger's reads use `ledger_entry_by_evidence`, `claim_once` and `ledger_entry_by_line`, and `ledger_match_rules`' new lookup `ledger_match_by_line` (EXPLAIN) | fails today: sequential scan of `claim`; no `seq` |
+| `apps/worker/src/reconcile/chain.large.db.test.ts` (new) | LED-25 | 50,000 synthetic claims bulk-inserted as the owner (one in twenty superseded) and 100,000 ledger entries over twenty practices, analysed: `claimLines`' recursive lookup, `unmatched.ts:187`'s EXISTS and the attribution's walk back use `claim_by_superseded`; a practice's matches in order use `ledger_match_by_seq`; the new trigger's reads use `ledger_entry_by_evidence`, `claim_once` and `ledger_entry_by_line`, and `ledger_match_rules`' new lookup `ledger_match_by_line` (EXPLAIN) | fails today: sequential scan of `claim`; no `seq` |
 | `apps/worker/src/report/brand.test.ts:144` | LED-24 | The printed statement's new interest sentence | fails today (old sentence) |
 | `apps/web/src/lib/routes/reconciliation-routes.db.test.ts` | LED-23, LED-24 | The line view's interest words, `takesBack` by the entry's sign, the reported-interest rows and the reverse route's refusal on `matchId`; the route world's interest reseeded as an L6 | fails today |
 | `apps/web/e2e/ledger-interest.spec.ts` (new) | LED-23 | A billing manager opens Reconciliation for `paired.835`: the line's "interest paid in this check (PLB L6)", entries 2.40 and 3.00, the totals tile's Interest 5.40 (10.80 today); for `reported-only.835` the reported sentence and "No interest paid."; the period's ROI statement, generated as J10 does (`reconciliation.spec.ts:235`), shows the new interest note; axe passes | fails today |

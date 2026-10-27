@@ -46,3 +46,5 @@ Started 2026-10-27. Reviewing /home/user/ops/designs/ledger-interest-once.md (87
 - CHAIN_ORDER tie-breaks (matched_at, kind class, bpr16_date, created_at, position, id) reproduce in-pass order -> seq equivalent for new rows. Sound.
 - Only LED-16 among LED fixtures carries AMT I (also V07 variant); PAR-18 is L6 named. Sound.
 ## STATUS: analysis complete; writing StructuredOutput. Verdict: build with changes. All probe DBs dropped (tp_design_interest_21).
+
+# ROUND 2 (started 2026-10-27 ~19:5x): design revised (123962 bytes, mtime 19:46) after round-1 findings; header says sect 15 records each finding. Reviewing the revision.
