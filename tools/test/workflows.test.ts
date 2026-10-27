@@ -1979,13 +1979,24 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
       expect(index).toBeGreaterThan(stepIndex(steps, (step) => step.run?.includes("-name '*-diff.png'") === true));
       const script = baseline.run ?? '';
       expect(script.indexOf('rm -f apps/web/e2e/brand.spec.ts-snapshots/*-chromium-linux.png')).toBeLessThan(script.indexOf('playwright test'));
-      expect(script).toContain('pnpm --filter @tp/web exec playwright test e2e/brand.spec.ts --update-snapshots=all --retries=0 --reporter=list --output="$RUNNER_TEMP/baselines-results" 2>&1 | tee "$RUNNER_TEMP/baselines.log" || status=$?');
+      expect(script).toContain('pnpm --filter @tp/web exec playwright test e2e/brand.spec.ts --update-snapshots=all --retries=0 --reporter=list --output="$RUNNER_TEMP/baselines-results" 2>&1 || status=$?');
+      // The pictures written are the ones present after the run, every one removed before it: no message text of
+      // Playwright's is read, which a release may reword (the review's N5).
+      const written = 'find apps/web/e2e/brand.spec.ts-snapshots -type f -name \'*-chromium-linux.png\' | LC_ALL=C sort > "$RUNNER_TEMP/baselines-written"';
+      expect(script.indexOf(written)).toBeGreaterThan(script.indexOf('playwright test'));
+      expect(script).not.toMatch(/doesn't exist|writing actual|baselines\.log/);
       const elsewhere = workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => job.steps.filter((step) => step.run?.includes('--update-snapshots') === true).map(() => `${file} ${id}`)));
       expect(elsewhere).toEqual(['ci.yml e2e']);
     });
 
-    /** The step's script in a git repository holding two committed baselines, with a stand-in pnpm that renders by mode. */
-    function regenerate(mode: 'same' | 'changed' | 'unreached' | 'extra' | 'failed') {
+    /** A picture whose base64 takes three chunks of 8,000 characters: 12,345 bytes, 16,460 characters. */
+    const LARGE = Buffer.from(Array.from({ length: 12_345 }, (_, index) => (index * 7) % 256));
+
+    /**
+     * The step's script in a git repository holding two committed baselines, with a stand-in pnpm that renders by mode
+     * and prints none of Playwright's messages, but in 'claimed', where it claims a picture it did not write.
+     */
+    function regenerate(mode: 'same' | 'changed' | 'large' | 'unreached' | 'claimed' | 'extra' | 'failed') {
       const dir = mkdtempSync(path.join(scratch, 'baselines-'));
       const env = { HOME: dir, GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'Synthetic', GIT_AUTHOR_EMAIL: 'synthetic@example.invalid', GIT_COMMITTER_NAME: 'Synthetic', GIT_COMMITTER_EMAIL: 'synthetic@example.invalid' };
       const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env: { ...process.env, ...env }, encoding: 'utf8' });
@@ -2000,18 +2011,22 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
       const temp = path.join(dir, 'runner-temp');
       mkdirSync(bin);
       mkdirSync(temp);
-      // Playwright's own line for each missing baseline it writes under --update-snapshots=all (handleMissing).
+      writeFileSync(path.join(dir, 'large.png'), LARGE);
       writeFileSync(
         path.join(bin, 'pnpm'),
         [
           '#!/usr/bin/env bash',
           `printf '%s\\n' "$*" > '${dir}/pnpm-args'`,
           'shots="$PWD/apps/web/e2e/brand.spec.ts-snapshots"',
-          'write() { printf "%s" "$2" > "$shots/$1"; echo "  A snapshot doesn\'t exist at $shots/$1, writing actual."; }',
+          'write() { printf "%s" "$2" > "$shots/$1"; }',
+          // Playwright's own line for a missing baseline it writes under --update-snapshots=all (handleMissing).
+          'claim() { echo "  A snapshot doesn\'t exist at $shots/$1, writing actual."; }',
           `case '${mode}' in`,
           '  same|failed) write header-1280-chromium-linux.png header; write report-cover-top-chromium-linux.png cover ;;',
           '  changed) write header-1280-chromium-linux.png header; write report-cover-top-chromium-linux.png "cover, drawn otherwise" ;;',
+          `  large) write header-1280-chromium-linux.png header; cp '${dir}/large.png' "$shots/report-cover-top-chromium-linux.png" ;;`,
           '  unreached) write header-1280-chromium-linux.png header ;;',
+          '  claimed) write header-1280-chromium-linux.png header; claim header-1280-chromium-linux.png; claim report-cover-top-chromium-linux.png ;;',
           '  extra) write header-1280-chromium-linux.png header; write report-cover-top-chromium-linux.png cover; write footer-chromium-linux.png footer ;;',
           'esac',
           `[ '${mode}' = failed ] && exit 1`,
@@ -2025,9 +2040,17 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
       return { ...result, args: readFileSync(path.join(dir, 'pnpm-args'), 'utf8').trim() };
     }
 
-    const sha = (text: string) => createHash('sha256').update(text).digest('hex');
+    const sha = (data: string | Buffer) => createHash('sha256').update(data).digest('hex');
+    /** What the step printed of one picture after its path: its SHA-256 line, then its chunks. */
+    const printed = (output: string, name: string) => {
+      const prefix = `apps/web/e2e/brand.spec.ts-snapshots/${name} `;
+      return output
+        .split('\n')
+        .filter((line) => line.startsWith(prefix))
+        .map((line) => line.slice(prefix.length));
+    };
 
-    it('pass when the run writes every committed baseline from nothing, byte for byte, printing their SHA-256s', () => {
+    it('pass when the run writes every committed baseline from nothing, byte for byte, whatever Playwright prints, printing their SHA-256s', () => {
       const same = regenerate('same');
       expect(same.status, same.output).toBe(0);
       expect(same.args).toMatch(/^--filter @tp\/web exec playwright test e2e\/brand\.spec\.ts --update-snapshots=all --retries=0 --reporter=list --output=\S+\/baselines-results$/);
@@ -2036,19 +2059,34 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
       expect(same.output).not.toContain('::error');
     });
 
-    it('fail on a changed picture, printing it as its path and its base64, on a picture the run did not reach, on one more than committed, and on a failed run', () => {
+    it('fail on a changed picture, printing its SHA-256 and then the picture in numbered chunks of 8,000 base64 characters, on a picture the run did not reach, on one more than committed, and on a failed run', () => {
       const changed = regenerate('changed');
       expect(changed.status).toBe(1);
       expect(changed.output).toContain('::error title=The brand baselines::this runner renders other bytes than the committed baselines');
-      // GNU base64's -w, as the runner has; only the changed picture is printed.
+      // GNU base64's -w, as the runner has; only the changed picture is printed, its SHA-256 first.
       if (spawnSync('base64', ['-w', '0'], { input: '' }).status === 0) {
-        expect(changed.output).toContain(`apps/web/e2e/brand.spec.ts-snapshots/report-cover-top-chromium-linux.png ${Buffer.from('cover, drawn otherwise').toString('base64')}`);
-        expect(changed.output).not.toContain(`header-1280-chromium-linux.png ${Buffer.from('header').toString('base64')}`);
+        expect(printed(changed.output, 'report-cover-top-chromium-linux.png')).toEqual([`sha256 ${sha('cover, drawn otherwise')}`, `1/1 ${Buffer.from('cover, drawn otherwise').toString('base64')}`]);
+        expect(printed(changed.output, 'header-1280-chromium-linux.png')).toEqual([]);
+        // A picture past one chunk: every chunk numbered of the whole, none longer than 8,000 characters, and the chunks
+        // joined decode to the picture whose SHA-256 came first, so a log reader that cuts long lines loses nothing.
+        const large = regenerate('large');
+        expect(large.status).toBe(1);
+        const encoded = LARGE.toString('base64');
+        expect(encoded).toHaveLength(16_460);
+        const lines = printed(large.output, 'report-cover-top-chromium-linux.png');
+        expect(lines).toEqual([`sha256 ${sha(LARGE)}`, `1/3 ${encoded.slice(0, 8000)}`, `2/3 ${encoded.slice(8000, 16_000)}`, `3/3 ${encoded.slice(16_000)}`]);
+        const joined = Buffer.from(lines.slice(1).map((line) => line.split(' ')[1] ?? '').join(''), 'base64');
+        expect(sha(joined)).toBe(lines[0]?.slice('sha256 '.length));
+        expect(large.output.split('\n').every((line) => line.length <= 8000 + 'apps/web/e2e/brand.spec.ts-snapshots/report-cover-top-chromium-linux.png 3/3 '.length)).toBe(true);
       }
       const unreached = regenerate('unreached');
       expect(unreached.status).toBe(1);
       expect(unreached.output).toContain('::error title=The brand baselines::the run wrote 1 baselines from nothing, not the 2 committed');
       expect(unreached.output).toContain('  committed, not written: apps/web/e2e/brand.spec.ts-snapshots/report-cover-top-chromium-linux.png');
+      // A message claiming a picture the run did not write does not make it written.
+      const claimed = regenerate('claimed');
+      expect(claimed.status).toBe(1);
+      expect(claimed.output).toContain('::error title=The brand baselines::the run wrote 1 baselines from nothing, not the 2 committed');
       const extra = regenerate('extra');
       expect(extra.status).toBe(1);
       expect(extra.output).toContain('the run wrote 3 baselines from nothing, not the 2 committed');
