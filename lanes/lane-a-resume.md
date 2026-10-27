@@ -74,3 +74,9 @@ UTC (trigger trig_01XqKZsF9KvqAG7S6pBGUmoi). Read this file first, then LANES.md
 - Counters: next free ADR 0085, synth module 21, fixture release 900008 (LANES.md rule 4).
 - Before Friday 2026-10-30 19:00 UTC (or this account's limit before then): the handoff to Lane B, like
   `lanes/lane-b-handoff-to-lane-a.md`.
+
+## Update 2026-10-27 19:10 UTC
+- The 5-hour limit stopped everything at ~17:12-17:27 UTC and the container restarted; resumed at 19:05-19:10 (setup re-run, both workflows resumed, the six Lane B sessions messaged).
+- #42's integrator works in `/home/user/pr6b4`; its unpushed commits are now snapshotted to `co-001/wip-pr42-integrate` (8aa45a46 at 19:07) and its uncommitted changes to `approval-summaries/lane-a-wip/integrate.uncommitted.patch`. If the container is new: check out `co-001/wip-pr42-integrate` as `co-001/pr-06b-mail-streams` in `/home/user/pr6b4` (it fast-forwards from 098636e3), apply the patch, then resume the integrator.
+- If the six sessions read FAILED in list_sessions, the limit stopped them: `send_message` each to resume (the text of 19:08 UTC in this session's log).
+- Safety check-in: 2026-10-28 00:10 UTC (the next 5-hour window).
