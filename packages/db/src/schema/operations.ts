@@ -194,7 +194,10 @@ export const SCREENING_BOUNCE_MARK_KINDS = ['client', 'account'] as const;
 export type ScreeningBounceMarkKind = (typeof SCREENING_BOUNCE_MARK_KINDS)[number];
 /** The screening is ready once its delivered and bounced probes came back within this many hours and since the last resume. */
 export const MAIL_PROBE_READY_HOURS = 48;
-/** A probe goes daily, and is missed when it has not come back in 26 hours. */
+/**
+ * A probe goes daily; a stream is missed when its last proof, the older of its last delivered and bounced probe since the
+ * last resume, is this many hours old (review M3): 2 hours after a daily probe sent and lost, 22 before readiness lapses.
+ */
 export const MAIL_PROBE_MISSED_HOURS = 26;
 
 /** The pepper of the keyed hash: 32 bytes as hex, made at the migration, read only by mail_recipient_sha256(). */
