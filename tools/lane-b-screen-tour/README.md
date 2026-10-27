@@ -73,8 +73,13 @@ request changes. This tool takes them in any session.
 - **A pull request's shots:** two runs of "Set-up and a run" below, each with its own `TOUR_DIR`. The first has
   `TOUR_REF` set to the PR's base commit, the second to its head. Set `TOUR_ONLY` to the sample's ids (prefixes with a
   trailing `*` are fine). Then `python3 -I tools/lane-b-screen-tour/tile.py <TOUR_DIR> <id-prefix ...>` cuts each shot
-  into window-height tiles (800 px at 1280, 844 px at 390) under `<TOUR_DIR>/tiles/`, with `index.json`. Give the
-  reviewer the tiles of both runs and their `shots.json` entries.
+  into window-height tiles (800 px at 1280, 844 px at 390, by the shot's viewport width, so a 390 px shot that overflows
+  is cut at 844 too) under `<TOUR_DIR>/tiles/`, with `index.json`. It needs Pillow: `/usr/bin/python3` has it,
+  `/opt/py312-ci`'s python3 (first on the usual PATH) does not. Give the reviewer the tiles of both runs and their
+  `shots.json` entries.
+  - A refused download (UX PR 5, co-001/ux-download-refusals) is shot on both sides with the same ids: before it the
+    download handler's raw JSON at the download's URL (the 390 px shot is 980 px wide, as a phone draws it), from it on
+    the page it returns to with `?refused=`. `downloadRefusal()` in the spec waits for either.
 - **The sample** (the reviewer reports any changed route outside it as "not seen, by sample"):
   - every screen and state the diff changes, at 1280 and 390 px light, and 1280 px dark (tokens only);
   - after a change to a shared component, a token or the shell: one shot per layout, at both widths and in the dark

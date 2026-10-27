@@ -1,11 +1,13 @@
 """Cuts each full-page shot into window-height tiles for the UX and brand reviewer.
 
-Usage: python3 -I tile.py <TOUR_DIR> [id-prefix ...]
+Usage: python3 -I tile.py <TOUR_DIR> [id-prefix ...]   (a python3 with Pillow: /usr/bin/python3 in Lane B's containers;
+/opt/py312-ci's has none)
 Writes <TOUR_DIR>/tiles/<id>/NN.png (800 px tall at 1280 wide, 844 px at 390) and <TOUR_DIR>/tiles/index.json, with each
 id's tile count and its shots.json entry. Synthetic shots only; the tiles, like the PNGs, never go on a branch.
 """
 import json
 import os
+import shutil
 import sys
 
 from PIL import Image
@@ -17,9 +19,12 @@ for shot in shots:
     if prefixes and not any(shot['id'].startswith(p) for p in prefixes):
         continue
     image = Image.open(os.path.join(tour, 'png', os.path.basename(shot['file'])))
-    step = 844 if image.width <= 500 else 800
+    # The window's height by the shot's viewport width, not the image's: a 390 px page that overflows (a wide table, 439
+    # to 667 px) or has no viewport meta (a download handler's raw JSON, 980 px) is still a 390x844 window (2026-10-27).
+    step = 844 if shot['width'] == 390 else 800
     out = os.path.join(tour, 'tiles', shot['id'])
-    os.makedirs(out, exist_ok=True)
+    shutil.rmtree(out, ignore_errors=True)  # a retake with fewer tiles leaves no stale ones
+    os.makedirs(out)
     count = 0
     for top in range(0, image.height, step):
         count += 1
