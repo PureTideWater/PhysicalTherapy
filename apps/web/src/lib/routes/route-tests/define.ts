@@ -4,10 +4,11 @@ import { PERSONAS } from '@tp/db';
 import { addMembership, createUser } from '@tp/db/testing';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { RUN_STARTING_ROUTES } from '../../billing/runs';
+import { CONTINUES_STARTED_WORK, RUN_STARTING_ROUTES } from '../../billing/runs';
 import { csrfTokenFor } from '../../http/csrf';
 import type { SampleRefs } from '../../http/route';
 import { SESSION_COOKIE } from '../../auth/sessions';
+import { MemoryQueue } from '../../uploads/queue';
 import { inviteMember } from '../console';
 import { routesOf } from './partition';
 import { type Actor, MemoryJar, PERSONA_LIST, type SignedIn, type World, customerPersona, expected, label, tenantRows, routeWorldsForThisFile } from './world';
@@ -42,6 +43,32 @@ import { type Actor, MemoryJar, PERSONA_LIST, type SignedIn, type World, custome
  */
 
 const INTERNAL_ROLES = ['platform_admin', 'contract_specialist', 'reviewer', 'support'] as const;
+
+/**
+ * The jobs that carry work a person starts (test matrix BIL-07; docs/adr/0080, D18): a route whose ok call queues one is
+ * in RUN_STARTING_ROUTES, so the wrapper asks Postgres before anything is queued, or in CONTINUES_STARTED_WORK, which
+ * carries on work a gated route already started. pg-boss enqueues on its own connection, so nothing later in the
+ * request could take the job back.
+ */
+const PERSON_STARTED_JOBS: ReadonlySet<string> = new Set(['triage', 'packet_export', 'intake', 'price', 'audit_report', 'report_document', 'roi_statement']);
+
+/**
+ * The practice's own monitoring and reconciliation, which a person's settings bring forward (the pricing location, the
+ * proof level, a reconciliation template): they carry on under a grantee's hold, as the practice's work and not the
+ * grantee's (design SS-01, section 2), and the worker's gate refuses them for the owner's hold (RUN_STARTING_JOBS).
+ */
+const PRACTICE_OWN_JOBS: ReadonlySet<string> = new Set(['monitor', 'reconcile']);
+
+/** Every job a route's ok call queued is gated as its kind needs, or the test names it (BIL-07's registry). */
+function expectQueuedWorkGated(routeId: string, types: readonly string[]): void {
+  for (const type of types) {
+    if (PERSON_STARTED_JOBS.has(type)) {
+      expect(RUN_STARTING_ROUTES.has(routeId) || CONTINUES_STARTED_WORK.has(routeId), `${routeId} queues ${type} without the wrapper's question`).toBe(true);
+    } else {
+      expect(PRACTICE_OWN_JOBS.has(type), `${routeId} queues ${type}, which neither list of queued work names`).toBe(true);
+    }
+  }
+}
 
 /** The generated tests of route-test file `file` (0 to 11): every case above for each of its routes. */
 export function defineRouteTests(file: number): void {
@@ -93,9 +120,15 @@ export function defineRouteTests(file: number): void {
     it.each(PERSONA_LIST.map((persona) => [label(persona), persona] as const))('answers %s as the persona matrix says', async (_label, persona) => {
       const actor = worldA.actors.find((candidate) => candidate.persona === persona) as Actor;
       const session = await worlds.signIn(actor);
+      const { queue } = worlds.services;
+      const queued = queue instanceof MemoryQueue ? queue.jobs.length : 0;
       const outcome = await worlds.call(route, session, refsFor(worldA, session));
       const want = expected(route, actor);
       expect(outcome.status, `${label(persona)} (${PERSONAS[persona.role].persona})`).toBe(want);
+      if (outcome.status === 'ok') {
+        expect(queue, 'the route tests queue into memory').toBeInstanceOf(MemoryQueue);
+        expectQueuedWorkGated(route.id, (queue as MemoryQueue).jobs.slice(queued).map((job) => job.type));
+      }
     });
 
     if (route.mutation) {
@@ -144,17 +177,44 @@ export function defineRouteTests(file: number): void {
     );
 
     if (RUN_STARTING_ROUTES.has(route.id)) {
-      it('refuses new work with the reason while the practice’s organization is suspended for nonpayment, and changes nothing (docs/adr/0050)', async () => {
+      it('refuses new work with the reason while the practice’s organization is suspended for nonpayment, telling only its members why, and changes nothing (docs/adr/0050, 0080)', async () => {
         // On the other world, after every test above has used it; paid again afterwards.
-        const allowed = worldB.actors.find((actor) => expected(route, actor) === 'ok') as Actor;
-        const session = await worlds.signIn(allowed);
+        const member = worldB.actors.find((actor) => actor.persona.kind === 'group' && expected(route, actor) === 'ok') as Actor;
+        const firm = worldB.actors.find((actor) => actor.persona.kind === 'firm' && expected(route, actor) === 'ok') as Actor;
+        const memberSession = await worlds.signIn(member);
+        const firmSession = await worlds.signIn(firm);
         const invoiceId = await worlds.suspendForNonpayment(worldB);
         try {
           const before = tenantRows(await worlds.snapshot(worldB));
-          expect(await worlds.call(route, session, refsFor(worldB, session))).toEqual({ status: 'suspended', reason: expect.stringMatching(/^the organization is suspended for nonpayment/) as string });
+          // R3 to the owning group's members; R6 to a firm's people, who never learn the group's invoice is unpaid (D6).
+          expect(await worlds.call(route, memberSession, refsFor(worldB, memberSession))).toEqual({
+            status: 'suspended',
+            reason: expect.stringMatching(/^an invoice of your organization has been unpaid for 30 days since its payment failed, so no new work starts at this practice until it is paid/) as string,
+          });
+          expect(await worlds.call(route, firmSession, refsFor(worldB, firmSession))).toEqual({
+            status: 'suspended',
+            reason: "the PaidWhole account of the practice's organization is on hold, so no new work starts here; everything here stays readable",
+          });
           expect(tenantRows(await worlds.snapshot(worldB))).toBe(before);
         } finally {
           await worlds.owner.query("UPDATE invoice SET status = 'paid', paid_at = now(), amount_paid_cents = amount_due_cents, amount_remaining_cents = 0 WHERE id = $1", [invoiceId]);
+        }
+      });
+
+      it('refuses a firm’s people new work through its grant while PaidWhole holds the firm suspended, and changes nothing (BIL-07; docs/adr/0080)', async () => {
+        // The world's firm holds a grant in force on the practice; suspended here as the owner, active again afterwards.
+        const firm = worldB.actors.find((actor) => actor.persona.kind === 'firm' && expected(route, actor) === 'ok') as Actor;
+        const session = await worlds.signIn(firm);
+        await worlds.owner.query("UPDATE organization SET status = 'suspended', status_reason = 'security_hold' WHERE id = $1", [worldB.refs.firmId]);
+        try {
+          const before = tenantRows(await worlds.snapshot(worldB));
+          expect(await worlds.call(route, session, refsFor(worldB, session))).toEqual({
+            status: 'suspended',
+            reason: expect.stringMatching(/^PaidWhole has suspended your organization, so you start no new work here through its grant until PaidWhole reinstates your organization/) as string,
+          });
+          expect(tenantRows(await worlds.snapshot(worldB))).toBe(before);
+        } finally {
+          await worlds.owner.query("UPDATE organization SET status = 'active' WHERE id = $1", [worldB.refs.firmId]);
         }
       });
     }
