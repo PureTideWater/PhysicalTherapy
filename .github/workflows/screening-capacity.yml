@@ -25,7 +25,8 @@ on:
     - cron: "41 6 * * 1"
   # On request, on the release's runner by default, or once on ubuntu-26.04 as an advisory probe whose numbers decide the
   # capacity chain's later move (the founder's F5; issue #41, O5): a dispatched 26.04 run opens no issue, and the launch
-  # check refuses its report for its runner image.
+  # check refuses its report, which is not release.yml's attested run (the runner-image refusal lands after #42;
+  # docs/adr/0066, Part 3).
   workflow_dispatch:
     inputs:
       runner:
