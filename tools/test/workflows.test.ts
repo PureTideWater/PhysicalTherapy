@@ -747,8 +747,9 @@ describe('workflows', () => {
       expect(build.outputs).toEqual(Object.fromEntries(images.flatMap((image) => ['sha256', 'config', 'target'].map((kind) => [`${kind}_${image}`, `\${{ steps.identity.outputs.${kind}_${image} }}`]))));
       const identity = build.steps.find((step) => step.id === 'identity');
       for (const line of ['echo "sha256_$IMAGE=$sha"', 'echo "config_$IMAGE=$config"', 'echo "target_$IMAGE=$target"', '} >> "$GITHUB_OUTPUT"']) expect(identity?.run, line).toContain(line);
+      // The dry run's two legs, web and worker, carry theirs the same way, so a pull request merges two legs' outputs.
       const dry = workflow('release-dry-run.yml') as Workflow & { jobs: Record<string, ReleaseJob & { outputs?: Record<string, string> }> };
-      expect(dry.jobs.build?.outputs).toEqual({ sha256_web: '${{ steps.identity.outputs.sha256_web }}', config_web: '${{ steps.identity.outputs.config_web }}', target_web: '${{ steps.identity.outputs.target_web }}' });
+      expect(dry.jobs.build?.outputs).toEqual(Object.fromEntries(['web', 'worker'].flatMap((image) => ['sha256', 'config', 'target'].map((kind) => [`${kind}_${image}`, `\${{ steps.identity.outputs.${kind}_${image} }}`]))));
       // Every docker load of both workflows, in a step that reads the build's outputs and checks the archive's SHA-256
       // against them first.
       const loads = [release, dry].flatMap((parsed, which) =>
@@ -1732,11 +1733,16 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
       if (job.strategy?.matrix !== undefined) expect(String(step.with?.name), id).toContain('${{ matrix.shard }}');
     }
     // Every upload of every workflow, the release's three and its dry run's included, overwrites, so a re-run of a
-    // failed job replaces what its first attempt left instead of failing on the name.
-    const every = workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => job.steps.filter((step) => usesAction(step, 'actions/upload-artifact')).map((step) => ({ where: `${file} ${id}`, step }))));
+    // failed job replaces what its first attempt left instead of failing on the name; and in a matrix job, of any
+    // workflow, the name carries a matrix value, so no two legs write one name (the release's build and its dry run's
+    // upload each leg's archive as image-<image>).
+    const every = workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => job.steps.filter((step) => usesAction(step, 'actions/upload-artifact')).map((step) => ({ where: `${file} ${id}`, job, step }))));
     expect(every.filter(({ where }) => where.startsWith('release.yml ')).length).toBe(3);
-    expect(every.filter(({ where }) => where.startsWith('release-dry-run.yml ')).length).toBe(1);
+    expect(every.filter(({ where }) => where.startsWith('release-dry-run.yml ')).map(({ step }) => step.with?.name)).toEqual(['image-${{ matrix.image }}']);
     for (const { where, step } of every) expect(step.with?.overwrite, where).toBe(true);
+    for (const { where, job, step } of every.filter((upload) => upload.job.strategy?.matrix !== undefined)) {
+      expect(String(step.with?.name), where).toMatch(new RegExp(`\\$\\{\\{ matrix\\.(?:${Object.keys(job.strategy?.matrix ?? {}).map(escaped).join('|')}) \\}\\}`));
+    }
   });
 
   it('builds both images into archives and scans each archive in one job, failing on HIGH or CRITICAL, the worker whatever the web image did', () => {
@@ -1897,17 +1903,17 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
         for (const after of later.slice(0, measure + 1)) expect(after.if ?? '', `${where}: ${after.name ?? after.run ?? ''}`).not.toMatch(/always\(\)|cancelled\(\)|failure\(\)/);
       }
     }
-    // The same check with --image on the worker image: in ci.yml's images job, in the release's build before the save,
-    // and in both measuring jobs that build it before the measurement (below).
+    // The same check with --image on the worker image: in ci.yml's images job, in the release's build and its dry run's
+    // before the save, and in both measuring jobs that build it before the measurement (below).
     const imageChecks = workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => job.steps.filter((step) => step.run?.startsWith(`${BROWSER_CHECK} --image`) === true).map(() => `${file} ${id}`)));
-    expect(imageChecks).toEqual(['ci.yml images', 'release-capacity.yml capacity', 'release.yml build', 'screening-capacity.yml capacity']);
+    expect(imageChecks).toEqual(['ci.yml images', 'release-capacity.yml capacity', 'release-dry-run.yml build', 'release.yml build', 'screening-capacity.yml capacity']);
   });
 
   it('checks the headless shell of every worker image a job builds into a local tag with --image before the tag is measured, saved, tagged or pushed, on Node 24 (design 3.3.7; the review’s S6)', () => {
     expect(workflowFiles().flatMap((file) => workerImageProblems(file, workflow(file)))).toEqual([]);
     // The jobs that build it, each checked by the rule above: none is left out by a form the rule does not read.
     const builders = workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => (JSON.stringify(job.steps).includes('apps/worker/Dockerfile') && job.steps.some((step) => usesAction(step, 'docker/build-push-action')) ? [`${file} ${id}`] : [])));
-    expect(builders).toEqual(['ci.yml images', 'release-capacity.yml capacity', 'release.yml build', 'screening-capacity.yml capacity']);
+    expect(builders).toEqual(['ci.yml images', 'release-capacity.yml capacity', 'release-dry-run.yml build', 'release.yml build', 'screening-capacity.yml capacity']);
     // The two measuring jobs check the image before anything is installed, so no installed package runs before it;
     // release-capacity's Node 24 for it restores no cache, while its own pnpm setup keeps cache: pnpm after.
     for (const file of ['release-capacity.yml', 'screening-capacity.yml']) {
@@ -2182,6 +2188,26 @@ describe('the release’s dry run (docs/adr/0066, Part 2)', () => {
   const release = () => workflow('release.yml') as Workflow & { jobs: Record<string, DryJob> };
   // The images' pnpm installer runs in both Dockerfiles' build stage, so a change to it is a change to the image build.
   const PATHS = ['.github/workflows/release.yml', '.github/workflows/release-dry-run.yml', 'tools/screening-capacity/image-id.ts', 'apps/web/Dockerfile', 'apps/worker/Dockerfile', 'tools/check-toolchain/install-pnpm.sh'];
+  // Two of the release build's four legs: the web image (which stands for the capacity job's production web image) and
+  // the worker image. web-staging and web-production differ from web only by a repository variable's static host.
+  const IMAGES = ['web', 'worker'];
+  /** A script of release.yml's as the dry run runs it: each image list cut to these two images, the tag to this run's. */
+  const cutScript = (script: string) =>
+    script
+      .replace(/for image in ([^;\n]+); do/g, (_whole: string, list: string) => `for image in ${[...new Set(list.trim().split(/\s+/).map((image) => (image === 'web-production' ? 'web' : image)))].filter((image) => IMAGES.includes(image)).join(' ')}; do`)
+      .replaceAll('$GITHUB_REF_NAME', 'dry-run-$GITHUB_RUN_ID');
+  /** An input of release.yml's as the dry run gives it: the tag `dry-run`, the production web archive the web one, kept a day. */
+  const cutInput = (key: string, value: unknown): unknown => {
+    if (key === 'retention-days') return 1;
+    if (typeof value !== 'string') return value;
+    return value.replaceAll('${{ github.ref_name }}', 'dry-run').replace(/^image-web-production$/, 'image-web');
+  };
+  /** One of release.yml's steps as the dry run runs it. */
+  const asDryRun = (step: Step): Step => ({
+    ...step,
+    ...(step.run === undefined ? {} : { run: cutScript(step.run) }),
+    ...(step.with === undefined ? {} : { with: Object.fromEntries(Object.entries(step.with).map(([key, value]) => [key, cutInput(key, value)])) }),
+  });
 
   it('runs on every pull request and push that changes the release, its dry run, the images’ Dockerfiles or their pnpm installer, outside the required checks', () => {
     expect(dry().on).toEqual({ pull_request: { paths: PATHS }, push: { branches: ['claude/build-platform'], paths: PATHS } });
@@ -2218,61 +2244,67 @@ describe('the release’s dry run (docs/adr/0066, Part 2)', () => {
     expect(dry().jobs.build?.steps.find((step) => usesAction(step, 'actions/upload-artifact'))?.with?.overwrite).toBe(true);
   });
 
-  it('runs the capacity job’s setup as release.yml does, with no cache, up to its frozen install and no further (the ci-infra review’s N4)', () => {
-    // The steps a tag runs first in its capacity job: the checkout, a download by name, pnpm and Node with no cache and
-    // the frozen install, each with release.yml's own inputs; the measurement itself stays the tag's.
-    const theirs = release().jobs.capacity?.steps ?? [];
-    const ours = dry().jobs.capacity?.steps ?? [];
-    expect(ours.map((step) => step.name ?? step.run ?? step.uses?.split('@')[0])).toEqual(['actions/checkout', 'actions/download-artifact', 'Check each archive against the build\'s outputs and load it as the image built', 'pnpm/action-setup', 'actions/setup-node', 'pnpm install --frozen-lockfile']);
-    // The archive's check: release.yml's capacity step, cut to the dry run's one image and its tag.
-    const cut = (script: string | undefined) => (script ?? '').replace('for image in web-production worker; do', 'for image in web; do').replace('ref="$repository/$image:$GITHUB_REF_NAME"', 'ref="$repository/$image:dry-run-$GITHUB_RUN_ID"');
-    const theirCheck = theirs.find((step) => /\bdocker load\b/.test(step.run ?? ''));
-    const ourCheck = ours.find((step) => /\bdocker load\b/.test(step.run ?? ''));
-    expect(cut(theirCheck?.run)).not.toBe(theirCheck?.run);
-    expect(ourCheck?.run).toBe(cut(theirCheck?.run));
-    expect(ourCheck?.env).toEqual(theirCheck?.env);
-    for (const step of ours.filter((candidate) => candidate !== ourCheck)) {
-      // The download names the dry run's one image where the tag names the production web image; every other input is
-      // release.yml's own.
-      const inputs = usesAction(step, 'actions/download-artifact') ? { ...step.with, name: 'image-web-production' } : step.with;
-      const match = theirs.find((candidate) => (step.run !== undefined ? candidate.run === step.run : candidate.uses === step.uses && isDeepStrictEqual(candidate.with, inputs)));
-      expect(match, `${step.run ?? step.uses ?? ''} with ${JSON.stringify(step.with)}`).toBeDefined();
-    }
-    expect(ours.find((step) => usesAction(step, 'actions/download-artifact'))?.with).toEqual({ name: 'image-web', path: '${{ runner.temp }}/image' });
-    expect(dry().jobs.capacity?.permissions).toBeUndefined();
+  it('builds release.yml’s web and worker legs with release.yml’s own steps, cut to this run’s tag, less the scan and the bill of materials’ upload: each leg’s identity under its own names, the worker’s headless shell checked before its save (the ci-infra review’s CI-3)', () => {
+    const theirs = release().jobs.build as DryJob & { outputs?: Record<string, string> };
+    const ours = dry().jobs.build as DryJob & { outputs?: Record<string, string> };
+    // Two of the release's four legs, in its order, and its outputs for those two: each leg writes its own names, so the
+    // legs' outputs merge as the release's four must, and the worker leg runs the release's --image step.
+    expect(ours.strategy).toEqual({ matrix: { image: IMAGES } });
+    expect((theirs.strategy?.matrix?.image as unknown[]).filter((image) => IMAGES.includes(String(image)))).toEqual(IMAGES);
+    expect(ours.outputs).toEqual(Object.fromEntries(Object.entries(theirs.outputs ?? {}).filter(([key]) => IMAGES.includes(key.replace(/^[a-z0-9]+_/, '')))));
+    expect(Object.keys(ours.outputs ?? {}).sort()).toEqual(['config_web', 'config_worker', 'sha256_web', 'sha256_worker', 'target_web', 'target_worker']);
+    expect(ours['runs-on']).toBe(theirs['runs-on']);
+    // Every step of release.yml's build, cut, but the scan (ci.yml's images job scans both images on every pull request)
+    // and the bill of materials' upload; the bill of materials is read as SPDX instead.
+    const kept = theirs.steps.filter((step) => !isScan(step) && !(usesAction(step, 'actions/upload-artifact') && String(step.with?.name).startsWith('sbom-')));
+    expect(theirs.steps.length - kept.length).toBe(2);
+    const sbom = stepIndex(kept, (step) => usesAction(step, 'aquasecurity/trivy-action'));
+    const read = { name: 'Read the bill of materials as SPDX', env: { SBOM: 'sbom-${{ matrix.image }}-dry-run.spdx.json' }, run: `jq -e '.spdxVersion and (.packages | length > 0)' "$SBOM" > /dev/null` };
+    expect(ours.steps).toEqual([...kept.slice(0, sbom + 1).map(asDryRun), read, ...kept.slice(sbom + 1).map(asDryRun)]);
+    // The cut changes only the tag (the image's name, its version label and the bill of materials' name) and how long
+    // the archive is kept; the worker's check and the identity step are release.yml's word for word.
+    expect(kept.filter((step) => !isDeepStrictEqual(asDryRun(step), step)).map((step) => step.name ?? actionOf(step))).toEqual(['Name the image, its Dockerfile and its static host', 'Build the image without pushing it', 'Write the software bill of materials', 'actions/upload-artifact']);
+    const check = stepIndex(ours.steps, (step) => step.run === 'node tools/ci/browser-build.ts --image "$REF"');
+    expect(ours.steps[check]?.if).toBe("${{ matrix.image == 'worker' }}");
+    expect(check).toBeLessThan(stepIndex(ours.steps, (step) => step.run?.includes('docker save') === true));
+    expect(ours.steps.find((step) => step.id === 'image')?.run).toContain('echo "ref=ghcr.io/${GITHUB_REPOSITORY,,}/$IMAGE:dry-run-$GITHUB_RUN_ID" >> "$GITHUB_OUTPUT"');
   });
 
-  it('writes the software bill of materials with release.yml’s own step, cut to this run’s image, and checks it is SPDX', () => {
+  it('checks and loads both archives in push and capacity with release.yml’s own steps, cut to this run’s two images and tag: push stops before its first push, capacity after its frozen install (the ci-infra review’s N4 and CI-3)', () => {
+    const theirs = release().jobs;
+    const ours = dry().jobs;
+    const push = theirs.push?.steps ?? [];
+    expect(ours.push?.steps).toEqual(push.slice(0, stepIndex(push, (step) => /\bdocker push\b/.test(step.run ?? ''))).map(asDryRun));
+    const capacity = theirs.capacity?.steps ?? [];
+    expect(ours.capacity?.steps).toEqual(capacity.slice(0, stepIndex(capacity, (step) => step.run === 'pnpm install --frozen-lockfile') + 1).map(asDryRun));
+    for (const id of ['push', 'capacity']) {
+      expect([ours[id]?.['runs-on'], ours[id]?.needs], id).toEqual([theirs[id]?.['runs-on'], theirs[id]?.needs]);
+      const check = (ours[id]?.steps ?? []).find((step) => /\bdocker load\b/.test(step.run ?? ''));
+      expect(check?.run, id).toContain('for image in web worker; do');
+      expect(check?.run, id).toContain('ref="$repository/$image:dry-run-$GITHUB_RUN_ID"');
+      expect(check?.run, id).not.toContain('GITHUB_REF_NAME');
+      expect(check?.env, id).toEqual({ BUILD: '${{ toJSON(needs.build.outputs) }}' });
+    }
+    // The capacity job downloads both archives by name, its production web image the web image built here.
+    expect(ours.capacity?.steps.filter((step) => usesAction(step, 'actions/download-artifact')).map((step) => step.with)).toEqual([
+      { name: 'image-web', path: '${{ runner.temp }}/image' },
+      { name: 'image-worker', path: '${{ runner.temp }}/image' },
+    ]);
+    expect(ours.push?.steps.map((step) => step.name ?? actionOf(step))).toEqual(['actions/download-artifact', 'docker/login-action', "Check each archive against the build's outputs and load it as the image built"]);
+    expect(ours.capacity?.permissions).toBeUndefined();
+  });
+
+  it('writes the software bill of materials with release.yml’s own step, cut to this run’s tag, and checks it is SPDX', () => {
     const sbom = (entry: Job | undefined) => entry?.steps.find((step) => usesAction(step, 'aquasecurity/trivy-action') && step.with?.format === 'spdx-json');
     const theirs = sbom(release().jobs.build);
     const ours = sbom(dry().jobs.build);
     expect(ours?.uses).toBe(theirs?.uses);
-    expect(ours?.with).toEqual({ ...theirs?.with, output: 'sbom-web-dry-run.spdx.json' });
+    expect(ours?.with).toEqual({ ...theirs?.with, output: 'sbom-${{ matrix.image }}-dry-run.spdx.json' });
     expect(theirs?.with?.output).toBe('sbom-${{ matrix.image }}-${{ github.ref_name }}.spdx.json');
     const steps = dry().jobs.build?.steps ?? [];
     const index = steps.findIndex((step) => usesAction(step, 'aquasecurity/trivy-action') && step.with?.format === 'spdx-json');
     expect(index).toBeGreaterThan(steps.findIndex((step) => usesAction(step, 'docker/build-push-action')));
-    expect(steps[index + 1]?.run).toBe("jq -e '.spdxVersion and (.packages | length > 0)' sbom-web-dry-run.spdx.json > /dev/null");
-  });
-
-  it('saves the image, records its identity as the job’s outputs and checks it with release.yml’s own scripts, cut to the web image and this run’s tag, with the push and the registry check removed (the review’s N5)', () => {
-    const save = (entry: Job | undefined) => entry?.steps.find((step) => step.run?.includes('docker save') === true);
-    expect(save(dry().jobs.build)?.run).toBe(save(release().jobs.build)?.run);
-    expect(save(dry().jobs.build)?.id).toBe('identity');
-    expect(save(dry().jobs.build)?.env).toEqual({ REF: '${{ steps.image.outputs.ref }}', IMAGE: 'web' });
-    // The build's steps are release.yml's, but the scan (ci.yml's images job scans both images), the bill of materials'
-    // upload and the worker's browser check (ci.yml's images job runs it): setup-node and the identity step included.
-    const names = (entry: Job | undefined) => (entry?.steps ?? []).map((step) => step.name ?? step.uses?.split('@')[0] ?? step.run ?? '');
-    expect(names(release().jobs.build)).toEqual(['actions/checkout', 'docker/setup-buildx-action', 'Name the image, its Dockerfile and its static host', 'Build the image without pushing it', 'Scan the image (fails on HIGH or CRITICAL)', 'Write the software bill of materials', 'actions/upload-artifact', 'actions/setup-node', "Check the worker image's headless shell against browser.json", 'Save the scanned image and record its identity', 'actions/upload-artifact']);
-    expect(names(dry().jobs.build)).toEqual(['actions/checkout', 'docker/setup-buildx-action', 'Name the image', 'Build the image without pushing it', 'Write the software bill of materials', "jq -e '.spdxVersion and (.packages | length > 0)' sbom-web-dry-run.spdx.json > /dev/null", 'actions/setup-node', 'Save the scanned image and record its identity', 'actions/upload-artifact']);
-    const identity = (entry: Job | undefined) => entry?.steps.find((step) => step.run?.includes('docker load') === true);
-    const cut = (identity(release().jobs.push)?.run ?? '').replace('for image in web web-staging web-production worker; do', 'for image in web; do').replace('ref="$repository/$image:$GITHUB_REF_NAME"', 'ref="$repository/$image:dry-run-$GITHUB_RUN_ID"');
-    expect(cut).not.toBe(identity(release().jobs.push)?.run);
-    expect(identity(dry().jobs.push)?.run).toBe(cut);
-    expect(identity(dry().jobs.push)?.env).toEqual(identity(release().jobs.push)?.env);
-    // Nothing of the push: no tag, no push, no registry check.
-    expect(dry().jobs.push?.steps.map((step) => step.name ?? step.uses?.split('@')[0])).toEqual(['actions/download-artifact', 'docker/login-action', "Check each archive against the build's outputs and load it as the image built"]);
-    expect(dry().jobs.build?.steps.find((step) => step.id === 'image')?.run).toBe('echo "ref=ghcr.io/${GITHUB_REPOSITORY,,}/web:dry-run-$GITHUB_RUN_ID" >> "$GITHUB_OUTPUT"');
+    expect(steps[index + 1]).toEqual({ name: 'Read the bill of materials as SPDX', env: { SBOM: 'sbom-${{ matrix.image }}-dry-run.spdx.json' }, run: `jq -e '.spdxVersion and (.packages | length > 0)' "$SBOM" > /dev/null` });
   });
 });
 
