@@ -154,7 +154,7 @@ a synthetic mailbox you control, and reads IDs and counts.
    rented lists, no open or click tracking. Every message goes through a configuration set by stream; bounces and
    complaints are recorded per message from SES's events, customer streams use the account suppression list, and our
    public screening stream pauses itself automatically at a 3% bounce or 0.08% complaint rate, or when the account's
-   rates reach half of SES's review levels." The account stays on SES's Essentials plan (the founder's Q1 (b)).
+   rates reach half of SES's review levels." The account stays on SES's Essentials plan (the founder's Q1 (f)).
 6. **The founder's own steps (open item O14):** register both domains with Google Postmaster Tools and Microsoft SNDS
    (free; they show how the large providers see the mail), and read the DMARC reports for two weeks; when only SES and
    the founder's own provider pass, move the parent's DMARC to `p=quarantine`.
