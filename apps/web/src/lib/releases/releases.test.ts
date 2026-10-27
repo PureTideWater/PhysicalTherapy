@@ -77,6 +77,7 @@ describe('the content checkout of the Rule releases screen', () => {
       TP_ENVIRONMENT: 'staging',
       MAIL_VALIDATION: 'ses',
       MAIL_VALIDATION_DAILY_CAP: '50',
+      MAIL_VALIDATION_ROLE_ARN: 'arn:aws:iam::444455556666:role/tp-staging-address-validation',
     };
     expect(readWebConfig(production).contentRoot).toBeNull();
     const scratch = mkdtempSync(path.join(tmpdir(), 'tp-content-root-test-'));

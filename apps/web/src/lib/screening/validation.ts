@@ -20,9 +20,16 @@ import { DOMAIN_CHECK_TIMEOUT_MS, type DomainResolver, type DomainVerdict, LOCAL
  * - otherwise IsValid or MailboxExists MEDIUM warns, and the prospect may keep the address;
  * - otherwise it accepts. IsRoleAddress, IsDisposable and IsRandomInput are not read: they say nothing about delivery,
  *   and a practice's billing@ is a role address.
- * A timeout or an error accepts and logs MAIL_VALIDATION_UNAVAILABLE; past the day's cap the call is not made and
- * MAIL_VALIDATION_CAP_REACHED is logged, which alarms (infra/lib/mail.ts). A DNS refusal still refuses, whatever SES
- * says (the call, made at once, still counts toward the cap). No log line names the address or its domain.
+ * A timeout or an error accepts and logs MAIL_VALIDATION_UNAVAILABLE; an error that says AWS refused the
+ * address-validation account's role or the call itself (VALIDATION_REFUSALS: it will refuse every address until the
+ * role or its parameter is fixed) accepts and logs MAIL_VALIDATION_REFUSED, which alarms; past the day's cap the call
+ * is not made and MAIL_VALIDATION_CAP_REACHED is logged, which alarms (infra/lib/mail.ts). A DNS refusal still refuses,
+ * whatever SES says (the call, made at once, still counts toward the cap). No log line names the address or its
+ * domain.
+ *
+ * On a deployed server the call runs as the role MAIL_VALIDATION_ROLE_ARN names in the environment's address-validation
+ * account (validation-credentials.ts; docs/adr/0065, "Address validation in its own account"), so CloudTrail records
+ * it, and the address in its request, in that account alone.
  */
 
 /** SES's three confidence verdicts. */
@@ -54,12 +61,31 @@ export type AddressVerdict = 'accept' | 'warn' | 'refuse';
 /** How long the validation call may take (one 2-second timeout, run beside the DNS check's). */
 export const VALIDATION_TIMEOUT_MS = 2_000;
 
-/** The codes the checks log (infra/lib/mail.ts holds the cap's alarm and the two warnings to these). */
+/** The codes the checks log (infra/lib/mail.ts holds the cap's and the refusal's alarms and the two warnings to these). */
 export const MAIL_CHECK_CODES = {
   domainUnavailable: 'MAIL_DOMAIN_CHECK_UNAVAILABLE',
   validationUnavailable: 'MAIL_VALIDATION_UNAVAILABLE',
+  validationRefused: 'MAIL_VALIDATION_REFUSED',
   capReached: 'MAIL_VALIDATION_CAP_REACHED',
 } as const;
+
+/**
+ * The AWS errors, by name, that say the validation was refused rather than slow: STS refused the address-validation
+ * role (its trust, or MAIL_VALIDATION_ROLE_ARN naming the wrong role), SES refused the call (the role's policy), or the
+ * credentials were not good. None passes on the next try, so each is MAIL_VALIDATION_REFUSED; any other error (a
+ * timeout, throttling, a network fault) is MAIL_VALIDATION_UNAVAILABLE.
+ */
+export const VALIDATION_REFUSALS: readonly string[] = [
+  'AccessDenied',
+  'AccessDeniedException',
+  'InvalidClientTokenId',
+  'UnrecognizedClientException',
+  'SignatureDoesNotMatch',
+  'ExpiredToken',
+  'ExpiredTokenException',
+  'RegionDisabledException',
+  'ValidationCredentialsMissing',
+];
 
 /** The rate limiter's bucket for the day's validations, and its one subject: the whole server counts as one. */
 export const VALIDATION_BUCKET = 'screening_validation';
@@ -72,11 +98,34 @@ function verdictOf(value: { readonly ConfidenceVerdict?: string } | undefined): 
   return VERDICTS.find((candidate) => candidate === verdict);
 }
 
-/** SES's validation of an address (the web task's role holds ses:GetEmailAddressInsights; infra application-role.ts). */
+/**
+ * A promise that rejects once `signal` aborts, whatever `work` is waiting on: the SDK honours the signal only once its
+ * request is under way, not while it fetches credentials, so this holds the whole call to the validation's bound.
+ */
+function bounded<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const aborted = () => {
+      reject(Object.assign(new Error('the validation did not answer in time'), { name: 'AbortError' }));
+    };
+    if (signal.aborted) {
+      aborted();
+      return;
+    }
+    signal.addEventListener('abort', aborted, { once: true });
+    void work.then(resolve, reject).finally(() => {
+      signal.removeEventListener('abort', aborted);
+    });
+  });
+}
+
+/**
+ * SES's validation of an address, through `client`: on a deployed server, one whose credentials are the
+ * address-validation account's role (services.ts; infra/lib/address-validation-stack.ts), which alone may make the call.
+ */
 export function sesAddressInsights(client: SESv2Client): AddressInsights {
   return {
     verdicts: async (address, signal) => {
-      const response = await client.send(new GetEmailAddressInsightsCommand({ EmailAddress: address }), { abortSignal: signal });
+      const response = await bounded(client.send(new GetEmailAddressInsightsCommand({ EmailAddress: address }), { abortSignal: signal }), signal);
       const mailbox = response.MailboxValidation;
       const evaluations = mailbox?.Evaluations;
       const read = {
@@ -158,6 +207,11 @@ async function takeValidation(pool: ScopePool<ScopeClient>, sealer: Sealer, dail
   }
 }
 
+/** An error's name when it is shaped like one, never its message, which can carry the address. */
+function errorName(error: unknown): string {
+  return error instanceof Error && /^[A-Za-z]{1,64}$/.test(error.name) ? error.name : '';
+}
+
 /** SES's verdict on the mailbox, or null when it was not asked (past the cap) or could not answer. */
 async function validated(
   address: string,
@@ -178,8 +232,12 @@ async function validated(
   const timer = setTimeout(() => controller.abort(), VALIDATION_TIMEOUT_MS);
   try {
     return validationVerdict(await context.checks.insights.verdicts(address, controller.signal));
-  } catch {
-    context.logger.warn('screening address not validated: the validation did not answer', { error_code: MAIL_CHECK_CODES.validationUnavailable });
+  } catch (error) {
+    if (VALIDATION_REFUSALS.includes(errorName(error))) {
+      context.logger.error('screening address not validated: AWS refused the address-validation role or its call', { error_code: MAIL_CHECK_CODES.validationRefused });
+    } else {
+      context.logger.warn('screening address not validated: the validation did not answer', { error_code: MAIL_CHECK_CODES.validationUnavailable });
+    }
     return null;
   } finally {
     clearTimeout(timer);
