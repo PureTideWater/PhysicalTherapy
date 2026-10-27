@@ -28,13 +28,15 @@
 --   new: the rate limiter's keyed HMAC of the client address, null when the web had none); a subject with 3 live marks
 --   is refused a new screening (screening_bounce_budget).
 -- - The refusals, by triggers, so no function body of migrations 20261105090000 or 20261106090000 is copied but
---   submit_screening()'s: an accepted upload is refused while the screening stream is paused (screening_paused) and for
---   an address on the refusal list (screening_contact_undeliverable), BEFORE INSERT on screening_upload, so a refused
---   upload, which is never emailed, is still recorded with its reasons; a run is refused for the bounce budget
---   (screening_bounce_budget), BEFORE INSERT on screening_run; and a claim, completion or failure of a run is refused
---   while the screening's mail is not sending (screening_mail_paused), BEFORE UPDATE OF status on screening_run. In
---   submit_screening() the refusals come in this order: closed; the ZIP statuses, the rows and
---   screening_band_outside_content; screening_paused; screening_contact_undeliverable; screening_bounce_budget.
+--   submit_screening()'s: an accepted upload is refused while the screening stream is paused (screening_paused), BEFORE
+--   INSERT on screening_upload, so a refused upload, which is never emailed, is still recorded with its reasons; a run
+--   is refused for the bounce budget (screening_bounce_budget) and then for an address on the refusal list
+--   (screening_contact_undeliverable), BEFORE INSERT on screening_run; and a claim, completion or failure of a run is
+--   refused while the screening's mail is not sending (screening_mail_paused), BEFORE UPDATE OF status on screening_run.
+--   In submit_screening() the refusals come in this order: closed; the ZIP statuses, the rows and
+--   screening_band_outside_content; screening_paused; screening_bounce_budget; screening_contact_undeliverable. The
+--   submitter's budget comes before the address (review S1), so no client or account past its budget can test an
+--   address against the refusal list.
 -- - The consumer (tp_screening) reads screening_mail_gate() before it claims; the web (tp_app) reads
 --   screening_mail_status() (paused; ready once the screening's delivered and bounced probes have come back within
 --   48 hours and since the last resume).
@@ -316,36 +318,48 @@ ALTER TABLE screening_bounce_mark ENABLE ROW LEVEL SECURITY;
 ALTER TABLE screening_bounce_mark FORCE ROW LEVEL SECURITY;
 CREATE POLICY screening_bounce_mark_owner ON screening_bounce_mark FOR ALL TO tp_owner USING (true) WITH CHECK (true);
 
--- An accepted upload is refused while the screening stream is paused, and for a contact address on the refusal list
--- (D7, D9; Q11 (b)). A refused upload is never emailed, so it is recorded with its reasons whatever the stream's state.
+-- Whether a submitter is past its bounce budget (Q10 (a)): its account's or its client's keyed subject (null: none) has
+-- 3 live bounce marks. Granted to no role: the run's trigger and the web's check before the address (section 9) read it.
+CREATE FUNCTION screening_bounce_budget_spent(account_subject text, client_subject text) RETURNS boolean
+LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT (SELECT count(*) FROM screening_bounce_mark b WHERE b.subject_kind = 'account' AND b.subject = $1 AND b.expires_at > now()) >= 3
+      OR (SELECT count(*) FROM screening_bounce_mark b WHERE b.subject_kind = 'client' AND b.subject = $2 AND b.expires_at > now()) >= 3
+$$;
+
+-- Whether a contact address's mailbox is on the refusal list (Q11 (b)). Granted to no role, as above.
+CREATE FUNCTION screening_contact_refused(address text) RETURNS boolean
+LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT EXISTS (SELECT 1 FROM screening_mail_refusal f WHERE f.recipient_sha256 = mail_recipient_sha256($1) AND f.expires_at > now())
+$$;
+
+-- An accepted upload is refused while the screening stream is paused (D7). A refused upload is never emailed, so it is
+-- recorded with its reasons whatever the stream's state.
 CREATE FUNCTION screening_upload_mail_gate() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
-DECLARE
-  hashed text;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM mail_stream s WHERE s.stream = 'screening' AND s.paused_at IS NULL) THEN
     RAISE EXCEPTION 'new screenings are paused while their result emails cannot be sent' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_paused';
-  END IF;
-  SELECT mail_recipient_sha256(p.contact_email) INTO hashed FROM screening_prospect p WHERE p.id = NEW.prospect_id;
-  IF EXISTS (SELECT 1 FROM screening_mail_refusal f WHERE f.recipient_sha256 = hashed AND f.expires_at > now()) THEN
-    RAISE EXCEPTION 'a screening''s result cannot be emailed to its contact address' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_contact_undeliverable';
   END IF;
   RETURN NEW;
 END;
 $$;
 CREATE TRIGGER screening_upload_mail_gate BEFORE INSERT ON screening_upload FOR EACH ROW WHEN (NEW.status = 'accepted') EXECUTE FUNCTION screening_upload_mail_gate();
 
--- A run is refused once its account's or its client's keyed subject has 3 live bounce marks (Q10 (a)).
-CREATE FUNCTION screening_run_bounce_budget() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+-- A run is refused, in this order (review S1): for its submitter's bounce budget (screening_bounce_budget), then for a
+-- contact address on the refusal list (screening_contact_undeliverable; D9). The submitter comes first, so a client or
+-- an account past its budget gets the one answer whatever the address, and cannot test an address against the list. A
+-- refused upload has no run, so it is recorded whatever the list says.
+CREATE FUNCTION screening_run_mail_refusal() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
-  IF (SELECT count(*) FROM screening_bounce_mark b WHERE b.subject_kind = 'account' AND b.subject = NEW.rate_subject AND b.expires_at > now()) >= 3
-     OR (NEW.client_subject IS NOT NULL
-         AND (SELECT count(*) FROM screening_bounce_mark b WHERE b.subject_kind = 'client' AND b.subject = NEW.client_subject AND b.expires_at > now()) >= 3) THEN
+  IF screening_bounce_budget_spent(NEW.rate_subject, NEW.client_subject) THEN
     RAISE EXCEPTION 'too many recent screening emails from this sender could not be delivered' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_bounce_budget';
+  END IF;
+  IF screening_contact_refused((SELECT p.contact_email FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE u.id = NEW.upload_id)) THEN
+    RAISE EXCEPTION 'a screening''s result cannot be emailed to its contact address' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_contact_undeliverable';
   END IF;
   RETURN NEW;
 END;
 $$;
-CREATE TRIGGER screening_run_bounce_budget BEFORE INSERT ON screening_run FOR EACH ROW EXECUTE FUNCTION screening_run_bounce_budget();
+CREATE TRIGGER screening_run_mail_refusal BEFORE INSERT ON screening_run FOR EACH ROW EXECUTE FUNCTION screening_run_mail_refusal();
 
 -- A run is not claimed, completed or failed (each ends in an email) while the screening's mail is not sending (D7); it
 -- stays queued, or in pricing for the stale rule, until the stream is resumed and SES confirmed.
@@ -1457,7 +1471,8 @@ REVOKE ALL ON mail_recipient_key, mail_stream, mail_send, screening_mail_refusal
 GRANT SELECT ON support_grant_notice, support_grant_notice_recipient TO tp_app;
 
 REVOKE ALL ON FUNCTION mail_recipient_canonical(text), mail_recipient_sha256(text), mail_send_expiry(), mail_state_rank(text), mail_window_counts(text), screening_mail_sending(),
-  screening_mail_gate(), screening_mail_status(), screening_upload_mail_gate(), screening_run_bounce_budget(), screening_run_mail_gate(),
+  screening_mail_gate(), screening_mail_status(), screening_bounce_budget_spent(text, text), screening_contact_refused(text),
+  screening_upload_mail_gate(), screening_run_mail_refusal(), screening_run_mail_gate(),
   support_notice_administrators(uuid), support_notice_report_undelivered(uuid, text), support_notice_counts(uuid, text),
   operator_open_support_notice(uuid, text, text), operator_support_notices_pending(integer), operator_support_notice_claim(uuid, uuid),
   operator_support_notice_sent(uuid, uuid, text, text), operator_support_notice_failed(uuid, uuid, text, boolean, text), operator_due_support_notices(integer),
