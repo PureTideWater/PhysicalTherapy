@@ -16,6 +16,9 @@ function noSubscription(): () => void {
  * A password with Show (NIST SP 800-63B 5.1.1.2; docs/adr/0077, D8): Field's markup, a secret its form empties after a
  * refusal (data-secret), uncontrolled so nothing writes the value back. Shown or not, the input turns off spell
  * checking, autocorrect and autocapitalisation, so a browser's cloud spelling service never reads a shown password.
+ * The component holds these itself: its props type leaves them out (with `type` and `ref`), and they are written after
+ * the caller's props, so not even a cast turns the spelling service back on, drops the secret mark or the type, or
+ * replaces the ref the submit-time hide needs.
  *
  * The toggle is named by its own words, "Show" and `showName` in a visually hidden span ("Show new password"), never
  * an aria-label, so a label search for the field finds one element. It is hidden until mounted (without JavaScript it
@@ -43,7 +46,7 @@ export function PasswordField({
   readonly errorName?: string;
   readonly issueFor?: readonly string[];
   readonly id?: string;
-} & Omit<ComponentProps<'input'>, 'type'>) {
+} & Omit<ComponentProps<'input'>, 'type' | 'spellCheck' | 'autoCorrect' | 'autoCapitalize' | 'ref'>) {
   const id = given ?? `field-${name}`;
   const shown = useFieldIssue(name, issueFor);
   const message = error ?? shown;
@@ -72,16 +75,16 @@ export function PasswordField({
       <Label htmlFor={id}>{label}</Label>
       <div className="flex min-w-0 items-center gap-2">
         <Input
-          ref={inputRef}
           id={id}
           name={name}
+          {...controlMarks(id, { error: message, hint, emptied, errorName, issueFor })}
+          {...props}
+          ref={inputRef}
           type={visible ? 'text' : 'password'}
           data-secret=""
           spellCheck={false}
           autoCorrect="off"
           autoCapitalize="none"
-          {...controlMarks(id, { error: message, hint, emptied, errorName, issueFor })}
-          {...props}
         />
         <Button
           type="button"

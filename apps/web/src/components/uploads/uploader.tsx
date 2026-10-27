@@ -6,6 +6,7 @@ import { type DragEvent, useCallback, useEffect, useRef, useState } from 'react'
 
 import { spreadsheetExportProblem } from '../../lib/uploads/csv-exports';
 import { type Receipt, formatBytes, receiptState } from '../../lib/uploads/receipt-labels';
+import { Hint } from '../field';
 import { FormatUnconfirmedBadge } from './format-flag';
 import { ReceiptList, type ReceiptPage, ReceiptStatus } from './receipts';
 
@@ -346,7 +347,7 @@ export function Uploader(props: UploaderProps) {
                 id="upload-format"
                 value={formatId}
                 required
-                aria-describedby="upload-format-help"
+                aria-describedby="upload-format-hint"
                 onChange={(event) => {
                   setFormatId(event.target.value);
                 }}
@@ -359,11 +360,13 @@ export function Uploader(props: UploaderProps) {
                   </option>
                 ))}
               </select>
-              <p id="upload-format-help" className="max-w-prose text-xs text-muted-foreground">
-                The practice-management system the ERA export came from. Each file of the batch is read with its layout; a CSV export only.
-              </p>
+              <Hint
+                id="upload-format"
+                className="max-w-prose"
+                hint="The practice-management system the ERA export came from. Each file of the batch is read with its layout; a CSV export only."
+              />
               {format?.unconfirmed === true ? (
-                <div className="flex max-w-prose flex-col gap-1 text-xs text-muted-foreground" role="note" aria-label="Format unconfirmed">
+                <div className="flex max-w-prose flex-col gap-1 text-sm text-muted-foreground" role="note" aria-label="Format unconfirmed">
                   <FormatUnconfirmedBadge />
                   <span>
                     No description of this format has been received from its vendor yet, so PaidWhole reads it with a placeholder layout and flags its lines on the Coverage screen until the

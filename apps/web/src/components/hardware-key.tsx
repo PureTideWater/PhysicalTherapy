@@ -111,11 +111,12 @@ export function HardwareKeySignIn() {
         void signIn();
       }}
     >
+      {/* First in the form, before the fields, as every refused form shows its summary (docs/adr/0077). */}
+      <Problem message={error} locked={locked} title="Not signed in" />
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="key-email">Email</Label>
         <Input id="key-email" name="email" type="email" autoComplete="username webauthn" required value={email} onChange={(event) => setEmail(event.target.value)} />
       </div>
-      <Problem message={error} locked={locked} title="Not signed in" />
       <CeremonyButton busy={busy} type="submit">
         Sign in with hardware key
       </CeremonyButton>

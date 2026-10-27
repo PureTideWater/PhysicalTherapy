@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 import type { ActionState } from '../../lib/http/next';
 import { dollarsForInput } from '../../lib/money-input';
 import { ActionForm } from '../action-form';
-import { Field } from '../field';
+import { Field, Hint } from '../field';
 import { MoneyField } from '../money-field';
 import { Counted, Money } from '../remittances/display';
 
@@ -97,11 +97,9 @@ export function PursuitCard({
           <ActionForm action={action} submit="Save pursuit cost" className="grid max-w-md gap-3">
             {formKeys()}
             <input type="hidden" name="practiceId" value={practiceId} />
-            <fieldset className="grid min-w-0 gap-3" aria-describedby="pursuit-rule">
+            <fieldset className="grid min-w-0 gap-3" aria-describedby="pursuit-hint">
               <legend className="text-sm font-medium">Staff rate and times</legend>
-              <p id="pursuit-rule" className="text-xs text-muted-foreground">
-                All three together, or all blank to clear.
-              </p>
+              <Hint id="pursuit" hint="All three together, or all blank to clear." />
               <MoneyField label="Staff rate per hour" name="staffRatePerHour" defaultValue={pursuit === null ? '' : dollarsForInput(pursuit.staffRateCentsPerHour)} />
               <Field label="Minutes per packet" name="minutesPerPacket" defaultValue={pursuit === null ? '' : String(pursuit.minutesPerPacket)} inputMode="numeric" />
               <Field label="Minutes per follow-up" name="minutesPerFollowUp" defaultValue={pursuit === null ? '' : String(pursuit.minutesPerFollowUp)} inputMode="numeric" />

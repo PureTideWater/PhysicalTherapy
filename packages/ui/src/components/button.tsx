@@ -13,7 +13,9 @@ export const buttonVariants = cva(
         // A quiet action in the danger color: its text on its tint with a rule, never white text on the Short fill
         // (docs/brand/BRAND.md, section 4). Ink fills are the primary button's alone.
         destructive: 'border border-danger bg-danger-bg text-danger hover:bg-background',
-        outline: 'border bg-background hover:bg-accent hover:text-accent-foreground',
+        // A pressed toggle (aria-pressed, such as a password's Show) looks pressed: an Ink rule on the inset surface, its
+        // words and name unchanged.
+        outline: 'border bg-background hover:bg-accent hover:text-accent-foreground aria-pressed:border-foreground aria-pressed:bg-secondary',
         secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
         ghost: 'hover:bg-accent hover:text-accent-foreground',
         link: 'text-primary underline-offset-4 hover:underline',

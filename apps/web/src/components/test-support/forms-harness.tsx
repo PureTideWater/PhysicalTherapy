@@ -1,5 +1,5 @@
 import { AppRouterContext, type AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
-import { Component, type ReactNode, StrictMode } from 'react';
+import { Component, type ReactNode, StrictMode, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 
 // The brand's tokens and the shared stylesheet as written: the browser ignores the Tailwind at-rules, and the unlayered
@@ -9,6 +9,7 @@ import '../../../../../packages/ui/src/styles.css';
 import { ActionForm, takesFocus, takesOrphanedRefusal } from '../action-form';
 import { CheckboxField, CheckboxGroup, Field, SelectField, TextAreaField } from '../field';
 import type { RefusalState } from '../form-issues';
+import { HardwareKeySignIn } from '../hardware-key';
 import { ExportRequestForm } from '../packets/export-status';
 import { VersionForm } from '../packets/version-form';
 import { PasswordField } from '../password-field';
@@ -23,6 +24,12 @@ import { ScreeningSplitForm } from '../screening/split-form';
 /** What the action does on one call: refuse with a state, refuse after the test releases it, drop the connection, or fail. */
 type Step = { readonly refuse: RefusalState } | { readonly hold: RefusalState } | { readonly drop: true } | { readonly fail: string };
 
+/** What the server renders into a form's keys (FormKeys): its request key, and the opaque mark of the person signed in. */
+interface PageKeys {
+  readonly requestKey: string;
+  readonly person: string | null;
+}
+
 /** The test's handle on the page. */
 interface HarnessControl {
   /** The action's next answers, first first; with none left it refuses with no issue. */
@@ -35,9 +42,23 @@ interface HarnessControl {
   allow: boolean;
   /** The stand-in router's refresh() calls. */
   refreshes: number;
+  /** What each next refresh renders into the page's keys, first first; with none left a refresh renders nothing new. */
+  refreshRenders: Partial<PageKeys>[];
+  /** Renders the page again with these keys, as a refresh in place does (the export status's, another form's). */
+  render: (next: Partial<PageKeys>) => void;
 }
 
-const control: HarnessControl = { steps: [], calls: [], release: null, allow: true, refreshes: 0 };
+/** The page's keys as the server renders them now, and the page's root, which renders again when they change. */
+let keys: PageKeys = { requestKey: 'synthetic-request-key', person: 'synthetic-person-a' };
+const rendered = new Set<() => void>();
+function renderKeys(next: Partial<PageKeys>): void {
+  keys = { ...keys, ...next };
+  for (const listener of rendered) {
+    listener();
+  }
+}
+
+const control: HarnessControl = { steps: [], calls: [], release: null, allow: true, refreshes: 0, refreshRenders: [], render: renderKeys };
 Object.assign(window, { harness: control });
 
 async function action(_previous: RefusalState, data: FormData): Promise<RefusalState> {
@@ -65,6 +86,16 @@ async function action(_previous: RefusalState, data: FormData): Promise<RefusalS
   return step.refuse;
 }
 
+/** FormKeys as the server renders it: the request key, and the person's mark on an element that is not posted. */
+function Keys({ page }: { readonly page: PageKeys }) {
+  return (
+    <>
+      <input type="hidden" name="requestKey" value={page.requestKey} />
+      {page.person === null ? null : <span hidden data-form-actor={page.person} />}
+    </>
+  );
+}
+
 /** ActionForm over the harness's action, as a page renders it. */
 function HarnessForm(props: Omit<Parameters<typeof ActionForm>[0], 'action'>) {
   return <ActionForm action={action} {...props} />;
@@ -86,11 +117,12 @@ const REASONS = [
   { value: 'other', label: 'Other' },
 ];
 
-const forms: Record<string, () => ReactNode> = {
+/** Each form, rendered from the page's keys (a refresh renders it again with the keys the server gives then). */
+const forms: Record<string, (page: PageKeys) => ReactNode> = {
   /** Every kind of control a refusal must keep, and every secret it must empty (FRM-01). */
-  keep: () => (
+  keep: (page) => (
     <HarnessForm submit="Save">
-      <input type="hidden" name="requestKey" value="synthetic-request-key" />
+      <Keys page={page} />
       <Field label="Billing ZIP (ZIP+4 if Medicare needs one)" name="zip" defaultValue="27601" hint="Five digits." />
       <SelectField label="Reason" name="reason" options={REASONS} defaultValue="window_passed" />
       <TextAreaField label="Why (for “Other” only)" name="why" />
@@ -198,7 +230,9 @@ const forms: Record<string, () => ReactNode> = {
     </HarnessForm>
   ),
   /** The screening's split form itself: it shows its own problems and sends nothing while it has any. */
-  screening: () => <ScreeningSplitForm action={action} facility="" nonFacility="" formKeys={null} />,
+  screening: (page) => <ScreeningSplitForm action={action} facility="" nonFacility="" formKeys={<Keys page={page} />} />,
+  /** The hardware-key sign-in, whose ceremony calls the test answers with page.route (its own form, not ActionForm). */
+  hardwareKey: () => <HardwareKeySignIn />,
   /**
    * A form a change elsewhere can overtake (#50's Re-run): it reads the page again after a refusal, and its hidden run
    * names an issue by its own data-error-name, as the route words it ("This run: …").
@@ -211,11 +245,11 @@ const forms: Record<string, () => ReactNode> = {
     </HarnessForm>
   ),
   /** The packet builder's version form, which submits as ActionForm does with two actions (design 4.2). */
-  version: () => (
+  version: (page) => (
     <VersionForm
       writeAction={action}
       modelAction={action}
-      keys={<input type="hidden" name="requestKey" value="synthetic-request-key" />}
+      keys={<Keys page={page} />}
       practiceId="practice-1"
       caseId="case-1"
       basedOnVersionId={null}
@@ -223,22 +257,24 @@ const forms: Record<string, () => ReactNode> = {
       attachable={[]}
       narrative={null}
       submits={[{ intent: 'save', label: 'Save as a new version' }]}
-      model={null}
+      model={{ heading: 'Draft with the model', description: 'A synthetic draft.', submit: { intent: 'model_draft', label: 'Draft with the model', variant: 'outline' }, unavailable: null }}
     />
   ),
   /** The packet's Export button, a form of hidden fields with its own useActionState (design 4.2). */
-  export: () => (
+  export: (page) => (
     <ExportRequestForm action={action} refusalCodes={['no_approved_version']}>
-      <input type="hidden" name="requestKey" value="synthetic-request-key" />
+      <Keys page={page} />
     </ExportRequestForm>
   ),
   /** Two forms on one page, as the per-row forms: each has its own refusal. */
-  two: () => (
+  two: (page) => (
     <>
       <HarnessForm submit="Save first">
+        <Keys page={page} />
         <Field label="Title" name="title" id="first-title" />
       </HarnessForm>
       <HarnessForm submit="Save second">
+        <Keys page={page} />
         <Field label="Title" name="title" id="second-title" />
       </HarnessForm>
     </>
@@ -254,6 +290,13 @@ const router = {
   replace: () => undefined,
   refresh: () => {
     control.refreshes += 1;
+    // The server's answer comes back a moment later and renders in place, as Next's does.
+    const next = control.refreshRenders.shift();
+    if (next !== undefined) {
+      setTimeout(() => {
+        renderKeys(next);
+      }, 20);
+    }
   },
   bfcacheId: 'harness',
 } satisfies AppRouterInstance;
@@ -283,10 +326,27 @@ const root = document.getElementById('root');
 if (render === undefined || root === null) {
   throw new Error(`no harness form ${name}`);
 }
+
+/** The page: rendered again, from the root, whenever its keys change, as a refresh renders a server page in place. */
+function Page({ form }: { readonly form: (page: PageKeys) => ReactNode }) {
+  const page = useSyncExternalStore(
+    (listener) => {
+      rendered.add(listener);
+      return () => {
+        rendered.delete(listener);
+      };
+    },
+    () => keys,
+  );
+  return form(page);
+}
+
 createRoot(root).render(
   <StrictMode>
     <AppRouterContext value={router}>
-      <Boundary>{render()}</Boundary>
+      <Boundary>
+        <Page form={render} />
+      </Boundary>
     </AppRouterContext>
   </StrictMode>,
 );

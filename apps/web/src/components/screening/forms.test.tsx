@@ -73,18 +73,27 @@ describe('the place-of-service split form', () => {
     expect(splitFaults('', '')).toEqual({ facility: true, nonFacility: false });
   });
 
-  it('holds its status region from the first render, empty until the lists have a problem, and marks the field at fault', () => {
+  it('shows its problems in a list that is not live and holds an empty status line from the first render, and marks the field at fault', () => {
     const keys = <input type="hidden" name="requestKey" value="k" />;
+    const status = '<p role="status" class="sr-only" data-slot="split-status"></p>';
     const empty = renderToStaticMarkup(<ScreeningSplitForm action={action} facility="" nonFacility="" formKeys={keys} />);
-    expect(empty).toContain('<div id="split-problems" role="status"></div>');
+    expect(empty).toContain(`<div id="split-problems"></div>${status}`);
     expect(empty).not.toContain('aria-invalid="');
+    // Problems the page opens with are shown and read in place, never said: the line speaks only after a change or a press.
     const both = renderToStaticMarkup(<ScreeningSplitForm action={action} facility="11" nonFacility="11" formKeys={keys} />);
     expect(both).toContain('Place of service 11 is listed as both facility and non-facility.');
-    expect(both).toMatch(/<div id="split-problems" role="status"><ul [^>]*data-state="split-problems"/);
+    expect(both).toMatch(/<div id="split-problems"><ul [^>]*data-state="split-problems">.*<\/ul><\/div><p role="status" class="sr-only" data-slot="split-status"><\/p>/);
     for (const id of ['split-facility', 'split-non-facility']) {
       const input = [...both.matchAll(/<input [^>]*>/g)].map((match) => match[0]).find((tag) => tag.includes(`id="${id}"`)) ?? '';
       expect(input).toContain('aria-invalid="true"');
       expect(input).toContain(`aria-describedby="split-problems ${id}-hint"`);
+    }
+  });
+
+  it('gives each list its hint in the shared hint’s 14 px', () => {
+    const html = renderToStaticMarkup(<ScreeningSplitForm action={action} facility="22" nonFacility="11" formKeys={null} />);
+    for (const id of ['split-facility', 'split-non-facility']) {
+      expect(html).toMatch(new RegExp(`<p id="${id}-hint" class="text-sm text-muted-foreground">`));
     }
   });
 

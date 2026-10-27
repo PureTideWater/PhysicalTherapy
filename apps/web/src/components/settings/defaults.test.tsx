@@ -144,9 +144,11 @@ describe('the pursuit card (CAS-38)', () => {
     expect(monoFigures(html)).toEqual(['$45.00', '1', '1']);
   });
 
-  it('groups its three fields under a legend described by the rule that binds them', () => {
+  it('groups its three fields under a legend described by the rule that binds them, in the shared 14 px hint', () => {
     const { html } = pursuit(PURSUIT);
-    expect(html).toMatch(/<fieldset[^>]*aria-describedby="pursuit-rule"[^>]*><legend[^>]*>Staff rate and times<\/legend><p id="pursuit-rule"[^>]*>All three together, or all blank to clear.<\/p>/);
+    expect(html).toMatch(
+      /<fieldset[^>]*aria-describedby="pursuit-hint"[^>]*><legend[^>]*>Staff rate and times<\/legend><p id="pursuit-hint" class="text-sm text-muted-foreground">All three together, or all blank to clear.<\/p>/,
+    );
     expect(controls(/<fieldset[\s\S]*<\/fieldset>/.exec(html)?.[0] ?? '')).toEqual(['staffRatePerHour', 'minutesPerPacket', 'minutesPerFollowUp']);
   });
 

@@ -9,10 +9,12 @@ import { enterPassword, practiceId, registerKeyAndSignIn, signInWithTotp } from 
  * audit request refused with and without JavaScript, measured and scanned at a phone's width and a desktop's; the sign-in
  * steps refused for a wrong password, a wrong code and a weak or mismatched new password; a practice's ROI form refused
  * while its post is held, so the pending button and its status can be read, then saved on another page; the support
- * form through a dropped connection, a page out of date, a refusal and a save to the same page; and the console's
+ * form through a dropped connection, a page out of date, a refusal and a save to the same page, then a save whose answer
+ * is lost and a page read again after someone else signs in from another tab; and the console's
  * incident form refused for its checkbox group, then saved to the same address (and resolved again, so the public status
- * page reads as before). Each signed-in test is its own synthetic persona's (refusals count toward the ten-failure lock,
- * and specs run in parallel), and nothing a refusal sends is written. Synthetic data only.
+ * page reads as before), and that page at a phone's width with a component's row refused. Each signed-in test is its
+ * own synthetic persona's (refusals count toward the ten-failure lock, and specs run in parallel), and nothing a refusal
+ * sends is written. Synthetic data only.
  */
 
 /** The refusal summary of a form: the first thing in it, before its fields (docs/adr/0077, D3). */
@@ -198,7 +200,9 @@ test('a refused audit request keeps what was typed, names the field by its label
       expect(posts).toBe(1);
       // Accepted (docs/adr/0077, Not covered): with nothing echoed from the server, the fields come back empty.
       await expect(organization).toHaveValue('');
-      await fillAuditRequest(plain, `SYNTHETIC FORMS CLINIC ${String(Date.now())}`);
+      // A name with no digits, which the screen always accepts: digits from a clock or a random tag can take an
+      // identifier's or a date's shape (textPhiFindings), and the success would never come. Nothing reads it back.
+      await fillAuditRequest(plain, 'SYNTHETIC FORMS CLINIC');
       await plain.getByRole('button', { name: 'Send request' }).click();
       await expect(plain.getByText('Request received')).toBeVisible();
     } finally {
@@ -247,7 +251,7 @@ test('sign-in refusals keep the email, empty and say so for the password and the
   });
 });
 
-test('choosing a password: the policy is the field’s hint, Show reveals and hides it, and a weak or mismatched password is refused on its own field (FRM-07)', async ({ page }) => {
+test('choosing a password: the policy is the field’s hint, Show reveals and hides it and looks pressed while it shows, and a weak or mismatched password is refused on its own field (FRM-07)', async ({ page }) => {
   const key = 'forms-invited';
   await enterPassword(page, key);
   await expect(page).toHaveURL(/\/sign-in\/new-password$/);
@@ -259,11 +263,17 @@ test('choosing a password: the policy is the field’s hint, Show reveals and hi
     await expect(fresh).toHaveAccessibleDescription('At least 12 characters, with a lowercase letter, an uppercase letter, a digit and a symbol.');
     // Exact: "Show new password" is also the start of "Show new password again".
     const show = page.getByRole('button', { name: 'Show new password', exact: true });
+    // Pressed, the toggle looks pressed, with the same words: an Ink rule (the text's color) in place of the quiet one.
+    const rule = () => show.evaluate((button) => getComputedStyle(button).borderTopColor);
+    const ink = await page.evaluate(() => getComputedStyle(document.body).color);
+    const quiet = await rule();
+    expect(quiet).not.toBe(ink);
     await expect(show).toHaveAttribute('aria-pressed', 'false');
     await expect(fresh).toHaveAttribute('type', 'password');
     await show.click();
     await expect(show).toHaveAttribute('aria-pressed', 'true');
     await expect(fresh).toHaveAttribute('type', 'text');
+    await expect.poll(rule).toBe(ink);
     for (const [attribute, value] of [
       ['spellcheck', 'false'],
       ['autocorrect', 'off'],
@@ -274,6 +284,7 @@ test('choosing a password: the policy is the field’s hint, Show reveals and hi
     await show.click();
     await expect(show).toHaveAttribute('aria-pressed', 'false');
     await expect(fresh).toHaveAttribute('type', 'password');
+    await expect.poll(rule).toBe(quiet);
   });
 
   await test.step('a weak password, sent while shown, is hidden again, emptied, and refused on New password', async () => {
@@ -399,7 +410,7 @@ test('a practice’s ROI form keeps the typed period, keeps its button focused a
   });
 });
 
-test('the support form keeps what was typed through a dropped connection, a page out of date and a refusal, and starts fresh once the ticket is saved (FRM-01, FRM-02, FRM-05)', async ({ page }) => {
+test('the support form keeps what was typed through a dropped connection, a page out of date and a refusal, and starts fresh once the ticket is saved; a press whose answer was lost is never saved twice, and a page read again under another person clears the form (FRM-01, FRM-02, FRM-05)', async ({ page }) => {
   await signInWithTotp(page, 'forms-manager');
   await page.goto('/support?from=remittances');
   const form = formWith(page, 'Open ticket');
@@ -473,9 +484,78 @@ test('the support form keeps what was typed through a dropped connection, a page
     await expect(message).toHaveValue('');
     await expect(form.locator('input[name="requestKey"]')).not.toHaveValue(keyBefore);
   });
+
+  await test.step('a press saved by the server whose answer is lost, sent again after the page is read again, carries the same request key: "Already sent", and one ticket (FRM-01, FRM-05)', async () => {
+    const asked = 'SYNTHETIC a question about the export column';
+    await category.selectOption('question');
+    await subject.fill(asked);
+    await message.fill('SYNTHETIC CHECK the statement page');
+    const support = (url: URL) => url.pathname === '/support';
+    let reached = 0;
+    await page.route(support, async (route) => {
+      if (route.request().method() === 'POST') {
+        // The post reaches the server, which saves the ticket; only its answer is lost on the way back.
+        await route.fetch();
+        reached += 1;
+        await route.abort('internetdisconnected');
+      } else {
+        await route.continue();
+      }
+    });
+    try {
+      await page.getByRole('button', { name: 'Open ticket' }).click();
+      await expect(summary).toContainText('Not confirmed');
+    } finally {
+      await page.unroute(support);
+    }
+    expect(reached).toBe(1);
+    // Read again in place: the page renders a new request key, and the next press still sends the one the server saved.
+    const key = form.locator('input[name="requestKey"]');
+    const sent = await key.inputValue();
+    await form.locator('input[name="csrfToken"]').evaluate((input) => {
+      (input as HTMLInputElement).value = 'SYNTHETIC-STALE-TOKEN';
+    });
+    await page.getByRole('button', { name: 'Open ticket' }).click();
+    await expect(summary).toContainText('It is up to date now: press “Open ticket” again.');
+    await expect(key).not.toHaveValue(sent);
+    await page.getByRole('button', { name: 'Open ticket' }).click();
+    await expect(summary).toHaveAttribute('data-state', 'duplicate');
+    await expect(summary).toContainText('Already sent');
+    await expect(summary).toContainText('This form was already sent, so nothing new was saved. Reload the page to see the result.');
+    await expect(summary).toBeFocused();
+    await kept(asked);
+    await page.reload();
+    await expect(page.getByRole('table', { name: 'Tickets' }).getByRole('row').filter({ hasText: asked })).toHaveCount(1);
+  });
+
+  await test.step('a page read again after someone else signs in from another tab clears the form and invites no press, and nothing is sent as them (FRM-01, FRM-05)', async () => {
+    const typed = 'SYNTHETIC a question typed before another sign-in';
+    await category.selectOption('question');
+    await subject.fill(typed);
+    await message.fill('SYNTHETIC CHECK the statement page');
+    const mark = form.locator('[data-form-actor]');
+    const before = await mark.getAttribute('data-form-actor');
+    expect(before).toBeTruthy();
+    // The other person's sign-in replaces this browser's session, so this page's token is now another session's.
+    const other = await page.context().newPage();
+    await signInWithTotp(other, 'forms-second');
+    await page.getByRole('button', { name: 'Open ticket' }).click();
+    await expect(summary).toHaveAttribute('data-state', 'cleared');
+    await expect(summary).toContainText('Form cleared');
+    await expect(summary).toContainText('This page was out of date, so nothing was saved. The person signed in on this browser changed, so this form was cleared.');
+    await expect(summary).not.toContainText('press');
+    await expect(summary).toBeFocused();
+    await expect(subject).toHaveValue('');
+    await expect(message).toHaveValue('');
+    await expect(mark).not.toHaveAttribute('data-form-actor', before ?? '');
+    await other.goto('/support');
+    await expect(other.getByRole('button', { name: 'Open ticket' })).toBeVisible();
+    await expect(other.getByText(typed)).toHaveCount(0);
+    await other.close();
+  });
 });
 
-test('the console’s incident form refused for its checkbox group keeps its text, marks the group and focuses its first box, and starts fresh after a save that returns to the same address (FRM-02, FRM-04, FRM-05)', async ({ page }) => {
+test('the console’s incident form refused for its checkbox group keeps its text, marks the group and focuses its first box, and starts fresh after a save that returns to the same address; the page fits a phone’s width, a refused component row too (FRM-02, FRM-04, FRM-05, FRM-08)', async ({ page }) => {
   await registerKeyAndSignIn(page, 'forms-admin');
   await page.goto('/console/status');
   const form = formWith(page, 'Open incident');
@@ -511,5 +591,18 @@ test('the console’s incident form refused for its checkbox group keeps its tex
     await opened.getByLabel('Update', { exact: true }).fill('SYNTHETIC resolved by the forms check');
     await opened.getByRole('button', { name: 'Post update' }).click();
     await expect(page.locator('[data-incident-status="resolved"]').filter({ hasText: 'SYNTHETIC forms check' }).first()).toBeVisible();
+  });
+
+  await test.step('at 390 px the page does not scroll sideways, nor once a component’s row is refused for an out-of-date page, its summary on a line of its own in the row (FRM-08)', async () => {
+    await atPhoneWidth(page, 'Console status');
+    const row = page.getByRole('table', { name: 'Components' }).locator('form').first();
+    await row.locator('input[name="csrfToken"]').evaluate((input, value) => {
+      (input as HTMLInputElement).value = value;
+    }, 'SYNTHETIC-STALE-TOKEN');
+    await row.getByRole('button', { name: 'Set', exact: true }).click();
+    await expect(summaryOf(row)).toContainText('This page was out of date, so nothing was saved.');
+    const [summaryBottom, selectTop] = await row.evaluate((form) => [form.querySelector('[data-slot="refusal-summary"]')?.getBoundingClientRect().bottom ?? 0, form.querySelector('select')?.getBoundingClientRect().top ?? 0]);
+    expect(selectTop).toBeGreaterThanOrEqual(summaryBottom ?? 0);
+    await atPhoneWidth(page, 'Console status, a component’s row refused');
   });
 });

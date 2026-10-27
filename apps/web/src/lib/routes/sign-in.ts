@@ -40,9 +40,12 @@ const noParams = z.object({});
 
 /**
  * What a sign-in step returns to the browser: where to go next, or what went wrong, with the field at fault when
- * naming it leaks nothing (the form shows it as an issue on that field).
+ * naming it leaks nothing (the form shows it as an issue on that field). `final`: no press of this form can succeed,
+ * whatever is typed (an expired invitation, refused before any password is checked), so the emptied password's note
+ * asks for nothing (docs/adr/0077, D2); a lock says so by `locked`. Never on a refusal whose words are a wrong
+ * password's, which would tell which addresses have accounts.
  */
-export type StepResult = { readonly redirect: string } | { readonly error: string; readonly locked?: boolean; readonly issues?: readonly Issue[] };
+export type StepResult = { readonly redirect: string } | { readonly error: string; readonly locked?: boolean; readonly final?: boolean; readonly issues?: readonly Issue[] };
 
 const MESSAGES = {
   credentials: 'That did not match. Check the email, the password or the code, and try again.',
@@ -119,9 +122,10 @@ async function settle(context: PublicContext<unknown, unknown>, result: FlowResu
           return { error: MESSAGES.locked, locked: true };
         case 'credentials':
           return options.credentials === undefined ? { error: MESSAGES.credentials } : { error: 'That did not match.', issues: [options.credentials] };
+        case 'invitation_expired':
+          return { error: MESSAGES.invitation_expired, final: true };
         case 'no_account':
         case 'key_not_registered':
-        case 'invitation_expired':
           return { error: MESSAGES[result.reason] };
       }
   }

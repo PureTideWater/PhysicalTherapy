@@ -7,8 +7,10 @@ import { describe, expect, it } from 'vitest';
 /**
  * Every field the browser checks by `pattern` states its format in words (test matrix FRM-04; docs/adr/0077,
  * decision D9; WCAG 3.3.2): its `hint`, or an `aria-describedby` naming text the page writes, so the browser's
- * generic "Please match the requested format" is never the only guide. Read from the source with the TypeScript
- * compiler, so a field added later without a hint fails here rather than waiting for a reviewer.
+ * generic "Please match the requested format" is never the only guide. And every hint is 14 px, the size of the
+ * message beside it (D9): text a control's description names is never written by hand at 12 px. Read from the source
+ * with the TypeScript compiler, so a field added later without a hint, or a hint written small, fails here rather than
+ * waiting for a reviewer.
  */
 
 const SOURCE = path.resolve(import.meta.dirname, '..');
@@ -72,6 +74,95 @@ describe('format hints on pattern fields (FRM-04)', () => {
 
   it('keeps its allowlist short: each file on it still has a field without a hint', () => {
     const stale = [...ALLOWED.keys()].filter((file) => !FIELDS.some((field) => field.file === file && !field.described));
+    expect(stale).toEqual([]);
+  });
+});
+
+/** Files whose hand-written descriptions may still be 12 px, each with the change that removes it. */
+const SMALL_ALLOWED = new Map([
+  // The screening upload's file and template hints: the form is #42's; remove after #42 merges, with the shared Hint.
+  ['components/screening/upload-form.tsx', 'remove after #42 merges'],
+]);
+
+interface Description {
+  readonly file: string;
+  readonly line: number;
+  readonly id: string;
+  readonly small: boolean;
+}
+
+/** The strings an attribute's value holds: a literal, or each literal inside an expression, a template whole. */
+function attributeTexts(source: ts.SourceFile, value: ts.JsxAttributeValue | undefined): string[] {
+  const texts: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+      texts.push(node.text);
+    } else if (ts.isTemplateExpression(node)) {
+      texts.push(node.getText(source));
+    } else {
+      ts.forEachChild(node, visit);
+    }
+  };
+  if (value !== undefined) {
+    visit(value);
+  }
+  return texts;
+}
+
+const SIZED = /(^|\s)text-(xs|sm|base|lg|xl)(\s|$)/;
+
+/**
+ * Each element a control's `aria-describedby` names in the same file (by the same literal, or the same template), with
+ * whether it is written at 12 px; and each shared `Hint` whose className sets a size, which only layout may.
+ */
+function descriptions(file: string, text: string): { readonly described: Description[]; readonly sizedHints: string[] } {
+  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const named = new Set<string>();
+  const elements: Description[] = [];
+  const sizedHints: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+      const attributes = new Map(node.attributes.properties.flatMap((attribute) => (ts.isJsxAttribute(attribute) ? [[attribute.name.getText(source), attributeTexts(source, attribute.initializer)] as const] : [])));
+      for (const value of attributes.get('aria-describedby') ?? []) {
+        for (const part of value.startsWith('`') ? [value] : value.split(/\s+/)) {
+          named.add(part);
+        }
+      }
+      const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
+      const classes = attributes.get('className') ?? [];
+      const id = attributes.get('id')?.[0];
+      if (id !== undefined) {
+        elements.push({ file, line, id, small: classes.some((value) => /(^|\s)text-xs(\s|$)/.test(value)) });
+      }
+      if (node.tagName.getText(source) === 'Hint' && classes.some((value) => SIZED.test(value))) {
+        sizedHints.push(`${file}:${String(line)}`);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return { described: elements.filter((element) => named.has(element.id)), sizedHints };
+}
+
+const DESCRIPTIONS = sources(SOURCE).map((file) => descriptions(path.relative(SOURCE, file).split(path.sep).join('/'), readFileSync(file, 'utf8')));
+const DESCRIBED = DESCRIPTIONS.flatMap((found) => found.described);
+
+describe('hints at 14 px (FRM-04; docs/adr/0077, D9)', () => {
+  it('finds the hand-written descriptions it checks', () => {
+    expect(DESCRIBED.length).toBeGreaterThan(5);
+  });
+
+  it('writes no description a control names at 12 px: a hint uses the shared Hint', () => {
+    const small = DESCRIBED.filter((found) => found.small && !SMALL_ALLOWED.has(found.file)).map(({ file, line, id }) => `${file}:${String(line)} #${id}`);
+    expect(small).toEqual([]);
+  });
+
+  it('gives the shared Hint no size of its own: its className adds layout only', () => {
+    expect(DESCRIPTIONS.flatMap((found) => found.sizedHints)).toEqual([]);
+  });
+
+  it('keeps its allowlist short: each file on it still has a description at 12 px', () => {
+    const stale = [...SMALL_ALLOWED.keys()].filter((file) => !DESCRIBED.some((found) => found.file === file && found.small));
     expect(stale).toEqual([]);
   });
 });

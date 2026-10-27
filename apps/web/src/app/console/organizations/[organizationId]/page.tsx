@@ -270,11 +270,11 @@ export default async function OrganizationPage(props: { readonly params: Promise
             <Field label="Version" name="version" required maxLength={40} />
             <Field label="Signer" name="signer" required maxLength={200} />
             <Field label="Signed on" name="signedOn" type="date" required />
-            <Field label="Document reference" name="documentRef" required hint="The e-signature vendor's envelope or document reference." />
-            <Field label="SHA-256" name="sha256" required pattern="[0-9a-fA-F]{64}" hint="The signed document's SHA-256, 64 hexadecimal characters." />
+            <Field label="Document reference" name="documentRef" required hint="The e-signature vendor’s envelope or document reference." />
+            <Field label="SHA-256" name="sha256" required pattern="[0-9a-fA-F]{64}" hint="The signed document’s SHA-256, 64 hexadecimal characters." />
           </ActionForm>
           <h3 className="text-sm font-semibold">Or upload the signed PDF</h3>
-          <p className="text-xs text-muted-foreground">The server hashes it and keeps it under an opaque key; an agreement signed through the e-signature vendor arrives by its webhook instead.</p>
+          <p className="text-sm text-muted-foreground">The server hashes it and keeps it under an opaque key; an agreement signed through the e-signature vendor arrives by its webhook instead.</p>
           <ActionForm action={uploadAgreementAction} submit="Upload agreement" className="grid max-w-xl gap-3">
             <FormKeys />
             <input type="hidden" name="organizationId" value={organization.id} />

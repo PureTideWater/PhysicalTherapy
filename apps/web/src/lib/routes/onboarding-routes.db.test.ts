@@ -311,7 +311,8 @@ describe('invitations (J2)', () => {
     await owner.query("UPDATE invitation SET sent_at = now() - interval '8 days', expires_at = now() - interval '1 day' WHERE id = $1", [invitation?.id]);
     const password = invitations.at(-1)?.password ?? '';
     const expired = await signInWithPassword.invoke({ cookies: new Jar(undefined), params: {}, input: { email, password }, requestId: `test-${randomUUID()}`, userAgent: null }, services);
-    expect(JSON.stringify(expired)).toContain('invitation has expired');
+    // Final: refused before the password is checked, so the form's password note asks for nothing (docs/adr/0077, D2).
+    expect(expired).toEqual({ status: 'ok', data: { error: 'This invitation has expired. Ask your organization’s administrator to send it again.', final: true } });
     ok(await call(resendInvitationAction, admin, { organizationId: world.organizationId }, { invitationId: invitation?.id }));
     expect(invitations.at(-1)?.email).toBe(email);
     const again = ok(await call(usersSettingsPage, admin, { organizationId: world.organizationId })).invitations.find((row) => row.id === invitation?.id);
@@ -369,6 +370,14 @@ describe('the terms of use', () => {
     expect(await call(practiceHome, customer, { practiceId: world.practiceId })).toEqual({ status: 'terms_required' });
     expect(ok(await call(termsPage, customer, {})).history.map((row) => row.version)).toEqual(['2026-10']);
     expect((await call(publishTerms, platformAdmin, {}, { version: '2026-11', documentRef: 'terms/again', sha256: sha('again') })).status).toBe('invalid');
+    // A version or reference outside its format is refused with the format in words, as the Version hint says it.
+    expect(await call(publishTerms, platformAdmin, {}, { version: '2026 12', documentRef: 'terms 2026-12', sha256: sha('terms 2026-12') })).toEqual({
+      status: 'invalid',
+      issues: [
+        { field: 'version', message: 'use only letters, digits, dots, underscores and hyphens, such as 2026-11' },
+        { field: 'documentRef', message: 'use only letters, digits, colons, slashes, dots, underscores and hyphens, such as terms/2026-11' },
+      ],
+    });
     // Everyone else in this file accepts the version in force.
     await asOwner(owner, [], () => owner.query("INSERT INTO terms_acceptance (user_id, terms_version_id, request_id) SELECT id, current_terms_version(), 'test' FROM \"user\" ON CONFLICT DO NOTHING"));
   });
@@ -471,9 +480,21 @@ describe('support', () => {
     const customer = await newCustomer('billing_manager');
     const opened = ok(await call(createTicket, customer, {}, { screen: 'cases', category: 'question', subject: 'Export button', message: 'Where do I export the packet?' }));
     expect(opened.redirect).toMatch(/^\/support\?sent=\d+$/);
-    expect(
-      (await call(createTicket, customer, {}, { screen: 'cases', category: 'problem', subject: 'Claim question', message: 'Member ID W123456789 was underpaid, DOB 1961-04-12.' })).status,
-    ).toBe('invalid');
+    // The refusal names the field and what to write instead, the record by the same name as the form's hints.
+    const refusal = (field: string) => ({
+      field,
+      message:
+        'a ticket takes no patient information: remove names, dates of birth, member IDs, claim numbers, other identifiers and phone numbers, and name the screen and the record’s ID instead',
+    });
+    expect(await call(createTicket, customer, {}, { screen: 'cases', category: 'problem', subject: 'Claim question', message: 'Member ID W123456789 was underpaid, DOB 1961-04-12.' })).toEqual({
+      status: 'invalid',
+      issues: [refusal('message')],
+    });
+    // Both fields at once: each is named, so both are fixed before the next press.
+    expect(await call(createTicket, customer, {}, { screen: 'cases', category: 'problem', subject: 'DOB 1961-04-12', message: 'Member ID W123456789 was underpaid.' })).toEqual({
+      status: 'invalid',
+      issues: [refusal('subject'), refusal('message')],
+    });
     // A patient written in words is refused too: the desk reads tickets with no support grant (docs/adr/0055).
     const inWords = await call(createTicket, customer, {}, {
       screen: 'cases',

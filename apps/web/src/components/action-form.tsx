@@ -2,22 +2,23 @@
 
 import { Alert, AlertDescription, AlertTitle, Button } from '@tp/ui';
 import { useRouter } from 'next/navigation';
-import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type { ActionState } from '../lib/http/next';
-import { FormIssues, PendingStatus, RefusalSummary, useGuardedSubmit } from './form-issues';
+import { FormIssues, PendingStatus, RefusalSummary, useClearedForAnotherPerson, useGuardedSubmit } from './form-issues';
 
 export { summaryLead } from './form-issues';
 
 /**
  * A form posting to a server action that keeps what the person typed when the action refuses (docs/adr/0077). The
  * form is sent from `onSubmit` (useGuardedSubmit), so React never resets it on a refusal; one press sends one request;
- * a dropped connection keeps every value and says the save is not confirmed. The refusal shows first in the form
- * (RefusalSummary): each issue named by the label the person sees and linked to its field, which shows "Error:" and
- * the rule's words under it (FormIssues); the focus goes to the one field refused, or to the summary. Passwords and
- * codes are emptied, and say so. While the request is out the button keeps its words and its focus (aria-disabled,
- * never disabled) and a status beside it says "Working…". On success the action redirects, and Next remounts the
- * page, so a saved form starts fresh with a fresh request key. That holds on two conditions, which no change may break:
+ * a dropped connection keeps every value but the secrets and says the save is not confirmed. The refusal shows first
+ * in the form (RefusalSummary): each issue named by the label the person sees and linked to its field, which shows
+ * "Error:" and the rule's words under it (FormIssues); the focus goes to the one field refused, or to the summary.
+ * Passwords and codes are emptied, and say so. While the request is out the button keeps its words and its focus
+ * (aria-disabled, never disabled) and a status beside it says "Working…". On success the action redirects, and Next
+ * remounts the page, so a saved form starts fresh with a fresh request key. That holds on two conditions, which no
+ * change may break:
  *
  * 1. The hook whose dispatcher goes on `<form action>` takes the server action itself, never a client wrapper: a
  *    wrapper drops the $ACTION_* fields the post without JavaScript (and React's replay of a press made before the
@@ -32,7 +33,10 @@ export { summaryLead } from './form-issues';
  * state, its refusal and the focus. Replaced by an explanation that names the same key (RefusalTakeover), the
  * focus, which the form took with it, moves to that explanation, so a keyboard or screen-reader user lands on why
  * and on its next step. Any form whose CSRF token or request key was out of date (`stale`) reads the page again the
- * same way, with no takeover: the fresh token and key render in place and what was typed stays.
+ * same way, with no takeover: the fresh token and key render in place and what was typed stays. A press whose
+ * connection dropped keeps its request key for the next press, whatever a refresh renders (useGuardedSubmit); and when
+ * a refresh shows another person signed in, the fields mount afresh and the summary says the form was cleared
+ * (useClearedForAnotherPerson), so nothing typed is sent under another person's name.
  */
 export function ActionForm({
   action,
@@ -61,13 +65,15 @@ export function ActionForm({
   readonly beforeSubmit?: (form: HTMLFormElement) => boolean;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
-  const { state, fromBrowser, pending, formAction, onSubmit } = useGuardedSubmit(action, beforeSubmit === undefined ? {} : { beforeSubmit });
+  const heldKey = useRef<string | null>(null);
+  const { state, fromBrowser, pending, formAction, onSubmit } = useGuardedSubmit(action, beforeSubmit === undefined ? { heldKey } : { beforeSubmit, heldKey });
+  const { shown, generation } = useClearedForAnotherPerson(formRef, state, heldKey);
   const stale = state.stale === true;
   return (
-    <FormIssues state={state}>
+    <FormIssues state={shown}>
       <form ref={formRef} action={formAction} onSubmit={onSubmit} className={className ?? 'flex flex-col gap-4'}>
-        <RefusalSummary state={state} fromBrowser={fromBrowser} submit={submit} formRef={formRef} />
-        {children}
+        <RefusalSummary state={shown} fromBrowser={fromBrowser} submit={submit} formRef={formRef} />
+        <Fragment key={generation}>{children}</Fragment>
         {/* The status goes inside the button's wrapper, never as a child of the form, which would take a cell of a grid or a slot of a row. */}
         <div className="flex flex-wrap items-center gap-2">
           <Button type="submit" variant={variant} aria-disabled={pending || undefined} className={wrapSubmit ? 'h-auto min-h-9 whitespace-normal text-left' : undefined}>

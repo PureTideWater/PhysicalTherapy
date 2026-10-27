@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import { ActionForm, RefusalFallback, RefusalTakeover, noteRefusal, summaryLead, takesFocus, takesOrphanedRefusal } from './action-form';
+import { RefusalLead, SUMMARY_TITLES, summaryKind } from './form-issues';
 
 /**
  * A refused form's first line, the hand-off of the focus from a refused form to the explanation that takes its place
@@ -34,6 +35,37 @@ describe('a refusal’s first line (FRM-04; docs/adr/0077; design 3.5)', () => {
     expect(summaryLead({ error: 'Fix the fields listed here, then try again.', invalid: true, issues: [] }, 0)).toBe('Fix the fields listed here, then try again.');
     expect(summaryLead({ error: 'This page was out of date, so nothing was saved.', stale: true }, null)).toBe('This page was out of date, so nothing was saved.');
     expect(summaryLead({}, 1)).toBeNull();
+  });
+});
+
+describe('what a summary says it is (S-SEC-2, S-A11Y-2, U-UX-3, U-UX-4; docs/adr/0077)', () => {
+  const lead = (state: Parameters<typeof RefusalLead>[0]['state'], secrets = false) =>
+    renderToStaticMarkup(<RefusalLead state={state} placed={null} fromBrowser submit="Save" secrets={secrets} />);
+
+  it('titles a form cleared for another person first, then a lock, a dropped connection, a key used before, and every other refusal "Not done"', () => {
+    expect(summaryKind({ otherPerson: true, stale: true })).toBe('cleared');
+    expect(summaryKind({ error: 'Locked.', locked: true, unconfirmed: true })).toBe('locked');
+    expect(summaryKind({ unconfirmed: true })).toBe('unconfirmed');
+    expect(summaryKind({ error: 'This form was already sent, so nothing new was saved. Reload the page to see the result.', duplicate: true })).toBe('duplicate');
+    expect(summaryKind({ error: 'Not available to your role: harness.' })).toBe('error');
+    expect(SUMMARY_TITLES).toEqual({ cleared: 'Form cleared', locked: 'Account locked', unconfirmed: 'Not confirmed', duplicate: 'Already sent', error: 'Not done' });
+  });
+
+  it('never invites a press on a form cleared for another person, and says whether the press before it saved', () => {
+    expect(lead({ otherPerson: true })).toBe('<p>The person signed in on this browser changed, so this form was cleared.</p>');
+    expect(lead({ otherPerson: true, stale: true })).toBe('<p>This page was out of date, so nothing was saved. The person signed in on this browser changed, so this form was cleared.</p>');
+    expect(lead({ otherPerson: true, unconfirmed: true })).toBe(
+      '<p>The connection to PaidWhole dropped before an answer came back, so the save is not confirmed. The person signed in on this browser changed, so this form was cleared.</p>',
+    );
+  });
+
+  it('says on a dropped connection that passwords and codes were not kept, when the form held one', () => {
+    expect(lead({ unconfirmed: true }, true)).toBe(
+      '<p>The connection to PaidWhole dropped before an answer came back. What you typed is still here, except passwords and codes: check your connection, type them again, then press “Save” again.</p>',
+    );
+    expect(lead({ unconfirmed: true })).toBe(
+      '<p>The connection to PaidWhole dropped before an answer came back. What you typed is still here: check your connection, then press “Save” again.</p>',
+    );
   });
 });
 

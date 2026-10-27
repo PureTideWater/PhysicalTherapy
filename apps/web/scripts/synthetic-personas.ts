@@ -25,8 +25,8 @@ import { totpCode, totpSecretFromBytes } from '../src/lib/auth/totp';
  * SYNTHETIC SUSPENDED GROUP, a group the seed holds suspended by PaidWhole with no practice, for the billing journey of a
  * suspended organization, so no other journey shares it and nothing reinstates it; and, for the forms journey, a viewer
  * who signs in with a wrong password and code, an invited viewer who chooses a password, a billing manager of the other
- * group and a platform administrator, each alone, because a refusal counts toward the ten-failure lock and the specs run
- * in parallel).
+ * group, a viewer who signs in from another tab while that billing manager's form is open, and a platform administrator,
+ * each alone, because a refusal counts toward the ten-failure lock and the specs run in parallel).
  * Their passwords and TOTP secrets are derived from their keys here rather than written down, and
  * exist only in the local identity provider's store.
  * Synthetic accounts on a development machine; never a real person.
@@ -126,10 +126,12 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   { key: 'suspended-admin', organization: 'suspended_group', role: 'practice_admin' },
   // The forms journey (docs/adr/0077): a viewer refused at sign-in, an invited viewer refused a new password (neither ever
   // saved, so each run starts from the seed), a billing manager of the other group refused on ROI and on a support ticket,
-  // and a platform administrator refused an incident on the console's status page.
+  // a viewer who signs in from another tab of that billing manager's browser while the ticket form is open, and a
+  // platform administrator refused an incident on the console's status page.
   { key: 'forms-signin', organization: 'group', role: 'viewer' },
   { key: 'forms-invited', organization: 'group', role: 'viewer', invited: true },
   { key: 'forms-manager', organization: 'other_group', role: 'billing_manager' },
+  { key: 'forms-second', organization: 'group', role: 'viewer' },
   { key: 'forms-admin', organization: 'internal', role: 'platform_admin' },
 ];
 

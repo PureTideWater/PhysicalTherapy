@@ -35,29 +35,40 @@ export interface RefusalState {
   readonly invalid?: boolean;
   readonly issues?: readonly Issue[];
   readonly locked?: boolean;
+  /** No press of this form can succeed, whatever is typed (a sign-in step's expired invitation). */
+  readonly final?: boolean;
   /** The page's CSRF token or request key was out of date: the form reads the page again. */
   readonly stale?: boolean;
+  /** The request key was used before: an earlier post with it saved, and this one did nothing. */
+  readonly duplicate?: boolean;
 }
 
-/** The state a form shows: the action's, plus two fields only the browser sets, never the server. */
+/** The state a form shows: the action's, plus fields only the browser sets, never the server. */
 export type FormState = RefusalState & {
-  /** A new number per response from the browser, so each response inserts a new summary, which is announced. */
+  /** A new number per response from the browser (or per clear, otherPerson), so each inserts a new summary, which is announced. */
   readonly seq?: number;
   /** The connection dropped before an answer came back: the server may have saved. */
   readonly unconfirmed?: true;
+  /** The page now shows another person signed in, or no one, so the form was cleared (useClearedForAnotherPerson). */
+  readonly otherPerson?: true;
 };
 
-/** The refusal a form is showing: its issues ([] when none) and whether it shows one at all (the emptied notes). */
-export const FormIssuesContext = createContext<{ readonly issues: readonly Issue[]; readonly refused: boolean }>({ issues: [], refused: false });
+/**
+ * The refusal a form is showing: its issues ([] when none), whether it shows one at all (the emptied notes) and whether
+ * no press of the form can succeed (`final`: a locked account, an expired invitation), whose password note then asks for
+ * nothing. A form cleared for another person shows no note.
+ */
+export const FormIssuesContext = createContext<{ readonly issues: readonly Issue[]; readonly refused: boolean; readonly final: boolean }>({ issues: [], refused: false, final: false });
 
-/** Whether a form's state is a refusal it shows: an error, or a dropped connection. */
+/** Whether a form shows a summary for its state: an error, a dropped connection, or a form cleared for another person. */
 function refused(state: FormState): boolean {
-  return state.error !== undefined || state.unconfirmed === true;
+  return state.error !== undefined || state.unconfirmed === true || state.otherPerson === true;
 }
 
 /** Gives the fields inside a form the refusal it shows: one provider per form, so row forms never mark each other. */
 export function FormIssues({ state, children }: { readonly state: FormState; readonly children: ReactNode }) {
-  const value = useMemo(() => ({ issues: state.issues ?? [], refused: refused(state) }), [state]);
+  // A lock is final by its own flag: no password opens a locked account.
+  const value = useMemo(() => ({ issues: state.issues ?? [], refused: refused(state) && state.otherPerson !== true, final: state.locked === true || state.final === true }), [state]);
   return <FormIssuesContext value={value}>{children}</FormIssuesContext>;
 }
 
@@ -125,11 +136,16 @@ export function useEmptied(secret: SecretKind | undefined): boolean {
   return use(FormIssuesContext).refused && secret !== undefined;
 }
 
-/** The note under a secret field its form emptied after a refusal, so a password manager's dots are not taken for it. */
+/**
+ * The note under a secret field its form emptied after a refusal, so a password manager's dots are not taken for it.
+ * A password's note asks for it again, except where no press can succeed (a locked account, an expired invitation),
+ * whose summary says what to do instead; a code's never does: its error or hint says what next.
+ */
 export function EmptiedNote({ id, secret }: { readonly id: string; readonly secret: SecretKind | undefined }) {
+  const { final } = use(FormIssuesContext);
   return useEmptied(secret) ? (
     <p id={`${id}-emptied`} data-slot="emptied-note" className="text-sm text-muted-foreground">
-      {secret === 'password' ? 'Emptied for your security: type it again.' : 'Emptied for your security.'}
+      {secret === 'password' && !final ? 'Emptied for your security: type it again.' : 'Emptied for your security.'}
     </p>
   ) : null;
 }
@@ -183,22 +199,41 @@ export interface GuardedSubmit {
  * The `inFlight` ref is the only guard that stops two presses in one frame (state lets the second through); a form
  * with several actions passes one ref to each hook. `beforeSubmit` runs after the guard's check and before it is
  * set; false sends nothing. startTransition is called synchronously in onSubmit, so useFormStatus pends too.
+ *
+ * The `heldKey` ref pins the request key (D1): once a press's connection drops, or the server answers that its key
+ * was used before, every later press sends that key until one is saved, even after a refresh renders a new key in
+ * the page (the export's status, a page out of date). The server may have saved under it, and only the same key
+ * makes another press do nothing. A refusal saves nothing but can come before the key is read, so it says nothing of
+ * that press and keeps the pin; a redirect (saved) or a failure lets it go. A form with several actions passes one
+ * ref to each hook, as it does `inFlight`, and lets it go itself when the page shows another person
+ * (useClearedForAnotherPerson).
  */
 export function useGuardedSubmit(
   action: FormAction,
-  options: { readonly beforeSubmit?: (form: HTMLFormElement) => boolean; readonly inFlight?: RefObject<boolean> } = {},
+  options: { readonly beforeSubmit?: (form: HTMLFormElement) => boolean; readonly inFlight?: RefObject<boolean>; readonly heldKey?: RefObject<string | null> } = {},
 ): GuardedSubmit {
+  const ownHold = useRef<string | null>(null);
+  const held = options.heldKey ?? ownHold;
   const [serverState, formAction, serverPending] = useActionState(action, {});
   const [browserState, dispatch, browserPending] = useActionState(async (previous: FormState, data: FormData): Promise<FormState> => {
     const seq = (previous.seq ?? 0) + 1;
+    const key = data.get('requestKey');
     try {
-      return { ...(await action(previous, data)), seq };
-    } catch (error) {
-      unstable_rethrow(error);
-      if (!(error instanceof TypeError) || 'digest' in error) {
-        throw error;
+      const answer = await action(previous, data);
+      if (answer.duplicate === true && typeof key === 'string') {
+        held.current = key;
       }
-      return { unconfirmed: true, seq };
+      return { ...answer, seq };
+    } catch (error) {
+      if (error instanceof TypeError && !('digest' in error)) {
+        if (typeof key === 'string') {
+          held.current = key;
+        }
+        return { unconfirmed: true, seq };
+      }
+      held.current = null;
+      unstable_rethrow(error);
+      throw error;
     }
   }, {});
   const [source, setSource] = useState<'server' | 'browser'>('server');
@@ -212,6 +247,9 @@ export function useGuardedSubmit(
   }, [pending, inFlight]);
   const { beforeSubmit } = options;
   function send(data: FormData): void {
+    if (held.current !== null && data.has('requestKey')) {
+      data.set('requestKey', held.current);
+    }
     startTransition(() => {
       setSource('browser');
       dispatch(data);
@@ -230,6 +268,74 @@ export function useGuardedSubmit(
     send(new FormData(form, (event.nativeEvent as SubmitEvent).submitter));
   }
   return { state: source === 'browser' ? browserState : serverState, fromBrowser: source === 'browser', pending, formAction, onSubmit, send };
+}
+
+/** The opaque mark of the person a form was rendered for (FormKeys; pageFormActor, lib/http/next.ts), or null for no one. */
+function personOf(form: HTMLFormElement | null): string | null {
+  return form?.querySelector<HTMLElement>('[data-form-actor]')?.dataset.formActor ?? null;
+}
+
+/**
+ * Runs `onChange` after a commit whose form is rendered for another person than the one it was first rendered for, or
+ * for no one (docs/adr/0077, D10). A page read again in place (a page out of date, the export's status, an upload, a
+ * form's refreshOnError) renders for whoever is signed in now, and someone else may have signed in from another tab of
+ * the same browser. The same person signed in again keeps the same mark, so nothing runs; a form first rendered for no
+ * one takes the first person it is rendered for.
+ */
+export function usePersonChange(formRef: RefObject<HTMLFormElement | null>, onChange: () => void): void {
+  const seen = useRef<string | null | undefined>(undefined);
+  useLayoutEffect(() => {
+    const now = personOf(formRef.current);
+    const before = seen.current;
+    seen.current = now;
+    if (before !== undefined && before !== null && now !== before) {
+      onChange();
+    }
+  });
+}
+
+/**
+ * A form once its page shows another person (usePersonChange). When the form holds anything of the first person's (a
+ * field they typed in, or a response to a press), its fields mount afresh from the page as rendered now (`generation`,
+ * the key the form gives them), so nothing typed stays, secrets included; the request key a dropped press pinned is let
+ * go; and `shown`, until the next response, is a state that says the form was cleared and invites no press, which would
+ * be sent as the person signed in now. A form untouched and showing nothing is left alone, so a page of row forms does
+ * not announce one change many times.
+ */
+export function useClearedForAnotherPerson(
+  formRef: RefObject<HTMLFormElement | null>,
+  state: FormState,
+  heldKeyRef?: RefObject<string | null>,
+): { readonly shown: FormState; readonly generation: number } {
+  const touched = useRef(false);
+  const [cleared, setCleared] = useState<{ readonly over: FormState; readonly shown: FormState; readonly generation: number }>({ over: {}, shown: {}, generation: 0 });
+  useEffect(() => {
+    const form = formRef.current;
+    if (form === null) {
+      return undefined;
+    }
+    const typed = (): void => {
+      touched.current = true;
+    };
+    form.addEventListener('input', typed);
+    return () => {
+      form.removeEventListener('input', typed);
+    };
+  }, [formRef]);
+  usePersonChange(formRef, () => {
+    if (!touched.current && !refused(state)) {
+      return;
+    }
+    touched.current = false;
+    if (heldKeyRef !== undefined) {
+      heldKeyRef.current = null;
+    }
+    const generation = cleared.generation + 1;
+    // What the form showed is kept only to say whether that press saved: nothing it names is shown again.
+    const before = { ...(state.stale === true ? { stale: true } : {}), ...(state.unconfirmed === true ? { unconfirmed: true as const } : {}) };
+    setCleared({ over: state, shown: { ...before, otherPerson: true, seq: generation }, generation });
+  });
+  return { shown: cleared.generation > 0 && cleared.over === state ? cleared.shown : state, generation: cleared.generation };
 }
 
 /** The keys that never name a field the person filled: root refinements and database rules, and the request key. */
@@ -327,11 +433,16 @@ function hiddenName(form: HTMLFormElement, field: string): string | null {
   return null;
 }
 
-/** Empties every secret in the form (docs/adr/0077, D2): marked by its component, or by its type as the fallback. */
-function emptySecrets(form: HTMLFormElement): void {
-  for (const control of form.querySelectorAll<HTMLInputElement>('input[data-secret], input[type="password"], input[autocomplete="one-time-code"]')) {
+/**
+ * Empties every secret in the form (docs/adr/0077, D2): marked by its component, or by its type as the fallback.
+ * Whether the form holds one, so a lead that says what stays can say what did not.
+ */
+function emptySecrets(form: HTMLFormElement): boolean {
+  const secrets = form.querySelectorAll<HTMLInputElement>('input[data-secret], input[type="password"], input[autocomplete="one-time-code"]');
+  for (const control of secrets) {
     control.value = '';
   }
+  return secrets.length > 0;
 }
 
 /**
@@ -359,6 +470,33 @@ function capitalised(message: string): string {
   return message.charAt(0).toUpperCase() + message.slice(1);
 }
 
+/** What a summary says it is, in its title and data-state: a form cleared for another person first, then the account's lock. */
+export type SummaryKind = 'cleared' | 'locked' | 'unconfirmed' | 'duplicate' | 'error';
+
+/** Each kind's title: "Not done" for every refusal that did nothing, as `contracts.spec.ts` and the tour read it. */
+export const SUMMARY_TITLES: Readonly<Record<SummaryKind, string>> = {
+  cleared: 'Form cleared',
+  locked: 'Account locked',
+  unconfirmed: 'Not confirmed',
+  // The key was used before, so an earlier press saved: never "Not done" over a record that exists.
+  duplicate: 'Already sent',
+  error: 'Not done',
+};
+
+/** A state's kind, as its summary shows it. */
+export function summaryKind(state: FormState): SummaryKind {
+  if (state.otherPerson === true) {
+    return 'cleared';
+  }
+  if (state.locked === true) {
+    return 'locked';
+  }
+  if (state.unconfirmed === true) {
+    return 'unconfirmed';
+  }
+  return state.duplicate === true ? 'duplicate' : 'error';
+}
+
 /** The summary's props: the form's state and whether it came from a press on this page, its button's words, the form. */
 export interface RefusalSummaryProps {
   readonly state: FormState;
@@ -373,15 +511,20 @@ export interface RefusalSummaryProps {
  * response inserts a new one (keyed by `seq`), so the same refusal twice is announced twice.
  */
 export function RefusalSummary(props: RefusalSummaryProps) {
-  return <Summary key={props.state.seq ?? 0} {...props} />;
+  return <Summary key={`${props.state.otherPerson === true ? 'cleared' : 'response'}:${String(props.state.seq ?? 0)}`} {...props} />;
 }
 
 function Summary({ state, fromBrowser, submit, formRef }: RefusalSummaryProps) {
   const itemId = useId();
   const summaryRef = useRef<HTMLDivElement>(null);
-  // Each issue's target, read from the page for the state it was read for (null before: the server render), and the
-  // name a hidden field gives an issue with no target.
-  const [placement, setPlacement] = useState<{ readonly state: FormState; readonly targets: readonly (Placed | null)[]; readonly hidden: readonly (string | null)[] } | null>(null);
+  // Each issue's target, read from the page for the state it was read for (null before: the server render), the name
+  // a hidden field gives an issue with no target, and whether the form held a secret, which the lead then names.
+  const [placement, setPlacement] = useState<{
+    readonly state: FormState;
+    readonly targets: readonly (Placed | null)[];
+    readonly hidden: readonly (string | null)[];
+    readonly secrets: boolean;
+  } | null>(null);
   const shown = refused(state);
   useLayoutEffect(() => {
     const form = formRef.current;
@@ -389,11 +532,11 @@ function Summary({ state, fromBrowser, submit, formRef }: RefusalSummaryProps) {
       return undefined;
     }
     // In this order: secrets emptied, targets read and named, hand-written controls marked, then the focus.
-    emptySecrets(form);
+    const secrets = emptySecrets(form);
     const issues = state.issues ?? [];
     const targets = issues.map((issue) => resolveIssue(form, issue.field));
     const undo = targets.map((target, index) => (target === null ? null : markByHand(target.control, `${itemId}-${String(index)}`)));
-    setPlacement({ state, targets, hidden: issues.map((issue, index) => (targets[index] === null ? hiddenName(form, issue.field) : null)) });
+    setPlacement({ state, targets, hidden: issues.map((issue, index) => (targets[index] === null ? hiddenName(form, issue.field) : null)), secrets });
     const only = issues.length === 1 ? targets[0] : null;
     (only?.control ?? summaryRef.current)?.focus();
     return () => {
@@ -407,12 +550,18 @@ function Summary({ state, fromBrowser, submit, formRef }: RefusalSummaryProps) {
   }
   const read = placement?.state === state ? placement : null;
   const targets = read?.targets ?? null;
-  const kind = state.locked === true ? 'locked' : state.unconfirmed === true ? 'unconfirmed' : 'error';
+  const kind = summaryKind(state);
   return (
     <Alert variant="destructive" data-state={kind} data-slot="refusal-summary" ref={summaryRef} tabIndex={-1} className="col-span-full basis-full w-full">
-      <AlertTitle>{kind === 'locked' ? 'Account locked' : kind === 'unconfirmed' ? 'Not confirmed' : 'Not done'}</AlertTitle>
+      <AlertTitle>{SUMMARY_TITLES[kind]}</AlertTitle>
       <AlertDescription>
-        <RefusalLead state={state} placed={targets === null ? null : targets.filter((target) => target !== null).length} fromBrowser={fromBrowser} submit={submit} />
+        <RefusalLead
+          state={state}
+          placed={targets === null ? null : targets.filter((target) => target !== null).length}
+          fromBrowser={fromBrowser}
+          submit={submit}
+          secrets={read?.secrets === true}
+        />
         {state.issues === undefined || state.issues.length === 0 ? null : (
           <ul className="mt-1 list-disc pl-5">
             {state.issues.map((issue, index) => {
@@ -432,12 +581,39 @@ function Summary({ state, fromBrowser, submit, formRef }: RefusalSummaryProps) {
 }
 
 /**
- * The summary's lead: the connection, the out-of-date page, or the action's error as summaryLead chooses it. Exported
- * for a form with a summary of its own (the export form), so its leads read the same.
+ * The summary's lead: a form cleared for another person, the connection, the out-of-date page, or the action's error
+ * as summaryLead chooses it. Exported for a form with a summary of its own (the export form), so its leads read the
+ * same. `secrets`: the form held a password or a code, which a dropped connection's lead says it emptied.
  */
-export function RefusalLead({ state, placed, fromBrowser, submit }: { readonly state: FormState; readonly placed: number | null; readonly fromBrowser: boolean; readonly submit: ReactNode }) {
+export function RefusalLead({
+  state,
+  placed,
+  fromBrowser,
+  submit,
+  secrets = false,
+}: {
+  readonly state: FormState;
+  readonly placed: number | null;
+  readonly fromBrowser: boolean;
+  readonly submit: ReactNode;
+  readonly secrets?: boolean;
+}) {
+  if (state.otherPerson === true) {
+    // Nothing typed stays and no press is invited: it would be sent as the person signed in now (docs/adr/0077, D10).
+    const before =
+      state.stale === true
+        ? 'This page was out of date, so nothing was saved. '
+        : state.unconfirmed === true
+          ? 'The connection to PaidWhole dropped before an answer came back, so the save is not confirmed. '
+          : '';
+    return <p>{before}The person signed in on this browser changed, so this form was cleared.</p>;
+  }
   if (state.unconfirmed === true) {
-    return <p>The connection to PaidWhole dropped before an answer came back. What you typed is still here: check your connection, then press “{submit}” again.</p>;
+    return secrets ? (
+      <p>The connection to PaidWhole dropped before an answer came back. What you typed is still here, except passwords and codes: check your connection, type them again, then press “{submit}” again.</p>
+    ) : (
+      <p>The connection to PaidWhole dropped before an answer came back. What you typed is still here: check your connection, then press “{submit}” again.</p>
+    );
   }
   if (state.stale === true) {
     // The flag, never the server's words, which end in a reload for the forms that do not read the page again (next.ts).
