@@ -4,15 +4,18 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../components/action-form';
+import { DownloadRefusal } from '../../../../components/download-refusal';
 import { roleNames, utc } from '../../../../components/format';
 import { ReleaseState, ReportStatusBadge } from '../../../../components/reports/display';
 import { DocumentStatusBadge } from '../../../../components/reports/documents';
 import { Money, Pager } from '../../../../components/remittances/display';
 import { ShareLink } from '../../../../components/share';
 import { AppShell, Forbidden } from '../../../../components/shell';
+import { downloadRefusal } from '../../../../lib/http/download-refusal';
 import { loadPage } from '../../../../lib/http/next';
 import type { ExportRecord } from '../../../../lib/reports/documents';
 import { exportWhat } from '../../../../lib/reports/export-words';
+import { DOCUMENTS_LIST } from '../../../../lib/routes/report-documents';
 import { reportsPage } from '../../../../lib/routes/reports';
 import { generateReportFormAction } from './actions';
 import { generateReportDocumentFormAction } from './documents/actions';
@@ -49,7 +52,8 @@ function exportHref(practiceId: string, entry: ExportRecord): string | null {
  * triage and released once a reimbursement reviewer signs; the monthly summary and the coverage report
  * are generated with their figures as they stand and printed by the worker; ROI statements come from
  * the recovery ledger. Line-level exports (an audit report's line CSV, a packet's export) are for the
- * roles that export PHI, and every download of every report file is listed here.
+ * roles that export PHI, and every download of every report file is listed here. A refused download from either list
+ * comes back here (its link says ?from=list), said beside the list it was in (docs/adr/0079).
  */
 export default async function ReportsPage(props: Props) {
   const page = await loadPage(reportsPage, props);
@@ -59,6 +63,9 @@ export default async function ReportsPage(props: Props) {
   const { practiceId, reports, documents, history, runs, canGenerate, canExport, canReview, lastMonth, origin, roles } = page.data;
   const path = `/p/${practiceId}/reports`;
   const pageQuery = { page: String(reports.page), documents: String(documents.page), history: String(history.page) };
+  const searchParams = await props.searchParams;
+  const refusal = downloadRefusal(searchParams);
+  const refusedInDocuments = searchParams.list === DOCUMENTS_LIST;
   return (
     <AppShell shell={page.shell} section="reports">
       <div className="flex flex-col gap-1">
@@ -108,6 +115,7 @@ export default async function ReportsPage(props: Props) {
             </CardContent>
           </Card>
         ) : null}
+        <DownloadRefusal refusal={refusedInDocuments ? null : refusal} />
         {reports.total === 0 ? (
           <EmptyState title="No audit report yet" nextStep="A billing manager or analyst generates one from the pricing run in effect for its period." />
         ) : (
@@ -154,11 +162,11 @@ export default async function ReportsPage(props: Props) {
                   )}
                   {report.status !== 'ready' ? null : (
                     <p className="flex flex-wrap gap-3 pt-2 text-sm">
-                      <a className="underline" href={`${base}/pdf`}>
+                      <a className="underline" href={`${base}/pdf?from=list`}>
                         Download the PDF
                       </a>
                       {canExport ? (
-                        <a className="underline" href={`${base}/csv`}>
+                        <a className="underline" href={`${base}/csv?from=list`}>
                           Download the line CSV
                         </a>
                       ) : (
@@ -233,6 +241,7 @@ export default async function ReportsPage(props: Props) {
       </div>
       <section aria-label="Generated reports" className="flex flex-col gap-2">
         <h2 className="text-xl font-bold tracking-display">Coverage reports and monthly summaries</h2>
+        <DownloadRefusal refusal={refusedInDocuments ? refusal : null} />
         {documents.total === 0 ? (
           <p className="text-sm text-muted-foreground">None generated yet{canGenerate ? ': generate one above.' : '; a billing manager or analyst generates them.'}</p>
         ) : (
@@ -262,11 +271,11 @@ export default async function ReportsPage(props: Props) {
                   <td className="py-1">
                     <span className="flex flex-wrap gap-3">
                       {document.status === 'ready' ? (
-                        <a className="underline" href={`${path}/documents/${document.id}/pdf`}>
+                        <a className="underline" href={`${path}/documents/${document.id}/pdf?from=list`}>
                           PDF
                         </a>
                       ) : null}
-                      <a className="underline" href={`${path}/documents/${document.id}/csv`}>
+                      <a className="underline" href={`${path}/documents/${document.id}/csv?from=list`}>
                         CSV
                       </a>
                     </span>

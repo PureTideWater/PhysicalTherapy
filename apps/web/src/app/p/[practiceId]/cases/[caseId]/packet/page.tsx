@@ -4,6 +4,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../../../components/action-form';
+import { DownloadRefusal } from '../../../../../../components/download-refusal';
 import { FormKeys } from '../../../../../../components/form-keys';
 import { utc } from '../../../../../../components/format';
 import { DraftBadge, HandEntryNotice, ModelNoticeAlert, draftOf } from '../../../../../../components/models/display';
@@ -16,6 +17,7 @@ import { type AttachableOption, VersionForm } from '../../../../../../components
 import { Money } from '../../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../../components/shell';
 import { CaseStateBadge, stageLabel } from '../../../../../../components/triage/display';
+import { downloadRefusal } from '../../../../../../lib/http/download-refusal';
 import { loadPage } from '../../../../../../lib/http/next';
 import { waitText } from '../../../../../../lib/packets/approval';
 import { CONTACT_MALFORMED_TEXT, CONTACT_MISSING_TEXT, type ContactNow, PAYER_COPY_TEXT, correspondenceSettingsPath } from '../../../../../../lib/packets/contact';
@@ -175,6 +177,9 @@ export default async function PacketPage(props: Props) {
   const casePath = `/p/${practiceId}/cases/${item.id}`;
   const version = builder.version;
   const approval = builder.approval;
+  // A refused export file comes back here (docs/adr/0079): the file links name the version shown, unless it is the current one.
+  const refusal = downloadRefusal(await props.searchParams);
+  const shownVersion = version === null || version.current ? '' : `?version=${version.id}`;
   return (
     <AppShell shell={page.shell} section="cases">
       <div className="flex flex-col gap-1">
@@ -564,6 +569,7 @@ export default async function PacketPage(props: Props) {
           <CardDescription>Every version of the packet, newest first; a version never changes once written.</CardDescription>
         </CardHeader>
         <CardContent>
+          <DownloadRefusal refusal={refusal} className="mb-4" />
           {builder.versions.length === 0 ? (
             <EmptyState title="No version yet" nextStep="Write the first version above." />
           ) : (
@@ -619,10 +625,10 @@ export default async function PacketPage(props: Props) {
                           '—'
                         ) : (
                           <span className="flex flex-col">
-                            <a className="underline" href={`${casePath}/packet/${entry.id}/pdf`}>
+                            <a className="underline" href={`${casePath}/packet/${entry.id}/pdf${shownVersion}`}>
                               PDF
                             </a>
-                            <a className="underline" href={`${casePath}/packet/${entry.id}/csv`}>
+                            <a className="underline" href={`${casePath}/packet/${entry.id}/csv${shownVersion}`}>
                               CSV
                             </a>
                           </span>

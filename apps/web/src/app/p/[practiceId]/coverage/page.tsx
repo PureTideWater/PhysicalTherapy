@@ -1,10 +1,11 @@
 import { quarterNameOf } from '@tp/rules';
-import { Alert, AlertDescription, AlertTitle, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Label } from '@tp/ui';
+import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../components/action-form';
 import { QuestionList, TotalsText } from '../../../../components/contracts/display';
+import { PayerLetter } from '../../../../components/coverage/letter';
 import { Figure } from '../../../../components/coverage/share';
 import { utc } from '../../../../components/format';
 import { ChecklistCard, HandEntryNotice, ModelNoticeAlert } from '../../../../components/models/display';
@@ -91,7 +92,7 @@ function UnconfirmedFormats({ practiceId, sources }: { readonly practiceId: stri
  * The Coverage screen (PRD 7): the share of lines and dollars priced, the unpriced reasons by count
  * with each reason's remedy linked to the screen it is taken on, the dollars waiting on mappings, what
  * to obtain to raise coverage, and the request-to-payer letter for a missing schedule (a text file from
- * a fixed template). Shares and counts are each line's result in its pricing in effect, across every
+ * a fixed template; a refused letter comes back to its form, marked, never to a JSON page). Shares and counts are each line's result in its pricing in effect, across every
  * run in effect (lib/coverage/in-effect.ts, as the dashboard and the digest read them), with the run
  * that took effect last named beside them; until a run takes effect, they are zero. Lines read from an
  * ERA export of an unconfirmed format are flagged, per format, with its name and why (CO-03). The months waiting on
@@ -134,6 +135,8 @@ export default async function CoveragePage(props: Props) {
   const inEffect = share.runs > 0;
   const of = inEffect ? share.of : { lines: lines.lines, chargeCents: lines.chargeCents };
   const path = `/p/${practiceId}/coverage`;
+  // A refused letter's marks and entries (components/coverage/letter.tsx): display only, so read here, not in the route.
+  const searchParams = await props.searchParams;
   return (
     <AppShell shell={page.shell} section="coverage">
       <div className="flex flex-col gap-1">
@@ -411,52 +414,8 @@ export default async function CoveragePage(props: Props) {
           <CardTitle>Request a missing fee schedule from a payer</CardTitle>
           <CardDescription>A letter from a fixed template asking the payer for the schedule (or the page) that sets the rate for the codes you name. It downloads as a text file to sign and send.</CardDescription>
         </CardHeader>
-        <CardContent>
-          {payers.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Payers appear once their 835s load.</p>
-          ) : (
-            <form method="get" action={`${path}/letter`} className="grid max-w-xl gap-3" aria-label="Letter">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="letter-payer">Payer</Label>
-                <select id="letter-payer" name="payer" required className="h-9 rounded-md border bg-background px-2 text-sm">
-                  {payers.map((payer) => (
-                    <option key={payer.id} value={payer.id}>
-                      {payer.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="letter-contract">The payer’s contract (optional)</Label>
-                <select id="letter-contract" name="contract" className="h-9 rounded-md border bg-background px-2 text-sm">
-                  <option value="">None named</option>
-                  {payers
-                    .filter((payer) => contracts.some((contract) => contract.payerId === payer.id))
-                    .map((payer) => (
-                      <optgroup key={payer.id} label={payer.name}>
-                        {contracts
-                          .filter((contract) => contract.payerId === payer.id)
-                          .map((contract) => (
-                            <option key={contract.id} value={contract.id}>
-                              {contract.title}
-                            </option>
-                          ))}
-                      </optgroup>
-                    ))}
-                </select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="letter-codes">Procedure codes (optional)</Label>
-                <Input id="letter-codes" name="codes" placeholder="97110, 97530" maxLength={400} />
-                <p className="text-xs text-muted-foreground">Leave blank to ask for the complete schedule.</p>
-              </div>
-              <div>
-                <Button type="submit" variant="outline">
-                  Download the letter
-                </Button>
-              </div>
-            </form>
-          )}
+        <CardContent className="flex flex-col gap-3">
+          <PayerLetter path={path} payers={payers} contracts={contracts} searchParams={searchParams} />
         </CardContent>
       </Card>
     </AppShell>

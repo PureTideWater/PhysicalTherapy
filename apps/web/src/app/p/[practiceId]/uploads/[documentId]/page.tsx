@@ -2,11 +2,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/u
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
+import { DownloadRefusal } from '../../../../../components/download-refusal';
 import { Counted, Money } from '../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { FormatUnconfirmedBadge } from '../../../../../components/uploads/format-flag';
 import { ReceiptList, ReceiptStatus } from '../../../../../components/uploads/receipts';
 import { unconfirmedFormatExplanation } from '../../../../../lib/contracts/format-sources';
+import { downloadRefusal } from '../../../../../lib/http/download-refusal';
 import { loadPage } from '../../../../../lib/http/next';
 import { uploadDocumentPage } from '../../../../../lib/routes/uploads';
 import {
@@ -23,6 +25,7 @@ import {
   exportErrorText,
   formatBytes,
   providerAdjustments,
+  reportHref,
   shortId,
   utcMinute,
 } from '../../../../../lib/uploads/receipt-labels';
@@ -241,14 +244,16 @@ function ExportReport({ practiceId, parse }: { readonly practiceId: string; read
  * parsed 835, its parse report: what each transaction set became, and every error with its segment
  * and position (milestone 3: "a held file shows its segment and position"); for an ERA export, what
  * each payment became and every hold by its column and row, its format named and, while the format is
- * unconfirmed, flagged (docs/adr/0060).
+ * unconfirmed, flagged (docs/adr/0060). A refused report download comes back here, said beside its link (docs/adr/0079);
+ * a zip's files link their own receipts' reports, so theirs come back to each file's receipt.
  */
-export default async function UploadDocumentPage(props: { readonly params: Promise<{ practiceId: string; documentId: string }> }) {
+export default async function UploadDocumentPage(props: { readonly params: Promise<{ practiceId: string; documentId: string }>; readonly searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const page = await loadPage(uploadDocumentPage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="uploads" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
   const { practiceId, receipt, canUpload } = page.data;
+  const refusal = downloadRefusal(await props.searchParams);
   return (
     <AppShell shell={page.shell} section="uploads">
       <div className="flex flex-col gap-1">
@@ -293,7 +298,8 @@ export default async function UploadDocumentPage(props: { readonly params: Promi
               <p className="text-muted-foreground">{unconfirmedFormatExplanation(receipt.format.name)}</p>
             </div>
           ) : null}
-          <a className="mt-4 inline-block text-sm underline" href={`/p/${practiceId}/uploads/${receipt.documentId}/report`} download>
+          <DownloadRefusal refusal={refusal} className="mt-4" />
+          <a className="mt-4 inline-block text-sm underline" href={reportHref(practiceId, receipt.documentId)}>
             Download the report (CSV)
           </a>
         </CardContent>

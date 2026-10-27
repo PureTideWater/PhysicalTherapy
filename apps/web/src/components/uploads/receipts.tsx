@@ -4,7 +4,7 @@ import { Badge, Button, EmptyState, ErrorState, LoadingState } from '@tp/ui';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
-import { type Receipt, type ReceiptState, documentName, formatBytes, receiptState, shortId, utcMinute } from '../../lib/uploads/receipt-labels';
+import { type Receipt, type ReceiptState, type ReportFrom, documentName, formatBytes, receiptState, reportHref, shortId, utcMinute } from '../../lib/uploads/receipt-labels';
 
 /**
  * Receipts as the server keeps them (PRD 7, Uploads: "file receipts with status and reasons ... error
@@ -67,6 +67,11 @@ export function ReceiptList(props: {
   readonly csrfToken: string;
   readonly refreshKey?: number;
   readonly title: string;
+  /**
+   * The page the list is on, as its report links name it (?from=), so a refused report comes back there (docs/adr/0079);
+   * without one (a zip's files), each comes back to its file's own receipt.
+   */
+  readonly reportFrom?: ReportFrom;
 }) {
   const { practiceId, parentId, canUpload, refreshKey } = props;
   const [page, setPage] = useState(1);
@@ -173,7 +178,7 @@ export function ReceiptList(props: {
                 </td>
                 <td className="py-2 whitespace-nowrap">
                   <div className="flex gap-2">
-                    <a className="underline" href={`/p/${practiceId}/uploads/${receipt.documentId}/report`} download>
+                    <a className="underline" href={reportHref(practiceId, receipt.documentId, props.reportFrom)}>
                       Report
                     </a>
                     {canUpload && state.retry === 'intake' && state.settled ? (

@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../../../../../components/action-form';
+import { DownloadRefusal } from '../../../../../../../../components/download-refusal';
 import { FormKeys } from '../../../../../../../../components/form-keys';
 import { utc } from '../../../../../../../../components/format';
 import { CalculationWords } from '../../../../../../../../components/packets/calculation-words';
@@ -11,6 +12,7 @@ import { PricingNowPanel } from '../../../../../../../../components/packets/pric
 import { StaleExportReview } from '../../../../../../../../components/packets/unattested';
 import { Money } from '../../../../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../../../../components/shell';
+import { downloadRefusal } from '../../../../../../../../lib/http/download-refusal';
 import { loadPage } from '../../../../../../../../lib/http/next';
 import { CONTACT_MALFORMED_TEXT, CONTACT_MISSING_TEXT, PAYER_COPY_REVIEW_TEXT } from '../../../../../../../../lib/packets/contact';
 import { ATTESTED_WORDING_NOTE, COMPUTED_BY_CODE_NOTE, PACKET_ATTESTATION_TEXT, attestedItems } from '../../../../../../../../lib/packets/review';
@@ -74,6 +76,8 @@ export default async function PacketReviewPage(props: Props) {
   const stale = review.attestation === null && blocked === 'pricing_not_current';
   const downloadedBoth = review.viewerDownloaded.pdf && review.viewerDownloaded.csv;
   const missing = [review.viewerDownloaded.pdf ? null : 'the PDF', review.viewerDownloaded.csv ? null : 'the CSV schedule'].filter((file) => file !== null).join(' and ');
+  // A refused file comes back here, said beside the exported files (docs/adr/0079).
+  const refusal = downloadRefusal(await props.searchParams);
   return (
     <AppShell shell={page.shell} section="packet_reviews">
       <div className="flex flex-col gap-1">
@@ -114,10 +118,15 @@ export default async function PacketReviewPage(props: Props) {
                 : `Exported ${utc(review.exportedAt)}. Download both files and review them before you attest: each download is checked against its SHA-256 as it is served and recorded as yours, and the attestation names their SHA-256.`}
           </CardDescription>
         </CardHeader>
+        {refusal === null ? null : (
+          <CardContent>
+            <DownloadRefusal refusal={refusal} />
+          </CardContent>
+        )}
         {review.exportedAt === null ? null : (
           <CardContent className="flex flex-col gap-2 text-sm">
             <p data-download="pdf" data-downloaded={review.viewerDownloaded.pdf ? 'true' : 'false'}>
-              <a className="underline" href={`${path}/pdf`} download>
+              <a className="underline" href={`${path}/pdf`}>
                 PDF
               </a>{' '}
               SHA-256 <Hash value={review.exportSha256} label="PDF SHA-256" />
@@ -126,7 +135,7 @@ export default async function PacketReviewPage(props: Props) {
               )}
             </p>
             <p data-download="csv" data-downloaded={review.viewerDownloaded.csv ? 'true' : 'false'}>
-              <a className="underline" href={`${path}/csv`} download>
+              <a className="underline" href={`${path}/csv`}>
                 CSV schedule
               </a>{' '}
               (line-level PHI: the download is recorded) SHA-256 <Hash value={review.exportCsvSha256} label="CSV SHA-256" />

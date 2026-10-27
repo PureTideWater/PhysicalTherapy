@@ -4,10 +4,12 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../../components/action-form';
+import { DownloadRefusal } from '../../../../../components/download-refusal';
 import { utc } from '../../../../../components/format';
 import { MonthlyFigures } from '../../../../../components/reports/documents';
 import { ShareLink } from '../../../../../components/share';
 import { AppShell, Forbidden } from '../../../../../components/shell';
+import { downloadRefusal } from '../../../../../lib/http/download-refusal';
 import { loadPage } from '../../../../../lib/http/next';
 import { monthlyContent } from '../../../../../lib/reports/documents';
 import { monthlySummaryPage } from '../../../../../lib/routes/monitoring';
@@ -25,7 +27,8 @@ type Props = { readonly params: Promise<{ practiceId: string }>; readonly search
  * validated and actionable, the variance; by payer beside it. Every figure links to the lines or cases
  * it counts; no figure adds one stage to another. Payer approved and recovered are counts here: their
  * dollars are the recovery ledger's. The month's CSV downloads now; its PDF is a document printed by the
- * worker with the figures as they stand when it is generated (docs/adr/0045).
+ * worker with the figures as they stand when it is generated (docs/adr/0045). A refused CSV comes back here, on its
+ * month when that is one the page takes, said below the link (docs/adr/0079).
  */
 export default async function MonthlySummaryPage(props: Props) {
   const page = await loadPage(monthlySummaryPage, props);
@@ -35,6 +38,7 @@ export default async function MonthlySummaryPage(props: Props) {
   const { practiceId, summary, digests, canGenerate, origin } = page.data;
   const { month } = summary;
   const path = `/p/${practiceId}/reports/monthly`;
+  const refusal = downloadRefusal(await props.searchParams);
   return (
     <AppShell shell={page.shell} section="reports">
       <div className="flex flex-col gap-1">
@@ -59,6 +63,7 @@ export default async function MonthlySummaryPage(props: Props) {
           Download the summary CSV
         </a>
       </form>
+      <DownloadRefusal refusal={refusal} />
       {canGenerate ? (
         <ActionForm action={generateReportDocumentFormAction} submit="Generate the month’s PDF" variant="outline" className="flex flex-wrap items-end gap-3">
           <FormKeys />

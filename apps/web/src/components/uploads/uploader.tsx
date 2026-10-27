@@ -2,10 +2,10 @@
 
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PermissionState } from '@tp/ui';
 import { useRouter } from 'next/navigation';
-import { type DragEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { type DragEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
 import { spreadsheetExportProblem } from '../../lib/uploads/csv-exports';
-import { type Receipt, formatBytes, receiptState } from '../../lib/uploads/receipt-labels';
+import { type Receipt, type ReportFrom, formatBytes, receiptState } from '../../lib/uploads/receipt-labels';
 import { FormatUnconfirmedBadge } from './format-flag';
 import { ReceiptList, type ReceiptPage, ReceiptStatus } from './receipts';
 
@@ -68,6 +68,10 @@ export interface UploaderProps {
   readonly uploaders?: string;
   /** Whether the practice's receipts are listed below the drop zone. */
   readonly showReceipts?: boolean;
+  /** The page the receipts are listed on, as their report links name it (?from=), so a refused report comes back there. */
+  readonly reportFrom?: ReportFrom;
+  /** Said above the receipts: a refused report download, which the page renders (DownloadRefusal; docs/adr/0079). */
+  readonly receiptsNotice?: ReactNode;
 }
 
 const ZIP_TYPES = new Set(['application/zip', 'application/x-zip-compressed']);
@@ -447,7 +451,8 @@ export function Uploader(props: UploaderProps) {
       {props.showReceipts === false ? null : (
         <div className="flex flex-col gap-2">
           <h2 className="text-xl font-bold tracking-display">Receipts</h2>
-          <ReceiptList practiceId={practiceId} canUpload={canUpload} csrfToken={csrfToken} refreshKey={refreshKey} title="Receipts" />
+          {props.receiptsNotice}
+          <ReceiptList practiceId={practiceId} canUpload={canUpload} csrfToken={csrfToken} refreshKey={refreshKey} title="Receipts" reportFrom={props.reportFrom} />
         </div>
       )}
     </div>

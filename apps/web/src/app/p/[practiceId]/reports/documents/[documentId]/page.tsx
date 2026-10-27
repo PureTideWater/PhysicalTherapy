@@ -4,10 +4,12 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../../../components/action-form';
+import { DownloadRefusal } from '../../../../../../components/download-refusal';
 import { utc } from '../../../../../../components/format';
 import { CoverageFigures, DocumentStatusBadge, MonthlyFigures, documentTitle } from '../../../../../../components/reports/documents';
 import { ShareLink } from '../../../../../../components/share';
 import { AppShell, Forbidden } from '../../../../../../components/shell';
+import { downloadRefusal } from '../../../../../../lib/http/download-refusal';
 import { loadPage } from '../../../../../../lib/http/next';
 import { reportDocumentPage } from '../../../../../../lib/routes/report-documents';
 import { generateReportDocumentFormAction } from '../actions';
@@ -15,14 +17,15 @@ import { FormKeys } from '../../../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Report' };
 
-type Props = { readonly params: Promise<{ practiceId: string; documentId: string }> };
+type Props = { readonly params: Promise<{ practiceId: string; documentId: string }>; readonly searchParams: Promise<Record<string, string | string[] | undefined>> };
 
 /**
  * A coverage report or a month's variance summary (PRD 5, J12; PRD 6, Reports and exports; PRD 7,
  * Reports: "generate, download, share within the organization ... every total links to its stage";
  * docs/adr/0045): its figures as they stood when it was generated, each linked to the screen it comes
  * from; its PDF (printed by the worker, with its SHA-256) and its CSV, neither of them line-level PHI;
- * and the link to share within the organization.
+ * and the link to share within the organization. A refused download of either file comes back here, said beside them
+ * (docs/adr/0079).
  */
 export default async function ReportDocumentPage(props: Props) {
   const page = await loadPage(reportDocumentPage, props);
@@ -32,6 +35,7 @@ export default async function ReportDocumentPage(props: Props) {
   const { practiceId, document, origin, canGenerate } = page.data;
   const path = `/p/${practiceId}/reports/documents/${document.id}`;
   const content = document.content;
+  const refusal = downloadRefusal(await props.searchParams);
   return (
     <AppShell shell={page.shell} section="reports">
       <div className="flex flex-col gap-1">
@@ -63,6 +67,7 @@ export default async function ReportDocumentPage(props: Props) {
           <CardDescription>The PDF is stored sealed with the practice’s key and checked against its SHA-256 before it is sent; the CSV is computed from the same figures. Every download is in the export history.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-2 text-sm">
+          <DownloadRefusal refusal={refusal} />
           <p>
             {document.status === 'ready' ? (
               <a className="underline" href={`${path}/pdf`}>

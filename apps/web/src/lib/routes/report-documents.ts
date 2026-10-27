@@ -1,8 +1,9 @@
 import { rolesPermit } from '@tp/db/runtime';
 import { z } from 'zod';
 
+import { cameFrom, returnPage } from '../http/download-refusal';
 import { practiceRoute } from '../http/invoke';
-import { type Download, InputError, type MutationResult, NotFoundError } from '../http/route';
+import { type Download, InputError, type MutationResult, NotFoundError, type ReturnTo } from '../http/route';
 import { type ReportDocumentDetail, generateReportDocument, reportDocumentCsvFile, reportDocumentOf, reportDocumentPdf } from '../reports/documents';
 import { opaqueId, optionalText } from './schemas';
 
@@ -61,6 +62,19 @@ export const reportDocumentPage = practiceRoute({
   sample: { params: (refs) => ({ practiceId: refs.practiceId, documentId: refs.reportDocumentId }) },
 });
 
+/**
+ * The Reports screen's list a refused document file comes back beside when its link was there (?list=documents): the
+ * screen has two lists of files, and its notice goes in the one the person used (docs/adr/0079).
+ */
+export const DOCUMENTS_LIST = 'documents';
+
+/**
+ * Where a browser's refused document file goes back to (docs/adr/0079): the Reports screen's list of generated reports
+ * when its link was there (?from=list), else the document's own page, beside its files.
+ */
+const documentFilesPage: ReturnTo = (params) =>
+  cameFrom(params, ['list']) === 'list' ? returnPage('/p/[practiceId]/reports', params, { list: DOCUMENTS_LIST }) : returnPage(reportDocumentPage.path, params);
+
 /** The document's PDF, checked against its SHA-256; the download is audited. */
 export const reportDocumentPdfRoute = practiceRoute({
   id: 'practice.reports.documents.pdf',
@@ -71,6 +85,7 @@ export const reportDocumentPdfRoute = practiceRoute({
   phi: true,
   permission: 'report.read',
   params: z.object({ practiceId: opaqueId, documentId: opaqueId }),
+  returnTo: documentFilesPage,
   handle: async ({ scope, practiceId, params, request, services }): Promise<Download<Uint8Array<ArrayBuffer>>> => {
     const body = await reportDocumentPdf(scope, services, practiceId, params.documentId, request.requestId);
     if (body === undefined) {
@@ -92,6 +107,7 @@ export const reportDocumentCsvRoute = practiceRoute({
   phi: true,
   permission: 'report.read',
   params: z.object({ practiceId: opaqueId, documentId: opaqueId }),
+  returnTo: documentFilesPage,
   handle: async ({ scope, practiceId, params, request }): Promise<Download> => {
     const file = await reportDocumentCsvFile(scope, practiceId, params.documentId, request.requestId);
     if (file === undefined) {

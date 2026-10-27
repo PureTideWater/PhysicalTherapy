@@ -10,6 +10,7 @@ import { type MonthWaitingOnLocation, monthsWaitingOnLocation } from '../pricing
 import { type PricingReadiness, type Totals, type WaitingPage, lineTotals, pricingReadiness, waitingPlans, waitingTotals } from '../contracts/mapping-queries';
 import { UNPRICED_REASON_TEXT, type UnpricedReasonText } from '../contracts/remedies';
 import { type FeeSchedulePeriod, coverageInEffect, feeSchedulePeriodsNotLoaded } from '../coverage/in-effect';
+import { keptCodes, keptId, returnPage } from '../http/download-refusal';
 import { practiceRoute } from '../http/invoke';
 import { type ChecklistView, latestChecklist } from '../models/evidence-checklist';
 import { modelFeatures } from '../models/path';
@@ -181,6 +182,12 @@ function todayOf(services: Services): string {
   return services.now().toISOString().slice(0, 10);
 }
 
+/**
+ * The request-to-payer letter, a text file from a fixed template, downloaded from Coverage's GET form. A browser's
+ * refused letter goes back to Coverage with the payer, the contract and the codes it was asked for, each kept only as
+ * Coverage reads it (an opaque ID; codes of letters, digits and separators), so the form shows them again beside the
+ * field it marks (docs/adr/0079). A script keeps the refusal's JSON, whose issue messages are the API's words.
+ */
 export const payerLetter = practiceRoute({
   id: 'practice.coverage.letter',
   kind: 'handler',
@@ -195,6 +202,7 @@ export const payerLetter = practiceRoute({
     contract: optionalText(opaqueId),
     codes: optionalText(z.string().max(400)),
   }),
+  returnTo: (params) => returnPage(coveragePage.path, params, { payer: keptId(params.payer), contract: keptId(params.contract), codes: keptCodes(params.codes) }),
   handle: async ({ scope, practiceId, params, request, services }): Promise<Download> => {
     let codes: string[];
     try {

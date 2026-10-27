@@ -3,10 +3,12 @@ import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardDesc
 import type { Metadata } from 'next';
 
 import { ActionForm } from '../../../components/action-form';
+import { DownloadRefusal } from '../../../components/download-refusal';
 import { Field, SelectField } from '../../../components/field';
 import { FormKeys } from '../../../components/form-keys';
 import { roleNames } from '../../../components/format';
 import { AppShell, Forbidden } from '../../../components/shell';
+import { downloadRefusal } from '../../../lib/http/download-refusal';
 import { loadPage } from '../../../lib/http/next';
 import { compliancePage } from '../../../lib/routes/compliance';
 import { recordEvidenceAction, sendEvidenceAction } from './actions';
@@ -91,6 +93,8 @@ export default async function CompliancePage(props: { readonly searchParams: Pro
     return <Forbidden shell={page.shell} section="compliance" roles={page.roles} message={page.message} nextStep="The evidence checklist is for platform administrators." />;
   }
   const { checklist, workforce, records, recordKinds, policies, platformConnected, sent } = page.data;
+  // A refused export comes back here, said above its link in the console's words (docs/adr/0079).
+  const refusal = downloadRefusal(await props.searchParams);
   return (
     <AppShell shell={page.shell} section="compliance">
       <div className="flex flex-col gap-1">
@@ -106,8 +110,9 @@ export default async function CompliancePage(props: { readonly searchParams: Pro
           <AlertDescription>The compliance platform received {sent}.</AlertDescription>
         </Alert>
       )}
+      <DownloadRefusal refusal={refusal} surface="console" />
       <div className="flex flex-wrap items-start gap-4">
-        <a className="text-sm underline" href="/console/compliance/export" download>
+        <a className="text-sm underline" href="/console/compliance/export">
           Download the export (JSON)
         </a>
         {platformConnected ? (

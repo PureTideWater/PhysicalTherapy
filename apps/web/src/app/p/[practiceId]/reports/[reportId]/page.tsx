@@ -3,11 +3,13 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../../components/action-form';
+import { DownloadRefusal } from '../../../../../components/download-refusal';
 import { utc } from '../../../../../components/format';
 import { Headline, ReleaseState, ReportSections, ReportStatusBadge } from '../../../../../components/reports/display';
 import { Pager } from '../../../../../components/remittances/display';
 import { ShareLink } from '../../../../../components/share';
 import { AppShell, Forbidden } from '../../../../../components/shell';
+import { downloadRefusal } from '../../../../../lib/http/download-refusal';
 import { loadPage } from '../../../../../lib/http/next';
 import { REPORT_RELEASE_WITHDRAWN_TEXT, reportFailureText, reportReleaseWithdrawnText } from '../../../../../lib/reports/queries';
 import { reportPage } from '../../../../../lib/routes/reports';
@@ -25,7 +27,8 @@ type Props = { readonly params: Promise<{ practiceId: string; reportId: string }
  * the reviewer's attestation; and the release, refused until the attestation is signed. A report that could not
  * be generated says why in words (its rule release withdrawn since the request, its run replaced since, or the job's
  * failure); a ready report whose rule release was withdrawn since it was generated (audit item #4) carries a banner,
- * and its attestation and release are disabled with the reason (the database refuses both).
+ * and its attestation and release are disabled with the reason (the database refuses both). A refused download of its
+ * files comes back here, said beside them (docs/adr/0079).
  */
 export default async function ReportPage(props: Props) {
   const page = await loadPage(reportPage, props);
@@ -34,6 +37,7 @@ export default async function ReportPage(props: Props) {
   }
   const { practiceId, report, history, canExport, canRelease, canReview, origin } = page.data;
   const path = `/p/${practiceId}/reports/${report.id}`;
+  const refusal = downloadRefusal(await props.searchParams);
   return (
     <AppShell shell={page.shell} section="reports">
       <div className="flex flex-col gap-1">
@@ -66,7 +70,10 @@ export default async function ReportPage(props: Props) {
           <AlertDescription>{reportReleaseWithdrawnText(report, utc)}</AlertDescription>
         </Alert>
       ) : null}
-      {report.content === null ? null : (
+      {/* A report without content shows no files, so a refusal of one is said here instead. */}
+      {report.content === null ? (
+        <DownloadRefusal refusal={refusal} />
+      ) : (
         <>
           <Headline headline={report.content.headline} practiceId={practiceId} base={path} />
           <Card role="region" aria-label="Files">
@@ -75,6 +82,7 @@ export default async function ReportPage(props: Props) {
               <CardDescription>Stored sealed with the practice’s key; each is checked against its SHA-256 before it is sent, and every download is recorded.</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-2 text-sm">
+              <DownloadRefusal refusal={refusal} />
               <p>
                 <a className="underline" href={`${path}/pdf`}>
                   PDF

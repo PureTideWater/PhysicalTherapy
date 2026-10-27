@@ -226,6 +226,21 @@ export function shortId(id: string): string {
   return id.slice(0, 8);
 }
 
+/**
+ * The pages other than a receipt's own that link its error report, as the link's ?from= names them (docs/adr/0079): the
+ * Uploads screen's receipts. A refused report comes back to the page named; without one (the receipt's page, or a zip's
+ * list of its files), to the file's own receipt, which links its zip.
+ */
+export const REPORT_FROM = ['uploads'] as const;
+
+export type ReportFrom = (typeof REPORT_FROM)[number];
+
+/** A receipt's error report link, naming the page it is on when that is not the receipt's own (ReportFrom). */
+export function reportHref(practiceId: string, documentId: string, from?: ReportFrom): string {
+  const path = `/p/${practiceId}/uploads/${documentId}/report`;
+  return from === undefined ? path : `${path}?from=${from}`;
+}
+
 function held(detail: string): ReceiptState {
   return { stage: 'held', label: 'Held', detail, held: true, settled: true, retry: null };
 }
