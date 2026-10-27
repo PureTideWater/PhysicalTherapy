@@ -636,6 +636,27 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/routes/onboarding-routes.db.test.ts',
     'apps/web/scripts/seed.db.test.ts',
   ]),
+  // SS-01: whose hold stops which work, PaidWhole's stored suspension and the dunning mail's truth (docs/adr/0080).
+  'BIL-07': none(11, 'Synthetic organizations, people and grants the tests write as the owner on a migrated database, and the route world’s firm; no file.', [
+    'packages/db/src/suspension.db.test.ts',
+    'apps/web/src/lib/routes/route-tests/define.ts',
+    'apps/worker/src/packets/export-attempts.db.test.ts',
+    'apps/worker/src/worker.test.ts',
+  ]),
+  'BIL-08': none(11, 'The setter and the routes run on synthetic organizations and platform administrators the tests write; no file.', [
+    'packages/db/src/organization-status.db.test.ts',
+    'packages/db/src/hardening.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+  ]),
+  'BIL-09': none(11, 'The words are pure functions of values the test passes in memory, and the journeys read a firm, a client practice and a console firm the seed holds; no file.', [
+    'apps/web/src/components/console/suspension-text.test.ts',
+    'apps/web/src/components/billing/account-standing.test.tsx',
+    'apps/web/e2e/billing.spec.ts',
+  ]),
+  'BIL-10': none(11, 'dunningMessage is a pure function of values the test passes in memory, and the sends run on synthetic organizations and invoices; no file.', [
+    'apps/worker/src/billing/dunning-words.test.ts',
+    'apps/worker/src/billing/billing.db.test.ts',
+  ]),
   // Milestone 0's "CI with every gate from section 18" (PRD 17), as the CI series rebuilds it (docs/adr/0066).
   'CI-01': none(0, 'The gate reads the results of the jobs it needs, which its test builds in memory; no file.', ['tools/test/ci-gate.test.ts', 'tools/test/workflows.test.ts']),
   'CI-02': none(0, 'The partition reads the route registry; no file.', ['apps/web/src/lib/routes/route-tests/partition.test.ts']),

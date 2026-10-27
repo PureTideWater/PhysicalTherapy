@@ -1,0 +1,17 @@
+{
+  "case": "BIL-10",
+  "module": "BIL",
+  "title": "The dunning mail never claims runs started or stopped when they did not",
+  "assertion": "Each dunning message's words are chosen when it is sent, from the organization's kind and status and billing's standing, and \"New runs have started again\" is said only to an active group that nothing else holds; a group suspended by PaidWhole that pays an invoice held 31 days reads that the invoice is paid and that PaidWhole's suspension still stops new runs, and one PaidWhole reinstated between the stage and the send reads that new runs have started again; a group whose other invoice reached its 30 days before the send reads that new runs stay stopped until that one is paid; a firm's and a closed group's notices say nothing about runs; the stage, its audit event, the outbox and the delivery states are unchanged",
+  "synthetic": true,
+  "completesIn": 11,
+  "assertedBy": ["apps/worker/src/billing/dunning-words.test.ts","apps/worker/src/billing/billing.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "dunningMessage is a pure function of values the test passes in memory, and the sends run on synthetic organizations and invoices; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

@@ -1,0 +1,21 @@
+{
+  "case": "BIL-08",
+  "module": "BIL",
+  "title": "PaidWhole's suspension is set only through its setter, with its reason, note and time, checked in the handler and in Postgres",
+  "assertion": "The console's route takes a suspension only with a reason from the closed list (at the customer's request, a security hold, the agreement ended; never nonpayment), an optional one-line note of at most 500 characters and the tick that confirms what it stops, a change of reason, or a reinstatement with its reason (the cause is resolved, or suspended in error), and refuses anything else before it writes; `console_set_organization_status` refuses anyone but a platform administrator in person (a job's actor, a customer administrator, a support engineer), a closed, internal or missing organization, a reason from the wrong list or none, and a status that changed since the page loaded; a suspension writes the status, its reason and its time, one history row with the note, and the reserved action `organization_suspended` with the reason as its purpose, at one instant; the same reason again writes nothing; a change of reason by a second administrator keeps when the suspension began, and the page names each administrator; a reinstatement clears the reason and records `organization_reinstated`; as the application role, a move into or out of closed, suspending the internal organization, creating an organization that is not active, writing the reason or the time, and inserting either reserved action are refused, while the previous image's direct suspend and reinstate still work, stamp the time and read as a suspension whose author was not recorded; `organization_status_change` is append-only and read by platform administrators alone, never by a customer or by billing",
+  "synthetic": true,
+  "completesIn": 11,
+  "assertedBy": [
+    "packages/db/src/organization-status.db.test.ts",
+    "packages/db/src/hardening.db.test.ts",
+    "apps/web/src/lib/routes/console-routes.db.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The setter and the routes run on synthetic organizations and platform administrators the tests write; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

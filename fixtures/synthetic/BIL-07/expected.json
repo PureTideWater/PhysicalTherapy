@@ -1,0 +1,22 @@
+{
+  "case": "BIL-07",
+  "module": "BIL",
+  "title": "A suspended or closed organization's people start no new work through its grants",
+  "assertion": "With an organization that holds a grant in force suspended by PaidWhole or closed, a person who reaches the practice through that grant is refused each piece of run-starting work their unheld roles (ownership, a support grant, a grant of an active organization) do not permit: at the route, which asks `practice_run_refusal_for` with the route's permission, and again in Postgres where a person records the work (an upload, a pricing run, an audit report, a report document and an ROI statement, each checked against its writer's permission; SQLSTATE 55000), in the sentence that begins \"PaidWhole has suspended your organization, so you start no new work here through its grant\" or \"your organization is closed\"; a person with a second path is refused only what that path does not allow (the group's practice administrator who is also the firm's principal: all five run-starting permissions; the group's analyst who is also the firm's principal: pricing runs, ROI statements and packet exports, never uploads or triage; the group's analyst who is also the firm's analyst: nothing); the practice's own staff, its other grantees and every job carry on, a digest and a packet export included, and a grantee's billing standing holds nothing; the owner's hold stops everyone, jobs included, and wins over a grantee's: the owning organization's members read why (PaidWhole's suspension with its reason, or the unpaid invoice) and anyone else, a job included, only that the PaidWhole account of the practice's organization is on hold, while closed reads closed to everyone; `practice_run_hold` gives a held grantee's people its source, kind, cause, reason, time and the permissions it stops, never a name; a permission outside `run_starting_permissions()` is refused 22023, and a trigger table with no permission named raises; `run_starting_permissions()` equals the permissions of `RUN_STARTING_ROUTES`, every route whose ok call queues triage, a packet export, intake, a price, an audit report, a report document or an ROI statement is in `RUN_STARTING_ROUTES` or `CONTINUES_STARTED_WORK`, and one that queues monitoring or reconciliation is named as the practice's own work; a `packet_export` job the gate refuses records `packet_export_refused` with the code `organization_suspended`, which its page reads as refused; the decision's functions are the owner's alone; for a firm granted 2,000 practices the route's question answers within 100 ms",
+  "synthetic": true,
+  "completesIn": 11,
+  "assertedBy": [
+    "packages/db/src/suspension.db.test.ts",
+    "apps/web/src/lib/routes/route-tests/define.ts",
+    "apps/worker/src/packets/export-attempts.db.test.ts",
+    "apps/worker/src/worker.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Synthetic organizations, people and grants the tests write as the owner on a migrated database, and the route world’s firm; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

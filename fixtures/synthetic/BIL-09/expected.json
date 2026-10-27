@@ -1,0 +1,21 @@
+{
+  "case": "BIL-09",
+  "module": "BIL",
+  "title": "Every place a person reads a suspension says it is PaidWhole's, whose it is, why (to its own members), and what restarts the work",
+  "assertion": "The practice home's notice, the job outcome, a refused packet export, the billing page, the console's card, history and billing status, and the practice's grants are worded for each source, cause, reason (or none), date (or none) and reader: \"PaidWhole has suspended\" or \"PaidWhole suspended\" appears exactly when the hold is PaidWhole's suspension and the reader is a member of the held organization; \"platform administrator\" never appears; no reason, \"invoice\" or \"unpaid\" reaches anyone outside the held organization, and \"your organization\" is never said to them about the owner's hold; a grantee's notice lists exactly the work stopped for its reader, in the order pricing runs, triage, reports, ROI statements, packet exports, uploads, and says it stops through the organization's grant; no closed case promises a restart, and every other case names what restarts the work or, to a non-member, that it is on hold; the billing page's label carries the date PaidWhole suspended the organization when one is stored, its notice and next step follow the reason, a firm suspended or closed by PaidWhole is told its people start no new work through its grants, and a firm's unpaid invoice still claims no run; in the journey a suspended firm's principal at a client practice reads the notice, \"Uploads are paused: \" and \"Not started: \" with the database's sentence, the client group's administrator at the same practice reads no notice and the grant's state, and a platform administrator suspends the console's firm with a reason, a note and the tick, reads who, when and why with the history, and reinstates it in one click; each page passes axe",
+  "synthetic": true,
+  "completesIn": 11,
+  "assertedBy": [
+    "apps/web/src/components/console/suspension-text.test.ts",
+    "apps/web/src/components/billing/account-standing.test.tsx",
+    "apps/web/e2e/billing.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The words are pure functions of values the test passes in memory, and the journeys read a firm, a client practice and a console firm the seed holds; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
