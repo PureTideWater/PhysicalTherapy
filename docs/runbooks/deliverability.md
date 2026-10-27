@@ -242,7 +242,10 @@ mailbox works.
 ### 3.4 An invitation undelivered (`INVITATION_UNDELIVERED`; `TransactionalSetBounce`)
 
 The users page shows the invitation "Not delivered" with its date. Tell the administrator who invited the person to
-check the address, then invite again. A transactional bounce rate at 2% means invitations are going to bad addresses
+check the address, then invite again. An invitation the person reported as spam reads "Reported as spam" instead: it
+reached them, and SES now holds the address back from the transactional stream, so another would not arrive. The
+person finds the invitation in their spam folder; take the address off the suppression list (3.3) only if they need a
+new one and confirm they expect it. A transactional bounce rate at 2% means invitations are going to bad addresses
 at volume: look for one organization's import.
 
 ### 3.5 The validation cap reached (`MAIL_VALIDATION_CAP_REACHED`)
