@@ -242,16 +242,18 @@ $$;
 -- A stream's window (Q9): from the later of 7 days ago and its last resume, its messages SES counts toward the account's
 -- rates (probes, those the account's own suppression list held back and rejected ones aside), the permanent bounces
 -- among them (a bounce from SES's global suppression list included, as SES counts it) and the complaints other than
--- not_spam.
-CREATE FUNCTION mail_window_counts(target text) RETURNS TABLE (sends integer, bounces integer, complaints integer)
+-- not_spam; and where it starts (starts_at), which the console shows (review M8).
+CREATE FUNCTION mail_window_counts(target text) RETURNS TABLE (starts_at timestamptz, sends integer, bounces integer, complaints integer)
 LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp AS $$
-  SELECT count(m.*)::integer,
+  SELECT w.starts_at,
+         count(m.*)::integer,
          count(m.*) FILTER (WHERE m.state = 'bounced' AND m.bounce_kind = 'permanent')::integer,
          count(m.*) FILTER (WHERE m.state = 'complained' AND m.complaint_type <> 'not_spam')::integer
     FROM mail_stream s
-    LEFT JOIN mail_send m ON m.stream = s.stream AND m.kind <> 'probe' AND m.state NOT IN ('suppressed', 'rejected')
-                         AND m.sent_at >= greatest(now() - interval '7 days', s.window_starts_at)
+    CROSS JOIN LATERAL (SELECT greatest(now() - interval '7 days', s.window_starts_at) AS starts_at) w
+    LEFT JOIN mail_send m ON m.stream = s.stream AND m.kind <> 'probe' AND m.state NOT IN ('suppressed', 'rejected') AND m.sent_at >= w.starts_at
    WHERE s.stream = target
+   GROUP BY w.starts_at
 $$;
 
 -- Whether the screening's mail is sending: not paused, and SES confirmed since the last pause. The triggers below read it;
@@ -1164,6 +1166,8 @@ $$;
 -- 8. The console (tp_app; feature_flag.manage, as console_model_spend)
 -- ---------------------------------------------------------------------------------------------------
 
+-- Each stream as the console's mail page shows it. window_starts_at is where the window's counts start, the later of 7
+-- days ago and the last resume (mail_window_counts()), never a resume older than the 7 days the counts cover (review M8).
 CREATE FUNCTION console_mail_streams() RETURNS TABLE (stream text, paused_at timestamptz, paused_reason text, paused_by uuid, pause_sends integer,
   pause_bounces integer, pause_complaints integer, window_starts_at timestamptz, window_sends integer, window_bounces integer, window_complaints integer,
   resumed_at timestamptz, confirmed_at timestamptz, sending boolean, ready boolean, probe_sent_at timestamptz, probe_delivered_at timestamptz,
@@ -1174,7 +1178,7 @@ BEGIN
     RAISE EXCEPTION 'only a platform administrator reads the mail streams' USING ERRCODE = 'insufficient_privilege';
   END IF;
   RETURN QUERY
-    SELECT s.stream, s.paused_at, s.paused_reason, s.paused_by, s.pause_sends, s.pause_bounces, s.pause_complaints, s.window_starts_at,
+    SELECT s.stream, s.paused_at, s.paused_reason, s.paused_by, s.pause_sends, s.pause_bounces, s.pause_complaints, w.starts_at,
            w.sends, w.bounces, w.complaints, s.resumed_at, s.ses_enabled_confirmed_at,
            s.paused_at IS NULL AND s.ses_enabled_confirmed_at IS NOT NULL,
            s.paused_at IS NULL AND s.ses_enabled_confirmed_at IS NOT NULL
