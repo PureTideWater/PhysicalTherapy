@@ -744,9 +744,10 @@ SHA-256 of every file of the build as `find <dir> -type f -print0 | LC_ALL=C sor
 gives it, the binary's SHA-256, and the Chrome for Testing zip and its SHA-256 for the local layout), and the lines that
 hash to each tree's SHA-256 are committed beside it as `apps/web/e2e/browser-builds/<dir>.sha256`, so a difference names
 the files that differ. `tools/ci/browser-build.ts` holds the installed builds to it, and its `--image <ref>` form holds a worker image's headless
-shell to it. The shell's two header controls are named by their visible text (`aria-label` "<practice>, practice
-switcher" and "<email>, account menu", the initial drawn as generated content), and the brand journey checks every
-header control's name contains its visible text at 1280 and 390 px.
+shell to it. The shell's two header controls are named from their content in UX-094's words, "<practice>, switch
+practice" and "<email>, account and sign out" (the purpose visually hidden, no `aria-label` and no `title`, the initial
+drawn as generated content), and the brand journey checks every header control's name starts with its visible text and
+contains every other piece of it at 1280 and 390 px.
 
 **Runners (the founder's F5, as recommended, relayed by the co-founder on 2026-10-25 at about 01:10 UTC).** The
 release's capacity chain stays on `RELEASE_RUNNER.label`, `ubuntu-24.04`: `release.yml`'s four jobs,

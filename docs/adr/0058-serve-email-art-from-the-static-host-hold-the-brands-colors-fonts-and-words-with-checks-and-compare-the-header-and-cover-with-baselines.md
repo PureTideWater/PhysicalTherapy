@@ -324,9 +324,17 @@ version and the Dockerfile to this form.
 
 **The header is named by what it shows.** axe-core 4.14.0 enables `label-content-name-mismatch` (WCAG 2.5.3, Label in
 Name), which every `expectAccessible` scan now runs. The practice switcher was named "Practice switcher" while it shows
-the practice's name, and the account control "Account menu" while it shows the address and an initial. They are now
-named "<practice>, practice switcher" and "<address>, account menu", and the initial is drawn as CSS generated content
-(`data-initial`, `before:content-[attr(data-initial)]`), not a text node; the pictures are unchanged, byte for byte under
-1.56.1 (the seven regenerated and equal) and pixel for pixel under 1.64.1 (both header pictures, against the 141 ones). The brand journey holds every header control's accessible name to contain each
-piece of its visible text, generated content included, at 1280 and 390 px: at 390 px the account shows only its initial,
-for which axe answers "incomplete" rather than a violation.
+the practice's name, and the account control "Account menu" while it shows the address and an initial. Both are now
+named from their content, in the words the co-founder's ruling took for them (UX-094 in the UX baseline,
+`designs/lane-b-ux-review.md` section 6.1 on `claude/build-ops`): the practice's name, then a visually hidden ", switch
+practice"; the address, visually hidden below `md` where only the initial shows, then a visually hidden ", account and
+sign out". Neither summary has an `aria-label` or a `title`, so Chromium does not also read the practice or the address
+as the control's description, and tests reach the two by `data-slot` (`practice-switcher`, `account-menu`). The span
+that holds the hidden words is their containing block (`relative`), so its truncation clips them instead of letting
+their position widen the page. The initial is drawn as CSS generated content (`data-initial`,
+`before:content-[attr(data-initial)]`), not a text node. The pictures are unchanged: the first names (an `aria-label`
+each) were byte for byte under 1.56.1 and pixel for pixel under 1.64.1, and with these names the seven regenerated under
+1.64.1 into an empty directory are the committed files byte for byte. The brand journey holds every header control's
+accessible name to start with its visible text and contain each other piece of it, generated content included, at 1280
+and 390 px (at 390 px the account shows only its initial, for which axe answers "incomplete" rather than a violation),
+and reads Chromium's own name and description of the switcher and the account.
