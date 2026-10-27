@@ -47,7 +47,9 @@ after it run when the install succeeded, whatever the check said, so a red check
 ("Upgrading the browser", below), while the capacity jobs stop at a red check. In every job that builds the worker
 image into a local tag (`images`, the release's `build`, and `release-capacity`'s and `screening-capacity`'s
 `capacity`), `node tools/ci/browser-build.ts --image <tag>` holds its headless shell, which prints customers' reports,
-to the same record before the tag is measured, saved or pushed, on Node 24 set up before it.
+to the same record before the tag is measured, saved or pushed, on Node 24 set up before it. Either way a build whose
+every file equals the record must also start: its `--version` must print `Google Chrome for Testing <browserVersion>`
+(in the image, run as the image's own user).
 
 Beside ci.yml, two workflows of the release content checks (docs/adr/0071) run on a schedule. Neither is a required
 check, and their schedules fire only from the default branch (the founder's ruling F1 (a)); until then they run on
@@ -285,11 +287,25 @@ per build:
   `setup-container.sh`'s `CFT_BUILDS` rows equal.
 
 `node tools/ci/browser-build.ts` checks the builds Playwright installed (under `PLAYWRIGHT_BROWSERS_PATH`, else
-`~/.cache/ms-playwright`); `--image <ref>` checks a built worker image's headless shell inside the image, as root and offline (`docker run --rm
---user 0:0 --network none`: the image's own user cannot read Chrome for Testing's mode-0600 `deb.deps` and `rpm.deps`); `--list`
-prints every file's line of each build it found. A build that fails the check has its every file's line printed
-anyway, two spaces in, as `--list` prints them, and on a tree difference at the recorded revision the message names
-every path that differs from the committed list, so one red CI run gives everything a new record needs.
+`~/.cache/ms-playwright`); `--image <ref>` checks a built worker image's headless shell inside the image, reading it
+as root, offline and from the local tag only (`docker run --rm --pull never --user 0:0 --network none`: the image's own
+user cannot read Chrome for Testing's mode-0600 `deb.deps` and `rpm.deps`, and a tag missing on the runner fails
+rather than being pulled from a registry and checked in place of the image just built). Inside the image each stage of
+the hash run reports its own exit status, so a file that cannot be read or hashed fails the check as "could not be
+hashed whole", naming the tool and the file, never as a file the image lacks. `--list` prints every file's line of each
+build it found. A build that fails the check has its every file's line printed anyway, two spaces in, as `--list`
+prints them, and on a tree difference at the recorded revision the message names every path that differs from the
+committed list, so one red CI run gives everything a new record needs.
+
+The hashes cover a build's bytes, not its files' modes nor the shared libraries and fonts the system provides, so a
+build equal to the record in every file can still fail to start. Once every file of a build equals the record, and
+only then (a binary is never run before its bytes are proven), the check runs the binary's `--version` and fails unless
+it exits 0 printing exactly `Google Chrome for Testing <browserVersion>`: on the runner as the job's user, and in the
+image as the image's own user (`docker run --rm --pull never --network none`, no `--user`), the user that prints
+customers' PDFs, while the hashes stay root's. Its message, "<build> does not run as browser.json's build", names the
+command, who ran it and what it printed or how it ended. That is not an upgrade: the bytes are the record's, so look
+outside them, at a shared library the runner or the image lacks (a base image or `--with-deps` change) or a mode or
+user that cannot run the binary.
 
 **The procedure,** in the upgrade's own pull request:
 1. **Lay the new build out locally.** Run `setup-container.sh` with the worktree as an argument: it lays out every
