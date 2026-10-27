@@ -50,6 +50,7 @@ None. The co-founder's standing ruling of 2026-10-26 ~00:20 UTC (relayed by the 
 - 2026-10-27 ~01:43 UTC: **Base merged** (rule 6): `claude/build-platform` at e908c214 (171 commits) into the branch with a merge commit, 862c9dc8 (local, not yet pushed). One conflict, `packages/synth/src/cases/workflow.ts`'s imports, both sides kept. Lockfile and `watched-paths.txt` regenerated, unchanged. Typecheck 22 projects pass. Next: the integrator (workflow).
 
 - 2026-10-27 01:44 UTC: **Integrator** running (wf_cedc1f41-ac5, script `workflow-scripts/lane-b-model-eval-gate-phi-integrate-wf_cedc1f41-ac5.js`): settle-code and docs in parallel, then the suite agent (synth twice, eval, the full local suite once, commits, no push). Progress files in this session's scratchpad `phi/progress/`. Check-in scheduled 06:54 UTC (trig_01EfQw1T4BDozVefFYChaFQm) to resume it with resumeFromRunId if the 5-hour limit stops it.
+- 2026-10-27 01:51 UTC: **Pause** (the orchestrator, 01:50 UTC, relaying the co-founder: weekly usage 94%, resets 14:00 UTC, #42 first): the running integrator is let finish; no new workflow until 14:05 UTC. The 06:54 check-in was cancelled; a check-in at 2026-10-27T14:05:00Z (trig_01PqXoVpjkq7fjs88tiff7Do) resumes from this file (resumeFromRunId wf_cedc1f41-ac5 if the limit stopped it).
 
 ## Handoff: `co-001/contract-phi-check` (#120), for whoever takes it
 - **Branch:** `co-001/contract-phi-check` at **d7447adb**, from `claude/build-platform` at 88a0e4e9 (#53 merged). Commits:
