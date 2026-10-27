@@ -265,6 +265,12 @@ describe('the evaluation on permitted examples inside the PHI boundary', () => {
       ).rows,
     );
     expect(screened).toEqual([{ actor_id: runId, actor_kind: 'service', object_type: 'patient_ref', request_id: `evaluate-permitted:${runId}:screen:${runId}`, n: '1' }]);
+    // Still refused calls: against an earlier run on the same examples whose calls were made (before the check shipped),
+    // the rise fails the comparison (kept, fail closed: docs/adr/0070, Part 3); against a run on the current code, which
+    // refuses the same examples, nothing has regressed.
+    const before = { ...report, refused: 0, problems: [], variants: { ...report.variants, default: { ...report.variants.default, refused: 0 } } };
+    expect(permittedRegressions(report, before)).toEqual(['refused_rose:default']);
+    expect(permittedRegressions(await evaluatePermitted(services(), { runId: randomUUID(), practiceIds: [misfiled.practiceId] }), report)).toEqual([]);
   });
 
   it('scores an answer that does not parse as proposing nothing', async () => {

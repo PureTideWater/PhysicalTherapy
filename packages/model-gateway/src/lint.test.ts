@@ -95,4 +95,22 @@ describe('the contract screen’s records check is issued only by its two factor
     // patient-records.ts (the interface and the two factories) and the tests that show a forged check is refused.
     expect(definitions.filter((file) => !/\.test\.tsx?$/.test(file))).toEqual([RECORDS]);
   });
+
+  it('leaves the testing module’s checks to tests: no other source imports it', () => {
+    // testing.ts's memoryPracticeRecords and syntheticPracticeCheck issue a real practice check over an in-memory
+    // practice, which the screen accepts for that practice and which reads none of its records: a caller that built
+    // one would send a contract checked against nothing. Tests, their support files and the e2e may import it, and
+    // the synthetic evaluation (eval/: its gateway's actor is the evaluation, which carries no practice's material).
+    const TESTING = path.join(root, 'packages/model-gateway/src/testing.ts');
+    const SPECIFIER = /\bfrom\s+'([^']+)'|\bimport\(\s*'([^']+)'\s*\)/g;
+    const importsTesting = (file: string) =>
+      [...readFileSync(file, 'utf8').matchAll(SPECIFIER)].some(([, from, dynamic]) => {
+        const specifier = from ?? dynamic ?? '';
+        return specifier === '@tp/model-gateway/testing' || (specifier.startsWith('.') && path.resolve(path.dirname(file), specifier).replace(/\.ts$/, '') === TESTING.replace(/\.ts$/, ''));
+      });
+    const TEST_CODE = /(?:\.test\.tsx?$|\/test-support\/|\/route-tests\/|^apps\/web\/e2e\/|^packages\/model-gateway\/eval\/)/;
+    const importers = files.filter((file) => file !== TESTING && importsTesting(file)).map(relative);
+    expect(importers.length).toBeGreaterThan(0);
+    expect(importers.filter((file) => !TEST_CODE.test(file))).toEqual([]);
+  });
 });

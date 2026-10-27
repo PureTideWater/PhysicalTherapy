@@ -488,16 +488,24 @@ export const SCREEN_UNAVAILABLE_MESSAGE = 'this document could not be checked fo
  * 1. the check must be one the gateway's factories issued (../patient-records.ts), else `screen_invalid`;
  * 2. it must be bound to the call's practice (a synthetic check, bound to none, only on a synthetic evaluation
  *    call), else `screen_invalid`;
- * 3. a page run that is one of the practice's member IDs, payer claim control numbers or patient control numbers
- *    refuses the call as `names_patient`; a check that could not read the records refuses it as
- *    `screen_unavailable` (the bound) or `screen_failed` (any load error). Every message is a fixed sentence.
+ * 3. a run of the text the call sends that is one of the practice's member IDs, payer claim control numbers or
+ *    patient control numbers refuses the call as `names_patient`; a check that could not read the records
+ *    refuses it as `screen_unavailable` (the bound) or `screen_failed` (any load error). Every message is a fixed
+ *    sentence.
+ *
+ * The check reads the prepared request's own text (`prepared.user`), not the input's pages a second time, so what is
+ * screened is exactly what would leave, even for an input whose pages read differently each time they are asked for
+ * (a getter or a proxy), which would otherwise pass the screen clean and frame a page that names a patient. The
+ * frame adds no run the screen could take for an identifier: each page sits between lines of its own (a newline ends
+ * a run, ../redact.ts identifierRuns), the frame's words have no digit, which every kept identifier has
+ * (SCREEN_FLOORS), and its page numbers and count stand alone, below every floor.
  */
-export async function screenContractPages(input: ContractPagesInput, _prepared: unknown, context: CallContext): Promise<void> {
+export async function screenContractPages(input: ContractPagesInput, prepared: { readonly user: string }, context: CallContext): Promise<void> {
   const check: unknown = input.patientRecords;
   if (!issuedCheck(check) || check.practiceId !== context.practiceId) {
     throw new InputRefusedError('screen_invalid', 'a contract is sent only with the practice records check the gateway issues');
   }
-  const outcome = await check.namesPatient(input.pages);
+  const outcome = await check.namesPatient([prepared.user]);
   switch (outcome) {
     case 'clear':
       return;

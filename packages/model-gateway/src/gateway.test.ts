@@ -702,6 +702,19 @@ describe('the contract PHI check (combined audit #120; docs/adr/0070 Part 3; tes
     }
   });
 
+  it('screens the text the call would send, so pages that read clean only when the screen asks for them are refused', async () => {
+    const harness = watched();
+    const named = [SYNTHETIC_CONTRACT_PAGES[0] ?? '', 'Member ID:ZZ 123 4567'];
+    // An input whose pages answer the screen with the clean contract, and everything else with a page naming a patient.
+    const input = Object.defineProperty(syntheticContractInput({ patientRecords: syntheticPracticeCheck(SYNTHETIC_IDS.practice, HELD) }), 'pages', {
+      get: () => (/screenContractPages/.test(new Error().stack ?? '') ? SYNTHETIC_CONTRACT_PAGES : named),
+    });
+    await expect(harness.gateway.proposeContractTerms(CONTEXT, input)).rejects.toMatchObject({ code: 'names_patient', message: NAMES_PATIENT_MESSAGE });
+    expect(harness.completedCall).not.toHaveBeenCalled();
+    expect(harness.local.requests).toEqual([]);
+    expect(harness.store.calls).toEqual([]);
+  });
+
   it('sends a fee-schedule twin whose figures are a practice’s short codes, dates and words only', async () => {
     const harness = registered();
     const practice = { memberIds: ['ZZ1234567'], patientControlNumbers: ['97110', '97140', '20260101', '12312026', 'AGREEMENT'], payerClaimNumbers: ['7712345678901'] };

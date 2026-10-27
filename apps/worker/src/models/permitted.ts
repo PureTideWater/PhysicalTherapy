@@ -60,8 +60,9 @@ import { type DocumentStore, collect } from '../storage/documents';
  * The worker re-sends a practice's contracts with no web code involved, so it checks them against the
  * practice's records as the web does (docs/adr/0070, Part 3): one practice records check per practice per
  * run, built in the run's job scope for that practice (its proof that the run reaches the practice) on the
- * run's pool, with the run's ID as the screen's, so the screen's reads are the run's own, audited under the
- * run's request ID with purpose contract_screen. The check loads the practice's identifiers once and the run
+ * run's pool, with the run's ID as the screen's, so the screen's reads are the run's own, audited with purpose
+ * contract_screen under the run's request ID and the screen's (`evaluate-permitted:<run>:screen:<run>`,
+ * screenAuditRequestId). The check loads the practice's identifiers once and the run
  * reuses them for every example of that practice (one job, one request ID), never across practices or runs.
  * An example whose document names a patient of the practice is refused before the call (refused:names_patient)
  * and is an outcome the example itself causes: a rerun meets it again, and the specialist's correction was of
@@ -70,6 +71,12 @@ import { type DocumentStore, collect } from '../storage/documents';
  * counts refused:document_kind, while refused:screen_unavailable and refused:screen_failed (the practice holds
  * more identifiers than the check reads, or the check's read failed) are the run's setting, not the example's,
  * and stay unmeasured: such a run is refused whole by record-permitted, as a run refused by the kill switch is.
+ * A refused:names_patient example still counts among the variant's refused calls, so the first run after the
+ * check ships, on a practice with an example whose document names a patient, refuses more calls than the run it
+ * is compared with and fails the comparison (`refused_rose:<variant>`, permittedRegressions). That is kept, and
+ * is the safer reading (docs/adr/0070, Part 3): the gate never decides on its own that a newly refused example
+ * was the document's fault and not a change of what the run measures; the comparison is made again against a run
+ * on the current code, which refuses the same examples, as after any change of what a run can send.
  */
 
 export interface PermittedEvaluationServices {

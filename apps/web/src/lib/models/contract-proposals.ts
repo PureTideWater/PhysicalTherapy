@@ -11,16 +11,16 @@ import {
 } from '@tp/contracts';
 import { randomUUID } from 'node:crypto';
 
-import { type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit, recordAuditEvent } from '@tp/db/runtime';
+import { type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit } from '@tp/db/runtime';
 import {
   CONTRACT_KINDS,
-  CONTRACT_SCREEN_PURPOSE,
   CORRECTION_FORMAT,
   type CandidateReview,
   type Correction,
   type ContractTermsProposal,
   type ProposedRateRecord,
   practiceRecordsCheck,
+  recordContractScreenRequested,
   recordPermittedExampleIn,
   recordReviewerDecisionIn,
 } from '@tp/model-gateway';
@@ -176,15 +176,9 @@ export async function proposeTerms(scope: PracticeScope<ScopeClient>, services: 
   // person's event below; the event is recorded first, in the request's transaction, naming the document.
   const screenId = randomUUID();
   const patientRecords = practiceRecordsCheck({ authorizedBy: scope, pool: services.modelPool, cipher, practiceId: input.practiceId, screenId, requestId: input.requestId });
-  await recordAuditEvent(scope, {
-    action: 'contract_screen_requested',
-    objectType: 'source_document',
-    objectId: input.documentId,
-    practiceId: input.practiceId,
-    purpose: CONTRACT_SCREEN_PURPOSE,
-    // The request ID the screen's reads carry (packages/model-gateway/src/patient-records.ts), so the event joins them.
-    requestId: `${input.requestId}:screen:${screenId}`,
-  });
+  // The gateway's own writer of the event, under the request ID its screen's reads carry (screenAuditRequestId), so
+  // the two IDs cannot drift apart.
+  await recordContractScreenRequested(scope, { practiceId: input.practiceId, documentId: input.documentId, requestId: input.requestId, screenId });
   let result;
   try {
     result = await gateway.proposeContractTerms(
