@@ -67,6 +67,8 @@ describe('PHI minimization before the call', () => {
     const number = fc.stringMatching(/^SYN[0-9]{6,10}$/);
     fc.assert(
       fc.property(word, word, number, number, fc.date({ min: new Date('1930-01-01T00:00:00Z'), max: new Date('2020-12-31T00:00:00Z'), noInvalidDate: true }), (first, last, member, claim, birth) => {
+        // A name spelled by its own placeholder's words is left in the redacted text and refused, as the test above shows.
+        fc.pre(![first, last].some((part) => ['PATIENT', 'NAME'].includes(part.toUpperCase())));
         const dob = birth.toISOString().slice(0, 10);
         const patient = { pseudonym: 'p', names: [`${first} ${last}`], datesOfBirth: [dob], memberIds: [member] };
         const claims = [{ claimId: SYNTHETIC_IDS.claimOne, patientPseudonym: 'p', claimNumbers: [claim] }];
