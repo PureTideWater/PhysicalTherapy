@@ -73,7 +73,7 @@ export const SUPPORT_MAIL_BUCKET_ACTIONS = ['s3:ListBucket'] as const;
  *   instance's ARN; KMS grants for the encrypted snapshot only through RDS and only for AWS resources.
  * - SES (docs/adr/0065): the support-access and dunning notices through the notices stream's set and MailFromAddress's
  *   identity, from MailFromAddress alone; the daily probes through every set and both identities, to the mailbox
- *   simulator's two addresses alone (`ses:Recipients`); the account's status and both identities read; and the
+ *   simulator's two addresses alone (`ses:Recipients`, which must be present); the account's status and both identities read; and the
  *   screening set's sending read and switched, on that set alone (the cut-off pauses only the screening stream). No
  *   statement names `identity/*`.
  * - The mail events queue (D4): receive, delete, extend and count its messages, and decrypt them through SQS alone.
@@ -195,6 +195,9 @@ export class OperatorRole extends Construct {
         resources: [props.mail.mailIdentityArn, props.mail.screeningIdentityArn, ...Object.values(props.mail.configurationSetArns)],
         conditions: {
           'ForAllValues:StringEquals': { 'ses:Recipients': [...MAIL_SIMULATOR_RECIPIENTS] },
+          // ForAllValues is true of a request with no value for the key, so a send whose recipients SES does not put in
+          // ses:Recipients (raw content without a destination) would pass it: the key must be present as well.
+          Null: { 'ses:Recipients': 'false' },
           StringEquals: { 'ses:FromAddress': [props.mail.mailFromAddress, props.mail.screeningMailFromAddress] },
         },
       }),

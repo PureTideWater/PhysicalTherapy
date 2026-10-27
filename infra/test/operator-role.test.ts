@@ -126,10 +126,12 @@ describe.each(ENVIRONMENTS)('%s: operator role', (environment) => {
     expect(statements.every((statement) => statement.Effect === 'Allow')).toBe(true);
   });
 
-  it('sends probes through every set and both identities to the mailbox simulator alone, from the two senders alone', () => {
+  it('sends probes through every set and both identities to the mailbox simulator alone, never without named recipients, from the two senders alone', () => {
     const probes = bySid('MailProbes');
     expect(probes.Action).toBe('ses:SendEmail');
     expect(probes.Condition?.['ForAllValues:StringEquals']).toEqual({ 'ses:Recipients': [...MAIL_SIMULATOR_RECIPIENTS] });
+    // ForAllValues holds for a request that carries no recipients at all: the key must be present (review S5).
+    expect(probes.Condition?.Null).toEqual({ 'ses:Recipients': 'false' });
     expect(MAIL_SIMULATOR_RECIPIENTS.every((address) => address.endsWith('@simulator.amazonses.com'))).toBe(true);
     expect(JSON.stringify(probes.Condition?.StringEquals)).toContain(PARAMETER_NAMES.mailFromAddress);
     expect(JSON.stringify(probes.Condition?.StringEquals)).toContain('results@screening.');

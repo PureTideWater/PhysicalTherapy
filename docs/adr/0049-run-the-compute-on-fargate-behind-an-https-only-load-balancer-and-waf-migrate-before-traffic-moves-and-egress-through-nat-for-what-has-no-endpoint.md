@@ -370,7 +370,7 @@ month).
 | Application (web, worker) | `DigestEmail` | `ses:SendEmail` on MailFromAddress's identity and the transactional set, from MailFromAddress |
 | Application | `ScreeningAddressValidation` | `ses:GetEmailAddressInsights` (no resource-level permission exists) |
 | Operator (platform) | `NoticeEmail` | `ses:SendEmail` on MailFromAddress's identity and the notices set, from MailFromAddress |
-| Operator | `MailProbes` | `ses:SendEmail` on both identities and the three sets, only to SES's two simulator addresses |
+| Operator | `MailProbes` | `ses:SendEmail` on both identities and the three sets, only to SES's two simulator addresses, which the request must name (`ses:Recipients` present) |
 | Operator | `MailReconcileScreeningSet` | `ses:GetConfigurationSet` and `ses:PutConfigurationSetSendingOptions` on the screening set alone, so the cut-off can pause nothing else |
 | Operator | `MailIdentitiesRead`, `MailAccountRead` | the two identities' state, and `ses:GetAccount` (SES's enforcement status) |
 | Operator | `MailEventsQueue`, `MailEventsDecryptThroughSqs` | receive, delete and visibility on the mail-events queue, and the key through SQS only |
