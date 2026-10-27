@@ -6,6 +6,17 @@ option (the co-founder's ruling of 2026-10-26 ~00:20 UTC), recorded here and in 
 
 Open questions: none.
 
+<!-- RESUME-BLOCK -->
+## Resume at 14:05 UTC (written 2026-10-27 02:10 UTC; the orchestrator's usage hold, weekly 94%)
+- **Branch heads:** `co-001/ci-browser` **2ab2b15** on GitHub (base e908c21 merged in; no PR). `claude/build-ops` carries this file, the pnpm pin, and `approval-summaries/lane-b-ci-browser-wip/` (the re-read's progress files and scout reports).
+- **Running at the hold:** workflow wf_4b7cdc69-267 (the design re-read; script `workflow-scripts/lane-b-ci-browser-reread2-wf_4b7cdc69-267.js`). Scouts done (reports in the wip folder); the reviser writing §3.3.7 into `designs/lane-b-ci.md`, then one reviewer, then the fold (§3.3.8). It is allowed to finish (the hold forbids starting a new one). If it finished, its result is committed here; if not:
+  - **same session, journal present:** `Workflow({scriptPath: <the archived script copied back>, resumeFromRunId: "wf_4b7cdc69-267"})`;
+  - **container gone:** re-run the setup script with `co-001/ci-browser:/home/user/ci-browser`, then re-run the re-read from the archived script (its agents continue from the progress files only if copied back to the scratchpad path the script names; else they start over: cheap). Discard any uncommitted §3.3.7 text.
+- **Machine:** storage.googleapis.com allowed since 02:00 UTC (the orchestrator). Setup re-run 02:04 UTC: **OK**; `playwright 1.56.1 chromium-1194 ... laid out from Chrome for Testing 141.0.7390.37`. 1248 is laid out by the same script once the worktree is on Playwright 1.64.1 (phase 2's bump), or by hand from `CFT_BUILDS`' pinned zips.
+- **Next after the re-read:** phase 2 per §3.3.7 (the bump under the gates with pnpm 10.34.8, 1248 laid out, the seven baselines, the specs, the new workflows under ci-browser's rules), then the draft PR and the pipeline. Check-in: trig_01GrMo81PeKyvGDWj3GRrUYp at 14:05 UTC.
+- **Dependabot:** read Tuesday 04:37 (actions) and Wednesday 04:43 (images; #33 should close) runs; never merge one.
+<!-- RESUME-BLOCK -->
+
 ## Continued from 2026-10-27 by a Lane B item session (session_01UzQ6wgZgtThBRBxXTFYhRB), started by Lane A's orchestrator
 
 Brief: `lanes/lane-b-session-brief.md`. Item: ci-browser, then P1, P2, P4; also ci-deps' merge follow-ups (the pnpm pin, Dependabot's first runs). GitHub login: PureTideWater.

@@ -5,6 +5,11 @@ session_01L3tN5LCq2aNYetEQBNJYZg, a Lane B item session started 2026-10-27 by La
 (session_01TrKDxeLbxVo7t7zwRXFzrg). Follow-on in this session after it merges: PR 9 `co-001/ux-home-figures`
 (status `lane-b-ux-home-figures-status.md`).
 
+## Resume at 14:05 UTC
+- **Branch heads:** `co-001/ux-download-refusals` pushed at e908c21 (= claude/build-platform; no commits of its own yet). No PR.
+- **Workflows:** none running or stopped. The design review `wf_a85eb619-cf6` finished (result in `designs/lane-b-ux-download-refusals-review.json`; its progress file in `approval-summaries/lane-b-ux-download-refusals-wip/`).
+- **Continue (from GitHub alone if this container is gone):** fetch `claude/build-ops`, run `tools/setup-container.sh` (record the playwright line), `git worktree add /home/user/ux-download-refusals co-001/ux-download-refusals` (tracking origin), `pnpm install --frozen-lockfile` under the lock; then stage 2, builders, from the design `designs/lane-b-ux-download-refusals.md` (§6 wins over §2 to §5).
+
 ## Now
 - **Stage:** 1 done: design reviewed (`wf_a85eb619-cf6`, verdict build with changes, 3 blocking and 15 others, all taken; dispositions in the design's §6, which wins over §2 to §5). **Next: stage 2, builders** (one workflow, two agents in series: the handler core and its tests; then routes, pages, e2e and docs), after re-running /tmp/setup-container.sh (storage.googleapis.com now allowed: record the playwright line).
 - **Paused** on the orchestrator's instruction (2026-10-27 01:50 UTC; weekly usage 94%, resets 14:00 UTC): finish the running review, start no new workflow until 14:05 UTC. A check-in is scheduled for 2026-10-27T14:05:00Z.
