@@ -85,3 +85,7 @@ Clone: scratchpad/designs/suitecap1-author
 - Probe G2 (G + grouping, heap 560, db _13) running from ~16:52 (task b3hr9g7zj).
 - DOC REWRITE in progress: new scope = locks (D1-D9) + D12 advanceStages LATERAL + D13 batched candidate reader (triage, open case, Cases page waitingPatterns web:253) + D14 batched report lines + D15 claim_by_superseded index (interest design D8/LED-25 shares it) + D16 lineShares grouping.
 - DOC REWRITTEN in full (17:0x) with D12-D16, 1.4 table, 2.2 options, probes table; PENDING: 8.3 G2 row, 8.4 budgets, section 0 item 8 maybe G2 report time
+- PROBE G2 (all fixes incl. lineShares grouping, heap 560, db _13 dropped; 16:51-17:00): B triage 9.8 s; A TRIAGE 49.8 s (candidates 32.7, actionable 5.0), heap peak 213, rss 542; A REPORT 73.1 s (gather 51.4: deadlines+ledger 17.2, patientBalance 3.4), heap peak 483 (of 560, garbage incl.), rss 872. Budgets: CI triage <=120 s, report <=180 s, actionable <=30 s.
+- dropped _8; no tp_design_suitecap1 db left; 5493 removed
+## DONE (17:1x): design complete at /home/user/ops/designs/suite-cap-1-triage-locks.md (sections 0-15, G2 numbers and budgets filled). All probe DBs dropped, 5493 cluster removed. Clone keeps probe patches (never pushed).
+Hand-ons for the orchestrator: claim_by_superseded moves here (interest design D8 drops it if this merges first); Cases page waiting-patterns time item; SUITE-CAP-2 if Q1 refused.

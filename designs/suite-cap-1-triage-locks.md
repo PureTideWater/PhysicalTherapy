@@ -46,8 +46,8 @@ freeze exception (Q1). The design reverses no founder ruling. It touches no mone
    - the report's patient-balance step takes 616 s, from a missing index and a quadratic loop.
 7. **Their fixes:** a per-line indexed lookup, reading candidates and report lines in batches of 2,000 that keep the
    judgement and drop the trace, the index `claim_by_superseded`, and grouping adjustments once. No result changes.
-8. **With all of it, under the worker's heap flag:** A's 100,000-line triage took 53.9 s with a 209 MiB heap peak, and
-   A's audit report completed (probe G). Before, triage failed and the report could not run.
+8. **With all of it, under the worker's heap flag:** A's 100,000-line triage took 49.8 s with a 213 MiB heap peak, and
+   A's audit report 73.1 s with a 483 MiB peak (probe G2). Before, triage failed and the report could not run.
 9. **The reconcile side, under a freeze exception (Q1).** Two ledger triggers take one lock per posting or EFT row and
    per line, so a real-size reconcile fails the same way. Every ledger writer already holds the practice's `ledger:`
    lock first, so both triggers take that key instead.
@@ -180,9 +180,9 @@ task is 0.5 vCPU and 1,024 MiB, with Node's heap at 560 MiB (`infra/lib/environm
 | # | Defect | Where | Evidence |
 | --- | --- | --- | --- |
 | 1 | Triage's actionable write is quadratic | `advanceStages` (`execute.ts:330-344`) finds each wanted line's current stage with a `DISTINCT ON` over the practice's events, joined to the wanted set by `IN`. In the triage transaction, the practice's new validated events are its own uncommitted rows, so the planner's statistics do not count them and it chooses a nested loop | Probe F, in the harness's shape (B's 20,000 lines triaged and analysed first): 6,667 actionable lines in 7.1 s, then 33,334 in 196.8 s (25 times as long for 5 times the lines). The case's derivation is not the cause: `case_rules`' aggregate over the same 33,334 lines takes 0.54 s, and a plain `INSERT … SELECT` of 6,000 actionable events 0.78 s |
-| 2 | Triage holds every candidate's trace at once | `candidateRows` (`execute.ts:210-258`) reads `p.trace` for every candidate, and `candidateLines` (:283-327) judges them all before any is released. A trace is 4,735 bytes of JSON on average | Probe E, under `--max-old-space-size=560`: heap at 477 MiB after judging and a peak of 531 MiB, 95% of the worker's heap |
+| 2 | Triage holds every candidate's trace at once | `candidateRows` (`execute.ts:210-252`) reads `p.trace` for every candidate, and `candidateLines` (:282-323) judges them all before any is released. A trace is 4,735 bytes of JSON on average | Probe E, under `--max-old-space-size=560`: heap at 477 MiB after judging and a peak of 531 MiB, 95% of the worker's heap |
 | 3 | The report holds every line's trace at once | `runLines` (`apps/worker/src/report/content.ts:366-410`) reads `p.trace` for every line with a shortfall, and `gatherReport` maps them after the read | Probe E: "JavaScript heap out of memory" in `gatherReport`. Without a heap limit (probe C) the report's heap peaked at 1,125 MiB |
-| 4 | The report's patient-balance step | `claimLines` (`apps/worker/src/reconcile/remittances.ts:249-262`) looks claims up by `superseded_by_claim_id`, which has no index (`20261016120000_remittances.sql:123`, indexes :134-136). `lineShares` (`apps/worker/src/reconcile/patient-share.ts:107-130`) filters every adjustment for each claim (:116) and for each line (:122) | Probe D: 616.0 s in this step and 693.1 s for the report. With the index (probe C) the step took 49.7 s, and `claimLines` itself 0.97 s (its plan uses the index); the rest is the filtering |
+| 4 | The report's patient-balance step | `claimLines` (`apps/worker/src/reconcile/remittances.ts:249-262`) looks claims up by `superseded_by_claim_id`, which has no index (`20261016120000_remittances.sql:123`, indexes :134-136). `lineShares` (`apps/worker/src/reconcile/patient-share.ts:107-130`) filters every adjustment for each claim (:116) and for each line (:122) | Probe D: 616.0 s in this step and 693.1 s for the report. With the index (probe C) the step took 49.7 s, and `claimLines` itself 0.97 s (its plan uses the index); the rest is the filtering. With the grouping too, 3.4 s (probe G2) |
 
 The Cases page reads the same candidates on every load: `waitingPatterns` (`apps/web/src/lib/routes/triage.ts:253` →
 `patterns.ts:63-66`) reads every validated line waiting outside a case, with its trace, in the web task (1,024 MiB, heap
@@ -282,7 +282,7 @@ statement.
 **1. The quadratic stage advance.**
 - Recommended: **a per-line indexed lookup.** `advanceStages` reads each wanted line's latest event with `LEFT JOIN
   LATERAL (… WHERE s.practice_id = $1 AND s.service_line_id = w.service_line_id ORDER BY s.seq DESC LIMIT 1)`, which the
-  index `line_status_by_line` answers exactly, whatever the statistics say. Probe G: 33,334 actionable lines in 5.3 s
+  index `line_status_by_line` answers exactly, whatever the statistics say. Probe G2: 33,334 actionable lines in 5.0 s
   (from 196.8 s).
 - Rejected: reading the stage from `line_status_head`. The application role has no grant on it, by D4, and a definer read
   function adds surface for no gain over the index.
@@ -300,14 +300,16 @@ statement.
     trace (the content-gap key and the adjustment behavior).
   - The traces are then released. The order (`ORDER BY service_line_id`) and every computation are unchanged, so the
     output is identical (CAS-41.5).
-  - Probe G, under the worker's heap flag: triage's heap peaked at 209 MiB (from 531), and the report completed with a
-    405 MiB peak, where before it ran out of heap.
+  - Probe G2, under the worker's heap flag: triage's heap peaked at 213 MiB (from 531), and the report completed with a
+    483 MiB peak, where before it ran out of heap. Peaks under the flag include garbage the collector has not yet
+    taken, so they overstate what is live.
 - Rejected: a larger worker task, or a larger heap. That is a cost every month, and it still grows with every trace in
   the month.
 - Not now: fully streaming aggregates. The report would fold its figures batch by batch and stream its CSV to storage,
   so memory would no longer grow with the month's lines. It rewrites the report's aggregation, whose figures are audited,
-  for headroom the 100,000-line target does not need. Batching makes the slim rows about a fifth of today's memory. This
-  design records the trigger for it: the weekly run's chain peak passing 70% of the task.
+  for headroom the 100,000-line target does not need: batching cut triage's heap peak from 531 to 213 MiB and let the
+  report finish under the flag. This design records the trigger for it: the weekly run's chain peak passing 70% of the
+  task.
 
 **4. The report's patient-balance step.**
 - Recommended: **the index and the grouping.**
@@ -339,7 +341,7 @@ statement.
 | D11 | The stored per-content windows stay with #8. | `releaseContentWindows` (`apps/worker/src/price/release.ts:274-291`) aggregates `rule_record`. Its callers are the web's Content through (`apps/web/src/lib/releases/content-through.ts:87`, :90), the price job (`price/execute.ts:389`) and the harness. Triage reads `rule_release_content_span()` (`release.ts:148`, via `execute.ts:261`). It shares nothing with this item's locks, tables or memory. |
 | D12 | `advanceStages` reads each wanted line's latest event with a `LEFT JOIN LATERAL` lookup on `(practice_id, service_line_id)` ordered by `seq DESC LIMIT 1`. | Section 2.2, defect 1. The same rows are filtered out, so the same events are written. |
 | D13 | One candidate reader, `judgedCandidates(scope, practiceId, pricingRunId, requestId)`, reads `candidateRows`' query through a cursor in batches of 2,000, audits each batch, judges it with `candidateLines`, and returns only the `CandidateLine`s, in the same order. Triage (`execute.ts:447`) and `planWaiting` (`patterns.ts:63-66`, so opening a case and the Cases page) use it. `candidateRows` and `candidateLines` stay, for the reader and for tests. | Defect 2, and its web twin. |
-| D14 | The report reads `runLines`' query the same way. While a batch's traces are in hand it computes each line's content-gap key and adjustment behavior, then keeps the row without its trace. The mapping (`content.ts:544-575`) uses the precomputed values. | Defect 3. |
+| D14 | The report reads `runLines`' query the same way. While a batch's traces are in hand it computes each line's content-gap key and adjustment behavior, then keeps the row without its trace. The mapping (`content.ts:536-568`) uses the precomputed values. | Defect 3. |
 | D15 | The migration adds `claim_by_superseded` (section 4.4). | Defect 4. Shared with the "Interest credited twice" design; the first to merge carries it. |
 | D16 | `lineShares` (`patient-share.ts:107-130`) groups the adjustments once into two maps, claim-level by claim and line-level by line, keeping their query order, and reads them from the maps. | Defect 4. The same adjustments, in the same order, reach the same arithmetic. No ledger table, ledger package, matching rule or recovered total changes, so this is not a freeze item. LED-01 to LED-17 and the oracle are its guard. |
 
@@ -553,7 +555,7 @@ now with a lock that holds at any size.
    `references`, which `gatherReport` already reads before it (:516-517). For each row of a batch it computes
    `contentGapsOf(trace, spans)` and `detectBehavior(trace, references)` while the trace is in hand, then keeps the row
    with `trace: null` and the two values.
-2. **The mapping** (:544-575) uses the two values instead of parsing the trace again. `behavior` is still used only when
+2. **The mapping** (:536-568) uses the two values instead of parsing the trace again. `behavior` is still used only when
    the line validates, as today.
 3. **`lineShares`** (`apps/worker/src/reconcile/patient-share.ts:107-130`), D16: one pass builds `claimLevelOf`
    (adjustments with no line, by claim) and `lineLevelOf` (by line), in query order; the two `filter` calls read from
@@ -774,13 +776,24 @@ committed.
 | E | As C, heap flag 560 | 267.3 s; heap peak 531 MiB | **Heap out of memory** |
 | F | As C, harness shape | 244.1 s (actionable 196.8 s) | 112.8 s; heap peak 849 MiB |
 | G | All fixes but D16, heap flag 560 | **53.9 s** (candidates 34.2, validated 9.3, case lines 3.9, actionable 5.3); heap peak 209 MiB | **Completes**, 187.0 s (patient balance 111.9 s); heap peak 405 MiB |
-| G2 | All fixes, heap flag 560 | PENDING | PENDING |
+| G2 | All fixes, heap flag 560 | **49.8 s** (candidates 32.7, actionable 5.0); heap peak 213 MiB | **73.1 s** (gather 51.4, of which patient balance 3.4); heap peak 483 MiB |
 
 Every probe held at most 1 advisory lock after the fix (the practice's `triage:` lock).
 
 ### 8.4 Budgets
 
-PENDING (from G2).
+CAS-41.4's limits, set at about two and a half times probe G2 (this container's 4 CPUs are a GitHub runner's), so they
+catch a return of any defect in 1.4, each of which cost minutes, without flaking on a slow runner:
+- A's triage under 120 s (G2: 49.8 s), and its actionable write under 30 s (G2: 5.0 s; the quadratic statement took
+  196.8 s);
+- A's audit report under 180 s (G2: 73.1 s; without the index 693.1 s);
+- no heap error under the worker's heap flag (the report ran out of heap without D14);
+- at most 1 advisory lock held by any backend.
+
+The weekly run measures the same jobs at the worker task's 0.5 vCPU. Its times stay advisory, as the founder ruled for
+the screening's capacity test (2026-10-23), which this run follows (`checks.ts:1-9`). Its hard limits are the job's 15-minute attempt, the first-attempt check, the lock
+bound and 90% of memory. At half a CPU the JavaScript parts take about twice as long, so A's triage and report should
+take minutes, well inside one attempt.
 
 ---
 

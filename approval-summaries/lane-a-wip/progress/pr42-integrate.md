@@ -25,3 +25,5 @@
 - NEXT: full suite on final tree (head 15189a50), suite.sh in background
 - Suite started 16:19 UTC in background (bgj64gaot): suite.sh (typecheck..actionlint); then suite2.sh (mutation 6 shards + gate, capacity S1,S4 binding, e2e on tp_pr6b4_integrate_e2e port 4961). Mutation affected: packets-scan, packets-rest, packets-explain, pricing-engine, pricing-recompute, pricing-rest (by packages/db/src/mail-address.ts etc.)
 - unit FAILED at 15189a50: packages/synth fixtures.test (matrix.ts rows SEC-18/19, SCR-21/22 stale vs test-matrix.md). Fixed f-commit 8aa45a46. Rerun unit+typecheck+lint+synth after suite.
+- Suite pass 1 (15189a50 / 8aa45a46): typecheck 0, lint 0 (1,644 files), lint-copy 0, lint-logs 0, check-fixtures 0, synth 0, engine-freeze 0, unit 1 (matrix; fixed 8aa45a46), golden 0, oracle 0, verify-content 0, db1 0 (33 files 3269+1 skipped), db2 0 (33 files 2654), db3 0 (32 files 2545), db4 0 (32 files 964), domain-model-check 0 (375 functions), build 0, infra 0 (26 files 697), cdk-synth 0 (6 stacks), actionlint 0
+- 17:06 rerun unit/typecheck/lint/synth at 8aa45a46, then suite2 (mutation, capacity, e2e) in background bic5mae06
