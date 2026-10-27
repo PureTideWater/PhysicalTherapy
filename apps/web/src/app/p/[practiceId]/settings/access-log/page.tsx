@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { utc } from '../../../../../components/format';
+import { ScrollTable } from '../../../../../components/scroll-table';
 import { SettingsNav, currentOrganization } from '../../../../../components/settings/nav';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { loadPage } from '../../../../../lib/http/next';
@@ -43,42 +44,44 @@ export default async function AccessLogPage(props: { readonly params: Promise<{ 
       {entries.length === 0 ? (
         <EmptyState mark title="Nothing logged" nextStep={filtered ? 'Nobody has read or changed this record.' : 'Reads and changes appear here as people work.'} />
       ) : (
-        <table className="w-full text-left text-sm" aria-label="Access log">
-          <thead className="text-muted-foreground">
-            <tr>
-              <th className="py-1 pr-3 font-medium">When</th>
-              <th className="py-1 pr-3 font-medium">Who</th>
-              <th className="py-1 pr-3 font-medium">Through</th>
-              <th className="py-1 pr-3 font-medium">What</th>
-              <th className="py-1 font-medium">Record</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map((entry) => (
-              <tr key={entry.id} className="border-t" data-action={entry.action}>
-                <td className="py-1 pr-3">{utc(entry.at)}</td>
-                <td className="py-1 pr-3">{entry.actor}</td>
-                <td className="py-1 pr-3">
-                  {entry.via}
-                  {entry.ticket === null ? '' : ` (ticket ${entry.ticket})`}
-                </td>
-                <td className="py-1 pr-3">
-                  {entry.action}
-                  {entry.purpose === null ? '' : ` (${entry.purpose})`}
-                </td>
-                <td className="py-1 font-mono text-xs">
-                  {entry.objectId === null ? (
-                    entry.objectType
-                  ) : (
-                    <Link className="underline" href={`${base}?object_type=${entry.objectType}&object_id=${entry.objectId}`}>
-                      {entry.objectType}
-                    </Link>
-                  )}
-                </td>
+        <ScrollTable label="Access log">
+          <table className="w-full min-w-[48rem] text-left text-sm" aria-label="Access log">
+            <thead className="text-muted-foreground">
+              <tr>
+                <th className="py-1 pr-3 font-medium">When</th>
+                <th className="py-1 pr-3 font-medium">Who</th>
+                <th className="py-1 pr-3 font-medium">Through</th>
+                <th className="py-1 pr-3 font-medium">What</th>
+                <th className="py-1 font-medium">Record</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {entries.map((entry) => (
+                <tr key={entry.id} className="border-t" data-action={entry.action}>
+                  <td className="py-1 pr-3">{utc(entry.at)}</td>
+                  <td className="py-1 pr-3 wrap-anywhere">{entry.actor}</td>
+                  <td className="py-1 pr-3">
+                    {entry.via}
+                    {entry.ticket === null ? '' : ` (ticket ${entry.ticket})`}
+                  </td>
+                  <td className="py-1 pr-3">
+                    {entry.action}
+                    {entry.purpose === null ? '' : ` (${entry.purpose})`}
+                  </td>
+                  <td className="py-1 font-mono text-xs wrap-anywhere">
+                    {entry.objectId === null ? (
+                      entry.objectType
+                    ) : (
+                      <Link className="underline" href={`${base}?object_type=${entry.objectType}&object_id=${entry.objectId}`}>
+                        {entry.objectType}
+                      </Link>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </ScrollTable>
       )}
       {next === null ? null : (
         <Link className="text-sm underline" href={`${base}?${query}before=${encodeURIComponent(next)}`}>

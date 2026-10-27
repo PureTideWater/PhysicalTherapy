@@ -7,6 +7,7 @@ import { utc } from '../../../../components/format';
 import { ReleaseLoadedThrough } from '../../../../components/pricing/content';
 import { PendingRunsAlert, RunStateBadges } from '../../../../components/pricing/display';
 import { ReleaseChanges, ReleaseStatusText } from '../../../../components/releases/note';
+import { ScrollTable } from '../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { loadPage } from '../../../../lib/http/next';
 import { releasesPage } from '../../../../lib/routes/releases';
@@ -151,30 +152,32 @@ export default async function ReleasesPage(props: Props) {
       <section aria-label="Published releases" className="flex flex-col gap-2">
         <h2 className="text-xl font-bold tracking-display">Published releases</h2>
         {releases.length === 0 ? null : (
-          <table className="w-full text-left text-sm" aria-label="Rule releases">
-            <thead className="text-muted-foreground">
-              <tr>
-                <th className="py-1 pr-3 font-medium">Release</th>
-                <th className="py-1 pr-3 font-medium">Published</th>
-                <th className="py-1 pr-3 font-medium">Standing</th>
-                <th className="py-1 text-right font-medium">Your runs in effect on it</th>
-              </tr>
-            </thead>
-            <tbody>
-              {releases.map((release) => (
-                <tr key={release.releaseNo} className="border-t" data-release={release.releaseNo}>
-                  <td className="py-1 pr-3">
-                    <Link className="underline" href={`${path}?release=${String(release.releaseNo)}`} aria-current={release.releaseNo === note?.releaseNo ? 'page' : undefined}>
-                      {release.releaseNo}
-                    </Link>
-                  </td>
-                  <td className="py-1 pr-3">{utc(release.publishedAt)}</td>
-                  <td className="py-1 pr-3">{release.withdrawal !== null ? `Withdrawn ${utc(release.withdrawal.withdrawnAt)}` : release.inForce ? 'In force' : 'Earlier'}</td>
-                  <td className="py-1 text-right font-mono tabular-nums">{runsByRelease[String(release.releaseNo)] ?? 0}</td>
+          <ScrollTable label="Rule releases">
+            <table className="w-full min-w-[32rem] text-left text-sm" aria-label="Rule releases">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="py-1 pr-3 font-medium">Release</th>
+                  <th className="py-1 pr-3 font-medium">Published</th>
+                  <th className="py-1 pr-3 font-medium">Standing</th>
+                  <th className="py-1 text-right font-medium">Your runs in effect on it</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {releases.map((release) => (
+                  <tr key={release.releaseNo} className="border-t" data-release={release.releaseNo}>
+                    <td className="py-1 pr-3">
+                      <Link className="underline" href={`${path}?release=${String(release.releaseNo)}`} aria-current={release.releaseNo === note?.releaseNo ? 'page' : undefined}>
+                        {release.releaseNo}
+                      </Link>
+                    </td>
+                    <td className="py-1 pr-3">{utc(release.publishedAt)}</td>
+                    <td className="py-1 pr-3">{release.withdrawal !== null ? `Withdrawn ${utc(release.withdrawal.withdrawnAt)}` : release.inForce ? 'In force' : 'Earlier'}</td>
+                    <td className="py-1 text-right font-mono tabular-nums">{runsByRelease[String(release.releaseNo)] ?? 0}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollTable>
         )}
       </section>
     </AppShell>

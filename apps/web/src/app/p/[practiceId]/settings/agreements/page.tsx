@@ -4,6 +4,7 @@ import type { Metadata } from 'next';
 import { ActionForm } from '../../../../../components/action-form';
 import { FormKeys } from '../../../../../components/form-keys';
 import { roleNames, utc, utcDate } from '../../../../../components/format';
+import { ScrollTable } from '../../../../../components/scroll-table';
 import { SettingsNav, currentOrganization } from '../../../../../components/settings/nav';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { loadPage } from '../../../../../lib/http/next';
@@ -89,30 +90,32 @@ export default async function AgreementsSettingsPage(props: { readonly params: P
           ) : grants.length === 0 ? (
             <EmptyState title="No grants" nextStep="A billing firm reaches this practice only through a grant you approve (milestone 12)." />
           ) : (
-            <table className="w-full text-left text-sm" aria-label="Grants">
-              <thead className="text-muted-foreground">
-                <tr>
-                  <th className="py-1 pr-3 font-medium">Organization</th>
-                  <th className="py-1 pr-3 font-medium">Roles</th>
-                  <th className="py-1 pr-3 font-medium">From</th>
-                  <th className="py-1 pr-3 font-medium">Until</th>
-                  <th className="py-1 font-medium">State</th>
-                </tr>
-              </thead>
-              <tbody>
-                {grants.map((grant) => (
-                  <tr key={grant.id} className="border-t">
-                    <td className="py-1 pr-3">
-                      {grant.granteeName} <span className="text-xs text-muted-foreground">({grant.granteeKind})</span>
-                    </td>
-                    <td className="py-1 pr-3">{roleNames(grant.roles)}</td>
-                    <td className="py-1 pr-3">{utcDate(grant.startsAt)}</td>
-                    <td className="py-1 pr-3">{utcDate(grant.endsAt)}</td>
-                    <td className="py-1">{grant.revokedAt !== null ? `revoked ${utcDate(grant.revokedAt)}` : grant.inForce ? 'in force' : 'not in force'}</td>
+            <ScrollTable label="Grants">
+              <table className="w-full min-w-[40rem] text-left text-sm" aria-label="Grants">
+                <thead className="text-muted-foreground">
+                  <tr>
+                    <th className="py-1 pr-3 font-medium">Organization</th>
+                    <th className="py-1 pr-3 font-medium">Roles</th>
+                    <th className="py-1 pr-3 font-medium">From</th>
+                    <th className="py-1 pr-3 font-medium">Until</th>
+                    <th className="py-1 font-medium">State</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {grants.map((grant) => (
+                    <tr key={grant.id} className="border-t">
+                      <td className="py-1 pr-3">
+                        {grant.granteeName} <span className="text-xs text-muted-foreground">({grant.granteeKind})</span>
+                      </td>
+                      <td className="py-1 pr-3 wrap-anywhere">{roleNames(grant.roles)}</td>
+                      <td className="py-1 pr-3">{utcDate(grant.startsAt)}</td>
+                      <td className="py-1 pr-3">{utcDate(grant.endsAt)}</td>
+                      <td className="py-1">{grant.revokedAt !== null ? `revoked ${utcDate(grant.revokedAt)}` : grant.inForce ? 'in force' : 'not in force'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollTable>
           )}
         </CardContent>
       </Card>

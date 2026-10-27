@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { Fact, Money, claimStatusName, period } from '../../../../../components/remittances/display';
+import { ScrollTable } from '../../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { FormatUnconfirmedBadge } from '../../../../../components/uploads/format-flag';
 import { unconfirmedFormatExplanation } from '../../../../../lib/contracts/format-sources';
@@ -23,9 +24,9 @@ const CATEGORY_NAMES: Readonly<Record<string, string>> = {
  * One remittance (PRD 7, Remittances: "open a remittance"; "reversals shown linked to their
  * originals"): its payment and trace, the provider-level adjustments, and its claims, each reversal
  * linked to the claim it reverses and each original to the reversal and the correction that
- * supersedes it. Claim identifiers show only to roles that read PHI. A remittance loaded from an ERA
- * export says so and names its format, with no X12 envelope to show, and is flagged while its format is
- * unconfirmed (docs/adr/0060).
+ * supersedes it. Claim identifiers show only to roles that read PHI, so each table's width follows the
+ * columns the role sees (docs/adr/0078). A remittance loaded from an ERA export says so and names its
+ * format, with no X12 envelope to show, and is flagged while its format is unconfirmed (docs/adr/0060).
  */
 export default async function RemittancePage(props: { readonly params: Promise<{ practiceId: string; remittanceId: string }> }) {
   const page = await loadPage(remittancePage, props);
@@ -104,30 +105,32 @@ export default async function RemittancePage(props: { readonly params: Promise<{
             <CardDescription>A positive amount reduced this payment; a negative one added to it.</CardDescription>
           </CardHeader>
           <CardContent>
-            <table className="w-full text-left text-sm" aria-label="Provider adjustments">
-              <thead className="text-muted-foreground">
-                <tr>
-                  <th className="py-1 pr-3 font-medium">Reason</th>
-                  <th className="py-1 pr-3 font-medium">Kind</th>
-                  <th className="py-1 pr-3 font-medium">Fiscal period</th>
-                  {canReadPhi ? <th className="py-1 pr-3 font-medium">Reference</th> : null}
-                  <th className="py-1 text-right font-medium">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {providerAdjustments.map((item) => (
-                  <tr key={item.position} className="border-t">
-                    <td className="py-1 pr-3 font-mono text-xs">{item.reasonCode}</td>
-                    <td className="py-1 pr-3">{CATEGORY_NAMES[item.category] ?? item.category}</td>
-                    <td className="py-1 pr-3">{item.fiscalPeriodDate}</td>
-                    {canReadPhi ? <td className="py-1 pr-3 font-mono text-xs">{item.reference ?? '—'}</td> : null}
-                    <td className="py-1 text-right">
-                      <Money value={item.amountCents} />
-                    </td>
+            <ScrollTable label="Provider adjustments">
+              <table className={`w-full ${canReadPhi ? 'min-w-[36rem]' : 'min-w-[32rem]'} text-left text-sm`} aria-label="Provider adjustments">
+                <thead className="text-muted-foreground">
+                  <tr>
+                    <th className="py-1 pr-3 font-medium">Reason</th>
+                    <th className="py-1 pr-3 font-medium">Kind</th>
+                    <th className="py-1 pr-3 font-medium">Fiscal period</th>
+                    {canReadPhi ? <th className="py-1 pr-3 font-medium">Reference</th> : null}
+                    <th className="py-1 text-right font-medium">Amount</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {providerAdjustments.map((item) => (
+                    <tr key={item.position} className="border-t">
+                      <td className="py-1 pr-3 font-mono text-xs">{item.reasonCode}</td>
+                      <td className="py-1 pr-3">{CATEGORY_NAMES[item.category] ?? item.category}</td>
+                      <td className="py-1 pr-3">{item.fiscalPeriodDate}</td>
+                      {canReadPhi ? <td className="py-1 pr-3 font-mono text-xs wrap-anywhere">{item.reference ?? '—'}</td> : null}
+                      <td className="py-1 text-right">
+                        <Money value={item.amountCents} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollTable>
           </CardContent>
         </Card>
       )}
@@ -142,69 +145,71 @@ export default async function RemittancePage(props: { readonly params: Promise<{
           {claims.length === 0 ? (
             <EmptyState title="No claims in this remittance" nextStep="A remittance of provider-level adjustments alone pays or takes back money without claims." />
           ) : (
-            <table className="w-full text-left text-sm" aria-label="Claims">
-              <thead className="text-muted-foreground">
-                <tr>
-                  <th className="py-1 pr-3 font-medium">#</th>
-                  {canReadPhi ? <th className="py-1 pr-3 font-medium">Patient</th> : null}
-                  {canReadPhi ? <th className="py-1 pr-3 font-medium">Claim control numbers</th> : null}
-                  {canReadPhi ? <th className="py-1 pr-3 font-medium">Service dates</th> : null}
-                  <th className="py-1 pr-3 font-medium">Status</th>
-                  <th className="py-1 pr-3 text-right font-medium">Charge</th>
-                  <th className="py-1 pr-3 text-right font-medium">Paid</th>
-                  <th className="py-1 pr-3 text-right font-medium">Patient responsibility</th>
-                  <th className="py-1 font-medium">Links</th>
-                </tr>
-              </thead>
-              <tbody>
-                {claims.map((claim) => (
-                  <tr key={claim.id} className="border-t align-top" data-claim={claim.id}>
-                    <td className="py-2 pr-3 font-mono tabular-nums">{claim.claimNo}</td>
-                    {claim.identifiers === null ? null : <td className="py-2 pr-3">{claim.identifiers.patient}</td>}
-                    {claim.identifiers === null ? null : (
-                      <td className="py-2 pr-3 font-mono text-xs">
-                        <div>Patient: {claim.identifiers.patientControlNumber}</div>
-                        <div>Payer: {claim.identifiers.payerClaimControlNumber}</div>
-                      </td>
-                    )}
-                    {claim.identifiers === null ? null : <td className="py-2 pr-3 whitespace-nowrap">{period(claim.identifiers.serviceFrom, claim.identifiers.serviceTo)}</td>}
-                    <td className="py-2 pr-3">{claimStatusName(claim.statusCode)}</td>
-                    <td className="py-2 pr-3 text-right">
-                      <Money value={claim.chargeCents} />
-                    </td>
-                    <td className="py-2 pr-3 text-right">
-                      <Money value={claim.paidCents} />
-                    </td>
-                    <td className="py-2 pr-3 text-right">
-                      <Money value={claim.patientRespCents} />
-                    </td>
-                    <td className="py-2 text-xs">
-                      <div className="flex flex-col gap-1">
-                        {claim.reversalOf === null ? null : (
-                          <Link className="underline" href={remittanceHref(claim.reversalOf.remittanceId)} data-link="reverses">
-                            Reverses a claim of {claim.reversalOf.remittanceId === remittance.id ? 'this remittance' : 'an earlier remittance'}
-                          </Link>
-                        )}
-                        {claim.statusCode === '22' && claim.reversalOf === null ? <span className="text-muted-foreground">Reverses a claim not loaded here</span> : null}
-                        {claim.reversedBy === null ? null : (
-                          <Link className="underline" href={remittanceHref(claim.reversedBy.remittanceId)} data-link="reversed-by">
-                            Reversed in {claim.reversedBy.remittanceId === remittance.id ? 'this remittance' : 'a later remittance'}
-                          </Link>
-                        )}
-                        {claim.supersededBy === null ? null : (
-                          <Link className="underline" href={remittanceHref(claim.supersededBy.remittanceId)} data-link="superseded-by">
-                            Superseded by a corrected claim
-                          </Link>
-                        )}
-                        <Link className="underline" href={`/p/${practiceId}/claims?view=all&claim=${claim.id}`}>
-                          {claim.lines === 1 ? '1 line' : `${String(claim.lines)} lines`}
-                        </Link>
-                      </div>
-                    </td>
+            <ScrollTable label="Claims">
+              <table className={`w-full ${canReadPhi ? 'min-w-[54rem]' : 'min-w-[48rem]'} text-left text-sm`} aria-label="Claims">
+                <thead className="text-muted-foreground">
+                  <tr>
+                    <th className="py-1 pr-3 font-medium">#</th>
+                    {canReadPhi ? <th className="py-1 pr-3 font-medium">Patient</th> : null}
+                    {canReadPhi ? <th className="py-1 pr-3 font-medium">Claim control numbers</th> : null}
+                    {canReadPhi ? <th className="py-1 pr-3 font-medium">Service dates</th> : null}
+                    <th className="py-1 pr-3 font-medium">Status</th>
+                    <th className="py-1 pr-3 text-right font-medium">Charge</th>
+                    <th className="py-1 pr-3 text-right font-medium">Paid</th>
+                    <th className="py-1 pr-3 text-right font-medium">Patient responsibility</th>
+                    <th className="py-1 font-medium">Links</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {claims.map((claim) => (
+                    <tr key={claim.id} className="border-t align-top" data-claim={claim.id}>
+                      <td className="py-2 pr-3 font-mono tabular-nums">{claim.claimNo}</td>
+                      {claim.identifiers === null ? null : <td className="py-2 pr-3">{claim.identifiers.patient}</td>}
+                      {claim.identifiers === null ? null : (
+                        <td className="py-2 pr-3 font-mono text-xs wrap-anywhere">
+                          <div>Patient: {claim.identifiers.patientControlNumber}</div>
+                          <div>Payer: {claim.identifiers.payerClaimControlNumber}</div>
+                        </td>
+                      )}
+                      {claim.identifiers === null ? null : <td className="py-2 pr-3 whitespace-nowrap">{period(claim.identifiers.serviceFrom, claim.identifiers.serviceTo)}</td>}
+                      <td className="py-2 pr-3">{claimStatusName(claim.statusCode)}</td>
+                      <td className="py-2 pr-3 text-right">
+                        <Money value={claim.chargeCents} />
+                      </td>
+                      <td className="py-2 pr-3 text-right">
+                        <Money value={claim.paidCents} />
+                      </td>
+                      <td className="py-2 pr-3 text-right">
+                        <Money value={claim.patientRespCents} />
+                      </td>
+                      <td className="py-2 text-xs">
+                        <div className="flex flex-col gap-1">
+                          {claim.reversalOf === null ? null : (
+                            <Link className="underline" href={remittanceHref(claim.reversalOf.remittanceId)} data-link="reverses">
+                              Reverses a claim of {claim.reversalOf.remittanceId === remittance.id ? 'this remittance' : 'an earlier remittance'}
+                            </Link>
+                          )}
+                          {claim.statusCode === '22' && claim.reversalOf === null ? <span className="text-muted-foreground">Reverses a claim not loaded here</span> : null}
+                          {claim.reversedBy === null ? null : (
+                            <Link className="underline" href={remittanceHref(claim.reversedBy.remittanceId)} data-link="reversed-by">
+                              Reversed in {claim.reversedBy.remittanceId === remittance.id ? 'this remittance' : 'a later remittance'}
+                            </Link>
+                          )}
+                          {claim.supersededBy === null ? null : (
+                            <Link className="underline" href={remittanceHref(claim.supersededBy.remittanceId)} data-link="superseded-by">
+                              Superseded by a corrected claim
+                            </Link>
+                          )}
+                          <Link className="underline" href={`/p/${practiceId}/claims?view=all&claim=${claim.id}`}>
+                            {claim.lines === 1 ? '1 line' : `${String(claim.lines)} lines`}
+                          </Link>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollTable>
           )}
         </CardContent>
       </Card>
