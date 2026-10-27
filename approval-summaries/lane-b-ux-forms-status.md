@@ -10,22 +10,23 @@ Forms keep what the person typed, and name the refused field (the UX baseline re
 session_01VNsi2Kru6pfk8CAbQ2AaYB; stopped cleanly at 2026-10-26 10:10 UTC on the orchestrator's wind-down. The next
 session (Lane A or Lane B) continues from here.
 
-## Now (2026-10-27 16:00 UTC)
-- **PR #74** (draft), head **4f0b526**, subscribed. CI on 4f0b526: every job green but e2e (1/2), one test: FRM-06's
-  no-JavaScript success step (commented on the PR). Cause found by the e2e agent: the spec's clinic name carried a
-  13-digit timestamp, which the no-patient-information check refuses (the product is right); fixed in the worktree,
-  uncommitted (it rides the fix round's one push). All seven affected e2e specs pass locally (22/22).
-- **Reviews done** (wf_1a8adc67-91d; `approval-summaries/lane-b-ux-forms-reviews.md`): security and accessibility
-  (6 findings: 4 real, 2 not defects), UX and brand from 153 before and 153 after shots (13 findings: 12 real, 1 not a
-  defect). 16 real, all fixable here; U-UX-6 (pre-answered write-off Reason and payer Response) **deferred to UX PR 10
-  `co-001/ux-payer-response`** (the baseline's UX-035, with its server-side refusal in `lib/routes/triage.ts`): one
-  finding, one PR, and this PR does not make it worse.
-- **Running:** fix round part 1, wf_723c6bc6-add (script archived): fixers F1 (form core: S-SEC-1, S-SEC-2, S-A11Y-2,
-  U-UX-3, U-UX-4), F2 (fields and styles: S-SEC-3, U-A11Y-1, U-A11Y-3, U-UX-1, U-UX-2, U-UX-8, U-UX-9 hints), F3 (words
-  and components: U-UX-5, U-UX-9, U-UX-10, U-A11Y-2); records (ADR 0077, design 12.2); integration check with the
-  affected e2e; an adversarial verifier per fix; a re-fix if any falls short. Progress files `progress/fix-*.md`.
+## Now (2026-10-27 19:20 UTC)
+- **PR #74** (draft), head **4f0b526**, subscribed. CI on 4f0b526: green but e2e (1/2), FRM-06's test bug (commented on
+  the PR; fixed in the worktree, rides the fix round's push).
+- **Reviews done** (`approval-summaries/lane-b-ux-forms-reviews.md`): 16 real findings, all fixed in this PR but U-UX-6,
+  deferred to UX PR 10 `co-001/ux-payer-response` (the baseline's UX-035).
+- **Galleries** (private to this account; the co-founder shares them from each page's Share menu): before (e908c21)
+  1280 https://claude.ai/artifact/JTLJX4saVr5nQ59EEvDDo7, 390 https://claude.ai/artifact/E7CDHT8hUTpPZMq6TKK18J;
+  after (4f0b526, what the reviews saw) 1280 https://claude.ai/artifact/7f5Xg3Kj8992F1jBTh7Hew, 390
+  https://claude.ai/artifact/N1ikEiBauh8PDGvVnNNhgU.
+- **Fix round part 1, wf_723c6bc6-add:** the three fixers finished (F1 form core, F2 fields and styles, F3 words and
+  components); the account's 5-hour limit stopped the run at ~17:12 UTC (records, check, verifiers). **Resumed 19:12
+  UTC** with resumeFromRunId (PostgreSQL restarted by the setup script). The fixers' work in progress is saved at
+  **`co-001/wip-ux-forms` 44ed04f** (no PR, no CI): if this container is gone, check that commit out over 4f0b526 and
+  continue the fix round from `approval-summaries/lane-b-ux-forms-wip/fix-*.md`. Check-in trig_01UDQayFbYZBj7M92B9swn7Q
+  at 2026-10-28 00:20 UTC.
 - **Next:** commit locally; fix round part 2 (the full local suite once, the after shots retaken at the new head, the UX
-  findings re-checked from them); one push; update the PR description; the fresh-clone verification reading CI; merge.
+  findings re-checked from them); one push; the PR description; the fresh-clone verification reading CI; merge.
 
 ## Handoff
 - **Branch:** `co-001/ux-forms`, head **17bbb70**, pushed, on claude/build-platform 7ef421b (#54 included). Two commits:
@@ -124,3 +125,5 @@ session (Lane A or Lane B) continues from here.
 | 2026-10-27 14:18 | Resumed; PR #74; reviews | Setup re-run: everything ok, Playwright's pinned Chromium 1194 laid out (storage.googleapis.com allowed). Browser unit tests 24/24 of record. Draft PR #74 opened (description read back identical), subscribed. Reviews workflow wf_1a8adc67-91d started (e2e, security and accessibility, UX and brand with shots; adversarial verification). |
 
 | 2026-10-27 16:00 | Reviews done; fix round | wf_1a8adc67-91d (23 agents, 95 min): e2e of the never-run specs (one test bug fixed, 22/22), security and accessibility review, UX and brand review from 153+153 shots, every finding verified (16 real). CI on 4f0b526: one e2e failure, the same test bug (PR comment). Tour captures for #74's states committed on claude/build-ops (merged with UX PR 5's download-refusal helpers, both kept). Fix round part 1 started: wf_723c6bc6-add. |
+
+| 2026-10-27 19:20 | Limit stop; resumed | Fix round part 1 (wf_723c6bc6-add): the three fixers done by ~16:51; the 5-hour limit stopped records, check and verifiers at ~17:12. The four galleries published (private). 19:08 the orchestrator's resume: WIP saved to co-001/wip-ux-forms 44ed04f, PostgreSQL restarted, the workflow resumed from its run. |
