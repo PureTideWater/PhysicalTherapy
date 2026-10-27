@@ -196,7 +196,7 @@ async function streamRow(stream: string): Promise<Record<string, unknown>> {
 }
 
 async function windowCounts(): Promise<{ sends: number; bounces: number; complaints: number }> {
-  const { rows } = await owner.query<{ sends: number; bounces: number; complaints: number }>("SELECT * FROM mail_window_counts('screening')");
+  const { rows } = await owner.query<{ sends: number; bounces: number; complaints: number }>("SELECT sends, bounces, complaints FROM mail_window_counts('screening')");
   return rows[0] ?? { sends: -1, bounces: -1, complaints: -1 };
 }
 
@@ -1104,6 +1104,13 @@ describe('the console’s mail reads (feature_flag.manage)', () => {
       { stream: 'screening', sending: true, window_sends: 1, window_bounces: 1, client_marks: 0, account_marks: 0 },
       { stream: 'transactional', sending: true, window_sends: expect.any(Number) as unknown, window_bounces: expect.any(Number) as unknown, client_marks: 0, account_marks: 0 },
     ]);
+    // Where the window's counts start (M8): the later of 7 days ago and the last resume, never a resume older than that.
+    const since = async () =>
+      (await read(platformAdmin, "SELECT round(extract(epoch FROM now() - window_starts_at) / 60)::int AS minutes FROM console_mail_streams() WHERE stream = 'screening'"))[0]?.minutes;
+    expect(await since()).toBe(7 * 24 * 60);
+    await owner.query("UPDATE mail_stream SET window_starts_at = now() - interval '2 days' WHERE stream = 'screening'");
+    expect(await since()).toBe(2 * 24 * 60);
+    expect((await owner.query<{ starts: number }>("SELECT round(extract(epoch FROM now() - starts_at) / 60)::int AS starts FROM mail_window_counts('screening')")).rows).toEqual([{ starts: 2 * 24 * 60 }]);
     const undelivered = await read(platformAdmin, "SELECT stream, kind, state, recipient_user_id, subject_id, messages FROM console_mail_undelivered(now() - interval '1 hour')");
     expect(undelivered).toContainEqual({ stream: 'screening', kind: 'screening_result', state: 'bounced', recipient_user_id: null, subject_id: null, messages: 1 });
     expect(undelivered.filter((row) => row.stream === 'screening')).toHaveLength(1);
