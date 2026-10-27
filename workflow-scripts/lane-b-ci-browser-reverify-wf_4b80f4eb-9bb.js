@@ -1,0 +1,14 @@
+export const meta = {
+  name: 'lane-b-ci-browser-reverify',
+  description: 'PR #77 re-verification of the delta 64843249..6d945c7b (documents only), CI on 6d945c7b, and the description\'s four corrections',
+  phases: [{ title: 'Verify', detail: 'one agent, a fresh clone' }],
+}
+phase('Verify')
+const v = await agent(`Context: PaidWhole build, repository PureTideWater/PhysicalTherapy, pull request #77 (ci-browser). The fresh-clone verification of head 64843249 (its report: /home/user/ops/approval-summaries/lane-b-ci-browser-verify-summary.md; read it) passed on the code, the local runs and CI, and failed only on the PR description, with four mismatches. Since then: one commit, 6d945c7b, was pushed (documents only: ADR 0058, ADR 0066 N18 and docs/runbooks/ci.md say the baselines' byte-only changes come from the browser's PNG encoder, not Playwright's), and the description was rewritten.
+Rules: GitHub read only (gh api GET, the GitHub MCP read tools); never comment, review, approve, merge or push; work in a fresh clone of your own (git clone https://github.com/PureTideWater/PhysicalTherapy /home/user/reverify-cib; checkout --detach origin/co-001/ci-browser) and remove it at the end; every shell command starts with export PATH=/opt/node24/bin:/opt/pnpm-bin:/opt/py312-ci/bin:$PATH; no model name or identifier in what you write.
+Check, with evidence:
+1. The head is 6d945c7b (git ls-remote) and its parent is 64843249; git diff --stat 64843249 6d945c7b touches only those three documents; the new text is true (Playwright passes Chrome's screenshot through: check playwright-core 1.64.1's lib, e.g. grep in the clone's node_modules after pnpm install --frozen-lockfile under flock /tmp/laneb-heavy.lock, or reason from the A9 note /home/user/ops/designs/lane-b-ci/ci-browser-a9.md section 4); no model name in it; the commit message ends with the two attribution lines.
+2. CI on 6d945c7b: every check run green or skipped by design (gh api repos/PureTideWater/PhysicalTherapy/commits/<full sha>/check-runs), the four required ones by name (all green, mutation, screening-capacity gate, approval-of-record); the PR mergeable and clean; the base claude/build-platform still 085299bd.
+3. The description (gh api repos/PureTideWater/PhysicalTherapy/pulls/77 --jq .body): each of the earlier report's four mismatches fixed (CI's results recorded for 64843249 with the numbers the report found; the failing-first count 34 / 32 at the head's tests; tools/screening-capacity/measure.test.ts listed as shared with #42; the A9 note linked by its commit dd9e0d66), every template section present, the attribution footer at the end, and no new claim that is false (spot-check five numbers against the earlier report).
+Return a short verdict: PASS or FAIL with each check's evidence.`, { label: 'reverify', phase: 'Verify' })
+return v

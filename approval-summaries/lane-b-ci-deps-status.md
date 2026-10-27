@@ -7,13 +7,12 @@ option (the co-founder's ruling of 2026-10-26 ~00:20 UTC), recorded here and in 
 Open questions: none.
 
 <!-- RESUME-BLOCK -->
-## Current state (2026-10-27 21:50 UTC): verification passed on the code; head 6d945c7b (docs only) in CI; merge next
-- **PR [#77](https://github.com/PureTideWater/PhysicalTherapy/pull/77)** (draft), head **6d945c7b**: 64843249 plus one documents-only commit (ADR 0058, ADR 0066 N18 and ci.md name the browser's PNG encoder, not Playwright's; A9's evidence). Base claude/build-platform 085299bd, unchanged.
-- **CI on 64843249: every check green** (`all green`, `mutation` with all seven shards, `screening-capacity gate`, `approval-of-record`); unit 6,352 + 1; db 9,223 + 0; e2e 54; golden 376; ADR 0058's proof made on 26.04 (the seven bytes equal).
-- **Fresh-clone verification** (wf_e2db34b6-575; `approval-summaries/lane-b-ci-browser-verify-summary.md`): **PASS on the code, the local runs and CI**; FAIL on the PR description only (CI's results not recorded, the failing-first count from 367a659f's tests: 34 and 32 at the head's, `measure.test.ts` newly shared with #42 at 6f23c42b (disjoint, merges cleanly), A9 not linked). Description corrected (body v3, applied by a helper agent with a byte-equal read-back).
-- **A9:** pass, no finding; committed dd9e0d66 (`designs/lane-b-ci/ci-browser-a9.md` with `ci-browser-a9/`), linked in the PR.
-- **release-capacity dispatch** (40584379787): our steps green on 26.04; its measurement fails on SUITE-CAP-1, as the base's scheduled run does (commented on #77).
-- **Next:** CI green on 6d945c7b; a short re-verification of the delta (documents only) and the description; mark ready; approval-of-record's re-run; merge with `expectedHeadSha` 6d945c7b (if the base has not moved; else merge it in first). Then unsubscribe, the post-merge housekeeping, the push runs, the O5 probe, and P1.
+## Current state (2026-10-27 22:25 UTC): ci-browser merged (#77, ecebdc90); push runs and the O5 probe running; P1 next
+- **PR [#77](https://github.com/PureTideWater/PhysicalTherapy/pull/77) merged** 2026-10-27 22:13 UTC as **ecebdc90** (a merge commit, `expectedHeadSha` 6d945c7b, base 085299bd unmoved), after: every check green on 6d945c7b (32 succeeded, 2 `notify` skipped), the fresh-clone verification (`lane-b-ci-browser-verify-summary.md`) and the re-verification of the delta (`lane-b-ci-browser-reverify-summary.md`, PASS), the description's three follow-ups applied (read back byte for byte), ready, approval-of-record's re-run green (40593025548).
+- **Done after the merge:** unsubscribed from #77; main checkout fast-forwarded to ecebdc90 and `pnpm install` run under the lock; the worktree `/home/user/ci-browser` and the local branches `co-001/ci-browser{,-f1,-f2,-f3,-w}` removed (each an ancestor of ecebdc90; remote branches stay).
+- **Running:** the push runs on ecebdc90 (ci 40593100176, mutation 40593100114, screening-capacity 40593100143, release-dry-run 40593100113, content-calendar 40593100120); the first push run seeds the apt archive cache. The O5 probe dispatched (`screening-capacity.yml`, `runner=ubuntu-26.04`, on claude/build-platform), queued behind the push run in its concurrency group; its report, `docker info` and times go on issue #41.
+- **#42:** ci-browser merged first, so #42 (merged second) keeps both and re-resolves `pnpm-lock.yaml` with `pnpm install` (Q2, rule 6), and O6 applies: #42's CI runs axe 4.14 over its mail journeys.
+- **Next:** read the push runs and the probe, record the probe on #41; Dependabot's Wednesday 04:43 UTC images run (#33 should close); then P1 (`co-001/ci-pin-age`), P2, P4, each through the whole pipeline.
 <!-- RESUME-BLOCK -->
 
 ## Continued from 2026-10-27 by a Lane B item session (session_01UzQ6wgZgtThBRBxXTFYhRB), started by Lane A's orchestrator
@@ -32,6 +31,13 @@ Brief: `lanes/lane-b-session-brief.md`. Item: ci-browser, then P1, P2, P4; also 
 - **Design re-read** (the brief: a design written before 2026-10-26's merges is re-read): workflow wf_4b7cdc69-267 (two scouts, a reviser writing §3.3.7, one adversarial reviewer, a fold writing §3.3.8). Script archived as `workflow-scripts/lane-b-ci-browser-reread2-wf_4b7cdc69-267.js`.
 - **Check-in:** a safety-net message at 07:00 UTC (trig_01RTEGVS4c8vS5hfq4P2217f).
 - **Next:** fold done → phase 2's no-browser steps (the bump under the gates, the new workflows under ci-browser's rules), then the draft PR; the local-browser steps wait on storage.googleapis.com.
+
+### 2026-10-27 22:25 UTC: ci-browser merged, ecebdc90
+- **Re-verification** of 6d945c7b (wf_4b80f4eb-9bb, one agent in a fresh clone, 22:02 to 22:06): PASS on the commit (three documents, wording true against playwright-core 1.64.1's code), on CI (34 check runs: 32 succeeded, 2 skipped) and on the description; three follow-ups (6d945c7b's own runs, the CI-8 row's count, "every pull-request check green" for 64843249), applied at 22:10 as body v4 and read back byte for byte (SHA-256 f0d9311b…).
+- **Merged:** ready at 22:12, approval-of-record re-ran green (40593025548), `merge_pull_request` (merge, `expectedHeadSha` 6d945c7b) at 22:13: **ecebdc90**.
+- **Housekeeping:** unsubscribed; main checkout at ecebdc90, `pnpm install` under the lock (pnpm 10.34.8); worktree and five local branches removed, each an ancestor of ecebdc90.
+- **Dispatched:** the O5 probe on 26.04 (screening-capacity, `runner=ubuntu-26.04`).
+- **Archived:** `workflow-scripts/lane-b-ci-browser-reverify-wf_4b80f4eb-9bb.js`, `approval-summaries/lane-b-ci-browser-reverify-summary.md`.
 
 ### 2026-10-27 21:12 UTC: CI green on 64843249; ADR 0058's proof made; verification, A9 and release-capacity running
 - **Every check green on 64843249**, the four required ones included (`all green`, `mutation` with all seven shards, `screening-capacity gate`, `approval-of-record`); PR mergeable, clean. `images` passes the worker's `--image` with the version gate on a real daemon (26.04, containerd); the dry run builds `web` and `worker` and checks both archives.
