@@ -104,3 +104,54 @@ None. No command failed and no flake re-run was needed.
 - The e2e has no step that ticks the export review's boxes and then forces an in-place refusal (the UX-DLR-02 verdict's third test). The unit tests and the Uploads step cover the in-place path.
 - Carried from core: packages/synth/src/cases/registry.ts (#42) could name apps/web/src/lib/http/download-refusal-words.test.ts under DLR-02.
 - Carried from the security review, outside this PR: download GETs do not check Sec-Fetch-Site, so a cross-site top-level navigation can start a download and its export record.
+
+## Part 2: second pass (UX-DLR-02, UX-DLR-05) and its re-read
+
+Worktree /home/user/ux-download-refusals, branch co-001/ux-download-refusals. Nothing was pushed. There was no rebase, no migration, no new dependency, and nothing under packages/pricing.
+
+### Commits after f4b01073…
+- 872f05b3…: the part-2 builder's commit (19 files).
+  - The nine equal-permission return pages render `ForgetRefusal` beside `Forbidden`.
+  - The reviewer checklist, the packet page's export history and the console's evidence export are `DownloadLink`s. `DownloadLinks` takes `below`.
+  - reports.spec's reviewer step has its line CSV refused in place, then downloads it.
+  - DLR-04's assertedBy is widened, and ADR 0079 D4, D5 and Consequences are updated.
+- 74ca6afc…: the re-read's one fix, in lib/http/download-refusal.test.ts (8 lines added, 2 removed).
+
+Final head: 74ca6afc….
+
+### Re-read of the diff from f4b01073… (adversarial)
+- Success path and the 303 fallback hold. Every in-place href is unchanged, `?from=review` and `${shownVersion}` included, and none has a `download` attribute. A new tab, a modifier click or a page without script still gets the 303. The console export is a `downloadHandler` route, so the fetch gets an attachment and saves it.
+- Focus holds. A notice said in place is focused through `focusNotice`'s ref, the same as before. `below` puts the notice before or after the children in fixed slots, so the children never remount: ticked boxes and typed words stay. The packet page's `flex flex-col gap-4` adds no empty child, because `RefusalNotice` renders null when there is no notice.
+- Words hold. No new user-facing text was added. Every notice comes from `shownRefusal` (download-refusal-words.ts), never from the URL. The e2e's 429 stand-in body is the shape `outcomeResponse` sends, as in download-refusals.spec.
+- The `Forbidden` branches are right. Coverage's `LETTER_CONTROLS` comes from letter.tsx, which has no 'use client', so it is a real array in a server page. Reports passes `RETURN_ONLY`. The monthly summary passes no key, because `month` is the page's own.
+- #42 files: only packages/synth/src/cases/registry.ts changed (its DLR-04 row). components/shell.tsx is untouched. There is no model identifier in the diff, and in the messages only the attribution lines.
+- One gap was found and fixed in 74ca6afc….
+  - The gap: the new source test took a notice's `forget` keys from the page's own source only. Coverage's notice is in its letter, so dropping `also={LETTER_CONTROLS}` from Coverage's `ForgetRefusal` still passed.
+  - The fix: `noticeSources()` also reads the components a page imports.
+  - Mutation check: with Coverage's `also` dropped, the Coverage case fails ("the notice forgets LETTER_CONTROLS"). Restored, all 13 pass.
+
+### Local suite on the final tree
+Every command ran under `flock /tmp/laneb-heavy.lock`, one at a time, with Node 24.22.0 and PG18 on 5433. Logs are in scratchpad/dlrf2c/*.log.
+
+The unit, lint, synth and e2e runs used the working tree of 872f05b3… plus the test fix. That tree is byte-identical to 74ca6afc…, which was committed after the pass. The e2e did not use `E2E_PREBUILT`, because build-stamp refuses an uncommitted tree; playwright built that tree itself.
+
+| Command | Result |
+| --- | --- |
+| pnpm typecheck | Pass. 22 projects (30 s); apps/web was rechecked. |
+| pnpm lint | Pass. 1,629 files in 3 groups, 0 errors, 0 warnings (113 s). |
+| pnpm lint:copy | Pass. 530 files. |
+| pnpm lint:logs | Pass. 1,064 files. |
+| pnpm test (the whole unit project) | Pass. 383 files: 6,477 passed, 4 skipped (258 s), coverage thresholds met. That is 14 more than on f4b01073…: 13 return-page cases and the `below` case. |
+| pnpm synth --all, then git diff --exit-code fixtures packages/synth | Pass. 240 cases: 0 written, 632 unchanged, 0 removed. EMR: 8 formats, 16 unchanged. |
+| pnpm exec tsx tools/screening-capacity/watched.ts --write, then git diff --exit-code tools/screening-capacity | Pass. 532 lines, unchanged. |
+| db shards | None. No route.ts or lib/routes file changed, and none of the 127 *.db.test.ts files imports a changed page or component. oracle.db.test.ts takes @tp/synth scale rows, not the DLR-04 entry. |
+| pnpm build | Pass. Web and worker (18 s). Afterwards the tree held only the test fix. |
+| E2E_ADMIN_URL=…5433/postgres E2E_DATABASE=tp_e2e_pr78b E2E_PORT=3179 pnpm test:e2e download-refusals, packets, reports, uploads, monitoring, onboarding --workers=2 | Pass. 15 passed (5.0 min): download-refusals 1, onboarding 5, monitoring 1, packets 2, reports 3, uploads 3. |
+| Clean-up | tp_e2e_pr78b was dropped and its /tmp directories removed (0 left). Nothing is listening on 3179. |
+
+### Failures
+None. No command failed and no flake re-run was needed.
+
+### Still open (carried, not this pass's)
+- The PR #78 description still needs updating. It lacks the fix round's lines, plus this pass: every return page forgets a refusal on `Forbidden`, and the reviewer checklist, packet history and console export download in place.
+- No end-to-end test clicks the packet page's export history links or the console's evidence export. Both are the same `DownloadLink`, held by its unit tests and the type check, as ADR 0079's Not verified here says.
