@@ -92,3 +92,4 @@ decision, open as issue #41 (decide before launch), with this measurement as its
 - Integrator: routes.ts conflict with fix-db (keep fix-db's precheck, then the two timing lines before const verdict).
 - Integrator: e2e chromium-1194 present now; full e2e worth running once after integration.
 - Proposal: infra metric filter on the web log's 'screening address checked' elapsed_ms (latency of DNS+validation in production; an alarm near the 2-s bound).
+- f077c048 capacity: report module comment lists the address-check checks (M4).
