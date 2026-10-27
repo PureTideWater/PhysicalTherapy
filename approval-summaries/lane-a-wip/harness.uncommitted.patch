@@ -172,7 +172,7 @@ index f72fdea8..10ce72ce 100644
        await expect(prospect.locator('[data-state="paused"]')).toHaveCount(0);
        await expect(prospect.getByLabel('File to screen')).toBeVisible();
 diff --git a/apps/web/e2e/screening.spec.ts b/apps/web/e2e/screening.spec.ts
-index fe33d9a2..3ef80504 100644
+index fe33d9a2..4c551d2a 100644
 --- a/apps/web/e2e/screening.spec.ts
 +++ b/apps/web/e2e/screening.spec.ts
 @@ -345,17 +345,25 @@ screeningTest('a specialist approves the split; a file with patient information
@@ -212,7 +212,19 @@ index fe33d9a2..3ef80504 100644
          channel: 'email',
          campaign: CAMPAIGN,
          row_band: '1_100',
-@@ -396,6 +404,18 @@ screeningTest('a specialist approves the split; a file with patient information
+@@ -381,6 +389,11 @@ screeningTest('a specialist approves the split; a file with patient information
+   let link = '';
+   await test.step('the screening consumer prices it in its threads from the job the web sent, and emails the link alone, under the lockup without the tagline (SCR-02)', async () => {
+     await expect.poll(() => outboxFor(CONTACT).length, { timeout: 90_000, intervals: [500] }).toBe(1);
++    // The consumer writes the email inside its completion's transaction and commits after the send returns, so the
++    // outbox's file can be there a moment before the run reads complete: the run is read once the consumer has finished.
++    await expect
++      .poll(async () => withDatabase(async (client) => (await client.query<{ status: string }>(`SELECT r.status FROM (${RUN_OF_CONTACT}) r`, [CONTACT])).rows[0]?.status), { timeout: 30_000, intervals: [250] })
++      .toBe('complete');
+     // Priced through the queue, once: the run's screening_price job completed, at the normal tier's priority, and the
+     // run kept when the web received the upload.
+     const priced = await withDatabase(
+@@ -396,6 +409,18 @@ screeningTest('a specialist approves the split; a file with patient information
          ).rows,
      );
      expect(priced).toEqual([{ status: 'complete', attempts: 1, received: true, job_state: 'completed', job_priority: 0 }]);
@@ -232,21 +244,22 @@ index fe33d9a2..3ef80504 100644
      expect(more).toEqual([]);
      expect(message?.subject).toBe('Your screening is ready | PaidWhole');
 diff --git a/apps/web/src/app/console/mail/page.tsx b/apps/web/src/app/console/mail/page.tsx
-index 1f366c29..078f675e 100644
+index 1f366c29..a4f07839 100644
 --- a/apps/web/src/app/console/mail/page.tsx
 +++ b/apps/web/src/app/console/mail/page.tsx
-@@ -68,7 +68,9 @@ export default async function ConsoleMailPage(props: { readonly searchParams: Pr
+@@ -68,7 +68,10 @@ export default async function ConsoleMailPage(props: { readonly searchParams: Pr
                  {stream.pausedAt !== null
                    ? `Paused ${utc(stream.pausedAt)}: ${stream.pausedReason === null ? 'reason not recorded' : PAUSE_REASON_LABELS[stream.pausedReason]}.`
                    : stream.stream === 'screening'
 -                    ? 'It pauses by itself past the cut-off (3% bounces over at least 200 sends, 0.08% complaints over at least 2,500, in 7 days), on the account’s warnings, or under an SES review.'
-+                    ? // The cut-off as mail_stream_cutoff() computes it: each rate over a floor of sends, so the floor's own
-+                      // count of hard bounces or complaints pauses it (7 and 3), not only once that many sends exist.
++                    ? // The cut-off as the database computes it (each rate over at least a floor of sends, in the window
++                      // mail_window_counts() reads), so the floor's own count of hard bounces or complaints pauses it (7
++                      // and 3), not only once that many sends exist.
 +                      'It pauses by itself when more than 3% of its sends bounce permanently (counted over at least 200 sends, so 7 hard bounces pause it) or more than 0.08% are reported as spam (over at least 2,500, so 3 complaints pause it), within 7 days or since the last resume; on the account’s warnings; or under an SES review.'
                      : 'It never pauses: it alarms instead.'}
                </CardDescription>
              </CardHeader>
-@@ -102,7 +104,9 @@ export default async function ConsoleMailPage(props: { readonly searchParams: Pr
+@@ -102,7 +105,9 @@ export default async function ConsoleMailPage(props: { readonly searchParams: Pr
                      <dd data-ready={stream.ready ? 'yes' : 'no'}>{stream.ready ? 'Yes: sending, confirmed, and both probes back within 48 hours' : 'No: staging and production keep the screening closed'}</dd>
                      <dt className="text-muted-foreground">Bounce marks (7 days)</dt>
                      <dd>
@@ -257,7 +270,7 @@ index 1f366c29..078f675e 100644
                      </dd>
                    </>
                  ) : null}
-@@ -117,6 +121,10 @@ export default async function ConsoleMailPage(props: { readonly searchParams: Pr
+@@ -117,6 +122,10 @@ export default async function ConsoleMailPage(props: { readonly searchParams: Pr
                    <FormKeys />
                    <input type="hidden" name="stream" value="screening" />
                    <SelectField label="Why it can resume" id="resume-reason" name="reason" required options={[{ value: '', label: 'Choose a reason' }, ...resumeReasons]} />
@@ -457,10 +470,10 @@ index 23d07367..37716a1d 100644
    });
  });
 diff --git a/docs/adr/0062-screen-prospects-from-aggregate-rows-without-phi-price-each-row-with-the-unchanged-engine-and-send-the-result-by-emailed-link.md b/docs/adr/0062-screen-prospects-from-aggregate-rows-without-phi-price-each-row-with-the-unchanged-engine-and-send-the-result-by-emailed-link.md
-index 3e038526..ff907a33 100644
+index 63d5acb9..60f11099 100644
 --- a/docs/adr/0062-screen-prospects-from-aggregate-rows-without-phi-price-each-row-with-the-unchanged-engine-and-send-the-result-by-emailed-link.md
 +++ b/docs/adr/0062-screen-prospects-from-aggregate-rows-without-phi-price-each-row-with-the-unchanged-engine-and-send-the-result-by-emailed-link.md
-@@ -1461,13 +1461,17 @@ marks.
+@@ -1463,13 +1463,17 @@ marks.
  new screening (`screening_bounce_budget`), so one client or one email account cannot close the screening for everyone.
  
  **The wording (Q12, the recommended wording; counsel confirms it before the screening opens).** The new sentences a
@@ -485,7 +498,7 @@ index 3e038526..ff907a33 100644
  - every refused address: "We cannot send email to this address. Check it, or use another address.";
  - a mailbox SES could not confirm: "We could not confirm this mailbox exists. Check the address, or keep it as
    typed.";
-@@ -1478,11 +1482,11 @@ prospect reads, word for word:
+@@ -1480,11 +1484,11 @@ prospect reads, word for word:
  - any other ending in no use: "This address ends in “.qqq”, which is not a domain ending in use. Check it, or keep it
    as typed.";
  - the box that keeps a questioned address: "Keep this address as typed";
