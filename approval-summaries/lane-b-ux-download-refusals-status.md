@@ -5,18 +5,18 @@ session_01L3tN5LCq2aNYetEQBNJYZg, a Lane B item session started 2026-10-27 by La
 (session_01TrKDxeLbxVo7t7zwRXFzrg). Follow-on in this session after it merges: PR 9 `co-001/ux-home-figures`
 (status `lane-b-ux-home-figures-status.md`).
 
-## Now (2026-10-27 14:30 UTC)
-- **Stage 2, builders, running:** workflow `wf_64b87764-990` (script `workflow-scripts/lane-b-ux-download-refusals-build-wf_64b87764-990.js`): core (handler, route shape, parser, notice, letter rule, unit tests), then four in parallel (coverage and the e2e spec; packets, uploads and console; reports, ROI and monthly; ADR 0079, test-matrix and synth), then an integration check. Builders do not commit; the session commits after the check. Progress files in the scratchpad `progress/dlr-build-*.md`.
-- **Before shots, running:** workflow `wf_c067d77c-56b` (script archived): adds the refused-download states to the screen tour on claude/build-ops, then the base run (TOUR_REF e908c21).
-- **If this container is gone:** both runs restart from their scripts (the builders from the worktree's state, which is uncommitted until the check; so a lost container means the build starts again from the design). Resume in this session with resumeFromRunId.
-- **Branch:** `co-001/ux-download-refusals`, pushed at e908c21 (no commits of its own yet). No PR.
-- **Design:** `designs/lane-b-ux-download-refusals.md` (§6 wins over §2 to §5); review `designs/lane-b-ux-download-refusals-review.json`.
-- **Reserved:** ADR 0079; test-matrix DLR-01 to DLR-04; `packages/synth` module 18 (DLR).
-- **Migration:** none. **#42 files:** none (checked 2026-10-27 01:45 UTC; design D7).
-- **GitHub login:** `PureTideWater`.
-- **Machine (14:20 UTC):** setup script OK on every line, playwright included (`ok playwright 1.56.1 chromium-1194 chromium_headless_shell-1194 in /opt/pw-browsers, laid out from Chrome for Testing 141.0.7390.37`).
-- **Overlaps:** ux-forms is PR #74 (open), ux-table-scroll in build: LANES rule 6, the one merged second keeps both.
-- **Safety check-in:** send_later at 2026-10-27T19:33Z.
+## Now (2026-10-27 16:15 UTC)
+- **PR #78** (draft) into claude/build-platform: https://github.com/PureTideWater/PhysicalTherapy/pull/78. Head **63aaa7f** (c1eff40 the code and tests, 63aaa7f ADR 0079, test-matrix DLR-01 to DLR-04 and synth module 18). Description from the template, written with update_pull_request and checked byte for byte. Subscribed to its activity.
+- **Stage 4, reviews, running:** workflow `wf_1c44b1a2-762` (script archived): the security review, and the after shots (TOUR_REF 63aaa7f) then the UX and brand review, in fresh clones; then one independent skeptic per finding.
+- **Next:** stage 5, the fix round with the full local suite once, one push; stage 6, the fresh-clone verification reading CI; stage 7, merge (base merged in, CI green, ready, merge with expectedHeadSha).
+- **If this container is gone:** the branch and PR hold the work; re-run the reviews from their archived script in a new session (no resume across sessions); the before shots are only in this scratchpad, so retake them at e908c21 with the same TOUR_ONLY (in `approval-summaries/lane-b-ux-download-refusals-wip/dlr-capture-before.md`).
+- **Before shots:** 70 at e908c21 (wf_c067d77c-56b); the tour's refused-download caps are on claude/build-ops (a5c50b1f, then the ForgetRefusal tolerance).
+- **Design:** `designs/lane-b-ux-download-refusals.md` (§6 wins); review `designs/lane-b-ux-download-refusals-review.json`.
+- **Reserved and used:** ADR 0079; test-matrix DLR-01 to DLR-04; `packages/synth` module 18 (DLR).
+- **Migration:** none. **#42 files:** none but the shared test-matrix, matrix.ts and registry.ts (rows added).
+- **GitHub login:** `PureTideWater`. **Machine:** every setup line OK, playwright included.
+- **Overlaps:** ux-forms PR #74 (open; compliance page, reports pages, compliance route, synth lines) and ux-table-scroll (in build): LANES rule 6.
+- **Safety check-in:** send_later at 2026-10-27T21:22Z.
 
 ## Log
 - 2026-10-27 01:45 UTC: machine set up; brief, LANES.md, lanes/lane-b.md read; branch cut; #42 file check done.
@@ -25,8 +25,16 @@ session_01L3tN5LCq2aNYetEQBNJYZg, a Lane B item session started 2026-10-27 by La
 - 2026-10-27 14:20 UTC: resumed on the orchestrator's message (the 14:05 check-in did not fire); setup OK, playwright included.
 - 2026-10-27 14:30 UTC: build workflow `wf_64b87764-990` and before-shots workflow `wf_c067d77c-56b` started.
 
+- 2026-10-27 16:00 UTC: build done (wf_64b87764-990, six agents; typecheck, lint, 1,166 unit tests, copy and log lints, synth, 21 e2e tests all passed). The session added ForgetRefusal and reworded the notices that said "Reload the page" (R16), re-ran tsc, eslint, 433 unit tests, lint:copy and the e2e (4 of 4).
+- 2026-10-27 16:10 UTC: committed c1eff40 and 63aaa7f, pushed; draft PR #78 opened and subscribed; reviews workflow wf_1c44b1a2-762 started.
+
 ## Waiting on someone
 - Nothing.
 
 ## Proposals (improve as you go, outside this PR)
-- None yet.
+- One shared YYYY-MM month schema in `lib/routes/schemas.ts` (the regex is written out in monitoring.ts, report-documents.ts, pricing.ts and remittances.ts).
+- `apps/web` could declare `fast-check` (a root devDependency today), so property tests there need no hand-seeded generator.
+- The Reports screen's paging is not kept on a refused download from a later page (the notice shows in the right section of page 1).
+- `reports/monthly/page.tsx` 404s when its GET form sends a month that is not YYYY-MM (a browser without type=month); ux-forms territory.
+- The repo's PostToolUse typecheck hook runs a full apps/web tsc after every edit, outside the heavy lock.
+- In e2e, the `export` rate limit's per-address bucket is shared by every spec (no trusted proxy); fine today.
