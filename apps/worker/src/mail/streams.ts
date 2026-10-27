@@ -43,7 +43,7 @@ export const MAIL_PROBE_RECIPIENTS = { delivered: `success@${MAIL_SIMULATOR_DOMA
 /**
  * The codes the platform logs for the operator's alarms (infra/lib/mail.ts holds its metric filters equal to these):
  * the screening stream paused, a notice not delivered to every recipient, a notice with no recipient, an invitation not
- * delivered, and a probe that has not come back in 26 hours. MAIL_EVENT_UNREADABLE is a warning the DLQ alarm covers.
+ * delivered, and a stream with no probe back in 26 hours. MAIL_EVENT_UNREADABLE is a warning the DLQ alarm covers.
  */
 export const MAIL_LOG_CODES = {
   streamPaused: 'MAIL_STREAM_PAUSED',

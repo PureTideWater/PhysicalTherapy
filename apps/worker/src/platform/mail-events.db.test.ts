@@ -343,6 +343,57 @@ describe('the mail_events job', () => {
     expect(mail.sent.map((message) => message.identity.stream)).toEqual(['notices', 'notices']);
   });
 
+  it('logs MAIL_PROBE_MISSED on every run once the stream’s last proof is 26 hours old, whether its next probe went and was lost or could not be sent, and not for a proof from before the last resume (review M3)', async () => {
+    const missed = (stream: string): unknown => expect.objectContaining({ level: 'error', msg: `${stream} mail probe has not come back in 26 hours`, error_code: 'MAIL_PROBE_MISSED' });
+    const unsent = expect.objectContaining({ level: 'warn', error_code: 'MAIL_PROBE_UNSENT' });
+    // Sent and lost: both probes came back 27 hours ago and the next went 3 hours ago. It is not due again for 23 hours,
+    // but the stream is missed now, 22 hours before the screening's readiness would lapse at 48, and on each run after.
+    await owner.query("UPDATE mail_stream SET probe_sent_at = now(), probe_delivered_at = now(), probe_bounced_at = now() WHERE stream <> 'screening'");
+    await owner.query("UPDATE mail_stream SET probe_sent_at = now() - interval '3 hours', probe_delivered_at = now() - interval '27 hours', probe_bounced_at = now() - interval '27 hours' WHERE stream = 'screening'");
+    const mail = new MemoryMailSender();
+    for (const attempt of ['first', 'second']) {
+      const { lines, logger } = capture();
+      expect(await run({ source: new MemoryQueue(), mail, probes: true }, logger), attempt).toMatchObject({ probed: [], probesMissed: ['screening'] });
+      expect(lines, attempt).toEqual([missed('screening')]);
+    }
+    expect(mail.sent).toEqual([]);
+    // The older of the two proofs decides: the delivery back and the bounce still 27 hours old is missed.
+    await owner.query("UPDATE mail_stream SET probe_delivered_at = now() WHERE stream = 'screening'");
+    expect(await run({ source: new MemoryQueue(), mail, probes: true })).toMatchObject({ probed: [], probesMissed: ['screening'] });
+    // Both back: nothing missed, nothing logged.
+    await owner.query("UPDATE mail_stream SET probe_bounced_at = now() WHERE stream = 'screening'");
+    const back = capture();
+    expect(await run({ source: new MemoryQueue(), mail, probes: true }, back.logger)).toMatchObject({ probed: [], probesMissed: [] });
+    expect(back.lines).toEqual([]);
+
+    // Not sent: the last probe went 28 hours ago and came back 27 hours ago, and every send since is refused. Missed
+    // from the proof's age alone, and unsent, on each run.
+    await owner.query("UPDATE mail_stream SET probe_sent_at = now() - interval '28 hours', probe_delivered_at = now() - interval '27 hours', probe_bounced_at = now() - interval '27 hours' WHERE stream = 'notices'");
+    const refusing = { send: () => Promise.reject(new Error('refused')) } as unknown as MemoryMailSender;
+    const refused = capture();
+    expect(await run({ source: new MemoryQueue(), mail: refusing, probes: true }, refused.logger)).toMatchObject({ probed: [], probesMissed: ['notices'] });
+    expect(refused.lines).toEqual([missed('notices'), unsent]);
+    // Unconfirmed (as a paused stream always is), nothing is missed: the stream is not meant to be sending.
+    await owner.query("UPDATE mail_stream SET ses_enabled_confirmed_at = NULL WHERE stream = 'notices'");
+    expect(await run({ source: new MemoryQueue(), mail, probes: true })).toMatchObject({ probed: [], probesMissed: [] });
+    await owner.query("UPDATE mail_stream SET ses_enabled_confirmed_at = now(), probe_sent_at = now(), probe_delivered_at = now(), probe_bounced_at = now() WHERE stream = 'notices'");
+
+    // A resume: the proofs from before it do not count, so they make the stream neither ready nor missed; its probes go
+    // at once.
+    await owner.query(
+      "UPDATE mail_stream SET resumed_at = now() - interval '1 minute', probe_sent_at = NULL, probe_delivered_at = now() - interval '30 hours', probe_bounced_at = now() - interval '30 hours' WHERE stream = 'screening'",
+    );
+    const resumed = capture();
+    expect(await run({ source: new MemoryQueue(), mail, probes: true }, resumed.logger)).toMatchObject({ probed: ['screening'], probesMissed: [] });
+    expect(resumed.lines).toEqual([]);
+    // A proof not back since the resume counts from the probe that went for it: 27 hours on, missed, and sent again.
+    await owner.query("UPDATE mail_stream SET resumed_at = now() - interval '28 hours', probe_sent_at = now() - interval '27 hours' WHERE stream = 'screening'");
+    const again = capture();
+    expect(await run({ source: new MemoryQueue(), mail, probes: true }, again.logger)).toMatchObject({ probed: ['screening'], probesMissed: ['screening'] });
+    expect(again.lines).toEqual([missed('screening')]);
+    expect(mail.sent.map((message) => message.identity.stream)).toEqual(['screening', 'screening', 'screening', 'screening']);
+  });
+
   it('reports a break-glass notice not delivered to an administrator once, by the grant’s ID, from its events in any order (SEC-19)', async () => {
     const grant = randomUUID();
     await asOwner(owner, [world.practiceId], () =>

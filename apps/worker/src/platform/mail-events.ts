@@ -22,8 +22,11 @@ import { type NoticeClient, asOperator } from './support-notices';
  *    reads the set enabled again, and the screening's runs are claimed only then (screening_run_mail_gate). Only the
  *    screening set is ever disabled: the transactional and notices streams never pause.
  * 2. Probes, once the stack's identities are verified (phase 2): a stream due one (daily, at once after a resume, again
- *    when one has not come back in 26 hours, which is MAIL_PROBE_MISSED) sends one message to SES's simulator's success
- *    address and one to its bounce address, through the stream's set, and nothing else.
+ *    26 hours after one that has not come back) sends one message to SES's simulator's success address and one to its
+ *    bounce address, through the stream's set, and nothing else. A stream whose last proof is 26 hours old (the older of
+ *    its last delivered and bounced probe, since the last resume) logs MAIL_PROBE_MISSED on every run until a probe
+ *    comes back, due or not, so a probe sent and lost pages 2 hours after it went and one that cannot be sent pages too,
+ *    each 22 hours before the screening's readiness lapses (review M3).
  * 3. Drain the queue: up to 10 messages a receive, at most 1,000 or 50 seconds a run. Each SES event is recorded once
  *    per message and event, in any order (operator_record_mail_event(), by SES's message ID and the state's rank), in a
  *    transaction scoped to its support notice's practice (its tp_practice tag) or to none; the message is deleted from
@@ -219,6 +222,7 @@ export interface MailEventsResult {
   /** Why the screening stream paused in this run, if it did. */
   readonly paused: MailPauseReason | null;
   readonly probed: readonly MailStream[];
+  /** The streams whose last proof is 26 hours old (operator_mail_streams().probe_missed), each logged MAIL_PROBE_MISSED. */
   readonly probesMissed: readonly MailStream[];
 }
 
@@ -260,7 +264,7 @@ function logPaused(logger: Logger, reason: MailPauseReason, requestId: string): 
   }
 }
 
-/** A probe that has not come back in 26 hours: one fixed sentence a stream, each with MAIL_PROBE_MISSED. */
+/** No probe of the stream back in 26 hours: one fixed sentence a stream, each with MAIL_PROBE_MISSED. */
 function logProbeMissed(logger: Logger, stream: MailStream, requestId: string): void {
   switch (stream) {
     case 'transactional':
@@ -367,12 +371,14 @@ export async function runMailEvents(options: MailEventsOptions): Promise<MailEve
   const probesMissed: MailStream[] = [];
   if (options.probes) {
     for (const row of await streams()) {
-      if (!row.probe_due) {
-        continue;
-      }
+      // Missed is read from the stream's last proof, due or not (review M3): logged on every run while it holds, so its
+      // alarm stays raised until a probe comes back, whether the last went and was lost or none could be sent.
       if (row.probe_missed) {
         probesMissed.push(row.stream);
         logProbeMissed(logger, row.stream, requestId);
+      }
+      if (!row.probe_due) {
+        continue;
       }
       try {
         await options.mail.send(probeMessage(row.stream, MAIL_PROBE_RECIPIENTS.delivered));
