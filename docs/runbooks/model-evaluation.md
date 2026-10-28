@@ -184,12 +184,12 @@ It refuses, and records nothing, unless:
   each variant the model the prompt pins;
 - every example's outcome is one that measured the model (it answered, or answered `invalid_output`), or one the
   example's own input caused and a rerun would meet again (`document_unavailable`, `expected_invalid`,
-  `refused:document_kind`, `refused:no_text`, `refused:too_many_pages`, `refused:names_patient`). Anything else refuses
-  the run: a failed call (`call_failed:<code>`), `refused:phi_boundary` (a run outside production),
-  `refused:kill_switch`, `refused:feature_off`, `refused:not_evaluated` (for instance the ambiguous variant before its
-  own entry is evaluable), `refused:screen_unavailable`, `refused:screen_failed` or `refused:screen_invalid` (the
-  contract screen did not run, so the example was not measured), a budget or busy refusal, or a code the list does
-  not know.
+  `refused:document_kind`, `refused:no_text`, `refused:too_many_pages`, `refused:too_long`, `refused:names_patient`).
+  Anything else refuses the run: a failed call (`call_failed:<code>`), `refused:phi_boundary` (a run outside
+  production), `refused:kill_switch`, `refused:feature_off`, `refused:not_evaluated` (for instance the ambiguous
+  variant before its own entry is evaluable), `refused:screen_unavailable`, `refused:screen_failed` or
+  `refused:screen_invalid` (the contract screen did not run, so the example was not measured), a budget or busy
+  refusal, or a code the list does not know.
   Run it again in production with the feature on and both variants evaluable. A run with examples none of which
   reached the model is refused too;
 - `--against` is given whenever anything of the provider was ever served (the baseline's served history, which a
@@ -230,5 +230,11 @@ history. Commit it by pull request: the deploy carrying that commit serves the v
   terms by hand. Many lines for one practice are a loop to look into, not a capacity to raise: until the lookup-hash
   migration (ADR 0070, F3) every screen audits every identifier of the practice. A click the gateway refuses anyway
   (the kill switch, a spent budget, a replay) reads none of the practice's records.
+- **A contract proposal is refused as too long**: a document whose framed request is over 1,000,000 bytes in UTF-8, as
+  sent or in the NFKC form the screen reads (`MAX_REQUEST_BYTES` in `contractTermsSpec.prepare`), is refused as
+  `too_long` before anything else is read, held or sent, and, as no refusal of a purpose's preparation is, it is not
+  logged. The person reads that the document is too long to send to the model and enters its terms by hand. No set v2
+  document is near the cap (the largest frames to 173,684 bytes); a document of mostly non-ASCII text reaches it in
+  fewer characters. A permitted run counts such an example as `refused:too_long`, outside the model.
 - **A pull request that bumps pdf.js or the Textract reader fails `set_changed`**: step 5, before it merges.
 - **The kill switch** still turns every model feature off at once (ADR 0052); it is not part of this runbook.

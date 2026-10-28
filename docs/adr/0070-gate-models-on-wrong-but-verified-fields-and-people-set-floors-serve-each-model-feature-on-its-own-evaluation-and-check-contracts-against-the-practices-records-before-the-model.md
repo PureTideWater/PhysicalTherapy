@@ -465,10 +465,10 @@ unless all of these hold (PR review B1, M1, M3, S1, N3, N4):
 - every example's outcome is on an allowlist of what measures the model (`permittedOutcome`): the model answered (no
   problem, or `invalid_output`), or the example's own input kept it from the model and a rerun would again
   (`document_unavailable`, `expected_invalid`, `refused:document_kind`, `refused:no_text`, `refused:too_many_pages`,
-  `refused:names_patient`). Any other code, a failed call, `refused:phi_boundary` (a run outside production),
-  `refused:kill_switch`, `refused:feature_off`, `refused:not_evaluated`, `refused:screen_unavailable`, a budget or busy
-  refusal, or a code the list does not yet know, refuses the run; and a run with examples none of which reached the
-  model is refused. Otherwise a first run, compared with nothing, could serve a model it never called;
+  `refused:too_long`, `refused:names_patient`). Any other code, a failed call, `refused:phi_boundary` (a run outside
+  production), `refused:kill_switch`, `refused:feature_off`, `refused:not_evaluated`, `refused:screen_unavailable`, a
+  budget or busy refusal, or a code the list does not yet know, refuses the run; and a run with examples none of which
+  reached the model is refused. Otherwise a first run, compared with nothing, could serve a model it never called;
 - `--against` is required whenever anything of the provider was ever served. The baseline keeps a served history
   (`served.<provider>.<variant>`: the prompt version and content hash, the model, and the permitted record) that
   production never reads and that outlives the entries, which a prompt or model change deletes and `eval --record`
@@ -605,8 +605,8 @@ go with it.
   newline ends a run), the frame's words hold no digit, which every kept identifier does, and its page numbers and
   count stand alone, below every floor.
 - **Test helpers stay in tests.** `src/testing.ts` issues real practice checks over an in-memory practice
-  (`memoryPracticeRecords`, `syntheticPracticeCheck`), which the screen accepts for that practice and which read none
-  of its records. `lint.test.ts` holds that only test code reaches it:
+  (`memoryPracticeRecords`, `syntheticPracticeCheck`, through `practiceRecordsCheckByShape`: below), which the screen
+  accepts for that practice and which read none of its records. `lint.test.ts` holds that only test code reaches it:
   - Test code is tests, their support files, the generated route tests, the e2e and the synthetic evaluation (`eval/`,
     whose calls carry no practice's material). A `test-support/` or `route-tests/` directory counts only outside the
     web's route tree (`apps/web/src/app/`), where Next serves a page or a route by its path though nothing imports it.
@@ -629,29 +629,98 @@ go with it.
   `withJobScope` builds exactly that scope today, and `patient-records.test.ts` reaches each condition through a
   tampered job scope).
   - A runner scoped to another practice cannot be supplied.
-  - The scope and the pool are taken by their shape, because `packages/db` brands neither, so the check cannot tell a
-    stub pool that returns nothing from a real one (`testing.ts`'s memory pool is such a pool). No production caller
-    supplies one: `lint.test.ts` holds every naming of `practiceRecordsCheck` outside a test to the web's proposal
+  - **Only the database package's own scope and pool** (P12, fixed in this pull request; N2). `practiceRecordsCheck`
+    throws at construction, before the checks above, unless the pool is one `openPool` opened (`openedPool`,
+    `packages/db/src/connect.ts`) and the scope is one `withPracticeScope` or `withJobScope` opened on such a pool, its
+    transaction still open, that reaches the practice (`openScopeReaches`, `packages/db/src/authz/scope.ts`). Each
+    module keeps a private registry (a `WeakMap`), added to only where the pool or the scope is opened: the pool's
+    `connect` as `openPool` found it, and the scope's access as the database answered it, marked closed when its
+    transaction's work ends. The check asks the registry, never the object's own properties, and reads through the
+    recorded `connect`. So a stub pool that returns nothing (`testing.ts`'s memory pool is one), a wrapper of the pool's
+    shape, a `pg` pool built another way, a copy of a scope, a scope whose `access` or `practiceIds` were reassigned, a
+    scope opened on a pool of the shape and a scope kept past its transaction are all refused, and a `connect` assigned
+    to a real pool afterwards is never used. Both production pools are `openPool`'s already (the web's
+    `services.modelPool`, built in `services.ts`, and the worker's run's pool in `permitted-cli.ts`), as is the
+    request's scope (the route's `withPracticeScope` in `invoke.ts`) and the run's (`withJobScope`), so no #42 file
+    changes and no migration is needed. This ADR's earlier reason for deferring it (the pool brand had to be issued in
+    `services.ts`) did not hold: `openPool` is where both production pools are made.
+  - What it does not prove: which database a pool reaches (a pool `openPool` opened on another database is
+    accepted), and nothing holds against code that replaces `pg`'s own `Pool.prototype.connect` before a pool is
+    opened, or that rewrites an opened pool's own state, which `pg`'s `connect` reads (its `Client`, its `options`, its
+    idle clients), as nothing does against a rewritten built-in ("The guards' reach"). So the callers stay pinned:
+    `lint.test.ts` holds every naming of `practiceRecordsCheck` outside a test to the web's proposal
     (`apps/web/src/lib/models/contract-proposals.ts`, its one call pinned to `authorizedBy: scope, pool:
     services.modelPool`), the worker's permitted run (`apps/worker/src/models/permitted.ts`, pinned to `authorizedBy:
     scope, pool: services.pool`), `src/testing.ts`, and the definition and the entry (`patient-records.ts`,
     `index.ts`).
-  - An unforgeable scope brand (issued by `packages/db/src/authz/scope.ts`) and a pool brand (issued where the
-    services build their pools, `apps/web/src/lib/server/services.ts`, a #42 file) would let the check refuse a stub
-    itself. Neither needs a migration (P12).
+  - Tests build the check over an in-memory practice, or over a pool that injects a fault or a race into a real one,
+    with `practiceRecordsCheckByShape`: the same check, its scope and pool taken by their shape (the construction
+    checks above, without the registries). `testing.ts` re-exports it, the main entry does not, and `lint.test.ts`
+    holds its naming to `patient-records.ts`, `testing.ts` and tests; the check's body (`recordsCheck`, which issues
+    it) is private and called by the two factories only.
 - **The gateway's order** (design review m3; the review's S1). `limited()` checks, in order: the purpose served; the
-  kill switch and a purpose's flag; the PHI boundary; `prepare` (the kind check and the framing as data); the call's
-  own variant served; a completed call under the idempotency key (`DuplicateModelCallError`); a read of the day's
-  logged spend against the budget (`ModelBudgetExceededError`, logged `MODEL_BUDGET_EXCEEDED`); the caller's step
-  before the screen (`CallContext.beforeScreen`), when the purpose screens; and only then the screen; after it, the
-  budget's hold and the call. Every refusal the gateway can make without the screen comes first, so no audited read of
-  a practice's records runs for a call the gateway refuses anyway, and the screen is the last step that can refuse a
-  call before it is made. A refused call writes no `model_call` row, holds no budget and sends nothing. The budget's
-  read counts no call in flight (`spentSince`), so it never refuses a call the hold would make; the hold, which adds
-  the calls in flight under the practice's lock, still decides the rest. (Before this round the screen ran before the
-  idempotency key and the budget, and the text here said "no audited read runs for a call that would be refused
-  anyway": that was false for a replay and a spent budget, before each of which the security review measured a full
-  screen.)
+  kill switch and a purpose's flag; the PHI boundary; `prepare` (the kind check, the request's cap in bytes and the
+  framing as data); the call's own variant served; a completed call under the idempotency key
+  (`DuplicateModelCallError`); a read of the day's logged spend against the budget (`ModelBudgetExceededError`, logged
+  `MODEL_BUDGET_EXCEEDED`); the caller's step before the screen (`CallContext.beforeScreen`), when the purpose screens;
+  and only then the screen; after it, the budget's hold and the call. Every refusal the gateway can make before the hold
+  comes first, so no audited read of a practice's records runs for a call refused that way, and the screen is the last
+  refusal before the budget's hold and the call. The hold can still refuse after the screen: it adds the calls in flight
+  under the practice's lock, so calls made at once can take the day's spend to the budget between one call's read and
+  its hold, and that call, though screened, is refused with nothing held or sent. A refused call writes no `model_call`
+  row, holds no budget and sends nothing. The budget's read counts no call in flight (`spentSince`), so it never refuses
+  a call the hold would make; the hold, which adds the calls in flight under the practice's lock, still decides the
+  rest. (Before this round the screen ran before the idempotency key and the budget, and the text here said "no audited
+  read runs for a call that would be refused anyway": that was false for a replay and a spent budget, before each of
+  which the security review measured a full screen.)
+- **The request's length** (P11; phi-screen F5's skeptic, item 5). `contractTermsSpec.prepare` refuses a request longer
+  than `MAX_REQUEST_BYTES`, 1,000,000 bytes of the framed request in UTF-8, counted both as it is sent and in the NFKC
+  form the screen reads (`redact.ts` `screenedBytes`: each line holding a character outside ASCII, normalized), as
+  `InputRefusedError('too_long')` with a fixed sentence that names the cap and nothing of the document ("a call sends at
+  most 1,000,000 bytes of a document; this one is longer and was not sent"). Bytes and not a string's length, and both
+  forms, because each reader of the request counts it its own way: the budget's hold counts a token a byte of what is
+  sent (`mostCost`), and a character outside ASCII is two to four bytes; the screen reads the NFKC form, in which a
+  compatibility character lengthens (U+FDFA, three bytes, is eighteen characters and 33 bytes). The cap was first a
+  string's length (this pull request's check round found it): a request of a million U+FDFA was within it, yet the
+  screen read it as 18 million characters, taking 1.3 to 2.5 s and more than a 192 MiB heap, and it was 3,000,000 bytes
+  sent, past what the default budget holds, so a screened request was then refused by the hold with an alert that the
+  practice had spent its budget. A character is at least a byte, so either form within the cap is at most 1,000,000
+  characters, and the screen reads at most that many. It is checked twice: on the pages' total before any page is
+  normalized for its text or framed (their length first, then their bytes as sent and in NFKC form, the bytes sent first
+  so a text already over the cap is never normalized; the frame only adds, so this refuses a subset of the second,
+  early), and on the framed text itself, so the cap holds what would be sent and what the screen reads, whatever the
+  pages read the second time they are asked for. A text within the cap as sent is normalized into at most six characters
+  a byte (U+FDFA's), so the count holds a bounded copy. It comes before the variant's serving check, the idempotency
+  key, the budget, the step before the screen, the screen and the call: such a document reads none of the practice's
+  records, takes no screen limit, writes no person's event, holds nothing and writes no `model_call` row. As no refusal
+  of a purpose's preparation is, it is not logged; the web shows it its own notice (`too_long`: "This document is too
+  long to send to the model, so nothing was sent. Enter its terms by hand below."), and the worker's permitted run
+  counts `refused:too_long` as outside the model, as it counts `refused:too_many_pages`. The value is taken from what a
+  legitimate contract needs and what a call can use, with margin:
+  - set v2's 63 documents frame to at most 173,684 bytes (L02, 80 pages; L01 and L03 163,247 and 165,238; the 40-page
+    L04 and L05 89,153 and 72,437; no medium or small case above 20,100; set v2 is ASCII, so each is as many characters
+    and the same in NFKC form), and its longest page is 2,524 bytes, so 100 pages (`MAX_PAGES`) of its densest frame to
+    about 255,000. The cap is 5.7 and 3.9 times those;
+  - at the runbook's estimate (about 1,250 input tokens a page, 100,000 for an 80-page document: about 1.7 bytes a token
+    on L02) the cap is about 575,000 tokens, inside the one-million-token context of the models the prompt version pins,
+    with the answer's 16,000 (`max_tokens`); the prompt version sets no input limit of its own. Intake's cap (16 MiB of
+    page text, `PAGE_READ_LIMITS.maxTextCharacters`) is about ten million tokens, which no pinned model reads, so the
+    gap between the two is requests no model could read;
+  - the budget's hold counts a token per byte of what is sent, plus the system prompt, the schema and 1,000 framing
+    tokens, and the answer's limit (`mostCost`). At `config/models.json`'s prices (still unconfirmed) a request at the
+    cap, which the hold counts in the same bytes, holds about 218 cents (the larger model, 435), so it fits the default
+    daily budget (`DEFAULT_DAILY_BUDGET_CENTS`, 500) on a day with no spend; the largest request that default could hold
+    is 2,412,350 bytes (the larger model, 1,162,350). At 16 MiB the hold was about 3,373 cents (6,746), refused by the
+    hold only after a full screen;
+  - the screen at the cap (measured as `redact.test.ts`'s bound measures it, a practice at 50,000 identifiers, in a
+    96 MiB heap on a 4-CPU machine) takes about 47 ms of prose with the identifier last, 122 ms at the worst case
+    (one-character tokens on one line: the most tokens 1,000,000 characters hold) and 379 ms with kept identifiers of
+    every length from 6 to 80, where 16 MiB took 0.6 s, 1.4 s and about 7 s. The largest request of U+FDFA the cap
+    admits (30,474 characters, read as 999,978 bytes) takes about 70 ms in the same heap.
+  A larger cap would admit requests the pinned models cannot be relied on to read in one call and that the default
+  budget's hold refuses for the larger model; a smaller one (say 500,000) would leave less margin over a dense
+  100-page schedule for no gain the screen needs. The cap reaches mostly what the page count does not: dense PDF
+  pages, a workbook's large sheet (one page each) and a CSV of long rows.
 - **When a screen may run** (the review's S1).
   - **The caller's step before the screen.** `CallContext.beforeScreen?: () => Promise<void>` runs once the gateway
     has refused everything it can without the screen, and only when the purpose has a screen. A throw refuses the call
@@ -962,11 +1031,16 @@ over time", S2 as "The practice's access log", S3 under "The audit trail", S4 un
     YYYYMMDD and MMDDYYYY only, so it does not widen what is left out).
 - **Refused whole:** until F3, every contract of a practice above 50,000 identifiers (its posting lines with no claim
   match counted), and of one whose rows pass the bound between the count and the read (`screen_unavailable`).
-- **The time per click:** the check is linear in the text and bounded in memory (the tokenizer, above). At the largest
-  text intake accepts it holds the web's event loop for about 1 to 2 s on a 4-CPU machine, up to about 7 s for a
-  practice whose kept identifiers have every length from 6 to 80, and longer on the web task's 0.5 vCPU. A request
-  that long cannot be read by a model anyway: a character cap in `contractTermsSpec.prepare`, before the screen, would
-  bound it (P11).
+- **The time per click:** the check is linear in the text and bounded in memory (the tokenizer, above), and the
+  request's cap bounds the text it reads (P11, fixed: in bytes, as sent and in NFKC form, so at most 1,000,000
+  characters read). At the cap it holds the web's event loop for about 0.05 s of prose and 0.12 s at the worst case on a
+  4-CPU machine, up to about 0.4 s for a practice whose kept identifiers have every length from 6 to 80, and longer on
+  the web task's 0.5 vCPU (before the cap, intake's largest text took 1 to 2 s, up to about 7 s).
+- **A document longer than a call sends:** refused whole as `too_long` (more than 1,000,000 bytes framed, as sent or in
+  NFKC form: none of set v2's 63, the largest of which is 173,684), and its terms are entered by hand. It is not
+  proposed in parts: a page is not split, and there is no way yet to ask for a range of pages. A document of mostly
+  non-ASCII text reaches the cap in fewer characters (a page of three-byte characters in a third as many), and one of
+  compatibility characters that NFKC lengthens in fewer still; no contract of set v2 holds either.
 - **The cost over time** (security S1, as fixed). Until F3, each screen still reads, decrypts and audits up to 50,000
   identifiers. The screen's limits bound that: at most 20 screens an hour and 60 a day of one practice, and 20 an hour
   and 100 a day caused by one person, so at most 3 million audit rows a practice a day at the bound (typically far
@@ -1009,8 +1083,9 @@ over time", S2 as "The practice's access log", S3 under "The audit trail", S4 un
   passes the gateway, and against code that compiles and passes the lint. They do not hold against code in the
   gateway's process that deliberately rewrites a built-in (`WeakSet.prototype.has`, `Set.prototype.has`,
   `Object.freeze` before the gateway loads): such code can skip the screen, as it could call a provider directly. No
-  module can stop that; code review and the lint rules that keep model calls in the gateway cover it. The check does
-  not refuse a stub pool itself; `lint.test.ts` holds its callers (above).
+  module can stop that; code review and the lint rules that keep model calls in the gateway cover it. The check
+  refuses a scope or a pool the database package did not open (P12, above), but cannot tell which database an opened
+  pool reaches, so `lint.test.ts` still holds its callers.
 - **The trace of a failure:** a load error is logged only as `MODEL_INPUT_SCREEN_FAILED`; the check has no logger, and
   which step failed (the scope, a query or a decrypt) is not recorded.
 - **What a person meets:** a misfiled document cannot be filed again until F4: it stays a contract in its version, and
@@ -1102,14 +1177,14 @@ Each is recorded with its reason; the founder can reverse any.
 7. **`syntheticRecordsCheck(identifiers)` takes no floors**, where the design passed `SCREEN_FLOORS`: an issued check
    always uses the ruled floors and rules. Other floors exist only for the measurement, through `screenSet(…, rules)`
    and `pagesName`, which issue nothing.
-8. **The twins' identifier shapes.** The 9-digit member IDs are `9NN00NNNN` (area 9NN and group 00, neither ever
-   issued, so no Social Security number has the shape, and no ITIN or ATIN, whose groups are 50 to 65, 70 to 88 and 90
-   to 99), the 11-character ones hold a B, L, S or Z, which no Medicare Beneficiary Identifier holds, and the payer
-   claim numbers start `77`: invented and never real-shaped (phi-screen N3; `patient-twins.test.ts`), and the ordinary
-   twin's TIN and ZIP+4 collisions are zero by construction. Before the review the build's 9 plus 8 digits held 12,079
-   ITIN- or ATIN-shaped IDs, and two of its 11-character IDs were MBI-shaped. Area 000 was measured and rejected (set
-   v2's synthetic TINs are 00-NNNNNNN, so it held 5 of them and refused 3 documents), and so was group 93, the ATIN
-   group.
+8. **The twins' identifier shapes.** Of the twin's 80,000 member IDs, a third are `ZZ` and 7 digits, a third are 9
+   digits `9NN00NNNN` (area 9NN and group 00, neither ever issued, so no Social Security number has the shape, and no
+   ITIN or ATIN, whose groups are 50 to 65, 70 to 88 and 90 to 99), and a third are 11 letters and digits holding a B,
+   L, S or Z, which no Medicare Beneficiary Identifier holds; the payer claim numbers start `77`: invented and never
+   real-shaped (phi-screen N3; `patient-twins.test.ts`), and the ordinary twin's TIN and ZIP+4 collisions are zero by
+   construction. Before the review the build's 9 plus 8 digits held 12,079 ITIN- or ATIN-shaped IDs, and two of its
+   11-character IDs were MBI-shaped. Area 000 was measured and rejected (set v2's synthetic TINs are 00-NNNNNNN, so it
+   held 5 of them and refused 3 documents), and so was group 93, the ATIN group.
 9. **The document and the check are two types** (`ContractPages`, and `ContractPagesInput` adding `patientRecords`;
    `RequestInputs` for `requestFor` and `registerOutput`), so only a call that sends a contract needs a check.
 10. **MOD-12's database tests seed the practice's records** through `src/test-support/screen-world.ts` from
@@ -1164,10 +1239,11 @@ The fix round of the pull request's review (2026-10-27) adds these:
     round's integration review). The design's specs, gateway and context were plain objects.
 25. **`lint.test.ts` holds the factories' callers and the testing module's whole reach** (N2, the security review's
     nits). This extends departure 19.
-26. **The screen runs last of the gateway's refusals**, where the design (5.2, m3) put it before the idempotency key
-    and the budget: a replay and a spent budget are now refused unscreened (security S1). The design's reasoning (no
-    budget is held and no row written for a refused call) still holds: the two checks before it are reads, and the
-    hold stays after the screen.
+26. **The screen runs last of the gateway's refusals before the budget's hold and the call**, where the design (5.2,
+    m3) put it before the idempotency key and the budget: a replay and a spent budget are now refused unscreened
+    (security S1). The design's reasoning (no budget is held and no row written for a refused call) still holds: the
+    two checks before it are reads, and the hold stays after the screen, so the hold can still refuse a screened call
+    (calls in flight taking the day's spend to the budget).
 27. **The person's event is written in the gateway's step before the screen** (`CallContext.beforeScreen`), not before
     the gateway is called (the design's 5.2), so it is written only for a screen about to read.
 28. **The screen has limits, and a found `names_patient` is remembered for an hour per server** (security S1); the
@@ -1179,6 +1255,13 @@ The fix round of the pull request's review (2026-10-27) adds these:
     refusal keeps every value, files too"); the second files them under whatever kind an arrow key passes first, a
     kind that never changes. The ERA export's system waits the same way, so UX PR 47 (`co-001/ux-uploader`) keeps the
     files without starting on the choice.
+30. **A cap on the request's bytes before the screen** (`MAX_REQUEST_BYTES`, `too_long`; P11, phi-screen F5's skeptic,
+    item 5): the design capped pages only (`MAX_PAGES`), so a one-sheet workbook of 16 MiB was screened before anything
+    refused it. The cap counts UTF-8 bytes, as sent and in the NFKC form the screen reads, not a string's length, which
+    this pull request first counted. The value and its reasoning are under "The request's length".
+31. **The check refuses a scope or a pool the database package did not open** (P12; N2), where the design's bound
+    check (M7) took both by their shape: `openPool` and `withPracticeScope`/`withJobScope` record what they open, and
+    `practiceRecordsCheck` reads only through what they recorded. Tests use `practiceRecordsCheckByShape`.
 
 ### Alternatives considered
 
@@ -1218,6 +1301,11 @@ The fix round of the pull request's review (2026-10-27) adds these:
   that ties the two stays true. The letter path's other-patient screen (`identifierCandidates`) is unchanged: it still
   drops a word with inner punctuation or a format character, and that gap is P9's.
 
+- **N14.** The request's cap is 1,000,000 bytes, as sent and in NFKC form (the reasoning is under "The request's
+  length"), and its notice says "This document is too long to send to the model, so nothing was sent. Enter its terms by
+  hand below.": no figure (the person cannot shorten the document), and hand entry as the next step, as the screen's
+  notices give it. The model's own sentence names the cap.
+
 ### Consequences
 
 - A payer letter or an EOB filed as a contract, or inside a zip filed as one, is refused before the model, with no
@@ -1234,11 +1322,11 @@ The fix round of the pull request's review (2026-10-27) adds these:
   the version's contract or the practice's, never to hand entry of a letter's terms. Files chosen before their kind
   wait in the browser until the person chooses it and presses Upload, so the panel files nothing by default or by an
   arrow key.
-- The check's time per click is linear in the text (about 1 to 2 s at the 16 MiB intake cap on a 4-CPU machine), and
-  its memory is bounded. A cap on the framed request's characters in `contractTermsSpec.prepare` should come before
-  the screen: an `InputRefusedError` with a fixed sentence, sized to what the model can read and above the 80-page
-  documents the design sizes at about 100k tokens, would bound the screen's event-loop time and refuse a request no
-  model can read (P11: phi-screen F5's skeptic's item 5, which needs a refusal code and a web notice).
+- The check's time per click is linear in the text and its memory is bounded. A request over 1,000,000 bytes, as sent or
+  in the NFKC form the screen reads, is refused in `contractTermsSpec.prepare` before anything else (P11, phi-screen
+  F5's skeptic's item 5, fixed in this pull request), so the screen reads at most 1,000,000 characters (about 0.05 to
+  0.4 s on a 4-CPU machine, where intake's 16 MiB took 1 to 7 s), and no request no model can read is screened, held or
+  sent. A contract that long is entered by hand (the `too_long` notice).
 - The first permitted run after this part, compared with a report made before it, fails `refused_rose:<variant>` for a
   practice with a misfiled example; the runbook says to run the served side again on the current code
   (`docs/runbooks/model-evaluation.md`). That fails closed, as intended.
@@ -1277,7 +1365,8 @@ MOD-12, "Contract or exhibit naming a patient of the practice", is asserted by:
   found, under its floor; 50,000 identifiers across the three kinds read whole and 50,001 refused with no read and no
   audit row; rows passing the bound after the count, for each of the three reads, refused as `screen_unavailable` with
   at most one row read past the bound, nothing after it read and nothing decrypted; each of the four conditions of the
-  opened-scope assertion; `screenContractPages`' `default:` branch; the synthetic check.
+  opened-scope assertion; `screenContractPages`' `default:` branch; the synthetic check; the in-memory scope and pool,
+  each alone, refused by `practiceRecordsCheck` with nothing read and accepted by `practiceRecordsCheckByShape` (P12).
 - `src/patient-records.db.test.ts`, on the web's and the worker's logins: one audit row per row read, by the service
   screen ID, joined to the person's one `contract_screen_requested` event, the person never a reader; the worker's run
   ID as the screen; a check for one practice built with another's scope refused; another practice's identical
@@ -1286,7 +1375,14 @@ MOD-12, "Contract or exhibit naming a patient of the practice", is asserted by:
   longer decrypts after others that do, `screen_failed` with every read audited (2 member IDs, 3 claims, 1 posting
   line); 1,000 claims committed right after the count of a practice at the bound, `screen_unavailable` with 25,001
   claim reads and the late claim never matched; a paper check's posting line found, and a line matched to a claim not
-  read (by its audit rows).
+  read (by its audit rows); a hand-built pool, a `pg` pool `openPool` did not open, a copied scope, a scope claiming
+  another practice, a scope opened on such a pool and one kept past its transaction refused at construction with no
+  connection taken, and a `connect` assigned to an opened pool after it opened never used (P12).
+- `packages/db/src/authz/scope.test.ts` (P12): `openScopeReaches` true for a request or job scope opened on a pool
+  `openPool` opened, for its own practices, while its work runs, and false after (the work failing too), for a copy,
+  for a scope whose properties were reassigned, for one opened on a pool of the shape and for anything else;
+  `openedPool` handing back the `connect` `openPool` found, frozen, whatever is assigned after, and nothing for any
+  other pool or value.
 - `src/specs.test.ts`: the map and every spec frozen, each where it is defined too (loaded alone, before the
   registry), and the contract spec's screen is `screenContractPages`; assigning or deleting the screen, `prepare` or
   the map's entry throws a `TypeError` and is a compile error (`@ts-expect-error`); the gateway's prototype and
@@ -1310,7 +1406,9 @@ MOD-12, "Contract or exhibit naming a patient of the practice", is asserted by:
   testing module reached by nothing but test code, through any import form, transitively, with a self-check over a
   synthetic graph; what counts as test code, with its own check (a support directory inside the web's route tree does
   not); `practiceRecordsCheck` named only in its two production callers (each call's arguments pinned), `testing.ts`,
-  the definition, the entry and tests; `syntheticRecordsCheck` only in `testing.ts`, `eval/` and tests.
+  the definition, the entry and tests; `practiceRecordsCheckByShape` only in `patient-records.ts`, `testing.ts` and
+  tests, never the entry, and the check's private body called by the two factories alone (P12);
+  `syntheticRecordsCheck` only in `testing.ts`, `eval/` and tests.
 - `eval/gate.golden.test.ts`: the set passes with the twin practice; a V01 naming a twin member ID refused; the false
   refusals (with and without the stored-side rules), the twin written with separators, and the seven collision classes
   above, pinned.
@@ -1329,6 +1427,26 @@ MOD-12, "Contract or exhibit naming a patient of the practice", is asserted by:
   both `refused:screen_failed`, read once each.
 - `apps/web/src/lib/models/path.test.ts`: each screen code to its own notice, `screen_invalid` to the bound's, and
   every notice naming the records one way and no patient, identifier, kind or count.
+- The request's cap (P11), apart from MOD-12: `src/functions/contract-terms.test.ts` (the pages' total refused before
+  any page is normalized, a page of blanks past the cap `too_long` and not `no_text`, the framed request prepared at
+  exactly the cap in bytes and refused one byte over it, pages that read short when counted and long when framed
+  refused, the fixed sentence naming the cap only, and 100 pages of set v2's longest page under a third of it; and the
+  two counts: 400,000 three-byte characters refused, a page of U+FDFA of 120,000 bytes sent and 1,320,000 in NFKC form
+  refused, also when the pages read so only when framed, a page of ligatures NFKC shortens counted as sent, and the
+  largest request of U+FDFA admitted read as at most the cap); `src/gateway.test.ts` (a document past the cap that names
+  a held member ID, and one within the cap's bytes sent but past it in NFKC form, each refused as `too_long` with no
+  screen connection, no audit row, no idempotency or budget read, no hold, nothing sent, no row and no log line, and the
+  same pages within the cap screened and refused as `names_patient`; an ambiguous one refused as `too_long` before the
+  unserved variant's `not_evaluated`); `src/redact.test.ts` (the largest request of U+FDFA the cap admits, framed by
+  `prepare`, screened in a 96 MiB heap in about 70 ms, where the cap first counted, a string's length, admitted a
+  million that ran the child out of that heap; and `screenedBytes` against the screen's own line-by-line normalization,
+  3,000 runs); `src/permitted.test.ts` (`refused:too_long` outside the model); `apps/web/src/lib/models/path.test.ts`
+  (`too_long` to its own notice, before the generic refusal, its words naming no figure);
+  `apps/web/src/lib/routes/models-routes.db.test.ts` (a CSV fee schedule past the cap: the version page's `too_long`
+  notice, nothing sent, no `model_call` or proposal row, no person's event, no screen limit taken, no read and no log
+  line). Each of the two checks, removed alone, fails the first of these; both removed fail the gateway's too. Counting
+  a string's length (the cap as first written) fails the counts' test, the gateway's and the heap's; counting the bytes
+  sent alone fails the same three, and the NFKC form alone fails the counts' test.
 - The upload panel: `apps/web/src/components/uploads/uploader.test.tsx` (what files do before the kind or the ERA
   system: held, focused, deduplicated, joined, started only on Upload, refused only for the batch's own problems; the
   kind's help and the alert in the markup), `apps/web/src/lib/routes/uploads.db.test.ts` (a file without a kind
@@ -1383,9 +1501,8 @@ practice-bound and scope-bound check, testing the union of its present runs and 
 matches (a Lane B item, no migration; with F3 it shares the lookup function). P10, after #42 (each touches a #42
 file): a `model_proposal` route bucket for the proposal's clicks (`rate-limit.ts`; 30 per person and 120 per address
 in 10 minutes), and the access log's page naming a screen read's cause and paging by event (`settings.ts`,
-`access-log/page.tsx`; with F3's new `practice_access_log`). P11 a character cap on the framed contract request in
-`contractTermsSpec.prepare`, before the screen, with a refusal code and a notice of its own (phi-screen F5). P12 an
-open-scope brand issued by `packages/db/src/authz/scope.ts` and a pool brand issued where the services build their
-pools (a #42 file), so `practiceRecordsCheck` refuses a stub itself (N2; no migration). P13 a deep freeze of `PROMPTS`
+`access-log/page.tsx`; with F3's new `practice_access_log`). (P11, the cap on the framed contract request's bytes,
+is fixed in this pull request: "The request's length", above; so is P12, the database package's own scope and pool,
+under "Bound to the caller's scope".) P13 a deep freeze of `PROMPTS`
 (each prompt version, its model map and its schema), so no code in the process can point a call at a model the gate
 did not evaluate (Part 2's, not this part's: the provider adapters' use of the schema objects is checked first).

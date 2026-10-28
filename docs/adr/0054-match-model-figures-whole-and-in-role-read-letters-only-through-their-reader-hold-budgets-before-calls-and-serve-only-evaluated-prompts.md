@@ -277,12 +277,13 @@ holds.
   It trusts the kind the person chose at upload, so a payer letter or an EOB filed as a contract, or inside a zip
   filed as one, passed it. A third check now runs after it: `contractTermsSpec.screen`.
 - `screen` takes the call's context (`screen?(input, prepared, context)`), so a screen can bind what it reads to the
-  call's own practice. The screen runs last of the gateway's refusals: serving, the kill switch and flags, the PHI
-  boundary, `prepare` (the kind check and the framing), the variant's serving check, a completed call under the
-  idempotency key, a read of the day's spend against the budget and the caller's step before the screen, then
-  `screen`; after it, the budget's hold and the call. No audited read runs for a call the gateway refuses without the
-  screen (ADR 0070, Part 3; its pull request review's S1, which found the screen running before the idempotency key
-  and the budget).
+  call's own practice. The screen runs last of the gateway's refusals before the budget's hold and the call: serving,
+  the kill switch and flags, the PHI boundary, `prepare` (the kind check, the request's cap in bytes and the
+  framing), the variant's serving check, a completed call under the idempotency key, a read of the day's spend against
+  the budget and the caller's step before the screen, then `screen`; after it, the budget's hold, which can still
+  refuse a screened call when calls in flight take the day's spend to the budget, and the call. No audited read runs
+  for a call the gateway refuses before the hold (ADR 0070, Part 3; its pull request review's S1, which found the
+  screen running before the idempotency key and the budget).
 - The contract screen asks the practice's records (`PatientRecordsCheck`, `src/patient-records.ts`) whether any run
   of the pages is a member ID, a payer claim control number or a patient control number the practice holds. On a
   yes the call is refused (`names_patient`). As with the letter's check, the answer is a code, never which
