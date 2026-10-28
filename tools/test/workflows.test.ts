@@ -3056,8 +3056,10 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
 
   /**
    * Every expression of a workflow that reaches a process, read as the runner reads it: the workflow's env; each job's
-   * env, outputs, strategy, container, services, with and secrets; each step's env, with and run (`if:` and `name:`
-   * reach none). What it refuses, each naming its file, job, step and key, and the values it found for BOUNDED_VALUES.
+   * env, outputs, strategy, container, services, with, secrets and defaults (its run's shell is the command the runner
+   * starts); each step's env, with, run and working-directory (`if:` and `name:` reach none). GitHub's contexts table
+   * names every key that takes a context. What it refuses, each naming its file, job, step and key, and the values it
+   * found for BOUNDED_VALUES.
    */
   function unboundedValueProblems(file: string, parsed: unknown): { problems: string[]; values: FoundValue[] } {
     const problems: string[] = [];
@@ -3092,11 +3094,11 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     visit(root.env, 'env', '-');
     for (const [id, job] of Object.entries(isRecord(root.jobs) ? root.jobs : {})) {
       if (!isRecord(job)) continue;
-      for (const key of ['env', 'outputs', 'strategy', 'container', 'services', 'with', 'secrets']) visit(job[key], `job ${id} ${key}`, id);
+      for (const key of ['env', 'outputs', 'strategy', 'container', 'services', 'with', 'secrets', 'defaults']) visit(job[key], `job ${id} ${key}`, id);
       (isList(job.steps) ? job.steps : []).forEach((step, index) => {
         if (!isRecord(step)) return;
         const named = `job ${id} step ${typeof step.name === 'string' ? JSON.stringify(step.name) : String(index)}`;
-        for (const key of ['env', 'with', 'run']) visit(step[key], `${named} ${key}`, id);
+        for (const key of ['env', 'with', 'run', 'working-directory']) visit(step[key], `${named} ${key}`, id);
         for (const line of (typeof step.run === 'string' ? step.run : '').split('\n').filter((text) => text.includes('GITHUB_ENV'))) {
           if (!GITHUB_ENV_NAMES.has(GITHUB_ENV_WRITE.exec(line)?.[1] ?? '')) problems.push(`${file} ${named} run: a $GITHUB_ENV write outside its closed list: ${line.trim()}`);
         }
@@ -3175,6 +3177,8 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       [`jobs: { images: { uses: ./.github/workflows/fixture.yml, secrets: { value: ${whole} } } }`, 'job images secrets.value'],
       [`jobs: { images: { runs-on: ubuntu-26.04, steps: [{ name: The step, uses: actions/fixture@v1, with: { value: ${whole} } }] } }`, 'job images step "The step" with.value'],
       [`jobs: { images: { runs-on: ubuntu-26.04, steps: [{ name: The step, run: ${whole} }] } }`, 'job images step "The step" run'],
+      [`jobs: { images: { runs-on: ubuntu-26.04, defaults: { run: { shell: ${whole} } }, steps: [] } }`, 'job images defaults.run.shell'],
+      [`jobs: { images: { runs-on: ubuntu-26.04, steps: [{ name: The step, run: echo, working-directory: ${whole} }] } }`, 'job images step "The step" working-directory'],
     ];
     for (const [jobs, where] of places) {
       expect(unboundedValueProblems('fixture.yml', parse(`name: fixture\non: push\n${jobs}\n`)).problems, where).toEqual([`fixture.yml ${where}: steps.web.outputs.metadata whole, in \${{ steps.web.outputs.metadata }}`]);
