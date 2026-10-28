@@ -249,6 +249,13 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/routes/console-routes.db.test.ts',
     'apps/web/e2e/triage.spec.ts',
   ]),
+  // Lane B (co-001/suite-cap-1-bounded-reads, SUITE-CAP-1a): triage and the audit report read a month in batches and give the whole read's answers; docs/adr/0083.
+  'CAS-41': none(8, 'Generated at size by the test: no file.', [
+    'apps/worker/src/triage/batched.db.test.ts',
+    'apps/worker/src/report/streamed.db.test.ts',
+    'apps/worker/src/report/csv-arena.test.ts',
+    'apps/worker/src/reconcile/patient-share.test.ts',
+  ]),
   'LED-01': none(9, 'A packet marked submitted: an action that must create no entry; no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
   'LED-02': { completesIn: 9, build: workflow.led02, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts'] },
   'LED-03': { completesIn: 9, build: workflow.led03, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts'] },
