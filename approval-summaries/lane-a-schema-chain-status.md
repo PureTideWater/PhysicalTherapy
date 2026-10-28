@@ -95,6 +95,12 @@ GitHub login: PureTideWater.
     tools/test/db-shards.test.ts's count, reconcile.large added beside triage.large), the harness's real-size runs
     (they need an 8-CPU runner: this container's 4 CPUs stop as RUNNER_TOO_SMALL), ADR 0083's 1b section, the shared
     documents merged with 1a's CAS-41 rows, then 1b's full local suite and a fresh domain model.
+- **Running: wf_4860596d-bb1 (interest-once-build; script `workflow-scripts/lane-a-interest-once-build-wf_4860596d-bb1.js`),
+  from 04:02 UTC:** the interest fix on `co-001/ledger-interest-once` (worktree /home/user/interest), stacked on
+  SUITE-CAP-1b's 358dc53f; migration 20261110090000 without claim_by_superseded (1b has it). Re-read; ledger core
+  (Stryker 100% on interest.ts) and schema in parallel; reconcile; screens and records (ADR 0084, PRD 13's granted
+  sentence, reconciliation-001's grant word for word); integrator with the full local suite; one push; no PR (it
+  opens after SS-01 and SUITE-CAP-1b merge). If stopped: setup, leftover marker in /home/user/interest, resumeFromRunId.
 - **Superseded:** when Stryker and its gate pass, push d763ba78; then merge #42's head 6f23c42b into SS-01 (merge commit;
   domain model and function files regenerated, never hand-merged), re-check, push; then SUITE-CAP-1b's build on it.
 - **Then:** read the build's result; the PR waits for #42 to merge (then merge #42's head and the latest
@@ -105,7 +111,7 @@ GitHub login: PureTideWater.
 | --- | --- | --- | --- |
 | 1 | SS-01 (`designs/ss-01-suspension.md`; ADR 0080; BIL-07 to BIL-10; synth module 15) | `co-001/ss-01-suspension-refusal` (on #42's branch) | Built; full local suite passed; #42's 6f23c42b merged (f5bd6201); PR waits on #42's merge |
 | 2 | SUITE-CAP-1b (`designs/suite-cap-1-triage-locks.md` part 1b; ADR 0083; CAS-40, CAS-42) | `co-001/suite-cap-1-triage-locks` (on SS-01's); the ledger part (section 4.5) goes in the PR: Q1 granted | Built but the 1a-dependent parts (358dc53f); waits on 1a and SS-01 |
-| 3 | The interest fix (`designs/ledger-interest-once.md`; ADR 0084; LED-23 to LED-25; synth module 6) | `co-001/ledger-interest-once` (on SUITE-CAP-1b's) | Not started; exception granted, PR opens after SS-01 and SUITE-CAP-1b merge |
+| 3 | The interest fix (`designs/ledger-interest-once.md`; ADR 0084; LED-23 to LED-25; synth module 6) | `co-001/ledger-interest-once` (on SUITE-CAP-1b's) | Building (wf_4860596d-bb1); exception granted; PR opens after SS-01 and SUITE-CAP-1b merge |
 
 ## Decisions taken (recommended option; security: the safer), with reasons
 - None yet.
@@ -130,3 +136,4 @@ GitHub login: PureTideWater.
 - 2026-10-28 00:27 UTC: SS-01 build workflow done; Stryker's remaining shards running in the session.
 - 2026-10-28 01:07 UTC: SS-01 suite complete, d763ba78 pushed; wf_8bd6852a-2dd started (merge #42; SUITE-CAP-1b build).
 - 2026-10-28 03:58 UTC: #42 merged into SS-01 (f5bd6201); SUITE-CAP-1b built but its 1a-dependent parts (358dc53f).
+- 2026-10-28 04:02 UTC: interest fix build started (wf_4860596d-bb1).
