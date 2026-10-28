@@ -128,7 +128,10 @@ const IMAGE_PATHS = [':(glob)apps/*/Dockerfile', FILES.compose, `:(glob)${WORKFL
 /** The oldest commit of the build branch's first-parent history that named a digest, and its committer time (CI-S3). */
 export interface NamedOnBuildBranch {
   readonly commit: string;
-  /** Its committer time, ISO 8601 as git prints it (%cI). */
+  /**
+   * Its committer time, ISO 8601 in UTC from git's epoch seconds (%ct): %cI's spelling of UTC differs between git
+   * versions (2.43 prints +00:00, 2.55 prints Z), so the time is never passed through as git prints it.
+   */
   readonly at: string;
 }
 
@@ -147,19 +150,19 @@ export function buildBranchHistory(root: string, base: string, branch: string = 
       return null;
     }
     // Each first-parent commit whose change against its first parent adds or removes a line naming the digest, newest first.
-    const listed = git(root, ['log', '--first-parent', '--diff-merges=first-parent', '--format=%H %cI', `-G${hex}`, branch, '--', ...IMAGE_PATHS]);
+    const listed = git(root, ['log', '--first-parent', '--diff-merges=first-parent', '--format=%H %ct', `-G${hex}`, branch, '--', ...IMAGE_PATHS]);
     if (listed.status !== 0) {
       return null;
     }
     const commits = listed.stdout
       .split('\n')
       .map((line) => line.trim().split(' '))
-      .filter((fields): fields is [string, string] => fields.length === 2 && /^[0-9a-f]{40,64}$/.test(fields[0] ?? ''))
+      .filter((fields): fields is [string, string] => fields.length === 2 && /^[0-9a-f]{40,64}$/.test(fields[0] ?? '') && /^\d{1,12}$/.test(fields[1] ?? ''))
       .reverse();
-    for (const [commit, at] of commits) {
+    for (const [commit, seconds] of commits) {
       // Behind the base, and naming it there (the oldest such commit added it; a later one may have removed it).
       if (git(root, ['merge-base', '--is-ancestor', commit, base]).status === 0 && git(root, ['grep', '-q', '-F', digest, commit, '--', ...IMAGE_PATHS]).status === 0) {
-        return { commit, at };
+        return { commit, at: new Date(Number(seconds) * 1000).toISOString() };
       }
     }
     return null;

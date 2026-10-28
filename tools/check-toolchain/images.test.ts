@@ -340,9 +340,9 @@ describe('the image rule', () => {
     const history = buildBranchHistory(dir, base, 'build');
     // The oldest first-parent commit that named each: the side branch's digest by the merge commit, never by the side commit.
     expect([history(digest('revert old')), history(digest('revert young')), history(digest('revert side')), history(digest('revert never'))]).toEqual([
-      { commit: named, at: '2026-10-01T00:00:00+00:00' },
-      { commit: recent, at: '2026-10-24T00:00:00+00:00' },
-      { commit: merge, at: '2026-10-25T00:00:00+00:00' },
+      { commit: named, at: '2026-10-01T00:00:00.000Z' },
+      { commit: recent, at: '2026-10-24T00:00:00.000Z' },
+      { commit: merge, at: '2026-10-25T00:00:00.000Z' },
       null,
     ]);
 
@@ -352,7 +352,7 @@ describe('the image rule', () => {
     const passed = await run(tree({ web: image('old') }), tree({ web: image('current') }), { registry: reverted, history });
     expect(problems(passed)).toEqual([]);
     expect(notes(passed)).toEqual([
-      `images: ${image('old')} (apps/web/Dockerfile:1) was named by ${named} on the build branch's first-parent history, committed 2026-10-01T00:00:00+00:00, at least three days ago; a digest is pushed before any commit can name it, so it is old enough, and Docker Hub is not read`,
+      `images: ${image('old')} (apps/web/Dockerfile:1) was named by ${named} on the build branch's first-parent history, committed 2026-10-01T00:00:00.000Z, at least three days ago; a digest is pushed before any commit can name it, so it is old enough, and Docker Hub is not read`,
     ]);
     expect(reverted.reads).toEqual([]);
     for (const seed of ['young', 'side']) {
