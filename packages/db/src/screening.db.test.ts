@@ -701,9 +701,8 @@ describe('the screening rules', () => {
     await pauseScreeningMail();
     await admin.query("INSERT INTO screening_mail_refusal (recipient_sha256, reason, expires_at) VALUES (mail_recipient_sha256('closed.first@synthetic.test'), 'bounced', now() + interval '1 day')");
     await expect(submit({ email: 'closed.first@synthetic.test' })).rejects.toMatchObject({ code: '23514', constraint: 'screening_closed' });
-    // The web's check before the address says so too, so nothing of the list is read while closed (S4).
-    const precheck = async () =>
-      (await as<{ refusal: string | null }>(APP_ROLE, 'SELECT screening_submit_mail_refusal($1, $2, NULL) AS refusal', ['closed.first@synthetic.test', accountSubject()]))[0]?.refusal;
+    // The web's check before the address says so too (S4).
+    const precheck = async () => (await as<{ refusal: string | null }>(APP_ROLE, 'SELECT screening_submit_mail_refusal($1, NULL) AS refusal', [accountSubject()]))[0]?.refusal;
     expect(await precheck()).toBe('screening_closed');
     await resetScreeningMail();
     await publishSyntheticRelease(900001);
@@ -1546,33 +1545,44 @@ describe('PR 6b-4: the screening’s mail (migration 20261107090000; audit #76, 
     expect(`${failure?.message ?? ''} ${failure?.detail ?? ''}`).not.toContain('@');
   });
 
-  it('answers the web, before it checks an address, with the refusal submit_screening() would give for the mail, in its order, writing nothing (S4)', async () => {
+  it('answers the web, before it checks an address, with the refusal submit_screening() would give for its submitter, in its order, writing nothing, and never reads the refusal list (S4; the review of 2026-10-27)', async () => {
     const refused = `precheck.${letters()}@synthetic.test`;
     const budgeted = sha256(`precheck account ${randomUUID()}`);
     const client = sha256(`precheck client ${randomUUID()}`);
     await admin.query("INSERT INTO screening_mail_refusal (recipient_sha256, reason, expires_at) VALUES (mail_recipient_sha256($1), 'bounced', now() + interval '1 day')", [refused]);
     await markSubject(budgeted, 'account');
     await markSubject(client, 'client');
-    const precheck = async (email: string, account: string, clientSubject: string | null) =>
-      (await as<{ refusal: string | null }>(APP_ROLE, 'SELECT screening_submit_mail_refusal($1, $2, $3) AS refusal', [email, account, clientSubject]))[0]?.refusal;
-    const other = `precheck.other.${letters()}@synthetic.test`;
-    expect(await precheck(other, accountSubject(), null)).toBeNull();
-    expect(await precheck(` ${refused.toUpperCase()} `, accountSubject(), null)).toBe('screening_contact_undeliverable');
-    // The submitter's budget before the address, for the account and the client alike (S1).
-    expect(await precheck(refused, budgeted, null)).toBe('screening_bounce_budget');
-    expect(await precheck(other, budgeted, null)).toBe('screening_bounce_budget');
-    expect(await precheck(refused, accountSubject(), client)).toBe('screening_bounce_budget');
-    // The same answers submit_screening() gives.
+    const precheck = async (account: string, clientSubject: string | null) =>
+      (await as<{ refusal: string | null }>(APP_ROLE, 'SELECT screening_submit_mail_refusal($1, $2) AS refusal', [account, clientSubject]))[0]?.refusal;
+    // It takes no address: the list answers only from the run's trigger, after the web's address checks and
+    // submit_screening()'s own (its ZIP, rows and bands), so no refusal that ends without an email tells a listed address
+    // from another (the review of 2026-10-27: read here, before the ZIP checks, it told any client whether an address
+    // was on the list, with nothing recorded and nothing sent).
+    expect(
+      (await admin.query<{ args: string }>("SELECT pg_get_function_identity_arguments(p.oid) AS args FROM pg_proc p WHERE p.proname = 'screening_submit_mail_refusal'")).rows,
+    ).toEqual([{ args: 'rate_account_subject text, client_subject text' }]);
+    expect(await precheck(accountSubject(), null)).toBeNull();
+    // The submitter's budget, for the account and the client alike (S1).
+    expect(await precheck(budgeted, null)).toBe('screening_bounce_budget');
+    expect(await precheck(accountSubject(), client)).toBe('screening_bounce_budget');
+    // The same answers submit_screening() gives, which refuses the listed address itself.
     const submitted = (options: SubmitOptions) => submit(options).then(() => null, (error: unknown) => (error as { constraint?: string }).constraint);
-    expect(await submitted({ email: refused, rateSubject: budgeted })).toBe(await precheck(refused, budgeted, null));
+    expect(await submitted({ email: refused, rateSubject: budgeted })).toBe(await precheck(budgeted, null));
     expect(await submitted({ email: refused })).toBe('screening_contact_undeliverable');
+    expect(await precheck(accountSubject(), null)).toBeNull();
+    // And a ZIP submit_screening() refuses is refused alike for a listed and an unlisted address: the ZIP comes first.
+    for (const zip of ['00099', '00012']) {
+      const listed = await submitted({ email: refused, zip });
+      expect(listed, zip).toMatch(/^screening_(zip_unknown|locality_not_loaded)$/);
+      expect(await submitted({ email: `precheck.unlisted.${letters()}@synthetic.test`, zip }), zip).toBe(listed);
+    }
     // Paused before the rest (closed before that: the screening rules' setup).
     await pauseScreeningMail();
-    expect(await precheck(refused, budgeted, client)).toBe('screening_paused');
+    expect(await precheck(budgeted, client)).toBe('screening_paused');
     await resetScreeningMail();
     // A subject not shaped as one finds no marks; nothing is written.
     const before = (await admin.query<{ n: number }>('SELECT (SELECT count(*) FROM screening_prospect) + (SELECT count(*) FROM audit_event) AS n')).rows[0]?.n;
-    expect(await precheck(other, 'not-a-subject', 'nor-this')).toBeNull();
+    expect(await precheck('not-a-subject', 'nor-this')).toBeNull();
     expect((await admin.query<{ n: number }>('SELECT (SELECT count(*) FROM screening_prospect) + (SELECT count(*) FROM audit_event) AS n')).rows[0]?.n).toBe(before);
   });
 
