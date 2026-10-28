@@ -953,3 +953,11 @@ HANDOFF.md; LANES.md rule 10).
 - Every required check green on 7102b8b (unit 6,459 passed, 1 skipped; db 9,223; e2e 56 of 56); fresh-clone verification passed. ADR 0078 and TBL-01 to TBL-04 (synth module 17) used. The person approved its screenshot Artifact after the 00:15 resume.
 - For #42's next base merge (rule 6): #79 changed `components/screening/result.test.tsx`, which #42 also changes; `apps/web/src/app/tables.test.ts` exempts #42's bare tables by exact count (console/support 1, users 2, support-access 1). If #42's head changes those counts (its verify round stacks the users page below sm), #42 edits that exemption line in its merge. #42's `console/mail` table already sits in `ScrollTable`.
 - PR 4 (screening result on a phone, `co-001/ux-screening-result-tables`) started from a6e754f in the same session.
+
+### 2026-10-28 03:20 UTC: Lane A's ruling on UX PR 4b's labels (asked by the screening-result-tables session)
+- 4b re-pins `screening-labels/2026-11-05` under the same name, with no migration. Why: a kept summary records the version it was shown under (screening_lead.labels_version), so a version is fixed once an environment keeps a summary under it. Environments deploy only from a release tag's images. The founder alone creates tags, and origin has none today, so no summary exists under it. PR 6b-2 set the precedent (dfec40dc). A new name would need a migration and the founder's domain-model approval to protect a record that does not exist.
+- Conditions:
+  - labels.test.ts states the rule: "a version may be re-pinned under its name only while no release tag contains it".
+  - Tags are checked again before 4b merges. If one exists, the labels part becomes a new version with its migration, for Lane A.
+  - 4b waits for #42 (lib/screening/*).
+- Not the founder's decision: no ruling changes, and audit #57's rule holds for every released version.
