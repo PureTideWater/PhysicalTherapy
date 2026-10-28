@@ -53,7 +53,8 @@ const HEADINGS = { 2: 'h2', 3: 'h3', 4: 'h4' } as const;
 
 /**
  * Under 24rem the terms stand over their values, so each value but the last keeps 8 px below it: a pair sits closer
- * together than to the next term.
+ * together than to the next term. From 24rem, where a long term beside its value wraps at a 20 px pitch, the pairs stand
+ * 8 px apart (the list's gap-y-2), so a wrapped term's two lines read as one term and not as a run of text.
  */
 const PAIRED = '@max-[24rem]:not-last:pb-2';
 /** A value wraps inside the card, and a status with it: a StatusChip or a Badge, each whitespace-nowrap in a table cell. */
@@ -91,7 +92,7 @@ function Row({ row, level }: { readonly row: StackedRow; readonly level: 2 | 3 |
     <li {...row.hooks} data-stacked-row={row.key} className="rounded-md border p-4">
       <Heading className="text-base font-semibold wrap-anywhere">{row.heading}</Heading>
       {rendersNothing(row.description) ? null : <p className="mt-1 text-sm text-muted-foreground">{row.description}</p>}
-      <dl className="mt-2 grid grid-cols-1 gap-y-1 text-sm @min-[24rem]:grid-cols-[fit-content(40%)_1fr] @min-[24rem]:gap-x-4">
+      <dl className="mt-2 grid grid-cols-1 gap-y-1 text-sm @min-[24rem]:grid-cols-[fit-content(40%)_1fr] @min-[24rem]:gap-x-4 @min-[24rem]:gap-y-2">
         {row.fields.map((field, index) => (
           <Field key={`${String(index)}:${field.label}`} field={field} />
         ))}

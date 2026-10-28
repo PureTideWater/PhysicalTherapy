@@ -216,16 +216,22 @@ phoneTest('the screening result reads on a phone: its three tables as stacked ro
     // The reason in words alone: its code stays in the item's hook.
     await expect(copyOf(page, 'coverage', 'rows')).not.toContainText('ENGINE_ERROR');
 
-    // Every column but the naming ones, under the table's own header and in its order (the hidden table's headers).
+    // Every column but the naming ones, under the table's own header and in its order (the hidden table's headers); a
+    // coverage row's Reason only when it has one, since the heading's outcome says what happened (UXR-03).
     for (const card of CARDS) {
       const headers = (await copyOf(page, card.section, 'table').locator('thead th').allTextContents()).map((header) => header.trim());
       const fields = headers.filter((header) => !(card.naming as readonly string[]).includes(header));
       expect(fields.length, `${card.title}: the columns that are fields`).toBe(headers.length - card.naming.length);
       const items = await copyOf(page, card.section, 'rows').evaluate((list) =>
-        [...list.children].map((item) => ({ key: item.getAttribute('data-stacked-row') ?? '', terms: [...item.querySelectorAll('dt')].map((term) => (term.textContent ?? '').trim()) })),
+        [...list.children].map((item) => ({
+          key: item.getAttribute('data-stacked-row') ?? '',
+          reason: item.hasAttribute('data-stacked-reason'),
+          terms: [...item.querySelectorAll('dt')].map((term) => (term.textContent ?? '').trim()),
+        })),
       );
       for (const item of items) {
-        expect(item.terms, `${card.title}, item ${item.key}: its terms`).toEqual(fields);
+        const expected = card === COVERAGE && !item.reason ? fields.filter((field) => field !== 'Reason') : fields;
+        expect(item.terms, `${card.title}, item ${item.key}: its terms`).toEqual(expected);
       }
     }
     expect(await page.locator('body').innerText()).not.toMatch(FORBIDDEN);

@@ -119,7 +119,9 @@ footer row, a sum of the rows a page does not list, is the list's last item. An 
 under its heading that says what its figures are where the table says it in the naming cell, so a heading stays the
 naming cell alone and a list read by its headings stays short. From 24rem the terms stand beside their values in a
 column of at most 40% of the list (`fit-content(40%)`), so a long term wraps between words rather than leave its value
-a sliver. In a table cell a status chip wraps above a 10rem floor, Decision 1's "the cell gives way", so a table whose
+a sliver, and the pairs stand 8 px apart there as below it, so a term wrapped onto two lines reads as one. An item
+leaves out a field that most of its rows leave empty when its heading already says why (a coverage row's Reason, which
+only a row PaidWhole could not price has); the table keeps the column. In a table cell a status chip wraps above a 10rem floor, Decision 1's "the cell gives way", so a table whose
 statuses are sentences fits its card when its figures do: the screening's anomalies fit at 1280 px and at 994 px, where
 the card's content is exactly 54rem. Where another pull request's test pins a cell's tone for a time, the rows copy may
 take the right tone first: the screening's anomaly is unpriced (ADR 0056's investigatory line; UX-040) in the rows copy

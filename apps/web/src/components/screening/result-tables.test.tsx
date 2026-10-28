@@ -16,6 +16,7 @@ import {
   ScreeningAnomalies,
   ScreeningTopRows,
   TOP_ROW_COLUMNS,
+  anomaliesDescription,
   anomalyItems,
   topRowItems,
 } from './anomalies';
@@ -170,6 +171,35 @@ const LATER_GROUPS = GROUPS.map((group, at) => ({ ...group, groupNo: 51 + at }))
 
 /** A full page of 50 groups, each its own SYNTHETIC code, with the others summed: the shape the large test counts. */
 const FULL_PAGE = Array.from({ length: 50 }, (_, at): ScreeningGroup => ({ ...(GROUPS[at % GROUPS.length] as ScreeningGroup), groupNo: 51 + at, procedureCode: String(97_100 + at) }));
+
+/** Page 1 of a result of 51 groups, the one shape with a single other group: groups 1 to 50 listed, the 51st summed. */
+const FIRST_PAGE = FULL_PAGE.map((group, at): ScreeningGroup => ({ ...group, groupNo: 1 + at }));
+
+/** The database's counts and sums for FIRST_PAGE, its one other group an anomaly (GROUPS[1]'s figures) or not (GROUPS[3]'s). */
+function oneOther(anomalyGroups: 0 | 1): ScreeningGroupPage {
+  const other = GROUPS[anomalyGroups === 1 ? 1 : 3] as ScreeningGroup;
+  return {
+    groups: 51,
+    anomalyGroups: FIRST_PAGE.filter((group) => group.anomaly).length + anomalyGroups,
+    withinReductionGroups: FIRST_PAGE.filter((group) => group.standing === 'within_reduction_range').length,
+    perPage: 50,
+    pages: 2,
+    page: 1,
+    firstGroup: 1,
+    lastGroup: 50,
+    others: {
+      groups: 1,
+      anomalyGroups,
+      rows: other.rows,
+      claimLines: other.claimLines,
+      expectedCents: other.expectedCents,
+      lowestCents: other.reducedCents ?? other.expectedCents,
+      observedCents: other.observedCents,
+      differenceCents: other.differenceCents,
+      lowestDifferenceCents: other.reducedDifferenceCents ?? other.differenceCents,
+    },
+  };
+}
 
 const ROWS: ScreeningRow[] = [
   {
@@ -343,6 +373,28 @@ function cellsOf(table: string, hook: string): string[] {
   return [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((match) => match[1] ?? '');
 }
 
+/** A table's body and footer rows, in order: each row's attributes and its cells. */
+function tableRows(table: string): { readonly attributes: string; readonly cells: string }[] {
+  return [...table.matchAll(/<tr( [^>]*)>([\s\S]*?)<\/tr>/g)].map(([, attributes = '', cells = '']) => ({ attributes, cells })).filter((row) => row.cells.startsWith('<td'));
+}
+
+/** A row's cells by the header of the column each stands in; a cell that spans naming columns under the first of them. */
+function cellsByHeader(table: string, cells: string): ReadonlyMap<string, string> {
+  const heads = headers(table);
+  const byHeader = new Map<string, string>();
+  let column = 0;
+  for (const [, attributes = '', cell = ''] of cells.matchAll(/<td([^>]*)>([\s\S]*?)<\/td>/g)) {
+    byHeader.set(heads[column] ?? `column ${String(column)}`, cell);
+    column += Number(/colspan="(\d+)"/i.exec(attributes)?.[1] ?? '1');
+  }
+  return byHeader;
+}
+
+/** A hook's value among a tag's attributes, or null. */
+function hookOf(attributes: string, hook: string): string | null {
+  return new RegExp(`\\s${hook}="([^"]*)"`).exec(` ${attributes}`)?.[1] ?? null;
+}
+
 /** A chip's words and its standing hook: the table's data-standing, or the stacked copy's data-stacked-standing. */
 function chip(markup: string, hook: 'data-standing' | 'data-stacked-standing'): { readonly tone: string; readonly standing: string; readonly words: string } | null {
   const match = new RegExp(`data-tone="([^"]*)"[^>]*${hook}="([^"]*)">([^<]*)<`).exec(markup);
@@ -372,7 +424,10 @@ describe('the screening result’s tables and their stacked rows (docs/adr/0078)
       const listed = items(rows);
       expect(listed).toHaveLength(count);
       for (const item of listed) {
-        expect(fields(item.body).map((field) => field.term), item.key).toEqual(fieldLabels(columns));
+        // A coverage row with no reason has no Reason field: its heading's outcome says what happened (UXR-03).
+        const reasonless = columns === COVERAGE_COLUMNS && !item.hooks.includes('data-stacked-reason=');
+        const expected = fieldLabels(columns).filter((label) => !(reasonless && label === 'Reason'));
+        expect(fields(item.body).map((field) => field.term), item.key).toEqual(expected);
       }
     }
     // The table's own words, which the stacked terms repeat: today's headers, but Claim lines for the top rows' count (UX-043).
@@ -396,6 +451,42 @@ describe('the screening result’s tables and their stacked rows (docs/adr/0078)
       }
     }
     expect(anomalyItems(LATER_GROUPS, LATER_PAGE).at(-1)?.key).toBe('others');
+  });
+
+  it('gives each stacked value as its table row’s cell under the same header has it, item by item in every card (TBL-05; P4-RC-06)', () => {
+    const cards = [
+      { name: 'anomalies', html: LATER, pairs: [['data-stacked-group', 'data-group']] },
+      { name: 'one other group', html: anomalies(FIRST_PAGE, oneOther(1)), pairs: [['data-stacked-group', 'data-group']] },
+      { name: 'top rows', html: TOP, pairs: [['data-stacked-row-no', 'data-row-no']] },
+      {
+        name: 'coverage',
+        html: COVERED,
+        pairs: [
+          ['data-stacked-coverage', 'data-coverage'],
+          ['data-stacked-reason', 'data-reason'],
+        ],
+      },
+    ] as const;
+    for (const { name, html, pairs } of cards) {
+      const { table, rows } = copies(html);
+      const listed = items(rows);
+      const tabled = tableRows(table);
+      // Both copies come from one row array: the same rows, in the same order, each item's hooks naming its table row's.
+      expect(listed.length, name).toBe(tabled.length);
+      for (const [index, item] of listed.entries()) {
+        const row = tabled[index] ?? { attributes: '', cells: '' };
+        for (const [stacked, tabledHook] of pairs) {
+          expect(hookOf(item.hooks, stacked), `${name} ${item.key}: ${stacked}`).toBe(hookOf(row.attributes, tabledHook));
+        }
+        const cells = cellsByHeader(table, row.cells);
+        const listedFields = fields(item.body);
+        expect(listedFields.length, `${name} ${item.key}: its fields`).toBeGreaterThan(0);
+        for (const field of listedFields) {
+          expect(cells.has(field.term), `${name} ${item.key}: a column headed ${field.term}`).toBe(true);
+          expect(text(field.value), `${name} ${item.key}: ${field.term}`).toBe(text(cells.get(field.term) ?? ''));
+        }
+      }
+    }
   });
 
   it('repeats no id or hook between the two copies (TBL-05)', () => {
@@ -524,8 +615,8 @@ describe('the screening result’s tables and their stacked rows (docs/adr/0078)
     expect(values.slice(0, 7)).toEqual(cells.slice(1, 8));
     expect(values[7]).toBe(cells[8]);
     expect(values[7]).toBe('12,300 groups among them are anomalies');
-    // One group among the others is named as one, in both copies.
-    const one = (anomalyGroups: number) => copies(anomalies(LATER_GROUPS, { ...LATER_PAGE, groups: 56, anomalyGroups: 2 + anomalyGroups, pages: 2, others: { ...LATER_PAGE.others, groups: 1, anomalyGroups } }));
+    // One group among the others is named as one, in both copies, on the one page that has it: page 1 of 51 groups (P4-RC-06).
+    const one = (anomalyGroups: 0 | 1) => copies(anomalies(FIRST_PAGE, oneOther(anomalyGroups)));
     for (const [anomalyGroups, words] of [
       [1, 'It is an anomaly'],
       [0, 'It is not an anomaly'],
@@ -536,7 +627,25 @@ describe('the screening result’s tables and their stacked rows (docs/adr/0078)
       expect(text(cellsOf(oneTable, 'data-group="others"')[0] ?? '')).toBe(`The one other group, its rows summed ${OTHERS_NOTE}`);
       expect(text(fields(item).at(-1)?.value ?? '')).toBe(words);
       expect(text(cellsOf(oneTable, 'data-group="others"').at(-1) ?? '')).toBe(words);
+      expect(items(oneRows).map((each) => each.key)).toHaveLength(51);
     }
+  });
+
+  it('says of one other group that the last row is that group, summed, and that the next page lists it; more than one keeps #42’s words (TBL-08; P4-RC-01)', () => {
+    const counts = '21 groups of 51 are anomalies.';
+    const within = '10 more groups are within the range of the reduction across codes: between their two figures, which is not an anomaly.';
+    expect(anomaliesDescription(oneOther(1))).toBe(
+      `${counts} ${ANOMALY_RULE} ${within} Largest difference from the lowest figure first. This page lists groups 1 to 50; the table’s last row is the one other group, its rows summed, and the next page lists it.`,
+    );
+    expect(anomaliesDescription(oneOther(0))).toMatch(/^20 groups of 51 are anomalies\. [\s\S]* This page lists groups 1 to 50; the table’s last row is the one other group, its rows summed, and the next page lists it\.$/);
+    // On the card, above the list whose last item is headed by the same name.
+    const card = anomalies(FIRST_PAGE, oneOther(1));
+    expect(text(/<p data-slot="card-description"[^>]*>([\s\S]*?)<\/p>/.exec(card)?.[1] ?? '')).toContain('the table’s last row is the one other group, its rows summed, and the next page lists it.');
+    expect(heading(items(copies(card).rows).at(-1)?.body ?? '')).toBe('The one other group, its rows summed');
+    expect(text(card)).not.toMatch(/the other 1\b/);
+    // Two or more other groups: the sentence #42's result.test.tsx pins.
+    expect(anomaliesDescription(LATER_PAGE)).toMatch(/This page lists groups 51 to 100; the table’s last row sums the other 20,457, and the pages below list them\.$/);
+    expect(anomaliesDescription({ ...oneOther(1), groups: 52, others: { ...oneOther(1).others, groups: 2 } })).toMatch(/; the table’s last row sums the other 2, and the pages below list them\.$/);
   });
 
   it('lets a status wrap in its cell above a 10rem floor, and leaves the coverage’s outcome chips as they were (TBL-06; P4-DR-07)', () => {
@@ -606,7 +715,8 @@ describe('the screening result’s words (TBL-08)', () => {
     );
     expect(text(page)).not.toMatch(/\bengine\b/i);
     const couldNot = /data-section="could-not-price"[\s\S]*?<p data-slot="card-description"[^>]*>([^<]*)<\/p>/.exec(page)?.[1];
-    expect(couldNot).toBe('Medicare rows PaidWhole could not price, or whose rates change within the quarter. Coverage, below, gives each reason.');
+    // Coverage gives every row's outcome, and a reason only for a row PaidWhole could not price (P4-RC-04, UXR-03).
+    expect(couldNot).toBe('Medicare rows PaidWhole could not price, or whose rates change within the quarter. Coverage, below, gives each outcome, and the reason for a row PaidWhole could not price.');
   });
 
   it('groups the digits of every count, with its noun (the app’s one counted(), lib/copy/words.ts)', () => {
@@ -617,14 +727,21 @@ describe('the screening result’s words (TBL-08)', () => {
     expect(summary).toContain('1,234 rows of a code in the reduction across codes fully reduced; the others at their one figure.');
   });
 
-  it('says an empty reason and empty modifiers as None to a screen reader, in both copies', () => {
+  it('says empty modifiers as None to a screen reader in both copies, and an empty reason as None in the table, where its item has no Reason (UXR-03)', () => {
     const none = '<span class="text-muted-foreground"><span aria-hidden="true">—</span><span class="sr-only">None</span></span>';
     const { table: topTable, rows: topRows } = copies(TOP);
     expect(cellsOf(topTable, 'data-row-no="1204"')[2]).toBe(none);
     expect(fields(items(topRows)[2]?.body ?? '').find((field) => field.term === 'Modifiers')?.value).toBe(none);
     const { table: coveredTable, rows: coveredRows } = copies(COVERED);
     expect(cellsOf(coveredTable, 'data-coverage="medicaid:not_screened"')[2]).toBe(none);
-    expect(fields(items(coveredRows).at(-1)?.body ?? '').find((field) => field.term === 'Reason')?.value).toBe(none);
+    expect(cellsOf(coveredTable, 'data-coverage="medicare_ffs:rates_change_in_band"')[2]).toBe(none);
+    // Each item whose row has no reason: its outcome in the heading, then Rows; a reason only where there is one.
+    for (const item of items(coveredRows)) {
+      const terms = fields(item.body).map((field) => field.term);
+      expect(terms.includes('Reason'), item.key).toBe(item.hooks.includes('data-stacked-reason='));
+      expect(terms[0], item.key).toBe(item.hooks.includes('data-stacked-reason=') ? 'Reason' : 'Rows');
+    }
+    expect(text(coveredRows)).not.toMatch(/Reason —|Reason None/);
   });
 
   it('never says owed, underpaid or recovered in either copy', () => {

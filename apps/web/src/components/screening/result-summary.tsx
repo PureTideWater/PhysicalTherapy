@@ -278,7 +278,7 @@ export function ScreeningSummary({ summary }: { readonly summary: ScreeningSumma
         <Card data-section="could-not-price">
           <CardHeader>
             <CardTitle>Could not be priced</CardTitle>
-            <CardDescription>Medicare rows PaidWhole could not price, or whose rates change within the quarter. Coverage, below, gives each reason.</CardDescription>
+            <CardDescription>Medicare rows PaidWhole could not price, or whose rates change within the quarter. Coverage, below, gives each outcome, and the reason for a row PaidWhole could not price.</CardDescription>
           </CardHeader>
           <CardContent>
             <GroupStats group={summary.couldNotPrice} slot="could-not-price" />

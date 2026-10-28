@@ -158,11 +158,12 @@ describe('one stacked-row layout', () => {
     }
   });
 
-  it('gives each field a term and a value in one definition list, under the given labels, terms above values until the list is wide enough for two columns and beside them after, in a term column of at most 40% of the list, each pair apart from the next while they stand so', () => {
+  it('gives each field a term and a value in one definition list, under the given labels, terms above values until the list is wide enough for two columns and beside them after, in a term column of at most 40% of the list, each pair apart from the next in either layout', () => {
     const html = item(renderToStaticMarkup(<StackedRows label="Cases" rows={[caseRow('case-1')]} />), 'case-1');
     expect(html.match(/<dl /g)).toHaveLength(1);
     // fit-content(40%): the term column takes its longest term up to 40% of the list, so a longer term wraps between words rather than leave its value a sliver.
-    expect(html).toContain('<dl class="mt-2 grid grid-cols-1 gap-y-1 text-sm @min-[24rem]:grid-cols-[fit-content(40%)_1fr] @min-[24rem]:gap-x-4">');
+    // From 24rem the pairs stand 8 px apart, so a term wrapped beside its value is not read into the next (UX review UXR-04).
+    expect(html).toContain('<dl class="mt-2 grid grid-cols-1 gap-y-1 text-sm @min-[24rem]:grid-cols-[fit-content(40%)_1fr] @min-[24rem]:gap-x-4 @min-[24rem]:gap-y-2">');
     expect(terms(html)).toEqual(Object.values(COLUMNS));
     expect(html.match(/<dd /g)).toHaveLength(fields().length);
     expect(html.match(/<dt class="text-muted-foreground">/g)).toHaveLength(fields().length);

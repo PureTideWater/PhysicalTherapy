@@ -187,7 +187,9 @@ function GroupStatus({ group, copy }: { readonly group: ScreeningGroup; readonly
 /**
  * What the anomalies card says above its table, from the database's counts over every group (never the page's): how
  * many groups are anomalies, and how many are within the range of the reduction across codes; with more than one
- * page, which groups this page shows.
+ * page, which groups this page shows and what its last row sums, one other group named as one (with 50 groups a page,
+ * that is page 1 of a result of 51, and the next page lists it). The words for more other groups are the ones #42's
+ * result.test.tsx pins, until UX PR 4b.
  */
 export function anomaliesDescription(page: Pick<ScreeningGroupPage, 'groups' | 'anomalyGroups' | 'withinReductionGroups' | 'pages' | 'firstGroup' | 'lastGroup' | 'others'>): string {
   if (page.groups === 0) {
@@ -201,10 +203,12 @@ export function anomaliesDescription(page: Pick<ScreeningGroupPage, 'groups' | '
     within === 0
       ? ''
       : ` ${counted(within, anomalies === 0 ? 'group' : 'more group')} ${within === 1 ? 'is' : 'are'} within the range of the reduction across codes: between ${within === 1 ? 'its' : 'their'} two figures, which is not an anomaly.`;
-  const shown =
-    page.pages <= 1
-      ? ''
-      : ` This page lists groups ${page.firstGroup.toLocaleString('en-US')} to ${page.lastGroup.toLocaleString('en-US')}; the table’s last row sums the other ${page.others.groups.toLocaleString('en-US')}, and the pages below list them.`;
+  const range = `${page.firstGroup.toLocaleString('en-US')} to ${page.lastGroup.toLocaleString('en-US')}`;
+  const rest =
+    page.others.groups === 1
+      ? 'the table’s last row is the one other group, its rows summed, and the next page lists it'
+      : `the table’s last row sums the other ${page.others.groups.toLocaleString('en-US')}, and the pages below list them`;
+  const shown = page.pages <= 1 ? '' : ` This page lists groups ${range}; ${rest}.`;
   return `${first} ${ANOMALY_RULE}${second} Largest difference from the lowest figure first.${shown}`;
 }
 

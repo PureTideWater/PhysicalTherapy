@@ -67,7 +67,7 @@ export const COVERAGE_COLUMNS = [
 
 type CoverageKey = (typeof COVERAGE_COLUMNS)[number]['key'];
 
-/** A coverage row's cells, the same in both copies: its reason in words alone, or None. */
+/** A coverage row's cells, the same in both copies: its reason in words alone, or None (in the table; an item drops it). */
 function coverageCells(entry: ScreeningCoverageRow): Readonly<Record<CoverageKey, ReactNode>> {
   return {
     product: productLabel(entry.payerProduct),
@@ -79,6 +79,12 @@ function coverageCells(entry: ScreeningCoverageRow): Readonly<Record<CoverageKey
   };
 }
 
+/**
+ * A stacked item's columns when its row has no reason: the heading's outcome already says what happened, so the item
+ * drops the Reason a dash would fill (UX review UXR-03); the table keeps the column, where a dash is the convention.
+ */
+const REASONLESS_COLUMNS = COVERAGE_COLUMNS.filter((column) => column.key !== 'reason');
+
 /** A row's key: a product holds several outcomes, and an outcome several reasons. */
 function coverageKey(entry: ScreeningCoverageRow): string {
   return `${entry.payerProduct}:${entry.disposition}:${entry.unpricedReason ?? ''}:${entry.unpricedDetail ?? ''}`;
@@ -86,7 +92,8 @@ function coverageKey(entry: ScreeningCoverageRow): string {
 
 /**
  * A coverage row as a stacked item: headed by its payer product and its outcome's chip, the table's naming cells, so
- * the headings tell the outcomes of a product apart and its Reason, the first field, the reasons of an outcome.
+ * the headings tell the outcomes of a product apart and its Reason, the first field, the reasons of an outcome; a row
+ * with no reason has no Reason field.
  */
 function coverageItem(entry: ScreeningCoverageRow): StackedRow {
   const coverage = `${entry.payerProduct}:${entry.disposition}`;
@@ -101,7 +108,7 @@ function coverageItem(entry: ScreeningCoverageRow): StackedRow {
         </StatusChip>
       </>
     ),
-    fields: fieldsFrom(COVERAGE_COLUMNS, coverageCells(entry)),
+    fields: fieldsFrom(entry.unpricedReason === null ? REASONLESS_COLUMNS : COVERAGE_COLUMNS, coverageCells(entry)),
   };
 }
 
