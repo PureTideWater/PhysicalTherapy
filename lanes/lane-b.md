@@ -999,3 +999,8 @@ HANDOFF.md; LANES.md rule 10).
 - At 100,000 lines: triage 248.0 s to 52.2 s; the audit report from out-of-memory to 726.3 s. On the default lock table both still fail 53200 until 1b. Records: approval-summaries/lane-b-suite-cap-1a-*.md.
 - The same session started SUITE-CAP-3 (reconcile at real size).
 - #42's final round was stopped at 05:45 to take #81 into the same push, and resumed: one push with #74, #81 and the images fix.
+
+### 2026-10-28 06:55 UTC: #42 carries the base PR's exact images fix; ci-findings-transport claimed
+- The CI session handed over its patch (49 lines, SHA-256 8cf981fb…). It uses `fromJSON(... || '{}')` because the runner evaluates a step's env before its `if:`, and fromJSON('') is an evaluation error. #42's round was stopped before its push, and the patch was applied byte for byte as be63bdc2 on top of the #81 merge (17e233f0): workflows test 114 passed, actionlint and eslint clean. The round resumed for typecheck, actions:check, toolchain:check and capacity, then the push.
+- New item `ci-findings-transport` (content-calendar.yml:78, latent) is queued for the CI session.
+- Waiting on someone: Dependabot #33 (main's old base-images group) can only be closed by hand, never merged. That is the founder's (or the triager's).
