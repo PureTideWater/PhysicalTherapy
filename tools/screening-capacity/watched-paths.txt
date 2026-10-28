@@ -419,6 +419,8 @@ packages/packets/src/payer.ts
 packages/packets/src/placeholders.ts
 packages/packets/src/readable.ts
 packages/packets/src/reference.ts
+packages/packets/src/roles-words.ts
+packages/packets/src/roles.ts
 packages/packets/src/scan.ts
 packages/packets/src/verifier/index.ts
 packages/packets/src/verifier/mismatches.ts

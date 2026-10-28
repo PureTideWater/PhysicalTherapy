@@ -1,6 +1,7 @@
-import { type NarrativeFacts, PLACEHOLDER_KINDS } from '../facts';
-import { type TextSpan, readableText } from '../readable';
-import { type Figure, type FigureKind, scanText, sentenceSpans } from '../scan';
+import { type NarrativeFacts, PLACEHOLDER_KINDS, heldRoles } from '../facts';
+import { type ReadableText, type TextSpan, readableText } from '../readable';
+import { FIGURE_ROLES, type FigureReading, type FigureRole, functionWords, quotedHolds, readFigures } from '../roles';
+import { type FigureKind, scanText, sentenceSpans } from '../scan';
 
 /**
  * The verifier's check itself (PRD 12: "any figure that is not in the input fails verification, and a
@@ -12,10 +13,12 @@ import { type Figure, type FigureKind, scanText, sentenceSpans } from '../scan';
  *
  * The narrative is read as it shows (../readable.ts: each character in its NFKC form, hidden characters
  * left out), and it fails:
- * - every figure (date, code, modifier, unit, amount, percentage, count, number or identifier) whose
- *   value is not among the inputs of its kind (a number may match a count, units or any other number
- *   of the inputs; a five-digit code may also match one; a contract window's day count only before
- *   "day" or "days", and its page only after "page");
+ * - every figure (date, code, modifier, unit, amount, percentage, count, number or identifier) the inputs
+ *   do not hold in the role its own words give it (../roles.ts; docs/adr/0086): "3650 days" is the window's
+ *   days, "page 2" a page, "3 claims" the claim count, "the payer allowed $70.00" the allowed amount, and a
+ *   value the inputs hold in another role fails ("10000 visits" when 10000 is the window's days). A figure
+ *   whose words name no role passes in any role of its kind (an amount, a percentage, a date), or, for a
+ *   number, in none: only as a quoted text holds it, with the words around it ("Section 4");
  * - every hidden character (one that prints as nothing or as something else), and every figure written
  *   in digits other than 0 to 9, which the verifier does not read;
  * - every occurrence of one of the case's own identifiers (a patient's name, a member ID, a claim
@@ -63,45 +66,100 @@ export interface NarrativeCheck {
   readonly mismatches: readonly Mismatch[];
 }
 
-function months(dates: ReadonlySet<string>): Set<string> {
-  return new Set([...dates].map((date) => date.slice(0, 7)));
+/** A figure as the check read it: its kind, the roles its words give it, and whether the inputs hold it so. */
+export interface CheckedFigure {
+  /** The figure's kind as read (a year, or a five-digit figure read as a number, is a number). */
+  readonly kind: FigureKind;
+  /** The roles its words give it (any of them), or null when they name none. */
+  readonly roles: readonly FigureRole[] | null;
+  readonly passed: boolean;
+  /** For a figure that failed, the roles the inputs hold its value in (a figure stated in the wrong role). */
+  readonly heldAs: readonly FigureRole[];
+  /** The sentence it is in, from 0. */
+  readonly sentence: number;
+  /** Its position in the narrative, [start, end). */
+  readonly start: number;
+  readonly end: number;
 }
 
-function monthDays(dates: ReadonlySet<string>): Set<string> {
-  return new Set([...dates].map((date) => date.slice(5)));
-}
-
-/** A day count's own words after it: "days", "calendar days", or "(30) days" after a number in words. */
-const DAYS_AFTER = /^\s*\)?\s*(?:\(\s*[\d,]+\s*\)\s*)?(?:calendar\s+|business\s+|working\s+)?days?(?![\p{L}\p{N}])/iu;
-/** A page's own word before it: "page 4", "p. 4". */
-const PAGE_BEFORE = /(?:^|[^\p{L}\p{N}])(?:page|p\.)\s*$/iu;
-
-/** Whether a figure's value is among the inputs of its kind (`text` is what the figure's positions are in). */
-function inInputs(figure: Figure, facts: NarrativeFacts, derived: { readonly months: ReadonlySet<string>; readonly monthDays: ReadonlySet<string> }, text: string): boolean {
-  switch (figure.kind) {
-    case 'amount':
-      return facts.amounts.has(figure.value);
-    case 'percent':
-      return facts.percents.has(figure.value);
-    case 'date':
-      return facts.dates.has(figure.value);
-    case 'month':
-      return derived.months.has(figure.value) || facts.identifiers.has(`month:${figure.value}`);
-    case 'month_day':
-      return derived.monthDays.has(figure.value) || facts.identifiers.has(`month_day:${figure.value}`);
+/**
+ * Whether the inputs hold a figure as it is read (../roles.ts): a code, modifier or identifier among the inputs of its
+ * kind; any other figure in a role its words give it, or, when they give it none, in any role of its kind (a number
+ * with no role in none); or repeated with the words around it from a quoted text (quotedHolds()).
+ */
+function inInputs(reading: FigureReading, facts: NarrativeFacts, tokens: readonly string[], words: ReadonlySet<string>): boolean {
+  const quoted = (inRole: boolean) => facts.quotes.some((quote) => quotedHolds(tokens, reading.token, quote, inRole, words));
+  switch (reading.kind) {
     case 'code':
-      return facts.codes.has(figure.value) || (/^\d{5}$/.test(figure.value) && facts.numbers.has(String(Number.parseInt(figure.value, 10))));
+      return facts.codes.has(reading.value) || quoted(false);
     case 'modifier':
-      return facts.modifiers.has(figure.value);
-    case 'number':
-      return (
-        facts.numbers.has(figure.value) ||
-        (facts.dayCounts.has(figure.value) && DAYS_AFTER.test(text.slice(figure.end, figure.end + 48))) ||
-        (facts.pages.has(figure.value) && PAGE_BEFORE.test(text.slice(Math.max(0, figure.start - 16), figure.start)))
-      );
+      return facts.modifiers.has(reading.value);
     case 'identifier':
-      return facts.identifiers.has(figure.value);
+      return facts.identifiers.has(reading.value);
+    case 'amount':
+    case 'percent':
+    case 'date':
+    case 'month':
+    case 'month_day':
+    case 'number':
+    case 'year': {
+      if (reading.prose || facts.codes.has(reading.code)) {
+        return true;
+      }
+      const held = heldRoles(facts, reading.kind, reading.value);
+      const { roles } = reading;
+      if (roles === 'any') {
+        return held.size > 0 || quoted(false);
+      }
+      if (roles === 'none') {
+        return quoted(false);
+      }
+      // Business or working days are only the days to pay of a rule that counts business days.
+      const inRole = roles.some((role) => held.has(role) && (!reading.business || (role === 'days_to_pay' && facts.businessDays)));
+      return inRole || quoted(true);
+    }
   }
+}
+
+/** Every figure of a narrative, read in its role and checked against the facts (`sentenceOf` a narrative position's sentence). */
+function checkFigures(readable: ReadableText, facts: NarrativeFacts, sentenceOf: (position: number) => number): CheckedFigure[] {
+  const read = readFigures(readable.text);
+  const words = functionWords();
+  return read.readings.map((reading) => {
+    const passed = inInputs(reading, facts, read.tokens, words);
+    const span = readable.original(reading.figure.start, reading.figure.end);
+    // A five-digit figure that may be a code or a count is reported as the code it is written as.
+    const kind: FigureKind = reading.code !== '' ? 'code' : reading.kind === 'year' ? 'number' : reading.kind;
+    const held = heldRoles(facts, reading.kind, reading.value);
+    return {
+      kind,
+      roles: Array.isArray(reading.roles) ? reading.roles : null,
+      passed,
+      heldAs: passed ? [] : FIGURE_ROLES.filter((role) => held.has(role)),
+      sentence: sentenceOf(span.start),
+      start: span.start,
+      end: span.end,
+    };
+  });
+}
+
+/**
+ * Every figure of a narrative as the check reads it, in text order: what the gateway's notice of a figure in the wrong
+ * role (model-gateway functions/narrative-roles.ts) and the editor's words for a failing figure are read from.
+ */
+export function checkedFigures(narrative: string, facts: NarrativeFacts): CheckedFigure[] {
+  const readable = readableText(narrative);
+  return checkFigures(readable, facts, sentenceFinder(originalSentences(readable)));
+}
+
+/** The narrative's sentences, in the original narrative's positions. */
+function originalSentences(readable: ReadableText): TextSpan[] {
+  return sentenceSpans(readable.text).map((span) => readable.original(span.start, span.end));
+}
+
+/** The index of the sentence a position falls in, or -1 for none. */
+function sentenceFinder(sentences: readonly TextSpan[]): (position: number) => number {
+  return (position) => sentences.findIndex((span) => position >= span.start && position < span.end);
 }
 
 /** Letters and digits: what an identifier is compared on, and what bounds it. */
@@ -154,14 +212,13 @@ export function findMismatches(narrative: string, facts: NarrativeFacts, identif
   const readable = readableText(narrative);
   const { text } = readable;
   const scan = scanText(text);
-  const sentences = sentenceSpans(text).map((span) => readable.original(span.start, span.end));
-  const sentenceOf = (position: number) => sentences.findIndex((span) => position >= span.start && position < span.end);
+  const sentences = originalSentences(readable);
+  const sentenceOf = sentenceFinder(sentences);
   const mismatches: Mismatch[] = [];
   const add = (code: MismatchCode, kind: Mismatch['kind'], span: TextSpan) => {
     mismatches.push({ code, kind, sentence: sentenceOf(span.start), start: span.start, end: span.end });
   };
   const at = (span: TextSpan) => readable.original(span.start, span.end);
-  const derived = { months: months(facts.dates), monthDays: monthDays(facts.dates) };
 
   if (sentences.length === 0) {
     mismatches.push({ code: 'empty_narrative', kind: null, sentence: -1, start: 0, end: narrative.length });
@@ -172,9 +229,9 @@ export function findMismatches(narrative: string, facts: NarrativeFacts, identif
   for (const span of readable.unreadable) {
     add('unreadable_figure', null, span);
   }
-  for (const figure of scan.figures) {
-    if (!inInputs(figure, facts, derived, text)) {
-      add('figure_not_in_input', figure.kind, at(figure));
+  for (const figure of checkFigures(readable, facts, sentenceOf)) {
+    if (!figure.passed) {
+      mismatches.push({ code: 'figure_not_in_input', kind: figure.kind, sentence: figure.sentence, start: figure.start, end: figure.end });
     }
   }
   const skip = [...scan.placeholders, ...scan.markers, ...scan.figures.filter((figure) => DATED.has(figure.kind))];

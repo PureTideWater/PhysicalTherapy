@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { JobActorIsPersonError, type PracticeScope, type ScopeClient, readDatabaseUrl, withJobScope } from '@tp/db';
 import { asOwner } from '@tp/db/testing';
 import { cents } from '@tp/money';
-import { ExplainBindingError, SYNTHETIC_CORRESPONDENCE_CONTACT, addDays, nextDisputeWindow } from '@tp/packets';
+import { ExplainBindingError, SYNTHETIC_CORRESPONDENCE_CONTACT, addDays, dollars, narrativeSha256, nextDisputeWindow } from '@tp/packets';
 import { type CaseDispute, deriveCaseState } from '@tp/triage';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -190,6 +190,40 @@ describe('CAS-08: a narrative with a figure not in the input', () => {
     const passing = await write(setup, setup.practice.manager, { basedOn: failing.versionId });
     expect(passing).toMatchObject({ versionNo: 2, verifier: { passed: true, mismatches: [] } });
     await expect(approve(setup, setup.second, passing.versionId, passing.contentSha256)).resolves.toMatchObject({ approvedAlone: false });
+  });
+});
+
+describe('CAS-43: a narrative that states an input’s figure in another role (docs/adr/0086)', () => {
+  it('fails the verifier at the figure, its approval is blocked, and the export refuses a version an older reading passed', async () => {
+    const setup = await cas08('CAS-43');
+    const draft = await write(setup, setup.practice.manager);
+    const { content } = draft;
+    const release = content.rule_releases[0]?.release_no ?? 0;
+    // The remittances' allowed amount stated as the shortfall, and the rule release stated as a count of units: every
+    // figure an input, each in a role its input does not hold it in.
+    const allowed = dollars(content.pattern.observed_cents);
+    const misstated = `The shortfall was ${allowed} [3]. There were ${String(release)} units [3].`;
+    const failing = await write(setup, setup.practice.manager, { narrative: misstated, basedOn: draft.versionId });
+    expect(failing.verifier.passed).toBe(false);
+    expect(failing.verifier.mismatches.map((item) => [item.code, item.kind, misstated.slice(item.start, item.end)])).toEqual([
+      ['figure_not_in_input', 'amount', allowed],
+      ['figure_not_in_input', 'number', String(release)],
+    ]);
+    const blocked = await refusal(approve(setup, setup.second, failing.versionId, failing.contentSha256));
+    expect(blocked.message).toBe('a packet version the verifier failed cannot be approved');
+
+    // A version written and approved under a reading that passed "There were 900001 units" (the release's number among
+    // the counts): the export reads it again, fails it, and prints nothing.
+    const passing = await write(setup, setup.practice.manager, { narrative: 'The payer paid these lines short of the contract [3].', basedOn: failing.versionId });
+    expect(passing.verifier.passed).toBe(true);
+    await approve(setup, setup.second, passing.versionId, passing.contentSha256);
+    const older = `There were ${String(release)} units [3].`;
+    await w.superuser(`UPDATE packet_version SET narrative = $2, verifier_report = jsonb_set(verifier_report, '{narrative_sha256}', to_jsonb($3::text)) WHERE id = $1`, [
+      passing.versionId,
+      setup.practice.cipher.encrypt('packet_version.narrative', older),
+      narrativeSha256(older),
+    ]);
+    expect(await w.export(setup.practice, passing.versionId)).toEqual({ outcome: 'not_exportable', reason: 'verifier_failed' });
   });
 });
 

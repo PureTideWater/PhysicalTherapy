@@ -16,7 +16,7 @@ import { type Mismatch, findMismatches } from './mismatches';
  * shown beside the (encrypted) narrative without repeating anything a person typed.
  */
 
-export { MISMATCH_CODES, type Mismatch, type MismatchCode, type NarrativeCheck, findMismatches, identifierForms } from './mismatches';
+export { type CheckedFigure, MISMATCH_CODES, type Mismatch, type MismatchCode, type NarrativeCheck, checkedFigures, findMismatches, identifierForms } from './mismatches';
 
 export interface VerifierReport {
   readonly format: typeof VERIFIER_FORMAT;

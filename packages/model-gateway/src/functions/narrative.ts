@@ -21,10 +21,10 @@ import { frameFacts } from '../untrusted';
  * Out: paragraphs with a citation marker on every sentence. The verifier is the packets verifier
  * itself (@tp/packets verifyNarrative): any number, date, code or count not among the version's inputs,
  * a sentence without a citation, a marker naming no source, a hidden character, or an identifier of
- * the case fails it, and a version whose narrative fails it cannot be approved (CAS-08). On top of it,
- * every amount and count is held to the role its own words give it (./narrative-roles.ts): a
- * narrative that states the payer's amount as the contract's, or the claim count as the line count,
- * fails, and the packet builder writes no version from it.
+ * the case fails it, and a version whose narrative fails it cannot be approved (CAS-08). It holds
+ * every figure to the role its own words give it (docs/adr/0086): a narrative that states the payer's
+ * amount as the contract's, or the claim count as the line count, fails it, and ./narrative-roles.ts
+ * names the role each such figure was read in, so the notice says it is misstated.
  */
 
 export const narrativeOutput = z.strictObject({ paragraphs: z.array(z.string().min(1).max(4000)).min(1).max(20) });
@@ -52,8 +52,9 @@ export interface NarrativeProposal {
   /** The packets verifier's report, as a version would store it. */
   readonly report: VerifierReport;
   /**
-   * Figures the packets verifier passed but whose own words give them a role whose inputs do not hold
-   * them (./narrative-roles.ts): a model's draft with any is not written as a version.
+   * Figures the packets verifier failed because their own words give them a role whose inputs do not
+   * hold them, though another role's do (./narrative-roles.ts): a model's draft with any is not written
+   * as a version.
    */
   readonly roles: readonly RoleMismatch[];
 }
