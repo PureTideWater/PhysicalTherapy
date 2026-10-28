@@ -53,7 +53,19 @@ GitHub login: PureTideWater.
   generated; one migration; nothing frozen touched. Handed-to-Lane-A items (a) to (j) are in the result's open items for
   the orchestrator (mail + Q13 PR next after SS-01; the tp_app status REVOKE after deploy; closure lifecycle and firm
   billing to milestone 12; UX PRs 78, 79, 57; model calls not refused).
-- **Next:** when Stryker and its gate pass, push d763ba78; then merge #42's head 6f23c42b into SS-01 (merge commit;
+- **01:04 UTC: SS-01's full local suite complete at d763ba78** (Stryker packets-rest, packets-explain, pricing-engine,
+  pricing-recompute, pricing-rest, each with its gate, and the six-shard gate: all exit 0); **d763ba78 pushed.**
+- **Running: wf_8bd6852a-2dd (script `workflow-scripts/lane-a-ss01-merge42-sc1b-build-wf_8bd6852a-2dd.js`), from
+  01:07 UTC:** (1) #42's head (6f23c42b or newer) merged into SS-01 with a merge commit, generated files regenerated,
+  SS-01's recreated objects re-read on #42's new body (the audit_event_record policy first), typecheck, lint, unit,
+  test:db 4 shards, domain model, content, synth; push. (2) SUITE-CAP-1b on `co-001/suite-cap-1-triage-locks`
+  (worktree /home/user/sc1b) cut from that merge: database (migration 20261109090000 with the re-read's deltas and 4.5
+  under the granted Q1; CAS-40 first), then the heap line and alarm, CAS-42.3 and the harness code, documents
+  (reconciliation-001's Q1 exception word for word), then the integrator (database suite; push; no PR).
+  **Deferred until part 1a merges** (1a still building in session_019i9ifDUYaz9Hta77Vukkzo): the measurement gate
+  (slice 1), CAS-42.1 and .2, the harness's real-size runs, ADR 0083's 1b section (1a creates the file), then 1b's
+  full local suite.
+- **Superseded:** when Stryker and its gate pass, push d763ba78; then merge #42's head 6f23c42b into SS-01 (merge commit;
   domain model and function files regenerated, never hand-merged), re-check, push; then SUITE-CAP-1b's build on it.
 - **Then:** read the build's result; the PR waits for #42 to merge (then merge #42's head and the latest
   claude/build-platform in, regenerate, open the draft PR, two reviews: security and tenancy, UX and brand).
@@ -86,3 +98,4 @@ GitHub login: PureTideWater.
 - 2026-10-27 22:27 UTC: container restart; setup re-run; wf_8ee54e2b-824 resumed in its integrator.
 - 2026-10-28 00:20 UTC: resumed after the usage limit and a second restart; integrator finishing Stryker and pushing.
 - 2026-10-28 00:27 UTC: SS-01 build workflow done; Stryker's remaining shards running in the session.
+- 2026-10-28 01:07 UTC: SS-01 suite complete, d763ba78 pushed; wf_8bd6852a-2dd started (merge #42; SUITE-CAP-1b build).
