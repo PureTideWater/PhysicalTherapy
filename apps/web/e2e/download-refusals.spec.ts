@@ -386,6 +386,24 @@ test('a refused letter comes back to Coverage marked, focused and kept; a good o
       await expect(page).toHaveURL(`${E2E_ORIGIN}${uploads}`);
       expect(await stayed()).toBe(true);
       await expectAccessible(page, 'Uploads, a receipt’s report refused in place');
+      // On a phone the receipts scroll in their own region (docs/adr/0078), and Safari focuses a clicked link's nearest
+      // focusable ancestor, that region, not the link. Chromium focuses the link, so the test puts the focus where
+      // Safari puts it and clicks the link without moving it: the refusal still takes the focus, above the scroller.
+      const wide = page.viewportSize();
+      await page.setViewportSize({ width: 390, height: 844 });
+      try {
+        const scroller = page.getByRole('region', { name: 'Receipts, scrolls sideways', exact: true });
+        await scroller.focus();
+        await report.dispatchEvent('click');
+        await expect(notice).toBeFocused();
+        await expect(scroller.locator('[data-download-refusal]')).toHaveCount(0);
+        await expect(page).toHaveURL(`${E2E_ORIGIN}${uploads}`);
+        expect(await stayed()).toBe(true);
+      } finally {
+        if (wide !== null) {
+          await page.setViewportSize(wide);
+        }
+      }
       // The next file saved takes the notice away.
       await page.unroute(report429);
       await Promise.all([page.waitForEvent('download'), report.click()]);

@@ -140,8 +140,10 @@ gone, and 980 px wide on a phone (UX-010). The cause was general, not the letter
    by `refusedDownloadOf()` and said above the links (below them where they sit in the page's header: `below`) in the
    words and look of a page's notice (`RefusalAlert`, 5 below), in place of the notice the page arrived with, and
    focused as it mounts (React's `autoFocus` focuses only a form control) when the focus is still where the download
-   left it, on a download link or on the page itself (`focusIsFree`): a person who moved on while the file was
-   fetched, into the packet page's narrative say, keeps their place, and the alert is still said; the next download
+   left it, on a download link, on an element that holds one or on the page itself (`focusIsFree`; Safari focuses a
+   clicked link's nearest focusable ancestor, not the link, and for the receipts' Report and the packet's version files
+   that is the table's scroller while it overflows, as on a phone: docs/adr/0078): a person who moved on while the file
+   was fetched, into the packet page's narrative say, keeps their place, and the alert is still said; the next download
    begun takes it away; anything the notice cannot settle (a signed-out session, maintenance, a body that is not an outcome, a request that
    failed) goes to the link as a navigation, whose 303 takes sign-in's steps. The `href` stays the link's own, `?from=`
    and `?version=` with it, so a new tab, a modifier click, "Save link as" or a page without script still downloads, and
@@ -315,7 +317,8 @@ gone, and 980 px wide on a phone (UX-010). The cause was general, not the letter
   tells it, two links fetching at once among them, is held by unit tests (`nextSaid`, `NoticePlace`), and no test
   hears a screen reader say it. No end-to-end test sends a refused file back to one of the nine return pages whose
   permission is their file's, as a role that page refuses too; the source test in `download-refusal.test.ts` reads their
-  `Forbidden` branches instead.
+  `Forbidden` branches instead. Safari's focus on the scroller of a clicked link is stood in for in Chromium (the
+  receipts at 390 px: the scroller focused and the Report link clicked without moving the focus); no test runs Safari.
 
 ## Revisit when
 

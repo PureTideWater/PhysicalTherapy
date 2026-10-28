@@ -137,8 +137,10 @@ describe('the click a download link takes over', () => {
 const IDLE = '<p role="status" class="text-sm text-muted-foreground empty:sr-only"></p>';
 
 describe('where a refusal said in place may take the focus', () => {
-  const body = { closest: () => null };
-  const on = (link: boolean) => ({ closest: (selector: string) => (link && selector === '[data-download-link]' ? {} : null) });
+  const body = { closest: () => null, querySelector: () => null };
+  const on = (link: boolean) => ({ closest: (selector: string) => (link && selector === '[data-download-link]' ? {} : null), querySelector: () => null });
+  /** A focused element with a download link inside it, or with none: the table's scroller, or another table's. */
+  const around = (link: boolean) => ({ closest: () => null, querySelector: (selector: string) => (link && selector === '[data-download-link]' ? {} : null) });
 
   it('takes it from a download link or from nowhere, never from where the person moved on to', () => {
     expect(focusIsFree(null, body)).toBe(true);
@@ -146,6 +148,12 @@ describe('where a refusal said in place may take the focus', () => {
     expect(focusIsFree(on(true), body)).toBe(true);
     // The version form's narrative, typed in while the file was fetched, keeps the focus.
     expect(focusIsFree(on(false), body)).toBe(false);
+  });
+
+  it('takes it from the scroller that holds the link, where Safari leaves a click on a link in a table that overflows (docs/adr/0078)', () => {
+    expect(focusIsFree(around(true), body)).toBe(true);
+    // Another table's scroller, which the person moved to while the file was fetched, keeps the focus.
+    expect(focusIsFree(around(false), body)).toBe(false);
   });
 });
 

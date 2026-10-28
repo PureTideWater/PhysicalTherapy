@@ -123,12 +123,14 @@ const TellDownloads = createContext<((told: Told) => void) | null>(null);
 
 /**
  * Whether a refusal said in place may take the focus: only from where the download left it, on a download link (the
- * one clicked, or another the person moved to) or nowhere (the page itself, as a browser that does not focus a clicked
- * link leaves it). A person who moved on while the file was fetched, into the version form's narrative say, keeps
- * their place; the notice is still on screen and said (role="alert").
+ * one clicked, or another the person moved to), on an element that holds one, or nowhere (the page itself). A browser
+ * that does not focus a clicked link (Safari) focuses its nearest focusable ancestor instead, or nothing: for the
+ * receipts' Report and the packet's version files that ancestor is the table's scroller, a region with a tab stop
+ * while the table overflows, as it does on a phone (docs/adr/0078). A person who moved on while the file was fetched,
+ * into the version form's narrative say, keeps their place; the notice is still on screen and said (role="alert").
  */
-export function focusIsFree(active: Pick<Element, 'closest'> | null, body: unknown): boolean {
-  return active === null || active === body || active.closest('[data-download-link]') !== null;
+export function focusIsFree(active: Pick<Element, 'closest' | 'querySelector'> | null, body: unknown): boolean {
+  return active === null || active === body || active.closest('[data-download-link]') !== null || active.querySelector('[data-download-link]') !== null;
 }
 
 /**
