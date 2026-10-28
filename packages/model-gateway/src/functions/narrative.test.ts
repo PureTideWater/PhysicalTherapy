@@ -3,7 +3,7 @@ import { REGULATION, assemblyInput } from '@tp/packets/testing';
 import { describe, expect, it } from 'vitest';
 
 import { SYNTHETIC_CASE_IDENTIFIERS, syntheticNarrativeInput, syntheticNarrativeOutput } from '../testing';
-import { mentionsIdentifier, narrativeInputs, narrativeSpec } from './narrative';
+import { identifierKinds, mentionsIdentifier, narrativeInputs, narrativeSpec } from './narrative';
 
 /**
  * draftPacketNarrative (PRD 14; PRD 16, Threats: "a narrative inventing a number"): drafted from
@@ -32,7 +32,7 @@ describe('the inputs', () => {
     }
     expect(user).not.toContain(input.content.practice.name);
     expect(user).not.toContain(input.content.payer.payer_id_raw);
-    expect(mentionsIdentifier(user, SYNTHETIC_CASE_IDENTIFIERS)).toBe(false);
+    expect(mentionsIdentifier(user, identifierKinds({ identifiers: SYNTHETIC_CASE_IDENTIFIERS }))).toBe(false);
     expect(narrativeSpec.prepare(input).inputHashes).toHaveLength(1);
   });
 
@@ -46,6 +46,27 @@ describe('the inputs', () => {
   it('refuse a call whose facts would carry one of the case’s identifiers', () => {
     const quoted = { ...input, content: { ...input.content, citation: { ...input.content.citation, quote: '97110 is paid 50.00 per unit for Jane Zephyra' } as typeof input.content.citation } };
     expect(() => narrativeSpec.prepare(quoted)).toThrow(expect.objectContaining({ code: 'identifier_in_input' }));
+  });
+
+  it('refuse an identifier however the facts write it, read as the letter reader’s redaction reads it', () => {
+    const quoting = (quote: string) => ({ ...input, content: { ...input.content, citation: { ...input.content.citation, quote } as typeof input.content.citation } });
+    for (const quote of ['97110 is paid 50.00 per unit for Jané Zéphyra', 'per unit (ZEPHYRA–JANE)', 'per unit, member SYN_MEMBER_0042', 'per unit, claim SYN\u200BCLAIM\u200B0001', 'per unit, claim syn claim 0002']) {
+      expect(() => narrativeSpec.prepare(quoting(quote)), quote).toThrow(expect.objectContaining({ code: 'identifier_in_input' }));
+    }
+  });
+
+  it('read names as names and numbers as numbers: an amount or a date in the facts is never a claim’s digits', () => {
+    const facts = narrativeSpec.prepare(input).user;
+    expect(facts).toContain('$300.00');
+    expect(facts).toContain('2026-03-05');
+    // A claim number of the amount's digits, and a patient control number of the service date's.
+    expect(mentionsIdentifier(facts, { names: ['ZEPHYRA, JANE Q'], numbers: ['30000', '20260305', 'SYNMEMBER0042'] })).toBe(false);
+    expect(narrativeSpec.prepare({ ...input, identifiers: [...SYNTHETIC_CASE_IDENTIFIERS, '30000', '20260305'], names: ['ZEPHYRA, JANE Q'] }).user).toBe(facts);
+    // Written as the number itself, it is the number.
+    expect(mentionsIdentifier(`${facts} 20260305`, { names: [], numbers: ['20260305'] })).toBe(true);
+    // Without the typed list, a value with no digit is a name and the rest numbers.
+    expect(identifierKinds({ identifiers: SYNTHETIC_CASE_IDENTIFIERS })).toEqual({ names: ['ZEPHYRA, JANE Q'], numbers: ['SYNMEMBER0042', 'SYNCLAIM0001', 'SYNCLAIM0002', 'SYNCLAIM0003'] });
+    expect(identifierKinds({ identifiers: ['VANTREE', 'ABCDEF'], names: ['VANTREE'] })).toEqual({ names: ['VANTREE'], numbers: ['ABCDEF'] });
   });
 });
 

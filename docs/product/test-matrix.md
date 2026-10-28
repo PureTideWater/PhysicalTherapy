@@ -228,10 +228,15 @@ Added by Change Order 001 (CO-04, CO-09) in its pull request 6; SCR-07 by the fo
 | MOD-09 | Contract evaluation set v2 | 63 documents to 60 codes and 80 pages: multi-row tables, contract-plus-exhibit pairs, scans with OCR errors or their own OCR layer, struck-through rates, each marked faithful or not; its hash covers the pages as read, and a changed set refuses comparison |
 | MOD-10 | Injected-instruction twins and decoy amended rates | Each twin's full proposal and review equal its clean twin's and no output string, a label included, holds a word only the injection writes; both rows of every expected conflict proposed and each flagged against the other; any difference, failed twin call or miss fails the gate |
 | MOD-11 | Real provider in production with a purpose unevaluated | That feature alone is off and hand entry works; a purpose is served only for a prompt, model and variant whose own baseline entry passes, every recall and precision floor set and met, and a contract variant only after a production permitted run of its own examples, compared with what was served |
+| MOD-13 | A payer letter whose patient's names, member IDs, claim numbers and date of birth are written any way a letter writes them (placeholder words or months as names, marks, `ß`, typographic apostrophes and dashes, invisible characters, spacing, a hyphen at a line break, initials, `_`, `.`, `/`, `:`, `#` or `(` in a number next to a letter, digits alone with dashes or invisible characters, a date's digits as a number, a dotted chain of initials after the name, a labeled date of birth with any dash, a backslash, `_`, `|`, spaces alone or a typographic apostrophe), and placeholder-shaped text of its own, or crafted to make redaction slow | No letter or digit written as an identifier is sent, a digits-only number included unless its written text is a calendar date with its separators that is not the date of birth; every placeholder is exact and each place a claim's number was written is that claim's placeholder (the lowest of equal claims); the letter's own square brackets are sent as parentheses; nothing today's redaction replaced is sent, but a deadline (read as a calendar date by the test itself) or a claim's amount (after a currency sign, with cents) it took for an identifier; text without the patient's forms, common phrases, amounts and deadlines included, is sent unchanged; the self-check finds nothing; a crafted letter of 100 kB is redacted and checked within its time budget |
+| MOD-14 | A letter that writes another patient's member ID or claim number, with a letter prefix or digits alone, with a dash, spaces or an invisible character, `_`, `.`, `/`, `:`, `#` or `(` next to a letter, after `ID:`, in brackets or as a claim placeholder's digits (`[CLAIM_7654321]`) | The one-patient screen is offered it, in the redacted letter too; a placeholder's word, or a redacted letter's own placeholder, never. Digits alone with `/` or `.` between them are not offered (a date's or an amount's writing; recorded in docs/adr/0054) |
 
 MOD-07 to MOD-11 were added by combined audit item #84 (docs/adr/0070): MOD-07 to MOD-10 by Part 1, the evaluation
 gate, and MOD-11 by Part 2, serving each model feature on its own evaluation. MOD-12 is reserved for Part 3, item #120's
 check of a contract against the practice's records, which its own pull request adds.
+
+MOD-13 and MOD-14 were added with the letter reader's one-pass redaction (docs/adr/0054, amendment of 2026-10-27): the
+generated letters' oracle is the generator, which records where it wrote each identifier, not the matcher.
 
 ## Billing (BIL)
 
@@ -252,7 +257,9 @@ preferred, cards still accepted, and the customer's default payment method the o
 The CI series of combined audit items #19, #54, #109 and #112 (docs/adr/0066): what the workflows, their gates and the
 test infrastructure must do, each asserted by a test that reads or runs them. CI-11 to CI-14 are the pins, the
 Dependabot configuration, the images and the toolchain (docs/adr/0066, Part 2); CI-15 to CI-17 are the mutation
-workflow's (Part 4); CI-18 to CI-20 are reserved for the browser and runner pull request (Part 3).
+workflow's (Part 4); CI-18 to CI-20 are the browser and the runners (Part 3), which complete the series. The report's
+runner image and image store, and the launch check's refusal of another image or a non-archive binding, join CI-20 once
+#42 has merged (Part 3, "After #42").
 
 | ID | Case | Assertion |
 | --- | --- | --- |
@@ -273,6 +280,9 @@ workflow's (Part 4); CI-18 to CI-20 are reserved for the browser and runner pull
 | CI-15 | The mutation canary | In every shard, each of its five cases reports its expected status before any score |
 | CI-16 | The mutation gate | Each fully-run money package above 85%, recorded equivalents still counted as survivors in the score, no survivor not recorded as equivalent, no runtime error but a test file's load failure |
 | CI-17 | Mutation where the money code changed | A push runs every package; a pull request runs exactly the packages whose closure (imports, data files, third-party packages) it changes, each package's shards all or none |
+| CI-18 | One browser build everywhere | The web tests, the worker, the tools and the lockfile name one Playwright version (playwright-core one catalog line), and the worker image installs the lockfile's playwright-core with no version of its own; every step that installs the browser, in every workflow, is followed by the check that holds every file of the headless shell's and Chromium's builds to `browser.json`'s tree SHA-256s before any test runs or any cache is saved, and the worker image's headless shell is held to it in `images` and in the release's build before it is saved and in screening-capacity's and release-capacity's measuring jobs before it is measured; CI regenerates the committed brand baselines from nothing, byte for byte, on every pull request and every push; a browser-tests pull request is red on the browser check by design until the baseline procedure runs, and its other steps still run |
+| CI-19 | Header controls named by their visible text | Each header control's accessible name starts with its visible text and contains every other piece of it (WCAG 2.5.3) at 1280 and 390 px; axe 4.14 with the WCAG 2.0/2.1 A and AA tags finds no violation on any page a journey scans |
+| CI-20 | Runner images | Every job on ubuntu-26.04 but the release's capacity chain, on the release runner; the probe's runner comes only from its dispatch input; the browser jobs' cached system packages are used only after each matches the signed index's SHA-256; the release binds images by the config digest hashed from the saved archive under either image store, carries each image's identities from the build as job outputs no later job can rewrite, proves the measured image, the loaded image before any push and the pushed image are that one, builds every checked image with no attestation manifest, and its push and report jobs run no repository code; the image scan reads the built archive |
 
 ## Database function diffs (DBF)
 

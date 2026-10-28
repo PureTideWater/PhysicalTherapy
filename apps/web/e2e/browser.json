@@ -1,0 +1,22 @@
+{
+  "revision": "1248",
+  "browserVersion": "156.0.8078.4",
+  "builds": {
+    "chromium-headless-shell": {
+      "dir": "chrome-headless-shell-linux64",
+      "path": "chrome-headless-shell-linux64/chrome-headless-shell",
+      "treeSha256": "333985b325984894be390c5275ab467ff9ee99ef55414ba6abe2222b2454172e",
+      "sha256": "4fa61f0ba0b4f89b7bec242c32ca16d3bccf69dbfef0651924a9ba8fede5f9d6",
+      "zip": "chrome-headless-shell-linux64.zip",
+      "zipSha256": "c3e50596aef52c58f8fda3c6b3411c33d34c88b177b3ed1c2243359fd3b8ba20"
+    },
+    "chromium": {
+      "dir": "chrome-linux64",
+      "path": "chrome-linux64/chrome",
+      "treeSha256": "2f991090d91aec41a37cbe49da4d6b3a03cd575dbd9d3daa6a1f36440d129545",
+      "sha256": "377a9fc07b495c3b8d0ab8ec1fdfd153641759f9756fea34d8dfce4de82f5025",
+      "zip": "chrome-linux64.zip",
+      "zipSha256": "43fd31766c7533a02dda2ded5ad50c2f861cd5400be7509c0abad71129f79d79"
+    }
+  }
+}

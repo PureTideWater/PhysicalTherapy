@@ -3,6 +3,8 @@
 # A line is a path, or a shell pattern whose * also matches across /.
 .github/workflows/screening-capacity.yml
 apps/web/Dockerfile
+apps/web/e2e/browser-builds/*
+apps/web/e2e/browser.json
 apps/web/next.config.ts
 apps/web/package.json
 apps/web/public/*
@@ -20,6 +22,8 @@ packages/*/package.json
 packages/db/migrations/*
 pnpm-lock.yaml
 pnpm-workspace.yaml
+tools/ci/apt-archives.sh
+tools/ci/browser-build.ts
 tools/screening-capacity/*
 apps/web/src/app/api/health/route.ts
 apps/web/src/app/api/screening/opened/route.ts
