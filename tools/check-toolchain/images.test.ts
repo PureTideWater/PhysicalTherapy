@@ -120,6 +120,21 @@ const buildx = (builder: string) =>
     },
   });
 
+/** A young image a Dockerfile can hide from a reader that is not BuildKit's (SEC-S1), and Docker Hub's answer for it. */
+const HIDDEN = `synthetic/hidden:1@${digest('hidden')}`;
+const hiddenHub = () => fakeRegistry({ tags: { 'synthetic/hidden:1': tag('1', digest('hidden'), YOUNG) } });
+
+/** The lines before a hidden FROM that a reader unlike BuildKit's misreads, each with any directives the file opens with. */
+const HIDING: readonly { readonly name: string; readonly directives: readonly string[]; readonly tail: readonly string[]; readonly from: number }[] = [
+  { name: 'a here-string, which is no heredoc', directives: [], tail: ['RUN tr a b <<<abc', `FROM ${HIDDEN} AS hidden`], from: 1 },
+  { name: 'a quoted "<<EOF", which is no heredoc', directives: [], tail: ['RUN echo "<<EOF"', `FROM ${HIDDEN} AS hidden`], from: 1 },
+  { name: 'a heredoc whose terminator is the whole word, EOF-1', directives: [], tail: ['RUN <<EOF-1', 'echo synthetic', 'EOF-1', `FROM ${HIDDEN} AS hidden`], from: 3 },
+  { name: 'an escaped trailing escape, which continues nothing', directives: [], tail: ['RUN echo foo \\\\', `FROM ${HIDDEN} AS hidden`], from: 1 },
+  { name: 'a directive whose value has a space, before # escape=`', directives: ['# check=skip=all; error=false', '# escape=`'], tail: ['RUN echo \\', `FROM ${HIDDEN} AS hidden`], from: 1 },
+  { name: 'a byte-order mark before # escape=`', directives: ['\uFEFF# escape=`'], tail: ['RUN echo \\', `FROM ${HIDDEN} AS hidden`], from: 1 },
+  { name: 'a FROM keyword split by a continuation, joined with no space as BuildKit joins it', directives: [], tail: ['FR\\', `OM ${HIDDEN} AS hidden`], from: 0 },
+];
+
 interface Shape {
   /** apps/web/Dockerfile's image (NODE). */
   readonly web?: string;
@@ -463,6 +478,70 @@ describe('the image rule', () => {
     ]);
   });
 
+  it.each(HIDING)('★ finds and ages the young FROM after $name, as BuildKit reads the file (SEC-S1)', async ({ directives, tail, from }) => {
+    const web = [...directives, dockerfile(NODE), ...tail].join('\n');
+    const line = directives.length + 4 + from + 1;
+    const registry = hiddenHub();
+    expect(problems(await run(tree({ dockerfiles: { 'apps/web/Dockerfile': web, 'apps/worker/Dockerfile': dockerfile(NODE) } }), tree(), { registry }))).toEqual([
+      `images: ${HIDDEN} (apps/web/Dockerfile:${String(line)}) was pushed ${YOUNG} (Docker Hub's tag_last_pushed of the tag 1), under three days ago; it is old enough from ${YOUNG_MATURE}: ${REMEDY}`,
+    ]);
+    expect(registry.reads).toEqual(['tag synthetic/hidden:1']);
+  });
+
+  it('★ refuses a FROM or from= line BuildKit does not read as that instruction, and a Dockerfile BuildKit’s parser refuses, rather than skip what it cannot place (SEC-S1)', () => {
+    const files = {
+      // A heredoc's body is cat's input, never an instruction, so the FROM and the COPY there are not read; the rule refuses them rather than trust that.
+      'apps/body/Dockerfile': dockerfile(NODE, ['RUN cat > /tmp/Dockerfile <<EOF', `FROM ${HIDDEN}`, 'COPY --from=synthetic/tools:1 /x /y', 'EOF']),
+      // A FROM line continuing a RUN is that RUN's text to BuildKit.
+      'apps/continued/Dockerfile': dockerfile(NODE, ['RUN echo \\', `FROM ${HIDDEN}`]),
+      'apps/escape/Dockerfile': ['# escape=x', dockerfile(NODE)].join('\n'),
+      'apps/label/Dockerfile': dockerfile(NODE, ['LABEL note="from=synthetic/tools:1"']),
+      'apps/twice/Dockerfile': ['# escape=\\', '# escape=`', dockerfile(NODE)].join('\n'),
+      'apps/unterminated/Dockerfile': dockerfile(NODE, ['RUN <<EOF', 'echo synthetic']),
+    };
+    const from = (file: string, line: number) =>
+      `images: ${file}:${String(line)}: a FROM line BuildKit does not read as a FROM instruction (a heredoc's body, or the continuation of the instruction before it), so the image rule cannot place it and refuses it; make each FROM line an instruction of its own (${RUNBOOK})`;
+    const fromEquals = (file: string, line: number) =>
+      `images: ${file}:${String(line)}: a from= outside every COPY and RUN instruction as BuildKit reads the file (a heredoc's body, or another instruction), so the image rule cannot place it and refuses it; copy and mount only from an earlier stage (${RUNBOOK})`;
+    const parser = (file: string, line: number, why: string) => `images: ${file}:${String(line)}: BuildKit's parser refuses this Dockerfile (${why}), so the images it names cannot be read; correct it (${RUNBOOK})`;
+    expect(problems(checkOffline(tree({ dockerfiles: files })))).toEqual([
+      from('apps/body/Dockerfile', 6),
+      fromEquals('apps/body/Dockerfile', 7),
+      from('apps/continued/Dockerfile', 6),
+      parser('apps/escape/Dockerfile', 1, "invalid escape token 'x' does not match ` or \\"),
+      fromEquals('apps/label/Dockerfile', 5),
+      parser('apps/twice/Dockerfile', 2, 'only one escape parser directive can be used'),
+      parser('apps/unterminated/Dockerfile', 5, 'unterminated heredoc'),
+    ]);
+  });
+
+  it('★ reads a COPY --from= under ONBUILD and a quoted --mount field’s from=, as BuildKit reads them, and refuses the images they name (SEC-S1, improve as you go)', () => {
+    const web = dockerfile(NODE, ['ONBUILD COPY --from=synthetic/later:1 /x /y', 'RUN --mount=type=bind,"from=synthetic/quoted:1",target=/q true', 'ONBUILD RUN --mount=type=cache,from=build,target=/c true']);
+    const stage = '; the image rule reads only FROM and # syntax= lines, so';
+    expect(problems(checkOffline(tree({ dockerfiles: { 'apps/web/Dockerfile': web, 'apps/worker/Dockerfile': dockerfile(NODE) } })))).toEqual([
+      `images: apps/web/Dockerfile:5: ONBUILD COPY --from=synthetic/later:1 names an image, not an earlier stage${stage} copy from a stage built FROM a pinned image (${RUNBOOK})`,
+      `images: apps/web/Dockerfile:6: RUN --mount=…,from=synthetic/quoted:1 names an image, not an earlier stage${stage} mount from a stage built FROM a pinned image (${RUNBOOK})`,
+    ]);
+  });
+
+  it('★ reads the frontend wherever BuildKit finds one: a # syntax= line after a byte-order mark or a #! line, a //syntax= line, and a JSON Dockerfile’s "syntax", which it also refuses (SEC-S2)', () => {
+    const frontend = 'synthetic/frontend:latest';
+    const files = {
+      'apps/bom/Dockerfile': `\uFEFF# syntax=${frontend}\n${dockerfile(NODE)}`,
+      'apps/cstyle/Dockerfile': `//syntax=${frontend}\n${dockerfile(NODE)}`,
+      'apps/json/Dockerfile': JSON.stringify({ syntax: frontend }),
+      'apps/shebang/Dockerfile': `#!/usr/bin/env synthetic\n# syntax = ${frontend} --synthetic-option\n${dockerfile(NODE)}`,
+    };
+    const unpinned = (where: string) => `images: ${where}: ${frontend} names no digest, so what runs can change under the same name; pin it as name:tag@sha256:<64 hex>`;
+    expect(problems(checkOffline(tree({ dockerfiles: files }))).filter((message) => message.startsWith('images: '))).toEqual([
+      `images: apps/json/Dockerfile:1: a JSON Dockerfile, which BuildKit hands whole to the frontend its "syntax" names, so no instruction of it is read; write the Dockerfile's instructions (${RUNBOOK})`,
+      unpinned('apps/bom/Dockerfile:1'),
+      unpinned('apps/cstyle/Dockerfile:1'),
+      unpinned('apps/json/Dockerfile:1'),
+      unpinned('apps/shebang/Dockerfile:2'),
+    ]);
+  });
+
   it('refuses a COPY --from= or RUN --mount=…,from= naming an image, a docker-image:// build context, a tracked image file outside the three read, and a compose build: (S6)', () => {
     const web = [
       `FROM ${NODE} AS build`,
@@ -475,7 +554,7 @@ describe('the image rule', () => {
       'COPY --from=synthetic/tools:1 /bin/tool /bin/tool',
       'RUN --mount=type=bind,from=build,source=/repo,target=/repo true',
       'RUN --mount=type=cache,target=/cache --mount=type=bind,from=synthetic/tools:1,target=/tools true',
-      // A heredoc's body is a command's input, never an instruction; a continuation is one instruction.
+      // A heredoc's body is a command's input, never an instruction, and a FROM line there is refused, not read; a continuation is one instruction.
       'RUN <<EOF',
       'FROM synthetic/not-an-instruction:1',
       'EOF',
@@ -506,7 +585,9 @@ describe('the image rule', () => {
     expect(problems(findings)).toEqual([
       `images: apps/web/Dockerfile:8: COPY --from=synthetic/tools:1 names an image, not an earlier stage${stage} copy from a stage built FROM a pinned image (${RUNBOOK})`,
       `images: apps/web/Dockerfile:10: RUN --mount=…,from=synthetic/tools:1 names an image, not an earlier stage${stage} mount from a stage built FROM a pinned image (${RUNBOOK})`,
+      `images: apps/web/Dockerfile:12: a FROM line BuildKit does not read as a FROM instruction (a heredoc's body, or the continuation of the instruction before it), so the image rule cannot place it and refuses it; make each FROM line an instruction of its own (${RUNBOOK})`,
       `images: apps/web/Dockerfile:14: COPY --from=synthetic/other:2 names an image, not an earlier stage${stage} copy from a stage built FROM a pinned image (${RUNBOOK})`,
+      `images: apps/web/Dockerfile:16: ONBUILD COPY --from=synthetic/later:1 names an image, not an earlier stage${stage} copy from a stage built FROM a pinned image (${RUNBOOK})`,
       `images: apps/worker/Dockerfile:6: COPY --from=synthetic/escaped:3 names an image, not an earlier stage${stage} copy from a stage built FROM a pinned image (${RUNBOOK})`,
       'images: docker-compose.yml: include: brings in another compose file, whose images the image rule does not read; name every service in docker-compose.yml',
       'images: docker-compose.yml services.db: build: builds an image the image rule does not read; run an image by digest (image: name:tag@sha256:<64 hex>)',
