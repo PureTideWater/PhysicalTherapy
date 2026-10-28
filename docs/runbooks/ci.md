@@ -407,8 +407,10 @@ user that cannot run the binary.
   tools/test/dependabot-config.test.ts tools/test/no-duplicated-versions.test.ts tools/test/ci-gate.test.ts
   tools/test/required-checks.test.ts`; the pins and the toolchain against the build branch:
   `BASE=origin/claude/build-platform pnpm actions:check` and `BASE=origin/claude/build-platform pnpm toolchain:check`.
-  Locally the age rule reads git, `gpgv` and Docker Hub as CI does, but not GitHub's API (`verified_at`, the release,
-  the activity, an exclude's advisory), which it skips with a note: CI can only be stricter.
+  The action age rule reads git, `gpgv` and, on CI only, GitHub's API (`verified_at`, the release, the activity, an
+  exclude's advisory); locally it reads git and `gpgv` as CI does and skips the API with a note: CI can only be
+  stricter. Docker Hub is read by the builder check (`pnpm actions:check`) and by check-toolchain's image rule
+  (`pnpm toolchain:check`), never by the action age rule.
 
 ## Changing CI
 
