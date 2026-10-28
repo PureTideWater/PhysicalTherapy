@@ -171,12 +171,48 @@ function readingOf(outcome: MatchCorrection['outcome'], allowed: MatchCorrection
  * line_status stage). The case's stored state is case_rules' as ever; this is said beside it until the stored close
  * lands.
  */
-export function casePatientBalance(lines: readonly { readonly correction: CorrectionKind | null; readonly writtenOff: boolean; readonly stage: string | null }[]): boolean {
+export function casePatientBalance(lines: readonly PatientBalanceLine[]): boolean {
   const open = lines.filter((line) => !line.writtenOff);
   return (
     open.some((line) => line.correction === 'patient_balance') &&
     open.every((line) => line.correction === 'patient_balance' || line.stage === 'payer_approved' || line.stage === 'recovered')
   );
+}
+
+/** A case line as casePatientBalance reads it: its correction, whether it is written off, and its latest stage. */
+export interface PatientBalanceLine {
+  readonly correction: CorrectionKind | null;
+  readonly writtenOff: boolean;
+  readonly stage: string | null;
+}
+
+/**
+ * casePatientBalance's "some" and "every", folded over a case's lines a part at a time (the audit report reads a case's
+ * lines in batches, SUITE-CAP-1a D18; docs/adr/0083): whether some line not written off is a correction the patient's
+ * share took whole, and whether every such line is one or is payer approved or recovered. Folding every line of a case
+ * from PATIENT_BALANCE_UNSEEN, in any order and in any parts, gives patientBalanceOf() equal to casePatientBalance() of
+ * them all (patient-share.test.ts).
+ */
+export interface PatientBalanceFold {
+  readonly some: boolean;
+  readonly every: boolean;
+}
+
+/** No line seen: some is false and every is true, as over no open line. */
+export const PATIENT_BALANCE_UNSEEN: PatientBalanceFold = { some: false, every: true };
+
+export function foldPatientBalance(fold: PatientBalanceFold, line: PatientBalanceLine): PatientBalanceFold {
+  if (line.writtenOff) {
+    return fold;
+  }
+  return {
+    some: fold.some || line.correction === 'patient_balance',
+    every: fold.every && (line.correction === 'patient_balance' || line.stage === 'payer_approved' || line.stage === 'recovered'),
+  };
+}
+
+export function patientBalanceOf(fold: PatientBalanceFold): boolean {
+  return fold.some && fold.every;
 }
 
 /**

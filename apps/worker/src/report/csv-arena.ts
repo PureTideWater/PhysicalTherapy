@@ -118,7 +118,20 @@ export class CsvArena {
    * compareText once every row is in, so the order is the comparator's over the stored keys (a tie on the whole key,
    * which one line per row cannot give, keeps the order the rows came in).
    */
-  async *rows(): AsyncGenerator<Uint8Array> {
+  rows(): AsyncIterable<Uint8Array> {
+    return {
+      [Symbol.asyncIterator]: () => {
+        // The pieces are made as they are asked for; a released arena rejects the next one.
+        const pieces = this.pieces();
+        return {
+          next: () => Promise.resolve().then(() => pieces.next()),
+          return: () => Promise.resolve(pieces.return(undefined)),
+        };
+      },
+    };
+  }
+
+  private *pieces(): Generator<Uint8Array, undefined> {
     this.live();
     yield Buffer.from(CSV_COLUMNS.map(csvText).join(',') + CRLF, 'utf8');
     const rank = new Uint32Array(this.names.length);
@@ -161,6 +174,7 @@ export class CsvArena {
     if (filled > 0) {
       yield piece.subarray(0, filled);
     }
+    return undefined;
   }
 
   /** Gives the chunks and keys back; the arena takes and streams nothing after. */

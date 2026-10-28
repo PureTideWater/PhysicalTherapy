@@ -5,17 +5,16 @@ import { type KeyProvider, auditReportKey, loadPracticeCipher } from '@tp/db/run
 
 import type { JobHandler } from '../jobs/handlers';
 import { practiceLedgerSettings } from '../reconcile/ledger';
-import type { DocumentStore } from '../storage/documents';
+import type { DocumentStore, WrittenDocument } from '../storage/documents';
 import { type TriageJobContext, todayUtc, triageInScope } from '../triage/execute';
 import { gatherReport } from './content';
-import { auditCsv } from './csv';
 import { auditHtml, auditReconciliation } from './html';
 import type { PdfRenderer } from './pdf';
 
 /**
  * The audit report job (PRD 4, Audit v0; PRD 5, J12; PRD 6, Reports and exports; docs/adr/0038), in
  * the report's one practice: in one transaction it triages the report's pricing run on today's date
- * (UTC), reads the report's numbers, prints them to PDF with Chromium, writes the line CSV, stores both
+ * (UTC), reads the report's numbers, writes the line CSV, prints the numbers to PDF with Chromium, stores both
  * sealed with the practice's key (written once, under keys of their own for this attempt) and records
  * the report ready with its numbers, the files' keys and their SHA-256. A failed attempt leaves the
  * report queued and the next starts over; the third failure marks it failed. A report already
@@ -79,15 +78,21 @@ export async function generateAuditReport(context: TriageJobContext, services: R
       return { outcome: triaged.outcome === 'missing' ? 'missing' : 'not_complete' };
     }
     const cipher = await loadPracticeCipher(scope, services.keys, practiceId);
-    const { content, lines } = await gatherReport(scope, { practiceId, auditReportId, pricingRunId: report.pricing_run_id, asOf, requestId: context.jobId, cipher });
+    const { content, arena } = await gatherReport(scope, { practiceId, auditReportId, pricingRunId: report.pricing_run_id, asOf, requestId: context.jobId, cipher });
+    const pdfKey = auditReportKey(practiceId, auditReportId, randomUUID(), 'pdf');
+    const csvKey = auditReportKey(practiceId, auditReportId, randomUUID(), 'csv');
+    // The line CSV is streamed from its arena and the arena released before Chromium prints (SUITE-CAP-1a D14, D17;
+    // docs/adr/0083), so the report never holds its lines while the PDF prints.
+    let writtenCsv: WrittenDocument;
+    try {
+      writtenCsv = await services.documents.write(cipher, csvKey, arena.rows());
+    } finally {
+      arena.release();
+    }
     // The Verified gate (docs/adr/0057), under the practice's proof level: the seal prints only from the ledger's answer.
     const reconciliation = auditReconciliation(content, (await practiceLedgerSettings(scope, practiceId)).proofLevel);
     const pdf = await services.pdf.render(auditHtml(content, reconciliation));
-    const csv = Buffer.from(auditCsv(lines), 'utf8');
-    const pdfKey = auditReportKey(practiceId, auditReportId, randomUUID(), 'pdf');
-    const csvKey = auditReportKey(practiceId, auditReportId, randomUUID(), 'csv');
     const writtenPdf = await services.documents.write(cipher, pdfKey, Readable.from([pdf]));
-    const writtenCsv = await services.documents.write(cipher, csvKey, Readable.from([csv]));
     await scope.client.query(
       `UPDATE audit_report SET status = 'ready', as_of = $3, content = $4, pdf_key = $5, pdf_sha256 = $6, csv_key = $7, csv_sha256 = $8
         WHERE id = $1 AND practice_id = $2`,

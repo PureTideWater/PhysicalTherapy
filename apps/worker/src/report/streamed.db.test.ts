@@ -11,10 +11,12 @@ import { lineCorrections, lineShares } from '../reconcile/patient-share';
 import { LED_PLAN, LedgerWorld, ledSettings } from '../reconcile/test-support/ledger-world';
 import { collect } from '../storage/documents';
 import { CAS_AS_OF, CAS_RUNS } from '../triage/test-support/cas-runs';
-import { GENERATED_AS_OF, type GeneratedMonth, generatedMonth, inJobScope } from '../triage/test-support/generated-month';
+import { GENERATED_AS_OF, GENERATED_FULL_LINES, type GeneratedMonth, generatedMonth, inJobScope } from '../triage/test-support/generated-month';
+import { measure, perAdded } from '../triage/test-support/memory';
 import { type ReadEvent, recordingContext, rolledBack, sortedEvents, storedEvents } from '../triage/test-support/recorded';
 import { type AuditReportContent, type GatherInput, gatherReport, patientBalanceCases } from './content';
-import { CSV_COLUMNS, auditCsv } from './csv';
+import { CSV_ARENA_CHUNK_BYTES } from './csv-arena';
+import { CSV_COLUMNS, auditCsv, csvText } from './csv';
 import { generateAuditReport } from './generate';
 import { auditHtml, auditReconciliation } from './html';
 import type { PdfRenderer } from './pdf';
@@ -30,7 +32,11 @@ import { wholeGatherReport, wholeLineCorrections, wholeLineShares, wholePatientB
  * cases). Through the readers, on a generated month of 10,000 lines (test-support/generated-month.ts): the streamed
  * gatherReport's content deep-equals the whole read's, its arena streams auditCsv() of the whole read's lines byte for
  * byte, the PDF's HTML is the same, and so are the audit events; lineShares and patientBalanceCases give the filtering
- * versions' answers, and lineCorrections answers a line the same whichever lines share its call.
+ * versions' answers, and lineCorrections answers a line the same whichever lines share its call. And in bounded
+ * memory (CAS-41.2): from that month to one twice its size, the heap gatherReport holds, while it reads and with its
+ * content and arena in hand before the CSV is written, grows by at most REPORT_HEAP_BYTES per added line, and the CSV's
+ * rows are held outside the heap, in arena chunks that hold their bytes within one chunk (test-support/memory.ts
+ * measures it).
  */
 
 /** While set, the price job reads every content as loaded: a run priced as it was before the content refusal (audit #7). */
@@ -54,6 +60,18 @@ async function contentLoaded<T>(run: () => Promise<T>): Promise<T> {
     pricing.beforeRefusal = false;
   }
 }
+
+/**
+ * CAS-41.2's bound on the heap per added line (SUITE-CAP-1a section 7). Measured on Node 24 between the months of
+ * 10,000 and 20,000 lines: gatherReport's peak fell by 222 bytes per added line (about 20 MB at both sizes: a batch of
+ * lines or of case lines in hand, whichever is larger; what it keeps once read, its figures and the arena's sort keys,
+ * about 110 bytes a line), the whole read of 085299bd 4,560 to 5,440 (its ReportLines alone 965). The sizes are the
+ * smallest at which every batch is in its steady state: a 2,000-line month has 428 case lines, and patientBalanceCases'
+ * batch of 2,000 fills only from about 9,700 lines, so between 2,000 and 10,000 lines the batch filling up counts as
+ * growth (1,283 bytes per added line). Every heap sample is taken after two full collections, at each query and every
+ * 250 ms, so the figure does not depend on the runner's speed: two runs agreed within 0.1 MB.
+ */
+const REPORT_HEAP_BYTES = 400;
 
 let w: LedgerWorld;
 
@@ -228,13 +246,13 @@ describe('the audit report’s readers on a generated month (CAS-41.1)', () => {
     month = await generatedMonth(w.triage, { label: 'streamed generated month', contentLoaded });
   }, 900_000);
 
-  const input = async (scope: PracticeScope<ScopeClient>, requestId: string): Promise<GatherInput> => ({
-    practiceId: month.practice.practiceId,
+  const input = async (scope: PracticeScope<ScopeClient>, requestId: string, target: GeneratedMonth = month): Promise<GatherInput> => ({
+    practiceId: target.practice.practiceId,
     auditReportId,
-    pricingRunId: month.runId,
+    pricingRunId: target.runId,
     asOf: GENERATED_AS_OF,
     requestId,
-    cipher: await loadPracticeCipher(scope, w.keys, month.practice.practiceId),
+    cipher: await loadPracticeCipher(scope, w.keys, target.practice.practiceId),
   });
 
   it('the reader folds the whole read’s content, streams its CSV byte for byte, prints its HTML and audits the same reads', async () => {
@@ -293,4 +311,50 @@ describe('the audit report’s readers on a generated month (CAS-41.1)', () => {
     const found = await samePatientShares(month.practice);
     expect(found.corrections).toBeGreaterThan(2_000);
   }, 600_000);
+
+  describe('in bounded memory (CAS-41.2)', () => {
+    let doubled: GeneratedMonth;
+
+    beforeAll(async () => {
+      doubled = await generatedMonth(w.triage, { label: 'streamed doubled month', lines: 2 * GENERATED_FULL_LINES, contentLoaded });
+    }, 900_000);
+
+    /**
+     * The heap gatherReport holds at most on a month's run, while it reads and with its content and arena in hand (before
+     * the CSV is written); the buffers outside the heap then; the arena's chunk bytes and its rows' bytes (the CSV less
+     * its header).
+     */
+    const measured = async (target: GeneratedMonth) => {
+      const { summary, peakBytes, answeredBuffers } = await measure(
+        (watch) => inJobScope(w.triage, target.practice, async (scope) => gatherReport(watch(scope), await input(scope, randomUUID(), target))),
+        async ({ arena }) => {
+          const arenaBytes = arena.heldBytes;
+          const rowBytes = (await collect(arena.rows())).length - Buffer.byteLength(`${CSV_COLUMNS.map(csvText).join(',')}\r\n`, 'utf8');
+          const lines = arena.lines;
+          arena.release();
+          return { lines, arenaBytes, rowBytes };
+        },
+      );
+      return { units: summary.lines, bytes: peakBytes, buffers: answeredBuffers, ...summary };
+    };
+
+    it(`holds at most ${String(REPORT_HEAP_BYTES)} bytes of heap per added line, from a month of 10,000 lines to one of 20,000, its CSV rows outside the heap`, async () => {
+      // Once unmeasured, so the code the read compiles and the pool's connection are not counted as the first month's.
+      await measured(month);
+      const at10k = await measured(month);
+      const at20k = await measured(doubled);
+      expect(at10k.units).toBe(month.lines);
+      expect(at20k.units).toBe(doubled.lines);
+      const growth = perAdded(at10k, at20k);
+      expect(growth, `${String(at10k.units)} lines ${String(at10k.bytes)} B, ${String(at20k.units)} lines ${String(at20k.bytes)} B`).toBeLessThanOrEqual(REPORT_HEAP_BYTES);
+      for (const size of [at10k, at20k]) {
+        // The arena's chunks hold the rows' bytes and at most one chunk's tail besides; outside the heap the report holds
+        // the chunks and, within one chunk more, its typed sort keys.
+        expect(size.arenaBytes).toBeGreaterThanOrEqual(size.rowBytes);
+        expect(size.arenaBytes - size.rowBytes).toBeLessThan(CSV_ARENA_CHUNK_BYTES);
+        expect(size.buffers).toBeGreaterThanOrEqual(size.arenaBytes);
+        expect(size.buffers - size.arenaBytes).toBeLessThan(CSV_ARENA_CHUNK_BYTES);
+      }
+    }, 600_000);
+  });
 });

@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { readDatabaseUrl } from '@tp/db';
 import { type NotActionableReason, judgeLine, triageSettings } from '@tp/triage';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -5,7 +7,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type * as ReleaseModule from '../price/release';
 import { candidateLines, candidateRows, executeTriage, judgedCandidates } from './execute';
 import { CAS_AS_OF, CAS_RUNS } from './test-support/cas-runs';
-import { GENERATED_AS_OF, GENERATED_SETTINGS, type GeneratedMonth, generatedMonth } from './test-support/generated-month';
+import { GENERATED_AS_OF, GENERATED_FULL_LINES, GENERATED_SETTINGS, type GeneratedMonth, generatedMonth, inJobScope } from './test-support/generated-month';
+import { measure, perAdded } from './test-support/memory';
 import { recordingContext, rolledBack, snapshot, sortedEvents, storedEvents } from './test-support/recorded';
 import { TriageWorld } from './test-support/triage-world';
 import { wholeTriageInScope } from './test-support/whole-triage';
@@ -18,7 +21,9 @@ import { wholeTriageInScope } from './test-support/whole-triage';
  * reader on a generated month (test-support/generated-month.ts, priced under SYNTHETIC release 900007): judgedCandidates
  * returns candidateLines(candidateRows(…))'s candidates in the same order, for the run, for no run (the workbench's
  * waiting patterns) and for another run, with the same audit events, and reads each release's facts once per call
- * however many batches it fetches.
+ * however many batches it fetches. And in bounded memory (CAS-41.2): from that month to one twice its size, the heap
+ * judgedCandidates holds, while it reads and with its candidates in hand, grows by at most CANDIDATE_HEAP_BYTES per
+ * added candidate (test-support/memory.ts measures it).
  */
 
 /** While set, the price job reads every content as loaded: a run priced as it was before the content refusal (audit #7). Counts the release reads triage makes. */
@@ -46,6 +51,18 @@ async function contentLoaded<T>(run: () => Promise<T>): Promise<T> {
     pricing.beforeRefusal = false;
   }
 }
+
+/**
+ * CAS-41.2's bound on the heap per added candidate (SUITE-CAP-1a section 7). Measured on Node 24 between the months of
+ * 10,000 and 20,000 lines (5,228 and 10,436 candidates): judgedCandidates 785 bytes per added candidate (the candidates
+ * themselves about 680, the rest the batch in hand at its peak), the whole read of 085299bd
+ * (candidateLines(candidateRows(…))) 5,473. The sizes are the smallest at which the reader's batches are in their steady
+ * state: below about 4,000 candidates no second full batch is read, and a 2,000-line month (1,060 candidates) fills
+ * none, so between 2,000 and 10,000 lines the batch filling up counts as growth (3,020 bytes per added candidate).
+ * Every heap sample is taken after two full collections, at each query and every 250 ms, so the figure does not
+ * depend on the runner's speed: two runs agreed within 0.1 MB.
+ */
+const CANDIDATE_HEAP_BYTES = 1_000;
 
 let w: TriageWorld;
 
@@ -128,4 +145,31 @@ describe('the candidate reader on a generated month (CAS-41.1)', () => {
       expect(pricing.typedReleaseReads, String(runId)).toBe(1);
     }
   }, 300_000);
+
+  describe('in bounded memory (CAS-41.2)', () => {
+    let doubled: GeneratedMonth;
+
+    beforeAll(async () => {
+      doubled = await generatedMonth(w, { label: 'batched doubled month', lines: 2 * GENERATED_FULL_LINES, contentLoaded });
+    }, 900_000);
+
+    /** The heap judgedCandidates holds at most on a month's run, while it reads and with its candidates in hand, and how many it returns. */
+    const measured = async (target: GeneratedMonth) => {
+      const { summary, peakBytes } = await measure(
+        (watch) => inJobScope(w, target.practice, (scope) => judgedCandidates(watch(scope), target.practice.practiceId, target.runId, randomUUID())),
+        (candidates) => candidates.length,
+      );
+      return { units: summary, bytes: peakBytes };
+    };
+
+    it(`holds at most ${String(CANDIDATE_HEAP_BYTES)} bytes of heap per added candidate, from a month of 10,000 lines to one of 20,000`, async () => {
+      // Once unmeasured, so the code the read compiles and the pool's connection are not counted as the first month's.
+      await measured(month);
+      const at10k = await measured(month);
+      const at20k = await measured(doubled);
+      expect(at20k.units - at10k.units).toBeGreaterThan(5_000);
+      const growth = perAdded(at10k, at20k);
+      expect(growth, `${String(at10k.units)} candidates ${String(at10k.bytes)} B, ${String(at20k.units)} candidates ${String(at20k.bytes)} B`).toBeLessThanOrEqual(CANDIDATE_HEAP_BYTES);
+    }, 600_000);
+  });
 });
