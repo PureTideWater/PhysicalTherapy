@@ -125,6 +125,37 @@ export const releaseAgeExceptionsSchema = z.strictObject({
 });
 export type ReleaseAgeException = z.infer<typeof releaseAgeExceptionsSchema>['entries'][number];
 
+/** A CVE id, the form a base image's security fix is usually published under. */
+const CVE = /^CVE-\d{4}-\d{4,}$/;
+/** One image exactly: `name:tag@sha256:<64 hex>`, no pattern (the image rule holds the name's own form). */
+const IMAGE_PIN = /^[^\s@*]+:[^\s@*/]+@sha256:[0-9a-f]{64}$/;
+
+/**
+ * tools/check-toolchain/image-age-exceptions.json (docs/adr/0066, Part 5): an image digest the release age cannot pass
+ * yet, each entry waiving one requirement for one image, dated, for at most seven days. `security-fix` waives the floor
+ * for a Docker Hub digest and names its advisory (GHSA or CVE, checked for form only, since no registry answers for it)
+ * and the package and version the image now carries that fix (S10). `age-unprovable` waives the need for a recorded push
+ * time, only on a registry other than Docker Hub, and rests on its reason alone, with no advisory.
+ */
+export const imageAgeExceptionsSchema = z.strictObject({
+  $comment: z.string().optional(),
+  entries: z.array(
+    z.discriminatedUnion('kind', [
+      z.strictObject({
+        image: z.string().regex(IMAGE_PIN),
+        kind: z.literal('security-fix'),
+        advisory: z.string().refine((value) => GHSA.test(value) || CVE.test(value), 'not a GHSA or CVE id'),
+        fixes: z.strictObject({ package: z.string().min(1), version: z.string().min(1) }),
+        reason,
+        added: instant,
+        expires: instant,
+      }),
+      z.strictObject({ image: z.string().regex(IMAGE_PIN), kind: z.literal('age-unprovable'), advisory: z.null(), reason, added: instant, expires: instant }),
+    ]),
+  ),
+});
+export type ImageAgeException = z.infer<typeof imageAgeExceptionsSchema>['entries'][number];
+
 /** tools/check-toolchain/trust-exceptions.json: equal to pnpm-workspace.yaml's trustPolicyExclude. */
 export const trustExceptionsSchema = z.strictObject({
   $comment: z.string().optional(),

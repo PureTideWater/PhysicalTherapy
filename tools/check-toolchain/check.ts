@@ -1,8 +1,9 @@
+import { ageWords, excludeWindowProblems, expiredExclude, releaseAgeMinutes } from './exclude-window';
+import { COMPOSE_FILE, IMAGE_AGE_EXCEPTIONS_FILE, imageFormRule, imageRule } from './images';
 import {
   AUDIT_EXCEPTION_MAX_DAYS,
   DAY_MS,
   EXACT_SPEC,
-  EXCLUDE_MAX_DAYS,
   MINIMUM_RELEASE_AGE_MINUTES,
   MINUTE_MS,
   type PackageJson,
@@ -13,6 +14,8 @@ import {
   lockedPackages,
   lockfileSchema,
   type Lockfile,
+  imageAgeExceptionsSchema,
+  type ImageAgeException,
   overrideEntriesSchema,
   packageJsonSchema,
   parseJsonFile,
@@ -30,12 +33,14 @@ import {
   workspaceSchema,
 } from './policy';
 import { NetworkReadError, type Packument, type Registry, type TrustEvidence } from './registry';
+import type { NamedOnBuildBranch } from './tree';
 
 /**
  * `pnpm toolchain:check` (designs/lane-b-ci.md §3.2.1, "Audit and toolchain"; test matrix CI-14; ADR 0066 Part 2): the
  * pnpm CI runs and every version the lockfile adds, held to the founder's F2 (b) three-day release age, with each
- * exception written down, dated and kept equal to the setting pnpm reads. It compares this tree with the base (the
- * range step's base, reduced with git merge-base), so a change is judged on what it adds.
+ * exception written down, dated and kept equal to the setting pnpm reads; and (ADR 0066 Part 5, CI-22) every image
+ * digest the tree adds, held to the same age by the push time Docker Hub recorded (images.ts). It compares this tree with
+ * the base (the range step's base, reduced with git merge-base), so a change is judged on what it adds.
  */
 
 /** The files check-toolchain reads, root-relative. */
@@ -49,13 +54,22 @@ export const FILES = {
   overrides: 'tools/check-toolchain/overrides.json',
   npmrc: '.npmrc',
   pnpmfile: '.pnpmfile.cjs',
+  compose: COMPOSE_FILE,
+  imageAgeExceptions: IMAGE_AGE_EXCEPTIONS_FILE,
 } as const;
 
 /** The one registry every package resolves from, and the one check-toolchain reads. */
 export const NPMJS = 'https://registry.npmjs.org/';
 
-/** One tree's text of those files (undefined: absent), and its Dockerfiles by path. */
-export type Tree = { readonly [key in keyof typeof FILES]?: string } & { readonly dockerfiles?: Readonly<Record<string, string>> };
+/**
+ * One tree's text of those files (undefined: absent), its apps' Dockerfiles and its workflows by root-relative path, and
+ * the paths of the image files it tracks outside the three the image rule reads (tree.ts).
+ */
+export type Tree = { readonly [key in keyof typeof FILES]?: string } & {
+  readonly dockerfiles?: Readonly<Record<string, string>>;
+  readonly workflows?: Readonly<Record<string, string>>;
+  readonly imageFiles?: readonly string[];
+};
 
 /** A push run follows a green pull request, so it warns where a pull request that edits a list fails. */
 export type CheckEvent = 'push' | 'pull_request';
@@ -65,6 +79,10 @@ export interface CheckInput {
   readonly base: Tree;
   readonly event: CheckEvent;
   readonly now: Date;
+  /** The deadline of the image rule's Docker Hub reads in ms, from the first (READ_DEADLINE_MS by default); its message names it. */
+  readonly deadlineMs?: number;
+  /** The build branch's first-parent history, which proves a reverted digest's age (tree.ts, buildBranchHistory; CI-S3). */
+  readonly history?: (digest: string) => NamedOnBuildBranch | null;
 }
 
 export type Level = 'error' | 'warning' | 'ok';
@@ -83,6 +101,7 @@ interface Config {
   readonly releaseAgeExceptions: readonly ReleaseAgeException[];
   readonly trustExceptions: ReturnType<typeof trustExceptionsSchema.parse>['entries'];
   readonly overrides: ReturnType<typeof overrideEntriesSchema.parse>['entries'];
+  readonly imageAgeExceptions: readonly ImageAgeException[];
   /** `.npmrc`'s settings, key to value, in file order (absent: none). */
   readonly npmrc: readonly (readonly [string, string])[];
   /** Whether the tree holds a `.pnpmfile.cjs`. */
@@ -125,15 +144,11 @@ function readConfig(tree: Tree): Config {
     releaseAgeExceptions: take(parseJsonFile(FILES.releaseAgeExceptions, tree.releaseAgeExceptions, releaseAgeExceptionsSchema, { entries: [] }), { entries: [] }).entries,
     trustExceptions: take(parseJsonFile(FILES.trustExceptions, tree.trustExceptions, trustExceptionsSchema, { entries: [] }), { entries: [] }).entries,
     overrides: take(parseJsonFile(FILES.overrides, tree.overrides, overrideEntriesSchema, { entries: [] }), { entries: [] }).entries,
+    imageAgeExceptions: take(parseJsonFile(FILES.imageAgeExceptions, tree.imageAgeExceptions, imageAgeExceptionsSchema, { entries: [] }), { entries: [] }).entries,
     npmrc: npmrcSettings(tree.npmrc),
     pnpmfile: tree.pnpmfile !== undefined,
     problems,
   };
-}
-
-/** "three days" for 4,320 minutes, otherwise the minutes and the days. */
-function ageWords(minutes: number): string {
-  return minutes === MINIMUM_RELEASE_AGE_MINUTES ? 'three days' : `${String(minutes)} minutes (${(minutes / 1440).toFixed(2)} days)`;
 }
 
 function failClosed(rule: string, error: unknown): Finding {
@@ -500,47 +515,34 @@ async function releaseAgeExcludeRule(head: Config, base: Config, input: CheckInp
   const edited =
     JSON.stringify([...listed].sort()) !== JSON.stringify([...(base.workspace.minimumReleaseAgeExclude ?? [])].sort()) ||
     JSON.stringify(head.releaseAgeExceptions.map((entry) => JSON.stringify(entry)).sort()) !== JSON.stringify([...baseEntries].sort());
-  const now = input.now.getTime();
   for (const entry of head.releaseAgeExceptions) {
-    const added = Date.parse(entry.added);
-    const expires = Date.parse(entry.expires);
     if (!EXACT_SPEC.test(entry.package)) {
       findings.push({ level: 'error', rule, message: `${FILES.releaseAgeExceptions}: "${entry.package}" is not one exact version (name@x.y.z)` });
       continue;
     }
     // An entry this change adds (or rewrites) covers its version's whole young window and never outlives seven days.
     if (!baseEntries.has(JSON.stringify(entry))) {
-      if (added > now) {
-        findings.push({ level: 'error', rule, message: `${entry.package}: added ${entry.added}, a time in the future` });
-      }
-      if (expires > added + EXCLUDE_MAX_DAYS * DAY_MS) {
-        findings.push({ level: 'error', rule, message: `${entry.package}: expires ${entry.expires}, more than ${String(EXCLUDE_MAX_DAYS)} days after it was added (${entry.added}); F2 (b) allows seven` });
-      }
       const { name, version } = splitSpec(entry.package);
+      let published: string | undefined;
+      let unread: Finding | undefined;
       try {
-        const published = (await registry.packument(name)).time[version];
-        if (published === undefined) {
-          findings.push({ level: 'error', rule, message: `${entry.package}: registry.npmjs.org gives no publish time for it` });
-        } else if (expires < Date.parse(published) + minutes * MINUTE_MS) {
-          findings.push({
-            level: 'error',
-            rule,
-            message: `${entry.package}: expires ${entry.expires}, before the version is ${ageWords(minutes)} old (${new Date(Date.parse(published) + minutes * MINUTE_MS).toISOString()}; published ${published}), so it would lapse while still needed`,
-          });
-        }
+        published = (await registry.packument(name)).time[version];
       } catch (error) {
-        findings.push(failClosed(rule, error));
+        unread = failClosed(rule, error);
+      }
+      const known = published === undefined ? null : { what: 'the version', at: published, as: 'published' };
+      findings.push(...excludeWindowProblems(entry.package, entry, { kind: 'security-fix', known, minutes }, input.now).map((message): Finding => ({ level: 'error', rule, message })));
+      if (unread !== undefined) {
+        findings.push(unread);
+      } else if (published === undefined) {
+        findings.push({ level: 'error', rule, message: `${entry.package}: registry.npmjs.org gives no publish time for it` });
       }
       findings.push(...(await excludeAdvisoryFindings(entry, base, registry)));
     }
-    if (expires <= now) {
-      // Once expired the version is three days old, so the exclude changes no resolution: it fails only where the
-      // lists are being edited, and warns elsewhere (a push follows a green pull request; Dependabot's touch only the lockfile).
-      findings.push({
-        level: input.event === 'pull_request' && edited ? 'error' : 'warning',
-        rule,
-        message: `${entry.package}: expired ${entry.expires}; remove it from both lists (the weekly triage, docs/runbooks/dependency-upgrades.md)`,
-      });
+    // Once expired the version is three days old, so the exclude changes no resolution (Dependabot's pull requests touch only the lockfile).
+    const expired = expiredExclude(entry.package, entry.expires, input.now, { event: input.event, edited, list: 'both lists' });
+    if (expired !== null) {
+      findings.push({ ...expired, rule });
     }
   }
   return findings.length > 0 ? findings : [{ level: 'ok', rule, message: `${String(listed.length)} exclude(s), each one exact version, equal in both lists and in date` }];
@@ -804,8 +806,9 @@ function overridesRule(head: Config): Finding[] {
 
 /**
  * The rules that read only the tree, with no base and no registry: the gates, the settings, the Dockerfiles' pnpm
- * install, every lockfile entry's resolution, the trust excludes and the overrides. The unit tests run them on the repository's real tree, so a list
- * out of step with pnpm's settings fails offline as well as in static's networked run (ci-infra N3).
+ * install, every image's form (images.ts, E5), every lockfile entry's resolution, the trust excludes and the overrides.
+ * The unit tests run them on the repository's real tree, so a list out of step with pnpm's settings, or an image not
+ * pinned by tag and digest, fails offline as well as in static's networked run (ci-infra N3).
  */
 export function checkOffline(tree: Tree): Finding[] {
   const head = readConfig(tree);
@@ -813,7 +816,7 @@ export function checkOffline(tree: Tree): Finding[] {
     return head.problems.map((message) => ({ level: 'error', rule: 'files', message }));
   }
   const dockerfiles = dockerfileRule(tree.dockerfiles ?? {}, pnpmVersion(head.packageJson.packageManager));
-  return [...gatesRule(head), ...settingsRule(head), ...dockerfiles, ...lockfileResolutionRule(head.lockfile), ...trustRule(head), ...overridesRule(head)];
+  return [...gatesRule(head), ...settingsRule(head), ...dockerfiles, ...imageFormRule(tree, head.imageAgeExceptions), ...lockfileResolutionRule(head.lockfile), ...trustRule(head), ...overridesRule(head)];
 }
 
 /** Every rule, in order. Never throws for a network failure: each fails closed as an error finding. */
@@ -826,7 +829,7 @@ export async function checkToolchain(input: CheckInput, registry: Registry): Pro
   const findings: Finding[] = base.problems.map((message) => ({ level: 'warning', rule: 'files', message: `the base's ${message}; its lists are read as empty` }));
   findings.push(...gatesRule(head));
   findings.push(...settingsRule(head));
-  const minutes = Math.max(head.workspace.minimumReleaseAge ?? 0, MINIMUM_RELEASE_AGE_MINUTES);
+  const minutes = releaseAgeMinutes(head.workspace);
   const live = liveExcludes(head, input.now);
   const version = pnpmVersion(head.packageJson.packageManager);
   if (version === null) {
@@ -839,6 +842,7 @@ export async function checkToolchain(input: CheckInput, registry: Registry): Pro
     findings.push(...pnpmRules(head.packageJson.packageManager ?? '', version, pnpm, advisories, live, minutes, input.now));
   }
   findings.push(...dockerfileRule(input.head.dockerfiles ?? {}, version));
+  findings.push(...(await imageRule(input, { head: head.imageAgeExceptions, base: base.imageAgeExceptions }, minutes, registry)));
   findings.push(...auditRule(head, input.now));
   findings.push(...(await releaseAgeExcludeRule(head, base, input, minutes, registry)));
   findings.push(...lockfileResolutionRule(head.lockfile));
