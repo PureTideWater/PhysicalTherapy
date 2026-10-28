@@ -12,7 +12,7 @@ import { templateForm, templateOf } from '../reconciliation/template';
 import type { Services } from '../server/services';
 import { CONTENT_TYPES, MAX_FILES_PER_BATCH, MAX_UPLOAD_BYTES } from '../uploads/limits';
 import { opaqueId } from './schemas';
-import { NO_BAA, baaOnFile } from './uploads';
+import { uploadGate } from './uploads';
 
 /**
  * The Reconciliation screen and the posting-template mapping (PRD 7, Reconciliation: "ERA to posting
@@ -99,7 +99,6 @@ export const reconciliationPage = practiceRoute({
     const phi = rolesPermit(access.roles, 'phi.read');
     const data = await reconciliation(scope, services, practiceId, { caseId, linesPage: params.lines, entriesPage: params.entries }, phi, request.requestId);
     const template = await templateState(scope, practiceId);
-    const open = await baaOnFile(scope, practiceId);
     return {
       practiceId,
       caseId,
@@ -111,7 +110,7 @@ export const reconciliationPage = practiceRoute({
       phi,
       upload: {
         canUpload: rolesPermit(access.roles, 'file.upload'),
-        gate: { open, reason: open ? null : NO_BAA },
+        gate: await uploadGate(scope, practiceId),
         limits: { maxFiles: MAX_FILES_PER_BATCH, maxBytes: MAX_UPLOAD_BYTES },
         kinds: [
           { kind: 'posting_export', contentTypes: CONTENT_TYPES.posting_export },

@@ -26,7 +26,7 @@ import { type PayerOption, payerOptions } from '../remittances/queries';
 import type { Services } from '../server/services';
 import { CONTENT_TYPES, MAX_FILES_PER_BATCH, MAX_UPLOAD_BYTES } from '../uploads/limits';
 import { opaqueId, optionalText, requiredText } from './schemas';
-import { NO_BAA, baaOnFile } from './uploads';
+import { type UploadGate, uploadGate } from './uploads';
 
 /**
  * The Contracts screens of the customer workspace (PRD 5, J5; PRD 6, Contract repository; PRD 7,
@@ -35,23 +35,40 @@ import { NO_BAA, baaOnFile } from './uploads';
  * records; sign off a version; open the specialist's questions ... a superseded version is read-only
  * and still opens from old runs"; PRD 7, Rate record review: "customer signs off"). Reading needs the
  * workspace (practice.open); uploading and tagging a document need file.upload (the upload itself is
- * the Uploads flow with the kind contract, exhibit or payer letter); signing off and answering the
- * specialist's questions need contract.sign_off (the practice administrator, the billing manager and
- * the firm principal). Signing off a version already signed off, or answering a question again with
- * the same answer, changes nothing.
+ * the Uploads flow with the kind contract, exhibit or payer letter, behind the Uploads page's gate);
+ * signing off and answering the specialist's questions need contract.sign_off (the practice
+ * administrator, the billing manager and the firm principal). Signing off a version already signed
+ * off, or answering a question again with the same answer, changes nothing. A payer's answer to a
+ * dispute is never a contract's document (docs/adr/0085, D4): a letter a payer response names is not
+ * listed to tag, and tagging it is refused (lib/contracts/tagging.ts).
  */
 
 const page = z.coerce.number().int().min(1).max(100_000).default(1);
 const id = optionalText(opaqueId);
 
+/**
+ * The kinds the contract upload panel files a document as. A payer letter here is a payer's terms or policy letter,
+ * a contract's source; a payer's answer to a dispute is uploaded with its response, on the case's Submissions and
+ * responses page, and a letter a response names never enters the contract lists (docs/adr/0085, D4).
+ */
 export const CONTRACT_DOCUMENT_KINDS = ['contract', 'exhibit', 'payer_letter'] as const;
+type ContractDocumentKind = (typeof CONTRACT_DOCUMENT_KINDS)[number];
 
-/** What the contract upload panel accepts (the Uploads flow's limits, for the contract kinds). */
+/**
+ * The panel's words for each kind. A kind never changes once uploaded, so the words say what the panel takes: "Payer
+ * letter", the receipts' name (KIND_NAMES), is what a person holding the payer's answer would choose.
+ */
+export const CONTRACT_KIND_LABELS: Readonly<Record<ContractDocumentKind, string>> = { contract: 'Contract', exhibit: 'Exhibit', payer_letter: 'Payer’s terms or policy letter' };
+
+/** The panel's sentence on where a payer's answer goes instead. */
+export const RESPONSE_LETTER_ELSEWHERE = 'A payer’s answer to a dispute goes with its response instead, on the case’s Submissions and responses page.';
+
+/** What the contract upload panel accepts (the Uploads flow's limits and gate, for the contract kinds). */
 export interface ContractUploadSettings {
   readonly canUpload: boolean;
-  readonly gate: { readonly open: boolean; readonly reason: string | null };
+  readonly gate: UploadGate;
   readonly limits: { readonly maxFiles: number; readonly maxBytes: number };
-  readonly kinds: readonly { readonly kind: (typeof CONTRACT_DOCUMENT_KINDS)[number]; readonly contentTypes: readonly string[] }[];
+  readonly kinds: readonly { readonly kind: ContractDocumentKind; readonly label: string; readonly contentTypes: readonly string[] }[];
 }
 
 function todayOf(services: Services): string {
@@ -97,7 +114,6 @@ export const contractsPage = practiceRoute({
   handle: async ({ scope, practiceId, params, request, services, access }): Promise<ContractsPageData> => {
     const today = todayOf(services);
     const cipher = await loadPracticeCipher(scope, services.keys, practiceId);
-    const open = await baaOnFile(scope, practiceId);
     const filters: ContractFilters = { ...(params.payer === undefined ? {} : { payer: params.payer }), ...(params.status === undefined ? {} : { status: params.status }) };
     const list = await listContracts(scope, { practiceId, today, page: params.page, requestId: request.requestId, ...(params.payer === undefined ? {} : { payerId: params.payer }), ...(params.status === undefined ? {} : { status: params.status }) });
     const shares = await contractCoverage(
@@ -118,9 +134,9 @@ export const contractsPage = practiceRoute({
       questions: await listQuestions(scope, practiceId, cipher, request.requestId, { openOnly: true }),
       upload: {
         canUpload: rolesPermit(access.roles, 'file.upload'),
-        gate: { open, reason: open ? null : NO_BAA },
+        gate: await uploadGate(scope, practiceId),
         limits: { maxFiles: MAX_FILES_PER_BATCH, maxBytes: MAX_UPLOAD_BYTES },
-        kinds: CONTRACT_DOCUMENT_KINDS.map((kind) => ({ kind, contentTypes: CONTENT_TYPES[kind] })),
+        kinds: CONTRACT_DOCUMENT_KINDS.map((kind) => ({ kind, label: CONTRACT_KIND_LABELS[kind], contentTypes: CONTENT_TYPES[kind] })),
       },
       canSignOff: rolesPermit(access.roles, 'contract.sign_off'),
       roles: access.roles,

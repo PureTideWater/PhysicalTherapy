@@ -179,6 +179,30 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     assertion:
       'Submitting the materiality and pursuit forms with the values the page pre-fills keeps lineMaterialityCents 500, caseMaterialityCents 25000 and staffRateCentsPerHour 4500; for every amount, the helper’s output read back through the save’s dollars field gives the same cents; a model budget entered as 5.00 or 5 is stored as 500 cents',
   },
+  {
+    id: 'CAS-45',
+    title: 'A write-off reason the line’s own records contradict',
+    assertion:
+      'The Reason starts on “Choose the reason”, and a write-off with no reason chosen is refused on Reason; “Window passed” is neither offered nor accepted for a line whose dispute window is open or unknown, and is refused on Reason with nothing written; once the window has ended it is offered and recorded',
+  },
+  {
+    id: 'CAS-46',
+    title: 'A payer response or a submission with nothing chosen',
+    assertion:
+      'The Response starts on “Choose the payer’s answer”, the Channel on “Choose the channel” and the payer’s letter on “Choose the payer’s letter”; a response with no answer or no letter, or a submission with no channel, is refused on that field and nothing is recorded; the words under Response say that every response is recorded for good, which state an acceptance or a partial acceptance gives the case unless a line has already reached Payer approved, that the recovery ledger approves up to its amount at the next reconcile (Payer approved), and that nothing is recovered until it is posted or deposited',
+  },
+  {
+    id: 'CAS-47',
+    title: 'The payer’s letter uploaded in “Log a payer response”',
+    assertion:
+      'The form shows with no letter on file; the letter goes through the same scanned intake; what was typed before the upload keeps its value through the scan and the page read again; the letter is chosen only once it is stored, and only the letter that form uploaded or, for a duplicate, the copy on file a response may carry, never over the person’s own choice, and the choice never moves focus; the letter that form uploaded is marked in the list; a press while it uploads or is scanned sends nothing; a stored letter the list does not show yet is said to be on its way, and if it never arrives the form says to reload; no button of the uploader submits the form; a file dropped on the form, with nothing typed, is cleared with the form for another person signed in on the same browser; the letter’s field and its upload sit under headings one level below the form’s, and the rest of the form under a heading of its own; no request carries the file’s name, and no upload request carries the form’s request key; the submission log names each response’s letter and links its receipt',
+  },
+  {
+    id: 'CAS-48',
+    title: 'A payer’s answer kept apart from the contract documents',
+    assertion:
+      'A response naming a document still in intake, held, a duplicate, a zip or one of its entries, of a kind other than a payer letter or other document, of another practice, or a contract version’s source is refused on the letter with one sentence, and nothing is recorded; the letters offered are grouped, those no response names first, then this case’s responses’, then other cases’, and a response with another case’s letter is still recorded; a letter a response names leaves Documents to tag and Documents awaiting abstraction, and tagging it, or naming it in an amendment or a correction, is refused with what to tag instead; a tag and a response of the same letter at the same time cannot both pass; a payer’s terms letter that no response names stays in both lists; the Contracts panel names its payer letter kind a payer’s terms or policy letter and says where a payer’s answer goes',
+  },
   { id: 'LED-01', title: 'Packet submitted', assertion: 'No entry' },
   { id: 'LED-02', title: 'Adjusted remittance with higher allowed matching a case line', assertion: '`approved` entry for the difference' },
   { id: 'LED-03', title: 'Adjusted remittance matching no case', assertion: 'Listed for manual match; no entry' },

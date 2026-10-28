@@ -249,6 +249,22 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/routes/console-routes.db.test.ts',
     'apps/web/e2e/triage.spec.ts',
   ]),
+  // Lane B (co-001/ux-payer-response): a choice that records a fact starts unchosen, and the payer’s letter is uploaded with its response, apart from the contract documents.
+  'CAS-45': none(8, 'A case line on a synthetic practice the test creates, written off: no file.', [
+    'apps/web/src/lib/cases/write-off.test.ts',
+    'apps/web/src/lib/routes/workbench-routes.db.test.ts',
+    'apps/web/e2e/triage.spec.ts',
+  ]),
+  'CAS-46': none(8, 'A response and a submission logged on a synthetic practice the test creates: no file.', ['apps/web/src/lib/routes/workbench-routes.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
+  'CAS-47': none(8, 'A SYNTHETIC payer letter the test builds as a PDF and uploads in the browser: no file.', [
+    'apps/web/src/components/packets/response-letter.browser.test.tsx',
+    'apps/web/e2e/packets.spec.ts',
+  ]),
+  'CAS-48': none(8, 'Documents the test inserts in each intake state, and a response recorded with one: no file.', [
+    'apps/web/src/lib/routes/workbench-routes.db.test.ts',
+    'apps/web/src/components/packets/response-letter.browser.test.tsx',
+    'apps/web/e2e/packets.spec.ts',
+  ]),
   'LED-01': none(9, 'A packet marked submitted: an action that must create no entry; no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
   'LED-02': { completesIn: 9, build: workflow.led02, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts'] },
   'LED-03': { completesIn: 9, build: workflow.led03, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts'] },

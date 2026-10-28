@@ -1,0 +1,20 @@
+{
+  "case": "CAS-47",
+  "module": "CAS",
+  "title": "The payer’s letter uploaded in “Log a payer response”",
+  "assertion": "The form shows with no letter on file; the letter goes through the same scanned intake; what was typed before the upload keeps its value through the scan and the page read again; the letter is chosen only once it is stored, and only the letter that form uploaded or, for a duplicate, the copy on file a response may carry, never over the person’s own choice, and the choice never moves focus; the letter that form uploaded is marked in the list; a press while it uploads or is scanned sends nothing; a stored letter the list does not show yet is said to be on its way, and if it never arrives the form says to reload; no button of the uploader submits the form; a file dropped on the form, with nothing typed, is cleared with the form for another person signed in on the same browser; the letter’s field and its upload sit under headings one level below the form’s, and the rest of the form under a heading of its own; no request carries the file’s name, and no upload request carries the form’s request key; the submission log names each response’s letter and links its receipt",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": [
+    "apps/web/src/components/packets/response-letter.browser.test.tsx",
+    "apps/web/e2e/packets.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "A SYNTHETIC payer letter the test builds as a PDF and uploads in the browser: no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

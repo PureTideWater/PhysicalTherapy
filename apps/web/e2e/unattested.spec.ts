@@ -113,6 +113,8 @@ test('an export whose pricing went stale after it was made is never attested, an
       await expect(confirm).toHaveAttribute('required', '');
       await expectAccessible(page, 'Submissions, an export never attested');
       await form.getByLabel('Payer’s reference (a portal confirmation, a fax receipt)').fill('SYNTHETIC-PORTAL-REF-UNATTESTED');
+      // The channel is recorded for good, so it starts unchosen and the manager chooses it (CAS-46).
+      await form.getByLabel('Channel', { exact: true }).selectOption('payer_portal');
       await confirm.check();
       await form.getByRole('button', { name: 'Log the submission sent without sign-off' }).click();
       await expect(page.locator('[data-notice="logged_unattested"]')).toContainText('The submission is logged as sent without sign-off: pricing went stale after export.');

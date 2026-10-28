@@ -33,6 +33,7 @@ import { type PayerOption, payerOptions } from '../remittances/queries';
 import { type Person, caseWorkers } from '../cases/people';
 import type { TimelineEvent } from '../cases/timeline';
 import { type ActivityView, caseActivity, caseTimeline } from '../cases/workbench';
+import { WRITE_OFF_REASON_WORDS, contradictedReason } from '../cases/write-off';
 import { type CorrectionView, casePatientBalance, correctionView } from '../reconciliation/queries';
 import { opaqueId, optionalText, requiredText } from './schemas';
 
@@ -459,6 +460,9 @@ export const WRITE_OFF_CONSEQUENCE =
  * Writes a case line off with a reason from the closed list ("other" says why; PRD 12, Write-offs and
  * reopening): the line stays in the case, struck through and out of its total. The person confirms the
  * consequence first (WRITE_OFF_CONSEQUENCE). The words are kept encrypted with the practice's key. A
+ * reason is chosen, never defaulted, and one the line's own records contradict ("Window passed" while its
+ * window is open or unknown) is refused on Reason before anything is written, by the rule the case page
+ * offers its reasons by (lib/cases/write-off.ts; docs/adr/0085 D2; the database's half is Lane A's). A
  * line already written off is left as it is.
  */
 export const writeOffLineAction = practiceRoute({
@@ -468,7 +472,7 @@ export const writeOffLineAction = practiceRoute({
   phi: true,
   permission: 'case.work',
   params: z.object({ practiceId: opaqueId }),
-  input: z.object({ caseLineId: opaqueId, reason: z.enum(WRITE_OFF_REASONS), text: optionalText(z.string().max(500)), confirm: z.literal('on', 'confirm what a write-off does') }),
+  input: z.object({ caseLineId: opaqueId, reason: z.enum(WRITE_OFF_REASONS, WRITE_OFF_REASON_WORDS.noReason), text: optionalText(z.string().max(500)), confirm: z.literal('on', 'confirm what a write-off does') }),
   audit: { action: 'case_line_written_off', objectType: 'case_line' },
   handle: async ({ scope, practiceId, input, services }): Promise<MutationResult> => {
     const checked = writeOffSchema.safeParse({ reason: input.reason, text: input.text });
@@ -480,6 +484,12 @@ export const writeOffLineAction = practiceRoute({
       throw new NotFoundError();
     }
     if (line.writtenOffReason === null) {
+      // The line's own records may contradict the reason (only "Window passed" can be): refused on Reason before the
+      // write, from the row caseLineState() holds FOR UPDATE, so the check and the write see one state.
+      const contradicted = contradictedReason(checked.data.reason, line);
+      if (contradicted !== null) {
+        throw new InputError([{ field: 'reason', message: contradicted }]);
+      }
       const words = checked.data.text;
       const text = words === null ? null : (await loadPracticeCipher(scope, services.keys, practiceId)).encrypt('case_line.written_off_text', words);
       await scope.client.query('UPDATE case_line SET written_off_reason = $3, written_off_text = $4, written_off_by = app_actor_id() WHERE id = $1 AND practice_id = $2', [

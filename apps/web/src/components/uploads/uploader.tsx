@@ -15,6 +15,13 @@ import { ReceiptList, type ReceiptPage, ReceiptStatus } from './receipts';
  * server for one upload URL per file, PUTs each file straight to it (S3, or the local receiver), and
  * reports each PUT complete; the server's receipts then take over. File names stay in this browser:
  * they are shown here while the batch uploads and never sent anywhere.
+ *
+ * It may sit inside a form (the payer's letter in "Log a payer response"; docs/adr/0085, D3): every button is
+ * type="button" and no control has a name, so the form never posts the file or anything of the uploader's; its
+ * requests make their own keys and carry the page's CSRF token, never the form's; `headingLevel` puts its headings one
+ * level below the form's card; and `onBatchChange` tells the form of its batch, so the form marks itself touched even
+ * for a dropped file and holds a press while the file uploads and is scanned. The form's remount for another person
+ * clears the batch with the fields.
  */
 
 interface UploadTarget {
@@ -53,6 +60,18 @@ export interface UploadKind {
   readonly formats?: readonly UploadFormat[];
 }
 
+/** What a batch holds, for the form the uploader sits in (onBatchChange). */
+export interface BatchReport {
+  /** The files the batch row shows. */
+  readonly size: number;
+  /** Whether any file is waiting, uploading or completing, or is sent with its receipt not settled. */
+  readonly inFlight: boolean;
+  /** The receipts of the batch's sent files that have settled. */
+  readonly settled: readonly Receipt[];
+}
+
+type BatchReportListener = (batch: BatchReport) => void;
+
 export interface UploaderProps {
   readonly practiceId: string;
   readonly canUpload: boolean;
@@ -69,10 +88,21 @@ export interface UploaderProps {
   readonly uploaders?: string;
   /** Whether the practice's receipts are listed below the drop zone. */
   readonly showReceipts?: boolean;
+  /** Told whenever the batch's size, whether it is in flight, or its settled receipts change. */
+  readonly onBatchChange?: BatchReportListener;
+  /**
+   * One file of the one kind offered, never several, a zip or another type: anything else is refused here with
+   * `refusal`, before any request.
+   */
+  readonly single?: { readonly refusal: string };
+  /** The level of the drop zone's heading and the batch's title: 3 inside a form under a card's title (2 by default). */
+  readonly headingLevel?: 2 | 3;
 }
 
 const ZIP_TYPES = new Set(['application/zip', 'application/x-zip-compressed']);
 const CONCURRENT_PUTS = 3;
+/** CardTitle's classes, for the batch's title at level 3 (CardTitle renders an <h2> only). */
+const CARD_TITLE_CLASSES = 'text-lg font-bold leading-snug tracking-display';
 
 /** The type a file is declared as: what the browser says when it is one an 835 may be, else generic. */
 function declaredType(file: File, allowed: readonly string[]): string {
@@ -137,7 +167,8 @@ function put(file: File, target: UploadTarget, csrfToken: string, onProgress: (s
 }
 
 export function Uploader(props: UploaderProps) {
-  const { practiceId, canUpload, gate, limits, kinds, csrfToken } = props;
+  const { practiceId, canUpload, gate, limits, kinds, csrfToken, onBatchChange, single } = props;
+  const Heading = props.headingLevel === 3 ? 'h3' : 'h2';
   const router = useRouter();
   const [kind, setKind] = useState<UploadKind>(kinds?.[0] ?? { kind: 'x12_835', label: '835 remittance', contentTypes: limits.contentTypes });
   /** The format chosen for a kind that has formats (an ERA export); none until the person chooses. */
@@ -176,7 +207,13 @@ export function Uploader(props: UploaderProps) {
   const start = useCallback(
     async (chosen: readonly File[]) => {
       const found: string[] = [];
-      if (chosen.length > limits.maxFiles) {
+      if (single !== undefined) {
+        // One file of the kind's types: several, a zip (whose entries would become documents of their own) or another
+        // type is refused with the caller's words.
+        if (chosen.length > 1 || chosen.some((file) => !kind.contentTypes.includes(declaredType(file, kind.contentTypes)))) {
+          found.push(single.refusal);
+        }
+      } else if (chosen.length > limits.maxFiles) {
         found.push(`At most ${String(limits.maxFiles)} files at once; zip the rest and upload the zip.`);
       }
       // An ERA export is read with its system's layout, so the person says which system's export it is first.
@@ -220,7 +257,7 @@ export function Uploader(props: UploaderProps) {
       });
       await Promise.all(workers);
     },
-    [csrfToken, format, kind, limits, practiceId, send],
+    [csrfToken, format, kind, limits, practiceId, send, single],
   );
 
   const retry = useCallback(
@@ -257,6 +294,21 @@ export function Uploader(props: UploaderProps) {
       router.refresh();
     }
   }, [router, settledAll]);
+  // What the batch holds, for the form the uploader sits in: told when it changes, not on each poll of the receipts.
+  const inFlight = pending || batch.some((item) => item.phase === 'waiting' || item.phase === 'uploading' || item.phase === 'completing');
+  const settledReceipts = sentIds.flatMap((id) => {
+    const receipt = receipts.get(id);
+    return receipt !== undefined && receiptState(receipt).settled ? [receipt] : [];
+  });
+  const reported = useRef<{ readonly to: BatchReportListener; readonly words: string } | null>(null);
+  useEffect(() => {
+    const words = `${String(batch.length)}|${String(inFlight)}|${settledReceipts.map((receipt) => `${receipt.documentId}:${receipt.status}`).join(',')}`;
+    if (onBatchChange === undefined || (reported.current?.to === onBatchChange && reported.current.words === words)) {
+      return;
+    }
+    reported.current = { to: onBatchChange, words };
+    onBatchChange({ size: batch.length, inFlight, settled: settledReceipts });
+  }, [onBatchChange, batch.length, inFlight, settledReceipts]);
   useEffect(() => {
     if (!pending) {
       return undefined;
@@ -311,12 +363,13 @@ export function Uploader(props: UploaderProps) {
           onDrop={onDrop}
           className={`flex flex-col items-start gap-3 rounded-xl border-2 border-dashed p-8 ${dragging ? 'border-primary bg-accent' : ''}`}
         >
-          <h2 className="text-base font-semibold">{props.heading ?? 'Drop 835 files here'}</h2>
+          <Heading className="text-base font-semibold">{props.heading ?? 'Drop 835 files here'}</Heading>
           <p className="max-w-prose text-sm text-muted-foreground">
-            {props.description ?? `Single files, a batch of up to ${String(limits.maxFiles)}, or a zip of them, up to ${formatBytes(limits.maxBytes)} each.`} Each file is scanned for malware
-            before anything reads it.
+            {props.description ?? `Single files, a batch of up to ${String(limits.maxFiles)}, or a zip of them, up to ${formatBytes(limits.maxBytes)} each.`}{' '}
+            {single === undefined ? 'Each file is' : 'The file is'} scanned for malware before anything reads it.
           </p>
-          {kinds === undefined ? null : (
+          {/* One kind offered is the kind every file is sent as: no choice to show beside the caller's own. */}
+          {kinds === undefined || kinds.length < 2 ? null : (
             <div className="flex max-w-full flex-col gap-1">
               <label htmlFor="upload-kind" className="text-sm font-medium">
                 Kind of document
@@ -380,9 +433,10 @@ export function Uploader(props: UploaderProps) {
             ref={input}
             id="upload-files"
             type="file"
-            multiple
+            multiple={single === undefined}
+            accept={single === undefined ? undefined : kind.contentTypes.join(',')}
             className="sr-only"
-            aria-label="Choose files to upload"
+            aria-label={single === undefined ? 'Choose files to upload' : 'Choose a file to upload'}
             // Out of the tab order and hidden from assistive technology: "Choose files" is the one control and opens the
             // picker, so a keyboard meets one stop, not an invisible input and then the button (docs/adr/0077).
             tabIndex={-1}
@@ -393,7 +447,7 @@ export function Uploader(props: UploaderProps) {
             }}
           />
           <Button type="button" onClick={() => input.current?.click()}>
-            Choose files
+            {single === undefined ? 'Choose files' : 'Choose a file'}
           </Button>
         </section>
       )}
@@ -412,7 +466,13 @@ export function Uploader(props: UploaderProps) {
       {batch.length === 0 ? null : (
         <Card role="region" aria-label="This batch">
           <CardHeader>
-            <CardTitle>This batch</CardTitle>
+            {props.headingLevel === 3 ? (
+              <h3 data-slot="card-title" className={CARD_TITLE_CLASSES}>
+                This batch
+              </h3>
+            ) : (
+              <CardTitle>This batch</CardTitle>
+            )}
             <CardDescription role="status" aria-live="polite">
               {sent} of {batch.length} sent{failed > 0 ? `, ${String(failed)} failed` : ''}; {settled} of {sentIds.length} taken in.
             </CardDescription>
@@ -432,7 +492,8 @@ export function Uploader(props: UploaderProps) {
                         <Badge variant="destructive">Not sent</Badge>
                         <span className="text-xs text-muted-foreground">{item.error}</span>
                         {item.documentId === undefined ? null : (
-                          <Button variant="outline" size="sm" onClick={() => void retry(item)}>
+                          // A button inside a form submits it unless it says otherwise.
+                          <Button type="button" variant="outline" size="sm" onClick={() => void retry(item)}>
                             Retry
                           </Button>
                         )}
@@ -452,7 +513,7 @@ export function Uploader(props: UploaderProps) {
       )}
       {props.showReceipts === false ? null : (
         <div className="flex flex-col gap-2">
-          <h2 className="text-xl font-bold tracking-display">Receipts</h2>
+          <Heading className="text-xl font-bold tracking-display">Receipts</Heading>
           <ReceiptList practiceId={practiceId} canUpload={canUpload} csrfToken={csrfToken} refreshKey={refreshKey} title="Receipts" />
         </div>
       )}

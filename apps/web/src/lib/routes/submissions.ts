@@ -9,7 +9,7 @@ import { practiceRoute } from '../http/invoke';
 import { InputError, type MutationResult, NotFoundError } from '../http/route';
 import {
   type EarlierExport,
-  type ResponseDocument,
+  type ResponseLetters,
   type SubmissionView,
   type SubmittableVersion,
   defaultFollowUpOn,
@@ -17,13 +17,16 @@ import {
   logSubmissionOnce,
   loggedSubmission,
   recordResponseOnce,
+  responseDocumentChoosable,
   responseDocuments,
   submissionsOf,
   submittableVersion,
 } from '../packets/submissions';
 import { STALE_EXPORT_SUBMISSION } from '../packets/unattested';
 import { type CaseSummary, caseOf } from '../triage/queries';
+import { MAX_UPLOAD_BYTES } from '../uploads/limits';
 import { opaqueId, optionalText } from './schemas';
+import { type UploadGate, uploadGate } from './uploads';
 
 /**
  * Submissions and responses, per case (PRD 5, J9: "the manager submits it through the practice's own
@@ -45,6 +48,12 @@ import { opaqueId, optionalText } from './schemas';
  * pricing went stale after export') and flagged with the cause, so reconciliation tracks the payer's answer. The
  * person confirms it went that way; the database decides whether the export is one (and refuses every other
  * unattested export) and records the audit event submission_logged_unattested in their name.
+ *
+ * A choice that records a fact starts unchosen and is refused empty on its field (docs/adr/0085, D1): the channel,
+ * the payer's answer and the payer's letter. The letter is uploaded in the response's form (D3), so the page carries
+ * the person's upload permission and the practice's upload gate, and the letters a response may carry, grouped; the
+ * handler refuses any other letter, a crafted post's or one tagged to a contract in another tab, under the document's
+ * lock (D4).
  */
 
 const isoDate = z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'a date, YYYY-MM-DD');
@@ -66,7 +75,12 @@ export interface SubmissionsPageData {
   readonly closed: boolean;
   /** Today's default follow-up date (45 days on). */
   readonly defaultFollowUpOn: string;
-  readonly documents: readonly ResponseDocument[];
+  /** The letters a response may carry, grouped; empty for a person who does not log responses. */
+  readonly letters: ResponseLetters;
+  /** Whether the person may upload the payer's letter in the response's form, and whether uploads are open; null for a person who does not log responses. */
+  readonly upload: ResponseLetterUpload | null;
+  /** The person's roles, which the uploader names when they cannot upload. */
+  readonly roles: readonly string[];
   /**
    * What was just done: logged, logged and flagged because the version's pricing is no longer current, logged sent
    * without sign-off (its pricing went stale after the export, so it is never attested), or a response recorded.
@@ -75,6 +89,16 @@ export interface SubmissionsPageData {
   readonly canLog: boolean;
   readonly canReadPhi: boolean;
 }
+
+/** The upload of the payer's letter in the response's form: the Uploads page's gate (a BAA on file, the organization not suspended). */
+export interface ResponseLetterUpload {
+  /** file.upload, its own check: logging responses does not imply it. */
+  readonly canUpload: boolean;
+  readonly gate: UploadGate;
+  readonly maxBytes: number;
+}
+
+const NO_LETTERS: ResponseLetters = { unused: [], thisCase: [], otherCases: [] };
 
 export const SUBMISSION_NOTICES = ['logged', 'logged_flagged', 'logged_unattested', 'recorded'] as const;
 export type SubmissionNotice = (typeof SUBMISSION_NOTICES)[number];
@@ -103,7 +127,9 @@ export const submissionsPage = practiceRoute({
       earlier: await earlierExports(scope, { practiceId, caseId: params.caseId }),
       closed: found.state === 'closed_written_off',
       defaultFollowUpOn: defaultFollowUpOn(asOf),
-      documents: canLog ? await responseDocuments(scope, practiceId) : [],
+      letters: canLog ? await responseDocuments(scope, { practiceId, caseId: params.caseId, requestId: request.requestId }) : NO_LETTERS,
+      upload: canLog ? { canUpload: rolesPermit(access.roles, 'file.upload'), gate: await uploadGate(scope, practiceId), maxBytes: MAX_UPLOAD_BYTES } : null,
+      roles: access.roles,
       notice: params.notice ?? null,
       canLog,
       canReadPhi,
@@ -136,7 +162,7 @@ export const logSubmissionAction = practiceRoute({
     caseId: opaqueId,
     versionId: opaqueId,
     submittedOn: isoDate,
-    channel: z.enum(SUBMISSION_CHANNELS),
+    channel: z.enum(SUBMISSION_CHANNELS, 'choose the channel'),
     reference: optionalText(z.string().max(200, 'at most 200 characters')),
     followUpOn: optionalText(isoDate),
     /** The person's confirmation that an export never attested (its pricing went stale after the export) went to the payer without sign-off. */
@@ -206,11 +232,22 @@ const optionalDollars = z.preprocess(
 );
 
 /**
- * Records the payer's response to the case's latest submission with its document (PRD 12: accepted,
+ * The refusal of a letter a response may not carry: one sentence for every case (another practice's document, one
+ * still in intake, a duplicate, held or expanded, a zip's entry, another kind, a contract's source), since the form
+ * offers none of them, so it answers a crafted post or a tag in another tab, and tells a post nothing about a
+ * document it cannot see.
+ */
+export const RESPONSE_LETTER_REFUSED = 'choose the payer’s letter from the list, or upload it here';
+
+/**
+ * Records the payer's response to the case's latest submission with its letter (PRD 12: accepted,
  * partial, denied, information requested, and amounts): an accepted or partial response states what
  * the payer accepted; a denial may name its reason and, with one, reopen the case for the next dispute
  * level within its window (the database computes the window and refuses a reopen without one).
  * Recording it writes no ledger entry and moves no line (LED-01). The same response again does nothing.
+ * The answer and the letter are the person's choice, refused empty; the letter must be one a response may carry
+ * (scanned clean, stored, no contract's source; docs/adr/0085, D4), checked under the document's lock before the
+ * response is recorded, since the database's refusal would name no field.
  */
 export const recordResponseAction = practiceRoute({
   id: 'practice.cases.submissions.respond',
@@ -222,9 +259,9 @@ export const recordResponseAction = practiceRoute({
   input: z.object({
     caseId: opaqueId,
     submissionId: opaqueId,
-    kind: z.enum(PERSON_RESPONSE_KINDS),
+    kind: z.enum(PERSON_RESPONSE_KINDS, 'choose the payer’s answer'),
     amount: optionalDollars,
-    documentId: opaqueId,
+    documentId: z.uuid('choose the payer’s letter').transform((value) => value.toLowerCase()),
     receivedOn: isoDate,
     denialCategory: optionalText(z.enum(DENIAL_CATEGORIES)),
     reopensCase: optionalText(z.literal('on')),
@@ -248,6 +285,9 @@ export const recordResponseAction = practiceRoute({
     const { rowCount } = await scope.client.query('SELECT 1 FROM submission WHERE id = $1 AND case_id = $2 AND practice_id = $3', [input.submissionId, input.caseId, practiceId]);
     if (rowCount !== 1) {
       throw new NotFoundError();
+    }
+    if (!(await responseDocumentChoosable(scope, practiceId, input.documentId))) {
+      throw new InputError([{ field: 'documentId', message: RESPONSE_LETTER_REFUSED }]);
     }
     const recorded = await underPacketRules(() =>
       recordResponseOnce(scope, services.keys, {

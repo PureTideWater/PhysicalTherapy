@@ -77,6 +77,19 @@ export interface UploadGate {
   readonly reason: string | null;
 }
 
+/**
+ * Whether the practice may upload now, and why not: its BAA on file (J1) and its organization not suspended, whose
+ * uploads pause with the reason (docs/adr/0050). One gate for every page that offers an upload (Uploads, Contracts,
+ * Reconciliation, and the payer's letter on Submissions), so each says so before a file is chosen rather than after.
+ */
+export async function uploadGate(scope: PracticeScope<ScopeClient>, practiceId: string): Promise<UploadGate> {
+  if (!(await baaOnFile(scope, practiceId))) {
+    return { open: false, reason: NO_BAA };
+  }
+  const suspension = await practiceRunRefusal(scope.client, practiceId);
+  return suspension === null ? { open: true, reason: null } : { open: false, reason: `Uploads are paused: ${suspension}.` };
+}
+
 /** A vendor ERA export format a person may choose for an upload, and whether its layout is still a placeholder. */
 export interface EraExportChoice {
   readonly id: EraFormatId;
@@ -107,14 +120,13 @@ export const uploadsPage = practiceRoute({
   permission: 'practice.open',
   params: z.object({ practiceId: opaqueId }),
   handle: async ({ scope, practiceId, access }): Promise<UploadsPageData> => {
-    const open = await baaOnFile(scope, practiceId);
     // A suspended organization's uploads pause with the reason (docs/adr/0050); what is on file stays readable.
-    const suspension = await practiceRunRefusal(scope.client, practiceId);
+    const gate = await uploadGate(scope, practiceId);
     return {
       practiceId,
       canUpload: rolesPermit(access.roles, 'file.upload'),
       roles: access.roles,
-      gate: { open: open && suspension === null, reason: !open ? NO_BAA : suspension === null ? null : `Uploads are paused: ${suspension}.` },
+      gate,
       limits: { maxFiles: MAX_FILES_PER_BATCH, maxBytes: MAX_UPLOAD_BYTES, contentTypes: CONTENT_TYPES.x12_835 },
       eraExport: { contentTypes: CONTENT_TYPES.era_export, formats: ERA_EXPORT_CHOICES },
     };

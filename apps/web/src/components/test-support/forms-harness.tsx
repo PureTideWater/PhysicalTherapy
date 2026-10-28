@@ -1,5 +1,5 @@
 import { AppRouterContext, type AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
-import { Component, type ReactNode, StrictMode, useSyncExternalStore } from 'react';
+import { Component, type ReactNode, StrictMode, startTransition, use, useEffect, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 
 // The brand's tokens and the shared stylesheet as written: the browser ignores the Tailwind at-rules, and the unlayered
@@ -11,6 +11,7 @@ import { CheckboxField, CheckboxGroup, Field, SelectField, TextAreaField } from 
 import type { RefusalState } from '../form-issues';
 import { HardwareKeySignIn } from '../hardware-key';
 import { ExportRequestForm } from '../packets/export-status';
+import { type ResponseLetterFieldProps, type ResponseLetters, ResponseLetterField } from '../packets/response-letter';
 import { VersionForm } from '../packets/version-form';
 import { PasswordField } from '../password-field';
 import { ScreeningSplitForm } from '../screening/split-form';
@@ -46,6 +47,20 @@ interface HarnessControl {
   refreshRenders: Partial<PageKeys>[];
   /** Renders the page again with these keys, as a refresh in place does (the export status's, another form's). */
   render: (next: Partial<PageKeys>) => void;
+  /** The response letter form's server: the letters it lists now, which each refresh renders. */
+  letters: ResponseLetters;
+  /** The response letter form's upload settings now, which each refresh renders. */
+  upload: ResponseLetterFieldProps['upload'];
+  /** While true, each refresh's answer waits for releaseRefreshes(). */
+  holdRefreshes: boolean;
+  /** While true, a refresh ends rendering nothing new, as one whose answer was lost. */
+  failRefreshes: boolean;
+  /** Answers every held refresh. */
+  releaseRefreshes: () => void;
+  /** Renders what the server gives now (letters and upload settings), as a refresh this form did not ask for. */
+  serve: () => void;
+  /** Whether the response letter form is mounted and reads the server's answers. */
+  serving: boolean;
 }
 
 /** The page's keys as the server renders them now, and the page's root, which renders again when they change. */
@@ -58,8 +73,49 @@ function renderKeys(next: Partial<PageKeys>): void {
   }
 }
 
-const control: HarnessControl = { steps: [], calls: [], release: null, allow: true, refreshes: 0, refreshRenders: [], render: renderKeys };
+/** What the response letter form's server renders: its letters and the upload settings. */
+interface LetterServerPage {
+  readonly letters: ResponseLetters;
+  readonly upload: ResponseLetterFieldProps['upload'];
+}
+
+/** The page's answer to its latest refresh (or serve), which the response letter form reads; null while it is not shown. */
+let showServer: ((answer: Promise<LetterServerPage>) => void) | null = null;
+/** The answers held until the test releases them. */
+const heldRefreshes: (() => void)[] = [];
+
+const control: HarnessControl = {
+  steps: [],
+  calls: [],
+  release: null,
+  allow: true,
+  refreshes: 0,
+  refreshRenders: [],
+  render: renderKeys,
+  letters: { unused: [], thisCase: [], otherCases: [] },
+  upload: { canUpload: true, gate: { open: true, reason: null }, maxBytes: 2 * 1024 ** 3 },
+  holdRefreshes: false,
+  failRefreshes: false,
+  releaseRefreshes: () => {
+    for (const reply of heldRefreshes.splice(0)) {
+      reply();
+    }
+  },
+  serve: () => {
+    served = { letters: control.letters, upload: control.upload };
+    showServer?.(settled(served));
+  },
+  serving: false,
+};
 Object.assign(window, { harness: control });
+
+/** What the response letter form shows now: the last answer that was not lost. */
+let served: LetterServerPage = { letters: control.letters, upload: control.upload };
+
+/** A promise React reads as settled already, so the render that takes it does not suspend. */
+function settled<T>(value: T): Promise<T> {
+  return Object.assign(Promise.resolve(value), { status: 'fulfilled', value });
+}
 
 async function action(_previous: RefusalState, data: FormData): Promise<RefusalState> {
   control.calls.push({
@@ -122,6 +178,46 @@ const RUNS = [
   { value: 'q1', label: 'Q1' },
   { value: 'long', label: 'SYNTHETIC REMITTANCES OF THE FIRST QUARTER (release 3)' },
 ];
+
+/** The payer's answers, as "Log a payer response" offers them, starting unchosen. */
+const RESPONSES = [
+  { value: '', label: 'Choose the payer’s answer' },
+  { value: 'accepted', label: 'Accepted' },
+  { value: 'partial', label: 'Partially accepted' },
+  { value: 'denied', label: 'Denied' },
+];
+
+/**
+ * "Log a payer response" as the submissions page renders it (design 2.5.1): the payer's letter first, over the real
+ * uploader, then the page's own heading and what the letter says. Its letters and upload settings are the server's
+ * answer, read as Next reads a refresh's: a refresh sets a new answer in a transition, which suspends until it comes,
+ * so a caller that starts the refresh in its own transition sees when it ends.
+ */
+function ResponseLetterForm({ page }: { readonly page: PageKeys }) {
+  const [answer, setAnswer] = useState(() => settled(served));
+  useEffect(() => {
+    showServer = setAnswer;
+    control.serving = true;
+    return () => {
+      showServer = null;
+      control.serving = false;
+    };
+  }, []);
+  const server = use(answer);
+  return (
+    <HarnessForm submit="Record the response" className="flex max-w-xl flex-col gap-3">
+      <Keys page={page} />
+      <ResponseLetterField practiceId="practice-1" csrfToken={PAGE_TOKEN} roleNames="Viewer" upload={server.upload} letters={server.letters} />
+      <h3 className="text-base font-semibold">What the letter says</h3>
+      <SelectField id="response-kind" label="Response" name="kind" required defaultValue="" options={RESPONSES} />
+      <Field id="amount" label="Additional amount the payer will pay (accepted or partial only, dollars)" name="amount" inputMode="decimal" />
+      <TextAreaField id="response-notes" label="Notes (kept encrypted)" name="notes" maxLength={2000} rows={2} />
+    </HarnessForm>
+  );
+}
+
+/** The page's CSRF token, as pageCsrfToken() renders it: synthetic, and never the form's request key. */
+const PAGE_TOKEN = ['synthetic', 'page', 'csrf'].join('-');
 
 /** A document's choice as the submissions page gives it: its SHA-256's prefix a run set in Plex Mono on the line. */
 const DOCUMENTS = [
@@ -303,6 +399,8 @@ const forms: Record<string, (page: PageKeys) => ReactNode> = {
       <Keys page={page} />
     </ExportRequestForm>
   ),
+  /** "Log a payer response" with its letter's field over the real uploader (CAS-47), whose server the test stands in for. */
+  'response-letter': (page) => <ResponseLetterForm page={page} />,
   /** Two forms on one page, as the per-row forms: each has its own refusal. */
   two: (page) => (
     <>
@@ -333,6 +431,27 @@ const router = {
       setTimeout(() => {
         renderKeys(next);
       }, 20);
+    }
+    // The response letter form's letters, in a transition as Next's router sets its state: the caller's own transition,
+    // if any, ends only once this answer has rendered.
+    if (showServer !== null) {
+      const show = showServer;
+      const answer = new Promise<LetterServerPage>((resolve) => {
+        const reply = () => {
+          if (!control.failRefreshes) {
+            served = { letters: control.letters, upload: control.upload };
+          }
+          resolve(served);
+        };
+        if (control.holdRefreshes) {
+          heldRefreshes.push(reply);
+        } else {
+          setTimeout(reply, 20);
+        }
+      });
+      startTransition(() => {
+        show(answer);
+      });
     }
   },
   bfcacheId: 'harness',

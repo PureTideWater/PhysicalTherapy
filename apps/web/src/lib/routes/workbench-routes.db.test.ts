@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
+import { type DatabaseClient, databaseClient, readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
 import { addMembership, asOwner, createOrganization, createUser } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
@@ -37,24 +37,31 @@ import {
   reviewPacketPdf,
   writeVersionAction,
 } from './packets';
+import { abstractionPage, amendVersionAction, startAbstraction, supersedeVersionAction } from './abstraction';
+import { contractsPage, tagContractDocument } from './contracts';
 import { REFUSED_FIELD, refusalState } from '../cases/refusals';
+import { writeOffReasonsFor } from '../cases/write-off';
+import { listContractDocuments } from '../contracts/contract-queries';
 import { EXPORT_REFUSAL_TEXT } from '../packets/export-attempts';
 import { PACKET_CHECKLIST } from '../packets/review';
 import { practiceHome } from './practice';
 import { logSubmissionAction, recordResponseAction, submissionsPage } from './submissions';
-import { casePage, casesPage } from './triage';
+import { casePage, casesPage, writeOffLineAction } from './triage';
 import { addNoteAction, assignCaseAction, openCaseAction, setMaterialityAction } from './workbench';
 import { csrfTokenFor } from '../http/csrf';
 
 /**
  * The case workbench, the packet builder and the submissions screens through their routes against
  * PostgreSQL (PRD 5, J8 to J10; PRD 7, Cases, Packet builder, Submissions and responses; PRD 12; test
- * matrix CAS-03 to CAS-15; docs/adr/0041 and 0044). Each practice loads SYNTHETIC CAS fixtures through
- * the parse_835 job, signs off a fixed schedule (97110 at 50.00 per unit), prices the month with the
- * price job and triages it; then its people work it through the screens' routes, and the export job's
- * own code prints the packets (with a stand-in printer where Chromium is not installed). Its window is the
- * contract's own 3,650 days, cited and verified (D17), so the deadline is verified and the export allowed;
- * a reimbursement reviewer under a support grant attests the export before it is submitted (D16).
+ * matrix CAS-03 to CAS-15 and CAS-45 to CAS-48; docs/adr/0041, 0044 and 0085). Each practice loads
+ * SYNTHETIC CAS fixtures through the parse_835 job, signs off a fixed schedule (97110 at 50.00 per unit),
+ * prices the month with the price job and triages it; then its people work it through the screens' routes,
+ * and the export job's own code prints the packets (with a stand-in printer where Chromium is not
+ * installed). Its window is the contract's own 3,650 days, cited and verified (D17), so the deadline is
+ * verified and the export allowed; a reimbursement reviewer under a support grant attests the export before
+ * it is submitted (D16). A choice that records a fact is refused empty, and a write-off reason the line's
+ * own window contradicts is refused; a response's letter is one a response may carry, never a contract's
+ * document, under the document's lock (ADR 0085).
  */
 
 let w: TriageWorld;
@@ -210,6 +217,141 @@ async function superuser(sql: string, values: unknown[]): Promise<void> {
   }
 }
 
+/** A contract specialist of the internal organization under a four-hour support grant on the practice, as the abstraction queue is worked. */
+async function specialistOf(target: Practice): Promise<string> {
+  const internal = await createOrganization(w.owner, 'internal', `abstraction ${randomUUID().slice(0, 8)}`);
+  const id = await createUser(w.owner, { hardwareKeyRequired: true });
+  await addMembership(w.owner, internal, id, 'contract_specialist');
+  await asOwner(w.owner, [target.practiceId], () =>
+    w.owner.query(`INSERT INTO support_grant (practice_id, user_id, ticket, reason, expires_at) VALUES ($1, $2, 'AB-ROUTES', 'SYNTHETIC ABSTRACTION', now() + interval '4 hours')`, [target.practiceId, id]),
+  );
+  internalUsers.add(id);
+  return id;
+}
+
+/**
+ * A document row of the practice as intake leaves it, uploaded by its manager: a clean, stored, top-level payer letter
+ * unless told otherwise. Only the row: nothing here reads a document's bytes.
+ */
+async function documentOf(
+  target: Practice,
+  fields: { readonly kind?: string; readonly scan?: 'pending' | 'clean'; readonly status?: string; readonly contentType?: string; readonly parentId?: string } = {},
+): Promise<string> {
+  const id = randomUUID();
+  const scan = fields.scan ?? 'clean';
+  await asOwner(w.owner, [target.practiceId], () =>
+    w.owner.query(
+      `INSERT INTO source_document (id, practice_id, kind, sha256, size_bytes, content_type, uploaded_by, scan_status, scan_at, status, parent_document_id)
+       VALUES ($1, $2, $3, $4, 100, $5, $6, $7, $8, $9, $10)`,
+      [
+        id,
+        target.practiceId,
+        fields.kind ?? 'payer_letter',
+        createHash('sha256').update(`document ${id}`).digest('hex'),
+        fields.contentType ?? 'application/pdf',
+        target.manager,
+        scan,
+        scan === 'pending' ? null : new Date(),
+        fields.status ?? 'stored',
+        fields.parentId ?? null,
+      ],
+    ),
+  );
+  return id;
+}
+
+/** Writes the case's packet, has a second billing manager approve it, exports it, has a reviewer attest it and logs its submission by fax: the case awaits the payer's answer. */
+async function submitted(practice: Practice, caseId: string): Promise<{ readonly versionId: string; readonly submissionId: string }> {
+  const P = { practiceId: practice.practiceId };
+  const second = await person(practice, 'billing_manager');
+  ok(await call(writeVersionAction, practice.manager, P, { caseId, basedOnVersionId: '', useDraft: 'on' }));
+  const version = ok(await call(packetPage, practice.manager, { ...P, caseId })).builder.version;
+  const versionId = version?.id ?? '';
+  ok(await call(approvePacketVersionAction, second, P, { caseId, versionId, versionSha256: version?.contentSha256 ?? '', wordsVersion: WORDS_VERSION }));
+  await runExport(practice, versionId);
+  await attestThroughRoutes(practice, await reviewerOf(practice), caseId, versionId);
+  ok(await call(logSubmissionAction, practice.manager, P, { caseId, versionId, submittedOn: today(), channel: 'fax', reference: '', followUpOn: '' }));
+  const page = ok(await call(submissionsPage, practice.manager, { ...P, caseId }));
+  return { versionId, submissionId: page.submissions[0]?.submissionId ?? '' };
+}
+
+/** A CAS-08 case, submitted, with a SYNTHETIC payer letter on file that no response names yet. */
+async function submittedCase(label: string): Promise<{ readonly practice: Practice; readonly caseId: string; readonly versionId: string; readonly submissionId: string; readonly letterId: string }> {
+  const { practice, caseId } = await cas08Case(label);
+  const letterId = await documentOf(practice);
+  return { practice, caseId, letterId, ...(await submitted(practice, caseId)) };
+}
+
+/** The refusal of a letter a response may not carry: one sentence, whatever the document is (docs/adr/0085, D4). */
+const LETTER_REFUSED = { status: 'invalid', issues: [{ field: 'documentId', message: 'choose the payer’s letter from the list, or upload it here' }] };
+
+/** The refusal of a response's letter as a contract's document, by the tag, amendment and correction handlers (D4). */
+const REFUSED_AS_SOURCE = {
+  status: 'invalid',
+  issues: [{ field: 'documentId', message: 'a payer’s answer to a dispute stays with its case’s response and is not a contract’s document; choose the contract, exhibit or payer’s terms letter instead' }],
+};
+
+/** The lock every handler that makes a document a response's evidence or a contract's source takes first (D4). */
+const DOCUMENT_USE_LOCK = "SELECT pg_advisory_xact_lock(hashtextextended('document_use:' || $1::text, 0))";
+
+/**
+ * Runs `work` as the owner on a connection of its own, in `actorId`'s name, and keeps its transaction open until
+ * `commit()`: another tab's work, done but not yet committed. `ready` settles once `work` has run (or rejects with its
+ * error).
+ */
+function held(client: DatabaseClient, target: Practice, actorId: string, work: () => Promise<void>): { readonly ready: Promise<void>; readonly commit: () => Promise<void> } {
+  let release = (): void => undefined;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let done = (): void => undefined;
+  const ran = new Promise<void>((resolve) => {
+    done = resolve;
+  });
+  const transaction = asOwner(
+    client,
+    [target.practiceId],
+    async () => {
+      await work();
+      done();
+      await released;
+    },
+    actorId,
+  );
+  return {
+    ready: Promise.race([ran, transaction]),
+    commit: async () => {
+      release();
+      await transaction;
+    },
+  };
+}
+
+/**
+ * Waits until a transaction asks for the document's lock and is not granted it (pg_locks: one bigint key is classid,
+ * its high half, and objid, its low half, with objsubid 1), so the handler is blocked before its check.
+ */
+async function waitingOn(documentId: string): Promise<void> {
+  const deadline = Date.now() + 15_000;
+  for (;;) {
+    const { rows } = await w.owner.query<{ n: number }>(
+      `SELECT count(*)::int AS n
+         FROM pg_locks l, (SELECT hashtextextended('document_use:' || $1::text, 0) AS key) k
+        WHERE l.locktype = 'advisory' AND NOT l.granted AND l.objsubid = 1
+          AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+          AND l.classid = ((k.key >> 32) & 4294967295)::oid AND l.objid = (k.key & 4294967295)::oid`,
+      [documentId],
+    );
+    if ((rows[0]?.n ?? 0) > 0) {
+      return;
+    }
+    if (Date.now() > deadline) {
+      throw new Error('no transaction waited for the document’s lock');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
 describe('the Cases workbench (CAS-03, CAS-04, CAS-06)', () => {
   it('opens a held pattern only once the case materiality admits it, with its owner, and lists cases by state, owner and deadline', async () => {
     const practice = await w.practice('WORKBENCH CAS-04');
@@ -328,6 +470,63 @@ describe('the Cases workbench (CAS-03, CAS-04, CAS-06)', () => {
     ]);
     expect([detail.case.state, detail.case.actionableNowCents, detail.case.writtenOffCents]).toEqual(['closed_written_off', '0', '9000']);
     expect(detail.timeline.filter((event) => event.kind === 'written_off')).toHaveLength(3);
+  });
+
+  it('offers and accepts “Window passed” only once a line’s window has ended, and refuses a write-off with no reason (CAS-45)', async () => {
+    const writeOff = (target: Practice, caseLineId: string, reason: string) => call(writeOffLineAction, target.manager, { practiceId: target.practiceId }, { caseLineId, reason, text: '', confirm: 'on' });
+    const writtenOff = async (target: Practice, caseLineId: string) =>
+      (
+        await asOwner(w.owner, [target.practiceId], () =>
+          w.owner.query<{ reason: string | null; by: string | null; events: number }>(
+            `SELECT cl.written_off_reason AS reason, cl.written_off_by AS by,
+                    (SELECT count(*)::int FROM audit_event a WHERE a.practice_id = cl.practice_id AND a.action = 'case_line_written_off' AND a.object_id = cl.id) AS events
+               FROM case_line cl WHERE cl.id = $1`,
+            [caseLineId],
+          ),
+        )
+      ).rows[0];
+
+    // As in the WINDOW test, a 30-day window judged on a day inside it opens the case; but no triage has run since, so
+    // its lines are still actionable though their windows have ended: "Window passed" is offered, and recorded in the
+    // manager's name.
+    const ended = await w.practice('WRITE-OFF CAS-45 ENDED', { case_materiality_cents: '1000' });
+    await w.load(ended, 'CAS-08/remit.835');
+    const contract = await w.fixedContract(ended, { ...FIXED, disputeWindowDays: 30 });
+    const runId = await w.pricedRun(ended, { plans: [{ key: 'CE:SYNPLAN-FIX-ONE', versionId: contract.versionId }], from: '2026-03-01', to: '2026-03-31' });
+    await w.triage(ended, runId, '2026-03-20');
+    const E = { practiceId: ended.practiceId };
+    const [endedCase] = ok(await call(casesPage, ended.manager, E)).cases;
+    const endedLines = ok(await call(casePage, ended.manager, { ...E, caseId: endedCase?.id ?? '' })).detail.lines;
+    expect(endedLines.map((line) => [line.actionable, line.windowPassed, line.writtenOffReason])).toEqual([
+      [true, true, null],
+      [true, true, null],
+      [true, true, null],
+    ]);
+    const [passed] = endedLines;
+    expect(passed === undefined ? [] : writeOffReasonsFor(passed)).toContain('window_passed');
+    ok(await writeOff(ended, passed?.id ?? '', 'window_passed'));
+    expect(await writtenOff(ended, passed?.id ?? '')).toEqual({ reason: 'window_passed', by: ended.manager, events: 1 });
+
+    // A CAS-08 case triaged today: its windows are open for ten years, so "Window passed" is neither offered nor
+    // accepted. It is refused on Reason with the rule, never a date, and nothing is written.
+    const { practice, caseId } = await cas08Case('WRITE-OFF CAS-45 OPEN');
+    const P = { practiceId: practice.practiceId };
+    const [open] = ok(await call(casePage, practice.manager, { ...P, caseId })).detail.lines;
+    expect([open?.actionable, open?.windowPassed]).toEqual([true, false]);
+    expect(open === undefined ? [] : writeOffReasonsFor(open)).not.toContain('window_passed');
+    expect(await writeOff(practice, open?.id ?? '', 'window_passed')).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'reason', message: 'a line whose dispute window is still open is not written off as “Window passed”; choose the reason that applies' }],
+    });
+    // A post that left Reason on its empty first option is refused on Reason, with what to choose.
+    expect(await writeOff(practice, open?.id ?? '', '')).toEqual({ status: 'invalid', issues: [{ field: 'reason', message: 'choose the reason' }] });
+    expect(await writtenOff(practice, open?.id ?? '')).toEqual({ reason: null, by: null, events: 0 });
+    const after = ok(await call(casePage, practice.manager, { ...P, caseId }));
+    expect(after.detail.lines.find((line) => line.id === open?.id)).toMatchObject({ actionable: true, writtenOffReason: null });
+    expect(after.timeline.filter((event) => event.kind === 'written_off')).toEqual([]);
+    // A judgment the records do not decide is the person's, on any line.
+    ok(await writeOff(practice, open?.id ?? '', 'not_worth_pursuit'));
+    expect(await writtenOff(practice, open?.id ?? '')).toEqual({ reason: 'not_worth_pursuit', by: practice.manager, events: 1 });
   });
 });
 
@@ -597,25 +796,11 @@ describe('the packet builder (CAS-08 to CAS-13)', () => {
 
 describe('submissions and responses (CAS-14, J10)', () => {
   it('records responses with their documents, reopens a denial only with its window, and surfaces an overdue follow-up on the dashboard', async () => {
-    const { practice, caseId } = await cas08Case('SUBMISSIONS');
-    const second = await person(practice, 'billing_manager');
+    const { practice, caseId, versionId, letterId: documentId } = await submittedCase('SUBMISSIONS');
     const P = { practiceId: practice.practiceId };
-    ok(await call(writeVersionAction, practice.manager, P, { caseId, basedOnVersionId: '', useDraft: 'on' }));
-    const version = ok(await call(packetPage, practice.manager, { ...P, caseId })).builder.version;
-    ok(await call(approvePacketVersionAction, second, P, { caseId, versionId: version?.id ?? '', versionSha256: version?.contentSha256 ?? '', wordsVersion: WORDS_VERSION }));
-    await runExport(practice, version?.id ?? '');
-    await attestThroughRoutes(practice, await reviewerOf(practice), caseId, version?.id ?? '');
-    const { rows } = await asOwner(w.owner, [practice.practiceId], () =>
-      w.owner.query<{ id: string }>(
-        `INSERT INTO source_document (practice_id, kind, sha256, size_bytes, content_type, uploaded_by, scan_status, scan_at, status)
-         VALUES ($1, 'payer_letter', $2, 100, 'application/pdf', $3, 'clean', now(), 'stored') RETURNING id`,
-        [practice.practiceId, createHash('sha256').update(`letter ${practice.practiceId}`).digest('hex'), practice.manager],
-      ),
-    );
-    const documentId = (rows[0] as { id: string }).id;
-    ok(await call(logSubmissionAction, practice.manager, P, { caseId, versionId: version?.id ?? '', submittedOn: today(), channel: 'fax', reference: '', followUpOn: '' }));
     const page = ok(await call(submissionsPage, practice.manager, { ...P, caseId }));
-    expect(page.documents.map((document) => document.id)).toEqual([documentId]);
+    // The letter on file is one no response names yet.
+    expect(page.letters.unused.map((document) => document.id)).toEqual([documentId]);
     const submissionId = page.submissions[0]?.submissionId ?? '';
     const response = (input: Record<string, unknown>) => call(recordResponseAction, practice.manager, P, { caseId, submissionId, documentId, receivedOn: today(), ...input });
 
@@ -629,13 +814,17 @@ describe('submissions and responses (CAS-14, J10)', () => {
     // More information requested: the case awaits a response; the second submission follows up today, so it is due now.
     ok(await response({ kind: 'info_requested', notes: 'SYNTHETIC: the payer wants the exhibit' }));
     ok(await response({ kind: 'info_requested', notes: '' }));
+    // The letter that answered is now listed among this case's earlier responses' letters, no longer unused (CAS-48).
+    expect(ok(await call(submissionsPage, practice.manager, { ...P, caseId })).letters).toMatchObject({ unused: [], thisCase: [{ id: documentId }], otherCases: [] });
     expect(ok(await call(casePage, practice.manager, { ...P, caseId })).case.state).toBe('awaiting_response');
-    ok(await call(logSubmissionAction, practice.manager, P, { caseId, versionId: version?.id ?? '', submittedOn: today(), channel: 'payer_portal', reference: '', followUpOn: today() }));
+    ok(await call(logSubmissionAction, practice.manager, P, { caseId, versionId, submittedOn: today(), channel: 'payer_portal', reference: '', followUpOn: today() }));
     const due = ok(await call(submissionsPage, practice.manager, { ...P, caseId }));
     expect(due.submissions.map((item) => [item.channel, item.followUp, item.responses.map((answer) => answer.kind)])).toEqual([
       ['payer_portal', 'due', []],
       ['fax', 'answered', ['info_requested']],
     ]);
+    // The log names each response's letter, as its receipt names it (UX-007).
+    expect(due.submissions[1]?.responses.map((answer) => [answer.documentId, answer.document?.id, answer.document?.kind])).toEqual([[documentId, documentId, 'payer_letter']]);
     expect(ok(await call(practiceHome, practice.manager, P)).dashboard.followUps).toEqual({ due: 1, earliest: today(), first: [{ caseId, followUpOn: today() }] });
     expect(ok(await call(casePage, practice.manager, { ...P, caseId })).dispute.latestSubmission).toMatchObject({ followUpDue: true });
 
@@ -648,6 +837,224 @@ describe('submissions and responses (CAS-14, J10)', () => {
     expect(ok(await call(practiceHome, practice.manager, P)).dashboard.followUps.due).toBe(0);
     const { rows: entries } = await asOwner(w.owner, [practice.practiceId], () => w.owner.query<{ n: number }>('SELECT count(*)::int AS n FROM ledger_entry WHERE practice_id = $1', [practice.practiceId]));
     expect(entries[0]?.n).toBe(0);
+  });
+
+  it('refuses a response or a submission with nothing chosen (CAS-46)', async () => {
+    const { practice, caseId, versionId, submissionId, letterId } = await submittedCase('SUBMISSIONS NOTHING CHOSEN');
+    const P = { practiceId: practice.practiceId };
+    const response = (input: Record<string, unknown>) => call(recordResponseAction, practice.manager, P, { caseId, submissionId, documentId: letterId, receivedOn: today(), kind: 'info_requested', ...input });
+    // A post without JavaScript, or a crafted one, that left a choice on its empty first option is refused on that
+    // field, with what to choose.
+    expect(await response({ kind: '' })).toEqual({ status: 'invalid', issues: [{ field: 'kind', message: 'choose the payer’s answer' }] });
+    expect(await response({ documentId: '' })).toEqual({ status: 'invalid', issues: [{ field: 'documentId', message: 'choose the payer’s letter' }] });
+    expect(await call(logSubmissionAction, practice.manager, P, { caseId, versionId, submittedOn: today(), channel: '', reference: '', followUpOn: '' })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'channel', message: 'choose the channel' }],
+    });
+    // Nothing was recorded: the one submission, with no response, and the letter still unused.
+    const page = ok(await call(submissionsPage, practice.manager, { ...P, caseId }));
+    expect(page.submissions.map((item) => [item.submissionId, item.channel, item.responses])).toEqual([[submissionId, 'fax', []]]);
+    expect(page.letters).toMatchObject({ unused: [{ id: letterId }], thisCase: [], otherCases: [] });
+    expect(ok(await call(casePage, practice.manager, { ...P, caseId })).case.state).toBe('submitted');
+  });
+
+  it('records a response only with a stored letter a response may carry, and keeps that letter apart from the contract documents (CAS-48)', async () => {
+    const { practice, caseId, submissionId, letterId } = await submittedCase('SUBMISSIONS LETTER CHECKS');
+    const P = { practiceId: practice.practiceId };
+    const specialist = await specialistOf(practice);
+    const payerId = await w.pricing.payerOf(practice);
+    const ids = (documents: { readonly items: readonly { readonly id: string }[] }) => documents.items.map((document) => document.id);
+    const sorted = (values: readonly string[]) => [...values].sort();
+
+    // Documents in each state intake leaves them, and of each kind or place a response may not carry.
+    const refusedDocuments = {
+      pending: await documentOf(practice, { scan: 'pending', status: 'received' }),
+      received: await documentOf(practice, { status: 'received' }),
+      duplicate: await documentOf(practice, { status: 'duplicate' }),
+      zip: await documentOf(practice, { contentType: 'application/zip', status: 'expanded' }),
+      remittance: await documentOf(practice, { kind: 'x12_835', contentType: 'application/edi-x12', status: 'loaded' }),
+      elsewhere: await documentOf(await w.practice('SUBMISSIONS LETTER CHECKS ELSEWHERE')),
+      tagged: await documentOf(practice),
+      missing: randomUUID(),
+    };
+    const entry = await documentOf(practice, { parentId: refusedDocuments.zip });
+    ok(await call(tagContractDocument, practice.manager, P, { documentId: refusedDocuments.tagged, payerId, title: 'SYNTHETIC TERMS LETTER AGREEMENT', effectiveFrom: '2026-01-01' }));
+    // A, the payer's answer; T, a payer's terms letter no response names.
+    const A = await documentOf(practice);
+    const T = await documentOf(practice);
+
+    // Only the stored, top-level letters no contract version names are offered, all of them unused.
+    const offered = ok(await call(submissionsPage, practice.manager, { ...P, caseId })).letters;
+    expect(sorted(offered.unused.map((document) => document.id))).toEqual(sorted([letterId, A, T]));
+    expect([offered.thisCase, offered.otherCases]).toEqual([[], []]);
+
+    // Each other document is refused on the letter with one sentence, the same for a document of another practice as
+    // for one that does not exist, and nothing is recorded.
+    const respond = (documentId: string) => call(recordResponseAction, practice.manager, P, { caseId, submissionId, documentId, receivedOn: today(), kind: 'info_requested' });
+    for (const [what, documentId] of Object.entries({ ...refusedDocuments, entry })) {
+      expect(await respond(documentId), what).toEqual(LETTER_REFUSED);
+    }
+    expect(ok(await call(submissionsPage, practice.manager, { ...P, caseId })).submissions[0]?.responses).toEqual([]);
+
+    // Before any response names A, it waits to be tagged and abstracted like T.
+    const lists = () =>
+      withPracticeScope(w.app, { actorId: practice.manager, practiceIds: [practice.practiceId] }, async (scope) => ({
+        untagged: await listContractDocuments(scope, practice.practiceId, 'untagged', 1, `test-${randomUUID()}`),
+        awaiting: await listContractDocuments(scope, practice.practiceId, 'awaiting_abstraction', 1, `test-${randomUUID()}`),
+      }));
+    const before = await lists();
+    expect(ids(before.untagged)).toEqual(expect.arrayContaining([A, T]));
+    expect(ids(before.awaiting)).toEqual(expect.arrayContaining([A, T]));
+
+    // A response with A, its ID posted upper-cased as a browser may send it, is recorded naming A.
+    ok(await respond(A.toUpperCase()));
+    const answered = ok(await call(submissionsPage, practice.manager, { ...P, caseId }));
+    expect(answered.submissions[0]?.responses.map((answer) => [answer.kind, answer.documentId])).toEqual([['info_requested', A]]);
+    expect(sorted(answered.letters.unused.map((document) => document.id))).toEqual(sorted([letterId, T]));
+    expect(answered.letters.thisCase.map((document) => document.id)).toEqual([A]);
+
+    // A leaves Documents to tag and Documents awaiting abstraction; T stays in both, on the Contracts page (the
+    // manager) and in the specialist's queue as in the lists, totals agreeing.
+    const after = await lists();
+    for (const list of [after.untagged, after.awaiting]) {
+      expect(ids(list)).toContain(T);
+      expect(ids(list)).not.toContain(A);
+    }
+    expect([after.untagged.total, after.awaiting.total]).toEqual([before.untagged.total - 1, before.awaiting.total - 1]);
+    const contracts = ok(await call(contractsPage, practice.manager, P));
+    expect([ids(contracts.untagged), contracts.untagged.total]).toEqual([ids(after.untagged), after.untagged.total]);
+    const queue = ok(await call(abstractionPage, specialist, P));
+    expect([ids(queue.documents), queue.documents.total]).toEqual([ids(after.awaiting), after.awaiting.total]);
+    // The Contracts panel's payer letter kind is a payer's terms or policy letter.
+    expect(contracts.upload.kinds.map((kind) => [kind.kind, kind.label])).toEqual([
+      ['contract', 'Contract'],
+      ['exhibit', 'Exhibit'],
+      ['payer_letter', 'Payer’s terms or policy letter'],
+    ]);
+
+    // Tagging A, by the manager or the specialist, or naming it in an amendment or a correction of the signed-off
+    // version, is refused on the document with what to choose instead, and changes nothing.
+    const counts = async () =>
+      (
+        await asOwner(w.owner, [practice.practiceId], () =>
+          w.owner.query<{ contracts: number; versions: number; naming: number }>(
+            `SELECT (SELECT count(*)::int FROM contract WHERE practice_id = $1) AS contracts,
+                    (SELECT count(*)::int FROM contract_version WHERE practice_id = $1) AS versions,
+                    (SELECT count(*)::int FROM contract_version WHERE practice_id = $1 AND $2::uuid = ANY (source_document_ids)) AS naming`,
+            [practice.practiceId, A],
+          ),
+        )
+      ).rows[0];
+    const { rows: signed } = await asOwner(w.owner, [practice.practiceId], () =>
+      w.owner.query<{ id: string }>("SELECT id FROM contract_version WHERE practice_id = $1 AND status = 'signed_off'", [practice.practiceId]),
+    );
+    const signedOff = signed[0]?.id ?? '';
+    const unchanged = await counts();
+    expect(unchanged?.naming).toBe(0);
+    const tag = { documentId: A, payerId, title: 'SYNTHETIC ANSWER AS AN AGREEMENT', effectiveFrom: '2027-01-01' };
+    expect(await call(tagContractDocument, practice.manager, P, tag)).toEqual(REFUSED_AS_SOURCE);
+    expect(await call(startAbstraction, specialist, P, tag)).toEqual(REFUSED_AS_SOURCE);
+    expect(await call(amendVersionAction, specialist, P, { versionId: signedOff, effectiveFrom: '2027-01-01', documentId: A })).toEqual(REFUSED_AS_SOURCE);
+    expect(await call(supersedeVersionAction, specialist, P, { versionId: signedOff, documentId: A })).toEqual(REFUSED_AS_SOURCE);
+    expect(await counts()).toEqual(unchanged);
+    // T, which no response names, is still tagged.
+    ok(await call(tagContractDocument, practice.manager, P, { ...tag, documentId: T, title: 'SYNTHETIC TERMS LETTER AGREEMENT' }));
+  });
+
+  it('lists another case’s response letter in its own group and still records it (CAS-48)', async () => {
+    // CAS-03's two payer patterns open two cases in one practice, each submitted.
+    const practice = await w.practice('SUBMISSIONS TWO CASES', { case_materiality_cents: '1000' });
+    await w.load(practice, 'CAS-03/remit.835');
+    const one = await w.fixedContract(practice, FIXED);
+    const two = await w.fixedContract(practice, { ...FIXED, schedule: [{ code: '97530', amountCents: '5200' }] });
+    const runId = await w.pricedRun(practice, {
+      plans: [
+        { key: 'CE:SYNPLAN-FIX-ONE', versionId: one.versionId },
+        { key: 'CE:SYNPLAN-FIX-TWO', versionId: two.versionId },
+      ],
+      from: '2026-03-01',
+      to: '2026-03-31',
+    });
+    expect(await w.triage(practice, runId)).toMatchObject({ outcome: 'triaged', summary: { casesOpened: 2 } });
+    const P = { practiceId: practice.practiceId };
+    const [first = '', second = ''] = ok(await call(casesPage, practice.manager, P)).cases.map((item) => item.id);
+    const firstSubmission = (await submitted(practice, first)).submissionId;
+    const secondSubmission = (await submitted(practice, second)).submissionId;
+    const A = await documentOf(practice);
+    const T = await documentOf(practice);
+    const letters = async (caseId: string) => {
+      const { unused, thisCase, otherCases } = ok(await call(submissionsPage, practice.manager, { ...P, caseId })).letters;
+      return [unused, thisCase, otherCases].map((group) => group.map((document) => document.id));
+    };
+    const respond = (caseId: string, submissionId: string) => call(recordResponseAction, practice.manager, P, { caseId, submissionId, documentId: A, receivedOn: today(), kind: 'info_requested' });
+
+    ok(await respond(first, firstSubmission));
+    // The first case lists A among its own responses' letters; the second, last, among other cases', not as unused.
+    expect(await letters(first)).toEqual([[T], [A], []]);
+    expect(await letters(second)).toEqual([[T], [], [A]]);
+    // A payer that answers two cases in one letter: the second case's response with A is recorded too.
+    ok(await respond(second, secondSubmission));
+    const page = ok(await call(submissionsPage, practice.manager, { ...P, caseId: second }));
+    expect(page.submissions[0]?.responses.map((answer) => [answer.kind, answer.documentId])).toEqual([['info_requested', A]]);
+    expect(await letters(second)).toEqual([[T], [A], []]);
+  });
+
+  it('serializes a tag and a response of the same letter (CAS-48)', async () => {
+    const { practice, caseId, submissionId } = await submittedCase('SUBMISSIONS LETTER RACE');
+    const P = { practiceId: practice.practiceId };
+    const payerId = await w.pricing.payerOf(practice);
+    const naming = async (documentId: string) =>
+      (
+        await asOwner(w.owner, [practice.practiceId], () =>
+          w.owner.query<{ responses: number; versions: number }>(
+            `SELECT (SELECT count(*)::int FROM payer_response WHERE practice_id = $1 AND document_id = $2) AS responses,
+                    (SELECT count(*)::int FROM contract_version WHERE practice_id = $1 AND $2::uuid = ANY (source_document_ids)) AS versions`,
+            [practice.practiceId, documentId],
+          ),
+        )
+      ).rows[0];
+    const other = databaseClient(w.pricing.database.url);
+    await other.connect();
+    try {
+      // A tag of L in another tab: its transaction holds L's lock and has written a draft version naming L, not yet
+      // committed. The response, posted with L upper-cased, takes the lock on L's canonical ID and waits for it (the
+      // test sees it wait in pg_locks), so it has not checked L yet; once the tag commits, it checks and is refused.
+      // Without the lock it would have checked before the commit and recorded the response.
+      const L = await documentOf(practice);
+      const tag = held(other, practice, practice.manager, async () => {
+        await other.query(DOCUMENT_USE_LOCK, [L]);
+        const { rows } = await other.query<{ id: string }>("INSERT INTO contract (practice_id, payer_id, title) VALUES ($1, $2, 'SYNTHETIC TERMS LETTER AGREEMENT') RETURNING id", [practice.practiceId, payerId]);
+        await other.query("INSERT INTO contract_version (practice_id, contract_id, version_no, source_document_ids, effective_from) VALUES ($1, $2, 1, ARRAY[$3::uuid], '2027-01-01')", [practice.practiceId, rows[0]?.id, L]);
+      });
+      await tag.ready;
+      const responding = call(recordResponseAction, practice.manager, P, { caseId, submissionId, documentId: L.toUpperCase(), receivedOn: today(), kind: 'info_requested' });
+      await waitingOn(L);
+      await tag.commit();
+      expect(await responding).toEqual(LETTER_REFUSED);
+      expect(await naming(L)).toEqual({ responses: 0, versions: 1 });
+
+      // The mirror: a response of M holds M's lock and has recorded M, not yet committed; a tag of M waits for the
+      // lock, then is refused with what to choose instead, and no version names M.
+      const M = await documentOf(practice);
+      const response = held(other, practice, practice.manager, async () => {
+        await other.query(DOCUMENT_USE_LOCK, [M]);
+        await other.query("INSERT INTO payer_response (practice_id, submission_id, kind, document_id, received_on, recorded_by) VALUES ($1, $2, 'info_requested', $3, $4, $5)", [
+          practice.practiceId,
+          submissionId,
+          M,
+          today(),
+          practice.manager,
+        ]);
+      });
+      await response.ready;
+      const tagging = call(tagContractDocument, practice.manager, P, { documentId: M.toUpperCase(), payerId, title: 'SYNTHETIC ANSWER AS AN AGREEMENT', effectiveFrom: '2027-01-01' });
+      await waitingOn(M);
+      await response.commit();
+      expect(await tagging).toEqual(REFUSED_AS_SOURCE);
+      expect(await naming(M)).toEqual({ responses: 1, versions: 0 });
+    } finally {
+      await other.end();
+    }
   });
 });
 

@@ -1,4 +1,4 @@
-import { type KeyProvider, PRICING_CHECK_RESULTS, type PracticeScope, type PricingCheckResult, type ScopeClient } from '@tp/db/runtime';
+import { type KeyProvider, PRICING_CHECK_RESULTS, type PracticeScope, type PricingCheckResult, type ScopeClient, readWithAudit } from '@tp/db/runtime';
 import { type Cents, centsToString } from '@tp/money';
 import { FOLLOW_UP_DAYS, type PacketContent, type PayerResponseKind, type SubmissionChannel, addDays, packetReference } from '@tp/packets';
 import {
@@ -22,10 +22,15 @@ import { type FollowUpState, followUpState } from './view';
  * "log a submission or response; set a follow-up"; PRD 12, Submission, response and follow-up; test
  * matrix CAS-12, CAS-14; docs/adr/0041 and 0044), over @tp/worker/packets: the customer submits through
  * the payer's own channel and logs it here with the exported hash (the product never submits); the
- * payer's answer is recorded with its document; a denial with a reason may reopen the case for the next
+ * payer's answer is recorded with its letter; a denial with a reason may reopen the case for the next
  * dispute level within its window, which the database computes. Recording a response writes no ledger
  * entry and moves no line (LED-01): the recovery ledger does both from the response and the remittances.
  * Each is recorded once: the same submission or response again records nothing.
+ *
+ * A response's letter is a case's evidence, never a contract's source (docs/adr/0085, D4): a top-level payer letter
+ * or other document, scanned clean and stored, that no contract version names (RESPONSE_DOCUMENT), checked under the
+ * document's lock, which the tagging handlers take too, so a tag of the same letter cannot pass beside it. The
+ * letters are read audited: a payer's letter is about a patient.
  *
  * A submission is never refused because the version's pricing is no longer current (audit item #4): it records
  * something that already happened outside the product, so it is logged and the database flags it
@@ -50,7 +55,10 @@ export interface ResponseView {
   readonly denialCategory: string | null;
   readonly reopensCase: boolean;
   readonly nextWindowEndsOn: string | null;
+  /** Null for a response the recovery ledger recorded from a reprocessed remittance. */
   readonly documentId: string | null;
+  /** The letter it names, as its receipt names it; null when it names none. */
+  readonly document: ResponseDocument | null;
 }
 
 export interface SubmissionView {
@@ -107,11 +115,19 @@ async function submissionPricing(
   );
 }
 
-/** The case's submission log, newest first, with each submission's follow-up state on `asOf` and its pricing flag. */
+/**
+ * The case's submission log, newest first, with each submission's follow-up state on `asOf` and its pricing flag, and
+ * each response's letter as its receipt names it (UX-007: the letters are listed on the submissions page).
+ */
 export async function submissionsOf(scope: Scope, keys: KeyProvider, input: { readonly practiceId: string; readonly caseId: string; readonly readsPhi: boolean; readonly asOf: string; readonly requestId: string }): Promise<SubmissionView[]> {
   const log = await submissionLog(scope, keys, { practiceId: input.practiceId, caseId: input.caseId, requestId: input.requestId });
   const emails = await peopleEmails(scope, input.practiceId, log.map((entry) => entry.submittedBy));
   const checks = await submissionPricing(scope, input);
+  const letters = await documentsNamed(scope, {
+    practiceId: input.practiceId,
+    ids: log.flatMap((entry) => entry.responses.flatMap((response) => (response.documentId === null ? [] : [response.documentId]))),
+    requestId: input.requestId,
+  });
   const pricing = new Map<string, PricingNowView>();
   for (const entry of log) {
     const found = checks.get(entry.submissionId);
@@ -143,6 +159,7 @@ export async function submissionsOf(scope: Scope, keys: KeyProvider, input: { re
       reopensCase: response.reopensCase,
       nextWindowEndsOn: response.nextWindowEndsOn,
       documentId: response.documentId,
+      document: response.documentId === null ? null : (letters.get(response.documentId) ?? null),
     })),
     pricingCheck: checks.get(entry.submissionId)?.check ?? null,
     pricing: pricing.get(entry.submissionId) ?? null,
@@ -326,15 +343,110 @@ export interface ResponseDocument {
   readonly sha256: string | null;
 }
 
-/** The documents a response may carry: the practice's clean payer letters and other documents, newest first. */
-export async function responseDocuments(scope: Scope, practiceId: string): Promise<ResponseDocument[]> {
-  const { rows } = await scope.client.query<{ id: string; kind: string; created_at: Date; sha256: string | null }>(
-    `SELECT id, kind, created_at, sha256 FROM source_document
-      WHERE practice_id = $1 AND parent_document_id IS NULL AND scan_status = 'clean' AND kind IN ('payer_letter', 'other')
-      ORDER BY created_at DESC, id LIMIT 50`,
-    [practiceId],
+/**
+ * The letters a response may carry, in three groups, each newest first (docs/adr/0085, D3): another case's letter,
+ * about another patient, is offered only in its own last group, so choosing it is deliberate.
+ */
+export interface ResponseLetters {
+  /** No payer response names them yet. */
+  readonly unused: readonly ResponseDocument[];
+  /** A response to a submission of this case names them. */
+  readonly thisCase: readonly ResponseDocument[];
+  /** Only responses of other cases name them. */
+  readonly otherCases: readonly ResponseDocument[];
+}
+
+/** How many letters the response form lists at most, over its three groups. */
+export const RESPONSE_LETTERS_LISTED = 50;
+
+/**
+ * A document a payer response may carry (alias d): top-level (no zip's entry), a payer letter or other document,
+ * scanned clean and stored (so never one still in intake, a duplicate, an expanded zip or one held), and no contract
+ * version's source. A response never changes, so it never points at evidence intake may still hold, and a document
+ * is a case's evidence or a contract's source, never both. The list and the handler read this one predicate.
+ */
+const RESPONSE_DOCUMENT = `d.parent_document_id IS NULL AND d.kind IN ('payer_letter', 'other') AND d.scan_status = 'clean' AND d.status = 'stored'
+  AND NOT EXISTS (SELECT 1 FROM contract_version v WHERE v.practice_id = d.practice_id AND d.id = ANY (v.source_document_ids))`;
+
+/**
+ * The document's transaction lock, taken first by every handler that makes a document a response's evidence or a
+ * contract's source (this one and lib/contracts/tagging.ts's), before its check: the check after it sees the other's
+ * commit, so a tag and a response of the same letter cannot both pass.
+ */
+const DOCUMENT_USE_LOCK = "SELECT pg_advisory_xact_lock(hashtextextended('document_use:' || $1::text, 0))";
+
+type LetterGroup = 'unused' | 'this_case' | 'other_cases';
+
+interface LetterRow {
+  readonly id: string;
+  readonly practice_id: string;
+  readonly kind: string;
+  readonly created_at: Date;
+  readonly sha256: string | null;
+}
+
+const letterOf = (row: LetterRow): ResponseDocument => ({ id: row.id, kind: row.kind, uploadedAt: row.created_at.toISOString(), sha256: row.sha256 });
+
+/**
+ * The letters a response to this case may carry (RESPONSE_DOCUMENT), grouped: those no response names first, then
+ * those this case's responses name, then those only other cases' responses name (a payer answering two cases in one
+ * letter); newest first in each, one limit over all three, so other cases' letters only fill the room left. An
+ * audited read.
+ */
+export async function responseDocuments(scope: Scope, input: { readonly practiceId: string; readonly caseId: string; readonly requestId: string }): Promise<ResponseLetters> {
+  const rows = await readWithAudit(
+    scope,
+    { objectType: 'source_document', purpose: 'case_review', requestId: input.requestId },
+    async (client) =>
+      (
+        await client.query<LetterRow & { letter_group: LetterGroup }>(
+          `SELECT d.id, d.practice_id, d.kind, d.created_at, d.sha256, g.letter_group
+             FROM source_document d
+             CROSS JOIN LATERAL (
+               SELECT CASE
+                        WHEN EXISTS (SELECT 1 FROM payer_response r JOIN submission s ON s.id = r.submission_id AND s.practice_id = r.practice_id
+                                      WHERE r.practice_id = d.practice_id AND r.document_id = d.id AND s.case_id = $2) THEN 'this_case'
+                        WHEN EXISTS (SELECT 1 FROM payer_response r WHERE r.practice_id = d.practice_id AND r.document_id = d.id) THEN 'other_cases'
+                        ELSE 'unused'
+                      END AS letter_group
+             ) g
+            WHERE d.practice_id = $1 AND ${RESPONSE_DOCUMENT}
+            ORDER BY array_position(ARRAY['unused', 'this_case', 'other_cases'], g.letter_group), d.created_at DESC, d.id
+            LIMIT ${String(RESPONSE_LETTERS_LISTED)}`,
+          [input.practiceId, input.caseId],
+        )
+      ).rows,
+    (row) => ({ objectId: row.id, practiceId: row.practice_id }),
   );
-  return rows.map((row) => ({ id: row.id, kind: row.kind, uploadedAt: row.created_at.toISOString(), sha256: row.sha256 }));
+  const of = (group: LetterGroup) => rows.filter((row) => row.letter_group === group).map(letterOf);
+  return { unused: of('unused'), thisCase: of('this_case'), otherCases: of('other_cases') };
+}
+
+/**
+ * Whether a response may carry the document (RESPONSE_DOCUMENT, in the practice): checked by the handler before the
+ * response is recorded, under the document's lock (DOCUMENT_USE_LOCK), in the transaction that records it. Another
+ * practice's document, which the policies hide, reads as one that does not exist.
+ */
+export async function responseDocumentChoosable(scope: Scope, practiceId: string, documentId: string): Promise<boolean> {
+  await scope.client.query(DOCUMENT_USE_LOCK, [documentId]);
+  const { rowCount } = await scope.client.query(`SELECT 1 FROM source_document d WHERE d.id = $1 AND d.practice_id = $2 AND ${RESPONSE_DOCUMENT}`, [documentId, practiceId]);
+  return rowCount === 1;
+}
+
+/** The documents the case's responses name, by ID, as their receipts name them (an audited read). */
+async function documentsNamed(scope: Scope, input: { readonly practiceId: string; readonly ids: readonly string[]; readonly requestId: string }): Promise<ReadonlyMap<string, ResponseDocument>> {
+  const ids = [...new Set(input.ids)];
+  if (ids.length === 0) {
+    return new Map();
+  }
+  const rows = await readWithAudit(
+    scope,
+    { objectType: 'source_document', purpose: 'case_review', requestId: input.requestId },
+    async (client) =>
+      (await client.query<LetterRow>('SELECT d.id, d.practice_id, d.kind, d.created_at, d.sha256 FROM source_document d WHERE d.practice_id = $1 AND d.id = ANY ($2::uuid[])', [input.practiceId, ids])).rows,
+    (row) => ({ objectId: row.id, practiceId: row.practice_id }),
+  );
+  return new Map(rows.map((row) => [row.id, letterOf(row)]));
 }
 
 /** The follow-up date a submission gets unless the person names one (PRD 12: "follow-ups default to 45 days"). */

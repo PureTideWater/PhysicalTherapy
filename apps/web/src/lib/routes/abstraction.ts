@@ -31,7 +31,7 @@ import {
 import { EVIDENCE_PROBLEM_TEXT, exclusiveEnd } from '../contracts/display';
 import { evidenceFor } from '../contracts/evidence';
 import { type VersionReview, versionReview } from '../contracts/review';
-import { tagDocument, tagInput } from '../contracts/tagging';
+import { refuseResponseLetter, tagDocument, tagInput } from '../contracts/tagging';
 import { termsFromForm } from '../contracts/terms-form';
 import { practiceRoute } from '../http/invoke';
 import { type ProposalView, reviewVersionProposals, versionProposals } from '../models/contract-proposals';
@@ -390,6 +390,11 @@ export const approveVersionAction = practiceRoute({
   sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ versionId: refs.readyVersionId }) },
 });
 
+/**
+ * An amendment or a correction of a version, from a further document when one is named. A document a payer response
+ * names is its case's evidence, never a contract's source (docs/adr/0085, D4): both handlers refuse it on documentId,
+ * under the document's lock, before the version is written.
+ */
 const successorInput = z.object({ versionId: opaqueId, effectiveFrom: optionalText(date), lastDay: optionalText(date), documentId: optionalText(opaqueId) });
 
 export const amendVersionAction = practiceRoute({
@@ -404,6 +409,9 @@ export const amendVersionAction = practiceRoute({
   handle: async ({ scope, practiceId, input, request }): Promise<MutationResult> => {
     if (input.effectiveFrom === undefined) {
       throw new InputError([{ field: 'effectiveFrom', message: 'the date the amendment takes effect' }]);
+    }
+    if (input.documentId !== undefined) {
+      await refuseResponseLetter(scope, practiceId, input.documentId);
     }
     const created = await amendVersion(
       { scope, requestId: request.requestId },
@@ -424,6 +432,9 @@ export const supersedeVersionAction = practiceRoute({
   input: successorInput,
   audit: { action: 'contract_correction_requested', objectType: 'contract_version' },
   handle: async ({ scope, practiceId, input, request }): Promise<MutationResult> => {
+    if (input.documentId !== undefined) {
+      await refuseResponseLetter(scope, practiceId, input.documentId);
+    }
     const created = await supersedeVersion(
       { scope, requestId: request.requestId },
       {

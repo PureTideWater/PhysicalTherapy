@@ -1,4 +1,3 @@
-import { WRITE_OFF_REASONS } from '@tp/triage';
 import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -11,6 +10,7 @@ import { Fact, Money, Pager } from '../../../../../components/remittances/displa
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { CaseStateBadge, Deadline, lineName, stageLabel, writeOffText } from '../../../../../components/triage/display';
 import { loadPage } from '../../../../../lib/http/next';
+import { WRITE_OFF_REASON_WORDS, withheldReasonHint, writeOffReasonsFor } from '../../../../../lib/cases/write-off';
 import { PRICING_CAUSE_TEXT } from '../../../../../lib/packets/pricing';
 import { WRITE_OFF_CONSEQUENCE, casePage } from '../../../../../lib/routes/triage';
 import { NOTE_MAX_LENGTH } from '../../../../../lib/routes/workbench';
@@ -31,7 +31,8 @@ type Props = { readonly params: Promise<{ practiceId: string; caseId: string }>;
  * stages (actionable here, payer approved and recovered from the recovery ledger), deadline, pursuit
  * cost and owner; every line with its trace, struck through when written off (with its reason, kept
  * visible: WINDOW_PASSED when its window closed); its notes; its packet and dispute; and the timeline
- * of everything recorded on it. A line whose pricing is no longer current (priced again since it joined, its rule
+ * of everything recorded on it. A write-off's Reason starts unchosen and offers "Window passed" only once the line's
+ * window has ended, saying why under Reason until then (docs/adr/0085). A line whose pricing is no longer current (priced again since it joined, its rule
  * release withdrawn, or its contract version no longer signed off or covering its date; audit item #4) is marked
  * with the cause: it is out of the actionable figure, and the packet is written only once it is written off or
  * priced current again, since nothing refreshes the case automatically yet. Beside the ledger and counted in no total
@@ -219,7 +220,16 @@ export default async function CasePage(props: Props) {
                     <FormKeys />
                     <input type="hidden" name="practiceId" value={practiceId} />
                     <input type="hidden" name="caseLineId" value={line.id} />
-                    <SelectField id={`reason-${line.id}`} label="Reason" name="reason" required options={WRITE_OFF_REASONS.map((reason) => ({ value: reason, label: writeOffText(reason) }))} />
+                    {/* Starts unchosen, on an enabled first option that a reset or a render without JavaScript also lands on; only the reasons the line's records allow (docs/adr/0085 D1, D2). */}
+                    <SelectField
+                      id={`reason-${line.id}`}
+                      label="Reason"
+                      name="reason"
+                      required
+                      defaultValue=""
+                      hint={withheldReasonHint(line) ?? undefined}
+                      options={[{ value: '', label: WRITE_OFF_REASON_WORDS.placeholder }, ...writeOffReasonsFor(line).map((reason) => ({ value: reason, label: writeOffText(reason) }))]}
+                    />
                     <Field id={`text-${line.id}`} label="Why (for “Other” only)" name="text" maxLength={500} />
                     <CheckboxField id={`confirm-${line.id}`} name="confirm" errorName="Confirmation" required label={`${WRITE_OFF_CONSEQUENCE} Write it off.`} />
                   </ActionForm>

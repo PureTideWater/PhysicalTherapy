@@ -1,0 +1,17 @@
+{
+  "case": "CAS-46",
+  "module": "CAS",
+  "title": "A payer response or a submission with nothing chosen",
+  "assertion": "The Response starts on “Choose the payer’s answer”, the Channel on “Choose the channel” and the payer’s letter on “Choose the payer’s letter”; a response with no answer or no letter, or a submission with no channel, is refused on that field and nothing is recorded; the words under Response say that every response is recorded for good, which state an acceptance or a partial acceptance gives the case unless a line has already reached Payer approved, that the recovery ledger approves up to its amount at the next reconcile (Payer approved), and that nothing is recovered until it is posted or deposited",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": ["apps/web/src/lib/routes/workbench-routes.db.test.ts","apps/web/e2e/packets.spec.ts"],
+  "codeListRelease": null,
+  "noFileReason": "A response and a submission logged on a synthetic practice the test creates: no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

@@ -5,14 +5,16 @@ import Link from 'next/link';
 
 import { ActionForm } from '../../../../../../components/action-form';
 import { CheckboxField, Field, SelectField, TextAreaField } from '../../../../../../components/field';
-import { utc } from '../../../../../../components/format';
+import { roleNames, utc } from '../../../../../../components/format';
 import { Hash } from '../../../../../../components/packets/display';
 import { PricingNowPanel } from '../../../../../../components/packets/pricing';
+import { ResponseLetterField } from '../../../../../../components/packets/response-letter';
 import { StatusChip } from '../../../../../../components/status';
 import { Money } from '../../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../../components/shell';
 import { CaseStateBadge, stageLabel } from '../../../../../../components/triage/display';
 import { CHANNEL_TEXT, RESPONSE_TEXT } from '../../../../../../lib/cases/timeline';
+import { pageCsrfToken } from '../../../../../../lib/http/csrf-page';
 import { loadPage } from '../../../../../../lib/http/next';
 import { PRICING_CAUSE_TEXT } from '../../../../../../lib/packets/pricing';
 import { CLOSED_CASE_SUBMISSION, EARLIER_EXPORT_SUBMISSION, NEVER_ATTESTED_LIST, SENT_WITHOUT_SIGN_OFF, STALE_EXPORT_SUBMISSION, everyLineStale, sentWithoutSignOffLine } from '../../../../../../lib/packets/unattested';
@@ -34,15 +36,24 @@ const DENIAL_TEXT: Readonly<Record<string, string>> = {
   other: 'Other',
 };
 
-const KIND_TEXT: Readonly<Record<string, string>> = { payer_letter: 'Payer letter', other: 'Other document' };
+/** A response's letter in the log, as the link to its receipt names it ("the receipt of the payer letter uploaded …"). */
+const LETTER_KIND_TEXT: Readonly<Record<string, string>> = { payer_letter: 'payer letter', other: 'other document' };
+
+/**
+ * What a response records, under the choice of it (docs/adr/0085): every response for good; the case's state from an
+ * acceptance unless its lines decide it first; the approval only at the next reconcile; recovery only once posted or
+ * deposited.
+ */
+const RESPONSE_HINT =
+  'Every response is recorded for good. Accepted marks the case Resolved and Partially accepted marks it Partially resolved, unless a line has already reached Payer approved. At the next reconcile, the recovery ledger approves up to the amount below on the lines this submission asked for (Payer approved). Nothing is recovered until it is posted or deposited.';
 
 const FOLLOW_UP_TEXT = { due: 'Follow-up due', waiting: 'Awaiting the payer', answered: 'Answered' } as const;
 
 /**
  * The form that logs one export's submission as it happened: its date (from its export to the last day it may be
  * logged), channel, the payer's reference and the follow-up date; for an export never attested (its pricing went stale
- * after the export), the person's confirmation that it went without sign-off. Its fields' IDs carry `idPrefix`, so two
- * forms on the page never share one.
+ * after the export), the person's confirmation that it went without sign-off. The channel is recorded for good, so it
+ * starts unchosen (docs/adr/0085, D1). Its fields' IDs carry `idPrefix`, so two forms on the page never share one.
  */
 function SubmissionForm({
   idPrefix,
@@ -72,7 +83,14 @@ function SubmissionForm({
       <input type="hidden" name="versionId" value={versionId} />
       <div className="flex flex-wrap gap-3">
         <Field id={id('submitted-on')} label="Submitted on" name="submittedOn" type="date" defaultValue={maxOn} min={minOn} max={maxOn} required />
-        <SelectField id={id('channel')} label="Channel" name="channel" required options={SUBMISSION_CHANNELS.map((channel) => ({ value: channel, label: CHANNEL_TEXT[channel] }))} />
+        <SelectField
+          id={id('channel')}
+          label="Channel"
+          name="channel"
+          required
+          defaultValue=""
+          options={[{ value: '', label: 'Choose the channel' }, ...SUBMISSION_CHANNELS.map((channel) => ({ value: channel, label: CHANNEL_TEXT[channel] }))]}
+        />
       </div>
       <Field id={id('reference')} label="Payer’s reference (a portal confirmation, a fax receipt)" name="reference" maxLength={200} />
       <Field id={id('follow-up-on')} label={`Follow up on (blank: 45 days after the submission, ${defaultFollowUpOn} for today’s)`} name="followUpOn" type="date" />
@@ -96,13 +114,20 @@ function SubmissionForm({
  * cause, and the log shows it plainly, so reconciliation tracks the payer's answer. An export an edit replaced is still
  * offered, logged only as sent before the edit; on a case closed written off, which takes no submission, the page says
  * how to log one instead of offering a form.
+ *
+ * A payer's response starts with its letter (UX-007; docs/adr/0085, D3): uploaded inside "Log a payer response",
+ * scanned while the person types what it says, and chosen by the form once stored, or chosen among the letters on file,
+ * grouped so another case's letter is a deliberate choice. The form shows whether or not a letter is on file, so the
+ * page read again after the upload keeps what was typed. The letter's part sits under the uploader's level-3 headings,
+ * and "What the letter says" heads the rest. The answer, the channel and the letter start unchosen (D1); the words
+ * under the answer say what it records. The log names each response's letter and links its receipt.
  */
 export default async function SubmissionsPage(props: Props) {
   const page = await loadPage(submissionsPage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="cases" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, case: item, submissions, submittable, earlier, closed, defaultFollowUpOn, documents, notice, canLog, canReadPhi, asOf } = page.data;
+  const { practiceId, case: item, submissions, submittable, earlier, closed, defaultFollowUpOn, letters, upload, roles, notice, canLog, canReadPhi, asOf } = page.data;
   const casePath = `/p/${practiceId}/cases/${item.id}`;
   const latest = submissions[0];
   return (
@@ -261,64 +286,56 @@ export default async function SubmissionsPage(props: Props) {
           )}
         </Card>
       ) : null}
-      {canLog && latest !== undefined ? (
+      {canLog && latest !== undefined && upload !== null ? (
         <Card role="region" aria-label="Log a payer response">
           <CardHeader>
             <CardTitle>Log a payer response</CardTitle>
-            <CardDescription>To the submission of {latest.submittedOn}, with its document (upload the payer’s letter on the Uploads screen first). A denial with a reason can reopen the case for the next dispute level, within its window.</CardDescription>
+            <CardDescription>
+              To the submission of {latest.submittedOn}. Start with the payer’s letter: upload it here, or choose one already on file, and fill in what it says while it is scanned. A denial with
+              a reason can reopen the case for the next dispute level, within its window.
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            {documents.length === 0 ? (
-              <EmptyState
-                title="No response document yet"
-                nextStep="Upload the payer's letter (as a payer letter or other document) on the Uploads screen; it appears here once it is scanned clean."
+            {/* Rendered with or without a letter on file, so the page read again after an upload keeps what was typed. */}
+            <ActionForm action={recordResponseFormAction} submit="Record the response" className="flex max-w-xl flex-col gap-3">
+              <FormKeys />
+              <input type="hidden" name="practiceId" value={practiceId} />
+              <input type="hidden" name="caseId" value={item.id} />
+              <input type="hidden" name="submissionId" value={latest.submissionId} />
+              {/* The page's CSRF token, never the form's request key: the uploader's requests make their own keys. */}
+              <ResponseLetterField practiceId={practiceId} csrfToken={await pageCsrfToken()} roleNames={roleNames(roles)} upload={upload} letters={letters} />
+              <h3 className="text-base font-semibold">What the letter says</h3>
+              <SelectField
+                id="response-kind"
+                label="Response"
+                name="kind"
+                required
+                defaultValue=""
+                options={[{ value: '', label: 'Choose the payer’s answer' }, ...PERSON_RESPONSE_KINDS.map((kind) => ({ value: kind, label: RESPONSE_TEXT[kind] }))]}
+                hint={RESPONSE_HINT}
               />
-            ) : (
-              <ActionForm action={recordResponseFormAction} submit="Record the response" className="flex max-w-xl flex-col gap-3">
-                <FormKeys />
-                <input type="hidden" name="practiceId" value={practiceId} />
-                <input type="hidden" name="caseId" value={item.id} />
-                <input type="hidden" name="submissionId" value={latest.submissionId} />
-                <div className="flex flex-wrap gap-3">
-                  <SelectField id="response-kind" label="Response" name="kind" required options={PERSON_RESPONSE_KINDS.map((kind) => ({ value: kind, label: RESPONSE_TEXT[kind] }))} />
-                  <Field id="received-on" label="Received on" name="receivedOn" type="date" defaultValue={asOf} min={latest.submittedOn} max={asOf} required />
-                  <Field
-                    id="amount"
-                    label="Additional amount the payer will pay (accepted or partial only, dollars)"
-                    name="amount"
-                    inputMode="decimal"
-                    hint="The additional payment the letter states, not the allowed amount; the patient’s share is never part of it."
-                  />
-                </div>
-                <SelectField
-                  id="response-document"
-                  label="Document"
-                  name="documentId"
-                  required
-                  // The SHA-256's prefix is its own run, so the line under the select sets it in Plex Mono, as
-                  // this page sets every SHA-256; the list itself shows the runs joined.
-                  options={documents.map((document) => ({
-                    value: document.id,
-                    label: [
-                      { text: `${KIND_TEXT[document.kind] ?? document.kind}, uploaded ${utc(document.uploadedAt)}${document.sha256 === null ? '' : ', SHA-256 '}` },
-                      ...(document.sha256 === null ? [] : [{ text: `${document.sha256.slice(0, 12)}…`, mono: true }]),
-                    ],
-                  }))}
-                  showChosen
+              <div className="flex flex-wrap gap-3">
+                <Field id="received-on" label="Received on" name="receivedOn" type="date" defaultValue={asOf} min={latest.submittedOn} max={asOf} required />
+                <Field
+                  id="amount"
+                  label="Additional amount the payer will pay (accepted or partial only, dollars)"
+                  name="amount"
+                  inputMode="decimal"
+                  hint="The additional payment the letter states, not the allowed amount; the patient’s share is never part of it."
                 />
-                <div className="flex flex-wrap items-end gap-3">
-                  <SelectField
-                    id="denial-category"
-                    label="Denial reason (denials only)"
-                    name="denialCategory"
-                    defaultValue=""
-                    options={[{ value: '', label: 'None' }, ...DENIAL_CATEGORIES.map((category) => ({ value: category, label: DENIAL_TEXT[category] ?? category }))]}
-                  />
-                  <CheckboxField id="reopens-case" name="reopensCase" errorName="Reopen the case" label="Reopen the case for the next dispute level (a denial with its reason)" />
-                </div>
-                <TextAreaField id="response-notes" label="Notes (kept encrypted)" name="notes" maxLength={2000} rows={2} />
-              </ActionForm>
-            )}
+              </div>
+              <div className="flex flex-wrap items-end gap-3">
+                <SelectField
+                  id="denial-category"
+                  label="Denial reason (denials only)"
+                  name="denialCategory"
+                  defaultValue=""
+                  options={[{ value: '', label: 'None' }, ...DENIAL_CATEGORIES.map((category) => ({ value: category, label: DENIAL_TEXT[category] ?? category }))]}
+                />
+                <CheckboxField id="reopens-case" name="reopensCase" errorName="Reopen the case" label="Reopen the case for the next dispute level (a denial with its reason)" />
+              </div>
+              <TextAreaField id="response-notes" label="Notes (kept encrypted)" name="notes" maxLength={2000} rows={2} />
+            </ActionForm>
           </CardContent>
         </Card>
       ) : null}
@@ -385,7 +402,25 @@ export default async function SubmissionsPage(props: Props) {
                           )}
                           {response.denialCategory === null ? '' : `, reason ${DENIAL_TEXT[response.denialCategory] ?? response.denialCategory}`}
                           {response.reopensCase ? `; the case reopened for the next dispute level, whose window ends ${response.nextWindowEndsOn ?? '—'}` : ''}
-                          {response.documentId === null ? ' (from a reprocessed remittance)' : ' (with its document)'}
+                          {response.documentId === null ? (
+                            ' (from a reprocessed remittance)'
+                          ) : response.document === null ? (
+                            ' (with its document)'
+                          ) : (
+                            // The link's words say where it goes: the letter's receipt, which shows its metadata, not the letter.
+                            <>
+                              {' (with its document: '}
+                              <Link className="underline" href={`/p/${practiceId}/uploads/${response.document.id}`} data-response-letter={response.document.id}>
+                                the receipt of the {LETTER_KIND_TEXT[response.document.kind] ?? 'document'} uploaded {utc(response.document.uploadedAt)}
+                              </Link>
+                              {response.document.sha256 === null ? null : (
+                                <>
+                                  , SHA-256 <Hash value={response.document.sha256} label="Letter SHA-256" />
+                                </>
+                              )}
+                              )
+                            </>
+                          )}
                         </li>
                       ))}
                     </ul>
