@@ -7,12 +7,13 @@ option (the co-founder's ruling of 2026-10-26 ~00:20 UTC), recorded here and in 
 Open questions: none.
 
 <!-- RESUME-BLOCK -->
-## Current state (2026-10-27 22:25 UTC): ci-browser merged (#77, ecebdc90); push runs and the O5 probe running; P1 next
-- **PR [#77](https://github.com/PureTideWater/PhysicalTherapy/pull/77) merged** 2026-10-27 22:13 UTC as **ecebdc90** (a merge commit, `expectedHeadSha` 6d945c7b, base 085299bd unmoved), after: every check green on 6d945c7b (32 succeeded, 2 `notify` skipped), the fresh-clone verification (`lane-b-ci-browser-verify-summary.md`) and the re-verification of the delta (`lane-b-ci-browser-reverify-summary.md`, PASS), the description's three follow-ups applied (read back byte for byte), ready, approval-of-record's re-run green (40593025548).
-- **Done after the merge:** unsubscribed from #77; main checkout fast-forwarded to ecebdc90 and `pnpm install` run under the lock; the worktree `/home/user/ci-browser` and the local branches `co-001/ci-browser{,-f1,-f2,-f3,-w}` removed (each an ancestor of ecebdc90; remote branches stay).
-- **Running:** the push runs on ecebdc90 (ci 40593100176, mutation 40593100114, screening-capacity 40593100143, release-dry-run 40593100113, content-calendar 40593100120); the first push run seeds the apt archive cache. The O5 probe dispatched (`screening-capacity.yml`, `runner=ubuntu-26.04`, on claude/build-platform), queued behind the push run in its concurrency group; its report, `docker info` and times go on issue #41.
-- **#42:** ci-browser merged first, so #42 (merged second) keeps both and re-resolves `pnpm-lock.yaml` with `pnpm install` (Q2, rule 6), and O6 applies: #42's CI runs axe 4.14 over its mail journeys.
-- **Next:** read the push runs and the probe, record the probe on #41; Dependabot's Wednesday 04:43 UTC images run (#33 should close); then P1 (`co-001/ci-pin-age`), P2, P4, each through the whole pipeline.
+## Current state (2026-10-28 00:20 UTC): resumed after the 5-hour limit; P1's design re-read running (wf_05b5c43a-d57)
+- **ci-browser: merged** (#77, **ecebdc90**, 2026-10-27 22:13 UTC). Its push runs are all green: ci 40593100176 (every job on ubuntu-26.04; `unit` saved the first apt archive cache; e2e (1/2)'s baseline step passed), mutation 40593100114, screening-capacity 40593100143, release-dry-run 40593100113, content-calendar 40593100120.
+- **O5 probe** (screening-capacity dispatched on 26.04, run 40593230221 at ecebdc90): green, verdict "pass (time advisory)", S4's middle run S4#1 52.4 s; its facts against the 24.04 push run are being extracted for issue #41 (`scratchpad/o5-probe.md`), then commented there.
+- **P1 (`co-001/ci-pin-age`)**: worktree `/home/user/ci-pin-age` at ecebdc90 (local branch, not pushed; the base has since moved to 0dd1ba7e, #80). Design re-read wf_05b5c43a-d57 (`workflow-scripts/lane-b-ci-pin-age-reread-*.js` when archived): both scouts done (`scratchpad/p1reread/scout-{files,pins}.md`); the reviser had written §14.1 to §14.3 into `designs/lane-b-ci/follow-up-p1-pin-age.md` (uncommitted in /home/user/ops) when the account's 5-hour limit stopped it at ~23:00 UTC; **resumed at 00:15 UTC** with `resumeFromRunId` (scouts replayed from cache; the reviser continues from its progress file), then the adversarial reviewer and the fold (§15).
+- **Machine:** the container restarted; the setup script re-run at 00:15, OK (PostgreSQL 18 and 16 up, Playwright 1.64.1's 1248 present, main checkout at 0dd1ba7e).
+- **Check-in:** trig_01VRYza7kBainue2gH5RZVHo at 05:25 UTC.
+- **Next:** the fold; commit the re-read; P1's build (B1 check-action-pins, B2 check-toolchain, integrator), the draft PR, two adversarial reviews, the fix round, the verification, the merge. Then P2, P4. Dependabot's Wednesday 04:43 UTC images run to read (#33 should close).
 <!-- RESUME-BLOCK -->
 
 ## Continued from 2026-10-27 by a Lane B item session (session_01UzQ6wgZgtThBRBxXTFYhRB), started by Lane A's orchestrator
@@ -31,6 +32,12 @@ Brief: `lanes/lane-b-session-brief.md`. Item: ci-browser, then P1, P2, P4; also 
 - **Design re-read** (the brief: a design written before 2026-10-26's merges is re-read): workflow wf_4b7cdc69-267 (two scouts, a reviser writing §3.3.7, one adversarial reviewer, a fold writing §3.3.8). Script archived as `workflow-scripts/lane-b-ci-browser-reread2-wf_4b7cdc69-267.js`.
 - **Check-in:** a safety-net message at 07:00 UTC (trig_01RTEGVS4c8vS5hfq4P2217f).
 - **Next:** fold done → phase 2's no-browser steps (the bump under the gates, the new workflows under ci-browser's rules), then the draft PR; the local-browser steps wait on storage.googleapis.com.
+
+### 2026-10-28 00:20 UTC: resumed; push runs green; O5 probe green; P1's re-read resumed
+- The account's 5-hour limit stopped the session at ~23:00 UTC with P1's design re-read in its reviser (wf_05b5c43a-d57: scouts done, §14.1 to §14.3 written). The container restarted. At 00:15: setup re-run (OK), the workflow resumed with `resumeFromRunId`, the check-in moved to 05:25 UTC.
+- ecebdc90's push runs: all green (ci 40593100176, mutation 40593100114, screening-capacity 40593100143, release-dry-run 40593100113, content-calendar 40593100120); the apt archive cache saved for the first time by `unit`.
+- O5 probe run 40593230221 (26.04, dispatched 22:14, measured 22:28 to 22:43): green, "pass (time advisory)"; facts for #41 being extracted.
+- Proposal (outside Lane B's items; for Lane A, infra): the infra tests' CDK synth leaves a `cdk.out*` directory in the system temp folder on every run (46 found, ~100 MB, from today's full-suite runs); give each test's `App` an `outdir` under a test temp directory removed after the test.
 
 ### 2026-10-27 22:25 UTC: ci-browser merged, ecebdc90
 - **Re-verification** of 6d945c7b (wf_4b80f4eb-9bb, one agent in a fresh clone, 22:02 to 22:06): PASS on the commit (three documents, wording true against playwright-core 1.64.1's code), on CI (34 check runs: 32 succeeded, 2 skipped) and on the description; three follow-ups (6d945c7b's own runs, the CI-8 row's count, "every pull-request check green" for 64843249), applied at 22:10 as body v4 and read back byte for byte (SHA-256 f0d9311b…).
