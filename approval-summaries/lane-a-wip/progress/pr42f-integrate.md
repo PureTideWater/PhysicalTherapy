@@ -26,3 +26,4 @@
 - MUTATION: affected.ts --event pull_request --base 46974a25 -> money/pricing/ledger/packets not affected, "shards: none (no money path changed)" -> no shard, no gate (scratchpad/pr42f-affected2.out). #81's reconcile/report/triage files are apps/worker, outside every mutation closure.
 - CAPACITY: screening-capacity.yml's own matching (base+head watched lists vs diff) -> 27 watched hits incl. #81's triage/execute.ts, report/content.ts, csv-arena.ts, generate.ts, reconcile/patient-share.ts, remittances.ts (scratchpad/pr42f-watched-hits2.txt) -> run S1,S4 --time-mode binding, FRESH --out
 - e2e: 2 shards (public repo -> CI's [1,2]), one playwright project 'chromium'
+- suite script scratchpad/pr42f/suite2.sh (= suite.sh, OUT=pr42f/suite2); chunk A launched: typecheck lint lint-copy lint-logs check-fixtures synth engine-freeze unit golden oracle verify-content
