@@ -6,6 +6,7 @@ import path from 'node:path';
 
 import { referenceCandidate } from '../../eval/reference';
 import { sha256Hex } from '../hash';
+import { screenedBytes } from '../redact';
 import { syntheticRecordsCheck } from '../patient-records';
 import { NO_IDENTIFIERS, SYNTHETIC_CONTRACT_PAGES, SYNTHETIC_IDS, memoryPracticeRecords, syntheticContractInput, syntheticContractOutput, syntheticPracticeCheck } from '../testing';
 import {
@@ -13,9 +14,11 @@ import {
   type ContractTermsCandidate,
   type FieldReview,
   MAX_PAGES,
+  MAX_REQUEST_BYTES,
   NAMES_PATIENT_MESSAGE,
   SCOPE_UNSTATED,
   SCREEN_UNAVAILABLE_MESSAGE,
+  TOO_LONG_MESSAGE,
   contractTermsOutput,
   contractTermsSpec,
   rowProblems,
@@ -23,7 +26,7 @@ import {
   screenContractPages,
   verifyContractTerms,
 } from './contract-terms';
-import { practiceRecordsCheck } from '../patient-records';
+import { practiceRecordsCheckByShape } from '../patient-records';
 
 /**
  * proposeContractTerms's verifier (test matrix MOD-01, MOD-02): every quote on its page, every amount,
@@ -314,6 +317,61 @@ describe('preparing the call', () => {
     expect(() => contractTermsSpec.prepare({ ...input, pages: Array.from({ length: MAX_PAGES + 1 }, () => 'SYNTHETIC') })).toThrow(expect.objectContaining({ code: 'too_many_pages' }));
   });
 
+  it('refuses a request longer than its cap (P11, phi-screen F5): the pages before they are read, the framed request exactly at the cap, in UTF-8 bytes', () => {
+    const tooLong = expect.objectContaining({ name: 'InputRefusedError', code: 'too_long', message: TOO_LONG_MESSAGE });
+    // The sentence names the cap and nothing of the document: not its length.
+    expect(TOO_LONG_MESSAGE).toBe('a call sends at most 1,000,000 bytes of a document; this one is longer and was not sent');
+    const line = 'SYNTHETIC FEE SCHEDULE: CPT 97110 Therapeutic exercise $32.50 per unit\n';
+    const over = [SYNTHETIC_CONTRACT_PAGES[0] ?? '', line.repeat(Math.ceil(MAX_REQUEST_BYTES / line.length))];
+    expect(() => contractTermsSpec.prepare({ ...input, pages: over })).toThrow(tooLong);
+    // Checked on the pages before any is normalized: a page of blanks past the cap is too long, not without text.
+    expect(() => contractTermsSpec.prepare({ ...input, pages: [' '.repeat(MAX_REQUEST_BYTES + 1)] })).toThrow(tooLong);
+    // The frame's own bytes count: the framed request at the cap is prepared, one byte more is refused.
+    const frame = Buffer.byteLength(contractTermsSpec.prepare({ ...input, pages: ['X'] }).user, 'utf8') - 1;
+    const atCap = contractTermsSpec.prepare({ ...input, pages: ['X'.repeat(MAX_REQUEST_BYTES - frame)] });
+    expect(Buffer.byteLength(atCap.user, 'utf8')).toBe(MAX_REQUEST_BYTES);
+    expect(() => contractTermsSpec.prepare({ ...input, pages: ['X'.repeat(MAX_REQUEST_BYTES - frame + 1)] })).toThrow(tooLong);
+    // What would be sent is what is capped: pages that read short when first counted and long when framed are refused.
+    let reads = 0;
+    const shifting = Object.defineProperty({ ...input }, 'pages', { get: () => (reads++ === 0 ? SYNTHETIC_CONTRACT_PAGES : over) });
+    expect(() => contractTermsSpec.prepare(shifting)).toThrow(tooLong);
+    // A document of the most pages a call reads, each as long as set v2's longest page (about 2,500 characters), frames
+    // to under a third of it (set v2's largest, 80 pages, frames to 173,684 bytes: the eval gate sends every case).
+    expect(Buffer.byteLength(contractTermsSpec.prepare({ ...input, pages: Array.from({ length: MAX_PAGES }, () => 'X'.repeat(2_500)) }).user, 'utf8')).toBeLessThan(MAX_REQUEST_BYTES / 3);
+  });
+
+  it('counts the request as sent and as the screen reads it, its NFKC form, so neither a character of several bytes nor one that lengthens in NFKC passes the cap (P11)', () => {
+    const tooLong = expect.objectContaining({ name: 'InputRefusedError', code: 'too_long', message: TOO_LONG_MESSAGE });
+    const head = SYNTHETIC_CONTRACT_PAGES[0] ?? '';
+    // SYNTHETIC text of three-byte characters, its own NFKC form: 400,000 characters are 1,200,000 bytes sent, which
+    // the budget's hold counts as tokens (gateway.ts mostCost).
+    const euros = '\u20AC'.repeat(400_000);
+    expect(euros.length).toBeLessThan(MAX_REQUEST_BYTES);
+    expect(() => contractTermsSpec.prepare({ ...input, pages: [head, euros] })).toThrow(tooLong);
+    // U+FDFA is three bytes sent and eighteen characters (33 bytes) in NFKC form, the form the screen reads (redact.ts
+    // screenedBytes): 40,000 of them are 120,000 bytes sent and 1,320,000 read.
+    const expanding = '\uFDFA'.repeat(40_000);
+    expect([Buffer.byteLength(expanding, 'utf8'), screenedBytes(expanding)]).toEqual([120_000, 1_320_000]);
+    expect(() => contractTermsSpec.prepare({ ...input, pages: [head, expanding] })).toThrow(tooLong);
+    // The framed request is counted the same way, whatever the pages read the second time they are asked for.
+    let reads = 0;
+    const shifting = Object.defineProperty({ ...input }, 'pages', { get: () => (reads++ === 0 ? SYNTHETIC_CONTRACT_PAGES : [head, expanding]) });
+    expect(() => contractTermsSpec.prepare(shifting)).toThrow(tooLong);
+    // The larger of the two counts: a ligature NFKC shortens (U+FB01, three bytes, is "fi") is counted as sent.
+    const ligatures = (count: number) => [head, `SYNTHETIC ${'\uFB01'.repeat(count)}`];
+    const frame = Buffer.byteLength(contractTermsSpec.prepare({ ...input, pages: ligatures(0) }).user, 'utf8');
+    const within = Math.floor((MAX_REQUEST_BYTES - frame) / 3);
+    const prepared = contractTermsSpec.prepare({ ...input, pages: ligatures(within) });
+    expect(Buffer.byteLength(prepared.user, 'utf8')).toBeLessThanOrEqual(MAX_REQUEST_BYTES);
+    expect(screenedBytes(prepared.user)).toBeLessThan(Buffer.byteLength(prepared.user, 'utf8'));
+    expect(() => contractTermsSpec.prepare({ ...input, pages: ligatures(within + 1) })).toThrow(tooLong);
+    // And a request of U+FDFA at the most the cap admits is read by the screen as at most the cap's characters.
+    const most = Math.floor((MAX_REQUEST_BYTES - screenedBytes(contractTermsSpec.prepare({ ...input, pages: [head, ''] }).user)) / 33);
+    const admitted = contractTermsSpec.prepare({ ...input, pages: [head, '\uFDFA'.repeat(most)] });
+    expect(admitted.user.normalize('NFKC').length).toBeLessThanOrEqual(MAX_REQUEST_BYTES);
+    expect(() => contractTermsSpec.prepare({ ...input, pages: [head, '\uFDFA'.repeat(most + 1)] })).toThrow(tooLong);
+  });
+
   it('reads a contract or an exhibit only: a payer letter (PHI) or any other kind is refused before anything is framed', () => {
     expect(contractTermsSpec.prepare({ ...input, kind: 'exhibit' }).user).toContain('<document kind="exhibit"');
     for (const kind of ['payer_letter', 'remittance_835', 'posting_export', '']) {
@@ -499,7 +557,7 @@ describe('the contract PHI check (combined audit item 120; docs/adr/0070 Part 3)
   it('refuses when the records could not be read: screen_unavailable above the bound, screen_failed on any load error', async () => {
     const memory = (options: Parameters<typeof memoryPracticeRecords>[2]) => {
       const held = memoryPracticeRecords(SYNTHETIC_IDS.practice, HELD, options);
-      return practiceRecordsCheck({ authorizedBy: held.scope, pool: held.pool, cipher: held.cipher, practiceId: SYNTHETIC_IDS.practice, screenId: SYNTHETIC_IDS.screen, requestId: 'request-1' });
+      return practiceRecordsCheckByShape({ authorizedBy: held.scope, pool: held.pool, cipher: held.cipher, practiceId: SYNTHETIC_IDS.practice, screenId: SYNTHETIC_IDS.screen, requestId: 'request-1' });
     };
     await expect(screen(memory({ identifierCount: 50_001 }))).rejects.toMatchObject({ code: 'screen_unavailable', message: SCREEN_UNAVAILABLE_MESSAGE });
     await expect(screen(memory({ fault: 'decrypt' }))).rejects.toMatchObject({ code: 'screen_failed', message: SCREEN_UNAVAILABLE_MESSAGE });

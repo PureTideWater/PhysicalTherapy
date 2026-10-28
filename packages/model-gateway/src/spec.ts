@@ -44,10 +44,10 @@ export interface PurposeSpec<I, O, P, C = undefined> {
    * A check of the prepared call against records outside the input (the denial-letter reader asks the
    * practice's records whether the letter names another patient; a contract's check asks whether the pages
    * name any patient of the practice, combined audit item 120); it refuses by throwing an InputRefusedError,
-   * and runs last of the gateway's refusals: after preparation, the variant's serving check, the idempotency
-   * key's lookup, the read of the day's budget and the caller's step before the screen (CallContext.beforeScreen),
-   * and before the budget's hold and the call (gateway.ts). The call's context says which practice the call
-   * reads, so a screen can hold its records check to that practice.
+   * and runs last of the gateway's refusals before the budget's hold and the call: after preparation, the
+   * variant's serving check, the idempotency key's lookup, the read of the day's budget and the caller's step
+   * before the screen (CallContext.beforeScreen); the hold can still refuse after it (gateway.ts). The call's
+   * context says which practice the call reads, so a screen can hold its records check to that practice.
    */
   readonly screen?: (input: I, prepared: PreparedCall<C>, context: CallContext) => Promise<void>;
   readonly verify: (input: I, output: O, context: C) => Verified<P>;

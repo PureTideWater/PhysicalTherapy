@@ -1,4 +1,4 @@
-import { InputRefusedError, ModelBudgetExceededError, PhiBoundaryError } from '@tp/model-gateway';
+import { InputRefusedError, MAX_REQUEST_BYTES, ModelBudgetExceededError, PhiBoundaryError } from '@tp/model-gateway';
 import { describe, expect, it } from 'vitest';
 
 import { MODEL_NOTICES, MODEL_PROBLEMS, MODEL_PROBLEM_TEXT, modelNoticeText } from './notices';
@@ -11,6 +11,18 @@ import { modelProblem } from './path';
  * try; the identifier bound and the screen's limits are not, or not yet), the four name the practice's patient records
  * one way, and none names a patient, an identifier, a kind of identifier or a count.
  */
+describe('a contract longer than a call sends (docs/adr/0070, Part 3, P11)', () => {
+  it('maps too_long to its own problem, before the generic refusal, and says the document is too long to send, with hand entry next', () => {
+    expect(modelProblem(new InputRefusedError('too_long', 'a call sends at most 1,000,000 bytes of a document; this one is longer and was not sent'))).toBe('too_long');
+    expect(MODEL_PROBLEMS).toContain('too_long');
+    expect(MODEL_NOTICES).toContain('too_long');
+    expect(modelNoticeText('too_long')).toBe('This document is too long to send to the model, so nothing was sent. Enter its terms by hand below.');
+    // No figure: not the document's length, nor the cap's, which the person cannot act on.
+    expect(MODEL_PROBLEM_TEXT.too_long).not.toMatch(/\d|byte|character|token/i);
+    expect(MAX_REQUEST_BYTES).toBe(1_000_000);
+  });
+});
+
 describe('the contract screen’s problems', () => {
   it('maps names_patient, screen_unavailable and screen_failed to their own problems, before the generic refusal', () => {
     expect(modelProblem(new InputRefusedError('names_patient', 'this document holds an identifier from the practice’s patient records and was not sent'))).toBe('names_patient');

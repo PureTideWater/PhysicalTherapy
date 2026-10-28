@@ -5,7 +5,12 @@
  */
 
 /**
- * Why a model call proposed nothing. Four are the contract screen's (docs/adr/0070, Part 3), and none sent anything:
+ * Why a model call proposed nothing. One is the contract's length, and nothing was sent:
+ * - `too_long`: the document's framed request is longer than a call sends (contractTermsSpec.prepare's cap,
+ *   MAX_REQUEST_BYTES; docs/adr/0070, Part 3, P11), several times what the largest contract of the evaluation set
+ *   needs, so a second try meets the same cap and the terms are entered by hand. It names no figure: the person cannot
+ *   shorten the document, so the cap's would not help.
+ * Four are the contract screen's (docs/adr/0070, Part 3), and none sent anything:
  * - `names_patient`: the document holds an identifier from the practice's patient records (a member ID, a patient
  *   control number or a payer claim number they hold). Most often it is a payer letter or an EOB filed as a contract,
  *   which has no terms to enter and cannot be filed again yet (F4), so the way on is the version's contract or the
@@ -28,6 +33,7 @@ export const MODEL_PROBLEMS = [
   'busy',
   'failed',
   'refused',
+  'too_long',
   'names_patient',
   'screen_unavailable',
   'screen_failed',
@@ -45,6 +51,7 @@ export const MODEL_PROBLEM_TEXT: Readonly<Record<ModelProblem, string>> = {
   busy: 'Other model requests are being answered right now, so nothing was sent; try again in a minute, or enter it by hand.',
   failed: 'The model did not answer (it timed out, was busy or refused); nothing was proposed. Enter it by hand, or try again.',
   refused: 'The input cannot be sent to a model as it is; enter it by hand.',
+  too_long: 'This document is too long to send to the model, so nothing was sent. Enter its terms by hand below.',
   names_patient:
     'This document holds an identifier from the practice’s patient records, so it was not sent to the model. If it is a payer letter or an explanation of benefits (EOB), it has no terms to enter: choose the version’s contract or exhibit as the document to read, or ask the practice for the contract below. If it is a contract or an exhibit, enter its terms by hand below.',
   screen_unavailable: 'This document could not be checked against the practice’s patient records, so it was not sent to the model. Enter its terms by hand below.',

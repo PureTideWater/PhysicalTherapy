@@ -21,6 +21,7 @@ export {
   type ScopePool,
   accessByPractice,
   onePracticeJob,
+  openScopeReaches,
   withActor,
   withJobScope,
   withPracticeScope,

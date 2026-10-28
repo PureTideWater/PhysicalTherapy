@@ -32,7 +32,8 @@ import { type ModelCallRecord, type ModelCallStore, actorColumns } from './store
  * 3. The PHI boundary: outside production only the local provider, or a synthetic evaluation call with
  *    no practice, may run.
  * 4. The purpose's preparation, which refuses an input that breaks a minimization rule (more than one
- *    patient, an identifier in a narrative's inputs), frames the input as data and names the model
+ *    patient, an identifier in a narrative's inputs) or that is longer than a call sends (a contract's framed
+ *    request over its cap in bytes, `too_long`), frames the input as data and names the model
  *    variant (the larger model for a contract marked ambiguous); and the variant served, or the call is
  *    refused as `not_evaluated`.
  * 5. The idempotency key: the SHA-256 of the purpose, prompt version, practice, the caller's request key
@@ -45,10 +46,11 @@ import { type ModelCallRecord, type ModelCallStore, actorColumns } from './store
  *    event there, so the event is written exactly when a screen is about to read. Its throw refuses the call.
  * 8. Only then the purpose's screen against records outside the input (a letter naming another patient of the
  *    practice; a contract naming any patient of the practice, through the records check the gateway issued
- *    for the call's practice, ./patient-records.ts): every refusal the gateway can make without it comes
- *    first, so no audited read of a practice's records runs for a call that is refused anyway, and the screen
- *    is the last step that can refuse a call before it is made (combined audit item 120's review, S1). A
- *    screen's refusal is logged with the practice's ID and its code only.
+ *    for the call's practice, ./patient-records.ts): every refusal the gateway can make before the budget's
+ *    hold comes first, so no audited read of a practice's records runs for a call refused that way, and the
+ *    screen is the last refusal before the hold and the call; the hold (step 9) can still refuse a call after
+ *    it (combined audit item 120's review, S1). A screen's refusal is logged with the practice's ID and its
+ *    code only.
  * 9. The budget's hold: a call is refused once the day's spend, with the holds of the calls in flight, reaches
  *    the budget, with the same alert; crossing it raises another. A call that is made first holds the most it
  *    can cost (its token limit and an upper bound of its input), under the practice's lock, until its row is

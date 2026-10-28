@@ -14,7 +14,7 @@ import { ModelGateway } from './gateway';
 import type { CallLimiter } from './limiter';
 import { sha256Hex } from './hash';
 import type { ModelProvider } from './provider';
-import { type PatientRecordsCheck, type ScreenIdentifiers, practiceRecordsCheck, syntheticRecordsCheck } from './patient-records';
+import { type PatientRecordsCheck, type ScreenIdentifiers, practiceRecordsCheckByShape, syntheticRecordsCheck } from './patient-records';
 import { LocalDeterministicProvider } from './providers/local';
 import type { ModelPurpose } from './purposes';
 import { compactIdentifier } from './redact';
@@ -56,7 +56,7 @@ export const SYNTHETIC_CONTRACT_PAGES: readonly string[] = [
 
 /**
  * The synthetic contract as the gateway takes it. Its records check, unless the test gives another, is a practice
- * check (patient-records.ts practiceRecordsCheck, issued as production's is) over the synthetic practice's
+ * check (patient-records.ts practiceRecordsCheckByShape, issued as production's is) over the synthetic practice's
  * in-memory records, which hold no identifier: a call for SYNTHETIC_IDS.practice passes the screen. An evaluation
  * call (no practice) gives `patientRecords: syntheticRecordsCheck(...)`.
  */
@@ -77,6 +77,14 @@ export const NO_IDENTIFIERS: ScreenIdentifiers = { memberIds: [], patientControl
  * module, eval/ and tests.
  */
 export { syntheticRecordsCheck };
+
+/**
+ * The practice check over a scope and a pool taken by their shape (patient-records.ts): the in-memory practice below,
+ * or a pool that injects a fault into a real one. practiceRecordsCheck refuses both, since @tp/db opened neither
+ * (combined audit item 120's review, P12); this one is for tests, and lint.test.ts holds its callers to this module
+ * and tests.
+ */
+export { practiceRecordsCheckByShape };
 
 // ---------------------------------------------------------------------------------------------------
 // The contract screen's records, in memory
@@ -291,10 +299,10 @@ export function memoryPracticeRecords(
   return { pool, cipher: cipherOf(practiceId), scope: memoryRequestScope([practiceId]), audited, reads, steps };
 }
 
-/** A practice check (issued by patient-records.ts practiceRecordsCheck, as production's is) over SYNTHETIC in-memory records. */
+/** A practice check (issued by patient-records.ts as production's is, by shape) over SYNTHETIC in-memory records. */
 export function syntheticPracticeCheck(practiceId: string = SYNTHETIC_IDS.practice, records: MemoryRecords = {}): PatientRecordsCheck {
   const memory = memoryPracticeRecords(practiceId, records);
-  return practiceRecordsCheck({ authorizedBy: memory.scope, pool: memory.pool, cipher: memory.cipher, practiceId, screenId: SYNTHETIC_IDS.screen, requestId: 'synthetic-screen' });
+  return practiceRecordsCheckByShape({ authorizedBy: memory.scope, pool: memory.pool, cipher: memory.cipher, practiceId, screenId: SYNTHETIC_IDS.screen, requestId: 'synthetic-screen' });
 }
 
 const WINDOW_QUOTE = 'This Agreement is effective January 1, 2026 and remains in effect through December 31, 2026.';

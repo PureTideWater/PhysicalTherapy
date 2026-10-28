@@ -1,7 +1,10 @@
 import { PAGE_READ_LIMITS } from '@tp/contracts/pages';
 
+import { InputRefusedError } from '../errors';
+import { MAX_REQUEST_BYTES, contractTermsSpec } from '../functions/contract-terms';
 import { SCREEN_MAX_IDENTIFIERS, identifierEntries, pagesName, screenSet } from '../patient-records';
-import { SCREEN_MAX_RUN } from '../redact';
+import { SCREEN_MAX_RUN, screenedBytes } from '../redact';
+import { syntheticEvaluationContractInput } from '../testing';
 import { framePages } from '../untrusted';
 
 /**
@@ -10,11 +13,15 @@ import { framePages } from '../untrusted';
  * purpose's prepare does, screens it with pagesName against a SYNTHETIC practice at the screen's bound and prints one
  * JSON line: the answer, the time it took and the heap. The test runs it under a heap flag far below the web task's.
  *
- * Usage: tsx screen-bound.ts <prose|dense> <none|last>
+ * Usage: tsx screen-bound.ts <prose|dense|expanding> <none|last>
  * - prose: 100 pages of single-spaced words in 90-character lines, a figure written with a decimal point and a
  *   no-break space among them, as a word processor's PDF writes one (so the text is not in NFKC form, each line is
  *   normalized as it is read, and normalizing the whole text at once would hold a second copy of it);
  * - dense: one page of one-character tokens joined by single spaces with no line break, the most runs a text can hold;
+ * - expanding: not intake's largest text but the largest request contractTermsSpec.prepare admits of one page of
+ *   U+FDFA on one line, the character NFKC lengthens most (three bytes, eighteen characters of four words), framed by
+ *   prepare itself: what the request's cap (MAX_REQUEST_BYTES, counted in the NFKC form the screen reads) lets the
+ *   screen read at most of such text;
  * - last: the practice's identifier written at the very end, so the whole text is read before the match.
  * Every value is invented; nothing here is read from a file.
  */
@@ -68,8 +75,36 @@ function dense(size: number): string {
 
 const named = 'ZZ90000001';
 
+/** The largest request of one page of U+FDFA that prepare admits, found by halving: prepare's own answer, not the cap's formula. */
+function admittedExpanding(): string {
+  const prepared = (count: number) => {
+    try {
+      return contractTermsSpec.prepare(syntheticEvaluationContractInput({ kind: 'exhibit', pages: ['\uFDFA'.repeat(count)] })).user;
+    } catch (error) {
+      if (error instanceof InputRefusedError && error.code === 'too_long') {
+        return undefined;
+      }
+      throw error;
+    }
+  };
+  let low = 1;
+  let high = MAX_REQUEST_BYTES;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (prepared(middle) === undefined) {
+      high = middle - 1;
+    } else {
+      low = middle;
+    }
+  }
+  return prepared(low) ?? '';
+}
+
 /** The request as the purpose's prepare frames it; its pages are let go once framed, so the text is all the child holds. */
 function framed(): string {
+  if (shape === 'expanding') {
+    return admittedExpanding();
+  }
   const pages = shape === 'dense' ? [dense(characters)] : Array.from({ length: 100 }, () => prose(characters / 100));
   if (hit === 'last') {
     pages[pages.length - 1] = `${pages.at(-1) ?? ''}\nMember ID ${named}`;
@@ -105,5 +140,5 @@ const found = pagesName([user], set);
 const ms = performance.now() - started;
 const after = process.memoryUsage().heapUsed;
 process.stdout.write(
-  `${JSON.stringify({ shape, hit, characters: user.length, identifiers: set.values.size, found, ms: Math.round(ms), heapBeforeMiB: Math.round(before / 2 ** 20), heapAfterMiB: Math.round(after / 2 ** 20) })}\n`,
+  `${JSON.stringify({ shape, hit, characters: user.length, bytes: Buffer.byteLength(user, 'utf8'), screened: shape === 'expanding' ? screenedBytes(user) : undefined, identifiers: set.values.size, found, ms: Math.round(ms), heapBeforeMiB: Math.round(before / 2 ** 20), heapAfterMiB: Math.round(after / 2 ** 20) })}\n`,
 );

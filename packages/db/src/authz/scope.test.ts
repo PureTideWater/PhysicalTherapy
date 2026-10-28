@@ -1,8 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import pg from 'pg';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { openPool, openedPool } from '../connect';
 import { fakePool } from '../test-support/fake-pool';
 import { ScopeError, isUuid, requireUuid } from './ids';
-import { JobActorIsPersonError, OnePracticePerJobError, accessByPractice, onePracticeJob, withActor, withJobScope, withPracticeScope, withPublicSnapshot } from './scope';
+import { JobActorIsPersonError, OnePracticePerJobError, type PracticeScope, type ScopeClient, accessByPractice, onePracticeJob, openScopeReaches, withActor, withJobScope, withPracticeScope, withPublicSnapshot } from './scope';
 
 const ACTOR = '3f0b8c1e-5d2a-4e7f-9a6b-1c2d3e4f5a60';
 const PRACTICE_A = '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c01';
@@ -235,5 +237,84 @@ describe('withJobScope (one practice per job, SEC-06)', () => {
     ).rejects.toThrow(JobActorIsPersonError);
     expect(ran).toBe(false);
     expect(texts().at(-1)).toBe('ROLLBACK');
+  });
+});
+
+describe('openScopeReaches: a scope this module opened on a pool openPool opened (combined audit item 120’s review, P12)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** A pool openPool opened whose connections are a fake client's (pg's own connect stood in for, before it is opened). */
+  function openedFake(respond: Parameters<typeof fakePool>[0]) {
+    const fake = fakePool(respond);
+    vi.spyOn(pg.Pool.prototype as unknown as { connect: () => Promise<pg.PoolClient> }, 'connect').mockImplementation(() => Promise.resolve(fake.client as pg.PoolClient));
+    return { ...fake, pool: openPool('postgres://synthetic@localhost:1/none', 1) };
+  }
+  const grantA = (text: string) => (text.includes('open_practice_scope') ? [{ practice_id: PRACTICE_A, via: 'grant', grant_id: GRANT_1, role: 'firm_analyst' }] : undefined);
+
+  it('answers for a request scope while its transaction is open, for the practices it reaches only, and never for a copy', async () => {
+    const { pool } = openedFake(grantA);
+    let kept: PracticeScope<ScopeClient> | undefined;
+    await withPracticeScope(pool, { actorId: ACTOR, practiceIds: [PRACTICE_A, PRACTICE_B] }, (scope) => {
+      kept = scope;
+      expect(openScopeReaches(scope, PRACTICE_A)).toBe(true);
+      expect(openScopeReaches(scope, PRACTICE_B)).toBe(false);
+      // An object of the same shape, its properties copied or made to claim another practice, proves nothing.
+      expect(openScopeReaches({ ...scope }, PRACTICE_A)).toBe(false);
+      const claimed = scope as { access: PracticeScope<ScopeClient>['access']; practiceIds: readonly string[] };
+      claimed.access = (id) => ({ practiceId: id, via: 'grant', grantId: GRANT_2, roles: ['firm_analyst'] });
+      claimed.practiceIds = [PRACTICE_A, PRACTICE_B];
+      expect(openScopeReaches(scope, PRACTICE_B)).toBe(false);
+      return Promise.resolve();
+    });
+    // Kept past its transaction, it reaches nothing.
+    expect(openScopeReaches(kept, PRACTICE_A)).toBe(false);
+  });
+
+  it('answers for a job scope for its one practice while it runs, and ends with it even when the job fails', async () => {
+    const { pool } = openedFake((text) => (text.includes('app_actor_is_person') ? [{ person: false }] : undefined));
+    let kept: PracticeScope<ScopeClient> | undefined;
+    await expect(
+      withJobScope(pool, { jobId: JOB, practiceId: PRACTICE_A }, (scope) => {
+        kept = scope;
+        expect([openScopeReaches(scope, PRACTICE_A), openScopeReaches(scope, PRACTICE_B)]).toEqual([true, false]);
+        return Promise.reject(new Error('SYNTHETIC job failed'));
+      }),
+    ).rejects.toThrow('SYNTHETIC job failed');
+    expect(openScopeReaches(kept, PRACTICE_A)).toBe(false);
+  });
+
+  it('answers for no scope opened on a pool of the same shape, and for anything that is not a scope', async () => {
+    const { pool } = fakePool(grantA);
+    await withPracticeScope(pool, { actorId: ACTOR, practiceIds: [PRACTICE_A] }, (scope) => {
+      expect(scope.access(PRACTICE_A)).toBeDefined();
+      expect(openScopeReaches(scope, PRACTICE_A)).toBe(false);
+      return Promise.resolve();
+    });
+    for (const value of [undefined, null, PRACTICE_A, { access: () => ({ practiceId: PRACTICE_A, via: 'grant', grantId: GRANT_1, roles: [] }), practiceIds: [PRACTICE_A] }]) {
+      expect(openScopeReaches(value, PRACTICE_A)).toBe(false);
+    }
+  });
+});
+
+describe('openedPool: a pool openPool opened (P12)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('hands back the connect openPool found, whatever is assigned to the pool after, and nothing for a pool built another way', async () => {
+    const fake = fakePool();
+    const connect = vi.spyOn(pg.Pool.prototype as unknown as { connect: () => Promise<pg.PoolClient> }, 'connect').mockImplementation(() => Promise.resolve(fake.client as pg.PoolClient));
+    const pool = openPool('postgres://synthetic@localhost:1/none', 1);
+    const stub = vi.fn(() => Promise.reject(new Error('SYNTHETIC stub')));
+    (pool as unknown as { connect: unknown }).connect = stub;
+    await expect(openedPool(pool)?.connect()).resolves.toBe(fake.client);
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(stub).not.toHaveBeenCalled();
+    expect(Object.isFrozen(openedPool(pool))).toBe(true);
+    for (const other of [new pg.Pool({ connectionString: 'postgres://synthetic@localhost:1/none', max: 1 }), fake.pool, { connect: () => pool.connect() }, undefined, null, 'pool']) {
+      expect(openedPool(other)).toBeUndefined();
+    }
   });
 });

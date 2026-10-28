@@ -80,17 +80,22 @@ describe('the contract screen’s records check is issued only by its two factor
   const relative = (file: string) => path.relative(root, file).split(path.sep).join('/');
   const RECORDS = 'packages/model-gateway/src/patient-records.ts';
 
-  it('adds to the issued set in one function, which only practiceRecordsCheck and syntheticRecordsCheck call', () => {
+  it('adds to the issued set in one function, which only the practice check (by brand or, for tests, by shape) and syntheticRecordsCheck call', () => {
     // This file names the call it looks for, and is left out.
     const adds = files.filter((file) => file !== import.meta.filename && readFileSync(file, 'utf8').includes('issued.add(')).map(relative);
     expect(adds).toEqual([RECORDS]);
     const text = readFileSync(path.join(root, RECORDS), 'utf8');
     expect(text.match(/issued\.add\(/g)).toHaveLength(1);
     expect(text).toMatch(/function issue\(check: PatientRecordsCheck\): PatientRecordsCheck \{\n {2}const frozen = Object\.freeze\(check\);\n {2}issued\.add\(frozen\);/);
-    // Each `return issue({` is one factory's; the module has exactly two.
-    const callers = [...text.matchAll(/export function (\w+)\([^)]*\): PatientRecordsCheck \{[\s\S]*?\n\}/g)].filter((match) => match[0].includes('return issue({')).map((match) => match[1]);
-    expect(callers).toEqual(['practiceRecordsCheck', 'syntheticRecordsCheck']);
+    // Each `return issue({` is one factory's; the module has exactly two: the practice check's body (recordsCheck, which
+    // only practiceRecordsCheck, after its brand checks, and practiceRecordsCheckByShape call) and the synthetic check.
+    const callers = [...text.matchAll(/(?:export )?function (\w+)\([^)]*\): PatientRecordsCheck \{[\s\S]*?\n\}/g)].filter((match) => match[0].includes('return issue({')).map((match) => match[1]);
+    expect(callers).toEqual(['recordsCheck', 'syntheticRecordsCheck']);
     expect(text.match(/\bissue\(/g)).toHaveLength(3);
+    expect(text).not.toMatch(/export function recordsCheck/);
+    const bodies = [...text.matchAll(/export function (\w+)\([^)]*\): PatientRecordsCheck \{[\s\S]*?\n\}/g)].filter((match) => /\brecordsCheck\(/.test(match[0])).map((match) => match[1]);
+    expect(bodies).toEqual(['practiceRecordsCheck', 'practiceRecordsCheckByShape']);
+    expect(text.match(/\brecordsCheck\(/g)).toHaveLength(3);
   });
 
   it('defines a namesPatient method nowhere else', () => {
@@ -157,9 +162,9 @@ describe('the contract screen’s records check is issued only by its two factor
   });
 
   it('builds a practice check only in the web’s proposal and the worker’s permitted run, from the caller’s scope on the services’ pool, besides testing.ts and tests', () => {
-    // The check takes its scope and pool by their shape (packages/db brands neither), so a stub pool that returns
-    // nothing would make a check over nothing: no production caller may pass one. Any naming of the factory counts (an
-    // import, a namespace's member, a re-export).
+    // The check refuses a scope or a pool @tp/db did not open (P12), and its callers are still pinned: each passes its
+    // own open scope and the services' pool. Any naming of the factory counts (an import, a namespace's member, a
+    // re-export).
     const CALLERS: Readonly<Record<string, RegExp>> = {
       'apps/web/src/lib/models/contract-proposals.ts': /^\{ authorizedBy: scope, pool: services\.modelPool, cipher, practiceId: input\.practiceId, screenId, requestId: input\.requestId \}$/,
       'apps/worker/src/models/permitted.ts': /^\{ authorizedBy: scope, pool: services\.pool, cipher: await loadPracticeCipher\(scope, services\.keys, practiceId\), practiceId, screenId: runId, requestId \}$/,
@@ -171,6 +176,13 @@ describe('the contract screen’s records check is issued only by its two factor
       expect(calls, file).toHaveLength(1);
       expect(calls[0], file).toMatch(call);
     }
+  });
+
+  it('builds a practice check by shape only in testing.ts and tests: the package’s entry does not export it (P12)', () => {
+    // By shape, the check accepts a stub scope and pool (an in-memory practice): production code never names it.
+    const naming = [...texts].filter(([file, text]) => file !== relative(import.meta.filename) && /\bpracticeRecordsCheckByShape\b/.test(text)).map(([file]) => file);
+    expect(naming.filter((file) => !TEST_FILE.test(file)).sort()).toEqual([RECORDS, TESTING].sort());
+    expect(texts.get('packages/model-gateway/src/index.ts')).not.toMatch(/\bpracticeRecordsCheckByShape\b/);
   });
 
   it('builds a synthetic check only in testing.ts, the synthetic evaluation and tests: the package’s entry does not export it', () => {

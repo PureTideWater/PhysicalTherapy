@@ -1,11 +1,21 @@
 import type * as DbRuntime from '@tp/db/runtime';
-import { PracticeCipher, type PracticeScope, type ScopeClient, ScopeError } from '@tp/db/runtime';
+import { PracticeCipher, type PracticeScope, type ScopeClient, ScopeError, openPool } from '@tp/db/runtime';
 import { randomBytes } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 
 import { InputRefusedError } from './errors';
 import { contractTermsSpec, screenContractPages } from './functions/contract-terms';
-import { CONTRACT_SCREEN_PURPOSE, SCREEN_MAX_IDENTIFIERS, type PracticeRecordsOptions, type ScreenOutcome, issuedCheck, practiceRecordsCheck, screenSet, syntheticRecordsCheck } from './patient-records';
+import {
+  CONTRACT_SCREEN_PURPOSE,
+  SCREEN_MAX_IDENTIFIERS,
+  type PracticeRecordsOptions,
+  type ScreenOutcome,
+  issuedCheck,
+  practiceRecordsCheck,
+  practiceRecordsCheckByShape,
+  screenSet,
+  syntheticRecordsCheck,
+} from './patient-records';
 import { NO_IDENTIFIERS, SYNTHETIC_IDS, type MemoryRecords, memoryPracticeRecords, memoryRequestScope, syntheticContractInput } from './testing';
 
 /**
@@ -32,32 +42,52 @@ const REQUEST = 'request-7';
 
 function build(records: MemoryRecords = {}, options: Parameters<typeof memoryPracticeRecords>[2] = {}, overrides: Partial<PracticeRecordsOptions> = {}) {
   const memory = memoryPracticeRecords(PRACTICE, records, options);
-  const check = practiceRecordsCheck({ authorizedBy: memory.scope, pool: memory.pool, cipher: memory.cipher, practiceId: PRACTICE, screenId: SCREEN, requestId: REQUEST, ...overrides });
+  const check = practiceRecordsCheckByShape({ authorizedBy: memory.scope, pool: memory.pool, cipher: memory.cipher, practiceId: PRACTICE, screenId: SCREEN, requestId: REQUEST, ...overrides });
   return { memory, check };
 }
 
 const HELD: MemoryRecords = { memberIds: ['ZZ1234567'], patientControlNumbers: ['SYNPCN00012345'], payerClaimNumbers: ['7712345678901'], postingReferences: ['SYNPOST4007100'] };
 
+describe('practiceRecordsCheck: only the database package’s own scope and pool (combined audit item 120’s review, P12)', () => {
+  it('refuses at construction the in-memory scope and pool, each alone, though by shape they reach the practice, reading nothing', async () => {
+    const memory = memoryPracticeRecords(PRACTICE, HELD);
+    const options = { cipher: memory.cipher, practiceId: PRACTICE, screenId: SCREEN, requestId: REQUEST };
+    // A pool openPool opened, never connected: the refusal comes first.
+    const opened = openPool('postgres://synthetic@localhost:1/none', 1);
+    try {
+      expect(() => practiceRecordsCheck({ ...options, authorizedBy: memory.scope, pool: memory.pool })).toThrow(new ScopeError('the screen reads the practice’s records only through a pool the database package opened'));
+      expect(() => practiceRecordsCheck({ ...options, authorizedBy: memory.scope, pool: opened })).toThrow(
+        new ScopeError('the caller’s scope is not one the database package opened, still open, that reaches the practice'),
+      );
+      expect(memory.reads.connects).toBe(0);
+      // The same scope and pool by shape: the testing factory, which lint.test.ts holds to tests.
+      expect(issuedCheck(practiceRecordsCheckByShape({ ...options, authorizedBy: memory.scope, pool: memory.pool }))).toBe(true);
+    } finally {
+      await opened.end();
+    }
+  });
+});
+
 describe('practiceRecordsCheck: bound to a scope that reaches the practice (the design review’s M7)', () => {
   it('refuses at construction, before anything is read, a caller’s scope that does not reach the practice', () => {
     const memory = memoryPracticeRecords(PRACTICE, HELD);
     const options = { pool: memory.pool, cipher: memory.cipher, practiceId: PRACTICE, screenId: SCREEN, requestId: REQUEST };
-    expect(() => practiceRecordsCheck({ ...options, authorizedBy: memoryRequestScope([OTHER]) })).toThrow(ScopeError);
-    expect(() => practiceRecordsCheck({ ...options, authorizedBy: memoryRequestScope([]) })).toThrow(ScopeError);
+    expect(() => practiceRecordsCheckByShape({ ...options, authorizedBy: memoryRequestScope([OTHER]) })).toThrow(ScopeError);
+    expect(() => practiceRecordsCheckByShape({ ...options, authorizedBy: memoryRequestScope([]) })).toThrow(ScopeError);
     // access() answers for the practice, but the scope's practices (app.practice_ids) do not hold it: refused too.
-    expect(() => practiceRecordsCheck({ ...options, authorizedBy: { ...memoryRequestScope([PRACTICE]), practiceIds: [] } })).toThrow(ScopeError);
-    expect(() => practiceRecordsCheck({ ...options, authorizedBy: { ...memoryRequestScope([PRACTICE]), practiceIds: [OTHER] } })).toThrow(ScopeError);
+    expect(() => practiceRecordsCheckByShape({ ...options, authorizedBy: { ...memoryRequestScope([PRACTICE]), practiceIds: [] } })).toThrow(ScopeError);
+    expect(() => practiceRecordsCheckByShape({ ...options, authorizedBy: { ...memoryRequestScope([PRACTICE]), practiceIds: [OTHER] } })).toThrow(ScopeError);
     expect(memory.reads.connects).toBe(0);
   });
 
   it('refuses another practice’s cipher, a screen ID that is not a UUID and a request ID with no room for the screen’s', () => {
     const memory = memoryPracticeRecords(PRACTICE, HELD);
     const options = { authorizedBy: memory.scope, pool: memory.pool, cipher: memory.cipher, practiceId: PRACTICE, screenId: SCREEN, requestId: REQUEST };
-    expect(() => practiceRecordsCheck({ ...options, cipher: new PracticeCipher(OTHER, randomBytes(32)) })).toThrow(ScopeError);
-    expect(() => practiceRecordsCheck({ ...options, screenId: 'screen-1' })).toThrow(ScopeError);
-    expect(() => practiceRecordsCheck({ ...options, requestId: 'r'.repeat(90) })).toThrow(ScopeError);
-    expect(() => practiceRecordsCheck({ ...options, requestId: 'has spaces' })).toThrow(ScopeError);
-    expect(() => practiceRecordsCheck({ ...options, practiceId: 'not-a-practice' })).toThrow(ScopeError);
+    expect(() => practiceRecordsCheckByShape({ ...options, cipher: new PracticeCipher(OTHER, randomBytes(32)) })).toThrow(ScopeError);
+    expect(() => practiceRecordsCheckByShape({ ...options, screenId: 'screen-1' })).toThrow(ScopeError);
+    expect(() => practiceRecordsCheckByShape({ ...options, requestId: 'r'.repeat(90) })).toThrow(ScopeError);
+    expect(() => practiceRecordsCheckByShape({ ...options, requestId: 'has spaces' })).toThrow(ScopeError);
+    expect(() => practiceRecordsCheckByShape({ ...options, practiceId: 'not-a-practice' })).toThrow(ScopeError);
   });
 
   it('is issued, bound to its practice and frozen: its practice cannot be changed after it is built', () => {
@@ -102,7 +132,7 @@ describe('practiceRecordsCheck: the read, as the screen and not as the person (t
 
   it('never matches another practice’s identical identifiers: the cross-tenant case', async () => {
     const memory = memoryPracticeRecords(PRACTICE, {}, { others: { [OTHER]: HELD } });
-    const check = practiceRecordsCheck({ authorizedBy: memory.scope, pool: memory.pool, cipher: memory.cipher, practiceId: PRACTICE, screenId: SCREEN, requestId: REQUEST });
+    const check = practiceRecordsCheckByShape({ authorizedBy: memory.scope, pool: memory.pool, cipher: memory.cipher, practiceId: PRACTICE, screenId: SCREEN, requestId: REQUEST });
     await expect(check.namesPatient(['Member ID: ZZ1234567', 'Claim 7712345678901', 'Account SYNPCN00012345', 'Account SYNPOST4007100'])).resolves.toBe('clear');
     expect(memory.audited).toEqual([]);
   });

@@ -9,6 +9,7 @@ import { readDatabaseUrl, withPracticeScope } from '@tp/db';
 import { addMembership, asOwner, createOrganization, createUser } from '@tp/db/testing';
 import {
   LocalDeterministicProvider,
+  MAX_REQUEST_BYTES,
   type ModelProvider,
   type ModelPurpose,
   type ModelRequest,
@@ -40,6 +41,7 @@ import type { CookieJar, MutationResult, Outcome, Route } from '../http/route';
 import { seedScreenRecords } from '../../../../../packages/model-gateway/src/test-support/screen-world';
 import { SCREEN_LIMITS, screenLimitSubject } from '../models/contract-proposals';
 import { coverageGaps } from '../models/evidence-checklist';
+import { modelNoticeText } from '../models/notices';
 import { assignModelPath } from '../models/path';
 import { type Services, createServices } from '../server/services';
 import { MemoryQueue } from '../uploads/queue';
@@ -48,7 +50,7 @@ import { coveragePage } from './coverage';
 import { draftNarrativeAction, proposeTermsAction, rejectProposalAction, reviewEvidenceAction, suggestEvidenceAction } from './models';
 import { approvePacketVersionAction, packetPage, requestApprovalAction, writeVersionAction } from './packets';
 import { ACCESS_LOG_PAGE_SIZE, accessLogPage } from './settings';
-import { CONTRACT_PAGES, storeContractDocument } from './test-support/contract-world';
+import { CONTRACT_PAGES, storeContractDocument, storeCsvDocument } from './test-support/contract-world';
 import { csrfTokenFor } from '../http/csrf';
 
 // A production gateway on a real provider works out what it serves from the committed baseline, floors and prices
@@ -218,7 +220,10 @@ const SYNTHETIC_PAYER_LETTER: readonly (readonly string[])[] = [
 ];
 
 /** A practice (its CAS-08 remittance loaded, for its payer) with a draft version naming a stored SYNTHETIC contract whose pages intake read, and any further documents given. */
-async function draftContract(label: string, extra: readonly { readonly pages: readonly (readonly string[])[]; readonly kind: 'exhibit' | 'payer_letter' }[] = []): Promise<DraftContract & { readonly extraIds: readonly string[] }> {
+async function draftContract(
+  label: string,
+  extra: readonly ({ readonly pages: readonly (readonly string[])[]; readonly kind: 'exhibit' | 'payer_letter' } | { readonly csv: string; readonly kind: 'exhibit' })[] = [],
+): Promise<DraftContract & { readonly extraIds: readonly string[] }> {
   const practice = await w.practice(label);
   await w.load(practice, CAS08);
   const specialist = await specialistOf(practice);
@@ -227,7 +232,7 @@ async function draftContract(label: string, extra: readonly { readonly pages: re
   const documentId = await storeContractDocument(options);
   const extraIds: string[] = [];
   for (const document of extra) {
-    extraIds.push(await storeContractDocument(options, document.pages, document.kind));
+    extraIds.push(await ('csv' in document ? storeCsvDocument(options, document.csv, document.kind) : storeContractDocument(options, document.pages, document.kind)));
   }
   const { contractId, versionId } = await withPracticeScope(w.app, { actorId: practice.manager, practiceIds: [practice.practiceId] }, async (scope) => {
     const context = { scope, requestId: `test-${randomUUID()}` };
@@ -640,6 +645,41 @@ describe('the practice records check before a contract is sent (docs/adr/0070, P
     expect(trail.events).toHaveLength(1);
     // The screen's reads are kept though a value then failed to decrypt: one per row it read (combined audit item 120's review, F3).
     expect(Object.fromEntries(trail.reads.map((read) => [read.object_type, Number(read.n)]))).toEqual(await heldRows(practiceId));
+  });
+});
+
+describe('a contract longer than a call sends (docs/adr/0070, Part 3, P11)', () => {
+  it('refuses it before the screen, says it is too long to send, and sends, reads and records nothing', async () => {
+    // A SYNTHETIC fee schedule saved from a spreadsheet: 100 rows of one code each, past the cap in all (intake reads a
+    // CSV as pages of 50 rows), and a last row writing the CAS-08 claim's patient control number: were it screened, the
+    // screen would read every identifier the practice holds and refuse it as names_patient.
+    const filler = 'SYNTHETIC FEE SCHEDULE NOTE'.padEnd(MAX_REQUEST_BYTES / 100, ' SYNTHETIC FEE SCHEDULE NOTE');
+    const schedule = Array.from({ length: 100 }, (_, row) => `${String(97_000 + row)},$32.50 per unit,${filler}`);
+    const draft = await draftContract('MODELS TOO LONG', [{ csv: `${schedule.join('\n')}\nPatient account,${KNOWN[0] ?? ''}\n`, kind: 'exhibit' }]);
+    const { practiceId } = draft.practice;
+    const P = { practiceId };
+    const scheduleId = draft.extraIds[0] ?? '';
+    const pages = await pagesInput(draft, scheduleId, 'exhibit');
+    expect(pages.pages.reduce((length, text) => length + text.length, 0)).toBeGreaterThan(MAX_REQUEST_BYTES);
+    const sentBefore = provider.requests.length;
+    logs.length = 0;
+
+    expect(redirectOf(await call(proposeTermsAction, draft.specialist, P, { versionId: draft.versionId, documentId: scheduleId }))).toBe(`/p/${practiceId}/abstraction/versions/${draft.versionId}?model=too_long`);
+    expect(provider.requests.length).toBe(sentBefore);
+    expect(await rows(practiceId, 'SELECT 1 FROM model_call WHERE practice_id = $1', [practiceId])).toEqual([]);
+    expect(await rows(practiceId, 'SELECT 1 FROM model_proposal WHERE practice_id = $1', [practiceId])).toEqual([]);
+    // Refused before the screen: no person's event, no screen limit taken, no read of the practice's records.
+    expect(await screenCounts(practiceId)).toEqual({ events: 0, screens: 0, reads: 0 });
+    const subjects = SCREEN_LIMITS.map((limit) => screenLimitSubject(services.sealer, limit.bucket, limit.subject, limit.subject === 'practice' ? practiceId : draft.specialist));
+    expect(await rows(practiceId, 'SELECT 1 FROM rate_limit_counter WHERE subject = ANY($1)', [subjects])).toEqual([]);
+    // Nothing is logged for it (no refusal of a purpose's preparation is), and nothing of the document is.
+    expect(logs.filter((entry) => String(entry.error_code).startsWith('MODEL_'))).toEqual([]);
+    expect(JSON.stringify(logs)).not.toContain('FEE SCHEDULE');
+
+    // The screen says the document is too long to send and offers hand entry; the version stays a draft.
+    const page = ok(await call(abstractionVersionPage, draft.specialist, { ...P, versionId: draft.versionId, model: 'too_long' }));
+    expect([page.modelNotice, page.canPropose, page.review.version.status, page.proposals]).toEqual(['too_long', true, 'draft', []]);
+    expect(modelNoticeText('too_long')).toBe('This document is too long to send to the model, so nothing was sent. Enter its terms by hand below.');
   });
 });
 

@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { addRateRecord, createContract, createDraftVersion } from '@tp/contracts';
 import { readDocumentPages } from '@tp/contracts/pages';
-import { PracticeCipher, readDatabaseUrl, withPracticeScope } from '@tp/db';
+import { PracticeCipher, openPool, readDatabaseUrl, withPracticeScope } from '@tp/db';
 import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from '@tp/db/testing';
 import { MOD12_PRACTICE, mod12Identifiers, readZip } from '@tp/synth';
 import pg from 'pg';
@@ -56,7 +56,8 @@ beforeAll(async () => {
   database = await createMigratedDatabase(readDatabaseUrl());
   owner = new pg.Client({ connectionString: database.url });
   await owner.connect();
-  app = new pg.Pool({ connectionString: database.appUrl, max: 4 });
+  // As the services open theirs: the contract screen reads only through a pool openPool opened (P12).
+  app = openPool(database.appUrl, 4);
   superuser = new pg.Pool({ connectionString: database.url, max: 2 });
   north = await createTenantWorld(owner, 'north');
   south = await createTenantWorld(owner, 'south');

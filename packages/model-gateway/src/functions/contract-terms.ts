@@ -9,6 +9,7 @@ import { isSha256, sha256Hex } from '../hash';
 import { type QuoteSpan, type WrittenFigure, codeTokens, figureInQuote, figureSpans, inQuote, normalized, readAmount, readDate, readPercent, readYear, tokenInQuote, tokenSpans } from '../figures';
 import { type PatientRecordsCheck, issuedCheck } from '../patient-records';
 import { PROMPTS } from '../prompts';
+import { screenedBytes } from '../redact';
 import type { PurposeSpec, Verified } from '../spec';
 import { framePages } from '../untrusted';
 
@@ -48,6 +49,43 @@ import { framePages } from '../untrusted';
 
 /** Pages a call reads at most; a longer document is proposed in parts. */
 export const MAX_PAGES = 100;
+
+/**
+ * UTF-8 bytes of the framed request a call sends at most, counted as it is sent and as the screen reads it, its NFKC
+ * form (redact.ts screenedBytes) (docs/adr/0070, Part 3; P11, phi-screen F5's skeptic, item 5). A longer document is
+ * refused in preparation (`too_long`), before the variant's serving check, the idempotency key, the budget, the screen
+ * and the call, so none of the practice's records is read for it and nothing is held or sent. Bytes, not a string's
+ * length, because the hold counts a token a byte of what is sent (gateway.ts mostCost), and a character outside ASCII
+ * is two to four; the NFKC form as well, because a compatibility character lengthens in it (U+FDFA, three bytes, is
+ * eighteen characters), so a cap on what is sent alone would let the screen read many times the cap. A character is at
+ * least a byte, so either form within the cap is at most that many characters. Sized from what a legitimate contract
+ * needs and what a call can use:
+ * - set v2's largest documents (80 pages) frame to 163,247 to 173,684 bytes (ASCII, so as many characters, and the same
+ *   in NFKC form), and 100 pages (MAX_PAGES) at its densest page to about 255,000: the cap is 5.7 and 3.9 times those;
+ * - at the runbook's estimate (100,000 input tokens for an 80-page document, about 1.7 bytes a token) the cap is about
+ *   575,000 tokens, inside the pinned models' context of a million tokens with the answer's 16,000; intake's own cap
+ *   (16 MiB of page text) is about ten million, which no pinned model reads;
+ * - the hold counts a token per byte, so at config/models.json's prices a request at the cap holds about 218 cents (the
+ *   larger model: 435) and fits the default daily budget (500) on a day with no spend, where 16 MiB holds about 3,373
+ *   (6,746);
+ * - the screen reads at most 1,000,000 characters, at most half of them tokens: about 0.05 s of prose and 0.12 s at the
+ *   worst case (0.4 s for kept identifiers of every length), where 16 MiB takes 0.6 s, 1.4 s and about 7 s of the web's
+ *   event loop. Counted as a string's length, a request of U+FDFA within the cap made the screen read 18 million
+ *   characters, taking 1.3 to 2.5 s and more than a 192 MiB heap.
+ */
+export const MAX_REQUEST_BYTES = 1_000_000;
+
+/** The refusal's sentence: the cap, and nothing of the document (not its length). */
+export const TOO_LONG_MESSAGE = `a call sends at most ${MAX_REQUEST_BYTES.toLocaleString('en-US')} bytes of a document; this one is longer and was not sent`;
+
+/**
+ * Whether the texts together are over the request's cap, as sent (UTF-8) or as the screen reads them (NFKC form): the
+ * bytes sent first, so a text already over the cap is never normalized, and a normalized copy is at most six characters
+ * a byte of a text within it.
+ */
+function overCap(texts: readonly string[]): boolean {
+  return texts.reduce((bytes, text) => bytes + Buffer.byteLength(text, 'utf8'), 0) > MAX_REQUEST_BYTES || texts.reduce((bytes, text) => bytes + screenedBytes(text), 0) > MAX_REQUEST_BYTES;
+}
 
 const page = z.number().int().min(1).max(999_999);
 const quote = z.string().min(1).max(2000);
@@ -487,9 +525,10 @@ export const NAMES_PATIENT_MESSAGE = 'this document holds an identifier from the
 export const SCREEN_UNAVAILABLE_MESSAGE = 'this document could not be checked against the practice’s patient records and was not sent';
 
 /**
- * The contract PHI check (combined audit item 120; docs/adr/0070, Part 3), run by the gateway last of its refusals: after
- * preparation, the variant's serving check, the idempotency key's lookup, the read of the day's budget and the caller's
- * step before the screen, and before the budget's hold and the call (gateway.ts, step 8; the review's S1):
+ * The contract PHI check (combined audit item 120; docs/adr/0070, Part 3), run by the gateway last of its refusals before
+ * the budget's hold and the call: after preparation (the kind, the text and the request's length), the variant's serving
+ * check, the idempotency key's lookup, the read of the day's budget and the caller's step before the screen; the hold
+ * can still refuse after it (gateway.ts, steps 8 and 9; the review's S1):
  * 1. the check must be one the gateway's factories issued (../patient-records.ts), else `screen_invalid`;
  * 2. it must be bound to the call's practice (a synthetic check, bound to none, only on a synthetic evaluation
  *    call), else `screen_invalid`;
@@ -540,14 +579,25 @@ export const contractTermsSpec = Object.freeze<PurposeSpec<ContractPagesInput, C
     if (!(CONTRACT_KINDS as readonly string[]).includes(input.kind)) {
       throw new InputRefusedError('document_kind', 'only a contract or an exhibit is read for its terms');
     }
+    // The frame only adds to the pages, so pages already over the cap are refused before any is normalized for its text
+    // or framed: their length first (a character is at least a byte), then their bytes as sent and in NFKC form.
+    if (input.pages.reduce((length, text) => length + text.length, 0) > MAX_REQUEST_BYTES || overCap(input.pages)) {
+      throw new InputRefusedError('too_long', TOO_LONG_MESSAGE);
+    }
     if (input.pages.length === 0 || input.pages.every((text) => normalized(text) === '')) {
       throw new InputRefusedError('no_text', 'the document has no page text to read');
     }
     if (input.pages.length > MAX_PAGES) {
       throw new InputRefusedError('too_many_pages', `a call reads at most ${String(MAX_PAGES)} pages; propose the document in parts`);
     }
+    const user = `Read the ${input.kind} pages below and propose the rate terms they state, in the JSON the schema describes.\n\n${framePages(input.kind, input.pages)}`;
+    // The cap holds what would be sent, as it is sent and as the screen reads it: the framed text, whatever the pages
+    // read the second time they are asked for.
+    if (overCap([user])) {
+      throw new InputRefusedError('too_long', TOO_LONG_MESSAGE);
+    }
     return {
-      user: `Read the ${input.kind} pages below and propose the rate terms they state, in the JSON the schema describes.\n\n${framePages(input.kind, input.pages)}`,
+      user,
       inputHashes: [input.documentSha256, ...input.pages.map(pageTextHash)],
       variant: input.ambiguous === true ? 'ambiguous' : 'default',
       context: undefined,

@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
+import { MAX_REQUEST_BYTES } from './functions/contract-terms';
 import { SCREEN_MAX_IDENTIFIERS } from './patient-records';
 import {
   type RunOptions,
@@ -17,6 +18,7 @@ import {
   isCompactCalendarDate,
   runIndex,
   screenIdentifier,
+  screenedBytes,
   someIdentifierRun,
   storedSeparators,
 } from './redact';
@@ -316,26 +318,37 @@ describe('someIdentifierRun: streamed, linear and stopping at the first match (p
     expect(index.otherFirsts[7]).toBe(1);
   });
 
+  /** test-support/screen-bound.ts in a child process, its one JSON line read back. */
+  const screenInChild = async (shape: string, hit: string) => {
+    const support = path.join(import.meta.dirname, 'test-support', 'screen-bound.ts');
+    const tsx = path.resolve(import.meta.dirname, '../../../node_modules/.bin/tsx');
+    const { stdout } = await promisify(execFile)(tsx, [support, shape, hit], {
+      // A 96 MiB old space (the web task's heap is 560 MiB): intake's largest text is 16 MiB, its framed copy 16 more.
+      env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=96 --max-semi-space-size=8 --expose-gc' },
+      maxBuffer: 1024 * 1024,
+      timeout: 100_000,
+    });
+    return JSON.parse(stdout.trim().split('\n').at(-1) ?? '{}') as {
+      characters: number;
+      bytes: number;
+      screened?: number;
+      identifiers: number;
+      found: boolean;
+      ms: number;
+      heapBeforeMiB: number;
+      heapAfterMiB: number;
+    };
+  };
+
   it(
     'screens the largest page text intake accepts in a bounded heap and time, through pagesName (prose read whole, and the worst case: one-character tokens on one line)',
     { timeout: 120_000 },
     async () => {
-      const support = path.join(import.meta.dirname, 'test-support', 'screen-bound.ts');
-      const tsx = path.resolve(import.meta.dirname, '../../../node_modules/.bin/tsx');
-      const run = async (shape: string, hit: string) => {
-        const { stdout } = await promisify(execFile)(tsx, [support, shape, hit], {
-          // A 96 MiB old space (the web task's heap is 560 MiB): the text itself is 16 MiB, its framed copy 16 more.
-          env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=96 --max-semi-space-size=8 --expose-gc' },
-          maxBuffer: 1024 * 1024,
-          timeout: 100_000,
-        });
-        return JSON.parse(stdout.trim().split('\n').at(-1) ?? '{}') as { characters: number; identifiers: number; found: boolean; ms: number; heapBeforeMiB: number; heapAfterMiB: number };
-      };
       for (const [shape, hit, found] of [
         ['prose', 'last', true],
         ['dense', 'none', false],
       ] as const) {
-        const measured = await run(shape, hit);
+        const measured = await screenInChild(shape, hit);
         expect(measured.characters, shape).toBeGreaterThan(16 * 1024 * 1024);
         expect(measured.identifiers, shape).toBe(SCREEN_MAX_IDENTIFIERS);
         expect(measured.found, shape).toBe(found);
@@ -345,6 +358,41 @@ describe('someIdentifierRun: streamed, linear and stopping at the first match (p
       }
     },
   );
+
+  it(
+    'screens the largest request the cap admits of the text NFKC lengthens most in the same heap: the cap counts the form the screen reads (P11)',
+    { timeout: 120_000 },
+    async () => {
+      // One page of U+FDFA (three bytes; eighteen characters in NFKC form), as large as prepare admits it. Counted as a
+      // string's length, the cap admitted a million of them, which the screen read as 18 million characters, past a
+      // 192 MiB heap; counted in the NFKC form, the screen reads at most the cap's characters.
+      const measured = await screenInChild('expanding', 'none');
+      expect(measured.screened).toBeLessThanOrEqual(MAX_REQUEST_BYTES);
+      expect(measured.screened).toBeGreaterThan(MAX_REQUEST_BYTES - 33);
+      expect(measured.bytes).toBeLessThan(MAX_REQUEST_BYTES / 10);
+      expect(measured.identifiers).toBe(SCREEN_MAX_IDENTIFIERS);
+      expect(measured.found).toBe(false);
+      expect(measured.ms).toBeLessThan(30_000);
+      process.stdout.write(`contract screen over the largest admitted U+FDFA request (${String(measured.characters)} characters, ${String(measured.screened)} bytes read): ${String(measured.ms)} ms, heap ${String(measured.heapBeforeMiB)} to ${String(measured.heapAfterMiB)} MiB\n`);
+    },
+  );
+
+  it('counts the bytes the screen reads as each line it normalizes, so the cap and the screen agree (property)', () => {
+    // SYNTHETIC text of ASCII, line breaks, combining marks that compose with what precedes them, Hangul jamo that
+    // compose into a syllable, ligatures and other compatibility characters that NFKC lengthens or shortens.
+    const unit = fc.constantFrom(...'AZaz09 -./', '\n', '\r', '\t', '\u00A0', '\u0301', '\u0338', '\u1100', '\u1161', '\u11A8', '\uFB01', '\uFDFA', '\u2474', '\u3300', 'é', 'Ｚ', '\u212B', '\u{1D400}');
+    fc.assert(
+      fc.property(fc.string({ unit, maxLength: 200 }), (text) => {
+        const lines = text.split('\n').map((line) => (/[^\0-\x7F]/.test(line) ? line.normalize('NFKC') : line));
+        expect(screenedBytes(text)).toBe(Buffer.byteLength(lines.join('\n'), 'utf8'));
+        expect(screenedBytes(text)).toBeGreaterThanOrEqual(text.normalize('NFKC').length);
+      }),
+      { numRuns: 3_000 },
+    );
+    expect(screenedBytes('SYNTHETIC 97110')).toBe(15);
+    expect(screenedBytes('\uFDFA')).toBe(33);
+    expect(screenedBytes('\uFB01')).toBe(2);
+  });
 });
 
 describe('the stored side: floors and rules (the session’s Q2 ruling)', () => {

@@ -100,10 +100,18 @@ export interface ContractWorldOptions {
  * document store and its page text, read by the bounded reader, sealed beside them (docs/adr/0033).
  */
 export async function storeContractDocument(options: ContractWorldOptions, pages: readonly (readonly string[])[] = CONTRACT_PAGES, kind: 'contract' | 'exhibit' | 'payer_letter' = 'contract'): Promise<string> {
+  return storeReadDocument(options, syntheticPdf(pages), 'application/pdf', kind);
+}
+
+/** A clean, stored CSV of the practice (a fee schedule saved from a spreadsheet), its pages read as intake reads a CSV. */
+export async function storeCsvDocument(options: ContractWorldOptions, csv: string, kind: 'contract' | 'exhibit' = 'exhibit'): Promise<string> {
+  return storeReadDocument(options, new TextEncoder().encode(csv), 'text/csv', kind);
+}
+
+async function storeReadDocument(options: ContractWorldOptions, bytes: Uint8Array, contentType: string, kind: 'contract' | 'exhibit' | 'payer_letter'): Promise<string> {
   const id = randomUUID();
-  const bytes = syntheticPdf(pages);
   await options.documents.write(options.cipher, documentObjectKey(options.practiceId, id), Readable.from([bytes]));
-  const read = await readPagesOnce(bytes);
+  const read = await readPagesOnce(bytes, contentType);
   if (!read.ok) {
     throw new Error(`the synthetic contract does not read: ${read.problem}`);
   }
@@ -111,8 +119,8 @@ export async function storeContractDocument(options: ContractWorldOptions, pages
   await asOwner(options.owner, [options.practiceId], () =>
     options.owner.query(
       `INSERT INTO source_document (id, practice_id, kind, sha256, size_bytes, content_type, uploaded_by, scan_status, scan_at, status, page_text_status, page_count)
-       VALUES ($1, $2, $7, $3, $4, 'application/pdf', $5, 'clean', now(), 'stored', 'ready', $6)`,
-      [id, options.practiceId, createHash('sha256').update(bytes).digest('hex'), bytes.length, options.customerId, read.pages.length, kind],
+       VALUES ($1, $2, $7, $3, $4, $8, $5, 'clean', now(), 'stored', 'ready', $6)`,
+      [id, options.practiceId, createHash('sha256').update(bytes).digest('hex'), bytes.length, options.customerId, read.pages.length, kind, contentType],
     ),
   );
   return id;

@@ -14,8 +14,8 @@ import { canonicalJson, sha256Hex } from './hash';
 import type { ModelPrice } from './prices';
 import { PROMPTS, modelFor } from './prompts';
 import { type ModelProvider, type ModelRequest, type ModelResponse, ProviderFailure } from './provider';
-import { NAMES_PATIENT_MESSAGE, SCREEN_UNAVAILABLE_MESSAGE } from './functions/contract-terms';
-import { practiceRecordsCheck, syntheticRecordsCheck } from './patient-records';
+import { MAX_REQUEST_BYTES, NAMES_PATIENT_MESSAGE, SCREEN_UNAVAILABLE_MESSAGE, TOO_LONG_MESSAGE } from './functions/contract-terms';
+import { practiceRecordsCheckByShape, syntheticRecordsCheck } from './patient-records';
 import { LocalDeterministicProvider } from './providers/local';
 import { ALL_SERVED, MODEL_PURPOSES, type ModelPurpose, type ServedKey, type ServedSet, offeredPurposes } from './purposes';
 import { type PurposeInputs, requestFor } from './specs';
@@ -365,14 +365,16 @@ describe('serving each feature on its own evaluation (docs/adr/0070, Part 2)', (
     const gateway = harness.build();
     // The contract screen's records, counted: an audited read would show as a connection taken.
     const records = memoryPracticeRecords(SYNTHETIC_IDS.practice);
-    const patientRecords = practiceRecordsCheck({ authorizedBy: records.scope, pool: records.pool, cipher: records.cipher, practiceId: SYNTHETIC_IDS.practice, screenId: SYNTHETIC_IDS.screen, requestId: 'request-1' });
+    const patientRecords = practiceRecordsCheckByShape({ authorizedBy: records.scope, pool: records.pool, cipher: records.cipher, practiceId: SYNTHETIC_IDS.practice, screenId: SYNTHETIC_IDS.screen, requestId: 'request-1' });
     // Nor does the caller's step before the screen run (the web's screen limits and the person's event).
     const step = vi.fn(() => Promise.resolve());
     await expect(gateway.proposeContractTerms({ ...CONTEXT, beforeScreen: step }, syntheticContractInput({ ambiguous: true, patientRecords }))).rejects.toMatchObject({ reason: 'not_evaluated' });
     expect(step).not.toHaveBeenCalled();
     expect(records.reads.connects).toBe(0);
-    // The variant is checked after the input is prepared: an input the purpose refuses is refused as that first.
+    // The variant is checked after the input is prepared: an input the purpose refuses is refused as that first, a
+    // document longer than a call sends among them (P11).
     await expect(gateway.proposeContractTerms(CONTEXT, syntheticContractInput({ ambiguous: true, pages: [], patientRecords }))).rejects.toBeInstanceOf(InputRefusedError);
+    await expect(gateway.proposeContractTerms(CONTEXT, syntheticContractInput({ ambiguous: true, pages: ['X'.repeat(MAX_REQUEST_BYTES + 1)], patientRecords }))).rejects.toMatchObject({ code: 'too_long' });
     expect(records.reads.connects).toBe(0);
     expect(harness.provider.requests).toEqual([]);
     expect(harness.store.calls).toEqual([]);
@@ -748,7 +750,7 @@ describe('the contract PHI check (combined audit item 120; docs/adr/0070 Part 3;
     for (const { options, code, logged } of cases) {
       const harness = watched();
       const records = memoryPracticeRecords(SYNTHETIC_IDS.practice, HELD, options);
-      const patientRecords = practiceRecordsCheck({ authorizedBy: records.scope, pool: records.pool, cipher: records.cipher, practiceId: SYNTHETIC_IDS.practice, screenId: SYNTHETIC_IDS.screen, requestId: 'request-1' });
+      const patientRecords = practiceRecordsCheckByShape({ authorizedBy: records.scope, pool: records.pool, cipher: records.cipher, practiceId: SYNTHETIC_IDS.practice, screenId: SYNTHETIC_IDS.screen, requestId: 'request-1' });
       await expect(harness.gateway.proposeContractTerms(CONTEXT, syntheticContractInput({ patientRecords }))).rejects.toMatchObject({ code, message: SCREEN_UNAVAILABLE_MESSAGE });
       expect(harness.hold).not.toHaveBeenCalled();
       expect(harness.store.calls).toEqual([]);
@@ -759,7 +761,7 @@ describe('the contract PHI check (combined audit item 120; docs/adr/0070 Part 3;
   /** A practice check over counted in-memory records, one per request as the web builds it: a connection taken is an audited read begun. */
   const counted = (records: Parameters<typeof memoryPracticeRecords>[1] = {}) => {
     const memory = memoryPracticeRecords(SYNTHETIC_IDS.practice, records);
-    return { memory, patientRecords: practiceRecordsCheck({ authorizedBy: memory.scope, pool: memory.pool, cipher: memory.cipher, practiceId: SYNTHETIC_IDS.practice, screenId: SYNTHETIC_IDS.screen, requestId: 'request-1' }) };
+    return { memory, patientRecords: practiceRecordsCheckByShape({ authorizedBy: memory.scope, pool: memory.pool, cipher: memory.cipher, practiceId: SYNTHETIC_IDS.practice, screenId: SYNTHETIC_IDS.screen, requestId: 'request-1' }) };
   };
   const BUDGET_SPENT: FlagRow = { key: 'model.daily_budget_cents', scope: 'practice', scopeId: SYNTHETIC_IDS.practice, value: '0' };
 
@@ -789,6 +791,43 @@ describe('the contract PHI check (combined audit item 120; docs/adr/0070 Part 3;
     expect(harness.local.requests).toEqual([]);
     expect(harness.store.calls).toEqual([]);
     expect(harness.logger.lines.map((line) => line.fields)).toEqual(Array.from({ length: 2 }, () => ({ practice_id: SYNTHETIC_IDS.practice, error_code: 'MODEL_BUDGET_EXCEEDED' })));
+  });
+
+  it('refuses a contract longer than a call sends in its preparation (P11, phi-screen F5): no screen read, no replay or budget read, no hold, nothing sent, no row', async () => {
+    // SYNTHETIC fee-schedule lines past the cap, a member ID the practice holds on the last: screened, it would be refused
+    // as names_patient after an audited read of every identifier the practice holds.
+    const line = 'SYNTHETIC FEE SCHEDULE: CPT 97110 Therapeutic exercise $32.50 per unit\n';
+    const long = (bytes: number) => [SYNTHETIC_CONTRACT_PAGES[0] ?? '', `${line.repeat(Math.floor(bytes / line.length))}Member ID:ZZ 123 4567`];
+    // And a page of a fifth of the cap's bytes sent that is over twice the cap in the NFKC form the screen reads
+    // (U+FDFA, three bytes, is eighteen characters and 33 bytes): counted as sent alone, it would be screened.
+    const expanding = [SYNTHETIC_CONTRACT_PAGES[0] ?? '', `${'\uFDFA'.repeat(Math.floor(MAX_REQUEST_BYTES / 15))}\nMember ID:ZZ 123 4567`];
+    for (const pages of [long(MAX_REQUEST_BYTES), expanding]) {
+      const harness = watched();
+      const step = vi.fn(() => Promise.resolve());
+      const over = counted(HELD);
+      await expect(harness.gateway.proposeContractTerms({ ...CONTEXT, beforeScreen: step }, syntheticContractInput({ pages, patientRecords: over.patientRecords }))).rejects.toMatchObject({
+        name: 'InputRefusedError',
+        code: 'too_long',
+        message: TOO_LONG_MESSAGE,
+      });
+      expect(step).not.toHaveBeenCalled();
+      expect(over.memory.reads.connects).toBe(0);
+      expect(over.memory.audited).toEqual([]);
+      expect(harness.completedCall).not.toHaveBeenCalled();
+      expect(harness.spentSince).not.toHaveBeenCalled();
+      expect(harness.hold).not.toHaveBeenCalled();
+      expect(harness.local.requests).toEqual([]);
+      expect(harness.store.calls).toEqual([]);
+      // As no refusal of a purpose's preparation is, it is not logged: the person's notice says why (the web's too_long).
+      expect(harness.logger.lines).toEqual([]);
+    }
+    // The same pages within the cap are screened, and refused by the screen after its read.
+    const harness = watched();
+    const within = counted(HELD);
+    await expect(harness.gateway.proposeContractTerms(CONTEXT, syntheticContractInput({ pages: long(MAX_REQUEST_BYTES / 2), patientRecords: within.patientRecords }))).rejects.toMatchObject({ code: 'names_patient' });
+    expect(within.memory.reads.connects).toBe(1);
+    expect(harness.hold).not.toHaveBeenCalled();
+    expect(harness.store.calls).toEqual([]);
   });
 
   it('runs the caller’s step before the screen only once nothing else refuses the call, then the screen; a step that throws refuses the call unscreened (S1; the review’s nit on the person’s event)', async () => {

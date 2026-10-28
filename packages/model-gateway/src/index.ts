@@ -166,6 +166,7 @@ export {
   type FieldProblem,
   type FieldReview,
   MAX_PAGES,
+  MAX_REQUEST_BYTES,
   NAMES_PATIENT_MESSAGE,
   type ProposedRateRecord,
   SCREEN_UNAVAILABLE_MESSAGE,

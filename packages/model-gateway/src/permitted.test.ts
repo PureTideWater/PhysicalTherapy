@@ -419,7 +419,7 @@ describe('the permitted run, variant by variant, and what it measured (the PR re
 
   it('keeps only outcomes on its list as measured or outside the model; any other code is unmeasured (S1)', () => {
     expect([null, 'invalid_output'].map(permittedOutcome)).toEqual(['measured', 'measured']);
-    expect(['document_unavailable', 'expected_invalid', 'refused:document_kind', 'refused:no_text', 'refused:too_many_pages', 'refused:names_patient'].map(permittedOutcome)).toEqual(Array(6).fill('outside_model'));
+    expect(['document_unavailable', 'expected_invalid', 'refused:document_kind', 'refused:no_text', 'refused:too_many_pages', 'refused:too_long', 'refused:names_patient'].map(permittedOutcome)).toEqual(Array(7).fill('outside_model'));
     for (const code of ['call_failed:timeout', 'refused:phi_boundary', 'refused:kill_switch', 'refused:feature_off', 'refused:not_evaluated', 'refused:screen_unavailable', 'refused:screen_failed', 'refused:input_invalid', 'budget_exceeded', 'busy', 'already_called', 'serving_invalid', 'refused:', 'anything_else']) {
       expect(permittedOutcome(code), code).toBe('unmeasured');
     }

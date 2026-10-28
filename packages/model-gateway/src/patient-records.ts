@@ -1,4 +1,17 @@
-import { type AnyScope, type PracticeCipher, type PracticeScope, type ScopeClient, type ScopePool, ScopeError, isUuid, readWithAudit, recordAuditEvent, withJobScope } from '@tp/db/runtime';
+import {
+  type AnyScope,
+  type PracticeCipher,
+  type PracticeScope,
+  type ScopeClient,
+  type ScopePool,
+  ScopeError,
+  isUuid,
+  openScopeReaches,
+  openedPool,
+  readWithAudit,
+  recordAuditEvent,
+  withJobScope,
+} from '@tp/db/runtime';
 
 import { type RunIndex, SCREEN_FLOORS, SCREEN_MAX_RUN, SCREEN_MIN_RUN, type ScreenIdentifierKind, runIndex, screenIdentifier, someIdentifierRun, storedSeparators } from './redact';
 
@@ -17,10 +30,12 @@ import { type RunIndex, SCREEN_FLOORS, SCREEN_MAX_RUN, SCREEN_MIN_RUN, type Scre
  *   carries no practice's material;
  * - a practice check is bound at construction to a scope of the caller's that reaches the practice (the caller's
  *   proof of access; the design review's M7), and reads through a job scope it opens itself on the pool for exactly
- *   that practice, so no runner scoped to another practice can be supplied. The scope and the pool are taken by
- *   their shape (packages/db brands neither), so this module cannot tell a stub pool that returns nothing from a
- *   real one: no production caller supplies one, because lint.test.ts holds practiceRecordsCheck to the web's
- *   proposal and the worker's permitted run, each on its services' pool, to ./testing.ts and to tests;
+ *   that practice, so no runner scoped to another practice can be supplied. The scope and the pool must be ones
+ *   packages/db opened (openScopeReaches, openedPool: the review's P12), so a stub pool that returns nothing, or an
+ *   object of a scope's shape, is refused, and the records are read through the connect the pool was opened with.
+ *   Which database an opened pool reaches is not proved, so lint.test.ts still holds practiceRecordsCheck to the
+ *   web's proposal and the worker's permitted run, each on its services' pool, to ./testing.ts and to tests, and
+ *   practiceRecordsCheckByShape, the same check by shape for tests, to ./testing.ts and tests;
  * - every issued check is frozen, so its practice cannot be changed after the gateway's binding was made;
  * - any error while loading (the scope, a query, a decrypt) answers screen_failed, and a practice holding more
  *   identifiers than the bound answers screen_unavailable: both refuse the call (fail closed), never "clear".
@@ -75,9 +90,15 @@ export interface ScreenIdentifiers {
 }
 
 export interface PracticeRecordsOptions {
-  /** The caller's own scope: proof that it reaches the practice now (its access()), never read through. */
+  /**
+   * The caller's own scope: proof that it reaches the practice now, never read through. practiceRecordsCheck takes only
+   * a scope @tp/db opened, still open (openScopeReaches); practiceRecordsCheckByShape, for tests, takes its access().
+   */
   readonly authorizedBy: PracticeScope<ScopeClient>;
-  /** The pool the check opens its own job scope on. */
+  /**
+   * The pool the check opens its own job scope on: for practiceRecordsCheck, a pool @tp/db's openPool opened, read
+   * through the connect it was opened with (openedPool); for practiceRecordsCheckByShape, any pool of the shape.
+   */
   readonly pool: ScopePool<ScopeClient>;
   /** The practice's cipher (the services'): the stored identifiers are encrypted with its data key. */
   readonly cipher: PracticeCipher;
@@ -165,12 +186,36 @@ function issue(check: PatientRecordsCheck): PatientRecordsCheck {
 
 /**
  * The check for one practice's records, for a call that reads that practice's document (the web's proposal, the
- * worker's permitted run). Throws at construction, before anything is read, unless the caller's scope reaches the
- * practice, the cipher is the practice's, the screen ID is a UUID and the request ID leaves room for the screen's
- * suffix. The records are read once, at the first question, and kept for the check's life (one request, or one run);
- * a failed read is not kept, so asking again reads again.
+ * worker's permitted run). Throws at construction, before anything is read, unless the pool is one @tp/db's openPool
+ * opened and the caller's scope is one @tp/db opened on such a pool, its transaction still open, that reaches the
+ * practice (combined audit item 120's review, P12: a stub pool that returns nothing, or a scope of the right shape,
+ * would make a check over nothing or over a practice the caller does not reach), and unless the checks of
+ * practiceRecordsCheckByShape pass. The records are read through the connect the pool was opened with, once, at the
+ * first question, and kept for the check's life (one request, or one run); a failed read is not kept, so asking again
+ * reads again.
  */
 export function practiceRecordsCheck(options: PracticeRecordsOptions): PatientRecordsCheck {
+  const pool = openedPool(options.pool);
+  if (pool === undefined) {
+    throw new ScopeError('the screen reads the practice’s records only through a pool the database package opened');
+  }
+  if (!openScopeReaches(options.authorizedBy, options.practiceId)) {
+    throw new ScopeError('the caller’s scope is not one the database package opened, still open, that reaches the practice');
+  }
+  return recordsCheck({ ...options, pool });
+}
+
+/**
+ * The same check over a scope and a pool taken by their shape, for tests only (an in-memory practice, ./testing.ts; a
+ * pool that injects a fault or a race into a real one): ./testing.ts re-exports it, and lint.test.ts holds its callers
+ * to that module and tests. It throws at construction unless the scope's access() and practices reach the practice,
+ * the cipher is the practice's, the screen ID is a UUID and the request ID leaves room for the screen's suffix.
+ */
+export function practiceRecordsCheckByShape(options: PracticeRecordsOptions): PatientRecordsCheck {
+  return recordsCheck(options);
+}
+
+function recordsCheck(options: PracticeRecordsOptions): PatientRecordsCheck {
   const { authorizedBy, pool, cipher, practiceId, screenId, requestId } = options;
   if (!isUuid(practiceId) || authorizedBy.access(practiceId) === undefined || !authorizedBy.practiceIds.includes(practiceId)) {
     throw new ScopeError('the caller’s scope does not reach the practice it would screen');

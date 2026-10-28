@@ -1,12 +1,20 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 
-import { PracticeCipher, ScopeError, type ScopeClient, type ScopePool, readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
+import { type DatabasePool, PracticeCipher, type PracticeScope, ScopeError, type ScopeClient, type ScopePool, openPool, readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
 import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from '@tp/db/testing';
 import { MOD12_PRACTICE, mod12Identifiers } from '@tp/synth';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { CONTRACT_SCREEN_PURPOSE, type PatientRecordsCheck, SCREEN_MAX_IDENTIFIERS, practiceRecordsCheck, recordContractScreenRequested, screenAuditRequestId } from './patient-records';
+import {
+  CONTRACT_SCREEN_PURPOSE,
+  type PatientRecordsCheck,
+  SCREEN_MAX_IDENTIFIERS,
+  practiceRecordsCheck,
+  practiceRecordsCheckByShape,
+  recordContractScreenRequested,
+  screenAuditRequestId,
+} from './patient-records';
 import { type SeededRecords, seedScreenRecords } from './test-support/screen-world';
 
 /**
@@ -24,8 +32,8 @@ import { type SeededRecords, seedScreenRecords } from './test-support/screen-wor
 
 let database: MigratedDatabase;
 let owner: pg.Client;
-let web: pg.Pool;
-let worker: pg.Pool;
+let web: DatabasePool;
+let worker: DatabasePool;
 let north: TenantWorld;
 let south: TenantWorld;
 let crowded: TenantWorld;
@@ -80,8 +88,9 @@ beforeAll(async () => {
   database = await createMigratedDatabase(readDatabaseUrl());
   owner = new pg.Client({ connectionString: database.url });
   await owner.connect();
-  web = new pg.Pool({ connectionString: database.appUrl, max: 4 });
-  worker = new pg.Pool({ connectionString: database.workerUrl, max: 4 });
+  // As the services open theirs: the production check reads only through a pool @tp/db's openPool opened (P12).
+  web = openPool(database.appUrl, 4);
+  worker = openPool(database.workerUrl, 4);
   north = await createTenantWorld(owner, 'north');
   south = await createTenantWorld(owner, 'south');
   crowded = await createTenantWorld(owner, 'crowded');
@@ -113,13 +122,20 @@ afterAll(async () => {
   await database.drop();
 });
 
-/** A check built as the web builds it: the specialist's request scope as proof, the web's pool to read on. */
-async function webCheck(practiceId: string, options: { readonly pool?: ScopePool<ScopeClient>; readonly cipher?: PracticeCipher; readonly screenId?: string; readonly requestId?: string; readonly actorId?: string } = {}) {
+/**
+ * A check built as the web builds it: the specialist's request scope as proof, the web's pool to read on. A pool of
+ * the test's own that injects a fault (`faulty`) is not one openPool opened, so its check is built by shape.
+ */
+async function webCheck(
+  practiceId: string,
+  options: { readonly pool?: DatabasePool; readonly faulty?: ScopePool<ScopeClient>; readonly cipher?: PracticeCipher; readonly screenId?: string; readonly requestId?: string; readonly actorId?: string } = {},
+) {
   const screenId = options.screenId ?? randomUUID();
   const requestId = options.requestId ?? `request-${randomUUID()}`;
-  const check = await withPracticeScope(web, { actorId: options.actorId ?? specialist, practiceIds: [practiceId] }, (scope) =>
-    Promise.resolve(practiceRecordsCheck({ authorizedBy: scope, pool: options.pool ?? web, cipher: options.cipher ?? cipherOf(practiceId), practiceId, screenId, requestId })),
-  );
+  const check = await withPracticeScope(web, { actorId: options.actorId ?? specialist, practiceIds: [practiceId] }, (scope) => {
+    const common = { authorizedBy: scope, cipher: options.cipher ?? cipherOf(practiceId), practiceId, screenId, requestId };
+    return Promise.resolve(options.faulty === undefined ? practiceRecordsCheck({ ...common, pool: options.pool ?? web }) : practiceRecordsCheckByShape({ ...common, pool: options.faulty }));
+  });
   return { check, screenId, requestId };
 }
 
@@ -200,6 +216,62 @@ describe('the practice: bound to a scope that reaches it, and to its rows alone 
   });
 });
 
+describe('only the database package’s own scope and pool (combined audit item 120’s review, P12)', () => {
+  const build = (authorizedBy: PracticeScope<ScopeClient>, pool: ScopePool<ScopeClient>) =>
+    practiceRecordsCheck({ authorizedBy, pool, cipher: cipherOf(north.practiceId), practiceId: north.practiceId, screenId: randomUUID(), requestId: `request-${randomUUID()}` });
+
+  it('refuses at construction a hand-built pool, a pg pool openPool did not open, a copied scope, a scope opened on such a pool and one kept past its transaction, reading nothing', async () => {
+    const stray = new pg.Pool({ connectionString: database.appUrl, max: 1 });
+    let connects = 0;
+    // Of the pool's shape, over the real database: it would answer as the database does, yet is no pool @tp/db opened.
+    const wrapper: ScopePool<ScopeClient> = {
+      connect: () => {
+        connects += 1;
+        return web.connect();
+      },
+    };
+    try {
+      let kept: PracticeScope<ScopeClient> | undefined;
+      await withPracticeScope(web, { actorId: specialist, practiceIds: [north.practiceId] }, (scope) => {
+        kept = scope;
+        expect(() => build(scope, wrapper)).toThrow(ScopeError);
+        expect(() => build(scope, stray)).toThrow(ScopeError);
+        // The scope's properties copied, or claimed for another practice, prove nothing.
+        expect(() => build({ ...scope }, web)).toThrow(ScopeError);
+        expect(() => practiceRecordsCheck({ authorizedBy: scope, pool: web, cipher: cipherOf(south.practiceId), practiceId: south.practiceId, screenId: randomUUID(), requestId: 'request-claimed' })).toThrow(ScopeError);
+        return Promise.resolve();
+      });
+      expect(() => build(kept as PracticeScope<ScopeClient>, web)).toThrow(ScopeError);
+      // A scope opened on a pool of the shape (here a pg pool openPool did not open) is not the package's either.
+      await withPracticeScope(stray, { actorId: specialist, practiceIds: [north.practiceId] }, (scope) => {
+        expect(scope.access(north.practiceId)).toBeDefined();
+        expect(() => build(scope, web)).toThrow(ScopeError);
+        return Promise.resolve();
+      });
+      expect(connects).toBe(0);
+    } finally {
+      await stray.end();
+    }
+  });
+
+  it('reads through the connect the pool was opened with, whatever is assigned to the pool afterwards', async () => {
+    const pool = openPool(database.appUrl, 1);
+    try {
+      const check = await withPracticeScope(web, { actorId: specialist, practiceIds: [north.practiceId] }, (scope) => Promise.resolve(build(scope, pool)));
+      // A stub that would answer every read with no rows, put on the pool after it was opened: the check never uses it.
+      let stubbed = 0;
+      (pool as unknown as { connect: () => Promise<unknown> }).connect = () => {
+        stubbed += 1;
+        return Promise.reject(new Error('SYNTHETIC stub'));
+      };
+      await expect(check.namesPatient(EOB)).resolves.toBe('names_patient');
+      expect(stubbed).toBe(0);
+    } finally {
+      await endPool(pool);
+    }
+  });
+});
+
 describe('a patient control number held only in a posting export (a paper check’s claim; F7)', () => {
   it('is read, audited and found, on the web’s login and the worker’s; a posting line matched to a claim is not read again', async () => {
     for (const pool of [web, worker]) {
@@ -236,12 +308,12 @@ describe('fails closed', () => {
         };
       },
     };
-    const queryFails = (await webCheck(north.practiceId, { pool: failing })).check;
+    const queryFails = (await webCheck(north.practiceId, { faulty: failing })).check;
     await expect(queryFails.namesPatient(EOB)).resolves.toBe('screen_failed');
     // A screen ID that names a person: withJobScope refuses to run the job as that person.
     const personAsScreen = (await webCheck(north.practiceId, { screenId: manager })).check;
     await expect(personAsScreen.namesPatient(EOB)).resolves.toBe('screen_failed');
-    const unreachable = new pg.Pool({ connectionString: database.appUrl.replace(/\/[^/?]+(\?|$)/, '/tp_no_such_database$1'), max: 1 });
+    const unreachable = openPool(database.appUrl.replace(/\/[^/?]+(\?|$)/, '/tp_no_such_database$1'), 1);
     try {
       await expect((await webCheck(north.practiceId, { pool: unreachable })).check.namesPatient(EOB)).resolves.toBe('screen_failed');
     } finally {
@@ -290,7 +362,7 @@ describe('fails closed', () => {
       };
       const runId = randomUUID();
       const check = await withJobScope(worker, { jobId: runId, practiceId: edge.practiceId }, (scope) =>
-        Promise.resolve(practiceRecordsCheck({ authorizedBy: scope, pool: racing, cipher: cipherOf(edge.practiceId), practiceId: edge.practiceId, screenId: runId, requestId: 'request-edge' })),
+        Promise.resolve(practiceRecordsCheckByShape({ authorizedBy: scope, pool: racing, cipher: cipherOf(edge.practiceId), practiceId: edge.practiceId, screenId: runId, requestId: 'request-edge' })),
       );
       await expect(check.namesPatient(['Claim: LATE00000001'])).resolves.toBe('screen_unavailable');
       expect(raced).toBe(true);

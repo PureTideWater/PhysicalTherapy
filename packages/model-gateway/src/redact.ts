@@ -598,6 +598,18 @@ export function someIdentifierRun(text: string, options: RunOptions, accept: (ru
   return false;
 }
 
+/**
+ * The UTF-8 bytes of the text as someIdentifierRun reads it: each line that holds a character outside ASCII in its NFKC
+ * form, which a compatibility character can make many times longer than the text (U+FDFA, three bytes, is eighteen
+ * characters and 33 bytes in NFKC form). The contract request's cap counts it beside the bytes a call sends
+ * (functions/contract-terms.ts MAX_REQUEST_BYTES), so the cap bounds what the screen reads as well as what is sent.
+ * A line break neither composes nor decomposes with what is beside it, so the text's NFKC form is its lines' forms
+ * joined, and ASCII is its own; a character is at least a byte, so the screen reads at most this many characters.
+ */
+export function screenedBytes(text: string): number {
+  return NOT_ASCII.test(text) ? Buffer.byteLength(text.normalize('NFKC'), 'utf8') : text.length;
+}
+
 /** Every distinct run of the text someIdentifierRun compares (for the tests and the measurement; the screen itself stops at the first match). */
 export function identifierRuns(text: string, options: RunOptions): string[] {
   const runs = new Set<string>();

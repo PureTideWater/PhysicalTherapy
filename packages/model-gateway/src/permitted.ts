@@ -200,7 +200,8 @@ const isRefusal = (problem: string | null) => problem !== null && problem.starts
  *   again, so it is counted and kept: the document is no longer readable as a clean contract with its
  *   pages (`document_unavailable`), the expectation does not parse (`expected_invalid`), or the gateway
  *   refused the input on its own merits (a document of another kind, one with no page text or too many
- *   pages, or, from docs/adr/0070 Part 3, one that names a patient of the practice).
+ *   pages, or, from docs/adr/0070 Part 3, one longer than a call sends or one that names a patient of the
+ *   practice).
  * - `unmeasured`: every other code. The call failed (`call_failed:<code>`), or was refused for the run's
  *   own setting rather than the input (the kill switch, a flag, a feature or variant not evaluable, the PHI
  *   boundary of a run outside production, the patient screen unavailable, the budget, the server busy, a
@@ -213,7 +214,7 @@ export type PermittedOutcome = 'measured' | 'outside_model' | 'unmeasured';
 /** The problem codes (beside none) of a call the model answered. */
 export const MEASURED_PROBLEMS: readonly string[] = ['invalid_output'];
 /** The problem codes of an example nothing of which reached the model, for a reason of its own. */
-export const OUTSIDE_MODEL_PROBLEMS: readonly string[] = ['document_unavailable', 'expected_invalid', 'refused:document_kind', 'refused:no_text', 'refused:too_many_pages', 'refused:names_patient'];
+export const OUTSIDE_MODEL_PROBLEMS: readonly string[] = ['document_unavailable', 'expected_invalid', 'refused:document_kind', 'refused:no_text', 'refused:too_many_pages', 'refused:too_long', 'refused:names_patient'];
 
 export function permittedOutcome(problem: string | null): PermittedOutcome {
   if (problem === null || MEASURED_PROBLEMS.includes(problem)) {
