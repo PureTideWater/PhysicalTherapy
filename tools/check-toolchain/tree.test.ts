@@ -5,7 +5,7 @@ import path from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { dockerfilePaths, mergeBase, readTreeAt, readWorkingTree } from './tree';
+import { dockerfilePaths, isImageFile, mergeBase, readTreeAt, readWorkingTree } from './tree';
 
 /**
  * The base check-toolchain compares with: BASE reduced with `git merge-base BASE HEAD`, so a change is judged on what
@@ -147,5 +147,40 @@ describe('the trees check-toolchain compares', () => {
     expect(after.imageFiles).toEqual(['apps/web/nested/Dockerfile', 'compose.yaml', 'deploy/Dockerfile.dev', 'docker-compose.override.yml', 'img/web.dockerfile', 'tools/img/Containerfile']);
     // The compose file the rule reads is read as the other files are.
     expect([before.compose, after.compose]).toEqual(['services: {}\n', 'services: {}\n']);
+  });
+
+  it('takes as an image file Docker’s own names only, in any case, and no ordinary file whose name merely begins like one (CI-S2)', () => {
+    const docker = [
+      'Dockerfile',
+      'dockerfile',
+      'deploy/Dockerfile.dev',
+      'tools/img/CONTAINERFILE',
+      'tools/img/Containerfile.prod',
+      'img/web.Dockerfile',
+      'img/web.containerfile',
+      'apps/web/nested/Dockerfile',
+      'compose.yaml',
+      'deploy/compose.yml',
+      'Compose.Override.yaml',
+      'docker-compose.override.yml',
+      'deploy/docker-compose.yml',
+      'docker-compose-dev.yaml',
+      'compose.prod.yaml',
+    ];
+    expect(docker.filter((file) => !isImageFile(file))).toEqual([]);
+    // dockerfileRule pulled out of check.ts, a runbook, notes, a content file, a Dockerfile's own ignore file, and the two files the image rule reads.
+    const ordinary = [
+      'tools/check-toolchain/dockerfile.ts',
+      'tools/check-toolchain/dockerfile.test.ts',
+      'docs/runbooks/dockerfiles.md',
+      'docs/containerfile-notes.md',
+      'content/compose-email.yml',
+      'apps/web/Dockerfile.dockerignore',
+      'composer.json',
+      'docs/docker-notes.md',
+      'apps/web/Dockerfile',
+      'docker-compose.yml',
+    ];
+    expect(ordinary.filter(isImageFile)).toEqual([]);
   });
 });

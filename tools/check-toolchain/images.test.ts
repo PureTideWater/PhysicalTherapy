@@ -1,10 +1,16 @@
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { stringify } from 'yaml';
 
 import { type CheckEvent, type Finding, type Tree, checkOffline, checkToolchain } from './check';
+import { imagesOf } from './images';
 import { type HubTag, type HubTagPage, NetworkReadError, type Packument, type Registry } from './registry';
+import { type NamedOnBuildBranch, buildBranchHistory } from './tree';
 
 /**
  * The image rule (docs/adr/0066, Part 5; test matrix CI-22): every image digest the tree names that its base names
@@ -14,6 +20,12 @@ import { type HubTag, type HubTagPage, NetworkReadError, type Packument, type Re
  * 2026-10-23T00:00Z is under three days old.
  */
 const NOW = new Date('2026-10-26T00:00:00.000Z');
+
+/** Scratch repositories, each made in the test that uses it, removed after the file's tests. */
+const scratches: string[] = [];
+afterAll(() => {
+  for (const dir of scratches) rmSync(dir, { recursive: true, force: true });
+});
 
 /** A synthetic sha256 digest, hashed from a seed. */
 const digest = (seed: string) => `sha256:${createHash('sha256').update(`synthetic image ${seed}`).digest('hex')}`;
@@ -120,6 +132,21 @@ const buildx = (builder: string) =>
     },
   });
 
+/** A young image a Dockerfile can hide from a reader that is not BuildKit's (SEC-S1), and Docker Hub's answer for it. */
+const HIDDEN = `synthetic/hidden:1@${digest('hidden')}`;
+const hiddenHub = () => fakeRegistry({ tags: { 'synthetic/hidden:1': tag('1', digest('hidden'), YOUNG) } });
+
+/** The lines before a hidden FROM that a reader unlike BuildKit's misreads, each with any directives the file opens with. */
+const HIDING: readonly { readonly name: string; readonly directives: readonly string[]; readonly tail: readonly string[]; readonly from: number }[] = [
+  { name: 'a here-string, which is no heredoc', directives: [], tail: ['RUN tr a b <<<abc', `FROM ${HIDDEN} AS hidden`], from: 1 },
+  { name: 'a quoted "<<EOF", which is no heredoc', directives: [], tail: ['RUN echo "<<EOF"', `FROM ${HIDDEN} AS hidden`], from: 1 },
+  { name: 'a heredoc whose terminator is the whole word, EOF-1', directives: [], tail: ['RUN <<EOF-1', 'echo synthetic', 'EOF-1', `FROM ${HIDDEN} AS hidden`], from: 3 },
+  { name: 'an escaped trailing escape, which continues nothing', directives: [], tail: ['RUN echo foo \\\\', `FROM ${HIDDEN} AS hidden`], from: 1 },
+  { name: 'a directive whose value has a space, before # escape=`', directives: ['# check=skip=all; error=false', '# escape=`'], tail: ['RUN echo \\', `FROM ${HIDDEN} AS hidden`], from: 1 },
+  { name: 'a byte-order mark before # escape=`', directives: ['\uFEFF# escape=`'], tail: ['RUN echo \\', `FROM ${HIDDEN} AS hidden`], from: 1 },
+  { name: 'a FROM keyword split by a continuation, joined with no space as BuildKit joins it', directives: [], tail: ['FR\\', `OM ${HIDDEN} AS hidden`], from: 0 },
+];
+
 interface Shape {
   /** apps/web/Dockerfile's image (NODE). */
   readonly web?: string;
@@ -155,8 +182,13 @@ function tree(shape: Shape = {}): Tree {
   };
 }
 
-async function run(head: Tree, base: Tree = tree(), options: { readonly event?: CheckEvent; readonly registry?: Registry; readonly signal?: AbortSignal } = {}): Promise<Finding[]> {
-  return checkToolchain({ head, base, event: options.event ?? 'pull_request', now: NOW, ...(options.signal === undefined ? {} : { signal: options.signal }) }, options.registry ?? fakeRegistry());
+async function run(
+  head: Tree,
+  base: Tree = tree(),
+  options: { readonly event?: CheckEvent; readonly registry?: Registry; readonly deadlineMs?: number; readonly history?: (digest: string) => NamedOnBuildBranch | null } = {},
+): Promise<Finding[]> {
+  const { event = 'pull_request', registry = fakeRegistry(), deadlineMs, history } = options;
+  return checkToolchain({ head, base, event, now: NOW, ...(deadlineMs === undefined ? {} : { deadlineMs }), ...(history === undefined ? {} : { history }) }, registry);
 }
 
 const problems = (findings: readonly Finding[], level: 'error' | 'warning' = 'error') => findings.filter((finding) => finding.level === level).map((finding) => `${finding.rule}: ${finding.message}`);
@@ -274,6 +306,64 @@ describe('the image rule', () => {
     expect(registry.reads).toHaveLength(5);
   });
 
+  it('★ passes the revert of a digest the build branch’s first-parent history named at least three days ago, by that commit’s time and without reading Docker Hub; still fails one named there under three days ago, or named only on a side branch (CI-S3)', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'check-toolchain-images-'));
+    scratches.push(dir);
+    const git = (args: readonly string[], at?: string) => {
+      const env = { ...process.env, ...(at === undefined ? {} : { GIT_AUTHOR_DATE: at, GIT_COMMITTER_DATE: at }) };
+      const result = spawnSync('git', ['-c', 'user.name=synthetic', '-c', 'user.email=synthetic@example.invalid', '-c', 'commit.gpgsign=false', ...args], { cwd: dir, encoding: 'utf8', env });
+      if (result.status !== 0) {
+        throw new Error(`git ${args.join(' ')}: ${result.stderr}`);
+      }
+      return result.stdout.trim();
+    };
+    const commit = (image: string, at: string, message: string) => {
+      mkdirSync(path.join(dir, 'apps/web'), { recursive: true });
+      writeFileSync(path.join(dir, 'apps/web/Dockerfile'), dockerfile(image));
+      git(['add', '-A']);
+      git(['commit', '-q', '-m', message], at);
+      return git(['rev-parse', 'HEAD']);
+    };
+    const image = (seed: string) => `synthetic/node:24-slim@${digest(`revert ${seed}`)}`;
+    git(['init', '-q', '-b', 'build']);
+    const named = commit(image('old'), '2026-10-01T00:00:00Z', 'the build branch names the old digest');
+    commit(image('current'), '2026-10-05T00:00:00Z', 'a bump moves on from it');
+    const recent = commit(image('young'), '2026-10-24T00:00:00Z', 'a bump names a digest two days ago');
+    commit(image('current'), '2026-10-24T12:00:00Z', 'and a revert moves off it');
+    // A side branch names its digest on a date its author set; the merge commit brings it onto the build branch a day ago.
+    git(['checkout', '-q', '-b', 'side']);
+    commit(image('side'), '2026-09-01T00:00:00Z', 'a side branch, dated by its author');
+    git(['checkout', '-q', 'build']);
+    git(['merge', '-q', '--no-ff', '-m', 'the side branch merges', 'side'], '2026-10-25T00:00:00Z');
+    const merge = git(['rev-parse', 'HEAD']);
+    const base = commit(image('current'), '2026-10-25T06:00:00Z', 'the base: a bump moves off it');
+    const history = buildBranchHistory(dir, base, 'build');
+    // The oldest first-parent commit that named each: the side branch's digest by the merge commit, never by the side commit.
+    expect([history(digest('revert old')), history(digest('revert young')), history(digest('revert side')), history(digest('revert never'))]).toEqual([
+      { commit: named, at: '2026-10-01T00:00:00+00:00' },
+      { commit: recent, at: '2026-10-24T00:00:00+00:00' },
+      { commit: merge, at: '2026-10-25T00:00:00+00:00' },
+      null,
+    ]);
+
+    // Docker Hub's tag names the current digest, and no tag carries any other.
+    const hub = () => fakeRegistry({ tags: { 'synthetic/node:24-slim': tag('24-slim', digest('revert current'), OLD) } });
+    const reverted = hub();
+    const passed = await run(tree({ web: image('old') }), tree({ web: image('current') }), { registry: reverted, history });
+    expect(problems(passed)).toEqual([]);
+    expect(notes(passed)).toEqual([
+      `images: ${image('old')} (apps/web/Dockerfile:1) was named by ${named} on the build branch's first-parent history, committed 2026-10-01T00:00:00+00:00, at least three days ago; a digest is pushed before any commit can name it, so it is old enough, and Docker Hub is not read`,
+    ]);
+    expect(reverted.reads).toEqual([]);
+    for (const seed of ['young', 'side']) {
+      const registry = hub();
+      expect(problems(await run(tree({ web: image(seed) }), tree({ web: image('current') }), { registry, history }))).toEqual([
+        `images: ${image(seed)} (apps/web/Dockerfile:1): Docker Hub's tag 24-slim names ${digest('revert current')} now, pushed ${OLD} and so old enough from 2026-10-04T00:00:00.000Z, and none of the 0 most recently updated tags of synthetic/node carries ${digest(`revert ${seed}`)}, so when it was pushed cannot be read, and no exclude clears that: pin a tag's current digest (${RUNBOOK})`,
+      ]);
+      expect(registry.reads).toEqual(['tag synthetic/node:24-slim', 'tags synthetic/node 1']);
+    }
+  });
+
   it('takes the time of another tag that carries a superseded digest, and fails one found on no tag, naming the tag’s current digest and when it is old enough', async () => {
     const superseded = digest('node 4');
     const current = digest('node 5');
@@ -340,16 +430,15 @@ describe('the image rule', () => {
     ]);
   });
 
-  it('fails closed, naming hub.docker.com, when a read fails after its three tries, and the deadline stops the rest as one finding', async () => {
+  it('fails closed, naming hub.docker.com, when a read fails after its three tries, and the caller’s deadline stops the rest as one finding that names it (CI-N2)', { timeout: 15_000 }, async () => {
     const images = ['a', 'b', 'c', 'd', 'e', 'f'].map((name) => `synthetic/${name}:1@${digest(name)}`);
     const [first = '', ...rest] = images;
     const head = tree({ web: first, dockerfiles: { 'apps/web/Dockerfile': dockerfile(first, rest.map((image, at) => `FROM ${image} AS stage${String(at)}`)), 'apps/worker/Dockerfile': dockerfile(NODE) } });
     const registry = fakeRegistry({ fail: ['tag synthetic/a:1'], hang: ['b', 'c', 'd', 'e', 'f'].map((name) => `tag synthetic/${name}:1`) });
-    const deadline = new AbortController();
-    setTimeout(() => deadline.abort(), 20);
-    expect(problems(await run(head, tree(), { registry, signal: deadline.signal }))).toEqual([
+    // A 20 ms deadline, named as the caller set it, never the default's 180 s.
+    expect(problems(await run(head, tree(), { registry, deadlineMs: 20 }))).toEqual([
       `images: ${first} (apps/web/Dockerfile:1): hub.docker.com: reading synthetic/a:1's Docker Hub tag failed after 3 tries with backoff (last: HTTP 503); check-toolchain fails closed`,
-      `images: hub.docker.com: the image reads stopped at their deadline (180 s) with 5 images unread, ${rest.join(', ')}; re-run`,
+      `images: hub.docker.com: the image reads stopped at their deadline (20 ms) with 5 images unread, ${rest.join(', ')}; re-run`,
     ]);
     // Four at a time: the fifth is read once the first fails; the sixth never starts.
     expect(registry.reads).toEqual(['tag synthetic/a:1', 'tag synthetic/b:1', 'tag synthetic/c:1', 'tag synthetic/d:1', 'tag synthetic/e:1']);
@@ -363,6 +452,20 @@ describe('the image rule', () => {
     expect(problems(findings)).toEqual([]);
     expect(problems(findings, 'warning')).toEqual([
       `images: ${young} (apps/web/Dockerfile:1) was pushed ${YOUNG} (Docker Hub's tag_last_pushed of the tag 24-slim), under three days ago; it is old enough from ${YOUNG_MATURE}: ${REMEDY}`,
+    ]);
+  });
+
+  it('warns, never fails, on an exceptions entry outside its window in a push run, as on every image age finding (CI-N3)', async () => {
+    const pinned = digest('node 2');
+    const young = `synthetic/node:24-slim@${pinned}`;
+    const registry = fakeRegistry({ tags: { 'synthetic/node:24-slim': tag('24-slim', pinned, YOUNG) } });
+    // Added a day ahead of now, and expiring before the digest is three days old by the push time read on this run.
+    const fix = { image: young, kind: 'security-fix', advisory: 'CVE-2026-12345', fixes: { package: 'openssl', version: '3.5.4-1' }, reason: 'synthetic: the fixed openssl of a high advisory', added: '2026-10-27T00:00:00.000Z', expires: '2026-10-27T23:59:59.000Z' };
+    const findings = await run(tree({ web: young, exceptions: [fix] }), tree(), { event: 'push', registry });
+    expect(problems(findings)).toEqual([]);
+    expect(problems(findings, 'warning')).toEqual([
+      `images: ${young}: added 2026-10-27T00:00:00.000Z, a time in the future`,
+      `images: ${young}: expires 2026-10-27T23:59:59.000Z, before the digest is three days old (${YOUNG_MATURE}; pushed ${YOUNG}), so it would lapse while still needed`,
     ]);
   });
 
@@ -429,6 +532,182 @@ describe('the image rule', () => {
     expect(notes(passed)).toEqual(['images: 4 image references, each name:tag@sha256:<64 hex>, and none the image rule does not read']);
   });
 
+  it('reads a compose service built from a YAML merge key, and refuses a service’s extends:, which takes its image from another service (SEC-N1)', () => {
+    const composed = [
+      'name: synthetic',
+      'x-base: &base',
+      '  image: synthetic/merged:latest',
+      'services:',
+      '  db:',
+      `    image: ${POSTGRES}`,
+      '  extra:',
+      '    <<: *base',
+      '  local:',
+      '    extends:',
+      '      service: db',
+      '',
+    ].join('\n');
+    expect(problems(checkOffline(tree({ compose: composed })))).toEqual([
+      "images: docker-compose.yml services.local: extends: takes the service from another one, in this file or another, which the image rule does not follow; name the service's image in docker-compose.yml",
+      'images: docker-compose.yml services.extra: synthetic/merged:latest names no digest, so what runs can change under the same name; pin it as name:tag@sha256:<64 hex>',
+    ]);
+  });
+
+  it.each(HIDING)('★ finds and ages the young FROM after $name, as BuildKit reads the file (SEC-S1)', async ({ directives, tail, from }) => {
+    const web = [...directives, dockerfile(NODE), ...tail].join('\n');
+    const line = directives.length + 4 + from + 1;
+    const registry = hiddenHub();
+    expect(problems(await run(tree({ dockerfiles: { 'apps/web/Dockerfile': web, 'apps/worker/Dockerfile': dockerfile(NODE) } }), tree(), { registry }))).toEqual([
+      `images: ${HIDDEN} (apps/web/Dockerfile:${String(line)}) was pushed ${YOUNG} (Docker Hub's tag_last_pushed of the tag 1), under three days ago; it is old enough from ${YOUNG_MATURE}: ${REMEDY}`,
+    ]);
+    expect(registry.reads).toEqual(['tag synthetic/hidden:1']);
+  });
+
+  it('★ refuses a FROM or from= line BuildKit does not read as that instruction, and a Dockerfile BuildKit’s parser refuses, rather than skip what it cannot place (SEC-S1)', () => {
+    const files = {
+      // A heredoc's body is cat's input, never an instruction, so the FROM and the COPY there are not read; the rule refuses them rather than trust that.
+      'apps/body/Dockerfile': dockerfile(NODE, ['RUN cat > /tmp/Dockerfile <<EOF', `FROM ${HIDDEN}`, 'COPY --from=synthetic/tools:1 /x /y', 'EOF']),
+      // A FROM line continuing a RUN is that RUN's text to BuildKit.
+      'apps/continued/Dockerfile': dockerfile(NODE, ['RUN echo \\', `FROM ${HIDDEN}`]),
+      'apps/escape/Dockerfile': ['# escape=x', dockerfile(NODE)].join('\n'),
+      'apps/label/Dockerfile': dockerfile(NODE, ['LABEL note="from=synthetic/tools:1"']),
+      'apps/twice/Dockerfile': ['# escape=\\', '# escape=`', dockerfile(NODE)].join('\n'),
+      'apps/unterminated/Dockerfile': dockerfile(NODE, ['RUN <<EOF', 'echo synthetic']),
+    };
+    const from = (file: string, line: number) =>
+      `images: ${file}:${String(line)}: a FROM line BuildKit does not read as a FROM instruction (a heredoc's body, or the continuation of the instruction before it), so the image rule cannot place it and refuses it; make each FROM line an instruction of its own (${RUNBOOK})`;
+    const fromEquals = (file: string, line: number) =>
+      `images: ${file}:${String(line)}: a from= outside every COPY and RUN instruction as BuildKit reads the file (a heredoc's body, or another instruction), so the image rule cannot place it and refuses it; copy and mount only from an earlier stage (${RUNBOOK})`;
+    const parser = (file: string, line: number, why: string) => `images: ${file}:${String(line)}: BuildKit's parser refuses this Dockerfile (${why}), so the images it names cannot be read; correct it (${RUNBOOK})`;
+    expect(problems(checkOffline(tree({ dockerfiles: files })))).toEqual([
+      from('apps/body/Dockerfile', 6),
+      fromEquals('apps/body/Dockerfile', 7),
+      from('apps/continued/Dockerfile', 6),
+      parser('apps/escape/Dockerfile', 1, "invalid escape token 'x' does not match ` or \\"),
+      fromEquals('apps/label/Dockerfile', 5),
+      parser('apps/twice/Dockerfile', 2, 'only one escape parser directive can be used'),
+      parser('apps/unterminated/Dockerfile', 5, 'unterminated heredoc'),
+    ]);
+  });
+
+  it('★ reads a COPY --from= under ONBUILD and a quoted --mount field’s from=, as BuildKit reads them, and refuses the images they name (SEC-S1, improve as you go)', () => {
+    const web = dockerfile(NODE, ['ONBUILD COPY --from=synthetic/later:1 /x /y', 'RUN --mount=type=bind,"from=synthetic/quoted:1",target=/q true', 'ONBUILD RUN --mount=type=cache,from=build,target=/c true']);
+    const stage = '; the image rule reads only FROM and # syntax= lines, so';
+    expect(problems(checkOffline(tree({ dockerfiles: { 'apps/web/Dockerfile': web, 'apps/worker/Dockerfile': dockerfile(NODE) } })))).toEqual([
+      `images: apps/web/Dockerfile:5: ONBUILD COPY --from=synthetic/later:1 names an image, not an earlier stage${stage} copy from a stage built FROM a pinned image (${RUNBOOK})`,
+      `images: apps/web/Dockerfile:6: RUN --mount=…,from=synthetic/quoted:1 names an image, not an earlier stage${stage} mount from a stage built FROM a pinned image (${RUNBOOK})`,
+    ]);
+  });
+
+  it('★ reads the frontend wherever BuildKit finds one: a # syntax= line after a byte-order mark or a #! line, a //syntax= line, and a JSON Dockerfile’s "syntax", which it also refuses (SEC-S2)', () => {
+    const frontend = 'synthetic/frontend:latest';
+    const files = {
+      'apps/bom/Dockerfile': `\uFEFF# syntax=${frontend}\n${dockerfile(NODE)}`,
+      'apps/cstyle/Dockerfile': `//syntax=${frontend}\n${dockerfile(NODE)}`,
+      'apps/json/Dockerfile': JSON.stringify({ syntax: frontend }),
+      'apps/shebang/Dockerfile': `#!/usr/bin/env synthetic\n# syntax = ${frontend} --synthetic-option\n${dockerfile(NODE)}`,
+    };
+    const unpinned = (where: string) => `images: ${where}: ${frontend} names no digest, so what runs can change under the same name; pin it as name:tag@sha256:<64 hex>`;
+    expect(problems(checkOffline(tree({ dockerfiles: files }))).filter((message) => message.startsWith('images: '))).toEqual([
+      `images: apps/json/Dockerfile:1: a JSON Dockerfile, which BuildKit hands whole to the frontend its "syntax" names, so no instruction of it is read; write the Dockerfile's instructions (${RUNBOOK})`,
+      unpinned('apps/bom/Dockerfile:1'),
+      unpinned('apps/cstyle/Dockerfile:1'),
+      unpinned('apps/json/Dockerfile:1'),
+      unpinned('apps/shebang/Dockerfile:2'),
+    ]);
+  });
+
+  it('★ refuses the build-push-action inputs that change what a build runs unread: a BUILDKIT_SYNTAX build-arg, a context outside the checkout, a literal file: other than apps/<name>/Dockerfile, a cache other than type=gha; and passes the forms the workflows use (SEC-S2)', () => {
+    const push = (inputs: Readonly<Record<string, string>>) => ({ uses: `docker/build-push-action@${'2'.repeat(40)}`, with: { context: '.', file: 'apps/web/Dockerfile', ...inputs } });
+    const workflow = stringify({
+      name: 'synthetic',
+      on: 'push',
+      jobs: {
+        images: {
+          'runs-on': 'ubuntu-26.04',
+          steps: [
+            { uses: `docker/setup-buildx-action@${'1'.repeat(40)}`, with: { 'driver-opts': `image=${BUILDER}` } },
+            // The forms the workflows use: a computed file:, a build-arg's value by expression, a type=gha cache, and a cache-to only the build branch's push writes.
+            push({
+              file: '${{ steps.image.outputs.dockerfile }}',
+              'build-args': 'STATIC_ASSET_ORIGIN=${{ steps.image.outputs.origin }}',
+              'cache-from': 'type=gha,scope=synthetic-web',
+              'cache-to': "${{ github.event_name == 'push' && github.ref == 'refs/heads/synthetic' && 'type=gha,mode=min,scope=synthetic-web' || '' }}",
+            }),
+            push({ context: 'apps/web', file: 'apps/web/Dockerfile' }),
+            push({ 'build-args': 'NODE_ENV=production\nBUILDKIT_SYNTAX=synthetic/frontend:latest' }),
+            push({ 'build-args': '${{ inputs.argument }}=synthetic/frontend:latest' }),
+            push({ context: 'https://github.com/synthetic-owner/synthetic.git#main' }),
+            push({ context: 'github.com/synthetic-owner/synthetic' }),
+            push({ context: '../elsewhere' }),
+            push({ file: 'build/spec.txt' }),
+            push({ 'cache-from': 'type=registry,ref=synthetic/cache:latest' }),
+            push({ 'cache-from': 'type=gha,url=https://cache.example.invalid/' }),
+            push({ 'cache-to': "${{ github.event_name == 'push' && 'type=local,dest=/tmp/cache' || '' }}" }),
+            push({ 'cache-to': '${{ inputs.cache }}' }),
+          ],
+        },
+      },
+    });
+    const at = (step: number) => `images: .github/workflows/ci.yml images step ${String(step)}`;
+    const context = (step: number, value: string) => `${at(step)}: context: ${value} is not a directory of this checkout, so the build reads a Dockerfile and files the image rule does not; build from the checkout (context: .) (${RUNBOOK})`;
+    const cache = (step: number, input: string, entry: string) =>
+      `${at(step)}: ${input}: ${entry} is not a GitHub Actions cache (type=gha, with only scope, mode, ignore-error or timeout), so the build can take its layers from a cache the image rule does not read; cache with type=gha (${RUNBOOK})`;
+    expect(problems(checkOffline(tree({ workflows: { '.github/workflows/ci.yml': workflow } })))).toEqual([
+      `${at(4)}: build-args sets BUILDKIT_SYNTAX, which hands the whole build to that frontend image before the Dockerfile is read, and the image rule does not read it; name a frontend, if any, in the Dockerfile's # syntax= line (${RUNBOOK})`,
+      `${at(5)}: build-args names an argument by an expression, which can be BUILDKIT_SYNTAX; name each argument as written (${RUNBOOK})`,
+      context(6, 'https://github.com/synthetic-owner/synthetic.git#main'),
+      context(7, 'github.com/synthetic-owner/synthetic'),
+      context(8, '../elsewhere'),
+      `${at(9)}: file: build/spec.txt is not apps/<name>/Dockerfile, the Dockerfiles the image rule reads; build one of those (${RUNBOOK})`,
+      cache(10, 'cache-from', 'type=registry,ref=synthetic/cache:latest'),
+      cache(11, 'cache-from', 'type=gha,url=https://cache.example.invalid/'),
+      cache(12, 'cache-to', 'type=local,dest=/tmp/cache'),
+      `${at(13)}: cache-to is an expression the image rule cannot read (it reads \${{ <condition> && '<value>' || '<value>' }}), so its cache cannot be checked; write it in that form or as a value (${RUNBOOK})`,
+    ]);
+  });
+
+  it('★ refuses what has a build run an image the rule does not read: any build-contexts, an SBOM scan, a setup-buildx driver other than docker-container or docker, and setup-qemu without its image by digest, which it reads (improve as you go)', () => {
+    const push = (inputs: Readonly<Record<string, string>>) => ({ uses: `docker/build-push-action@${'2'.repeat(40)}`, with: { context: '.', file: 'apps/web/Dockerfile', ...inputs } });
+    const binfmt = `synthetic/binfmt:1@${digest('binfmt')}`;
+    const workflow = stringify({
+      name: 'synthetic',
+      on: 'push',
+      jobs: {
+        images: {
+          'runs-on': 'ubuntu-26.04',
+          steps: [
+            { uses: `docker/setup-buildx-action@${'1'.repeat(40)}`, with: { 'driver-opts': `image=${BUILDER}` } },
+            { uses: `docker/setup-buildx-action@${'1'.repeat(40)}`, with: { driver: 'remote', endpoint: 'tcp://builder.example.invalid:1234', 'driver-opts': `image=${BUILDER}` } },
+            { uses: `docker/setup-buildx-action@${'1'.repeat(40)}`, with: { driver: 'docker' } },
+            push({ 'build-contexts': 'node=https://github.com/synthetic-owner/rootfs.git' }),
+            push({ sbom: 'true' }),
+            push({ attests: 'type=sbom' }),
+            push({ sbom: 'false', provenance: 'false' }),
+            { uses: `docker/setup-qemu-action@${'3'.repeat(40)}` },
+            { uses: `docker/setup-qemu-action@${'3'.repeat(40)}`, with: { image: binfmt } },
+          ],
+        },
+      },
+    });
+    const at = (step: number) => `images: .github/workflows/ci.yml images step ${String(step)}`;
+    const findings = checkOffline(tree({ workflows: { '.github/workflows/ci.yml': workflow } }));
+    expect(problems(findings)).toEqual([
+      `${at(2)}: setup-buildx's driver: remote is not docker-container or docker, so the builds can run on a builder the image rule does not read; use the docker-container driver with image=moby/buildkit:vX.Y.Z@sha256:<64 hex> (${RUNBOOK})`,
+      `${at(4)}: build-contexts gives the build named contexts, each taking the place of the stage or image of its name (docker-image://, a git or https URL, a directory), and the image rule reads none of them; build FROM a pinned image in the Dockerfile instead (${RUNBOOK})`,
+      `${at(5)}: sbom: or attests: has BuildKit run its SBOM scanner, an image the image rule does not read; leave the bill of materials to the release's Trivy scan (${RUNBOOK})`,
+      `${at(6)}: sbom: or attests: has BuildKit run its SBOM scanner, an image the image rule does not read; leave the bill of materials to the release's Trivy scan (${RUNBOOK})`,
+      `${at(8)}: setup-qemu names no image, so it runs tonistiigi/binfmt:latest by tag; name it as image: tonistiigi/binfmt:<tag>@sha256:<64 hex>`,
+    ]);
+    // setup-qemu's image, when named, is read with the builders, so it is held to the form and aged.
+    const read = imagesOf(tree({ workflows: { '.github/workflows/ci.yml': workflow } })).uses.filter((use) => use.where.startsWith('.github/'));
+    expect(read.map((use) => `${use.where}: ${use.image}`)).toEqual([
+      `.github/workflows/ci.yml images step 1: ${BUILDER}`,
+      `.github/workflows/ci.yml images step 2: ${BUILDER}`,
+      `.github/workflows/ci.yml images step 9: ${binfmt}`,
+    ]);
+  });
+
   it('refuses a COPY --from= or RUN --mount=…,from= naming an image, a docker-image:// build context, a tracked image file outside the three read, and a compose build: (S6)', () => {
     const web = [
       `FROM ${NODE} AS build`,
@@ -441,7 +720,7 @@ describe('the image rule', () => {
       'COPY --from=synthetic/tools:1 /bin/tool /bin/tool',
       'RUN --mount=type=bind,from=build,source=/repo,target=/repo true',
       'RUN --mount=type=cache,target=/cache --mount=type=bind,from=synthetic/tools:1,target=/tools true',
-      // A heredoc's body is a command's input, never an instruction; a continuation is one instruction.
+      // A heredoc's body is a command's input, never an instruction, and a FROM line there is refused, not read; a continuation is one instruction.
       'RUN <<EOF',
       'FROM synthetic/not-an-instruction:1',
       'EOF',
@@ -472,13 +751,15 @@ describe('the image rule', () => {
     expect(problems(findings)).toEqual([
       `images: apps/web/Dockerfile:8: COPY --from=synthetic/tools:1 names an image, not an earlier stage${stage} copy from a stage built FROM a pinned image (${RUNBOOK})`,
       `images: apps/web/Dockerfile:10: RUN --mount=…,from=synthetic/tools:1 names an image, not an earlier stage${stage} mount from a stage built FROM a pinned image (${RUNBOOK})`,
+      `images: apps/web/Dockerfile:12: a FROM line BuildKit does not read as a FROM instruction (a heredoc's body, or the continuation of the instruction before it), so the image rule cannot place it and refuses it; make each FROM line an instruction of its own (${RUNBOOK})`,
       `images: apps/web/Dockerfile:14: COPY --from=synthetic/other:2 names an image, not an earlier stage${stage} copy from a stage built FROM a pinned image (${RUNBOOK})`,
+      `images: apps/web/Dockerfile:16: ONBUILD COPY --from=synthetic/later:1 names an image, not an earlier stage${stage} copy from a stage built FROM a pinned image (${RUNBOOK})`,
       `images: apps/worker/Dockerfile:6: COPY --from=synthetic/escaped:3 names an image, not an earlier stage${stage} copy from a stage built FROM a pinned image (${RUNBOOK})`,
       'images: docker-compose.yml: include: brings in another compose file, whose images the image rule does not read; name every service in docker-compose.yml',
       'images: docker-compose.yml services.db: build: builds an image the image rule does not read; run an image by digest (image: name:tag@sha256:<64 hex>)',
-      "images: docker-compose.yml services.cache: extends: names another compose file, whose images the image rule does not read; name the service's image in docker-compose.yml",
+      "images: docker-compose.yml services.cache: extends: takes the service from another one, in this file or another, which the image rule does not follow; name the service's image in docker-compose.yml",
       'images: .github/workflows/ci.yml images step 1: setup-buildx names no builder image (driver-opts image=…), so it runs moby/buildkit:buildx-stable-1 by tag; name it as image=moby/buildkit:vX.Y.Z@sha256:<64 hex>',
-      `images: .github/workflows/ci.yml images step 2: build-contexts names an image (docker-image://), which the image rule does not read; build FROM a pinned image in the Dockerfile instead (${RUNBOOK})`,
+      `images: .github/workflows/ci.yml images step 2: build-contexts gives the build named contexts, each taking the place of the stage or image of its name (docker-image://, a git or https URL, a directory), and the image rule reads none of them; build FROM a pinned image in the Dockerfile instead (${RUNBOOK})`,
       `images: .github/workflows/ci.yml images step 3: docker/bake-action builds from bake files, whose images and docker-image:// contexts the image rule does not read; build with docker/build-push-action from a Dockerfile FROM a pinned image (${RUNBOOK})`,
       ...['compose.yaml', 'deploy/Dockerfile.dev'].map(
         (file) =>

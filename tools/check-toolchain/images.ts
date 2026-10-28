@@ -1,9 +1,10 @@
 import { parse } from 'yaml';
 
 import type { CheckEvent, Finding, Level, Tree } from './check';
-import { ageWords, excludeWindowProblems, expiredExclude, type ExcludeWindow, type KnownTime } from './exclude-window';
+import { READ_DEADLINE_MS, ageWords, excludeWindowProblems, expiredExclude, type ExcludeWindow, type KnownTime } from './exclude-window';
 import { MINUTE_MS, type ImageAgeException } from './policy';
 import { type HubTag, NetworkReadError, type Registry } from './registry';
+import type { NamedOnBuildBranch } from './tree';
 
 /**
  * The image rule (docs/adr/0066, Part 5; test matrix CI-22): every image the tree names is held to the founder's F2 (b)
@@ -22,8 +23,6 @@ import { type HubTag, NetworkReadError, type Registry } from './registry';
 export const COMPOSE_FILE = 'docker-compose.yml';
 /** The image exceptions, beside the checker. */
 export const IMAGE_AGE_EXCEPTIONS_FILE = 'tools/check-toolchain/image-age-exceptions.json';
-/** One deadline for all of a run's Docker Hub reads (E3). */
-export const IMAGE_DEADLINE_MS = 180_000;
 /** Docker Hub reads at once. */
 export const IMAGE_READS_AT_ONCE = 4;
 /** Pages of a repository's tags, most recently updated first, searched for a digest its own tag no longer names. */
@@ -89,109 +88,1032 @@ export function parseImage(image: string): ImageName | { readonly problem: strin
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
-const blankOrComment = (line: string) => /^\s*(?:#|$)/.test(line);
+
+// The Dockerfile reader: BuildKit v0.34.1's parser (moby/buildkit frontend/dockerfile/parser, parser.go,
+// directives.go, split_command.go and line_parsers.go, and the word lexer of frontend/dockerfile/shell/lex.go), ported
+// so that the image rule reads a Dockerfile's lines as the pinned builder does (SEC-S1). Each function names the Go one
+// it follows. What it cannot vouch for it reports, and the rule refuses: a parse BuildKit refuses, and any FROM or from=
+// line it did not place as that instruction, so a divergence it does not know of fails closed.
+
+/** A Dockerfile instruction as BuildKit reads it. */
+export interface DockerfileInstruction {
+  /** The line it starts on, 1-based. */
+  readonly line: number;
+  /** Every line its text came from: the first and each continuation, never a comment, blank or heredoc body line. */
+  readonly lines: readonly number[];
+  /** Its keyword, upper case as BuildKit dispatches it (FROM, COPY, RUN, ONBUILD, …), or as written when unknown. */
+  readonly command: string;
+  /** Its leading `--flags`, quotes and escapes removed, as BuildKit extracts them (`--from=build`). */
+  readonly flags: readonly string[];
+  /** Its arguments: whitespace-split for FROM, COPY and ADD, the JSON array's strings, or the rest as one. */
+  readonly args: readonly string[];
+  /** ONBUILD's trigger, read as an instruction of its own. */
+  readonly trigger?: DockerfileInstruction;
+}
+
+/** A Dockerfile as BuildKit reads it (readDockerfile). */
+export interface DockerfileRead {
+  /**
+   * The frontend images the build is handed to: the one BuildKit picks (DetectSyntax: a `# syntax=` or `//syntax=`
+   * directive after a byte-order mark and a `#!` line, else a JSON Dockerfile's "syntax"), and, stricter than BuildKit,
+   * every other line that reads as a syntax directive.
+   */
+  readonly frontends: readonly { readonly line: number; readonly image: string }[];
+  /** Each FROM, in order: its image or earlier stage as written, and its stage name (null when it has none). */
+  readonly stages: readonly { readonly line: number; readonly image: string; readonly name: string | null }[];
+  readonly instructions: readonly DockerfileInstruction[];
+  /**
+   * Why the reader cannot vouch for what it read, by line: a JSON Dockerfile, a parse BuildKit refuses, a FROM line it
+   * did not place as a FROM instruction, a from= outside every COPY and RUN. Empty: every image the file can name is
+   * in `frontends`, `stages` or a COPY or RUN flag.
+   */
+  readonly problems: readonly { readonly line: number; readonly message: string }[];
+}
+
+/** A Dockerfile BuildKit's parser refuses, and the line where. */
+class DockerfileParseError extends Error {
+  constructor(
+    message: string,
+    readonly line: number,
+  ) {
+    super(message);
+  }
+}
+
+/** A word the lexer cannot read (an unmatched quote, a bad substitution). */
+class LexError extends Error {}
+
+/** Go's unicode.IsSpace. */
+function isGoSpace(ch: string): boolean {
+  if (ch === '\t' || ch === '\n' || ch === '\v' || ch === '\f' || ch === '\r' || ch === ' ' || ch === '\u0085' || ch === ' ') {
+    return true;
+  }
+  const code = ch.codePointAt(0) ?? 0;
+  return code === 0x1680 || (code >= 0x2000 && code <= 0x200a) || code === 0x2028 || code === 0x2029 || code === 0x202f || code === 0x205f || code === 0x3000;
+}
+
+/** Go's TrimLeftFunc(unicode.IsSpace), TrimSpace. */
+function trimLeftGo(text: string): string {
+  let at = 0;
+  while (at < text.length && isGoSpace(text[at] ?? '')) {
+    at += 1;
+  }
+  return text.slice(at);
+}
+function trimSpaceGo(text: string): string {
+  let end = text.length;
+  while (end > 0 && isGoSpace(text[end - 1] ?? '')) {
+    end -= 1;
+  }
+  return trimLeftGo(text.slice(0, end));
+}
+
+/** Go's strings.ToLower for an instruction's keyword: simple case mapping, so ONBUİLD reads as onbuild. */
+const goLower = (text: string) => text.replace(/İ/g, 'i').toLowerCase();
+
+/** BuildKit's trimNewline: every trailing CR and LF. */
+const trimNewline = (line: string) => line.replace(/[\r\n]+$/, '');
+
+/** BuildKit's isComment: a `#` first after leading whitespace. */
+const isComment = (line: string) => trimLeftGo(line).startsWith('#');
+
+/** BuildKit's directive regexp, with Go's \s ([\t\n\f\r ]) and `.` (not \n). */
+const DIRECTIVE = /^([a-zA-Z][a-zA-Z0-9]*)[\t\n\f\r ]*=[\t\n\f\r ]*([^\n]+?)[\t\n\f\r ]*$/;
+const DIRECTIVE_KEYS = new Set(['syntax', 'escape', 'check']);
+
+/** BuildKit's DirectiveParser: directives only at the top, each key once, the first other line ending them. */
+class DirectiveParser {
+  private done = false;
+  private readonly seen = new Set<string>();
+
+  constructor(private readonly comment: string) {}
+
+  /** ParseLine: the directive, or null (and null for every later line); throws on a repeated key. */
+  parseLine(line: string, at: number): { readonly name: string; readonly value: string } | null {
+    if (this.done) {
+      return null;
+    }
+    if (!line.startsWith(this.comment)) {
+      this.done = true;
+      return null;
+    }
+    const match = DIRECTIVE.exec(trimLeftGo(line.slice(this.comment.length)));
+    const name = match?.[1]?.toLowerCase();
+    if (match === null || name === undefined || !DIRECTIVE_KEYS.has(name)) {
+      this.done = true;
+      return null;
+    }
+    if (this.seen.has(name)) {
+      throw new DockerfileParseError(`only one ${name} parser directive can be used`, at);
+    }
+    this.seen.add(name);
+    return { name, value: match[2] ?? '' };
+  }
+}
+
+/** bufio.ScanLines: lines without their LF and one trailing CR, no line after a final LF. */
+function scanLines(text: string): string[] {
+  const lines = text.split('\n');
+  if (lines[lines.length - 1] === '') {
+    lines.pop();
+  }
+  return lines.map((line) => (line.endsWith('\r') ? line.slice(0, -1) : line));
+}
 
 /**
- * A Dockerfile's instructions, each with its first line's number: continuation lines joined (under the file's `escape`
- * directive), comment and blank lines left out, and the bodies of RUN, COPY and ADD heredocs skipped, since they are a
- * command's input, never instructions.
+ * DetectSyntax: after a byte-order mark (stripped by the caller) and a `#!` line, the `syntax` of the `#` directives,
+ * else of `//` directives, else a JSON object's "syntax"; the image is the value up to its first space.
  */
-function instructions(text: string): { readonly line: number; readonly text: string }[] {
-  const lines = text.split(/\r?\n/);
-  let escape = '\\';
-  for (const line of lines) {
-    const directive = /^#\s*([A-Za-z]+)\s*=\s*(\S+)\s*$/.exec(line);
-    if (directive === null) {
-      break;
-    }
-    if (directive[1]?.toLowerCase() === 'escape' && (directive[2] === '`' || directive[2] === '\\')) {
-      escape = directive[2];
+function detectSyntax(body: string): { readonly line: number; readonly image: string } | null {
+  let lines = scanLines(body);
+  let data = body;
+  let offset = 0;
+  if ((lines[0] ?? '').startsWith('#!')) {
+    lines = lines.slice(1);
+    data = body.includes('\n') ? body.slice(body.indexOf('\n') + 1) : '';
+    offset = 1;
+  }
+  for (const comment of ['#', '//']) {
+    const parser = new DirectiveParser(comment);
+    for (const [index, line] of lines.entries()) {
+      let directive: { readonly name: string; readonly value: string } | null;
+      try {
+        directive = parser.parseLine(line, index + 1 + offset);
+      } catch {
+        break;
+      }
+      if (directive === null) {
+        break;
+      }
+      if (directive.name === 'syntax') {
+        return { line: index + 1 + offset, image: directive.value.split(' ')[0] ?? '' };
+      }
     }
   }
-  const result: { line: number; text: string }[] = [];
-  let index = 0;
-  while (index < lines.length) {
-    const start = index;
-    let current = lines[index] ?? '';
-    index += 1;
-    if (blankOrComment(current)) {
+  const json = jsonObject(data);
+  return json !== null && typeof json.syntax === 'string' ? { line: 1 + offset, image: json.syntax.split(' ')[0] ?? '' } : null;
+}
+
+/** The text as a JSON object, as Go's json.Unmarshal into a map reads one; null for anything else. */
+function jsonObject(text: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** setEscapeToken's line-continuation regexp for `\` or a backtick. */
+function continuationOf(escape: string): RegExp {
+  const token = escape === '\\' ? '\\\\' : '`';
+  return new RegExp(`([^${token}])${token}[ \\t]*$|^${token}[ \\t]*$`);
+}
+
+/** trimContinuationCharacter: the line without its continuation token, and whether it ends the instruction. */
+function trimContinuation(line: string, continuation: RegExp): [string, boolean] {
+  return continuation.test(line) ? [line.replace(continuation, '$1'), false] : [line, true];
+}
+
+/** Go's unicode.IsSpace of a byte read as a rune, as extractBuilderFlags tests each byte. */
+const isSpaceByte = (byte: number) => byte === 9 || byte === 10 || byte === 11 || byte === 12 || byte === 13 || byte === 32 || byte === 0x85 || byte === 0xa0;
+
+/**
+ * extractBuilderFlags: the leading `--` words, byte by byte as BuildKit reads them (each byte written as the rune of its
+ * value), quotes and escapes removed, up to the first other word or `--`; and the rest of the line.
+ */
+function extractBuilderFlags(line: string, escape: string): { readonly rest: string; readonly flags: string[] } {
+  const bytes = Buffer.from(line, 'utf8');
+  const escapeByte = escape.charCodeAt(0);
+  const rest = (at: number) => bytes.subarray(at).toString('utf8');
+  const flags: string[] = [];
+  const IN_SPACES = 0;
+  const IN_WORD = 1;
+  const IN_QUOTE = 2;
+  let phase = IN_SPACES;
+  let word = '';
+  let quote = 0;
+  let blankOk = false;
+  let ch = 0;
+  for (let at = 0; at <= bytes.length; at += 1) {
+    if (at !== bytes.length) {
+      ch = bytes[at] ?? 0;
+    }
+    if (phase === IN_SPACES) {
+      if (at === bytes.length) {
+        break;
+      }
+      if (isSpaceByte(ch)) {
+        continue;
+      }
+      if (ch !== 0x2d || at + 1 === bytes.length || bytes[at + 1] !== 0x2d) {
+        return { rest: rest(at), flags };
+      }
+      phase = IN_WORD;
+    }
+    if ((phase === IN_WORD || phase === IN_QUOTE) && at === bytes.length) {
+      if (word !== '--' && (blankOk || word.length > 0)) {
+        flags.push(word);
+      }
+      break;
+    }
+    if (phase === IN_WORD) {
+      if (isSpaceByte(ch)) {
+        phase = IN_SPACES;
+        if (word === '--') {
+          return { rest: rest(at), flags };
+        }
+        if (blankOk || word.length > 0) {
+          flags.push(word);
+        }
+        word = '';
+        blankOk = false;
+        continue;
+      }
+      if (ch === 0x27 || ch === 0x22) {
+        quote = ch;
+        blankOk = true;
+        phase = IN_QUOTE;
+        continue;
+      }
+      if (ch === escapeByte) {
+        if (at + 1 === bytes.length) {
+          continue;
+        }
+        at += 1;
+        ch = bytes[at] ?? 0;
+      }
+      word += String.fromCharCode(ch);
       continue;
     }
-    while (current.trimEnd().endsWith(escape) && index < lines.length) {
-      current = current.trimEnd().slice(0, -1);
-      while (index < lines.length && blankOrComment(lines[index] ?? '')) {
-        index += 1;
-      }
-      current += ` ${lines[index] ?? ''}`;
-      index += 1;
+    if (ch === quote) {
+      phase = IN_WORD;
+      continue;
     }
-    if (/^\s*(?:RUN|COPY|ADD)\s/i.test(current)) {
-      for (const match of current.matchAll(/<<(-?)(["']?)([A-Za-z_][A-Za-z0-9_]*)\2/g)) {
-        const strip = match[1] === '-';
-        while (index < lines.length && (strip ? (lines[index] ?? '').replace(/^\t+/, '') : lines[index]) !== match[3]) {
-          index += 1;
+    if (ch === escapeByte) {
+      if (at + 1 === bytes.length) {
+        phase = IN_WORD;
+        continue;
+      }
+      at += 1;
+      ch = bytes[at] ?? 0;
+    }
+    word += String.fromCharCode(ch);
+  }
+  return { rest: '', flags };
+}
+
+/** reWhitespace, which splits a command from its arguments and FROM's arguments from each other. */
+const WHITESPACE = /[\t\v\f\r ]+/;
+
+/** The keywords BuildKit dispatches, by lower case. */
+const KEYWORDS = new Set(['add', 'arg', 'cmd', 'copy', 'entrypoint', 'env', 'expose', 'from', 'healthcheck', 'label', 'maintainer', 'onbuild', 'run', 'shell', 'stopsignal', 'user', 'volume', 'workdir']);
+
+/** An instruction's parse, before its lines are known. */
+interface Parsed {
+  readonly command: string;
+  readonly flags: readonly string[];
+  readonly args: readonly string[];
+  readonly json: boolean;
+  readonly trigger?: Parsed;
+}
+
+/** parseJSON: a JSON array of strings, null when the text is no JSON array; throws when one holds anything but strings. */
+function jsonArray(rest: string, at: number): string[] | null {
+  const text = trimLeftGo(rest);
+  if (!text.startsWith('[')) {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed)) {
+    return null;
+  }
+  const strings = parsed.filter((item): item is string => typeof item === 'string');
+  if (strings.length !== parsed.length) {
+    throw new DockerfileParseError('when using JSON array syntax, arrays must be comprised of strings only', at);
+  }
+  return strings;
+}
+
+/** newNodeFromLine: splitCommand, then the command's line parser (an unknown command's arguments are ignored). */
+function parseInstruction(line: string, escape: string, at: number): Parsed {
+  const trimmed = trimSpaceGo(line);
+  const split = WHITESPACE.exec(trimmed);
+  const keyword = split === null ? trimmed : trimmed.slice(0, split.index);
+  const extracted = split === null ? { rest: '', flags: [] } : extractBuilderFlags(trimmed.slice(split.index + split[0].length), escape);
+  const rest = trimSpaceGo(extracted.rest);
+  const lower = goLower(keyword);
+  const command = KEYWORDS.has(lower) ? lower.toUpperCase() : keyword;
+  const words = () => (rest === '' ? [] : rest.split(WHITESPACE));
+  switch (lower) {
+    case 'from':
+    case 'expose':
+      return { command, flags: extracted.flags, args: words(), json: false };
+    case 'add':
+    case 'copy':
+    case 'volume': {
+      const array = jsonArray(rest, at);
+      return array === null ? { command, flags: extracted.flags, args: words(), json: false } : { command, flags: extracted.flags, args: array, json: true };
+    }
+    case 'run':
+    case 'cmd':
+    case 'entrypoint':
+    case 'shell': {
+      const array = rest === '' ? null : jsonArray(rest, at);
+      return array === null ? { command, flags: extracted.flags, args: rest === '' ? [] : [rest], json: false } : { command, flags: extracted.flags, args: array, json: true };
+    }
+    case 'onbuild':
+      return rest === '' ? { command, flags: extracted.flags, args: [], json: false } : { command, flags: extracted.flags, args: [rest], json: false, trigger: parseInstruction(rest, escape, at) };
+    default:
+      return { command, flags: extracted.flags, args: rest === '' ? [] : [rest], json: false };
+  }
+}
+
+/** canContainHeredoc: RUN, COPY or ADD (ONBUILD's trigger for ONBUILD), not in JSON form. */
+function canContainHeredoc(parsed: Parsed): boolean {
+  const node = parsed.command === 'ONBUILD' && parsed.trigger !== undefined ? parsed.trigger : parsed;
+  return (node.command === 'RUN' || node.command === 'COPY' || node.command === 'ADD') && !node.json;
+}
+
+/** The words of a list as shell/lex.go's wordsStruct gathers them, into a buffer that a nested read resets (as Go's does). */
+class Words {
+  readonly words: string[] = [];
+  private inWord = false;
+
+  constructor(private readonly buffer: { text: string }) {}
+
+  addChar(ch: string): void {
+    if (isGoSpace(ch) && this.inWord) {
+      if (this.buffer.text.length !== 0) {
+        this.words.push(this.buffer.text);
+        this.buffer.text = '';
+        this.inWord = false;
+      }
+    } else if (!isGoSpace(ch)) {
+      this.addRawChar(ch);
+    }
+  }
+
+  addRawChar(ch: string): void {
+    this.buffer.text += ch;
+    this.inWord = true;
+  }
+
+  addString(text: string): void {
+    for (const ch of text) {
+      this.addChar(ch);
+    }
+  }
+
+  addRawString(text: string): void {
+    this.buffer.text += text;
+    this.inWord = true;
+  }
+
+  get(): string[] {
+    if (this.buffer.text.length > 0) {
+      this.words.push(this.buffer.text);
+      this.buffer.text = '';
+      this.inWord = false;
+    }
+    return this.words;
+  }
+}
+
+/**
+ * shell/lex.go's shellWord with escape `\`, no environment and SkipUnsetEnv (as BuildKit reads a heredoc's words):
+ * ProcessWords splits a line into words, keeping quotes (RawQuotes) and escapes (RawEscapes) when asked.
+ */
+class ShellWord {
+  private readonly chars: string[];
+  private at = 0;
+  private rawEscapes: boolean;
+  private readonly buffer = { text: '' };
+
+  constructor(
+    word: string,
+    private readonly rawQuotes: boolean,
+    rawEscapes: boolean,
+  ) {
+    this.chars = Array.from(word);
+    this.rawEscapes = rawEscapes;
+  }
+
+  /** ProcessWords. */
+  words(): string[] {
+    return this.stopOn(null, this.rawEscapes, false).words;
+  }
+
+  private peek(): string | null {
+    return this.chars[this.at] ?? null;
+  }
+
+  private next(): string | null {
+    const ch = this.chars[this.at] ?? null;
+    if (ch !== null) {
+      this.at += 1;
+    }
+    return ch;
+  }
+
+  /** processStopOn. */
+  private stopOn(stop: string | null, rawEscapes: boolean, preserve: boolean): { readonly result: string; readonly words: string[] } {
+    let result = '';
+    this.buffer.text = '';
+    const words = new Words(this.buffer);
+    const toggled = rawEscapes !== this.rawEscapes;
+    if (toggled) {
+      this.rawEscapes = rawEscapes;
+    }
+    try {
+      while (this.peek() !== null) {
+        const ch = this.peek() ?? '';
+        if (stop !== null && ch === stop) {
+          this.next();
+          return { result, words: words.get() };
         }
-        index += 1;
+        const special = ch === '$' ? () => this.dollar() : ch === '<' ? () => this.possibleHeredoc() : ch === "'" ? () => this.singleQuote(preserve) : ch === '"' ? () => this.doubleQuote(preserve) : null;
+        if (special !== null) {
+          const text = special();
+          result += text;
+          if (ch === '$') {
+            words.addString(text);
+          } else {
+            words.addRawString(text);
+          }
+          continue;
+        }
+        let read = this.next() ?? '';
+        if (read === '\\') {
+          if (this.rawEscapes) {
+            words.addRawChar(read);
+            result += read;
+          }
+          const escaped = this.next();
+          if (escaped === null) {
+            break;
+          }
+          read = escaped;
+          words.addRawChar(read);
+        } else {
+          words.addChar(read);
+        }
+        result += read;
+      }
+      if (stop !== null) {
+        throw new LexError(`unexpected end of statement while looking for matching ${stop}`);
+      }
+      return { result, words: words.get() };
+    } finally {
+      if (toggled) {
+        this.rawEscapes = !rawEscapes;
       }
     }
-    result.push({ line: start + 1, text: current.trim() });
   }
-  return result;
-}
 
-/** An instruction's leading `--name=value` flags, value unquoted. */
-function flags(words: readonly string[]): { readonly name: string; readonly value: string }[] {
-  const result: { name: string; value: string }[] = [];
-  for (const word of words) {
-    const flag = /^--([A-Za-z-]+)(?:=(.*))?$/.exec(word);
-    if (flag === null) {
-      break;
+  /** processSingleQuote. */
+  private singleQuote(preserve: boolean): string {
+    let result = '';
+    const open = this.next() ?? '';
+    if (this.rawQuotes) {
+      result += open;
     }
-    result.push({ name: flag[1]?.toLowerCase() ?? '', value: (flag[2] ?? '').replace(/^(["'])(.*)\1$/, '$2') });
+    for (;;) {
+      const ch = this.next();
+      if (ch === null) {
+        throw new LexError('unexpected end of statement while looking for matching single-quote');
+      }
+      if (ch === "'") {
+        if (this.rawQuotes) {
+          result += ch;
+        }
+        return result;
+      }
+      if (preserve && ch === '\\') {
+        result += ch;
+      }
+      result += ch;
+    }
   }
-  return result;
+
+  /** processDoubleQuote. */
+  private doubleQuote(preserve: boolean): string {
+    let result = '';
+    const open = this.next() ?? '';
+    if (this.rawQuotes) {
+      result += open;
+    }
+    for (;;) {
+      const ahead = this.peek();
+      if (ahead === null) {
+        throw new LexError('unexpected end of statement while looking for matching double-quote');
+      }
+      if (ahead === '"') {
+        const close = this.next() ?? '';
+        if (this.rawQuotes) {
+          result += close;
+        }
+        return result;
+      }
+      if (ahead === '$') {
+        result += this.dollar();
+        continue;
+      }
+      let ch = this.next() ?? '';
+      if (ch === '\\') {
+        const after = this.peek();
+        if (after === null) {
+          continue;
+        }
+        if (after === '"' || after === '$' || after === '\\') {
+          if (this.rawEscapes) {
+            result += ch;
+          }
+          ch = this.next() ?? '';
+        } else if (this.rawEscapes && (!this.rawQuotes || preserve)) {
+          result += ch;
+        }
+      }
+      result += ch;
+    }
+  }
+
+  /** processDollar, with every variable unset and kept as written. */
+  private dollar(): string {
+    this.next();
+    if (this.peek() !== '{') {
+      const name = this.name();
+      return name === '' ? '$' : `$${name}`;
+    }
+    this.next();
+    const ahead = this.peek();
+    if (ahead === null) {
+      throw new LexError("syntax error: missing '}'");
+    }
+    if (ahead === '{' || ahead === '}' || ahead === ':') {
+      throw new LexError('syntax error: bad substitution');
+    }
+    const name = this.name();
+    let ch = this.next();
+    let modifier = ch ?? '';
+    let nullIsUnset = false;
+    if (ch === '}') {
+      return `\${${name}}`;
+    }
+    if (ch === ':') {
+      nullIsUnset = true;
+      ch = this.next();
+      modifier += ch ?? '';
+    }
+    if (nullIsUnset || ch === '+' || ch === '-' || ch === '?' || ch === '#' || ch === '%') {
+      const raw = ch === '#' || ch === '%';
+      if (nullIsUnset && raw) {
+        throw new LexError(`unsupported modifier (${modifier}) in substitution`);
+      }
+      const word = this.until('}', raw, raw, "syntax error: missing '}'");
+      return `\${${name}${modifier}${word}}`;
+    }
+    if (ch === '/') {
+      if (this.peek() === '/') {
+        this.next();
+      }
+      const pattern = this.until('/', true, true, "syntax error: missing '/' in ${}");
+      const replacement = this.until('}', true, false, "syntax error: missing '}'");
+      return `\${${name}/${pattern}/${replacement}}`;
+    }
+    throw new LexError(`unsupported modifier (${modifier}) in substitution`);
+  }
+
+  /** A nested processStopOn, its error at the end of the text named as Go names it. */
+  private until(stop: string, rawEscapes: boolean, preserve: boolean, missing: string): string {
+    try {
+      return this.stopOn(stop, rawEscapes, preserve).result;
+    } catch (error) {
+      if (this.peek() === null) {
+        throw new LexError(missing);
+      }
+      throw error;
+    }
+  }
+
+  /** processName. */
+  private name(): string {
+    let name = '';
+    while (this.peek() !== null) {
+      const ch = this.peek() ?? '';
+      if (name === '' && /^\p{Nd}$/u.test(ch)) {
+        while (this.peek() !== null && /^\p{Nd}$/u.test(this.peek() ?? '')) {
+          name += this.next() ?? '';
+        }
+        return name;
+      }
+      if (name === '' && '@*#?-$!0'.includes(ch)) {
+        this.next();
+        return ch;
+      }
+      if (!/^[\p{L}\p{Nd}_]$/u.test(ch)) {
+        break;
+      }
+      name += this.next() ?? '';
+    }
+    return name;
+  }
+
+  /** processPossibleHeredoc: `<<` and the whitespace after it as one raw piece of a word, else `<`. */
+  private possibleHeredoc(): string {
+    this.next();
+    if (this.peek() !== '<') {
+      return '<';
+    }
+    this.next();
+    let space = '';
+    while (this.peek() === '\t' || this.peek() === '\r' || this.peek() === ' ') {
+      space += this.next() ?? '';
+    }
+    return `<<${space}`;
+  }
 }
 
-function dockerfileImages(file: string, text: string, uses: ImageUse[], unread: string[]): void {
-  // Every `# syntax=` line names the frontend image BuildKit pulls before it reads the file (CI-13 reads them all, as here).
-  text.split(/\r?\n/).forEach((line, index) => {
-    const syntax = /^#\s*syntax\s*=\s*(\S+)/i.exec(line)?.[1];
-    if (syntax !== undefined) {
-      uses.push({ image: syntax, where: `${file}:${String(index + 1)}` });
+/** reHeredoc, with Go's \d and \s. */
+const HEREDOC = /^([0-9]*)<<(-?)[\t\n\f\r ]*([^<]*)$/;
+
+/** heredocsFromLine and heredocFromMatch: each unquoted word `<<[-]NAME` of the line, its terminator NAME unquoted. */
+function heredocsOf(line: string, at: number): { readonly name: string; readonly chomp: boolean }[] {
+  let words: string[];
+  try {
+    words = new ShellWord(line, true, true).words();
+  } catch {
+    words = [];
+  }
+  const heredocs: { name: string; chomp: boolean }[] = [];
+  for (const word of words) {
+    const match = HEREDOC.exec(word);
+    const rest = match?.[3] ?? '';
+    if (match === null || rest === '') {
+      continue;
+    }
+    try {
+      const plain = new ShellWord(rest, false, false).words();
+      if (plain.length !== 1) {
+        continue;
+      }
+      const raw = new ShellWord(rest, true, false).words();
+      if (raw.length !== plain.length) {
+        throw new LexError(`internal lexing of heredoc produced inconsistent results: ${rest}`);
+      }
+      heredocs.push({ name: plain[0] ?? '', chomp: match[2] === '-' });
+    } catch (error) {
+      throw new DockerfileParseError(error instanceof Error ? error.message : String(error), at);
+    }
+  }
+  return heredocs;
+}
+
+/** Parse: the instructions of a Dockerfile (its byte-order mark already stripped), or the line BuildKit stops at. */
+function parseDockerfile(body: string): { readonly instructions: DockerfileInstruction[]; readonly failure: { readonly line: number; readonly message: string } | null } {
+  const lines = body.split('\n');
+  if (lines[lines.length - 1] === '') {
+    lines.pop();
+  }
+  const directives = new DirectiveParser('#');
+  let escape = '\\';
+  let continuation = continuationOf(escape);
+  const instructions: DockerfileInstruction[] = [];
+  let at = 0;
+  // processLine: the line without its newline (and leading whitespace, for an instruction's first), any directive
+  // taken, and a comment read as empty.
+  const processLine = (raw: string, stripLeft: boolean, number: number): string => {
+    let token = trimNewline(raw);
+    if (stripLeft) {
+      token = trimLeftGo(token);
+    }
+    const directive = directives.parseLine(token, number);
+    if (directive?.name === 'escape') {
+      if (directive.value !== '`' && directive.value !== '\\') {
+        throw new DockerfileParseError(`invalid escape token '${directive.value}' does not match \` or \\`, number);
+      }
+      escape = directive.value;
+      continuation = continuationOf(escape);
+    }
+    return isComment(token) ? '' : token;
+  };
+  const toInstruction = (parsed: Parsed, line: number, read: readonly number[]): DockerfileInstruction => ({
+    line,
+    lines: read,
+    command: parsed.command,
+    flags: parsed.flags,
+    args: parsed.args,
+    ...(parsed.trigger === undefined ? {} : { trigger: toInstruction(parsed.trigger, line, read) }),
+  });
+  try {
+    while (at < lines.length) {
+      const start = at + 1;
+      const first = processLine(lines[at] ?? '', true, start);
+      at += 1;
+      let [text, ended] = trimContinuation(first, continuation);
+      if (ended && text === '') {
+        continue;
+      }
+      let joined = text;
+      const read = [start];
+      while (!ended && at < lines.length) {
+        const raw = lines[at] ?? '';
+        const processed = processLine(raw, false, at + 1);
+        at += 1;
+        if (isComment(raw) || trimLeftGo(trimNewline(processed)) === '') {
+          continue;
+        }
+        [text, ended] = trimContinuation(processed, continuation);
+        joined += text;
+        read.push(at);
+      }
+      const parsed = parseInstruction(joined, escape, start);
+      if (canContainHeredoc(parsed) && joined.includes('<<')) {
+        for (const heredoc of heredocsOf(joined, start)) {
+          let terminated = false;
+          while (at < lines.length) {
+            const candidate = trimNewline(lines[at] ?? '');
+            at += 1;
+            if ((heredoc.chomp ? candidate.replace(/^\t+/, '') : candidate) === heredoc.name) {
+              terminated = true;
+              break;
+            }
+          }
+          if (!terminated) {
+            throw new DockerfileParseError('unterminated heredoc', start);
+          }
+        }
+      }
+      instructions.push(toInstruction(parsed, start, read));
+    }
+  } catch (error) {
+    if (error instanceof DockerfileParseError) {
+      return { instructions, failure: { line: error.line, message: error.message } };
+    }
+    throw error;
+  }
+  return { instructions, failure: null };
+}
+
+/**
+ * Reads a Dockerfile as BuildKit v0.34.1, the pinned builder, reads it (SEC-S1, SEC-S2): its frontend images, its
+ * stages and instructions, and the problems that keep the reader from vouching for them. The image rule reads every
+ * Dockerfile through it, and so does CI-13 (tools/test/workflows.test.ts), so the two cannot read a file differently.
+ */
+export function readDockerfile(text: string): DockerfileRead {
+  const body = text.startsWith('﻿') ? text.slice(1) : text;
+  const raw = body.split('\n');
+  const problems: { line: number; message: string }[] = [];
+  const frontends: { line: number; image: string }[] = [];
+  const detected = detectSyntax(body);
+  if (detected !== null) {
+    frontends.push(detected);
+  }
+  raw.forEach((line, index) => {
+    const image = /^\s*(?:#|\/\/)\s*syntax\s*=\s*(\S+)/i.exec(line)?.[1];
+    if (image !== undefined && !frontends.some((frontend) => frontend.line === index + 1 && frontend.image === image)) {
+      frontends.push({ line: index + 1, image });
     }
   });
+  frontends.sort((a, b) => a.line - b.line);
+  const shebang = (raw[0] ?? '').startsWith('#!');
+  if (jsonObject(shebang ? raw.slice(1).join('\n') : body) !== null) {
+    problems.push({
+      line: 1,
+      message: `a JSON Dockerfile, which BuildKit hands whole to the frontend its "syntax" names, so no instruction of it is read; write the Dockerfile's instructions (${RUNBOOK})`,
+    });
+  }
+  const { instructions, failure } = parseDockerfile(body);
+  if (failure !== null) {
+    problems.push({ line: failure.line, message: `BuildKit's parser refuses this Dockerfile (${failure.message}), so the images it names cannot be read; correct it (${RUNBOOK})` });
+  } else {
+    const froms = new Set(instructions.filter((instruction) => instruction.command === 'FROM').map((instruction) => instruction.line));
+    const placed = new Set(
+      instructions.filter((instruction) => [instruction.command, instruction.trigger?.command].some((command) => command === 'COPY' || command === 'RUN')).flatMap((instruction) => instruction.lines),
+    );
+    raw.forEach((line, index) => {
+      if (/^\s*FROM(?=[\s\\`]|$)/i.test(line) && !froms.has(index + 1)) {
+        problems.push({
+          line: index + 1,
+          message: `a FROM line BuildKit does not read as a FROM instruction (a heredoc's body, or the continuation of the instruction before it), so the image rule cannot place it and refuses it; make each FROM line an instruction of its own (${RUNBOOK})`,
+        });
+      }
+      // A comment is never an instruction to BuildKit, outside a heredoc or in one.
+      if (/from=/i.test(line) && !isComment(line) && !placed.has(index + 1)) {
+        problems.push({
+          line: index + 1,
+          message: `a from= outside every COPY and RUN instruction as BuildKit reads the file (a heredoc's body, or another instruction), so the image rule cannot place it and refuses it; copy and mount only from an earlier stage (${RUNBOOK})`,
+        });
+      }
+    });
+  }
+  const stages = instructions
+    .filter((instruction) => instruction.command === 'FROM')
+    .map((instruction) => ({ line: instruction.line, image: instruction.args[0] ?? '', name: instruction.args[1]?.toLowerCase() === 'as' ? (instruction.args[2] ?? null) : null }));
+  return { frontends, stages, instructions, problems: problems.sort((a, b) => a.line - b.line) };
+}
+
+/** Go's encoding/csv for one line (no lazy quotes), as BuildKit reads a --mount's fields; throws when it cannot. */
+function csvFields(line: string): string[] {
+  const fields: string[] = [];
+  let at = 0;
+  for (;;) {
+    if (line[at] === '"') {
+      let field = '';
+      at += 1;
+      for (;;) {
+        const quote = line.indexOf('"', at);
+        if (quote === -1) {
+          throw new Error('extraneous or missing " in quoted-field');
+        }
+        field += line.slice(at, quote);
+        at = quote + 1;
+        if (line[at] === '"') {
+          field += '"';
+          at += 1;
+          continue;
+        }
+        if (at === line.length || line[at] === ',') {
+          break;
+        }
+        throw new Error('extraneous or missing " in quoted-field');
+      }
+      fields.push(field);
+    } else {
+      const comma = line.indexOf(',', at);
+      const field = comma === -1 ? line.slice(at) : line.slice(at, comma);
+      if (field.includes('"')) {
+        throw new Error('bare " in non-quoted-field');
+      }
+      fields.push(field);
+      at = comma === -1 ? line.length : comma;
+    }
+    if (at >= line.length) {
+      return fields;
+    }
+    at += 1;
+  }
+}
+
+/** The values of an instruction's `--<name>=` flags (any case, stricter than BuildKit's exact names). */
+const flagValues = (flags: readonly string[], name: string) =>
+  flags.flatMap((flag) => {
+    const equals = flag.indexOf('=');
+    return equals !== -1 && flag.slice(2, equals).toLowerCase() === name ? [flag.slice(equals + 1)] : [];
+  });
+
+function dockerfileImages(file: string, text: string, uses: ImageUse[], unread: string[]): void {
+  const read = readDockerfile(text);
+  // Every frontend BuildKit can hand the build to before it reads the file, and every other syntax line (CI-13 reads the same).
+  for (const { line, image } of read.frontends) {
+    uses.push({ image, where: `${file}:${String(line)}` });
+  }
+  const refused: { line: number; message: string }[] = [...read.problems];
   // The stages so far, by name (lower case, as BuildKit compares them) or null; the last is the current one.
   const stages: (string | null)[] = [];
-  const earlierStage = (from: string) => (/^\d+$/.test(from) ? Number(from) < stages.length - 1 : stages.slice(0, -1).includes(from.toLowerCase()));
-  for (const { line, text: instruction } of instructions(text)) {
-    const where = `${file}:${String(line)}`;
-    const [keyword = '', ...words] = instruction.split(/\s+/);
-    const command = keyword.toUpperCase();
-    if (command === 'FROM') {
-      const args = words.filter((word) => !word.startsWith('--'));
-      const image = args[0] ?? '';
+  // An earlier stage by name or index; an ONBUILD trigger runs in a stage built FROM this one, so this one counts too.
+  const isStage = (from: string, trigger: boolean) => {
+    const known = trigger ? stages : stages.slice(0, -1);
+    return /^\d+$/.test(from) ? Number(from) < known.length : known.includes(from.toLowerCase());
+  };
+  for (const instruction of read.instructions) {
+    if (instruction.command === 'FROM') {
+      const image = instruction.args[0] ?? '';
       if (image !== '' && image.toLowerCase() !== 'scratch' && !stages.includes(image.toLowerCase())) {
-        uses.push({ image, where });
+        uses.push({ image, where: `${file}:${String(instruction.line)}` });
       }
-      stages.push(args[1]?.toLowerCase() === 'as' ? (args[2]?.toLowerCase() ?? null) : null);
-    } else if (command === 'COPY') {
-      for (const { value } of flags(words).filter((flag) => flag.name === 'from')) {
-        if (!earlierStage(value)) {
-          unread.push(`${where}: COPY --from=${value} names an image, not an earlier stage; the image rule reads only FROM and # syntax= lines, so copy from a stage built FROM a pinned image (${RUNBOOK})`);
+      stages.push(instruction.args[1]?.toLowerCase() === 'as' ? (instruction.args[2]?.toLowerCase() ?? null) : null);
+    }
+    for (const [prefix, step] of [
+      ['', instruction],
+      ['ONBUILD ', instruction.trigger],
+    ] as const) {
+      if (step?.command === 'COPY') {
+        for (const value of flagValues(step.flags, 'from').filter((from) => !isStage(from, prefix !== ''))) {
+          refused.push({ line: instruction.line, message: `${prefix}COPY --from=${value} names an image, not an earlier stage; the image rule reads only FROM and # syntax= lines, so copy from a stage built FROM a pinned image (${RUNBOOK})` });
         }
-      }
-    } else if (command === 'RUN') {
-      for (const { value } of flags(words).filter((flag) => flag.name === 'mount')) {
-        const from = value
-          .split(',')
-          .map((option) => /^from=(.*)$/i.exec(option.trim())?.[1])
-          .find((option) => option !== undefined);
-        if (from !== undefined && !earlierStage(from)) {
-          unread.push(`${where}: RUN --mount=…,from=${from} names an image, not an earlier stage; the image rule reads only FROM and # syntax= lines, so mount from a stage built FROM a pinned image (${RUNBOOK})`);
+      } else if (step?.command === 'RUN') {
+        for (const mount of flagValues(step.flags, 'mount')) {
+          let fields: string[];
+          try {
+            fields = csvFields(mount);
+          } catch (error) {
+            refused.push({ line: instruction.line, message: `${prefix}RUN --mount=${mount} is not the CSV BuildKit reads (${error instanceof Error ? error.message : String(error)}), so what it mounts cannot be read; correct it (${RUNBOOK})` });
+            continue;
+          }
+          for (const field of fields) {
+            const equals = field.indexOf('=');
+            const from = equals !== -1 && field.slice(0, equals).toLowerCase() === 'from' ? field.slice(equals + 1) : undefined;
+            if (from !== undefined && !isStage(from, prefix !== '')) {
+              refused.push({ line: instruction.line, message: `${prefix}RUN --mount=…,from=${from} names an image, not an earlier stage; the image rule reads only FROM and # syntax= lines, so mount from a stage built FROM a pinned image (${RUNBOOK})` });
+            }
+          }
         }
       }
     }
   }
+  for (const { line, message } of refused.sort((a, b) => a.line - b.line)) {
+    unread.push(`${file}:${String(line)}: ${message}`);
+  }
+}
+
+/** An app's Dockerfile, the one form of Dockerfile the image rule reads (tree.ts lists every other as an image file). */
+const APP_DOCKERFILE = /^apps\/[^/]+\/Dockerfile$/;
+/** A GitHub Actions cache entry's keys; `url`, `url_v2` and `token` would point it at another server. */
+const GHA_CACHE_KEYS = new Set(['type', 'scope', 'mode', 'ignore-error', 'timeout']);
+/** A GitHub expression's string literal, `''` an escaped quote. */
+const LITERAL = "'((?:[^']|'')*)'";
+
+/**
+ * The values a `with:` input can take: itself when it holds no expression; the literals of a whole-value
+ * `${{ '<a>' }}` or `${{ <condition> && '<a>' || '<b>' }}` whose condition has no `||` (so it yields <a> or <b>,
+ * nothing else); null for any other expression, whose value the rule cannot know.
+ */
+function expressionOutcomes(value: string): string[] | null {
+  if (!value.includes('${{')) {
+    return [value];
+  }
+  const expression = /^\$\{\{([\s\S]*)\}\}$/.exec(value.trim())?.[1]?.trim();
+  if (expression === undefined || expression.includes('${{') || expression.includes('}}')) {
+    return null;
+  }
+  const unquote = (literal: string | undefined) => (literal ?? '').replace(/''/g, "'");
+  const single = new RegExp(`^${LITERAL}$`).exec(expression);
+  if (single !== null) {
+    return [unquote(single[1])];
+  }
+  const choice = new RegExp(`^([\\s\\S]+?)&&\\s*${LITERAL}\\s*\\|\\|\\s*${LITERAL}$`).exec(expression);
+  if (choice === null || (choice[1] ?? '').replace(new RegExp(LITERAL, 'g'), "''").includes('||')) {
+    return null;
+  }
+  return [unquote(choice[2]), unquote(choice[3])];
+}
+
+/** A cache entry buildx reads as type=gha with only the keys of GHA_CACHE_KEYS (quotes dropped, so stricter than its CSV). */
+function ghaCache(entry: string): boolean {
+  const pairs = entry
+    .replace(/"/g, '')
+    .split(',')
+    .map((field) => {
+      const equals = field.indexOf('=');
+      return equals === -1 ? null : { key: field.slice(0, equals).trim().toLowerCase(), value: field.slice(equals + 1).trim() };
+    });
+  const types = pairs.filter((pair) => pair?.key === 'type');
+  return pairs.every((pair) => pair !== null && GHA_CACHE_KEYS.has(pair.key)) && types.length === 1 && types[0]?.value.toLowerCase() === 'gha';
+}
+
+/** A local directory of the checkout: `.`, or a relative path whose first part has no dot (github.com/… is a git URL to buildx) and no part is `..`. */
+const localContext = (value: unknown) => typeof value === 'string' && (value === '.' || (/^(?:\.\/)?[A-Za-z0-9_-]+(?:\/[A-Za-z0-9._-]+)*\/?$/.test(value) && !value.split('/').includes('..')));
+
+/**
+ * A docker/build-push-action step's inputs that change what the build runs without the image rule reading it
+ * (SEC-S2): BUILDKIT_SYNTAX among its build-args (a frontend image the build is handed to before the Dockerfile is
+ * read), or an argument named by an expression; a context outside the checkout (a git or https URL, a parent
+ * directory); a literal `file:` other than apps/<name>/Dockerfile (a computed one is release.yml's case statement);
+ * a cache-from or cache-to entry other than type=gha, whose layers a registry or another server would supply.
+ */
+function buildPushProblems(where: string, inputs: Readonly<Record<string, unknown>>): string[] {
+  const problems: string[] = [];
+  const text = (value: unknown) => (typeof value === 'string' ? value : JSON.stringify(value));
+  if (inputs['build-args'] !== undefined) {
+    const args = text(inputs['build-args']);
+    if (/BUILDKIT_SYNTAX/i.test(args)) {
+      problems.push(`${where}: build-args sets BUILDKIT_SYNTAX, which hands the whole build to that frontend image before the Dockerfile is read, and the image rule does not read it; name a frontend, if any, in the Dockerfile's # syntax= line (${RUNBOOK})`);
+    }
+    if (args.split(/\r?\n/).some((line) => (line.split('=')[0] ?? '').includes('${{'))) {
+      problems.push(`${where}: build-args names an argument by an expression, which can be BUILDKIT_SYNTAX; name each argument as written (${RUNBOOK})`);
+    }
+  }
+  if (inputs.context !== undefined && !localContext(inputs.context)) {
+    problems.push(`${where}: context: ${text(inputs.context)} is not a directory of this checkout, so the build reads a Dockerfile and files the image rule does not; build from the checkout (context: .) (${RUNBOOK})`);
+  }
+  const dockerfile = inputs.file;
+  if (dockerfile !== undefined && !(typeof dockerfile === 'string' && (dockerfile.includes('${{') || APP_DOCKERFILE.test(dockerfile)))) {
+    problems.push(`${where}: file: ${text(dockerfile)} is not apps/<name>/Dockerfile, the Dockerfiles the image rule reads; build one of those (${RUNBOOK})`);
+  }
+  for (const input of ['cache-from', 'cache-to']) {
+    if (inputs[input] === undefined) {
+      continue;
+    }
+    const outcomes = expressionOutcomes(text(inputs[input]));
+    if (outcomes === null) {
+      problems.push(`${where}: ${input} is an expression the image rule cannot read (it reads \${{ <condition> && '<value>' || '<value>' }}), so its cache cannot be checked; write it in that form or as a value (${RUNBOOK})`);
+      continue;
+    }
+    for (const entry of new Set(outcomes.flatMap((outcome) => outcome.split(/\r?\n/)).map((entry) => entry.trim()))) {
+      if (entry !== '' && !ghaCache(entry)) {
+        problems.push(
+          `${where}: ${input}: ${entry} is not a GitHub Actions cache (type=gha, with only scope, mode, ignore-error or timeout), so the build can take its layers from a cache the image rule does not read; cache with type=gha (${RUNBOOK})`,
+        );
+      }
+    }
+  }
+  return problems;
 }
 
 function workflowImages(file: string, text: string, uses: ImageUse[], unread: string[]): void {
@@ -235,6 +1157,8 @@ function workflowImages(file: string, text: string, uses: ImageUse[], unread: st
       // An action's name is case-insensitive on GitHub.
       const action = step.uses.toLowerCase();
       const inputs = isRecord(step.with) ? step.with : {};
+      // An input as the runner hands it to the action: a string (YAML's other scalars by their text).
+      const input = (name: string) => (inputs[name] === undefined ? undefined : typeof inputs[name] === 'string' ? inputs[name] : JSON.stringify(inputs[name]));
       if (action.startsWith('docker://')) {
         uses.push({ image: step.uses.slice('docker://'.length), where });
       } else if (action.startsWith('docker/setup-buildx-action@')) {
@@ -247,10 +1171,32 @@ function workflowImages(file: string, text: string, uses: ImageUse[], unread: st
         if (builders.length === 0 && inputs.driver !== 'docker') {
           unread.push(`${where}: setup-buildx names no builder image (driver-opts image=…), so it runs moby/buildkit:buildx-stable-1 by tag; name it as image=moby/buildkit:vX.Y.Z@sha256:<64 hex>`);
         }
+        // A remote or Kubernetes builder runs wherever its endpoint or cluster says, whatever image= names (improve as you go).
+        const driver = input('driver');
+        if (driver !== undefined && driver !== 'docker-container' && driver !== 'docker') {
+          unread.push(
+            `${where}: setup-buildx's driver: ${driver} is not docker-container or docker, so the builds can run on a builder the image rule does not read; use the docker-container driver with image=moby/buildkit:vX.Y.Z@sha256:<64 hex> (${RUNBOOK})`,
+          );
+        }
       } else if (action.startsWith('docker/build-push-action@')) {
-        const contexts = inputs['build-contexts'];
-        if (typeof contexts === 'string' && /docker-image:\/\//i.test(contexts)) {
-          unread.push(`${where}: build-contexts names an image (docker-image://), which the image rule does not read; build FROM a pinned image in the Dockerfile instead (${RUNBOOK})`);
+        // A named context takes the place of the stage or image of its name, whatever it is (improve as you go: before, docker-image:// only).
+        if (inputs['build-contexts'] !== undefined) {
+          unread.push(
+            `${where}: build-contexts gives the build named contexts, each taking the place of the stage or image of its name (docker-image://, a git or https URL, a directory), and the image rule reads none of them; build FROM a pinned image in the Dockerfile instead (${RUNBOOK})`,
+          );
+        }
+        // An SBOM attestation has BuildKit run its scanner image (docker/buildkit-syft-scanner, by tag unless named).
+        const sbom = input('sbom');
+        if ((sbom !== undefined && sbom.toLowerCase() !== 'false') || /sbom/i.test(input('attests') ?? '')) {
+          unread.push(`${where}: sbom: or attests: has BuildKit run its SBOM scanner, an image the image rule does not read; leave the bill of materials to the release's Trivy scan (${RUNBOOK})`);
+        }
+        unread.push(...buildPushProblems(where, inputs));
+      } else if (action.startsWith('docker/setup-qemu-action@')) {
+        // The binfmt image it runs to install the emulators: read when named, refused when left to its default by tag.
+        if (typeof inputs.image === 'string') {
+          uses.push({ image: inputs.image, where });
+        } else {
+          unread.push(`${where}: setup-qemu names no image, so it runs tonistiigi/binfmt:latest by tag; name it as image: tonistiigi/binfmt:<tag>@sha256:<64 hex>`);
         }
       } else if (action.startsWith('docker/bake-action@')) {
         // A bake file names its own targets' images, contexts and Dockerfiles, none of which this rule reads.
@@ -266,7 +1212,8 @@ function composeImages(text: string | undefined, uses: ImageUse[], unread: strin
   }
   let parsed: unknown;
   try {
-    parsed = parse(text);
+    // Merge keys honoured, as Compose resolves `<<: *anchor` (SEC-N1), so a service built from one is read.
+    parsed = parse(text, { merge: true });
   } catch (error) {
     unread.push(`${COMPOSE_FILE}: not YAML (${error instanceof Error ? error.message : String(error)}), so the images it names cannot be read`);
     return;
@@ -283,8 +1230,9 @@ function composeImages(text: string | undefined, uses: ImageUse[], unread: strin
     if (service.build !== undefined) {
       unread.push(`${where}: build: builds an image the image rule does not read; run an image by digest (image: ${FORM})`);
     }
-    if (isRecord(service.extends) && service.extends.file !== undefined) {
-      unread.push(`${where}: extends: names another compose file, whose images the image rule does not read; name the service's image in ${COMPOSE_FILE}`);
+    if (service.extends !== undefined) {
+      // From another file, or another service of this one: either way the image it takes is not this service's own.
+      unread.push(`${where}: extends: takes the service from another one, in this file or another, which the image rule does not follow; name the service's image in ${COMPOSE_FILE}`);
     }
     if (typeof service.image === 'string') {
       uses.push({ image: service.image, where });
@@ -363,6 +1311,7 @@ export function imageFormRule(tree: Tree, entries: readonly ImageAgeException[])
 
 /** How one image's age was read. */
 type Verdict =
+  | { readonly kind: 'named'; readonly commit: string; readonly at: string }
   | { readonly kind: 'pushed'; readonly at: string; readonly source: string }
   | { readonly kind: 'nowhere'; readonly current: HubTag | null; readonly searched: number }
   | { readonly kind: 'untimed'; readonly on: string }
@@ -441,14 +1390,22 @@ async function eachAtMost<T, R>(items: readonly T[], limit: number, run: (item: 
   return results;
 }
 
-/** What the networked rule reads: both trees, the event, now, and the deadline (IMAGE_DEADLINE_MS from the first read when absent). */
+/**
+ * What the networked rule reads: both trees, the event, now, the deadline of its Docker Hub reads in ms
+ * (READ_DEADLINE_MS from the first read when absent), and the build branch's first-parent history (tree.ts,
+ * buildBranchHistory; absent: none is read).
+ */
 export interface ImageInput {
   readonly head: Tree;
   readonly base: Tree;
   readonly event: CheckEvent;
   readonly now: Date;
-  readonly signal?: AbortSignal;
+  readonly deadlineMs?: number;
+  readonly history?: (digest: string) => NamedOnBuildBranch | null;
 }
+
+/** A deadline as a message says it: in whole seconds ("180 s"), else in milliseconds ("20 ms"). */
+const deadlineWords = (ms: number) => (ms % 1000 === 0 ? `${String(ms / 1000)} s` : `${String(ms)} ms`);
 
 /**
  * The networked image rule: the form rule's problems, then each image new against the base read and judged, then the
@@ -483,8 +1440,15 @@ export async function imageRule(
     const digests = new Set([...named.values()].map(({ name }) => name.digest)).size;
     findings.push({ level: 'ok', rule: RULE, message: `no image is new against the base, so nothing is read (${plural(digests, 'digest')} named, each one in the base)` });
   } else {
-    const deadline = input.signal ?? AbortSignal.timeout(IMAGE_DEADLINE_MS);
+    const deadlineMs = input.deadlineMs ?? READ_DEADLINE_MS;
+    const deadline = AbortSignal.timeout(deadlineMs);
     const verdicts = await eachAtMost(fresh, IMAGE_READS_AT_ONCE, async ([, { name }]): Promise<Verdict> => {
+      // A revert (CI-S3): a digest the build branch's first-parent history named at least the floor ago is that old, read
+      // from git with no network, whatever Docker Hub's tags carry now.
+      const named = input.history?.(name.digest) ?? null;
+      if (named !== null && Date.parse(named.at) + minutes * MINUTE_MS <= now) {
+        return { kind: 'named', commit: named.commit, at: named.at };
+      }
       if (name.registry !== null) {
         return { kind: 'unprovable', registry: name.registry };
       }
@@ -509,6 +1473,13 @@ export async function imageRule(
       const subject = `${image} (${wheres.join(', ')})`;
       const add = (level: Level, message: string) => findings.push({ level, rule: RULE, message });
       switch (verdict.kind) {
+        case 'named':
+          known.set(image, { what: 'the digest', at: verdict.at, as: `named by ${verdict.commit}` });
+          add(
+            'ok',
+            `${subject} was named by ${verdict.commit} on the build branch's first-parent history, committed ${verdict.at}, at least ${ageWords(minutes)} ago; a digest is pushed before any commit can name it, so it is old enough, and Docker Hub is not read`,
+          );
+          break;
         case 'pushed': {
           known.set(image, { what: 'the digest', at: verdict.at, as: 'pushed' });
           const matureAt = Date.parse(verdict.at) + minutes * MINUTE_MS;
@@ -558,7 +1529,7 @@ export async function imageRule(
       }
     });
     if (unread.length > 0) {
-      findings.push({ level: age, rule: RULE, message: `${HUB_HOST}: the image reads stopped at their deadline (${String(IMAGE_DEADLINE_MS / 1000)} s) with ${plural(unread.length, 'image')} unread, ${unread.join(', ')}; re-run` });
+      findings.push({ level: age, rule: RULE, message: `${HUB_HOST}: the image reads stopped at their deadline (${deadlineWords(deadlineMs)}) with ${plural(unread.length, 'image')} unread, ${unread.join(', ')}; re-run` });
     }
   }
   findings.push(...exceptionFindings(input, lists, head.uses, known, minutes));
@@ -567,8 +1538,9 @@ export async function imageRule(
 
 /**
  * The exceptions list's entries: an entry this change adds or rewrites inside its kind's window (exclude-window.ts; a
- * security-fix entry's known time is its digest's push time when this run read it), the expired rule, and an entry for
- * an image the tree no longer names, a warning.
+ * security-fix entry's known time is its digest's push time when this run read it), an error on a pull request and a
+ * warning on a push, as every image age finding is (CI-N3: a tag moved between the pull request and its merge gives
+ * the push another push time); the expired rule; and an entry for an image the tree no longer names, a warning.
  */
 function exceptionFindings(
   input: ImageInput,
@@ -578,13 +1550,14 @@ function exceptionFindings(
   minutes: number,
 ): Finding[] {
   const findings: Finding[] = [];
+  const age: Level = input.event === 'push' ? 'warning' : 'error';
   const baseEntries = new Set(lists.base.map((entry) => JSON.stringify(entry)));
   const edited = JSON.stringify(lists.head.map((entry) => JSON.stringify(entry)).sort()) !== JSON.stringify([...baseEntries].sort());
   const images = new Set(uses.map((use) => use.image));
   for (const entry of lists.head) {
     if (!baseEntries.has(JSON.stringify(entry))) {
       const window: ExcludeWindow = entry.kind === 'security-fix' ? { kind: 'security-fix', known: known.get(entry.image) ?? null, minutes } : { kind: 'reasoned' };
-      findings.push(...excludeWindowProblems(entry.image, entry, window, input.now).map((message): Finding => ({ level: 'error', rule: RULE, message })));
+      findings.push(...excludeWindowProblems(entry.image, entry, window, input.now).map((message): Finding => ({ level: age, rule: RULE, message })));
     }
     const expired = expiredExclude(entry.image, entry.expires, input.now, { event: input.event, edited, list: IMAGE_AGE_EXCEPTIONS_FILE });
     if (expired !== null) {

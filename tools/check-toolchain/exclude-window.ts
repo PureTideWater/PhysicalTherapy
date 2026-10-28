@@ -10,8 +10,16 @@ import { DAY_MS, EXCLUDE_MAX_DAYS, MINIMUM_RELEASE_AGE_MINUTES, MINUTE_MS, type 
  * - `ageWords(minutes)`: the floor as a message says it;
  * - `excludeWindowProblems(subject, entry, window, now)`: an added or rewritten entry's dates against its kind's window;
  * - `expiredExclude(subject, expires, now, where)`: the expired rule, an error on a pull request that edits the list and
- *   a warning elsewhere.
+ *   a warning elsewhere;
+ * - `READ_DEADLINE_MS`: the one deadline each checker's age reads run under (E3).
  */
+
+/**
+ * The deadline of each checker's age reads, from its first read (E3): check-action-pins' reads of a pin's dates and
+ * check-toolchain's Docker Hub reads of an image's push time, 180 s each, so an outage fails closed in bounded time and
+ * both steps' limits stay inside static's `timeout-minutes: 15`.
+ */
+export const READ_DEADLINE_MS = 180_000;
 
 /**
  * The floor, in minutes: pnpm-workspace.yaml's minimumReleaseAge, never under MINIMUM_RELEASE_AGE_MINUTES. A setting

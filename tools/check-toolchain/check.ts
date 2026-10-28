@@ -33,6 +33,7 @@ import {
   workspaceSchema,
 } from './policy';
 import { NetworkReadError, type Packument, type Registry, type TrustEvidence } from './registry';
+import type { NamedOnBuildBranch } from './tree';
 
 /**
  * `pnpm toolchain:check` (designs/lane-b-ci.md §3.2.1, "Audit and toolchain"; test matrix CI-14; ADR 0066 Part 2): the
@@ -78,8 +79,10 @@ export interface CheckInput {
   readonly base: Tree;
   readonly event: CheckEvent;
   readonly now: Date;
-  /** The deadline of the image rule's Docker Hub reads (by default IMAGE_DEADLINE_MS from the first). */
-  readonly signal?: AbortSignal;
+  /** The deadline of the image rule's Docker Hub reads in ms, from the first (READ_DEADLINE_MS by default); its message names it. */
+  readonly deadlineMs?: number;
+  /** The build branch's first-parent history, which proves a reverted digest's age (tree.ts, buildBranchHistory; CI-S3). */
+  readonly history?: (digest: string) => NamedOnBuildBranch | null;
 }
 
 export type Level = 'error' | 'warning' | 'ok';
