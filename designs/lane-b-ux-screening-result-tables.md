@@ -1147,3 +1147,16 @@ first deploy from main, so UX PR 4b re-pins its hash under the same name with no
 The function `screening_labels_version()` is Lane A's, so the status file names this for Lane A to confirm before 4b
 starts. Lane A's objection, if it has one, moves the labels part to Lane A's next schema PR on the screening (1.3).
 Nothing in this PR depends on it.
+
+Confirmed by Lane A's orchestrator, 2026-10-28 ~03:20 UTC, from the primary sources:
+- a kept summary records its version (`screening_lead.labels_version`);
+- environments deploy only from a release tag's images, which the founder alone creates, and origin has no tag;
+- PR 6b-2's re-pin (dfec40dc) is the precedent;
+- a new name would need a migration and the founder's domain-model approval, to protect a record that does not exist.
+
+Lane A set three conditions for UX PR 4b:
+1. In `labels.test.ts`, update the VERSIONS comment for 2026-11-05: name 4b's three changed strings, and state the rule exactly, "a version may be re-pinned under its name only while no release tag contains it (the founder creates tags; the first tag releases it)". Leave the hash map's other entry alone.
+2. Before 4b merges, run `git ls-remote --tags origin` again. If any tag exists, stop the labels part, hand it to Lane A as a new version with its migration (the words of §11.3), and build the rest.
+3. Record the decision and these reasons in 4b's PR description and its status file. It is not the founder's: no ruling changes, and audit #57's rule ("a label changes only under a new version") holds for every released version.
+
+4b still waits for #42 to merge.
