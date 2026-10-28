@@ -977,7 +977,8 @@ reversible by a later pull request, and is recommended.
 - **E1. One image rule for every image the tree names**, in `images.ts`, with one exceptions list and its "entry no
   longer used" check (14.4, items 1 and 2). Safer than a rule per place: a new kind of image reference is aged or
   refused from the day it appears, (§15) which holds because every reference the rule does not read is refused
-  offline (E17).
+  offline (E17). (§16) It holds against the next parser quirk too: each Dockerfile is read by `readDockerfile`, a port
+  of BuildKit v0.34.1's parser that refuses any FROM or from= line it cannot place (SEC-S1).
 - **E2. Images are not bootstrapped.** Hub is readable from here, so the integrator's reading is the measured record,
   and Hub reads from GitHub's runners are already proven by the builder check on every networked run (run
   40593100176). Aging the base's digests on P1's pull request would only turn it red whenever Hub rebuilds `node`
@@ -995,7 +996,8 @@ reversible by a later pull request, and is recommended.
   "Toolchain" 2 s), so its other steps took about 183 s, and all four at their limits stay inside the 900 s of
   `timeout-minutes: 15` (`ci.yml:37`). What is not bounded: the verify loop on a pull request (P28) and
   check-toolchain's npm reads on any event (P20), as today. 180 s also fits one rate-limit wait (60 s) and a retried
-  read.
+  read. (§16) The 180 s is one constant for both checkers, `READ_DEADLINE_MS` in `exclude-window.ts`; the image
+  deadline's message names the caller's deadline (CI-N2); the builder's two Hub reads take the rate-limit wait.
 - **E4. The builder's newness from `state.workflows`, and its faults warn on a push** (14.4, item 4).
 - **E5. An offline `images` form rule** in `checkOffline`, so a malformed reference (no tag, no digest) fails the
   unit tests and `--offline` runs, not only the networked step; `check.test.ts:559`'s list gains it.
@@ -1058,11 +1060,19 @@ reversible by a later pull request, and is recommended.
   upstream move produces it; a ref new against the previous head keeps every error. The loop runs under its own
   `PUSH_DEADLINE_MS`; refs left unread are one warning, or one error naming any new ones. Without it, P1's merge push
   and P2's, which edit the checker and so re-verify all 13 refs (`check.ts:86-95`, `base.ts:63`), turn the build
-  branch red on an outage or a moved tag, with no bound on time.
+  branch red on an outage or a moved tag, with no bound on time. (§16) **Superseded** by the fix round (the ci-infra
+  review's S4, the session's disposition of 2026-10-28): on a push, read faults, moved tags and deadline leftovers
+  warn for every ref, new against the previous head or not, since the pull request that added a new pin was its
+  gate too; a problem in what was read (inputs, nested pins, caches, an `action.yml` that does not parse) stays an
+  error. ADR 0066 Part 5's "A push warns" and N26 say so.
 - **E17. The image references the rule does not read are refused offline** (§15, S6): a `--from=` or `from=` naming
   anything but an earlier stage, `docker-image://` in `build-contexts`, a tracked `Dockerfile*`, `Containerfile*` or
   compose file other than the three read (Compose prefers `compose.yaml` over `docker-compose.yml`), a compose
-  `build:`. None occurs today.
+  `build:`. None occurs today. (§16) Widened: an image file is one of Docker's own names only (CI-S2); a Dockerfile
+  line the reader cannot place, a JSON Dockerfile, any `build-contexts`, a `BUILDKIT_SYNTAX` build-arg, a
+  non-local `context:`, a literal `file:` other than `apps/<name>/Dockerfile`, a cache other than `type=gha`, an SBOM
+  scan, a setup-buildx driver other than `docker-container` or `docker`, a setup-qemu step with no image, and a
+  compose `extends:` in any form are refused (SEC-S1, SEC-S2, SEC-N1).
 - **E18. Reusable workflows and Docker actions** (§15, S7). Rule (a) refuses a `jobs.*.uses` that calls a reusable
   workflow; `verify.ts` refuses a Docker action, at any depth, whose `runs.image` is not `docker://…@sha256:<64 hex>`.
   C9's premise then holds for everything that runs. None is used today.
@@ -1253,3 +1263,67 @@ mode, as the pre-push hook scans, 2026-10-28T01:20Z), so no digest or fingerprin
 | N16 every branch fetched | **Fixed** | The default branch alone (§3.1, E6) |
 | N17 counts | **Fixed** | `tree.test.ts` listed once (commit 2); the totals say "in all". 62 tests, not the review's 61, because S5's `registry.test.ts` case is its own `it`: 385 files and 6,414 passed + 1 skipped at ecebdc90, 386 and 6,480 at 0dd1ba7e, the scoped run 32 and 420 (14.5) |
 | Proposals P23 to P28 | **Adopted** in 14.7 | No collision: the highest elsewhere is P17 (`lane-b-ci.md:3072`) and this file's P18 to P22. P25 also moves `pip install` after the token step; P27's ancestry is the review's read, not re-read here |
+
+## 16. Fix round (2026-10-28)
+
+Two adversarial reviews ran on #82's head b574d4e8… (merged with 165c5993… on CI): CI and test infrastructure
+(`approval-summaries/lane-b-ci-pin-age-review-ci-infra.md`, 0 B, 4 S, 7 N; ids CI-) and security and supply chain
+(`lane-b-ci-pin-age-review-security-supply.md`, 0 B, 4 S, 4 N; ids SEC-). Under the co-founder's 2026-10-26 ruling
+(the recommended option, for security the safer one) the session disposed every finding as fixed in P1, the nits
+included, with the integrator's three proposals. Each was re-checked against the code first; every one held. Two
+fixers built them in disjoint files (F1, `tools/check-toolchain`; F2, `tools/check-action-pins`), each behaviour fix
+red first, and the integrator merged both (`--no-ff`), wired the seam and fixed the rest. The failing-first record is
+`scratchpad/p1fix/failing-first.md`; the summary `approval-summaries/lane-b-ci-pin-age-fix-round.md`.
+
+| Finding | Disposition | Where |
+| --- | --- | --- |
+| CI-S1 the token asserts are case-sensitive | **Fixed**, with SEC-N2: `tokenProblems` counts `/\bgithub\s*\.\s*token\b/gi` once, compares each step's JSON lower-cased, forbids the five other spellings in any case and, improve as you go, a whole `github` context inside an expression; a negative case gives a second step the token in seven spellings | e9ec332e… |
+| CI-S2 `isImageFile` refuses ordinary names | **Fixed**: Docker's own names only, in any case; `dockerfile.ts`, `dockerfiles.md`, `containerfile-notes.md`, `compose-email.yml` pass; slightly wider than asked (`compose.<x>.yaml`, `docker-compose-<x>.yml`), and `Dockerfile.dockerignore` passes | 47bc4985… |
+| CI-S3 an images revert blocked for good | **Fixed** as recommended: a digest a first-parent commit of `origin/claude/build-platform`, at or behind the merge base, named in an image file is old enough by that commit's committer time; no Hub read, any registry, no new exclude kind, the message names the commit. The branch is fixed rather than BASE, so a pull request into another branch cannot offer its own history | e9f6e2cb… |
+| CI-S4 a push of a new pin turns red on an outage | **Fixed**, superseding E16: read faults, moved tags and deadline leftovers warn for every ref on a push; a problem in what was read stays an error, an `action.yml` that does not parse included | 8406c899… |
+| CI-N1 the arrival read can throw | **Fixed** with SEC-N3: `object()` never rejects, the arrival read is caught into a note, the recorded transport can reject | 257d2fef… |
+| CI-N2 the image deadline message says 180 s | **Fixed**: the input takes `deadlineMs` and the message names it | e2c2e773… |
+| CI-N3 image window problems error on a push | **Fixed**: the event's level | 39f45ec5… |
+| CI-N4 the bootstrapping marker named twice | **Fixed**: `CHECKER_FILE`, `AGE_FILE`, `AGE_EXCEPTIONS` in `base.ts`, a unit case requires each at the head (a refactor: its red is the reviewer's rename drift, caught after and not before) | 5a8e8519… |
+| CI-N5 the builder comments | **Fixed** on all five setup-buildx steps (comment only) | 7e816ed4… |
+| CI-N6 `ci.md` says the age rule reads Docker Hub | **Fixed** (document only) | 1b794873… |
+| CI-N7 a force push makes every pin young | **Fixed**: `before` fetched by its SHA when the branch's fetch lacks it; held with the pin, no arrival; unfetchable, still counts | 7e14ea0e… |
+| SEC-S1 the Dockerfile reader diverges from BuildKit | **Fixed**: `readDockerfile`, a port of BuildKit v0.34.1's parser, failing closed on any FROM or from= line it cannot place and on a JSON Dockerfile; checked against BuildKit's own parser on 23,037 inputs | 63c2188b… |
+| SEC-S2 frontends and build inputs unread | **Fixed**: the frontend after a BOM or `#!`, on `//`, and a JSON Dockerfile refused (63c2188b…); `BUILDKIT_SYNTAX`, a non-local `context:`, a literal `file:` other than `apps/<name>/Dockerfile`, a cache other than `type=gha` refused (edd3e691…); CI-13 reads through `readDockerfile` (c10011b6…) | 63c2188b…, edd3e691…, c10011b6… |
+| SEC-S3 base workflows read recursively | **Fixed**: the base's top level only, and an offline refusal of any file in a subdirectory of `.github/workflows` | 413e5812… |
+| SEC-S4 `runs.using` case-sensitive | **Fixed** in the Docker-action refusal, the nested walk and the cache trace | 31662c7d… |
+| SEC-N1 compose merge keys invisible | **Fixed**: parsed with `merge: true`; `extends:` in any form and `include:` refused (workflow `services` with a merge key already name no image, so are refused) | 7f3d8cbb… |
+| SEC-N2 E8's asserts case-sensitive | **Fixed** with CI-S1 | e9ec332e… |
+| SEC-N3 two crash paths | **Fixed**: an out-of-range time is a finding naming the epoch; the arrival read cannot throw | 257d2fef… |
+| SEC-N4 the token inherited by every child | **Fixed**: `childEnv()` drops `GITHUB_TOKEN` and `GH_TOKEN` for git (networked and the base's local one) and `gpgv` | 87739d3e… |
+| Integrator: the builder's Hub reads take the rate-limit wait | **Fixed**, the run's clock shared with the age rule | 2048f733… |
+| Integrator: one constant for the two 180 s deadlines | **Fixed**: `READ_DEADLINE_MS` in `exclude-window.ts` (e2c2e773…), check-action-pins wired to it with a red-first case (54610150…) | e2c2e773…, 54610150… |
+| Integrator: the deadline message names the caller's deadline | **Fixed** as CI-N2 | e2c2e773… |
+| Improve as you go (F1) | ONBUILD triggers' `--from` and mounts checked; a mount read as BuildKit's CSV; any `build-contexts`, an SBOM scan, a setup-buildx driver other than `docker-container`/`docker` refused; setup-qemu's image read, refused when left to its default tag | 63c2188b…, 26ff2eac… |
+
+**E16 is superseded** (CI-S4): its split, a new ref's faults kept as errors, was the one red path a push run had
+left. E16's record above says so; ADR 0066 Part 5's "A push warns" and N26 are restated. E1, E3 and E17 carry "(§16)"
+notes for the reader, the shared deadline and the widened refusals.
+
+**Deviations, with their reasons.**
+- CI-S3 reads `origin/claude/build-platform`'s history, not BASE's, and takes commits at or behind the merge base:
+  a pull request into another branch could otherwise offer its own author-dated history. The history check runs before
+  Docker Hub, on any registry.
+- CI-S2 is a little wider than the disposition's wording (`compose.<x>.yaml`, `docker-compose-<x>.yml`), as Docker's
+  own documents name extra compose files.
+- The reader is stricter than BuildKit in four places (flag names in any case; every line that reads as a syntax
+  directive is a frontend; cache entries read with quotes dropped; an ONBUILD `COPY --from=` image refused).
+- SEC-N4 also covers `base.ts`'s local git; CI-N1's fix makes an annotated tag the fetch cannot read fail closed with
+  "re-run".
+- CI-N4 has no behaviour red (a refactor and a guard): the reviewer's rename drift passes before and fails after.
+- F1's e39d469a… carried an invisible U+FEFF in its subject; it entered as 5f06218a…, reworded by cherry-pick.
+
+**Proposals not built** (outside these files): setup-buildx-action's `version:` input (downloads buildx unpinned;
+refuse it in `workflowImages` or hold it as P26 holds gitleaks); images a `run:` step pulls (`docker run`,
+`docker pull`), read by no rule; a custom `# syntax=` frontend, even by digest, can pull images of its own;
+`dockerfileRule` reading instructions through `readDockerfile` rather than raw lines; the gitleaks download's
+timeouts; the weekly read of `web-flow.gpg` (403 from here; only a push makes it); and P18 to P28 (14.7).
+
+**Pushed head:** 03e18576… (2026-10-28T07:05:47Z; the merge with `claude/build-platform` 56ed6279…, #81), the full
+local suite green at it (unit 397 files, 6,666 + 1; db 9,283 + 1; e2e 62; golden 376; oracle 687; both checkers;
+actionlint), and #82's description updated and read back identical. CI on it is recorded when it has run.
