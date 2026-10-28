@@ -4,6 +4,7 @@ import { readDatabaseUrl, withJobScope } from '@tp/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { Practice } from '../price/test-support/pricing-world';
+import { ATTRIBUTION_CLAIMS, CHAIN_ROOTS } from './interest-chains';
 import type { Scope } from './ledger';
 import { LedgerWorld, ledSettings } from './test-support/ledger-world';
 
@@ -17,7 +18,9 @@ import { LedgerWorld, ledSettings } from './test-support/ledger-world';
  * read them:
  * - the correction chain's walk from a correction to the claims it supersedes (claimLines' recursive lookup and the
  *   claim each corrects, apps/worker/src/reconcile/remittances.ts; the adjusted payments' EXISTS,
- *   apps/worker/src/reconcile/unmatched.ts) by claim_by_superseded (migration 20261109090000);
+ *   apps/worker/src/reconcile/unmatched.ts) by claim_by_superseded (migration 20261109090000), and the interest
+ *   attribution's walk back from a claim to its chain's root (interest-chains.ts, the reconcile's and the screen's) by
+ *   the same index;
  * - a practice's matches in the order the ledger made them by an index on its practice, never a scan of the table: at
  *   2,500 matches a practice the planner reads them by ledger_match_by_remittance and sorts them by seq (about 400 cost
  *   units), cheaper than walking ledger_match_by_seq, which keeps seq unique within the practice;
@@ -166,6 +169,11 @@ describe('a line’s chain and its interest read by index at 50,000 claims (LED-
     expect(await plan(template, SUPERSEDED, [correction])).toContain('claim_by_superseded');
     const reader = practices[10] as Practice;
     expect(await plan(reader, ADJUSTED_PAYMENTS, [reader.practiceId])).toContain('claim_by_superseded');
+    // The interest attribution's walk back from a correction to its chain's root, as the reconcile reads it within one
+    // moment's remittances and as the screen reads it.
+    const remittances = (await w.owner.query<{ id: string }>(`SELECT ${id('remittance', 'g')}::text AS id FROM generate_series(0, ${String(REMITTANCES - 1)}) g`)).rows.map((row) => row.id);
+    expect(await plan(template, ATTRIBUTION_CLAIMS, [template.practiceId, remittances, [await of(id('remittance', '120'))], []])).toContain('claim_by_superseded');
+    expect(await plan(template, CHAIN_ROOTS, [template.practiceId, null, [correction]])).toContain('claim_by_superseded');
 
     // The practice's matches in the order the ledger made them (ledgerMatches, the chain's order and the web's lists).
     const ordered = await plan(reader, 'SELECT m.id FROM ledger_match m WHERE m.practice_id = $1 ORDER BY m.seq', [reader.practiceId]);

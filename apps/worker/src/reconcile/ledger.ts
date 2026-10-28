@@ -95,12 +95,12 @@ interface MatchRow {
   readonly standing: boolean;
 }
 
-/** The practice's matches, standing and reversed, in the order they were made. */
+/** The practice's matches, standing and reversed, in the order the ledger made them (ledger_match.seq; docs/adr/0084). */
 export async function ledgerMatches(scope: Scope, practiceId: string): Promise<StoredMatch[]> {
   const { rows } = await scope.client.query<MatchRow>(
     `SELECT m.id, m.kind, m.claim_id, m.posting_row_id, m.eft_row_id, m.provider_adjustment_id, m.remittance_id, m.service_line_id, m.outcome, m.level, m.allocated, m.matched_by,
             m.reversed_at IS NULL AS standing
-       FROM ledger_match m WHERE m.practice_id = $1 ORDER BY m.matched_at, m.id`,
+       FROM ledger_match m WHERE m.practice_id = $1 ORDER BY m.seq`,
     [practiceId],
   );
   return rows.map((row) => ({
@@ -120,8 +120,8 @@ export async function ledgerMatches(scope: Scope, practiceId: string): Promise<S
   }));
 }
 
-export interface NewMatch {
-  readonly kind: LedgerMatchKind;
+interface NewMatchOf<Kind extends LedgerMatchKind> {
+  readonly kind: Kind;
   readonly claimId?: string;
   readonly postingRowId?: string;
   readonly eftRowId?: string;
@@ -134,6 +134,19 @@ export interface NewMatch {
   /** The person who matched by hand; null for the reconcile job. */
   readonly matchedBy: string | null;
 }
+
+/**
+ * An interest match (docs/adr/0084): the PLB L6 that pays or takes the interest back, of its remittance, and the claim it
+ * is for on the line, both always. Its evidence is then the PLB L6, so one stands per PLB L6 and line; Postgres skips the
+ * reconcile job's interest match carrying only one of the two (the image before this change).
+ */
+export interface NewInterestMatch extends NewMatchOf<'interest'> {
+  readonly claimId: string;
+  readonly providerAdjustmentId: string;
+  readonly serviceLineId: string;
+}
+
+export type NewMatch = NewMatchOf<Exclude<LedgerMatchKind, 'interest'>> | NewInterestMatch;
 
 /** Records a standing match; null when one already stands for the same evidence (and case line). */
 export async function insertMatch(scope: Scope, practiceId: string, match: NewMatch): Promise<string | null> {

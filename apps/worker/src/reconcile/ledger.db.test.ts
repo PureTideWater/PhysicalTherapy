@@ -290,6 +290,11 @@ describe('recoupments (LED-06)', () => {
     await w.reconcile(practice);
     const totalsNow = await jobTotals(practice);
     expect(totalsNow).toMatchObject({ interestCents: 411n, recoveredCents: 0n, approvedCents: 3000n });
+    // Its evidence is the PLB L6, and its match names the attached claim the L6's reference reaches (docs/adr/0084).
+    const [l6] = await w.rows<{ id: string }>(practice, "SELECT id FROM provider_adjustment WHERE category = 'interest'");
+    expect(
+      await w.rows(practice, "SELECT e.amount_cents::text, e.evidence_kind, e.evidence_id, m.claim_id, m.provider_adjustment_id, e.service_line_id FROM ledger_entry e JOIN ledger_match m ON m.id = e.match_id WHERE e.stage = 'interest'"),
+    ).toEqual([{ amount_cents: '411', evidence_kind: 'provider_adjustment', evidence_id: l6?.id, claim_id: attached?.claim_id, provider_adjustment_id: l6?.id, service_line_id: serviceLineId }]);
     expect(await w.lineStage(practice, serviceLineId)).toBe('payer_approved');
   });
 });

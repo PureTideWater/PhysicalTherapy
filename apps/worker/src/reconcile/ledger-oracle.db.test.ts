@@ -16,7 +16,7 @@ import { unmatchedItems } from './unmatched';
 /**
  * The ledger oracle (PRD 18, "Three oracles", 3): synthetic posting and EFT exports with known
  * outcomes (a recovery, a partial, a recoupment after deposit, a reversal a forward balance offsets, a
- * reversed match, a duplicate export),
+ * reversed match, a duplicate export, and interest paid by a PLB L6 and later taken back, docs/adr/0084),
  * driven through the reconcile step against a scratch database, and the ledger's totals compared with
  * the known outcomes. The known totals are stated here by hand from the SYNTHETIC fixtures (a 30.00
  * difference approved on one 97110 line, the practice proving recovery by deposit, as each fixture's
@@ -149,6 +149,23 @@ const CASES: readonly OracleCase[] = [
     ],
     // 8.00 and 16.00 approved, posted and deposited; every claim of the line reversed, so the last reversal takes back both.
     known: { approved: 2400n, posted: 2400n, deposited: 2400n, recouped: -2400n, interest: 0n, recovered: 0n, postedEntries: 2, lineStage: 'actionable' },
+  },
+  {
+    name: 'interest reported on the correction (AMT I) and paid by a PLB L6 naming it, on two lines, deposited',
+    fixture: 'LED-23',
+    steps: [{ kind: 'export', file: 'eft-export.csv', as: 'eft_export' }],
+    // 24.00 and 30.00 approved and proved by the 59.40 deposit, which proves principal only; the PLB L6's 5.40 credited once, beside it (docs/adr/0084).
+    known: { approved: 5400n, posted: 0n, deposited: 5400n, recouped: 0n, interest: 540n, recovered: 5400n, postedEntries: 0, lineStage: 'recovered' },
+  },
+  {
+    name: 'interest paid by a PLB L6 on two lines, deposited, then the correction reversed alone and its interest taken back',
+    fixture: 'LED-24',
+    steps: [
+      { kind: 'export', file: 'eft-export.csv', as: 'eft_export' },
+      { kind: 'remittance', file: 'taken-back.835' },
+    ],
+    // The reversal alone takes back both approvals after the deposit, as LED-14's takes back its one; the PLB L6 of 5.40 takes the interest back from the lines holding it.
+    known: { approved: 5400n, posted: 0n, deposited: 5400n, recouped: -5400n, interest: 0n, recovered: 0n, postedEntries: 0, lineStage: 'actionable' },
   },
 ];
 
