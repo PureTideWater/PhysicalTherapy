@@ -91,9 +91,10 @@ describe('the panel’s kind select', () => {
     expect(KIND_HELP).toBe('A document’s kind cannot be changed once it is uploaded.');
     for (const html of [rendered({ kinds: [CONTRACT, LETTER] }), rendered({ kinds: [POSTING, EFT] }), rendered({ kinds: [ANSI, ERA], initialKind: 'x12_835' })]) {
       const select = openingTag(html, 'upload-kind');
-      expect(select).toContain('aria-describedby="upload-kind-help"');
+      expect(select).toContain('aria-describedby="upload-kind-hint"');
       expect(select).not.toContain('aria-invalid=');
-      expect(html).toContain(`<p id="upload-kind-help" class="max-w-prose text-xs text-muted-foreground">${KIND_HELP}</p>`);
+      // The shared Hint (docs/adr/0077, D9): 14 px, as every field's.
+      expect(html).toContain(`<p id="upload-kind-hint" class="max-w-prose text-sm text-muted-foreground">${KIND_HELP}</p>`);
     }
   });
 
@@ -185,17 +186,22 @@ describe('the kind field while files wait for it (UX-1, UX-5)', () => {
     const html = field(waitingText('kind', 3));
     const select = openingTag(html, 'upload-kind');
     expect(select).toContain('aria-invalid="true"');
-    expect(select).toContain('aria-describedby="upload-kind-error upload-kind-help"');
-    expect(html).toContain('<p id="upload-kind-error" role="alert" class="max-w-prose text-xs text-destructive">Choose the kind of document for these 3 files, then upload them.</p>');
+    expect(select).toContain('aria-describedby="upload-kind-error upload-kind-hint"');
+    // The shared field error (docs/adr/0077, D3): "Error:" and its icon beside the message, which the element the select
+    // names holds alone; in an alert, so each drop or choice that leaves files waiting is announced.
+    expect(html).toMatch(
+      /<div role="alert" class="max-w-prose"><div data-field-error="true" class="[^"]*\btext-sm text-destructive"><svg aria-hidden="true"[^>]*>.*?<\/svg><span aria-hidden="true" class="font-semibold">Error:<\/span><p id="upload-kind-error">Choose the kind of document for these 3 files, then upload them\.<\/p><\/div><\/div>/,
+    );
     expect(html.indexOf('</select>')).toBeLessThan(html.indexOf('id="upload-kind-error"'));
-    expect(html.indexOf('id="upload-kind-error"')).toBeLessThan(html.indexOf('id="upload-kind-help"'));
+    expect(html.indexOf('id="upload-kind-error"')).toBeLessThan(html.indexOf('id="upload-kind-hint"'));
   });
 
   it('drops the mark and the words once nothing waits for the kind', () => {
     const html = field(null);
     expect(openingTag(html, 'upload-kind')).not.toContain('aria-invalid=');
-    expect(openingTag(html, 'upload-kind')).toContain('aria-describedby="upload-kind-help"');
+    expect(openingTag(html, 'upload-kind')).toContain('aria-describedby="upload-kind-hint"');
     expect(html).not.toContain('upload-kind-error');
+    expect(html).not.toContain('role="alert"');
   });
 });
 

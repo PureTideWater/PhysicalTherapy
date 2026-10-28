@@ -2,7 +2,7 @@ import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription
 import type { Metadata } from 'next';
 
 import { ActionForm } from '../../../../../components/action-form';
-import { SelectField } from '../../../../../components/field';
+import { CheckboxField, SelectField } from '../../../../../components/field';
 import { FormKeys } from '../../../../../components/form-keys';
 import { SettingsNav, currentOrganization } from '../../../../../components/settings/nav';
 import { AppShell, Forbidden } from '../../../../../components/shell';
@@ -55,9 +55,7 @@ export default async function ProofLevelPage(props: { readonly params: Promise<{
               <FormKeys />
               <input type="hidden" name="practiceId" value={practiceId} />
               <SelectField label="Proof level" name="proofLevel" options={levels.map((value) => ({ value, label: LABELS[value] ?? value }))} defaultValue={other} />
-              <label className="flex items-center gap-2">
-                <input type="checkbox" name="confirm" required /> I have read what the change does to lines already recovered (posted or deposited).
-              </label>
+              <CheckboxField name="confirm" errorName="Confirmation" label="I have read what the change does to lines already recovered (posted or deposited)." required />
             </ActionForm>
           ) : (
             <p className="text-xs text-muted-foreground">The proof level is set by the practice administrator.</p>

@@ -1,6 +1,7 @@
 # 0056. Wear the PaidWhole brand from one token source, with self-hosted fonts and status as text on tint
 
-- **Status:** accepted; amended by [0058](0058-serve-email-art-from-the-static-host-hold-the-brands-colors-fonts-and-words-with-checks-and-compare-the-header-and-cover-with-baselines.md)
+- **Status:** accepted; amended by [0058](0058-serve-email-art-from-the-static-host-hold-the-brands-colors-fonts-and-words-with-checks-and-compare-the-header-and-cover-with-baselines.md),
+  [0077](0077-submit-forms-from-the-browser-keep-what-was-typed-name-each-refused-field-by-its-label-and-size-controls-for-phones.md)
   and [0078](0078-scroll-every-wide-table-in-a-named-region-that-says-it-scrolls-and-stack-rows-on-a-phone-through-one-primitive.md)
 - **Date:** 2026-10-17
 - **Deciders:** founder (engineering)
@@ -52,6 +53,9 @@ in the display face at -0.02em; running text (a page's lede, a card's descriptio
 words included (`<Money/>`); the one exception is a price inside a native `<option>`, which holds text only. At a
 phone's width no page scrolls sideways: a wide table scrolls inside its own card (its scroller is `relative`, so a
 visually hidden header stays inside it), and a definition list stacks its terms over their values.
+
+*Amended by [0077](0077-submit-forms-from-the-browser-keep-what-was-typed-name-each-refused-field-by-its-label-and-size-controls-for-phones.md) (decision D6): below the md breakpoint, form controls are 16 px, so iOS Safari
+does not zoom the page when a field takes focus; from md up they stay 14.*
 
 *Amended by [0078](0078-scroll-every-wide-table-in-a-named-region-that-says-it-scrolls-and-stack-rows-on-a-phone-through-one-primitive.md) (`co-001/ux-table-scroll`, 2026-10-27): every
 wide table scrolls in `ScrollTable`, a region named after its table, then ", scrolls sideways", while the table

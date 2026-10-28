@@ -7,6 +7,8 @@ import { type DragEvent, type RefObject, useCallback, useEffect, useRef, useStat
 import { counted } from '../../lib/copy/words';
 import { spreadsheetExportProblem } from '../../lib/uploads/csv-exports';
 import { type Receipt, formatBytes, receiptState } from '../../lib/uploads/receipt-labels';
+import { Hint, controlMarks } from '../field';
+import { FieldError } from '../form-issues';
 import { FormatUnconfirmedBadge } from './format-flag';
 import { ReceiptList, type ReceiptPage, ReceiptStatus } from './receipts';
 
@@ -95,6 +97,9 @@ export const CHOOSE_KIND_PLACEHOLDER = 'Choose the kind of document';
 
 /** The kind select's help, under it on every panel that offers kinds: a kind is the person's choice before the upload (UX-4). */
 export const KIND_HELP = 'A document’s kind cannot be changed once it is uploaded.';
+
+/** The ERA export's system select's help, under it. */
+const FORMAT_HELP = 'The practice-management system the ERA export came from. Each file of the batch is read with its layout; a CSV export only.';
 
 /** A file as the panel weighs it: what the browser says of it, and when it last changed (File's own fields). */
 interface ChosenFile {
@@ -302,9 +307,10 @@ function put(file: File, target: UploadTarget, csrfToken: string, onProgress: (s
 
 /**
  * The kind select, its label, what it waits for and its help (UX-1, UX-4). While files wait for the kind, the select is
- * marked invalid and described first by what to do, the words under it as an alert, re-inserted at each attempt
- * (`attempt`) so a second drop of the same files is announced too; its help is read after them. The select's change
- * only sets the kind: nothing uploads on it.
+ * marked invalid and described first by what to do, then by its help, as every refused field is (controlMarks, the
+ * shared FieldError and Hint; docs/adr/0077, D3 and D9): the words under it in an alert, re-inserted at each attempt
+ * (`attempt`) so a second drop of the same files is announced too. The select's change only sets the kind: nothing
+ * uploads on it.
  */
 export function KindField({
   kinds,
@@ -335,15 +341,14 @@ export function KindField({
         id="upload-kind"
         value={kind?.kind ?? ''}
         required
-        aria-invalid={problem === null ? undefined : true}
-        aria-describedby={problem === null ? 'upload-kind-help' : 'upload-kind-error upload-kind-help'}
+        {...controlMarks('upload-kind', { error: problem ?? undefined, hint: KIND_HELP })}
         onChange={(event) => {
           const chosen = kinds.find((candidate) => candidate.kind === event.target.value);
           if (chosen !== undefined) {
             onChange(chosen);
           }
         }}
-        className="h-9 max-w-full rounded-md border bg-background px-2 text-sm aria-invalid:border-destructive"
+        className="h-9 max-w-full rounded-md border bg-background px-2 text-sm"
       >
         {startedUnchosen ? (
           <option value="" disabled>
@@ -357,13 +362,11 @@ export function KindField({
         ))}
       </select>
       {problem === null ? null : (
-        <p key={attempt} id="upload-kind-error" role="alert" className="max-w-prose text-xs text-destructive">
-          {problem}
-        </p>
+        <div key={attempt} role="alert" className="max-w-prose">
+          <FieldError id="upload-kind" error={problem} />
+        </div>
       )}
-      <p id="upload-kind-help" className="max-w-prose text-xs text-muted-foreground">
-        {KIND_HELP}
-      </p>
+      <Hint id="upload-kind" className="max-w-prose" hint={KIND_HELP} />
     </div>
   );
 }
@@ -560,6 +563,8 @@ export function Uploader(props: UploaderProps) {
 
   /** What the files waiting wait for, if anything (waitingFor). */
   const waiting = waitingFor(kind, format);
+  /** What the ERA system select says while files wait for it (waitingText), else nothing. */
+  const formatProblem = held.length > 0 && waiting === 'format' ? waitingText('format', held.length) : undefined;
 
   /** A drop or a choice of files: started, kept waiting, or refused (afterChoosing). */
   const choose = (chosen: readonly File[]) => {
@@ -663,15 +668,14 @@ export function Uploader(props: UploaderProps) {
                 id="upload-format"
                 value={formatId}
                 required
-                aria-invalid={held.length > 0 && waiting === 'format' ? true : undefined}
-                aria-describedby={held.length > 0 && waiting === 'format' ? 'upload-format-error upload-format-help' : 'upload-format-help'}
+                {...controlMarks('upload-format', { error: formatProblem, hint: FORMAT_HELP })}
                 onChange={(event) => {
                   setFormatId(event.target.value);
                   if (held.length > 0) {
                     setProblems([]);
                   }
                 }}
-                className="h-9 max-w-full rounded-md border bg-background px-2 text-sm aria-invalid:border-destructive"
+                className="h-9 max-w-full rounded-md border bg-background px-2 text-sm"
               >
                 <option value="">Choose the system</option>
                 {kind.formats.map((candidate) => (
@@ -680,16 +684,14 @@ export function Uploader(props: UploaderProps) {
                   </option>
                 ))}
               </select>
-              {held.length > 0 && waiting === 'format' ? (
-                <p key={attempt} id="upload-format-error" role="alert" className="max-w-prose text-xs text-destructive">
-                  {waitingText('format', held.length)}
-                </p>
-              ) : null}
-              <p id="upload-format-help" className="max-w-prose text-xs text-muted-foreground">
-                The practice-management system the ERA export came from. Each file of the batch is read with its layout; a CSV export only.
-              </p>
+              {formatProblem === undefined ? null : (
+                <div key={attempt} role="alert" className="max-w-prose">
+                  <FieldError id="upload-format" error={formatProblem} />
+                </div>
+              )}
+              <Hint id="upload-format" className="max-w-prose" hint={FORMAT_HELP} />
               {format?.unconfirmed === true ? (
-                <div className="flex max-w-prose flex-col gap-1 text-xs text-muted-foreground" role="note" aria-label="Format unconfirmed">
+                <div className="flex max-w-prose flex-col gap-1 text-sm text-muted-foreground" role="note" aria-label="Format unconfirmed">
                   <FormatUnconfirmedBadge />
                   <span>
                     No description of this format has been received from its vendor yet, so PaidWhole reads it with a placeholder layout and flags its lines on the Coverage screen until the
@@ -706,6 +708,10 @@ export function Uploader(props: UploaderProps) {
             multiple
             className="sr-only"
             aria-label="Choose files to upload"
+            // Out of the tab order and hidden from assistive technology: "Choose files" is the one control and opens the
+            // picker, so a keyboard meets one stop, not an invisible input and then the button (docs/adr/0077).
+            tabIndex={-1}
+            aria-hidden="true"
             onChange={(event) => {
               choose([...(event.target.files ?? [])]);
               event.target.value = '';
