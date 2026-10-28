@@ -1,9 +1,9 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, Label } from '@tp/ui';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 
 import type { ActionState } from '../../lib/http/next';
 import type { OrganizationSuspension, StatusChange, SuspensionReach } from '../../lib/routes/console';
 import { ActionForm } from '../action-form';
-import { Field } from '../field';
+import { CheckboxField, Field, SelectField } from '../field';
 import { FormKeys } from '../form-keys';
 import { utc } from '../format';
 import { ScrollTable } from '../scroll-table';
@@ -31,29 +31,13 @@ import {
 
 type Action = (state: ActionState, form: FormData) => Promise<ActionState>;
 
-/** The labels a refusal names each field by (ActionForm), so "reason: choose why PaidWhole suspends it" reads by its label. */
-const LABELS = { reason: 'Reason', note: 'Note', confirm: 'Confirmation', change: 'Status' } as const;
-
 /**
- * C4: the required reason select, starting empty, with its hint tied to it (aria-describedby); the form's refusal marks
- * it invalid and describes it too (ActionForm).
+ * C4: the required reason select, starting empty, through the shared SelectField (docs/adr/0077): its hint at 14 px
+ * under it, and a refusal shows "Error:" and the rule's words under it, marks it and names it "Reason" in the summary,
+ * by the label the person sees. A refused form keeps the reason chosen (ActionForm).
  */
 function ReasonSelect({ id }: { readonly id: string }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-1.5">
-      <Label htmlFor={id}>{LABELS.reason}</Label>
-      <select id={id} name="reason" required defaultValue="" aria-describedby={`${id}-hint`} className="h-9 max-w-full rounded-md border border-input bg-transparent px-2 text-sm">
-        {SUSPENSION_REASON_OPTIONS.map((option) => (
-          <option key={option.value} value={option.value} disabled={option.value === ''}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      <p id={`${id}-hint`} className="text-xs text-muted-foreground">
-        {SUSPENSION_REASON_HINT}
-      </p>
-    </div>
-  );
+  return <SelectField label="Reason" id={id} name="reason" required defaultValue="" options={SUSPENSION_REASON_OPTIONS} hint={SUSPENSION_REASON_HINT} />;
 }
 
 /** C5: the optional note, one line of at most 500 characters (the CHECK organization_status_change_note's). */
@@ -78,10 +62,11 @@ export function SuspensionCard({
   readonly reach: SuspensionReach;
   readonly action: Action;
 }) {
+  // A refusal of the hidden change reads "Status: …" (data-error-name, docs/adr/0077 D3), never the route's key.
   const hidden = (change: 'suspend' | 'reason' | 'reinstate') => (
     <>
       <FormKeys />
-      <input type="hidden" name="change" value={change} />
+      <input type="hidden" name="change" value={change} data-error-name="Status" />
       <input type="hidden" name="organizationId" value={organization.id} />
     </>
   );
@@ -93,14 +78,11 @@ export function SuspensionCard({
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {suspension === null ? (
-          <ActionForm action={action} submit={SUSPEND_SUBMIT} variant="destructive" labels={LABELS} className="grid max-w-xl gap-3" wrapSubmit>
+          <ActionForm action={action} submit={SUSPEND_SUBMIT} variant="destructive" className="grid max-w-xl gap-3" wrapSubmit>
             {hidden('suspend')}
             <ReasonSelect id="suspend-reason" />
             <NoteField id="suspend-note" />
-            <label className="flex items-start gap-2 text-sm" htmlFor="suspend-confirm">
-              <input id="suspend-confirm" type="checkbox" name="confirm" required className="mt-1" />
-              <span>{suspensionTick(organization.kind, organization.name, reach)}</span>
-            </label>
+            <CheckboxField id="suspend-confirm" name="confirm" required errorName="Confirmation" label={suspensionTick(organization.kind, organization.name, reach)} />
           </ActionForm>
         ) : (
           <>
@@ -112,7 +94,7 @@ export function SuspensionCard({
             </div>
             <div className="flex flex-wrap gap-3">
               {(['resolved', 'in_error'] as const).map((reason) => (
-                <ActionForm key={reason} action={action} submit={REINSTATE_SUBMITS[reason]} labels={LABELS} className="flex flex-col gap-1" wrapSubmit>
+                <ActionForm key={reason} action={action} submit={REINSTATE_SUBMITS[reason]} className="flex flex-col gap-1" wrapSubmit>
                   {hidden('reinstate')}
                   <input type="hidden" name="reason" value={reason} />
                 </ActionForm>
@@ -122,7 +104,7 @@ export function SuspensionCard({
               <h3 id="change-reason-heading" className="text-sm font-semibold">
                 {CHANGE_REASON_SUBMIT}
               </h3>
-              <ActionForm action={action} submit={CHANGE_REASON_SUBMIT} variant="outline" labels={LABELS} className="grid max-w-xl gap-3">
+              <ActionForm action={action} submit={CHANGE_REASON_SUBMIT} variant="outline" className="grid max-w-xl gap-3">
                 {hidden('reason')}
                 <ReasonSelect id="change-reason" />
                 <NoteField id="change-note" />
@@ -147,7 +129,7 @@ export function SuspensionHistory({ history }: { readonly history: readonly Stat
           <p className="text-sm text-muted-foreground">{HISTORY_EMPTY}</p>
         ) : (
           <ScrollTable label={HISTORY_CAPTION}>
-            <table className="w-full text-left text-sm" aria-label={HISTORY_CAPTION}>
+            <table className="w-full min-w-[48rem] text-left text-sm" aria-label={HISTORY_CAPTION}>
               <thead className="text-muted-foreground">
                 <tr>
                   {HISTORY_COLUMNS.map((column) => (
@@ -163,8 +145,12 @@ export function SuspensionHistory({ history }: { readonly history: readonly Stat
                     <td className="whitespace-nowrap py-1 pr-3">{utc(change.at).replace(' UTC', '')}</td>
                     <td className="py-1 pr-3">{HISTORY_CHANGES[change.change]}</td>
                     <td className="py-1 pr-3">{reasonLabel(change.reason)}</td>
-                    <td className="break-all py-1 pr-3">{change.by}</td>
-                    <td className="break-words py-1">{change.note ?? ''}</td>
+                    <td className="py-1 pr-3">
+                      <span className="block min-w-40 wrap-anywhere">{change.by}</span>
+                    </td>
+                    <td className="py-1">
+                      <span className="block min-w-48 wrap-anywhere">{change.note ?? ''}</span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
