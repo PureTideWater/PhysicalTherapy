@@ -2,6 +2,7 @@ import type { PracticeScope, ScopeClient } from '@tp/db/runtime';
 
 import type { JobHandler } from '../jobs/handlers';
 import type { MailMessage, MailSender } from '../mail/mail';
+import { sendErrorName } from '../mail/streams';
 import { notify, recipients } from '../monitor/chain';
 import { todayUtc } from '../triage/execute';
 import { digestFigures } from './figures';
@@ -57,6 +58,19 @@ export function digestMessage(to: DigestRecipient, digestId: string, period: str
   };
 }
 
+/**
+ * A digest email the mail service refused, carried out of the job by the SES error's name alone (review S6): the job's
+ * failure is kept by pg-boss with its message and stack, and an SES error's message can name the address (an
+ * unverified recipient in the sandbox, say). Never the error itself, as a property or a cause.
+ */
+export class DigestSendFailed extends Error {
+  override readonly name = 'DigestSendFailed';
+
+  constructor(readonly sendErrorName: string) {
+    super(`the mail service refused a digest email (${sendErrorName})`);
+  }
+}
+
 interface Prepared {
   readonly digestId: string;
   readonly sent: boolean;
@@ -107,7 +121,12 @@ export function digestHandler(services: DigestServices): JobHandler<'digest'> {
     }
     const link = digestLink(services.appOrigin, payload.practice_id, prepared.digestId);
     for (const to of prepared.emails) {
-      await services.mail.send(digestMessage(to, prepared.digestId, payload.period, prepared.figures, link));
+      try {
+        await services.mail.send(digestMessage(to, prepared.digestId, payload.period, prepared.figures, link));
+      } catch (error) {
+        // Not sent: the job fails and pg-boss tries it again; the digest stays unsent, with its figures.
+        throw new DigestSendFailed(sendErrorName(error));
+      }
     }
     await context.transaction((scope) => scope.client.query('UPDATE digest SET sent_at = now() WHERE id = $1 AND practice_id = $2 AND sent_at IS NULL', [prepared.digestId, payload.practice_id]));
     context.logger.info('digest sent', { digest_id: prepared.digestId });

@@ -368,20 +368,24 @@ month).
 | Role | Statement | What |
 | --- | --- | --- |
 | Application (web, worker) | `DigestEmail` | `ses:SendEmail` on MailFromAddress's identity and the transactional set, from MailFromAddress |
-| Application | `ScreeningAddressValidation` | `ses:GetEmailAddressInsights` (no resource-level permission exists) |
+| Application | `NoAddressValidationHere`, `NoRoleOfThisAccount` | refused `ses:GetEmailAddressInsights`, and `sts:AssumeRole` on any role of the environment's account (ADR 0065, review S3) |
+| Application | `AssumeAddressValidationRole` (its own policy, only once `MailValidationRoleArn` names a role) | `sts:AssumeRole` on that role, in the environment's address-validation account |
+| Address validation (`tp-<env>-address-validation`, its own account) | `ScreeningAddressValidation` | `ses:GetEmailAddressInsights` (no resource-level permission exists), assumable by the application role alone |
 | Operator (platform) | `NoticeEmail` | `ses:SendEmail` on MailFromAddress's identity and the notices set, from MailFromAddress |
-| Operator | `MailProbes` | `ses:SendEmail` on both identities and the three sets, only to SES's two simulator addresses |
+| Operator | `MailProbes` | `ses:SendEmail` on both identities and the three sets, only to SES's two simulator addresses, which the request must name (`ses:Recipients` present) |
 | Operator | `MailReconcileScreeningSet` | `ses:GetConfigurationSet` and `ses:PutConfigurationSetSendingOptions` on the screening set alone, so the cut-off can pause nothing else |
 | Operator | `MailIdentitiesRead`, `MailAccountRead` | the two identities' state, and `ses:GetAccount` (SES's enforcement status) |
 | Operator | `MailEventsQueue`, `MailEventsDecryptThroughSqs` | receive, delete and visibility on the mail-events queue, and the key through SQS only |
 | Screening | `ScreeningResultEmail` | `ses:SendEmail` on the screening identity and set only, from `results@screening.<domain>` (the plan's G4) |
 
-**Alarms** (15, to the operator topic): the account's bounce rate at 2.5% and 4% and complaint rate at 0.05% and 0.08%
+**Alarms** (17, to the operator topic): the account's bounce rate at 2.5% and 4% and complaint rate at 0.05% and 0.08%
 (the two warnings also pause the screening through the second rule), the screening set's bounce rate at 3% and
 complaint rate at 0.08%, the transactional set's bounce rate at 2%, a message in the dead-letter queue, the queue's
-oldest message past 15 minutes, and six counted from the logs in namespace `TherapyPlatform/Mail` (`MAIL_STREAM_PAUSED`,
-`NOTICE_UNDELIVERED`, `NOTICE_UNDELIVERABLE`, `INVITATION_UNDELIVERED` and `MAIL_PROBE_MISSED` from the platform's log
-in five minutes, `MAIL_VALIDATION_CAP_REACHED` from the web's in a day). No metric has an address as a dimension.
+oldest message past 15 minutes, and eight counted from the logs in namespace `TherapyPlatform/Mail`
+(`MAIL_STREAM_PAUSED`, `NOTICE_UNDELIVERED`, `NOTICE_UNDELIVERABLE`, `INVITATION_UNDELIVERED` and `MAIL_PROBE_MISSED`
+from the platform's log in five minutes, `MAIL_PROBE_UNSENT` from it in each of three five-minute periods,
+`MAIL_VALIDATION_REFUSED` from the web's in five minutes and `MAIL_VALIDATION_CAP_REACHED` from it in a day). No metric
+has an address as a dimension.
 
 **Settings** (`constructs/compute.ts`): the web gains `MAIL_VALIDATION=ses` and `MAIL_VALIDATION_DAILY_CAP` (1,000 in
 production, 50 elsewhere; the founder's Q1 (g)); the worker `MAIL_STREAM_PREFIX`; the platform `MAIL_STREAM_PREFIX`,
@@ -393,10 +397,12 @@ production, 50 elsewhere; the founder's Q1 (g)); the worker `MAIL_STREAM_PREFIX`
 `log_parameter_max_length_on_error` to 0, so no statement's bind values, an address passed to a definer function among
 them, reach the log (open item O11, now held by the template rather than checked by hand).
 
-**Cost** (Q1; prices read from search results, to be read again on AWS's pages before the first deploy, O12): about $18
-a month per environment, the SQS endpoint $14.60 of it (two zones), 15 alarms $1.50, six log metrics $1.80, the probes
-and requests well under $1; SES at Essentials' $0.16 per 1,000 messages; SES's validation of a screening address at
-$0.01, at most 1,000 a day in production.
+**Cost** (Q1; prices read from search results, to be read again on AWS's pages before the first deploy, O12): about $20
+a month per environment, the SQS endpoint $14.60 of it (two zones), 17 alarms $1.70, eight log metrics $2.40, the probes
+and requests well under $1, and the address-validation account's key $1 (ADR 0065); the founder's Q1 figure was about
+$18, and the review's fix round added about $1.80 (the unsent probe's and the refused validation's alarms and metrics,
+$0.80, and that key, $1). SES at Essentials' $0.16 per 1,000 messages; SES's validation of a screening address at $0.01, at most
+1,000 a day in production.
 
 **Revisit when** staging's phase 2 shows that Cognito needs a sending-authorization policy on the stack's identity, or
 that the account's reputation metrics do not publish at launch volume (O11); SES offers tenants with configurable

@@ -614,25 +614,39 @@ export const screeningSubmit = publicRoute({
       throw new InputError([{ field: 'contactEmail', message: 'an email address: the result’s link is sent there' }]);
     }
     const rateAccountSubject = rateSubjectHash(services.sealer, 'screening', 'account', account);
-    // The address (audit #76; docs/adr/0065, D9), only now that the upload passed its own checks and the rate limit, so
-    // nothing is asked, or paid for, for an upload those refuse. A likely typo, or an ending not in use, is said first
-    // and costs nothing; then DNS and SES's validation run together, so the time added is at most one 2-second timeout
-    // (the plan's G1). One sentence answers every refused address, here and for the database's refusal list.
+    // The client the rate limiter counts, as it keeps it: its keyed hash, or null where no trusted proxy names one. The
+    // database holds the run to the client's bounce budget beside the account's (Q10 (a)).
+    const clientSubject = request.clientAddress === undefined || request.clientAddress === null ? null : rateSubjectHash(services.sealer, 'screening', 'address', request.clientAddress);
+    // The address (audit #76; docs/adr/0065, D9), only now that the upload passed its own checks and the rate limit. A
+    // likely typo, or an ending not in use, is said first: it costs nothing and reads the address alone, so it is said
+    // alike whether or not the address is on the refusal list, and the prospect who mistyped is told the likely fix.
     const kept = input.keepAddress.trim() === '1';
     const hint = addressHint(prospect.contactEmail);
     if (hint.message !== null && !kept) {
       throw new InputError([{ field: 'contactEmail', message: hint.message }]);
     }
+    // What the database would refuse for the mail, in its order (closed, paused, the submitter's bounce budget, then the
+    // address on the refusal list), before any check that is asked or paid for (review S4): the day's validations are
+    // never spent on an upload the database refuses for its mail, and a client or an account past its budget gets the
+    // budget's sentence whatever the address (S1). submit_screening()'s triggers stay the backstop.
+    const refusal = await withClient(services.pool, async (client) =>
+      (await client.query<{ refusal: string | null }>('SELECT screening_submit_mail_refusal($1, $2, $3) AS refusal', [prospect.contactEmail, rateAccountSubject, clientSubject])).rows[0]?.refusal ?? null,
+    );
+    if (refusal !== null) {
+      throw new InputError([submitIssue(refusal)]);
+    }
+    // Then DNS and SES's validation run together, so the time added is at most one 2-second timeout (the plan's G1). One
+    // sentence answers every refused address, here and for the database's refusal list. Their time, measured here from
+    // after the database's answer, is logged with the run once it is stored (below).
+    const checksStarted = performance.now();
     const verdict = await checkScreeningAddress(prospect.contactEmail, { checks: services.addressChecks, pool: services.pool, sealer: services.sealer, logger: services.logger, kept });
+    const addressCheckMs = Math.round(performance.now() - checksStarted);
     if (verdict === 'refuse') {
       throw new InputError([{ field: 'contactEmail', message: ADDRESS_REFUSED }]);
     }
     if (verdict === 'warn') {
       throw new InputError([{ field: 'contactEmail', message: MAILBOX_UNCONFIRMED }]);
     }
-    // The client the rate limiter counts, as it keeps it: its keyed hash, or null where no trusted proxy names one. The
-    // database holds the run to the client's bounce budget beside the account's (Q10 (a)).
-    const clientSubject = request.clientAddress === undefined || request.clientAddress === null ? null : rateSubjectHash(services.sealer, 'screening', 'address', request.clientAddress);
     let runId: string;
     try {
       runId = await withClient(services.pool, async (client) => {
@@ -679,6 +693,10 @@ export const screeningSubmit = publicRoute({
       }
       throw error;
     }
+    // How long the address checks took for this upload, by its run alone (never the address or its domain): the capacity
+    // harness reads the line and holds every measured upload to the checks' worst case, one 2-second timeout (the plan's
+    // G1), so a change that skips or shortens them on its path fails the gate instead of passing it about 2 s fast.
+    services.logger.info('screening address checked', { screening_run_id: runId, elapsed_ms: addressCheckMs });
     // Where the run stands in the queue: its tier (Q7), and how many runs are pricing or ahead of it.
     let wait: ScreeningQueuePlace | null;
     try {

@@ -258,9 +258,18 @@ describe('an invitation whose email was not delivered (SEC-19)', () => {
     // The email last sent bounced (its own send time, within SES's clock skew of sent_at).
     await owner.query("UPDATE invitation SET undelivered_at = sent_at - interval '2 seconds', undelivered_reason = 'bounced' WHERE id = $1", [invitationId]);
     expect((await view())?.undeliveredAt).toBeInstanceOf(Date);
+    expect((await view())?.undeliveredReason).toBe('undelivered');
+    // Reported as spam: it reached the person, so the page says so rather than "Not delivered" (the review of 2026-10-23).
+    await owner.query("UPDATE invitation SET undelivered_reason = 'complained' WHERE id = $1", [invitationId]);
+    expect((await view())?.undeliveredReason).toBe('complained');
+    for (const reason of ['suppressed', 'rejected']) {
+      await owner.query('UPDATE invitation SET undelivered_reason = $2 WHERE id = $1', [invitationId, reason]);
+      expect((await view())?.undeliveredReason, reason).toBe('undelivered');
+    }
     // A late report of an email a resend replaced flags nothing.
     await owner.query("UPDATE invitation SET undelivered_at = sent_at - interval '10 minutes' WHERE id = $1", [invitationId]);
     expect((await view())?.undeliveredAt).toBeNull();
+    expect((await view())?.undeliveredReason).toBeNull();
     // Nor once the invitation is accepted.
     await owner.query("UPDATE invitation SET undelivered_at = sent_at, accepted_at = now() WHERE id = $1", [invitationId]);
     expect((await view())?.undeliveredAt).toBeNull();

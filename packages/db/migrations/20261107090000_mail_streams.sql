@@ -8,7 +8,8 @@
 -- - mail_stream: the three SES streams (transactional, notices, screening), one seeded row each. Only the screening
 --   stream pauses (a CHECK): on its own rates over the window (permanent bounces above 3% of its sends, floor 200;
 --   complaints other than not_spam above 0.08%, floor 2,500; the window starts 7 days ago or at the last resume, whichever
---   is later), on the account's warning alarms (account_rate) or on SES's enforcement (account_review), or by hand. A
+--   is later; read at each screening bounce or complaint and once each mail_events run, operator_mail_cutoff()), on the
+--   account's warning alarms (account_rate) or on SES's enforcement (account_review), or by hand. A
 --   pause clears the SES confirmation; a resume (a platform administrator, cause_fixed or false_alarm) resets the window,
 --   makes the probes due at once and sends nothing until the platform's reconcile reads the screening set enabled again.
 --   Each row is seeded confirmed: no stream has been paused, and the platform's reconcile clears the confirmation within
@@ -18,25 +19,29 @@
 --   bounce's or complaint's codes. No address and no hash of one. Kept 30 days on the screening stream and 90 on the
 --   others (mail_send_expiry). States move one way: sent, delayed, delivered, then bounced, suppressed, rejected or
 --   complained, and a lower-ranked event never overwrites a higher one, so events land in any order and once.
--- - mail_recipient_key and mail_recipient_sha256(): SHA-256 of a 32-byte pepper made at this migration and the trimmed,
---   lower-cased address. The only address-derived value kept is screening_mail_refusal's (Q11 (b)): a screening
---   address that bounced permanently or was reported as spam (not not_spam), for 365 days, read only to refuse a new
---   screening to it. No customer stream's outcome is ever on the list.
+-- - mail_recipient_key and mail_recipient_sha256(): SHA-256 of a pepper made at this migration and the mailbox the
+--   address reaches (mail_recipient_canonical(): case, white space, Unicode NFKC, a +tag, googlemail.com and Gmail's
+--   dots), so every spelling of one inbox keys alike. The only address-derived value kept is screening_mail_refusal's
+--   (Q11 (b)): a screening address that bounced permanently or was reported as spam (not not_spam), for 365 days, read
+--   only to refuse a new screening to it. No customer stream's outcome is ever on the list.
 -- - screening_bounce_mark (Q10 (a)): one 7-day mark per screening permanent bounce for each of the run's keyed subjects,
 --   its account's (screening_run.rate_subject, migration 20261106090000) and its client's (screening_run.client_subject,
 --   new: the rate limiter's keyed HMAC of the client address, null when the web had none); a subject with 3 live marks
 --   is refused a new screening (screening_bounce_budget).
 -- - The refusals, by triggers, so no function body of migrations 20261105090000 or 20261106090000 is copied but
---   submit_screening()'s: an accepted upload is refused while the screening stream is paused (screening_paused) and for
---   an address on the refusal list (screening_contact_undeliverable), BEFORE INSERT on screening_upload, so a refused
---   upload, which is never emailed, is still recorded with its reasons; a run is refused for the bounce budget
---   (screening_bounce_budget), BEFORE INSERT on screening_run; and a claim, completion or failure of a run is refused
---   while the screening's mail is not sending (screening_mail_paused), BEFORE UPDATE OF status on screening_run. In
---   submit_screening() the refusals come in this order: closed; the ZIP statuses, the rows and
---   screening_band_outside_content; screening_paused; screening_contact_undeliverable; screening_bounce_budget.
+--   submit_screening()'s: an accepted upload is refused while the screening stream is paused (screening_paused), BEFORE
+--   INSERT on screening_upload, so a refused upload, which is never emailed, is still recorded with its reasons; a run
+--   is refused for the bounce budget (screening_bounce_budget) and then for an address on the refusal list
+--   (screening_contact_undeliverable), BEFORE INSERT on screening_run; and a claim, completion or failure of a run is
+--   refused while the screening's mail is not sending (screening_mail_paused), BEFORE UPDATE OF status on screening_run.
+--   In submit_screening() the refusals come in this order: closed; the ZIP statuses, the rows and
+--   screening_band_outside_content; screening_paused; screening_bounce_budget; screening_contact_undeliverable. The
+--   submitter's budget comes before the address (review S1), so no client or account past its budget can test an
+--   address against the refusal list.
 -- - The consumer (tp_screening) reads screening_mail_gate() before it claims; the web (tp_app) reads
 --   screening_mail_status() (paused; ready once the screening's delivered and bounced probes have come back within
---   48 hours and since the last resume).
+--   48 hours and since the last resume), and screening_submit_mail_refusal() before it spends an address validation
+--   (closed, paused, the budget, the refusal list, in that order; review S4).
 -- - Break-glass notices from a recorded outbox (support_grant_notice and support_grant_notice_recipient, both tenant
 --   tables, registered, read by the application role under the practice's scope): the recipients are recorded first,
 --   one row per current practice administrator, and each is sent in its own transaction; notice_sent is written at the
@@ -75,8 +80,9 @@
 -- 1. The keyed hash of a screening address (D12; Q11 (b))
 -- ---------------------------------------------------------------------------------------------------
 
--- One 32-byte pepper, as 64 hex characters, made here from two random UUIDs (the repository has no pgcrypto), so a copy
--- of the refusal list alone cannot be matched against a list of addresses. The owner's alone: no role holds a privilege
+-- One pepper of 64 hex characters, made here from two random UUIDs (the repository has no pgcrypto): 244 random bits,
+-- each UUID's version and variant bits being fixed, so a copy of the refusal list alone cannot be matched against a
+-- list of addresses. The owner's alone: no role holds a privilege
 -- on it, and it never changes.
 CREATE TABLE mail_recipient_key (
   id boolean PRIMARY KEY DEFAULT true CONSTRAINT mail_recipient_key_one CHECK (id),
@@ -89,11 +95,49 @@ ALTER TABLE mail_recipient_key ENABLE ROW LEVEL SECURITY;
 ALTER TABLE mail_recipient_key FORCE ROW LEVEL SECURITY;
 CREATE POLICY mail_recipient_key_owner ON mail_recipient_key FOR ALL TO tp_owner USING (true) WITH CHECK (true);
 
--- The keyed hash of an address: SHA-256 of the pepper and the trimmed, lower-cased address, as hex. Granted to no role;
--- it runs as its caller, the owner inside the definer functions and triggers below. It never raises with its input.
+-- The mailbox an address reaches, so every spelling of one inbox keys alike (review S2): canonicalMailbox() in
+-- packages/db/src/mail-address.ts is the same rule, and mail.db.test.ts holds the two equal on a table of spellings.
+-- Unicode NFKC (which composes as NFC does); ASCII white space dropped at either end; ASCII letters in lower case (the
+-- "C" collation's rule, whatever the database's locale); split at the last @, an address with no local part or no
+-- domain standing as read so far; the domain's trailing dots dropped and googlemail.com read as gmail.com; everything
+-- from the local part's first + dropped, at every domain; and at gmail.com alone, the local part's dots dropped (Google:
+-- dots do not matter in a Gmail address, and do in a Google Workspace one). A local part those two would leave empty is
+-- kept. Used only to look an address up, never to send. Granted to no role.
+CREATE FUNCTION mail_recipient_canonical(address text) RETURNS text
+LANGUAGE plpgsql IMMUTABLE SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE
+  as_read text := lower(btrim(normalize(coalesce(address, ''), NFKC), E' \t\n\r\f' || chr(11)) COLLATE "C");
+  -- The last @, counted from the end.
+  last_at integer := strpos(reverse(as_read), '@');
+  local_part text;
+  domain_part text;
+  mailbox_part text;
+BEGIN
+  IF last_at = 0 THEN
+    RETURN as_read;
+  END IF;
+  local_part := left(as_read, length(as_read) - last_at);
+  domain_part := rtrim(right(as_read, last_at - 1), '.');
+  IF local_part = '' OR domain_part = '' THEN
+    RETURN as_read;
+  END IF;
+  IF domain_part = 'googlemail.com' THEN
+    domain_part := 'gmail.com';
+  END IF;
+  mailbox_part := split_part(local_part, '+', 1);
+  IF domain_part = 'gmail.com' THEN
+    mailbox_part := replace(mailbox_part, '.', '');
+  END IF;
+  RETURN CASE WHEN mailbox_part = '' THEN local_part ELSE mailbox_part END || '@' || domain_part;
+END;
+$$;
+
+-- The keyed hash of an address: SHA-256 of the pepper and the mailbox it reaches (mail_recipient_canonical()), as hex.
+-- Granted to no role; it runs as its caller, the owner inside the definer functions and triggers below. It never raises
+-- with its input.
 CREATE FUNCTION mail_recipient_sha256(address text) RETURNS text
 LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp AS $$
-  SELECT encode(sha256(decode(k.pepper, 'hex') || convert_to(lower(btrim(address)), 'UTF8')), 'hex') FROM mail_recipient_key k
+  SELECT encode(sha256(decode(k.pepper, 'hex') || convert_to(mail_recipient_canonical(address), 'UTF8')), 'hex') FROM mail_recipient_key k
 $$;
 
 -- ---------------------------------------------------------------------------------------------------
@@ -148,7 +192,7 @@ CREATE TABLE mail_send (
   state text NOT NULL CONSTRAINT mail_send_state CHECK (state IN ('sent', 'delayed', 'delivered', 'bounced', 'suppressed', 'rejected', 'complained')),
   bounce_kind text CONSTRAINT mail_send_bounce_kind CHECK (bounce_kind IN ('permanent', 'transient', 'undetermined')),
   bounce_subtype text CONSTRAINT mail_send_bounce_subtype CHECK (bounce_subtype IN ('general', 'no_email', 'suppressed', 'on_account_suppression_list',
-    'on_configuration_set_suppression_list', 'mailbox_full', 'message_too_large', 'content_rejected', 'attachment_rejected', 'other')),
+    'on_configuration_set_suppression_list', 'mailbox_full', 'message_too_large', 'content_rejected', 'attachment_rejected', 'undetermined', 'other')),
   complaint_type text CONSTRAINT mail_send_complaint_type CHECK (complaint_type IN ('abuse', 'auth_failure', 'fraud', 'not_spam', 'virus', 'other', 'unspecified')),
   sent_at timestamptz NOT NULL,
   delivered_at timestamptz,
@@ -196,17 +240,21 @@ LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, public, pg_temp AS $$
                     WHEN 'complained' THEN 3 WHEN 'bounced' THEN 3 WHEN 'suppressed' THEN 3 WHEN 'rejected' THEN 3 WHEN 'failed' THEN 3 END
 $$;
 
--- A stream's window (Q9): from the later of 7 days ago and its last resume, its messages handed to a mailbox (probes,
--- suppressed and rejected ones aside), the permanent bounces among them and the complaints other than not_spam.
-CREATE FUNCTION mail_window_counts(target text) RETURNS TABLE (sends integer, bounces integer, complaints integer)
+-- A stream's window (Q9): from the later of 7 days ago and its last resume, its messages SES counts toward the account's
+-- rates (probes, those the account's own suppression list held back and rejected ones aside), the permanent bounces
+-- among them (a bounce from SES's global suppression list included, as SES counts it) and the complaints other than
+-- not_spam; and where it starts (starts_at), which the console shows (review M8).
+CREATE FUNCTION mail_window_counts(target text) RETURNS TABLE (starts_at timestamptz, sends integer, bounces integer, complaints integer)
 LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp AS $$
-  SELECT count(m.*)::integer,
+  SELECT w.starts_at,
+         count(m.*)::integer,
          count(m.*) FILTER (WHERE m.state = 'bounced' AND m.bounce_kind = 'permanent')::integer,
          count(m.*) FILTER (WHERE m.state = 'complained' AND m.complaint_type <> 'not_spam')::integer
     FROM mail_stream s
-    LEFT JOIN mail_send m ON m.stream = s.stream AND m.kind <> 'probe' AND m.state NOT IN ('suppressed', 'rejected')
-                         AND m.sent_at >= greatest(now() - interval '7 days', s.window_starts_at)
+    CROSS JOIN LATERAL (SELECT greatest(now() - interval '7 days', s.window_starts_at) AS starts_at) w
+    LEFT JOIN mail_send m ON m.stream = s.stream AND m.kind <> 'probe' AND m.state NOT IN ('suppressed', 'rejected') AND m.sent_at >= w.starts_at
    WHERE s.stream = target
+   GROUP BY w.starts_at
 $$;
 
 -- Whether the screening's mail is sending: not paused, and SES confirmed since the last pause. The triggers below read it;
@@ -274,36 +322,48 @@ ALTER TABLE screening_bounce_mark ENABLE ROW LEVEL SECURITY;
 ALTER TABLE screening_bounce_mark FORCE ROW LEVEL SECURITY;
 CREATE POLICY screening_bounce_mark_owner ON screening_bounce_mark FOR ALL TO tp_owner USING (true) WITH CHECK (true);
 
--- An accepted upload is refused while the screening stream is paused, and for a contact address on the refusal list
--- (D7, D9; Q11 (b)). A refused upload is never emailed, so it is recorded with its reasons whatever the stream's state.
+-- Whether a submitter is past its bounce budget (Q10 (a)): its account's or its client's keyed subject (null: none) has
+-- 3 live bounce marks. Granted to no role: the run's trigger and the web's check before the address (section 9) read it.
+CREATE FUNCTION screening_bounce_budget_spent(account_subject text, client_subject text) RETURNS boolean
+LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT (SELECT count(*) FROM screening_bounce_mark b WHERE b.subject_kind = 'account' AND b.subject = $1 AND b.expires_at > now()) >= 3
+      OR (SELECT count(*) FROM screening_bounce_mark b WHERE b.subject_kind = 'client' AND b.subject = $2 AND b.expires_at > now()) >= 3
+$$;
+
+-- Whether a contact address's mailbox is on the refusal list (Q11 (b)). Granted to no role, as above.
+CREATE FUNCTION screening_contact_refused(address text) RETURNS boolean
+LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT EXISTS (SELECT 1 FROM screening_mail_refusal f WHERE f.recipient_sha256 = mail_recipient_sha256($1) AND f.expires_at > now())
+$$;
+
+-- An accepted upload is refused while the screening stream is paused (D7). A refused upload is never emailed, so it is
+-- recorded with its reasons whatever the stream's state.
 CREATE FUNCTION screening_upload_mail_gate() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
-DECLARE
-  hashed text;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM mail_stream s WHERE s.stream = 'screening' AND s.paused_at IS NULL) THEN
     RAISE EXCEPTION 'new screenings are paused while their result emails cannot be sent' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_paused';
-  END IF;
-  SELECT mail_recipient_sha256(p.contact_email) INTO hashed FROM screening_prospect p WHERE p.id = NEW.prospect_id;
-  IF EXISTS (SELECT 1 FROM screening_mail_refusal f WHERE f.recipient_sha256 = hashed AND f.expires_at > now()) THEN
-    RAISE EXCEPTION 'a screening''s result cannot be emailed to its contact address' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_contact_undeliverable';
   END IF;
   RETURN NEW;
 END;
 $$;
 CREATE TRIGGER screening_upload_mail_gate BEFORE INSERT ON screening_upload FOR EACH ROW WHEN (NEW.status = 'accepted') EXECUTE FUNCTION screening_upload_mail_gate();
 
--- A run is refused once its account's or its client's keyed subject has 3 live bounce marks (Q10 (a)).
-CREATE FUNCTION screening_run_bounce_budget() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+-- A run is refused, in this order (review S1): for its submitter's bounce budget (screening_bounce_budget), then for a
+-- contact address on the refusal list (screening_contact_undeliverable; D9). The submitter comes first, so a client or
+-- an account past its budget gets the one answer whatever the address, and cannot test an address against the list. A
+-- refused upload has no run, so it is recorded whatever the list says.
+CREATE FUNCTION screening_run_mail_refusal() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
-  IF (SELECT count(*) FROM screening_bounce_mark b WHERE b.subject_kind = 'account' AND b.subject = NEW.rate_subject AND b.expires_at > now()) >= 3
-     OR (NEW.client_subject IS NOT NULL
-         AND (SELECT count(*) FROM screening_bounce_mark b WHERE b.subject_kind = 'client' AND b.subject = NEW.client_subject AND b.expires_at > now()) >= 3) THEN
+  IF screening_bounce_budget_spent(NEW.rate_subject, NEW.client_subject) THEN
     RAISE EXCEPTION 'too many recent screening emails from this sender could not be delivered' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_bounce_budget';
+  END IF;
+  IF screening_contact_refused((SELECT p.contact_email FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE u.id = NEW.upload_id)) THEN
+    RAISE EXCEPTION 'a screening''s result cannot be emailed to its contact address' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_contact_undeliverable';
   END IF;
   RETURN NEW;
 END;
 $$;
-CREATE TRIGGER screening_run_bounce_budget BEFORE INSERT ON screening_run FOR EACH ROW EXECUTE FUNCTION screening_run_bounce_budget();
+CREATE TRIGGER screening_run_mail_refusal BEFORE INSERT ON screening_run FOR EACH ROW EXECUTE FUNCTION screening_run_mail_refusal();
 
 -- A run is not claimed, completed or failed (each ends in an email) while the screening's mail is not sending (D7); it
 -- stays queued, or in pricing for the stale rule, until the stream is resumed and SES confirmed.
@@ -834,6 +894,32 @@ BEGIN
 END;
 $$;
 
+-- The screening's cut-off (Q9), in integer arithmetic: permanent bounces above 3% of its sends (floor 200), else
+-- complaints other than not_spam above 0.08% (floor 2,500), over the window (mail_window_counts()). Pauses the stream
+-- once; the reason when this call paused it, null otherwise. Read when a screening bounce or complaint is recorded and
+-- once each mail_events run, so a window that shrinks past the line is seen without a new event (review M9). Granted
+-- to no role.
+CREATE FUNCTION mail_stream_cutoff(request text) RETURNS text
+LANGUAGE plpgsql VOLATILE SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE
+  counted record;
+BEGIN
+  SELECT w.sends, w.bounces, w.complaints INTO counted FROM mail_window_counts('screening') w;
+  IF counted.bounces::bigint * 10000 > 300 * greatest(counted.sends, 200)::bigint THEN
+    RETURN CASE WHEN mail_stream_pause('bounce_rate', NULL, request) THEN 'bounce_rate' END;
+  ELSIF counted.complaints::bigint * 100000 > 80 * greatest(counted.sends, 2500)::bigint THEN
+    RETURN CASE WHEN mail_stream_pause('complaint_rate', NULL, request) THEN 'complaint_rate' END;
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
+-- The platform's mail_events job, once a run (tp_operator): the cut-off on the window as it stands now.
+CREATE FUNCTION operator_mail_cutoff(request text) RETURNS text
+LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT mail_stream_cutoff($1)
+$$;
+
 -- One SES event of one message, recorded once (D5 step 3). The first event seen creates the message's row; a later one
 -- moves its state only forward. When the state moves: a probe sets its stream's probe columns; a notice's recipient row
 -- takes the state, and the notice's or the invoice's first undelivered recipient is reported (notice_undelivered: the
@@ -860,7 +946,6 @@ DECLARE
   touched_notice uuid;
   touched_invoice uuid;
   touched_stage text;
-  counted record;
 BEGIN
   recorded := false;
   notice_undelivered := NULL;
@@ -879,9 +964,13 @@ BEGIN
   IF event = 'bounce' THEN
     given_bounce := CASE WHEN bounce_kind IN ('permanent', 'transient', 'undetermined') THEN bounce_kind ELSE 'undetermined' END;
     given_subtype := CASE WHEN bounce_subtype IN ('general', 'no_email', 'suppressed', 'on_account_suppression_list', 'on_configuration_set_suppression_list',
-                                                  'mailbox_full', 'message_too_large', 'content_rejected', 'attachment_rejected', 'other')
+                                                  'mailbox_full', 'message_too_large', 'content_rejected', 'attachment_rejected', 'undetermined', 'other')
                           THEN bounce_subtype ELSE 'other' END;
-    new_state := CASE WHEN given_subtype IN ('suppressed', 'on_account_suppression_list', 'on_configuration_set_suppression_list') THEN 'suppressed' ELSE 'bounced' END;
+    -- Suppressed by the account's own list (or a set's override of it, which only changes what goes on that list): SES
+    -- accepted the message, sent it to no one and counts it toward neither rate. A bounce from SES's global suppression
+    -- list (subtype suppressed: the address bounced recently for some sender) is counted toward the account's bounce rate
+    -- as any hard bounce is, so it is a bounce here too: the window, the refusal list and the bounce marks count it.
+    new_state := CASE WHEN given_subtype IN ('on_account_suppression_list', 'on_configuration_set_suppression_list') THEN 'suppressed' ELSE 'bounced' END;
   ELSIF event = 'complaint' THEN
     given_complaint := CASE WHEN complaint_type IS NULL THEN 'unspecified'
                             WHEN complaint_type IN ('abuse', 'auth_failure', 'fraud', 'not_spam', 'virus', 'other', 'unspecified') THEN complaint_type
@@ -994,16 +1083,7 @@ BEGIN
        WHERE v.marked IS NOT NULL
       ON CONFLICT DO NOTHING;
     END IF;
-    SELECT w.sends, w.bounces, w.complaints INTO counted FROM mail_window_counts('screening') w;
-    IF counted.bounces::bigint * 10000 > 300 * greatest(counted.sends, 200)::bigint THEN
-      IF mail_stream_pause('bounce_rate', NULL, request) THEN
-        stream_paused := 'bounce_rate';
-      END IF;
-    ELSIF counted.complaints::bigint * 100000 > 80 * greatest(counted.sends, 2500)::bigint THEN
-      IF mail_stream_pause('complaint_rate', NULL, request) THEN
-        stream_paused := 'complaint_rate';
-      END IF;
-    END IF;
+    stream_paused := mail_stream_cutoff(request);
   END IF;
   RETURN NEXT;
 END;
@@ -1103,6 +1183,8 @@ $$;
 -- 8. The console (tp_app; feature_flag.manage, as console_model_spend)
 -- ---------------------------------------------------------------------------------------------------
 
+-- Each stream as the console's mail page shows it. window_starts_at is where the window's counts start, the later of 7
+-- days ago and the last resume (mail_window_counts()), never a resume older than the 7 days the counts cover (review M8).
 CREATE FUNCTION console_mail_streams() RETURNS TABLE (stream text, paused_at timestamptz, paused_reason text, paused_by uuid, pause_sends integer,
   pause_bounces integer, pause_complaints integer, window_starts_at timestamptz, window_sends integer, window_bounces integer, window_complaints integer,
   resumed_at timestamptz, confirmed_at timestamptz, sending boolean, ready boolean, probe_sent_at timestamptz, probe_delivered_at timestamptz,
@@ -1113,7 +1195,7 @@ BEGIN
     RAISE EXCEPTION 'only a platform administrator reads the mail streams' USING ERRCODE = 'insufficient_privilege';
   END IF;
   RETURN QUERY
-    SELECT s.stream, s.paused_at, s.paused_reason, s.paused_by, s.pause_sends, s.pause_bounces, s.pause_complaints, s.window_starts_at,
+    SELECT s.stream, s.paused_at, s.paused_reason, s.paused_by, s.pause_sends, s.pause_bounces, s.pause_complaints, w.starts_at,
            w.sends, w.bounces, w.complaints, s.resumed_at, s.ses_enabled_confirmed_at,
            s.paused_at IS NULL AND s.ses_enabled_confirmed_at IS NOT NULL,
            s.paused_at IS NULL AND s.ses_enabled_confirmed_at IS NOT NULL
@@ -1393,6 +1475,23 @@ BEGIN
 END;
 $$;
 
+-- The web's check before it spends one of the day's address validations (review S4; D9): the refusal of an accepted
+-- upload's mail that submit_screening() would give, in its order, writing nothing: screening_closed (no release in
+-- force, or no split approved), screening_paused, screening_bounce_budget (the submitter's keyed subjects), then
+-- screening_contact_undeliverable (the address's mailbox); null when none applies. The submitter's budget comes before
+-- the address, as in the run's trigger (S1), so a client or an account past it learns nothing of the list here either.
+-- The triggers stay the backstop for a change between this read and the submission. Granted to tp_app.
+CREATE FUNCTION screening_submit_mail_refusal(email text, rate_account_subject text, client_subject text) RETURNS text
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT CASE
+           WHEN current_rule_release() IS NULL OR place_of_service_split_in_force() IS NULL
+                OR NOT EXISTS (SELECT 1 FROM rule_release r WHERE r.release_no = current_rule_release() AND r.manifest_sha256 IS NOT NULL) THEN 'screening_closed'
+           WHEN NOT EXISTS (SELECT 1 FROM mail_stream s WHERE s.stream = 'screening' AND s.paused_at IS NULL) THEN 'screening_paused'
+           WHEN screening_bounce_budget_spent($2, $3) THEN 'screening_bounce_budget'
+           WHEN screening_contact_refused($1) THEN 'screening_contact_undeliverable'
+         END
+$$;
+
 -- ---------------------------------------------------------------------------------------------------
 -- 10. The functions the outboxes replace
 -- ---------------------------------------------------------------------------------------------------
@@ -1410,17 +1509,19 @@ REVOKE ALL ON mail_recipient_key, mail_stream, mail_send, screening_mail_refusal
   support_grant_notice, support_grant_notice_recipient FROM PUBLIC;
 GRANT SELECT ON support_grant_notice, support_grant_notice_recipient TO tp_app;
 
-REVOKE ALL ON FUNCTION mail_recipient_sha256(text), mail_send_expiry(), mail_state_rank(text), mail_window_counts(text), screening_mail_sending(),
-  screening_mail_gate(), screening_mail_status(), screening_upload_mail_gate(), screening_run_bounce_budget(), screening_run_mail_gate(),
+REVOKE ALL ON FUNCTION mail_recipient_canonical(text), mail_recipient_sha256(text), mail_send_expiry(), mail_state_rank(text), mail_window_counts(text),
+  screening_mail_sending(), screening_mail_gate(), screening_mail_status(), screening_bounce_budget_spent(text, text), screening_contact_refused(text),
+  screening_submit_mail_refusal(text, text, text),
+  screening_upload_mail_gate(), screening_run_mail_refusal(), screening_run_mail_gate(),
   support_notice_administrators(uuid), support_notice_report_undelivered(uuid, text), support_notice_counts(uuid, text),
   operator_open_support_notice(uuid, text, text), operator_support_notices_pending(integer), operator_support_notice_claim(uuid, uuid),
   operator_support_notice_sent(uuid, uuid, text, text), operator_support_notice_failed(uuid, uuid, text, boolean, text), operator_due_support_notices(integer),
   dunning_notice_report_undelivered(uuid, text, text), billing_open_dunning_notice(uuid, text, text), billing_dunning_notices_pending(integer),
   billing_dunning_notice_claim(uuid, text, uuid), billing_dunning_notice_sent(uuid, text, uuid, text, text),
-  billing_dunning_notice_failed(uuid, text, uuid, text, boolean, text), mail_stream_pause(text, uuid, text),
+  billing_dunning_notice_failed(uuid, text, uuid, text, boolean, text), mail_stream_pause(text, uuid, text), mail_stream_cutoff(text),
   operator_record_mail_event(text, text, text, timestamptz, timestamptz, text, text, uuid, uuid, uuid, text, text, text, text),
-  operator_mail_account_signal(text, text), operator_mail_streams(), operator_mail_stream_confirmed(text, boolean), operator_mail_probe_sent(text),
-  operator_mail_expire(integer), console_mail_streams(), console_pause_mail_stream(text, text), console_resume_mail_stream(text, text),
+  operator_mail_account_signal(text, text), operator_mail_cutoff(text), operator_mail_streams(), operator_mail_stream_confirmed(text, boolean),
+  operator_mail_probe_sent(text), operator_mail_expire(integer), console_mail_streams(), console_pause_mail_stream(text, text), console_resume_mail_stream(text, text),
   console_mail_undelivered(timestamptz), console_support_grants(),
   submit_screening(text, text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], integer, integer, bigint,
     integer, bigint, bigint, text, text, text, text, text, text, text, text, timestamptz, text, text, text) FROM PUBLIC;
@@ -1428,12 +1529,12 @@ REVOKE ALL ON FUNCTION mail_recipient_sha256(text), mail_send_expiry(), mail_sta
 GRANT EXECUTE ON FUNCTION operator_open_support_notice(uuid, text, text), operator_support_notices_pending(integer), operator_support_notice_claim(uuid, uuid),
   operator_support_notice_sent(uuid, uuid, text, text), operator_support_notice_failed(uuid, uuid, text, boolean, text), operator_due_support_notices(integer),
   operator_record_mail_event(text, text, text, timestamptz, timestamptz, text, text, uuid, uuid, uuid, text, text, text, text),
-  operator_mail_account_signal(text, text), operator_mail_streams(), operator_mail_stream_confirmed(text, boolean), operator_mail_probe_sent(text),
-  operator_mail_expire(integer) TO tp_operator;
+  operator_mail_account_signal(text, text), operator_mail_cutoff(text), operator_mail_streams(), operator_mail_stream_confirmed(text, boolean),
+  operator_mail_probe_sent(text), operator_mail_expire(integer) TO tp_operator;
 GRANT EXECUTE ON FUNCTION billing_open_dunning_notice(uuid, text, text), billing_dunning_notices_pending(integer), billing_dunning_notice_claim(uuid, text, uuid),
   billing_dunning_notice_sent(uuid, text, uuid, text, text), billing_dunning_notice_failed(uuid, text, uuid, text, boolean, text) TO tp_billing;
-GRANT EXECUTE ON FUNCTION screening_mail_status(), console_mail_streams(), console_pause_mail_stream(text, text), console_resume_mail_stream(text, text),
-  console_mail_undelivered(timestamptz), console_support_grants(),
+GRANT EXECUTE ON FUNCTION screening_mail_status(), screening_submit_mail_refusal(text, text, text), console_mail_streams(), console_pause_mail_stream(text, text),
+  console_resume_mail_stream(text, text), console_mail_undelivered(timestamptz), console_support_grants(),
   submit_screening(text, text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], integer, integer, bigint,
     integer, bigint, bigint, text, text, text, text, text, text, text, text, timestamptz, text, text, text) TO tp_app;
 GRANT EXECUTE ON FUNCTION screening_mail_gate() TO tp_screening;

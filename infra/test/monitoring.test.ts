@@ -149,8 +149,8 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     // Worker: heartbeat, final job failures, pricing engine errors, model budget events. Platform:
     // heartbeat, final job failures. Screening: heartbeat, final job failures, the time to email, the oldest queued run,
     // failed runs. Web: failed sign-in bursts, model budget events, screening uploads sent to wait. Mail (docs/adr/0065):
-    // the platform's five codes and the web's validation cap.
-    expect(filters).toHaveLength(20);
+    // the platform's five codes, an unsent probe, and the web's refused validation and validation cap.
+    expect(filters).toHaveLength(22);
     const alarms = [
       stack.monitoring.screeningHeartbeatAlarm,
       stack.monitoring.screeningTimeToEmailAlarm,
@@ -168,6 +168,8 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       stack.uptime.apiAlarm,
       stack.uptime.certificateAlarm,
       ...Object.values(stack.monitoring.mailCodeAlarms),
+      stack.monitoring.mailProbeUnsentAlarm,
+      stack.monitoring.mailValidationRefusedAlarm,
       stack.monitoring.mailValidationCapAlarm,
       stack.mailStreams.accountBounceWarningAlarm,
       stack.mailStreams.accountBounceHighAlarm,

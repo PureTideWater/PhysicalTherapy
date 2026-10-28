@@ -51,7 +51,10 @@ const streamTest = test.extend<{ stream: undefined }>({
         await release();
       }
     },
-    { auto: true },
+    // Its own time: the lock waits while the cut-off journey holds the stream alone, which may take that journey's
+    // whole 240 seconds, and the wait would otherwise count against the test's default 30 before its own budget is set
+    // (CI runs the journeys in parallel, and a timeout there is a flaky failure, test matrix CI-07).
+    { auto: true, timeout: 240_000 },
   ],
 });
 
@@ -345,17 +348,25 @@ screeningTest('a specialist approves the split; a file with patient information 
     expect(small).toBe('0');
     // The prospect keeps how they heard of us, the cookie's codes and kind of click, and the firm; the outcome keeps
     // bands, the channel the database computed, the listed campaign and the release, never a name, email or ZIP (SCR-10, SCR-12).
+    // The consumer prices the upload as soon as the web sends its job, so it may be priced already: the outcome is read in
+    // one statement with its run's status, and its stage is the one that status gives (submit_screening writes it
+    // accepted; the completion moves the run to complete and the outcome to priced in one transaction). The next step
+    // reads it priced once the consumer has finished.
     const kept = await withDatabase(
       async (client) =>
         (
           await client.query<Record<string, unknown>>(
             `SELECT p.source, p.utm_source, p.utm_medium, p.utm_campaign, p.paid_click, p.referring_firm, o.stage, o.channel, o.campaign, o.row_band, o.left_out_band,
-                    o.release_no IS NOT NULL AS pinned, o.screened_month = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM') AS this_month, (to_jsonb(o) - 'id' - 'upload_id')::text AS outcome
-               FROM screening_prospect p JOIN screening_upload u ON u.prospect_id = p.id JOIN screening_outcome o ON o.upload_id = u.id WHERE p.contact_email = $1`,
+                    o.release_no IS NOT NULL AS pinned, o.screened_month = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM') AS this_month, (to_jsonb(o) - 'id' - 'upload_id')::text AS outcome,
+                    r.status AS run_status
+               FROM screening_prospect p JOIN screening_upload u ON u.prospect_id = p.id JOIN screening_outcome o ON o.upload_id = u.id JOIN screening_run r ON r.upload_id = u.id
+              WHERE p.contact_email = $1`,
             [CONTACT],
           )
         ).rows,
     );
+    const runStatus = kept[0]?.run_status;
+    expect(['queued', 'pricing', 'complete'], 'the run is waiting, being priced or complete').toContain(runStatus);
     expect(kept).toEqual([
       expect.objectContaining({
         source: 'billing_firm',
@@ -364,7 +375,7 @@ screeningTest('a specialist approves the split; a file with patient information 
         utm_campaign: CAMPAIGN,
         paid_click: 'paid_search',
         referring_firm: FIRM,
-        stage: 'accepted',
+        stage: runStatus === 'complete' ? 'priced' : 'accepted',
         channel: 'email',
         campaign: CAMPAIGN,
         row_band: '1_100',
@@ -381,6 +392,11 @@ screeningTest('a specialist approves the split; a file with patient information 
   let link = '';
   await test.step('the screening consumer prices it in its threads from the job the web sent, and emails the link alone, under the lockup without the tagline (SCR-02)', async () => {
     await expect.poll(() => outboxFor(CONTACT).length, { timeout: 90_000, intervals: [500] }).toBe(1);
+    // The consumer writes the email inside its completion's transaction and commits after the send returns, so the
+    // outbox's file can be there a moment before the run reads complete: the run is read once the consumer has finished.
+    await expect
+      .poll(async () => withDatabase(async (client) => (await client.query<{ status: string }>(`SELECT r.status FROM (${RUN_OF_CONTACT}) r`, [CONTACT])).rows[0]?.status), { timeout: 30_000, intervals: [250] })
+      .toBe('complete');
     // Priced through the queue, once: the run's screening_price job completed, at the normal tier's priority, and the
     // run kept when the web received the upload.
     const priced = await withDatabase(
@@ -396,6 +412,18 @@ screeningTest('a specialist approves the split; a file with patient information 
         ).rows,
     );
     expect(priced).toEqual([{ status: 'complete', attempts: 1, received: true, job_state: 'completed', job_priority: 0 }]);
+    // The counts-only outcome moved from accepted to priced with the completion, its figures the database's own bands.
+    const outcome = await withDatabase(
+      async (client) =>
+        (
+          await client.query<{ stage: string; engine: boolean; shares: boolean }>(
+            `SELECT o.stage, o.engine_version IS NOT NULL AS engine, o.priced_share_pct IS NOT NULL AND o.anomaly_band IS NOT NULL AS shares
+               FROM screening_prospect p JOIN screening_upload u ON u.prospect_id = p.id JOIN screening_outcome o ON o.upload_id = u.id WHERE p.contact_email = $1`,
+            [CONTACT],
+          )
+        ).rows,
+    );
+    expect(outcome).toEqual([{ stage: 'priced', engine: true, shares: true }]);
     const [message, ...more] = outboxFor(CONTACT);
     expect(more).toEqual([]);
     expect(message?.subject).toBe('Your screening is ready | PaidWhole');

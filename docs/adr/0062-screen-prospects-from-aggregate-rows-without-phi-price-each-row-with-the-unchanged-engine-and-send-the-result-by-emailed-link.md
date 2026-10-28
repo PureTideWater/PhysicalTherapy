@@ -1442,7 +1442,9 @@ is not sending: it waits, and is priced and emailed after the resume if that is 
 Every refused address, whatever refused it, gets one sentence, so the form says nothing about any earlier screening,
 and nothing about a customer's mail, which the refusal list never holds. No log line, issue or error names the address
 or its domain. The harness charges the checks' worst case on every upload, so the 60-second promise holds with them
-(the plan's G1; ADR 0065).
+(the plan's G1; ADR 0065): the web logs the checks' time with each stored upload's run (`screening address checked`,
+the run's ID and its milliseconds, never the address), and the harness's verdict fails an upload with no such line or
+one under 2 seconds, so it reads what the web measured, never the delay the harness gave its stand-ins (review M4).
 
 **The delivery state (D11; the plan's D9).** A prospect's delivery state is its result mail's record (`mail_send`,
 keyed to the prospect, set null when the prospect goes), not a column on the immutable prospect; PR 7 adds its read
@@ -1461,13 +1463,17 @@ marks.
 new screening (`screening_bounce_budget`), so one client or one email account cannot close the screening for everyone.
 
 **The wording (Q12, the recommended wording; counsel confirms it before the screening opens).** The new sentences a
-prospect reads, word for word:
+prospect reads, word for word, as the review of 2026-10-23 left them (its Wording section: the paused page and its
+refusal named one cause, undelivered mail, for every pause, though a pause also follows delivered mail reported as
+spam, the account's rates, SES's review or a person; the bounce budget said "this email account" where the account is
+a work address's domain, so a colleague at the practice was told their own address had failed; and what is kept said
+"never send to it again" of a hash that lapses after 12 months and refuses only a new screening):
 
-- the page while the stream is paused, under "New screenings are paused": "Too many of our recent result emails could
-  not be delivered, so we have stopped sending them while we fix it. Screenings uploaded before the pause are kept and
-  will be emailed when we resume, if that is within 30 days of the upload. Result links already sent still work.",
-  then "Meanwhile, you can request an audit.";
-- an upload that raced the pause: "New screenings are paused while we fix our result emails. Try again later.";
+- the page while the stream is paused, under "New screenings are paused": "We have paused new screenings while we
+  check that our result emails are reaching people. Screenings uploaded before the pause are kept, and their results
+  are emailed once we resume, if that is within 30 days of the upload. Result links already sent still work.", then
+  "Meanwhile, you can request an audit.";
+- an upload that raced the pause: "New screenings are paused for now. Try again later, or request an audit.";
 - every refused address: "We cannot send email to this address. Check it, or use another address.";
 - a mailbox SES could not confirm: "We could not confirm this mailbox exists. Check the address, or keep it as
   typed.";
@@ -1478,11 +1484,11 @@ prospect reads, word for word:
 - any other ending in no use: "This address ends in “.qqq”, which is not a domain ending in use. Check it, or keep it
   as typed.";
 - the box that keeps a questioned address: "Keep this address as typed";
-- the bounce budget: "Several recent screening results sent from this connection, or to this email account, could not
-  be delivered, so we cannot take another screening from it for up to 7 days. Check the email address, or request an
-  audit instead.";
+- the bounce budget: "Several recent screening results for this connection, or for this email address or its work
+  domain, could not be delivered, so we cannot take another screening from them for up to 7 days. Check the email
+  address, or request an audit instead.";
 - what is kept: "If email to the address you gave cannot be delivered, or is reported as spam, we keep a coded form of
-  it that cannot be read back as the address, for 12 months, only so that we never send to it again."
+  it, which cannot be turned back into the address, for 12 months, only to refuse another screening to that address."
 
 **What proves it.** `apps/web/src/lib/screening/address.test.ts` and `validation.test.ts` (the hints, the DNS
 verdicts, the validation table, the cap, the timeouts and the logs), `routes.db.test.ts` (paused and not ready closing

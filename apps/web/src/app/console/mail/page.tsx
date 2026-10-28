@@ -68,7 +68,10 @@ export default async function ConsoleMailPage(props: { readonly searchParams: Pr
                 {stream.pausedAt !== null
                   ? `Paused ${utc(stream.pausedAt)}: ${stream.pausedReason === null ? 'reason not recorded' : PAUSE_REASON_LABELS[stream.pausedReason]}.`
                   : stream.stream === 'screening'
-                    ? 'It pauses by itself past the cut-off (3% bounces over at least 200 sends, 0.08% complaints over at least 2,500, in 7 days), on the account’s warnings, or under an SES review.'
+                    ? // The cut-off as the database computes it (each rate over at least a floor of sends, in the window
+                      // mail_window_counts() reads), so the floor's own count of hard bounces or complaints pauses it (7
+                      // and 3), not only once that many sends exist.
+                      'It pauses by itself when more than 3% of its sends bounce permanently (counted over at least 200 sends, so 7 hard bounces pause it) or more than 0.08% are reported as spam (over at least 2,500, so 3 complaints pause it), within 7 days or since the last resume; on the account’s warnings; or under an SES review.'
                     : 'It never pauses: it alarms instead.'}
               </CardDescription>
             </CardHeader>
@@ -102,7 +105,9 @@ export default async function ConsoleMailPage(props: { readonly searchParams: Pr
                     <dd data-ready={stream.ready ? 'yes' : 'no'}>{stream.ready ? 'Yes: sending, confirmed, and both probes back within 48 hours' : 'No: staging and production keep the screening closed'}</dd>
                     <dt className="text-muted-foreground">Bounce marks (7 days)</dt>
                     <dd>
-                      <span className="font-mono tabular-nums">{stream.marks.client}</span> on clients, <span className="font-mono tabular-nums">{stream.marks.account}</span> on email accounts (3 refuse a fourth screening)
+                      {/* The account a mark is on is a work address's domain or a free-mail address's mailbox (rate.ts). */}
+                      <span className="font-mono tabular-nums">{stream.marks.client}</span> on clients, <span className="font-mono tabular-nums">{stream.marks.account}</span> on email domains or mailboxes (3 refuse
+                      a fourth screening)
                     </dd>
                   </>
                 ) : null}
@@ -117,6 +122,10 @@ export default async function ConsoleMailPage(props: { readonly searchParams: Pr
                   <FormKeys />
                   <input type="hidden" name="stream" value="screening" />
                   <SelectField label="Why it can resume" id="resume-reason" name="reason" required options={[{ value: '', label: 'Choose a reason' }, ...resumeReasons]} />
+                  {/* The mail_events job reads SES's enforcement every minute and pauses the stream again under a review. */}
+                  <p className="text-sm text-muted-foreground" data-copy="resume-review">
+                    If SES still has the account under review, the platform pauses it again within a minute.
+                  </p>
                 </ActionForm>
               )}
             </CardContent>

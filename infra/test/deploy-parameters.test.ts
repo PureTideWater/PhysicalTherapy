@@ -8,7 +8,7 @@ import { type AttestationReading, registryImageId, reportSha256, verifyReportAtt
 import { type Measurements, report } from '../../tools/screening-capacity/report';
 import { attestationOutput, releaseSigner } from '../../tools/screening-capacity/test-support/attestation';
 import { ADVISORY, ENFORCED, SYNTHETIC_COMMIT, SYNTHETIC_TAG, measured, onOwnCpus, scenario, upload, withS1 } from '../../tools/screening-capacity/test-support/measurements';
-import { MAIL_IDENTITIES_VERIFIED_CONDITION, NO_IMAGE, PARAMETER_NAMES, SCREENING_CLOSED, SCREENING_CONSUMER_STATES, SCREENING_LAUNCH_PATTERN, SCREENING_LAUNCH_RULE } from '../lib/deploy-parameters';
+import { MAIL_IDENTITIES_VERIFIED_CONDITION, NO_IMAGE, NO_VALIDATION_ROLE, PARAMETER_NAMES, SCREENING_CLOSED, SCREENING_CONSUMER_STATES, SCREENING_LAUNCH_PATTERN, SCREENING_LAUNCH_RULE } from '../lib/deploy-parameters';
 import { ENVIRONMENTS, type EnvironmentName } from '../lib/environments';
 import { DEPLOY_LAUNCH_READERS, LAUNCH_ATTESTATION_CONTEXT, LAUNCH_REPORT_CONTEXT, LAUNCH_TAG_CONTEXT, type LaunchReaders, type LaunchTarget, ecrImageReference } from '../lib/screening-launch';
 import { SYNTH_TIMEOUT_MS, resourcesOf, synthesizeAll, templateFor } from './synth';
@@ -68,14 +68,15 @@ describe.each(ENVIRONMENTS)('%s: deploy-time parameters', (environment) => {
     expect(own).not.toContain('ScreeningLaunch');
   });
 
-  it('has no default for anything but the image tag, which starts at none (no task runs), the consumer, which starts held, and the mail phase, which starts at 1', () => {
-    const defaulted: readonly string[] = [PARAMETER_NAMES.imageTag, PARAMETER_NAMES.screeningConsumer, PARAMETER_NAMES.mailIdentitiesVerified];
+  it('has no default for anything but the image tag, which starts at none (no task runs), the consumer, which starts held, the mail phase, which starts at 1, and the validation role, which starts at none', () => {
+    const defaulted: readonly string[] = [PARAMETER_NAMES.imageTag, PARAMETER_NAMES.screeningConsumer, PARAMETER_NAMES.mailIdentitiesVerified, PARAMETER_NAMES.mailValidationRoleArn];
     for (const name of Object.values(PARAMETER_NAMES).filter((candidate) => !defaulted.includes(candidate))) {
       expect(declared[name]?.Default, name).toBeUndefined();
     }
     expect(declared[PARAMETER_NAMES.imageTag]?.Default).toBe(NO_IMAGE);
     expect(declared[PARAMETER_NAMES.screeningConsumer]?.Default).toBe('held');
     expect(declared[PARAMETER_NAMES.mailIdentitiesVerified]?.Default).toBe('false');
+    expect(declared[PARAMETER_NAMES.mailValidationRoleArn]?.Default).toBe(NO_VALIDATION_ROLE);
     expect(json(templateFor(environment)).Conditions.Released).toEqual({ 'Fn::Not': [{ 'Fn::Equals': [{ Ref: PARAMETER_NAMES.imageTag }, NO_IMAGE] }] });
   });
 
@@ -114,6 +115,14 @@ describe.each(ENVIRONMENTS)('%s: deploy-time parameters', (environment) => {
     expect(matches(PARAMETER_NAMES.imageTag, 'v2027.1.0')).toBe(true);
     expect(matches(PARAMETER_NAMES.imageTag, NO_IMAGE)).toBe(true);
     expect(matches(PARAMETER_NAMES.imageTag, 'latest:sha256')).toBe(false);
+  });
+
+  it('takes the address-validation account\'s role as none or an IAM role\'s ARN, and nothing else (docs/adr/0065; review S3)', () => {
+    expect(matches(PARAMETER_NAMES.mailValidationRoleArn, NO_VALIDATION_ROLE)).toBe(true);
+    expect(matches(PARAMETER_NAMES.mailValidationRoleArn, 'arn:aws:iam::444455556666:role/tp-production-address-validation')).toBe(true);
+    for (const bad of ['', 'None', 'arn:aws:iam::444455556666:user/someone', 'arn:aws:iam::4444:role/x', 'arn:aws:sts::444455556666:assumed-role/x/y', '*']) {
+      expect(matches(PARAMETER_NAMES.mailValidationRoleArn, bad), bad).toBe(false);
+    }
   });
 
   it('takes the consumer’s state as held or running', () => {

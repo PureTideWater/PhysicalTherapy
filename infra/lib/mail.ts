@@ -97,9 +97,28 @@ export const MAIL_PLATFORM_ALARM_CODES = ['MAIL_STREAM_PAUSED', 'NOTICE_UNDELIVE
 export type MailPlatformAlarmCode = (typeof MAIL_PLATFORM_ALARM_CODES)[number];
 export const MAIL_PLATFORM_ALARM_PERIOD_SECONDS = 300;
 
+/**
+ * A probe the platform could not send (review M3). While a stream's probe is due, each minute's mail_events run tries
+ * it and, when the send throws, logs MAIL_PROBE_UNSENT and tries again on the next run. Nothing then comes back, but no
+ * probe is outstanding either, so MAIL_PROBE_MISSED never fires, and 48 hours after the last probe came back the
+ * stream is no longer ready: staging and production close the screening. Counted on the platform's log group and
+ * alarmed when each of three five-minute periods has one, so a send that fails once and goes on the next run pages no
+ * one, and a send that keeps failing pages within 15 minutes. The probes go a day apart, so that is about a day before
+ * readiness lapses.
+ */
+export const MAIL_PROBE_UNSENT_ALARM = { code: 'MAIL_PROBE_UNSENT', periodSeconds: 300, periods: 3 } as const;
+
 /** The web's code when a day's address validations reach the cap (Q1 (g)): counted and alarmed at one in a day. */
 export const MAIL_VALIDATION_CAP_CODE = 'MAIL_VALIDATION_CAP_REACHED';
 export const MAIL_VALIDATION_CAP_PERIOD_SECONDS = 86_400;
+
+/**
+ * The web's code when AWS refuses the address validation itself (review S3): STS refuses the address-validation
+ * account's role (its trust, or MailValidationRoleArn naming the wrong role) or SES refuses the role's call. Every
+ * address is then accepted on DNS alone until it is fixed, so it is counted and alarmed at one in five minutes.
+ */
+export const MAIL_VALIDATION_REFUSED_CODE = 'MAIL_VALIDATION_REFUSED';
+export const MAIL_VALIDATION_REFUSED_PERIOD_SECONDS = 300;
 
 /**
  * Codes logged as warnings with no alarm of their own: an unreadable event (it reaches the dead-letter queue, whose

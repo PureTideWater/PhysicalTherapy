@@ -2,12 +2,12 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `098636e38ff6def35686c53edee9b1e17b922c29` on branch `co-001/ss-01-suspension-refusal`, with uncommitted changes to its inputs (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Generated at commit `d763ba7860efe32d84998f8ebddbe293fc56de2c` on branch `co-001/ss-01-suspension-refusal`, with uncommitted changes to its inputs (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
 - Migrations applied: 46; head `20261108090000_suspension_refusal.sql`
 - PostgreSQL 18; schema `public`: 99 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
 - PHI flag: 47 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 40 organization- or user-scoped tables with RLS forced; 8 global tables
 - RLS: 91 tables ENABLE and FORCE row-level security; 0 enable without forcing; 8 have none (the global tables); 182 policies
-- Functions in `public`: 376 (171 SECURITY DEFINER); triggers: 276, none disabled or replica-only; rewrite rules on tables: none
+- Functions in `public`: 382 (173 SECURITY DEFINER); triggers: 276, none disabled or replica-only; rewrite rules on tables: none
 - Default privileges (ALTER DEFAULT PRIVILEGES): none
 - Roles (group roles; login roles are per environment and not listed): `tp_app`, `tp_billing`, `tp_esign`, `tp_job`, `tp_operator`, `tp_owner`, `tp_screening`; every relation is owned by `tp_owner`
 - Divergences from the Data dictionary: 23 to approve, 51 tables and 150 columns not in it (informational); see [Divergences from the Data dictionary](#divergences-from-the-data-dictionary)
@@ -5048,7 +5048,6 @@ Invariants enforced by triggers:
   - "a screening is kept until it expires, 30 days after its upload, or a later screening of the same practice replaces it"
 - `screening_upload_mail_gate`: `BEFORE INSERT ON screening_upload FOR EACH ROW WHEN (new.status = 'accepted'::text) EXECUTE FUNCTION screening_upload_mail_gate()`
   - "new screenings are paused while their result emails cannot be sent"
-  - "a screening's result cannot be emailed to its contact address"
 - `screening_upload_no_truncate`: `BEFORE TRUNCATE ON screening_upload FOR EACH STATEMENT EXECUTE FUNCTION reject_change()`
   - "% is append-only: % is refused"
 
@@ -5170,14 +5169,15 @@ Invariants enforced by constraints:
 - `screening_run_wait_reason`: `CHECK (wait_reason = ANY (ARRAY['account_share'::text, 'daily_cap'::text]))`
 
 Invariants enforced by triggers:
-- `screening_run_bounce_budget`: `BEFORE INSERT ON screening_run FOR EACH ROW EXECUTE FUNCTION screening_run_bounce_budget()`
-  - "too many recent screening emails from this sender could not be delivered"
 - `screening_run_client_subject_fixed`: `BEFORE UPDATE OF client_subject ON screening_run FOR EACH ROW WHEN (new.client_subject IS DISTINCT FROM old.client_subject) EXECUTE FUNCTION reject_change()`
   - "% is append-only: % is refused"
 - `screening_run_kept_until_expiry`: `BEFORE DELETE ON screening_run FOR EACH ROW EXECUTE FUNCTION screening_kept_until_expiry()`
   - "a screening is kept until it expires, 30 days after its upload, or a later screening of the same practice replaces it"
 - `screening_run_mail_gate`: `BEFORE UPDATE OF status ON screening_run FOR EACH ROW EXECUTE FUNCTION screening_run_mail_gate()`
   - "the screening's mail is not sending: the run waits"
+- `screening_run_mail_refusal`: `BEFORE INSERT ON screening_run FOR EACH ROW EXECUTE FUNCTION screening_run_mail_refusal()`
+  - "too many recent screening emails from this sender could not be delivered"
+  - "a screening's result cannot be emailed to its contact address"
 - `screening_run_no_truncate`: `BEFORE TRUNCATE ON screening_run FOR EACH STATEMENT EXECUTE FUNCTION reject_change()`
   - "% is append-only: % is refused"
 - `screening_run_rules`: `BEFORE UPDATE ON screening_run FOR EACH ROW EXECUTE FUNCTION screening_run_rules()`
@@ -6381,7 +6381,7 @@ Maintains `updated_at`: `mail_stream_updated_at`.
 | 6 | `screening_prospect_id` | `uuid` | null |  | `screening_prospect(id)` | `20261107090000` |  |
 | 7 | `state` | `text` | NOT NULL |  |  | `20261107090000` | one of sent, delayed, delivered, bounced, suppressed, rejected, complained |
 | 8 | `bounce_kind` | `text` | null |  |  | `20261107090000` | one of permanent, transient, undetermined |
-| 9 | `bounce_subtype` | `text` | null |  |  | `20261107090000` | one of general, no_email, suppressed, on_account_suppression_list, on_configuration_set_suppression_list, mailbox_full, message_too_large, content_rejected, attachment_rejected, other |
+| 9 | `bounce_subtype` | `text` | null |  |  | `20261107090000` | one of general, no_email, suppressed, on_account_suppression_list, on_configuration_set_suppression_list, mailbox_full, message_too_large, content_rejected, attachment_rejected, undetermined, other |
 | 10 | `complaint_type` | `text` | null |  |  | `20261107090000` | one of abuse, auth_failure, fraud, not_spam, virus, other, unspecified |
 | 11 | `sent_at` | `timestamp with time zone` | NOT NULL |  |  | `20261107090000` |  |
 | 12 | `delivered_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
@@ -6412,7 +6412,7 @@ Policies (1):
 Invariants enforced by constraints:
 - `mail_send_bounce`: `CHECK ((state = ANY (ARRAY['bounced'::text, 'suppressed'::text])) = (bounce_kind IS NOT NULL) AND (bounce_kind IS NULL) = (bounce_subtype IS NULL))`
 - `mail_send_bounce_kind`: `CHECK (bounce_kind = ANY (ARRAY['permanent'::text, 'transient'::text, 'undetermined'::text]))`
-- `mail_send_bounce_subtype`: `CHECK (bounce_subtype = ANY (ARRAY['general'::text, 'no_email'::text, 'suppressed'::text, 'on_account_suppression_list'::text, 'on_configuration_set_suppression_list'::text, 'mailbox_full'::text, 'message_too_large'::text, 'content_rejected'::text, 'attachment_rejected'::text, 'other'::text]))`
+- `mail_send_bounce_subtype`: `CHECK (bounce_subtype = ANY (ARRAY['general'::text, 'no_email'::text, 'suppressed'::text, 'on_account_suppression_list'::text, 'on_configuration_set_suppression_list'::text, 'mailbox_full'::text, 'message_too_large'::text, 'content_rejected'::text, 'attachment_rejected'::text, 'undetermined'::text, 'other'::text]))`
 - `mail_send_complaint`: `CHECK ((state = 'complained'::text) = (complaint_type IS NOT NULL))`
 - `mail_send_complaint_type`: `CHECK (complaint_type = ANY (ARRAY['abuse'::text, 'auth_failure'::text, 'fraud'::text, 'not_spam'::text, 'virus'::text, 'other'::text, 'unspecified'::text]))`
 - `mail_send_expiry_window`: `CHECK (expires_at > sent_at AND expires_at <= (sent_at + '91 days'::interval))`
@@ -6926,7 +6926,7 @@ Columns whose CHECK constraint admits a closed list of values: the column's own 
 | `mail_send.kind` | `cognito`, `digest`, `dunning`, `support_grant_opened`, `support_grant_closed`, `screening_result`, `screening_failed`, `screening_reminder`, `screening_withdrawal`, `probe` |
 | `mail_send.state` | `sent`, `delayed`, `delivered`, `bounced`, `suppressed`, `rejected`, `complained` |
 | `mail_send.bounce_kind` | `permanent`, `transient`, `undetermined` |
-| `mail_send.bounce_subtype` | `general`, `no_email`, `suppressed`, `on_account_suppression_list`, `on_configuration_set_suppression_list`, `mailbox_full`, `message_too_large`, `content_rejected`, `attachment_rejected`, `other` |
+| `mail_send.bounce_subtype` | `general`, `no_email`, `suppressed`, `on_account_suppression_list`, `on_configuration_set_suppression_list`, `mailbox_full`, `message_too_large`, `content_rejected`, `attachment_rejected`, `undetermined`, `other` |
 | `mail_send.complaint_type` | `abuse`, `auth_failure`, `fraud`, `not_spam`, `virus`, `other`, `unspecified` |
 | `screening_mail_refusal.reason` | `bounced`, `complained` |
 | `screening_bounce_mark.subject_kind` | `client`, `account` |
@@ -7014,7 +7014,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `console_approve_place_of_service_split(jsonb)` | `uuid` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `f330f4ac65a5e2e6` |
 | `console_contract_queue()` | `TABLE(practice_id uuid, name text, documents_awaiting bigint, drafts bigint, proposals_awaiting bigint, awaiting_sign_off bigint, open_questions bigint, regulations_awaiting bigint, support_grant_ends_at timestamp with time zone)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes | `34782bbb84bc92d2` |
 | `console_grants(uuid)` | `TABLE(grant_id uuid, organization_id uuid, practice_id uuid, scope jsonb, starts_at timestamp with time zone, ends_at timestamp with time zone, agreement_id uuid, approved_by_user_id uuid, revoked_at timestamp with time zone, created_at timestamp with time zone)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `99b8bdc1d3dee83b` |
-| `console_mail_streams()` | `TABLE(stream text, paused_at timestamp with time zone, paused_reason text, paused_by uuid, pause_sends integer, pause_bounces integer, pause_complaints integer, window_starts_at timestamp with time zone, window_sends integer, window_bounces integer, window_complaints integer, resumed_at timestamp with time zone, confirmed_at timestamp with time zone, sending boolean, ready boolean, probe_sent_at timestamp with time zone, probe_delivered_at timestamp with time zone, probe_bounced_at timestamp with time zone, client_marks integer, account_marks integer)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `8ca35dce4f520314` |
+| `console_mail_streams()` | `TABLE(stream text, paused_at timestamp with time zone, paused_reason text, paused_by uuid, pause_sends integer, pause_bounces integer, pause_complaints integer, window_starts_at timestamp with time zone, window_sends integer, window_bounces integer, window_complaints integer, resumed_at timestamp with time zone, confirmed_at timestamp with time zone, sending boolean, ready boolean, probe_sent_at timestamp with time zone, probe_delivered_at timestamp with time zone, probe_bounced_at timestamp with time zone, client_marks integer, account_marks integer)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `b178b66699759acf` |
 | `console_mail_undelivered(timestamp with time zone)` | `TABLE(stream text, kind text, state text, recipient_user_id uuid, practice_id uuid, subject_id uuid, undelivered_at timestamp with time zone, messages integer)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `2cf128abb1f398dd` |
 | `console_model_spend(date)` | `TABLE(practice_id uuid, organization_id uuid, name text, calls integer, spent_unrounded numeric)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes | `e376a7bc2663c81e` |
 | `console_pause_mail_stream(text,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `23619fe754a7ceb1` |
@@ -7073,11 +7073,13 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `line_status_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `6d34625159838cf3` |
 | `locality_status(integer,text,text,date,date)` | `TABLE(status text, carrier text, locality text)` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `93f19de141f69e25` |
 | `ma_dispute_route_confirmed()` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `b7b976b0230f8b43` |
-| `mail_recipient_sha256(text)` | `text` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `862d5e2d8906f26b` |
+| `mail_recipient_canonical(text)` | `text` | plpgsql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` |  |  | `3cd5ce229f5df323` |
+| `mail_recipient_sha256(text)` | `text` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `fe2c4d71acd96c24` |
 | `mail_send_expiry()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `3cd6d13742c65cc1` |
 | `mail_state_rank(text)` | `integer` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` |  |  | `72f7fbe980da4163` |
+| `mail_stream_cutoff(text)` | `text` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `fe3e57d4187593b9` |
 | `mail_stream_pause(text,uuid,text)` | `boolean` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `0e5bcfa22d6f3411` |
-| `mail_window_counts(text)` | `TABLE(sends integer, bounces integer, complaints integer)` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `4fc496298bfe8768` |
+| `mail_window_counts(text)` | `TABLE(starts_at timestamp with time zone, sends integer, bounces integer, complaints integer)` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `1207dd7886f86d3c` |
 | `maintenance_on()` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1a688a810ac58550` |
 | `marketing_campaign_kept(text)` | `text` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `fc3ead84269c9c23` |
 | `marketing_campaign_listed_only()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `918ae38efbc9e36e` |
@@ -7103,12 +7105,13 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `operator_assert_scope(uuid)` | `void` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `533c2fbe71370114` |
 | `operator_due_support_notices(integer)` | `TABLE(support_grant_id uuid, practice_id uuid, notice text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `80da21d02daeadaa` |
 | `operator_mail_account_signal(text,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `2684abb0a6c123b1` |
+| `operator_mail_cutoff(text)` | `text` | sql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `aec6c3e8b9262b47` |
 | `operator_mail_expire(integer)` | `integer` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `faa298581d4c5479` |
 | `operator_mail_probe_sent(text)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `eb2b3b2faa1ff637` |
 | `operator_mail_stream_confirmed(text,boolean)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `58a4b66cc84c84e4` |
 | `operator_mail_streams()` | `TABLE(stream text, paused boolean, confirmed boolean, probe_due boolean, probe_missed boolean)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `de3024995afee946` |
 | `operator_open_support_notice(uuid,text,text)` | `TABLE(notice_id uuid, recipients integer, opened boolean)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `dbbd884fcd0805f7` |
-| `operator_record_mail_event(text,text,text,timestamp with time zone,timestamp with time zone,text,text,uuid,uuid,uuid,text,text,text,text)` | `TABLE(recorded boolean, state text, notice_undelivered uuid, invoice_undelivered uuid, invitation_undelivered uuid, stream_paused text)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `3de0eeb78b63986f` |
+| `operator_record_mail_event(text,text,text,timestamp with time zone,timestamp with time zone,text,text,uuid,uuid,uuid,text,text,text,text)` | `TABLE(recorded boolean, state text, notice_undelivered uuid, invoice_undelivered uuid, invitation_undelivered uuid, stream_paused text)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `eda27a15443050cf` |
 | `operator_record_support_mail(text,text,text,text,text,text)` | `TABLE(outcome text, ticket_number bigint)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `2903a95e22531e32` |
 | `operator_screening_claim(uuid)` | `TABLE(release_no integer, release_manifest_sha256 text, release_available boolean, zip text, zip_plus_four text, settings jsonb, as_of date, row_count integer, attempt integer)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator, tp_screening |  | `a35a25f1df1aa1c8` |
 | `operator_screening_complete(uuid,text,text,text,text,integer)` | `TABLE(contact_email text, row_count integer, kept_with text, received_at timestamp with time zone, wait_reason text)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator, tp_screening |  | `8220d43ccceb8bb4` |
@@ -7244,6 +7247,8 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `rule_release_withdrawal_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `c0f7ed15484f7fd1` |
 | `run_starting_permissions()` | `text[]` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` |  |  | `532f9006e6ec8cf9` |
 | `screening_band_days(text)` | `daterange` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `f912bb8d6e15fdd1` |
+| `screening_bounce_budget_spent(text,text)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `3de7fd3276da7f3f` |
+| `screening_contact_refused(text)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `276bb32fa4777583` |
 | `screening_count_band(bigint)` | `text` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `3c43fb92e0243276` |
 | `screening_difference_band(bigint)` | `text` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `02bf48b2aefc21ae` |
 | `screening_freeze_lead(uuid,uuid,text,boolean,text)` | `uuid` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `0621e0dd445907d7` |
@@ -7276,12 +7281,13 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `screening_result_rows(text,integer)` | `TABLE(row_no integer, procedure_code text, modifiers text[], units integer, place_of_service text, payer_product text, service_band text, claim_count integer, observed_allowed_cents bigint, expected_line_cents bigint, expected_cents bigint, difference_cents bigint, in_reduction_pool boolean, reduced_line_cents bigint, reduced_cents bigint, reduced_difference_cents bigint, standing text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1fc6b8482bf8d179` |
 | `screening_result_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `740dacdcc9915f56` |
 | `screening_result_summary(text)` | `TABLE(run_id uuid, practice_name text, state text, zip text, release_no integer, engine_version text, created_at timestamp with time zone, expires_at timestamp with time zone, rows integer, claim_lines bigint, observed_cents bigint, priced_rows integer, priced_claim_lines bigint, expected_cents bigint, priced_observed_cents bigint, difference_cents bigint, pooled_rows integer, reduced_cents bigint, reduced_difference_cents bigint, contract_rows integer, contract_claim_lines bigint, contract_observed_cents bigint, not_screened_rows integer, not_screened_claim_lines bigint, not_screened_observed_cents bigint, unpriced_rows integer, unpriced_claim_lines bigint, unpriced_observed_cents bigint, left_out_rows integer, left_out_claim_lines bigint, left_out_observed_cents bigint, converted boolean, release_withdrawn boolean, kept_with text, outside_content_rows integer, outside_content_claim_lines bigint, outside_content_observed_cents bigint, zip_plus_four text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `fb9b9c255c87b3fd` |
-| `screening_run_bounce_budget()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `3e4ac16da6191d20` |
 | `screening_run_mail_gate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `d65ca371246a478f` |
+| `screening_run_mail_refusal()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `975f94b6061dd3a9` |
 | `screening_run_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `f15d5e31592d5d9e` |
 | `screening_standing(bigint,bigint,bigint,bigint)` | `text` | sql | invoker | immutable |  |  |  | `d8feb37d697d3992` |
 | `screening_status()` | `TABLE(release_no integer, place_of_service_split_id uuid)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `00660ad1e09bf1da` |
-| `screening_upload_mail_gate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `34c048190125ece9` |
+| `screening_submit_mail_refusal(text,text,text)` | `text` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `eadbe9312658ab5d` |
+| `screening_upload_mail_gate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `4bfa2e936ef0a8bb` |
 | `screening_wait(uuid)` | `TABLE(queue_priority smallint, wait_reason text, pricing integer, queued_ahead integer)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `8b60abe3ed17d2aa` |
 | `screening_wait_limits()` | `TABLE(account_rows integer, daily_rows integer)` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` |  |  | `9366f730bda41f40` |
 | `service_line_priced_in_effect(uuid)` | `uuid` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `25da75c9275ad787` |
@@ -7385,7 +7391,7 @@ Every migration applied to the database, from `schema_migrations`, with the SHA-
 | 42 | `20261104090000_free_screening.sql` | ADR 0062 | `8bc938ac54150a7d1d93255acb4610851b3d2bd85f37d6b7a521a6ed950b0a43` |
 | 43 | `20261105090000_pricing_location_and_zip_plus_four.sql` | ADR 0013, ADR 0017, ADR 0039, ADR 0040, ADR 0062, ADR 0064 | `2182a581fe94dde7667ef5561c12c8e78969c6c4bbbe3a406aff525edd9dc293` |
 | 44 | `20261106090000_screening_consumer.sql` | ADR 0014, ADR 0019, ADR 0049, ADR 0062 | `d6e449698132fa47d2f89ce7e27a96111efa27b1a258cde899576754f44e26b0` |
-| 45 | `20261107090000_mail_streams.sql` | ADR 0065 | `09fffbcc11af493d4df24d42e3d724a0d46e3841f76cd3c0740b7bb49a8a4f54` |
+| 45 | `20261107090000_mail_streams.sql` | ADR 0065 | `23767dd2eeeaf49ed086d75299b4a45b7325e784207c1aa14150756953496868` |
 | 46 | `20261108090000_suspension_refusal.sql` | ADR 0009, ADR 0050, ADR 0055, ADR 0080 | `42d1885de95b0763735a856698bdc7f72822a90a4132122954bb7ba3ee7ea0f9` |
 
 ## Cross-checks
@@ -7404,4 +7410,4 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 This document describes the schema at migration head `20261108090000_suspension_refusal.sql` (46 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1 and C5. It does not decide C2, C3 and C4, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: ________  Date: ________  Document SHA-256: `12b0e87d557359b0a390979e6ca28dc2b7c77979e4d2bb3cdd544d61a5e8b2c4`
+Approved by: ________  Date: ________  Document SHA-256: `6559c5b90af3d1249e80d9369da18885971e118fbd4411c4a6a5bb8775c2fadc`

@@ -21,13 +21,16 @@ import {
   MAIL_STATES,
   MAIL_STREAMS,
   MAIL_STREAM_KINDS,
+  MAIL_SUPPRESSION_SUBTYPES,
   NOTICE_RECIPIENT_STATES,
   NOTICE_RETRY_MINUTES,
   NOTIFICATION_KINDS,
   SCREENING_BOUNCE_MARK_KINDS,
   SUPPORT_GRANT_NOTICES,
 } from './schema';
+import { canonicalMailbox } from './mail-address';
 import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from './testing';
+import { MAILBOX_SPELLINGS } from './test-support/mailbox-spellings';
 
 /**
  * The mail streams, delivery recorded by message, the notices' outboxes and the screening's cut-off (audit #76; migration
@@ -193,7 +196,7 @@ async function streamRow(stream: string): Promise<Record<string, unknown>> {
 }
 
 async function windowCounts(): Promise<{ sends: number; bounces: number; complaints: number }> {
-  const { rows } = await owner.query<{ sends: number; bounces: number; complaints: number }>("SELECT * FROM mail_window_counts('screening')");
+  const { rows } = await owner.query<{ sends: number; bounces: number; complaints: number }>("SELECT sends, bounces, complaints FROM mail_window_counts('screening')");
   return rows[0] ?? { sends: -1, bounces: -1, complaints: -1 };
 }
 
@@ -365,6 +368,7 @@ describe('the mail tables and their grants (SEC-18)', () => {
 
   it('grants every function of the migration to exactly its role, sets each one’s search path, and drops the three the outboxes replace', async () => {
     const expected: Readonly<Record<string, { readonly definer: boolean; readonly grantees: readonly string[] }>> = {
+      'mail_recipient_canonical(text)': { definer: false, grantees: [] },
       'mail_recipient_sha256(text)': { definer: false, grantees: [] },
       'mail_send_expiry()': { definer: false, grantees: [] },
       'mail_state_rank(text)': { definer: false, grantees: [] },
@@ -373,8 +377,11 @@ describe('the mail tables and their grants (SEC-18)', () => {
       'screening_mail_sending()': { definer: false, grantees: [] },
       'screening_mail_gate()': { definer: true, grantees: [SCREENING_ROLE] },
       'screening_mail_status()': { definer: true, grantees: [APP_ROLE] },
+      'screening_submit_mail_refusal(text,text,text)': { definer: true, grantees: [APP_ROLE] },
       'screening_upload_mail_gate()': { definer: false, grantees: [] },
-      'screening_run_bounce_budget()': { definer: false, grantees: [] },
+      'screening_bounce_budget_spent(text,text)': { definer: false, grantees: [] },
+      'screening_contact_refused(text)': { definer: false, grantees: [] },
+      'screening_run_mail_refusal()': { definer: false, grantees: [] },
       'screening_run_mail_gate()': { definer: false, grantees: [] },
       'support_notice_administrators(uuid)': { definer: false, grantees: [] },
       'support_notice_report_undelivered(uuid,text)': { definer: false, grantees: [] },
@@ -391,6 +398,8 @@ describe('the mail tables and their grants (SEC-18)', () => {
         grantees: [OPERATOR_ROLE],
       },
       'operator_mail_account_signal(text,text)': { definer: true, grantees: [OPERATOR_ROLE] },
+      'operator_mail_cutoff(text)': { definer: true, grantees: [OPERATOR_ROLE] },
+      'mail_stream_cutoff(text)': { definer: false, grantees: [] },
       'operator_mail_streams()': { definer: true, grantees: [OPERATOR_ROLE] },
       'operator_mail_stream_confirmed(text,boolean)': { definer: true, grantees: [OPERATOR_ROLE] },
       'operator_mail_probe_sent(text)': { definer: true, grantees: [OPERATOR_ROLE] },
@@ -497,6 +506,28 @@ describe('the keyed hash of a screening address (Q11 (b); SEC-18)', () => {
     expect(await hash(given)).toBe(keyed);
   });
 
+  it('keys the mailbox an address reaches, not its spelling, by the TypeScript rule exactly (S2)', async () => {
+    const { rows } = await owner.query<{ given: string; canonical: string }>('SELECT g AS given, mail_recipient_canonical(g) AS canonical FROM unnest($1::text[]) g', [
+      MAILBOX_SPELLINGS.map(([given]) => given),
+    ]);
+    expect(rows.map((row) => [row.given, row.canonical])).toEqual(MAILBOX_SPELLINGS.map(([given, mailbox]) => [given, mailbox]));
+    for (const row of rows) {
+      expect(row.canonical, JSON.stringify(row.given)).toBe(canonicalMailbox(row.given));
+    }
+    // The keyed hash is of the mailbox: one hash for its every spelling, and the pepper and the canonical mailbox are
+    // all it hashes.
+    const hash = async (value: string) => (await owner.query<{ h: string }>('SELECT mail_recipient_sha256($1) AS h', [value])).rows[0]?.h;
+    const pepper = (await owner.query<{ pepper: string }>('SELECT pepper FROM mail_recipient_key')).rows[0]?.pepper ?? '';
+    const mailbox = await hash('synthetic.keyed@gmail.com');
+    for (const spelling of ['SyntheticKeyed@gmail.com', ' synthetic.keyed+screening@GoogleMail.com. ', 's.y.n.t.h.e.t.i.c.k.e.y.e.d@gmail.com']) {
+      expect(await hash(spelling), spelling).toBe(mailbox);
+    }
+    expect(mailbox).toBe(createHash('sha256').update(Buffer.concat([Buffer.from(pepper, 'hex'), Buffer.from('synthetickeyed@gmail.com', 'utf8')])).digest('hex'));
+    // Dots name another mailbox off gmail.com.
+    expect(await hash('synthetic.keyed@workspace.synthetic.test')).not.toBe(await hash('synthetickeyed@workspace.synthetic.test'));
+    expect(await hash('synthetic.keyed+x@workspace.synthetic.test')).toBe(await hash('synthetic.keyed@workspace.synthetic.test'));
+  });
+
   it('names no address in any error a mail function raises', async () => {
     const given = address('error.text');
     const failures: unknown[] = [];
@@ -546,12 +577,18 @@ describe('an event, recorded once per message, in any order (JOB-05)', () => {
       await owner.query('SELECT state, bounce_kind, bounce_subtype, sent_at, extract(day FROM expires_at - sent_at)::int AS kept FROM mail_send WHERE ses_message_id = $1', [early.message])
     ).rows;
     expect(bounced).toEqual([{ state: 'bounced', bounce_kind: 'transient', bounce_subtype: 'mailbox_full', sent_at: sentAt, kept: MAIL_SEND_DAYS.screening }]);
-    // An unknown subtype is other; a suppression subtype is suppressed; a rejection and a rendering failure are rejected.
+    // An unknown subtype is other; the account's or a set's suppression is suppressed, every other subtype (the global
+    // suppression list's included) bounced; a rejection and a rendering failure are rejected.
     expect(await record(screeningEvent('bounce', { bounceKind: 'permanent', bounceSubtype: 'new_in_ses' }))).toMatchObject({ state: 'bounced' });
-    expect(await record(screeningEvent('bounce', { bounceKind: 'permanent', bounceSubtype: 'on_account_suppression_list' }))).toMatchObject({ state: 'suppressed' });
+    for (const subtype of MAIL_BOUNCE_SUBTYPES) {
+      expect((await record(screeningEvent('bounce', { bounceKind: 'permanent', bounceSubtype: subtype }))).state, subtype).toBe(
+        MAIL_SUPPRESSION_SUBTYPES.includes(subtype) ? 'suppressed' : 'bounced',
+      );
+    }
+    expect(MAIL_SUPPRESSION_SUBTYPES).toEqual(['on_account_suppression_list', 'on_configuration_set_suppression_list']);
     expect(await record(screeningEvent('reject'))).toMatchObject({ state: 'rejected' });
     expect(await record(screeningEvent('rendering_failure'))).toMatchObject({ state: 'rejected' });
-    expect((await owner.query("SELECT count(*)::int AS n FROM mail_send WHERE bounce_subtype = 'other'")).rows).toEqual([{ n: 1 }]);
+    expect((await owner.query("SELECT count(*)::int AS n FROM mail_send WHERE bounce_subtype = 'other'")).rows).toEqual([{ n: 2 }]);
   });
 
   it('refuses an event its stream does not carry, a screening message naming a user, and an unknown event', async () => {
@@ -602,39 +639,76 @@ describe('the screening stream’s cut-off (SCR-21; the founder’s Q9)', () => 
     expect(await auditCount('mail_stream_paused')).toBe(before);
   });
 
-  it('counts a permanent bounce of every subtype that reached a mailbox, never a suppression, a transient or undetermined bounce, a not_spam complaint, a probe or a send before the window', async () => {
+  it('counts a permanent bounce of every subtype SES counts toward the account’s bounce rate, the global suppression list’s among them, never the account’s or the set’s suppression, a transient or undetermined bounce, a not_spam complaint, a probe or a send before the window', async () => {
     await resetScreening();
     const expectCounts = async (sends: number, bounces: number, complaints: number) => expect(await windowCounts()).toEqual({ sends, bounces, complaints });
     for (const subtype of ['general', 'no_email', 'other']) {
       await record(screeningEvent('bounce', { bounceKind: 'permanent', bounceSubtype: subtype }));
     }
     await expectCounts(3, 3, 0);
-    for (const subtype of ['suppressed', 'on_account_suppression_list', 'on_configuration_set_suppression_list']) {
+    // SES's global suppression list (Permanent/Suppressed: the address bounced recently for any sender) counts toward the
+    // account's bounce rate as any hard bounce does, so it is a bounce here too (M2).
+    expect(await record(screeningEvent('bounce', { bounceKind: 'permanent', bounceSubtype: 'suppressed' }))).toMatchObject({ state: 'bounced' });
+    await expectCounts(4, 4, 0);
+    // The account's own list, and a set's override of it: SES did not send, and counts it toward no rate.
+    for (const subtype of ['on_account_suppression_list', 'on_configuration_set_suppression_list']) {
       expect(await record(screeningEvent('bounce', { bounceKind: 'permanent', bounceSubtype: subtype }))).toMatchObject({ state: 'suppressed' });
     }
-    await expectCounts(3, 3, 0);
+    await expectCounts(4, 4, 0);
     for (const [kind, subtype] of [
       ['transient', 'mailbox_full'],
       ['transient', 'message_too_large'],
       ['transient', 'content_rejected'],
       ['transient', 'attachment_rejected'],
-      ['undetermined', 'other'],
+      ['undetermined', 'undetermined'],
       ['undetermined', 'mailbox_full'],
     ]) {
       await record(screeningEvent('bounce', { bounceKind: kind, bounceSubtype: subtype }));
     }
-    await expectCounts(9, 3, 0);
+    await expectCounts(10, 4, 0);
+    // SES's Undetermined/Undetermined is kept as SES names it.
+    expect((await owner.query("SELECT count(*)::int AS n FROM mail_send WHERE stream = 'screening' AND bounce_kind = 'undetermined' AND bounce_subtype = 'undetermined'")).rows).toEqual([{ n: 1 }]);
     await record(screeningEvent('complaint', { complaintType: 'not_spam' }));
-    await expectCounts(10, 3, 0);
+    await expectCounts(11, 4, 0);
     await record(screeningEvent('complaint', { complaintType: 'abuse' }));
-    await expectCounts(11, 3, 1);
+    await expectCounts(12, 4, 1);
     await record({ ...screeningEvent('bounce', { bounceKind: 'permanent', bounceSubtype: 'general' }), kind: 'probe', subject: null });
-    await expectCounts(11, 3, 1);
+    await expectCounts(12, 4, 1);
     // A send before the window starts (the last resume) is outside it.
     await record(screeningEvent('bounce', { bounceKind: 'permanent', bounceSubtype: 'general', mailAt: new Date(Date.now() - 40 * 24 * 3600_000) }));
-    await expectCounts(11, 3, 1);
+    await expectCounts(12, 4, 1);
     await owner.query("UPDATE mail_stream SET window_starts_at = now() WHERE stream = 'screening'");
     await expectCounts(0, 0, 0);
+  });
+
+  it('pauses on the window alone when the platform’s mail_events run asks, so a window that shrinks past the line is seen without a new bounce (M9)', async () => {
+    const cutoff = async () => (await as<{ paused: string | null }>(OPERATOR_ROLE, 'SELECT operator_mail_cutoff($1) AS paused', [request()]))[0]?.paused;
+    // Under the line: nothing.
+    await resetScreening();
+    await seedScreening(144, 6, 0);
+    expect(await cutoff()).toBeNull();
+    expect(await streamRow('screening')).toMatchObject({ paused_at: null });
+    // A window that shrank: 600 sends of 8 days ago leave it, and 29 bounces of 400 sends stay (7.25%).
+    await resetScreening();
+    await owner.query(
+      `INSERT INTO mail_send (ses_message_id, stream, kind, subject_id, state, sent_at)
+       SELECT 'old' || replace(gen_random_uuid()::text, '-', ''), 'screening', 'screening_result', gen_random_uuid(), 'delivered', now() - interval '8 days'
+         FROM generate_series(1, 600)`,
+    );
+    await seedScreening(371, 29, 0);
+    const before = await auditCount('mail_stream_paused', null, 'bounce_rate');
+    expect(await cutoff()).toBe('bounce_rate');
+    expect(await streamRow('screening')).toMatchObject({ paused_reason: 'bounce_rate', paused_by: null, pause_sends: 400, pause_bounces: 29, ses_enabled_confirmed_at: null });
+    expect(await auditCount('mail_stream_paused', null, 'bounce_rate')).toBe(before + 1);
+    // Once: paused already, a second run pauses nothing again.
+    expect(await cutoff()).toBeNull();
+    expect(await auditCount('mail_stream_paused', null, 'bounce_rate')).toBe(before + 1);
+    // Complaints the same way, by the same rule as an event's.
+    await resetScreening();
+    await seedScreening(97, 0, 3);
+    expect(await cutoff()).toBe('complaint_rate');
+    // Only the platform's role may ask.
+    expect(await code(as(APP_ROLE, 'SELECT operator_mail_cutoff($1)', [request()]))).toBe('42501');
   });
 
   it('pauses the screening alone on the account’s signals, once, and never pauses the other streams, whatever their bounces', async () => {
@@ -786,8 +860,8 @@ describe('break-glass notices from a recorded outbox (SEC-19; D10)', () => {
       bounceSubtype: subtype,
     });
     expect(await record(event(world.adminUserId, 'delivery'))).toMatchObject({ recorded: true, state: 'delivered', notice_undelivered: null });
-    expect(await record(event(secondAdmin, 'bounce', 'suppressed'))).toMatchObject({ recorded: true, state: 'suppressed', notice_undelivered: grant });
-    expect(await record(event(secondAdmin, 'bounce', 'suppressed'))).toMatchObject({ recorded: false, notice_undelivered: null });
+    expect(await record(event(secondAdmin, 'bounce', 'on_account_suppression_list'))).toMatchObject({ recorded: true, state: 'suppressed', notice_undelivered: grant });
+    expect(await record(event(secondAdmin, 'bounce', 'on_account_suppression_list'))).toMatchObject({ recorded: false, notice_undelivered: null });
     expect(await auditCount('notice_undelivered', grant, 'support_grant_opened')).toBe(1);
     expect(await notifications(notice)).toEqual(
       [world.adminUserId, secondAdmin].sort().map((user) => ({ user_id: user, practice_id: world.practiceId, counts: {}, totals_cents: {} })),
@@ -1003,6 +1077,48 @@ describe('invitations flagged by their own message alone (D10)', () => {
   });
 });
 
+describe('a message SES accepted and never sent: the address on the account’s suppression list (M1)', () => {
+  // The mail_events job reads SES's Complaint of subtype OnAccountSuppressionList, and its Bounce of that subtype, as
+  // this suppressed bounce (apps/worker/src/mail/events.ts): undelivered on every customer stream, counted on none.
+  const suppressed = { event: 'bounce', bounceKind: 'permanent', bounceSubtype: 'on_account_suppression_list' } as const;
+
+  it('reads undelivered for a dunning notice and an invitation, and for the screening counts toward nothing and refuses no address', async () => {
+    const invoice = await invoiceFor(world.organizationId);
+    expect((await as<{ recipients: number }>(BILLING_ROLE, 'SELECT recipients FROM billing_open_dunning_notice($1, $2, $3)', [invoice, 'payment_failed', request()]))[0]).toEqual({ recipients: 2 });
+    const message = messageId();
+    await inTransaction(BILLING_ROLE, {}, async (client) => {
+      await client.query('SELECT email FROM billing_dunning_notice_claim($1, $2, $3)', [invoice, 'payment_failed', world.adminUserId]);
+      await client.query('SELECT billing_dunning_notice_sent($1, $2, $3, $4, $5)', [invoice, 'payment_failed', world.adminUserId, message, request()]);
+    });
+    expect(await record({ ...suppressed, message, stream: 'notices', kind: 'dunning', subject: invoice, recipientUser: world.adminUserId })).toMatchObject({
+      recorded: true,
+      state: 'suppressed',
+      invoice_undelivered: invoice,
+    });
+    expect((await owner.query('SELECT state FROM dunning_notice_recipient WHERE ses_message_id = $1', [message])).rows).toEqual([{ state: 'suppressed' }]);
+    expect(await auditCount('notice_undelivered', invoice, 'payment_failed')).toBe(1);
+    // An invitation's Cognito message.
+    const user = await createUser(owner, { status: 'invited', mfaEnrolled: false });
+    const membership = await addMembership(owner, world.organizationId, user, 'viewer');
+    const { rows } = await owner.query<{ id: string }>(
+      `INSERT INTO invitation (organization_id, membership_id, user_id, invited_by, sent_at, expires_at, last_sent_by)
+       VALUES ($1, $2, $3, $4, now() - interval '1 minute', now() - interval '1 minute' + interval '7 days', $4) RETURNING id`,
+      [world.organizationId, membership, user, world.adminUserId],
+    );
+    expect(await record({ ...suppressed, message: messageId(), stream: 'transactional', kind: 'cognito', recipient: `${user}@synthetic.test` })).toMatchObject({
+      state: 'suppressed',
+      invitation_undelivered: rows[0]?.id,
+    });
+    expect((await owner.query('SELECT undelivered_reason FROM invitation WHERE id = $1', [rows[0]?.id])).rows).toEqual([{ undelivered_reason: 'suppressed' }]);
+    // The screening: no send, no bounce, no refusal and no mark (SES counts it toward neither rate).
+    await resetScreening();
+    const neverSent = address('never.sent');
+    expect(await record(screeningEvent('bounce', { ...suppressed, recipient: neverSent }))).toMatchObject({ state: 'suppressed', stream_paused: null });
+    expect(await windowCounts()).toEqual({ sends: 0, bounces: 0, complaints: 0 });
+    expect((await owner.query('SELECT count(*)::int AS n FROM screening_mail_refusal WHERE recipient_sha256 = mail_recipient_sha256($1)', [neverSent])).rows).toEqual([{ n: 0 }]);
+  });
+});
+
 describe('the console’s mail reads (feature_flag.manage)', () => {
   it('shows the streams and the recent undelivered customer messages to a platform administrator alone, the screening’s counted, never listed', async () => {
     await resetScreening();
@@ -1020,6 +1136,13 @@ describe('the console’s mail reads (feature_flag.manage)', () => {
       { stream: 'screening', sending: true, window_sends: 1, window_bounces: 1, client_marks: 0, account_marks: 0 },
       { stream: 'transactional', sending: true, window_sends: expect.any(Number) as unknown, window_bounces: expect.any(Number) as unknown, client_marks: 0, account_marks: 0 },
     ]);
+    // Where the window's counts start (M8): the later of 7 days ago and the last resume, never a resume older than that.
+    const since = async () =>
+      (await read(platformAdmin, "SELECT round(extract(epoch FROM now() - window_starts_at) / 60)::int AS minutes FROM console_mail_streams() WHERE stream = 'screening'"))[0]?.minutes;
+    expect(await since()).toBe(7 * 24 * 60);
+    await owner.query("UPDATE mail_stream SET window_starts_at = now() - interval '2 days' WHERE stream = 'screening'");
+    expect(await since()).toBe(2 * 24 * 60);
+    expect((await owner.query<{ starts: number }>("SELECT round(extract(epoch FROM now() - starts_at) / 60)::int AS starts FROM mail_window_counts('screening')")).rows).toEqual([{ starts: 2 * 24 * 60 }]);
     const undelivered = await read(platformAdmin, "SELECT stream, kind, state, recipient_user_id, subject_id, messages FROM console_mail_undelivered(now() - interval '1 hour')");
     expect(undelivered).toContainEqual({ stream: 'screening', kind: 'screening_result', state: 'bounced', recipient_user_id: null, subject_id: null, messages: 1 });
     expect(undelivered.filter((row) => row.stream === 'screening')).toHaveLength(1);

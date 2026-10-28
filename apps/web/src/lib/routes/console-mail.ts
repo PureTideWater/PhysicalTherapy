@@ -26,6 +26,7 @@ export interface MailStreamView {
   readonly pausedAt: Date | null;
   readonly pausedReason: MailPauseReason | null;
   readonly pauseCounts: { readonly sends: number; readonly bounces: number; readonly complaints: number } | null;
+  /** Where the window's counts start: the later of 7 days ago and the last resume (console_mail_streams()). */
   readonly windowStartsAt: Date | null;
   readonly window: { readonly sends: number; readonly bounces: number; readonly complaints: number };
   readonly resumedAt: Date | null;

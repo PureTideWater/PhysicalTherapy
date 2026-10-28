@@ -14,11 +14,14 @@ import {
   MAIL_NAMESPACE,
   MAIL_PLATFORM_ALARM_CODES,
   MAIL_PLATFORM_ALARM_PERIOD_SECONDS,
+  MAIL_PROBE_UNSENT_ALARM,
   MAIL_SIMULATOR_RECIPIENTS,
   MAIL_STREAMS,
   MAIL_VALIDATION_CAP_CODE,
   MAIL_VALIDATION_CAP_PERIOD_SECONDS,
   MAIL_VALIDATION_DAILY_CAP,
+  MAIL_VALIDATION_REFUSED_CODE,
+  MAIL_VALIDATION_REFUSED_PERIOD_SECONDS,
   MAIL_WARNING_CODES,
   REPUTATION_PERIOD_SECONDS,
   SET_REPUTATION_ALARMS,
@@ -55,7 +58,7 @@ function sources(directory: string): string {
 /**
  * The mail streams (audit #76; docs/adr/0065; the founder's rulings of 2026-10-21, Q1 and Q9 to Q12; test matrix SCR-21,
  * SEC-18 and JOB-05): three SES configuration sets, two stack-owned identities in two phases, the event path into one
- * encrypted queue, the cut-off that can pause only the screening stream, and the fifteen alarms.
+ * encrypted queue, the cut-off that can pause only the screening stream, and the seventeen alarms.
  */
 describe('the mail streams\' names and codes match the worker\'s and the web\'s', () => {
   it('names the same three streams as the database\'s closed list', () => {
@@ -77,14 +80,17 @@ describe('the mail streams\' names and codes match the worker\'s and the web\'s'
 
   it('counts the codes the platform jobs log, and the web\'s, and alarms on none of the warnings', () => {
     const worker = sources('apps/worker/src');
-    for (const code of [...MAIL_PLATFORM_ALARM_CODES, 'MAIL_EVENT_UNREADABLE']) {
+    for (const code of [...MAIL_PLATFORM_ALARM_CODES, MAIL_PROBE_UNSENT_ALARM.code, 'MAIL_EVENT_UNREADABLE']) {
       expect(worker, code).toContain(`'${code}'`);
     }
+    // An unsendable probe is logged on each minute's run while the probe is due, and the next run tries again.
+    expect(source('apps/worker/src/platform/mail-events.ts')).toContain(`error_code: '${MAIL_PROBE_UNSENT_ALARM.code}'`);
     const web = source('apps/web/src/lib/screening/validation.ts') + source('apps/web/src/lib/screening/address.ts');
-    for (const code of [MAIL_VALIDATION_CAP_CODE, 'MAIL_DOMAIN_CHECK_UNAVAILABLE', 'MAIL_VALIDATION_UNAVAILABLE']) {
+    for (const code of [MAIL_VALIDATION_CAP_CODE, MAIL_VALIDATION_REFUSED_CODE, 'MAIL_DOMAIN_CHECK_UNAVAILABLE', 'MAIL_VALIDATION_UNAVAILABLE']) {
       expect(web, code).toContain(`'${code}'`);
     }
-    expect(MAIL_WARNING_CODES.filter((code) => (MAIL_PLATFORM_ALARM_CODES as readonly string[]).includes(code))).toEqual([]);
+    const alarmed: readonly string[] = [...MAIL_PLATFORM_ALARM_CODES, MAIL_PROBE_UNSENT_ALARM.code, MAIL_VALIDATION_CAP_CODE, MAIL_VALIDATION_REFUSED_CODE];
+    expect(MAIL_WARNING_CODES.filter((code) => alarmed.includes(code))).toEqual([]);
   });
 
   it('caps the web\'s address validations at the founder\'s numbers, and the web reads the cap the task is given', () => {
@@ -303,14 +309,15 @@ describe.each(ENVIRONMENTS)('%s: mail streams', (environment) => {
     });
   });
 
-  it('counts each platform mail code and the web\'s validation cap from the logs, by the code alone, and alarms at one (six filters)', () => {
+  it('counts each platform mail code, an unsent probe and the web\'s refused validation and validation cap from the logs, by the code alone (eight filters)', () => {
     const filters = resourcesOf(template, 'AWS::Logs::MetricFilter').filter(([, filter]) => JSON.stringify(propertiesOf(filter).MetricTransformations).includes(MAIL_NAMESPACE));
-    expect(filters).toHaveLength(6);
+    expect(filters).toHaveLength(8);
     const platform = ref(logicalIdOf(stack, stack.monitoring.platformLogGroup));
     const web = ref(logicalIdOf(stack, stack.monitoring.webLogGroup));
     const expected = [
       ...MAIL_PLATFORM_ALARM_CODES.map((code) => ({ code, group: platform, alarm: stack.monitoring.mailCodeAlarms[code], period: MAIL_PLATFORM_ALARM_PERIOD_SECONDS })),
       { code: MAIL_VALIDATION_CAP_CODE, group: web, alarm: stack.monitoring.mailValidationCapAlarm, period: MAIL_VALIDATION_CAP_PERIOD_SECONDS },
+      { code: MAIL_VALIDATION_REFUSED_CODE, group: web, alarm: stack.monitoring.mailValidationRefusedAlarm, period: MAIL_VALIDATION_REFUSED_PERIOD_SECONDS },
     ];
     for (const { code, group, alarm, period } of expected) {
       const metricName = mailCodeMetricName(code);
@@ -332,14 +339,48 @@ describe.each(ENVIRONMENTS)('%s: mail streams', (environment) => {
       });
     }
     expect(MAIL_VALIDATION_CAP_PERIOD_SECONDS).toBe(86_400);
+    // A refused validation refuses every address after it: at once (review S3).
+    expect(MAIL_VALIDATION_REFUSED_PERIOD_SECONDS).toBe(300);
+    expect(source('apps/web/src/lib/screening/validation.ts')).toContain(`validationRefused: '${MAIL_VALIDATION_REFUSED_CODE}'`);
   });
 
-  it('has fifteen mail alarms', () => {
+  it('alarms when a probe could not be sent in each of three five-minute periods, long before a stream\'s readiness lapses at 48 hours (review M3)', () => {
+    const metricName = mailCodeMetricName(MAIL_PROBE_UNSENT_ALARM.code);
+    expect(metricName).toBe('MailProbeUnsent');
+    const filter = resourcesOf(template, 'AWS::Logs::MetricFilter').find(([, candidate]) => JSON.stringify(propertiesOf(candidate).MetricTransformations).includes(`"MetricName":"${metricName}"`));
+    expect(filter).toBeDefined();
+    expect(propertiesOf((filter as [string, CfnResource])[1])).toEqual({
+      LogGroupName: ref(logicalIdOf(stack, stack.monitoring.platformLogGroup)),
+      FilterPattern: `{ $.error_code = "${MAIL_PROBE_UNSENT_ALARM.code}" }`,
+      MetricTransformations: [{ MetricNamespace: MAIL_NAMESPACE, MetricName: metricName, MetricValue: '1', Unit: 'Count' }],
+    });
+    const unsent = propertiesOf(resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.mailProbeUnsentAlarm)));
+    expect(unsent).toMatchObject({
+      Namespace: MAIL_NAMESPACE,
+      MetricName: metricName,
+      Statistic: 'Sum',
+      Period: 300,
+      EvaluationPeriods: 3,
+      DatapointsToAlarm: 3,
+      Threshold: 1,
+      ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+      TreatMissingData: 'notBreaching',
+      AlarmActions: [ref(logicalIdOf(stack, stack.monitoring.operatorTopic))],
+    });
+    expect(unsent.Dimensions).toBeUndefined();
+    // The probes go a day apart and readiness lapses 48 hours after the last one came back: the alarm's 15 minutes of
+    // failed sends leave the operator about a day.
+    expect(MAIL_PROBE_UNSENT_ALARM).toEqual({ code: 'MAIL_PROBE_UNSENT', periodSeconds: 300, periods: 3 });
+    expect(MAIL_PROBE_UNSENT_ALARM.periodSeconds * MAIL_PROBE_UNSENT_ALARM.periods).toBeLessThan(24 * 3600);
+    expect(unsent.AlarmDescription).toContain('docs/runbooks/deliverability.md, 3.7');
+  });
+
+  it('has seventeen mail alarms', () => {
     const mail = resourcesOf(template, 'AWS::CloudWatch::Alarm').filter(([, alarm]) => {
       const properties = propertiesOf(alarm);
       return properties.Namespace === MAIL_NAMESPACE || properties.Namespace === 'AWS/SES' || (properties.Namespace === 'AWS/SQS' && JSON.stringify(properties.Dimensions).includes('MailStreamsEvents'));
     });
-    expect(mail).toHaveLength(15);
+    expect(mail).toHaveLength(17);
   });
 
   it('outputs every DNS record the founder sets at the registrar, and the sets and queues', () => {

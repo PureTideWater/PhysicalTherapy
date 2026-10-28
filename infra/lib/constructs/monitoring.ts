@@ -29,8 +29,11 @@ import {
   MAIL_NAMESPACE,
   MAIL_PLATFORM_ALARM_CODES,
   MAIL_PLATFORM_ALARM_PERIOD_SECONDS,
+  MAIL_PROBE_UNSENT_ALARM,
   MAIL_VALIDATION_CAP_CODE,
   MAIL_VALIDATION_CAP_PERIOD_SECONDS,
+  MAIL_VALIDATION_REFUSED_CODE,
+  MAIL_VALIDATION_REFUSED_PERIOD_SECONDS,
   type MailPlatformAlarmCode,
   mailCodeMetricName,
 } from '../mail';
@@ -110,12 +113,14 @@ export interface MonitoringProps {
  * minutes in a row; and its failed runs (any error line, or a run out of attempts). The web app's uploads sent to wait
  * (over an account's share or the day's cap, Q7) are counted from the web's group. No metric has a dimension.
  *
- * The mail streams (docs/adr/0065; audit #76) add six metric filters, each with its alarm: five codes the platform jobs
- * log (infra/lib/mail.ts, MAIL_PLATFORM_ALARM_CODES: the screening stream paused, a notice not delivered to a recipient,
- * a notice with no recipient, an invitation not delivered, a probe not back), each alarmed at one in five minutes, and
- * the web's code for the day's address validations reaching their cap, alarmed at one in a day. Each is matched on the
- * line's `error_code` and named by it, never by a value from the line; MailStreams holds the reputation and queue
- * alarms.
+ * The mail streams (docs/adr/0065; audit #76) add eight metric filters, each with its alarm: five codes the platform
+ * jobs log (infra/lib/mail.ts, MAIL_PLATFORM_ALARM_CODES: the screening stream paused, a notice not delivered to a
+ * recipient, a notice with no recipient, an invitation not delivered, a probe not back), each alarmed at one in five
+ * minutes; a probe the platform could not send (MAIL_PROBE_UNSENT_ALARM), alarmed when each of three five-minute periods
+ * has one; the web's code for an address validation AWS refused (the address-validation account's role or its call),
+ * alarmed at one in five minutes; and its code for the day's address validations reaching their cap, alarmed at one in
+ * a day. Each is matched on the line's `error_code` and named by it, never by a value from the line; MailStreams holds
+ * the reputation and queue alarms.
  */
 export class Monitoring extends Construct {
   readonly operatorTopic: sns.Topic;
@@ -137,6 +142,10 @@ export class Monitoring extends Construct {
   readonly screeningUploadsSentToWaitAlarm: cloudwatch.Alarm;
   /** One alarm per platform mail code (MAIL_PLATFORM_ALARM_CODES). */
   readonly mailCodeAlarms: Readonly<Record<MailPlatformAlarmCode, cloudwatch.Alarm>>;
+  /** A probe that could not be sent for 15 minutes (MAIL_PROBE_UNSENT_ALARM). */
+  readonly mailProbeUnsentAlarm: cloudwatch.Alarm;
+  /** An address validation AWS refused (MAIL_VALIDATION_REFUSED_CODE). */
+  readonly mailValidationRefusedAlarm: cloudwatch.Alarm;
   readonly mailValidationCapAlarm: cloudwatch.Alarm;
   /** Notifies the operator topic; every alarm in the stack uses it. */
   readonly notify: cloudwatchActions.SnsAction;
@@ -435,6 +444,31 @@ export class Monitoring extends Construct {
       codeAlarms[code] = alarm;
     }
     this.mailCodeAlarms = codeAlarms as Record<MailPlatformAlarmCode, cloudwatch.Alarm>;
+
+    const unsentMetricName = mailCodeMetricName(MAIL_PROBE_UNSENT_ALARM.code);
+    const probeUnsent = counted(this.platformLogGroup, unsentMetricName, { namespace: MAIL_NAMESPACE, metricName: unsentMetricName }, logs.FilterPattern.stringValue('$.error_code', '=', MAIL_PROBE_UNSENT_ALARM.code));
+    this.mailProbeUnsentAlarm = new cloudwatch.Alarm(this, `Mail${unsentMetricName}`, {
+      alarmDescription: `A ${props.environmentName} mail probe could not be sent for 15 minutes: no probe comes back, so staging and production close the screening 48 hours after the last one did; check the operator role's MailProbes statement, both identities and SES's sending (docs/runbooks/deliverability.md, 3.7).`,
+      metric: probeUnsent.metric({ statistic: cloudwatch.Stats.SUM, period: Duration.seconds(MAIL_PROBE_UNSENT_ALARM.periodSeconds) }),
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      threshold: 1,
+      evaluationPeriods: MAIL_PROBE_UNSENT_ALARM.periods,
+      datapointsToAlarm: MAIL_PROBE_UNSENT_ALARM.periods,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    this.mailProbeUnsentAlarm.addAlarmAction(notify);
+
+    const refusedMetricName = mailCodeMetricName(MAIL_VALIDATION_REFUSED_CODE);
+    const validationRefused = counted(this.webLogGroup, refusedMetricName, { namespace: MAIL_NAMESPACE, metricName: refusedMetricName }, logs.FilterPattern.stringValue('$.error_code', '=', MAIL_VALIDATION_REFUSED_CODE));
+    this.mailValidationRefusedAlarm = new cloudwatch.Alarm(this, `Mail${refusedMetricName}`, {
+      alarmDescription: `AWS refused a ${props.environmentName} screening address validation: the web cannot assume the address-validation account's role, or the role cannot call SES, so every address is checked by DNS alone until it is fixed (docs/runbooks/deliverability.md, 3.8).`,
+      metric: validationRefused.metric({ statistic: cloudwatch.Stats.SUM, period: Duration.seconds(MAIL_VALIDATION_REFUSED_PERIOD_SECONDS) }),
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      threshold: 1,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    this.mailValidationRefusedAlarm.addAlarmAction(notify);
 
     const capMetricName = mailCodeMetricName(MAIL_VALIDATION_CAP_CODE);
     const capReached = counted(this.webLogGroup, capMetricName, { namespace: MAIL_NAMESPACE, metricName: capMetricName }, logs.FilterPattern.stringValue('$.error_code', '=', MAIL_VALIDATION_CAP_CODE));

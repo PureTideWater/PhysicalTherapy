@@ -1,6 +1,7 @@
 import { Annotations, App } from 'aws-cdk-lib';
 
 import type { OperatorEndpoints } from './constructs/monitoring';
+import { AddressValidationStack, addressValidationStackName } from './address-validation-stack';
 import { ENVIRONMENTS, stackName } from './environments';
 import { PlatformStack } from './platform-stack';
 import { DEPLOY_LAUNCH_READERS, LAUNCH_ATTESTATION_CONTEXT, LAUNCH_ENVIRONMENT, LAUNCH_REPORT_CONTEXT, LAUNCH_TAG_CONTEXT, type LaunchReaders, refuseHandTypedLaunch, screeningLaunchValue } from './screening-launch';
@@ -36,7 +37,8 @@ function booleanContext(app: App, key: string): boolean {
 }
 
 /**
- * Builds the CDK app: one PlatformStack per environment. Account and region come from CDK's defaults. Production's
+ * Builds the CDK app: one PlatformStack per environment, and beside each the AddressValidationStack its
+ * address-validation account holds. Account and region come from CDK's defaults. Production's
  * screening launch value is computed here, once, from `-c tp:launchReport`, `-c tp:launchAttestation` and
  * `-c tp:launchTag` (screening-launch.ts; decision 13 and the founder's ruling of 2026-10-22); `readers` are what it
  * reads outside the code (the tests' own).
@@ -66,6 +68,12 @@ export function buildApp(app: App = new App(), readers: LaunchReaders = DEPLOY_L
         Annotations.of(stack).addInfo(note);
       }
     }
+    // Deployed into the environment's address-validation account, never its own (docs/adr/0065).
+    new AddressValidationStack(app, addressValidationStackName(environmentName), {
+      environmentName,
+      stackName: addressValidationStackName(environmentName),
+      description: `Therapy contract-payment platform (${environmentName}): the screening's address validation, in its own account`,
+    });
   }
   return app;
 }

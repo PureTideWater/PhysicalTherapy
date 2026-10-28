@@ -11,7 +11,7 @@ import { FileDevStore } from '../src/lib/auth/dev-store';
 import { hashPassword } from '../src/lib/auth/password';
 import { personaPassword, personaTotpCode, personaTotpSecret } from '../scripts/synthetic-personas';
 import { E2E_MAIL_EVENTS_DIR, E2E_MAIL_OUTBOX_DIR, E2E_MAIL_STREAM_PREFIX, E2E_ORIGIN, e2eDatabaseUrl } from './env';
-import { addVirtualKey, refusal, withDatabase } from './helpers';
+import { refusal, registerOrRestoreKeyAndSignIn, withDatabase } from './helpers';
 
 /**
  * The mail journeys' world (audit #76; docs/adr/0065; test matrix SCR-21 and SEC-19): two accounts e2e/prepare.ts
@@ -130,17 +130,12 @@ export async function signInAs(page: Page, account: MailAccount): Promise<void> 
   await signedIn;
 }
 
-/** An internal account's first sign-in: password and TOTP, register a key, then sign in with it (registerKeyAndSignIn). */
+/**
+ * An internal account's first sign-in: password and TOTP, register a key, then sign in with it; safe to retry, as
+ * registerKeyAndSignIn is (a retry puts back the key the first attempt registered).
+ */
 export async function registerKeyAndSignInAs(page: Page, account: MailAccount): Promise<void> {
-  await addVirtualKey(page);
-  await signInAs(page, account);
-  await expect(page).toHaveURL(/\/sign-in\/register-key$/);
-  await page.getByRole('button', { name: 'Register hardware key' }).click();
-  await expect(page).toHaveURL(/\/sign-in\/hardware-key\?reason=key_registered$/);
-  await page.goto('/sign-in/hardware-key');
-  await page.getByLabel('Email').fill(account.email);
-  await page.getByRole('button', { name: 'Sign in with hardware key' }).click();
-  await page.waitForURL((url) => !url.pathname.startsWith('/sign-in'));
+  await registerOrRestoreKeyAndSignIn(page, { name: account.key, email: account.email }, () => signInAs(page, account));
 }
 
 /** The local sender with its simulator-shaped events, as the platform and the consumer send in the journeys. */

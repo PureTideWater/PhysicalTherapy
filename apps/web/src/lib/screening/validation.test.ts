@@ -6,7 +6,20 @@ import { describe, expect, it } from 'vitest';
 
 import { Sealer } from '../auth/seal';
 import type { DomainResolver } from './address';
-import { type AddressCheckServices, type AddressInsights, LOCAL_ADDRESS_INSIGHTS, type MailboxVerdicts, VALIDATION_BUCKET, checkScreeningAddress, localAddressChecks, validationVerdict } from './validation';
+import type { SESv2Client } from '@aws-sdk/client-sesv2';
+
+import {
+  type AddressCheckServices,
+  type AddressInsights,
+  LOCAL_ADDRESS_INSIGHTS,
+  type MailboxVerdicts,
+  VALIDATION_BUCKET,
+  VALIDATION_REFUSALS,
+  checkScreeningAddress,
+  localAddressChecks,
+  sesAddressInsights,
+  validationVerdict,
+} from './validation';
 
 /**
  * SES's validation of a screening's address and the day's cap, beside the DNS check (audit #76; docs/adr/0065, D9 step
@@ -37,12 +50,16 @@ const ACCEPTING: DomainResolver = { resolveMx: () => Promise.resolve([{ exchange
 const REFUSING: DomainResolver = { resolveMx: () => Promise.reject(Object.assign(new Error('nx'), { code: 'ENOTFOUND' })), resolve4: () => Promise.resolve([]), resolve6: () => Promise.resolve([]) };
 const TIMING_OUT: DomainResolver = { resolveMx: () => new Promise(() => undefined), resolve4: () => Promise.resolve([]), resolve6: () => Promise.resolve([]) };
 
-function insights(verdicts: MailboxVerdicts | 'error' | 'hang', calls: string[] = []): AddressInsights {
+function insights(verdicts: MailboxVerdicts | 'error' | 'refused' | 'hang', calls: string[] = []): AddressInsights {
   return {
     verdicts: (address, signal) => {
       calls.push(address);
       if (verdicts === 'error') {
         return Promise.reject(new Error('ThrottlingException'));
+      }
+      if (verdicts === 'refused') {
+        // As STS answers a role whose trust does not name the caller (its message names the role, never the address).
+        return Promise.reject(Object.assign(new Error('not authorized to perform: sts:AssumeRole'), { name: 'AccessDenied' }));
       }
       if (verdicts === 'hang') {
         return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('aborted'))));
@@ -104,6 +121,44 @@ describe('the address checks together', () => {
     expect(silent.lines.map((line) => (JSON.parse(line) as { error_code?: string }).error_code).sort()).toEqual(['MAIL_DOMAIN_CHECK_UNAVAILABLE', 'MAIL_VALIDATION_UNAVAILABLE']);
   });
 
+  it('accepts when AWS refuses the address-validation role or its call, logging MAIL_VALIDATION_REFUSED, which alarms, rather than a warning (review S3)', async () => {
+    const refused = context({ resolver: ACCEPTING, insights: insights('refused'), dailyCap: 5 });
+    expect(await refused.run()).toBe('accept');
+    const [line] = refused.lines.map((text) => JSON.parse(text) as { error_code?: string; level?: string });
+    expect(line).toMatchObject({ error_code: 'MAIL_VALIDATION_REFUSED', level: 'error' });
+    expect(refused.lines).toHaveLength(1);
+    // Every refusal by name; a slow or throttled call stays a warning.
+    for (const name of VALIDATION_REFUSALS) {
+      const run = context({ resolver: ACCEPTING, insights: { verdicts: () => Promise.reject(Object.assign(new Error('refused'), { name })) }, dailyCap: 5 });
+      await run.run();
+      expect(run.lines.map((text) => (JSON.parse(text) as { error_code?: string }).error_code), name).toEqual(['MAIL_VALIDATION_REFUSED']);
+    }
+    for (const name of ['ThrottlingException', 'TooManyRequestsException', 'AbortError', 'TimeoutError', 'Error']) {
+      const run = context({ resolver: ACCEPTING, insights: { verdicts: () => Promise.reject(Object.assign(new Error('slow'), { name })) }, dailyCap: 5 });
+      await run.run();
+      expect(run.lines.map((text) => (JSON.parse(text) as { error_code?: string }).error_code), name).toEqual(['MAIL_VALIDATION_UNAVAILABLE']);
+    }
+  });
+
+  it('holds SES\'s call to the validation\'s bound even while it waits on credentials, which the SDK\'s own signal does not reach', async () => {
+    let sent = 0;
+    // A client stuck before its request (as when STS does not answer): it ignores the abort signal.
+    const stuck = { send: () => {
+      sent += 1;
+      return new Promise(() => undefined);
+    } } as unknown as SESv2Client;
+    const controller = new AbortController();
+    const asked = sesAddressInsights(stuck).verdicts(ADDRESS, controller.signal);
+    setTimeout(() => {
+      controller.abort();
+    }, 20);
+    await expect(asked).rejects.toMatchObject({ name: 'AbortError' });
+    expect(sent).toBe(1);
+    const already = new AbortController();
+    already.abort();
+    await expect(sesAddressInsights(stuck).verdicts(ADDRESS, already.signal)).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
   it('makes no call past the day\'s cap, logging MAIL_VALIDATION_CAP_REACHED, and still checks DNS', async () => {
     const calls: string[] = [];
     const run = context({ resolver: ACCEPTING, insights: insights({ isValid: 'LOW' }, calls), dailyCap: 2 });
@@ -121,6 +176,7 @@ describe('the address checks together', () => {
     const runs = [
       context({ resolver: TIMING_OUT, insights: insights('hang'), dailyCap: 5 }),
       context({ resolver: ACCEPTING, insights: insights('error'), dailyCap: 5 }),
+      context({ resolver: ACCEPTING, insights: insights('refused'), dailyCap: 5 }),
       context({ resolver: ACCEPTING, insights: insights({ isValid: 'HIGH' }), dailyCap: 0 + 1 }),
     ];
     for (const run of runs) {

@@ -137,9 +137,9 @@ describe.each(ENVIRONMENTS)('%s: application role', (environment) => {
     expect(text).not.toContain(logicalIdOf(stack, stack.storage.auditCopies));
   });
 
-  it('sends digest email only through MailFromAddress\'s identity and the transactional set, from MailFromAddress, and validates screening addresses; nothing else of SES', () => {
+  it('sends digest email only through MailFromAddress\'s identity and the transactional set, from MailFromAddress, and is refused address validation here; nothing else of SES', () => {
     const ses = statements.filter((statement) => actionsOf(statement).some((action) => action.startsWith('ses:')));
-    expect(ses.map((statement) => statement.Sid)).toEqual(['DigestEmail', 'ScreeningAddressValidation']);
+    expect(ses.map((statement) => statement.Sid)).toEqual(['DigestEmail', 'NoAddressValidationHere']);
     const [digest, validation] = ses as [CfnStatement, CfnStatement];
     expect(actionsOf(digest)).toEqual(['ses:SendEmail']);
     expect(digest.Condition).toEqual({ StringEquals: { 'ses:FromAddress': { Ref: PARAMETER_NAMES.mailFromAddress } } });
@@ -151,8 +151,8 @@ describe.each(ENVIRONMENTS)('%s: application role', (environment) => {
     for (const other of ['notices', 'screening']) {
       expect(resource).not.toContain(`tp-${environment}-${other}`);
     }
-    // GetEmailAddressInsights takes no resource.
-    expect(validation).toEqual({ Sid: 'ScreeningAddressValidation', Effect: 'Allow', Action: 'ses:GetEmailAddressInsights', Resource: '*' });
+    // The validation runs as the address-validation account's role (address-validation.test.ts); here it is refused.
+    expect(validation).toEqual({ Sid: 'NoAddressValidationHere', Effect: 'Deny', Action: 'ses:GetEmailAddressInsights', Resource: '*' });
     expect([...ADDRESS_VALIDATION_ACTIONS]).toEqual(['ses:GetEmailAddressInsights']);
   });
 
@@ -177,13 +177,17 @@ describe.each(ENVIRONMENTS)('%s: application role', (environment) => {
   it('runs Textract’s text detection for scanned pages, and nothing else of Textract', () => {
     const textract = statements.filter((statement) => actionsOf(statement).some((action) => action.startsWith('textract:')));
     expect(textract).toEqual([{ Sid: 'ScannedPages', Effect: 'Allow', Action: [...TEXTRACT_ACTIONS], Resource: '*' }]);
-    // Every other statement names its resources, but the address validation's, whose action takes none.
-    expect(statements.filter((statement) => statement.Resource === '*').map((statement) => statement.Sid)).toEqual(['ScreeningAddressValidation', 'ScannedPages']);
+    // Every other statement it is allowed names its resources; the one refusal of every resource is address validation's.
+    expect(statements.filter((statement) => statement.Resource === '*').map((statement) => [statement.Sid, statement.Effect])).toEqual([
+      ['NoAddressValidationHere', 'Deny'],
+      ['ScannedPages', 'Allow'],
+    ]);
   });
 
   it('cannot delete objects, change retention or bypass Object Lock', () => {
-    const actions = statements.flatMap(actionsOf);
-    expect(actions.filter((action) => /Delete|Retention|LegalHold|Bypass|PutBucket|\*/.test(action))).toEqual([]);
-    expect(statements.every((statement) => statement.Effect === 'Allow')).toBe(true);
+    const allowed = statements.filter((statement) => statement.Effect === 'Allow').flatMap(actionsOf);
+    expect(allowed.filter((action) => /Delete|Retention|LegalHold|Bypass|PutBucket|\*/.test(action))).toEqual([]);
+    // Its only refusals: address validation here, and any role of this account (address-validation.test.ts).
+    expect(statements.filter((statement) => statement.Effect !== 'Allow').map((statement) => statement.Sid)).toEqual(['NoAddressValidationHere', 'NoRoleOfThisAccount']);
   });
 });

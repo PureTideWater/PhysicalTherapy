@@ -878,6 +878,12 @@ export interface InvitationView {
    * skew between SES and the database), so a late report of an earlier email never flags a resent one.
    */
   readonly undeliveredAt: Date | null;
+  /**
+   * Why, beside undeliveredAt: 'complained' when the email reached the person and was reported as spam (SES then holds
+   * the address back from the transactional stream, so one sent again does not reach them), else 'undelivered'
+   * (bounced, held back by SES's suppression list, or rejected); null with undeliveredAt.
+   */
+  readonly undeliveredReason: 'complained' | 'undelivered' | null;
 }
 
 const organizationParams = z.object({ organizationId: opaqueId, notice: optionalText(z.enum(['invited', 'role_changed', 'ended', 'resent'])).catch(undefined) });
@@ -917,9 +923,11 @@ export const usersSettingsPage = organizationRoute({
       accepted_at: Date | null;
       expired: boolean;
       undelivered_at: Date | null;
+      undelivered_reason: string | null;
     }>(
       `SELECT i.id, u.email, m.role, i.sent_at, i.expires_at, i.sends, i.accepted_at, (i.accepted_at IS NULL AND i.expires_at <= now()) AS expired,
-              CASE WHEN i.accepted_at IS NULL AND i.undelivered_at >= i.sent_at - interval '5 seconds' THEN i.undelivered_at END AS undelivered_at
+              CASE WHEN i.accepted_at IS NULL AND i.undelivered_at >= i.sent_at - interval '5 seconds' THEN i.undelivered_at END AS undelivered_at,
+              CASE WHEN i.accepted_at IS NULL AND i.undelivered_at >= i.sent_at - interval '5 seconds' THEN i.undelivered_reason END AS undelivered_reason
          FROM invitation i JOIN "user" u ON u.id = i.user_id JOIN membership m ON m.id = i.membership_id
         WHERE i.organization_id = $1 AND (m.ends_at IS NULL OR m.ends_at > now())
         ORDER BY i.accepted_at IS NOT NULL, i.sent_at DESC, i.id LIMIT 100`,
@@ -942,6 +950,7 @@ export const usersSettingsPage = organizationRoute({
           acceptedAt: row.accepted_at,
           expired: row.expired,
           undeliveredAt: row.undelivered_at,
+          undeliveredReason: row.undelivered_at === null ? null : row.undelivered_reason === 'complained' ? 'complained' : 'undelivered',
         }),
       ),
       notice: params.notice ?? null,

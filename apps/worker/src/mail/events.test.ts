@@ -118,8 +118,9 @@ describe('the mail-events queue’s messages', () => {
       expect(parse(bounce('Permanent', ses))).toMatchObject({ type: 'event', record: { event: 'bounce', bounceKind: 'permanent', bounceSubtype: ours } });
       expect(MAIL_BOUNCE_SUBTYPES).toContain(ours);
     }
-    // Undetermined, and anything SES adds later: passed on, and recorded as other (operator_record_mail_event).
+    // Undetermined, as SES names it; anything SES adds later is passed on, and recorded as other (operator_record_mail_event).
     expect(parse(bounce('Undetermined', 'Undetermined'))).toMatchObject({ record: { bounceKind: 'undetermined', bounceSubtype: 'undetermined' } });
+    expect(MAIL_BOUNCE_SUBTYPES).toContain('undetermined');
     expect(parse(bounce('Transient', 'SomethingNew'))).toMatchObject({ record: { bounceKind: 'transient', bounceSubtype: 'something_new' } });
   });
 
@@ -137,6 +138,46 @@ describe('the mail-events queue’s messages', () => {
     }
     expect(parse(sesEvent('Complaint', { complaint: { timestamp: AT } }))).toMatchObject({ record: { complaintType: null } });
     expect(snakeCase('OnAccountSuppressionList')).toBe('on_account_suppression_list');
+  });
+
+  it('reads a complaint SES raised for an address on the account-level suppression list as that suppression: SES never sent the message', () => {
+    // SES's Complaint.ComplaintSubType: null, or OnAccountSuppressionList ("SES accepted the message, but didn't attempt to
+    // send it"); such an event carries no feedback report. Recorded as the suppressed bounce SES gives such an address,
+    // never as a complaint, which counts as delivered.
+    const suppressed = parse(sesEvent('Complaint', { complaint: { complaintSubType: 'OnAccountSuppressionList', complainedRecipients: [{ emailAddress: 'x' }], timestamp: AT, feedbackId: 'synthetic' } }));
+    expect(suppressed).toMatchObject({
+      type: 'event',
+      record: { event: 'bounce', bounceKind: 'permanent', bounceSubtype: 'on_account_suppression_list', complaintType: null, eventAt: new Date(AT) },
+    });
+    expect(MAIL_BOUNCE_SUBTYPES).toContain('on_account_suppression_list');
+    // The same on every stream: a support notice's, a dunning notice's and Cognito's.
+    for (const tags of [
+      { 'ses:configuration-set': ['tp-production-screening'], tp_kind: ['screening_failed'], tp_subject: [RUN] },
+      { 'ses:configuration-set': ['tp-production-notices'], tp_kind: ['support_grant_opened'], tp_subject: [NOTICE], tp_practice: [PRACTICE], tp_recipient: [ADMIN] },
+      { 'ses:configuration-set': ['tp-production-notices'], tp_kind: ['dunning'], tp_subject: [NOTICE], tp_recipient: [ADMIN] },
+      { 'ses:configuration-set': ['tp-production-transactional'] },
+    ] as Record<string, string[]>[]) {
+      expect(parse(sesEvent('Complaint', { complaint: { complaintSubType: 'OnAccountSuppressionList', timestamp: AT } }, tags))).toMatchObject({
+        type: 'event',
+        record: { event: 'bounce', bounceKind: 'permanent', bounceSubtype: 'on_account_suppression_list', complaintType: null },
+      });
+    }
+    // A subtype of null, as SES writes it for a complaint it received, is a complaint.
+    expect(parse(sesEvent('Complaint', { complaint: { complaintSubType: null, complaintFeedbackType: 'abuse', timestamp: AT } }))).toMatchObject({
+      record: { event: 'complaint', complaintType: 'abuse', bounceKind: null },
+    });
+    // One SES documents no meaning for is left for the dead-letter queue, never read as delivered or as a complaint.
+    expect(() => parse(sesEvent('Complaint', { complaint: { complaintSubType: 'SomethingNew', timestamp: AT } }))).toThrow(MailEventUnreadable);
+  });
+
+  it('reads a delivery delay at its own time and a rejection (SES found a virus and sent nothing), each by its documented shape', () => {
+    const delayed = parse(
+      sesEvent('DeliveryDelay', {
+        deliveryDelay: { delayType: 'TransientCommunicationFailure', expirationTime: '2026-10-24T12:00:00.000Z', delayedRecipients: [{ emailAddress: 'x', status: '4.4.1' }], timestamp: SENT_AT },
+      }),
+    );
+    expect(delayed).toMatchObject({ type: 'event', record: { event: 'delivery_delay', eventAt: new Date(SENT_AT), bounceKind: null, complaintType: null } });
+    expect(parse(sesEvent('Reject', { reject: { reason: 'Bad content' } }))).toMatchObject({ type: 'event', record: { event: 'reject', eventAt: new Date(AT), bounceKind: null } });
   });
 
   it('never reads a bounce’s diagnostic code or its recipients’ list', () => {

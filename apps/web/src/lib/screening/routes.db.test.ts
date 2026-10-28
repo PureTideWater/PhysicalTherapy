@@ -33,7 +33,7 @@ import {
 } from './routes';
 import { parseScreeningBytes } from './parse';
 import { screeningRateAccount } from './rate';
-import { type AddressCheckServices, type MailboxVerdicts } from './validation';
+import { type AddressCheckServices, type MailboxVerdicts, localAddressChecks } from './validation';
 import { pageRequest } from './test-support/page-services';
 import { ScreeningWorld, SCREENING_HEADERS, SAMPLE_ROWS, practiceName, screeningRow, submitInput } from './test-support/screening-world';
 
@@ -1234,9 +1234,13 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
       await resume();
     }
     expect(ok(await world.call(screeningPage))).toMatchObject({ open: true, closedReason: null });
-    expect(SCREENING_PAUSED.text).toBe(
-      'Too many of our recent result emails could not be delivered, so we have stopped sending them while we fix it. Screenings uploaded before the pause are kept and will be emailed when we resume, if that is within 30 days of the upload. Result links already sent still work.',
-    );
+    // No cause named: a pause can follow delivered mail reported as spam, the account's rates, SES's review or a person.
+    expect(SCREENING_PAUSED).toEqual({
+      title: 'New screenings are paused',
+      text: 'We have paused new screenings while we check that our result emails are reaching people. Screenings uploaded before the pause are kept, and their results are emailed once we resume, if that is within 30 days of the upload. Result links already sent still work.',
+      refusal: 'New screenings are paused for now. Try again later, or request an audit.',
+    });
+    expect(`${SCREENING_PAUSED.text} ${SCREENING_PAUSED.refusal}`).not.toMatch(/could not be delivered|fix/);
   });
 
   it('keeps staging closed until the mail path is proven (both probes back within 48 hours, since the last resume); development ignores readiness', async () => {
@@ -1253,7 +1257,8 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
   });
 
   it('answers a refusal by DNS, by SES\'s validation and by the refusal list with the one sentence, and stores nothing of the address', async () => {
-    const services = withServices({ addressChecks: checks('nomail.synthetic.test', (address) => (address.startsWith('gone.') ? { ...HIGH, mailboxExists: 'LOW' } : HIGH)) });
+    const calls: string[] = [];
+    const services = withServices({ addressChecks: checks('nomail.synthetic.test', (address) => (address.startsWith('gone.') ? { ...HIGH, mailboxExists: 'LOW' } : HIGH), calls) });
     const refused = [
       'someone@nomail.synthetic.test',
       'gone.mailbox@clinic-gone.synthetic.test',
@@ -1265,7 +1270,13 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
     // An address a screening email bounced from (its keyed hash on the refusal list): the same sentence, from the database.
     const bounced = 'Bounced.Before@Clinic-Bounced.synthetic.test';
     await world.owner.query("INSERT INTO screening_mail_refusal (recipient_sha256, reason, expires_at) VALUES (mail_recipient_sha256($1), 'bounced', now() + interval '365 days')", [bounced]);
-    expect(issuesOf(await call(screeningSubmit, services, { input: submitInput({ contactEmail: ` ${bounced} ` }) }))).toEqual([{ field: 'contactEmail', message: ADDRESS_REFUSED }]);
+    // Another spelling of that mailbox too (S2), and neither spends one of the day's validations on an upload the database
+    // would refuse (S4).
+    calls.length = 0;
+    for (const spelling of [` ${bounced} `, 'bounced.before+screening@clinic-bounced.synthetic.test']) {
+      expect(issuesOf(await call(screeningSubmit, services, { input: submitInput({ contactEmail: spelling }) })), spelling).toEqual([{ field: 'contactEmail', message: ADDRESS_REFUSED }]);
+    }
+    expect(calls).toEqual([]);
     expect(await prospects(bounced.toLowerCase())).toBe(0);
     expect(await storedText()).not.toMatch(/nomail|clinic-gone|clinic-bounced/i);
   });
@@ -1280,6 +1291,21 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
       { field: 'contactEmail', message: 'Did you mean @gmail.com? Check the address, or keep it as typed.' },
     ]);
     expect(await prospects(typo)).toBe(0);
+  });
+
+  it('says the likely typo of a mistyped address on the refusal list as of any other, before the database answers for the list', async () => {
+    const calls: string[] = [];
+    const services = withServices({ addressChecks: checks(null, () => HIGH, calls) });
+    // A mistyped address a screening email bounced from: the hint, as for one never seen, so the form says nothing of the
+    // list and the prospect is told the likely fix; kept as typed, the list's sentence, with no validation spent (S4).
+    const listed = 'listed.typo@gmial.com';
+    await world.owner.query("INSERT INTO screening_mail_refusal (recipient_sha256, reason, expires_at) VALUES (mail_recipient_sha256($1), 'bounced', now() + interval '365 days')", [listed]);
+    const hint = [{ field: 'contactEmail', message: 'Did you mean @gmail.com? Check the address, or keep it as typed.' }];
+    expect(issuesOf(await call(screeningSubmit, services, { input: submitInput({ contactEmail: listed }) }))).toEqual(hint);
+    expect(issuesOf(await call(screeningSubmit, services, { input: submitInput({ contactEmail: 'unlisted.typo@gmial.com' }) }))).toEqual(hint);
+    expect(issuesOf(await call(screeningSubmit, services, { input: { ...submitInput({ contactEmail: listed }), keepAddress: '1' } }))).toEqual([{ field: 'contactEmail', message: ADDRESS_REFUSED }]);
+    expect(calls).toEqual([]);
+    expect(await prospects(listed)).toBe(0);
   });
 
   it('never asks SES about an upload that fails its own checks or the rate limit', async () => {
@@ -1297,6 +1323,27 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
     // A clean upload is asked about once.
     expect((await call(screeningSubmit, services, { input: submitInput({ contactEmail: 'clean@clinic-clean.synthetic.test' }) })).status).toBe('ok');
     expect(calls).toEqual(['clean@clinic-clean.synthetic.test']);
+  });
+
+  it('logs the address checks\' measured time with the stored run, and nothing of the address (the capacity harness\'s G1)', async () => {
+    // The stand-ins slowed as the harness slows them (MAIL_CHECK_DELAY_MS): the line measures the delay, never copies it.
+    const services = withServices({ addressChecks: localAddressChecks(1_000, 300) });
+    const email = 'timed.checks@clinic-timed.synthetic.test';
+    const from = world.logLines.length;
+    expect(await call(screeningSubmit, services, { input: submitInput({ contactEmail: email }) })).toEqual({ status: 'ok', data: { redirect: SENT } });
+    const { rows } = await world.owner.query<{ id: string }>(
+      'SELECT r.id FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1',
+      [email],
+    );
+    const checked = world.logLines.slice(from).filter((line) => line.msg === 'screening address checked');
+    expect(checked).toEqual([expect.objectContaining({ level: 'info', screening_run_id: rows[0]?.id, elapsed_ms: expect.any(Number) as number })]);
+    expect(Number(checked[0]?.elapsed_ms)).toBeGreaterThanOrEqual(300);
+    expect(Number(checked[0]?.elapsed_ms)).toBeLessThan(5_000);
+    expect(JSON.stringify(checked)).not.toMatch(/timed|clinic/);
+    // An upload the checks refuse stores no run, and logs no such line.
+    const refusedFrom = world.logLines.length;
+    expect((await call(screeningSubmit, services, { input: submitInput({ contactEmail: 'invalid.mailbox@clinic-timed.synthetic.test' }) })).status).toBe('invalid');
+    expect(world.logLines.slice(refusedFrom).filter((line) => line.msg === 'screening address checked')).toEqual([]);
   });
 
   it('keeps the client\'s keyed subject with the run, and refuses a client past its bounce budget with the budget\'s sentence, naming no address', async () => {
@@ -1329,11 +1376,25 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
         messageId,
       ]);
     }
+    const calls: string[] = [];
+    const counted = withServices({ addressChecks: checks(null, () => HIGH, calls) });
     const fourth = 'client.fourth@clinic-client-fourth.synthetic.test';
-    expect(issuesOf(await world.call(screeningSubmit, { input: submitInput({ contactEmail: fourth }), address }))).toEqual([{ field: 'input', message: SCREENING_BOUNCE_BUDGET }]);
+    expect(issuesOf(await call(screeningSubmit, counted, { input: submitInput({ contactEmail: fourth }), address }))).toEqual([{ field: 'input', message: SCREENING_BOUNCE_BUDGET }]);
     expect(await prospects(fourth)).toBe(0);
+    // The client past its budget gets the budget's sentence for an address on the refusal list too, so it learns nothing of
+    // the list (S1), and spends none of the day's validations (S4).
+    const listed = 'client.listed@clinic-client-listed.synthetic.test';
+    await world.owner.query("INSERT INTO screening_mail_refusal (recipient_sha256, reason, expires_at) VALUES (mail_recipient_sha256($1), 'complained', now() + interval '365 days')", [listed]);
+    expect(issuesOf(await call(screeningSubmit, counted, { input: submitInput({ contactEmail: listed }), address }))).toEqual([{ field: 'input', message: SCREENING_BOUNCE_BUDGET }]);
+    expect(issuesOf(await call(screeningSubmit, counted, { input: submitInput({ contactEmail: listed }), address: '198.51.100.90' }))).toEqual([{ field: 'contactEmail', message: ADDRESS_REFUSED }]);
+    expect(calls).toEqual([]);
     // Another client is not held by this one's budget.
     expect((await world.call(screeningSubmit, { input: submitInput({ contactEmail: 'client.other@clinic-client-other.synthetic.test' }), address: '198.51.100.89' })).status).toBe('ok');
     expect(SCREENING_BOUNCE_BUDGET).not.toMatch(/@|198\.51/);
+    // The account is a work address's domain or a free-mail address's mailbox: the sentence names both, never "this
+    // email account" alone, which told a colleague at the same domain that their own address had failed.
+    expect(SCREENING_BOUNCE_BUDGET).toBe(
+      'Several recent screening results for this connection, or for this email address or its work domain, could not be delivered, so we cannot take another screening from them for up to 7 days. Check the email address, or request an audit instead.',
+    );
   });
 });
