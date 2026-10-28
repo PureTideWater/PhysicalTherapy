@@ -1,0 +1,268 @@
+{
+ "pr": 83,
+ "head": "f4a97668",
+ "correctness": {
+  "verdict": "merge after fixes",
+  "findings": [
+   {
+    "id": "P4-RC-01",
+    "severity": "should-fix",
+    "file": "docs/product/test-matrix.md",
+    "line": 354,
+    "claim": "TBL-08 says 'every count on the result groups its digits and takes a noun that agrees with it (the one other group, its rows summed)'. That is not true at f4a97668 and no test asserts it. anomaliesDescription (apps/web/src/components/screening/anomalies.tsx:206) still writes the page sentence with a bare count and a plural pronoun for one group. The design's 4b closed set (design 3.4 / 11.2) does not cover this case either, so 4b's rewrite would keep 'sums the other 1, and the pages below list them' under 'the last entry'. The same text is in packages/synth/src/cases/matrix.ts:497 and fixtures/synthetic/TBL-08/expected.json.",
+    "scenario": "A synthetic result with 51 priced groups, opened on page 1. On a phone the anomalies card's description ends: 'This page lists groups 1 to 50; the table\u2019s last row sums the other 1, and the pages below list them.' Directly below it, the list's last item is headed 'The one other group, its rows summed'. The matrix row says every count on the result takes a noun that agrees with it, and the two sentences on that screen disagree.",
+    "fix": "Fix it in this PR by wording only. In docs/product/test-matrix.md:354, replace the clause with 'every count on the result groups its digits, and the other groups' row and item name one group as one (the one other group, its rows summed)'. Copy the same text into matrix.ts, then run pnpm synth --all so TBL-08/expected.json follows. Add the missing case to the 4b spec (design 3.4 closed set, 11.2, 11.5): with others.groups === 1, the page sentence reads '\u2026; the last entry is the one other group, its rows summed, and the next page lists it.' With a 50-row page that case can only occur on page 1 of a 51-group result. Changing the others.groups === 1 branch now would not break #42's pins, which pin only the 20,457 case, but P4-DR-05 kept every other count's words, so leave that choice to 4b."
+   },
+   {
+    "id": "P4-RC-02",
+    "severity": "nit",
+    "file": "docs/adr/0078-scroll-every-wide-table-in-a-named-region-that-says-it-scrolls-and-stack-rows-on-a-phone-through-one-primitive.md",
+    "line": 123,
+    "claim": "The amendment says without condition 'the screening's anomalies fit at 1280 px and at 994 px'. The PR description says 'so the anomalies table fits its card'. Both hold only for the synthetic result (CLEAN_ROWS figures of 9 characters or fewer, measured min-content 806 px). Design 2.7 itself says a table with wider figures scrolls. TBL-06 words it correctly ('the synthetic result's').",
+    "scenario": "A real practice's group sums: 97110 for a year is about '$123,456.78' (11 characters), and the others row on a multi-page result is about '$98,765,432.10'. Each extra character adds roughly 8.4 px to each of the five figure columns, about +42 px a character. The table then overflows its 864 px card at 994 px from about 10 characters, and its 894 px card at 1280 px from about 12. It scrolls in its region with the cue, which is correct behaviour, but the ADR says it fits.",
+    "fix": "ADR 0078:122-124: replace 'the screening's anomalies fit at 1280 px and at 994 px, where the card's content is exactly 54rem' with 'the synthetic screening result's anomalies fit at 1280 px and at 994 px, where the card's content is exactly 54rem; a result whose figures run past about ten characters scrolls in its region with the cue'. In the PR description, say 'the synthetic result's anomalies table fits its card'."
+   },
+   {
+    "id": "P4-RC-03",
+    "severity": "nit",
+    "file": "apps/web/e2e/screening-phone.spec.ts",
+    "line": 279,
+    "claim": "Step 7 and the '994 px, the narrowest width at which all three tables show' claim (spec header :25, TBL-06 test-matrix.md:352, ADR 0078:123) assume no layout scrollbar. That holds in CI only because headless Chromium runs with --hide-scrollbars. With a classic scrollbar the card's content at a 994 px viewport is 847 px, below 54rem, so all three cards stack.",
+    "scenario": "A developer runs `playwright test screening-phone --headed` on Linux or Windows. The result page is taller than 720 px, so a 15 to 17 px vertical scrollbar appears. At 994 px the content is 994-17-80-2-48 = 847 px < 864, so the anomalies and coverage tables are hidden and `getByRole('table', { name: ANOMALIES.title }).toBeVisible()` fails. On a real Windows desktop the tables show only from about 1011 px.",
+    "fix": "In step 7, measure the scrollbar and set the viewport from the content's own width: `const bar = await page.evaluate(() => window.innerWidth - document.documentElement.clientWidth); await page.setViewportSize({ width: 994 + bar, height: 720 });`. Name the step 'where the cards' content is exactly 54rem'. Reword TBL-06 and the ADR to 'at the width where the card's content is exactly 54rem (994 px without a classic scrollbar)'."
+   },
+   {
+    "id": "P4-RC-04",
+    "severity": "nit",
+    "file": "apps/web/src/components/screening/result-summary.tsx",
+    "line": 285,
+    "claim": "The rewritten could-not-price sentence says 'Coverage, below, gives each reason.' For rows whose rates change within the quarter, coverage's Reason is empty. This PR now has a screen reader say that empty value as 'None'. Before, it was a bare dash.",
+    "scenario": "A result with a medicare_ffs rates_change_in_band row (as in the unit fixture). The could-not-price card promises a reason for each row. Its coverage item reads 'Original Medicare: Rates change within the quarter', then 'Reason: None'. The reason is the outcome itself, but the card's words and the field disagree.",
+    "fix": "Reword the sentence (component words, unpinned): 'Medicare rows PaidWhole could not price, or whose rates change within the quarter. Coverage, below, gives each outcome, and the reason for a row PaidWhole could not price.' Alternatively, hand this to the UX and brand reviewer to confirm."
+   },
+   {
+    "id": "P4-RC-05",
+    "severity": "nit",
+    "file": "apps/web/e2e/screening-phone.spec.ts",
+    "line": 162,
+    "claim": "The spec reads 'what the page must list' with `screening_result_groups($1, 1, 100)`. The route reads `screening_result_groups(hash, page, SCREENING_GROUPS_PER_PAGE)`, which is 50. The two agree only while CLEAN_ROWS prices 50 groups or fewer.",
+    "scenario": "A later edit to CLEAN_ROWS, or to SCREENING_GROUPS_PER_PAGE, makes the result longer than one page. The spec then expects up to 100 stacked items and 100 tbody rows, while the page lists 50 and an others item. The failure would look like a defect in the stacked rows, not like a page-size mismatch.",
+    "fix": "Import SCREENING_GROUPS_PER_PAGE, or read page_size from `screening_result_group_totals($1, 1, \u2026)`, and query `screening_result_groups($1, 1, <that>)` as the route does."
+   },
+   {
+    "id": "P4-RC-06",
+    "severity": "nit",
+    "file": "apps/web/src/components/screening/result-tables.test.tsx",
+    "line": 523,
+    "claim": "Two test-only gaps. (a) The one-other-group fixture is a shape the database cannot return: groups 56, pages 2, page 2 listing groups 51 to 100, five groups shown and one other summed with 49,870 rows. (b) No case asserts that each stacked value equals its table cell under the same header for the groups, top rows and coverage. Only the others row's values and the status words are compared. It holds today: a scripted comparison of four renders found 0 mismatches. It holds only by construction (one cells function per copy).",
+    "scenario": "A future edit makes groupCells(group, 'rows') differ from the table copy in one value, for example a figure keyed to the wrong column in one copy only. Every case still passes, because terms, mono classes and statuses are each checked on their own.",
+    "fix": "(a) Give `one()` the shape the database returns: groups 51, pages 2, page 1, firstGroup 1, lastGroup 50, with others { groups: 1, rows: 1, \u2026 }. (b) Add one case that, for each card, maps the table's headers to the cells of the item's row (by data-group, data-row-no, data-coverage) and expects `fields(item).map(text)` to equal those cells under each field's term. The comparison script is at scratchpad/p4-review-correctness/compare.test.tsx.txt."
+   }
+  ],
+  "checked": [
+   "Clean clone at f4a97668, frozen-lockfile install. Under the lock, unit tests for components/screening and stacked-rows: 7 files, 85 passed. That includes #42's result.test.tsx, which is byte-identical to the base.",
+   "Under the lock: synth fixtures and index, tools/screening-capacity/watched.test.ts, tools/brand-copy/scan.test.ts, app/tables.test.ts: 5 files, 94 passed.",
+   "CI on f4a97668 is green. That includes the required all green, mutation, approval-of-record, unit, db 1-4, e2e 1-2, and capacity, which finished after 05:45.",
+   "Trial merge with #42's head 46974a25 (git merge-tree, clean). In a scratch worktree: install, then components/screening, stacked-rows and watched.test.ts, 8 files, 93 passed, including #42's added kept-text pin; apps/web tsc clean. So the spec's imports (screening.ts, helpers.withDatabase, env.e2eDatabaseUrl, outbox.outboxFor) hold against #42. #42's mail.ts uses the same lock key 760065, the same e2eDatabaseUrl and the same pg_advisory_lock_shared query.",
+   "Table copy, base against head, rendered from one synthetic fixture. The only markup changes are: the StatusCell floor div; OTHERS_NOTE's words; the one-other name and chip; Claims becoming Claim lines; the None spans; the coverage code span dropped. Class strings are identical, including Row (numeric wins over mono, so py-1 pr-3 text-right) and the others row's eight cells.",
+   "Each stacked value against its table cell and header, scripted over the anomalies with others, one-other, top rows and coverage renders: 0 mismatches. That covers the four Medicare figures of a top row (one-line before, row before, one-line fully reduced, row fully reduced), and the others item's lowest figures under the fully reduced labels with OTHERS_NOTE as its description.",
+   "Roles: anomalies expected, expected, paid, short, short; top rows expected x4, paid, short x2; coverage paid. Non-figure fields only before the first figure or after the last; brandOrderProblems is empty for every item.",
+   "Hooks: the rows copy carries no data-group, group-no, coverage, reason, row-no, standing, anomaly or figure attribute; repeatedIds is empty for all three cards. render-result.tsx and the large db test count data-group-no=\" and data-group=\"others\", which data-stacked-group never matches; the unit test proves 50 and 1 for a full page.",
+   "Budgets: builders' and the integrator's three local runs of result-page.large.db.test.ts give page 1 at 387 KB (cap 512 KiB), page 206 at 375 KB, page 411 at 205 KB, and +15.7 to 19.3 MiB of heap (cap 64). The test runs unconditionally in the CI db project, which is green.",
+   "Sign key against the database: the CHECKs in 20261104090000_free_screening.sql:520,531 define difference_cents = expected_cents - observed_allowed_cents and reduced_difference_cents = reduced_cents - observed_allowed_cents. Groups and others are sums (screening_result_ranked_groups, group_totals), so the lowest difference is lowest less observed. routes.ts only maps these values. The sentence 'its Medicare figure less the allowed amount \u2026 positive where below, negative where above' is true for every difference on the page.",
+   "Top rows sentence: expected_cents = expected_line_cents * claim_count and reduced_cents = reduced_line_cents * claim_count (CHECKs), with the unrounded line value kept beside it, so 'rounds that price once; the row\u2019s figure is that price times its claim lines' is true. 'The one priced row' is shown only when the database returns one priced row.",
+   "Words at one, one group and many: the others name and chip ('The one other group, its rows summed' and 'It is an anomaly' / 'It is not an anomaly'; plural forms otherwise); GroupStatus; GroupPages; groupedCount in the summary, the description and the others heading; the row number grouped in the heading; None in both copies. No owed, underpaid, recovered or engine text in any card but the heading's engine version, which is UX PR 85's.",
+   "Tone split: the anomalies and top rows cards both switch at 54rem in containers of equal width, and coverage has no standing chips. So no viewport, print width or no-script load shows a rows-copy anomaly chip (unpriced) and a table-copy one (short) on the same screen. They differ only across widths, as accepted by P4-DR-03. The e2e checks the rows-copy tone; the unit test checks the table copy stays short and never whole.",
+   "List semantics: ul role=list named by aria-labelledby to the CardTitle, which is an h2 (packages/ui card.tsx:19); item headings are h3, with no h2 or h4 inside a list; dt/dd pairs directly in the dl; the description p comes between the h3 and the dl, only when it renders something.",
+   "Container-query widths: main max-w-5xl with md:p-10, card border and CardContent px-6 give 894 px at 1280, 864 px (exactly 54rem) at 994, 690 at 820 and 308 at 390, matching the spec's steps. A table hidden on first load measures 0 ('fits') and measures again on show (expectScrollersAgree plus polls).",
+   "screening-phone.spec.ts and the known races: no read of the upload's status or the outcome's stage (screening.spec.ts:339); no sign-in or hardware key (helpers.ts:87); the run status is polled until complete before the link opens (the capacity harness's 404 race). The shared lock 760065 is held on its own client from before the consumer starts, released in finally, and the consumer is torn down first.",
+   "Retry safety (CI retries 1): CONTACT is random per worker and a retry is a new worker. PRACTICE plus ZIP has a practice key distinct from screening.spec.ts's, so submit_screening replaces only this spec's own earlier attempt. No address rate bucket applies in e2e (no trusted proxy, rate-limit.ts:112). The domain bucket is 20 a day on a fresh database.",
+   "atPhoneWidth's lists option (valuesOutOfView): only visible lists, an item per li, an empty or unrendered dd, a value past the window edge, a chip cut by more than 1 px. getByRole excludes hidden copies.",
+   "watched-paths.txt equals `tsx tools/screening-capacity/watched.ts` output at f4a97668, and watched.test passes on the trial merge with #42 too.",
+   "TBL-01, 03 and 04 rewordings match existing tests (tables.test.ts wrap-in-cell and unfloored-wrap, the landmark-unique label guard; stacked-rows.test.tsx). TBL-05, 06 and 07 match what the unit test and spec assert, apart from the P4-RC-03 scrollbar caveat."
+  ],
+  "notSeen": [
+   "I did not run the e2e specs myself, at f4a97668 or on the trial merge with #42. I rely on the builders' local runs (screening-phone 4+ passes, including --repeat-each=3) and on CI's e2e 1/2 and 2/2, which are green.",
+   "I did not re-run result-page.large.db.test.ts locally. The CI db job logs could not be downloaded through the proxy (blob URL 403), so the HTML and heap figures are the builders' local measurements, backed by CI's green db shards.",
+   "I did not check rendering in Safari with VoiceOver, in Firefox, or with real classic scrollbars; P4-RC-03 is reasoned from the layout arithmetic.",
+   "I did not look at the screenshots or do the UX and brand checks; that is the other reviewer's lens.",
+   "I did not measure the served document's real bytes (HTML plus Next's RSC flight payload) at the worst shape."
+  ],
+  "proposals": [
+   "Measure what a phone actually downloads. The 512 KiB cap in result-page.large.db.test.ts measures renderToString output only. The served page also carries Next's RSC flight payload, which repeats every server-rendered node, so with both copies the worst-shape page 1 is likely about 750 KB uncompressed. Add a check of the served bytes, gzip and raw, from `next start` in the capacity harness, or record the ratio once in the ADR.",
+   "Give stacked-rows.tsx a shared check, for example `copiesAgree(html, headersFrom)`, that every stacked dd's text equals its table cell under the same header. Every paired caller ADR 0078 adds (PR 34's row forms and the rest) could then run it beside repeatedIds and brandOrderProblems. P4-RC-06's script is a starting point.",
+   "For UX PR 4b: add the one-other page sentence to design 3.4's closed set (P4-RC-01). Also scope #42's `screening.spec.ts:517` `.first()` chip to `[data-stacked-copy=\"table\"]`, so it never depends on DOM order.",
+   "For width-threshold e2e steps (this spec's 994, and #79's 1263 in TBL-02): derive the viewport from the measured scrollbar width, so a step means the same thing headed, headless and on classic-scrollbar platforms.",
+   "Name the coverage stacked item's key without its trailing separators (`medicare_ffs:priced::` becomes `medicare_ffs:priced`) when the reason and detail are null. This is cosmetic: the data-stacked-row value is read by tests only."
+  ],
+  "summary": "I found no defect in what the result renders. One should-fix and five nits remain, all about words, docs or test robustness. The two copies agree everywhere I could check: rendering the base and head tables side by side shows only the intended changes, and a scripted comparison of every stacked value against its table cell found 0 mismatches. That includes the four Medicare figures of a top row and the others item's lowest figures with their note. The roles keep the brand's order and no hook is repeated. All of #42's result.test.tsx pins hold unedited, including on a trial merge with #42's head, which also typechecks. CI is fully green. The sign sentence is true to the database's CHECKs (each difference is its figure less the allowed amount, and groups and others are sums). The anomaly tone split is never visible on one screen. The phone spec avoids the three known races and is safe on retry. The one should-fix is P4-RC-01: TBL-08 claims every count on the result takes a noun that agrees with it, but on page 1 of a 51-group result the description still says 'sums the other 1, and the pages below list them', right above 'The one other group, its rows summed', and 4b's spec does not cover that case. The nits: the ADR says without condition that the anomalies fit at 1280 and 994 px, which only the synthetic figures do; the 994 px step relies on hidden scrollbars; the could-not-price card's 'gives each reason' sits beside a spoken 'None'; the spec reads 100 groups where the route shows 50; and the unit test has one impossible fixture and no per-field value check."
+ },
+ "ux_and_brand": {
+  "verdict": "merge after fixes",
+  "findings": [
+   {
+    "id": "UXR-01",
+    "severity": "should-fix",
+    "file": "apps/web/src/components/screening/result-view.tsx",
+    "line": 29,
+    "claim": "On a phone the stacked lists make the public result at least twice as long, and the prospect's one action, the audit request, is still at the bottom. This makes the open baseline finding UX-134 (C-115) worse: \"the audit request at the foot of a 4,500 px page\". The checklist's Flows rule (baseline) asks for each person's one action at the top of a long page. The design accepts this (section 9, with P8 handed to UX PR 63), but under this checklist a change that worsens an open finding owns it at should fix or above.",
+    "scenario": "At 390 px the one-anomaly result grows from 7,659 to 14,227 px and the no-anomaly result from 6,735 to 11,909 px. One stacked group is about 600 px tall and one stacked top row is 924 px, taller than the 844 px window. A result with a full page of 50 groups and 25 top rows would put \"Ask for a PaidWhole audit\" about 60,000 px down, against about 13,000 px with the tables before (my estimate from item heights). This is a prospect who opened the emailed link on a phone, and the page is their only view of the product. They have to scroll through every group card and every 13-field top-row card to reach the request. Nothing above the lists links to the request.",
+    "fix": "Take UX-134's primary link into this PR. In result-view.tsx, directly after <ScreeningHeading/>, add a link styled as the primary button with the text \"Ask for an audit of the rows a contract prices\" and href=\"#screening-convert\" (the CardTitle id at convert-form.tsx:48). The kept legal paragraph does not move and no #42 file changes. UX PR 63 then adds its three summary lines above that link. No migration, freeze exception or founder decision is needed. The other route, keeping UX PR 63's scope whole and gating it before the first release tag, still leaves the branch worse at this merge.",
+    "shots": [
+     "screening-result.default.390",
+     "screening-result.no-anomaly.390",
+     "screening-result.top-rows-scrolled.390",
+     "screening-result.top-rows-item.390",
+     "screening-result-harness.several.390",
+     "screening-result.error-name.390"
+    ]
+   },
+   {
+    "id": "UXR-02",
+    "severity": "nit",
+    "file": "apps/web/src/components/screening/anomalies.tsx",
+    "line": 206,
+    "claim": "When exactly one other group is summed, the anomalies card's description still reads \"the other 1, and the pages below list them\". This contradicts TBL-08's claim that every count \"takes a noun that agrees with it (the one other group, its rows summed)\". The same card's heading and chip already handle the single case (othersName and othersStanding at :317 and :322). It is polish under the checklist's Words rule (a count with its noun, words.ts:2-3).",
+    "scenario": "A result of 51 groups, opened on page 1: the description ends \"This page lists groups 1 to 50; the table\u2019s last row sums the other 1, and the pages below list them.\" The summed item directly below is headed \"The one other group, its rows summed\". result.test.tsx:501 pins only the plural sentence (20,457), so the singular branch is free to change now.",
+    "fix": "In anomaliesDescription's `shown`, branch on page.others.groups === 1 and say \"This page lists groups 1 to 50; the table\u2019s last row is the one other group, its rows summed, and the next page lists it.\" (others = 1 only happens on page 1 of 2). Build the group range from page.firstGroup and page.lastGroup as now. Add a case to result-tables.test.tsx beside :523.",
+    "shots": []
+   },
+   {
+    "id": "UXR-03",
+    "severity": "nit",
+    "file": "apps/web/src/components/screening/coverage.tsx",
+    "line": 104,
+    "claim": "Each stacked coverage item shows a \"Reason\" field, but only a could-not-price row has a reason. Every other outcome shows \"Reason \u2014\", which a screen reader reads as \"Reason, None\". Under \"Cannot be priced without a contract\" that states a vacuous, slightly false fact, since the reason is the missing contract. It is polish under the baseline's \"no vacuous or false fact\" rule.",
+    "scenario": "default.390 after, tiles 09 to 11: five of the six coverage items (Commercial, Medicare Advantage under contract, Medicare Advantage without a contract, Medicaid, Original Medicare priced) each spend a pair of about 56 px on \"Reason \u2014\". Only the \"Could not be priced\" item has words there.",
+    "fix": "In coverageItem, drop the Reason field from the rows copy when entry.unpricedReason is null, because the heading's outcome chip already says what happened. Keep the table's Reason column, where a dash in a column is the convention. Word TBL-05 as \"holding every other column (a coverage row's Reason only when it has one)\", and update the unit case's field list. No words change.",
+    "shots": [
+     "screening-result.default.390",
+     "screening-result-harness.several.390"
+    ]
+   },
+   {
+    "id": "UXR-04",
+    "severity": "nit",
+    "file": "apps/web/src/components/stacked-rows.tsx",
+    "line": 94,
+    "claim": "From 24rem, where terms stand beside their values, pairs are separated only by gap-y-1 (4 px). fit-content(40%), added in this PR, now wraps the long Medicare terms onto two lines at a 20 px pitch. A wrapped term's second line therefore sits only 4 px closer to its own first line than to the next term, so the term column reads as one run of text. Below 24rem, PAIRED adds 8 px and pairs read clearly. Judged by the task's spacing-between-pairs item (recommendation).",
+    "scenario": "At 820 px, \"One claim line, expected under Medicare, / before the reduction across codes\" is followed 24 px later by \"Expected under Medicare, before the / reduction across codes\": two two-line terms that run together. Only the value column anchors each pair.",
+    "fix": "Add `@min-[24rem]:gap-y-2` to the dl's classes (`mt-2 grid grid-cols-1 gap-y-1 text-sm @min-[24rem]:grid-cols-[fit-content(40%)_1fr] @min-[24rem]:gap-x-4 @min-[24rem]:gap-y-2`) and update the pinned class in stacked-rows.test.tsx:165.",
+    "shots": [
+     "screening-result.band.820"
+    ]
+   },
+   {
+    "id": "UXR-05",
+    "severity": "nit",
+    "file": "apps/web/src/components/screening/result-summary.tsx",
+    "line": 92,
+    "claim": "groupedCount is a second count-and-noun helper beside counted() (lib/copy/words.ts:9), while the checklist sends counts through <Counted/> or counted(). The design deferred grouping in counted() (P1) because words.ts was #74's. #74 is now merged into this branch (f4a97668), so that reason no longer holds, and under the founder's standing rule the one app-wide helper is the best option.",
+    "scenario": "The screening says \"12,345 rows\" through groupedCount. Any other screen that counts through counted() still says \"12345 rows\". Two helpers with the same rule and different digit grouping will drift.",
+    "fix": "In words.ts:10, write `${count.toLocaleString('en-US')} ${count === 1 ? one : many}`. Make Counted (components/remittances/display.tsx:24-28) slice by the grouped string's length (`const count = value.toLocaleString('en-US')`). Replace groupedCount with counted in result-summary.tsx and anomalies.tsx, and add a words.test.ts case for \"12,345 rows\". The existing pins are all below 1,000, so they hold.",
+    "shots": []
+   },
+   {
+    "id": "UXR-06",
+    "severity": "nit",
+    "file": "docs/adr/0078-scroll-every-wide-table-in-a-named-region-that-says-it-scrolls-and-stack-rows-on-a-phone-through-one-primitive.md",
+    "line": 123,
+    "claim": "The amendment says without qualification that \"the screening's anomalies fit at 1280 px and at 994 px\", and the PR description says the status floor means \"the anomalies table fits its card\". This holds only for the synthetic result's figures. A later page of a large result still scrolls sideways at 1280, behind the cue. That fallback is correct, but the claim is overbroad (BRAND.md: claim nothing the product cannot prove).",
+    "scenario": "On the static later page (page 2 of 411, the others' sums at $98,765,432.10 and so on), the anomalies table measures 1094 px in its 894 px card at 1280 after (1348 px before).",
+    "fix": "In the ADR amendment write \"the synthetic result's anomalies fit at 1280 px and at 994 px; wider figures scroll in the region with the cue\". In the PR description change \"so the anomalies table fits its card\" to \"so the anomalies table fits its card while its figures do (the synthetic result: 806 px in 894)\".",
+    "shots": [
+     "screening-result-harness.others.1280"
+    ]
+   },
+   {
+    "id": "UXR-07",
+    "severity": "nit",
+    "file": "apps/web/src/components/screening/anomalies.tsx",
+    "line": 160,
+    "claim": "The same anomaly standing gets two tones, depending on which copy the width shows: unpriced in the rows copy (:164, :351) and Short in the table copy (:160, :347). The baseline asks that each state chip look the same everywhere. I judge the split an acceptable interim, not a defect a prospect will see: the page is investigatory on both copies, the words are the same, and nothing deploys before a release tag. That holds only if UX PR 4b's table tone lands first, and the PR does not state that condition.",
+    "scenario": "A prospect opens the emailed link on a phone and sees the 97140 anomaly in slate on the unpriced tint, then opens it on a desktop and sees it in Short's terracotta. On the desktop that is UX-040's open defect (brand.md:26-28; ADR 0056 \"Flagged (investigatory): unpriced\").",
+    "fix": "In the PR description's \"Waits for #42\" and in the status file, add: \"UX PR 4b (or its tone change) merges before the first release tag; until then the table copy's Short is UX-040, open.\" No code change.",
+    "shots": [
+     "screening-result.default.390",
+     "screening-result.default.1280",
+     "screening-result.default.1280-dark",
+     "screening-result.default.390-dark",
+     "screening-result-harness.several.390",
+     "screening-result-harness.several.1280"
+    ]
+   },
+   {
+    "id": "UXR-08",
+    "severity": "nit",
+    "file": "apps/web/src/components/screening/anomalies.tsx",
+    "line": 206,
+    "claim": "On a phone, a later page's description says \"the table\u2019s last row sums the other 20,457\" while the page shows a list whose last item is that sum. Before this PR the phone showed the table, so the sentence was true there. The text is pinned (#42's result.test.tsx:501), and design sections 3.4 and 9 give \"the last entry\" to UX PR 4b. The PR description's list of what waits for #42 leaves it out.",
+    "scenario": "On harness others.390 after, the anomalies card reads \"\u2026the table\u2019s last row sums the other 20,457\u2026\" above a stacked list. No table is visible at that width.",
+    "fix": "Add \"the page sentence's 'the table\u2019s last row' becomes 'the last entry' (design 3.4)\" to the PR description's \"Waits for #42\" list. The words change in 4b.",
+    "shots": [
+     "screening-result-harness.others.390",
+     "screening-result-harness.others-item.390"
+    ]
+   }
+  ],
+  "checked": [
+   "The diff origin/claude/build-platform...f4a97668 (21 files), read whole for the components: table-parts.tsx (new), stacked-rows.tsx, anomalies.tsx, coverage.tsx, result-summary.tsx; also the a11y.ts lists option, the screening-phone.spec.ts steps, the ADR 0078 amendment, and TBL-01 and TBL-03 to TBL-08",
+   "The checklist .claude/agents/ux-brand-reviewer.md, item by item where it touches this diff; .claude/rules/brand.md; ADR 0056 (phone rule, type, the tones table); CO-11 (change-order-001.md:95); words.ts; the design (sections 1 to 3, 7, 9 to 12, with 12 winning); the baseline entries UX-005, -040, -042, -043, -132, -206 and the open UX-134 (UX PR 63)",
+   "pnpm install --frozen-lockfile, then pnpm lint:copy under /tmp/laneb-heavy.lock: passed, 520 files read",
+   "Tokens only: the diff's added classes contain no palette colour, rgb() or hex (dark is advisory and holds on screening-result.default.1280-dark and .390-dark)",
+   "Reach: StackedRows and table-parts are used only by the screening result; the changed components render only /screening/results/[resultId] and the large-result test harness",
+   "Stacked cards at 390 (screening-result.default.390, no-anomaly.390, error-name.390, harness several.390 and others.390): heading of code and payer product, row number, code and product, or product and outcome chip; code and row number in Plex Mono 500 (zoomed crop); every other column under the table's header in table order; Rows and Claim lines, then the Medicare figures, allowed and differences together, all in mono; status in words on its tint, wrapping; terms over values with 8 px between pairs",
+   "The others item (harness others-item.390 and -dark): heading 'The other 20,457 groups, summed', OTHERS_NOTE as a muted line under it, eight fields, chip in the unpriced tone when anomalies are among them; the single-group words are read in code",
+   "Term column at 820 (screening-result.band.820): fit-content(40%) works and terms wrap beside the values; coverage keeps its table (690 px in 690)",
+   "1280 (screening-result.default.1280 tiles 03 to 05, no-anomaly.1280, harness several.1280): the anomalies table fits its card with statuses wrapped in min-w-40 cells and no caption; coverage fits; the top rows still scroll with the caption",
+   "Keyboard at 1280 (screening-result.top-rows-tab-focus.1280, before and after): the top rows' scroller is reached on Tab press 2 (press 3 before), the focus outline is drawn on the frame, the caption shows; the stacked lists hold no focusable element, and the hidden copy is display:none",
+   "Words: the sign key, 'Claim lines' (UX-043 closed at 1280 and 390), the coverage reason without ENGINE_ERROR (before and after default.1280 tile 04), 'PaidWhole could not price \u2026 within the quarter', the top rows' 'PaidWhole prices one claim line\u2026', grouped counts, None spoken in place of the dash, curly apostrophes in the new strings; no owed, underpaid or recovered, and no finding about a payer",
+   "Semantics, from code: the list is named by the card's h2 through aria-labelledby, role=list, h3 item headings under it, a dl of term and value pairs, coverage headings distinct by outcome (P4-DR-08)",
+   "Baseline on these screens: UX-005 closed at 390 and, for anomalies and coverage, at 1280 (the top rows scroll behind the cue, P7); UX-043 closed; UX-042 in part (sentence present, headers wait for 4b); UX-132 in part (code and 'the engine' gone; the reason's words 'approved place-of-service split' and the heading's '(engine phase-two/2)' remain, for 4b and UX PR 85); UX-040 phone part closed, table copy still Short at 1280 (open, not worsened); UX-206 still open ('1 group of 4 is an anomaly.'); UX-134 worsened (UXR-01); UX-154's top-rows sentence closed",
+   "Not the change's: 'Anomaly: 1 of 2 rows \u2026 below their lowest figure' (their for one row; the pinned format, for 4b); 'Expected under Medicare' headers beside the sentences' 'Medicare figure' (P5); no skip link in the public header (Tab press 1 is the logo)"
+  ],
+  "notSeen": [
+   "screening-result.converted.1280 and .390 (in the Screens of UX-005 and UX-132): not taken; tables read in code only",
+   "994 px, the narrowest width at which the tables show: no shot; only the spec's assertion",
+   "768 and 767 px, where coverage stacks and then shows its table again: not seen",
+   "A live result with more than one page of groups at 390 (GroupPages after a 50-item list): only the static harness later page was seen",
+   "25 top rows at 390: not seen; the length is an estimate from one 924 px item",
+   "One other group (51 groups): the heading, chip and description are read in code only",
+   "Empty states (nothing priced under Medicare, no top rows) and the withdrawn-release state: not seen, by sample; code shows no change of shape",
+   "A top row with no modifiers (None) in a live result: every synthetic row has GP",
+   "screening-result.top-rows-item.390 has no before shot (the base has no stacked item); the base's table is in top-rows-scrolled.390",
+   "Not checked: screen reader output (VoiceOver list role and count, heading list), print of the result, zoom to 200 to 400%"
+  ],
+  "proposals": [
+   "Stacked anomaly and top-row items: show the standing chip with the heading, as coverage shows its outcome, so a reader scanning 50 cards on a phone can find the anomaly without reading eight fields. This needs an order exception in ADR 0078 / TBL-04 (recommendation).",
+   "Fold design P5 into UX PR 4b's labels change: 'Expected under Medicare, \u2026' becomes 'Medicare figure, \u2026', so the sign key's 'its Medicare figure' names the column it points to, one name per thing (BRAND.md section 6 keeps 'expected' for contract amounts).",
+   "UX PR 4b: GroupStatus with one anomalous row reads 'Anomaly: 1 of 2 rows more than $5 a claim line below their lowest figure'; give it 'its' for one row along with the count sentence.",
+   "Record UX PR 4b and UX PR 63 as gates before the first release tag (LANES.md or the launch checklist): until then the public result has split tones and a request form tens of thousands of pixels down on a phone.",
+   "Tour on claude/build-ops: add screening-result shots at 994 and 768 px, and a static 'one other group' harness state, for 4b's review.",
+   "Checklist (.claude/agents/ux-brand-reviewer.md), with design P12: 'a stacked list's items carry their own hooks, never the table's', 'a status that is a sentence wraps above a floor in its cell', and 'a stacked field with no value for most items is dropped from those items'."
+  ],
+  "summary": "PR #83 does what it claims for UX-005 and UX-043, and for the parts of UX-042, UX-132 and UX-040 it takes. Compared before and after on the cited screens (default.390, error-name.390, default.1280, plus the capture spec's states):\n- **On a phone** the three tables are now stacked cards. Each is headed by its naming cells, with the code and row number in Plex Mono 500. Every column sits under the table's own header in the table's order, the Medicare figures, the allowed amount and the differences together in mono, and the status in words on its tint, wrapping.\n- **At 1280** the anomalies table now fits its card, with statuses wrapped above their 10rem floor. The top rows still scroll, with the cue and the focus outline on the frame.\n- **Words and dark mode:** the sign key and \"Claim lines\" appear, and ENGINE_ERROR and \"the engine\" are gone. Dark mode uses tokens only, and the copy lint passes (520 files).\n\nThe one should-fix is UXR-01. On a phone the result page is twice as long (7,659 to 14,227 px with one anomaly), and an estimated 60,000 px for a full page of groups. The audit request is still at the foot. That makes the open UX-134 worse. The fix is UX-134's jump link to `#screening-convert` under the heading, taken into this PR.\n\nThe other findings are nits, each small:\n- UXR-02: the one-other-group description reads \"the other 1 \u2026 list them\".\n- UXR-03: coverage cards show \"Reason \u2014\" on every outcome that has no reason.\n- UXR-04: pairs are only 4 px apart where long terms wrap beside their values at 820 px.\n- UXR-05: groupedCount duplicates counted(); #74 has merged, so words.ts can now group digits itself.\n- UXR-06: the ADR amendment says the anomalies fit at 1280 without qualification, but the large later page is 1094 px in 894.\n- UXR-07: the phone's unpriced tone beside the table's Short is an acceptable interim only if UX PR 4b lands before the first release tag; the PR description should say so.\n- UXR-08: \"the table\u2019s last row\" (pinned until 4b) should be in the PR description's list of what waits for #42.\n\nThe design and its review accepted the page length (section 9, P8). I still grade it should fix because the change worsens an open finding on the prospect's only page. Not seen: the converted state, 994 and 768 px, a live multi-page result and 25 top rows. My progress file is <scratchpad>/progress/p4-review-ux.md."
+ },
+ "shots": {
+  "sample": [
+   "Tour, both runs: screening-result.default.1280, .1280-dark and .390. This is the one-anomaly result: the tour's one send of CLEAN_ROWS with SMALL_ROWS and OUTSIDE_ROWS, 4 groups, 1 anomaly (97140 under Medicare Advantage without a contract).",
+   "Tour, both runs: screening-result.error-name.1280 and .390. These are among the Screens of UX-005, UX-042, UX-043 and UX-132 in the review, and the step writes nothing.",
+   "Tour, both runs: screening.default.1280, .1280-dark and .390. This is the public screening page, the one shot per layout. It is pixel-identical before and after.",
+   "Capture spec, both runs: screening-result.default.390-dark (the tour takes dark at 1280 only).",
+   "Capture spec, both runs: screening-result.no-anomaly.1280 and .390. A second real send of CLEAN_ROWS less its 97140 ma_noncontracted row, under its own practice (SYNTHETIC NO ANOMALY SCREENING CLINIC) and its own synthetic address. It gives 3 groups and 0 anomalies.",
+   "Capture spec, both runs: screening-result.band.820 (viewport 820x1180, no mobile emulation).",
+   "Capture spec, both runs: screening-result.top-rows-scrolled.390, the viewport scrolled to the top rows' card.",
+   "Capture spec, both runs: screening-result.top-rows-tab-focus.1280, the viewport around the top rows' ScrollTable frame after Tab reaches it. The Tab path is in the note.",
+   "Capture spec, both runs: screening-result-harness.several.390, .390-dark, .1280 and .1280-dark. A static render through each ref's own components of the head unit test's several-anomalies page (onePage(GROUPS), two anomalies among five groups), with its summary, coverage and top rows.",
+   "Capture spec, both runs: screening-result-harness.others.390, .390-dark, .1280 and .1280-dark. The same static render of the unit test's later page (LATER_PAGE: page 2 of 411, the other 20,457 groups summed).",
+   "Capture spec, both runs: screening-result-harness.others-item.390 and .390-dark. A clip of the others' stacked item after, and of the anomalies table frame that holds the others' row before.",
+   "Capture spec, after only: screening-result.top-rows-item.390. An element shot of the first stacked top row (308x924 px, 13 fields). The base has no stacked item; its table is in top-rows-scrolled.390 and default.390."
+  ],
+  "missing": [
+   "screening-result.top-rows-item.390 has no before shot. The base has no stacked item, and the step was added after the before server had stopped; the base's table is in screening-result.top-rows-scrolled.390 and screening-result.default.390.",
+   "screening-result.converted.1280 and .390 (in the Screens of UX-005 and UX-132) were not taken. Converting the run's one result would change the page the capture spec opens next, and its tables are the same as the default's.",
+   "No shots were taken at 994 px, the narrowest width at which the tables show (the design names it only in section 12's spec step 7, not in the screenshot sample)."
+  ],
+  "summary": "Both runs are done: 8 tour shots plus 16 capture-spec shots before, and 8 plus 17 after (the extra one is an after-only shot of one stacked top row). Nothing was skipped. Each run had a fresh database and held the lock about 3.5 to 4.5 minutes, and the server was confirmed stopped after each (`fuser 3297/tcp` printed nothing). The tour database and its temporary directories are removed. Both runs are tiled, and the index for each sample id is at <scratchpad>/p4-screens-index.md.\n\nThe states the tour lacks are in my own capture spec, <scratchpad>/capture/lane-b-ux-screening-result-tables-capture.spec.ts. Its static renders come from <scratchpad>/capture/screening-result-harness.mts, which draws the unit test's synthetic pages through each ref's own components with the app's stylesheets, so it works on both sides. The tour spec needed no change.\n\nThe PR's changes show in the shots: on a phone the three tables are stacked lists, the anomalies table fits its card at 1280 on the live results, the sign sentence and \"Claim lines\" appear, and ENGINE_ERROR and \"the engine\" are gone. The public screening page is pixel-identical before and after.\n\nSeen while checking, for the reviewer to judge:\n- At 390 the result page is about twice as long, and one stacked top row (924 px) is taller than the phone window.\n- On the large-result later page the anomalies table still overflows its card at 1280 (1094 px in 894), because the others' sums are wide."
+ }
+}
