@@ -7,6 +7,7 @@ import { Field } from '../../../../../components/field';
 import { FormKeys } from '../../../../../components/form-keys';
 import { MonthsWaitingOnLocation } from '../../../../../components/pricing/location';
 import { Money } from '../../../../../components/remittances/display';
+import { ScrollTable } from '../../../../../components/scroll-table';
 import { SettingsNav, currentOrganization } from '../../../../../components/settings/nav';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { loadPage } from '../../../../../lib/http/next';
@@ -134,7 +135,7 @@ export default async function PricingSettingsPage(props: { readonly params: Prom
         </CardHeader>
         <CardContent className="flex flex-col gap-2 text-sm">
           {places.length === 0 ? null : (
-            <div className="w-full overflow-x-auto">
+            <ScrollTable label="Places of service in effect">
               <table className="w-full text-left" aria-label="Places of service in effect">
                 <thead className="text-muted-foreground">
                   <tr>
@@ -153,7 +154,7 @@ export default async function PricingSettingsPage(props: { readonly params: Prom
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollTable>
           )}
           {split === 'not_read' ? <p className="text-muted-foreground">The approved split’s places show here once a run of this practice has priced under it.</p> : null}
           {split === 'none' ? <p className="text-muted-foreground">No place-of-service split is approved yet, so only the practice’s own places apply.</p> : null}

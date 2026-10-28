@@ -6,6 +6,7 @@ import { Label } from '@tp/ui';
 import { type ChangeEvent, useMemo, useState } from 'react';
 
 import { FIELD_LABELS, OWN_TEMPLATE, columnField } from '../../lib/reconciliation/template';
+import { ScrollTable } from '../scroll-table';
 
 /**
  * The posting-template mapping, with its preview on a sample (PRD 20: "one per practice-management
@@ -170,8 +171,8 @@ export function TemplateMapper({ builtIn, current }: TemplateMapperProps) {
             <p className="text-sm" data-state="preview">
               {preview.rows.length} {preview.rows.length === 1 ? 'row reads' : 'rows read'}; {preview.problems.length} {preview.problems.length === 1 ? 'row is' : 'rows are'} left out for an unreadable field.
             </p>
-            <div className="overflow-x-auto">
-              <table aria-label="Preview rows" className="w-full text-sm">
+            <ScrollTable label="Preview rows">
+              <table aria-label="Preview rows" className="w-full min-w-[48rem] text-sm">
                 <thead>
                   <tr className="border-b text-left">
                     <th className="py-1 pr-3">Row</th>
@@ -187,8 +188,10 @@ export function TemplateMapper({ builtIn, current }: TemplateMapperProps) {
                   {preview.rows.slice(0, PREVIEW_ROWS).map((row) => (
                     <tr key={row.rowNo} className="border-b">
                       <td className="py-1 pr-3">{row.rowNo}</td>
-                      <td className="py-1 pr-3">{row.postedOn}</td>
-                      <td className="py-1 pr-3 font-mono">{row.checkOrTrace}</td>
+                      <td className="py-1 pr-3 whitespace-nowrap">{row.postedOn}</td>
+                      <td className="py-1 pr-3 font-mono">
+                        <span className="block min-w-32 wrap-anywhere">{row.checkOrTrace}</span>
+                      </td>
                       <td className="py-1 pr-3 text-right font-mono tabular-nums">{formatUsd(row.amountCents)}</td>
                       <td className="py-1 pr-3">{row.payerName ?? '—'}</td>
                       <td className="py-1 pr-3">{row.claimReference === null ? 'none (check level)' : 'present (line level)'}</td>
@@ -197,7 +200,7 @@ export function TemplateMapper({ builtIn, current }: TemplateMapperProps) {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollTable>
             {preview.problems.length === 0 ? null : (
               <p className="text-sm text-muted-foreground">
                 Left out: {preview.problems.slice(0, PREVIEW_ROWS).map((problem) => `row ${String(problem.rowNo)} (${FIELD_LABELS[problem.field as PostingField].toLowerCase()})`).join(', ')}.

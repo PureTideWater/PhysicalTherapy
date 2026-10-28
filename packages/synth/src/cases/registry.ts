@@ -652,6 +652,25 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/components/pricing/content.test.tsx',
     'tools/test/workflows.test.ts',
   ]),
+  // The tables of the UX baseline review's third pull request (docs/adr/0078).
+  'TBL-01': none(1, 'The scroller is rendered from a synthetic table the test passes in memory, the source guard reads the app’s own files and sources it holds in memory, and the browser measures the scroller on synthetic practices the journeys load; no file.', [
+    'apps/web/src/components/scroll-table.test.tsx',
+    'apps/web/src/app/tables.test.ts',
+    'apps/web/e2e/layout-1280.spec.ts',
+    'apps/web/e2e/tables-phone.spec.ts',
+  ]),
+  'TBL-02': none(1, 'A synthetic practice of its own loads SYNTHETIC CAS-08, CAS-02 and MAP-03, whose files belong to those cases; no file.', ['apps/web/e2e/tables-phone.spec.ts', 'apps/web/e2e/layout-1280.spec.ts']),
+  'TBL-03': none(1, 'The routes read synthetic practices and sign-ins the journeys and the seed create; no file.', [
+    'apps/web/e2e/tables-phone.spec.ts',
+    'apps/web/e2e/reconciliation.spec.ts',
+    'apps/web/e2e/reports.spec.ts',
+    'apps/web/e2e/packets.spec.ts',
+    'apps/web/e2e/onboarding.spec.ts',
+    'apps/web/e2e/models.spec.ts',
+    'apps/web/e2e/unattested.spec.ts',
+    'apps/web/e2e/pricing.spec.ts',
+  ]),
+  'TBL-04': none(1, 'The stacked rows are rendered from synthetic rows the test passes in memory; no file.', ['apps/web/src/components/stacked-rows.test.tsx']),
 };
 
 export interface CaseDefinition {

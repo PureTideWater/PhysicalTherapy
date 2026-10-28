@@ -1,0 +1,22 @@
+{
+  "case": "TBL-01",
+  "module": "TBL",
+  "title": "A wide table's scroller and a fixed-height text box",
+  "assertion": "Rendered on the server as a region named after its table with \", scrolls sideways\" added (a text box: \", scrolls\") with tabindex 0, the containing block of what its table positions, with a visible focus outline, so it is reachable before any script runs; in the browser it has no role, name or tab stop while its content fits and the scroller itself does not hold focus (a link inside it does not count), and is a region again when the content overflows; edge fades show only at an edge with content past it and the caption \"Scroll sideways for more columns.\" only while it overflows, both from classes and data attributes alone (no style attribute); every table in apps/web/src is the direct and only child of the ScrollTable of components/scroll-table, under whatever name it is imported, and none is made by createElement or written in markup, but in the #42 pages listed with the pull requests that wrap them, and an exemption that no longer matches fails",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": [
+    "apps/web/src/components/scroll-table.test.tsx",
+    "apps/web/src/app/tables.test.ts",
+    "apps/web/e2e/layout-1280.spec.ts",
+    "apps/web/e2e/tables-phone.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The scroller is rendered from a synthetic table the test passes in memory, the source guard reads the app’s own files and sources it holds in memory, and the browser measures the scroller on synthetic practices the journeys load; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
