@@ -504,3 +504,20 @@ the build departs from the design or the review, the reason is given.
 6. **The reader keeps no sentence index.** Its windows stop at edges (a sentence's end is one), and a period after one
    letter or an abbreviation is none, so "p. 4" and "v. 2" are read as labels even where `sentenceSpans` (which the
    verifier still uses for its sentences and citations) splits them.
+7. **Two reviewed equivalents are renumbered, not re-reviewed.** The build adds array literals before them, so
+   `facts.ts` `nextLevel ? [] : …` is now occurrence 6 (was 1) and `mismatches.ts` `identifierForms`' `?? []` is now
+   occurrence 12 (was 4) in `tools/stryker/equivalent/packets.json`; the code and the reasons are unchanged. The
+   reviewer should confirm the renumbering.
+
+### Results
+
+- Tests: packets 915 pass (28 files); model-gateway 514 pass (+ `gateway.db.test.ts` 19 on PostgreSQL 18); web packets
+  41; worker `src/packets` 125 on PostgreSQL 18 (a cold machine needs `--testTimeout 60000`: the default 5 s timed out
+  once and cascaded); synth 185 (CAS-43 and CAS-44 `expected.json` written by `pnpm synth --case`); tools/stryker 103;
+  typecheck 22 projects; eslint on every touched file; `lint:logs`; `verify-content`.
+- Mutation (Stryker 10.1.1, 4 shared CPUs): `packets-roles` 100.00% (700/700, 7 min 16 s); `packets-words` 100.00%
+  (1,128/1,128, 22 min 42 s); `packets-scan` 93.95% with no unexplained survivor (9 min 9 s); `packets-rest` 17 min
+  23 s; packets as a whole 98.59% (6,162 of 6,250; all 88 undetected are recorded equivalents); the gate over all
+  five packets shards passes. The last round's survivors were killed by tests (a decimal is never a code;
+  `businessDays` is false without a prompt-pay rule) or by sharing one sentence finder between `findMismatches` and
+  `checkedFigures`.
