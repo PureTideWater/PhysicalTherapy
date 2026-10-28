@@ -35,7 +35,9 @@ on Lane A's orchestrator's order of 2026-10-28 03:45 UTC: next after #74, before
      never recorded cannot be tagged or read by roles without `phi.read` (design 2.8, 8.1).
 - **Waiting on someone (the founder):** whether a line already at Payer approved or Recovered may be written off, and
   with which reasons (a money and stage ruling; recorded, not decided; design 8.2).
-- **Next:** the build workflow (slices A to E in parallel, integration check, design critic, fixer); commit and push;
+- **Running:** the build workflow wf_0fd81a80-111 (script archived; progress `progress/pay-build-*.md`, `pay-critic.md`,
+  `pay-fix.md` in this session's scratchpad; worktree /home/user/ux-payer-response, uncommitted).
+- **Next:** commit and push (a WIP ref first if a limit stops the build);
   the draft PR; two reviews (UX and brand with shots; security with the money lens); fix round with the full suite; the
   fresh-clone verification; merge. Check-in trig_01VmPUaCgFFjDLZev4GuKyfh at 10:24 UTC.
 
@@ -46,3 +48,5 @@ on Lane A's orchestrator's order of 2026-10-28 03:45 UTC: next after #74, before
 | 2026-10-28 05:15 | Design: review next | The limit stopped wf_6c170a1a-e77 at ~04:20 after the scouts and the author (`designs/lane-b-ux-payer-response.md`, complete draft; scouts in `designs/lane-b-ux-payer-response/`). Resumed at 05:15 with resumeFromRunId (the review and revision run). |
 
 | 2026-10-28 05:55 | Design done | wf_6c170a1a-e77 finished on resume: review 28 findings, all applied. Decisions, Lane A items and the founder's question recorded above. Build next. |
+
+| 2026-10-28 06:00 | Build | wf_0fd81a80-111 started: builders A to E, integration check, critic, fixer. |
