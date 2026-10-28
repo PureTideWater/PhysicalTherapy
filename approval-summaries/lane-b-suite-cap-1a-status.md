@@ -24,6 +24,7 @@ split"; 1b completes it), test-matrix CAS-41, `packages/synth` case CAS-41 (modu
 - None for 1a. For Lane A (1b, already in its design as D15): the report's patient-balance step at 100,000 lines is dominated by claimLines' lookup on superseded_by_claim_id, which has no index: 718.7 s of the base report's 842.5 s (no heap flag). 1a's grouping (D16) and batching (D18) remove the rest (about 47 s), but the report stays near pg-boss's 15-minute attempt until `claim_by_superseded` lands (1b section 4.4, or the interest PR, whichever merges first). It is a migration, so it is not 1a's.
 
 ## Log
+- 2026-10-28 05:19 UTC: resumed per the orchestrator's 05:15 message (already resumed at 05:13: setup re-run, fix round pushed, verification wf_f8c221c4-b76 running). Check-in moved to 10:20 UTC (trig_01Bzt6FX9kWEjLfmb9S6XbJW); the 05:25 and 08:05 ones cancelled. Next: the verification's verdict, then the merge.
 - 2026-10-28 05:19 UTC: fix round done; suite passed; pushed f25333a6 (with the base merge); description updated; verification wf_f8c221c4-b76 launched.
 - 2026-10-28 04:01 UTC: fix done (61 focused tests, three of them failing before; worker and web db green); full local suite running: lint, typecheck, lint:logs, verify-content, fixtures, synth, unit, golden, oracle, db shards 1 and 2 pass so far. SUITE-CAP-3 assigned as the follow-on.
 - 2026-10-28 02:56 UTC: CI green on d3a9a3d7; reviews returned (both merge); fix round wf_e5086638-950 launched.
