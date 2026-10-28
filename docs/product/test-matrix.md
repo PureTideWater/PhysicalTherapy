@@ -128,6 +128,7 @@ PRC-25 to PRC-28 were added in `co-001/superseded-rerun` (combined audit #10, an
 | CAS-34 | A code the words have no words for | Refused on every screen and in the PDF; never shown as a code |
 | CAS-38 | The materiality and pursuit settings show stored cents as dollars | With a practice’s thresholds at 500 and 25000 cents and a staff rate of 4500 cents an hour, Settings → Defaults says "$5.00 per line and $250.00 per case" and "$45.00 an hour", each in the mono face, and pre-fills its dollar fields with 5.00, 250.00 and 45.00; the cases page pre-fills the same thresholds with the same helper; the console’s model budget is typed in dollars, as its hint says |
 | CAS-39 | Saving the defaults form unchanged changes nothing | Submitting the materiality and pursuit forms with the values the page pre-fills keeps lineMaterialityCents 500, caseMaterialityCents 25000 and staffRateCentsPerHour 4500; for every amount, the helper’s output read back through the save’s dollars field gives the same cents; a model budget entered as 5.00 or 5 is stored as 500 cents |
+| CAS-41 | A month's triage and report read in bounded memory | Triage's candidates and the audit report are read in batches; the judged candidates, the report's content, its CSV's bytes and its PDF's HTML equal the whole read's; what the report holds grows by at most 400 bytes per line, its CSV rows kept outside the heap |
 
 ## Ledger (LED)
 

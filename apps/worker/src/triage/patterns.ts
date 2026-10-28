@@ -2,7 +2,7 @@ import type { PracticeScope, ScopeClient } from '@tp/db/runtime';
 import { type Cents, sumCents } from '@tp/money';
 import { BEHAVIOR_TEXT, type CandidateLine, type PatternKey, type TriageSettings, judgeLine, patternId, planCases, pursuitCost, triageSettings } from '@tp/triage';
 
-import { candidateLines, candidateRows, insertCaseLines, lockPractice, openCase, openCases } from './execute';
+import { insertCaseLines, judgedCandidates, lockPractice, openCase, openCases } from './execute';
 
 /**
  * Payer patterns waiting for a case, and opening a case on one by hand (PRD 5, J8: "validated
@@ -62,8 +62,7 @@ async function settingsOf(client: ScopeClient, practiceId: string): Promise<Tria
 
 async function planWaiting(scope: PracticeScope<ScopeClient>, practiceId: string, asOf: string, requestId: string): Promise<Planned> {
   const settings = await settingsOf(scope.client, practiceId);
-  const rows = await candidateRows(scope, practiceId, null, requestId);
-  const candidates = rows.length === 0 ? [] : await candidateLines(scope.client, rows);
+  const candidates = await judgedCandidates(scope, practiceId, null, requestId);
   return { settings, candidates, plan: planCases(candidates, await openCases(scope.client, practiceId), settings, asOf) };
 }
 
