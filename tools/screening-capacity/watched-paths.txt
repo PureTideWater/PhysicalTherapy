@@ -121,6 +121,7 @@ apps/worker/src/deploy/logins.ts
 apps/worker/src/digest/figures.ts
 apps/worker/src/digest/job.ts
 apps/worker/src/digest/view.ts
+apps/worker/src/heap.ts
 apps/worker/src/heartbeat.ts
 apps/worker/src/intake/classify.ts
 apps/worker/src/intake/intake.ts

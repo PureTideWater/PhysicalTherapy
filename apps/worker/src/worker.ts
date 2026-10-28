@@ -4,6 +4,7 @@ import type { Logger } from '@tp/observability';
 import type { PgBoss } from 'pg-boss';
 
 import { SUSPENDED_ERROR_CODE, practiceRunRefusal, startsRun } from './billing/refusal';
+import { jobHeap, startHeapWatch } from './heap';
 import { startHeartbeat } from './heartbeat';
 import type { JobHandlers } from './jobs/handlers';
 import { PLATFORM_JOB_TYPES, PLATFORM_SCHEDULES, type PlatformHandlers, type PlatformJobType, parsePlatformPayload } from './jobs/platform';
@@ -79,6 +80,14 @@ export class CrossPracticeJobError extends Error {
  */
 export const JOB_FAILED_MESSAGE = 'job failed on its last attempt';
 
+/**
+ * The line each attempt logs as it ends, completed or failed (docs/adr/0083, D19): the largest live heap of the process
+ * seen while it ran, just after a major collection, and V8's heap limit, in MiB. IDs and numbers only. The worker log
+ * group's metric filter takes its peak and alarms at 75% of the worker's heap (infra/lib/jobs.ts); the weekly real-size
+ * run reads it back by job ID.
+ */
+export const JOB_HEAP_MESSAGE = 'job heap';
+
 interface QueuedJob {
   readonly id: string;
   readonly data: unknown;
@@ -86,8 +95,12 @@ interface QueuedJob {
   readonly retryCount?: number;
 }
 
-/** Runs one attempt, logging the job's final failure (its third attempt) for the operator alarm. */
+/**
+ * Runs one attempt, logging the job's final failure (its third attempt) for the operator alarm, and, however it ends,
+ * the live heap it saw (JOB_HEAP_MESSAGE).
+ */
 async function attempt(type: string, job: QueuedJob, logger: Logger, run: () => Promise<void>): Promise<void> {
+  const heap = jobHeap();
   try {
     await run();
   } catch (error) {
@@ -96,6 +109,10 @@ async function attempt(type: string, job: QueuedJob, logger: Logger, run: () => 
       logger.error('job failed on its last attempt', { job_id: job.id, job_type: type, error_code: 'JOB_FAILED' });
     }
     throw error;
+  } finally {
+    const { heapLivePeakMib, heapLimitMib } = heap.end();
+    // The text is JOB_HEAP_MESSAGE, written out for the log lint; worker.test.ts holds them equal.
+    logger.info('job heap', { job_id: job.id, job_type: type, heap_live_peak_mib: heapLivePeakMib, heap_limit_mib: heapLimitMib });
   }
 }
 
@@ -236,6 +253,7 @@ export async function startWorker(options: WorkerOptions): Promise<RunningWorker
   const { boss, logger } = options;
   const practice = practiceJobs(options);
   await boss.start();
+  const stopHeapWatch = startHeapWatch();
   for (const type of JOB_TYPES) {
     await boss.createQueue(type, queueOptions(type));
   }
@@ -307,6 +325,7 @@ export async function startWorker(options: WorkerOptions): Promise<RunningWorker
         heartbeat.stop();
         await boss.stop({ graceful: true, timeout: options.shutdownTimeoutMs ?? 30_000 });
         await screening?.close();
+        stopHeapWatch();
         logger.info('worker stopped');
       })();
       return stopping;

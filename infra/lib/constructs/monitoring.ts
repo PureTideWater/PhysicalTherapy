@@ -15,7 +15,17 @@ import {
 import { Construct } from 'constructs';
 
 import type { EnvironmentName } from '../environments';
-import { JOB_FAILED_MESSAGE, JOB_FAILED_METRIC, JOB_FAILED_PERIOD_SECONDS, PRICING_ENGINE_ERRORS_MESSAGE, PRICING_ENGINE_ERRORS_METRIC } from '../jobs';
+import { HEAP_MIB } from '../heap';
+import {
+  JOB_FAILED_MESSAGE,
+  JOB_FAILED_METRIC,
+  JOB_FAILED_PERIOD_SECONDS,
+  JOB_HEAP_ALARM_PERCENT,
+  JOB_HEAP_MESSAGE,
+  JOB_HEAP_METRIC,
+  PRICING_ENGINE_ERRORS_MESSAGE,
+  PRICING_ENGINE_ERRORS_METRIC,
+} from '../jobs';
 import {
   HEARTBEAT_INTERVAL_SECONDS,
   HEARTBEAT_MESSAGE,
@@ -103,7 +113,9 @@ export interface MonitoringProps {
  * alarm. The web app's failed sign-in bursts (a second-factor burst, a lockout) are counted from
  * its log group and alarm at once. A practice that reaches or spends its daily model budget (test
  * matrix MOD-05: "calls refused; alert") is counted from the web app's and the worker's log groups,
- * both of which call the model gateway, and alarms at once. Alarm text is fixed: an alarm name, the
+ * both of which call the model gateway, and alarms at once. Each worker job's live heap peak (its
+ * `job heap` line, docs/adr/0083) is taken from the worker's log group, and its maximum alarms above 75%
+ * of the worker's heap limit in a five-minute period. Alarm text is fixed: an alarm name, the
  * environment and a reason, never a value from a log line.
  *
  * The screening consumer (docs/adr/0062; PR 6b-3, decisions 13 to 16) logs to its own group (/tp/<env>/screening). Its
@@ -133,6 +145,8 @@ export class Monitoring extends Construct {
   readonly platformHeartbeatAlarm: cloudwatch.Alarm;
   readonly jobFailedAlarm: cloudwatch.Alarm;
   readonly pricingEngineErrorsAlarm: cloudwatch.Alarm;
+  /** A job's live heap above 75% of the worker's heap limit (D23). */
+  readonly jobHeapAlarm: cloudwatch.Alarm;
   readonly failedSignInBurstAlarm: cloudwatch.Alarm;
   readonly modelBudgetAlarm: cloudwatch.Alarm;
   readonly screeningHeartbeatAlarm: cloudwatch.Alarm;
@@ -301,6 +315,22 @@ export class Monitoring extends Construct {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
     this.pricingEngineErrorsAlarm.addAlarmAction(notify);
+
+    const heapPeaks = this.workerLogGroup.addMetricFilter('JobHeapLivePeak', {
+      filterPattern: logs.FilterPattern.stringValue('$.msg', '=', JOB_HEAP_MESSAGE),
+      metricNamespace: JOB_HEAP_METRIC.namespace,
+      metricName: JOB_HEAP_METRIC.metricName,
+      metricValue: '$.heap_live_peak_mib',
+    });
+    this.jobHeapAlarm = new cloudwatch.Alarm(this, 'JobHeapLivePeak', {
+      alarmDescription: `A ${props.environmentName} worker job saw the live heap pass ${String(JOB_HEAP_ALARM_PERCENT)} percent of the worker heap limit.`,
+      metric: heapPeaks.metric({ statistic: cloudwatch.Stats.MAXIMUM, period: Duration.seconds(JOB_FAILED_PERIOD_SECONDS) }),
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      threshold: (HEAP_MIB.worker * JOB_HEAP_ALARM_PERCENT) / 100,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    this.jobHeapAlarm.addAlarmAction(notify);
 
     const signInBursts = this.webLogGroup.addMetricFilter('FailedSignInBursts', {
       filterPattern: logs.FilterPattern.any(...SIGN_IN_BURST_MESSAGES.map((message) => logs.FilterPattern.stringValue('$.msg', '=', message))),

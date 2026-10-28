@@ -48,10 +48,11 @@ export const ALLOWED_LOG_FIELDS = [
 
 /**
  * Fields that hold a number and nothing else: a phase's elapsed milliseconds and the count of records it read or
- * wrote (docs/adr/0062, the screening's phase timings). The runtime logger drops one whose value is not a finite,
- * non-negative number, so neither can carry text.
+ * wrote (docs/adr/0062, the screening's phase timings), and a job's largest live heap and the heap limit in mebibytes
+ * (docs/adr/0083, the worker's `job heap` line). The runtime logger drops one whose value is not a finite,
+ * non-negative number, so none can carry text.
  */
-export const NUMERIC_LOG_FIELDS = ['elapsed_ms', 'record_count'] as const;
+export const NUMERIC_LOG_FIELDS = ['elapsed_ms', 'record_count', 'heap_live_peak_mib', 'heap_limit_mib'] as const;
 
 export type IdentifierLogField = (typeof ALLOWED_LOG_FIELDS)[number];
 export type NumericLogField = (typeof NUMERIC_LOG_FIELDS)[number];

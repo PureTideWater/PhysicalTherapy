@@ -8,7 +8,7 @@ import { PLATFORM_JOB_TYPES, PLATFORM_SCHEDULES, type PlatformHandlers } from '.
 import { JOB_TYPES, PARSE_CONCURRENCY, QUEUE_OPTIONS, SCREENING_QUEUE_OPTIONS, queueOptions, workOptions } from './jobs/registry';
 import { SCREENING_JOB_TYPES, type ScreeningHandlers, type ScreeningJobs } from './jobs/screening';
 import type { JobRunRecorder } from './jobs/runs';
-import { CrossPracticeJobError, JOB_FAILED_MESSAGE, JobPayloadError, type QueueClient, startWorker } from './worker';
+import { CrossPracticeJobError, JOB_FAILED_MESSAGE, JOB_HEAP_MESSAGE, JobPayloadError, type QueueClient, startWorker } from './worker';
 
 const PRACTICE = '7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01';
 const DOCUMENT = '0b6e2a7c-3f4d-4e5a-8b9c-1d2e3f4a5b03';
@@ -236,6 +236,59 @@ describe('startWorker', () => {
       expect.objectContaining({ level: 'error', job_id: 'job-drill', job_type: 'restore_drill', error_code: 'JOB_FAILED' }),
     ]);
     expect(QUEUE_OPTIONS.retryLimit + 1).toBe(3);
+    await worker.stop();
+  });
+
+  it('logs the live heap once per attempt as it ends, completed or failed, with IDs and numbers only (D19)', async () => {
+    const { handlers, client } = fakeBoss();
+    const { lines, logger } = capture();
+    const failing = () => Promise.reject(new Error('synthetic failure'));
+    const worker = await startWorker({
+      boss: client,
+      pool,
+      logger,
+      handlers: { ...placeholderHandlers, price: failing, parse_835: () => Promise.resolve() },
+      platform: {
+        audit_copy: () => Promise.resolve(),
+        restore_drill: failing,
+        support_grant_notices: failing,
+        monitoring_schedule: failing,
+        billing_dunning: failing,
+        usage_snapshot: failing,
+        support_mail: failing,
+        screening_expiry: failing,
+        mail_events: failing,
+        mail_expiry: failing,
+        dunning_notices: failing,
+      },
+      heartbeatMs: 60_000,
+    });
+    expect(JOB_HEAP_MESSAGE).toBe('job heap');
+    await handlers.get('parse_835')?.([{ id: 'job-parse', data: { practice_id: PRACTICE, document_id: DOCUMENT } }]);
+    for (const retryCount of [0, 1, 2]) {
+      await expect(handlers.get('price')?.([{ id: 'job-price', retryCount, data: { practice_id: PRACTICE, pricing_run_id: DOCUMENT } }])).rejects.toThrow('synthetic failure');
+    }
+    await handlers.get('audit_copy')?.([{ id: 'job-copy', data: {} }]);
+    // A payload the worker rejects is an attempt too: it still logs its heap.
+    await expect(handlers.get('parse_835')?.([{ id: 'job-bad', data: { practice_id: 'not a uuid' } }])).rejects.toThrow(JobPayloadError);
+    const heapLines = lines.filter((line) => line.msg === JOB_HEAP_MESSAGE);
+    expect(heapLines.map((line) => [line.job_id, line.job_type])).toEqual([
+      ['job-parse', 'parse_835'],
+      ['job-price', 'price'],
+      ['job-price', 'price'],
+      ['job-price', 'price'],
+      ['job-copy', 'audit_copy'],
+      ['job-bad', 'parse_835'],
+    ]);
+    for (const line of heapLines) {
+      expect(Object.keys(line).sort()).toEqual(['heap_limit_mib', 'heap_live_peak_mib', 'job_id', 'job_type', 'level', 'msg', 'time']);
+      expect(line.level).toBe('info');
+      for (const field of ['heap_live_peak_mib', 'heap_limit_mib'] as const) {
+        expect(Number.isInteger(line[field]), field).toBe(true);
+        expect(line[field] as number, field).toBeGreaterThan(0);
+      }
+      expect(line.heap_live_peak_mib as number).toBeLessThanOrEqual(line.heap_limit_mib as number);
+    }
     await worker.stop();
   });
 
