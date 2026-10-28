@@ -961,3 +961,8 @@ HANDOFF.md; LANES.md rule 10).
   - Tags are checked again before 4b merges. If one exists, the labels part becomes a new version with its migration, for Lane A.
   - 4b waits for #42 (lib/screening/*).
 - Not the founder's decision: no ruling changes, and audit #57's rule holds for every released version.
+
+### 2026-10-28 03:40 UTC: UX PR 1 (forms keep input) merged as #74 (165c599); UX PR 10 next
+- #74: CI green on 8cab9c9, the fresh-clone verification passed, approval-of-record re-ran; #79 merged into it first (14 conflicted files, both sides kept).
+- Order in the ux-forms session (Lane A's call): UX PR 10 `co-001/ux-payer-response` (UX-035, blocking: a write-off Reason or a payer Response that opens pre-answered can record a decision nobody chose, which moves a line's stage) before UX PR 6 and 7 (sign-in time and recovery). Reserved for PR 10: ADR 0085, CAS-45 to CAS-48, synth module 21 if needed. Next free: ADR 0087, synth module 22, fixture release 900008.
+- After #42 merges: `co-001/ux-forms-after-42` (design 7.8).
