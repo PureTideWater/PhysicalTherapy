@@ -6,6 +6,8 @@ option (the co-founder's ruling of 2026-10-26 ~00:20 UTC), recorded here and in 
 
 Open questions: none.
 
+Waiting on someone: the founder or the triager closes Dependabot PR #33 by hand (2026-10-28; why in the resume block).
+
 <!-- RESUME-BLOCK -->
 ## Current state (2026-10-28 05:20 UTC): P1 draft PR #82 green on b574d4e8; its fix round resumed after the 5-hour limit (wf_dfb43bb4-b4c)
 - **ci-browser: merged** (#77, ecebdc90); push runs green; the O5 probe on #41.
@@ -14,7 +16,7 @@ Open questions: none.
 - **Fix round** wf_dfb43bb4-b4c (script to archive as `workflow-scripts/lane-b-ci-pin-age-fix-round-*.js`): F1 check-toolchain in `/home/user/ci-pin-age-f1`, F2 check-action-pins in `/home/user/ci-pin-age-f2`, then the integrator in `/home/user/ci-pin-age` (workflows test, documents, design §16, the base merged in (165c5993 or later), the full local suite once, one push, description v2 read back). Progress in `scratchpad/p1fix/progress/`.
 - **Stopped and resumed:** the account's 5-hour limit stopped the fix round at ~04:05 UTC (F2 had five commits 413e5812..7e14ea0e and uncommitted edits; F1 nothing committed); the container restarted. At 05:13: setup re-run (OK), F2's commits pushed for continuity as `co-001/wip-ci-pin-age-f2`, the script given a RESUMED note, the round resumed with `resumeFromRunId`.
 - **Check-in:** trig_01VRYza7kBainue2gH5RZVHo at 10:25 UTC.
-- **Dependabot, Wednesday 04:44 UTC:** the images runs (docker 40634046721, docker_compose 40634047077) succeeded at 165c5993; #33 is still open and untouched; the logs are being read for why (`scratchpad/dependabot-wed.md`).
+- **Dependabot, Wednesday 04:44 UTC (read):** the docker (40634046721) and docker_compose (40634047077) runs at 165c5993 were scheduled version updates under the new config: node and postgres held by their `semver-major` ignores and the 7-day cooldown ("No update needed"), `existing-pull-requests: []`. **#33 stays open because no scheduled run can see or close it** (it belongs to main's old `base-images` group; dependabot-core matches group PRs by name and never closes on a version run). **Waiting on someone: the founder or the triager closes #33 by hand** (never merged; runbook dependency-upgrades.md). Also seen: Docker Hub rebuilt `node:24-trixie-slim` (2026-10-28 02:38Z) and `postgres:18-trixie` (04:13Z) inside the cooldown, so a digest refresh opens only if a tag goes 7 days unrepublished: P22 (P1 design §14.7) watches it in the weekly triage. Report: `lane-b-ci-deps-dependabot-2026-10-28.md`.
 - **Next:** CI on the fix round's head; the fresh-clone verification; ready; merge. Then P2, P4. Dependabot's Wednesday 04:43 UTC images run to read.
 <!-- RESUME-BLOCK -->
 
