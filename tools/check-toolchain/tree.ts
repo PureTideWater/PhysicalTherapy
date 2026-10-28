@@ -49,16 +49,24 @@ const APP_DOCKERFILE = /^apps\/[^/]+\/Dockerfile$/;
 export const WORKFLOWS_DIR = '.github/workflows';
 const WORKFLOW = /\.ya?ml$/;
 
+/** A source, document or ignore file's extension: dockerfile.ts or Dockerfile.dockerignore names no image (CI-S2). */
+const NOT_AN_IMAGE_FILE = /\.(?:[cm]?[jt]sx?|json|mdx?|txt|snap|dockerignore)$/i;
+
 /**
  * Whether a tracked file can define an image outside the three the image rule reads (each apps/<name>/Dockerfile and
- * docker-compose.yml), so the rule refuses it (S6): a Dockerfile or Containerfile by any name (Dockerfile.dev,
- * web.dockerfile; release.yml and release-dry-run.yml compute `file:`, so any of them can be built), and any compose
- * file (compose.yaml, which Compose prefers to docker-compose.yml, and every override it merges), at any depth.
+ * docker-compose.yml), so the rule refuses it (S6). Docker's own names only, in any case, at any depth (CI-S2):
+ * - Dockerfile or Containerfile alone, with a suffix (Dockerfile.dev) or as one (web.Dockerfile); release.yml and
+ *   release-dry-run.yml compute `file:`, so any of them can be built. A source, document or ignore file is none, so
+ *   dockerfile.ts and Dockerfile.dockerignore pass;
+ * - compose.y(a)ml and docker-compose.y(a)ml, which Compose prefers in that order, with a `.<x>` part (the
+ *   `.override` file it merges, compose.prod.yaml) or, for docker-compose, a `-<x>` one (docker-compose-dev.yml).
+ * Names that merely begin like these (dockerfiles.md, containerfile-notes.md, compose-email.yml) are ordinary files.
  */
 export function isImageFile(file: string): boolean {
   const name = file.slice(file.lastIndexOf('/') + 1);
-  const image = /^(?:dockerfile|containerfile)/i.test(name) || /\.(?:dockerfile|containerfile)$/i.test(name) || /^(?:docker-)?compose(?:[.-][^/]*)?\.ya?ml$/i.test(name);
-  return image && !APP_DOCKERFILE.test(file) && file !== FILES.compose;
+  const dockerfile = (/^(?:dockerfile|containerfile)(?:\.[^/]+)?$/i.test(name) && !NOT_AN_IMAGE_FILE.test(name)) || /^[^/]+\.(?:dockerfile|containerfile)$/i.test(name);
+  const compose = /^(?:docker-)?compose(?:\.[^/]+)?\.ya?ml$/i.test(name) || /^docker-compose-[^/]+\.ya?ml$/i.test(name);
+  return (dockerfile || compose) && !APP_DOCKERFILE.test(file) && file !== FILES.compose;
 }
 
 /** Splits git's NUL-terminated list of paths. */
