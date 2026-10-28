@@ -2,7 +2,7 @@
   "case": "TBL-03",
   "module": "TBL",
   "title": "Every changed route at a phone's width passes axe",
-  "assertion": "At 390 px every changed route, each with its wide table populated and overflowing, has no axe-core WCAG 2.1 A or AA violation, a scrollable region the keyboard cannot reach (scrollable-region-focusable) among them, and every scroller's state agrees with its measurement before axe runs; the screening result's is the review's fourth pull request's",
+  "assertion": "At 390 px every changed route, each with its wide table populated and overflowing, has no axe-core WCAG 2.1 A or AA violation, a scrollable region the keyboard cannot reach (scrollable-region-focusable) among them, and no two landmarks of a role share a name (axe's landmark-unique), every scroller's state agreeing with its measurement before axe runs; the screening result's is TBL-07",
   "synthetic": true,
   "completesIn": 1,
   "assertedBy": [

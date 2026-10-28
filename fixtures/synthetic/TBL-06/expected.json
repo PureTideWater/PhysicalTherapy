@@ -1,0 +1,20 @@
+{
+  "case": "TBL-06",
+  "module": "TBL",
+  "title": "The screening result's tables from a desktop's width",
+  "assertion": "At 1280 px the three tables show, each in its scroller named after its card's title, with one row for each group, coverage row and top row the database returns, and the lists are hidden from view and from assistive technology; each card switches at its own table's width, so at 820 px the anomalies and the top rows stack while the coverage keeps its table, and without script the switch is the same; the table and the list render from one row array and one list of column labels; a status wraps in its cell above a 10rem floor, so the synthetic result's anomalies and coverage fit their cards at 1280 px and at 994 px, the narrowest width at which all three tables show, while at 1280 px the rows with the largest differences scroll in their region with the caption; a table that was hidden measures again when it shows",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": [
+    "apps/web/src/components/screening/result-tables.test.tsx",
+    "apps/web/e2e/screening-phone.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The result is rendered from synthetic groups, rows and coverage the test writes by hand, and the browser opens a result the screening consumer prices from a synthetic upload built in memory (CLEAN_ROWS, e2e/screening.ts); no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

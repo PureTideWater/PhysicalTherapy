@@ -109,6 +109,24 @@ claims focus only when its element is rendered (`getClientRects().length > 0`), 
 the visible one needs; that change to `components/action-form.tsx` lands with the review's 34th pull request, the
 first to render row forms in both copies. The fourth pull request (the screening result) is the first user.
 
+*Amended 2026-10-28 (`co-001/ux-screening-result-tables`, the fourth pull request and the first user):* a paired caller
+writes one list of columns per table, each with its label, its figure role (expected, paid or short) or the mono face,
+and whether it is a naming cell, and reads it in order for the table's headers, for each row's cells and for the
+stacked fields: the item's heading is its naming cells, and every other column is a field. A row's cells come from one
+renderer that takes the copy, the table's or the rows', so a component inside a cell (a status chip, a one-figure
+dash) carries the table's test hooks in the table copy and `data-stacked-…` hooks or none in the rows copy. A table's
+footer row, a sum of the rows a page does not list, is the list's last item. An item may carry a description, a line
+under its heading that says what its figures are where the table says it in the naming cell, so a heading stays the
+naming cell alone and a list read by its headings stays short. From 24rem the terms stand beside their values in a
+column of at most 40% of the list (`fit-content(40%)`), so a long term wraps between words rather than leave its value
+a sliver. In a table cell a status chip wraps above a 10rem floor, Decision 1's "the cell gives way", so a table whose
+statuses are sentences fits its card when its figures do: the screening's anomalies fit at 1280 px and at 994 px, where
+the card's content is exactly 54rem. Where another pull request's test pins a cell's tone for a time, the rows copy may
+take the right tone first: the screening's anomaly is unpriced (ADR 0056's investigatory line; UX-040) in the rows copy
+now and in the table copy with the review's follow-on, once #42's tests may change. The switch is proved in the browser
+at 390, 820, 994 and 1280 px and without script by `e2e/screening-phone.spec.ts` (TBL-05 to TBL-07), and
+`atPhoneWidth` checks a stacked list's values the way its `tables` option checks a table (`lists`).
+
 **6. The guard.** A unit test (`apps/web/src/app/tables.test.ts`) parses every `.ts` and `.tsx` in `apps/web/src` but
 tests and test support, and fails on a `<table>` whose parent is not `ScrollTable`, on a `ScrollTable` whose children
 are not exactly one `<table>`, on `createElement('table')` or `jsx('table')`, and on a table in markup for
