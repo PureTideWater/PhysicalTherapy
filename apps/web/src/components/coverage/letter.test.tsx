@@ -5,7 +5,8 @@ import { LETTER_CODES_PATTERN } from '../../lib/contracts/letter';
 import { payerLetter } from '../../lib/routes/coverage';
 import { forgetRefusalUrl } from '../forget-refusal';
 import { LETTER_CONTROLS, type LetterSearchParams, PayerLetter } from './letter';
-import { type ContractChoice, type PayerChoice, contractOwners, watchLetterContract } from './letter-contract-check';
+import { type ContractChoice, type PayerChoice, watchLetterContract } from './letter-contract-check';
+import { contractOwners } from './letter-contract-owners';
 import { type LetterMark, type MarkedControl, clearMark, describedWithout, watchLetterMarks } from './letter-marks';
 
 /**

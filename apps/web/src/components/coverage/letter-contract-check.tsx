@@ -2,6 +2,8 @@
 
 import { useEffect } from 'react';
 
+import type { ContractOwners } from './letter-contract-owners';
+
 /** The payer select, as the check reads it (an HTMLSelectElement; a test passes a fake). */
 export interface PayerChoice extends EventTarget {
   readonly value: string;
@@ -14,14 +16,6 @@ export interface PayerChoice extends EventTarget {
 export interface ContractChoice extends EventTarget {
   readonly value: string;
   setCustomValidity(message: string): void;
-}
-
-/** Each listed contract's payer, by the contract's ID: what the check holds the chosen contract to. */
-export type ContractOwners = Readonly<Record<string, string>>;
-
-/** The payer of each contract the select lists, by the contract's ID (opaque IDs only, never a name). */
-export function contractOwners(contracts: readonly { readonly id: string; readonly payerId: string }[]): ContractOwners {
-  return Object.fromEntries(contracts.map((contract) => [contract.id, contract.payerId]));
 }
 
 /**

@@ -6,7 +6,8 @@ import { type RefusedDownload, downloadRefusal, keptCodes, keptId } from '../../
 import type { PayerOption } from '../../lib/remittances/queries';
 import { DownloadRefusal } from '../download-refusal';
 import { Field, type FieldWords, SelectField } from '../field';
-import { LetterContractCheck, contractOwners } from './letter-contract-check';
+import { LetterContractCheck } from './letter-contract-check';
+import { contractOwners } from './letter-contract-owners';
 import { LetterMarks } from './letter-marks';
 
 /**
