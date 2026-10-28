@@ -80,6 +80,8 @@ describe('the screening upload form', () => {
     expect(UPLOAD_EMAIL_HINT).toContain('keep a record of counts that names no one');
     // What happens if the practice has, or asks for, an audit, without saying whether it has (decision 17).
     expect(UPLOAD_EMAIL_HINT).toContain('If an audit is requested from the screening, or was requested from an earlier screening with the same practice name and ZIP code');
+    // The mail service's record of the address check outlives the deletion the hint states (the review of 2026-10-27).
+    expect(UPLOAD_EMAIL_HINT).toContain('The mail service that checks whether the address can receive email keeps a record of that check, which can name the address, for 90 days.');
     expect(plain).toContain(ABOUT_PRACTICE);
   });
 

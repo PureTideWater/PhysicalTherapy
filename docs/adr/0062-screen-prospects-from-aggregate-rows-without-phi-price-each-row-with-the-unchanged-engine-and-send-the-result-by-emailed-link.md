@@ -1508,10 +1508,13 @@ function with the lead list.
 
 **What is kept of a refused address (Q11 (b)).** A keyed hash (the pepper in an owner-only table no role reads) of a
 screening address that bounced permanently or was reported as spam on the screening stream, kept 365 days from its
-latest such outcome, used only to refuse a new screening to it. The pages say so and never call it deleted:
-`REFUSED_ADDRESS_KEPT` joins the result page's notice (with no request), the closed link's page, the upload form's hint
-and the "sent" alert. It is the only value derived from a screening address kept past its prospect, with the budget's
-marks.
+latest such outcome, used only to refuse a new screening to it (a permanent bounce keyed with the address's +tag
+kept, a complaint by its mailbox: ADR 0065). The pages say so and never call it deleted: `REFUSED_ADDRESS_KEPT` joins
+the result page's notice (with no request), the closed link's page, the upload form's hint, the "sent" alert and, since
+the review of 2026-10-27, the result email. It is the only value derived from a screening address the database keeps
+past its prospect, with the budget's marks. Beside it, each of those five says the mail service keeps its record of the
+address check 90 days (`ADDRESS_CHECK_KEPT`; ADR 0065, residual 1), which the pages had left out while saying the
+address is deleted (the review of 2026-10-27).
 
 **The bounce budget (Q10 (a)).** Each run keeps, for its 30 days, the rate limiter's keyed hash of the client address
 (`client_subject`, new, passed by the web as `submit_screening()`'s last parameter) beside the email account's
@@ -1544,7 +1547,9 @@ a work address's domain, so a colleague at the practice was told their own addre
   domain, could not be delivered, so we cannot take another screening from them for up to 7 days. Check the email
   address, or request an audit instead.";
 - what is kept: "If email to the address you gave cannot be delivered, or is reported as spam, we keep a coded form of
-  it, which cannot be turned back into the address, for 12 months, only to refuse another screening to that address."
+  it, which cannot be turned back into the address, for 12 months, only to refuse another screening to that address.";
+- and beside it (the review of 2026-10-27, for the founder's sign-off and counsel, O4): "The mail service that checks
+  whether the address can receive email keeps a record of that check, which can name the address, for 90 days."
 
 **What proves it.** `apps/web/src/lib/screening/address.test.ts` and `validation.test.ts` (the hints, the DNS
 verdicts, the validation table, the cap, the timeouts and the logs), `routes.db.test.ts` (paused and not ready closing

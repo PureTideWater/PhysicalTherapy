@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { MemoryMailSender, mailBody, mailBodyHtml } from '../mail/mail';
 import { EMAIL_LOCKUP_PATH, EMAIL_PROSPECT_LOCKUP_PATH, MAIL_FOOTERS } from '../mail/template';
 import { SCREENING_WAITED, ScreeningMessageError, screeningFailedMessage, screeningResultLink, screeningResultMessage, screeningStartLink } from './message';
-import { KEPT_COUNTS, KEPT_SUMMARY, emailKept } from './wording';
+import { ADDRESS_CHECK_KEPT, KEPT_COUNTS, KEPT_SUMMARY, REFUSED_ADDRESS_KEPT, emailKept } from './wording';
 
 /**
  * The screening emails (CO-04; decisions D11 and D21 a): the result's link as the prospect variant, the lockup without
@@ -38,6 +38,10 @@ describe('the screening result email', () => {
     expect(message.lines).toContain(emailKept('none'));
     expect(emailKept('none')).toContain('Then we delete the result and the details you gave, unless an audit is requested from it');
     expect(emailKept('none')).toContain(`We keep a record of counts that names no one: ${KEPT_COUNTS}.`);
+    // What outlives the address, as the pages that say it is deleted say it (the review of 2026-10-27).
+    expect(emailKept('none')).toContain(`${REFUSED_ADDRESS_KEPT} ${ADDRESS_CHECK_KEPT}`);
+    expect(emailKept('none')).toContain('we keep a coded form of it, which cannot be turned back into the address, for 12 months, only to refuse another screening to that address.');
+    expect(emailKept('none')).toContain('keeps a record of that check, which can name the address, for 90 days.');
   });
 
   it('tells a prospect whose screening took over an earlier request that their details are kept with it, and for how long', () => {
@@ -80,8 +84,9 @@ describe('the screening result email', () => {
       expect(text).not.toMatch(/\$|\bcents?\b|\d[\d,.]*\s*dollars?\b/i);
       expect(text).not.toMatch(/\b20\d{2}-\d{2}-\d{2}\b|\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/);
     }
-    // The only numbers are the row count, the 30 days and the 12 months.
-    expect(body.replace(LINK, '').match(/\d[\d,]*/g)).toEqual(['1,234', '30', '12']);
+    // The only numbers are the row count, the 30 days, the 12 months a request keeps the summary, the 12 months a refused
+    // address's coded form is kept and the 90 days the mail service keeps its address check (the review of 2026-10-27).
+    expect(body.replace(LINK, '').match(/\d[\d,]*/g)).toEqual(['1,234', '30', '12', '12', '90']);
   });
 
   it('is headed by the lockup without the tagline (D11), with the prospect’s footer, never the customer’s', () => {
