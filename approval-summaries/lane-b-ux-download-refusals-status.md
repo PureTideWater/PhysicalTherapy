@@ -5,8 +5,11 @@ session_01L3tN5LCq2aNYetEQBNJYZg, a Lane B item session started 2026-10-27 by La
 (session_01TrKDxeLbxVo7t7zwRXFzrg). Follow-on in this session after it merges: PR 9 `co-001/ux-home-figures`
 (status `lane-b-ux-home-figures-status.md`).
 
-## Now (2026-10-28 06:30 UTC)
-- **PR #78** (draft) into claude/build-platform: https://github.com/PureTideWater/PhysicalTherapy/pull/78. Head **ab50600**, pushed 06:27 UTC (8f7d18d the merge of #74 keeping both sides, 036989a UX-DLR-11, 4136bd3 the review's F1 to F4, a0099fa F5 (every Coverage render threw after the merge) with `client-boundary.test.ts`, ab50600 the merge of #81). Before: f47437e, pushed ~02:50 UTC (646f060 the merge of #79 keeping both sides, f47437e the Safari focus fix). Before: b459ba7, pushed 01:40 UTC (after e36a68b: 4a5f8d8 UX-DLR-16 and 17, cadcdc2 the merge of claude/build-platform 0dd1ba7e (#80), b459ba7 the in-place focus rule); description rewritten again and checked byte for byte (20,956 characters). Earlier: e36a68b (the fix round aa4176f, f4b0107, 872f05b, 74ca6af and the merge of ecebdc90: #76, #77); description rewritten for the fix round and checked byte for byte (c1eff40 the code and tests, 63aaa7f ADR 0079, test-matrix DLR-01 to DLR-04 and synth module 18). Description from the template, written with update_pull_request and checked byte for byte. Subscribed to its activity.
+## Now (2026-10-28 06:55 UTC): MERGED
+- **PR #78 merged** into claude/build-platform as **83d71fd** (2026-10-28 06:51 UTC), head ab50600, by merge_pull_request with method merge and expectedHeadSha, after: every required check and every other job green on ab50600 (all green, mutation, screening-capacity gate, approval-of-record, re-run after ready and after the final description edit); the fresh-clone verification `wf_f6ddc946-253` passed on ab50600 with the base unchanged (56ed6279); the description final (25,926 characters, checked byte for byte). Unsubscribed. Main checkout fast-forwarded to 83d71fd and installed; worktree and local branch removed (the remote branch stays). The merge's push runs (ci, screening-capacity, mutation) were queued at 06:52 UTC: next, read them.
+- **Next item, in this session:** PR 9, `co-001/ux-home-figures` (status `approval-summaries/lane-b-ux-home-figures-status.md`).
+
+## The record of this PR
 - **Stage 4, reviews: done** (`wf_1c44b1a2-762`, resumed once after the 5-hour limit). Security: SEC-01 should-fix, SEC-02 and SEC-03 nits. UX and brand (74 after shots at 63aaa7f): UX-DLR-01 to 07 should-fix, 08 to 15 nits. Each verified by an independent skeptic: 16 real, UX-DLR-12 and 13 not defects. Findings and verdicts: `approval-summaries/lane-b-ux-download-refusals-review-findings.json`.
 - **Stage 5, fix round: done.** Part 1 `wf_959acf20-bf4` (aa4176f, f4b0107; the full local suite passed on f4b0107, record `approval-summaries/lane-b-ux-download-refusals-fix-suite.md`), part 2 `wf_9a7d5490-4a9` (872f05b, 74ca6af; typecheck, lint, 6,477 unit, 15 e2e). Base merged (e36a68b, no conflicts, generators clean; setup re-run for #77's Chromium 1248); typecheck, lint, 6,562 unit, build and 18 e2e passed on it. One push.
 - **Stage 6, verification: passed on e36a68b** (`wf_8a1a9b4b-bb5`, record `approval-summaries/lane-b-ux-download-refusals-verify.json`): tree, claims, fast checks and CI all hold. The base has since moved to 0dd1ba7e (#80) and the ruleset needs an up-to-date branch. The UX re-check on retaken shots at e36a68b (`screens-after2`, 74 shots): every earlier fix holds; new UX-DLR-16 (should-fix: no busy state on an in-place download) and UX-DLR-17 (nit: the contract's mark stays after a payer fix), both this PR's own; UX-DLR-18 (nit: a link in the permission state) needs `components/shell.tsx`, a #42 file: after #42.
@@ -52,6 +55,8 @@ session_01L3tN5LCq2aNYetEQBNJYZg, a Lane B item session started 2026-10-27 by La
 - 2026-10-28 ~04:20 UTC: the 5-hour limit stopped the #74 merge's review agent mid-e2e; resumed 05:14 UTC after setup (PostgreSQL was down).
 - 2026-10-28 05:45 UTC: the #74 merge done (a0099fa, F5 found by the e2e and fixed); the base moved again (#81, clean).
 - 2026-10-28 06:27 UTC: #81 merged (ab50600); the full local suite passed; pushed once.
+- 2026-10-28 06:46 UTC: the fresh-clone verification passed on ab50600 (wf_f6ddc946-253); marked ready; description's last rows filled in; approval-of-record green after each.
+- 2026-10-28 06:51 UTC: **merged as 83d71fd.** Post-merge steps done; push runs queued.
 
 ## Waiting on someone
 - Nothing.
@@ -65,6 +70,7 @@ session_01L3tN5LCq2aNYetEQBNJYZg, a Lane B item session started 2026-10-27 by La
 - In e2e, the `export` rate limit's per-address bucket is shared by every spec (no trusted proxy); fine today.
 - **Security, outside this PR (from the security review):** download GETs do not check `Sec-Fetch-Site`, so a cross-site top-level navigation can start a download and its export record (a packet export's download is the reviewer's evidence, ADR 0061). Its own PR: refuse a cross-site navigation to a recording download (or record only same-site ones).
 - `e2e/journeys.ts` signedOffSchedule inserts a contract document ID that is not an RFC 9562 UUID, so `opaqueId` refuses it and that receipt's Report answers not_found (test data only).
+- **The screening-capacity gate's advisory timing warnings** (S4 52.7 to 54.2 s against 48 s; the consumer's size, O9) are on the base as on this PR's heads: HANDOFF O9 and issue #41 carry them; nothing for this PR.
 - **After #42 (UX-DLR-18):** `Forbidden` (components/shell.tsx) takes an optional link, so the packet page's and the reviewer checklist's permission states link the case and the audit report.
 - An e2e for the export review's checklist opening after the second in-place download (packets.spec.ts still reloads by hand).
 - An e2e for the export review's ticks surviving an in-place refusal (unit and the reviewer-checklist step cover the path).
