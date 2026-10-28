@@ -139,8 +139,10 @@ gone, and 980 px wide on a phone (UX-010). The cause was general, not the letter
    attachment is saved under its `Content-Disposition` name from an object URL, and nothing is said; a refusal is read
    by `refusedDownloadOf()` and said above the links (below them where they sit in the page's header: `below`) in the
    words and look of a page's notice (`RefusalAlert`, 5 below), in place of the notice the page arrived with, and
-   focused as it mounts (React's `autoFocus` focuses only a form control); the next download begun takes it away;
-   anything the notice cannot settle (a signed-out session, maintenance, a body that is not an outcome, a request that
+   focused as it mounts (React's `autoFocus` focuses only a form control) when the focus is still where the download
+   left it, on a download link or on the page itself (`focusIsFree`): a person who moved on while the file was
+   fetched, into the packet page's narrative say, keeps their place, and the alert is still said; the next download
+   begun takes it away; anything the notice cannot settle (a signed-out session, maintenance, a body that is not an outcome, a request that
    failed) goes to the link as a navigation, whose 303 takes sign-in's steps. The `href` stays the link's own, `?from=`
    and `?version=` with it, so a new tab, a modifier click, "Save link as" or a page without script still downloads, and
    is still refused back to its page (1 to 3). It serves the receipts' Report link (on Uploads, and in a zip's list of

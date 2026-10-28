@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { shownRefusal } from '../lib/http/download-refusal-words';
-import { DownloadLink, DownloadLinks, NoticePlace, type Said, attachmentFilename, fetchDownload, isPlainClick, nextSaid, saveFile } from './download-link';
+import { DownloadLink, DownloadLinks, NoticePlace, type Said, attachmentFilename, fetchDownload, focusIsFree, isPlainClick, nextSaid, saveFile } from './download-link';
 
 /**
  * A download fetched in place on a page that holds what a reload would lose (docs/adr/0079; test matrix DLR-04; UX
@@ -136,6 +136,19 @@ describe('the click a download link takes over', () => {
 /** The place's status as it renders while no file is fetched: mounted, empty, and out of the layout's flow. */
 const IDLE = '<p role="status" class="text-sm text-muted-foreground empty:sr-only"></p>';
 
+describe('where a refusal said in place may take the focus', () => {
+  const body = { closest: () => null };
+  const on = (link: boolean) => ({ closest: (selector: string) => (link && selector === '[data-download-link]' ? {} : null) });
+
+  it('takes it from a download link or from nowhere, never from where the person moved on to', () => {
+    expect(focusIsFree(null, body)).toBe(true);
+    expect(focusIsFree(body, body)).toBe(true);
+    expect(focusIsFree(on(true), body)).toBe(true);
+    // The version form's narrative, typed in while the file was fetched, keeps the focus.
+    expect(focusIsFree(on(false), body)).toBe(false);
+  });
+});
+
 describe('a download link and the place its refusal is said', () => {
   it('is a plain link to the file, without download, so a new tab or a page without script still gets the 303 back to its page', () => {
     const markup = renderToStaticMarkup(
@@ -146,8 +159,9 @@ describe('a download link and the place its refusal is said', () => {
       </DownloadLinks>,
     );
     // The progress cursor shows only while the link is aria-busy, its file being fetched.
-    expect(markup).toBe(`${IDLE}<a class="aria-busy:cursor-progress underline" href="${HREF}">Report</a>`);
-    expect(markup).not.toContain('download');
+    expect(markup).toBe(`${IDLE}<a class="aria-busy:cursor-progress underline" href="${HREF}" data-download-link="">Report</a>`);
+    // No download attribute (data-download-link is the link's own mark, not the attribute).
+    expect(markup).not.toMatch(/\sdownload(?:[=\s>])/);
     expect(markup).not.toContain('aria-busy=');
   });
 
@@ -157,7 +171,7 @@ describe('a download link and the place its refusal is said', () => {
         <DownloadLink href={HREF}>Report</DownloadLink>
       </DownloadLinks>,
     );
-    expect(markup).toBe(`${IDLE}<p data-arrived="true">Arrived</p><a class="aria-busy:cursor-progress" href="${HREF}">Report</a>`);
+    expect(markup).toBe(`${IDLE}<p data-arrived="true">Arrived</p><a class="aria-busy:cursor-progress" href="${HREF}" data-download-link="">Report</a>`);
   });
 
   it('says it below the links when they are in a page’s header (the reviewer checklist’s), and inside another one below its own links, the status the outer one’s', () => {
@@ -166,7 +180,7 @@ describe('a download link and the place its refusal is said', () => {
         <DownloadLink href={HREF}>Report</DownloadLink>
       </DownloadLinks>,
     );
-    expect(below).toBe(`<a class="aria-busy:cursor-progress" href="${HREF}">Report</a>${IDLE}<p data-arrived="true">Arrived</p>`);
+    expect(below).toBe(`<a class="aria-busy:cursor-progress" href="${HREF}" data-download-link="">Report</a>${IDLE}<p data-arrived="true">Arrived</p>`);
     const inner = renderToStaticMarkup(
       <DownloadLinks>
         <DownloadLinks arrived={<p data-arrived>Arrived</p>} below>
@@ -174,7 +188,7 @@ describe('a download link and the place its refusal is said', () => {
         </DownloadLinks>
       </DownloadLinks>,
     );
-    expect(inner).toBe(`${IDLE}<a class="aria-busy:cursor-progress" href="${HREF}">Report</a><p data-arrived="true">Arrived</p>`);
+    expect(inner).toBe(`${IDLE}<a class="aria-busy:cursor-progress" href="${HREF}" data-download-link="">Report</a><p data-arrived="true">Arrived</p>`);
   });
 
   it('leaves the place to the outer one when one is inside another (the Uploads screen’s, above its receipt list’s own), one status for both', () => {
@@ -187,7 +201,7 @@ describe('a download link and the place its refusal is said', () => {
         </section>
       </DownloadLinks>,
     );
-    expect(markup).toBe(`${IDLE}<p data-arrived="true">Arrived</p><section><a class="aria-busy:cursor-progress" href="${HREF}">Report</a></section>`);
+    expect(markup).toBe(`${IDLE}<p data-arrived="true">Arrived</p><section><a class="aria-busy:cursor-progress" href="${HREF}" data-download-link="">Report</a></section>`);
   });
 });
 

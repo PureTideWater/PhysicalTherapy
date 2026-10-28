@@ -122,11 +122,24 @@ const FETCHING = 'Downloading the file…';
 const TellDownloads = createContext<((told: Told) => void) | null>(null);
 
 /**
- * Focuses the notice it holds as it mounts (a ref callback): autoFocus focuses a notice only as the page loads (the
- * browser's own), and React focuses only a form control, so a notice said in place is focused here.
+ * Whether a refusal said in place may take the focus: only from where the download left it, on a download link (the
+ * one clicked, or another the person moved to) or nowhere (the page itself, as a browser that does not focus a clicked
+ * link leaves it). A person who moved on while the file was fetched, into the version form's narrative say, keeps
+ * their place; the notice is still on screen and said (role="alert").
+ */
+export function focusIsFree(active: Pick<Element, 'closest'> | null, body: unknown): boolean {
+  return active === null || active === body || active.closest('[data-download-link]') !== null;
+}
+
+/**
+ * Focuses the notice it holds as it mounts (a ref callback), when the focus is free (focusIsFree): autoFocus focuses a
+ * notice only as the page loads (the browser's own), and React focuses only a form control, so a notice said in place
+ * is focused here.
  */
 function focusNotice(place: HTMLDivElement | null): void {
-  place?.querySelector<HTMLElement>('[data-download-refusal]')?.focus();
+  if (place !== null && focusIsFree(document.activeElement, document.body)) {
+    place.querySelector<HTMLElement>('[data-download-refusal]')?.focus();
+  }
 }
 
 /**
@@ -260,7 +273,7 @@ export function DownloadLink({
   };
   return (
     <>
-      <a className={cn('aria-busy:cursor-progress', className)} href={href} onClick={onClick} aria-busy={fetching ? true : undefined}>
+      <a className={cn('aria-busy:cursor-progress', className)} href={href} onClick={onClick} aria-busy={fetching ? true : undefined} data-download-link="">
         {children}
       </a>
       {refresh ? <RefreshOnSave saved={saved} /> : null}
