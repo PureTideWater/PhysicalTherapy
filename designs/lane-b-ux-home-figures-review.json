@@ -1,0 +1,99 @@
+{
+ "verdict": "build with changes",
+ "needsMigration": false,
+ "touchesFrozen": false,
+ "findings": [
+  {
+   "id": "F1",
+   "severity": "should-fix",
+   "area": "cost on a large practice (D2, D3)",
+   "claim": "The design's main cost claims (\"one lateral pass gives cents, lines and open lines\", \"at most one check per case line at actionable\") do not hold for the query as written. ACTIONABLE_NOW_OF puts the same predicate in two aggregate FILTERs (sum FILTER and count FILTER). PostgreSQL evaluates each aggregate's FILTER separately and does not merge common subexpressions, so both the latest-stage subquery and the plpgsql priced_line_pricing_check() run twice for every line. Moving the predicate into a derived-table column does not help: subquery pull-up copies the expression into each reference. The planned test (a recording client counting statements that contain priced_line_pricing_check) only proves there is one statement. It cannot see how many times the function runs. The CAS-41 measurement has no pass condition, so it cannot fail.",
+   "fix": "D2: compute the per-line value once, behind an optimization fence. Write ACTIONABLE_NOW_OF(c) as `CROSS JOIN LATERAL (SELECT coalesce(sum(y.variance_cents) FILTER (WHERE y.now), 0) AS cents, count(*) FILTER (WHERE y.now) AS lines, count(*) FILTER (WHERE y.open) AS open_lines FROM (SELECT p.variance_cents, x.written_off_reason IS NULL AS open, ${ACTIONABLE_NOW_LINE('x')} AS now FROM case_line x JOIN priced_line p ON p.id = x.priced_line_id WHERE x.case_id = c.id AND x.practice_id = c.practice_id OFFSET 0) y) a`. Add `s.practice_id = x.practice_id` to the latest-stage lookup, because line_status_by_line (migration 20261019160000:152) leads with practice_id. HOM-01: assert that EXPLAIN (VERBOSE) of dashboard()'s statement names priced_line_pricing_check exactly once. D3: make the CAS-41 measurement a gate. The new statement's EXPLAIN ANALYZE time must be no more than the sum of today's three statements (dashboard/queries.ts:93-97, :138-146). Record both in the PR; if the gate fails, stop and hand it to Lane A's PR 11."
+  },
+  {
+   "id": "F2",
+   "severity": "should-fix",
+   "area": "completeness: an actionable figure the design missed",
+   "claim": "The monthly summary is a sixth reading of Actionable dollars. It is the SUMMARY query in apps/web/src/lib/monitoring/queries.ts:198-243 (a #42 file), shown on Reports > Monthly, in its CSV (reports/monthly/csv/route.ts) and in its PDF (apps/worker/src/report/documents.ts:379-380). It has no pricing check and takes the variance of the priced line that the latest stage event names. Reopen events carry no priced_line_id (reconcile/stages.ts:61, lib/routes/triage.ts:528), so a line reopened to actionable is counted as 1 line at $0.00. That is the same mismatch UX-003 fixes on the home tile. The audit report (report/content.ts:607-610) also counts without the check, and the design leaves it out (open question 2). Yet §2 and D11 (ADR 0082) say \"every actionable figure, on a screen or in a document, reads one predicate\".",
+   "fix": "Add two rows to the §1 table: the monthly summary (screen, CSV, PDF) and the audit report. Reword §2 and the D11 ADR sentence to cover \"every live actionable figure of the practice's cases (home, Cases, case page, packet builder, ROI statement, digest)\", with two named exceptions that keep their own figure: the run-scoped audit report (open question 2) and the month-scoped monthly summary. Add an open question for the monthly summary, after #42: SUMMARY's actionable bucket counts a case line only through ACTIONABLE_NOW_LINE and reports the others apart as out of the figure. Nothing changes in lib/monitoring/queries.ts in this PR."
+  },
+  {
+   "id": "F3",
+   "severity": "should-fix",
+   "area": "digest (D5) and ADR 0082 (D11): a stored figure changes meaning",
+   "claim": "D4 records that roi_statement.actionable_open_cents, a stored figure that never changes, changes meaning. It does not record the same for the digest. digest.totals_cents is fixed when the digest is recorded (digest_rules(), migration 20261020090000:332-356, \"a digest's figures never change once recorded\"). Its cases_nearing_deadline_actionable changes meaning in the same way. The digest's page and email show that stored figure. The comment at digest/figures.ts:16-17 (\"the case's own, derived in SQL\") also becomes false.",
+   "fix": "In D5 and D11, list digest.totals_cents.cases_nearing_deadline_actionable beside roi_statement.actionable_open_cents as stored figures whose meaning changes from the date ADR 0082 records. Change the figures.ts:16-17 comment to say \"its lines still actionable on their pricing in effect (ACTIONABLE_NOW)\". Do not edit ADR 0039 (a #42 file)."
+  },
+  {
+   "id": "F4",
+   "severity": "should-fix",
+   "area": "words and scope (D8): the case page's Actionable fact and the out-of-figure clause",
+   "claim": "Rewording the case page's Actionable fact is UX-023's fix (UX PR 12, co-001/ux-case-summary). UX-023's ruled words count each cause: 'Actionable $0.00 (no line is still actionable: 3 lines moved on to payer approved)', and for the packet '0 of 3 lines; 3 have moved past actionable'. D8 picks different words for the same fact and reuses the packet-builder sentence that UX-023 replaces. The clause \"its pricing is no longer current, or it moved past actionable\" is not exact (BRAND.md:23), because the code knows which cause applies to each line: the latest stage, or the check. \"0 lines ... (1 more line in them ...)\" also reads oddly. The new helper replaces the packet builder's sentence, but cases/[caseId]/packet/page.tsx is missing from D10's files.",
+   "fix": "ACTIONABLE_NOW_OF also returns two counts: moved_on (not written off, latest stage not actionable) and stale (at actionable, check not 'current'), read once each from the F1 derived table. Add one helper, outOfFigureWords(movedOn, stale), in components/triage/display.tsx, built on counted(), showing each part only when it is above 0. Tile: \"what the packets ask for: 0 lines in cases still being worked; out of the figure: 1 line whose pricing is no longer current, 2 lines moved on past actionable\". Case page: \"$0.00 on 0 of the 3 lines not written off; out of the figure: …\". The packet builder (packet/page.tsx:219-222, added to D10) uses the same helper. Keep 'moved on past actionable' so no bare 'recovered' reaches pnpm lint:copy. Say in the PR that UX-023's Actionable part closes here, so UX PR 12 keeps only Written off and the partial answer. HOM-02 renders 0, 1 and 2 of each cause."
+  },
+  {
+   "id": "F5",
+   "severity": "should-fix",
+   "area": "completeness: the Cases row",
+   "claim": "Each Cases row pairs the live Actionable total (cases/page.tsx:260, actionableNowCents) with a 'Lines' cell showing openLines of lines ('3 of 3', :237 and :257-258). On PACKETS that reads as $0.00 for 3 of 3 lines, the same defect as the home tile. D8 rewrites this screen's header but leaves the row's count, so the Cases screen still pairs a figure with a count of other lines.",
+   "fix": "Change the header (:237) to `{stageLabel('actionable')} lines` and the cell to `{item.actionableNowLines} of {item.openLines}` (the CASES row already returns actionable_now_lines). HOM-01 asserts that each row's count equals the lines in its figure, before and after the re-run."
+  },
+  {
+   "id": "F6",
+   "severity": "should-fix",
+   "area": "approval notes by proof level (UX-015)",
+   "claim": "Two notes on Reconciliation stay blind to the proof level: PAYER_APPROVED_NOTE ('...; recovered only once posted or deposited', components/reconciliation/display.tsx:71) and LEDGER_TOTALS_HELP ('...taken back before it posted', :74). On a practice that proves recovery by deposit, posting alone recovers nothing. D10 already edits display.tsx, but D8 rewords only the home's note.",
+   "fix": "Make both notes maps by proof level, beside proofLevelWords(). The note: 'what payers agreed to pay, never the patient’s share; counted as recovered only once it is deposited' (posted: '... only once it is posted'). The help: 'Payer approved is net of reversals and of what was taken back before it was deposited.' (posted: '... before it posted.'). Update ledger-patient-share.spec.ts:62-63, and add both notes to HOM-02 and to the lint:copy check."
+  },
+  {
+   "id": "F7",
+   "severity": "should-fix",
+   "area": "tests: existing assertions weakened or missed",
+   "claim": "Putting the quarter's line inside the tile marked data-figure=\"recovered-total\" weakens existing tests. monitoring.spec.ts:104 and packets.spec.ts:534 (toContainText('$0.00')) and ledger-patient-share.spec.ts:92-94 would then pass on the quarter's amount even if the to-date amount were wrong. §4 does not list them. report-documents-routes.db.test.ts:277 compares the whole headline with toEqual and will change when Headline gains outOfFigure and since, but §4 lists that file as unchanged (citing :278 only).",
+   "fix": "Mark the to-date value span data-figure=\"recovered-to-date\"; the tile keeps recovered-total for its label, as brand.spec.ts:445 expects. Point monitoring.spec.ts:104, packets.spec.ts:534 and ledger-patient-share.spec.ts:92 at recovered-to-date with toHaveText. Add report-documents-routes.db.test.ts:277 to the assertions that change."
+  },
+  {
+   "id": "F8",
+   "severity": "should-fix",
+   "area": "the Recovered periods (D7): the ledger map and a property test",
+   "claim": "D7 says only \"ledgerTotals for all and for the quarter\". If the quarter is totalled with the default ledger map (entriesById of the quarter's entries alone), a reversal in the quarter of an earlier entry throws (packages/ledger/src/stages.ts:165), and the home fails to load. The planned LED test has a quarter total of 0, so it cannot catch this. The payment-engine checklist asks for a property test for new money behaviour.",
+   "fix": "Add a pure recoveredPeriods(all, proofLevel, {from, to}) in reconcile/statements.ts. It returns ledgerTotals(all, proofLevel), ledgerTotals(periodEntries(all, from, to), proofLevel, entriesById(all)) exactly as practiceLedgerTotals does (:38-44), and firstOn: the minimum effectiveOn over entryIds.recovered, or null when there is none. practiceRecoveredPeriods wraps it after one ledgerEntries read. headlineOf takes payerApprovedCents and proofLevel from its all-time totals, so the ledger is really read once. HOM-01 adds a fast-check property: on random ledgers with reversals crossing the quarter boundary, the result equals practiceLedgerTotals' composition for all time and for the quarter. Amounts go through centsToString only."
+  },
+  {
+   "id": "F9",
+   "severity": "should-fix",
+   "area": "trace of the ROI statement's actionable figure (the Lane A part)",
+   "claim": "The statement's actionable figure links only case IDs, and roi_links_valid() admits exactly four keys (packages/db/functions/roi_links_valid.sql). With a live predicate, nobody can recompute the stored figure later. D8's page words ('... as the practice home and Cases count them') suggest a live match that the stored figure will not keep. 'Open cases (any not resolved or closed)' also clashes with the case state named open, which the digest uses.",
+   "fix": "Page: 'Actionable in cases still being worked: $X / Counted when the statement was generated, as the practice home and Cases count: each case's lines still actionable on their pricing in effect. Not recomputed from its links.' PDF: the same words. Record for Lane A (a migration, left out here): a fifth links key, actionable_open_lines (priced_line IDs, whose variance_cents never change), so the figure can be recomputed. Mention it in ADR 0082 and open question 3. If the e2e asserts the region name, rename it in HOM-04 too."
+  },
+  {
+   "id": "F10",
+   "severity": "nit",
+   "area": "arithmetic in the home's single statement (D3)",
+   "claim": "D3 says only that \"the headline sums the worked states\". It does not say how cents are summed across the up to six rows, keep today's ORDER BY c.state that casesByState relies on, or state the deadline FILTER exactly.",
+   "fix": "State the details: the headline's cents are sumCents(rows.map((r) => parseCents(r.cents))) over the worked states, or GROUPING SETS ((c.state), ()) in SQL, never Number. The statement ends ORDER BY c.state. The deadlines FILTER is `c.state NOT IN ('resolved','closed_written_off') AND c.deadline_on <= $2::date + $3::int` (passed deadlines included, as today at :144). earliest is min(deadline_on)::text of the filtered rows."
+  },
+  {
+   "id": "F11",
+   "severity": "nit",
+   "area": "the upload gate's files (D9)",
+   "claim": "baaOnFile and NO_BAA are also imported from './uploads' by lib/routes/contracts.ts:29 and lib/routes/reconciliation.ts:15. Moving them to lib/uploads/gate.ts breaks those imports, and D10 does not list those files.",
+   "fix": "Either list contracts.ts and reconciliation.ts in D10 and import from lib/uploads/gate.ts, or keep a re-export in lib/routes/uploads.ts. Neither file is a #42 file."
+  },
+  {
+   "id": "F12",
+   "severity": "nit",
+   "area": "the empty home with no BAA (UX-140)",
+   "claim": "The no-BAA empty state has no control. The UX lens requires an empty state to give the next step and a control for it. The practice's Grants and agreements page (/p/[practiceId]/settings/agreements) already shows the chain as missing or on file, including an organization-wide BAA.",
+   "fix": "In the no-BAA state, add a link 'See the agreement chain' to /p/<id>/settings/agreements for roles that may open Settings. Viewers see no link (UX-119 covers who acts). HOM-03 renders it."
+  },
+  {
+   "id": "F13",
+   "severity": "nit",
+   "area": "cost of the whole home (D3)",
+   "claim": "D3's \"bounded in memory\" and \"Node receives at most six rows\" describe the actionable statement only. The rest of the home still reads every ledger entry of the practice into Node (ledgerEntries, through practiceLedgerTotals or practiceRecoveredPeriods) and runs practiceStageSummary over every line, so the home as a whole is not bounded.",
+   "fix": "Say so in D3. Record the CAS-41 timing of the whole dashboard() call beside the statement's own."
+  }
+ ],
+ "summary": "Verdict: build with changes. No migration is needed, and no frozen code is touched. packages/pricing and packages/ledger get no diff. Inside the worker, generateRoiStatement's query change only changes what is passed into roiStatement(), which just sums its input (packages/ledger/src/roi.ts:85-118). recomputeStatement() (statement.ts:67-77) and roi_statement_rules() never check actionable, and roi_links_valid() only checks the shape of the links. The column's CHECK (actionable_open_cents >= 0) still holds: a per-visit line never reaches actionable (packages/triage/src/actionable.ts, PER_VISIT_REVIEW), and actionable needs a positive shortfall. The LED-11 tests (ledger.db.test.ts:986-, chain.db.test.ts:306, payment-terms.db.test.ts:640-) never assert actionable_open_cents, so they pass unchanged.\n\nD1 holds. #42's web-entries.test.ts (on origin/co-001/pr-06b-mail-streams) follows value imports from the web's entries, so a worker module with no imports passes. @tp/triage's charter (index.ts:1-8) rules out SQL there. The #42 check holds: none of the design's files is a #42 file except the shared docs, which get rows only. The \"stage five\" grep matches the design: page.tsx:221 and :362, reconciliation/display.tsx:114, the case page :98, and help.ts:10 (a #42 file, rightly deferred). The new Payer approved words pass the lint's DENIED rule (tools/brand-copy/scan.ts:160). The review's words fail it, as the design says. The ADR 0082 reservation, test-matrix HOM-01 to HOM-04 and synth module 20 are confirmed in LANES.md row 185. ADR 0082 is warranted.\n\nWhere the design breaks:\n- **Cost (F1):** two FILTER aggregates over one STABLE predicate run the plpgsql check twice per line, and planned test cannot see it. It needs an OFFSET 0 derived table, an EXPLAIN VERBOSE test and a pass condition for the measurement.\n- **Missed figures (F2):** the inventory misses the monthly summary's Actionable dollars on its screen, CSV and PDF (lib/monitoring/queries.ts, a #42 file). Like the audit report, it has no pricing check, so §2's \"every figure\" claim is false. Both need naming as exceptions with follow-ups.\n- **Digest (F3):** the digest's stored figure (digest_rules) changes meaning, just as the ROI statement's does, but D5 and D11 do not record it.\n- **Words and scope (F4):** D8 takes over UX-023's case-page fix with words that differ from the review's ruled words, and its \"or\" clause is not exact where the code knows each line's cause.\n- **Cases row (F5):** the row still pairs live dollars with \"3 of 3\" lines.\n- **Approval notes (F6):** Reconciliation's Payer approved note and help still ignore the proof level.\n- **Tests (F7):** three home e2e assertions are weakened by the quarter's line nested inside the tile, and report-documents-routes.db.test.ts:277 changes though §4 says it does not.\n- **Recovered periods (F8):** practiceRecoveredPeriods must total the quarter with the whole ledger map, or a reversal across the boundary throws and the home fails to load; it needs a property test.\n- **Trace (F9):** the statement's actionable figure links only case IDs, so it cannot be recomputed later. Linking its priced lines needs a migration, for Lane A, and the page's words must say the figure is counted at generation.\n- **Nits (F10-F13):** how cents are summed and ordered in Node, the gate's other importers, a control for the no-BAA empty state, and the cost of the whole home.\n\nProgress notes are in /tmp/claude-0/-home-user-PhysicalTherapy/12cbf3a7-985c-52b3-adc0-b6d7ac05d769/scratchpad/progress/hom-design-review.md."
+}
