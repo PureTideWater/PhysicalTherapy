@@ -1,12 +1,14 @@
 import { type PracticeCipher, type PracticeScope, type ScopeClient, readWithAudit } from '@tp/db/runtime';
-import { type LedgerEntry, entriesById, ledgerTotals } from '@tp/ledger';
-import { type Cents, centsToString, cents, parseCents, sumCents } from '@tp/money';
+import { entriesById, ledgerTotals } from '@tp/ledger';
+import { type Cents, ZERO_CENTS, centsToString, cents, parseCents, sumCents } from '@tp/money';
 import { type UnpricedReason, parseTrace } from '@tp/pricing';
 import {
   type AdjustmentBehavior,
   BEHAVIOR_RECORD_TYPES,
   BEHAVIOR_TEXT,
+  type BehaviorReferences,
   type DeadlineUnverifiedCause,
+  type DeadlineVerification,
   INVESTIGATORY,
   NOT_ACTIONABLE_REASONS,
   STAGE_LABELS,
@@ -23,10 +25,11 @@ import {
 
 import { parseCoverage } from '../price/coverage';
 import { RUN_IN_EFFECT } from '../price/in-effect';
-import { type ContentRead, contentGapsOf, familyOf, releaseContentSpans, typedRelease } from '../price/release';
-import { ledgerEntries, practiceLedgerSettings } from '../reconcile/ledger';
-import { casePatientBalance, lineCorrections } from '../reconcile/patient-share';
+import { type ContentRead, type ContentSpans, contentGapsOf, familyOf, releaseContentSpans, typedRelease } from '../price/release';
+import { type StoredEntry, ledgerEntries, practiceLedgerSettings } from '../reconcile/ledger';
+import { PATIENT_BALANCE_UNSEEN, type PatientBalanceFold, foldPatientBalance, lineCorrections, patientBalanceOf } from '../reconcile/patient-share';
 import { lineDeadlines } from '../triage/deadline';
+import { CsvArena, type LineOrderKey, compareLineOrder, compareText } from './csv-arena';
 import { UNPRICED_REMEDIES } from './remedies';
 
 /**
@@ -363,47 +366,42 @@ export interface GatherInput {
 const text = (value: Cents) => centsToString(value);
 const sum = (values: readonly string[]) => sumCents(values.map(parseCents));
 
-async function runLines(scope: PracticeScope<ScopeClient>, input: GatherInput): Promise<LineRow[]> {
-  return readWithAudit(
-    scope,
-    { objectType: 'priced_line', purpose: 'audit_report', requestId: input.requestId },
-    async (client) =>
-      (
-        await client.query<LineRow>(
-          `WITH current_stage AS (
-             SELECT DISTINCT ON (s.service_line_id) s.service_line_id, s.stage FROM line_status s WHERE s.practice_id = $2 ORDER BY s.service_line_id, s.seq DESC
-           )
-           SELECT p.id AS priced_line_id, p.practice_id, p.service_line_id, p.expected_allowed_cents::text, p.observed_allowed_cents::text, p.variance_cents::text,
-                  p.unpriced_reason, p.window_ends_on::text, p.contract_version_id, p.rate_record_id, m.mapping_kind, v.status AS version_status,
-                  coalesce(payer_plan_mapping_in_force(l.payer_plan_key, coalesce(l.service_date, c.service_from)) = p.mapping_id, false) AS mapping_in_force,
-                  (p.contract_version_id IS NULL OR coalesce(v.effective_from <= coalesce(l.service_date, c.service_from)
-                     AND (v.effective_to IS NULL OR coalesce(l.service_date, c.service_from) < v.effective_to), false)) AS version_covers_service,
-                  EXISTS (SELECT 1 FROM pricing_run r JOIN rule_release_withdrawal w ON w.release_no = r.release_no WHERE r.id = p.pricing_run_id) AS release_withdrawn,
-                  l.line_no, l.procedure_code, l.modifiers, trim_scale(coalesce(l.units, 1))::text AS units, coalesce(l.service_date, c.service_from)::text AS service_date,
-                  l.charge_cents::text, c.payer_claim_control_number, py.id AS payer_id, py.name_raw AS payer_name, pl.id AS plan_id, coalesce(pl.name, pl.plan_key) AS plan_name,
-                  (c.claim_status_code = '22' OR EXISTS (SELECT 1 FROM claim x WHERE x.reversal_of_claim_id = c.id)) AS reversed,
-                  c.superseded_by_claim_id IS NOT NULL AS superseded,
-                  cs.stage, cl.case_id, cl.priced_line_id = p.id AS case_in_run, cl.written_off_reason,
-                  CASE WHEN p.variance_cents > 0 THEN p.trace END AS trace,
-                  CASE WHEN jsonb_typeof(p.trace #> '{steps,per_visit}') = 'object' THEN p.trace #> '{steps,per_visit}' END AS per_visit,
-                  priced_line_visit_variance_cents(p.id)::text AS visit_variance_cents,
-                  coalesce(p.trace #> '{outcome,review_flags}', '[]'::jsonb) AS review_flags
-             FROM priced_line p
-             JOIN service_line l ON l.id = p.service_line_id
-             JOIN claim c ON c.id = l.claim_id
-             JOIN plan pl ON pl.id = l.payer_plan_key
-             JOIN payer py ON py.id = pl.payer_id
-             LEFT JOIN payer_plan_mapping m ON m.id = p.mapping_id
-             LEFT JOIN contract_version v ON v.id = p.contract_version_id
-             LEFT JOIN current_stage cs ON cs.service_line_id = p.service_line_id
-             LEFT JOIN case_line cl ON cl.service_line_id = p.service_line_id
-            WHERE p.pricing_run_id = $1 AND p.practice_id = $2`,
-          [input.pricingRunId, input.practiceId],
-        )
-      ).rows,
-    (row) => ({ objectId: row.priced_line_id, practiceId: row.practice_id }),
-  );
-}
+/**
+ * The run's lines, each with what the report reads of it: its claim, plan and payer, its stage now, its case line, the
+ * trace of a line with a shortfall, its visit's net and its review flags. $1 is the pricing run, $2 the practice.
+ * gatherReport reads it through a cursor, REPORT_BATCH_LINES rows at a time (SUITE-CAP-1a D14; docs/adr/0083).
+ */
+const RUN_LINES_QUERY = `WITH current_stage AS (
+     SELECT DISTINCT ON (s.service_line_id) s.service_line_id, s.stage FROM line_status s WHERE s.practice_id = $2 ORDER BY s.service_line_id, s.seq DESC
+   )
+   SELECT p.id AS priced_line_id, p.practice_id, p.service_line_id, p.expected_allowed_cents::text, p.observed_allowed_cents::text, p.variance_cents::text,
+          p.unpriced_reason, p.window_ends_on::text, p.contract_version_id, p.rate_record_id, m.mapping_kind, v.status AS version_status,
+          coalesce(payer_plan_mapping_in_force(l.payer_plan_key, coalesce(l.service_date, c.service_from)) = p.mapping_id, false) AS mapping_in_force,
+          (p.contract_version_id IS NULL OR coalesce(v.effective_from <= coalesce(l.service_date, c.service_from)
+             AND (v.effective_to IS NULL OR coalesce(l.service_date, c.service_from) < v.effective_to), false)) AS version_covers_service,
+          EXISTS (SELECT 1 FROM pricing_run r JOIN rule_release_withdrawal w ON w.release_no = r.release_no WHERE r.id = p.pricing_run_id) AS release_withdrawn,
+          l.line_no, l.procedure_code, l.modifiers, trim_scale(coalesce(l.units, 1))::text AS units, coalesce(l.service_date, c.service_from)::text AS service_date,
+          l.charge_cents::text, c.payer_claim_control_number, py.id AS payer_id, py.name_raw AS payer_name, pl.id AS plan_id, coalesce(pl.name, pl.plan_key) AS plan_name,
+          (c.claim_status_code = '22' OR EXISTS (SELECT 1 FROM claim x WHERE x.reversal_of_claim_id = c.id)) AS reversed,
+          c.superseded_by_claim_id IS NOT NULL AS superseded,
+          cs.stage, cl.case_id, cl.priced_line_id = p.id AS case_in_run, cl.written_off_reason,
+          CASE WHEN p.variance_cents > 0 THEN p.trace END AS trace,
+          CASE WHEN jsonb_typeof(p.trace #> '{steps,per_visit}') = 'object' THEN p.trace #> '{steps,per_visit}' END AS per_visit,
+          priced_line_visit_variance_cents(p.id)::text AS visit_variance_cents,
+          coalesce(p.trace #> '{outcome,review_flags}', '[]'::jsonb) AS review_flags
+     FROM priced_line p
+     JOIN service_line l ON l.id = p.service_line_id
+     JOIN claim c ON c.id = l.claim_id
+     JOIN plan pl ON pl.id = l.payer_plan_key
+     JOIN payer py ON py.id = pl.payer_id
+     LEFT JOIN payer_plan_mapping m ON m.id = p.mapping_id
+     LEFT JOIN contract_version v ON v.id = p.contract_version_id
+     LEFT JOIN current_stage cs ON cs.service_line_id = p.service_line_id
+     LEFT JOIN case_line cl ON cl.service_line_id = p.service_line_id
+    WHERE p.pricing_run_id = $1 AND p.practice_id = $2`;
+
+/** How many of the run's lines the report holds at a time (SUITE-CAP-1a D14, D18; docs/adr/0083). */
+export const REPORT_BATCH_LINES = 2000;
 
 /**
  * The cases holding lines this run priced, each with this run's share (its case lines whose priced line
@@ -438,27 +436,51 @@ async function runCases(client: ScopeClient, input: GatherInput): Promise<CaseRo
 /**
  * The cases, of those named, whose corrections paid nothing more because the patient's share took them (docs/adr/0067):
  * the one rule the Reconciliation and case screens read too (reconcile/patient-share.ts casePatientBalance), over every
- * line of the case, whichever run priced it.
+ * line of the case, whichever run priced it. The case lines are read through a cursor REPORT_BATCH_LINES at a time and
+ * the rule folded per case (foldPatientBalance), each batch's corrections read from the practice's ledger entries as
+ * the caller read them (SUITE-CAP-1a D18; docs/adr/0083): a line's correction reads its own claim alone, so a batch
+ * answers each of its lines as one call for every line would. The lines come in their claim's order, so a batch holds
+ * whole claims (but at its edges) and the batches together read each claim's lines and chain once, as one call did;
+ * in no order, each batch would read the claims of nearly all its lines again (2.6 times the rows at 100,000 lines).
  */
-async function patientBalanceCases(scope: PracticeScope<ScopeClient>, practiceId: string, caseIds: readonly string[]): Promise<Set<string>> {
+export async function patientBalanceCases(scope: PracticeScope<ScopeClient>, practiceId: string, caseIds: readonly string[], entries: readonly StoredEntry[]): Promise<Set<string>> {
   if (caseIds.length === 0) {
     return new Set();
   }
-  const { rows } = await scope.client.query<{ case_id: string; service_line_id: string; written_off: boolean; stage: string | null }>(
-    `SELECT cl.case_id, cl.service_line_id, cl.written_off_reason IS NOT NULL AS written_off,
+  const { client } = scope;
+  const folds = new Map<string, PatientBalanceFold>();
+  await client.query(
+    `DECLARE report_case_lines NO SCROLL CURSOR FOR
+     SELECT cl.case_id, cl.service_line_id, cl.written_off_reason IS NOT NULL AS written_off,
             (SELECT s.stage FROM line_status s WHERE s.service_line_id = cl.service_line_id ORDER BY s.seq DESC LIMIT 1) AS stage
-       FROM case_line cl WHERE cl.practice_id = $1 AND cl.case_id = ANY ($2::uuid[])`,
+       FROM case_line cl JOIN service_line l ON l.id = cl.service_line_id
+      WHERE cl.practice_id = $1 AND cl.case_id = ANY ($2::uuid[])
+      ORDER BY l.claim_id, cl.service_line_id`,
     [practiceId, caseIds],
   );
-  const corrections = await lineCorrections(
-    scope,
-    practiceId,
-    rows.map((row) => row.service_line_id),
-  );
+  for (;;) {
+    const { rows } = await client.query<{ case_id: string; service_line_id: string; written_off: boolean; stage: string | null }>(`FETCH ${REPORT_BATCH_LINES} FROM report_case_lines`);
+    if (rows.length === 0) {
+      break;
+    }
+    const corrections = await lineCorrections(
+      scope,
+      practiceId,
+      rows.map((row) => row.service_line_id),
+      entries,
+    );
+    for (const row of rows) {
+      const line = { correction: corrections.get(row.service_line_id)?.correction ?? null, writtenOff: row.written_off, stage: row.stage };
+      folds.set(row.case_id, foldPatientBalance(folds.get(row.case_id) ?? PATIENT_BALANCE_UNSEEN, line));
+    }
+    if (rows.length < REPORT_BATCH_LINES) {
+      break;
+    }
+  }
+  await client.query('CLOSE report_case_lines');
   const qualifies = new Set<string>();
-  for (const caseId of new Set(rows.map((row) => row.case_id))) {
-    const lines = rows.filter((row) => row.case_id === caseId).map((row) => ({ correction: corrections.get(row.service_line_id)?.correction ?? null, writtenOff: row.written_off, stage: row.stage }));
-    if (casePatientBalance(lines)) {
+  for (const [caseId, fold] of folds) {
+    if (patientBalanceOf(fold)) {
       qualifies.add(caseId);
     }
   }
@@ -479,10 +501,6 @@ async function runAnomalies(client: ScopeClient, input: GatherInput): Promise<An
   return rows;
 }
 
-function compareText(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
-
 /**
  * The report's reasons for a validated line held because its trace read the MPPR or the MUE on a date its release does
  * not load them for (CONTENT_NOT_LOADED, audit #7), one per content read, so the report names which (fix round 2 of PR
@@ -496,8 +514,256 @@ export function contentNotLoadedReason(gaps: readonly ContentRead[]): (typeof CO
   return families.has('mppr') && families.has('mue') ? 'CONTENT_NOT_LOADED:mppr_mue' : families.has('mue') ? 'CONTENT_NOT_LOADED:mue' : 'CONTENT_NOT_LOADED:mppr';
 }
 
-/** Everything the report shows, and its lines, as of the report's triage date. */
-export async function gatherReport(scope: PracticeScope<ScopeClient>, input: GatherInput): Promise<{ readonly content: AuditReportContent; readonly lines: readonly ReportLine[] }> {
+/** What the mapping of a line reads besides its row: the run's release, settings and anomalies, and its batch's deadlines. */
+interface LineReading {
+  readonly input: GatherInput;
+  readonly settings: TriageSettings;
+  readonly references: BehaviorReferences;
+  readonly spans: ContentSpans;
+  readonly anomalyOf: ReadonlyMap<string, string>;
+  readonly deadlines: ReadonlyMap<string, DeadlineVerification>;
+}
+
+/**
+ * A run's line as the report counts it and the line CSV lists it, with the content-not-loaded reason of a line whose
+ * trace read MPPR or MUE content its release does not load for its date (null otherwise). The trace is parsed and
+ * dropped here.
+ */
+function reportLineOf(row: LineRow, reading: LineReading): { readonly line: ReportLine; readonly contentKey: string | null } {
+  const { input, settings, references, spans, anomalyOf, deadlines } = reading;
+  // A contract window cited in a rule the engine does not compute yet has no end the report can state or judge.
+  const windowRuleComputed = deadlines.get(row.priced_line_id)?.cause !== 'CONTRACT_WINDOW_RULE_NOT_COMPUTED';
+  const variance = row.variance_cents === null ? null : parseCents(row.variance_cents);
+  const visit = row.visit_variance_cents === null ? null : parseCents(row.visit_variance_cents);
+  const trace = row.trace === null ? null : parseTrace(row.trace);
+  const gaps = trace === null ? [] : contentGapsOf(trace, spans);
+  const contentKey = gaps.length > 0 ? contentNotLoadedReason(gaps) : null;
+  const judged = judgeLine(
+    {
+      varianceCents: variance,
+      windowEndsOn: row.window_ends_on,
+      deadlineStatus: deadlines.get(row.priced_line_id)?.status ?? 'unverified',
+      windowRuleComputed,
+      claimReversed: row.reversed,
+      claimSuperseded: row.superseded,
+      mappingKind: row.mapping_kind,
+      mappingInForce: row.mapping_in_force,
+      contractVersionStatus: row.version_status,
+      contractVersionCoversService: row.version_covers_service,
+      releaseWithdrawn: row.release_withdrawn,
+      contentNotLoaded: gaps.length > 0,
+      writtenOff: false,
+      visitVarianceCents: visit,
+      reviewFlags: row.review_flags.map((flag) => flag.flag),
+    },
+    settings.lineMaterialityCents,
+    input.asOf,
+  );
+  const validatedCents = judged.validatedCents;
+  const behavior = trace === null || validatedCents === null ? null : detectBehavior(trace, references);
+  // A per-visit line counts with its visit: on the line that carries it, at the visit's net.
+  const counted = row.per_visit === null ? variance : row.per_visit.carrier_line_no === row.line_no ? visit : null;
+  let status: string;
+  let reasons: string[] = [];
+  if (row.unpriced_reason !== null) {
+    status = 'unpriced';
+  } else if (row.per_visit !== null && row.per_visit.carrier_line_no !== row.line_no) {
+    status = 'with_visit';
+  } else if (counted !== null && counted < 0n) {
+    status = 'overpaid';
+  } else if (validatedCents === null) {
+    status = 'paid_as_expected';
+  } else if (row.case_id !== null && row.case_in_run === true) {
+    // A case line past actionable is counted at its stage now (the ledger moved it), never as actionable too.
+    status = row.written_off_reason !== null ? 'written_off' : row.stage === 'payer_approved' || row.stage === 'recovered' ? row.stage : 'actionable';
+    reasons = row.written_off_reason === null ? [] : [row.written_off_reason];
+  } else if (row.case_id !== null) {
+    status = 'in_case_other_run';
+    reasons = ['CASE_LINE_FROM_OTHER_RUN'];
+  } else {
+    status = judged.actionable ? 'held' : 'not_actionable';
+    reasons = judged.actionable ? ['BELOW_CASE_MATERIALITY'] : [...judged.reasons];
+  }
+  const line: ReportLine = {
+    priced_line_id: row.priced_line_id,
+    service_line_id: row.service_line_id,
+    payer_claim_control_number: input.cipher.decrypt('claim.payer_claim_control_number', row.payer_claim_control_number),
+    line_no: row.line_no,
+    service_date: row.service_date,
+    procedure_code: row.procedure_code,
+    modifiers: (row.modifiers ?? []).filter((modifier) => modifier !== ''),
+    units: row.units,
+    payer: row.payer_name,
+    plan: row.plan_name,
+    charge_cents: row.charge_cents,
+    observed_allowed_cents: row.observed_allowed_cents,
+    expected_allowed_cents: row.expected_allowed_cents,
+    variance_cents: row.variance_cents,
+    validated_cents: status === 'with_visit' || validatedCents === null ? null : centsToString(validatedCents),
+    visit_variance_cents: row.visit_variance_cents,
+    unpriced_reason: row.unpriced_reason,
+    window_ends_on: windowRuleComputed ? row.window_ends_on : null,
+    stage: row.stage ?? '',
+    status,
+    reasons,
+    review_flags: row.review_flags,
+    behavior,
+    case_id: row.case_id,
+    anomaly_id: anomalyOf.get(row.service_line_id) ?? null,
+  };
+  return { line, contentKey };
+}
+
+/** A count of lines and the sum of an amount of theirs, in integer cents. */
+interface Tally {
+  lines: number;
+  cents: Cents;
+}
+
+const noLines = (): Tally => ({ lines: 0, cents: ZERO_CENTS });
+
+function tallied(into: Tally, amount: string): void {
+  into.lines += 1;
+  into.cents = cents(into.cents + parseCents(amount));
+}
+
+/** A pattern of the validated lines: its key's fields, its lines and their total, and the first of its lines in the report's order. */
+interface PatternFigures {
+  readonly key: Omit<ReportPattern, 'lines' | 'variance_cents'>;
+  readonly tally: Tally;
+  first: LineOrderKey;
+}
+
+/**
+ * The report's running figures over the run's lines (SUITE-CAP-1a D14, design 5.3 point 2; docs/adr/0083), one field
+ * per filter the whole read ran over its lines, each a count and a sum in integer cents, so folding the lines a batch
+ * at a time, in any order, gives the integers the whole read gave. Where the whole read's order followed its sorted
+ * lines (a pattern's place among patterns that tie on the report's sort), a pattern keeps its first line in the
+ * report's order and the patterns' sort breaks the tie by it.
+ */
+interface ReportFigures {
+  /** The lines that validate a shortfall, and its sum. */
+  readonly validated: Tally;
+  /** The validated lines by payer pattern (payer, plan, mapping kind, contract version, rate record, behavior). */
+  readonly patterns: Map<string, PatternFigures>;
+  /** The validated lines by why each is not actionable, one per reason the report lists (by its place in the list), and their validated sum. */
+  readonly notActionable: Map<number, Tally>;
+  /** The overpaid lines and what each counts (its variance, or the visit's net on the line carrying it). */
+  readonly overpaid: Tally;
+  /** By case, the lines still actionable and their variance. */
+  readonly actionableNow: Map<string, Tally>;
+  /** By case, the service lines of the case this run priced (one ID per case line of the run). */
+  readonly inRun: Map<string, Set<string>>;
+  /** The validated lines with no window, and with a deadline not verified: their billed sum. */
+  readonly noWindow: Tally;
+  readonly unverified: Tally;
+  /** What holds back the unverified deadlines (null for a line with none read): deadlineRemedy reads membership only. */
+  readonly unverifiedCauses: Set<DeadlineVerification['cause'] | null>;
+}
+
+function reportFigures(): ReportFigures {
+  return {
+    validated: noLines(),
+    patterns: new Map(),
+    notActionable: new Map(),
+    overpaid: noLines(),
+    actionableNow: new Map(),
+    inRun: new Map(),
+    noWindow: noLines(),
+    unverified: noLines(),
+    unverifiedCauses: new Set(),
+  };
+}
+
+/** The reasons the report lists a validated line under as not actionable, in its order. */
+function notActionableReasons(): string[] {
+  return [
+    // CONTENT_NOT_LOADED by the content its lines' traces read (UX-10): the report names which.
+    ...NOT_ACTIONABLE_REASONS.filter((reason) => reason !== 'WRITTEN_OFF').flatMap((reason) => (reason === 'CONTENT_NOT_LOADED' ? CONTENT_NOT_LOADED_REASONS : [reason])),
+    'BELOW_CASE_MATERIALITY',
+    'CASE_LINE_FROM_OTHER_RUN',
+    ...Object.keys(WRITE_OFF_TEXT).map((reason) => `written_off:${reason}`),
+  ];
+}
+
+/** What an overpaid line counts: its variance, or for the line carrying a visit the visit's net. */
+const overpaidCents = (line: ReportLine): string => line.visit_variance_cents ?? line.variance_cents ?? '0';
+
+/** Adds one line to the figures; nothing of the line is kept but its share of them. */
+function foldLine(figures: ReportFigures, reasonsListed: readonly string[], row: LineRow, line: ReportLine, contentKey: string | null, deadlines: ReadonlyMap<string, DeadlineVerification>): void {
+  if (row.case_id !== null && row.case_in_run === true) {
+    figures.inRun.set(row.case_id, (figures.inRun.get(row.case_id) ?? new Set()).add(row.service_line_id));
+  }
+  if (line.case_id !== null && line.status === 'actionable') {
+    const still = figures.actionableNow.get(line.case_id) ?? noLines();
+    tallied(still, line.variance_cents ?? '0');
+    figures.actionableNow.set(line.case_id, still);
+  }
+  if (line.status === 'overpaid') {
+    tallied(figures.overpaid, overpaidCents(line));
+  }
+  if (line.validated_cents === null) {
+    return;
+  }
+  tallied(figures.validated, line.validated_cents);
+  const behavior = line.behavior ?? 'BELOW_CONTRACT_RATE';
+  const key = JSON.stringify([row.payer_name, row.plan_name, row.mapping_kind, row.contract_version_id, row.rate_record_id, behavior]);
+  const order: LineOrderKey = {
+    payer: line.payer,
+    plan: line.plan,
+    payer_claim_control_number: line.payer_claim_control_number,
+    line_no: line.line_no,
+    service_line_id: line.service_line_id,
+  };
+  let pattern = figures.patterns.get(key);
+  if (pattern === undefined) {
+    pattern = {
+      key: {
+        payer: row.payer_name,
+        plan: row.plan_name,
+        mapping_kind: row.mapping_kind ?? 'contract',
+        contract_version_id: row.contract_version_id,
+        rate_record_id: row.rate_record_id,
+        behavior,
+        behavior_text: BEHAVIOR_TEXT[behavior],
+      },
+      tally: noLines(),
+      first: order,
+    };
+    figures.patterns.set(key, pattern);
+  } else if (compareLineOrder(order, pattern.first) < 0) {
+    pattern.first = order;
+  }
+  tallied(pattern.tally, line.validated_cents);
+  for (const [place, reason] of reasonsListed.entries()) {
+    const matches = reason.startsWith('written_off:')
+      ? line.status === 'written_off' && line.reasons.includes(reason.slice('written_off:'.length))
+      : reason.startsWith('CONTENT_NOT_LOADED:')
+        ? line.reasons.includes('CONTENT_NOT_LOADED') && contentKey === reason
+        : line.reasons.includes(reason);
+    if (matches) {
+      const entry = figures.notActionable.get(place) ?? noLines();
+      tallied(entry, line.validated_cents);
+      figures.notActionable.set(place, entry);
+    }
+  }
+  if (line.reasons.includes('NO_WINDOW')) {
+    tallied(figures.noWindow, line.charge_cents);
+  }
+  if (line.reasons.includes('DEADLINE_UNVERIFIED')) {
+    tallied(figures.unverified, line.charge_cents);
+    figures.unverifiedCauses.add(deadlines.get(line.priced_line_id)?.cause ?? null);
+  }
+}
+
+/**
+ * Everything the report shows as of the report's triage date, and its line CSV held in an arena for the caller to
+ * stream and release. The run's lines are read through a cursor REPORT_BATCH_LINES at a time (SUITE-CAP-1a D14, D17,
+ * D18; docs/adr/0083): each batch is audited (one event per row read), its deadlines read, each row mapped to its line,
+ * the line folded into the figures and its CSV row appended to the arena, and the batch dropped. The cursor lives in
+ * the job's transaction and is closed before this returns; an error aborts the transaction, which ends it.
+ */
+export async function gatherReport(scope: PracticeScope<ScopeClient>, input: GatherInput): Promise<{ readonly content: AuditReportContent; readonly arena: CsvArena }> {
   const { client } = scope;
   const run = (
     await client.query<{ id: string; period_from: string; period_to: string; release_no: number; engine_version: string; coverage: unknown; completed_at: Date; manifest_sha256: string }>(
@@ -524,167 +790,59 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
     }
   }
   const caseRows = await runCases(client, input);
-  const rows = await runLines(scope, input);
-  // Whether each line's deadline is verified (D17 a), as triage judged it.
-  const deadlines = await lineDeadlines(
-    client,
-    rows.map((row) => row.priced_line_id),
-  );
 
-  /** The content-not-loaded key of each line whose trace read MPPR or MUE content its release does not load for its date. */
-  const contentKeyOf = new Map<string, string>();
-  const lines: ReportLine[] = rows.map((row) => {
-    // A contract window cited in a rule the engine does not compute yet has no end the report can state or judge.
-    const windowRuleComputed = deadlines.get(row.priced_line_id)?.cause !== 'CONTRACT_WINDOW_RULE_NOT_COMPUTED';
-    const variance = row.variance_cents === null ? null : parseCents(row.variance_cents);
-    const visit = row.visit_variance_cents === null ? null : parseCents(row.visit_variance_cents);
-    const trace = row.trace === null ? null : parseTrace(row.trace);
-    const gaps = trace === null ? [] : contentGapsOf(trace, spans);
-    if (gaps.length > 0) {
-      contentKeyOf.set(row.priced_line_id, contentNotLoadedReason(gaps));
-    }
-    const judged = judgeLine(
-      {
-        varianceCents: variance,
-        windowEndsOn: row.window_ends_on,
-        deadlineStatus: deadlines.get(row.priced_line_id)?.status ?? 'unverified',
-        windowRuleComputed,
-        claimReversed: row.reversed,
-        claimSuperseded: row.superseded,
-        mappingKind: row.mapping_kind,
-        mappingInForce: row.mapping_in_force,
-        contractVersionStatus: row.version_status,
-        contractVersionCoversService: row.version_covers_service,
-        releaseWithdrawn: row.release_withdrawn,
-        contentNotLoaded: gaps.length > 0,
-        writtenOff: false,
-        visitVarianceCents: visit,
-        reviewFlags: row.review_flags.map((flag) => flag.flag),
-      },
-      settings.lineMaterialityCents,
-      input.asOf,
-    );
-    const validatedCents = judged.validatedCents;
-    const behavior = trace === null || validatedCents === null ? null : detectBehavior(trace, references);
-    // A per-visit line counts with its visit: on the line that carries it, at the visit's net.
-    const counted = row.per_visit === null ? variance : row.per_visit.carrier_line_no === row.line_no ? visit : null;
-    let status: string;
-    let reasons: string[] = [];
-    if (row.unpriced_reason !== null) {
-      status = 'unpriced';
-    } else if (row.per_visit !== null && row.per_visit.carrier_line_no !== row.line_no) {
-      status = 'with_visit';
-    } else if (counted !== null && counted < 0n) {
-      status = 'overpaid';
-    } else if (validatedCents === null) {
-      status = 'paid_as_expected';
-    } else if (row.case_id !== null && row.case_in_run === true) {
-      // A case line past actionable is counted at its stage now (the ledger moved it), never as actionable too.
-      status = row.written_off_reason !== null ? 'written_off' : row.stage === 'payer_approved' || row.stage === 'recovered' ? row.stage : 'actionable';
-      reasons = row.written_off_reason === null ? [] : [row.written_off_reason];
-    } else if (row.case_id !== null) {
-      status = 'in_case_other_run';
-      reasons = ['CASE_LINE_FROM_OTHER_RUN'];
-    } else {
-      status = judged.actionable ? 'held' : 'not_actionable';
-      reasons = judged.actionable ? ['BELOW_CASE_MATERIALITY'] : [...judged.reasons];
-    }
-    return {
-      priced_line_id: row.priced_line_id,
-      service_line_id: row.service_line_id,
-      payer_claim_control_number: input.cipher.decrypt('claim.payer_claim_control_number', row.payer_claim_control_number),
-      line_no: row.line_no,
-      service_date: row.service_date,
-      procedure_code: row.procedure_code,
-      modifiers: (row.modifiers ?? []).filter((modifier) => modifier !== ''),
-      units: row.units,
-      payer: row.payer_name,
-      plan: row.plan_name,
-      charge_cents: row.charge_cents,
-      observed_allowed_cents: row.observed_allowed_cents,
-      expected_allowed_cents: row.expected_allowed_cents,
-      variance_cents: row.variance_cents,
-      validated_cents: status === 'with_visit' || validatedCents === null ? null : centsToString(validatedCents),
-      visit_variance_cents: row.visit_variance_cents,
-      unpriced_reason: row.unpriced_reason,
-      window_ends_on: windowRuleComputed ? row.window_ends_on : null,
-      stage: row.stage ?? '',
-      status,
-      reasons,
-      review_flags: row.review_flags,
-      behavior,
-      case_id: row.case_id,
-      anomaly_id: anomalyOf.get(row.service_line_id) ?? null,
-    };
-  });
-  lines.sort(
-    (a, b) =>
-      compareText(a.payer, b.payer) ||
-      compareText(a.plan, b.plan) ||
-      compareText(a.payer_claim_control_number, b.payer_claim_control_number) ||
-      a.line_no - b.line_no ||
-      compareText(a.service_line_id, b.service_line_id),
-  );
-
-  const validated = lines.filter((line) => line.validated_cents !== null);
-  const overpaid = lines.filter((line) => line.status === 'overpaid');
-  /** What an overpaid line counts: its variance, or for the line carrying a visit the visit's net. */
-  const overpaidCents = (line: ReportLine): string => line.visit_variance_cents ?? line.variance_cents ?? '0';
-  const patterns = new Map<string, { readonly key: Omit<ReportPattern, 'lines' | 'variance_cents'>; readonly variances: string[] }>();
-  const rowById = new Map(rows.map((row) => [row.priced_line_id, row]));
-  for (const line of validated) {
-    const row = rowById.get(line.priced_line_id) as LineRow;
-    const behavior = line.behavior ?? 'BELOW_CONTRACT_RATE';
-    const key = JSON.stringify([row.payer_name, row.plan_name, row.mapping_kind, row.contract_version_id, row.rate_record_id, behavior]);
-    const entry = patterns.get(key) ?? {
-      key: {
-        payer: row.payer_name,
-        plan: row.plan_name,
-        mapping_kind: row.mapping_kind ?? 'contract',
-        contract_version_id: row.contract_version_id,
-        rate_record_id: row.rate_record_id,
-        behavior,
-        behavior_text: BEHAVIOR_TEXT[behavior],
-      },
-      variances: [],
-    };
-    entry.variances.push(line.validated_cents as string);
-    patterns.set(key, entry);
-  }
-  const notActionableReasons = [
-    // CONTENT_NOT_LOADED by the content its lines' traces read (UX-10): the report names which.
-    ...NOT_ACTIONABLE_REASONS.filter((reason) => reason !== 'WRITTEN_OFF').flatMap((reason) => (reason === 'CONTENT_NOT_LOADED' ? CONTENT_NOT_LOADED_REASONS : [reason])),
-    'BELOW_CASE_MATERIALITY',
-    'CASE_LINE_FROM_OTHER_RUN',
-    ...Object.keys(WRITE_OFF_TEXT).map((reason) => `written_off:${reason}`),
-  ];
-  const notActionable = notActionableReasons
-    .map((reason) => {
-      const matching = validated.filter((line) =>
-        reason.startsWith('written_off:')
-          ? line.status === 'written_off' && line.reasons.includes(reason.slice('written_off:'.length))
-          : reason.startsWith('CONTENT_NOT_LOADED:')
-            ? line.reasons.includes('CONTENT_NOT_LOADED') && contentKeyOf.get(line.priced_line_id) === reason
-            : line.reasons.includes(reason),
+  const figures = reportFigures();
+  const reasonsListed = notActionableReasons();
+  const arena = new CsvArena();
+  try {
+    await client.query(`DECLARE report_lines NO SCROLL CURSOR FOR ${RUN_LINES_QUERY}`, [input.pricingRunId, input.practiceId]);
+    for (;;) {
+      const batch = await readWithAudit(
+        scope,
+        { objectType: 'priced_line', purpose: 'audit_report', requestId: input.requestId },
+        async (reader) => (await reader.query<LineRow>(`FETCH ${REPORT_BATCH_LINES} FROM report_lines`)).rows,
+        (row) => ({ objectId: row.priced_line_id, practiceId: row.practice_id }),
       );
-      return { reason, lines: matching.length, variance_cents: text(sum(matching.map((line) => line.validated_cents as string))) };
+      if (batch.length === 0) {
+        break;
+      }
+      // Whether each line's deadline is verified (D17 a), as triage judged it.
+      const deadlines = await lineDeadlines(
+        client,
+        batch.map((row) => row.priced_line_id),
+      );
+      const reading: LineReading = { input, settings, references, spans, anomalyOf, deadlines };
+      for (const row of batch) {
+        const { line, contentKey } = reportLineOf(row, reading);
+        foldLine(figures, reasonsListed, row, line, contentKey, deadlines);
+        arena.append(line);
+      }
+      if (batch.length < REPORT_BATCH_LINES) {
+        break;
+      }
+    }
+    await client.query('CLOSE report_lines');
+  } catch (error) {
+    arena.release();
+    throw error;
+  }
+
+  const notActionable = reasonsListed
+    .map((reason, place) => {
+      const entry = figures.notActionable.get(place) ?? noLines();
+      return { reason, lines: entry.lines, variance_cents: text(entry.cents) };
     })
     .filter((entry) => entry.lines > 0);
 
   // The recovery ledger, read as it stands (docs/adr/0042): each case's entries for its lines this run priced
-  // (and for the case as a whole when it holds no other run's line), at the practice's proof level.
+  // (and for the case as a whole when it holds no other run's line), at the practice's proof level. Read once, for
+  // the cases' totals and their patient balances (D18).
   const { proofLevel } = await practiceLedgerSettings(scope, input.practiceId);
-  const ledger: readonly LedgerEntry[] = caseRows.length === 0 ? [] : await ledgerEntries(scope, input.practiceId);
+  const ledger: readonly StoredEntry[] = caseRows.length === 0 ? [] : await ledgerEntries(scope, input.practiceId);
   const byId = entriesById(ledger);
-  const inRun = new Map<string, Set<string>>();
-  for (const row of rows) {
-    if (row.case_id !== null && row.case_in_run === true) {
-      inRun.set(row.case_id, (inRun.get(row.case_id) ?? new Set()).add(row.service_line_id));
-    }
-  }
-  const actionableNow = (caseId: string) => lines.filter((line) => line.case_id === caseId && line.status === 'actionable');
+  const actionableNow = (caseId: string) => figures.actionableNow.get(caseId) ?? noLines();
   const ledgerOf = (row: CaseRow) => {
-    const share = inRun.get(row.id) ?? new Set<string>();
+    const share = figures.inRun.get(row.id) ?? new Set<string>();
     const whole = row.case_lines === row.lines;
     return ledgerTotals(
       ledger.filter((entry) => entry.caseId === row.id && (entry.serviceLineId === null ? whole : share.has(entry.serviceLineId))),
@@ -693,11 +851,16 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
     );
   };
 
-  const patientBalance = await patientBalanceCases(scope, input.practiceId, caseRows.map((row) => row.id));
+  const patientBalance = await patientBalanceCases(
+    scope,
+    input.practiceId,
+    caseRows.map((row) => row.id),
+    ledger,
+  );
 
   const cases: ReportCase[] = caseRows.map((row) => {
     const still = actionableNow(row.id);
-    const stillCents = sum(still.map((line) => line.variance_cents ?? '0'));
+    const stillCents = still.cents;
     const totals = ledgerOf(row);
     const pursuit = row.pursuit_cost_cents === null ? null : parseCents(row.pursuit_cost_cents);
     // What pursuing the case may still bring: its lines still actionable, less the cost.
@@ -724,7 +887,7 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
       pursuit_cost_cents: row.pursuit_cost_cents,
       net_expected_cents: net === null ? null : text(net),
       owner: row.owner,
-      actionable_now_lines: still.length,
+      actionable_now_lines: still.lines,
       actionable_now_cents: text(stillCents),
       payer_approved_cents: text(totals.payerApprovedCents),
       recovered_cents: text(totals.recoveredCents),
@@ -762,8 +925,8 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
     flaggedLines: anomalies.reduce((total, item) => total + item.flagged_lines, 0),
     flaggedRangeLowCents: sum(anomalies.map((item) => item.range_low_cents)),
     flaggedRangeHighCents: sum(anomalies.map((item) => item.range_high_cents)),
-    validatedLines: validated.length,
-    validatedCents: sum(validated.map((line) => line.validated_cents as string)),
+    validatedLines: figures.validated.lines,
+    validatedCents: figures.validated.cents,
   });
 
   const pursuitCosts = pursued.map((item) => item.pursuit_cost_cents);
@@ -775,27 +938,26 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
       gaps.push({ kind: 'unpriced', reason: entry.reason, lines: entry.lines, charge_cents: entry.charge_cents, detail: UNPRICED_REMEDIES[entry.reason].meaning, remedy: UNPRICED_REMEDIES[entry.reason].remedy });
     }
   }
-  const noWindow = validated.filter((line) => line.reasons.includes('NO_WINDOW'));
-  if (noWindow.length > 0) {
+  const { noWindow, unverified } = figures;
+  if (noWindow.lines > 0) {
     gaps.push({
       kind: 'no_window',
       reason: 'NO_WINDOW',
-      lines: noWindow.length,
-      charge_cents: text(sum(noWindow.map((line) => line.charge_cents))),
+      lines: noWindow.lines,
+      charge_cents: text(noWindow.cents),
       detail: 'No dispute window is known for these validated lines: the contract states none and the release has no default for them',
       remedy: 'Obtain the contract’s dispute terms',
     });
   }
-  const unverified = validated.filter((line) => line.reasons.includes('DEADLINE_UNVERIFIED'));
-  if (unverified.length > 0) {
+  if (unverified.lines > 0) {
     gaps.push({
       kind: 'deadline_unverified',
       reason: 'DEADLINE_UNVERIFIED',
-      lines: unverified.length,
-      charge_cents: text(sum(unverified.map((line) => line.charge_cents))),
+      lines: unverified.lines,
+      charge_cents: text(unverified.cents),
       detail:
         'The dispute deadline of these validated lines is not verified (D17 a): their contract’s window is not cited and verified on its page or cites a rule the product does not compute yet, the release’s window is its commercial default or below L2, or the Medicare Advantage dispute route is not confirmed, so they are not actionable',
-      remedy: deadlineRemedy(unverified.map((line) => deadlines.get(line.priced_line_id)?.cause ?? null)),
+      remedy: deadlineRemedy([...figures.unverifiedCauses]),
     });
   }
   const maCases = openCases.filter((item) => item.mapping_kind === 'ma_noncontracted');
@@ -862,17 +1024,25 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
     },
     anomalies,
     validated: {
-      lines: validated.length,
-      variance_cents: text(sum(validated.map((line) => line.validated_cents as string))),
-      patterns: [...patterns.values()]
-        .map((entry) => ({ ...entry.key, lines: entry.variances.length, variance_cents: text(sum(entry.variances)) }))
-        .sort((a, b) => compareText(a.payer, b.payer) || compareText(a.plan, b.plan) || compareText(a.behavior, b.behavior) || compareText(a.rate_record_id ?? '', b.rate_record_id ?? '')),
+      lines: figures.validated.lines,
+      variance_cents: text(figures.validated.cents),
+      // Patterns tied on the sort keep the order of their first lines in the report's order, as the whole read's did.
+      patterns: [...figures.patterns.values()]
+        .sort(
+          (a, b) =>
+            compareText(a.key.payer, b.key.payer) ||
+            compareText(a.key.plan, b.key.plan) ||
+            compareText(a.key.behavior, b.key.behavior) ||
+            compareText(a.key.rate_record_id ?? '', b.key.rate_record_id ?? '') ||
+            compareLineOrder(a.first, b.first),
+        )
+        .map((entry) => ({ ...entry.key, lines: entry.tally.lines, variance_cents: text(entry.tally.cents) })),
       not_actionable: notActionable,
     },
-    overpaid: { lines: overpaid.length, variance_cents: text(sum(overpaid.map(overpaidCents))) },
+    overpaid: { lines: figures.overpaid.lines, variance_cents: text(figures.overpaid.cents) },
     cases,
     pursuit: { estimated, cost_cents: pursuitTotal === null ? null : text(pursuitTotal), net_expected_cents: pursuitTotal === null ? null : text(cents(actionableCents - pursuitTotal)) },
     evidence_gaps: gaps,
   };
-  return { content, lines };
+  return { content, arena };
 }
