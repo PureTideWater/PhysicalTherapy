@@ -29,13 +29,18 @@ import {
   claim,
   documentFor835,
   dollars,
+  envelopeOf,
   line,
+  parseCalendarDate,
+  postingExport,
   remittance,
   renderDocument,
+  reversalOf,
   scaleCodes,
   scaleZips,
   singleTransactionFile,
 } from '@tp/synth';
+import { type Cents, cents } from '@tp/money';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
 import { createPricingRun } from '@tp/worker/pricing';
 
@@ -52,7 +57,13 @@ import { createPricingRun } from '@tp/worker/pricing';
  *   report action requests one; its job runs in the concurrent phase.
  * - C, four SYNTHETIC 835s of 2,000 claims each, written by packages/synth's 835 writer and staged as intake leaves a
  *   clean upload (the document row, its sealed bytes in the worker's local document store, scanned); their parse_835
- *   jobs run in the concurrent phase.
+ *   jobs run in the concurrent phase, and a second set of four in the large jobs together.
+ * - D and E, periods of A's shape (largeTogetherLines each; docs/adr/0083, D20): D's priced during setup and triaged in
+ *   the large jobs together, E's priced there.
+ * - A's reprocessing (step 7b; the ledger freeze exception granted 2026-10-27): once A is triaged, SYNTHETIC 835s that
+ *   reverse each claim holding an actionable line and pay its correction, every actionable line at its expected amount
+ *   (checks of REPROCESSING_CHECK_CLAIMS claims), and a SYNTHETIC posting export with one line-level row per
+ *   actionable line, so A's reconcile approves and posts every one of them in one pass.
  *
  * A's and B's lines are bulk-inserted as the owner, in the shape of apps/worker/src/price/price.large.db.test.ts, with
  * the claim numbers sealed under the practice's own key as the parser seals them (the audit report opens them). Every
@@ -68,13 +79,15 @@ export interface ScenarioSize {
   readonly measuredLines: number;
   /** Practice B's lines (the report printed in the concurrent phase). */
   readonly reportLines: number;
-  /** Practice C's 835s, and the claims each holds. */
+  /** Practice C's 835s, and the claims each holds (each set: one in the concurrent phase, one in the large jobs together). */
   readonly remittances: number;
   readonly claimsPerRemittance: number;
+  /** Practices D's and E's lines each (the large jobs together, D20). */
+  readonly largeTogetherLines: number;
 }
 
-export const FULL_SIZE: ScenarioSize = { measuredLines: 100_000, reportLines: 20_000, remittances: 4, claimsPerRemittance: 2_000 };
-export const SMALL_SIZE: ScenarioSize = { measuredLines: 2_000, reportLines: 500, remittances: 4, claimsPerRemittance: 50 };
+export const FULL_SIZE: ScenarioSize = { measuredLines: 100_000, reportLines: 20_000, remittances: 4, claimsPerRemittance: 2_000, largeTogetherLines: 100_000 };
+export const SMALL_SIZE: ScenarioSize = { measuredLines: 2_000, reportLines: 500, remittances: 4, claimsPerRemittance: 50, largeTogetherLines: 2_000 };
 
 /** The period A and B are priced for: every quarter of 2026. */
 export const PERIOD = { from: '2026-01-01', to: '2026-12-31' } as const;
@@ -87,7 +100,11 @@ export const CAPACITY_ZIP: string = (scaleZips(SCALE_RELEASE_SHAPE).find((zip) =
 
 /** The place-of-service settings every practice prices with, and the split the specialist approves. */
 export const PLACE_OF_SERVICE = { '11': 'non_facility', '22': 'facility' } as const;
-const SETTINGS = { place_of_service_settings: PLACE_OF_SERVICE, default_rounding: 'HALF_UP_CENT' };
+/**
+ * Every practice's settings: the place-of-service split and rounding it prices with, and the ledger's (a posted entry
+ * proves recovery; posting exports read with the SYNTHETIC PM EXPORT v1 template), for A's reconcile.
+ */
+export const SETTINGS = { place_of_service_settings: PLACE_OF_SERVICE, default_rounding: 'HALF_UP_CENT', proof_level: 'posted', posting_export_template: { template: 'synthetic_pm_export_v1' } } as const;
 
 /**
  * The worker's command with a heap flag after `node` (#31's explicit heap limit; infra/lib/heap.ts): production's
@@ -183,6 +200,102 @@ export function capacity835(index: number, claims: number): Buffer {
   const bytes = Buffer.from(renderDocument(documentFor835(singleTransactionFile(remit, { isa13: 710_000 + index, date: paymentDate })), { lineEnding: '\n' }), 'latin1');
   assertSyntheticX12(bytes, `release-capacity C ${String(index)}`);
   return bytes;
+}
+
+/** The claims of a reprocessing check (step 7b): small, as a payer's checks are, since a line-level posting row is matched among its check's claims. */
+export const REPROCESSING_CHECK_CLAIMS = 20;
+/** Checks per reprocessing 835: each file one interchange of this many transactions, one parse_835 job. */
+export const REPROCESSING_CHECKS_PER_FILE = 100;
+/** The date A's reprocessing pays and posts: the original remittance's (insertClaims), the reprocessing loaded after it. */
+export const REPROCESSING_PAID_ON = '2026-12-31';
+
+/** An actionable line's key in `expected`: its claim's number and its line number. */
+export const lineKey = (claimNo: number, lineNo: number): string => `${String(claimNo)}:${String(lineNo)}`;
+
+/** A claim's number as insertClaims seals it (also its patient control number's body). */
+export const claimNumber = (label: string, claimNo: number): string => `${practiceNames(label).claimPrefix}${String(claimNo).padStart(7, '0')}`;
+
+/** A line as insertClaims wrote it: charged 100.00, allowed 50.00, the patient's 10.00 (PR 2), paid 40.00. */
+const ORIGINAL_LINE = { charge: dollars('100.00'), allowed: dollars('50.00'), patientShare: dollars('10.00') } as const;
+
+export interface Reprocessing {
+  /** The 835s, each one interchange of up to REPROCESSING_CHECKS_PER_FILE checks. */
+  readonly files: readonly Buffer[];
+  /** The posting export: one line-level row per actionable line (its correction's payment, code and date). */
+  readonly postingExport: string;
+  /** The actionable lines it pays and posts. */
+  readonly lines: number;
+}
+
+/**
+ * A's reprocessing (step 7b), deterministic from the claims insertClaims wrote: for each claim holding an actionable
+ * line (`expected`, by lineKey, its expected allowed amount in cents), its reversal (status 22, every amount negated) and
+ * its correction (frequency 7, naming it in REF F8, the same patient control number), whose actionable lines are allowed
+ * and paid their expected amount and whose other lines are as the original paid them. Checks of
+ * REPROCESSING_CHECK_CLAIMS claims, each its own payment (trace); the posting export posts each actionable line from
+ * its own row. Every identifier SYNTHETIC.
+ */
+export function reprocessing(label: string, claims: readonly CapacityClaim[], expected: ReadonlyMap<string, bigint>): Reprocessing {
+  const world = new SynthWorld(`tp-release-capacity/${label}/reprocessing`);
+  const names = practiceNames(label);
+  const payer = { ...world.payer(`CAPACITY ${label}`), name: names.payer, refs: [{ qualifier: '2U', value: names.payerId.slice('2U:'.length) }] };
+  const payee = world.payee(`CAP${label}`);
+  const patient = world.patient();
+  const provider = world.renderingProvider();
+  const paidOn = parseCalendarDate(REPROCESSING_PAID_ON);
+  const touched = claims.filter((entry) => entry.lines.some((item) => expected.has(lineKey(entry.claimNo, item.lineNo))));
+  const checks: { trace: string; claims: Claim[] }[] = [];
+  const rows: Parameters<typeof postingExport>[0][number][] = [];
+  for (let start = 0; start < touched.length; start += REPROCESSING_CHECK_CLAIMS) {
+    const trace = `${names.trace.slice(0, -4)}R${String(checks.length + 1).padStart(5, '0')}`;
+    const built: Claim[] = [];
+    for (const entry of touched.slice(start, start + REPROCESSING_CHECK_CLAIMS)) {
+      const number = claimNumber(label, entry.claimNo);
+      const plan = { qualifier: 'CE', value: (entry.medicareAdvantage ? names.medicareAdvantagePlan : names.contractPlan).slice('CE:'.length) };
+      const filingIndicator = entry.medicareAdvantage ? '16' : '12';
+      const dates = (item: CapacityLine) => ({ kind: 'single' as const, date: parseCalendarDate(item.serviceDate) });
+      const original = claim({
+        patientControlNumber: `SYNPCN${number}`,
+        payerClaimControlNumber: number,
+        filingIndicator,
+        patient,
+        renderingProvider: provider,
+        refs: [plan],
+        lines: entry.lines.map((item) =>
+          line({ code: item.code, modifiers: [...item.modifiers], units: String(item.units), charge: ORIGINAL_LINE.charge, allowed: ORIGINAL_LINE.allowed, patientShare: [{ reason: '2', amount: ORIGINAL_LINE.patientShare }], dates: dates(item) }),
+        ),
+      });
+      const corrected = claim({
+        patientControlNumber: `SYNPCN${number}`,
+        payerClaimControlNumber: `${number}R`,
+        filingIndicator,
+        frequencyCode: '7',
+        patient,
+        renderingProvider: provider,
+        refs: [plan, { qualifier: 'F8', value: number }],
+        lines: entry.lines.map((item) => {
+          const amount = expected.get(lineKey(entry.claimNo, item.lineNo));
+          if (amount === undefined) {
+            return line({ code: item.code, modifiers: [...item.modifiers], units: String(item.units), charge: ORIGINAL_LINE.charge, allowed: ORIGINAL_LINE.allowed, patientShare: [{ reason: '2', amount: ORIGINAL_LINE.patientShare }], dates: dates(item) });
+          }
+          const allowed: Cents = cents(amount);
+          rows.push({ postedOn: paidOn, checkOrTrace: trace, payerName: names.payer, claimReference: `SYNPCN${number}`, procedureCode: item.code, serviceDate: parseCalendarDate(item.serviceDate), amount: allowed, batch: `SYNBATCH-CAP${label}` });
+          return line({ code: item.code, modifiers: [...item.modifiers], units: String(item.units), charge: allowed > ORIGINAL_LINE.charge ? allowed : ORIGINAL_LINE.charge, allowed, dates: dates(item) });
+        }),
+      });
+      built.push(reversalOf(original), corrected);
+    }
+    checks.push({ trace, claims: built });
+  }
+  const files: Buffer[] = [];
+  for (let start = 0; start < checks.length; start += REPROCESSING_CHECKS_PER_FILE) {
+    const isa13 = 720_000 + files.length + 1;
+    const remittances = checks.slice(start, start + REPROCESSING_CHECKS_PER_FILE).map((check) => remittance({ payer, payee, claims: check.claims, paymentDate: paidOn, trace: check.trace, originatorId: world.originatorId(`R${label}`) }, world));
+    const bytes = Buffer.from(renderDocument(documentFor835({ interchanges: [envelopeOf(remittances, { isa13, date: paidOn })] }), { lineEnding: '\n' }), 'latin1');
+    assertSyntheticX12(bytes, `release-capacity ${label} reprocessing ${String(files.length + 1)}`);
+    files.push(bytes);
+  }
+  return { files, postingExport: postingExport(rows), lines: rows.length };
 }
 
 /** A seeded practice: its ID, its billing manager and its key. */
@@ -402,6 +515,45 @@ export async function requestReport(seeding: Seeding, practice: SeededPractice, 
   const id = randomUUID();
   await withPracticeScope(seeding.app, { actorId: practice.manager, practiceIds: [practice.practiceId] }, (scope) =>
     scope.client.query('INSERT INTO audit_report (id, practice_id, pricing_run_id, requested_by) VALUES ($1, $2, $3, app_actor_id())', [id, practice.practiceId, runId]),
+  );
+  return id;
+}
+
+/** A's actionable lines after its triage, by lineKey (claim number and line number), each with its expected allowed amount (step 7b). */
+export async function actionableLines(seeding: Seeding, practice: SeededPractice, runId: string): Promise<Map<string, bigint>> {
+  const { owner } = seeding;
+  const { rows } = await asOwner(owner, [practice.practiceId], () =>
+    owner.query<{ claim_no: number; line_no: number; expected: string }>(
+      `SELECT c.claim_no, l.line_no, p.expected_allowed_cents::text AS expected
+         FROM case_line cl JOIN service_line l ON l.id = cl.service_line_id JOIN claim c ON c.id = l.claim_id
+         JOIN priced_line p ON p.service_line_id = l.id AND p.pricing_run_id = $2
+        WHERE cl.practice_id = $1 AND p.expected_allowed_cents IS NOT NULL`,
+      [practice.practiceId, runId],
+    ),
+  );
+  return new Map(rows.map((row) => [lineKey(row.claim_no, row.line_no), BigInt(row.expected)]));
+}
+
+/**
+ * A posting export staged as intake leaves a clean one waiting for its reconcile (apps/worker/src/reconcile/test-support/
+ * ledger-world.ts, stageExport()): the document row in the billing manager's scope, its bytes sealed under the
+ * practice's key in the worker's local document store, hashed, scanned clean and stored. Returns its ID, for the
+ * reconcile job that intake queues for it.
+ */
+export async function stagePostingExport(seeding: Seeding, practice: SeededPractice, content: string): Promise<string> {
+  const id = randomUUID();
+  const bytes = Buffer.from(content, 'utf8');
+  await withPracticeScope(seeding.app, { actorId: practice.manager, practiceIds: [practice.practiceId] }, (scope) =>
+    scope.client.query("INSERT INTO source_document (id, practice_id, kind, size_bytes, content_type, uploaded_by) VALUES ($1, $2, 'posting_export', $3, 'text/csv', $4)", [
+      id,
+      practice.practiceId,
+      bytes.length,
+      practice.manager,
+    ]),
+  );
+  await new DocumentStore(new LocalSealedBytes(seeding.documentsDir)).write(practice.cipher, documentObjectKey(practice.practiceId, id), Readable.from([bytes]));
+  await asOwner(seeding.owner, [practice.practiceId], () =>
+    seeding.owner.query("UPDATE source_document SET sha256 = $2, scan_status = 'clean', scan_at = now(), status = 'stored' WHERE id = $1", [id, createHash('sha256').update(bytes).digest('hex')]),
   );
   return id;
 }

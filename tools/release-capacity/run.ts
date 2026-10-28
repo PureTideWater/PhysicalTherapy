@@ -21,22 +21,25 @@ import { CommandError, DockerRuntime, ProcessRuntime, type Runtime, type Service
 import { HARNESS_LOGINS, type HarnessDirectories, harnessLogins, loginUrl, loginsEnvironment, workerEnvironment } from '../screening-capacity/env';
 import { MIB, NETWORK_DELAY_MS, cpuLayout, harnessCpus, postgresLimit, productionLimits, runnerTooSmall, taskLimit } from '../screening-capacity/limits';
 import { memoryEvents, workerStarted } from '../screening-capacity/measure';
-import { type CapacityMeasurements, type JobOutcome, type WindowsQuery, type WorkerMemory, advisoriesOutput, errorCodes, markdown, report } from './checks';
+import { type AdvisoryLockSamples, type CapacityMeasurements, type JobHeap, type JobOutcome, type JobPhase, type SampledPeriod, type WindowsQuery, type WorkerMemory, advisoriesOutput, errorCodes, jobHeaps, markdown, report } from './checks';
 import {
   FULL_SIZE,
   SMALL_SIZE,
   type ScenarioSize,
   type SeededPractice,
   type Seeding,
+  actionableLines,
   capacity835,
   createRun,
   insertClaims,
   mapPlans,
   practiceClaims,
+  reprocessing,
   requestReport,
   seedPractice,
   specialist,
   stage835,
+  stagePostingExport,
   withHeapFlag,
 } from './scenario';
 
@@ -49,21 +52,32 @@ import {
  *  2. build release 900110 outside the repository in a child process (or take one already built: --release-dir);
  *  3. start Postgres at production's database class and storage limits (tools/screening-capacity's runtime: Docker in
  *     CI, or a scratch database on the caller's server), migrate and create the logins, load the release in a child;
- *  4. seed the SYNTHETIC practices A, B and C (scenario.ts);
+ *  4. seed the SYNTHETIC practices A to E (scenario.ts), C's second set of 835s staged too;
  *  5. start the worker at the worker task's limits (taskLimit(compute.worker): 0.5 vCPU and 1,024 MiB, no swap) with
  *     production's command and heapFlag('worker') after node (infra/lib/heap.ts; the flag is added here, never in
  *     tools/screening-capacity, so the screening's watched list does not change); price and triage B's period, and
- *     request its audit report;
+ *     request its audit report; price D's period (setup: not measured);
  *  6. the concurrent phase, queued within a second: A's run created by the billing manager and its price job, B's
  *     audit_report job (a PDF printed by Chromium in the same container), C's four parse_835 jobs; memory.current
  *     sampled every second until all six finish (the harness cannot reset memory.peak through the runtime, so the
  *     phase's peak is the samples' maximum);
- *  7. the chain: A's triage job, then A's audit report; each wait up to 45 minutes;
+ *  7. the chain: A's triage job, then A's audit report; each wait up to 45 minutes, memory.current sampled each second
+ *     for each job alone;
+ *  7b. A's reconcile (the ledger freeze exception granted 2026-10-27; docs/adr/0083): SYNTHETIC 835s reprocessing every
+ *     claim with an actionable line, each line paid its expected amount, staged and parsed, then a SYNTHETIC posting
+ *     export posting each actionable line from its own row, staged as intake leaves it and reconciled by the reconcile
+ *     job (the approvals and the postings in one pass), measured like the chain;
+ *  7c. the large jobs together (D20): A's second audit report (its inline triage a re-triage), D's triage, E's run
+ *     created and its price job, and C's second four parses, queued within a second, memory.current sampled each
+ *     second until all seven finish;
  *  8. the web's windows query on the release (releaseContentWindows), cold after a restart of Postgres and warm, with
  *     its EXPLAIN (ANALYZE, BUFFERS);
- *  9. read back every job's state, the run, the counts, the container's memory.peak, OOM kills and restarts, and the
- *     worker log's error codes; write release-capacity.json and summary.md (and the job summary in CI); exit non-zero
- *     on any failing check (checks.ts). Times are advisory.
+ *  9. read back every job's state and attempt, the run, the counts, the container's memory.peak, OOM kills and
+ *     restarts, the worker log's error codes and each job's `job heap` line (D19); write release-capacity.json and
+ *     summary.md (and the job summary in CI); exit non-zero on any failing check (checks.ts). Times are advisory.
+ *
+ * Over the whole run, from the migration to the read-back, a sampler reads each second the largest advisory-lock count
+ * any one backend of the run's database holds (D10).
  *
  * `--small` runs the same steps at a smoke size (the quarterly shape at the unit tests' size, and SMALL_SIZE's
  * practices): it proves the harness end to end and measures nothing. `--worker-image` names the image measured, so the
@@ -221,27 +235,38 @@ const TERMINAL = new Set(['completed', 'failed', 'cancelled']);
 interface Queued {
   readonly what: string;
   readonly name: string;
-  readonly concurrent: boolean;
+  readonly phase: JobPhase;
   readonly jobId: string | null;
 }
 
+/** A queued job's state, time and attempt (pg-boss's retry_count, plus one); its heap is read from the log at the end. */
 async function jobOutcome(owner: DatabaseClient, job: Queued): Promise<JobOutcome> {
   if (job.jobId === null) {
-    return { ...job, state: 'not_queued', elapsedMs: null };
+    return { ...job, state: 'not_queued', elapsedMs: null, attempts: null, heap: null };
   }
   const { rows } = await owner
-    .query<{ state: string; ms: number | null }>(
-      'SELECT state, (extract(epoch FROM (completed_on - started_on)) * 1000)::float8 AS ms FROM pgboss.job WHERE name = $1 AND id = $2',
+    .query<{ state: string; ms: number | null; retry_count: number | null }>(
+      'SELECT state, (extract(epoch FROM (completed_on - started_on)) * 1000)::float8 AS ms, retry_count FROM pgboss.job WHERE name = $1 AND id = $2',
       [job.name, job.jobId],
     )
-    .catch(() => ({ rows: [] as { state: string; ms: number | null }[] }));
+    .catch(() => ({ rows: [] as { state: string; ms: number | null; retry_count: number | null }[] }));
   const row = rows[0];
-  return { ...job, state: row?.state ?? null, elapsedMs: row?.ms === null || row?.ms === undefined ? null : Math.round(row.ms) };
+  return {
+    ...job,
+    state: row?.state ?? null,
+    elapsedMs: row?.ms === null || row?.ms === undefined ? null : Math.round(row.ms),
+    attempts: typeof row?.retry_count === 'number' ? row.retry_count + 1 : null,
+    heap: null,
+  };
 }
 
-/** Waits until every job is finished (completed, failed or cancelled) or the wait ends; `tick` runs every second meanwhile. */
+/**
+ * Waits until every job is finished (completed, failed or cancelled) or the wait ends; `tick` runs once at the start and
+ * then every second meanwhile, so a period it samples has a sample however soon its jobs finish.
+ */
 async function waitForJobs(owner: DatabaseClient, jobs: readonly Queued[], tick: () => Promise<void> = () => Promise.resolve()): Promise<JobOutcome[]> {
   const until = Date.now() + JOB_WAIT_MS;
+  await tick();
   let outcomes = await Promise.all(jobs.map((job) => jobOutcome(owner, job)));
   while (outcomes.some((outcome) => outcome.state === null || !TERMINAL.has(outcome.state)) && outcomes.every((outcome) => outcome.state !== 'not_queued') && Date.now() < until) {
     await tick();
@@ -290,7 +315,7 @@ async function measureWindows(runtime: Runtime, appUrl: string, practice: Seeded
   }
 }
 
-async function readMemory(runtime: Runtime, limitBytes: number, phase: readonly number[]): Promise<WorkerMemory> {
+async function readMemory(runtime: Runtime, limitBytes: number, periods: readonly SampledPeriod[]): Promise<WorkerMemory> {
   const v = runtime.cgroupVersion;
   const peakText = await runtime.cgroupFile('worker', v === 2 ? 'memory.peak' : 'memory.max_usage_in_bytes');
   const eventsText = await runtime.cgroupFile('worker', v === 2 ? 'memory.events' : 'memory.oom_control');
@@ -299,12 +324,51 @@ async function readMemory(runtime: Runtime, limitBytes: number, phase: readonly 
   return {
     limitBytes,
     peakBytes: peakBytes === null || Number.isNaN(peakBytes) ? null : peakBytes,
-    phasePeakBytes: phase.length === 0 ? null : Math.max(...phase),
-    phaseSamples: phase.length,
+    periods,
     oomKills: eventsText === null ? null : memoryEvents(eventsText, v).oomKill,
     oomKilled: status?.oomKilled ?? null,
     restarts: status?.restarts ?? null,
     running: status?.running ?? null,
+  };
+}
+
+/**
+ * Samples, each second until stopped, the largest advisory-lock count any one backend of the run's database holds (D10),
+ * on a connection of its own. A sample that cannot be read (a restart of Postgres) is skipped, not counted.
+ */
+function advisoryLockSampler(url: string): { readonly stop: () => Promise<AdvisoryLockSamples | null> } {
+  let running = true;
+  let peak = 0;
+  let samples = 0;
+  const loop = (async () => {
+    const client = await ownerClient(url).catch(() => null);
+    if (client === null) {
+      return;
+    }
+    try {
+      while (running) {
+        const read = await client
+          .query<{ n: number }>(
+            `SELECT coalesce(max(n), 0)::int AS n FROM (SELECT count(*) AS n FROM pg_locks
+               WHERE locktype = 'advisory' AND database = (SELECT oid FROM pg_database WHERE datname = current_database()) GROUP BY pid) x`,
+          )
+          .catch(() => null);
+        if (read !== null) {
+          peak = Math.max(peak, read.rows[0]?.n ?? 0);
+          samples += 1;
+        }
+        await sleep(1000);
+      }
+    } finally {
+      await client.end().catch(() => undefined);
+    }
+  })();
+  return {
+    stop: async () => {
+      running = false;
+      await loop;
+      return samples === 0 ? null : { peak, samples };
+    },
   };
 }
 
@@ -337,13 +401,18 @@ async function main(): Promise<number> {
     }
   };
   const jobs: JobOutcome[] = [];
-  const phase: number[] = [];
+  const periods: SampledPeriod[] = [];
   let release = { releaseNo: QUARTERLY_SCALE_RELEASE_NUMBER, records: 0, manifestSha256: '' };
   let run: CapacityMeasurements['run'] = null;
   let pricedLines: number | null = null;
   let parsedClaims: number | null = null;
-  let memory: WorkerMemory = { limitBytes: workerLimit.memoryMiB * MIB, peakBytes: null, phasePeakBytes: null, phaseSamples: 0, oomKills: null, oomKilled: null, restarts: null, running: null };
+  let postedEntries: number | null = null;
+  let expectedPosted = 0;
+  let memory: WorkerMemory = { limitBytes: workerLimit.memoryMiB * MIB, peakBytes: null, periods, oomKills: null, oomKilled: null, restarts: null, running: null };
   let codes: Record<string, number> | null = null;
+  let lines: string[] | null = null;
+  let locks: { readonly stop: () => Promise<AdvisoryLockSamples | null> } | null = null;
+  let advisoryLocks: AdvisoryLockSamples | null = null;
   let windows: WindowsQuery | null = null;
   let aborted: string | null = null;
   let owner: DatabaseClient | null = null;
@@ -375,6 +444,7 @@ async function main(): Promise<number> {
       ownerService = withDatabase(urls.serviceUrl, opts.database);
     }
     await timed('migrate', () => runtime.migrate(ownerService, loginsEnvironment(ownerService, logins)));
+    locks = advisoryLockSampler(ownerHarness);
     say(`loaded: ${(await timed('release load', () => child('tools/release-capacity/load.ts', [ownerHarness, built.dir, String(built.releaseNo)], 8192))).trim()}`);
     const hostDirs = directories(runtime.dataDir.host);
     for (const dir of Object.values(hostDirs) as string[]) {
@@ -385,20 +455,34 @@ async function main(): Promise<number> {
     const appUrl = loginUrl(ownerHarness, logins.app);
     app = pool(appUrl, 4);
     const seeding: Seeding = { owner, app, documentsDir: hostDirs.documents };
-    const { a, b, c, documents } = await timed('seed', async () => {
+    const aClaims = practiceClaims(size.measuredLines, 'A');
+    const { a, b, c, d, e, documents, secondDocuments } = await timed('seed', async () => {
       const specialistId = await specialist(seeding);
-      const seeded = { a: await seedPractice(seeding, 'A', specialistId), b: await seedPractice(seeding, 'B', specialistId), c: await seedPractice(seeding, 'C', specialistId) };
-      await insertClaims(seeding, seeded.a, practiceClaims(size.measuredLines, 'A'));
+      const seeded = {
+        a: await seedPractice(seeding, 'A', specialistId),
+        b: await seedPractice(seeding, 'B', specialistId),
+        c: await seedPractice(seeding, 'C', specialistId),
+        d: await seedPractice(seeding, 'D', specialistId),
+        e: await seedPractice(seeding, 'E', specialistId),
+      };
+      await insertClaims(seeding, seeded.a, aClaims);
       await insertClaims(seeding, seeded.b, practiceClaims(size.reportLines, 'B'));
-      await mapPlans(seeding, seeded.a, specialistId);
-      await mapPlans(seeding, seeded.b, specialistId);
+      await insertClaims(seeding, seeded.d, practiceClaims(size.largeTogetherLines, 'D'));
+      await insertClaims(seeding, seeded.e, practiceClaims(size.largeTogetherLines, 'E'));
+      for (const practice of [seeded.a, seeded.b, seeded.d, seeded.e]) {
+        await mapPlans(seeding, practice, specialistId);
+      }
       const staged: string[] = [];
+      const second: string[] = [];
       for (let index = 1; index <= size.remittances; index += 1) {
         staged.push(await stage835(seeding, seeded.c, capacity835(index, size.claimsPerRemittance)));
+        second.push(await stage835(seeding, seeded.c, capacity835(index + size.remittances, size.claimsPerRemittance)));
       }
-      return { ...seeded, documents: staged };
+      return { ...seeded, documents: staged, secondDocuments: second };
     });
-    say(`seeded A (${String(size.measuredLines)} lines), B (${String(size.reportLines)}) and C (${String(size.remittances)} 835s of ${String(size.claimsPerRemittance)} claims)`);
+    say(
+      `seeded A (${String(size.measuredLines)} lines), B (${String(size.reportLines)}), C (two sets of ${String(size.remittances)} 835s of ${String(size.claimsPerRemittance)} claims), D and E (${String(size.largeTogetherLines)} each)`,
+    );
     const worker: ServiceSpec = {
       name: 'worker',
       env: workerEnvironment(ownerService, runtime.webOrigin, directories(runtime.dataDir.service), developmentMasterKey().toString('base64'), logins),
@@ -417,44 +501,106 @@ async function main(): Promise<number> {
       }
     });
     queue = new PgBossQueue(loginUrl(ownerHarness, logins.queue), createLogger());
-    const queued = async (what: string, name: 'price' | 'triage' | 'audit_report' | 'parse_835', concurrent: boolean, send: (q: PgBossQueue) => Promise<string | null>): Promise<Queued> => ({
+    const queued = async (what: string, name: 'price' | 'triage' | 'audit_report' | 'parse_835' | 'reconcile', phase: JobPhase, send: (q: PgBossQueue) => Promise<string | null>): Promise<Queued> => ({
       what,
       name,
-      concurrent,
+      phase,
       jobId: await send(queue as PgBossQueue),
     });
-    // B's period priced and triaged before the measurement, as a practice's month would be.
+    /** memory.current sampled each second into the period named, from its first tick; `close` records how long it ran. */
+    const sampling = (what: string) => {
+      const values: number[] = [];
+      const started = Date.now();
+      let entry: SampledPeriod = { what, peakBytes: null, samples: 0, ms: null };
+      periods.push(entry);
+      const close = () => {
+        const index = periods.indexOf(entry);
+        entry = { what, peakBytes: values.length === 0 ? null : Math.max(...values), samples: values.length, ms: Date.now() - started };
+        periods[index] = entry;
+      };
+      const tick = async () => {
+        const text = await runtime.cgroupFile('worker', runtime.cgroupVersion === 2 ? 'memory.current' : 'memory.usage_in_bytes').catch(() => null);
+        const value = text === null ? Number.NaN : Number.parseInt(text.trim(), 10);
+        if (!Number.isNaN(value)) {
+          values.push(value);
+        }
+        close();
+      };
+      return { tick, close };
+    };
+    // B's and D's periods priced, and B's triaged, before the measurement, as a practice's month would be.
     const bRun = await createRun(seeding, b, release.releaseNo);
-    const setup = await timed('setup: B priced and triaged', async () => {
-      const priced = await waitForJobs(owner as DatabaseClient, [await queued('B price', 'price', false, (q) => q.enqueue('price', { practice_id: b.practiceId, pricing_run_id: bRun }))]);
-      const triaged = await waitForJobs(owner as DatabaseClient, [await queued('B triage', 'triage', false, (q) => q.enqueue('triage', { practice_id: b.practiceId, pricing_run_id: bRun }))]);
-      return [...priced, ...triaged];
+    const dRun = await createRun(seeding, d, release.releaseNo);
+    const setup = await timed('setup: B priced and triaged, D priced', async () => {
+      const priced = await waitForJobs(owner as DatabaseClient, [await queued('B price', 'price', 'setup', (q) => q.enqueue('price', { practice_id: b.practiceId, pricing_run_id: bRun }))]);
+      const triaged = await waitForJobs(owner as DatabaseClient, [await queued('B triage', 'triage', 'setup', (q) => q.enqueue('triage', { practice_id: b.practiceId, pricing_run_id: bRun }))]);
+      const dPriced = await waitForJobs(owner as DatabaseClient, [await queued('D price', 'price', 'setup', (q) => q.enqueue('price', { practice_id: d.practiceId, pricing_run_id: dRun }))]);
+      return [...priced, ...triaged, ...dPriced];
     });
     jobs.push(...setup);
     const bReport = await requestReport(seeding, b, bRun);
     // The concurrent phase: A's run, B's report and C's four parses, queued together.
     const aRun = await createRun(seeding, a, release.releaseNo);
-    const sampled = async () => {
-      const text = await runtime.cgroupFile('worker', runtime.cgroupVersion === 2 ? 'memory.current' : 'memory.usage_in_bytes');
-      const value = text === null ? Number.NaN : Number.parseInt(text.trim(), 10);
-      if (!Number.isNaN(value)) {
-        phase.push(value);
-      }
-    };
+    const concurrentMemory = sampling('the concurrent phase');
     const concurrent = await timed('concurrent phase', async () => {
       const sent = await Promise.all([
-        queued('A price', 'price', true, (q) => q.enqueue('price', { practice_id: a.practiceId, pricing_run_id: aRun })),
-        queued('B audit report', 'audit_report', true, (q) => q.enqueue('audit_report', { practice_id: b.practiceId, audit_report_id: bReport })),
-        ...documents.map((documentId, index) => queued(`C parse ${String(index + 1)}`, 'parse_835', true, (q) => q.enqueue('parse_835', { practice_id: c.practiceId, document_id: documentId }))),
+        queued('A price', 'price', 'concurrent', (q) => q.enqueue('price', { practice_id: a.practiceId, pricing_run_id: aRun })),
+        queued('B audit report', 'audit_report', 'concurrent', (q) => q.enqueue('audit_report', { practice_id: b.practiceId, audit_report_id: bReport })),
+        ...documents.map((documentId, index) => queued(`C parse ${String(index + 1)}`, 'parse_835', 'concurrent', (q) => q.enqueue('parse_835', { practice_id: c.practiceId, document_id: documentId }))),
       ]);
-      return waitForJobs(owner as DatabaseClient, sent, sampled);
+      return waitForJobs(owner as DatabaseClient, sent, concurrentMemory.tick);
     });
+    concurrentMemory.close();
     jobs.push(...concurrent);
     say(`concurrent phase: ${concurrent.map((job) => `${job.what} ${job.state ?? 'unread'}`).join(', ')}`);
-    // The chain: A's triage, then A's audit report.
-    jobs.push(...(await timed('A triage', async () => waitForJobs(owner as DatabaseClient, [await queued('A triage', 'triage', false, (q) => q.enqueue('triage', { practice_id: a.practiceId, pricing_run_id: aRun }))]))));
+    // The chain: A's triage, then A's audit report, each job's memory sampled alone.
+    const triageMemory = sampling('A’s triage');
+    jobs.push(...(await timed('A triage', async () => waitForJobs(owner as DatabaseClient, [await queued('A triage', 'triage', 'chain', (q) => q.enqueue('triage', { practice_id: a.practiceId, pricing_run_id: aRun }))], triageMemory.tick))));
+    triageMemory.close();
     const aReport = await requestReport(seeding, a, aRun);
-    jobs.push(...(await timed('A audit report', async () => waitForJobs(owner as DatabaseClient, [await queued('A audit report', 'audit_report', false, (q) => q.enqueue('audit_report', { practice_id: a.practiceId, audit_report_id: aReport }))]))));
+    const reportMemory = sampling('A’s audit report');
+    jobs.push(
+      ...(await timed('A audit report', async () =>
+        waitForJobs(owner as DatabaseClient, [await queued('A audit report', 'audit_report', 'chain', (q) => q.enqueue('audit_report', { practice_id: a.practiceId, audit_report_id: aReport }))], reportMemory.tick),
+      )),
+    );
+    reportMemory.close();
+    // 7b, A's reconcile: its reprocessing 835s parsed, then its posting export reconciled (approvals and postings in one pass).
+    const reprocessed = reprocessing('A', aClaims, await actionableLines(seeding, a, aRun));
+    expectedPosted = reprocessed.lines;
+    const reprocessingDocuments: string[] = [];
+    for (const file of reprocessed.files) {
+      reprocessingDocuments.push(await stage835(seeding, a, file));
+    }
+    const exportId = await stagePostingExport(seeding, a, reprocessed.postingExport);
+    say(`A's reconcile: ${String(reprocessed.lines)} actionable lines in ${String(reprocessed.files.length)} reprocessing 835s`);
+    const reconcileMemory = sampling('A’s reconcile');
+    await timed('A reconcile', async () => {
+      const parses = await Promise.all(
+        reprocessingDocuments.map((documentId, index) => queued(`A reprocessing parse ${String(index + 1)}`, 'parse_835', 'reconcile', (q) => q.enqueue('parse_835', { practice_id: a.practiceId, document_id: documentId }))),
+      );
+      jobs.push(...(await waitForJobs(owner as DatabaseClient, parses, reconcileMemory.tick)));
+      jobs.push(...(await waitForJobs(owner as DatabaseClient, [await queued('A reconcile', 'reconcile', 'reconcile', (q) => q.enqueue('reconcile', { practice_id: a.practiceId, document_id: exportId }))], reconcileMemory.tick)));
+    });
+    reconcileMemory.close();
+    // 7c, the large jobs together (D20): A's second report, D's triage, E's price job and C's second four parses.
+    const aSecondReport = await requestReport(seeding, a, aRun);
+    const eRun = await createRun(seeding, e, release.releaseNo);
+    const togetherMemory = sampling('the large jobs together');
+    const together = await timed('large jobs together', async () => {
+      const sent = await Promise.all([
+        queued('A audit report 2', 'audit_report', 'together', (q) => q.enqueue('audit_report', { practice_id: a.practiceId, audit_report_id: aSecondReport })),
+        queued('D triage', 'triage', 'together', (q) => q.enqueue('triage', { practice_id: d.practiceId, pricing_run_id: dRun })),
+        queued('E price', 'price', 'together', (q) => q.enqueue('price', { practice_id: e.practiceId, pricing_run_id: eRun })),
+        ...secondDocuments.map((documentId, index) =>
+          queued(`C parse ${String(size.remittances + index + 1)}`, 'parse_835', 'together', (q) => q.enqueue('parse_835', { practice_id: c.practiceId, document_id: documentId })),
+        ),
+      ]);
+      return waitForJobs(owner as DatabaseClient, sent, togetherMemory.tick);
+    });
+    togetherMemory.close();
+    jobs.push(...together);
+    say(`large jobs together: ${together.map((job) => `${job.what} ${job.state ?? 'unread'}`).join(', ')}`);
     // Read back, before the worker stops.
     const ownerNow = owner;
     run = await asOwner(ownerNow, [a.practiceId], async () => {
@@ -466,8 +612,16 @@ async function main(): Promise<number> {
       return rows[0] === undefined ? null : { status: rows[0].status, failureCode: rows[0].failure_code };
     });
     parsedClaims = await asOwner(ownerNow, [c.practiceId], async () => (await ownerNow.query<{ n: number }>('SELECT count(*)::int AS n FROM claim WHERE practice_id = $1', [c.practiceId])).rows[0]?.n ?? null);
-    memory = await readMemory(runtime, workerLimit.memoryMiB * MIB, phase);
-    codes = errorCodes(await runtime.logs('worker'));
+    postedEntries = await asOwner(
+      ownerNow,
+      [a.practiceId],
+      async () => (await ownerNow.query<{ n: number }>("SELECT count(*)::int AS n FROM ledger_entry WHERE practice_id = $1 AND stage = 'posted'", [a.practiceId])).rows[0]?.n ?? null,
+    );
+    advisoryLocks = await locks.stop();
+    locks = null;
+    memory = await readMemory(runtime, workerLimit.memoryMiB * MIB, periods);
+    lines = await runtime.logs('worker');
+    codes = errorCodes(lines);
     await runtime.stopService('worker');
     await app.end();
     app = null;
@@ -480,13 +634,14 @@ async function main(): Promise<number> {
     }
     aborted = error instanceof HarnessStop ? error.code : `HARNESS_ERROR: ${masked(error instanceof Error ? error.message : String(error)).split('\n')[0]?.slice(0, 500) ?? ''}`;
     say(`stopped: ${aborted}`);
-    if (codes === null) {
-      codes = await runtime
-        .logs('worker')
-        .then((lines) => errorCodes(lines))
-        .catch(() => null);
+    if (lines === null) {
+      lines = await runtime.logs('worker').catch(() => null);
+      codes = lines === null ? null : errorCodes(lines);
     }
   } finally {
+    if (locks !== null) {
+      advisoryLocks = await locks.stop();
+    }
     await app?.end().catch(() => undefined);
     await owner?.end().catch(() => undefined);
     await runtime.stopAll().catch(() => undefined);
@@ -500,6 +655,9 @@ async function main(): Promise<number> {
       await admin.end();
     }
   }
+  // Each job's `job heap` lines, by its ID (D19): none when the log could not be read, which fails closed.
+  const heaps = lines === null ? new Map<string, JobHeap>() : jobHeaps(lines);
+  const measuredJobs = jobs.map((job) => ({ ...job, heap: job.jobId === null ? null : (heaps.get(job.jobId) ?? null) }));
   const full = report({
     commit,
     runtime: opts.runtime,
@@ -507,12 +665,14 @@ async function main(): Promise<number> {
     runner,
     worker: { cpus: workerLimit.cpus, memoryMiB: workerLimit.memoryMiB, cpuset: layout.web, command },
     release,
-    expected: { pricedLines: size.measuredLines, parsedClaims: size.remittances * size.claimsPerRemittance },
-    jobs,
+    expected: { pricedLines: size.measuredLines, parsedClaims: 2 * size.remittances * size.claimsPerRemittance, postedEntries: expectedPosted },
+    jobs: measuredJobs,
     run,
     pricedLines,
     parsedClaims,
+    postedEntries,
     memory,
+    advisoryLocks,
     errorCodes: codes,
     windows,
     times,
