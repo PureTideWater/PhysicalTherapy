@@ -25,3 +25,4 @@ on Lane A's orchestrator's order of 2026-10-28 03:45 UTC: next after #74, before
 | Time (UTC) | Stage | Detail |
 |---|---|---|
 | 2026-10-28 03:55 | Started | The orchestrator's order (03:45): PR 10 before PR 6 and 7. Branch and worktree cut from 165c599; design workflow started. |
+| 2026-10-28 05:15 | Design: review next | The limit stopped wf_6c170a1a-e77 at ~04:20 after the scouts and the author (`designs/lane-b-ux-payer-response.md`, complete draft; scouts in `designs/lane-b-ux-payer-response/`). Resumed at 05:15 with resumeFromRunId (the review and revision run). |

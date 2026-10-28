@@ -1,0 +1,36 @@
+# Scout C (security) progress, co-001/ux-sign-in-time
+Started 2026-10-28. Checkout /home/user/ux-sign-in-time at 165c5993.
+## Checks
+- [ ] 0 read requirements (review section 3 order 6, UX-012, UX-128, C-007, C-042, prs.json order 6)
+- [ ] 0 read security-reviewer.md checklist
+- [ ] 1 email kept: cookie flags, sealer
+- [ ] 2 enumeration
+- [ ] 3 deadline leak
+- [ ] 4 rate limits / lockout
+- [ ] 5 lengths
+- [ ] 6 boundaries / #42 / PR 7
+- [ ] 7 ADR 0081 scope
+- [x] 0 requirements read: UX-012 fix = sealed HttpOnly cookie outliving step by 15 min, never in URL, prefill /sign-in after expiry; warning at 1 min; one constant beside pendingSeconds = min(Cognito 3m, cookie 5m). UX-128 = step marker invited path. Sibling scouts A (scout-flow.md) and B (scout-timer.md) already exist in /home/user/ops/designs/lane-b-ux-sign-in-time/: A recommends tp_sign_in_email cookie (purpose sign-in-email, stepSeconds+15m, cleared at writeSession and locked, path /sign-in optional), startedAt in Pending + pendingOf enforcement; B recommends closesAt sealed beside Pending (not in sign-in.ts), no production knob (e2e clears tp_sign_in cookie), prefill only on reason=step_expired.
+- [x] 0 security-reviewer.md read (same in both checkouts): tenant isolation, PHI in URLs/keys/filenames/emails/errors, log allowlist, role checks not middleware-only, uploads, model calls. Migration part n/a.
+- [x] code read: pending.ts (pendingSeconds private 5m/15m, writePending seals PENDING_PURPOSE, Max-Age=seconds), seal.ts (AES-256-GCM, AAD v1:purpose, e inside, no schema check on open), routes/sign-in.ts (settle; RESTART; pendingAccount = raw sealed cookie value as rate account!), rate-limit.ts (sign_in addr 30/300 acct(email) 20/900; mfa addr 30/300 acct(sealed cookie) 10/300; subjects HMAC'd), sign_in_failed.sql (consecutive count, lock at 10, burst at 3 mfa/15m; expiry is NOT a failure), sign_in_succeeded only in openSession (resets count). Adapters: next.ts:23 COOKIE_OPTIONS Lax path /; handler.ts:44-46 setCookieHeader Path=/ fixed; CookieJar.set only maxAgeSeconds (route.ts). WAF sampled requests off (edge.ts:96-97,165); CloudFront passes no cookie.
+- Findings so far: (4) Start again adds no bypass: new pending only via password step (sign_in bucket per email+address); lockout count per user in DB, untouched by expiry/restart. Note mfa account bucket keyed on sealed value => per pending step; each restart = fresh mfa account bucket, but 10-consecutive-failure lock binds first. Pitfall: if email cookie write is put inside writePending it also fires for `key` step from hardwareKeyOptions (any typed email, no password) -> restrict to steps after password.
+- Pre-existing enumeration (not this PR): start() refuses locked and invitation_expired BEFORE password check (sign-in.ts:164-177) -> reveals locked / expired-invited addresses.
+- [x] #42 state (REST gh api): open, not merged, head co-001/pr-06b-mail-streams, updated 2026-10-27T21:05Z. GraphQL gh pr view refused (403).
+- [x] #42 overlap: http.test.ts (pins Path=/ SameSite=Lax cookie header; so a path option's test must live elsewhere), rate-limit.ts, services.ts, config.ts, e2e/prepare.ts, e2e/env.ts, identity.ts, identity.test.ts, test-matrix.md, synth cases/matrix.ts + cases/registry.ts (rule-6 shared docs). NOT #42: pending.ts, seal.ts, sessions.ts, next.ts, handler.ts, route.ts, routes/sign-in.ts, sign-in pages, notice.tsx, dev-provider.ts, sign-in.ts, synth expected/types.ts.
+- [x] framing: CSP frame-ancestors 'none' + XFO DENY (security-headers.ts:69,83) -> no visual leak of a prefilled field cross-site. Email field autoComplete=username (page.tsx:28).
+- [x] lengths: identity.ts:14 authSession 3m (:108 authSessionValidity), pinned identity.test.ts:109 toBe(3); dev-provider.ts:47 CHALLENGE_MS 3m, :48 GRANT_MS 15m; pending.ts:15-17 5m/15m; no env/config/request input sets any of them so far (verify services/config next).
+- [x] #42 diff of identity.ts/identity.test.ts (REST, files page 2): touches imports, IdentityProps, emailConfiguration only; TOKEN_LIFETIMES.authSession (line 14) and authSessionValidity (:108) untouched; identity.test.ts :109 toBe(3) untouched. A web text-pin reading identity.ts is safe (pin by text).
+- [x] no time knob in prod: servicesFromConfig (services.ts:200-235) passes no `now`; createServices default new Date() (:183); config.ts has no length/clock env; dev provider only under TP_ALLOW_LOCAL_PROVIDERS=e2e (config.ts:191-215).
+- [x] seal purposes in use: sign-in-pending, dev-challenge, dev-grant (derived key), csrf, local-upload, rate-limit (HMAC). 'sign-in-email' free.
+- [x] PRD6/sessions.md:17 and policies/access-control.md:43 state cookies HttpOnly Secure SameSite=Lax -> keep Lax. No public cookie notice lists cookies (no legal text).
+- Decisions so far: email cookie sealed (not signed), purpose sign-in-email, Path=/ + Lax (house; narrowing gives no confidentiality gain and adds a delete-path mismatch failure mode + http.test.ts is #42), Max-Age/seal e = startedAt + stepSeconds + 900 (absolute; rewrites never extend), written only for new_password/mfa_setup/mfa/register_key (never key, never on refusal), cleared at writeSession, locked, and replaced/cleared by EVERY first-step submission; prefill only when reason=step_expired (or the restart reason); validate opened payload with emailAddress schema; never from URL (reasonParams strips ?email).
+- startedAt: fail closed on missing stamp (purpose bump sign-in-pending.v2 or shape check) -- differs from Scout A (fail open); reason: one invariant, provider still enforces either way.
+- REVISED startedAt: agree with Scout A (missing stamp -> no app deadline, provider decides): AEAD means client cannot strip it; only older-code cookies lack it (<=15 min); rolling deploy mixes versions; must be a FLAT extra property on the sealed object (old code ignores it), not an envelope/purpose bump (that would bounce sign-ins across task versions).
+- [x] ADR 0077 D1 (:47, :180-182, :246): nothing typed echoed / kept in browser storage -> ADR 0081 must state the kept email as a narrow exception (account address, schema-checked, sealed HttpOnly, after password, 18 min).
+- [x] legal-surfaces.md (#42 file, :84 in list) -> do not add a row; strictly necessary cookie like tp_sign_in; FYI to #51 privacy notice (founder/counsel).
+- [x] sign-out (routes/account.ts:46-61) clears session only; no change needed (writeSession clears kept email). reason gating keeps signed_out from prefilling.
+- Clear rule: kept email cleared wherever pending is cleared EXCEPT expiry (writeSession, locked, hardware_key_required, key_registered) + every non-pending first-step result (also clear tp_sign_in there).
+- Marker: compute only on success path (no extra query before password; timing).
+- NEXT: write report /home/user/ops/designs/lane-b-ux-sign-in-time/scout-security.md
+- [x] citations re-verified (identity.ts:103 preventUserExistenceErrors; primitives.test.ts:65-77; hardware-key.tsx:91-95).
+- [x] DONE: report written to /home/user/ops/designs/lane-b-ux-sign-in-time/scout-security.md (sections 0-10). All checks 1-7 complete.

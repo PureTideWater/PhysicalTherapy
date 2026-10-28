@@ -7,8 +7,12 @@ after #74 (UX PR 1) merged; then PR 7 (`co-001/ux-sign-in-recovery`) in the same
 
 ## Now (2026-10-28 03:55 UTC): paused after the design, for UX PR 10
 - **Paused on the orchestrator's order (03:45 UTC):** UX PR 10 (`co-001/ux-payer-response`) runs first in this
-  session. This PR's design workflow (wf_3c17f552-0ea) was already running; it finishes (never cut off mid-run) and
-  its design is committed to `designs/lane-b-ux-sign-in-time.md`. Nothing is built; the branch is unpushed and its
+  session. This PR's design workflow (wf_3c17f552-0ea) was already running; the account's 5-hour limit stopped it at
+  ~04:20 UTC with the three scouts done (`designs/lane-b-ux-sign-in-time/scout-*.md`) and the author through
+  sections 1 to 4 of 8 (`designs/lane-b-ux-sign-in-time.md`, a **partial draft**; its progress
+  `lane-b-ux-sign-in-time-wip/sgn-author.md`). Clean point: committed as is. **Resume after PR 10 merges** with
+  `resumeFromRunId: wf_3c17f552-0ea` (the scouts replay; the author continues from its progress file at section 5),
+  or, in a new session, rerun the author, review and revision from the committed scouts and draft. Nothing is built; the branch is unpushed and its
   worktree stays. **Resume after PR 10 merges:** merge the latest claude/build-platform into the branch, re-read the
   design against it, then the builders.
 - **Branch:** `co-001/ux-sign-in-time`, cut from claude/build-platform 165c599 (#74's merge); worktree
@@ -32,3 +36,4 @@ after #74 (UX PR 1) merged; then PR 7 (`co-001/ux-sign-in-recovery`) in the same
 |---|---|---|
 | 2026-10-28 03:45 | Started | #74 merged (165c599). Branch and worktree cut from it; design workflow started. |
 | 2026-10-28 03:55 | Paused | The orchestrator's order: UX PR 10 first. The running design workflow finishes; build resumes after PR 10 merges. |
+| 2026-10-28 05:15 | Clean stop | The limit stopped the design at ~04:20: scouts done, author through section 4. Committed as a partial draft; resumes after PR 10 merges. |
