@@ -99,8 +99,11 @@ jobs:
 
       # No attestation manifest from buildx, so either image store holds one manifest for the image (the release's
       # attestation is the report job's, its bill of materials Trivy's below).
+      # Its metadata output carries no build provenance (BUILDX_METADATA_PROVENANCE: disabled): buildx would put the
+      # whole event in it, and in the log (docs/adr/0066, Part 3, N29).
       - name: Build the image without pushing it
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env: { BUILDX_METADATA_PROVENANCE: disabled }
         with:
           context: .
           file: ${{ steps.image.outputs.dockerfile }}

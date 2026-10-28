@@ -59,8 +59,11 @@ jobs:
       # workflow's layer cache and writes none, so the weekly run never churns the repository's Actions cache. The cache
       # stays, unlike release.yml's (docs/adr/0066, Part 2): this run's report is advisory, never attested, and no launch
       # check, deploy or required check reads it, so a layer another run built cannot reach a binding measurement.
+      # Its metadata output carries no build provenance (BUILDX_METADATA_PROVENANCE: disabled): buildx would put the
+      # whole event in it, and in the log (docs/adr/0066, Part 3, N29).
       - name: Build the worker image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env: { BUILDX_METADATA_PROVENANCE: disabled }
         with:
           context: .
           file: apps/worker/Dockerfile

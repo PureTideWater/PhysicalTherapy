@@ -678,9 +678,12 @@ jobs:
         run: mkdir -p "$RUNNER_TEMP/image"
       # Each image as an archive (buildx's type=docker export), with no attestation manifest, so either image store
       # holds one manifest for it and the scan reads the bytes the checks read.
+      # Its metadata output carries no build provenance (BUILDX_METADATA_PROVENANCE: disabled): buildx would put the
+      # whole event in it, and in the log (docs/adr/0066, Part 3, N29).
       - name: Build the web image
         id: web
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env: { BUILDX_METADATA_PROVENANCE: disabled }
         with:
           context: .
           file: apps/web/Dockerfile
@@ -705,6 +708,7 @@ jobs:
         id: worker
         if: ${{ !cancelled() }}
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env: { BUILDX_METADATA_PROVENANCE: disabled }
         with:
           context: .
           file: apps/worker/Dockerfile
