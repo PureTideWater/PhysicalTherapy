@@ -2234,8 +2234,9 @@ test('practice workflow', async ({ browser }) => {
   await notice(browser, { key: 'p.abstraction-version', route: abv, persona: CS, path: () => L(`/abstraction/versions/${need('version')}?model=proposed`), name: 'model-notice', dark: true });
   // The contract screen's refusals (PR #75; docs/adr/0070, Part 3), opened by their URL as the notice above. A build
   // that does not know a code shows no notice (the route's ?model= falls back to none), which is that build's screen.
-  // screen_failed and screen_limited came with the PR's fix round (the review's UX-3).
-  for (const code of ['names_patient', 'screen_unavailable', 'screen_failed', 'screen_limited']) {
+  // screen_failed and screen_limited came with the PR's fix round (the review's UX-3), and too_long (the request's
+  // byte cap, P11) with its second.
+  for (const code of ['names_patient', 'screen_unavailable', 'screen_failed', 'screen_limited', 'too_long']) {
     await cap(browser, {
       key: 'p.abstraction-version',
       route: abv,
