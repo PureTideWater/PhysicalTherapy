@@ -15,7 +15,7 @@ GitHub login: PureTideWater.
   20261108090000 via the marker route, packages/db, domain model, function files), then W (worker, SS-08), C (console),
   P (wrapper, customer surfaces, seed, e2e) and M (ADR 0080, amendments, matrix, synth) in parallel, then the
   integrator (adversarial seam read, the full local suite once, one push; no PR). Progress files in the session's
-  scratchpad `progress/ss01-*.md`. Safety check-in trig_01CUguDmAfdnm5WQZr6UTJn7 at 2026-10-28 01:48 UTC.
+  scratchpad `progress/ss01-*.md`. Safety check-in: see below.
   If stopped: re-run the setup script if PostgreSQL is down, remove a leftover `/home/user/ss01/.claude/.allow-protected-edit`,
   resume with resumeFromRunId (same session only).
   At 21:25 UTC builder D had pushed d213416b (BIL-07/08 db tests, 39 failing on the base) and 7da01015 (the migration,
@@ -38,6 +38,15 @@ GitHub login: PureTideWater.
   3b26e73f; the integrator's checks, seam read and domain-model check done: SHA-256 12b0e87d…, approval line 7407; its
   revert of an out-of-scope comment in standing.ts committed locally as d763ba78; suite part 1 lost). Setup re-run (OK),
   no marker left, the script given a RESUMED note and **resumed at ~22:27 UTC** (the six finished agents from cache).
+- **~23:00 UTC: the account's 5-hour limit stopped the integrator in part 3; then a second container restart.** At
+  d763ba78 the full local suite had passed: unit 6,439 passed, 1 failed (apps/worker/src/web-entries.test.ts, which
+  fails identically on 098636e3: #42's, fixed by #42's 15189a50 guard), 4 skipped; golden 376; oracle 687 fixtures agree;
+  test:db 4 shards 9,489 passed, 1 skipped, 0 failed; build; e2e 59 passed; Stryker packets-scan and its gate; content,
+  synth and fixtures checks; domain model --check exact (99 tables, 375 function files, SHA-256 12b0e87d…, line 7407).
+  Scope: 86 paths, all the design's section 13, tests or generated.
+- **Resumed 2026-10-28 00:20 UTC** (the orchestrator's RESUME of 00:15): setup re-run (OK), no marker, the integrator
+  given a second RESUMED note to run only Stryker packets-rest, packets-explain, pricing-engine, pricing-recompute,
+  pricing-rest, the gate, then scope and its one push. Check-in moved to trig_015zUyNTQAE48NHK4vYz3Sw6 at 05:25 UTC.
 - **Next:** read the build's result; the PR waits for #42 to merge (then merge #42's head and the latest
   claude/build-platform in, regenerate, open the draft PR, two reviews: security and tenancy, UX and brand).
 
@@ -67,3 +76,4 @@ GitHub login: PureTideWater.
 - 2026-10-27 21:26 UTC: SS-01's database slice pushed (d213416b, 7da01015); SUITE-CAP-1b re-read started (wf_6e2dedb0-b5e).
 - 2026-10-27 21:40 UTC: SUITE-CAP-1b re-read: build with deltas; #42 at 6f23c42b, to merge into SS-01 after its build.
 - 2026-10-27 22:27 UTC: container restart; setup re-run; wf_8ee54e2b-824 resumed in its integrator.
+- 2026-10-28 00:20 UTC: resumed after the usage limit and a second restart; integrator finishing Stryker and pushing.
