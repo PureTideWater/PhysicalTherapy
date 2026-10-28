@@ -12,9 +12,10 @@ Source: product observation (b) in `approval-summaries/lane-b-test-flakes-status
 - For Lane A (from the design, outside this item): a migration to accept and require `tp-packet-verifier/3`, so a version the old verifier passed shows "verifier outdated". This PR keeps the report format `tp-packet-verifier/2` (the export job re-runs the verifier, so a stored version the new rules fail is refused before it reaches a payer).
 - 2026-10-28 ~06:30: build done (wf_cd5cf1da-e8b): role reader `roles.ts`/`roles-words.ts`, facts held by role, one reading in the verifier, the browser editor and the gateway's role check; ADR 0086 with amendments to 0047, 0054, 0061; CAS-43/CAS-44; shards packets-roles and packets-words; packets 915 tests; the mutation gate over the five packets shards passes (98.59%, every survivor killed or a recorded equivalent). Committed 9e25b11; merged the base 56ed627 (#81; CAS-41 kept beside CAS-43/44 in the matrix, the synth matrix and registry; watched-paths.txt regenerated: the builder had not added the two new files) as e3299ea; pushed. **Draft PR #84** opened from the template; subscribed.
 - A person sees a change (the editor's mismatch words), so LANES rule 1's UX and brand review runs too: three reviews (payment-engine checklist, correctness, UX with before/after shots), wf_5607bc50-a7b.
+- 2026-10-28 07:20: merge hold from Lane A's orchestrator: #84 is not merged until #75 (contract-phi-check) merges or 11:00 UTC, whichever first (it touches test-matrix.md and the synth matrix and registry). Every stage up to the merge continues; after the hold, merge the base in once, then merge as usual.
 
 ## Waiting on someone
-None. (A Lane A migration for `tp-packet-verifier/3` is proposed above, not needed by this PR.)
+- The merge waits on the orchestrator's hold (#75 merged, or 11:00 UTC). (A Lane A migration for `tp-packet-verifier/3` is proposed above, not needed by this PR.)
 
 ## Next step
 The three reviews (wf_5607bc50-a7b), then the fix round with the full local suite and the packets mutation shards, one push; the fresh-clone verification reading CI; merge.
