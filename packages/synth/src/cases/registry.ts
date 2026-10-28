@@ -568,6 +568,9 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'packages/model-gateway/eval/gate.golden.test.ts',
     'apps/web/src/lib/routes/models-routes.db.test.ts',
   ]),
+  // The letter reader's one-pass redaction (docs/adr/0054, amendment of 2026-10-27).
+  'MOD-13': none(10, 'Letters are generated in memory by the property test, which records where it wrote each identifier; no file.', ['packages/model-gateway/src/redact.property.test.ts', 'packages/model-gateway/src/functions/denial-letter.test.ts']),
+  'MOD-14': none(10, 'Letters are generated in memory by the property test; no file.', ['packages/model-gateway/src/redact.property.test.ts', 'packages/model-gateway/src/functions/denial-letter.test.ts']),
   // Milestone 11's billing (PRD 6, 15), as combined audit item 135 orders its payment methods (docs/adr/0073).
   'BIL-01': none(11, 'The Payment Element’s options and the confirmation’s notices are built from values the test passes in memory; Stripe’s form never renders; no file.', ['apps/web/src/components/billing/billing.test.tsx']),
   'BIL-02': none(11, 'The Stripe adapter runs against a mocked SDK client that records each request; no file.', ['packages/billing/src/stripe.test.ts', 'packages/billing/src/types.test.ts']),
@@ -611,6 +614,10 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'CI-15': none(0, "The canary's five cases run under Stryker in every shard; their verdict is judged from reports built in memory; no file.", ['tools/stryker/canary/verdict.test.ts', 'tools/test/workflows.test.ts']),
   'CI-16': none(0, "The gate judges shards' reports and equivalents the test builds in memory; no file.", ['tools/stryker/gate.test.ts', 'tools/stryker/mutants.test.ts', 'tools/test/workflows.test.ts']),
   'CI-17': none(0, 'The closures are read from synthetic repositories the test writes to a temporary directory and from this one; no file.', ['tools/stryker/affected.test.ts', 'tools/stryker/shards.test.ts', 'tools/screening-capacity/watched.test.ts', 'tools/test/workflows.test.ts']),
+  // The browser and the runners (docs/adr/0066, Part 3).
+  'CI-18': none(0, "The manifests, the lockfile, the worker's Dockerfile and the workflows are read; the browser check runs on stand-in builds and a stand-in docker in a temporary directory, and the baseline step's script in a temporary git repository; no file.", ['tools/test/browser-version.test.ts', 'tools/ci/browser-build.test.ts', 'tools/test/no-duplicated-versions.test.ts', 'tools/test/workflows.test.ts']),
+  'CI-19': none(0, "The brand journey reads the header's accessible names and visible text in the browser, and every journey's axe scan reads its pages; no file.", ['apps/web/e2e/brand.spec.ts', 'apps/web/e2e/a11y.ts']),
+  'CI-20': none(0, "Every workflow file is read; the release's archive check runs on stand-in archives with a stand-in docker, the apt check with stand-in apt tools, and the archive reader and the harness's image proof on synthetic archives, each in a temporary directory; no file.", ['tools/test/workflows.test.ts', 'tools/ci/apt-archives.test.ts', 'tools/screening-capacity/image-id.test.ts', 'tools/screening-capacity/measure.test.ts']),
   // The generated function files of the combined audit's item 111 (docs/adr/0068).
   'DBF-01': none(0, 'The function files are generated from a scratch database the drift file migrates; no file.', ['packages/db/src/domain-model/function-files.db.test.ts']),
   'DBF-02': none(0, 'A probe migration changes a function on a scratch database; no file.', ['packages/db/src/domain-model/domain-model-drift.db.test.ts']),

@@ -156,7 +156,7 @@ so the band's comparison alone would pass it). Unmutated, every check passes. Th
 the seal prints, must be Paper and nothing else in the run's picture and in the committed baseline, and with the seal
 earned the same box holds thousands of ink and brass pixels. Checked by mutation: the frame printing the seal with its
 definition for `false` fails the comparison (2% of pixels); the seal art alone, without its `data-verified` marker or
-caption, passes the comparison and the DOM check and fails the foot check. The baselines are Playwright's Chromium (141.0.7390.37 for `@playwright/test` 1.56.1) on Ubuntu 24.04. CI ran Google Chrome
+caption, passes the comparison and the DOM check and fails the foot check. The baselines are Chrome for Testing 156.0.8078.4 (revision 1248), Playwright's Chromium for `@playwright/test` 1.64.1, which `apps/web/e2e/browser.json` records file by file; they were made on Ubuntu 24.04 and are proved on ubuntu-26.04 by CI's baseline step, which regenerates all seven from nothing on every pull request and push run (amendment below; first made with Chromium 141.0.7390.37 under 1.56.1). CI ran Google Chrome
 where Playwright's Chromium was not installed, so `ci.yml` now runs `pnpm --filter @tp/web exec playwright install
 --with-deps chromium` right before the unit tests (so the worker's print checks below run there too, and a test fails in
 CI if Chromium is missing rather than skipping) and the config takes that build. The same build was not enough: Chromium
@@ -179,8 +179,9 @@ host preferring Inter for sans-serif or not, and a glyph check of the faces for 
 ellipsis included), so the host's installed fonts do not enter them either. The screenshots for people stay in
 `brand-screenshots/`, and CI uploads them with the Playwright report and test results (the diffs of a failed
 comparison included) after the e2e step, failed runs included. A failed run also prints each diff and actual picture
-under `apps/web/test-results` smaller than 300 KB into the job's log, as its path and its base64 on one line, so a
-comparison can be read where the artifact cannot be fetched.
+under `apps/web/test-results` smaller than 300 KB into the job's log, as its SHA-256 and then its base64 in numbered
+lines of 8,000 characters (amendment below; first as one line), so a comparison can be read where the artifact cannot
+be fetched.
 
 **Printed documents print at full size.** Chromium shrinks a whole PDF to fit when anything is wider than the inside
 pages' content box (8.5 in less the stylesheet's 0.75 in margins: 672 CSS px), the full-bleed Paper cover and the 16 px
@@ -211,7 +212,12 @@ are shown to fail on a table kept on one line, and fail on the frame as it stood
 | An exact pixel match, or a tolerance of several percent | Exact breaks on antialiasing; several percent lets a lockup or underline change pass |
 | Leave the seal's absence to the cover's comparison | The seal is about 0.5% of the cover's pixels, under any useful tolerance |
 | Keep CI on Google Chrome with baselines of its own | The runner image moves Chrome's version without a commit here; the installed Chromium moves only with `@playwright/test` in the lockfile |
-| Run the e2e step in Playwright's container image | A larger change to CI for the same browser build, and the text would still follow that image's fontconfig |
+| Run the e2e step in Playwright's container image | A larger change to CI for the same browser build, and the text would still follow that image's fontconfig; it would also change the rendering host the baselines depend on, and compose Postgres would need Docker in Docker (amendment below) |
+| Install the browser jobs' system packages from a hand-kept `.deb` set with `dpkg -i` (amendment below) | Loses apt's check against the signed index and goes stale with every security update |
+| Drop `--with-deps` to avoid the mirror's stalls | CI-05 requires it, and the fonts it installs are part of the rendering host |
+| Another Ubuntu mirror | Moves the throttle; does not remove it |
+| Hold the browser by its binary's SHA-256 alone | The build's other files draw the pictures too (the software GL, the ICU data, the resources), and Playwright verifies no download |
+| The worker image installs playwright-core from the registry at a version read from the manifest | An unpinned fetch beside the lockfile's integrity-checked one, and the manifest says `catalog:` |
 | Loosen `VISUAL` and `STRICT` until the runner's hinted text passes | The runner's text moved 2% of the header and 231 pixels of the lockup band, past what the mutations above are caught within |
 
 ## Consequences
@@ -219,12 +225,14 @@ are shown to fail on a table kept on one line, and fail on the frame as it stood
 - `pnpm test` runs the hex check, the font-host scan and its ESLint fixture tests, and the copy lint; `pnpm lint`
   refuses Google's font loader; `pnpm test:e2e` runs the font-host journey, the copy journey (`e2e/copy.spec.ts`, the D11
   placements and the undecorated sign-in) and the brand journey with its baselines. `tools/test/workflows.test.ts` pins
-  the Chromium install step right before the unit tests (and so before the e2e step), the artifact upload right after
+  the Chromium install step right before the unit tests (and so before the e2e step), the browser build check right after
+  every install, the baseline step in the first e2e shard, the artifact upload right after
   the e2e step, the print of a failed run's pictures after it, the seven baselines, and the e2e browser's text
   rendering switches and `e2e/fonts.conf`.
 - A deliberate change to the header or the cover, or an upgrade of `@playwright/test` (which moves Chromium; Dependabot
-  proposes one weekly), may need new baselines: on Linux with Playwright's Chromium, run
-  `pnpm --filter @tp/web exec playwright test e2e/brand.spec.ts --update-snapshots`, look at the seven images (the
+  proposes one weekly), may need new baselines: follow `docs/runbooks/ci.md`, "Upgrading the browser": on Linux with
+  Playwright's Chromium, run `pnpm --filter @tp/web exec playwright test e2e/brand.spec.ts --update-snapshots=all`
+  (`=all` rewrites every snapshot; Playwright 1.64 renamed the bare flag's modes), look at the seven images (the
   journey itself refuses a without-seal baseline whose foot is not blank Paper) and commit them in the same pull request.
   On macOS, on Windows or under Google Chrome the comparisons do not apply: Playwright names baselines by platform, so a
   missing one fails the journey there; run it on Linux or in CI.
@@ -250,3 +258,89 @@ are shown to fail on a table kept on one line, and fail on the frame as it stood
 The brand owner answers (2) or (6); a dark-mode setting is offered; the static host or the application's response
 headers change; screening is built (PR 6) and its paths fall under the copy lint's screening rules; the packet's neutral
 wording lands (PR 12); or a Playwright upgrade moves the rendering past the tolerance.
+
+## Amendment (`co-001/ci-browser`, 2026-10-26): the browser build recorded and checked, the baselines proved on CI, and the header named by what it shows
+
+Playwright 1.64.1 pins Chrome for Testing 156.0.8078.4 (revision 1248) for both Chromium and its headless shell, where
+1.56.1 pinned 141.0.7390.37 (revision 1194); with `@axe-core/playwright` 4.14.0 it is the first of the two versions to
+support Ubuntu 26.04, where every job but the release's capacity chain now runs (ADR 0066, Part 3). Four things change
+with it (designs/lane-b-ci.md §3.3; test matrix CI-18 and CI-19).
+
+**The build is recorded, every file of it.** `apps/web/e2e/browser.json` records the revision, the Chrome for Testing
+version and, for each build (`chrome-headless-shell-linux64`, which renders the baselines and prints the worker's PDFs,
+and `chrome-linux64`, which `playwright.config.ts` probes for), its directory, its binary's path, its tree SHA-256, its
+binary's SHA-256, and Google's zip with its SHA-256 (the local layout's pin). It names no Playwright version: the
+manifests and the lockfile do. The tree SHA-256 is the SHA-256 of the lines `"<sha256>  <path>\n"` of every regular
+file under the build's directory, sorted by path bytes (`cd <revision dir> && find <dir> -type f -print0 | LC_ALL=C sort
+-z | xargs -0 sha256sum | sha256sum`), and those lines are committed beside it as `browser-builds/<dir>.sha256`, whose
+own SHA-256 is the tree SHA-256. The headless shell's build is 287 files and Chromium's 301, among them the software GL
+that draws the pictures (`libvk_swiftshader.so`, `libGLESv2.so`, `libEGL.so`), the ICU data and the `.pak` resources, all
+of which affect rendering. Playwright verifies no download, and CI restores its browsers by cache key alone, so a binary's
+hash alone would let any of them move.
+
+**The build is checked after every install.** `tools/ci/browser-build.ts` (Node's own modules only, run by Node 24 with
+no install) finds the installed playwright-core through `@playwright/test` → `playwright` → `playwright-core` (pnpm
+hoists none of them), requires its `browsers.json` to pin the recorded revision and version, computes both builds' tree
+and binary SHA-256s, and fails on any difference, naming what it found, what is recorded, ADR 0058's procedure and,
+when the build is the recorded revision, every file that differs; a build that fails it has its every file's line
+printed, as `--list` prints them, so one run gives a new record. With `--image <ref>` it checks the worker image's
+headless shell inside the image, read as root, offline and from the local tag only, where a file that cannot be hashed
+fails by name rather than reading as one the image lacks. The hashes cover bytes, not modes nor the libraries the
+system provides, so once a build's every file equals the record, and only then, the check runs its `--version` and
+fails unless it prints `Google Chrome for Testing <browserVersion>`: a build that cannot start fails here, on the
+runner as the job's user and in the image as the image's own user, the one that prints the PDFs. It runs right after
+every `playwright install` in every workflow, before any test and before any cache is saved, so a build that fails it
+is never cached, and on the worker image in every job that builds it into a local tag before the tag is measured,
+saved or pushed: `ci.yml`'s `images`, the release's build and its dry run's, and both measuring jobs
+(`release-capacity.yml`'s and `screening-capacity.yml`'s `capacity`). The steps after it still run when it fails (their
+condition is the install's success), so a Playwright upgrade's pull request shows everything the new browser does. **That pull request is red here
+by design**: every upgrade brings a new build, and a new browser under unchanged baselines is what this ADR forbids. It
+turns green when a person runs the procedure (`docs/runbooks/ci.md`, "Upgrading the browser"): the new build laid out
+locally, the baselines regenerated, CI's baseline step read, `browser.json`'s hashes updated. This is the one exception
+to ADR 0066's rule that a Dependabot pull request passes unaided.
+
+**CI proves the bytes.** The comparisons carry tolerances (`VISUAL`, `STRICT`), so a green journey does not prove that
+CI renders the committed bytes, and CI's host is not the machine that made them. A baseline step in the first e2e shard,
+on every pull request and every push run with no condition on what changed (the pictures are drawn by application code
+as much as by the browser: a change under 1% would pass the journey and leave the baselines stale), regenerates them
+with `--update-snapshots=all --retries=0` into an empty directory outside the repository (`E2E_BASELINES_DIR`, which
+`playwright.config.ts` turns into the snapshot path), so each is written from nothing while the tracked tree stays as
+committed, which the prebuilt build's stamp requires; it requires the run to pass and the pictures present after it to
+be exactly the committed set, and fails on any byte that differs from the commit, printing each differing picture's
+SHA-256 and then the picture as numbered lines of 8,000 base64 characters (`<path> <i>/<n> <chunk>`),
+so a log reader that cuts long lines still gets it whole and proves the decode; the failed comparisons' pictures
+print the same way, through the same `tools/ci/print-pictures.sh`. The pull request that moved to 1.64.1
+records its first passing run, with the seven SHA-256s, as this ADR's proof that ubuntu-26.04 renders the committed
+bytes; if the local host and CI ever disagree, CI's bytes are committed and the difference is recorded here. For 1.64.1
+the seven were regenerated on Ubuntu 24.04 with the 1248 build laid out from Google's zips and held to `browser.json`,
+and a second run wrote nothing. Six are the 141 baselines pixel for pixel and changed bytes only because the browser's PNG
+encoder picks other scanline filters (Playwright passes the screenshot Chrome returns through unchanged, so the encoder
+is Chrome for Testing 156's, the build 1.64.1 pins), so any browser upgrade may rewrite every file. On `report-cover-without-seal`
+Chrome 156 draws the title 'ROI statement' 1 px lower (1,611 pixels in 234 x 27 at 83, 418, 0.19% of the picture
+against the journey's 1%; shifted down one pixel, the old title matches exactly; nothing else on the cover moves). Every new set of baselines is inspected against this ADR's brand points,
+image by image, before it merges (for 1.64.1, by an adversarial visual-inspection agent, whose record the pull request
+links).
+
+**The worker image takes the lockfile's playwright-core.** Its build stage, which installs with
+`pnpm install --frozen-lockfile` and so checks every tarball against the lockfile's integrity, copies the resolved
+`playwright-core` out with `cp -RL`, and the runtime stage installs the headless shell with that package's own CLI. The
+image names no version, so it cannot drift from the manifests as it did in #38, where the manifest moved and the image's
+literal did not; `tools/test/browser-version.test.ts` holds the manifests, the catalog line and the lockfile to one
+version and the Dockerfile to this form.
+
+**The header is named by what it shows.** axe-core 4.14.0 enables `label-content-name-mismatch` (WCAG 2.5.3, Label in
+Name), which every `expectAccessible` scan now runs. The practice switcher was named "Practice switcher" while it shows
+the practice's name, and the account control "Account menu" while it shows the address and an initial. Both are now
+named from their content, in the words the co-founder's ruling took for them (UX-094 in the UX baseline,
+`designs/lane-b-ux-review.md` section 6.1 on `claude/build-ops`): the practice's name, then a visually hidden ", switch
+practice"; the address, visually hidden below `md` where only the initial shows, then a visually hidden ", account and
+sign out". Neither summary has an `aria-label` or a `title`, so Chromium does not also read the practice or the address
+as the control's description, and tests reach the two by `data-slot` (`practice-switcher`, `account-menu`). The span
+that holds the hidden words is their containing block (`relative`), so its truncation clips them instead of letting
+their position widen the page. The initial is drawn as CSS generated content (`data-initial`,
+`before:content-[attr(data-initial)]`), not a text node. The pictures are unchanged: the first names (an `aria-label`
+each) were byte for byte under 1.56.1 and pixel for pixel under 1.64.1, and with these names the seven regenerated under
+1.64.1 into an empty directory are the committed files byte for byte. The brand journey holds every header control's
+accessible name to start with its visible text and contain each other piece of it, generated content included, at 1280
+and 390 px (at 390 px the account shows only its initial, for which axe answers "incomplete" rather than a violation),
+and reads Chromium's own name and description of the switcher and the account.
