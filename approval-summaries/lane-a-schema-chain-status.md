@@ -120,6 +120,14 @@ GitHub login: PureTideWater.
 - #42's merge (SS-01's PR opens after it).
 - The founder: each schema PR's domain-model approval.
 
+## For SS-01's base merge at PR time (the orchestrator, 04:15 UTC)
+- The base moved since f5bd6201: #80 (0dd1ba7), #79 (a6e754f: every table in ScrollTable, phone stacked rows), #74
+  (165c599: forms keep input). #79 merged first, so SS-01 keeps both: #79's ScrollTable and stacked rows and SS-01's
+  Suspension card content. `apps/web/src/app/tables.test.ts` exempts bare tables by exact count: wrap any table SS-01
+  adds or moves in ScrollTable (preferred) rather than editing the count. Re-run watched.ts --write and synth --all on
+  the merged tree. #42's verification round already merged #80 and #79 (46974a25).
+- Reconcile at real size is SUITE-CAP-3 (SUITE-CAP-1a's session, after 1a; ADR 0087, CAS-49 to CAS-51): out of these PRs.
+
 ## Rulings received
 - **Founder (Tyler Williams), relayed by the co-founder, 2026-10-27 20:49 UTC** (`approval-summaries/founder-asks-2026-10-27.md`
   line 3; the orchestrator's message ~20:50 UTC): "Granted: the ledger freeze exceptions in designs/ledger-interest-once.md
@@ -137,3 +145,4 @@ GitHub login: PureTideWater.
 - 2026-10-28 01:07 UTC: SS-01 suite complete, d763ba78 pushed; wf_8bd6852a-2dd started (merge #42; SUITE-CAP-1b build).
 - 2026-10-28 03:58 UTC: #42 merged into SS-01 (f5bd6201); SUITE-CAP-1b built but its 1a-dependent parts (358dc53f).
 - 2026-10-28 04:02 UTC: interest fix build started (wf_4860596d-bb1).
+- 2026-10-28 04:16 UTC: orchestrator's base-merge notes recorded; SUITE-CAP-3 claimed elsewhere.
