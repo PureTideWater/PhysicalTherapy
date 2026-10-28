@@ -1,7 +1,7 @@
 import { parse } from 'yaml';
 
 import type { CheckEvent, Finding, Level, Tree } from './check';
-import { ageWords, excludeWindowProblems, expiredExclude, type ExcludeWindow, type KnownTime } from './exclude-window';
+import { READ_DEADLINE_MS, ageWords, excludeWindowProblems, expiredExclude, type ExcludeWindow, type KnownTime } from './exclude-window';
 import { MINUTE_MS, type ImageAgeException } from './policy';
 import { type HubTag, NetworkReadError, type Registry } from './registry';
 
@@ -22,8 +22,6 @@ import { type HubTag, NetworkReadError, type Registry } from './registry';
 export const COMPOSE_FILE = 'docker-compose.yml';
 /** The image exceptions, beside the checker. */
 export const IMAGE_AGE_EXCEPTIONS_FILE = 'tools/check-toolchain/image-age-exceptions.json';
-/** One deadline for all of a run's Docker Hub reads (E3). */
-export const IMAGE_DEADLINE_MS = 180_000;
 /** Docker Hub reads at once. */
 export const IMAGE_READS_AT_ONCE = 4;
 /** Pages of a repository's tags, most recently updated first, searched for a digest its own tag no longer names. */
@@ -441,14 +439,17 @@ async function eachAtMost<T, R>(items: readonly T[], limit: number, run: (item: 
   return results;
 }
 
-/** What the networked rule reads: both trees, the event, now, and the deadline (IMAGE_DEADLINE_MS from the first read when absent). */
+/** What the networked rule reads: both trees, the event, now, and the deadline of its Docker Hub reads in ms (READ_DEADLINE_MS from the first read when absent). */
 export interface ImageInput {
   readonly head: Tree;
   readonly base: Tree;
   readonly event: CheckEvent;
   readonly now: Date;
-  readonly signal?: AbortSignal;
+  readonly deadlineMs?: number;
 }
+
+/** A deadline as a message says it: in whole seconds ("180 s"), else in milliseconds ("20 ms"). */
+const deadlineWords = (ms: number) => (ms % 1000 === 0 ? `${String(ms / 1000)} s` : `${String(ms)} ms`);
 
 /**
  * The networked image rule: the form rule's problems, then each image new against the base read and judged, then the
@@ -483,7 +484,8 @@ export async function imageRule(
     const digests = new Set([...named.values()].map(({ name }) => name.digest)).size;
     findings.push({ level: 'ok', rule: RULE, message: `no image is new against the base, so nothing is read (${plural(digests, 'digest')} named, each one in the base)` });
   } else {
-    const deadline = input.signal ?? AbortSignal.timeout(IMAGE_DEADLINE_MS);
+    const deadlineMs = input.deadlineMs ?? READ_DEADLINE_MS;
+    const deadline = AbortSignal.timeout(deadlineMs);
     const verdicts = await eachAtMost(fresh, IMAGE_READS_AT_ONCE, async ([, { name }]): Promise<Verdict> => {
       if (name.registry !== null) {
         return { kind: 'unprovable', registry: name.registry };
@@ -558,7 +560,7 @@ export async function imageRule(
       }
     });
     if (unread.length > 0) {
-      findings.push({ level: age, rule: RULE, message: `${HUB_HOST}: the image reads stopped at their deadline (${String(IMAGE_DEADLINE_MS / 1000)} s) with ${plural(unread.length, 'image')} unread, ${unread.join(', ')}; re-run` });
+      findings.push({ level: age, rule: RULE, message: `${HUB_HOST}: the image reads stopped at their deadline (${deadlineWords(deadlineMs)}) with ${plural(unread.length, 'image')} unread, ${unread.join(', ')}; re-run` });
     }
   }
   findings.push(...exceptionFindings(input, lists, head.uses, known, minutes));

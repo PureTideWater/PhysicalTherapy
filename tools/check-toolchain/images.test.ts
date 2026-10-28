@@ -155,8 +155,8 @@ function tree(shape: Shape = {}): Tree {
   };
 }
 
-async function run(head: Tree, base: Tree = tree(), options: { readonly event?: CheckEvent; readonly registry?: Registry; readonly signal?: AbortSignal } = {}): Promise<Finding[]> {
-  return checkToolchain({ head, base, event: options.event ?? 'pull_request', now: NOW, ...(options.signal === undefined ? {} : { signal: options.signal }) }, options.registry ?? fakeRegistry());
+async function run(head: Tree, base: Tree = tree(), options: { readonly event?: CheckEvent; readonly registry?: Registry; readonly deadlineMs?: number } = {}): Promise<Finding[]> {
+  return checkToolchain({ head, base, event: options.event ?? 'pull_request', now: NOW, ...(options.deadlineMs === undefined ? {} : { deadlineMs: options.deadlineMs }) }, options.registry ?? fakeRegistry());
 }
 
 const problems = (findings: readonly Finding[], level: 'error' | 'warning' = 'error') => findings.filter((finding) => finding.level === level).map((finding) => `${finding.rule}: ${finding.message}`);
@@ -340,16 +340,15 @@ describe('the image rule', () => {
     ]);
   });
 
-  it('fails closed, naming hub.docker.com, when a read fails after its three tries, and the deadline stops the rest as one finding', async () => {
+  it('fails closed, naming hub.docker.com, when a read fails after its three tries, and the caller’s deadline stops the rest as one finding that names it (CI-N2)', { timeout: 15_000 }, async () => {
     const images = ['a', 'b', 'c', 'd', 'e', 'f'].map((name) => `synthetic/${name}:1@${digest(name)}`);
     const [first = '', ...rest] = images;
     const head = tree({ web: first, dockerfiles: { 'apps/web/Dockerfile': dockerfile(first, rest.map((image, at) => `FROM ${image} AS stage${String(at)}`)), 'apps/worker/Dockerfile': dockerfile(NODE) } });
     const registry = fakeRegistry({ fail: ['tag synthetic/a:1'], hang: ['b', 'c', 'd', 'e', 'f'].map((name) => `tag synthetic/${name}:1`) });
-    const deadline = new AbortController();
-    setTimeout(() => deadline.abort(), 20);
-    expect(problems(await run(head, tree(), { registry, signal: deadline.signal }))).toEqual([
+    // A 20 ms deadline, named as the caller set it, never the default's 180 s.
+    expect(problems(await run(head, tree(), { registry, deadlineMs: 20 }))).toEqual([
       `images: ${first} (apps/web/Dockerfile:1): hub.docker.com: reading synthetic/a:1's Docker Hub tag failed after 3 tries with backoff (last: HTTP 503); check-toolchain fails closed`,
-      `images: hub.docker.com: the image reads stopped at their deadline (180 s) with 5 images unread, ${rest.join(', ')}; re-run`,
+      `images: hub.docker.com: the image reads stopped at their deadline (20 ms) with 5 images unread, ${rest.join(', ')}; re-run`,
     ]);
     // Four at a time: the fifth is read once the first fails; the sixth never starts.
     expect(registry.reads).toEqual(['tag synthetic/a:1', 'tag synthetic/b:1', 'tag synthetic/c:1', 'tag synthetic/d:1', 'tag synthetic/e:1']);

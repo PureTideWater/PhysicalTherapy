@@ -78,8 +78,8 @@ export interface CheckInput {
   readonly base: Tree;
   readonly event: CheckEvent;
   readonly now: Date;
-  /** The deadline of the image rule's Docker Hub reads (by default IMAGE_DEADLINE_MS from the first). */
-  readonly signal?: AbortSignal;
+  /** The deadline of the image rule's Docker Hub reads in ms, from the first (READ_DEADLINE_MS by default); its message names it. */
+  readonly deadlineMs?: number;
 }
 
 export type Level = 'error' | 'warning' | 'ok';
