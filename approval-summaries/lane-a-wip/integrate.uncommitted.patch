@@ -673,131 +673,6 @@ index 202124c8..4907305a 100644
  
  /** The audit request form, which collects how the requester heard of us and the campaign link they came from. */
  export const REQUEST_AUDIT_KEPT =
-diff --git a/apps/web/src/lib/screening/routes.db.test.ts b/apps/web/src/lib/screening/routes.db.test.ts
-index f4273b98..22277c08 100644
---- a/apps/web/src/lib/screening/routes.db.test.ts
-+++ b/apps/web/src/lib/screening/routes.db.test.ts
-@@ -1270,13 +1270,13 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
-     // An address a screening email bounced from (its keyed hash on the refusal list): the same sentence, from the database.
-     const bounced = 'Bounced.Before@Clinic-Bounced.synthetic.test';
-     await world.owner.query("INSERT INTO screening_mail_refusal (recipient_sha256, reason, expires_at) VALUES (mail_recipient_sha256($1), 'bounced', now() + interval '365 days')", [bounced]);
--    // Another spelling of that mailbox too (S2), and neither spends one of the day's validations on an upload the database
--    // would refuse (S4).
-+    // Another spelling of that mailbox too (S2). The list answers only once the address checks and submit_screening()'s own
-+    // have passed, so each spends its validation as an unlisted address does (the review of 2026-10-27).
-     calls.length = 0;
-     for (const spelling of [` ${bounced} `, 'bounced.before+screening@clinic-bounced.synthetic.test']) {
-       expect(issuesOf(await call(screeningSubmit, services, { input: submitInput({ contactEmail: spelling }) })), spelling).toEqual([{ field: 'contactEmail', message: ADDRESS_REFUSED }]);
-     }
--    expect(calls).toEqual([]);
-+    expect(calls).toEqual(['bounced.before@clinic-bounced.synthetic.test', 'bounced.before+screening@clinic-bounced.synthetic.test']);
-     expect(await prospects(bounced.toLowerCase())).toBe(0);
-     expect(await storedText()).not.toMatch(/nomail|clinic-gone|clinic-bounced/i);
-   });
-@@ -1297,17 +1297,59 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
-     const calls: string[] = [];
-     const services = withServices({ addressChecks: checks(null, () => HIGH, calls) });
-     // A mistyped address a screening email bounced from: the hint, as for one never seen, so the form says nothing of the
--    // list and the prospect is told the likely fix; kept as typed, the list's sentence, with no validation spent (S4).
-+    // list and the prospect is told the likely fix, with no validation spent; kept as typed, the list's sentence, after
-+    // the address checks, as for any address (the review of 2026-10-27).
-     const listed = 'listed.typo@gmial.com';
-     await world.owner.query("INSERT INTO screening_mail_refusal (recipient_sha256, reason, expires_at) VALUES (mail_recipient_sha256($1), 'bounced', now() + interval '365 days')", [listed]);
-     const hint = [{ field: 'contactEmail', message: 'Did you mean @gmail.com? Check the address, or keep it as typed.' }];
-     expect(issuesOf(await call(screeningSubmit, services, { input: submitInput({ contactEmail: listed }) }))).toEqual(hint);
-     expect(issuesOf(await call(screeningSubmit, services, { input: submitInput({ contactEmail: 'unlisted.typo@gmial.com' }) }))).toEqual(hint);
--    expect(issuesOf(await call(screeningSubmit, services, { input: { ...submitInput({ contactEmail: listed }), keepAddress: '1' } }))).toEqual([{ field: 'contactEmail', message: ADDRESS_REFUSED }]);
-     expect(calls).toEqual([]);
-+    expect(issuesOf(await call(screeningSubmit, services, { input: { ...submitInput({ contactEmail: listed }), keepAddress: '1' } }))).toEqual([{ field: 'contactEmail', message: ADDRESS_REFUSED }]);
-+    expect(calls).toEqual([listed]);
-     expect(await prospects(listed)).toBe(0);
-   });
- 
-+  it('answers a listed and an unlisted address alike on every path that ends without an email: a ZIP the release cannot price, or a mailbox SES cannot confirm (the review of 2026-10-27)', async () => {
-+    const calls: string[] = [];
-+    const services = withServices({ addressChecks: checks(null, (address) => (address.includes('.medium.') ? { ...HIGH, mailboxExists: 'MEDIUM' } : HIGH), calls) });
-+    const list = (email: string) =>
-+      world.owner.query("INSERT INTO screening_mail_refusal (recipient_sha256, reason, expires_at) VALUES (mail_recipient_sha256($1), 'complained', now() + interval '365 days')", [email]);
-+    const kept = async () =>
-+      (
-+        await world.owner.query<{ kept: string }>(
-+          "SELECT concat_ws('/', (SELECT count(*) FROM screening_prospect), (SELECT count(*) FROM screening_upload), (SELECT count(*) FROM screening_run), (SELECT count(*) FROM audit_event WHERE action = 'screening_submitted')) AS kept",
-+        )
-+      ).rows[0]?.kept;
-+    const before = await kept();
-+    const asked: string[] = [];
-+    // A ZIP the locality map does not hold (00099), and one whose ZIP+4 list the release has not loaded (00012): the ZIP's
-+    // sentence for both. Read before the ZIP checks, the list told a client which address was on it, with nothing recorded
-+    // and nothing sent.
-+    for (const [zip, sentence] of [
-+      ['00099', 'this ZIP code is not in the Medicare locality map in force; check it'],
-+      ['00012', SCREENING_ZIP_MESSAGES.screening_locality_not_loaded],
-+    ] as const) {
-+      const listed = `target.listed.zip${zip}@gmail.com`;
-+      const unlisted = `target.unlisted.zip${zip}@gmail.com`;
-+      await list(listed);
-+      for (const email of [listed, unlisted]) {
-+        expect(issuesOf(await call(screeningSubmit, services, { input: submitInput({ zip, contactEmail: email }) })), `${zip} ${email}`).toEqual([{ field: 'zip', message: sentence }]);
-+        asked.push(email);
-+      }
-+    }
-+    // A mailbox SES rates MEDIUM: the question to keep it, for both.
-+    const listed = 'target.listed.medium.box@gmail.com';
-+    await list(listed);
-+    for (const email of [listed, 'target.unlisted.medium.box@gmail.com']) {
-+      expect(issuesOf(await call(screeningSubmit, services, { input: submitInput({ contactEmail: email }) })), email).toEqual([{ field: 'contactEmail', message: MAILBOX_UNCONFIRMED }]);
-+      asked.push(email);
-+    }
-+    // Each was checked as any address is, and none was recorded or queued.
-+    expect(calls).toEqual(asked);
-+    expect(await kept()).toBe(before);
-+  });
-+
-   it('never asks SES about an upload that fails its own checks or the rate limit', async () => {
-     const calls: string[] = [];
-     const services = withServices({ addressChecks: checks(null, () => HIGH, calls) });
-@@ -1382,12 +1424,14 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
-     expect(issuesOf(await call(screeningSubmit, counted, { input: submitInput({ contactEmail: fourth }), address }))).toEqual([{ field: 'input', message: SCREENING_BOUNCE_BUDGET }]);
-     expect(await prospects(fourth)).toBe(0);
-     // The client past its budget gets the budget's sentence for an address on the refusal list too, so it learns nothing of
--    // the list (S1), and spends none of the day's validations (S4).
-+    // the list (S1), and spends none of the day's validations (S4); another client is refused the listed address only
-+    // after its address checks, as any address is checked (the review of 2026-10-27).
-     const listed = 'client.listed@clinic-client-listed.synthetic.test';
-     await world.owner.query("INSERT INTO screening_mail_refusal (recipient_sha256, reason, expires_at) VALUES (mail_recipient_sha256($1), 'complained', now() + interval '365 days')", [listed]);
-     expect(issuesOf(await call(screeningSubmit, counted, { input: submitInput({ contactEmail: listed }), address }))).toEqual([{ field: 'input', message: SCREENING_BOUNCE_BUDGET }]);
--    expect(issuesOf(await call(screeningSubmit, counted, { input: submitInput({ contactEmail: listed }), address: '198.51.100.90' }))).toEqual([{ field: 'contactEmail', message: ADDRESS_REFUSED }]);
-     expect(calls).toEqual([]);
-+    expect(issuesOf(await call(screeningSubmit, counted, { input: submitInput({ contactEmail: listed }), address: '198.51.100.90' }))).toEqual([{ field: 'contactEmail', message: ADDRESS_REFUSED }]);
-+    expect(calls).toEqual([listed]);
-     // Another client is not held by this one's budget.
-     expect((await world.call(screeningSubmit, { input: submitInput({ contactEmail: 'client.other@clinic-client-other.synthetic.test' }), address: '198.51.100.89' })).status).toBe('ok');
-     expect(SCREENING_BOUNCE_BUDGET).not.toMatch(/@|198\.51/);
-diff --git a/apps/web/src/lib/screening/routes.ts b/apps/web/src/lib/screening/routes.ts
-index 277500f1..b3d8bba6 100644
---- a/apps/web/src/lib/screening/routes.ts
-+++ b/apps/web/src/lib/screening/routes.ts
-@@ -625,12 +625,15 @@ export const screeningSubmit = publicRoute({
-     if (hint.message !== null && !kept) {
-       throw new InputError([{ field: 'contactEmail', message: hint.message }]);
-     }
--    // What the database would refuse for the mail, in its order (closed, paused, the submitter's bounce budget, then the
--    // address on the refusal list), before any check that is asked or paid for (review S4): the day's validations are
--    // never spent on an upload the database refuses for its mail, and a client or an account past its budget gets the
--    // budget's sentence whatever the address (S1). submit_screening()'s triggers stay the backstop.
-+    // What the database would refuse for the submitter, in its order (closed, paused, the submitter's bounce budget),
-+    // before any check that is asked or paid for (review S4): the day's validations are never spent on an upload the
-+    // database refuses for its mail, and a client or an account past its budget gets the budget's sentence whatever the
-+    // address (S1). The address's refusal list is not asked here: submit_screening()'s run trigger answers for it after
-+    // the address checks and the ZIP, row and band checks, so a ZIP the release cannot price or a mailbox SES cannot
-+    // confirm is answered alike for a listed and an unlisted address, and nothing tells the list to a client that sends
-+    // no screening (the review of 2026-10-27). The triggers stay the backstop.
-     const refusal = await withClient(services.pool, async (client) =>
--      (await client.query<{ refusal: string | null }>('SELECT screening_submit_mail_refusal($1, $2, $3) AS refusal', [prospect.contactEmail, rateAccountSubject, clientSubject])).rows[0]?.refusal ?? null,
-+      (await client.query<{ refusal: string | null }>('SELECT screening_submit_mail_refusal($1, $2) AS refusal', [rateAccountSubject, clientSubject])).rows[0]?.refusal ?? null,
-     );
-     if (refusal !== null) {
-       throw new InputError([submitIssue(refusal)]);
 diff --git a/apps/worker/src/mail/events.test.ts b/apps/worker/src/mail/events.test.ts
 index 63709a82..8ec69807 100644
 --- a/apps/worker/src/mail/events.test.ts
@@ -850,7 +725,7 @@ index 365827f0..1301ac41 100644
        eventAt,
        recipient,
 diff --git a/apps/worker/src/platform/mail-events.db.test.ts b/apps/worker/src/platform/mail-events.db.test.ts
-index 0566acc8..e6eb282c 100644
+index 0566acc8..bc67b480 100644
 --- a/apps/worker/src/platform/mail-events.db.test.ts
 +++ b/apps/worker/src/platform/mail-events.db.test.ts
 @@ -60,7 +60,7 @@ beforeEach(async () => {
@@ -981,6 +856,26 @@ index 0566acc8..e6eb282c 100644
    });
  
    it('reports a break-glass notice not delivered to an administrator once, by the grant’s ID, from its events in any order (SEC-19)', async () => {
+@@ -496,13 +559,16 @@ describe('the mail_events job', () => {
+     await run({ source: queue }, logger);
+     expect(lines).toEqual(expect.arrayContaining([expect.objectContaining({ level: 'warn', invitation_id: invitation[0]?.id, error_code: 'INVITATION_UNDELIVERED' })]));
+     expect((await owner.query('SELECT undelivered_reason FROM invitation WHERE id = $1', [invitation[0]?.id])).rows).toEqual([{ undelivered_reason: 'bounced' }]);
+-    // The refusal list holds the keyed hash, not the address nor its plain SHA-256; no mail record holds either.
+-    const { rows } = await owner.query<{ keyed: string; plain: string }>(
+-      "SELECT mail_recipient_sha256('bounce+refused@simulator.amazonses.com') AS keyed, encode(sha256(convert_to('bounce+refused@simulator.amazonses.com', 'UTF8')), 'hex') AS plain",
++    // The refusal list holds the keyed hash, not the address nor its plain SHA-256; no mail record holds either. A
++    // permanent bounce is keyed by the spelling with its +tag kept, not by the base mailbox (the review of 2026-10-27).
++    const { rows } = await owner.query<{ keyed: string; mailbox: string; plain: string }>(
++      `SELECT mail_recipient_sha256('bounce+refused@simulator.amazonses.com', true) AS keyed, mail_recipient_sha256('bounce@simulator.amazonses.com') AS mailbox,
++              encode(sha256(convert_to('bounce+refused@simulator.amazonses.com', 'UTF8')), 'hex') AS plain`,
+     );
+     const refusals = await owner.query<{ recipient_sha256: string }>('SELECT recipient_sha256 FROM screening_mail_refusal');
+     expect(refusals.rows).toEqual([{ recipient_sha256: rows[0]?.keyed }]);
+     expect(rows[0]?.keyed).not.toBe(rows[0]?.plain);
++    expect(rows[0]?.keyed).not.toBe(rows[0]?.mailbox);
+     const sends = JSON.stringify((await owner.query('SELECT * FROM mail_send')).rows);
+     expect(sends).not.toMatch(/@|simulator/i);
+     expect(sends).not.toContain(rows[0]?.keyed ?? 'none');
 diff --git a/apps/worker/src/platform/mail-events.ts b/apps/worker/src/platform/mail-events.ts
 index 79c2c94e..adf9b2ea 100644
 --- a/apps/worker/src/platform/mail-events.ts
@@ -1129,6 +1024,24 @@ index 5413c48c..49b8f226 100644
      case 'earlier_request':
        return `${opens} Then we delete the result’s rows and figures. An audit was requested for this practice from an earlier screening with the same practice name and ZIP code, so we now keep ${KEPT_SUMMARY} with that request, in place of the earlier screening’s, for 12 months from this screening. We keep a record of counts that names no one: ${KEPT_COUNTS}; ${MATCHED}.`;
      case 'consent':
+diff --git a/docs/adr/0014-audit-log-retention-classes-and-platform-jobs.md b/docs/adr/0014-audit-log-retention-classes-and-platform-jobs.md
+index f9dca688..5a5adebf 100644
+--- a/docs/adr/0014-audit-log-retention-classes-and-platform-jobs.md
++++ b/docs/adr/0014-audit-log-retention-classes-and-platform-jobs.md
+@@ -131,8 +131,11 @@ jobs call and 0050 the dunning outbox.
+   deleted from the queue only after that commits (JOB-05); an account alarm's state change pauses the screening
+   stream. It logs IDs and codes only: `MAIL_STREAM_PAUSED`, `NOTICE_UNDELIVERED` (with the support grant's or the
+   invoice's ID), `INVITATION_UNDELIVERED` (with the invitation's ID), `MAIL_PROBE_MISSED` (on each run while a
+-  stream has had no probe back in 26 hours; ADR 0065), and
+-  `MAIL_EVENT_UNREADABLE` (with the queue message's ID; the message is left for the dead-letter queue).
++  stream's probes have not come back: the older of its delivered and bounced probe since the last resume 26 hours old,
++  or one not back an hour after the first probe sent since then; the probes then go hourly; ADR 0065), and
++  `MAIL_EVENT_UNREADABLE` (with the queue message's ID; the message is left for the dead-letter queue). Each probe
++  event it records is logged at info by SES's message ID and codes alone (the stream, SES's event type, the state and
++  the bounce subtype), which the deliverability runbook's staging checks read (the review of 2026-10-27).
+ - **`mail_expiry`, nightly at 03:50 UTC.** It deletes, 1,000 of each a call until none is left
+   (`operator_mail_expire()`), the mail records past their days: a message's row 30 days after it was sent on the
+   screening stream (its prospect's own 30) and 90 on the others; a bounce mark after 7 days; a refused screening
 diff --git a/docs/adr/0062-screen-prospects-from-aggregate-rows-without-phi-price-each-row-with-the-unchanged-engine-and-send-the-result-by-emailed-link.md b/docs/adr/0062-screen-prospects-from-aggregate-rows-without-phi-price-each-row-with-the-unchanged-engine-and-send-the-result-by-emailed-link.md
 index a9fbbf20..b099543f 100644
 --- a/docs/adr/0062-screen-prospects-from-aggregate-rows-without-phi-price-each-row-with-the-unchanged-engine-and-send-the-result-by-emailed-link.md
@@ -1523,9 +1436,18 @@ index e75b1f18..6f07c0f7 100644
  ## Model gateway (MOD)
  
 diff --git a/docs/runbooks/deliverability.md b/docs/runbooks/deliverability.md
-index 3af8b38a..01f2998d 100644
+index 3af8b38a..edadda88 100644
 --- a/docs/runbooks/deliverability.md
 +++ b/docs/runbooks/deliverability.md
+@@ -91,7 +91,7 @@ a synthetic mailbox you control, and reads IDs and counts.
+   | `NOTICE_UNDELIVERED` | a notice not delivered to every recipient (platform log) | 3.3 |
+   | `NOTICE_UNDELIVERABLE` | a notice with no recipient (platform log) | 3.3 |
+   | `INVITATION_UNDELIVERED` | an invitation's email undelivered (platform log) | 3.4 |
+-  | `MAIL_PROBE_MISSED` | a stream with no probe back in 26 hours, 22 hours before its readiness lapses (platform log) | 3.7 |
++  | `MAIL_PROBE_MISSED` | a stream with no probe back in 26 hours, 22 hours before its readiness lapses, or none back an hour after the first since a resume; raised until both come back (platform log) | 3.7 |
+   | `MAIL_PROBE_UNSENT` | a probe that could not be sent, in each of three 5-minute periods (platform log) | 3.7 |
+   | `MAIL_VALIDATION_CAP_REACHED` | the day's validation cap reached (web log) | 3.5 |
+   | `MAIL_VALIDATION_REFUSED` | AWS refused an address validation: the address-validation role or its call (web log) | 3.8 |
 @@ -145,16 +145,25 @@ a synthetic mailbox you control, and reads IDs and counts.
  4. **Staging checks (open item O11), once, in staging after its phase 2**, with a synthetic mailbox you control
     (`<you+tp-check>@…`, never a customer's). Tag each message you send by hand `tp_kind=probe`, so the platform records
@@ -1574,11 +1496,10 @@ index 3af8b38a..01f2998d 100644
       Within a few minutes, send to the same address through the screening set once more and record the subtype the
 -     platform records for it (its log line or its `mail_send` row, by message ID): SES's global suppression list
 -     answers `Permanent`/`Suppressed` on a set whose own suppression is off, which the cut-off counts, as SES does; if it
--     reads anything else, note it for ADR 0065's mapping.
 +     platform records for it (the `bounce_subtype_code` of its line, by message ID): SES's global suppression list
-+     answers `Permanent`/`Suppressed` on a set whose own suppression is off, which the platform records as
-+     `suppressed` in state `bounced` and the cut-off counts, as SES does; if it reads anything else, note it for ADR
-+     0065's mapping.
++     answers `Permanent`/`Suppressed` on a set whose own suppression is off, which the platform records with
++     `mail_state_code` `bounced` and `bounce_subtype_code` `suppressed`, and the cut-off counts, as SES does; if it
+      reads anything else, note it for ADR 0065's mapping.
 +   - **A send through a disabled set is refused as paused.** A screening result or failure notice already past the
 +     run's gate when a pause commits, and the sweep's completion, roll back only when SES refuses the send with
 +     `SendingPausedException` (ADR 0065, review M6 and M7; `screeningMailPaused()` in
@@ -1964,42 +1885,8 @@ index d4c3e27c..1836e97c 100644
  $function$;
  ALTER FUNCTION public.screening_contact_refused(text) OWNER TO tp_owner;
  REVOKE ALL ON FUNCTION public.screening_contact_refused(text) FROM PUBLIC;
-diff --git a/packages/db/functions/screening_submit_mail_refusal.sql b/packages/db/functions/screening_submit_mail_refusal.sql
-index 012c838c..06cb228c 100644
---- a/packages/db/functions/screening_submit_mail_refusal.sql
-+++ b/packages/db/functions/screening_submit_mail_refusal.sql
-@@ -1,11 +1,11 @@
- -- Written by `pnpm db:domain-model --out` from a freshly migrated database (docs/adr/0068).
- -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
- 
---- screening_submit_mail_refusal(text,text,text)
---- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: eadbe9312658ab5d
-+-- screening_submit_mail_refusal(text,text)
-+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 68638b412b4b2db0
- -- Trigger function of: (none)
- -- Called by policy: (none)
--CREATE OR REPLACE FUNCTION public.screening_submit_mail_refusal(email text, rate_account_subject text, client_subject text)
-+CREATE OR REPLACE FUNCTION public.screening_submit_mail_refusal(rate_account_subject text, client_subject text)
-  RETURNS text
-  LANGUAGE sql
-  STABLE SECURITY DEFINER
-@@ -15,10 +15,9 @@ AS $function$
-            WHEN current_rule_release() IS NULL OR place_of_service_split_in_force() IS NULL
-                 OR NOT EXISTS (SELECT 1 FROM rule_release r WHERE r.release_no = current_rule_release() AND r.manifest_sha256 IS NOT NULL) THEN 'screening_closed'
-            WHEN NOT EXISTS (SELECT 1 FROM mail_stream s WHERE s.stream = 'screening' AND s.paused_at IS NULL) THEN 'screening_paused'
--           WHEN screening_bounce_budget_spent($2, $3) THEN 'screening_bounce_budget'
--           WHEN screening_contact_refused($1) THEN 'screening_contact_undeliverable'
-+           WHEN screening_bounce_budget_spent($1, $2) THEN 'screening_bounce_budget'
-          END
- $function$;
--ALTER FUNCTION public.screening_submit_mail_refusal(text,text,text) OWNER TO tp_owner;
--REVOKE ALL ON FUNCTION public.screening_submit_mail_refusal(text,text,text) FROM PUBLIC;
--GRANT EXECUTE ON FUNCTION public.screening_submit_mail_refusal(text,text,text) TO tp_app;
-+ALTER FUNCTION public.screening_submit_mail_refusal(text,text) OWNER TO tp_owner;
-+REVOKE ALL ON FUNCTION public.screening_submit_mail_refusal(text,text) FROM PUBLIC;
-+GRANT EXECUTE ON FUNCTION public.screening_submit_mail_refusal(text,text) TO tp_app;
 diff --git a/packages/db/migrations/20261107090000_mail_streams.sql b/packages/db/migrations/20261107090000_mail_streams.sql
-index 18ec43e3..1a0e0324 100644
+index dbc470b3..1a0e0324 100644
 --- a/packages/db/migrations/20261107090000_mail_streams.sql
 +++ b/packages/db/migrations/20261107090000_mail_streams.sql
 @@ -20,10 +20,12 @@
@@ -2019,18 +1906,7 @@ index 18ec43e3..1a0e0324 100644
  -- - screening_bounce_mark (Q10 (a)): one 7-day mark per screening permanent bounce for each of the run's keyed subjects,
  --   its account's (screening_run.rate_subject, migration 20261106090000) and its client's (screening_run.client_subject,
  --   new: the rate limiter's keyed HMAC of the client address, null when the web had none); a subject with 3 live marks
-@@ -41,7 +43,9 @@
- -- - The consumer (tp_screening) reads screening_mail_gate() before it claims; the web (tp_app) reads
- --   screening_mail_status() (paused; ready once the screening's delivered and bounced probes have come back within
- --   48 hours and since the last resume), and screening_submit_mail_refusal() before it spends an address validation
----   (closed, paused, the budget, the refusal list, in that order; review S4).
-+--   (closed, paused, the submitter's budget, in that order; review S4). It takes no address: the refusal list answers
-+--   only from the run's trigger, after the web's address checks and submit_screening()'s own, so no refusal that ends
-+--   without an email tells a listed address from another (the review of 2026-10-27).
- -- - Break-glass notices from a recorded outbox (support_grant_notice and support_grant_notice_recipient, both tenant
- --   tables, registered, read by the application role under the practice's scope): the recipients are recorded first,
- --   one row per current practice administrator, and each is sent in its own transaction; notice_sent is written at the
-@@ -96,23 +100,32 @@ ALTER TABLE mail_recipient_key FORCE ROW LEVEL SECURITY;
+@@ -98,23 +100,32 @@ ALTER TABLE mail_recipient_key FORCE ROW LEVEL SECURITY;
  CREATE POLICY mail_recipient_key_owner ON mail_recipient_key FOR ALL TO tp_owner USING (true) WITH CHECK (true);
  
  -- The mailbox an address reaches, so every spelling of one inbox keys alike (review S2): canonicalMailbox() in
@@ -2074,7 +1950,7 @@ index 18ec43e3..1a0e0324 100644
    IF last_at = 0 THEN
      RETURN as_read;
    END IF;
-@@ -123,8 +136,10 @@ BEGIN
+@@ -125,8 +136,10 @@ BEGIN
    END IF;
    IF domain_part = 'googlemail.com' THEN
      domain_part := 'gmail.com';
@@ -2086,7 +1962,7 @@ index 18ec43e3..1a0e0324 100644
    IF domain_part = 'gmail.com' THEN
      mailbox_part := replace(mailbox_part, '.', '');
    END IF;
-@@ -132,12 +147,12 @@ BEGIN
+@@ -134,12 +147,12 @@ BEGIN
  END;
  $$;
  
@@ -2104,7 +1980,7 @@ index 18ec43e3..1a0e0324 100644
  $$;
  
  -- ---------------------------------------------------------------------------------------------------
-@@ -161,6 +176,9 @@ CREATE TABLE mail_stream (
+@@ -163,6 +176,9 @@ CREATE TABLE mail_stream (
    -- cleared by a pause, by a resume and by a read of the set disabled. The screening's runs are claimed only with it.
    ses_enabled_confirmed_at timestamptz,
    probe_sent_at timestamptz,
@@ -2114,7 +1990,7 @@ index 18ec43e3..1a0e0324 100644
    probe_delivered_at timestamptz,
    probe_bounced_at timestamptz,
    updated_at timestamptz NOT NULL DEFAULT now(),
-@@ -330,10 +348,15 @@ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp AS $$
+@@ -332,10 +348,15 @@ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp AS $$
        OR (SELECT count(*) FROM screening_bounce_mark b WHERE b.subject_kind = 'client' AND b.subject = $2 AND b.expires_at > now()) >= 3
  $$;
  
@@ -2132,7 +2008,7 @@ index 18ec43e3..1a0e0324 100644
  $$;
  
  -- An accepted upload is refused while the screening stream is paused (D7). A refused upload is never emailed, so it is
-@@ -925,7 +948,8 @@ $$;
+@@ -927,7 +948,8 @@ $$;
  -- takes the state, and the notice's or the invoice's first undelivered recipient is reported (notice_undelivered: the
  -- support grant's ID; invoice_undelivered: the invoice's); a Cognito message to an invited user flags the invitation
  -- (invitation_undelivered); a screening message links its prospect, and a permanent bounce or a complaint other than
@@ -2142,7 +2018,7 @@ index 18ec43e3..1a0e0324 100644
  -- pause the screening stream (stream_paused: the reason). recipient is read only to resolve a Cognito user and to hash a
  -- refused screening address; it is never stored, logged or returned. A notice's event runs in its practice's scope.
  CREATE FUNCTION operator_record_mail_event(message_id text, stream text, event text, mail_at timestamptz, event_at timestamptz, recipient text,
-@@ -1073,7 +1097,7 @@ BEGIN
+@@ -1075,7 +1097,7 @@ BEGIN
       AND ((held.state = 'bounced' AND held.bounce_kind = 'permanent') OR (held.state = 'complained' AND held.complaint_type <> 'not_spam')) THEN
      IF recipient IS NOT NULL AND btrim(recipient) <> '' THEN
        INSERT INTO screening_mail_refusal (recipient_sha256, reason, recorded_at, expires_at)
@@ -2151,7 +2027,7 @@ index 18ec43e3..1a0e0324 100644
        ON CONFLICT (recipient_sha256) DO UPDATE SET reason = EXCLUDED.reason, recorded_at = EXCLUDED.recorded_at, expires_at = EXCLUDED.expires_at;
      END IF;
      IF held.state = 'bounced' AND priced.id IS NOT NULL THEN
-@@ -1103,26 +1127,30 @@ BEGIN
+@@ -1105,26 +1127,30 @@ BEGIN
  END;
  $$;
  
@@ -2193,7 +2069,7 @@ index 18ec43e3..1a0e0324 100644
     ORDER BY s.stream
  $$;
  
-@@ -1154,7 +1182,7 @@ BEGIN
+@@ -1156,7 +1182,7 @@ BEGIN
    IF stream IS NULL OR stream NOT IN ('transactional', 'notices', 'screening') THEN
      RAISE EXCEPTION 'unknown mail stream' USING ERRCODE = 'check_violation', CONSTRAINT = 'mail_stream_name';
    END IF;
@@ -2202,7 +2078,7 @@ index 18ec43e3..1a0e0324 100644
  END;
  $$;
  
-@@ -1250,7 +1278,7 @@ BEGIN
+@@ -1252,7 +1278,7 @@ BEGIN
    END IF;
    UPDATE mail_stream s
       SET paused_at = NULL, paused_reason = NULL, paused_by = NULL, pause_sends = NULL, pause_bounces = NULL, pause_complaints = NULL,
@@ -2211,58 +2087,15 @@ index 18ec43e3..1a0e0324 100644
     WHERE s.stream = stream AND s.paused_at IS NOT NULL;
    IF NOT FOUND THEN
      RETURN false;
-@@ -1482,19 +1510,22 @@ END;
- $$;
- 
- -- The web's check before it spends one of the day's address validations (review S4; D9): the refusal of an accepted
---- upload's mail that submit_screening() would give, in its order, writing nothing: screening_closed (no release in
---- force, or no split approved), screening_paused, screening_bounce_budget (the submitter's keyed subjects), then
---- screening_contact_undeliverable (the address's mailbox); null when none applies. The submitter's budget comes before
---- the address, as in the run's trigger (S1), so a client or an account past it learns nothing of the list here either.
---- The triggers stay the backstop for a change between this read and the submission. Granted to tp_app.
--CREATE FUNCTION screening_submit_mail_refusal(email text, rate_account_subject text, client_subject text) RETURNS text
-+-- upload's mail that submit_screening() would give for its submitter, in its order, writing nothing: screening_closed
-+-- (no release in force, or no split approved), screening_paused, then screening_bounce_budget (the submitter's keyed
-+-- subjects); null when none applies. It takes no address and never reads the refusal list (the review of 2026-10-27):
-+-- read here, before the address checks and submit_screening()'s ZIP checks, the list told any client whether an address
-+-- had bounced or complained in the last 12 months, by which refusal a ZIP the release cannot price or a mailbox SES
-+-- could not confirm drew, with nothing recorded and nothing sent. The run's trigger answers for the list after them all,
-+-- so every path that ends without an email answers a listed address as any other; a listed address spends one
-+-- validation, within the rate limit. The triggers stay the backstop for a change between this read and the submission.
-+-- Granted to tp_app.
-+CREATE FUNCTION screening_submit_mail_refusal(rate_account_subject text, client_subject text) RETURNS text
- LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
-   SELECT CASE
-            WHEN current_rule_release() IS NULL OR place_of_service_split_in_force() IS NULL
-                 OR NOT EXISTS (SELECT 1 FROM rule_release r WHERE r.release_no = current_rule_release() AND r.manifest_sha256 IS NOT NULL) THEN 'screening_closed'
-            WHEN NOT EXISTS (SELECT 1 FROM mail_stream s WHERE s.stream = 'screening' AND s.paused_at IS NULL) THEN 'screening_paused'
--           WHEN screening_bounce_budget_spent($2, $3) THEN 'screening_bounce_budget'
--           WHEN screening_contact_refused($1) THEN 'screening_contact_undeliverable'
-+           WHEN screening_bounce_budget_spent($1, $2) THEN 'screening_bounce_budget'
-          END
- $$;
- 
-@@ -1515,9 +1546,9 @@ REVOKE ALL ON mail_recipient_key, mail_stream, mail_send, screening_mail_refusal
+@@ -1520,7 +1546,7 @@ REVOKE ALL ON mail_recipient_key, mail_stream, mail_send, screening_mail_refusal
    support_grant_notice, support_grant_notice_recipient FROM PUBLIC;
  GRANT SELECT ON support_grant_notice, support_grant_notice_recipient TO tp_app;
  
 -REVOKE ALL ON FUNCTION mail_recipient_canonical(text), mail_recipient_sha256(text), mail_send_expiry(), mail_state_rank(text), mail_window_counts(text),
 +REVOKE ALL ON FUNCTION mail_recipient_canonical(text, boolean), mail_recipient_sha256(text, boolean), mail_send_expiry(), mail_state_rank(text), mail_window_counts(text),
    screening_mail_sending(), screening_mail_gate(), screening_mail_status(), screening_bounce_budget_spent(text, text), screening_contact_refused(text),
--  screening_submit_mail_refusal(text, text, text),
-+  screening_submit_mail_refusal(text, text),
+   screening_submit_mail_refusal(text, text),
    screening_upload_mail_gate(), screening_run_mail_refusal(), screening_run_mail_gate(),
-   support_notice_administrators(uuid), support_notice_report_undelivered(uuid, text), support_notice_counts(uuid, text),
-   operator_open_support_notice(uuid, text, text), operator_support_notices_pending(integer), operator_support_notice_claim(uuid, uuid),
-@@ -1539,7 +1570,7 @@ GRANT EXECUTE ON FUNCTION operator_open_support_notice(uuid, text, text), operat
-   operator_mail_probe_sent(text), operator_mail_expire(integer) TO tp_operator;
- GRANT EXECUTE ON FUNCTION billing_open_dunning_notice(uuid, text, text), billing_dunning_notices_pending(integer), billing_dunning_notice_claim(uuid, text, uuid),
-   billing_dunning_notice_sent(uuid, text, uuid, text, text), billing_dunning_notice_failed(uuid, text, uuid, text, boolean, text) TO tp_billing;
--GRANT EXECUTE ON FUNCTION screening_mail_status(), screening_submit_mail_refusal(text, text, text), console_mail_streams(), console_pause_mail_stream(text, text),
-+GRANT EXECUTE ON FUNCTION screening_mail_status(), screening_submit_mail_refusal(text, text), console_mail_streams(), console_pause_mail_stream(text, text),
-   console_resume_mail_stream(text, text), console_mail_undelivered(timestamptz), console_support_grants(),
-   submit_screening(text, text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], integer, integer, bigint,
-     integer, bigint, bigint, text, text, text, text, text, text, text, text, timestamptz, text, text, text) TO tp_app;
 diff --git a/packages/db/src/mail-address.test.ts b/packages/db/src/mail-address.test.ts
 index 3b06d3dd..25bd816c 100644
 --- a/packages/db/src/mail-address.test.ts
@@ -2411,7 +2244,7 @@ index 6b580975..79a3395a 100644
    return parts === null ? readAddress(address) : `${parts.local}@${parts.domain}`;
  }
 diff --git a/packages/db/src/mail.db.test.ts b/packages/db/src/mail.db.test.ts
-index 9a4c6809..243b528e 100644
+index b2306a35..9f959a3a 100644
 --- a/packages/db/src/mail.db.test.ts
 +++ b/packages/db/src/mail.db.test.ts
 @@ -16,6 +16,7 @@ import {
@@ -2453,16 +2286,20 @@ index 9a4c6809..243b528e 100644
        'mail_send_expiry()': { definer: false, grantees: [] },
        'mail_state_rank(text)': { definer: false, grantees: [] },
        'mail_window_counts(text)': { definer: false, grantees: [] },
-@@ -379,7 +380,7 @@ describe('the mail tables and their grants (SEC-18)', () => {
-       'screening_mail_sending()': { definer: false, grantees: [] },
-       'screening_mail_gate()': { definer: true, grantees: [SCREENING_ROLE] },
-       'screening_mail_status()': { definer: true, grantees: [APP_ROLE] },
--      'screening_submit_mail_refusal(text,text,text)': { definer: true, grantees: [APP_ROLE] },
-+      'screening_submit_mail_refusal(text,text)': { definer: true, grantees: [APP_ROLE] },
-       'screening_upload_mail_gate()': { definer: false, grantees: [] },
-       'screening_bounce_budget_spent(text,text)': { definer: false, grantees: [] },
-       'screening_contact_refused(text)': { definer: false, grantees: [] },
-@@ -516,6 +517,15 @@ describe('the keyed hash of a screening address (Q11 (b); SEC-18)', () => {
+@@ -438,9 +439,10 @@ describe('the mail tables and their grants (SEC-18)', () => {
+         config: ['search_path=pg_catalog, public, pg_temp'],
+       });
+     }
+-    // The keyed hash is executable by no login and no role but its owner.
++    // The keyed hash and the canonical rule are executable by no login and no role but their owner.
+     const logins = await owner.query<{ rolname: string; may: boolean }>(
+-      "SELECT rolname, has_function_privilege(oid, 'mail_recipient_sha256(text)', 'EXECUTE') AS may FROM pg_roles WHERE rolname LIKE 'tp\\_%' AND rolname <> $1 ORDER BY 1",
++      `SELECT rolname, has_function_privilege(oid, 'mail_recipient_sha256(text, boolean)', 'EXECUTE') OR has_function_privilege(oid, 'mail_recipient_canonical(text, boolean)', 'EXECUTE') AS may
++         FROM pg_roles WHERE rolname LIKE 'tp\\_%' AND rolname <> $1 ORDER BY 1`,
+       [OWNER_ROLE],
+     );
+     expect(logins.rows.filter((row) => row.may)).toEqual([]);
+@@ -516,6 +518,15 @@ describe('the keyed hash of a screening address (Q11 (b); SEC-18)', () => {
      for (const row of rows) {
        expect(row.canonical, JSON.stringify(row.given)).toBe(canonicalMailbox(row.given));
      }
@@ -2478,7 +2315,7 @@ index 9a4c6809..243b528e 100644
      // The keyed hash is of the mailbox: one hash for its every spelling, and the pepper and the canonical mailbox are
      // all it hashes.
      const hash = async (value: string) => (await owner.query<{ h: string }>('SELECT mail_recipient_sha256($1) AS h', [value])).rows[0]?.h;
-@@ -530,6 +540,49 @@ describe('the keyed hash of a screening address (Q11 (b); SEC-18)', () => {
+@@ -530,6 +541,49 @@ describe('the keyed hash of a screening address (Q11 (b); SEC-18)', () => {
      expect(await hash('synthetic.keyed+x@workspace.synthetic.test')).toBe(await hash('synthetic.keyed@workspace.synthetic.test'));
    });
  
@@ -2528,7 +2365,7 @@ index 9a4c6809..243b528e 100644
    it('names no address in any error a mail function raises', async () => {
      const given = address('error.text');
      const failures: unknown[] = [];
-@@ -761,11 +814,11 @@ describe('the screening stream’s cut-off (SCR-21; the founder’s Q9)', () =>
+@@ -761,11 +815,11 @@ describe('the screening stream’s cut-off (SCR-21; the founder’s Q9)', () =>
      expect(await code(consoleCall(platformAdmin, 'SELECT console_resume_mail_stream($1, $2)', ['screening', 'because']))).toBe('23514');
      expect(await consoleCall(platformAdmin, 'SELECT console_resume_mail_stream($1, $2) AS resumed', ['screening', 'cause_fixed'])).toEqual([{ resumed: true }]);
      expect(await consoleCall(platformAdmin, 'SELECT console_resume_mail_stream($1, $2) AS resumed', ['screening', 'cause_fixed'])).toEqual([{ resumed: false }]);
@@ -2543,7 +2380,7 @@ index 9a4c6809..243b528e 100644
      expect((await owner.query("SELECT actor_kind, actor_id, purpose FROM audit_event WHERE action = 'mail_stream_resumed'")).rows).toEqual([
        { actor_kind: 'user', actor_id: platformAdmin, purpose: 'cause_fixed' },
      ]);
-@@ -784,7 +837,7 @@ describe('the screening stream’s cut-off (SCR-21; the founder’s Q9)', () =>
+@@ -784,7 +838,7 @@ describe('the screening stream’s cut-off (SCR-21; the founder’s Q9)', () =>
      expect(await code(as(OPERATOR_ROLE, "SELECT operator_mail_stream_confirmed('elsewhere', true)"))).toBe('23514');
    });
  
@@ -2552,7 +2389,7 @@ index 9a4c6809..243b528e 100644
      await resetScreening();
      const status = async () => (await as<{ paused: boolean; ready: boolean }>(APP_ROLE, 'SELECT * FROM screening_mail_status()'))[0];
      const probe = (event: string) =>
-@@ -807,51 +860,73 @@ describe('the screening stream’s cut-off (SCR-21; the founder’s Q9)', () =>
+@@ -807,51 +861,73 @@ describe('the screening stream’s cut-off (SCR-21; the founder’s Q9)', () =>
      expect(await status()).toEqual({ paused: false, ready: true });
      await as(OPERATOR_ROLE, 'SELECT operator_mail_account_signal($1, $2)', ['enforcement_not_healthy', request()]);
      expect(await status()).toEqual({ paused: true, ready: false });
@@ -2696,81 +2533,10 @@ index 404e238f..61a3c3a8 100644
    probeBouncedAt: timestamp('probe_bounced_at', { withTimezone: true }),
    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 diff --git a/packages/db/src/screening.db.test.ts b/packages/db/src/screening.db.test.ts
-index 126310aa..96940aba 100644
+index bbc7d3d6..96940aba 100644
 --- a/packages/db/src/screening.db.test.ts
 +++ b/packages/db/src/screening.db.test.ts
-@@ -701,9 +701,8 @@ describe('the screening rules', () => {
-     await pauseScreeningMail();
-     await admin.query("INSERT INTO screening_mail_refusal (recipient_sha256, reason, expires_at) VALUES (mail_recipient_sha256('closed.first@synthetic.test'), 'bounced', now() + interval '1 day')");
-     await expect(submit({ email: 'closed.first@synthetic.test' })).rejects.toMatchObject({ code: '23514', constraint: 'screening_closed' });
--    // The web's check before the address says so too, so nothing of the list is read while closed (S4).
--    const precheck = async () =>
--      (await as<{ refusal: string | null }>(APP_ROLE, 'SELECT screening_submit_mail_refusal($1, $2, NULL) AS refusal', ['closed.first@synthetic.test', accountSubject()]))[0]?.refusal;
-+    // The web's check before the address says so too (S4).
-+    const precheck = async () => (await as<{ refusal: string | null }>(APP_ROLE, 'SELECT screening_submit_mail_refusal($1, NULL) AS refusal', [accountSubject()]))[0]?.refusal;
-     expect(await precheck()).toBe('screening_closed');
-     await resetScreeningMail();
-     await publishSyntheticRelease(900001);
-@@ -1546,33 +1545,44 @@ describe('PR 6b-4: the screening’s mail (migration 20261107090000; audit #76,
-     expect(`${failure?.message ?? ''} ${failure?.detail ?? ''}`).not.toContain('@');
-   });
- 
--  it('answers the web, before it checks an address, with the refusal submit_screening() would give for the mail, in its order, writing nothing (S4)', async () => {
-+  it('answers the web, before it checks an address, with the refusal submit_screening() would give for its submitter, in its order, writing nothing, and never reads the refusal list (S4; the review of 2026-10-27)', async () => {
-     const refused = `precheck.${letters()}@synthetic.test`;
-     const budgeted = sha256(`precheck account ${randomUUID()}`);
-     const client = sha256(`precheck client ${randomUUID()}`);
-     await admin.query("INSERT INTO screening_mail_refusal (recipient_sha256, reason, expires_at) VALUES (mail_recipient_sha256($1), 'bounced', now() + interval '1 day')", [refused]);
-     await markSubject(budgeted, 'account');
-     await markSubject(client, 'client');
--    const precheck = async (email: string, account: string, clientSubject: string | null) =>
--      (await as<{ refusal: string | null }>(APP_ROLE, 'SELECT screening_submit_mail_refusal($1, $2, $3) AS refusal', [email, account, clientSubject]))[0]?.refusal;
--    const other = `precheck.other.${letters()}@synthetic.test`;
--    expect(await precheck(other, accountSubject(), null)).toBeNull();
--    expect(await precheck(` ${refused.toUpperCase()} `, accountSubject(), null)).toBe('screening_contact_undeliverable');
--    // The submitter's budget before the address, for the account and the client alike (S1).
--    expect(await precheck(refused, budgeted, null)).toBe('screening_bounce_budget');
--    expect(await precheck(other, budgeted, null)).toBe('screening_bounce_budget');
--    expect(await precheck(refused, accountSubject(), client)).toBe('screening_bounce_budget');
--    // The same answers submit_screening() gives.
-+    const precheck = async (account: string, clientSubject: string | null) =>
-+      (await as<{ refusal: string | null }>(APP_ROLE, 'SELECT screening_submit_mail_refusal($1, $2) AS refusal', [account, clientSubject]))[0]?.refusal;
-+    // It takes no address: the list answers only from the run's trigger, after the web's address checks and
-+    // submit_screening()'s own (its ZIP, rows and bands), so no refusal that ends without an email tells a listed address
-+    // from another (the review of 2026-10-27: read here, before the ZIP checks, it told any client whether an address
-+    // was on the list, with nothing recorded and nothing sent).
-+    expect(
-+      (await admin.query<{ args: string }>("SELECT pg_get_function_identity_arguments(p.oid) AS args FROM pg_proc p WHERE p.proname = 'screening_submit_mail_refusal'")).rows,
-+    ).toEqual([{ args: 'rate_account_subject text, client_subject text' }]);
-+    expect(await precheck(accountSubject(), null)).toBeNull();
-+    // The submitter's budget, for the account and the client alike (S1).
-+    expect(await precheck(budgeted, null)).toBe('screening_bounce_budget');
-+    expect(await precheck(accountSubject(), client)).toBe('screening_bounce_budget');
-+    // The same answers submit_screening() gives, which refuses the listed address itself.
-     const submitted = (options: SubmitOptions) => submit(options).then(() => null, (error: unknown) => (error as { constraint?: string }).constraint);
--    expect(await submitted({ email: refused, rateSubject: budgeted })).toBe(await precheck(refused, budgeted, null));
-+    expect(await submitted({ email: refused, rateSubject: budgeted })).toBe(await precheck(budgeted, null));
-     expect(await submitted({ email: refused })).toBe('screening_contact_undeliverable');
-+    expect(await precheck(accountSubject(), null)).toBeNull();
-+    // And a ZIP submit_screening() refuses is refused alike for a listed and an unlisted address: the ZIP comes first.
-+    for (const zip of ['00099', '00012']) {
-+      const listed = await submitted({ email: refused, zip });
-+      expect(listed, zip).toMatch(/^screening_(zip_unknown|locality_not_loaded)$/);
-+      expect(await submitted({ email: `precheck.unlisted.${letters()}@synthetic.test`, zip }), zip).toBe(listed);
-+    }
-     // Paused before the rest (closed before that: the screening rules' setup).
-     await pauseScreeningMail();
--    expect(await precheck(refused, budgeted, client)).toBe('screening_paused');
-+    expect(await precheck(budgeted, client)).toBe('screening_paused');
-     await resetScreeningMail();
-     // A subject not shaped as one finds no marks; nothing is written.
-     const before = (await admin.query<{ n: number }>('SELECT (SELECT count(*) FROM screening_prospect) + (SELECT count(*) FROM audit_event) AS n')).rows[0]?.n;
--    expect(await precheck(other, 'not-a-subject', 'nor-this')).toBeNull();
-+    expect(await precheck('not-a-subject', 'nor-this')).toBeNull();
-     expect((await admin.query<{ n: number }>('SELECT (SELECT count(*) FROM screening_prospect) + (SELECT count(*) FROM audit_event) AS n')).rows[0]?.n).toBe(before);
-   });
- 
-@@ -1661,6 +1671,55 @@ describe('PR 6b-4: the screening’s mail (migration 20261107090000; audit #76,
+@@ -1671,6 +1671,55 @@ describe('PR 6b-4: the screening’s mail (migration 20261107090000; audit #76,
      await resetScreeningMail();
    });
  
