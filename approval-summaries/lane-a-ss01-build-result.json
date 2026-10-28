@@ -1,0 +1,704 @@
+[
+ {
+  "verdict": "build with deltas",
+  "deltas": [
+   {
+    "section": "Header, 4, 14, 17 (which #42 head)",
+    "code_now": "origin/co-001/pr-06b-mail-streams is 098636e3 (this branch's base). The design's '#42 head 15189a50' is a descendant of 098636e3 (36 commits ahead) that exists only in origin/co-001/wip-pr42-integrate (6f23c42b). The wip branches are named wip-pr42-fix-db / -fix-harness / -fix-infra (not wip-pr42-db/harness/infra). integrate holds cherry-picks of all three, plus 14392ab1 (domain model regenerated), 5ef893d5, 869352a9, 15189a50, 8aa45a46 and 6f23c42b.",
+    "design_says": "#42 moved from 098636e3 to 15189a50; builders re-read at #42's merged head",
+    "builder_instruction": "Build on 098636e3 as the tree has it. The objects this design recreates are identical at 098636e3 and at integrate (see the other deltas), so nothing in the migration changes. Line numbers that come from #42's migration follow the 098636e3 numbering below until the session merges #42's new head."
+   },
+   {
+    "section": "4, D8, 4.5 (mail_streams.sql line numbers)",
+    "code_now": "At 098636e3, the audit_event_record policy is mail_streams.sql:803-810 (DROP :803, CREATE :804) and console_pause/resume_mail_stream is :1134-1172. The policy body is byte-identical to integrate's :863-870. Live policy from pg_get_expr: action <> ALL ('notice_sent','security_event','sign_in_failed','data_key_destroyed','notice_undelivered','mail_stream_paused','mail_stream_resumed') AND actor_id = app_actor_id() AND actor_kind IN ('user','service') AND (practice_id IS NULL OR practice_id = ANY(app.practice_ids)), TO tp_app, FOR INSERT.",
+    "design_says": "mail_streams.sql:863-870 and :1216-1256 at 15189a50",
+    "builder_instruction": "Copy the policy from mail_streams.sql:804-810 at 098636e3 and append 'organization_suspended', 'organization_reinstated' after 'mail_stream_resumed'. Model the setter on :1134-1172, which has the same IF app_actor_id() IS NULL OR NOT app_actor_is_person() OR NOT coalesce(app_actor_platform_permitted(...), false) shape and the #variable_conflict use_variable line. Cite 098636e3 numbers in comments, or none."
+   },
+   {
+    "section": "4.4 table (packet_export_refusal_codes predecessor)",
+    "code_now": "20261103090000_deadline_verification_and_export_attestation.sql:1505-1509: CREATE FUNCTION at :1505, the ARRAY of 12 codes ending 'verifier_failed' at :1506-1507, and the comment '(the readiness reasons in their order, then the verifier's)' at :1500. The trigger is :1521-1541.",
+    "design_says": ":1525-1529",
+    "builder_instruction": "Recreate it from :1505-1509, appending 'organization_suspended' after 'verifier_failed'. Change the comment at :1500 as the design says. Only the line citation was wrong."
+   },
+   {
+    "section": "5.4 / 13 (exhaustive maps over PacketExportRefusal)",
+    "code_now": "Widening PACKET_EXPORT_REFUSALS (readiness.ts:43-56) breaks two more maps that the design does not list. (1) apps/worker/src/packets/export.ts:243-257: EXPORT_REFUSALS `satisfies Readonly<Record<PacketExportRefusal | 'missing', string>>`, so typecheck fails. (2) apps/web/src/lib/packets/export-attempts.ts:215-228: REFUSAL_SUMMARY Record<PacketExportRefusal,string>, used at :173 in 'The request at \u2026 was refused: {summary}. That no longer holds\u2026'. Also apps/web/src/lib/packets/approval.test.ts:110 requires EXPORT_REFUSAL_TEXT's keys to equal PACKET_EXPORT_REFUSALS in order.",
+    "design_says": "only EXPORT_REFUSAL_TEXT (E1) and readiness/services/the codes test",
+    "builder_instruction": "In export.ts:256, add `organization_suspended: 'ORGANIZATION_SUSPENDED'` after verifier_failed, the same value as SUSPENDED_ERROR_CODE. In export-attempts.ts:227, add REFUSAL_SUMMARY.organization_suspended = 'new work had stopped for the practice's organization'. These are J1's/E1's own words; report it as a needed wording addition within brand.md. Add E1 last in EXPORT_REFUSAL_TEXT (:30) so approval.test.ts:110's order holds. Add export.ts and approval.test.ts to the file list."
+   },
+   {
+    "section": "10 BIL-07 Registry (job types)",
+    "code_now": "Person routes also queue 'reconcile': settings.ts:414 practice.settings.set_proof_level (proof_level.set) and reconciliation.ts:334 practice.reconciliation.save_template (posting.reconcile, which firm_principal holds). They also queue 'monitor': settings.ts:720 practice.settings.pricing_location (pricing_settings.set, which firm_principal holds, via afterCommit) and console.ts:474 console.practice_location. monitor and reconcile are worker RUN_STARTING_JOBS (refusal.ts:14), refused there for the owner's hold only.",
+    "design_says": "the registry test checks routes queueing triage, packet_export, intake, price, audit_report, report_document, roi_statement",
+    "builder_instruction": "Keep the design's list. Make the test exhaustive over job types: every job a route's ok call queues must be one of the seven (route in RUN_STARTING_ROUTES or CONTINUES_STARTED_WORK), or monitor/reconcile, or else the test fails. Give monitor/reconcile a named comment: the practice's own monitoring and reconciliation, which section 2 says continue under a grantee's hold, gated by the worker for the owner's hold. Record in ADR 0080's known limits that a held grantee's person can still bring the practice's monitor forward (pricing location) or its reconcile (template save). Changing that would mean refusing settings writes, which is a redesign and goes in open items."
+   },
+   {
+    "section": "5.8 / 13 (where the reason lists are exported)",
+    "code_now": "ORGANIZATION_STATUSES is at packages/db/src/schema/tenancy.ts:13 and is exported through the named list in packages/db/src/schema/index.ts:401. runtime.ts re-exports with `export * from './schema'`, and index.ts with `export * from './runtime'`. wip integrate adds a line at runtime.ts:26 (canonicalMailbox).",
+    "design_says": "packages/db/src/runtime.ts / index.ts: export the reason lists",
+    "builder_instruction": "Define SUSPENSION_REASONS and REINSTATEMENT_REASONS in tenancy.ts beside :13. Add both to schema/index.ts's list beside ORGANIZATION_STATUSES (:401). Do not edit runtime.ts or index.ts. That also avoids a conflict with the wip's runtime.ts line."
+   },
+   {
+    "section": "10 / 13 (migrate test pins every owner table)",
+    "code_now": "packages/db/src/migrate.db.test.ts:96-190 asserts the exact list of public tables owned by the owner, in name order.",
+    "design_says": "not mentioned",
+    "builder_instruction": "Add 'organization_status_change' after 'organization' in that list, in the migration slice."
+   },
+   {
+    "section": "10 BIL-08 / 13 (reserved actions test)",
+    "code_now": "packages/db/src/hardening.db.test.ts:354 loops over the seven reserved audit actions and expects 42501 from tp_app for 'user' and 'service'.",
+    "design_says": "BIL-08 tests organization_suspended in console-routes.db.test.ts only",
+    "builder_instruction": "Add 'organization_suspended' and 'organization_reinstated' to the array at :354, tests first: it fails on the base because the insert is accepted. Update the comment at :352-353 to name migration 20261108090000. Add the file to section 13. This is an improvement of the same kind."
+   },
+   {
+    "section": "5.8 / 13 (seed test)",
+    "code_now": "apps/web/scripts/seed.db.test.ts:76-82 asserts SYNTHETIC SUSPENDED GROUP, and it is in BIL-06's assertedBy (registry.ts:634-638). The seed writes as the owner (seed.ts:86 SET LOCAL ROLE), so the new trigger's owner path allows the non-active insert and stamps status_since.",
+    "design_says": "seed.ts and synthetic-personas.ts only",
+    "builder_instruction": "Extend seed.db.test.ts with the new seeded rows: the group's status_reason 'customer_request' and a non-null status_since; the suspended firm ('security_hold'); its grant in force on SYNTHETIC FIRM CLIENT PRACTICE; and the console firm active. Before adding a seeded practice, grep e2e/*.spec.ts for journeys that count practices or organizations."
+   },
+   {
+    "section": "1.1 / 5.1 (console.ts doc comment)",
+    "code_now": "console.ts:83-89, the comment above setOrganizationStatus, says the suspension refuses runs 'by the path a nonpayment suspension takes (organization_run_refusal: ...)'. It is the only remaining TypeScript mention of the dropped function. organizationPage is console.ts:183-295 (design :183-260). The Grants card's data (the `names` query inside organizationPage) carries no grantee status.",
+    "design_says": "console.ts:90-113 route; organizationPage :183-260",
+    "builder_instruction": "Rewrite the comment at :83-89 for the setter (console_set_organization_status, reason and note, ADR 0080). In organizationPage, read the grantee's status with the grant names so C11/C12 can render. The status is read as the platform administrator; tp_app SELECT on organization already covers it."
+   },
+   {
+    "section": "13 'Not touched: packages/billing/src/standing.ts'",
+    "code_now": "standing.ts:7-9 says 'A firm's unpaid invoice refuses no run before milestone 12 (practice_run_refusal reads only a practice's owning group, and firms are billed then)'. After this migration practice_run_refusal also reads a grantee's status, so the parenthesis is false. account-standing.test.tsx:188 has the same parenthesis.",
+    "design_says": "standing.ts unchanged",
+    "builder_instruction": "Make a comment-only edit at standing.ts:8: '(practice_run_refusal never reads a grantee's billing standing, docs/adr/0080, and firms are billed then)'. The mapping logic does not change. Change the same words in account-standing.test.tsx:188, which the design already edits. Report it as an improvement in an allowed package."
+   },
+   {
+    "section": "6 / 10 (BIL-05 matrix row)",
+    "code_now": "test-matrix.md:252 and matrix.ts:420-425 (BIL-05) say 'a firm is never told runs have stopped or will'. B4/B9 now tell a firm suspended by PaidWhole that its people start no new work through its grants. B4/B9 avoid the word 'runs', so the literal claim still holds.",
+    "design_says": "BIL-05's row changes in one phrase only ('with no date')",
+    "builder_instruction": "Keep the 'with no date' change. When editing the row, narrow the firm clause to billing's hold, e.g. 'a firm is never told its unpaid invoice stops runs', identically in matrix.ts. Report it as a wording change in a document."
+   },
+   {
+    "section": "11 (Appendix C pointer)",
+    "code_now": "Appendix C's introduction is generator text at packages/db/src/domain-model/render.ts:468, not an input file. Neither 098636e3 nor integrate adds the pointer to packages/db/functions. No test pins the sentence.",
+    "design_says": "one sentence in Appendix C's introduction, if #42 has not added it (listed under inputs)",
+    "builder_instruction": "If you add it, edit render.ts:468 (append 'Each function's full definition, owner and privileges are in packages/db/functions (docs/adr/0068).'), regenerate, and list render.ts in section 13."
+   },
+   {
+    "section": "13 runbook; 4.3 catalog citation; 5.5 accountStanding range",
+    "code_now": "docs/runbooks/billing.md: the section is '## A suspension that should have ended' at :64, and 'A suspension is computed, not stored' is :66-69. catalog.ts's rule 'row-level security enabled means forced; a table without it is global, and the application role may only read it' is :22-23 (check at :350). accountStanding is billing.ts:231-312.",
+    "design_says": "runbook :67-70; catalog.ts:26-27; accountStanding :231-309",
+    "builder_instruction": "Put the runbook paragraph after billing.md:69, inside '## A suspension that should have ended'. Only the citations moved; the rest is unchanged."
+   },
+   {
+    "section": "5.3 / 5.4 / 5.5 (web-bundled worker modules)",
+    "code_now": "apps/worker/src/billing/refusal.ts and account.ts (via @tp/worker/billing) and packets/readiness.ts (via @tp/worker/packets) are bundled by the web. apps/worker/src/web-entries.test.ts refuses the @tp/db main entry in any module they reach (15189a50 narrows the walk after the merge).",
+    "design_says": "not mentioned",
+    "builder_instruction": "practiceRunRefusalFor in refusal.ts keeps the RefusalClient type and no new value import. Any import added to account.ts, readiness.ts or dunning.ts comes from @tp/db/runtime, never '@tp/db'. worker.ts may keep its '@tp/db' import, since it is not web-bundled. Write the gate's packet_export_refused with recordAuditEvent from '@tp/db/runtime' as export.ts:127 does: purpose 'organization_suspended', requestId job.id, inside the same withJobScope as the refusal check."
+   },
+   {
+    "section": "Verified unchanged (no action)",
+    "code_now": "From a database migrated from empty at 098636e3, pg_get_functiondef gives: practice_run_refusal (plpgsql STABLE DEFINER, scope check then organization_run_refusal(p.organization_id) WHERE organization_id IS NOT NULL; EXECUTE tp_owner,tp_app); refuse_new_work_while_suspended (DEFINER, 55000; owner only); practice_grants (returns grant_id, grantee_name, grantee_kind, roles jsonb, starts_at, ends_at, revoked_at, agreement_id; grant.revoke check; tp_app); packet_export_refusal_codes (12 codes; tp_app); organization_run_refusal (sql DEFINER, the three sentences the design quotes; owner only). Their function files and the billing.sql/deadline migrations have no diff e908c21->098636e3 or 098636e3->integrate. billing.sql :238/:248/:264/:268/:281/:297/:310-318/:405/:408; tenancy.sql :19-27, :95-116, :490-496, :595-597; audit :15, :54; tenancy_hardening :118; console.ts :90-113 (:100-107); console page :54-76, :324; invoke.ts :294-300, :433, :499-504, :269-281; runs.ts :10-20; uploads.ts :112, :117, :231, :243, :325-341, :364; triage.ts :440/:448; queries.ts:547; worker.ts:146-151; refusal.ts:14; public.ts:30; practice.ts:252; home page :137, :164-171; settings.ts :46-48, :198-243; dunning.ts :93-113, :141-185, :211-221, :234-237; worker.test.ts:325; billing.db.test :313, :340-341, :662-676; console-routes.db.test :679-701 (:685 runs in a job's scope, so R6); billing-routes.db.test :414 (reads home.suspension, which is renamed to hold), :415, :430, :441, :489, :504, :550; define.ts :146-160; world.ts :384-432; queue.ts :26-40, :60-71; scope.ts :142-160 (union of roles), :260-285; registry.ts :628-638; matrix.ts :420-431; ADR 0050 :67-72, :118 (amendments from :128); ADR 0055 :59, :68-69 (amendment :174); ADR 0009 :42-43; seed.ts :82-100. A compile probe of sections 4.2, 4.3 and practice_work_hold on 098636e3 ran clean, rolled back. app_actor_organization_ids() returns '{}' and never NULL, so D6's member test is sound in a job's scope. 20261108090000 is free on every branch.",
+    "design_says": "as written",
+    "builder_instruction": "No change. Build as designed for everything not named in another delta."
+   }
+  ],
+  "pr42_fix_round_watch": [
+   "The audit_event_record policy: no wip branch (fix-db, fix-harness, fix-infra, integrate) touches it. Its body at integrate's mail_streams.sql:863-870 is identical to 098636e3's :803-810. The reserved list ends at 'mail_stream_resumed' on both. Merge effect: nothing changes, and SS-01's DROP/CREATE stays valid. Re-check only if a later fix commit adds a reserved action. If one does, SS-01's CREATE POLICY must include it, or the merge silently un-reserves it.",
+   "Migration name and timestamp: integrate edits 20261107090000_mail_streams.sql in place (+225/-? lines: mail_recipient_canonical, mail_stream_cutoff, screening refusal and budget functions, window counts, grants list line 'mail_stream_cutoff(text)'). The name is unchanged, nothing touches organization, audit_event, dunning, practice_run* or packet_export*, and no new migration file is added. 20261108090000 still sorts last. Merge effect: no conflict in SS-01's migration. Its applied-checksum for #42's file differs only between #42's own heads.",
+   "console.ts, dunning.ts, practice.ts, packages/db/src/schema/tenancy.ts, areas.json, synth registry.ts, worker.ts, worker.test.ts, billing.db.test.ts, ADR 0050 and ADR 0055: no diff in any wip branch versus 098636e3. Merge effect: clean.",
+   "apps/web/src/lib/routes/settings.ts: integrate adds InvitationView.undeliveredReason (:875-950 at the users page). SS-01 edits only the grants area (:198-243). Merge effect: clean textual merge expected.",
+   "packages/db/src/runtime.ts: integrate adds `export { canonicalMailbox, canonicalMailboxParts } from './mail-address';` at :26. If SS-01 follows the EXP delta (export via schema/index.ts), there is no conflict. If a builder edits runtime.ts anyway, expect an adjacent-line conflict.",
+   "docs/product/test-matrix.md and packages/synth/src/cases/matrix.ts: integrate rewrites SEC-18, SEC-19, SCR-21 and SCR-22 (matrix :176-212, matrix.ts :221-233 and :341-353), and 6f23c42b regenerates the four fixtures' expected.json. SS-01 adds BIL-07 to BIL-10 after BIL-06 (:253, matrix.ts :431). Merge effect: clean. Run pnpm synth --all after the merge so fixtures.test.ts holds.",
+   "docs/product/domain-model.md and packages/db/functions/*.sql: integrate regenerates both (14392ab1: 38 lines of the document, 13 function files of the mail and screening objects, SHA-256 b12150bb, approval blank). SS-01 regenerates the same document. Merge effect: domain-model.md WILL conflict. Resolve it by migrating a fresh database from empty on the merged tree and running pnpm db:domain-model --out --strict, never by hand-merging. Commit the function files before the founder signs. The function files SS-01 changes do not overlap integrate's.",
+   "packages/db/src/screening.db.test.ts and mail.db.test.ts: integrate changes their pinned definer lists (screening_run_bounce_budget removed, new mail functions). SS-01 does not touch them, since its new functions match neither the %screening%/%marketing% filter nor the mail map. Merge effect: none for SS-01.",
+   "apps/worker/src/web-entries.test.ts (15189a50): after the merge the guard walks from Next's entries. SS-01's new imports in web-bundled worker modules (refusal.ts, account.ts, readiness.ts) must use @tp/db/runtime, which the guard enforces both before and after.",
+   "claude/build-platform 085299bd: merge-base with this branch is e908c214. 098636e3...085299bd changes only 6 test files (rerun-rule.property.test.ts, denial-letter.test.ts, verifier.test.ts, worksheet.test.ts, db-shards.test.ts timeouts, workflows.test.ts timeouts), none of this design's files or objects. Merging it in is clean for SS-01."
+  ],
+  "notes": "Verdict: build the design with 15 deltas. All 15 are moved line numbers, or files and maps the design missed. None changes the decision, the SQL or the words of section 6, except one wording addition and one matrix phrase, both noted below.\n\n**Branch state**\n- #42's remote branch is at 098636e3, which is this branch's base. The design's \"#42 head 15189a50\" lives only on origin/co-001/wip-pr42-integrate.\n- The fix branches are named wip-pr42-fix-db, wip-pr42-fix-harness and wip-pr42-fix-infra. The names in the task (wip-pr42-db, -harness, -infra) do not exist on origin.\n\n**How I checked**\n- Database `tp_ss01_reread_1`, migrated from empty at 098636e3 with `pnpm db:migrate` (45 migrations), read with `pg_get_functiondef`, `pg_policy` and `proacl`. It is now dropped.\n- A compile probe of sections 4.2, 4.3 and the `practice_work_hold` body, run in a rolled-back transaction, compiled clean: `/tmp/claude-0/-home-user-PhysicalTherapy/2d6572d6-2076-5676-9f8f-7a15571707e4/scratchpad/ss01/probe/compile.sql`.\n- I ran no repository check (typecheck, lint, test) and wrote nothing in /home/user/ss01.\n- Progress file: `/tmp/claude-0/-home-user-PhysicalTherapy/2d6572d6-2076-5676-9f8f-7a15571707e4/scratchpad/progress/ss01-reread.md`. It holds every section checked and every delta.\n\n**Wording changes the builders will need (to report)**\n- `REFUSAL_SUMMARY.organization_suspended` needs new words: \"new work had stopped for the practice's organization\", taken from J1 and E1.\n- The firm clause of BIL-05's matrix row should be narrowed to billing's hold.\n\n**Synth case numbering**\nLANES.md's \"module 15\" is the reservation label. #56's BIL-05 and BIL-06 use `none(11, \u2026)` (the first argument is `completesIn`), so the design's `none(11, \u2026)` is consistent.\n\n**Proposals for open items (not deltas)**\n1. A held grantee's person can still bring the practice's own monitor or reconcile job forward, through the pricing location (`pricing_settings.set`) or a reconciliation template save (`posting.reconcile`). Refusing that would mean gating settings writes, which is a redesign. Record it in ADR 0080's known limits.\n2. `uploader.tsx:296` titles the paused gate \"Uploads are not open yet\" above \"Uploads are paused: \u2026\". This predates this design, which leaves the file unchanged. Raise it with the UX/brand reviewer.\n3. G1 and G2 start \"In force.\" with a capital, while the grants column reads lowercase \"in force\" (`agreements/page.tsx:111`) and C11/C12 are lowercase. Raise it with the UX/brand reviewer."
+ },
+ {
+  "summary": "The SS-01 database slice is built, committed and pushed to co-001/ss-01-suspension-refusal at 7da01015 (on top of 098636e3). It is in two commits.\n\n- d213416b, the tests first. Two new db test files and extensions to two existing ones. On 098636e3, 39 tests failed (the other 36 in those files passed).\n- 7da01015, the migration and what goes with it:\n  - the one migration, packages/db/migrations/20261108090000_suspension_refusal.sql, covering design \u00a74.1 to \u00a74.8;\n  - the Drizzle mirror and the two reason lists in tenancy.ts, exported through schema/index.ts;\n  - areas.json;\n  - one sentence added to Appendix C in render.ts;\n  - the regenerated docs/product/domain-model.md and packages/db/functions: 7 files added, 6 changed, organization_run_refusal.sql removed.\n\nThe migration was written through the marker route. The marker was created and removed in a trap for each write, and it was gone before each commit. All new and packages/db tests pass on fresh PostgreSQL 18 databases.\n\nThe domain model's Cross-checks block reports 0 differences and 0 catalogProblems. Its SHA-256 is 12b0e87d557359b0a390979e6ca28dc2b7c77979e4d2bb3cdd544d61a5e8b2c4. The approval line is left blank.\n\nHazard review of the changed function files (new-migration skill list): no hazard found.\n- Every definer sets search_path pg_catalog, public, pg_temp, is owned by tp_owner, and has REVOKE ALL FROM PUBLIC.\n- No function sets app.practice_ids or app.actor_id, runs dynamic EXECUTE, adds LEAKPROOF or removes STRICT.\n- No volatility changed, no owner changed, and no scope function gained an overload.\n- New grants go only to tp_app, on the three new functions. practice_grants was dropped and created again with its earlier tp_app grant.\n- New callers: app_actor_platform_permitted is now called by the policy organization_status_change_platform_read, and reject_change is now the trigger function of the two new append-only triggers on organization_status_change.\n\nThe working databases (tp_ss01_d_1 and tp_ss01_d_2) were dropped.",
+  "head": "7da01015",
+  "files": [
+   "/home/user/ss01/packages/db/migrations/20261108090000_suspension_refusal.sql",
+   "/home/user/ss01/packages/db/src/suspension.db.test.ts",
+   "/home/user/ss01/packages/db/src/organization-status.db.test.ts",
+   "/home/user/ss01/packages/db/src/hardening.db.test.ts",
+   "/home/user/ss01/packages/db/src/migrate.db.test.ts",
+   "/home/user/ss01/packages/db/src/schema/tenancy.ts",
+   "/home/user/ss01/packages/db/src/schema/index.ts",
+   "/home/user/ss01/packages/db/domain-model/areas.json",
+   "/home/user/ss01/packages/db/src/domain-model/render.ts",
+   "/home/user/ss01/docs/product/domain-model.md",
+   "/home/user/ss01/packages/db/functions/ (added: run_starting_permissions, practice_work_hold, practice_work_refusal, practice_run_refusal_for, practice_run_hold, console_set_organization_status, organization_status_rules; changed: practice_run_refusal, refuse_new_work_while_suspended, practice_grants, packet_export_refusal_codes, app_actor_platform_permitted (new policy caller line), reject_change (new trigger caller lines); removed: organization_run_refusal)",
+   "/tmp/claude-0/-home-user-PhysicalTherapy/2d6572d6-2076-5676-9f8f-7a15571707e4/scratchpad/progress/ss01-db.md",
+   "/tmp/claude-0/-home-user-PhysicalTherapy/2d6572d6-2076-5676-9f8f-7a15571707e4/scratchpad/ss01/20261108090000_suspension_refusal.sql"
+  ],
+  "checks": [
+   {
+    "command": "DATABASE_URL=... flock /tmp/laneb-heavy.lock pnpm exec vitest run --project db packages/db/src/{suspension,organization-status,hardening,migrate}.db.test.ts (on 098636e3, before the migration)",
+    "passed": false,
+    "note": "Failing first as intended: 39 failed, 36 passed (log scratchpad/ss01/base-fail.log)."
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock pnpm exec vitest run --project db packages/db/src/suspension.db.test.ts packages/db/src/organization-status.db.test.ts",
+    "passed": true,
+    "note": "37 of 37 passed after the migration."
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock pnpm exec vitest run --project db packages/db",
+    "passed": true,
+    "note": "23 files, 1528 tests. Includes catalog, cross-tenant, migrate (owner-table list and the new preflight case), hardening (reserved actions), function-files, domain-model drift, mail, screening and location."
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock pnpm exec vitest run --project unit packages/db",
+    "passed": true,
+    "note": "17 files, 274 tests."
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock pnpm typecheck",
+    "passed": true,
+    "note": "All 22 projects passed."
+   },
+   {
+    "command": "NODE_OPTIONS=--max-old-space-size=6144 flock /tmp/laneb-heavy.lock pnpm lint",
+    "passed": true,
+    "note": "1,638 files, 0 errors, 0 warnings."
+   },
+   {
+    "command": "pnpm db:domain-model --out --strict (fresh PG 18 database tp_ss01_d_2)",
+    "passed": true,
+    "note": "Cross-checks: 0 differences, catalogProblems 0. 13 function files written, 1 removed. Divergences: 23 to approve (unchanged); informational now 51 tables and 150 columns."
+   },
+   {
+    "command": "pnpm -s db:domain-model --check",
+    "passed": true,
+    "note": "The document and the 375 function files match the schema exactly."
+   },
+   {
+    "command": "pnpm -s db:domain-model --check --require-approval",
+    "passed": false,
+    "note": "Expected: the approval line is blank until the founder signs SHA-256 12b0e87d557359b0a390979e6ca28dc2b7c77979e4d2bb3cdd544d61a5e8b2c4."
+   },
+   {
+    "command": "git push -u origin co-001/ss-01-suspension-refusal",
+    "passed": true,
+    "note": "The pre-push hook passed: fixture guard, X12 search and gitleaks."
+   }
+  ],
+  "open_items": [
+   "The other builders' work is untouched and still needed. EXPORT_REFUSALS in worker export.ts, PACKET_EXPORT_REFUSALS and ExportReadinessReason in readiness.ts, REFUSAL_SUMMARY and EXPORT_REFUSAL_TEXT, CONTINUES_STARTED_WORK and the registry test, and all route, console and seed tests. Typecheck passes today only because nothing in TypeScript reads the widened database list yet. apps/worker/src/packets/export-attempts.db.test.ts will fail until PACKET_EXPORT_REFUSALS gains organization_suspended.",
+   "These are the web builders' to update, because their tests pin the old sentences: console-routes.db.test.ts, billing-routes.db.test.ts, billing.db.test.ts, worker.test.ts and define.ts. The direct status UPDATE that console.ts does today still works (D11), but console-routes.db.test.ts:679-701 expects the old behaviour on closed and internal organizations, which Postgres now refuses with 23514.",
+   "After #42's new head is merged, regenerate domain-model.md from a database migrated from empty on the merged tree (pnpm db:domain-model --out --strict). Do not hand-merge it. The SHA-256 will change. Also check whether #42 has added any reserved audit action that the recreated audit_event_record policy must include.",
+   "Known limit, held to the design: the trigger's packet_version and digest mappings are tested on scratch tables of the same names, not on real rows. A real packet export blocked by the gate is the worker builder's test (export-attempts.db.test.ts).",
+   "Proposal for ADR 0080 known limits, per the delta. A held grantee's person can still bring the practice's monitor forward by setting the pricing location, or its reconcile by saving the template. Refusing settings writes would be a redesign.",
+   "Next schema PR after this one is deployed: REVOKE UPDATE (status), INSERT (status) ON organization FROM tp_app (D11; design 4.8)."
+  ],
+  "differences_from_design": [
+   "Setter: a NULL reason is now refused with organization_status_change_reason. The design's literal IN check let a NULL through, because NOT (NULL) is NULL; my test caught it and the check is now wrapped in coalesce(..., false).",
+   "Setter: 'closed' in the current status, from_status or to_status raises organization_closed_by_closure_only. The design names only the closed organization; I made the closed check also cover a requested move into or out of closed.",
+   "The database tests live in packages/db/src (suspension.db.test.ts and organization-status.db.test.ts), not in apps/web's suspension-refusal.db.test.ts, because this builder may not touch apps/. Trigger-table inserts run as the owner role with app.actor_id set to the person or job. Uploads also go through tp_app in the person's own scope.",
+   "The practice's own staff in the trigger tests is G's billing_manager, not the practice administrator. practice_admin is allowed none of the five run-starting permissions, so its inserts would be refused by the tables' own policies, not by the hold.",
+   "Improvement of the same kind: migrate.db.test.ts gains a test of the \u00a74.1 preflight. An internal organization that is not active refuses the migration with the design's sentence, and the migration applies once the owner sets it active.",
+   "practice_run_refusal_for checks scope first, then the parameter (22023), as the design orders it."
+  ],
+  "interfaces": "FUNCTIONS (all SET search_path = pg_catalog, public, pg_temp; owner tp_owner; REVOKE ALL FROM PUBLIC):\n- run_starting_permissions() RETURNS text[]. sql IMMUTABLE, not a definer, owner only. Returns ['mapping.edit','case.work','posting.reconcile','phi.export','file.upload'].\n- practice_work_hold(target_practice uuid) RETURNS TABLE(source text, organization_id uuid, organization_kind text, cause text, reason text, since timestamptz, stopped text[]). sql STABLE DEFINER, owner only.\n- practice_work_refusal(target_practice uuid, wanted text) RETURNS text. sql STABLE DEFINER, owner only.\n- practice_run_refusal(target_practice uuid) RETURNS text. Signature and grant unchanged (tp_app). 42501 outside scope. Same as practice_work_refusal(target, NULL): any run-starting work.\n- practice_run_refusal_for(target_practice uuid, wanted text) RETURNS text. GRANT tp_app. 42501 'the practice is not in this transaction''s scope' outside scope; 22023 invalid_parameter_value 'a run refusal is asked for a run-starting permission' when wanted is null or not in run_starting_permissions(). Otherwise returns the sentence or null.\n- practice_run_hold(target_practice uuid) RETURNS TABLE(source, organization_id, organization_kind, cause, reason, since, stopped). GRANT tp_app. 42501 outside scope. Zero rows means nothing is held.\n  - source: 'owner' or 'grantee'.\n  - cause for owner: 'suspended' or 'nonpayment' (members of the owning organization only), 'on_hold' (anyone else, including a job), 'closed' (everyone).\n  - cause for grantee: 'suspended' or 'closed'.\n  - reason: the stored suspension reason, only for an owner 'suspended' to members and for a grantee 'suspended'; otherwise null.\n  - since: status_since for suspended or closed, billing_standing.suspended_since for nonpayment or on_hold-by-nonpayment.\n  - stopped: null for owner rows; for a grantee row, the stopped permissions in run_starting_permissions() order (always non-empty). No organization name is ever returned.\n- console_set_organization_status(target_organization uuid, from_status text, to_status text, status_reason text, note text) RETURNS boolean. plpgsql VOLATILE DEFINER, GRANT tp_app.\n  - Errors:\n    - 42501 'only a platform administrator suspends or reinstates an organization', unless a person with platform permission organization.manage;\n    - P0002 'no such organization' for a missing or internal organization;\n    - 23514 CONSTRAINT organization_closed_by_closure_only when the current, from or to status is closed;\n    - returns false, writing nothing, for (suspended -> active) on an organization already active;\n    - 23514 CONSTRAINT organization_status_changed_meanwhile when the current status differs from from_status;\n    - 23514 CONSTRAINT organization_status_change_reason unless one of these moves: active->suspended with a suspension reason, suspended->suspended with a suspension reason, or suspended->active with a reinstatement reason (null and unpaid_invoice are refused);\n    - returns false for suspended->suspended with the same reason and an empty note;\n    - 23514 CONSTRAINT organization_status_change_note when the note is over 500 characters or contains a control character.\n  - Writes: organization.status and status_reason (the trigger stamps status_since); an organization_status_change row with the note trimmed and an empty one stored null; and audit_event (actor_id app_actor_id(), actor_kind 'user', action 'organization_suspended' for a suspension or change of reason, or 'organization_reinstated', object_type 'organization', object_id the target, purpose the reason). Returns true.\n- practice_grants(target_practice uuid): dropped and created again; tp_app; the same check (grant.revoke) and order. Returns (grant_id, grantee_name, grantee_kind, roles jsonb, starts_at, ends_at, revoked_at, agreement_id, grantee_status text), with grantee_status ('active','suspended','closed') last.\n- packet_export_refusal_codes(): 13 codes, 'organization_suspended' last after 'verifier_failed'; tp_app.\n- refuse_new_work_while_suspended(): trigger, DEFINER, no grant; the seven triggers are unchanged.\n  - Table map: pricing_run mapping.edit; audit_report and report_document case.work; roi_statement posting.reconcile; source_document file.upload; packet_version phi.export; digest NULL (any stopped permission).\n  - Any other table raises XX000 'refuse_new_work_while_suspended names no permission for <table>'.\n  - Raises 55000 with the sentence.\n- organization_run_refusal(uuid): DROPPED.\n- organization_status_rules(): trigger BEFORE INSERT OR UPDATE OF status, status_reason ON organization; plpgsql, not a definer. Outside tp_owner:\n  - insert non-active: 23514 CONSTRAINT organization_created_active 'an organization is created active';\n  - a move into or out of closed: 23514 CONSTRAINT organization_closed_by_closure_only 'a closed organization stays closed, and only its closure closes one'.\n  - It stamps status_since := now() on a status change, sets it on a non-active insert (coalesce) and to NULL on an active insert, and nulls status_reason unless the status is suspended.\n55000 SENTENCES (R1 to R6, exact):\n- R1: PaidWhole has suspended your organization, so no new work starts at this practice until PaidWhole reinstates your organization; everything here stays readable\n- R2: the practice's organization is closed, so no new work starts here; everything here stays readable\n- R3: an invoice of your organization has been unpaid for 30 days since its payment failed, so no new work starts at this practice until it is paid; everything here stays readable\n- R4: PaidWhole has suspended your organization, so you start no new work here through its grant until PaidWhole reinstates your organization; you can still read this practice's records\n- R5: your organization is closed, so you start no new work here through its grant\n- R6: the PaidWhole account of the practice's organization is on hold, so no new work starts here; everything here stays readable\nCOLUMNS: organization.status_reason text CHECK organization_status_reason IN ('customer_request','security_hold','agreement_ended'); organization.status_since timestamptz; CHECK organization_status_reason_suspended (reason null or status suspended); CHECK organization_internal_active (kind <> 'internal' OR status = 'active'). tp_app reads both through its table SELECT and has no write on either. tp_billing: GRANT SELECT (status_reason, status_since).\nTABLE organization_status_change:\n- Columns: id uuid pk, organization_id uuid NOT NULL fk, from_status and to_status in ('active','suspended'), reason (a suspension reason when to_status is suspended, else resolved or in_error; constraint organization_status_change_reason), note (1 to 500 characters, no control characters, or null; organization_status_change_note), changed_by uuid NOT NULL fk \"user\", at timestamptz default now(); CHECK organization_status_change_moves.\n- Index (organization_id, at DESC). Append-only (reject_change, P0001) and no truncate.\n- FORCE RLS. Policies: organization_status_change_owner FOR ALL TO tp_owner; organization_status_change_platform_read FOR SELECT TO tp_app USING (app_actor_platform_permitted('organization.manage')). GRANT SELECT TO tp_app only. No other role has any privilege.\n- A suspension's own row has from_status 'active' and at = organization.status_since (one now()).\nAUDIT: audit_event_record (tp_app INSERT) is recreated from mail_streams.sql:804-810 at 098636e3, with 'organization_suspended' and 'organization_reinstated' appended to the reserved list.\nTYPESCRIPT (packages/db/src/schema/tenancy.ts, exported through schema/index.ts, so available from '@tp/db' and '@tp/db/runtime'):\n- SUSPENSION_REASONS = ['customer_request','security_hold','agreement_ended'] as const; type SuspensionReason;\n- REINSTATEMENT_REASONS = ['resolved','in_error'] as const; type ReinstatementReason;\n- organization.statusReason and statusSince;\n- table organizationStatusChange; type OrganizationStatusChangeRow.\nruntime.ts and index.ts are not edited.",
+  "wording": [
+   "R1 to R6 (design 6.1), the 55000 message and the return value of practice_run_refusal and practice_run_refusal_for, read after 'Not started: ', after 'Uploads are paused: ' and in the JSON 402 reason. Exact text in interfaces.",
+   "Preflight (4.1), migration error: 'the internal organization must be active before migration 20261108090000; set it active as the owner, then migrate again'",
+   "4.2 trigger (database message, mapped by the route): 'a closed organization stays closed, and only its closure closes one' (organization_closed_by_closure_only); 'an organization is created active' (organization_created_active)",
+   "D8 setter (database messages, mapped by the console route): 'only a platform administrator suspends or reinstates an organization' (42501); 'no such organization' (P0002); 'the organization''s status changed since it was read' (organization_status_changed_meanwhile); 'a suspension takes a suspension reason, and a reinstatement a reinstatement reason' (organization_status_change_reason)",
+   "V1 parameter error (22023), developer-facing: 'a run refusal is asked for a run-starting permission'",
+   "D17 fail-closed (XX000), developer-facing: 'refuse_new_work_while_suspended names no permission for <table>'",
+   "Domain model Appendix C introduction (render.ts:468), added: 'Each function's full definition, owner and privileges are in packages/db/functions (docs/adr/0068).'",
+   "Tenancy area's about (areas.json), appended: ', and PaidWhole's suspensions and reinstatements of an organization, with their reasons.'"
+  ]
+ },
+ {
+  "summary": "Builder W (worker) for SS-01 is done, with one cross-builder dependency still open. The repository typecheck fails in apps/web until the web builder adds organization_suspended to two maps in apps/web/src/lib/packets/export-attempts.ts: EXPORT_REFUSAL_TEXT (E1, added last) and REFUSAL_SUMMARY (the J1 words). Tests were written first: ef5017bf holds them, 26 failing on the base (21 unit, 5 db), and 1f5769cb holds the code. Both commits are pushed to co-001/ss-01-suspension-refusal.\n\nWhat changed:\n- refusal.ts and public.ts: practiceRunRefusalFor(client, practiceId, permission) runs SELECT practice_run_refusal_for($1, $2). It keeps the RefusalClient type and adds no value import. practiceRunRefusal stays for the worker gate.\n- worker.ts: a new exported refusedByHold(scope, type, payload, jobId) is the gate. It still asks only practice_run_refusal in the job's scope, so only the owner's hold applies. For a refused packet_export it also writes packet_export_refused on the payload's version with purpose organization_suspended and requestId the job ID, using recordAuditEvent from @tp/db/runtime in the same withJobScope transaction. The export's page then reads refused with that code.\n- readiness.ts: PACKET_EXPORT_REFUSALS gains organization_suspended last, and ExportReadinessReason excludes it.\n- export.ts: EXPORT_REFUSALS gains organization_suspended: 'ORGANIZATION_SUSPENDED'.\n- dunning.ts (SS-08): dunningEffect({kind, status, standing}) returns, first match wins, 'none' for any non-group or closed group, 'held' for a suspended group, 'billing_held' for a group whose standing is suspended, else 'runs'. dunningMessage takes a required last argument, effect. sendOne reads the organization's kind and status and its billing_standing as tp_billing at send time, after the claim and the invoice read. The stage machine, audits and outbox are unchanged.\n- account.ts: organizationBilling and consoleBillingStatus also select status_reason and status_since; OrganizationBilling and ConsoleBillingRow gain statusReason and statusSince.",
+  "head": "1f5769cb",
+  "files": [
+   "/home/user/ss01/apps/worker/src/billing/refusal.ts",
+   "/home/user/ss01/apps/worker/src/billing/public.ts",
+   "/home/user/ss01/apps/worker/src/billing/dunning.ts",
+   "/home/user/ss01/apps/worker/src/billing/account.ts",
+   "/home/user/ss01/apps/worker/src/worker.ts",
+   "/home/user/ss01/apps/worker/src/packets/readiness.ts",
+   "/home/user/ss01/apps/worker/src/packets/export.ts",
+   "/home/user/ss01/apps/worker/src/billing/dunning-words.test.ts",
+   "/home/user/ss01/apps/worker/src/billing/billing.db.test.ts",
+   "/home/user/ss01/apps/worker/src/packets/export-attempts.db.test.ts",
+   "/home/user/ss01/apps/worker/src/worker.test.ts"
+  ],
+  "checks": [
+   {
+    "command": "flock /tmp/laneb-heavy.lock npx vitest run --project unit apps/worker/src/billing/dunning-words.test.ts apps/worker/src/worker.test.ts (failing first)",
+    "passed": true,
+    "note": "Fails as intended on the base: 21 failed of 49 (20 dunning-words cases, 1 new worker gate test)."
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock npx vitest run --project db apps/worker/src/billing/billing.db.test.ts apps/worker/src/packets/export-attempts.db.test.ts (failing first)",
+    "passed": true,
+    "note": "Fails as intended on the base: 5 failed of 37 (three BIL-10 send cases, the gate's refused-export row, the codes test). The 'reinstated between the stage and the send' case passes on the base, because today's words are right there; it guards against a regression."
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock npx vitest run --project unit apps/worker",
+    "passed": false,
+    "note": "746 of 747 pass. The one failure is web-entries.test.ts, which finds the @tp/db main entry in 13 files reached from apps/worker/src/runtime.ts. None of those files is changed here. The delta says #42's 15189a50 narrows that walk, so it should clear after the merge. All my tests pass."
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock npx vitest run --project db apps/worker/src/billing/billing.db.test.ts",
+    "passed": true,
+    "note": "20 of 20 pass."
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock npx vitest run --project db apps/worker/src/packets/export-attempts.db.test.ts",
+    "passed": true,
+    "note": "The whole file passes, in the combined run with billing.db.test.ts."
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock pnpm typecheck",
+    "passed": false,
+    "note": "21 of 22 projects pass, apps/worker included. apps/web fails only at export-attempts.ts:30 (EXPORT_REFUSAL_TEXT) and :215 (REFUSAL_SUMMARY), both missing organization_suspended. Those are the web builder's to add; I may not touch apps/web."
+   },
+   {
+    "command": "NODE_OPTIONS=--max-old-space-size=6144 flock /tmp/laneb-heavy.lock pnpm lint",
+    "passed": true,
+    "note": "1,642 files, 0 errors, 0 warnings."
+   },
+   {
+    "command": "git push -u origin co-001/ss-01-suspension-refusal",
+    "passed": true,
+    "note": "The pre-push hook passed (fixture guard and gitleaks). c4ccb7e3..1f5769cb."
+   }
+  ],
+  "interfaces": "@tp/worker/billing (apps/worker/src/billing/public.ts):\n- practiceRunRefusalFor(client: { query(text, values?) }, practiceId: string, permission: string): Promise<string | null>. It runs SELECT practice_run_refusal_for($1, $2) AS reason. Postgres raises 22023 for a permission not in run_starting_permissions() and 42501 outside the scope.\n- dunningEffect(org: DunningOrganization): DunningEffect.\n- type DunningEffect = 'runs' | 'billing_held' | 'held' | 'none'.\n- type DunningOrganization = { kind: 'group' | 'firm' | 'internal'; status: 'active' | 'suspended' | 'closed'; standing: 'good' | 'past_due' | 'suspended' }.\n- dunningMessage(step, to, recipientUserId, row, link, effect: DunningEffect). The new last argument is required.\n- OrganizationBilling and ConsoleBillingRow gain statusReason: SuspensionReason | null and statusSince: Date | null. SuspensionReason is a type import from @tp/db/runtime.\n\napps/worker/src/worker.ts:\n- export refusedByHold<T extends JobType>(scope: PracticeScope<ScopeClient>, type: T, payload: JobPayload<T>, jobId: string): Promise<boolean>. It asks practice_run_refusal(payload.practice_id). For packet_export it then calls recordAuditEvent with {action 'packet_export_refused', objectType 'packet_version', objectId payload.packet_version_id, practiceId, purpose 'organization_suspended', requestId jobId}.\n- The refused run still records outcome 'refused' with errorCode 'ORGANIZATION_SUSPENDED'.\n\n@tp/worker/packets:\n- PACKET_EXPORT_REFUSALS has 13 codes, ending 'verifier_failed', 'organization_suspended'.\n- ExportReadinessReason = Exclude<PacketExportRefusal, 'verifier_failed' | 'organization_suspended'>.\n- EXPORT_REFUSALS.organization_suspended = 'ORGANIZATION_SUSPENDED'.",
+  "wording": [
+   "SS-08 (design section 7). `{invoice}` is 'invoice SIM-0002' or 'an invoice', `{Invoice}` is 'Invoice SIM-0002' or 'An invoice', `{owed}` is the amount, `{suspends}` is 'YYYY-MM-DD at HH:MM UTC'. Lines are listed in order and separated by ' | '. Every message also carries one link, the billing page.",
+   "SS-08, effect `runs`, unchanged from today, payment_failed: subject 'A payment failed' | 'The payment for {invoice} ({owed}) failed.' | 'Update the payment method or pay the invoice before {suspends}; from then new runs stop until it is paid.'",
+   "SS-08, `runs`, second_notice and third_notice: subject 'An invoice is still unpaid' | '{Invoice} ({owed}) is still unpaid.' | 'New runs stop on {suspends} unless it is paid.'",
+   "SS-08, `runs`, final_notice: subject 'Final notice before new runs stop' | 'Final notice: {invoice} ({owed}) is unpaid.' | 'New runs stop on {suspends}: pricing, monitoring, packet exports and reports. Your data stays readable.'",
+   "SS-08, `runs` and `billing_held`, suspended: subject 'New runs have stopped until an invoice is paid' | '{Invoice} ({owed}) has been unpaid for 30 days since its payment failed, so new runs have stopped.' | 'Your data stays readable. Runs start again as soon as the invoice is paid.'",
+   "SS-08, `runs`, reinstated: subject 'New runs have started again' | '{Invoice} is paid. New runs have started again.'",
+   "SS-08, `billing_held`, payment_failed: subject 'A payment failed' | 'The payment for {invoice} ({owed}) failed.' | 'Update the payment method or pay the invoice from the billing page.' | 'New runs are already stopped until another unpaid invoice is paid.'",
+   "SS-08, `billing_held`, second_notice, third_notice and final_notice: subject 'An invoice is still unpaid' | '{Invoice} ({owed}) is still unpaid.' | 'Pay it, or update the payment method, from the billing page.' | 'New runs are already stopped until another unpaid invoice is paid.'",
+   "SS-08, `billing_held`, reinstated: subject '{Invoice} is paid' | '{Invoice} is paid.' | 'Another invoice is still unpaid, so new runs stay stopped until it is paid.'",
+   "SS-08, `held`, payment_failed: subject 'A payment failed' | 'The payment for {invoice} ({owed}) failed.' | 'Update the payment method or pay the invoice from the billing page.' | 'New runs are already stopped while PaidWhole's suspension of the organization lasts.'",
+   "SS-08, `held`, second_notice, third_notice and final_notice: subject 'An invoice is still unpaid' | '{Invoice} ({owed}) is still unpaid.' | 'Pay it, or update the payment method, from the billing page.' | 'New runs are already stopped while PaidWhole's suspension of the organization lasts.'",
+   "SS-08, `held`, suspended: subject 'An invoice has been unpaid for 30 days' | '{Invoice} ({owed}) has been unpaid for 30 days since its payment failed.' | 'New runs stay stopped until it is paid and PaidWhole reinstates the organization.'",
+   "SS-08, `held`, reinstated: subject '{Invoice} is paid' | '{Invoice} is paid.' | 'PaidWhole has also suspended the organization, so new runs stay stopped until PaidWhole reinstates it. The billing page says why and what to do next.'",
+   "SS-08, `none`, payment_failed: subject 'A payment failed' | 'The payment for {invoice} ({owed}) failed.' | 'Update the payment method or pay the invoice from the billing page.'",
+   "SS-08, `none`, second_notice, third_notice and final_notice: subject 'An invoice is still unpaid' | '{Invoice} ({owed}) is still unpaid.' | 'Pay it, or update the payment method, from the billing page.'",
+   "SS-08, `none`, suspended: subject 'An invoice has been unpaid for 30 days' | '{Invoice} ({owed}) has been unpaid for 30 days since its payment failed.' | 'Pay it from the billing page.'",
+   "SS-08, `none`, reinstated: subject '{Invoice} is paid' | '{Invoice} is paid.'",
+   "Not new words, a code: the export refusal code organization_suspended. The page words it as E1 through the web's EXPORT_REFUSAL_TEXT, which the web builder still has to add.",
+   "A test fixture string, not shown to anyone: R6 as the worker tests pin it, 'the PaidWhole account of the practice's organization is on hold, so no new work starts here; everything here stays readable'."
+  ],
+  "differences_from_design": [
+   "I put the gate in an exported function, refusedByHold in worker.ts, so the db test can drive the real gate on the worker's own login. Behaviour is the design's: one job-scope transaction, practice_run_refusal, then the audit for packet_export only.",
+   "The design leaves internal organizations out of SS-08's rule; dunningEffect treats any non-group, internal included, as 'none'. Internal organizations are never billed, so this changes no message anyone receives.",
+   "export.ts gains the EXPORT_REFUSALS entry, as the re-read delta requires. It was not in my file list, but widening the list would break worker typecheck without it.",
+   "In export-attempts.db.test.ts, the refusedFor helper also skips the request-side check for organization_suspended, as it already did for verifier_failed. This is needed by ExportReadinessReason's narrowing, and no test is loosened.",
+   "account.ts's reads run in the person's own transaction as tp_app (the file's existing design), not as tp_billing. tp_app's table SELECT covers the new columns. dunning.ts's send-time read does run as tp_billing, as D13 says."
+  ],
+  "open_items": [
+   "Web builder: add organization_suspended last in EXPORT_REFUSAL_TEXT (E1, export-attempts.ts:30, so approval.test.ts:110's order holds) and in REFUSAL_SUMMARY (export-attempts.ts:215, 'new work had stopped for the practice's organization'). Until then pnpm typecheck fails in apps/web, at those two lines only.",
+   "Web builder: invoke.ts and uploads.ts can now import practiceRunRefusalFor from @tp/worker/billing. The billing page and console can read statusReason and statusSince from organizationBilling and consoleBillingStatus.",
+   "web-entries.test.ts fails in the worker unit run because the walk reaches the @tp/db main entry through apps/worker/src/runtime.ts and 12 other files. I changed none of them, and the delta says #42's 15189a50 narrows that walk. Re-check after #42's head is merged.",
+   "Proposal, outside my files: a db test that runs the whole worker (startWorker with a real pool and a fake boss) on a held practice's packet_export. The gate is covered today by the mocked worker.test.ts and by refusedByHold on the real database.",
+   "The worker tests do not cover how the web shows organization_suspended (E1, J1); that is the web builder's test.",
+   "apps/worker/src/billing/billing.db.test.ts: BIL-10's 'reinstated before the send' case passes on the base, because today's words are right there. It is kept as a regression guard."
+  ]
+ },
+ {
+  "summary": "Builder C (console, section 15 slice 4) is built and pushed. The console's suspension route now goes only through console_set_organization_status. Its Zod input is a discriminated union over change (suspend, reason, reinstate); the reasons come from SUSPENSION_REASONS and REINSTATEMENT_REASONS; the note follows the CHECK's rule (one line, at most 500 characters); and suspend requires confirm='on'. The handler checks organization.manage through the platform route and refuses not-found and closed organizations; Postgres checks the person and the permission again. Postgres's refusals map to the design's words: P0002 to not found, organization_closed_by_closure_only to the closed message, organization_status_changed_meanwhile to X6, and organization_status_change_reason to X1-X3. The organization page shows: the card per kind (C1-C3); the reason select with C4's hint tied to it; the note (C5); the tick with the real counts (C6); the suspended lines (C7), where the person who suspended comes from the suspension's own history row and a third line names whoever changed the reason; the effect (C8); the note and the two one-click reinstate buttons (C9); the History table (C10, in ScrollTable); and the Grants card's State (C11, C12) from the grantee's status. O1 is on the console billing page. Tests first: the BIL-08 route block in console-routes.db.test.ts was rewritten as 5 tests. All 5 failed on 7da01015 (D's migration, the old console.ts) and all 32 in the file pass after. Two commits: c4ccb7e3 (route, page, components, tests) and 66931e4b (O1). O1 was committed only after the worker builder pushed ConsoleBillingRow.statusReason (1f5769cb).",
+  "head": "66931e4b",
+  "files": [
+   "/home/user/ss01/apps/web/src/lib/routes/console.ts",
+   "/home/user/ss01/apps/web/src/lib/routes/console-routes.db.test.ts",
+   "/home/user/ss01/apps/web/src/app/console/organizations/[organizationId]/page.tsx",
+   "/home/user/ss01/apps/web/src/app/console/billing/page.tsx",
+   "/home/user/ss01/apps/web/src/components/console/suspension-text.ts",
+   "/home/user/ss01/apps/web/src/components/console/suspension-text.test.ts",
+   "/home/user/ss01/apps/web/src/components/console/suspension-card.tsx"
+  ],
+  "checks": [
+   {
+    "command": "DATABASE_URL=postgres://postgres:test@localhost:5433/tp_ss01_console_1 pnpm exec vitest run --project db apps/web/src/lib/routes/console-routes.db.test.ts (before the console change, on 7da01015)",
+    "passed": false,
+    "note": "Failing first, as required: 5 failed, 27 passed"
+   },
+   {
+    "command": "same, after the change",
+    "passed": true,
+    "note": "32/32 passed"
+   },
+   {
+    "command": "pnpm exec vitest run --project db route-tests.0.db.test.ts route-tests.1.db.test.ts -t console.organization",
+    "passed": true,
+    "note": "62 passed (the route harness for console.organization and console.organization_status, with the new sample)"
+   },
+   {
+    "command": "pnpm exec vitest run --project unit apps/web/src/components/console",
+    "passed": true,
+    "note": "9/9"
+   },
+   {
+    "command": "pnpm typecheck",
+    "passed": false,
+    "note": "The only errors are in apps/web/src/lib/packets/export-attempts.ts:30 and :215 (organization_suspended missing from EXPORT_REFUSAL_TEXT and REFUSAL_SUMMARY). That is another builder's file, broken by the widened PACKET_EXPORT_REFUSALS; none of my files has an error. A web tsc run after O1 was likewise clean except that file."
+   },
+   {
+    "command": "NODE_OPTIONS=--max-old-space-size=6144 pnpm lint",
+    "passed": true,
+    "note": "1,642 files, 0 errors, 0 warnings"
+   },
+   {
+    "command": "pnpm lint:copy",
+    "passed": true,
+    "note": "524 files, brand words kept"
+   },
+   {
+    "command": "git push -u origin co-001/ss-01-suspension-refusal (pre-push hook)",
+    "passed": true,
+    "note": "Both pushes accepted"
+   }
+  ],
+  "differences_from_design": [
+   "C6 to C12 and O1 live in a new pure module, apps/web/src/components/console/suspension-text.ts, with an exact-words unit test, not in P's lib/billing/suspension-words.ts. My ownership rules out P's module, and the design names no function for them there. P's property test (BIL-09) can import them from this module.",
+   "Page data shape. organizationPage now returns organization.statusReason and statusSince; suspension, which is {reason, since, suspendedBy, reasonChangedBy, note} or null unless suspended; reach, which is {practices, grants}: for a group its active practices, for a firm the distinct practices of its grants in force, and the grants in force it holds; history, the latest 20 rows of {id, at, change: suspended|reinstated|reason_changed, reason, by (email), note}; and grants[].granteeStatus. The suspension is read from its own rows (at >= status_since), not from the 20-row history, so a long history never loses who suspended it.",
+   "C7 line 3 names the latest suspended-to-suspended row whose reason differs from the one before it, so a row that only adds a note never reads as a change of reason. The design says 'the latest row from suspended to suspended'. This is the stricter reading of its intent. Note is the latest non-null note of the current suspension.",
+   "Labels the design does not give: the reason select's visible label 'Reason'; the ActionForm field labels for refusals (reason 'Reason', note 'Note', confirm 'Confirmation', change 'Status'); and the heading 'Change the reason' above the reason form (C9's submit words). These are within brand.md and were checked by lint:copy.",
+   "Apostrophes are straight, as section 6.5 writes them, so text matches from the design hold.",
+   "I did not add the delta's REFUSAL_SUMMARY and EXPORT_REFUSAL_TEXT entries: those files are not mine (see open items)."
+  ],
+  "open_items": [
+   "Another builder's files (export-attempts.ts, P or E1's owner) break pnpm typecheck: EXPORT_REFUSAL_TEXT.organization_suspended (E1, placed last so approval.test.ts:110's order holds) and REFUSAL_SUMMARY.organization_suspended = 'new work had stopped for the practice's organization' are still missing in apps/web/src/lib/packets/export-attempts.ts.",
+   "Proposal (wording): a suspended-to-suspended row that keeps the reason and only adds a note reads 'Reason changed' in the History's Change column, which is C10's closed list. A fourth label, 'Note added', would be truer. The card's C7 line 3 already ignores such rows.",
+   "Proposal (wording): C8 has no zero-count variant, so a suspended group with no active practice reads 'New work is refused at its 0 practices for everyone\u2026'. A variant like C6's ('it has no active practice now') would read better.",
+   "BIL-09's e2e journey (c), for P/the integrator: the console firm's card uses the reason select id suspend-reason, the note suspend-note and the tick suspend-confirm; the suspended card is [data-suspension=suspended], its lines are [data-suspended-lines], and history rows are [data-change]. The Grants State cell carries data-grantee-status.",
+   "The previous image's direct UPDATE (D11) still writes no history row. The card reads it as 'who suspended it was not recorded', and a later reinstatement through the route records the first history row (tested). The REVOKE is the next schema PR's (D11)."
+  ],
+  "interfaces": "TS exports, apps/web/src/lib/routes/console.ts:\n- OrganizationSummary gains statusReason (SuspensionReason | null) and statusSince (Date | null).\n- ConsoleGrant gains granteeStatus: string.\n- New: StatusChangeAuthor {email, at}; OrganizationSuspension {reason, since, suspendedBy, reasonChangedBy, note}; SuspensionReach {practices, grants}; StatusChange {id, at, change: 'suspended'|'reinstated'|'reason_changed', reason, by, note}; suspensionOf(organization, rows).\n- organizationPage data adds suspension, reach and history.\n\nsetOrganizationStatus (id console.organization_status, permission organization.manage, audit organization_status_set):\n- Input is one of: {change:'suspend', organizationId, reason in SUSPENSION_REASONS, note?, confirm:'on'}, {change:'reason', organizationId, reason, note?}, or {change:'reinstate', organizationId, reason in REINSTATEMENT_REASONS}.\n- It calls SELECT console_set_organization_status($1,$2,$3,$4,$5), with (from, to) of suspend active->suspended, reason suspended->suspended, reinstate suspended->active.\n- Refusals: issues on field reason (X1-X3), confirm (X4), note (X5), change (X6, and the closed message).\n- Sample: {change:'reinstate', organizationId, reason:'resolved'}.\n\napps/web/src/components/console/suspension-text.ts:\n- Constants: SUSPENSION_REASON_LABELS, REINSTATEMENT_REASON_LABELS, SUSPENSION_REASON_OPTIONS, SUSPENSION_REASON_HINT, SUSPENSION_NOTE_LABEL, SUSPENSION_NOTE_HINT, SUSPEND_SUBMIT, CHANGE_REASON_SUBMIT, REINSTATE_SUBMITS, HISTORY_CAPTION, HISTORY_COLUMNS, HISTORY_EMPTY, HISTORY_CHANGES.\n- Functions: suspensionTitle, suspensionDescription(kind), suspensionTick(kind, name, reach), suspendedLines(suspension), suspendedEffect(kind, reach), suspendedNote, reasonLabel, grantState(grant, now), suspendedByPaidWhole(reason) (O1).\n\napps/web/src/components/console/suspension-card.tsx: SuspensionCard({organization, suspension, reach, action}) and SuspensionHistory({history}).\n\nThe console billing page reads ConsoleBillingRow.statusReason (the worker builder's, 1f5769cb).",
+  "wording": [
+   "C1 (active card title): Suspension",
+   "C2 (group description): Suspending stops all new work at this organization's practices, whoever starts it: pricing runs, triage, reports, packet exports, uploads and monitoring. Its people also start no new work through any grant it holds at another practice. Every record stays readable. Billing's own hold for an unpaid invoice is separate.",
+   "C3 (firm description): Suspending stops this firm's people from starting new work through its grants: pricing runs, triage, reports, packet exports and uploads at the practices it is granted. Work a person starts through their own practice or another firm's grant is not stopped. The practices' own staff and their monitoring carry on, and every record stays readable.",
+   "C4 (reason select, label 'Reason'): options Choose a reason \u00b7 At the customer's request \u00b7 Security hold \u00b7 Agreement ended. Hint: Nonpayment is not a reason here: billing holds an organization whose invoice has been unpaid for 30 days, and lifts the hold when it is paid. A security hold stops new work only: its people still read and download everything. To stop their access, end their memberships.",
+   "C5 (note field): label Note (optional); hint Seen only by PaidWhole's platform administrators. No patient details. At most 500 characters.",
+   "C6 (the tick), group: Suspend {name}: new work stops at its {n} practice(s) for everyone[, and its people start no new work through the {m} grant(s) it holds]; every record stays readable. With n = 0: Suspend {name}: it has no active practice now[, and ...]; every record stays readable.",
+   "C6 (the tick), firm: Suspend {name}: its people start no new work through its grants at the {n} practice(s) it is granted; every record stays readable. With n = 0: Suspend {name}: it holds no grant in force now; every record stays readable. Submit: Suspend the organization",
+   "C7 (suspended card): title Suspended. Line 1: Suspended by {email} on {YYYY-MM-DD HH:MM} UTC. (Suspended on {...} UTC; who suspended it was not recorded. / Suspended; when and by whom were not recorded.) Line 2: Reason: {label}. (No reason was recorded.) Line 3: Reason changed by {email} on {...} UTC.",
+   "C8 (card description while suspended), group: New work is refused at its {n} practice(s) for everyone[, and its people start no new work through the {m} grant(s) it holds]; every record stays readable. Reinstating lifts it at once.",
+   "C8, firm: Its people start no new work through its grants at the {n} practice(s) it is granted; the practices' own staff carry on. Reinstating lifts it at once.",
+   "C9 (suspended card): Note: {note} \u00b7 heading and submit Change the reason \u00b7 Reinstate: the cause is resolved \u00b7 Reinstate: suspended in error",
+   "C10 (History card): title History; columns When (UTC), Change (Suspended, Reinstated, Reason changed), Reason (labels as above, plus The cause is resolved, Suspended in error), By, Note; empty: No suspension recorded.",
+   "C11 (Grants card State): in force; its people start no new work through it while their organization is suspended",
+   "C12 (Grants card State): in force; its people start no new work through it, since their organization is closed",
+   "O1 (console Billing status, Standing badge): Suspended by PaidWhole: {reason label}, or Suspended by PaidWhole when none is recorded",
+   "X1-X6 (route refusals, under 'Not done' with the field's label): reason: choose why PaidWhole suspends it \u00b7 reason: choose the new reason \u00b7 reason: choose why it is reinstated \u00b7 confirm: tick to confirm what the suspension stops \u00b7 note: at most 500 characters / one line, with no line breaks \u00b7 change: the organization's status changed since this page loaded; reload the page",
+   "Closed refusal (field change): a closed organization is neither suspended nor reinstated",
+   "Added labels (not in section 6.5): Reason, Note, Confirmation, Status, used as ActionForm field labels in refusals"
+  ]
+ },
+ {
+  "summary": "Builder M (documents and registries) for SS-01 is done and pushed in three commits on co-001/ss-01-suspension-refusal.\n(1) a2fb12c6:\n- test-matrix rows BIL-07 to BIL-10;\n- BIL-05's two phrases (\"with no date\" becomes \"with the date PaidWhole suspended it, when one is stored\"; the firm clause is narrowed to \"a firm is never told its unpaid invoice stops runs\", per the delta);\n- the same text word for word in packages/synth matrix.ts;\n- registry.ts entries none(11, ...) with assertedBy, the same form as #56;\n- fixtures regenerated with pnpm synth --all (BIL-05 updated, BIL-07 to BIL-10 new).\n(2) 7da918de:\n- new ADR 0080, with Status, Date, Deciders, PRD sections, Context, Decision 1-7, Alternatives considered, Known limits stated, Open for milestone 12, Consequences, Handed to Lane A and Revisit when;\n- dated 2026-10-27 amendments at the end of ADRs 0050 and 0055 on the text at 098636e3, with each Status line pointing to them;\n- a paragraph in docs/runbooks/billing.md after :69, inside \"A suspension that should have ended\".\n(3) The last commit, under the branch head (local and origin head was b8a44deb when checked; the hash of this commit was not re-read separately): BIL-07 also cites apps/web suspension-refusal.db.test.ts, and BIL-09 cites suspension-words.test.ts and billing-routes.db.test.ts, once the web builder had committed them (0c8be3eb). Fixtures regenerated.\nreconciliation-001 is not changed. The pipeline records founder rulings there (as #42 did), and SS-01 has none: it reverses no ruling, and #56 added no entry either.\nLANES.md \"Handed to Lane A\" lines from section 16, for the orchestrator:\n(a) The suspension and reinstatement mail, and Q13 (a suspension waits for a delivered dunning notice or a recorded contact): one schema PR, next in Lane A's chain after SS-01. Claim it now. It extends #42's outbox: a new mail_send_kind, an outbox table and operator_record_mail_event.\n(b) REVOKE UPDATE (status), INSERT (status) ON organization FROM tp_app: in the first schema PR after SS-01 is deployed (the mail PR, if SS-01 is live by then). Recorded in ADR 0080.\n(c) A manual nonpayment suspension: not recommended. If the founder rules for one, it goes in the mail-and-Q13 PR, with Q13's precondition in the setter and an automatic lift on payment.\n(d) A Postgres stop for triage, a packet export and an upload's retry: not built, and a known limit in ADR 0080. Options for later are a requester check in the job, or each enqueue after the commit with a way to recover a lost request.\n(e) The closure lifecycle: closure ends grants, memberships and sessions; the Stripe subscription; export and deletion; whether a closed grantee keeps reading; reopening. This is milestone 12's offboarding PR.\n(f) A firm's own invoices and suspension rules, and a group grantee's nonpayment at the practices it is granted: milestone 12's firm billing (ADR 0050:118).\n(g) UX PR 78 (co-001/ux-console-confirm, UX-046) drops its \"Suspend ...\" tick, which SS-01 builds (C6).\n(h) UX PR 79 (co-001/ux-console-org-page, UX-203) lands after SS-01. It keeps the Suspension card's content and moves the card to the foot of the page. The Grants state (C11, C12) is built in SS-01.\n(i) UX PR 57 (co-001/ux-console-records, UX-204) may link O1 (\"Suspended by PaidWhole: {reason}\") to the organization's card.\n(j) Model calls under a suspension: not refused, and recorded in ADR 0080 as a later product decision.",
+  "head": "b8a44deb",
+  "files": [
+   "/home/user/ss01/docs/adr/0080-stop-a-held-organizations-people-through-its-grants-per-permission-store-paidwholes-suspension-with-its-reason-and-history-and-keep-nonpayment-billings-computed-hold.md",
+   "/home/user/ss01/docs/adr/0050-bill-organizations-through-stripe-as-a-role-that-reads-no-phi-suspend-new-runs-thirty-days-after-a-failed-payment-and-simulate-test-mode-locally.md",
+   "/home/user/ss01/docs/adr/0055-keep-model-calls-off-the-requests-connection-give-billing-and-e-signature-their-own-logins-bound-bodies-open-tickets-from-mail-and-keep-cognito.md",
+   "/home/user/ss01/docs/runbooks/billing.md",
+   "/home/user/ss01/docs/product/test-matrix.md",
+   "/home/user/ss01/packages/synth/src/cases/matrix.ts",
+   "/home/user/ss01/packages/synth/src/cases/registry.ts",
+   "/home/user/ss01/fixtures/synthetic/BIL-05/expected.json",
+   "/home/user/ss01/fixtures/synthetic/BIL-07/expected.json",
+   "/home/user/ss01/fixtures/synthetic/BIL-08/expected.json",
+   "/home/user/ss01/fixtures/synthetic/BIL-09/expected.json",
+   "/home/user/ss01/fixtures/synthetic/BIL-10/expected.json",
+   "/tmp/claude-0/-home-user-PhysicalTherapy/2d6572d6-2076-5676-9f8f-7a15571707e4/scratchpad/progress/ss01-docs.md"
+  ],
+  "checks": [
+   {
+    "command": "pnpm verify-content",
+    "passed": true,
+    "note": "every content set passes"
+   },
+   {
+    "command": "pnpm lint:copy",
+    "passed": true,
+    "note": "526 files read and clean. It does not read docs/, so it covers none of these files directly"
+   },
+   {
+    "command": "packages/synth: pnpm exec vitest run (unit + fixtures)",
+    "passed": true,
+    "note": "13 files, 185 tests passed after each registry change; fixtures.test.ts alone 23 of 23 (matrix word for word, assertedBy files exist, no fixture drift)"
+   },
+   {
+    "command": "pnpm synth --all",
+    "passed": true,
+    "note": "BIL-05 rewritten; BIL-07 to BIL-10 written; later BIL-07 and BIL-09 updated"
+   },
+   {
+    "command": "markdown link check (script over ADRs 0080, 0050, 0055, billing runbook, test-matrix)",
+    "passed": true,
+    "note": "0 broken relative links"
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock pnpm typecheck",
+    "passed": true,
+    "note": "22 projects passed"
+   },
+   {
+    "command": "NODE_OPTIONS=--max-old-space-size=6144 flock /tmp/laneb-heavy.lock pnpm lint",
+    "passed": false,
+    "note": "packages and the root group pass. apps/web has 2 errors in another builder's committed file, apps/web/src/lib/routes/suspension-refusal.db.test.ts: :61 FIRM_PERSONA is unused (no-unused-vars), and :173 has an unnecessary type assertion. Reported, not fixed."
+   }
+  ],
+  "open_items": [
+   "The web builder's apps/web/src/lib/routes/suspension-refusal.db.test.ts fails pnpm lint with 2 errors (:61 FIRM_PERSONA unused; :173 an unnecessary type assertion). It is that builder's to fix.",
+   "The registry's assertedBy names only test files committed when this was checked: define.ts, suspension-refusal.db.test.ts, suspension-words.test.ts and the others. If a later builder adds BIL-07, BIL-09 or BIL-10 tests in a file not listed, add it to registry.ts and re-run pnpm synth --all. One example is a BIL-09 seed journey in seed.db.test.ts, which the BIL-06 entry lists but BIL-09 does not.",
+   "After #42's new head is merged, run pnpm synth --all, as integrate rewrites SEC-18, SEC-19, SCR-21 and SCR-22. BIL-07 to BIL-10 sit after BIL-06, so the matrix should merge cleanly.",
+   "Proposal (outside my files): ADR 0050's Status line does not mention its PR 6b-4 amendment. I added only SS-01's mention there.",
+   "Proposal for the design owner: refusing settings writes, the pricing location for monitor and the posting template or proof level for reconcile, to a held grantee's person would be a redesign. It is recorded as a known limit in ADR 0080."
+  ],
+  "differences_from_design": [
+   "reconciliation-001: no entry, because SS-01 has no founder ruling (#56 added none either).",
+   "The registry uses none(11, ...) with the module derived from the ID (BIL), as #56 did. 'module 15' is LANES.md's label, not a code value.",
+   "BIL-07's assertedBy names packages/db/src/suspension.db.test.ts (builder D's move) alongside apps/web suspension-refusal.db.test.ts. BIL-08's names packages/db/src/organization-status.db.test.ts and hardening.db.test.ts, per D's and the delta's placement.",
+   "BIL-05: besides the design's 'with no date' phrase, the firm clause now reads 'a firm is never told its unpaid invoice stops runs', per the re-read delta, identically in test-matrix.md and matrix.ts.",
+   "ADR 0080 states D's two setter refinements: a NULL reason is refused, and 'closed' in the requested status is refused as well as the current one. It also records the delta's monitor/reconcile limit and the trigger's fail-closed map.",
+   "The runbook paragraph adds one sentence the design does not name: a suspended group stops its practices for everyone, while a suspended firm stops only its own people's work through its grants."
+  ],
+  "interfaces": "Test-matrix IDs BIL-07 to BIL-10 (titles as in design section 10). packages/synth/src/cases/registry.ts entries 'BIL-07' to 'BIL-10' = none(11, reason, assertedBy). ADR path docs/adr/0080-stop-a-held-organizations-people-through-its-grants-per-permission-store-paidwholes-suspension-with-its-reason-and-history-and-keep-nonpayment-billings-computed-hold.md. Amendment headings: ADR 0050 '## Amendment (SS-01, 2026-10-27): whose hold stops which work, and the dunning mail's words chosen when sent'; ADR 0055 '## Amendment (SS-01, 2026-10-27): the console's suspension keeps its reason, and Postgres checks it'.",
+  "wording": [
+   "No product copy was added or changed. Every new sentence is in documents: ADR 0080, the two amendments and the runbook paragraph. The matrix rows follow design section 10 and quote section 6's words (R4's opening, 'Uploads are paused: ', 'Not started: ', 'New runs have started again', 'Seen only by PaidWhole's platform administrators. No patient details.').",
+   "test-matrix.md and matrix.ts, BIL-05: 'with no date' becomes 'with the date PaidWhole suspended it, when one is stored', and 'a firm is never told runs have stopped or will' becomes 'a firm is never told its unpaid invoice stops runs' (a wording change in a document, per the delta)."
+  ]
+ },
+ {
+  "summary": "I built builder P's part of SS-01: the route wrapper, the customer surfaces, the seed and the journeys. All the checks I ran pass, and the work is pushed in three commits; the tests went first, in 0c8be3eb.\n- **Route wrapper:** it now asks Postgres `practice_run_refusal_for` with the route's own permission, and the uploads gate asks for `file.upload`.\n- **Registry:** `CONTINUES_STARTED_WORK` (the upload's completion) is added. In the per-route test of every route, each job an allowed call queues must come from a run-starting route or that set, or be the practice's own monitor or reconcile; any other job fails the test.\n- **New modules:**\n  - `hold.ts` reads `practice_run_hold` once, plus the person's own organization name and memberships.\n  - `suspension-words.ts` is a pure module holding H1 to H13, J1, G1, G2 and the stopped-work list. As a second guard, it never words a suspension or nonpayment as a member's to someone outside the held organization.\n- **Pages:**\n  - The practice home renders the notice with `data-hold-source` and its next step, and the refused job reads J1.\n  - The grants page shows G1 or G2.\n  - The billing page carries PaidWhole's stored date and reason (B1 to B10), including the new firm sentences.\n  - A refused export reads E1, with the matching short summary for an earlier refusal.\n- **Seed:** the suspended group now stores its reason (`customer_request`). I added SYNTHETIC SUSPENDED FIRM (`security_hold`) with a grant on SYNTHETIC FIRM CLIENT PRACTICE, that practice's own group SYNTHETIC FIRM CLIENT GROUP, and SYNTHETIC CONSOLE SUSPENSION FIRM. New personas: `suspended-firm-principal`, `firm-client-admin` and `suspension-admin`.\n- **Tests:**\n  - `suspension-words.test.ts` has the exact sentences and fast-check properties.\n  - `account-standing.test.tsx` covers B1 to B10.\n  - `define.ts`: the nonpayment test now expects R3 for a group member and R6 for a firm person. A new per-route test expects R4 while the world's firm is suspended, plus the queued-work check above.\n  - `suspension-refusal.db.test.ts` covers X, Y, Z, W and the firm principal at every run-starting route, the uploads gate, the home, the grants, a closed grantee, the owner's hold under D6, and the registry.\n  - `billing-routes.db.test.ts` and `seed.db.test.ts` assert the new sentences and the seeded rows.\n  - `billing.spec.ts` adds the three BIL-09 journeys and keeps BIL-06 green with the stored reason and date.\n\n**Failing first, on base 1f5769cb:** the unit project failed 4 cases in `account-standing.test.tsx` and could not load `suspension-words.test.ts`. In the db project, `billing-routes.db.test.ts` failed 2 cases and `suspension-refusal.db.test.ts` could not load.",
+  "head": "3b26e73f",
+  "files": [
+   "/home/user/ss01/apps/web/src/lib/http/invoke.ts",
+   "/home/user/ss01/apps/web/src/lib/billing/runs.ts",
+   "/home/user/ss01/apps/web/src/lib/routes/uploads.ts",
+   "/home/user/ss01/apps/web/src/lib/billing/hold.ts",
+   "/home/user/ss01/apps/web/src/lib/billing/suspension-words.ts",
+   "/home/user/ss01/apps/web/src/lib/billing/suspension-words.test.ts",
+   "/home/user/ss01/apps/web/src/lib/routes/practice.ts",
+   "/home/user/ss01/apps/web/src/app/p/[practiceId]/page.tsx",
+   "/home/user/ss01/apps/web/src/lib/routes/billing.ts",
+   "/home/user/ss01/apps/web/src/components/billing/account-standing.test.tsx",
+   "/home/user/ss01/apps/web/src/lib/routes/settings.ts",
+   "/home/user/ss01/apps/web/src/app/p/[practiceId]/settings/agreements/page.tsx",
+   "/home/user/ss01/apps/web/src/lib/packets/export-attempts.ts",
+   "/home/user/ss01/apps/web/src/lib/routes/route-tests/define.ts",
+   "/home/user/ss01/apps/web/src/lib/routes/billing-routes.db.test.ts",
+   "/home/user/ss01/apps/web/src/lib/routes/suspension-refusal.db.test.ts",
+   "/home/user/ss01/apps/web/scripts/seed.ts",
+   "/home/user/ss01/apps/web/scripts/synthetic-personas.ts",
+   "/home/user/ss01/apps/web/scripts/seed.db.test.ts",
+   "/home/user/ss01/apps/web/e2e/billing.spec.ts",
+   "/home/user/ss01/packages/billing/src/standing.ts"
+  ],
+  "checks": [
+   {
+    "command": "flock /tmp/laneb-heavy.lock pnpm typecheck",
+    "passed": true,
+    "note": "22 projects passed. tsc for apps/web was clean again after the last edits."
+   },
+   {
+    "command": "NODE_OPTIONS=--max-old-space-size=6144 flock /tmp/laneb-heavy.lock pnpm lint",
+    "passed": true,
+    "note": "The first run failed with 2 errors in my suspension-refusal.db.test.ts (an unused const and an unnecessary assertion). I fixed both; eslint on that file and on the e2e and seed files is now clean. The packages and root groups passed."
+   },
+   {
+    "command": "pnpm lint:copy",
+    "passed": true,
+    "note": "526 files read"
+   },
+   {
+    "command": "pnpm lint:logs",
+    "passed": true,
+    "note": "1069 files scanned"
+   },
+   {
+    "command": "vitest run --project unit apps/web/src/lib/billing apps/web/src/components/billing apps/web/src/lib/packets/approval.test.ts packages/billing",
+    "passed": true,
+    "note": "suspension-words 19 of 19. Before that, 2 property failures were a wrong oracle in my own new test: it read on_hold as a member's cause. I fixed the oracle, not the module."
+   },
+   {
+    "command": "DATABASE_URL=postgres://postgres:test@localhost:5433/postgres vitest run --project db apps/web/src/lib/routes/billing-routes.db.test.ts apps/web/src/lib/routes/suspension-refusal.db.test.ts apps/web/scripts/seed.db.test.ts",
+    "passed": true,
+    "note": "23 of 23 on fresh tp_test_* databases. seed.db.test was re-run after adding the suspension-admin persona: 1 of 1."
+   },
+   {
+    "command": "vitest run --project db apps/web/src/lib/routes/route-tests/route-tests -t '<the 9 run-starting routes, practice.uploads.complete, set_proof_level, pricing_location, reconciliation.save_template>'",
+    "passed": true,
+    "note": "460 passed. The verbose run for uploads.request and uploads.complete confirmed the new per-route, nonpayment and queued-work tests ran. I did not run all 12 files in full (no full test:db, as instructed)."
+   },
+   {
+    "command": "createdb tp_ss01_seed_1; pnpm db:migrate; pnpm db:seed; DROP DATABASE",
+    "passed": true,
+    "note": "57 synthetic people seeded. The suspended firm and group carry their reasons and times; the client group and the console firm are active."
+   },
+   {
+    "command": "E2E_DATABASE=tp_ss01_e2e_1 E2E_PORT=4961 flock /tmp/laneb-heavy.lock pnpm --filter @tp/web test:e2e billing.spec.ts",
+    "passed": true,
+    "note": "6 of 6, including BIL-06 and the three BIL-09 journeys with axe. Database dropped afterwards."
+   }
+  ],
+  "interfaces": "- `apps/web/src/lib/billing/runs.ts`: `export const CONTINUES_STARTED_WORK: ReadonlySet<string> = new Set(['practice.uploads.complete'])`. `RUN_STARTING_ROUTES` is unchanged.\n- `apps/web/src/lib/http/invoke.ts` gate: `practiceRunRefusalFor(scope.client, practiceId, spec.permission)`.\n- `apps/web/src/lib/routes/uploads.ts` gate: `practiceRunRefusalFor(scope.client, practiceId, 'file.upload')`.\n- `apps/web/src/lib/billing/suspension-words.ts` exports:\n  - `RUN_STARTING_PERMISSIONS` and type `RunStartingPermission`;\n  - types `HoldSource = 'owner'|'grantee'` and `HoldCause = 'suspended'|'nonpayment'|'on_hold'|'closed'`;\n  - `interface PracticeHold { source; cause; reason: SuspensionReason|null; since: Date|null; stopped: readonly RunStartingPermission[]; name: string|null; viewer: 'member'|'other'; billingHref: string|null }`;\n  - `interface HoldNextStep { link: string|null; href: string|null; text: string }`;\n  - `interface HoldNotice { source; title; body; nextStep: HoldNextStep|null }`;\n  - `holdNotice(hold): HoldNotice`, `stoppedWork(stopped): string`, `grantHoldState(granteeStatus: string, granteeName: string): string|null`;\n  - `JOB_REFUSED_LABEL`.\n- `apps/web/src/lib/billing/hold.ts`: `practiceHold(scope: PracticeScope<ScopeClient>, practiceId): Promise<PracticeHold|null>`. It runs `SELECT ... FROM practice_run_hold($1)`, then `app_actor_memberships()`, then the person's own organization row for a grantee's hold.\n- `practiceHome` data: `suspension` is replaced by `hold: HoldNotice | null`.\n- Practice home markup: `[data-notice=\"suspended\"][data-hold-source]`, with `p[data-next-step]`.\n- `GrantView` gains `granteeStatus: string`. The agreements page's state cell carries `data-grantee-status`.\n- `accountStanding(billing)` now takes `statusReason` and `statusSince` (`BillingView` already carries them from the worker's `account.ts`).\n- `EXPORT_REFUSAL_TEXT.organization_suspended` (E1) is the last entry. `REFUSAL_SUMMARY.organization_suspended` is \"new work had stopped for the practice's organization\".\n- Seed:\n  - `SeedOrganization` adds `'suspended_firm' | 'firm_client_group' | 'console_firm'`;\n  - new exports `SCRIPT_ORGANIZATIONS`, `SYNTHETIC_SUSPENDED_FIRM`, `SYNTHETIC_FIRM_CLIENT_GROUP`, `SYNTHETIC_FIRM_CLIENT_PRACTICE`, `SYNTHETIC_CONSOLE_SUSPENSION_FIRM`;\n  - personas `suspended-firm-principal` (firm_principal), `firm-client-admin` (practice_admin), `suspension-admin` (internal platform_admin);\n  - `SyntheticSeedResult.practices.firm_client`.",
+  "differences_from_design": [
+   "C11 and C12 stay in builder C's apps/web/src/components/console/suspension-text.ts, where they were already built and tested. suspension-words.ts holds H1 to H13, J1, the work list, G1 and G2, so the words are not defined twice.",
+   "I added the persona 'suspension-admin' (internal platform_admin). Section 5.8 gives the console firm no persona that signs in, but journey (c) needs a platform administrator with a hardware key of its own, so it shares no key or TOTP step with another spec.",
+   "H9's '{Your organization's}' is filled as \"Your organization's\" for both the owner's members and a grantee's members. In both cases it is the reader's own organization.",
+   "B9 replaces a closed firm's 'Its data stays readable.' with \"Your people start no new work through the organization's grants.\" plus what is owed, as B9 reads literally.",
+   "B7 keeps #56's order: the reason's ticket first, then 'Pay {invoice}'.",
+   "As a second guard, holdNotice words an owner 'suspended' or 'nonpayment' given for a non-member as H13 and prints no reason or billing link. Postgres already decides D6; this guard lets the property test hold over every combination.",
+   "BIL-07's 'database' part (the trigger tables, the job scope, the trigger's map) and its capacity guard are builder D's packages/db/src/suspension.db.test.ts, as registry.ts lists. My suspension-refusal.db.test.ts covers the routes, the mixed paths, the uploads gate, the home, the grants, the closed grantee, the owner's hold under D6, and the registry equality of run_starting_permissions() with RUN_STARTING_ROUTES.",
+   "Failing first: define.ts's new per-route R4 test already passes on 1f5769cb, because D's migration made the old practice_run_refusal refuse any held person. It fails on 098636e3. The route change itself is proven by suspension-refusal.db.test.ts, where Z is refused only for mapping.edit, posting.reconcile and phi.export and is not refused for triage, reports or uploads.",
+   "Edited outside my file list, both per the deltas: apps/web/scripts/seed.db.test.ts (the seeded rows), and a comment-only edit in packages/billing/src/standing.ts (the delta's words, the same as in account-standing.test.tsx). The mapping logic does not change.",
+   "One wording addition within brand.md and CO-11, from the delta: REFUSAL_SUMMARY.organization_suspended reads 'new work had stopped for the practice's organization', so an earlier refused export now says 'The request at \u2026 was refused: new work had stopped for the practice's organization. That no longer holds\u2026'."
+  ],
+  "open_items": [
+   "I did not write the docs, which are not in my files. ADR 0080 still needs its known limit, per the delta: a held grantee's person can still bring the practice's monitor forward (by saving the pricing location) or its reconcile (by saving the template, or the proof level). Refusing those settings writes would be a redesign; I propose it as a later decision.",
+   "I did not run the 12 route-test files in full: only the 13 route IDs whose ok calls queue jobs or start runs (460 passed). The integrator's full run will exercise the new queued-work check on every route. Any route found queuing parse_835, export or digest would fail by design.",
+   "When #42's new head is merged, re-run billing.spec.ts and seed.db.test.ts. The seed adds 3 organizations, 1 practice and 3 personas, and no e2e spec counts practices or organizations (I grepped).",
+   "Proposal: the uploads page could also say which permission is stopped, when only part of a person's work is held. Today it shows R4 only when uploads themselves stop."
+  ],
+  "wording": [
+   "R1 to R6 are Postgres's (builder D's). The web shows them unchanged after 'Not started: ' and 'Uploads are paused: '.",
+   "H1 (home, owner suspended, member, date): title 'New runs have stopped'; body 'PaidWhole suspended your organization on {date}{reason clause}. Pricing runs, triage, reports, packet exports, uploads and monitoring do not start here until PaidWhole reinstates your organization. Everything here stays readable.'",
+   "H2 (home, no date): 'PaidWhole has suspended your organization{reason clause}. Pricing runs, triage, reports, packet exports, uploads and monitoring do not start here until PaidWhole reinstates your organization. Everything here stays readable.'",
+   "H3 (home, closed): title 'No new runs start'; body '{Your organization | The practice's organization} is closed, so pricing runs, triage, reports, packet exports, uploads and monitoring do not start here. Everything here stays readable.'",
+   "H4 (home, nonpayment, member): title 'New runs have stopped'; body 'An invoice of your organization has been unpaid for 30 days since its payment failed, so pricing runs, triage, reports, packet exports, uploads and monitoring do not start here until it is paid. Everything here stays readable.'",
+   "H5 and H6 (home, grantee suspended): title \"Work through your organization's grant has stopped\"; body '{PaidWhole suspended {firm} on {date} | PaidWhole has suspended {firm}}{reason clause}, so you start no new {stopped} at this practice through its grant until PaidWhole reinstates {firm}. You can still read everything here, and the practice's own staff carry on.'",
+   "H7 (home, grantee closed): same title; body '{Firm} is closed, so you start no new {stopped} at this practice through its grant.'",
+   "H13 (home, on hold, non-member): title 'New work has stopped here'; body \"The PaidWhole account of the practice's organization {has been on hold since {date} | is on hold}, so pricing runs, triage, reports, packet exports, uploads and monitoring do not start here. Everything here stays readable.\"",
+   "Home reason clauses: customer_request \", at your organization's request\"; security_hold ', while it looks into a security concern'; agreement_ended \", because your organization's agreement with PaidWhole has ended\".",
+   "H8 (home next step): link 'Settings, Billing' to /settings/billing/{organizationId}, then ' shows why and what to do next.'",
+   "H9: \"Your organization's administrator sees why and what to do next in Settings, Billing.\"",
+   "H10: \"The practice's administrator sees why and what to do next in Settings, Billing.\"",
+   "H11: link 'Open a support ticket' to /support?from=billing, then ' if you have a question about the closure.' H12: no next step.",
+   "Work list (grantee): mapping.edit 'pricing runs', case.work 'triage, reports', posting.reconcile 'ROI statements', phi.export 'packet exports', file.upload 'uploads', joined with commas and 'or' before the last.",
+   "J1 (home, job outcome): \"Refused: new work had stopped for the practice's organization\"",
+   "E1 (packet export refusal): \"New work had stopped for the practice's organization, so the export was not made. Ask for it again once the practice's home no longer says that new work has stopped.\"",
+   "E1's short summary (delta addition, in an earlier refusal's line): \"new work had stopped for the practice's organization\"",
+   "B1 (billing label): 'Suspended by PaidWhole since {date}'. B2 (no date): 'Suspended by PaidWhole'.",
+   "B3 (group notice): 'PaidWhole has suspended the organization{B10 clause}: new runs have stopped until PaidWhole reinstates it, and its data stays readable. Paying an invoice does not reinstate it.{billing hold sentence}'",
+   "B4 (firm notice, title 'The organization is suspended'): \"PaidWhole has suspended the organization{B10 clause}: your people start no new work through its grants at the practices you are granted until PaidWhole reinstates the organization. Every record stays readable, and the practices' own staff carry on.{ An invoice is also unpaid since {date}.}\"",
+   "B7 (billing next step, link 'Open a support ticket'): customer_request ' when you want the organization reinstated.'; security_hold ' to find out what PaidWhole needs from you.'; agreement_ended ' to discuss a new agreement.'; no reason, group: ' to find out why and what reinstates it.'; no reason, firm: ' to find out why.'",
+   "B9 (closed firm notice): \"Your people start no new work through the organization's grants.{owed}\"",
+   "B10 (billing reason clause): customer_request ' at your request'; security_hold ' while it looks into a security concern'; agreement_ended \" because the organization's agreement with PaidWhole has ended\".",
+   "G1 (Settings, Grants and agreements, State cell): 'In force. The PaidWhole account of {grantee} is on hold, so its people start no new work here through this grant; your own staff carry on.'",
+   "G2 (same cell): 'In force. {Grantee} is closed, so its people start no new work here through this grant.'"
+  ]
+ },
+ {
+  "head": "d763ba78 (local only, not pushed; origin/co-001/ss-01-suspension-refusal is still 3b26e73f)",
+  "domain_model_sha256": "12b0e87d557359b0a390979e6ca28dc2b7c77979e4d2bb3cdd544d61a5e8b2c4",
+  "approval_line_number": 7407,
+  "scope_ok": true,
+  "fixes": [
+   "d763ba78: restores packages/billing/src/standing.ts's comment to its text at the base. Design section 13 leaves that file untouched and its rule did not change. Committed, not yet pushed.",
+   "Step 2's adversarial review (tenancy, security, truth) found no other defect in the migration, the definers, the grants, the policy, the reserved audit actions or the words (sections 6 and 7, and SS-08 at send time)."
+  ],
+  "suite": [
+   {
+    "command": "flock /tmp/laneb-heavy.lock pnpm typecheck (on 3b26e73f)",
+    "passed": true,
+    "note": "22 of 22 projects"
+   },
+   {
+    "command": "NODE_OPTIONS=--max-old-space-size=6144 flock /tmp/laneb-heavy.lock pnpm lint",
+    "passed": true,
+    "note": "1,646 files, 0 errors, 0 warnings"
+   },
+   {
+    "command": "pnpm lint:copy",
+    "passed": true,
+    "note": "526 files"
+   },
+   {
+    "command": "pnpm lint:logs",
+    "passed": true
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock pnpm test (unit and property, at d763ba78)",
+    "passed": false,
+    "note": "387 files: 6,439 passed, 1 failed, 4 skipped. The failure is apps/worker/src/web-entries.test.ts, with the same 13 modules on 098636e3: it predates SS-01 and comes from #42. #42's 15189a50 guard, run on this tree, reaches 82 modules and finds 0 offending, so it clears once #42 is merged."
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock pnpm test:golden",
+    "passed": true,
+    "note": "5 files, 376 tests"
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock pnpm test:oracle",
+    "passed": true,
+    "note": "687 fixtures agree: 676 valid, 11 malformed rejected"
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock pnpm test:db --shard=n/4 (shards 1 to 4, each on a fresh PG 18 database)",
+    "passed": true,
+    "note": "133 files: 9,489 passed, 1 skipped, 0 failed. Per shard: 3,292 + 1 skipped, 2,651, 2,566, 980."
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock pnpm build; stamp; E2E_PREBUILT=1 E2E_PORT=4961 pnpm test:e2e --workers=2",
+    "passed": true,
+    "note": "Build exit 0, stamped d763ba78. e2e: 59 passed in 8.5 minutes."
+   },
+   {
+    "command": "stryker packets-scan, then gate --shard packets-scan",
+    "passed": true,
+    "note": "exit 0 / exit 0"
+   },
+   {
+    "command": "stryker packets-rest, packets-explain, pricing-engine, pricing-recompute and pricing-rest, then the gate with --expected for all six",
+    "passed": false,
+    "note": "Not finished. The run was resumed at 00:16 UTC (scratchpad/ss01/suite/part3b.sh) and was still in packets-rest when this report was required. There is no result yet; the status file is scratchpad/ss01/suite/status."
+   },
+   {
+    "command": "pnpm -s db:domain-model --check (fresh PG 18 database, then dropped)",
+    "passed": true,
+    "note": "375 function files, 99 tables. SHA-256 12b0e87d...2c4; the approval line (7407) is blank."
+   },
+   {
+    "command": "pnpm -s db:domain-model --check --require-approval",
+    "passed": false,
+    "note": "Expected: it waits for the founder's approval line."
+   },
+   {
+    "command": "pnpm verify-content",
+    "passed": true
+   },
+   {
+    "command": "pnpm synth --all; check:fixtures",
+    "passed": true,
+    "note": "0 written, 637 unchanged, fixtures clean"
+   },
+   {
+    "command": "git diff --name-only 098636e3...HEAD",
+    "passed": true,
+    "note": "74 paths, all section 13 files, new tests or generated files. Nothing under packages/pricing/src, ledger, rules, fixtures/golden, content/releases or engine-freeze. Exactly one new migration (20261108090000_suspension_refusal.sql), no applied migration changed, permission matrix unchanged."
+   }
+  ],
+  "open_items": [
+   "Step 3 part 3 is unfinished: five of the six affected Stryker shards (packets-rest, packets-explain, pricing-engine, pricing-recompute, pricing-rest) and the final gate still need to run. part3b.sh was running in the background when this report was required, and ending the turn stops it. Re-run scratchpad/ss01/suite/part3b.sh at d763ba78.",
+   "Step 5 is not done: d763ba78 (the standing.ts restore) is committed locally and not pushed. Push it once part 3 is green, using git push -u origin co-001/ss-01-suspension-refusal.",
+   "web-entries.test.ts fails on the base too (#42's). It should clear when #42's new head is merged.",
+   "Approval: the founder signs domain-model SHA-256 12b0e87d557359b0a390979e6ca28dc2b7c77979e4d2bb3cdd544d61a5e8b2c4 at docs/product/domain-model.md line 7407. The session opens the PR after #42 merges.",
+   "Handed to Lane A (a): the suspension and reinstatement mail, plus Q13 (a suspension waits for a delivered dunning notice or a recorded contact). One schema PR, next after SS-01, extending #42's outbox.",
+   "Handed to Lane A (b): REVOKE UPDATE (status), INSERT (status) ON organization FROM tp_app, in the first schema PR after SS-01 is deployed.",
+   "Handed to Lane A (c): a manual nonpayment suspension is not recommended. If the founder rules for one, it goes in the mail-and-Q13 PR.",
+   "Handed to Lane A (d): there is no Postgres stop for triage, a packet export or an upload's retry. It is a known limit in ADR 0080.",
+   "Handed to Lane A (e): the closure lifecycle goes to milestone 12's offboarding PR.",
+   "Handed to Lane A (f): a firm's own invoices, and a group grantee's nonpayment, go to milestone 12's firm billing.",
+   "Handed to Lane A (g): UX PR 78 drops its Suspend tick, since SS-01 builds C6.",
+   "Handed to Lane A (h): UX PR 79 lands after SS-01, keeps the Suspension card's content and moves the card.",
+   "Handed to Lane A (i): UX PR 57 may link O1 to the organization's card.",
+   "Handed to Lane A (j): model calls under a suspension are not refused. ADR 0080 records this as a later product decision.",
+   "Wording added within brand.md (from the re-read's delta): REFUSAL_SUMMARY.organization_suspended reads 'new work had stopped for the practice's organization'. The founder should know it is there."
+  ]
+ }
+]
