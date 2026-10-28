@@ -80,3 +80,8 @@ UTC (trigger trig_01XqKZsF9KvqAG7S6pBGUmoi). Read this file first, then LANES.md
 - #42's integrator works in `/home/user/pr6b4`; its unpushed commits are now snapshotted to `co-001/wip-pr42-integrate` (8aa45a46 at 19:07) and its uncommitted changes to `approval-summaries/lane-a-wip/integrate.uncommitted.patch`. If the container is new: check out `co-001/wip-pr42-integrate` as `co-001/pr-06b-mail-streams` in `/home/user/pr6b4` (it fast-forwards from 098636e3), apply the patch, then resume the integrator.
 - If the six sessions read FAILED in list_sessions, the limit stopped them: `send_message` each to resume (the text of 19:08 UTC in this session's log).
 - Safety check-in: 2026-10-28 00:10 UTC (the next 5-hour window).
+
+## Update 2026-10-28 00:15 UTC
+- The limit stopped everything at ~23:00 UTC; resumed 00:11-00:15 (setup OK, snapshot loop pid restarted, #42's verify round wf_6faedfe4-8e0 resumed with a RESUMED note in its fix agent's prompt, seven sessions messaged; table-scroll waits on the person's Artifact approval).
+- If the container is new: check out `co-001/wip-pr42-integrate` (9664763b or later) as `co-001/pr-06b-mail-streams` in `/home/user/pr6b4`, apply `approval-summaries/lane-a-wip/integrate.uncommitted.patch`, copy `approval-summaries/lane-a-wip/progress/pr42v-*.md` back to `<scratchpad>/progress/`, and run `workflow-scripts/lane-a-pr42-verify-round-wf_6faedfe4-8e0.js` again (its fix agent continues from pr42v-fix.md).
+- Safety check-in: 2026-10-28 05:10 UTC (trig_016UjAWEaLDhLhqkoKEEWZNA).
