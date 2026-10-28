@@ -475,9 +475,13 @@ describe('the anomalies by code and payer product', () => {
     expect(rowClasses.slice(0, -1).filter((names) => !/\bpr-3\b/.test(names))).toEqual([]);
   });
 
-  it('lets a keyboard reach each table’s scrolling region, named by its card’s title', () => {
-    expect(html).toContain('<div class="overflow-x-auto" role="region" aria-labelledby="screening-anomalies" tabindex="0" data-scroll="anomalies">');
-    expect(renderToStaticMarkup(<ScreeningTopRows rows={ROWS} />)).toContain('<div class="overflow-x-auto" role="region" aria-labelledby="screening-top-rows" tabindex="0" data-scroll="top-rows">');
+  it('lets a keyboard reach each table’s scrolling region, named by its card’s title, the table its direct child (docs/adr/0078)', () => {
+    expect(html).toMatch(
+      /<div role="region" aria-label="Anomalies by code and payer product, scrolls sideways" tabindex="0" data-scroller="" class="[^"]*"><table class="w-full min-w-\[54rem\] text-left text-sm" aria-labelledby="screening-anomalies">/,
+    );
+    expect(renderToStaticMarkup(<ScreeningTopRows rows={ROWS} />)).toMatch(
+      /<div role="region" aria-label="Rows with the largest differences, scrolls sideways" tabindex="0" data-scroller="" class="[^"]*"><table class="w-full min-w-\[54rem\] text-left text-sm" aria-labelledby="screening-top-rows">/,
+    );
   });
 
   it('is an empty state when nothing was priced', () => {
@@ -547,6 +551,12 @@ describe('the coverage', () => {
     expect(html).toMatch(/data-coverage="medicaid:not_screened"[\s\S]*?Not screened/);
     expect(text(html)).toContain('33% of the rows (2 of 6) cannot be priced without a contract');
     expect(html).not.toContain('data-tone="whole"');
+  });
+
+  it('lets a keyboard reach its table’s scrolling region, named by the card’s title, the table its direct child (docs/adr/0078)', () => {
+    expect(html).toMatch(
+      /<div role="region" aria-label="Coverage, and the rows missing a contract, scrolls sideways" tabindex="0" data-scroller="" class="[^"]*"><table class="w-full min-w-\[40rem\] text-left text-sm" aria-labelledby="screening-coverage">/,
+    );
   });
 });
 

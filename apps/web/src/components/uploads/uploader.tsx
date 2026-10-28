@@ -316,7 +316,7 @@ export function Uploader(props: UploaderProps) {
             before anything reads it.
           </p>
           {kinds === undefined ? null : (
-            <div className="flex flex-col gap-1">
+            <div className="flex max-w-full flex-col gap-1">
               <label htmlFor="upload-kind" className="text-sm font-medium">
                 Kind of document
               </label>
@@ -327,7 +327,7 @@ export function Uploader(props: UploaderProps) {
                   setKind(kinds.find((candidate) => candidate.kind === event.target.value) ?? kind);
                   setFormatId('');
                 }}
-                className="h-9 rounded-md border bg-background px-2 text-sm"
+                className="h-9 max-w-full rounded-md border bg-background px-2 text-sm"
               >
                 {kinds.map((candidate) => (
                   <option key={candidate.kind} value={candidate.kind}>
@@ -416,9 +416,8 @@ export function Uploader(props: UploaderProps) {
                 const receipt = item.documentId === undefined ? undefined : receipts.get(item.documentId);
                 return (
                   <li key={item.key} className="flex flex-wrap items-start gap-3 text-sm" data-phase={item.phase}>
-                    <span className="min-w-48 truncate" title={item.file.name}>
-                      {item.file.name}
-                    </span>
+                    {/* The whole name, never cut to a hover title a phone cannot reach: it breaks only past 12rem. */}
+                    <span className="min-w-48 wrap-anywhere">{item.file.name}</span>
                     {receipt !== undefined ? (
                       <ReceiptStatus receipt={receipt} />
                     ) : item.phase === 'failed' ? (

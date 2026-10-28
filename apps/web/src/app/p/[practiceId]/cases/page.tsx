@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { ActionForm } from '../../../../components/action-form';
 import { MoneyField } from '../../../../components/money-field';
 import { Money, Pager } from '../../../../components/remittances/display';
+import { ScrollTable } from '../../../../components/scroll-table';
 import { MATERIALITY_LABELS } from '../../../../components/settings/defaults';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { CASE_STATE_TEXT, CaseStateBadge, Deadline, stageLabel } from '../../../../components/triage/display';
@@ -239,8 +240,8 @@ export default async function CasesPage(props: Props) {
         ) : cases.length === 0 ? (
           <p className="text-sm text-muted-foreground">No case matches these filters.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm" aria-label="Cases">
+          <ScrollTable label="Cases">
+            <table className="w-full min-w-[54rem] text-sm" aria-label="Cases">
               <thead>
                 <tr className="border-b text-left">
                   <th className="px-2 py-1 font-medium">Payer and plan</th>
@@ -265,7 +266,7 @@ export default async function CasesPage(props: Props) {
                     <td className="px-2 py-1">
                       <CaseStateBadge state={item.state} />
                     </td>
-                    <td className="px-2 py-1 font-mono tabular-nums">
+                    <td className="px-2 py-1 font-mono tabular-nums whitespace-nowrap">
                       {item.openLines} of {item.lines}
                     </td>
                     <td className="px-2 py-1">
@@ -275,12 +276,14 @@ export default async function CasesPage(props: Props) {
                       <Deadline on={item.deadlineOn} state={item.state === 'resolved' || item.state === 'closed_written_off' ? 'none' : item.deadline} />
                     </td>
                     <td className="px-2 py-1">{item.pursuitCostCents === null ? 'not estimated' : <Money value={item.pursuitCostCents} />}</td>
-                    <td className="px-2 py-1">{item.owner ?? 'Unassigned'}</td>
+                    <td className="px-2 py-1">
+                      <span className="block min-w-40 wrap-anywhere">{item.owner ?? 'Unassigned'}</span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollTable>
         )}
         <Pager path={path} query={filters} page={page.data.page} pages={page.data.pages} total={total} noun="Cases" />
       </section>

@@ -473,4 +473,28 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
   { id: 'RCC-06', title: 'A line priced before its content loaded', assertion: "Triage holds a priced line whose trace read MPPR or MUE outside its release's spans as CONTENT_NOT_LOADED, never actionable; the audit report names the reason" },
   { id: 'RCC-07', title: 'A run reads only the keys it prices', assertion: "The price job, the release impact check and the dry run read each key of their claims once a run and the shared types once per release; every stored row equals the whole-release read's; a lookup outside the fetch fails the run as release_read_outside_fetch before its batch is stored; triage and reports read two types only; the keyed read uses rule_record_identity; weekly, under the quarterly scale release 900110, a 100,000-line month prices while another practice's audit report prints and four 835s parse, then triages and reports, within the worker task's memory" },
   { id: 'RCC-08', title: 'Content due', assertion: "The calendar names every content but PaidWhole's own; content ending within 45 or 14 days, ended, due with no draft, or overdue is reported with the exact import commands, as is a calendar entry never reviewed or older than 13 months; before any release is published the drafts are judged and the titles say so; the console shows Content due, customers see every family of the release in force, loaded through a date, open, loaded only from a later date, partly loaded or not loaded; the source watch finds a new matching file whatever its name, shows plain names as they are and others percent-encoded, reports a page that lists no matching file any more, and reads pages over https from the calendar's hosts only, at most 5 MiB; the workflow's check job only reads and its notify job alone writes issues, once per title and at most 20 new ones a run, listing the rest in one issue" },
+  {
+    id: 'TBL-01',
+    title: "A wide table's scroller and a fixed-height text box",
+    assertion:
+      'Rendered on the server as a region named after its table with ", scrolls sideways" added (a text box: ", scrolls") with tabindex 0, the containing block of what its table positions, with a visible focus outline, so it is reachable before any script runs; in the browser it has no role, name or tab stop while its content fits and the scroller itself does not hold focus (a link inside it does not count), and is a region again when the content overflows; edge fades show only at an edge with content past it and the caption "Scroll sideways for more columns." only while it overflows, both from classes and data attributes alone (no style attribute); every table in apps/web/src is the direct and only child of the ScrollTable of components/scroll-table, under whatever name it is imported, and none is made by createElement or written in markup, but in the #42 pages listed with the pull requests that wrap them, and an exemption that no longer matches fails',
+  },
+  {
+    id: 'TBL-02',
+    title: 'No page scrolls sideways',
+    assertion:
+      "At 390 px no changed route is wider than the window, every table on it sits in a scroller, and each populated wide table overflows its scroller and shows the caption; at 1280 px, and at 1263 px (1280 less a classic scrollbar), each wide table the tour checks fits its card, every table's headers stand apart, no page scrolls sideways, and a table that fits has no tab stop and no caption, even while a link inside it holds focus",
+  },
+  {
+    id: 'TBL-03',
+    title: "Every changed route at a phone's width passes axe",
+    assertion:
+      "At 390 px every changed route, each with its wide table populated and overflowing, has no axe-core WCAG 2.1 A or AA violation, a scrollable region the keyboard cannot reach (scrollable-region-focusable) among them, and every scroller's state agrees with its measurement before axe runs; the screening result's is the review's fourth pull request's",
+  },
+  {
+    id: 'TBL-04',
+    title: 'One stacked-row layout',
+    assertion:
+      "Each stacked row is a list item headed by its naming cell at the level the caller gives (a link when the row has one), then a definition list of each column's label and value, then the row's actions; expected, paid and short are given together and in that order, and the stacked rows keep the table's column order, each figure in the mono face with tabular numerals; a status wraps inside the card; the rows carry their own hooks, never the table's, and no id or hook repeats between the two copies; with a table, the table shows from the table's own width up and the rows below it, by a container query on a full-width wrapper",
+  },
 ];

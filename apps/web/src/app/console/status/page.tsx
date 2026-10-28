@@ -6,6 +6,7 @@ import { ActionForm } from '../../../components/action-form';
 import { Field, SelectField, TextAreaField } from '../../../components/field';
 import { FormKeys } from '../../../components/form-keys';
 import { utc } from '../../../components/format';
+import { ScrollTable } from '../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
 import { INCIDENT_STATUS_LABELS, STATUS_LABELS, consoleStatusPage } from '../../../lib/routes/support';
@@ -57,24 +58,26 @@ export default async function ConsoleStatusPage() {
           <CardTitle>Components</CardTitle>
         </CardHeader>
         <CardContent>
-          <table className="w-full text-left text-sm" aria-label="Components">
-            <tbody>
-              {components.map((component) => (
-                <tr key={component.key} className="border-t first:border-t-0 align-top">
-                  <td className="py-2">
-                    {component.name} <Badge variant={component.status === 'operational' ? 'outline' : 'destructive'}>{STATUS_LABELS[component.status]}</Badge>
-                  </td>
-                  <td className="py-2">
-                    <ActionForm action={setComponentStatusAction} submit="Set" variant="outline" className="flex items-end gap-2">
-                      <FormKeys />
-                      <input type="hidden" name="component" value={component.key} />
-                      <SelectField label="Status" id={`status-${component.key}`} name="status" options={statuses} defaultValue={component.status} />
-                    </ActionForm>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ScrollTable label="Components">
+            <table className="w-full text-left text-sm" aria-label="Components">
+              <tbody>
+                {components.map((component) => (
+                  <tr key={component.key} className="border-t first:border-t-0 align-top">
+                    <td className="py-2 pr-3">
+                      {component.name} <Badge variant={component.status === 'operational' ? 'outline' : 'destructive'}>{STATUS_LABELS[component.status]}</Badge>
+                    </td>
+                    <td className="py-2">
+                      <ActionForm action={setComponentStatusAction} submit="Set" variant="outline" className="flex items-end gap-2">
+                        <FormKeys />
+                        <input type="hidden" name="component" value={component.key} />
+                        <SelectField label="Status" id={`status-${component.key}`} name="status" options={statuses} defaultValue={component.status} />
+                      </ActionForm>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollTable>
         </CardContent>
       </Card>
       <Card>

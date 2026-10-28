@@ -1,0 +1,17 @@
+{
+  "case": "TBL-02",
+  "module": "TBL",
+  "title": "No page scrolls sideways",
+  "assertion": "At 390 px no changed route is wider than the window, every table on it sits in a scroller, and each populated wide table overflows its scroller and shows the caption; at 1280 px, and at 1263 px (1280 less a classic scrollbar), each wide table the tour checks fits its card, every table's headers stand apart, no page scrolls sideways, and a table that fits has no tab stop and no caption, even while a link inside it holds focus",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": ["apps/web/e2e/tables-phone.spec.ts","apps/web/e2e/layout-1280.spec.ts"],
+  "codeListRelease": null,
+  "noFileReason": "A synthetic practice of its own loads SYNTHETIC CAS-08, CAS-02 and MAP-03, whose files belong to those cases; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

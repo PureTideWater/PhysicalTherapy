@@ -149,7 +149,7 @@ test('a viewer’s case detail names each line by its number, and no screen the 
       // Titled and numbered as the practice's steps: Step 4 is there even when nothing in it applies.
       await expect(trace.getByRole('heading', { level: 3, name: 'Step 4: adjustments' })).toBeVisible();
       await expect(trace.getByRole('list', { name: 'Trace steps' }).getByText(/rounded once/i).first()).toBeVisible();
-      await expect(trace.getByText('As the engine recorded it')).toHaveCount(0);
+      await expect(trace.getByText('As PaidWhole recorded it')).toHaveCount(0);
       await expect(trace).not.toContainText(/\d{4}-\d{2}-\d{2}/);
       await expectAccessible(viewer, 'the viewer’s line trace');
       await atPhoneWidth(viewer, 'the viewer’s line trace');
