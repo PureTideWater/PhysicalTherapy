@@ -47,7 +47,15 @@ GitHub login: PureTideWater.
 - **Resumed 2026-10-28 00:20 UTC** (the orchestrator's RESUME of 00:15): setup re-run (OK), no marker, the integrator
   given a second RESUMED note to run only Stryker packets-rest, packets-explain, pricing-engine, pricing-recompute,
   pricing-rest, the gate, then scope and its one push. Check-in moved to trig_015zUyNTQAE48NHK4vYz3Sw6 at 05:25 UTC.
-- **Next:** read the build's result; the PR waits for #42 to merge (then merge #42's head and the latest
+- **00:25 UTC: wf_8ee54e2b-824 finished** (result: `approval-summaries/lane-a-ss01-build-result.json`); its integrator
+  returned before Stryker's last five shards ran and before its push, so the session runs them itself
+  (`scratchpad/ss01/suite/part3b.sh`, background, at d763ba78). Scope 74 paths at d763ba78, all section 13, tests or
+  generated; one migration; nothing frozen touched. Handed-to-Lane-A items (a) to (j) are in the result's open items for
+  the orchestrator (mail + Q13 PR next after SS-01; the tp_app status REVOKE after deploy; closure lifecycle and firm
+  billing to milestone 12; UX PRs 78, 79, 57; model calls not refused).
+- **Next:** when Stryker and its gate pass, push d763ba78; then merge #42's head 6f23c42b into SS-01 (merge commit;
+  domain model and function files regenerated, never hand-merged), re-check, push; then SUITE-CAP-1b's build on it.
+- **Then:** read the build's result; the PR waits for #42 to merge (then merge #42's head and the latest
   claude/build-platform in, regenerate, open the draft PR, two reviews: security and tenancy, UX and brand).
 
 ## Items
@@ -77,3 +85,4 @@ GitHub login: PureTideWater.
 - 2026-10-27 21:40 UTC: SUITE-CAP-1b re-read: build with deltas; #42 at 6f23c42b, to merge into SS-01 after its build.
 - 2026-10-27 22:27 UTC: container restart; setup re-run; wf_8ee54e2b-824 resumed in its integrator.
 - 2026-10-28 00:20 UTC: resumed after the usage limit and a second restart; integrator finishing Stryker and pushing.
+- 2026-10-28 00:27 UTC: SS-01 build workflow done; Stryker's remaining shards running in the session.
