@@ -168,11 +168,14 @@ jobs:
       # attestation manifest, loaded below once its identity is read from its bytes. Every run reads the layer cache;
       # only a push to the build branch writes it, and only the final layers (mode=min): both Dockerfiles copy the whole
       # checkout before installing, so the install and build layers change with every commit and exporting them each run
-      # would churn the repository's 10 GB of Actions cache (audit #53 part 1's capacity review).
+      # would churn the repository's 10 GB of Actions cache (audit #53 part 1's capacity review). Each one's metadata
+      # output carries no build provenance (BUILDX_METADATA_PROVENANCE: disabled): buildx would put the whole event in
+      # it, and in the log (docs/adr/0066, Part 3, N29).
       - name: The images' directory
         run: mkdir -p "$RUNNER_TEMP/image"
       - name: Build the web image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env: { BUILDX_METADATA_PROVENANCE: disabled }
         with:
           context: .
           file: apps/web/Dockerfile
@@ -186,6 +189,7 @@ jobs:
 
       - name: Build the worker image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env: { BUILDX_METADATA_PROVENANCE: disabled }
         with:
           context: .
           file: apps/worker/Dockerfile

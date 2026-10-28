@@ -25,7 +25,7 @@
     [0063](0063-protect-main-and-the-build-branch-make-the-founders-github-review-the-approval-of-record-open-each-approval-with-what-changed-and-switch-on-the-edit-hooks.md)
     (the build branch is the default branch until launch, the build branch's ruleset applied, every action pinned by
     SHA at its release).
-- **Date:** 2026-10-25; Parts 2 and 3 2026-10-26
+- **Date:** 2026-10-25; Parts 2 and 3 2026-10-26; N29 2026-10-28
 - **Deciders:** the founder, Tyler Williams, who adopted the combined best-option audit in full on 2026-10-20 (items
   #19, #54, #109 and #112 among it, each placed "CI PR before PR 7"), under the standing rule of 2026-10-18; the build
   (Lane B), for the notices below, decided under that rule and each reversible by the founder
@@ -35,6 +35,8 @@
     co-founder on 2026-10-25 at about 01:10 UTC; the co-founder's Q2 (2026-10-25, about 21:05 UTC) and ruling of
     2026-10-26, about 00:20 UTC (every choice its recommended option, for security the safer one; the baselines'
     inspection by an adversarial visual-inspection agent's private gallery, not blocking the merge).
+    N29 is made under the same ruling of 2026-10-26, for the item Lane A's orchestrator handed Lane B on 2026-10-28 at
+    05:45 UTC (reconciliation-001).
   - **Part 2:** items #112 and #19 of that audit; the founder's rulings on the series' questions F1 (a), F2 (a) and
     (b), F4 and F7, relayed by the co-founder on 2026-10-25 at about 01:10 UTC, F7 applied that day at 21:14 UTC; and
     the co-founder's answers to CQ1, CQ2 and CQ3, each its recommended and safer option (2026-10-26, about 00:20 UTC),
@@ -963,6 +965,23 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
   each with a stand-in docker that accepts those two forms only, a stand-in `sha256sum` that fails on one file, and
   stand-in binaries whose bytes stay equal to the record while they print another version, fail to start or lose their
   execute bit.
+- **N29** (`co-001/ci-images-digest`, 2026-10-28). The images job's two identity steps take only the config digest
+  they compare, `fromJSON(steps.<id>.outputs.metadata || '{}')['containerimage.config.digest']`, never the whole
+  metadata output.
+  - **Why.** buildx v0.38.1 copies the whole event into every build record's provenance and, by default, into the
+    metadata output. On #42's description of 95,324 characters, that output reached 132,377 bytes, 132,387 as one
+    environment string, over Linux's 131,072 (`MAX_ARG_STRLEN`), so bash never started (job 122624309161).
+  - **The guard.** The `|| '{}'` keeps an empty output on the step's own message: the runner evaluates a step's
+    `env` before its `if:`, so no condition could guard it.
+  - **The builds.** Every `docker/build-push-action` step also sets `BUILDX_METADATA_PROVENANCE: disabled`. No step
+    reads the provenance, and the event stops being printed in each build's log. The build record, which
+    build-push-action uploads as an artifact, keeps BuildKit's copy.
+  - **What holds it.** `workflows.test.ts` reads every expression that reaches a step's environment, an input or a
+    script as the runner reads it, and admits only a closed list. That list holds values GitHub or the workflow
+    bounds, and every step output and value one job hands another, each listed with its bound.
+    - One listed value is over the limit and named so: the content calendar's findings (`FINDINGS_B64`). Their
+      transport is an item of its own.
+    - A `$GITHUB_ENV` write names a variable from a closed list.
 
 ### Consequences
 
