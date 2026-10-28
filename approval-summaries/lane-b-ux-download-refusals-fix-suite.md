@@ -301,3 +301,103 @@ None in the suite. No flake re-run was needed. The only failure was the intended
 - No test runs Safari. Its focus on a clicked link's scroller is stood in for in Chromium (ADR 0079, Not verified here).
 - `prettier --check` fails on download-link.tsx, download-link.test.tsx and download-refusals.spec.ts. It failed on them at 646f060a… already. Prettier is not one of the repo's gates and no round has run it, so they were not reformatted.
 - Carried from Part 3: UX-DLR-18 waits for #42. The PR #78 description still needs the fix rounds' lines, plus this merge: the receipts', Versions' and Generated reports' tables scroll in #79's regions inside this PR's `DownloadLinks`, and the focus fix.
+
+## Part 5: the merge of #74 and UX-DLR-11
+
+Worktree /home/user/ux-download-refusals, branch co-001/ux-download-refusals. #74 (co-001/ux-forms, UX PR 1; ADR 0077, FRM-01 to FRM-08) merged into claude/build-platform as 165c5993…, after #79. The merge base is a6e754fc…, and 16 files changed on both sides. Nothing was pushed. There was no rebase, no force and no --no-verify. There was no migration, nothing under packages/pricing and no model identifier. Against 165c5993… the #42 files touched are test-matrix.md, matrix.ts and registry.ts (rows only: 14, 24 and 22 lines added, 0 removed) and watched-paths.txt (3 rows, the generator's). components/shell.tsx is untouched.
+
+### Commits after f47437eb…
+- 8f7d18d4…: the merge (parents f47437eb… and 165c5993…), made by the merge agent (LANES.md rule 6: this PR merged second, so it keeps both).
+  - The 10 conflicts:
+    - The packet, packet review, report review and Reports pages, and uploader.tsx: only the imports conflicted. Each keeps #74's `TextAreaField`, `CheckboxGroup`, `SelectField` and `Field` beside this PR's `DownloadLinks`, `DownloadLink`, `DownloadRefusal`, `ForgetRefusal` and `?from=`.
+    - Coverage: keeps `PayerLetter`. Its two selects become #74's `SelectField` with `showChosen`, because #74's packets.spec.ts (its FRM-08 step) reads the letter's chosen contract under the select at 390 px. `SelectField` writes no attribute on an option, so the contract is held to its payer by ID (`contractOwners`). The form also takes #74's `grid-cols-1`, and the codes hint is 14 px, because form-hints.test.ts (ADR 0077 D9) failed on the merged tree.
+    - lib/http/next.ts: keeps `signInFor` in sign-in-for.ts (this PR) and #74's `guardMessage`, `STALE`, `refusedInput` and the form actor mark, with this PR's `minutesWords`. The words are the same either way.
+    - Synth and test matrix: `CASE_MODULES`, `MODULE_NUMBER`, matrix, registry and test-matrix hold FRM (16), TBL (17) and DLR (18).
+    - Personas: both sides' entries and doc comment.
+  - The generators (install, watched.ts, synth) wrote nothing.
+- 036989af…: UX-DLR-11, by the merge agent (8 files), as ADR 0079's Revisit when asked of whichever PR merged second.
+  - The letter's controls are marked through form-issues' `FieldError` and `describedBy`, through `SelectField`'s own `error`.
+  - `scroll-mt-18` is gone from `RefusalAlert` and the letter, replaced by #74's `html { scroll-padding-top: calc(3.5rem + 1rem) }`, which is the same 72 px.
+  - `LetterMarks` now hides the whole `FieldError` line.
+- 4136bd3d…: this check's first fix, F1 to F4 (9 files).
+- a0099fab…: this check's second fix, F5 (5 files): Coverage failed on every render.
+
+Final head: a0099fab….
+
+### Adversarial check of the merge against both parents
+- **Every file is accounted for.** I compared each side's own change (from the merge base a6e754fc…) with what the merge adds to the other parent, as multisets of +/- lines.
+  - At the merge: the 62 files only this PR changed equal f47437eb…, and the 113 only #74 changed equal 165c5993….
+  - The 16 both-changed files are exact unions except the planned resolutions: next.ts, uploader.tsx, the four pages, console/compliance/page.tsx, lib/routes/compliance.ts, test-matrix.md, matrix.ts, registry.ts and watched-paths.txt.
+  - Re-run on the final head: 17 files differ from a plain union, and each difference is planned:
+    - the personas' doc comment;
+    - the Coverage page and the synth `CASE_MODULES` and `MODULE_NUMBER`;
+    - the letter files, download-refusal and its test, refusal-notice, the e2e spec and ADR 0079 (UX-DLR-11 and F2 to F4);
+    - field.tsx and fields.test.tsx (F1);
+    - letter-contract-owners.ts and client-boundary.test.ts (F5).
+  - F1 replaced 13 of #74's lines in field.tsx, and each one is widened where it stood: a hint or a label that is a string renders as before.
+- **Nothing of #74's is lost.** `ActionForm` keeps what was typed. `Field`, `FieldError` (its icon and an aria-hidden "Error:"), `RefusalSummary` and `describedBy` are intact. So are the unlayered 2 px invalid rule, the 14 px hints, `html` scroll-padding-top, its tests (form-hints, fields, action-form, form-issues, forms-keep-input.spec, packets.spec FRM-08) and the FRM rows (## Forms (FRM), 16 rows in the registry and in the matrix).
+- **Nothing of this PR's is lost.** `returnTo`, the notices, `ForgetRefusal`, every `DownloadLink` placement, `?from=`, the `Forbidden` branches with their `ForgetRefusal`, the letter's behaviour, the tests, ADR 0079 and the DLR rows are all intact. That behaviour is: kept entries, marks from the URL, focus on the first marked control, a mark that clears on edit, on the payer and contract pair and on a valid submit, `LetterContractCheck`, the pattern, and the hint after the message.
+- **One defect that neither tsc nor any unit test could see (F5, from the merge commit).** letter.tsx is a server component, and it called `contractOwners` from letter-contract-check.tsx, a `'use client'` module. On the server that export is only a client reference. So every render of Coverage threw "Attempted to call contractOwners() from the server". The first suite run's e2e found it (below). A boundary scan of the server module graph found that one call on 4136bd3d… and none in either parent. A second scan found no function handed to a client component as a prop, on the head or on either parent.
+
+### UX and brand review of the letter's new markup (by code, against ADR 0077)
+- **Holds.**
+  - Each refused control has `aria-invalid` and #74's 2 px danger border from the one unlayered rule. The border reaches `SelectField` and `Input` alike, so the mark is never colour alone.
+  - Under each refused control is `FieldError`: the icon, an aria-hidden "Error:" and the message (3.3.1). It is named first in the control's `aria-describedby`, then the hint (FRM-04).
+  - The first marked control is focused on arrival.
+  - `LetterMarks` hides the whole line (Tailwind's preflight `[hidden]` is display:none !important, which beats the line's flex).
+  - The notice (`RefusalAlert`) and the focused control stop under the sticky header through `html` scroll-padding-top. The header is h-14 and sticky in the document scroller (shell.tsx), so the `html` rule applies.
+- **F1 (ADR 0077 D9).** The codes control was hand-written (Label, Input, FieldError and its own `<p>`), because the shared `Hint` took only a string and this hint sets each example code in mono (UX-DLR-09). Now `Hint` and `FieldProps.hint` take words in runs, as an option's label already did (ADR 0077 D6). The codes are a `Field`, and the DOM is the same as before.
+- **F2 (record).** ADR 0079's Revisit when said `scroll-mt-18` with scroll-padding-top made "144 px where 72 px was meant". That holds only for a top-aligned scroll, and this PR has none. Chromium's `focus()` centres the element instead, and it stopped 36 px lower. The ADR now says so, and its D5 letter paragraph names the three shared fields.
+- **F3 (tidy).** Doc comments the UX-DLR-11 edit had left past the 120-column wrap are reflowed in 5 files.
+- **F4 (test gap).** The e2e now asserts the 2 px `--destructive` border on the refused codes input and the refused contract select (`expectDangerMark`). There is no e2e for the header offset, because Chromium's centring focus cannot tell the padding from none. The rule is held in download-refusal.test.tsx, and its effect is #74's FRM-05.
+- **F5 (the fix).** `contractOwners` and `ContractOwners` move to components/coverage/letter-contract-owners.ts, which has no directive. letter.tsx and letter.test.tsx import the function from there, and the check imports only the type.
+  - New guard: apps/web/src/client-boundary.test.ts. It reads the code with the TypeScript compiler, starting from the app's server files, proxy.ts and every `'use server'` module, and follows imports through `ts.resolveModuleName` until it reaches a `'use client'` module (through barrels too). It fails on any use of a client export except as a JSX tag, a JSX attribute's value, an export or a type.
+  - Proven: with 4136bd3d…'s letter files it fails with "letter.tsx: contractOwners at line 164 (CallExpression)", and on the fix it passes (3 tests).
+  - The guard has no test-matrix row, because the matrix files are #42's.
+- **Considered, not changed.**
+  - Several marks focus the first marked control and show no summary. The letter is a GET download form with no `ActionForm`. R02 decided this, and two marks at once need both browser checks bypassed.
+  - The billing page's `scroll-mt-20` (PR #56) now stacks with #74's padding on a `#pay-<invoice>` fragment. That has been on the base since #74, and the file is not this PR's.
+  - `SelectField` keeps its intrinsic width in the letter, as #74's own letter and all 62 of its uses do.
+
+### Local suite on a0099fab…
+Every command ran under `flock /tmp/laneb-heavy.lock`, one at a time, with Node 24.22.0 and PG18 on 5433. Logs are in scratchpad/m74s2/*.log, and the first run's are in scratchpad/m74s. The tree was clean before and after each step, so the e2e ran the stamped build of the commit.
+
+| Command | Result |
+| --- | --- |
+| merge agent, on the merged tree before its commit: pnpm install --frozen-lockfile --config.modules-cache-max-age=0; watched.ts --write; pnpm synth --all | Pass. Each wrote nothing. Synth: 257 cases, 0 written, 649 unchanged. |
+| F1 to F4 (before 4136bd3d…): tsc apps/web (twice); vitest, 9 files then 7; eslint, 8 files; pnpm lint:copy | Pass. 297 tests, then 135; 0 problems; 535 files. |
+| F5 (before a0099fab…): tsc apps/web; vitest client-boundary, coverage/letter and form-hints; eslint, 5 files; watched.ts --write | Pass. 3 files, 30 tests; 0 problems; 538 lines, unchanged. |
+| Targeted check of a0099fab…: pnpm build, stamp, then E2E_DATABASE=tp_e2e_pr78g E2E_PORT=3187 pnpm test:e2e --workers=2 with download-refusals, era-exports, mapping, models and packets | Pass. 8 passed (1.9 min), with no server error. DLR-04 passes, including the F4 marks, focus and kept entries, and so does #74's FRM-08 step. tp_e2e_pr78g was dropped. |
+| pnpm typecheck | Pass. 22 projects (16.9 s). |
+| pnpm lint | Pass. 1,658 files in 3 groups, 0 errors, 0 warnings (79 s). |
+| pnpm lint:copy | Pass. 536 files. |
+| pnpm lint:logs | Pass. 1,075 files. |
+| pnpm test (the whole unit project) | Pass. 399 files: 6,789 passed, 4 skipped (186 s), coverage thresholds met. That includes client-boundary.test.ts, form-hints, fields, letter and download-refusal. |
+| pnpm synth --all, then git diff --exit-code | Pass. 257 cases: 0 written, 649 unchanged, 0 removed. EMR: 8 formats, 16 unchanged. |
+| tsx tools/screening-capacity/watched.ts --write, then git diff --exit-code | Pass. 538 lines, unchanged. |
+| tsx tools/stryker/affected.ts --event pull_request --base 165c5993… | Pass. Money, pricing, ledger and packets are not affected: any=false, no shards. |
+| tsx tools/stryker/gate.ts (empty reports, --expected '[]') | Pass: "No money path changed", "mutation gate: passed". |
+| DATABASE_URL=…5433/postgres pnpm test:db --shard=1/6 | Pass. 22 files, 2,432 passed (97 s). |
+| --shard=2/6 | Pass. 21 files, 824 passed, 1 skipped (58 s). |
+| --shard=3/6 | Pass. 21 files, 2,510 passed (100 s). |
+| --shard=4/6 | Pass. 21 files, 1,836 passed (92 s). |
+| --shard=5/6 | Pass. 21 files, 1,398 passed (163 s). |
+| --shard=6/6 | Pass. 21 files, 222 passed (60 s). |
+| test:db total | 127 files: 9,222 passed, 1 skipped, 0 failed. |
+| pnpm build | Pass. Web and worker (11 s: Turbopack's cache from the targeted check's build of the same tree). The tree was clean afterwards. |
+| build-stamp.ts --write a0099fab… | Stamped a0099fab…. Both e2e web servers read "the build is a0099fab…'s". |
+| E2E_ADMIN_URL=…5433/postgres E2E_PREBUILT=1 E2E_DATABASE=tp_e2e_pr78f E2E_PORT=3186 pnpm test:e2e --shard=1/2 --workers=2 | Pass. 32 passed (4.7 min). download-refusals (DLR-04), era-exports, layout-1280, mapping, models and forms-keep-input are included. |
+| same, --shard=2/2 | Pass. 31 passed (4.5 min). packets (with #74's FRM-08 step), tables-phone, uploads, reports and reconciliation are included. |
+| e2e total | 63 passed, 0 failed: the whole suite (63 tests in 29 files, `playwright test --list`). No server error in either log. |
+| Clean-up | tp_e2e_pr78f was dropped and its /tmp directories removed (0 left). Nothing listens on 3186 (only TIME_WAIT sockets). |
+
+### Failures
+- **First suite run, on 4136bd3d….** Everything passed through the stamp: typecheck, lint, lint:copy, lint:logs, test (398 files, 6,786 passed), synth, watched, affected, the gate, the six db shards and the build. Then e2e shard 1/2 failed 5 tests with one root cause, F5, which is not a flake: download-refusals DLR-04, era-exports CO-03 (Coverage), the layout-1280 tour (it timed out after 8 min waiting on Coverage's table), mapping MAP-01 and models milestone 10. Every Coverage render threw `contractOwners()` from the server (digest 766848993).
+- A container restart cut shard 2/2 off before it reported. After the restart I dropped the leftover tp_e2e_pr78f and its 7 /tmp directories.
+- F5 is fixed in a0099fab…, and the whole suite above was run again on it. No flake, and no re-run was needed.
+
+### Still open (carried)
+- `prettier --check` fails on letter-contract-owners.ts, letter-contract-check.tsx and client-boundary.test.ts, as it does on field.tsx and form-hints.test.ts on the base. Prettier is not one of the repo's gates, so they were not reformatted.
+- No test runs Safari (ADR 0079, Not verified here).
+- Carried from Part 3: UX-DLR-18 waits for #42.
+- The PR #78 description still needs the fix rounds' lines, plus this merge: the letter on #74's shared fields, scroll-padding-top in place of scroll-mt-18, `Hint` in runs, and client-boundary.test.ts.
