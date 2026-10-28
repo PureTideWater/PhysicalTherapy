@@ -993,3 +993,9 @@ HANDOFF.md; LANES.md rule 10).
   - post one PR comment on the images failure;
   - a fresh-clone verification reading CI.
 - Then I post the approval line as a suggested change and tell the founder exactly what to do.
+
+### 2026-10-28 05:50 UTC: SUITE-CAP-1a merged as #81 (56ed6279)
+- Both adversarial reviews said merge. The review round fixed a confirmed capacity regression: patient-balance batches re-read the match history once per batch, now once per report.
+- At 100,000 lines: triage 248.0 s to 52.2 s; the audit report from out-of-memory to 726.3 s. On the default lock table both still fail 53200 until 1b. Records: approval-summaries/lane-b-suite-cap-1a-*.md.
+- The same session started SUITE-CAP-3 (reconcile at real size).
+- #42's final round was stopped at 05:45 to take #81 into the same push, and resumed: one push with #74, #81 and the images fix.
