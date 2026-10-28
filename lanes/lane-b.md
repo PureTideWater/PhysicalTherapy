@@ -974,3 +974,10 @@ HANDOFF.md; LANES.md rule 10).
 - SS-01's hand-overs (a) to (j) are in LANES.md "Handed to Lane A".
 - New item SUITE-CAP-3, reconcile at real size: 6,000 lines took 341.8 s, growing faster than the line count. It goes next in SUITE-CAP-1a's session after 1a merges. Reserved: ADR 0087, CAS-49 to CAS-51. The matching rules and the ledger stay frozen.
 - Next free: ADR 0088, synth module 22, fixture release 900008.
+
+### 2026-10-28 05:20 UTC (Lane A's orchestrator): resumed after the 04:05-04:27 stop
+- The 5-hour limit stopped every session at about 04:05 to 04:27 UTC; this container restarted (setup re-run, snapshot loop restarted).
+- #42: the verification round's fix agent pushed 46974a25 at 04:03, after the full local suite on that tree. It includes #80 and #79; #74 comes next round. Then the limit stopped it, before the body update.
+  - CI on 46974a25: unit, db 1 to 4, e2e 1 and 2, lint, static, build, mutation, capacity, screening-capacity gate and approval-of-record are green.
+  - Red: `domain model` (expected: only the founder's approval line, hash `b23fed0e…`) and `images` (being root-caused now).
+- Eight sessions told to resume: the schema chain, SUITE-CAP-1a, packet day counts, download refusals, screening-result-tables, CI P1, #120, and ux-forms (UX PR 10).
