@@ -4,6 +4,7 @@ import type { CheckEvent, Finding, Level, Tree } from './check';
 import { READ_DEADLINE_MS, ageWords, excludeWindowProblems, expiredExclude, type ExcludeWindow, type KnownTime } from './exclude-window';
 import { MINUTE_MS, type ImageAgeException } from './policy';
 import { type HubTag, NetworkReadError, type Registry } from './registry';
+import type { NamedOnBuildBranch } from './tree';
 
 /**
  * The image rule (docs/adr/0066, Part 5; test matrix CI-22): every image the tree names is held to the founder's F2 (b)
@@ -1287,6 +1288,7 @@ export function imageFormRule(tree: Tree, entries: readonly ImageAgeException[])
 
 /** How one image's age was read. */
 type Verdict =
+  | { readonly kind: 'named'; readonly commit: string; readonly at: string }
   | { readonly kind: 'pushed'; readonly at: string; readonly source: string }
   | { readonly kind: 'nowhere'; readonly current: HubTag | null; readonly searched: number }
   | { readonly kind: 'untimed'; readonly on: string }
@@ -1365,13 +1367,18 @@ async function eachAtMost<T, R>(items: readonly T[], limit: number, run: (item: 
   return results;
 }
 
-/** What the networked rule reads: both trees, the event, now, and the deadline of its Docker Hub reads in ms (READ_DEADLINE_MS from the first read when absent). */
+/**
+ * What the networked rule reads: both trees, the event, now, the deadline of its Docker Hub reads in ms
+ * (READ_DEADLINE_MS from the first read when absent), and the build branch's first-parent history (tree.ts,
+ * buildBranchHistory; absent: none is read).
+ */
 export interface ImageInput {
   readonly head: Tree;
   readonly base: Tree;
   readonly event: CheckEvent;
   readonly now: Date;
   readonly deadlineMs?: number;
+  readonly history?: (digest: string) => NamedOnBuildBranch | null;
 }
 
 /** A deadline as a message says it: in whole seconds ("180 s"), else in milliseconds ("20 ms"). */
@@ -1413,6 +1420,12 @@ export async function imageRule(
     const deadlineMs = input.deadlineMs ?? READ_DEADLINE_MS;
     const deadline = AbortSignal.timeout(deadlineMs);
     const verdicts = await eachAtMost(fresh, IMAGE_READS_AT_ONCE, async ([, { name }]): Promise<Verdict> => {
+      // A revert (CI-S3): a digest the build branch's first-parent history named at least the floor ago is that old, read
+      // from git with no network, whatever Docker Hub's tags carry now.
+      const named = input.history?.(name.digest) ?? null;
+      if (named !== null && Date.parse(named.at) + minutes * MINUTE_MS <= now) {
+        return { kind: 'named', commit: named.commit, at: named.at };
+      }
       if (name.registry !== null) {
         return { kind: 'unprovable', registry: name.registry };
       }
@@ -1437,6 +1450,13 @@ export async function imageRule(
       const subject = `${image} (${wheres.join(', ')})`;
       const add = (level: Level, message: string) => findings.push({ level, rule: RULE, message });
       switch (verdict.kind) {
+        case 'named':
+          known.set(image, { what: 'the digest', at: verdict.at, as: `named by ${verdict.commit}` });
+          add(
+            'ok',
+            `${subject} was named by ${verdict.commit} on the build branch's first-parent history, committed ${verdict.at}, at least ${ageWords(minutes)} ago; a digest is pushed before any commit can name it, so it is old enough, and Docker Hub is not read`,
+          );
+          break;
         case 'pushed': {
           known.set(image, { what: 'the digest', at: verdict.at, as: 'pushed' });
           const matureAt = Date.parse(verdict.at) + minutes * MINUTE_MS;

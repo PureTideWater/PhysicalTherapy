@@ -1,7 +1,7 @@
 import { repositoryRoot } from '../content-files';
 import { type Finding, checkToolchain } from './check';
 import { createRegistry } from './registry';
-import { DEFAULT_BASE, mergeBase, readTreeAt, readWorkingTree } from './tree';
+import { DEFAULT_BASE, buildBranchHistory, mergeBase, readTreeAt, readWorkingTree } from './tree';
 
 /**
  * `pnpm toolchain:check`: runs in ci.yml's static job after the install and the range step, with BASE set to that
@@ -27,7 +27,10 @@ try {
   const commit = mergeBase(repositoryRoot, base);
   const event = process.env.GITHUB_EVENT_NAME === 'push' ? 'push' : 'pull_request';
   process.stdout.write(`check-toolchain: comparing this tree with ${commit} (git merge-base ${base} HEAD), as a ${event === 'push' ? 'push run' : 'pull request'}.\n`);
-  const findings = await checkToolchain({ head: readWorkingTree(repositoryRoot), base: readTreeAt(repositoryRoot, commit), event, now: new Date() }, createRegistry());
+  const findings = await checkToolchain(
+    { head: readWorkingTree(repositoryRoot), base: readTreeAt(repositoryRoot, commit), event, now: new Date(), history: buildBranchHistory(repositoryRoot, commit) },
+    createRegistry(),
+  );
   findings.forEach(print);
   const errors = findings.filter((finding) => finding.level === 'error').length;
   const warnings = findings.filter((finding) => finding.level === 'warning').length;

@@ -1,10 +1,15 @@
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { stringify } from 'yaml';
 
 import { type CheckEvent, type Finding, type Tree, checkOffline, checkToolchain } from './check';
 import { type HubTag, type HubTagPage, NetworkReadError, type Packument, type Registry } from './registry';
+import { type NamedOnBuildBranch, buildBranchHistory } from './tree';
 
 /**
  * The image rule (docs/adr/0066, Part 5; test matrix CI-22): every image digest the tree names that its base names
@@ -14,6 +19,12 @@ import { type HubTag, type HubTagPage, NetworkReadError, type Packument, type Re
  * 2026-10-23T00:00Z is under three days old.
  */
 const NOW = new Date('2026-10-26T00:00:00.000Z');
+
+/** Scratch repositories, each made in the test that uses it, removed after the file's tests. */
+const scratches: string[] = [];
+afterAll(() => {
+  for (const dir of scratches) rmSync(dir, { recursive: true, force: true });
+});
 
 /** A synthetic sha256 digest, hashed from a seed. */
 const digest = (seed: string) => `sha256:${createHash('sha256').update(`synthetic image ${seed}`).digest('hex')}`;
@@ -170,8 +181,13 @@ function tree(shape: Shape = {}): Tree {
   };
 }
 
-async function run(head: Tree, base: Tree = tree(), options: { readonly event?: CheckEvent; readonly registry?: Registry; readonly deadlineMs?: number } = {}): Promise<Finding[]> {
-  return checkToolchain({ head, base, event: options.event ?? 'pull_request', now: NOW, ...(options.deadlineMs === undefined ? {} : { deadlineMs: options.deadlineMs }) }, options.registry ?? fakeRegistry());
+async function run(
+  head: Tree,
+  base: Tree = tree(),
+  options: { readonly event?: CheckEvent; readonly registry?: Registry; readonly deadlineMs?: number; readonly history?: (digest: string) => NamedOnBuildBranch | null } = {},
+): Promise<Finding[]> {
+  const { event = 'pull_request', registry = fakeRegistry(), deadlineMs, history } = options;
+  return checkToolchain({ head, base, event, now: NOW, ...(deadlineMs === undefined ? {} : { deadlineMs }), ...(history === undefined ? {} : { history }) }, registry);
 }
 
 const problems = (findings: readonly Finding[], level: 'error' | 'warning' = 'error') => findings.filter((finding) => finding.level === level).map((finding) => `${finding.rule}: ${finding.message}`);
@@ -287,6 +303,64 @@ describe('the image rule', () => {
       pushed(step, '.github/workflows/ci.yml b step 1'),
     ]);
     expect(registry.reads).toHaveLength(5);
+  });
+
+  it('★ passes the revert of a digest the build branch’s first-parent history named at least three days ago, by that commit’s time and without reading Docker Hub; still fails one named there under three days ago, or named only on a side branch (CI-S3)', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'check-toolchain-images-'));
+    scratches.push(dir);
+    const git = (args: readonly string[], at?: string) => {
+      const env = { ...process.env, ...(at === undefined ? {} : { GIT_AUTHOR_DATE: at, GIT_COMMITTER_DATE: at }) };
+      const result = spawnSync('git', ['-c', 'user.name=synthetic', '-c', 'user.email=synthetic@example.invalid', '-c', 'commit.gpgsign=false', ...args], { cwd: dir, encoding: 'utf8', env });
+      if (result.status !== 0) {
+        throw new Error(`git ${args.join(' ')}: ${result.stderr}`);
+      }
+      return result.stdout.trim();
+    };
+    const commit = (image: string, at: string, message: string) => {
+      mkdirSync(path.join(dir, 'apps/web'), { recursive: true });
+      writeFileSync(path.join(dir, 'apps/web/Dockerfile'), dockerfile(image));
+      git(['add', '-A']);
+      git(['commit', '-q', '-m', message], at);
+      return git(['rev-parse', 'HEAD']);
+    };
+    const image = (seed: string) => `synthetic/node:24-slim@${digest(`revert ${seed}`)}`;
+    git(['init', '-q', '-b', 'build']);
+    const named = commit(image('old'), '2026-10-01T00:00:00Z', 'the build branch names the old digest');
+    commit(image('current'), '2026-10-05T00:00:00Z', 'a bump moves on from it');
+    const recent = commit(image('young'), '2026-10-24T00:00:00Z', 'a bump names a digest two days ago');
+    commit(image('current'), '2026-10-24T12:00:00Z', 'and a revert moves off it');
+    // A side branch names its digest on a date its author set; the merge commit brings it onto the build branch a day ago.
+    git(['checkout', '-q', '-b', 'side']);
+    commit(image('side'), '2026-09-01T00:00:00Z', 'a side branch, dated by its author');
+    git(['checkout', '-q', 'build']);
+    git(['merge', '-q', '--no-ff', '-m', 'the side branch merges', 'side'], '2026-10-25T00:00:00Z');
+    const merge = git(['rev-parse', 'HEAD']);
+    const base = commit(image('current'), '2026-10-25T06:00:00Z', 'the base: a bump moves off it');
+    const history = buildBranchHistory(dir, base, 'build');
+    // The oldest first-parent commit that named each: the side branch's digest by the merge commit, never by the side commit.
+    expect([history(digest('revert old')), history(digest('revert young')), history(digest('revert side')), history(digest('revert never'))]).toEqual([
+      { commit: named, at: '2026-10-01T00:00:00+00:00' },
+      { commit: recent, at: '2026-10-24T00:00:00+00:00' },
+      { commit: merge, at: '2026-10-25T00:00:00+00:00' },
+      null,
+    ]);
+
+    // Docker Hub's tag names the current digest, and no tag carries any other.
+    const hub = () => fakeRegistry({ tags: { 'synthetic/node:24-slim': tag('24-slim', digest('revert current'), OLD) } });
+    const reverted = hub();
+    const passed = await run(tree({ web: image('old') }), tree({ web: image('current') }), { registry: reverted, history });
+    expect(problems(passed)).toEqual([]);
+    expect(notes(passed)).toEqual([
+      `images: ${image('old')} (apps/web/Dockerfile:1) was named by ${named} on the build branch's first-parent history, committed 2026-10-01T00:00:00+00:00, at least three days ago; a digest is pushed before any commit can name it, so it is old enough, and Docker Hub is not read`,
+    ]);
+    expect(reverted.reads).toEqual([]);
+    for (const seed of ['young', 'side']) {
+      const registry = hub();
+      expect(problems(await run(tree({ web: image(seed) }), tree({ web: image('current') }), { registry, history }))).toEqual([
+        `images: ${image(seed)} (apps/web/Dockerfile:1): Docker Hub's tag 24-slim names ${digest('revert current')} now, pushed ${OLD} and so old enough from 2026-10-04T00:00:00.000Z, and none of the 0 most recently updated tags of synthetic/node carries ${digest(`revert ${seed}`)}, so when it was pushed cannot be read, and no exclude clears that: pin a tag's current digest (${RUNBOOK})`,
+      ]);
+      expect(registry.reads).toEqual(['tag synthetic/node:24-slim', 'tags synthetic/node 1']);
+    }
   });
 
   it('takes the time of another tag that carries a superseded digest, and fails one found on no tag, naming the tag’s current digest and when it is old enough', async () => {

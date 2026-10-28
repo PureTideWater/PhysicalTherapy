@@ -12,8 +12,11 @@ import { FILES, type Tree } from './check';
  * (docs/adr/0066, Part 5), so the image rule can tell a digest the change adds from one the base already ran.
  */
 
+/** The build branch, whose first-parent commits are the merge commits GitHub made when a pull request merged (CI-S3). */
+export const BUILD_BRANCH = 'origin/claude/build-platform';
+
 /** BASE when CI gives none: the build branch, as a local run would compare against it. */
-export const DEFAULT_BASE = 'origin/claude/build-platform';
+export const DEFAULT_BASE = BUILD_BRANCH;
 
 function git(root: string, args: readonly string[]): { readonly status: number | null; readonly stdout: string; readonly stderr: string } {
   const result = spawnSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
@@ -116,5 +119,49 @@ export function readTreeAt(root: string, commit: string): Tree {
     dockerfiles: at(files.filter((file) => APP_DOCKERFILE.test(file))),
     workflows: at(files.filter((file) => file.startsWith(`${WORKFLOWS_DIR}/`) && !file.slice(WORKFLOWS_DIR.length + 1).includes('/') && WORKFLOW.test(file))),
     imageFiles: files.filter(isImageFile),
+  };
+}
+
+/** The files the image rule reads, as git pathspecs: the apps' Dockerfiles, the compose file and the workflows. */
+const IMAGE_PATHS = [':(glob)apps/*/Dockerfile', FILES.compose, `:(glob)${WORKFLOWS_DIR}/*.yml`, `:(glob)${WORKFLOWS_DIR}/*.yaml`];
+
+/** The oldest commit of the build branch's first-parent history that named a digest, and its committer time (CI-S3). */
+export interface NamedOnBuildBranch {
+  readonly commit: string;
+  /** Its committer time, ISO 8601 as git prints it (%cI). */
+  readonly at: string;
+}
+
+/**
+ * The build branch's first-parent history as the image rule reads it (CI-S3): for a digest, the oldest commit on
+ * `branch`'s first-parent history, at or behind `base` (the merge base), whose files the rule reads (IMAGE_PATHS)
+ * name it; null when none does, or git cannot say (the branch absent), so the rule reads Docker Hub as before.
+ * First-parent commits there are the merge commits GitHub made, so their committer times are GitHub's; a commit on a
+ * merged side branch, whose dates its author set, is never taken. A digest is pushed before any commit can name it,
+ * so that commit's time bounds the push time from above.
+ */
+export function buildBranchHistory(root: string, base: string, branch: string = BUILD_BRANCH): (digest: string) => NamedOnBuildBranch | null {
+  return (digest) => {
+    const hex = /^sha256:([0-9a-f]{64})$/.exec(digest)?.[1];
+    if (hex === undefined) {
+      return null;
+    }
+    // Each first-parent commit whose change against its first parent adds or removes a line naming the digest, newest first.
+    const listed = git(root, ['log', '--first-parent', '--diff-merges=first-parent', '--format=%H %cI', `-G${hex}`, branch, '--', ...IMAGE_PATHS]);
+    if (listed.status !== 0) {
+      return null;
+    }
+    const commits = listed.stdout
+      .split('\n')
+      .map((line) => line.trim().split(' '))
+      .filter((fields): fields is [string, string] => fields.length === 2 && /^[0-9a-f]{40,64}$/.test(fields[0] ?? ''))
+      .reverse();
+    for (const [commit, at] of commits) {
+      // Behind the base, and naming it there (the oldest such commit added it; a later one may have removed it).
+      if (git(root, ['merge-base', '--is-ancestor', commit, base]).status === 0 && git(root, ['grep', '-q', '-F', digest, commit, '--', ...IMAGE_PATHS]).status === 0) {
+        return { commit, at };
+      }
+    }
+    return null;
   };
 }
