@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -354,6 +354,52 @@ describe('the git transport', () => {
     } finally {
       transport.close();
     }
+  });
+
+  it('runs git without the job’s token, which no git read needs, so GITHUB_TOKEN and GH_TOKEN never reach it (SEC-N4)', async () => {
+    const dir = path.join(scratch, 'octo', 'tokenless');
+    mkdirSync(dir, { recursive: true });
+    const env = { ...process.env, HOME: scratch, GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'Synthetic', GIT_AUTHOR_EMAIL: 'synthetic@example.invalid', GIT_COMMITTER_NAME: 'Synthetic', GIT_COMMITTER_EMAIL: 'synthetic@example.invalid' };
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env, encoding: 'utf8' }).trim();
+    git('init', '-q', '-b', 'main');
+    git('config', 'uploadpack.allowFilter', 'true');
+    writeFileSync(path.join(dir, 'action.yml'), node(''));
+    git('add', '.');
+    git('commit', '-q', '-m', 'first');
+    git('tag', 'v1.0.0');
+    const first = git('rev-parse', 'HEAD');
+    // A git that records which tokens its environment holds, then runs the real one.
+    const real = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
+    const bin = path.join(scratch, 'recording-bin');
+    const log = path.join(scratch, 'git-env.log');
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(path.join(bin, 'git'), `#!/bin/sh\nprintf '%s %s\\n' "\${GITHUB_TOKEN-unset}" "\${GH_TOKEN-unset}" >> '${log}'\nexec '${real}' "$@"\n`, { mode: 0o755 });
+    const saved = { PATH: process.env.PATH, GITHUB_TOKEN: process.env.GITHUB_TOKEN, GH_TOKEN: process.env.GH_TOKEN };
+    const restore = () => {
+      for (const [name, value] of Object.entries(saved)) {
+        if (value === undefined) Reflect.deleteProperty(process.env, name);
+        else process.env[name] = value;
+      }
+    };
+    process.env.PATH = `${bin}${path.delimiter}${saved.PATH ?? ''}`;
+    process.env.GITHUB_TOKEN = 'synthetic-token-not-a-secret';
+    process.env.GH_TOKEN = 'synthetic-gh-token-not-a-secret';
+    let transport: ReturnType<typeof gitTransport>;
+    try {
+      transport = gitTransport(`file://${scratch}`);
+    } finally {
+      restore();
+    }
+    try {
+      expect(await transport.file('octo/tokenless', first, 'action.yml')).toBe(node(''));
+      expect((await transport.fetchRefs('octo/tokenless', 'v1.0.0')).head).toBe(first);
+      expect((await transport.object('octo/tokenless', first))?.type).toBe('commit');
+    } finally {
+      transport.close();
+    }
+    const lines = readFileSync(log, 'utf8').trim().split('\n');
+    expect(lines.length).toBeGreaterThan(3);
+    expect(new Set(lines)).toEqual(new Set(['unset unset']));
   });
 
   it('fetches the age rule’s default branch alone, with the whole history a shallow file read cuts, answers ancestry and objects, fetches a commit by SHA, and close() removes it all', async () => {

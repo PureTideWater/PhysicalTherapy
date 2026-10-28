@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -175,6 +175,30 @@ describe('the pins the network reads', () => {
     expect(result.errors).toContain(refusal);
     // New against the base's top-level workflows: verified and aged, not vouched for by the parked copy.
     expect(transport.reads).toEqual(expect.arrayContaining(['ls-remote https://github.com/octo/setup-python refs/tags/v7.2.0 refs/tags/v7.2.0^{}', 'fetchRefs octo/setup-python v7.2.0']));
+  });
+
+  it('read the base with a git that never sees the job’s token, as the networked reads’ git and gpgv do not (SEC-N4)', () => {
+    const repo = repository({ baseWorkflow: workflow(CHECKOUT), headWorkflow: workflow(NEWER), baseChecker: true });
+    // A git that records which tokens its environment holds, then runs the real one.
+    const real = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
+    const bin = mkdtempSync(path.join(scratch, 'recording-bin-'));
+    const log = path.join(bin, 'git-env.log');
+    writeFileSync(path.join(bin, 'git'), `#!/bin/sh\nprintf '%s %s\\n' "\${GITHUB_TOKEN-unset}" "\${GH_TOKEN-unset}" >> '${log}'\nexec '${real}' "$@"\n`, { mode: 0o755 });
+    const saved = { PATH: process.env.PATH, GITHUB_TOKEN: process.env.GITHUB_TOKEN, GH_TOKEN: process.env.GH_TOKEN };
+    process.env.PATH = `${bin}${path.delimiter}${saved.PATH ?? ''}`;
+    process.env.GITHUB_TOKEN = 'synthetic-token-not-a-secret';
+    process.env.GH_TOKEN = 'synthetic-gh-token-not-a-secret';
+    try {
+      expect(baseState(repo.dir, repo.base)).toMatchObject({ mergeBase: repo.base, hasAge: true, everyPin: undefined });
+    } finally {
+      for (const [name, value] of Object.entries(saved)) {
+        if (value === undefined) Reflect.deleteProperty(process.env, name);
+        else process.env[name] = value;
+      }
+    }
+    const lines = readFileSync(log, 'utf8').trim().split('\n');
+    expect(lines.length).toBeGreaterThan(3);
+    expect(new Set(lines)).toEqual(new Set(['unset unset']));
   });
 });
 

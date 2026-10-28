@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 
+import { childEnv } from './network';
 import { actionUses, type ActionUse, type WorkflowText } from './workflows';
 
 /**
@@ -13,8 +14,9 @@ import { actionUses, type ActionUse, type WorkflowText } from './workflows';
 export const CHECKER_DIR = 'tools/check-action-pins';
 const WORKFLOWS_DIR = '.github/workflows';
 
+/** A git command in the checkout, run without the job's token, which no local read needs (the security review's N4). */
 function git(root: string, args: readonly string[]): { status: number | null; stdout: string; stderr: string } {
-  const result = spawnSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  const result = spawnSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: childEnv() });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 

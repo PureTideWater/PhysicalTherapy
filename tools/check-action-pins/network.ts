@@ -82,6 +82,18 @@ export interface Transport {
 
 const run = promisify(execFile);
 
+/** The job's token, under either name the GitHub tools read it from. */
+const TOKEN_NAMES = new Set(['GITHUB_TOKEN', 'GH_TOKEN']);
+
+/**
+ * The environment a child process (git, here and in base.ts; gpgv in age.ts) runs with: this process's, without the job's
+ * token, which no git read or signature check needs, so the token lives only in the age rule's API request headers (the
+ * security review's N4).
+ */
+export function childEnv(extra: Readonly<Record<string, string>> = {}): NodeJS.ProcessEnv {
+  return { ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !TOKEN_NAMES.has(name))), ...extra };
+}
+
 /** One git command's limit, and one HTTPS read's. */
 const READ_TIMEOUT_MS = 30_000;
 
@@ -99,7 +111,7 @@ export function gitTransport(origin = 'https://github.com'): Transport & { close
   const repositories = new Map<string, Promise<string>>();
   const commits = new Map<string, Promise<string>>();
   const ages = new Map<string, Promise<string>>();
-  const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: os.devNull };
+  const env = childEnv({ GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: os.devNull });
   const git = async (args: readonly string[], signal?: AbortSignal) => (await run('git', [...args], { timeout: READ_TIMEOUT_MS, env, signal, maxBuffer: 16 * 1024 * 1024 })).stdout;
   const gitBytes = async (args: readonly string[], signal?: AbortSignal) =>
     (await run('git', [...args], { timeout: READ_TIMEOUT_MS, env, signal, maxBuffer: 64 * 1024 * 1024, encoding: 'buffer' })).stdout;

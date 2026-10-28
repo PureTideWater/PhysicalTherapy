@@ -376,6 +376,26 @@ describe('the times read', SPAWNS, () => {
     expect(missing.errors).toEqual([`${REPO}@${before.sha} ${VERSION}: gpgv is not installed, so the commit's signature cannot be checked; install it (apt-get install gpgv) and re-run`]);
   });
 
+  it('run gpgv without the job’s token, which it never reads, so GITHUB_TOKEN and GH_TOKEN never reach it (SEC-N4)', async () => {
+    const log = path.join(scratch, 'gpgv-env.log');
+    const recording = path.join(scratch, 'recording-gpgv');
+    writeFileSync(recording, `#!/bin/sh\nprintf '%s %s\\n' "\${GITHUB_TOKEN-unset}" "\${GH_TOKEN-unset}" >> '${log}'\nexit 2\n`, { mode: 0o755 });
+    const saved = { GITHUB_TOKEN: process.env.GITHUB_TOKEN, GH_TOKEN: process.env.GH_TOKEN };
+    process.env.GITHUB_TOKEN = 'synthetic-token-not-a-secret';
+    process.env.GH_TOKEN = 'synthetic-gh-token-not-a-secret';
+    try {
+      const commit = signedObject('signed.commit');
+      const result = await run(adds(commit.sha), network([{ commit }]), { now: new Date(SIGNED + 10 * DAY), gpgv: recording });
+      expect(result.notes).toEqual(expect.arrayContaining([expect.stringContaining('; signed, but by no web-flow key (gpgv found no signature it could check)')]));
+    } finally {
+      for (const [name, value] of Object.entries(saved)) {
+        if (value === undefined) Reflect.deleteProperty(process.env, name);
+        else process.env[name] = value;
+      }
+    }
+    expect(readFileSync(log, 'utf8')).toBe('unset unset\n');
+  });
+
   it('on CI take verified_at with its reason beside it, 1 day old a failure and 5 days old a pass; locally no API read is made', async () => {
     const commit = signedObject('signed.commit');
     const repo = adds(commit.sha);

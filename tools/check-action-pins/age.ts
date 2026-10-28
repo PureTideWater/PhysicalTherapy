@@ -10,7 +10,7 @@ import { ageWords, excludeWindowProblems, expiredExclude, type KnownTime } from 
 import { compareVersions, MINUTE_MS } from '../check-toolchain/policy';
 import type { BaseState } from './base';
 import { armoredFingerprints, dearmor } from './keys';
-import { NetworkError, pool, rateLimitWait, withRetries, type Answer, type GitObject, type Headers, type Refs, type Transport } from './network';
+import { childEnv, NetworkError, pool, rateLimitWait, withRetries, type Answer, type GitObject, type Headers, type Refs, type Transport } from './network';
 import { actionUses, parsePin, VERSION, versionsByRef, type WorkflowText } from './workflows';
 
 /**
@@ -300,7 +300,7 @@ class SignatureReader {
     writeFileSync(payloadFile, payload);
     let status: string;
     try {
-      status = (await execFileAsync(this.gpgv, ['--homedir', this.dir, '--status-fd', '1', '--keyring', path.join(this.dir, 'web-flow.gpg'), signatureFile, payloadFile], { timeout: 30_000, signal })).stdout;
+      status = (await execFileAsync(this.gpgv, ['--homedir', this.dir, '--status-fd', '1', '--keyring', path.join(this.dir, 'web-flow.gpg'), signatureFile, payloadFile], { timeout: 30_000, signal, env: childEnv() })).stdout;
     } catch (error) {
       const failed = error as { code?: unknown; killed?: unknown; stdout?: unknown };
       if (failed.code === 'ENOENT') return 'missing';
