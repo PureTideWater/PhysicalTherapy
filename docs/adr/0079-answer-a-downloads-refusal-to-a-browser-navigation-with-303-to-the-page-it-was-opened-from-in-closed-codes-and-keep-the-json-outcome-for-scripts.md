@@ -11,7 +11,8 @@
   (Lane B), for the design review's eighteen findings (R01 to R18, all taken) and for the pull request's two reviews:
   the security review's three (SEC-01 to SEC-03, that review's numbers, not the test matrix's) and the UX review's
   fifteen (UX-DLR-01 to UX-DLR-15), each taken as its verifier corrected it, two of them (UX-DLR-12, UX-DLR-13) no
-  defect. Each reversible by the founder
+  defect, and its re-check's three (UX-DLR-16 to UX-DLR-18), the last left for after #42 (Revisit when). Each
+  reversible by the founder
 - **PRD sections:** 6 (Cross-cutting: every error shown with a next step; PRD.md:256), 7 (every screen has an error
   state with a next step); test matrix DLR-01 to DLR-04
 
@@ -124,22 +125,30 @@ gone, and 980 px wide on a phone (UX-010). The cause was general, not the letter
    Without the attribute, a refused link loads its page again, which would cut off an Uploads batch still being sent,
    untick the export review's and the audit report's reviewer checklists, and lose words typed and not yet sent on the
    packet page or in the console's evidence forms. On those pages a link is a `DownloadLink`
-   (`components/download-link.tsx`), inside a `DownloadLinks` that says its refusals. A plain primary click (no modifier
-   key) fetches the file as a script does (`Accept: application/json`, Fetch Metadata's `cors` mode and an empty
-   destination, so `isNavigation` is false and a refusal is the JSON outcome, never the 303): an attachment is saved
-   under its `Content-Disposition` name from an object URL; a refusal is read by `refusedDownloadOf()` and said above
-   the links (below them where they sit in the page's header: `below`) in the words and look of a page's notice
-   (`RefusalAlert`, 5 below), in place of the notice the page arrived with, and focused as it mounts (React's
-   `autoFocus` focuses only a form control); the next file saved takes it away; anything the notice cannot settle (a
-   signed-out session, maintenance, a body that is not an outcome, a request that failed) goes to the link as a
-   navigation, whose 303 takes sign-in's steps. The `href` stays the link's own, `?from=` and `?version=` with it, so a
-   new tab, a modifier click, "Save link as" or a page without script still downloads, and is still refused back to its
-   page (1 to 3). It serves the receipts' Report link (on Uploads, and in a zip's list of its files); the export
-   review's PDF and CSV, which read the page again once a file is saved (`router.refresh()`), so the checklist opens as
-   the second file is downloaded; the reviewer checklist's PDF and line CSV, in its header; each exported version's PDF
-   and CSV in the packet page's export history; and the console's evidence export, in the console's words
-   (`surface="console"`). Every other download link stays plain: its page holds nothing a reload would lose
-   (Alternatives considered). Once Report never navigates on a plain click, `Uploader` asks before the page unloads
+   (`components/download-link.tsx`), inside a `DownloadLinks` that says its fetches and its refusals. A plain primary
+   click (no modifier key) fetches the file as a script does (`Accept: application/json`, Fetch Metadata's `cors` mode
+   and an empty destination, so `isNavigation` is false and a refusal is the JSON outcome, never the 303). The browser
+   shows a fetched file only once the whole of it has arrived, where the navigation it replaces showed its own loading
+   indicator from the click, so while it runs the link is `aria-busy` (with the progress cursor,
+   `aria-busy:cursor-progress`) and tells its `DownloadLinks` through the context it says refusals through (one inside
+   another defers to the outer, as for refusals): that place keeps a `role="status"` line
+   (`text-sm text-muted-foreground`), mounted from the first render, empty and out of the layout's flow while no fetch
+   runs (`empty:sr-only`, so a page's gaps stay as they were), which reads "Downloading the file…", in the product's
+   busy words ("Working…", "Sending…"), while any link inside is fetching (UX-DLR-16). A fetch begun takes the place
+   from the notice before it, so the newest attempt is the one on screen, and its outcome clears the status: an
+   attachment is saved under its `Content-Disposition` name from an object URL, and nothing is said; a refusal is read
+   by `refusedDownloadOf()` and said above the links (below them where they sit in the page's header: `below`) in the
+   words and look of a page's notice (`RefusalAlert`, 5 below), in place of the notice the page arrived with, and
+   focused as it mounts (React's `autoFocus` focuses only a form control); the next download begun takes it away;
+   anything the notice cannot settle (a signed-out session, maintenance, a body that is not an outcome, a request that
+   failed) goes to the link as a navigation, whose 303 takes sign-in's steps. The `href` stays the link's own, `?from=`
+   and `?version=` with it, so a new tab, a modifier click, "Save link as" or a page without script still downloads, and
+   is still refused back to its page (1 to 3). It serves the receipts' Report link (on Uploads, and in a zip's list of
+   its files); the export review's PDF and CSV, which read the page again once a file is saved (`router.refresh()`), so
+   the checklist opens as the second file is downloaded; the reviewer checklist's PDF and line CSV, in its header; each
+   exported version's PDF and CSV in the packet page's export history; and the console's evidence export, in the
+   console's words (`surface="console"`). Every other download link stays plain: its page holds nothing a reload would
+   lose (Alternatives considered). Once Report never navigates on a plain click, `Uploader` asks before the page unloads
    (`beforeunload`, the browser's own question) while any file of the batch is still being asked for, sent or reported
    complete (`stillSending`); a move inside the app does not unload the page and does not ask.
 5. **How a page says it.** Each page parses `props.searchParams` with `downloadRefusal()`, whose zod fragment
@@ -185,16 +194,19 @@ gone, and 980 px wide on a phone (UX-010). The cause was general, not the letter
      `autoFocus` on the first marked control. It keeps the validated entries as the form's defaults (a payer or
      contract only when it is one of the form's own options); a marked payer that is none of them starts unanswered,
      on a first option "Choose a payer" that the select's `required` holds, never as another payer shown under the
-     mark (UX-DLR-06). A mark clears as the person edits its control, and a letter sent (the browser fires `submit`
-     only once its own checks pass) clears them all and takes the refusal and the entries out of the address bar as
-     `ForgetRefusal` does, so a downloaded letter leaves a clean form and a reload shows the plain one; until then the
-     marks and entries survive a reload (`LetterMarks`, UX-DLR-04). Before the server, the codes input takes the
-     route's rule as its `pattern` (`LETTER_CODES_PATTERN`), with `letterCodes` tightened to test `/^[0-9A-Za-z]{5}$/`
-     before upper-casing so the two accept exactly the same codes (R06), and its hint gives the format and the example
-     (each code in mono, with no placeholder; UX-DLR-07, UX-DLR-09); and a contract of another payer holds the contract
-     select invalid (`setCustomValidity`) in the words its refusal would be marked with, so the browser stops that
-     letter and says why there (`LetterContractCheck`, UX-DLR-15). The route's checks stay the rule: without script,
-     its refusal comes back marked.
+     mark (UX-DLR-06). A mark clears as the person edits its control, the contract's also once a change of the payer
+     makes the pair hold (its entry in `LetterMarks` names the payer as `also`, and the payer's change is read on the
+     form, where it bubbles after `LetterContractCheck`'s listener on the payer has set the contract's validity, so its
+     `validity.valid` is the new pair's, read as a value where `checkValidity()` would fire `invalid`; UX-DLR-17), and a
+     letter sent (the browser fires `submit` only once its own checks pass) clears them all and takes the refusal and
+     the entries out of the address bar as `ForgetRefusal` does, so a downloaded letter leaves a clean form and a reload
+     shows the plain one; until then the marks and entries survive a reload (`LetterMarks`, UX-DLR-04). Before the
+     server, the codes input takes the route's rule as its `pattern` (`LETTER_CODES_PATTERN`), with `letterCodes`
+     tightened to test `/^[0-9A-Za-z]{5}$/` before upper-casing so the two accept exactly the same codes (R06), and its
+     hint gives the format and the example (each code in mono, with no placeholder; UX-DLR-07, UX-DLR-09); and a
+     contract of another payer holds the contract select invalid (`setCustomValidity`) in the words its refusal would be
+     marked with, so the browser stops that letter and says why there (`LetterContractCheck`, UX-DLR-15). The route's
+     checks stay the rule: without script, its refusal comes back marked.
 
 ## Alternatives considered
 
@@ -247,13 +259,14 @@ gone, and 980 px wide on a phone (UX-010). The cause was general, not the letter
   unchanged (DLR-01, DLR-02, DLR-04).
 - Every new download route declares `returnTo` through `returnPage`, or the registry test in
   `download-refusal.test.ts` fails; a route that names no page still sends a navigation to `/`, never to JSON (DLR-03).
-- **A later success leaves a plain link's notice on screen (R16).** A download does not navigate, so after a good
-  file the notice stays beside a link that is now fine, until the person moves on; a link that downloads in place (4)
-  takes it away with the next file saved. The notice's keys, and the page's own that it names, have already left the
-  address bar (`ForgetRefusal`), so a reload shows the page as it is now, and no notice tells the person to reload:
-  each says what to do on the page itself. The letter clears its own marks, a control's as the person edits it and
-  all of them, with the refusal and the entries in the address bar, once the letter is sent (`LetterMarks`): ux-forms'
-  `Field` does not clear a mark as the person types (`co-001/ux-forms` at 4f0b526d).
+- **A later success leaves a plain link's notice on screen (R16).** A download does not navigate, so after a good file
+  the notice stays beside a link that is now fine, until the person moves on; a link that downloads in place (4) takes
+  it away as its next download begins. The notice's keys, and the page's own that it names, have already left the
+  address bar (`ForgetRefusal`), so a reload shows the page as it is now, and no notice tells the person to reload: each
+  says what to do on the page itself. The letter clears its own marks, a control's as the person edits it (the
+  contract's also as a change of the payer makes the pair hold) and all of them, with the refusal and the entries in the
+  address bar, once the letter is sent (`LetterMarks`): ux-forms' `Field` does not clear a mark as the person types
+  (`co-001/ux-forms` at 4f0b526d).
 - **A refused plain link loads its page again**, on a page that holds nothing a reload would lose. Every page that
   holds work beside a download link (Uploads, the export review, the audit report's reviewer checklist, the packet
   page and the console's evidence checklist) downloads it in place (4), so a refused file leaves the ticks, the typed
@@ -295,9 +308,12 @@ gone, and 980 px wide on a phone (UX-010). The cause was general, not the letter
   no end-to-end test answers it. CI saves a fetched file in Chromium only.
 - Every in-place link and every return page in a browser: the end-to-end tests click the receipts' Report, the export
   review's files and the reviewer checklist's line CSV (its ticks kept); the packet page's export history and the
-  console's evidence export are the same `DownloadLink`, held by its unit tests and the type check. No end-to-end test
-  sends a refused file back to one of the nine return pages whose permission is their file's, as a role that page
-  refuses too; the source test in `download-refusal.test.ts` reads their `Forbidden` branches instead.
+  console's evidence export are the same `DownloadLink`, held by its unit tests and the type check. The status is read
+  in a browser on the receipts' Report alone, its refused fetch held open; what the place says after each thing a link
+  tells it, two links fetching at once among them, is held by unit tests (`nextSaid`, `NoticePlace`), and no test
+  hears a screen reader say it. No end-to-end test sends a refused file back to one of the nine return pages whose
+  permission is their file's, as a role that page refuses too; the source test in `download-refusal.test.ts` reads their
+  `Forbidden` branches instead.
 
 ## Revisit when
 
@@ -310,6 +326,10 @@ gone, and 980 px wide on a phone (UX-010). The cause was general, not the letter
   otherwise add to it (144 px where 72 px is meant; UX-DLR-11). The letter keeps `LetterMarks` until a shared field
   clears its own mark.
 - Another page comes to hold what a reload would lose beside a download link: its links move onto `DownloadLink`.
+- #42 merges: `Forbidden` (`components/shell.tsx`, a #42 file this pull request leaves untouched) takes an optional
+  link, which `PermissionState` renders under its next step, so the packet page's permission state links the case
+  ("Open the case", in place of "Open the case to see its state.") and the reviewer checklist's links the audit report
+  ("Open the audit report"), which its next step now names without a way to open it (UX-DLR-18).
 - A download is opened from a page `from=` does not name (a zip's file's report coming back to the zip, UX-DLR-13), or
   a route needs a page that depends on more than its own path parameters.
 - A browser changes the destination it sends for a link download or "Save link as", or Next changes how a route

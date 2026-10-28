@@ -1,5 +1,6 @@
 'use client';
 
+import { cn } from '@tp/ui';
 import { useRouter } from 'next/navigation';
 import { type MouseEvent, type ReactNode, createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 
@@ -13,7 +14,8 @@ import { RefusalAlert } from './refusal-notice';
  * comes back to its page by a 303, which loads the page again, so here a plain click fetches the file as a script
  * instead: the response is the file, saved under the name the route gave it (Content-Disposition), or the route's JSON
  * outcome, whose refusal is said in place, in the product's words (lib/http/download-refusal-words.ts) and focused,
- * beside the links (DownloadLinks), while the page and everything on it stay. What the notice cannot settle (a
+ * beside the links (DownloadLinks), while the page and everything on it stay. The browser shows a fetched file only
+ * once the whole of it has arrived, so the same place says the fetch while it runs. What the notice cannot settle (a
  * signed-out session, maintenance, a body that is not an outcome, a request that failed) goes to the link itself, as a
  * navigation, whose 303 takes sign-in's steps. The href stays the link's own, so a new tab, a modifier click, "Save
  * link as" or a page without script still downloads, and is still refused back to its page.
@@ -78,14 +80,46 @@ export function isPlainClick(event: Pick<MouseEvent, 'button' | 'metaKey' | 'ctr
   return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey && !event.defaultPrevented;
 }
 
-/** What DownloadLinks says: nothing yet (the notice the page arrived with), or the newest attempt's outcome. */
-interface Said {
+/**
+ * What DownloadLinks says once a link inside has been clicked (before that, nothing: the notice the page arrived
+ * with): the newest attempt's notice, and the fetches still running.
+ */
+export interface Said {
+  /** The newest outcome's refusal; null from a fetch begun until a refusal comes back, and once a file is saved. */
   readonly notice: ShownRefusal | null;
-  /** Counts the attempts, so a second refusal in the same words mounts a new notice, which is focused again. */
+  /** Counts the refusals, so a second refusal in the same words mounts a new notice, which is focused again. */
   readonly attempt: number;
+  /** The links inside still fetching their files, which the status says. */
+  readonly fetching: number;
 }
 
-const SayRefusal = createContext<((notice: ShownRefusal | null) => void) | null>(null);
+/**
+ * What a link tells the DownloadLinks it is inside: its fetch begun, the outcome it came to (a refusal, or null for a
+ * file saved), its fetch ended.
+ */
+export type Told = { readonly kind: 'fetching' } | { readonly kind: 'said'; readonly notice: ShownRefusal | null } | { readonly kind: 'fetched' };
+
+/**
+ * What DownloadLinks says after a link tells it this. A fetch begun takes the place, so the newest attempt is the one
+ * on screen: the notice before it leaves, and the status says the fetch until the last one running has ended; its
+ * outcome is said there (a file saved, nothing).
+ */
+export function nextSaid(said: Said | null, told: Told): Said {
+  const { notice, attempt, fetching } = said ?? { notice: null, attempt: 0, fetching: 0 };
+  switch (told.kind) {
+    case 'fetching':
+      return { notice: null, attempt, fetching: fetching + 1 };
+    case 'said':
+      return { notice: told.notice, attempt: told.notice === null ? attempt : attempt + 1, fetching };
+    case 'fetched':
+      return { notice, attempt, fetching: Math.max(fetching - 1, 0) };
+  }
+}
+
+/** The words of a fetch running: the status's, in the product's busy words ("Working…", "Sending…"). */
+const FETCHING = 'Downloading the file…';
+
+const TellDownloads = createContext<((told: Told) => void) | null>(null);
 
 /**
  * Focuses the notice it holds as it mounts (a ref callback): autoFocus focuses a notice only as the page loads (the
@@ -96,17 +130,42 @@ function focusNotice(place: HTMLDivElement | null): void {
 }
 
 /**
- * Where the download links inside (DownloadLink) say their refusals: above them, or below them (below: links in a
- * page's header, the reviewer checklist's, whose notice follows the header), in place of the notice the page arrived
- * with (arrived: its DownloadRefusal, from a 303), so the newest outcome is the one on screen; a file saved takes the
- * notice away. One inside another says nothing of its own: the outer one's place is the page's (the Uploads screen's,
- * above its receipts), and the inner one's (a receipt list's own) serves where there is none.
+ * DownloadLinks' place, as it says what its links come to: a status, mounted from the first render so a screen reader
+ * hears what it later says, empty and out of the layout's flow while no fetch runs (so a page's gaps stay as they
+ * were), and "Downloading the file…" while one does; then the notice: the one the page arrived with until a link is
+ * clicked (said null), the newest outcome's after (none from a fetch begun until a refusal comes back, nor for a file
+ * saved).
+ */
+export function NoticePlace({ said, arrived }: { readonly said: Said | null; readonly arrived?: ReactNode }) {
+  return (
+    <>
+      <p role="status" className="text-sm text-muted-foreground empty:sr-only">
+        {said !== null && said.fetching > 0 ? FETCHING : null}
+      </p>
+      {said === null ? (
+        arrived
+      ) : said.notice === null ? null : (
+        <div key={said.attempt} ref={focusNotice}>
+          <RefusalAlert notice={said.notice} />
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * Where the download links inside (DownloadLink) say their fetches and their refusals (NoticePlace): above them, or
+ * below them (below: links in a page's header, the reviewer checklist's, whose notice follows the header), in place of
+ * the notice the page arrived with (arrived: its DownloadRefusal, from a 303), so the newest attempt is the one on
+ * screen (nextSaid); a file saved takes the notice away. One inside another says nothing of its own: the outer one's
+ * place is the page's (the Uploads screen's, above its receipts), and the inner one's (a receipt list's own) serves
+ * where there is none.
  */
 export function DownloadLinks({ arrived, below = false, children }: { readonly arrived?: ReactNode; readonly below?: boolean; readonly children: ReactNode }) {
-  const outer = useContext(SayRefusal);
+  const outer = useContext(TellDownloads);
   const [said, setSaid] = useState<Said | null>(null);
-  const say = useCallback((notice: ShownRefusal | null) => {
-    setSaid((last) => ({ notice, attempt: (last?.attempt ?? 0) + 1 }));
+  const tell = useCallback((told: Told) => {
+    setSaid((last) => nextSaid(last, told));
   }, []);
   if (outer !== null) {
     return (
@@ -117,20 +176,13 @@ export function DownloadLinks({ arrived, below = false, children }: { readonly a
       </>
     );
   }
-  const notice =
-    said === null ? (
-      arrived
-    ) : said.notice === null ? null : (
-      <div key={said.attempt} ref={focusNotice}>
-        <RefusalAlert notice={said.notice} />
-      </div>
-    );
+  const place = <NoticePlace said={said} arrived={arrived} />;
   return (
-    <SayRefusal.Provider value={say}>
-      {below ? null : notice}
+    <TellDownloads.Provider value={tell}>
+      {below ? null : place}
       {children}
-      {below ? notice : null}
-    </SayRefusal.Provider>
+      {below ? place : null}
+    </TellDownloads.Provider>
   );
 }
 
@@ -152,7 +204,8 @@ function RefreshOnSave({ saved }: { readonly saved: number }) {
 /**
  * A download link whose plain click fetches the file in place (see above), inside DownloadLinks; outside one it is a
  * plain link. refresh reads the page again once the file is saved, for a page that shows what the download recorded
- * (the export review opens its checklist once both files are downloaded). surface picks the refusal's words.
+ * (the export review opens its checklist once both files are downloaded). surface picks the refusal's words. While
+ * its file is fetched it tells its DownloadLinks, whose status says so, and is aria-busy, with the progress cursor.
  */
 export function DownloadLink({
   href,
@@ -167,12 +220,12 @@ export function DownloadLink({
   readonly surface?: DownloadSurface;
   readonly refresh?: boolean;
 }) {
-  const say = useContext(SayRefusal);
+  const tell = useContext(TellDownloads);
   const busy = useRef(false);
   const [fetching, setFetching] = useState(false);
   const [saved, setSaved] = useState(0);
   const onClick = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (say === null || !isPlainClick(event)) {
+    if (tell === null || !isPlainClick(event)) {
       return;
     }
     event.preventDefault();
@@ -182,16 +235,17 @@ export function DownloadLink({
     }
     busy.current = true;
     setFetching(true);
+    tell({ kind: 'fetching' });
     void fetchDownload(href)
       .then((fetched) => {
         switch (fetched.kind) {
           case 'file':
             saveFile(fetched.blob, fetched.filename);
-            say(null);
+            tell({ kind: 'said', notice: null });
             setSaved((count) => count + 1);
             return;
           case 'refused':
-            say(shownRefusal(fetched.refusal, surface));
+            tell({ kind: 'said', notice: shownRefusal(fetched.refusal, surface) });
             return;
           case 'navigate':
             window.location.assign(href);
@@ -201,11 +255,12 @@ export function DownloadLink({
       .finally(() => {
         busy.current = false;
         setFetching(false);
+        tell({ kind: 'fetched' });
       });
   };
   return (
     <>
-      <a className={className} href={href} onClick={onClick} aria-busy={fetching ? true : undefined}>
+      <a className={cn('aria-busy:cursor-progress', className)} href={href} onClick={onClick} aria-busy={fetching ? true : undefined}>
         {children}
       </a>
       {refresh ? <RefreshOnSave saved={saved} /> : null}

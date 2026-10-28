@@ -4,10 +4,14 @@ import { useEffect } from 'react';
 
 import { forgetRefusalUrl } from '../forget-refusal';
 
-/** A marked control and the message under it, by their element ids (letter.tsx). */
+/**
+ * A marked control and the message under it, by their element ids (letter.tsx), and the other controls whose change
+ * can answer its refusal (also: the payer, for a contract refused as not the payer's).
+ */
 export interface LetterMarkIds {
   readonly control: string;
   readonly message: string;
+  readonly also?: readonly string[];
 }
 
 /** A control, as its mark is read and cleared (an input or a select; a test passes a fake). */
@@ -15,13 +19,22 @@ export interface MarkedControl extends EventTarget {
   getAttribute(name: string): string | null;
   setAttribute(name: string, value: string): void;
   removeAttribute(name: string): void;
+  /**
+   * Whether it holds now, its custom validity with the rest (the contract's is LetterContractCheck's), read as a value:
+   * checkValidity() would fire an invalid event at a control that does not hold.
+   */
+  readonly validity: Pick<ValidityState, 'valid'>;
 }
 
-/** A marked control, the message that says its mark (null when the page has none) and that message's id. */
+/**
+ * A marked control, the message that says its mark (null when the page has none), that message's id, and the other
+ * controls whose change clears the mark once the control holds (none when not given).
+ */
 export interface LetterMark {
   readonly control: MarkedControl;
   readonly message: Pick<HTMLElement, 'hidden'> | null;
   readonly messageId: string;
+  readonly also?: readonly EventTarget[];
 }
 
 /** An aria-describedby's ids without one of them, in order; null when none is left. */
@@ -54,9 +67,11 @@ export function clearMark(mark: LetterMark): void {
 
 /**
  * Watches a refused letter's marks until they no longer hold: a control the person edits (input, change) loses its own
- * mark, and a letter sent (submit, which the browser fires only once its own checks pass) loses them all, a refusal of
- * the pair being one the person may answer by changing the other control; then sent() runs. Returns the function that
- * stops.
+ * mark; a change of one of its other controls (also) loses it once the control holds again (a refused pair the person
+ * answers by changing the payer); and a letter sent (submit, which the browser fires only once its own checks pass)
+ * loses them all, then sent() runs. The other controls' changes are read on the form, where they arrive as they bubble,
+ * after every listener on the control itself has run, so the validity read is the one LetterContractCheck has just set
+ * for the new pair. Returns the function that stops.
  */
 export function watchLetterMarks(form: EventTarget, marks: readonly LetterMark[], sent: () => void): () => void {
   const edits = marks.map((mark) => ({
@@ -65,6 +80,13 @@ export function watchLetterMarks(form: EventTarget, marks: readonly LetterMark[]
       clearMark(mark);
     },
   }));
+  const answered = (event: Event) => {
+    for (const mark of marks) {
+      if (mark.also?.some((other) => other === event.target) === true && mark.control.validity.valid) {
+        clearMark(mark);
+      }
+    }
+  };
   const submitted = () => {
     for (const mark of marks) {
       clearMark(mark);
@@ -75,12 +97,14 @@ export function watchLetterMarks(form: EventTarget, marks: readonly LetterMark[]
     control.addEventListener('input', edited);
     control.addEventListener('change', edited);
   }
+  form.addEventListener('change', answered);
   form.addEventListener('submit', submitted);
   return () => {
     for (const { control, edited } of edits) {
       control.removeEventListener('input', edited);
       control.removeEventListener('change', edited);
     }
+    form.removeEventListener('change', answered);
     form.removeEventListener('submit', submitted);
   };
 }
@@ -92,14 +116,16 @@ export function watchLetterMarks(form: EventTarget, marks: readonly LetterMark[]
  * control the person edits loses its mark; a letter sent loses them all, and the refusal and the entries kept beside
  * it (forget) leave the address bar as ForgetRefusal takes them (replaceState with no state, so Next moves its
  * canonical URL too): a downloaded letter leaves a clean screen and a reload shows the plain form, and a letter refused
- * again comes back to a new address with its own marks. Until the person edits or sends, the marks and entries survive
- * a reload. Renders nothing.
+ * again comes back to a new address with its own marks. A mark that names other controls (also) is lost too once a
+ * change of one of them makes its control hold. Until the person edits or sends, the marks and entries survive a
+ * reload. Renders nothing.
  */
 export function LetterMarks({ marks, forget }: { readonly marks: readonly LetterMarkIds[]; readonly forget: readonly string[] }) {
   useEffect(() => {
     const found = marks.flatMap((ids) => {
       const control = document.getElementById(ids.control);
-      return control instanceof HTMLInputElement || control instanceof HTMLSelectElement ? [{ control, message: document.getElementById(ids.message), messageId: ids.message }] : [];
+      const also = (ids.also ?? []).flatMap((id) => document.getElementById(id) ?? []);
+      return control instanceof HTMLInputElement || control instanceof HTMLSelectElement ? [{ control, message: document.getElementById(ids.message), messageId: ids.message, also }] : [];
     });
     const form = found[0]?.control.form ?? null;
     if (form === null) {

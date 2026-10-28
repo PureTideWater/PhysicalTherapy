@@ -17,11 +17,11 @@ import { Figure } from './share';
  * (payerLetter's returnTo; docs/adr/0079) with the entries it was asked for kept as the form's defaults, and the refused
  * control marked: its message under it, after "Error:", named first by its aria-describedby, and the first marked
  * control focused on arrival; a payer the route did not find comes back unanswered ("Choose a payer"), never as another
- * payer shown under its mark. A mark clears as the person edits its control, and a letter sent clears them all and
- * takes the refusal and its entries out of the address bar (LetterMarks). A refusal of nothing the form can mark (a
- * rate limit, say) is the download's notice in its place, and the entries leave the address bar with it. Nothing from
- * the URL is ever said in words: a kept payer or contract is selected only when it is one of the form's own options,
- * and the kept codes are only the field's value.
+ * payer shown under its mark. A mark clears as the person edits its control (the contract's also once a change of the
+ * payer makes the pair hold), and a letter sent clears them all and takes the refusal and its entries out of the
+ * address bar (LetterMarks). A refusal of nothing the form can mark (a rate limit, say) is the download's notice in its
+ * place, and the entries leave the address bar with it. Nothing from the URL is ever said in words: a kept payer or
+ * contract is selected only when it is one of the form's own options, and the kept codes are only the field's value.
  */
 
 /** The page's search parameters, as Next gives them (awaited). */
@@ -66,6 +66,12 @@ function single(searchParams: LetterSearchParams, key: string): string | undefin
 /** A control's element id and its message's, one rule for the form, its descriptions and its client checks. */
 const controlId = (control: LetterControl) => `letter-${control}`;
 const errorId = (control: LetterControl) => `letter-${control}-error`;
+
+/**
+ * The other controls whose change can answer a control's refusal: a contract refused as not the payer's is answered by
+ * choosing the contract's payer too, and LetterMarks clears its mark once the pair holds.
+ */
+const ANSWERED_BY: Readonly<Partial<Record<LetterControl, readonly LetterControl[]>>> = { contract: ['payer'] };
 
 /**
  * A control's aria-describedby: its message first when refused, then its hint. Each control writes it as an attribute
@@ -201,7 +207,10 @@ export function PayerLetter({
             </Button>
           </div>
           {marked.size === 0 ? null : (
-            <LetterMarks marks={[...marked].map((control) => ({ control: controlId(control), message: errorId(control) }))} forget={LETTER_CONTROLS} />
+            <LetterMarks
+              marks={[...marked].map((control) => ({ control: controlId(control), message: errorId(control), also: ANSWERED_BY[control]?.map(controlId) }))}
+              forget={LETTER_CONTROLS}
+            />
           )}
         </form>
       )}

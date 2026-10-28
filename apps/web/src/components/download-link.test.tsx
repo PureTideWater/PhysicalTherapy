@@ -2,14 +2,15 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { shownRefusal } from '../lib/http/download-refusal-words';
-import { DownloadLink, DownloadLinks, attachmentFilename, fetchDownload, isPlainClick, saveFile } from './download-link';
+import { DownloadLink, DownloadLinks, NoticePlace, type Said, attachmentFilename, fetchDownload, isPlainClick, nextSaid, saveFile } from './download-link';
 
 /**
  * A download fetched in place on a page that holds what a reload would lose (docs/adr/0079; test matrix DLR-04; UX
- * review of PR #78, UX-DLR-02): the file saved under the route's own name, a refusal read from the JSON outcome a
- * script gets and said in the product's words, above the links or below them, anything else sent to the link as a
- * navigation, and the link itself kept for a new tab or a page without script. The click and the focus need a browser
- * (the e2e runs them); the request, its reading and the save are tested here. Written by hand.
+ * review of PR #78, UX-DLR-02, UX-DLR-16): the file saved under the route's own name, a refusal read from the JSON
+ * outcome a script gets and said in the product's words, above the links or below them, the fetch said in a status
+ * while it runs, anything else sent to the link as a navigation, and the link itself kept for a new tab or a page
+ * without script. The click and the focus need a browser (the e2e runs them); the request, its reading, the save and
+ * what the place says after each thing a link tells it are tested here. Written by hand.
  */
 
 const DOCUMENT = '00000000-0000-4000-8000-0000000000d1';
@@ -132,6 +133,9 @@ describe('the click a download link takes over', () => {
   });
 });
 
+/** The place's status as it renders while no file is fetched: mounted, empty, and out of the layout's flow. */
+const IDLE = '<p role="status" class="text-sm text-muted-foreground empty:sr-only"></p>';
+
 describe('a download link and the place its refusal is said', () => {
   it('is a plain link to the file, without download, so a new tab or a page without script still gets the 303 back to its page', () => {
     const markup = renderToStaticMarkup(
@@ -141,8 +145,10 @@ describe('a download link and the place its refusal is said', () => {
         </DownloadLink>
       </DownloadLinks>,
     );
-    expect(markup).toBe(`<a class="underline" href="${HREF}">Report</a>`);
+    // The progress cursor shows only while the link is aria-busy, its file being fetched.
+    expect(markup).toBe(`${IDLE}<a class="aria-busy:cursor-progress underline" href="${HREF}">Report</a>`);
     expect(markup).not.toContain('download');
+    expect(markup).not.toContain('aria-busy=');
   });
 
   it('says the notice the page arrived with until a download in place says its own, above the links', () => {
@@ -151,16 +157,16 @@ describe('a download link and the place its refusal is said', () => {
         <DownloadLink href={HREF}>Report</DownloadLink>
       </DownloadLinks>,
     );
-    expect(markup).toBe(`<p data-arrived="true">Arrived</p><a href="${HREF}">Report</a>`);
+    expect(markup).toBe(`${IDLE}<p data-arrived="true">Arrived</p><a class="aria-busy:cursor-progress" href="${HREF}">Report</a>`);
   });
 
-  it('says it below the links when they are in a page’s header (the reviewer checklist’s), inside another one too', () => {
+  it('says it below the links when they are in a page’s header (the reviewer checklist’s), and inside another one below its own links, the status the outer one’s', () => {
     const below = renderToStaticMarkup(
       <DownloadLinks arrived={<p data-arrived>Arrived</p>} below>
         <DownloadLink href={HREF}>Report</DownloadLink>
       </DownloadLinks>,
     );
-    expect(below).toBe(`<a href="${HREF}">Report</a><p data-arrived="true">Arrived</p>`);
+    expect(below).toBe(`<a class="aria-busy:cursor-progress" href="${HREF}">Report</a>${IDLE}<p data-arrived="true">Arrived</p>`);
     const inner = renderToStaticMarkup(
       <DownloadLinks>
         <DownloadLinks arrived={<p data-arrived>Arrived</p>} below>
@@ -168,10 +174,10 @@ describe('a download link and the place its refusal is said', () => {
         </DownloadLinks>
       </DownloadLinks>,
     );
-    expect(inner).toBe(below);
+    expect(inner).toBe(`${IDLE}<a class="aria-busy:cursor-progress" href="${HREF}">Report</a><p data-arrived="true">Arrived</p>`);
   });
 
-  it('leaves the place to the outer one when one is inside another (the Uploads screen’s, above its receipt list’s own)', () => {
+  it('leaves the place to the outer one when one is inside another (the Uploads screen’s, above its receipt list’s own), one status for both', () => {
     const markup = renderToStaticMarkup(
       <DownloadLinks arrived={<p data-arrived>Arrived</p>}>
         <section>
@@ -181,6 +187,49 @@ describe('a download link and the place its refusal is said', () => {
         </section>
       </DownloadLinks>,
     );
-    expect(markup).toBe(`<p data-arrived="true">Arrived</p><section><a href="${HREF}">Report</a></section>`);
+    expect(markup).toBe(`${IDLE}<p data-arrived="true">Arrived</p><section><a class="aria-busy:cursor-progress" href="${HREF}">Report</a></section>`);
+  });
+});
+
+describe('what the place says while a file is fetched in place (UX-DLR-16)', () => {
+  const ARRIVED = <p data-arrived>Arrived</p>;
+  const REFUSAL = shownRefusal({ status: 'rate_limited', fields: [], retryMinutes: 3 });
+  const place = (said: Said | null) => renderToStaticMarkup(<NoticePlace said={said} arrived={ARRIVED} />);
+
+  it('keeps its status mounted and empty while no file is fetched, the notice the page arrived with beside it', () => {
+    expect(place(null)).toBe(`${IDLE}<p data-arrived="true">Arrived</p>`);
+  });
+
+  it('says the fetch in its status while it runs, in place of the notice before it, and clears it as the file is saved', () => {
+    const fetching = nextSaid(null, { kind: 'fetching' });
+    expect(place(fetching)).toBe('<p role="status" class="text-sm text-muted-foreground empty:sr-only">Downloading the file…</p>');
+    const saved = nextSaid(nextSaid(fetching, { kind: 'said', notice: null }), { kind: 'fetched' });
+    expect(place(saved)).toBe(IDLE);
+  });
+
+  it('clears the status as a refusal comes back, and the refusal’s alert takes the place', () => {
+    const refused = nextSaid(nextSaid(nextSaid(null, { kind: 'fetching' }), { kind: 'said', notice: REFUSAL }), { kind: 'fetched' });
+    const markup = place(refused);
+    expect(markup.startsWith(`${IDLE}<div>`)).toBe(true);
+    expect(markup).toMatch(/<div [^>]*role="alert"[^>]*data-download-refusal="rate_limited"/);
+    expect(markup).toContain('Not downloaded');
+    expect(markup).toContain('Too many downloads in a short time. Wait 3 minutes and try again.');
+    expect(markup).not.toContain('Downloading');
+    expect(markup).not.toContain('data-arrived');
+    // The next attempt takes the place from the refusal while it runs.
+    expect(place(nextSaid(refused, { kind: 'fetching' }))).toBe('<p role="status" class="text-sm text-muted-foreground empty:sr-only">Downloading the file…</p>');
+  });
+
+  it('says the fetch while any link inside is still fetching, and counts each refusal, so one in the same words is a new notice', () => {
+    const both = nextSaid(nextSaid(null, { kind: 'fetching' }), { kind: 'fetching' });
+    const first = nextSaid(nextSaid(both, { kind: 'said', notice: REFUSAL }), { kind: 'fetched' });
+    expect(first).toEqual({ notice: REFUSAL, attempt: 1, fetching: 1 });
+    expect(place(first)).toContain('Downloading the file…');
+    expect(place(first)).toContain('data-download-refusal="rate_limited"');
+    const second = nextSaid(nextSaid(first, { kind: 'said', notice: REFUSAL }), { kind: 'fetched' });
+    expect(second).toEqual({ notice: REFUSAL, attempt: 2, fetching: 0 });
+    expect(place(second).startsWith(`${IDLE}<div>`)).toBe(true);
+    // A fetch that ends in a navigation says no outcome; the count never goes below none.
+    expect(nextSaid(second, { kind: 'fetched' })).toEqual(second);
   });
 });

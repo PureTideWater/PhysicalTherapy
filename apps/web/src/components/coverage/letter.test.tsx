@@ -13,8 +13,9 @@ import { type LetterMark, type MarkedControl, clearMark, describedWithout, watch
  * codes field's pattern with its hint, each contract option's payer for the check that holds the contract to the
  * payer, and a refused letter's return marked on the control it names, a payer the route did not find unanswered, its
  * entries kept only as the form's own options and the codes' alphabet allow, and never a word from the URL; then the
- * marks cleared as the person edits and sends (LetterMarks), and the contract held to its payer before the letter is
- * sent (LetterContractCheck), over fake controls (there is no DOM here). Synthetic IDs only. Written by hand.
+ * marks cleared as the person edits and sends (LetterMarks), the contract held to its payer before the letter is sent
+ * (LetterContractCheck), and a refused pair's contract mark cleared once a change of the payer makes the pair hold
+ * (UX-DLR-17), over fake controls (there is no DOM here). Synthetic IDs only. Written by hand.
  */
 
 const PRACTICE = '00000000-0000-4000-8000-000000000001';
@@ -213,9 +214,10 @@ describe('Coverage’s letter form', () => {
   });
 });
 
-/** A control's attributes and its events, as LetterMarks reads and clears them. */
+/** A control's attributes, its validity and its events, as LetterMarks reads and clears them. */
 class FakeControl extends EventTarget implements MarkedControl {
   readonly marks: Map<string, string>;
+  validity = { valid: true };
 
   constructor(marks: Readonly<Record<string, string>>) {
     super();
@@ -239,10 +241,21 @@ class FakeControl extends EventTarget implements MarkedControl {
   }
 }
 
-/** A control marked as letter.tsx marks it, with its message. */
-function markedControl(control: string, hint?: string): LetterMark & { readonly control: FakeControl; readonly message: { hidden: boolean } } {
+/** A control marked as letter.tsx marks it, with its message, and the other controls whose change can answer it. */
+function markedControl(control: string, hint?: string, also?: readonly EventTarget[]): LetterMark & { readonly control: FakeControl; readonly message: { hidden: boolean } } {
   const messageId = `letter-${control}-error`;
-  return { control: new FakeControl({ 'aria-invalid': 'true', 'aria-describedby': [messageId, hint].filter((id) => id !== undefined).join(' ') }), message: { hidden: false }, messageId };
+  return { control: new FakeControl({ 'aria-invalid': 'true', 'aria-describedby': [messageId, hint].filter((id) => id !== undefined).join(' ') }), message: { hidden: false }, messageId, also };
+}
+
+/**
+ * A change of a control as the browser sends it: at the control, then bubbling to its form, where its target is still
+ * the control (fakes have no tree, so the form is sent it here).
+ */
+function changeBubbling(control: EventTarget, form: EventTarget): void {
+  control.dispatchEvent(new Event('change'));
+  const bubbled = new Event('change');
+  Object.defineProperty(bubbled, 'target', { value: control });
+  form.dispatchEvent(bubbled);
 }
 
 describe('a refused letter’s marks, cleared once they no longer hold (LetterMarks)', () => {
@@ -276,7 +289,7 @@ describe('a refused letter’s marks, cleared once they no longer hold (LetterMa
     codes.control.edit('input');
     expect(codes.control.getAttribute('aria-invalid')).toBeNull();
     expect(codes.message.hidden).toBe(true);
-    // A refusal of the pair stays marked while the other control changes: it may be answered there.
+    // Another control's mark stays: only its own edit, a change that makes it hold (below) or a sent letter clears it.
     expect(contract.control.getAttribute('aria-invalid')).toBe('true');
     expect(contract.message.hidden).toBe(false);
     expect(sent).not.toHaveBeenCalled();
@@ -293,14 +306,46 @@ describe('a refused letter’s marks, cleared once they no longer hold (LetterMa
     expect(again.control.getAttribute('aria-invalid')).toBe('true');
   });
 
+  it('clears a mark that names another control once a change of that control makes it hold, and no other mark', () => {
+    const form = new EventTarget();
+    const payer = new EventTarget();
+    const codesControl = new EventTarget();
+    const contract = markedControl('contract', undefined, [payer]);
+    const codes = markedControl('codes', 'letter-codes-hint');
+    const sent = vi.fn();
+    const stop = watchLetterMarks(form, [contract, codes], sent);
+    // The pair is still refused: the mark stays.
+    contract.control.validity = { valid: false };
+    changeBubbling(payer, form);
+    expect(contract.control.getAttribute('aria-invalid')).toBe('true');
+    expect(contract.message.hidden).toBe(false);
+    // A change of a control the mark does not name leaves it, valid or not.
+    contract.control.validity = { valid: true };
+    changeBubbling(codesControl, form);
+    expect(contract.control.getAttribute('aria-invalid')).toBe('true');
+    // The payer's change makes it hold: the mark clears, its message hidden and out of the description.
+    changeBubbling(payer, form);
+    expect(contract.control.getAttribute('aria-invalid')).toBeNull();
+    expect(contract.control.getAttribute('aria-describedby')).toBeNull();
+    expect(contract.message.hidden).toBe(true);
+    // A mark that names no other control is cleared only by its own edit or a sent letter.
+    expect(codes.control.getAttribute('aria-invalid')).toBe('true');
+    expect(sent).not.toHaveBeenCalled();
+    stop();
+  });
+
   it('stops listening when it is stopped', () => {
     const form = new EventTarget();
     const payer = markedControl('payer');
+    const other = new EventTarget();
+    const contract = markedControl('contract', undefined, [other]);
     const sent = vi.fn();
-    watchLetterMarks(form, [payer], sent)();
+    watchLetterMarks(form, [payer, contract], sent)();
     payer.control.edit('change');
+    changeBubbling(other, form);
     form.dispatchEvent(new Event('submit'));
     expect(payer.control.getAttribute('aria-invalid')).toBe('true');
+    expect(contract.control.getAttribute('aria-invalid')).toBe('true');
     expect(sent).not.toHaveBeenCalled();
   });
 });
@@ -318,14 +363,14 @@ class FakePayer extends EventTarget implements PayerChoice {
 /** The contract select: its chosen option's payer (none for None named), its change, and the validity the check sets. */
 class FakeContract extends EventTarget implements ContractChoice {
   owner: string | undefined;
-  validity = '';
+  customValidity = '';
 
   get selectedOptions(): ArrayLike<{ readonly dataset: Readonly<Record<string, string | undefined>> }> {
     return [{ dataset: this.owner === undefined ? {} : { payer: this.owner } }];
   }
 
   setCustomValidity(message: string): void {
-    this.validity = message;
+    this.customValidity = message;
   }
 
   choose(owner: string | undefined): void {
@@ -343,28 +388,81 @@ describe('the letter’s contract, held to its payer before it is sent (LetterCo
     payer.value = PAYER_R;
     contract.owner = PAYER_Q;
     const stop = watchLetterContract(payer, contract, MESSAGE);
-    expect(contract.validity).toBe(MESSAGE);
+    expect(contract.customValidity).toBe(MESSAGE);
     payer.choose(PAYER_Q);
-    expect(contract.validity).toBe('');
+    expect(contract.customValidity).toBe('');
     payer.choose(PAYER_R);
-    expect(contract.validity).toBe(MESSAGE);
+    expect(contract.customValidity).toBe(MESSAGE);
     contract.choose(undefined);
-    expect(contract.validity).toBe('');
+    expect(contract.customValidity).toBe('');
     contract.choose(PAYER_Q);
-    expect(contract.validity).toBe(MESSAGE);
+    expect(contract.customValidity).toBe(MESSAGE);
     stop();
     payer.choose(PAYER_Q);
-    expect(contract.validity).toBe(MESSAGE);
+    expect(contract.customValidity).toBe(MESSAGE);
   });
 
   it('never holds None named, nor a contract while no payer is chosen (the payer’s required stops that letter)', () => {
     const payer = new FakePayer();
     const contract = new FakeContract();
     watchLetterContract(payer, contract, MESSAGE);
-    expect(contract.validity).toBe('');
+    expect(contract.customValidity).toBe('');
     contract.choose(PAYER_Q);
-    expect(contract.validity).toBe('');
+    expect(contract.customValidity).toBe('');
     payer.choose(PAYER_Q);
-    expect(contract.validity).toBe('');
+    expect(contract.customValidity).toBe('');
+  });
+});
+
+/** The contract select marked by a refused pair: held to its payer by LetterContractCheck, and marked as letter.tsx marks it. */
+class FakeMarkedContract extends FakeContract implements MarkedControl {
+  readonly marks = new Map([
+    ['aria-invalid', 'true'],
+    ['aria-describedby', 'letter-contract-error'],
+  ]);
+
+  getAttribute(name: string): string | null {
+    return this.marks.get(name) ?? null;
+  }
+
+  setAttribute(name: string, value: string): void {
+    this.marks.set(name, value);
+  }
+
+  removeAttribute(name: string): void {
+    this.marks.delete(name);
+  }
+
+  get validity(): Pick<ValidityState, 'valid'> {
+    return { valid: this.customValidity === '' };
+  }
+}
+
+describe('a refused pair answered by changing the payer (LetterContractCheck, then LetterMarks; UX-DLR-17)', () => {
+  it('clears the contract’s mark once the payer’s change makes the pair hold, read after the check has set its validity', () => {
+    const form = new EventTarget();
+    const payer = new FakePayer();
+    const contract = new FakeMarkedContract();
+    const message = { hidden: false };
+    // The kept pair: payer R with payer Q's contract, held at once.
+    payer.value = PAYER_R;
+    contract.owner = PAYER_Q;
+    const stopCheck = watchLetterContract(payer, contract, 'Choose one of this payer’s contracts, or None named.');
+    const stopMarks = watchLetterMarks(form, [{ control: contract, message, messageId: 'letter-contract-error', also: [payer] }], vi.fn());
+    expect(contract.validity.valid).toBe(false);
+    // Another payer that is not the contract's: still refused, still marked.
+    payer.value = ELSEWHERE;
+    changeBubbling(payer, form);
+    expect(contract.getAttribute('aria-invalid')).toBe('true');
+    expect(message.hidden).toBe(false);
+    // The contract's own payer: the check frees it at the payer, and the form, reached after, clears its mark.
+    payer.value = PAYER_Q;
+    changeBubbling(payer, form);
+    expect(contract.validity.valid).toBe(true);
+    expect(contract.getAttribute('aria-invalid')).toBeNull();
+    expect(contract.getAttribute('aria-describedby')).toBeNull();
+    expect(message.hidden).toBe(true);
+    stopMarks();
+    stopCheck();
   });
 });

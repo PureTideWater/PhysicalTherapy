@@ -25,10 +25,10 @@ import { startLocalWorker } from './worker';
  * the page stays. A refused file of the Reports list comes back beside that list, and the list leaves the address bar
  * with the refusal. Then a viewer who opens the audit report's line CSV as a page lands on the report with the refusal
  * said and focused, and still there after a router refresh that never writes the refusal back, while a script's
- * request keeps the JSON refusal. On Uploads, a receipt's report downloads in place and its refusal is said above the
- * receipts, focused, while the page stays (a batch still being sent would stay with it); and a viewer who opens a
- * packet's PDF lands on the packet's permission state, told who downloads its files, with the refusal out of the
- * address bar. Synthetic data only.
+ * request keeps the JSON refusal. On Uploads, a receipt's report downloads in place, its fetch said while it runs,
+ * and its refusal is said above the receipts, focused, while the page stays (a batch still being sent would stay with
+ * it); and a viewer who opens a packet's PDF lands on the packet's permission state, told who downloads its files, with
+ * the refusal out of the address bar. Synthetic data only.
  */
 
 const FIXTURES = path.resolve(import.meta.dirname, '../../../fixtures/synthetic');
@@ -188,9 +188,13 @@ test('a refused letter comes back to Coverage marked, focused and kept; a good o
     });
 
     await test.step('once corrected, the letter downloads with its marks cleared and the refusal out of the address bar, and a reload shows the plain form', async () => {
-      // A refusal of the pair, answered by changing the payer: the contract's mark stays until the letter is sent.
+      // A refusal of the pair, answered by changing the payer: once the pair holds, the contract's mark clears before
+      // anything is sent (LetterMarks reads the validity LetterContractCheck has just set; UX-DLR-17).
       await payer.selectOption({ label: PAYER_Q });
-      await expect(contract).toHaveAttribute('aria-invalid', 'true');
+      expect(await contractHeld()).toBe(false);
+      await expect(contract).not.toHaveAttribute('aria-invalid');
+      await expect(page.locator('#letter-contract-error')).toBeHidden();
+      await expect(contract).toHaveAccessibleDescription('');
       const [download] = await Promise.all([page.waitForEvent('download'), submit.click()]);
       expect(download.suggestedFilename()).toMatch(/^request-to-payer-[0-9a-f-]{36}\.txt$/);
       await expect(page).toHaveURL(`${E2E_ORIGIN}${coverage}`);
@@ -338,7 +342,7 @@ test('a refused letter comes back to Coverage marked, focused and kept; a good o
       }
     });
 
-    await test.step('a receipt’s report downloads in place on Uploads, and its refusal is said above the receipts, focused, while the page stays', async () => {
+    await test.step('a receipt’s report downloads in place on Uploads, its fetch said while it runs, and its refusal is said above the receipts, focused, while the page stays', async () => {
       const uploads = `/p/${practice}/uploads`;
       await page.goto(uploads);
       const report = page.getByRole('region', { name: 'Receipts' }).getByRole('row').filter({ hasText: '835 remittance' }).getByRole('link', { name: 'Report' }).first();
@@ -352,14 +356,30 @@ test('a refused letter comes back to Coverage marked, focused and kept; a good o
       await expect(page).toHaveURL(`${E2E_ORIGIN}${uploads}`);
       expect(await stayed()).toBe(true);
       // The route's answer to a script once the export limit is spent (outcomeResponse: 429, Retry-After and the
-      // outcome), stood in for here so the limit every download of this run shares stays whole.
+      // outcome), stood in for here so the limit every download of this run shares stays whole, and held until the
+      // fetch still running has been read on screen.
       const report429 = (url: URL) => url.pathname.endsWith('/report');
-      await page.route(report429, (route) =>
-        route.fulfill({ status: 429, headers: { 'retry-after': '125' }, contentType: 'application/json', body: JSON.stringify({ status: 'rate_limited', retryAfterSeconds: 125 }) }),
-      );
+      let answer = () => {};
+      const answered = new Promise<void>((resolve) => {
+        answer = () => {
+          resolve();
+        };
+      });
+      await page.route(report429, async (route) => {
+        await answered;
+        await route.fulfill({ status: 429, headers: { 'retry-after': '125' }, contentType: 'application/json', body: JSON.stringify({ status: 'rate_limited', retryAfterSeconds: 125 }) });
+      });
       await report.click();
+      // While the file is fetched, the place above the receipts says so and the link is busy (UX-DLR-16).
+      const fetching = page.getByRole('status').filter({ hasText: 'Downloading the file…' });
+      await expect(fetching).toBeVisible();
+      await expect(report).toHaveAttribute('aria-busy', 'true');
+      answer();
       const notice = page.locator('[data-download-refusal="rate_limited"]');
       await expect(notice).toBeFocused();
+      // The refusal takes the place, and the status says nothing beside it.
+      await expect(page.getByText('Downloading the file…')).toHaveCount(0);
+      await expect(report).not.toHaveAttribute('aria-busy');
       await expect(notice).toHaveAttribute('role', 'alert');
       await expect(notice).toContainText('Not downloaded');
       await expect(notice).toContainText('Too many downloads in a short time. Wait 3 minutes and try again.');
