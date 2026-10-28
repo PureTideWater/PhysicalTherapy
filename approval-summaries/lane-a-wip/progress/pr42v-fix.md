@@ -36,3 +36,5 @@
 - NEXT: full suite once (scratchpad/pr42vf2/suite-*.log)
 - [x] C8 cd94793f (domain model). Base moved: origin/claude/build-platform 0dd1ba7e (#80, model-gateway redaction; clean merge-tree) -> merged per LANES.md rule 6 as 8b60d74a; pnpm install --frozen-lockfile 0 (lock sha ba976a82 unchanged), watched.ts --write 541 lines unchanged, synth --all 0 written (246 cases). Mutation affected (base ecebdc90 merge base before merge): pricing+packets, 6 shards
 - NEXT: suite (scratchpad/pr42vf2/suite/results.tsv) on 8b60d74a
+- suite started ~00:27 UTC on 8b60d74a in background (run-all.sh: suite.sh then suite2.sh; results scratchpad/pr42vf2/suite/results.tsv; ALLDONE in results.tsv.done)
+- suite run 1 ABORTED at 00:31 (lint: packages/db/src/mail-address.ts:32 no-control-regex \x00); fixed in ffb27b11 (regex [\u0080-\uffff], same semantics); suite restarted on the new head (logs of the aborted run in scratchpad/pr42vf2/suite-aborted)
