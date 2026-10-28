@@ -82,7 +82,7 @@ export default async function RoiStatementPage(props: Props) {
                 <a className="underline" href={`${path}/pdf`}>
                   PDF
                 </a>{' '}
-                <span className="font-mono text-xs">SHA-256 {detail.pdfSha256}</span>
+                <span className="font-mono text-xs wrap-anywhere">SHA-256 {detail.pdfSha256}</span>
               </>
             ) : detail.print === 'failed' ? (
               'The PDF could not be printed after three attempts; the operator was alerted. The figures below and the CSV stand.'

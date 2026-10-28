@@ -1,6 +1,7 @@
 # 0056. Wear the PaidWhole brand from one token source, with self-hosted fonts and status as text on tint
 
 - **Status:** accepted; amended by [0058](0058-serve-email-art-from-the-static-host-hold-the-brands-colors-fonts-and-words-with-checks-and-compare-the-header-and-cover-with-baselines.md)
+  and [0078](0078-scroll-every-wide-table-in-a-named-region-that-says-it-scrolls-and-stack-rows-on-a-phone-through-one-primitive.md)
 - **Date:** 2026-10-17
 - **Deciders:** founder (engineering)
 - **PRD sections:** 6 (Cross-cutting: accessibility; PHI pages make no third-party requests), 7 (the shell, the
@@ -51,6 +52,11 @@ in the display face at -0.02em; running text (a page's lede, a card's descriptio
 words included (`<Money/>`); the one exception is a price inside a native `<option>`, which holds text only. At a
 phone's width no page scrolls sideways: a wide table scrolls inside its own card (its scroller is `relative`, so a
 visually hidden header stays inside it), and a definition list stacks its terms over their values.
+
+*Amended by [0078](0078-scroll-every-wide-table-in-a-named-region-that-says-it-scrolls-and-stack-rows-on-a-phone-through-one-primitive.md) (`co-001/ux-table-scroll`, 2026-10-27): every
+wide table scrolls in `ScrollTable`, a region named after its table, then ", scrolls sideways", while the table
+overflows, with edge fades and a caption; and a working list on a phone stacks each row through one primitive,
+`StackedRows`.*
 
 **Tables: expected, paid, short.** The brand's three numbers stand side by side in that order. In a table of lines the
 comparison is at the allowed level (the variance is expected allowed less observed allowed), so "paid" in the brand's

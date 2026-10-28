@@ -8,6 +8,7 @@ import { roleNames, utc, utcDate } from '../../../components/format';
 import { NotificationText } from '../../../components/monitoring/display';
 import { proofLevelWords, recoveredLabel } from '../../../components/reconciliation/display';
 import { Money } from '../../../components/remittances/display';
+import { ScrollTable } from '../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
 import { DEADLINE_WINDOW_DAYS, type Queues } from '../../../lib/dashboard/queries';
@@ -435,8 +436,8 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
             <EmptyState title="No agreements on file" nextStep="A platform administrator records the signed BAA and engagement letter. Nothing can be uploaded until they exist." />
           ) : (
             // Its own scroller at a phone's width: the page never scrolls sideways.
-            <div className="relative overflow-x-auto">
-              <table className="w-full text-left text-sm" aria-label="Agreements">
+            <ScrollTable label="Agreements">
+              <table className="w-full min-w-[40rem] text-left text-sm" aria-label="Agreements">
                 <thead className="text-muted-foreground">
                   <tr>
                     <th className="py-1 pr-3 font-medium">Agreement</th>
@@ -451,16 +452,18 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
                     <tr key={agreement.id} className="border-t align-top">
                       <td className="py-1 pr-3">{AGREEMENT_NAMES[agreement.kind] ?? agreement.kind}</td>
                       <td className="py-1 pr-3 font-mono text-xs whitespace-nowrap">{agreement.version}</td>
-                      <td className="py-1 pr-3">{agreement.signer}</td>
+                      <td className="py-1 pr-3">
+                        <span className="block min-w-32 wrap-anywhere">{agreement.signer}</span>
+                      </td>
                       <td className="py-1 pr-3 font-mono text-xs whitespace-nowrap">{utcDate(agreement.signedAt)}</td>
-                      <td className="py-1 font-mono text-xs whitespace-nowrap" title={agreement.sha256}>
-                        {agreement.sha256.slice(0, 12)}…
+                      <td className="py-1 font-mono text-xs">
+                        <span className="block min-w-32 wrap-anywhere">{agreement.sha256}</span>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollTable>
           )}
         </CardContent>
       </Card>

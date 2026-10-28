@@ -5,7 +5,9 @@ import Link from 'next/link';
 import { ActionForm } from '../../../../components/action-form';
 import { QuestionList, VersionStatusBadge } from '../../../../components/contracts/display';
 import { TagForm, documentLabel } from '../../../../components/contracts/forms';
+import { WholeDates } from '../../../../components/dates';
 import { Pager } from '../../../../components/remittances/display';
+import { ScrollTable } from '../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { windowText } from '../../../../lib/contracts/display';
 import { loadPage } from '../../../../lib/http/next';
@@ -97,38 +99,47 @@ export default async function AbstractionPage(props: Props) {
         {versions.length === 0 ? (
           <p className="text-sm text-muted-foreground">No version is being abstracted, reviewed or awaiting sign-off.</p>
         ) : (
-          <table className="w-full text-left text-sm" aria-label="Versions in progress">
-            <thead className="text-muted-foreground">
-              <tr>
-                <th className="py-1 pr-3 font-medium">Contract</th>
-                <th className="py-1 pr-3 font-medium">Version</th>
-                <th className="py-1 pr-3 font-medium">Status</th>
-                <th className="py-1 pr-3 font-medium">Effective</th>
-                <th className="py-1 text-right font-medium">Rate records</th>
-              </tr>
-            </thead>
-            <tbody>
-              {versions.map((version) => (
-                <tr key={version.id} className="border-t" data-version={version.id}>
-                  <td className="py-1 pr-3">
-                    {version.contractTitle} <span className="text-muted-foreground">({version.payerName})</span>
-                  </td>
-                  <td className="py-1 pr-3">
-                    <Link className="underline" href={`${path}/versions/${version.id}`}>
-                      Version {version.versionNo}
-                    </Link>
-                  </td>
-                  <td className="py-1 pr-3">
-                    <VersionStatusBadge status={version.status} />
-                  </td>
-                  <td className="py-1 pr-3">{windowText(version.effectiveFrom, version.effectiveTo)}</td>
-                  <td className="py-1 text-right font-mono tabular-nums">
-                    {version.verified} of {version.records} verified
-                  </td>
+          <ScrollTable label="Versions in progress">
+            <table className="w-full min-w-[40rem] text-left text-sm" aria-label="Versions in progress">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="py-1 pr-3 font-medium">Contract</th>
+                  <th className="py-1 pr-3 font-medium">Version</th>
+                  <th className="py-1 pr-3 font-medium">Status</th>
+                  <th className="py-1 pr-3 font-medium">Effective</th>
+                  <th className="py-1 text-right font-medium">Rate records</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {versions.map((version) => (
+                  <tr key={version.id} className="border-t" data-version={version.id}>
+                    <td className="py-1 pr-3">
+                      <span className="block min-w-32 wrap-anywhere">
+                        {version.contractTitle} <span className="text-muted-foreground">({version.payerName})</span>
+                      </span>
+                    </td>
+                    <td className="py-1 pr-3">
+                      <Link className="underline" href={`${path}/versions/${version.id}`}>
+                        Version {version.versionNo}
+                      </Link>
+                    </td>
+                    <td className="py-1 pr-3">
+                      <VersionStatusBadge status={version.status} />
+                    </td>
+                    <td className="py-1 pr-3">
+                      <WholeDates text={windowText(version.effectiveFrom, version.effectiveTo)} />
+                    </td>
+                    <td className="py-1 text-right font-mono tabular-nums">
+                      <span className="whitespace-nowrap">
+                        {version.verified} of {version.records}
+                      </span>{' '}
+                      verified
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollTable>
         )}
       </section>
       <Card role="region" aria-label="Questions to the practice">

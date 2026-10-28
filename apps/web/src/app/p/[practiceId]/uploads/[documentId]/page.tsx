@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { DownloadRefusal } from '../../../../../components/download-refusal';
 import { ForgetRefusal } from '../../../../../components/forget-refusal';
 import { Counted, Money } from '../../../../../components/remittances/display';
+import { ScrollTable } from '../../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { FormatUnconfirmedBadge } from '../../../../../components/uploads/format-flag';
 import { ReceiptList, ReceiptStatus } from '../../../../../components/uploads/receipts';
@@ -103,60 +104,64 @@ function X12Report({ practiceId, parse }: { readonly practiceId: string; readonl
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {parse.transactionOutcomes.length === 0 ? null : (
-          <table className="w-full text-left text-sm" aria-label="Transaction sets">
-            <thead className="text-muted-foreground">
-              <tr>
-                <th className="py-1 pr-3 font-medium">Transaction set</th>
-                <th className="py-1 pr-3 font-medium">Outcome</th>
-                <th className="py-1 pr-3 text-right font-medium">Claims</th>
-                <th className="py-1 pr-3 text-right font-medium">Lines</th>
-                <th className="py-1 font-medium">Remittance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {parse.transactionOutcomes.map((item) => (
-                <tr key={`${String(item.interchange)}:${String(item.group)}:${String(item.transaction)}`} className="border-t" data-outcome={item.outcome}>
-                  <td className="py-1 pr-3 font-mono text-xs">
-                    ST02 {item.st02} (segment {item.segmentIndex})
-                  </td>
-                  <td className="py-1 pr-3">
-                    {OUTCOME_NAMES[item.outcome]}
-                    {item.reasons.length === 0 ? '' : ` (${item.reasons.join(', ')})`}
-                  </td>
-                  <td className="py-1 pr-3 text-right font-mono tabular-nums">{item.claims}</td>
-                  <td className="py-1 pr-3 text-right font-mono tabular-nums">{item.lines}</td>
-                  <td className="py-1 font-mono text-xs">
-                    <RemittanceLinks practiceId={practiceId} remittanceId={item.remittanceId ?? item.linkedRemittanceId} documentId={item.linkedDocumentId} provenance={item.linkedProvenance ?? null} />
-                  </td>
+          <ScrollTable label="Transaction sets">
+            <table className="w-full min-w-[40rem] text-left text-sm" aria-label="Transaction sets">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="py-1 pr-3 font-medium">Transaction set</th>
+                  <th className="py-1 pr-3 font-medium">Outcome</th>
+                  <th className="py-1 pr-3 text-right font-medium">Claims</th>
+                  <th className="py-1 pr-3 text-right font-medium">Lines</th>
+                  <th className="py-1 font-medium">Remittance</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {parse.transactionOutcomes.map((item) => (
+                  <tr key={`${String(item.interchange)}:${String(item.group)}:${String(item.transaction)}`} className="border-t" data-outcome={item.outcome}>
+                    <td className="py-1 pr-3 font-mono text-xs">
+                      ST02 {item.st02} (segment {item.segmentIndex})
+                    </td>
+                    <td className="py-1 pr-3">
+                      {OUTCOME_NAMES[item.outcome]}
+                      {item.reasons.length === 0 ? '' : ` (${item.reasons.join(', ')})`}
+                    </td>
+                    <td className="py-1 pr-3 text-right font-mono tabular-nums">{item.claims}</td>
+                    <td className="py-1 pr-3 text-right font-mono tabular-nums">{item.lines}</td>
+                    <td className="py-1 font-mono text-xs">
+                      <RemittanceLinks practiceId={practiceId} remittanceId={item.remittanceId ?? item.linkedRemittanceId} documentId={item.linkedDocumentId} provenance={item.linkedProvenance ?? null} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollTable>
         )}
         {parse.errors.length === 0 ? (
           <p className="text-sm text-muted-foreground">No errors.</p>
         ) : (
-          <table className="w-full text-left text-sm" aria-label="Errors">
-            <thead className="text-muted-foreground">
-              <tr>
-                <th className="py-1 pr-3 font-medium">Code</th>
-                <th className="py-1 pr-3 font-medium">Where</th>
-                <th className="py-1 font-medium">What</th>
-              </tr>
-            </thead>
-            <tbody>
-              {parse.errors.map((error, index) => (
-                <tr key={index} className="border-t" data-code={error.code}>
-                  <td className="py-1 pr-3 font-mono text-xs">{error.code}</td>
-                  <td className="py-1 pr-3">
-                    {errorPosition(error)}
-                    {error.transaction === undefined ? '' : ` (ST02 ${error.transaction.st02})`}
-                  </td>
-                  <td className="py-1">{errorText(error)}</td>
+          <ScrollTable label="Errors">
+            <table className="w-full text-left text-sm" aria-label="Errors">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="py-1 pr-3 font-medium">Code</th>
+                  <th className="py-1 pr-3 font-medium">Where</th>
+                  <th className="py-1 font-medium">What</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {parse.errors.map((error, index) => (
+                  <tr key={index} className="border-t" data-code={error.code}>
+                    <td className="py-1 pr-3 font-mono text-xs">{error.code}</td>
+                    <td className="py-1 pr-3">
+                      {errorPosition(error)}
+                      {error.transaction === undefined ? '' : ` (ST02 ${error.transaction.st02})`}
+                    </td>
+                    <td className="py-1">{errorText(error)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollTable>
         )}
         {parse.unknownCodes.length === 0 ? null : <p className="text-sm">Unknown codes, loaded with a flag: {parse.unknownCodes.join(', ')}</p>}
       </CardContent>
@@ -177,62 +182,68 @@ function ExportReport({ practiceId, parse }: { readonly practiceId: string; read
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {parse.transactionOutcomes.length === 0 ? null : (
-          <table className="w-full text-left text-sm" aria-label="Payments">
-            <thead className="text-muted-foreground">
-              <tr>
-                <th className="py-1 pr-3 font-medium">Payment</th>
-                <th className="py-1 pr-3 font-medium">Outcome</th>
-                <th className="py-1 pr-3 text-right font-medium">Claims</th>
-                <th className="py-1 pr-3 text-right font-medium">Lines</th>
-                <th className="py-1 font-medium">Remittance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {parse.transactionOutcomes.map((item) => (
-                <tr key={item.payment} className="border-t" data-outcome={item.outcome}>
-                  <td className="py-1 pr-3">
-                    <span className="font-mono tabular-nums">{item.payment}</span>{' '}
-                    <span className="text-xs text-muted-foreground">
-                      ({item.rows === 1 ? `row ${String(item.firstRow)}` : `rows ${String(item.firstRow)} to ${String(item.firstRow + item.rows - 1)}`} below the header)
-                    </span>
-                  </td>
-                  <td className="py-1 pr-3">
-                    {PAYMENT_OUTCOME_NAMES[item.outcome]}
-                    {item.reasons.length === 0 ? '' : ` (${item.reasons.join(', ')})`}
-                  </td>
-                  <td className="py-1 pr-3 text-right font-mono tabular-nums">{item.claims}</td>
-                  <td className="py-1 pr-3 text-right font-mono tabular-nums">{item.lines}</td>
-                  <td className="py-1 font-mono text-xs">
-                    <RemittanceLinks practiceId={practiceId} remittanceId={item.remittanceId ?? item.linkedRemittanceId} documentId={item.linkedDocumentId} provenance={item.linkedProvenance} />
-                  </td>
+          <ScrollTable label="Payments">
+            <table className="w-full min-w-[40rem] text-left text-sm" aria-label="Payments">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="py-1 pr-3 font-medium">Payment</th>
+                  <th className="py-1 pr-3 font-medium">Outcome</th>
+                  <th className="py-1 pr-3 text-right font-medium">Claims</th>
+                  <th className="py-1 pr-3 text-right font-medium">Lines</th>
+                  <th className="py-1 font-medium">Remittance</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {parse.transactionOutcomes.map((item) => (
+                  <tr key={item.payment} className="border-t" data-outcome={item.outcome}>
+                    <td className="py-1 pr-3">
+                      <span className="block min-w-32 wrap-anywhere">
+                        <span className="font-mono tabular-nums">{item.payment}</span>{' '}
+                        <span className="text-xs text-muted-foreground">
+                          ({item.rows === 1 ? `row ${String(item.firstRow)}` : `rows ${String(item.firstRow)} to ${String(item.firstRow + item.rows - 1)}`} below the header)
+                        </span>
+                      </span>
+                    </td>
+                    <td className="py-1 pr-3">
+                      {PAYMENT_OUTCOME_NAMES[item.outcome]}
+                      {item.reasons.length === 0 ? '' : ` (${item.reasons.join(', ')})`}
+                    </td>
+                    <td className="py-1 pr-3 text-right font-mono tabular-nums">{item.claims}</td>
+                    <td className="py-1 pr-3 text-right font-mono tabular-nums">{item.lines}</td>
+                    <td className="py-1 font-mono text-xs">
+                      <RemittanceLinks practiceId={practiceId} remittanceId={item.remittanceId ?? item.linkedRemittanceId} documentId={item.linkedDocumentId} provenance={item.linkedProvenance} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollTable>
         )}
         {parse.errors.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nothing held.</p>
         ) : (
-          <table className="w-full text-left text-sm" aria-label="Holds">
-            <thead className="text-muted-foreground">
-              <tr>
-                <th className="py-1 pr-3 font-medium">Reason</th>
-                <th className="py-1 pr-3 font-medium">Where</th>
-                <th className="py-1 font-medium">What, and what to do</th>
-              </tr>
-            </thead>
-            <tbody>
-              {parse.errors.map((error, index) => (
-                <tr key={index} className="border-t align-top" data-reason={error.reason}>
-                  <td className="py-1 pr-3 font-mono text-xs">{error.reason}</td>
-                  <td className="py-1 pr-3">{exportErrorPosition(error)}</td>
-                  <td className="py-1">
-                    {exportErrorText(error)} {EXPORT_REMEDIES[error.reason]}
-                  </td>
+          <ScrollTable label="Holds">
+            <table className="w-full text-left text-sm" aria-label="Holds">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="py-1 pr-3 font-medium">Reason</th>
+                  <th className="py-1 pr-3 font-medium">Where</th>
+                  <th className="py-1 font-medium">What, and what to do</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {parse.errors.map((error, index) => (
+                  <tr key={index} className="border-t align-top" data-reason={error.reason}>
+                    <td className="py-1 pr-3 font-mono text-xs">{error.reason}</td>
+                    <td className="py-1 pr-3">{exportErrorPosition(error)}</td>
+                    <td className="py-1">
+                      {exportErrorText(error)} {EXPORT_REMEDIES[error.reason]}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollTable>
         )}
         {parse.unknownCodes.length === 0 ? null : <p className="text-sm">Unknown codes, loaded with a flag: {parse.unknownCodes.join(', ')}</p>}
       </CardContent>

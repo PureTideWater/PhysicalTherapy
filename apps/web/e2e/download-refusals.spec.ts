@@ -291,7 +291,7 @@ test('a refused letter comes back to Coverage marked, focused and kept; a good o
     await test.step('a refused file of the Reports list comes back beside that list, and the list leaves the address bar with the refusal', async () => {
       const reports = `/p/${practice}/reports`;
       await page.goto(`${reports}/documents/${NO_DOCUMENT}/pdf?from=list`);
-      const notice = page.getByRole('region', { name: 'Generated reports' }).locator('[data-download-refusal="not_found"]');
+      const notice = page.getByRole('region', { name: 'Generated reports', exact: true }).locator('[data-download-refusal="not_found"]');
       await expect(notice).toBeFocused();
       await expect(notice).toContainText('Not downloaded');
       await expect(page.locator('[data-download-refusal]')).toHaveCount(1);
@@ -345,7 +345,7 @@ test('a refused letter comes back to Coverage marked, focused and kept; a good o
     await test.step('a receipt’s report downloads in place on Uploads, its fetch said while it runs, and its refusal is said above the receipts, focused, while the page stays', async () => {
       const uploads = `/p/${practice}/uploads`;
       await page.goto(uploads);
-      const report = page.getByRole('region', { name: 'Receipts' }).getByRole('row').filter({ hasText: '835 remittance' }).getByRole('link', { name: 'Report' }).first();
+      const report = page.getByRole('region', { name: 'Receipts', exact: true }).getByRole('row').filter({ hasText: '835 remittance' }).getByRole('link', { name: 'Report' }).first();
       // A navigation would load another document and drop this mark, as it would cut off a batch still being sent.
       await page.evaluate(() => {
         (window as unknown as { stayed?: boolean }).stayed = true;

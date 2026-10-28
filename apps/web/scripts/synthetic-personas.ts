@@ -23,8 +23,10 @@ import { totpCode, totpSecretFromBytes } from '../src/lib/auth/totp';
  * submission sent without sign-off, in a practice of its own; and a platform administrator and two people of the other
  * group for the pricing-location journey, in a group of its own the console creates; and the practice administrator of
  * SYNTHETIC SUSPENDED GROUP, a group the seed holds suspended by PaidWhole with no practice, for the billing journey of a
- * suspended organization, so no other journey shares it and nothing reinstates it; and a billing manager and a viewer of
- * the other group for the journey of refused downloads, in a practice of its own).
+ * suspended organization, so no other journey shares it and nothing reinstates it; and, for the tables at a phone's
+ * width, a billing manager and a practice administrator of the other group, three contract specialists, a platform
+ * administrator and a support engineer, each in one test only; and a billing manager and a viewer of the other group
+ * for the journey of refused downloads, in a practice of its own).
  * Their passwords and TOTP secrets are derived from their keys here rather than written down, and
  * exist only in the local identity provider's store.
  * Synthetic accounts on a development machine; never a real person.
@@ -122,6 +124,18 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   // A suspended organization's billing page (BIL-06; the UX baseline review's UX-004): the practice administrator of the
   // group the seed holds suspended by PaidWhole.
   { key: 'suspended-admin', organization: 'suspended_group', role: 'practice_admin' },
+  // The tables at a phone's width (TBL-02, TBL-03; docs/adr/0078), each persona in one test only, so no sign-in or
+  // hardware key is shared between tests that run at once: a billing manager of the other group, in a practice of its
+  // own, the practice administrator who reads its access log and grants (not the journeys' own, whom the packets
+  // journey signs in), and the contract specialist who abstracts there; the console's contract specialist, platform
+  // administrator and support engineer; and the contract specialist who corrects the recovery journey's ledger.
+  { key: 'tables-manager', organization: 'other_group', role: 'billing_manager' },
+  { key: 'tables-practice-admin', organization: 'other_group', role: 'practice_admin' },
+  { key: 'tables-specialist', organization: 'internal', role: 'contract_specialist' },
+  { key: 'tables-console-specialist', organization: 'internal', role: 'contract_specialist' },
+  { key: 'tables-admin', organization: 'internal', role: 'platform_admin' },
+  { key: 'tables-support', organization: 'internal', role: 'support' },
+  { key: 'tables-ledger-specialist', organization: 'internal', role: 'contract_specialist' },
   // Refused downloads back on their pages (docs/adr/0079; test matrix DLR-04): a billing manager of the other group who
   // asks for the letter and generates the report, and a viewer refused the report's line CSV, in a practice of its own.
   { key: 'refusals-manager', organization: 'other_group', role: 'billing_manager' },

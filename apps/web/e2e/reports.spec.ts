@@ -4,7 +4,7 @@ import path from 'node:path';
 import { type Page, expect, test } from '@playwright/test';
 import { assertNoPhi } from '@tp/observability';
 
-import { expectAccessible } from './a11y';
+import { atPhoneWidth, expectAccessible } from './a11y';
 import { practiceId, registerKeyAndSignIn, signInWithTotp } from './helpers';
 import { journeyPractice, pricedAndTriaged, signedOffSchedule } from './journeys';
 import { startLocalWorker } from './worker';
@@ -113,6 +113,8 @@ test('an audit report is released only once the reviewer signs; the monthly summ
       await expect(page.locator('[data-state="release-refused"]')).toContainText('Release waits for the reviewer’s attestation.');
       await expect(page.getByRole('button', { name: 'Release the report' })).toHaveCount(0);
       await expectAccessible(page, 'An audit report');
+      // At a phone's width each of the report's wide tables scrolls in its own region, named by its caption (TBL-03).
+      await atPhoneWidth(page, 'An audit report', { tables: ['Cases'] });
       return new URL(page.url()).pathname;
     });
 
@@ -152,6 +154,7 @@ test('an audit report is released only once the reviewer signs; the monthly summ
         await expect(reviewer.locator('[data-download-refusal]')).toHaveCount(0);
         await ticked();
         await expectAccessible(reviewer, 'The reviewer checklist');
+        await atPhoneWidth(reviewer, 'The reviewer checklist', { tables: ['Cases'] });
         await checklist.getByRole('button', { name: 'Sign the attestation' }).click();
         await expect(reviewer).toHaveURL(new RegExp(`${reportPath}$`));
         await expect(reviewer.locator('[data-release="attested"]')).toBeVisible();
@@ -181,6 +184,7 @@ test('an audit report is released only once the reviewer signs; the monthly summ
       await page.goto(`${reports}/monthly?month=2026-03`);
       await expect(page.locator('[data-stage="actionable"]')).toContainText('$90.00');
       await expectAccessible(page, 'The monthly summary');
+      await atPhoneWidth(page, 'The monthly summary', { tables: ['Stages by payer'] });
       await page.getByRole('button', { name: 'Generate the month’s PDF' }).click();
       await expect(page).toHaveURL(new RegExp(`${reports}/documents/[0-9a-f-]{36}$`));
       await expect(page.getByRole('heading', { level: 1 })).toContainText('Monthly variance summary, 2026-03');
@@ -228,6 +232,7 @@ test('an audit report is released only once the reviewer signs; the monthly summ
       await expect(page.locator(`[data-headline]`).getByRole('link').first()).toHaveAttribute('href', `${reportPath}#stage-actionable`);
       await expect(page.getByRole('region', { name: 'Share' }).getByLabel('Link to share within the organization')).toHaveValue(new RegExp(`${reports}$`));
       await expectAccessible(page, 'Reports');
+      await atPhoneWidth(page, 'Reports', { tables: ['Generated reports'] });
       await page.getByRole('link', { name: 'Open the ROI statements' }).click();
       await expect(page.getByRole('heading', { level: 1, name: 'ROI statements' })).toBeVisible();
     });

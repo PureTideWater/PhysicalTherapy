@@ -94,7 +94,7 @@ export default async function ReportPage(props: Props) {
                 <a className="underline" href={`${path}/pdf`}>
                   PDF
                 </a>{' '}
-                <span className="font-mono text-xs">SHA-256 {report.pdfSha256}</span>
+                <span className="font-mono text-xs wrap-anywhere">SHA-256 {report.pdfSha256}</span>
               </p>
               <p>
                 {canExport ? (
@@ -104,7 +104,7 @@ export default async function ReportPage(props: Props) {
                 ) : (
                   <span>Line CSV (line-level PHI: for the roles that export it)</span>
                 )}{' '}
-                <span className="font-mono text-xs">SHA-256 {report.csvSha256}</span>
+                <span className="font-mono text-xs wrap-anywhere">SHA-256 {report.csvSha256}</span>
               </p>
               <ShareLink href={`${origin}${path}`} />
             </CardContent>

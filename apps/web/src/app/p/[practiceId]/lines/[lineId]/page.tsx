@@ -8,6 +8,7 @@ import { ActionForm } from '../../../../../components/action-form';
 import { utc } from '../../../../../components/format';
 import { Fact, LineStatusChip, Money, basisName, claimStatusName, period } from '../../../../../components/remittances/display';
 import { AdjustmentWords, LineSummary, LineTrace, UnpricedWords } from '../../../../../components/pricing/line-words';
+import { ScrollTable } from '../../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { notComputedWindowText } from '../../../../../lib/contracts/display';
 import { otherRunReasonText } from '../../../../../lib/contracts/remedies';
@@ -237,32 +238,34 @@ export default async function LinePage(props: {
           {adjustments.length === 0 ? (
             <p className="text-sm text-muted-foreground">No adjustments.</p>
           ) : (
-            <table className="w-full text-left text-sm" aria-label="Adjustments">
-              <thead className="text-muted-foreground">
-                <tr>
-                  <th className="py-1 pr-3 font-medium">Level</th>
-                  <th className="py-1 pr-3 font-medium">Group</th>
-                  <th className="py-1 pr-3 font-medium">Reason</th>
-                  <th className="py-1 pr-3 text-right font-medium">Quantity</th>
-                  <th className="py-1 text-right font-medium">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {adjustments.map((item, index) => (
-                  <tr key={index} className="border-t">
-                    <td className="py-1 pr-3">{item.level === 'line' ? 'Line' : 'Claim'}</td>
-                    <td className="py-1 pr-3 font-mono text-xs">{item.groupCode}</td>
-                    <td className="py-1 pr-3 font-mono text-xs">
-                      {item.reasonCode} {item.unknownCode ? <Badge variant="destructive">Unknown code</Badge> : null}
-                    </td>
-                    <td className="py-1 pr-3 text-right font-mono tabular-nums">{item.quantity ?? '—'}</td>
-                    <td className="py-1 text-right">
-                      <Money value={item.amountCents} />
-                    </td>
+            <ScrollTable label="Adjustments">
+              <table className="w-full min-w-[32rem] text-left text-sm" aria-label="Adjustments">
+                <thead className="text-muted-foreground">
+                  <tr>
+                    <th className="py-1 pr-3 font-medium">Level</th>
+                    <th className="py-1 pr-3 font-medium">Group</th>
+                    <th className="py-1 pr-3 font-medium">Reason</th>
+                    <th className="py-1 pr-3 text-right font-medium">Quantity</th>
+                    <th className="py-1 text-right font-medium">Amount</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {adjustments.map((item, index) => (
+                    <tr key={index} className="border-t">
+                      <td className="py-1 pr-3">{item.level === 'line' ? 'Line' : 'Claim'}</td>
+                      <td className="py-1 pr-3 font-mono text-xs">{item.groupCode}</td>
+                      <td className="py-1 pr-3 font-mono text-xs">
+                        {item.reasonCode} {item.unknownCode ? <Badge variant="destructive">Unknown code</Badge> : null}
+                      </td>
+                      <td className="py-1 pr-3 text-right font-mono tabular-nums">{item.quantity ?? '—'}</td>
+                      <td className="py-1 text-right">
+                        <Money value={item.amountCents} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollTable>
           )}
         </CardContent>
       </Card>

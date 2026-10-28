@@ -99,8 +99,12 @@ function LetterError({ control, marked }: { readonly control: LetterControl; rea
   ) : null;
 }
 
-/** The select's look, today's, with a refused one's border (as Input marks aria-invalid) and room under the sticky header when focused. */
-const SELECT = 'h-9 max-w-full scroll-mt-18 rounded-md border bg-background px-2 text-sm aria-invalid:border-destructive';
+/**
+ * The select's look, today's: the width of its column and never wider (w-full min-w-0 in a min-w-0 column, so a long
+ * contract title never widens the page at 390 px; docs/adr/0078), with a refused one's border (as Input marks
+ * aria-invalid) and room under the sticky header when focused.
+ */
+const SELECT = 'h-9 w-full min-w-0 scroll-mt-18 rounded-md border bg-background px-2 text-sm aria-invalid:border-destructive';
 
 /**
  * The letter's form (or, before any 835 has loaded a payer, why there is none), with a refused letter's marks and

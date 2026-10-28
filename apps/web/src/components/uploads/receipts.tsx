@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { type Receipt, type ReceiptState, type ReportFrom, documentName, formatBytes, receiptState, reportHref, shortId, utcMinute } from '../../lib/uploads/receipt-labels';
 import { DownloadLink, DownloadLinks } from '../download-link';
+import { ScrollTable } from '../scroll-table';
 
 /**
  * Receipts as the server keeps them (PRD 7, Uploads: "file receipts with status and reasons ... error
@@ -152,52 +153,54 @@ export function ReceiptList(props: {
       {/* A refused report is said here, unless the page says it above the list (the Uploads screen's DownloadLinks). */}
       <DownloadLinks>
         {failed ? <p className="text-sm text-destructive">The latest refresh failed; showing the receipts as last loaded.</p> : null}
-        <table className="w-full text-left text-sm">
-          <thead className="text-muted-foreground">
-            <tr>
-              <th className="py-1 pr-3 font-medium">Received</th>
-              <th className="py-1 pr-3 font-medium">Document</th>
-              <th className="py-1 pr-3 font-medium">Kind</th>
-              <th className="py-1 pr-3 font-medium">Size</th>
-              <th className="py-1 pr-3 font-medium">Status</th>
-              <th className="py-1 font-medium">
-                <span className="sr-only">Actions</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.receipts.map((receipt) => {
-              const state = receiptState(receipt);
-              return (
-                <tr key={receipt.documentId} className="border-t align-top" data-document={receipt.documentId}>
-                  <td className="py-2 pr-3 whitespace-nowrap">{utcMinute(receipt.receivedAt)}</td>
-                  <td className="py-2 pr-3 font-mono text-xs">
-                    <Link className="underline" href={`/p/${practiceId}/uploads/${receipt.documentId}`}>
-                      {shortId(receipt.documentId)}
-                    </Link>
-                  </td>
-                  <td className="py-2 pr-3">{receipt.entries === null ? documentName(receipt) : `zip of ${documentName(receipt)} files`}</td>
-                  <td className="py-2 pr-3 whitespace-nowrap">{formatBytes(Number(receipt.sizeBytes))}</td>
-                  <td className="py-2 pr-3">
-                    <ReceiptStatus receipt={receipt} />
-                  </td>
-                  <td className="py-2 whitespace-nowrap">
-                    <div className="flex gap-2">
-                      <DownloadLink className="underline" href={reportHref(practiceId, receipt.documentId, props.reportFrom)}>
-                        Report
-                      </DownloadLink>
-                      {canUpload && state.retry === 'intake' && state.settled ? (
-                        <Button variant="outline" size="sm" onClick={() => void retryIntake(practiceId, receipt.documentId, props.csrfToken).then(reload, reload)}>
-                          Retry
-                        </Button>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <ScrollTable label={props.title}>
+          <table className="w-full min-w-[48rem] text-left text-sm" aria-label={props.title}>
+            <thead className="text-muted-foreground">
+              <tr>
+                <th className="py-1 pr-3 font-medium">Received</th>
+                <th className="py-1 pr-3 font-medium">Document</th>
+                <th className="py-1 pr-3 font-medium">Kind</th>
+                <th className="py-1 pr-3 font-medium">Size</th>
+                <th className="py-1 pr-3 font-medium">Status</th>
+                <th className="py-1 font-medium">
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.receipts.map((receipt) => {
+                const state = receiptState(receipt);
+                return (
+                  <tr key={receipt.documentId} className="border-t align-top" data-document={receipt.documentId}>
+                    <td className="py-2 pr-3 whitespace-nowrap">{utcMinute(receipt.receivedAt)}</td>
+                    <td className="py-2 pr-3 font-mono text-xs">
+                      <Link className="underline" href={`/p/${practiceId}/uploads/${receipt.documentId}`}>
+                        {shortId(receipt.documentId)}
+                      </Link>
+                    </td>
+                    <td className="py-2 pr-3">{receipt.entries === null ? documentName(receipt) : `zip of ${documentName(receipt)} files`}</td>
+                    <td className="py-2 pr-3 whitespace-nowrap">{formatBytes(Number(receipt.sizeBytes))}</td>
+                    <td className="py-2 pr-3">
+                      <ReceiptStatus receipt={receipt} />
+                    </td>
+                    <td className="py-2 whitespace-nowrap">
+                      <div className="flex gap-2">
+                        <DownloadLink className="underline" href={reportHref(practiceId, receipt.documentId, props.reportFrom)}>
+                          Report
+                        </DownloadLink>
+                        {canUpload && state.retry === 'intake' && state.settled ? (
+                          <Button variant="outline" size="sm" onClick={() => void retryIntake(practiceId, receipt.documentId, props.csrfToken).then(reload, reload)}>
+                            Retry
+                          </Button>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </ScrollTable>
         {data.pages > 1 ? (
           <nav aria-label="Receipt pages" className="flex items-center gap-3 text-sm">
             <Button variant="outline" size="sm" disabled={data.page <= 1} onClick={() => setPage(data.page - 1)}>
