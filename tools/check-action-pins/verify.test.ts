@@ -183,6 +183,28 @@ describe('a Docker action', () => {
     expect(await at('Dockerfile', true)).toEqual([`octo/top@${sha('c')} > octo/docker@${DOCKER}: a Docker action whose image is "Dockerfile", not docker://…@sha256:<64 hex>; a Dockerfile or an image by tag pulls a mutable image at run time`]);
     expect(await at(DIGEST, true)).toEqual([]);
   });
+
+  it('is read from runs.using in any case, as the runner reads it: Docker and DOCKER refused, a Composite walked for its nested pins and caches, and Node20 warned about (SEC-S4)', async () => {
+    const DOCKER = sha('d');
+    const top = sha('c');
+    const verdict = async (action: string, nested: string, file = 'ci.yml') => {
+      const transport = recordedTransport({ tags: { 'octo/top': lightweight('v1.0.0', top) }, files: { [blob('octo/top', top)]: action, [blob('octo/docker', DOCKER)]: nested, [blob('actions/cache', CACHE)]: node('  path: {}\n  key: {}\n') } });
+      const step: ActionUse = { file, job: 'j', step: 0, uses: `octo/top@${top}`, with: {} };
+      return verifyPin(transport, new ActionReader(transport), step.uses, 'v1.0.0', [step]);
+    };
+    const docker = (using: string) => `name: d\nruns:\n  using: ${using}\n  image: Dockerfile\n`;
+    const refused = (chain: string) => `${chain}: a Docker action whose image is "Dockerfile", not docker://…@sha256:<64 hex>; a Dockerfile or an image by tag pulls a mutable image at run time`;
+    for (const using of ['Docker', 'DOCKER']) expect((await verdict(docker(using), '')).problems, using).toEqual([refused(`octo/top@${top}`)]);
+    // A composite in any case is walked: a Docker action nested in it, and a nested tag, are refused.
+    const wrapper = (using: string, uses: string) => `name: w\nruns:\n  using: ${using}\n  steps:\n    - uses: ${uses}\n`;
+    expect((await verdict(wrapper('Composite', `octo/docker@${DOCKER}`), docker('docker'))).problems).toEqual([refused(`octo/top@${top} > octo/docker@${DOCKER}`)]);
+    expect((await verdict(wrapper('COMPOSITE', 'actions/checkout@v6'), '')).problems).toEqual([`octo/top@${top} > actions/checkout@v6: a nested action not pinned to a full commit SHA`]);
+    // And its caches are traced for release.yml.
+    const cached = `name: w\nruns:\n  using: Composite\n  steps:\n    - uses: actions/cache@${CACHE}\n      with: { path: db, key: db }\n`;
+    expect((await verdict(cached, '', 'release.yml')).problems).toEqual([`release.yml j step 1: octo/top@${top} > actions/cache@${CACHE}: a nested cache whose condition (none) is not gated by an input this check can read`]);
+    // A deprecated Node.js runtime is one in any case.
+    expect((await verdict('name: n\nruns:\n  using: Node20\n  main: x.js\n', '')).warnings).toEqual([`octo/top@${top}: v1.0.0 runs on Node20, a Node.js runtime GitHub has deprecated; move to a release that runs on node24`]);
+  });
 });
 
 describe('release.yml’s nested caches', () => {
