@@ -25,7 +25,7 @@ const ROUNDING = [
   { value: 'TRUNCATE', label: 'Truncate to the cent' },
 ];
 
-/** The label of each field of the settings form, by its key, as the form shows it, so a refusal names the label. */
+/** The label of each field of the settings form, by its key; a refusal names a field by the label the page shows. */
 const SETTINGS_LABELS = {
   facilityPlaces: 'Places of service priced as facility',
   nonFacilityPlaces: 'Places of service priced as non-facility',
@@ -115,7 +115,7 @@ export default async function PracticeSettingsPage(props: Props) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <ActionForm action={setPracticeSettingsAction} submit="Save the settings" className="grid max-w-xl gap-3" labels={SETTINGS_LABELS}>
+          <ActionForm action={setPracticeSettingsAction} submit="Save the settings" className="grid max-w-xl gap-3">
             <FormKeys />
             <input type="hidden" name="practiceId" value={practice.id} />
             <Field label={SETTINGS_LABELS.facilityPlaces} name="facilityPlaces" defaultValue={form.facilityPlaces} hint="Two-digit codes, separated by commas (for example 19, 22)." />

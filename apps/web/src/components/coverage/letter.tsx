@@ -5,7 +5,8 @@ import { LETTER_CODES_PATTERN } from '../../lib/contracts/letter';
 import { type RefusedDownload, downloadRefusal, keptCodes, keptId } from '../../lib/http/download-refusal';
 import type { PayerOption } from '../../lib/remittances/queries';
 import { DownloadRefusal } from '../download-refusal';
-import { LetterContractCheck } from './letter-contract-check';
+import { SelectField } from '../field';
+import { LetterContractCheck, contractOwners } from './letter-contract-check';
 import { LetterMarks } from './letter-marks';
 import { Figure } from './share';
 
@@ -13,7 +14,8 @@ import { Figure } from './share';
  * Coverage's request-to-payer letter (PRD 7: "create a request-to-payer letter for a missing schedule"): a GET form whose
  * file downloads while the page stays. The codes field takes the route's own rule as its pattern (letterCodes), and the
  * contract is held to the payer chosen (LetterContractCheck), so the browser stops a mistyped code or another payer's
- * contract before the form is sent; the route's check stays the rule. A letter the route refuses comes back here
+ * contract before the form is sent; the route's check stays the rule. Each select is the shared SelectField, which
+ * shows a choice it cuts short whole under it (showChosen; docs/adr/0077 D6). A letter the route refuses comes back here
  * (payerLetter's returnTo; docs/adr/0079) with the entries it was asked for kept as the form's defaults, and the refused
  * control marked: its message under it, after "Error:", named first by its aria-describedby, and the first marked
  * control focused on arrival; a payer the route did not find comes back unanswered ("Choose a payer"), never as another
@@ -102,7 +104,7 @@ function LetterError({ control, marked }: { readonly control: LetterControl; rea
 /**
  * The select's look, today's: the width of its column and never wider (w-full min-w-0 in a min-w-0 column, so a long
  * contract title never widens the page at 390 px; docs/adr/0078), with a refused one's border (as Input marks
- * aria-invalid) and room under the sticky header when focused.
+ * aria-invalid) and room under the sticky header when focused. It replaces SelectField's own classes.
  */
 const SELECT = 'h-9 w-full min-w-0 scroll-mt-18 rounded-md border bg-background px-2 text-sm aria-invalid:border-destructive';
 
@@ -128,8 +130,9 @@ export function PayerLetter({
   const kept: Readonly<Partial<Record<LetterControl, string>>> =
     refusal === null ? {} : { payer: keptId(single(searchParams, 'payer')), contract: keptId(single(searchParams, 'contract')), codes: keptCodes(single(searchParams, 'codes')) };
   const named = payers.filter((payer) => contracts.some((contract) => contract.payerId === payer.id));
+  const listed = contracts.filter((option) => named.some((each) => each.id === option.payerId));
   const payer = payers.some((option) => option.id === kept.payer) ? kept.payer : undefined;
-  const contract = contracts.some((option) => option.id === kept.contract && named.some((each) => each.id === option.payerId)) ? kept.contract : undefined;
+  const contract = listed.some((option) => option.id === kept.contract) ? kept.contract : undefined;
   // A marked payer that is none of the options starts unanswered, so the mark never sits under a payer nobody chose and
   // the select's required holds the next letter until one is.
   const choose = marked.has('payer') && payer === undefined;
@@ -139,52 +142,39 @@ export function PayerLetter({
       {payers.length === 0 ? (
         <p className="text-sm text-muted-foreground">Payers appear once their 835s load.</p>
       ) : (
-        <form method="get" action={`${path}/letter`} className="grid max-w-xl gap-3" aria-label="Letter">
+        <form method="get" action={`${path}/letter`} className="grid max-w-xl grid-cols-1 gap-3" aria-label="Letter">
           <div className="flex min-w-0 flex-col gap-1.5">
-            <Label htmlFor={controlId('payer')}>Payer</Label>
-            <select
+            <SelectField
               id={controlId('payer')}
+              label="Payer"
               name="payer"
               required
+              options={[...(choose ? [{ value: '', label: 'Choose a payer' }] : []), ...payers.map((option) => ({ value: option.id, label: option.name }))]}
+              showChosen
               defaultValue={choose ? '' : payer}
               className={SELECT}
               aria-describedby={describedBy('payer', marked)}
               {...invalidMarks('payer', marked)}
-            >
-              {choose ? <option value="">Choose a payer</option> : null}
-              {payers.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.name}
-                </option>
-              ))}
-            </select>
+            />
             <LetterError control="payer" marked={marked} />
           </div>
           <div className="flex min-w-0 flex-col gap-1.5">
-            <Label htmlFor={controlId('contract')}>The payer’s contract (optional)</Label>
-            <select
+            <SelectField
               id={controlId('contract')}
+              label="The payer’s contract (optional)"
               name="contract"
+              options={[
+                { value: '', label: 'None named' },
+                ...named.map((each) => ({ group: each.name, options: listed.filter((option) => option.payerId === each.id).map((option) => ({ value: option.id, label: option.title })) })),
+              ]}
+              showChosen
               defaultValue={contract}
               className={SELECT}
               aria-describedby={describedBy('contract', marked)}
               {...invalidMarks('contract', marked)}
-            >
-              <option value="">None named</option>
-              {named.map((each) => (
-                <optgroup key={each.id} label={each.name}>
-                  {contracts
-                    .filter((option) => option.payerId === each.id)
-                    .map((option) => (
-                      <option key={option.id} value={option.id} data-payer={option.payerId}>
-                        {option.title}
-                      </option>
-                    ))}
-                </optgroup>
-              ))}
-            </select>
+            />
             <LetterError control="contract" marked={marked} />
-            <LetterContractCheck payer={controlId('payer')} contract={controlId('contract')} message={MESSAGES.contract} />
+            <LetterContractCheck payer={controlId('payer')} contract={controlId('contract')} owners={contractOwners(listed)} message={MESSAGES.contract} />
           </div>
           <div className="flex min-w-0 flex-col gap-1.5">
             <Label htmlFor={controlId('codes')}>Procedure codes (optional)</Label>
@@ -201,7 +191,7 @@ export function PayerLetter({
               {...invalidMarks('codes', marked)}
             />
             <LetterError control="codes" marked={marked} />
-            <p id="letter-codes-hint" className="text-xs text-muted-foreground">
+            <p id="letter-codes-hint" className="text-sm text-muted-foreground">
               Five-character codes separated by commas, such as <Figure>97110</Figure>, <Figure>97530</Figure>. Leave blank to ask for the whole schedule.
             </p>
           </div>

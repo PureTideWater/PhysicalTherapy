@@ -1,5 +1,5 @@
 import { NARRATIVE_MAX_LENGTH, PACKET_EXPORT_REFUSALS } from '@tp/worker/packets';
-import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Label } from '@tp/ui';
+import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
@@ -7,6 +7,7 @@ import { ActionForm } from '../../../../../../components/action-form';
 import { UtcTime } from '../../../../../../components/dates';
 import { DownloadLink, DownloadLinks } from '../../../../../../components/download-link';
 import { DownloadRefusal } from '../../../../../../components/download-refusal';
+import { TextAreaField } from '../../../../../../components/field';
 import { ForgetRefusal } from '../../../../../../components/forget-refusal';
 import { FormKeys } from '../../../../../../components/form-keys';
 import { utc } from '../../../../../../components/format';
@@ -463,8 +464,7 @@ export default async function PacketPage(props: Props) {
                     <input type="hidden" name="practiceId" value={practiceId} />
                     <input type="hidden" name="caseId" value={item.id} />
                     <input type="hidden" name="versionId" value={version.id} />
-                    <Label htmlFor="request-message">A word to the approver (optional)</Label>
-                    <textarea id="request-message" name="message" maxLength={REQUEST_MESSAGE_MAX_LENGTH} rows={2} className="w-full rounded-md border bg-background p-2 text-sm" />
+                    <TextAreaField id="request-message" label="A word to the approver (optional)" name="message" maxLength={REQUEST_MESSAGE_MAX_LENGTH} rows={2} />
                   </ActionForm>
                 ) : null}
                 {!canApprove || approval === null || approval.status === 'approved' || approval.status === 'not_approver' ? null : approval.status === 'ready' ? (

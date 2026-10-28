@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 
 import { cookies, headers } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
+import { cache } from 'react';
 
+import type { Sealer } from '../auth/seal';
 import type { StepResult } from '../routes/sign-in';
 import { services } from '../server/services';
 import { minutesWords } from './download-refusal-words';
@@ -52,15 +54,35 @@ async function nextRequest(params: unknown, input?: unknown, upload?: UploadBody
   };
 }
 
-/** What a refused form says when the wrapper's own checks refused it (CSRF, rate limits). */
-export function guardMessage(outcome: Outcome<unknown>): string | undefined {
-  if (outcome.status === 'csrf_refused') {
-    return 'This form could not be checked against your session (it may have come from another site, or your session changed). Reload the page and try again.';
-  }
+/** What a refused form says when the wrapper's rate limits refused it (a refused CSRF token is a page out of date, STALE). */
+function guardMessage(outcome: Outcome<unknown>): string | undefined {
   if (outcome.status === 'rate_limited') {
     return `Too many attempts in a short time. Wait ${minutesWords(retryMinutes(outcome.retryAfterSeconds))} and try again.`;
   }
   return undefined;
+}
+
+/**
+ * Who a page's forms were rendered for (docs/adr/0077, D10). A page read again in place (a page out of date, the
+ * export's status, an upload) renders for whoever is signed in now, and someone else may have signed in from another
+ * tab of the same browser: a form that sees the mark change clears what was typed, so one person's words are never
+ * sent under another's name. The mark is an HMAC of the person's email under the server's key: the same for every
+ * session of theirs (signing in again changes nothing), another for anyone else. It is opaque (never the email or an
+ * id a route reads), never a field (FormKeys renders it on an element that is not posted), and never logged.
+ */
+const FORM_ACTOR = 'form-actor';
+
+/** The request's mark: one object per server render (React's cache), which loadPage sets and FormKeys reads. */
+const pageMark = cache((): { tag: string | undefined } => ({ tag: undefined }));
+
+/** The mark of the person whose email this is. */
+export function formActorTag(sealer: Sealer, email: string): string {
+  return sealer.sign(FORM_ACTOR, email.trim().toLowerCase()).toString('base64url');
+}
+
+/** The mark of the person this request's page renders for; undefined with no one signed in, or outside a page. */
+export function pageFormActor(): string | undefined {
+  return pageMark().tag;
 }
 
 export type PageResult<R> =
@@ -79,6 +101,11 @@ export async function loadPage<R>(route: Route<R>, props: { readonly params?: Pa
   const signIn = signInFor(outcome);
   if (signIn !== undefined) {
     redirect(signIn);
+  }
+  const shell = outcome.status === 'ok' || outcome.status === 'forbidden' ? outcome.shell : undefined;
+  if (shell !== undefined) {
+    // Whom the page's forms are rendered for, as the opaque mark FormKeys renders (pageFormActor).
+    pageMark().tag = formActorTag(services().sealer, shell.email);
   }
   if (outcome.status === 'ok') {
     return { kind: 'ok', data: outcome.data, shell: outcome.shell };
@@ -101,14 +128,54 @@ export async function loadPublicPage<R extends object>(route: Route<R | StepResu
   return outcome.data as R;
 }
 
-/** What a form shows after a server action that did not move on. */
+/**
+ * What a form shows after a server action that did not move on: flags, keys and the rule's own words, never a value
+ * the person typed (the form keeps those in the browser, docs/adr/0077).
+ */
 export interface ActionState {
   readonly error?: string;
-  /** The error is the generic line of an invalid form ("Check the fields marked below."), which the issues follow. */
+  /** The error is the lead of an invalid form, which the browser may choose again from the issues it places (ActionForm's summaryLead). */
   readonly invalid?: boolean;
   readonly issues?: readonly Issue[];
-  readonly problems?: readonly string[];
   readonly locked?: boolean;
+  /** No press of this form can succeed, whatever is typed (a sign-in step's expired invitation): a secret's note asks for nothing. */
+  readonly final?: boolean;
+  /** The page's CSRF token or request key was out of date: the form reads the page again and keeps what was typed. */
+  readonly stale?: boolean;
+  /** The request key was used before: an earlier post with it saved, and this one did nothing (the form says "Already sent"). */
+  readonly duplicate?: boolean;
+}
+
+/** The lead of an invalid form; the browser says "field" for one field it places (summaryLead). */
+const INVALID_LEAD = 'Fix the fields listed here, then try again.';
+
+/**
+ * A page out of date (a CSRF token its session has overtaken, or a missing or garbled request key): nothing was saved,
+ * and the form reads the page again, which renders a fresh token and key in place, so what was typed stays (ADR 0077).
+ * The flag marks it: a form that reads the page again (ActionForm's summary, the version and export forms) writes its
+ * own next step, which depends on whether the person's own press sent the post, in place of these words. These are for
+ * a form that does not (the screening upload, a #42 file, until it does), so its refusal still has a next step.
+ */
+const STALE: ActionState = { error: 'This page was out of date, so nothing was saved. Reload the page and try again.', stale: true };
+
+/** Whether an invalid outcome only says the request key is missing or garbled (invoke.ts), which a fresh page mends. */
+function onlyRequestKey(issues: readonly Issue[]): boolean {
+  return issues.length > 0 && issues.every((issue) => issue.field === 'requestKey');
+}
+
+/** A refused form's state for an outcome the wrapper's guards or the input's parse refused, or undefined for any other. */
+function refusedInput(outcome: Outcome<unknown>): ActionState | undefined {
+  if (outcome.status === 'csrf_refused' || (outcome.status === 'invalid' && onlyRequestKey(outcome.issues))) {
+    return STALE;
+  }
+  const guarded = guardMessage(outcome);
+  if (guarded !== undefined) {
+    return { error: guarded };
+  }
+  if (outcome.status === 'invalid') {
+    return { error: INVALID_LEAD, invalid: true, issues: outcome.issues };
+  }
+  return undefined;
 }
 
 /** A form's file field as the route's streamed upload (an agreement's signed copy), or none. */
@@ -137,12 +204,9 @@ export async function runAction(route: Route<MutationResult>, form: FormData, pa
   if (outcome.status === 'ok') {
     redirect(outcome.data.redirect ?? '/');
   }
-  const guarded = guardMessage(outcome);
-  if (guarded !== undefined) {
-    return { error: guarded };
-  }
-  if (outcome.status === 'invalid') {
-    return { error: 'Check the fields marked below.', invalid: true, issues: outcome.issues };
+  const refusal = refusedInput(outcome);
+  if (refusal !== undefined) {
+    return refusal;
   }
   if (outcome.status === 'forbidden') {
     return { error: `Not available to your role: ${outcome.message}.` };
@@ -153,21 +217,25 @@ export async function runAction(route: Route<MutationResult>, form: FormData, pa
   if (outcome.status === 'suspended') {
     return { error: `Not started: ${outcome.reason}.` };
   }
-  return { error: 'This form was already submitted. Reload the page to see the result.' };
+  if (outcome.status === 'duplicate') {
+    // The request key was used before (invoke.ts), so an earlier post with it saved.
+    return { error: 'This form was already sent, so nothing new was saved. Reload the page to see the result.', duplicate: true };
+  }
+  // No outcome is left today. One added later reads as a refusal ("Not done") until it has words of its own, never as
+  // "Already sent" over a record that may not exist.
+  return { error: 'Reload the page and try again.' };
 }
 
 /** Runs a sign-in step from a form: on to the next step, or the step's error. */
 export async function runSignInStep(route: Route<StepResult>, form: FormData): Promise<ActionState> {
   const outcome = await route.invoke(await nextRequest({}, formInput(form)), services());
-  if (outcome.status === 'invalid') {
-    return { error: 'Check the fields marked below.', invalid: true, issues: outcome.issues };
-  }
-  const guarded = guardMessage(outcome);
-  if (guarded !== undefined) {
-    return { error: guarded };
+  const refusal = refusedInput(outcome);
+  if (refusal !== undefined) {
+    return refusal;
   }
   if (outcome.status !== 'ok') {
-    return { error: 'Sign-in could not continue. Start again.' };
+    // Starting again is the next step, not this form again (from the new-password step, the start is another page).
+    return { error: 'Sign-in could not continue. Start again.', final: true };
   }
   if ('redirect' in outcome.data) {
     redirect(outcome.data.redirect);

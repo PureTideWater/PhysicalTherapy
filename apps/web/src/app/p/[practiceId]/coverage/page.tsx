@@ -4,6 +4,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../components/action-form';
+import { CheckboxField, CheckboxGroup } from '../../../../components/field';
 import { QuestionList, TotalsText } from '../../../../components/contracts/display';
 import { LETTER_CONTROLS, PayerLetter } from '../../../../components/coverage/letter';
 import { Figure } from '../../../../components/coverage/share';
@@ -371,23 +372,24 @@ export default async function CoveragePage(props: Props) {
             checklist={checklist}
             review={(shown) => (
               <ActionForm action={reviewEvidenceFormAction} submit="Keep the checked items" className="flex flex-col gap-3">
+                <FormKeys />
                 <input type="hidden" name="practiceId" value={practiceId} />
                 <input type="hidden" name="proposalId" value={shown.id} />
-                <fieldset className="flex flex-col gap-2 text-sm">
-                  <legend className="font-medium">Keep the items that apply</legend>
-                  {shown.items.map((item, index) => (
-                    <label key={`${item.reason}:${String(index)}`} className="flex items-start gap-2" data-item={index}>
-                      <input type="checkbox" name={`keep:${String(index)}`} value="on" defaultChecked />
+                <CheckboxGroup
+                  legend="Keep the items that apply"
+                  issueKey="kept"
+                  options={shown.items.map((item, index) => ({
+                    name: `keep:${String(index)}`,
+                    value: 'on',
+                    defaultChecked: true,
+                    label: (
                       <span>
                         <span className="font-medium">{item.document}</span> ({item.reason}): {item.why}
                       </span>
-                    </label>
-                  ))}
-                  <label className="flex items-center gap-2 border-t pt-2">
-                    <input type="checkbox" name="dismiss" value="on" />
-                    Dismiss the whole checklist
-                  </label>
-                </fieldset>
+                    ),
+                  }))}
+                />
+                <CheckboxField id="evidence-dismiss" name="dismiss" value="on" errorName="Dismiss the checklist" label="Dismiss the whole checklist" />
               </ActionForm>
             )}
           />

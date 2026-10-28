@@ -206,7 +206,8 @@ export class CognitoAuthProvider implements AuthProvider {
       return await this.respond(challenge, 'NEW_PASSWORD_REQUIRED', { NEW_PASSWORD: newPassword }, null, 'password');
     } catch (error) {
       if (errorName(error) === 'InvalidPasswordException') {
-        return { kind: 'invalid_password', problems: ['a password the user pool accepts'] };
+        // The user pool refused a password that meets our policy: no rule to name, so the step says so in its own words.
+        return { kind: 'invalid_password', problems: [] };
       }
       throw error;
     }

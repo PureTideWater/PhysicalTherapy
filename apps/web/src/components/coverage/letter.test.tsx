@@ -5,13 +5,13 @@ import { LETTER_CODES_PATTERN } from '../../lib/contracts/letter';
 import { payerLetter } from '../../lib/routes/coverage';
 import { forgetRefusalUrl } from '../forget-refusal';
 import { LETTER_CONTROLS, type LetterSearchParams, PayerLetter } from './letter';
-import { type ContractChoice, type PayerChoice, watchLetterContract } from './letter-contract-check';
+import { type ContractChoice, type PayerChoice, contractOwners, watchLetterContract } from './letter-contract-check';
 import { type LetterMark, type MarkedControl, clearMark, describedWithout, watchLetterMarks } from './letter-marks';
 
 /**
  * Coverage's letter form, rendered as the page renders it (docs/adr/0079; test matrix DLR-04): the route's rule as the
- * codes field's pattern with its hint, each contract option's payer for the check that holds the contract to the
- * payer, and a refused letter's return marked on the control it names, a payer the route did not find unanswered, its
+ * codes field's pattern with its hint, each contract listed under its payer and its payer by ID for the check that
+ * holds the contract to the payer, and a refused letter's return marked on the control it names, a payer the route did not find unanswered, its
  * entries kept only as the form's own options and the codes' alphabet allow, and never a word from the URL; then the
  * marks cleared as the person edits and sends (LetterMarks), the contract held to its payer before the letter is sent
  * (LetterContractCheck), and a refused pair's contract mark cleared once a change of the payer makes the pair hold
@@ -100,8 +100,10 @@ describe('Coverage’s letter form', () => {
     expect(autofocused(page)).toEqual([]);
     expect(shown(page, 'letter-payer')).toBe(PAYER_Q);
     expect(shown(page, 'letter-contract')).toBe('');
-    // Each contract names its payer, for the check that holds the contract to the payer chosen; None named names none.
-    expect(page).toContain(`<option value="${CONTRACT_Q}" data-payer="${PAYER_Q}">SYNTHETIC FIXED SCHEDULE AGREEMENT</option>`);
+    // Each contract is listed under its payer, and the check that holds the contract to the payer chosen is given each
+    // listed contract's payer by ID (the shared SelectField writes no attribute on an option); None named names none.
+    expect(page).toContain(`<optgroup label="SYNTHETIC PAYER Q"><option value="${CONTRACT_Q}">SYNTHETIC FIXED SCHEDULE AGREEMENT</option></optgroup>`);
+    expect(contractOwners(CONTRACTS)).toEqual({ [CONTRACT_Q]: PAYER_Q });
     expect(page).toContain('<option value="">None named</option>');
   });
 
@@ -360,24 +362,23 @@ class FakePayer extends EventTarget implements PayerChoice {
   }
 }
 
-/** The contract select: its chosen option's payer (none for None named), its change, and the validity the check sets. */
+/** The contract select: its value (a contract's ID, '' for None named), its change, and the validity the check sets. */
 class FakeContract extends EventTarget implements ContractChoice {
-  owner: string | undefined;
+  value = '';
   customValidity = '';
-
-  get selectedOptions(): ArrayLike<{ readonly dataset: Readonly<Record<string, string | undefined>> }> {
-    return [{ dataset: this.owner === undefined ? {} : { payer: this.owner } }];
-  }
 
   setCustomValidity(message: string): void {
     this.customValidity = message;
   }
 
-  choose(owner: string | undefined): void {
-    this.owner = owner;
+  choose(value: string): void {
+    this.value = value;
     this.dispatchEvent(new Event('change'));
   }
 }
+
+/** The listed contracts' payers, as the page gives them to the check: payer Q's contract. */
+const OWNERS = contractOwners(CONTRACTS);
 
 describe('the letter’s contract, held to its payer before it is sent (LetterContractCheck)', () => {
   const MESSAGE = 'Choose one of this payer’s contracts, or None named.';
@@ -386,31 +387,37 @@ describe('the letter’s contract, held to its payer before it is sent (LetterCo
     const payer = new FakePayer();
     const contract = new FakeContract();
     payer.value = PAYER_R;
-    contract.owner = PAYER_Q;
-    const stop = watchLetterContract(payer, contract, MESSAGE);
+    contract.value = CONTRACT_Q;
+    const stop = watchLetterContract(payer, contract, OWNERS, MESSAGE);
     expect(contract.customValidity).toBe(MESSAGE);
     payer.choose(PAYER_Q);
     expect(contract.customValidity).toBe('');
     payer.choose(PAYER_R);
     expect(contract.customValidity).toBe(MESSAGE);
-    contract.choose(undefined);
+    contract.choose('');
     expect(contract.customValidity).toBe('');
-    contract.choose(PAYER_Q);
+    contract.choose(CONTRACT_Q);
     expect(contract.customValidity).toBe(MESSAGE);
     stop();
     payer.choose(PAYER_Q);
     expect(contract.customValidity).toBe(MESSAGE);
   });
 
-  it('never holds None named, nor a contract while no payer is chosen (the payer’s required stops that letter)', () => {
+  it('never holds None named, a value the list does not name, nor a contract while no payer is chosen (the payer’s required stops that letter)', () => {
     const payer = new FakePayer();
     const contract = new FakeContract();
-    watchLetterContract(payer, contract, MESSAGE);
+    watchLetterContract(payer, contract, OWNERS, MESSAGE);
     expect(contract.customValidity).toBe('');
-    contract.choose(PAYER_Q);
+    contract.choose(CONTRACT_Q);
     expect(contract.customValidity).toBe('');
     payer.choose(PAYER_Q);
     expect(contract.customValidity).toBe('');
+    // Payer R chosen: neither a contract the list does not name nor a key every object has is held to it.
+    payer.choose(PAYER_R);
+    for (const value of [ELSEWHERE, 'toString', 'constructor', '__proto__']) {
+      contract.choose(value);
+      expect(contract.customValidity, value).toBe('');
+    }
   });
 });
 
@@ -446,8 +453,8 @@ describe('a refused pair answered by changing the payer (LetterContractCheck, th
     const message = { hidden: false };
     // The kept pair: payer R with payer Q's contract, held at once.
     payer.value = PAYER_R;
-    contract.owner = PAYER_Q;
-    const stopCheck = watchLetterContract(payer, contract, 'Choose one of this payer’s contracts, or None named.');
+    contract.value = CONTRACT_Q;
+    const stopCheck = watchLetterContract(payer, contract, OWNERS, 'Choose one of this payer’s contracts, or None named.');
     const stopMarks = watchLetterMarks(form, [{ control: contract, message, messageId: 'letter-contract-error', also: [payer] }], vi.fn());
     expect(contract.validity.valid).toBe(false);
     // Another payer that is not the contract's: still refused, still marked.

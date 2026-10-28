@@ -90,7 +90,7 @@ hex values in a component.
 | Role | Face | Weights | Notes |
 | --- | --- | --- | --- |
 | Display, headlines, wordmark | Schibsted Grotesk | 500, 600, 700 | Headlines 700 at -0.02em, line-height 1.1 |
-| Body and UI | IBM Plex Sans | 400, 500, 600 | 16/24 body; 14 in dense tables; labels 500; buttons 600 |
+| Body and UI | IBM Plex Sans | 400, 500, 600 | 16/24 body; 14 in dense tables and form controls from 768 px up (16 below; ADR 0077); labels 500; buttons 600 |
 | Money and tables | IBM Plex Mono | 400, 500 | Every dollar figure, code, unit count and rate. `font-variant-numeric: tabular-nums`. Totals 500. |
 
 Fonts load through `apps/web/src/lib/fonts.ts` (next/font/local, self-hosted at build time). No page may load

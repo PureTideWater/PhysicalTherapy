@@ -12,7 +12,7 @@ import { startLocalWorker } from './worker';
 
 /**
  * Triage to cases in the browser (PRD 5, J8; PRD 7, Cases and Practice dashboard; PRD 12; test matrix
- * CAS-03, CAS-04, CAS-06, CAS-07, CAS-38, CAS-39, PRC-14): in a practice of its own whose case materiality is 100.00, a
+ * CAS-03, CAS-04, CAS-06, CAS-07, CAS-38, CAS-39, PRC-14, FRM-01): in a practice of its own whose case materiality is 100.00, a
  * billing manager uploads two SYNTHETIC remittances of one payer pattern, CAS-08 (paid 2026-04-08,
  * three lines 30.00 short) and CAS-04 (paid 2026-06-04, three lines 20.00 short). The payer's schedule
  * is signed off beside the browser with a dispute window that closed ten days ago for CAS-08's payment
@@ -21,9 +21,10 @@ import { startLocalWorker } from './worker';
  * cases page and Settings → Defaults show in dollars and an unchanged save keeps (CAS-38, CAS-39); the
  * manager lowers it, told the consequence first, opens the case on the pattern by keyboard with an owner,
  * and the case attaches the three open lines with the deadline of their window. Triage again adds the
- * three lines past their window struck through with WINDOW_PASSED, out of the actionable total. A line
- * is written off with its reason (CAS-06) and reopened with a reason (CAS-07); the dashboard's headline
- * follows each step, its figure the Cases screen's. Synthetic data only.
+ * three lines past their window struck through with WINDOW_PASSED, out of the actionable total. A
+ * write-off as "Other" with no reason given is refused and keeps its reason and its tick (FRM-01); given
+ * its reason, the line is written off (CAS-06) and reopened with a reason (CAS-07); the dashboard's
+ * headline follows each step, its figure the Cases screen's. Synthetic data only.
  */
 
 const FIXTURES = path.resolve(import.meta.dirname, '../../../fixtures/synthetic');
@@ -135,16 +136,33 @@ test('a pattern below the case materiality waits; lowered, it opens as a case wi
       await expectAccessible(page, 'A case');
     });
 
-    await test.step('a line written off with its reason leaves the total and stays visible (CAS-06); reopened with a reason, it returns (CAS-07)', async () => {
+    await test.step('a write-off as "Other" with no reason given is refused and keeps its reason and its tick (FRM-01); a line written off with its reason leaves the total and stays visible (CAS-06); reopened with a reason, it returns (CAS-07)', async () => {
       const open = page.getByRole('list', { name: 'Case lines' }).locator('[data-actionable="yes"]').first();
       const lineId = (await open.getAttribute('data-case-line')) ?? '';
-      await open.getByText('Write this line off').click();
-      await open.getByRole('combobox', { name: 'Reason' }).selectOption({ label: 'Not worth pursuit' });
-      await open.getByRole('checkbox').check();
-      await open.getByRole('button', { name: 'Write off' }).click();
       const line = page.locator(`[data-case-line="${lineId}"]`);
+      await open.getByText('Write this line off').click();
+      const reason = open.getByRole('combobox', { name: 'Reason' });
+      const why = open.getByRole('textbox', { name: /^Why/ });
+      const confirm = open.getByRole('checkbox');
+      await reason.selectOption({ label: 'Other' });
+      await confirm.check();
+      await open.getByRole('button', { name: 'Write off' }).click();
+      // Refused, the form keeps what was chosen: a reset would put back "Window passed" and untick the box, and a second
+      // press would record a reason nobody chose (a11y-practice-1-03). The one refused field is named, marked and focused.
+      const summary = open.locator('[data-slot="refusal-summary"]');
+      await expect(summary).toContainText('Not done');
+      await expect(summary).toContainText('Why: say why for "other", and only for "other"');
+      await expect(reason).toHaveValue('other');
+      await expect(confirm).toBeChecked();
+      await expect(why).toHaveAttribute('aria-invalid', 'true');
+      await expect(why).toBeFocused();
+      await expect(line).toHaveAttribute('data-actionable', 'yes');
+      // The reason given, the same form (its kept choice and tick) writes the line off.
+      await why.fill('SYNTHETIC the payer closed the claim on review');
+      await open.getByRole('button', { name: 'Write off' }).click();
       await expect(line).toHaveAttribute('data-actionable', 'no');
-      await expect(line.locator('[data-reason="not_worth_pursuit"]')).toContainText(`by ${personaEmail('triage-manager')}`);
+      await expect(line.locator('[data-reason="other"]')).toContainText('Written off: Other (SYNTHETIC the payer closed the claim on review)');
+      await expect(line.locator('[data-reason="other"]')).toContainText(`by ${personaEmail('triage-manager')}`);
       await expect(page.locator('[data-figure="actionable"]').first()).toHaveText('$40.00');
       await page.goto(`/p/${practiceId}`);
       await expect(page.locator('[data-figure="actionable"]')).toContainText('$40.00');
