@@ -38,6 +38,7 @@ type Keyed<K extends string> = ScreeningColumn & { readonly key: K };
 /** A table's columns less its naming ones: a stacked item's fields, and the cells of a footer row beside its naming cell. */
 export type FieldColumn<C extends ScreeningColumn> = Exclude<C, { readonly naming: true }>;
 
+/** A table's columns less its naming ones, in order. */
 export function fieldColumns<C extends ScreeningColumn>(columns: readonly C[]): FieldColumn<C>[] {
   return columns.filter((column): column is FieldColumn<C> => column.naming !== true);
 }
@@ -81,7 +82,7 @@ export function ColumnCells<K extends string>({ columns, cells }: { readonly col
 
 /** A stacked item's fields: every column but the naming ones, in order, under the header's own words. */
 export function fieldsFrom<K extends string>(columns: readonly Keyed<K>[], cells: Readonly<Record<NoInfer<K>, ReactNode>>): StackedField[] {
-  return columns.filter((column) => column.naming !== true).map((column) => ({ label: column.label, value: cells[column.key], figure: column.figure, mono: column.mono }));
+  return fieldColumns(columns).map((column) => ({ label: column.label, value: cells[column.key], figure: column.figure, mono: column.mono }));
 }
 
 /**
