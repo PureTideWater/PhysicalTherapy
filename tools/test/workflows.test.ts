@@ -3207,14 +3207,14 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
    * the test below until a reviewed row names its bound (docs/adr/0066, Part 3, N29).
    */
   const BOUNDED_VALUES: readonly BoundedValue[] = [
-    { file: 'ci.yml', job: 'all-green', value: 'tojson(needs)', bound: 'the eight jobs it needs (ci.yml:779), each a result word, and their outputs, of which there are none: no ci.yml job declares outputs (asserted below)' },
+    { file: 'ci.yml', job: 'all-green', value: 'tojson(needs)', bound: 'the eight jobs it needs (ci.yml:782), each a result word, and their outputs, of which there are none: no ci.yml job declares outputs (asserted below)' },
     { file: 'ci.yml', job: 'db', value: 'steps.runner-image.outputs.key', bound: runnerImage('ci.yml:324-332') },
     { file: 'ci.yml', job: 'db', value: 'steps.runner-image.outputs.os', bound: runnerImage('ci.yml:324-332') },
     { file: 'ci.yml', job: 'db', value: 'steps.vitest-cache.outputs.cache-primary-key', bound: cacheKey('ci.yml:370', 'runner.os, strategy.job-total, matrix.shard and github.sha') },
     { file: 'ci.yml', job: 'e2e', value: 'steps.runner-image.outputs.key', bound: runnerImage('ci.yml:523-531') },
     { file: 'ci.yml', job: 'e2e', value: 'steps.runner-image.outputs.os', bound: runnerImage('ci.yml:523-531') },
-    { file: 'ci.yml', job: 'images', value: "fromjson(steps.web.outputs.metadata || '{}')['containerimage.config.digest']", bound: "buildx's config digest of the web build (ci.yml:678-688), sha256: and 64 hexadecimal digits, or '' when the metadata lacks it" },
-    { file: 'ci.yml', job: 'images', value: "fromjson(steps.worker.outputs.metadata || '{}')['containerimage.config.digest']", bound: "buildx's config digest of the worker build (ci.yml:701-712), sha256: and 64 hexadecimal digits, or '' when the metadata lacks it" },
+    { file: 'ci.yml', job: 'images', value: "fromjson(steps.web.outputs.metadata || '{}')['containerimage.config.digest']", bound: "buildx's config digest of the web build (ci.yml:681-691), sha256: and 64 hexadecimal digits, or '' when the metadata lacks it" },
+    { file: 'ci.yml', job: 'images', value: "fromjson(steps.worker.outputs.metadata || '{}')['containerimage.config.digest']", bound: "buildx's config digest of the worker build (ci.yml:704-715), sha256: and 64 hexadecimal digits, or '' when the metadata lacks it" },
     { file: 'ci.yml', job: 'static', value: 'steps.range.outputs.base', bound: 'the commits step (ci.yml:55-74) writes origin/ and the base branch, github.event.before or a commit SHA, each checked to name a commit' },
     { file: 'ci.yml', job: 'static', value: 'steps.tsc-cache.outputs.cache-primary-key', bound: cacheKey('ci.yml:146', `${RUNNER_HASH} and github.sha`) },
     { file: 'ci.yml', job: 'unit', value: 'steps.apt.outputs.cache-primary-key', bound: cacheKey('ci.yml:229', APT_KEY) },
