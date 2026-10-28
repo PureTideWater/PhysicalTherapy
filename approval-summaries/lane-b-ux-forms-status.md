@@ -1,4 +1,4 @@
-# Lane B: ux-forms status (co-001/ux-forms)
+# Lane B: ux-forms status (co-001/ux-forms): MERGED as #74 (165c599, 2026-10-28 03:25 UTC)
 
 **Continued 2026-10-27 01:20 UTC** by session_01TAgFZo3SGSTBEfKRjX1jeG (a Lane B item session started by Lane A's
 orchestrator, session_01TrKDxeLbxVo7t7zwRXFzrg). GitHub login: PureTideWater. Machine: setup-container OK except the
@@ -10,33 +10,37 @@ Forms keep what the person typed, and name the refused field (the UX baseline re
 session_01VNsi2Kru6pfk8CAbQ2AaYB; stopped cleanly at 2026-10-26 10:10 UTC on the orchestrator's wind-down. The next
 session (Lane A or Lane B) continues from here.
 
-## Now (2026-10-28 02:00 UTC)
-- **PR #74** (draft), head **34f7427**, pushed (the fix round's one push), subscribed. It holds: the review fix round
-  3b94e23, the base merge ab197e4 (#76), the verifiers' follow-ups a57fbf5, the UX re-check's polish fixes 001cdbf, the
-  base merge ae26bf7 (0dd1ba7: #77 Playwright 1.64.1 and Chromium 1248, #80) and 34f7427 (matrix.ts word for word).
-  Description rewritten from the template (checks, reviewer table of every finding, galleries), read back identical.
-- **Local checks on the head:** the full local suite on a57fbf5 (unit 6,367, golden 376, oracle 687, db 9,222, e2e 60)
-  and, after the merge, on 34f7427/ae26bf7: typecheck, lint, copy, logs, fixtures, synth, unit 6,524 (browser tests in
-  Chromium 1248), db 9,222, build, stamp, e2e 60/60 against the new brand baselines; no mutation shard affected.
-- **Head 8cab9c9, pushed 02:55 UTC:** the merge of claude/build-platform a6e754f (#79, ux-table-scroll; 14 conflicts,
-  both kept; the audit found two interactions, both fixed: a refused field focused inside a scroller keeps its danger
-  border, and ADR 0077 "Not covered" says a row form's two StackedRows copies share one request key). Re-check on the
-  merged tree: every command green, unit 6,565, e2e 62/62 (`tables-phone.spec.ts` included). (34f7427's CI was green on
-  every check before the base moved.)
-- **Running:** the fresh-clone verification wf_4be80bed-13f (reads CI on 8cab9c9). PR description updated (helper,
-  read back).
-- **Next:** on PASS and CI green: mark ready, wait for approval-of-record's re-run, merge with method merge and
-  expectedHeadSha 8cab9c9 (unless the base moved again: then merge it, re-check, push, verify again); unsubscribe;
-  then PR 6.
-- **Galleries** (private): before 1280 https://claude.ai/artifact/JTLJX4saVr5nQ59EEvDDo7, 390
+## Now (2026-10-28 03:30 UTC): merged
+- **#74 merged** into claude/build-platform as **165c599** (merge commit, expectedHeadSha 8cab9c9), after: CI green on
+  every check of 8cab9c9, the fresh-clone verification PASS (`lane-b-ux-forms-verification.md`), ready, and
+  approval-of-record's re-run green. Unsubscribed. The main checkout is fast-forwarded and installed; the worktree
+  /home/user/ux-forms and the local branch are removed (remote branches stay, the WIP refs included). The push runs on
+  165c599 (ci, mutation, screening-capacity) are being read.
+- **Records:** reviews `lane-b-ux-forms-reviews.md`; build `lane-b-ux-forms-build-2b.md`; progress files
+  `lane-b-ux-forms-wip/`; design `designs/lane-b-ux-forms.md` (sections 12.1 to 12.4); verification
+  `lane-b-ux-forms-verification.md`.
+- **Galleries** (private to this account): before 1280 https://claude.ai/artifact/JTLJX4saVr5nQ59EEvDDo7, 390
   https://claude.ai/artifact/E7CDHT8hUTpPZMq6TKK18J; after the build (4f0b526) 1280
   https://claude.ai/artifact/7f5Xg3Kj8992F1jBTh7Hew, 390 https://claude.ai/artifact/N1ikEiBauh8PDGvVnNNhgU; after the fix
   round (a57fbf5) 1280 https://claude.ai/artifact/X2vUgzfCWqxnZhtyj2MfQw, 390
   https://claude.ai/artifact/22MQXWDuHMMJiNRVzt93tT.
-- **WIP refs** (no PR, no CI; superseded by the push, kept, never forced): co-001/wip-ux-forms, -2 to -5.
-- **Deferred:** U-UX-6 to UX PR 10 `co-001/ux-payer-response` (the baseline's UX-035; a blocking defect: a write-off
-  reason and a payer response that open pre-answered). **Proposal to the orchestrator:** claim it soon.
-  Check-in trig_01N9s6CGXZwDNXd96ZUXEt2C at 07:02 UTC.
+- **Left for others (proposals and hand-overs):**
+  - **UX PR 10 `co-001/ux-payer-response`** (the baseline's UX-035, blocking): the write-off Reason and payer Response
+    open pre-answered; the server-side refusal in `lib/routes/triage.ts`. Deferred here as U-UX-6. **Claim it soon.**
+  - **`co-001/ux-forms-after-42`** (design 7.8): upload-form.tsx (also: handle `stale` and `RefusalLead`, the person
+    mark), the console support Ticket hint, the users page's raw checkbox, the ZIP, email and screening wordings,
+    `support-mail.ts`'s "opaque ID" and `console.ts`'s bare punctuation; the form-hints allowlist entry for
+    upload-form.tsx goes with it.
+  - **The 34th UX PR** (the first row form in both StackedRows copies): the two copies share one request key and one
+    pin (ADR 0077 "Not covered").
+  - Design 11.2 and the build summaries' proposals: "enter at most {n} characters" in packets.ts, settings.ts,
+    submissions.ts and reconciliation/template.ts; a shared RadioGroup; a per-box message in CheckboxGroup; an `id`
+    prop on CheckboxGroup; a column layout for sentence-long checkbox labels; the console practices page's
+    SETTINGS_LABELS table; a static test that every practice-mutation ActionForm renders FormKeys; four console pages
+    that scroll sideways at 390 px because of wide tables and a badge (not forms); text typed before hydration and
+    S-SEC-2's edge (a); one separator rule for every message (a words pass after #42); onboarding.spec.ts's random
+    8-character tag (1 run in 40,000 is an 8-digit date the no-PHI check refuses); `FORMS_HARNESS_CHROMIUM` documented.
+- **Next in this session:** UX PR 6, `co-001/ux-sign-in-time` (`lane-b-ux-sign-in-time-status.md`), then PR 7.
 
 ## Handoff
 - **Branch:** `co-001/ux-forms`, head **17bbb70**, pushed, on claude/build-platform 7ef421b (#54 included). Two commits:
@@ -148,3 +152,5 @@ session (Lane A or Lane B) continues from here.
 
 | 2026-10-28 02:58 | #79 merged in; verification | 8cab9c9 pushed (the #79 merge, wf_6b9c6983-f04: resolve, adversarial audit, re-check). The fresh-clone verification started: wf_4be80bed-13f. |
 | 2026-10-28 03:20 | Verified | CI on 8cab9c9: all 22 check runs green (all green, mutation, screening-capacity gate, approval-of-record). The fresh-clone verification: **PASS**, no blocker (`approval-summaries/lane-b-ux-forms-verification.md`); its two wording notes corrected in the description. Next: ready, approval-of-record's re-run, merge with expectedHeadSha 8cab9c9. |
+
+| 2026-10-28 03:30 | **Merged #74 (165c599)** | Ready 03:07, approval-of-record re-run green, merged with method merge and expectedHeadSha 8cab9c9. Unsubscribed; main checkout fast-forwarded and installed; worktree removed. Push runs being read. Next: PR 6. |
