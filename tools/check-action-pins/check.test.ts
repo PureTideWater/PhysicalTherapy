@@ -74,7 +74,7 @@ afterAll(() => {
  * A repository whose first commit holds this workflow (and, if asked, the checker, with its age rule unless `baseAge` is
  * false), with a later head commit.
  */
-function repository(options: { baseWorkflow: string; headWorkflow: string; baseChecker: boolean; baseAge?: boolean; headCheckerEdit?: boolean }) {
+function repository(options: { baseWorkflow: string; headWorkflow: string; baseChecker: boolean; baseAge?: boolean; headCheckerEdit?: boolean; baseFiles?: Readonly<Record<string, string>>; headFiles?: Readonly<Record<string, string>> }) {
   const dir = mkdtempSync(path.join(scratch, 'repo-'));
   const env = { ...process.env, HOME: dir, GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'Synthetic', GIT_AUTHOR_EMAIL: 'synthetic@example.invalid', GIT_COMMITTER_NAME: 'Synthetic', GIT_COMMITTER_EMAIL: 'synthetic@example.invalid' };
   const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env, encoding: 'utf8' }).trim();
@@ -86,11 +86,13 @@ function repository(options: { baseWorkflow: string; headWorkflow: string; baseC
   write('.github/workflows/ci.yml', options.baseWorkflow);
   if (options.baseChecker) write('tools/check-action-pins/index.ts', '// the checker\n');
   if (options.baseAge ?? true) write('tools/check-action-pins/age.ts', '// the age rule\n');
+  for (const [file, text] of Object.entries(options.baseFiles ?? {})) write(file, text);
   git('add', '.');
   git('commit', '-q', '-m', 'base');
   const base = git('rev-parse', 'HEAD');
   write('.github/workflows/ci.yml', options.headWorkflow);
   if (options.headCheckerEdit === true) write('tools/check-action-pins/index.ts', '// the checker, edited\n');
+  for (const [file, text] of Object.entries(options.headFiles ?? {})) write(file, text);
   write('README.md', 'head\n');
   git('add', '.');
   git('commit', '-q', '-m', 'head');
@@ -153,6 +155,26 @@ describe('the pins the network reads', () => {
     const release = { file: 'release.yml', text: workflow(CHECKOUT) };
     expect(selectPins([release], [{ file: 'ci.yml', text: workflow(CHECKOUT) }]).verify).toEqual(new Set([`octo/checkout@${CHECKOUT}`, `octo/setup-node@${NODE}`]));
     expect(selectPins([release], [release]).verify).toEqual(new Set());
+  });
+
+  it('read the base’s workflows at the top level only, as GitHub runs them, and a file in a subdirectory of .github/workflows is refused, so a pin parked there is aged when it enters a workflow (SEC-S3)', async () => {
+    const PYTHON = sha('f');
+    const parked = `name: next\non: push\njobs:\n  build:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: octo/setup-python@${PYTHON} # v7.2.0\n`;
+    const head = `${workflow(CHECKOUT)}      - uses: octo/setup-python@${PYTHON} # v7.2.0\n`;
+    // The first pull request parked the pin in a subdirectory, which GitHub never runs; the second moves it into ci.yml.
+    const repo = repository({ baseWorkflow: workflow(CHECKOUT), headWorkflow: head, baseChecker: true, baseFiles: { '.github/workflows/drafts/next.yml': parked }, headFiles: { '.github/workflows/drafts/next.yml': parked } });
+    expect(baseState(repo.dir, repo.base).workflows.map((workflow) => workflow.file)).toEqual(['ci.yml']);
+    const refusal = '.github/workflows/drafts/next.yml: a file in a subdirectory of .github/workflows, which GitHub never runs and this check never reads, so a pin parked there would enter a workflow later without its age read; keep drafts outside .github/workflows';
+    const offline = await checkActionPins({ root: repo.dir, base: repo.base, event: 'pull_request', transport: recordedTransport({}), offline: true });
+    expect(offline.errors).toEqual([refusal]);
+    const transport = recordedTransport({
+      tags: { 'octo/setup-python': lightweight('v7.2.0', PYTHON) },
+      files: { [blob('octo/setup-python', PYTHON)]: 'runs:\n  using: node24\n  main: x.js\n' },
+    });
+    const result = await checkActionPins({ root: repo.dir, base: repo.base, event: 'pull_request', transport });
+    expect(result.errors).toContain(refusal);
+    // New against the base's top-level workflows: verified and aged, not vouched for by the parked copy.
+    expect(transport.reads).toEqual(expect.arrayContaining(['ls-remote https://github.com/octo/setup-python refs/tags/v7.2.0 refs/tags/v7.2.0^{}', 'fetchRefs octo/setup-python v7.2.0']));
   });
 });
 

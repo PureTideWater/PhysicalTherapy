@@ -35,11 +35,18 @@ export function baseState(root: string, base: string): BaseState {
   const merged = git(root, ['merge-base', base, 'HEAD']);
   if (merged.status !== 0) throw new Error(`BASE ${base} has no merge base with HEAD in this checkout (git merge-base: ${merged.stderr.trim() || `status ${String(merged.status)}`})`);
   const mergeBase = merged.stdout.trim();
-  const files = git(root, ['ls-tree', '-r', '--name-only', mergeBase, '--', `${WORKFLOWS_DIR}/`]);
+  // The top level alone, as GitHub runs them and as the head's are read (check.ts): a file in a subdirectory runs
+  // nowhere, so the base vouches for none of its pins (the security review's S3).
+  const files = git(root, ['ls-tree', '-z', mergeBase, '--', `${WORKFLOWS_DIR}/`]);
   if (files.status !== 0) throw new Error(`git ls-tree of ${mergeBase} failed: ${files.stderr.trim()}`);
   const workflows = files.stdout
-    .split('\n')
-    .filter((file) => /\.ya?ml$/.test(file))
+    .split('\0')
+    .flatMap((entry) => {
+      const tab = entry.indexOf('\t');
+      const type = entry.slice(0, tab).split(' ')[1];
+      const file = entry.slice(tab + 1);
+      return tab !== -1 && type === 'blob' && !file.slice(WORKFLOWS_DIR.length + 1).includes('/') && /\.ya?ml$/.test(file) ? [file] : [];
+    })
     .map((file) => {
       const shown = git(root, ['show', `${mergeBase}:${file}`]);
       if (shown.status !== 0) throw new Error(`git show ${mergeBase}:${file} failed: ${shown.stderr.trim()}`);

@@ -11,8 +11,9 @@ import { actionUses, consistencyProblems, formProblems, parsePin, reusableWorkfl
 
 /**
  * `pnpm actions:check` (docs/adr/0066, Parts 2 and 5; test matrix CI-11, CI-21, CI-23): the pin policy over every
- * workflow. Offline on every run: every action pinned to a full commit SHA with its release version, one commit and one
- * version per action, no reusable workflow of another repository, and age-exceptions.json well formed. Networked, for
+ * workflow. Offline on every run: no file in a subdirectory of .github/workflows, every action pinned to a full commit
+ * SHA with its release version, one commit and one version per action, no reusable workflow of another repository, and
+ * age-exceptions.json well formed. Networked, for
  * the pins the base does not already vouch for (base.ts): the tag, the inputs, the nested actions and release.yml's
  * nested caches (verify.ts); then the BuildKit builder (buildkit.ts) and the age rule (age.ts), under one deadline of
  * AGE_DEADLINE_MS. On a push run every finding about something read from upstream is a warning, since the pull request
@@ -68,13 +69,28 @@ export interface CheckResult {
   readonly notes: string[];
 }
 
-/** The workflow files of a tree, by name. */
+const WORKFLOWS_DIR = '.github/workflows';
+
+/** The workflow files of a tree, by name: the top level alone, the files GitHub runs. */
 export function readWorkflows(root: string): WorkflowText[] {
-  const dir = path.join(root, '.github/workflows');
+  const dir = path.join(root, WORKFLOWS_DIR);
   return readdirSync(dir)
     .filter((file) => /\.ya?ml$/.test(file))
     .sort()
     .map((file) => ({ file, text: readFileSync(path.join(dir, file), 'utf8') }));
+}
+
+/**
+ * The offline rule over .github/workflows' subdirectories: no file in one. GitHub never runs it and no rule here reads
+ * it, so a pin parked there would vouch for nothing and enter a workflow later unread (the security review's S3).
+ */
+export function workflowDirectoryProblems(root: string): string[] {
+  const dir = path.join(root, WORKFLOWS_DIR);
+  return readdirSync(dir, { recursive: true, withFileTypes: true })
+    .filter((entry) => !entry.isDirectory() && path.resolve(entry.parentPath) !== path.resolve(dir))
+    .map((entry) => path.relative(root, path.join(entry.parentPath, entry.name)).split(path.sep).join('/'))
+    .sort()
+    .map((file) => `${file}: a file in a subdirectory of ${WORKFLOWS_DIR}, which GitHub never runs and this check never reads, so a pin parked there would enter a workflow later without its age read; keep drafts outside ${WORKFLOWS_DIR}`);
 }
 
 /** A file of the checkout, or undefined when it has none. */
@@ -100,7 +116,14 @@ export async function checkActionPins(options: CheckOptions): Promise<CheckResul
   const workflows = readWorkflows(options.root);
   const builder = builderOf(workflows);
   const exceptions = readOptional(path.join(options.root, AGE_EXCEPTIONS));
-  const errors = [...formProblems(workflows), ...reusableWorkflowProblems(workflows), ...consistencyProblems(workflows), ...builder.problems, ...exceptionProblems(exceptions)];
+  const errors = [
+    ...workflowDirectoryProblems(options.root),
+    ...formProblems(workflows),
+    ...reusableWorkflowProblems(workflows),
+    ...consistencyProblems(workflows),
+    ...builder.problems,
+    ...exceptionProblems(exceptions),
+  ];
   const warnings: string[] = [];
   const notes: string[] = [];
   if (options.offline === true) return { errors, warnings, notes: ['offline: the networked checks did not run'] };
