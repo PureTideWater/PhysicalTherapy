@@ -1453,7 +1453,8 @@ Every old-enough instant equals the design's reading of 2026-10-27T22:20Z. All 1
 
 The two annotated tags (pnpm/action-setup's, PGP-signed, and trivy-action's, SSH-signed) give the youngest time for
 those two. The same run read the builder: its tag is the index `99368f3e…`, and no newer BuildKit release is three days
-old.
+old. The integrator's run of the same command from the merged head, 2026-10-28T02:59:19Z to 02:59:38Z, read the same
+12 blocks, the same youngest times and the same old-enough instants.
 
 **The pins, on CI** (filled from P1's CI run). This part's own pull request ages all 12 on GitHub's runners with the
 token. For each commit, its log prints:
@@ -1474,6 +1475,13 @@ That base, 6eae41a3, predates all three digests, so the image rule read Docker H
 | `node:24-trixie-slim@sha256:43b9ba11…` | `apps/web/Dockerfile:7, :24`; `apps/worker/Dockerfile:5, :23` | 2026-10-21T17:39:11.31083Z | 2026-10-24T17:39:11Z |
 | `postgres:18-trixie@sha256:edb0c08d…` | `docker-compose.yml` `services.postgres` | 2026-10-21T19:08:32.855608Z | 2026-10-24T19:08:32Z |
 | `moby/buildkit:v0.34.1@sha256:99368f3e…` | the setup-buildx step of ci.yml's images job, release.yml, release-dry-run.yml, release-capacity.yml and screening-capacity.yml | 2026-10-20T21:37:36.856866Z | 2026-10-23T21:37:36Z |
+
+The integrator ran the same command again from the merged head, 2026-10-28T02:59:40Z to 02:59:46Z. Between the two
+runs Docker Hub rebuilt `node`: `24-trixie-slim` named `f2fb6134…` by then. So the rule searched the most recently
+updated tags for `43b9ba11…`, found it on `lts-trixie-slim`, and took that tag's `tag_last_pushed`,
+2026-10-21T17:41:02.078086Z, so it was old enough from 2026-10-24T17:41:02Z. It passed, as postgres and the builder did
+again from their own tags. That run proved the search path live as well as the direct read. It is also why images are
+not bootstrapped: the base's unchanged digest is never read on a pull request, so the tag's move turns nothing red.
 
 A read-only probe through the same reader, 2026-10-28T02:05:00Z, also checked two answers:
 - a missing tag of `library/node` reads as "no such tag";
