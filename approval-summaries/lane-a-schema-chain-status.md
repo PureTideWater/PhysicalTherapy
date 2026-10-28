@@ -101,6 +101,10 @@ GitHub login: PureTideWater.
   (Stryker 100% on interest.ts) and schema in parallel; reconcile; screens and records (ADR 0084, PRD 13's granted
   sentence, reconciliation-001's grant word for word); integrator with the full local suite; one push; no PR (it
   opens after SS-01 and SUITE-CAP-1b merge). If stopped: setup, leftover marker in /home/user/interest, resumeFromRunId.
+  **~04:10 UTC the usage limit stopped it in its re-read (nothing built); a container restart followed. Resumed
+  2026-10-28 05:18 UTC** (setup re-run with the four worktrees; PostgreSQL 16's stale lock files from the old container
+  removed by hand, its PID reused by PostgreSQL 18; both clusters answer; the re-read given a RESUMED note). Check-in
+  trig_011P79pdAThs6U9K5f147QAX at 10:25 UTC (the window ends near 10:10).
 - **Superseded:** when Stryker and its gate pass, push d763ba78; then merge #42's head 6f23c42b into SS-01 (merge commit;
   domain model and function files regenerated, never hand-merged), re-check, push; then SUITE-CAP-1b's build on it.
 - **Then:** read the build's result; the PR waits for #42 to merge (then merge #42's head and the latest
@@ -146,3 +150,4 @@ GitHub login: PureTideWater.
 - 2026-10-28 03:58 UTC: #42 merged into SS-01 (f5bd6201); SUITE-CAP-1b built but its 1a-dependent parts (358dc53f).
 - 2026-10-28 04:02 UTC: interest fix build started (wf_4860596d-bb1).
 - 2026-10-28 04:16 UTC: orchestrator's base-merge notes recorded; SUITE-CAP-3 claimed elsewhere.
+- 2026-10-28 05:18 UTC: resumed after the usage limit and a restart; interest fix build resumed in its re-read.
