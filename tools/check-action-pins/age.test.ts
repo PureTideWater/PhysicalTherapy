@@ -19,6 +19,13 @@ import { armoredFingerprints, dearmor, packets } from './keys';
  * whose SHAs are their real hashes, checked with gpgv. No GitHub key material is used here.
  */
 
+/**
+ * Every case writes a git repository and runs checkActionPins over it, which spawns git and gpgv, often several times in
+ * one case: in the full unit run with coverage one case took 5.8 s on four shared CPUs (2026-10-28), past vitest's 5 s
+ * default, where alone it takes under 1 s. Each describe gives its cases 30 s, the db project's figure.
+ */
+const SPAWNS = { timeout: 30_000 } as const;
+
 const TESTDATA = new URL('./testdata/age/', import.meta.url);
 const testdata = (file: string) => readFileSync(new URL(file, TESTDATA));
 /** make.sh's record: the keys' fingerprints, the retired key's expiry and each object's SHA. */
@@ -177,7 +184,7 @@ async function run(repo: { dir: string; base: string }, transport: ReturnType<ty
 const adds = (pin: string, version = VERSION, extra: Partial<Parameters<typeof repository>[0]> = {}) => repository({ base: workflow([]), head: workflow([{ ref: `${REPO}@${pin}`, version }]), ...extra });
 const CI = { ci: true, token: 'synthetic-token' } as const;
 
-describe('a pin new against the base', () => {
+describe('a pin new against the base', SPAWNS, () => {
   it('fails while its signed commit is 2 days old, naming each time read, its source and when it is old enough, and passes at the floor', async () => {
     const commit = signedObject('signed.commit');
     const repo = adds(commit.sha);
@@ -246,7 +253,7 @@ describe('a pin new against the base', () => {
   });
 });
 
-describe('a pin the base already runs', () => {
+describe('a pin the base already runs', SPAWNS, () => {
   it('is never read for its age: "age: no pin new against the base, nothing read", also when the change edits the checker, and for a new step on it', async () => {
     const commit = unsigned(Date.parse('2030-01-09T00:00:00Z'));
     const now = new Date('2030-01-10T00:00:00Z');
@@ -265,7 +272,7 @@ describe('a pin the base already runs', () => {
   });
 });
 
-describe('the times read', () => {
+describe('the times read', SPAWNS, () => {
   it('hold the floor pnpm-workspace.yaml sets: five days when minimumReleaseAge is 7200, and never less than three', async () => {
     const commit = signedObject('signed.commit');
     const repo = adds(commit.sha);
@@ -513,7 +520,7 @@ describe('the times read', () => {
   });
 });
 
-describe('a base without the age rule', () => {
+describe('a base without the age rule', SPAWNS, () => {
   it('has every pin aged, the ones it already runs included (bootstrapping)', async () => {
     const commit = signedObject('signed.commit');
     const pin = { ref: `${REPO}@${commit.sha}`, version: VERSION };
@@ -526,7 +533,7 @@ describe('a base without the age rule', () => {
   });
 });
 
-describe('a push run', () => {
+describe('a push run', SPAWNS, () => {
   it('warns about a young pin, never failing', async () => {
     const commit = signedObject('signed.commit');
     const result = await run(adds(commit.sha), network([{ commit }]), { now: new Date(SIGNED + DAY), event: 'push' });
@@ -558,7 +565,7 @@ describe('a push run', () => {
   });
 });
 
-describe('the excludes', () => {
+describe('the excludes', SPAWNS, () => {
   const GHSA_ID = 'GHSA-2222-3333-4444';
   const OLDER = unsigned(Date.parse('2020-01-01T00:00:00Z'), 'older');
   /** A security fix: the base pins v1.2.2, the head moves to make.sh's signed commit as v1.2.3. */
@@ -678,7 +685,7 @@ describe('the excludes', () => {
   });
 });
 
-describe('the committed files', () => {
+describe('the committed files', SPAWNS, () => {
   it('hold GitHub’s two web-flow keys, by fingerprint, and no exclude', () => {
     const committed = webFlowKeys();
     expect(armoredFingerprints(committed.armored)).toEqual(['968479A1AFF927E37D1A566BB5690EEEBB952194', '5DE3E0509C47EA3CF04A42D34AEE18F83AFDEB23']);
