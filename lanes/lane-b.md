@@ -966,3 +966,11 @@ HANDOFF.md; LANES.md rule 10).
 - #74: CI green on 8cab9c9, the fresh-clone verification passed, approval-of-record re-ran; #79 merged into it first (14 conflicted files, both sides kept).
 - Order in the ux-forms session (Lane A's call): UX PR 10 `co-001/ux-payer-response` (UX-035, blocking: a write-off Reason or a payer Response that opens pre-answered can record a decision nobody chose, which moves a line's stage) before UX PR 6 and 7 (sign-in time and recovery). Reserved for PR 10: ADR 0085, CAS-45 to CAS-48, synth module 21 if needed. Next free: ADR 0087, synth module 22, fixture release 900008.
 - After #42 merges: `co-001/ux-forms-after-42` (design 7.8).
+
+### 2026-10-28 04:15 UTC: the schema chain's state; SUITE-CAP-3 claimed
+- SS-01: built, with the full local suite green at d763ba78; #42's pushed head merged in (f5bd6201). It opens its PR when #42 merges.
+- SUITE-CAP-1b: the parts that don't depend on 1a are built (358dc53f). The measurement gate, CAS-42.1 and .2, and the real-size runs wait for 1a.
+- The interest fix is building on 1b's branch (wf_4860596d-bb1).
+- SS-01's hand-overs (a) to (j) are in LANES.md "Handed to Lane A".
+- New item SUITE-CAP-3, reconcile at real size: 6,000 lines took 341.8 s, growing faster than the line count. It goes next in SUITE-CAP-1a's session after 1a merges. Reserved: ADR 0087, CAS-49 to CAS-51. The matching rules and the ledger stay frozen.
+- Next free: ADR 0088, synth module 22, fixture release 900008.
