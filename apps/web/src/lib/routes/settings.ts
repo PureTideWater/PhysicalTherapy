@@ -876,12 +876,27 @@ export interface InvitationView {
    */
   readonly undeliveredAt: Date | null;
   /**
-   * Why, beside undeliveredAt: 'complained' when the email reached the person and was reported as spam (SES then holds
-   * the address back from the transactional stream, so one sent again does not reach them), else 'undelivered'
-   * (bounced, held back by SES's suppression list, or rejected); null with undeliveredAt.
+   * Why, beside undeliveredAt: 'complained' when the email reached the person and was reported as spam, and 'suppressed'
+   * when SES held it back with the account's suppression list (an earlier bounce or spam report); either way SES holds
+   * back another one to the address until PaidWhole's support releases it (docs/runbooks/deliverability.md, 3.3 and 3.4;
+   * the review of 2026-10-27), so the administrator is not offered to send it again. 'undelivered' when it bounced or
+   * was rejected, where the address is to be checked; null with undeliveredAt.
    */
-  readonly undeliveredReason: 'complained' | 'undelivered' | null;
+  readonly undeliveredReason: InvitationUndeliveredView | null;
 }
+
+/** An undelivered invitation's reason as the users page words it (InvitationView.undeliveredReason). */
+export type InvitationUndeliveredView = 'complained' | 'suppressed' | 'undelivered';
+
+/** The reasons SES holds another invitation email back for until support releases the address: no resend is offered. */
+export const INVITATION_HELD_BACK: readonly InvitationUndeliveredView[] = ['complained', 'suppressed'];
+
+function undeliveredView(reason: string | null): InvitationUndeliveredView {
+  return reason === 'complained' || reason === 'suppressed' ? reason : 'undelivered';
+}
+
+/** The refusal of a resend the mail service would hold back (the review of 2026-10-27). */
+export const INVITATION_RESEND_HELD = 'our mail service is holding this address back: ask PaidWhole support to release it and send the invitation again';
 
 const organizationParams = z.object({ organizationId: opaqueId, notice: optionalText(z.enum(['invited', 'role_changed', 'ended', 'resent'])).catch(undefined) });
 
@@ -947,7 +962,7 @@ export const usersSettingsPage = organizationRoute({
           acceptedAt: row.accepted_at,
           expired: row.expired,
           undeliveredAt: row.undelivered_at,
-          undeliveredReason: row.undelivered_at === null ? null : row.undelivered_reason === 'complained' ? 'complained' : 'undelivered',
+          undeliveredReason: row.undelivered_at === null ? null : undeliveredView(row.undelivered_reason),
         }),
       ),
       notice: params.notice ?? null,
@@ -1088,11 +1103,22 @@ export const resendInvitationAction = organizationRoute({
   input: z.object({ invitationId: opaqueId }),
   audit: { action: 'invitation_resent', objectType: 'invitation' },
   handle: async ({ scope, organizationId, input, services }): Promise<MutationResult> => {
+    // The flag on the email last sent, as the page reads it: one reported as spam or held back by SES's suppression list
+    // is not sent again from here, since SES would hold the new one back too and Cognito's resend voids the temporary
+    // password of the one the person may still find (the review of 2026-10-27); PaidWhole's support releases the address
+    // and sends it from the console (docs/runbooks/deliverability.md, 3.4).
     const invitation = (
-      await scope.client.query<{ email: string }>('SELECT u.email FROM invitation i JOIN "user" u ON u.id = i.user_id WHERE i.id = $1 AND i.organization_id = $2', [input.invitationId, organizationId])
+      await scope.client.query<{ email: string; held: string | null }>(
+        `SELECT u.email, CASE WHEN i.accepted_at IS NULL AND i.undelivered_at >= i.sent_at - interval '5 seconds' THEN i.undelivered_reason END AS held
+           FROM invitation i JOIN "user" u ON u.id = i.user_id WHERE i.id = $1 AND i.organization_id = $2`,
+        [input.invitationId, organizationId],
+      )
     ).rows[0];
     if (invitation === undefined) {
       throw new NotFoundError();
+    }
+    if (invitation.held !== null && INVITATION_HELD_BACK.includes(undeliveredView(invitation.held))) {
+      throw new InputError([{ field: 'invitationId', message: INVITATION_RESEND_HELD }]);
     }
     if ((await scope.client.query<{ resent: boolean }>('SELECT resend_invitation($1) AS resent', [input.invitationId])).rows[0]?.resent !== true) {
       throw new InputError([{ field: 'invitationId', message: 'this invitation was accepted, or its membership has ended' }]);

@@ -48,13 +48,15 @@ export function NotificationText({ practiceId, notification }: { readonly practi
     );
   }
   if (notification.kind === 'support_notice_undelivered') {
-    // Its counts and totals are empty: the grant's page says how many administrators the notice reached.
+    // Its counts and totals are empty: the grant's page says how many administrators the notice reached. A right address
+    // SES holds back with the account's suppression list (an earlier bounce or spam report) is released by PaidWhole's
+    // support (docs/runbooks/deliverability.md, 3.3; the review of 2026-10-27).
     return (
       <span>
         <Link className="font-medium underline" href={`/p/${practiceId}/support-access/${notification.supportGrantId ?? ''}`}>
           A support-access {notification.notice === 'support_grant_closed' ? 'closing' : 'opening'} notice did not reach every administrator
         </Link>
-        . Check your administrators&apos; email addresses.
+        . Check your administrators&apos; email addresses; if an address is right, ask PaidWhole support to release it.
       </span>
     );
   }

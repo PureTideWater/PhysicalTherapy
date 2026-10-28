@@ -4,10 +4,11 @@ import type { Metadata } from 'next';
 import { ActionForm } from '../../../../../components/action-form';
 import { Field, SelectField } from '../../../../../components/field';
 import { FormKeys } from '../../../../../components/form-keys';
-import { roleName, utcDate } from '../../../../../components/format';
+import { roleName } from '../../../../../components/format';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { loadPage } from '../../../../../lib/http/next';
-import { usersSettingsPage } from '../../../../../lib/routes/settings';
+import { InvitationStateText } from '../../../../../components/settings/invitations';
+import { INVITATION_HELD_BACK, type InvitationView, usersSettingsPage } from '../../../../../lib/routes/settings';
 import { changeRole, endMembership, inviteUser, resendInvitation } from './actions';
 
 export const metadata: Metadata = { title: 'Users and roles' };
@@ -116,56 +117,64 @@ export default async function UsersSettingsPage(props: { readonly params: Promis
           {invitations.length === 0 ? (
             <p className="text-sm text-muted-foreground">No invitations yet.</p>
           ) : (
-            <table className="w-full text-left text-sm" aria-label="Invitations">
-              <thead className="text-muted-foreground">
-                <tr>
-                  <th className="py-1 pr-3 font-medium">Email</th>
-                  <th className="py-1 pr-3 font-medium">Role</th>
-                  <th className="py-1 pr-3 font-medium">State</th>
-                  <th className="py-1 font-medium" />
-                </tr>
-              </thead>
-              <tbody>
+            <>
+              {/* Below the sm breakpoint each invitation is a list item, so the page never scrolls sideways (WCAG 1.4.10). */}
+              <ul className="flex flex-col sm:hidden" aria-label="Invitations">
                 {invitations.map((invitation) => (
-                  <tr
-                    key={invitation.id}
-                    className="border-t"
-                    data-invitation={invitation.acceptedAt !== null ? 'accepted' : invitation.undeliveredAt !== null ? 'undelivered' : invitation.expired ? 'expired' : 'pending'}
-                  >
-                    <td className="py-1 pr-3">{invitation.email}</td>
-                    <td className="py-1 pr-3">{roleName(invitation.role)}</td>
-                    <td className="py-1 pr-3">
-                      {/*
-                        An invitation email reported undelivered (docs/adr/0065, D10): the administrator checks the address and
-                        invites again. One reported as spam was delivered, and SES now holds the address back from the
-                        transactional stream, so the person is asked to find it, not sent another (the review of 2026-10-23).
-                      */}
-                      {invitation.acceptedAt !== null
-                        ? `accepted ${utcDate(invitation.acceptedAt)}`
-                        : invitation.undeliveredAt !== null
-                          ? invitation.undeliveredReason === 'complained'
-                            ? `Reported as spam ${utcDate(invitation.undeliveredAt)}: ask the person to find it in their spam folder; one sent again will not reach them`
-                            : `Not delivered ${utcDate(invitation.undeliveredAt)}: check the address, then invite again`
-                          : invitation.expired
-                            ? 'expired'
-                            : `open until ${utcDate(invitation.expiresAt)}`}
-                    </td>
-                    <td className="py-1">
-                      {invitation.acceptedAt === null ? (
-                        <ActionForm action={resendInvitation} submit="Send again" variant="outline" className="flex flex-col gap-1">
-                          <FormKeys />
-                          <input type="hidden" name="organizationId" value={organization.id} />
-                          <input type="hidden" name="invitationId" value={invitation.id} />
-                        </ActionForm>
-                      ) : null}
-                    </td>
-                  </tr>
+                  <li key={invitation.id} className="flex flex-col gap-1 border-t py-2 text-sm" data-invitation={invitationState(invitation)}>
+                    <span className="break-all font-medium">{invitation.email}</span>
+                    <span className="text-muted-foreground">{roleName(invitation.role)}</span>
+                    <InvitationStateText invitation={invitation} />
+                    <ResendForm invitation={invitation} organizationId={organization.id} />
+                  </li>
                 ))}
-              </tbody>
-            </table>
+              </ul>
+              <table className="hidden w-full text-left text-sm sm:table" aria-label="Invitations">
+                <thead className="text-muted-foreground">
+                  <tr>
+                    <th className="py-1 pr-3 font-medium">Email</th>
+                    <th className="py-1 pr-3 font-medium">Role</th>
+                    <th className="py-1 pr-3 font-medium">State</th>
+                    <th className="py-1 font-medium" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {invitations.map((invitation) => (
+                    <tr key={invitation.id} className="border-t" data-invitation={invitationState(invitation)}>
+                      <td className="py-1 pr-3">{invitation.email}</td>
+                      <td className="py-1 pr-3">{roleName(invitation.role)}</td>
+                      <td className="py-1 pr-3">
+                        <InvitationStateText invitation={invitation} />
+                      </td>
+                      <td className="py-1">
+                        <ResendForm invitation={invitation} organizationId={organization.id} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
           )}
         </CardContent>
       </Card>
     </AppShell>
+  );
+}
+
+function invitationState(invitation: InvitationView): string {
+  return invitation.acceptedAt !== null ? 'accepted' : invitation.undeliveredAt !== null ? 'undelivered' : invitation.expired ? 'expired' : 'pending';
+}
+
+/** Send again, for an invitation not accepted, unless SES would hold the email back (INVITATION_HELD_BACK). */
+function ResendForm({ invitation, organizationId }: { readonly invitation: InvitationView; readonly organizationId: string }) {
+  if (invitation.acceptedAt !== null || (invitation.undeliveredReason !== null && INVITATION_HELD_BACK.includes(invitation.undeliveredReason))) {
+    return null;
+  }
+  return (
+    <ActionForm action={resendInvitation} submit="Send again" variant="outline" className="flex flex-col gap-1">
+      <FormKeys />
+      <input type="hidden" name="organizationId" value={organizationId} />
+      <input type="hidden" name="invitationId" value={invitation.id} />
+    </ActionForm>
   );
 }
