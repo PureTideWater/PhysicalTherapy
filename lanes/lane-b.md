@@ -1004,3 +1004,8 @@ HANDOFF.md; LANES.md rule 10).
 - The CI session handed over its patch (49 lines, SHA-256 8cf981fb…). It uses `fromJSON(... || '{}')` because the runner evaluates a step's env before its `if:`, and fromJSON('') is an evaluation error. #42's round was stopped before its push, and the patch was applied byte for byte as be63bdc2 on top of the #81 merge (17e233f0): workflows test 114 passed, actionlint and eslint clean. The round resumed for typecheck, actions:check, toolchain:check and capacity, then the push.
 - New item `ci-findings-transport` (content-calendar.yml:78, latent) is queued for the CI session.
 - Waiting on someone: Dependabot #33 (main's old base-images group) can only be closed by hand, never merged. That is the founder's (or the triager's).
+
+### 2026-10-28 07:20 UTC: #78 merged; merge hold for #75
+- UX PR 5 (download refusals) merged as #78 at 06:50 UTC; PR 9 (home figures) follows in the same session.
+- At #75's request, the merge hold in LANES.md "Claims" runs until #75 merges or 11:00 UTC. #75 has chased the base four times since 22:00.
+- #42 pushes its final round on the base at 56ed6279. #78 and #75 come in at one more base merge after #75 lands. The approval line is posted once this round's verification passes; the domain model's text, so its hash, does not change with a base merge that has no migration.
