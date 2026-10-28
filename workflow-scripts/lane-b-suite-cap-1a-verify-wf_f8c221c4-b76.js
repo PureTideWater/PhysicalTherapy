@@ -1,0 +1,16 @@
+export const meta = {
+  name: 'lane-b-suite-cap-1a-verify',
+  description: 'SUITE-CAP-1a (#81): the fresh-clone verification at f25333a6, reading CI on the head',
+  phases: [{ title: 'Verify', detail: 'one agent in a fresh clone: the diff against the design and the PR description, the key tests, and CI on the head' }],
+}
+const SP = '/tmp/claude-0/-home-user-PhysicalTherapy/b8fe4f4f-26ab-5bdd-9556-0e8c28ea8bc8/scratchpad'
+const HEAD = 'f25333a69ad62412c04cbea5af8ed2dcd278677e'
+phase('Verify')
+const v = await agent(`You are the fresh-clone verifier of PR #81 (PureTideWater/PhysicalTherapy), SUITE-CAP-1a "bounded reads" (design /home/user/ops/designs/suite-cap-1-triage-locks.md, part 1a; ADR docs/adr/0083-*.md). Head ${HEAD} (the review round 483c3167, then claude/build-platform 165c5993 merged in with a merge commit). Progress file ${SP}/progress/verify.md (continue from it if it exists).
+Rules: every shell command starts with export PATH=/opt/node24/bin:/opt/py312-ci/bin:$PATH; heavy commands only under flock /tmp/laneb-heavy.lock; DATABASE_URL=postgres://postgres:test@localhost:5433/postgres; long commands with run_in_background. Never commit, push, comment, approve or request changes. Synthetic data only.
+1. Fresh clone: git clone -q /home/user/PhysicalTherapy ${SP}/verify && cd ${SP}/verify && git fetch -q origin co-001/suite-cap-1-bounded-reads claude/build-platform && git checkout -q ${HEAD}; pnpm install --frozen-lockfile under the lock.
+2. Verify the PR against its description (gh api repos/PureTideWater/PhysicalTherapy/pulls/81 --jq .body) and the design's part 1a: every claim in "What changes", "What it does not change" and the findings table is true of the diff (git diff origin/claude/build-platform...${HEAD}); no migration, nothing under packages/pricing, packages/ledger, content/ or docs/product/domain-model.md; the merge commit kept both lanes' changes in test-matrix.md, matrix.ts, registry.ts, vitest.config.ts SLOW_FIRST and db-shards.test.ts; watched-paths.txt equals what watched.ts --write produces on this tree; no model identifier in any changed file; no PHI.
+3. Run on the clone, under the lock: pnpm typecheck; pnpm lint; the db tests apps/worker/src/triage/batched.db.test.ts and apps/worker/src/report/streamed.db.test.ts (CAS-41) and report.db.test.ts; the unit tests csv-arena.test.ts, patient-share.test.ts, tools/test/db-shards.test.ts, packages/synth.
+4. Read CI on the head: gh api "repos/PureTideWater/PhysicalTherapy/commits/${HEAD}/check-runs?per_page=100". If any check is still running, wait (poll every 3 minutes with a bounded until-loop in the background, up to 75 minutes) until all complete. Every required check must succeed: all green, mutation, screening-capacity gate, approval-of-record (and every other check except skipped ones). For a failure read its log (gh run view --log-failed or the job's logs) and say exactly what failed and whether it is this PR's.
+Return verdict pass or fail, with each check and the CI table.`, { label: 'verify', phase: 'Verify', schema: { type: 'object', properties: { verdict: { type: 'string', enum: ['pass', 'fail'] }, summary: { type: 'string' }, ci: { type: 'array', items: { type: 'string' } }, problems: { type: 'array', items: { type: 'string' } } }, required: ['verdict', 'summary', 'ci', 'problems'] } })
+return v
