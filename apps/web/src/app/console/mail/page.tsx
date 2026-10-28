@@ -34,6 +34,20 @@ function streamState(stream: MailStreamView): { readonly label: string; readonly
  * by hand, and resumes it only with a reason. Counts, states and IDs, and a customer's user by the sign-in email the
  * console's other screens show; never a screening address, and never SES's own record of a recipient.
  */
+/** A figure of the cut-off sentence: a rate or a count, in the mono face with tabular numerals. */
+function Figure({ children }: { readonly children: string }) {
+  return <span className="font-mono tabular-nums">{children}</span>;
+}
+
+/** When the screening stream pauses by itself (docs/adr/0065, D6; the founder's Q9). */
+const CUTOFF_SENTENCE = (
+  <span data-copy="cutoff">
+    It pauses by itself when more than <Figure>3%</Figure> of its sends in the window bounce permanently (over at least <Figure>200</Figure> sends, so <Figure>7</Figure> hard bounces pause it)
+    or more than <Figure>0.08%</Figure> are reported as spam (over at least <Figure>2,500</Figure>, so <Figure>3</Figure> complaints pause it); the window is the last <Figure>7</Figure> days, or
+    since the last resume if that is later. It also pauses on the account’s warnings or under an SES review.
+  </span>
+);
+
 export default async function ConsoleMailPage(props: { readonly searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const page = await loadPage(consoleMailPage, props);
   if (page.kind === 'forbidden') {
@@ -69,9 +83,10 @@ export default async function ConsoleMailPage(props: { readonly searchParams: Pr
                   ? `Paused ${utc(stream.pausedAt)}: ${stream.pausedReason === null ? 'reason not recorded' : PAUSE_REASON_LABELS[stream.pausedReason]}.`
                   : stream.stream === 'screening'
                     ? // The cut-off as the database computes it (each rate over at least a floor of sends, in the window
-                      // mail_window_counts() reads), so the floor's own count of hard bounces or complaints pauses it (7
-                      // and 3), not only once that many sends exist.
-                      'It pauses by itself when more than 3% of its sends bounce permanently (counted over at least 200 sends, so 7 hard bounces pause it) or more than 0.08% are reported as spam (over at least 2,500, so 3 complaints pause it), within 7 days or since the last resume; on the account’s warnings; or under an SES review.'
+                      // mail_window_counts() reads, from the later of 7 days ago and the last resume), so the floor's own
+                      // count of hard bounces or complaints pauses it (7 and 3), not only once that many sends exist; each
+                      // rate and count in the mono face (the review of 2026-10-27).
+                      CUTOFF_SENTENCE
                     : 'It never pauses: it alarms instead.'}
               </CardDescription>
             </CardHeader>
@@ -122,9 +137,12 @@ export default async function ConsoleMailPage(props: { readonly searchParams: Pr
                   <FormKeys />
                   <input type="hidden" name="stream" value="screening" />
                   <SelectField label="Why it can resume" id="resume-reason" name="reason" required options={[{ value: '', label: 'Choose a reason' }, ...resumeReasons]} />
-                  {/* The mail_events job reads SES's enforcement every minute and pauses the stream again under a review. */}
+                  {/* The mail_events job reads SES's enforcement every minute and pauses the stream again under a review; an
+                      account-rate alarm pauses it only as the alarm goes into ALARM, so one still raised does not (the
+                      review of 2026-10-27). */}
                   <p className="text-sm text-muted-foreground" data-copy="resume-review">
-                    If SES still has the account under review, the platform pauses it again within a minute.
+                    If SES still has the account under review, the platform pauses it again within a minute. Resume only once the account’s bounce and complaint rates are under their warnings: a
+                    warning still raised does not pause it again.
                   </p>
                 </ActionForm>
               )}

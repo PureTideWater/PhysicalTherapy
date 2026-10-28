@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest';
 import type { ActionState } from '../../lib/http/next';
 import { PROSPECT_SOURCE_OPTIONS } from '../../lib/routes/onboarding';
 import { ABOUT_PRACTICE, UPLOAD_EMAIL_HINT } from '../../lib/screening/retention';
-import { ScreeningUploadForm, ZIP_HINT } from './upload-form';
+import { SCREENING_BOUNCE_BUDGET, SCREENING_PAUSED } from '../../lib/screening/messages';
+import { ScreeningUploadForm, UploadRefusal, ZIP_HINT } from './upload-form';
 
 /**
  * The screening's upload form as the server renders it (CO-04; decisions D18 a, D20 a and D21 a): the file is read in
@@ -96,5 +97,32 @@ describe('the screening upload form', () => {
     expect(text).toContain('The template’s first lines state its rules: each row sums at least 11 claim lines, and denied lines are left out of every total and claim count.');
     expect(text).toContain('this page skips them, so you can keep them');
     expect(html).toMatch(/aria-describedby="screening-template-rules"/);
+  });
+});
+
+describe('the upload’s refusal', () => {
+  const render = (state: ActionState) => renderToStaticMarkup(<UploadRefusal state={state} />);
+  const words = (html: string) => html.replace(/<!-- -->/g, '').replace(/<[^>]+>/g, '');
+
+  it('says a refusal of the form as a whole as its own text, names no field it does not mark, and links the audit request it offers (the review of 2026-10-27)', () => {
+    for (const message of [SCREENING_PAUSED.refusal, SCREENING_BOUNCE_BUDGET]) {
+      const html = render({ error: 'Check the fields marked below.', invalid: true, issues: [{ field: 'input', message }] });
+      expect(words(html)).toBe(`Not done${message}`);
+      expect(html).not.toContain('Check the fields marked below.');
+      expect(html).not.toContain('Form:');
+      expect(html).toContain('<a class="underline" href="/request-audit">request an audit</a>');
+      expect(html).toContain('role="alert"');
+      expect(html).toContain('tabindex="-1"');
+    }
+    // A sentence with no audit request, its first letter capitalized; the words are the server's.
+    expect(words(render({ error: 'Check the fields marked below.', invalid: true, issues: [{ field: 'input', message: 'screening is not open yet; try again later' }] }))).toBe(
+      'Not doneScreening is not open yet; try again later',
+    );
+  });
+
+  it('lists a refusal of the form’s fields by the field each names, under the summary', () => {
+    const html = render({ error: 'Check the fields marked below.', invalid: true, issues: [{ field: 'zip', message: 'this ZIP code is not in the Medicare locality map in force; check it' }] });
+    expect(words(html)).toBe('Not doneCheck the fields marked below.ZIP code: this ZIP code is not in the Medicare locality map in force; check it');
+    expect(render({})).toBe('');
   });
 });

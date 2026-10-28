@@ -1,7 +1,8 @@
 'use client';
 
 import { Alert, AlertDescription, AlertTitle, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label } from '@tp/ui';
-import { type FormEvent, startTransition, useActionState, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
+import { type FormEvent, type ReactNode, type Ref, startTransition, useActionState, useEffect, useRef, useState } from 'react';
 
 import type { ContentQuarters } from '@tp/worker/screening-format';
 
@@ -128,6 +129,65 @@ const FIELD_NAMES: Readonly<Record<string, string>> = {
 
 function issueField(field: string): string {
   return FIELD_NAMES[field] ?? field;
+}
+
+/** The words of a refusal that link to the audit request, where the page's own link is far below. */
+const REQUEST_AN_AUDIT = 'request an audit';
+
+/** A refusal's sentence as the alert's text: its first letter capitalized, and "request an audit" linked to the form. */
+function refusalSentence(message: string): ReactNode {
+  const sentence = `${message.charAt(0).toUpperCase()}${message.slice(1)}`;
+  const at = sentence.indexOf(REQUEST_AN_AUDIT);
+  if (at < 0) {
+    return sentence;
+  }
+  return (
+    <>
+      {sentence.slice(0, at)}
+      <Link className="underline" href="/request-audit">
+        {REQUEST_AN_AUDIT}
+      </Link>
+      {sentence.slice(at + REQUEST_AN_AUDIT.length)}
+    </>
+  );
+}
+
+/**
+ * The server's refusal of an upload, which takes the focus when no field of the form is refused. A refusal of the form
+ * as a whole (every issue is "input": the screening paused or closed, or the bounce budget) is said as the alert's own
+ * text, with no "Check the fields marked below." and no "Form:" label, since no field is marked, and its "request an
+ * audit" links to the request form, the next step it names (the review of 2026-10-27). Any other refusal lists each issue
+ * by the field it names, which the form marks too.
+ */
+export function UploadRefusal({ state, ref }: { readonly state: ActionState; readonly ref?: Ref<HTMLDivElement> }) {
+  if (state.error === undefined) {
+    return null;
+  }
+  const issues = state.issues ?? [];
+  const formOnly = issues.length > 0 && issues.every((issue) => issue.field === 'input');
+  return (
+    <Alert variant="destructive" data-state="error" ref={ref} tabIndex={-1}>
+      <AlertTitle>Not done</AlertTitle>
+      <AlertDescription>
+        {formOnly ? (
+          issues.map((issue) => <p key={issue.message}>{refusalSentence(issue.message)}</p>)
+        ) : (
+          <>
+            <p>{state.error}</p>
+            {issues.length === 0 ? null : (
+              <ul className="mt-1 list-disc pl-5">
+                {issues.map((issue) => (
+                  <li key={`${issue.field}:${issue.message}`}>
+                    {issueField(issue.field)}: {issue.message}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+      </AlertDescription>
+    </Alert>
+  );
 }
 
 /** The fields of this form the server may refuse, in the form's order: a refusal moves the focus to the first. */
@@ -323,23 +383,7 @@ export function ScreeningUploadForm({ action, states, maxRows, minClaimLines, se
           ) : null}
         </CardContent>
       </Card>
-      {state.error === undefined ? null : (
-        <Alert variant="destructive" data-state="error" ref={errorRef} tabIndex={-1}>
-          <AlertTitle>Not done</AlertTitle>
-          <AlertDescription>
-            <p>{state.error}</p>
-            {state.issues === undefined || state.issues.length === 0 ? null : (
-              <ul className="mt-1 list-disc pl-5">
-                {state.issues.map((issue) => (
-                  <li key={`${issue.field}:${issue.message}`}>
-                    {issueField(issue.field)}: {issue.message}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </AlertDescription>
-        </Alert>
-      )}
+      <UploadRefusal state={state} ref={errorRef} />
       <div>
         <Button type="submit" disabled={pending || reading}>
           {pending ? 'Sending…' : 'Screen the file'}
