@@ -2352,6 +2352,45 @@ test('practice workflow', async ({ browser }) => {
       await expect(page.getByText(/Live check: 1 mismatch/).first()).toBeVisible({ timeout: 15_000 });
     },
   });
+  // A figure the input holds, written in a role its record does not give it (ADR 0086, co-001/packet-day-counts): the
+  // year of the draft's own service date written as a count of claims. Before that change the year passed as a number;
+  // from it on the live check fails and says what the figure was read as. The same step serves both sides.
+  await cap(browser, {
+    key: 'p.packet',
+    route: pkt,
+    persona: 'pricing-manager',
+    path: layoutPacket,
+    state: 'error',
+    variant: 'error-wrong-role',
+    note: 'The year of the draft’s service date typed into the narrative as a count of claims (“The payer underpaid <year> claims [3].”, synthetic; not saved): from ADR 0086 on the live check fails with “read as a count of claims”; before it the year passed as a number.',
+    act: async (page) => {
+      const narrative = page.getByRole('textbox', { name: 'Narrative', exact: true });
+      const text = await narrative.inputValue();
+      const year = /\b((?:19|20)\d{2})-\d{2}-\d{2}\b/.exec(text)?.[1];
+      if (year === undefined) throw new Error('no service date in the LAYOUT draft narrative');
+      await narrative.fill(`${text} The payer underpaid ${year} claims [3].`);
+      await expect(page.locator('#narrative-check').getByText(/^Live check (passes|: \d+ mismatch(es)?)$/).first()).toBeVisible({ timeout: 15_000 });
+      await page.waitForTimeout(300);
+      log(`RECORDS wrong-role live check: ${(await page.locator('#narrative-check').innerText()).replace(/\s+/g, ' ')}`);
+    },
+  });
+  // The same editor with a typed figure in the role its record gives it: the count of lines as lines. Passes on both sides.
+  await cap(browser, {
+    key: 'p.packet',
+    route: pkt,
+    persona: 'pricing-manager',
+    path: layoutPacket,
+    state: 'interaction:live-check-pass',
+    note: 'The draft’s count of lines typed again as a count of lines (“The shortfall is on <n> lines [3].”, synthetic; not saved): the live check passes.',
+    act: async (page) => {
+      const narrative = page.getByRole('textbox', { name: 'Narrative', exact: true });
+      const text = await narrative.inputValue();
+      const lines = /\bfor (\d+) lines?\b/.exec(text)?.[1];
+      if (lines === undefined) throw new Error('no count of lines in the LAYOUT draft narrative');
+      await narrative.fill(`${text} The shortfall is on ${lines} ${lines === '1' ? 'line' : 'lines'} [3].`);
+      await expect(page.locator('#narrative-check').getByText(/^Live check passes$/).first()).toBeVisible({ timeout: 15_000 });
+    },
+  });
   await cap(browser, { key: 'p.packet', route: pkt, persona: 'packet-deadline-approver', path: () => DL(`/cases/${need('deadlinesBlockedCase')}/packet`), state: 'error', variant: 'error-export-blocked', ready: async (page) => expect(page.locator('[data-export="blocked"]').first()).toBeVisible(), note: 'PACKET DEADLINES: the export blocked by an unverified deadline, with its reason and fix.' });
   await cap(browser, { key: 'p.packet', route: pkt, persona: 'other-admin', path: packetPath, state: 'error', variant: 'error-forbidden', ready: denied });
   // The exported PDF opened by its URL: by a role without phi.export (the practice administrator, who is refused the
