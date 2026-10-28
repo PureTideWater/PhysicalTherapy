@@ -18,14 +18,16 @@ session (Lane A or Lane B) continues from here.
 - **Local checks on the head:** the full local suite on a57fbf5 (unit 6,367, golden 376, oracle 687, db 9,222, e2e 60)
   and, after the merge, on 34f7427/ae26bf7: typecheck, lint, copy, logs, fixtures, synth, unit 6,524 (browser tests in
   Chromium 1248), db 9,222, build, stamp, e2e 60/60 against the new brand baselines; no mutation shard affected.
-- **CI on 34f7427: every check green** (all green, mutation, screening-capacity gate, approval-of-record, e2e 1/2 and
-  2/2, db 1-4, unit, static, lint, images, build, capacity, domain model; 01:49 UTC). But the base moved to a6e754f
-  (#79, UX PR 3 table scroll, 30 shared files): **merge in progress** in /home/user/ux-forms (uncommitted, MERGE_HEAD
-  set): the shared documents, synth module lists (FRM 16, TBL 17), ADR 0056 (amended by 0058, 0077 and 0078) and
-  personas resolved by hand (both kept); seven page and component conflicts being resolved, audited and re-checked by
-  wf_6b9c6983-f04 (script archived). If this container is gone: redo the merge of a6e754f into 34f7427 the same way.
-- **Next:** commit the merge, one push; CI green on that head; the fresh-clone verification reading CI; ready;
-  approval-of-record's re-run; merge with method merge and expectedHeadSha; unsubscribe; then PR 6.
+- **Head 8cab9c9, pushed 02:55 UTC:** the merge of claude/build-platform a6e754f (#79, ux-table-scroll; 14 conflicts,
+  both kept; the audit found two interactions, both fixed: a refused field focused inside a scroller keeps its danger
+  border, and ADR 0077 "Not covered" says a row form's two StackedRows copies share one request key). Re-check on the
+  merged tree: every command green, unit 6,565, e2e 62/62 (`tables-phone.spec.ts` included). (34f7427's CI was green on
+  every check before the base moved.)
+- **Running:** the fresh-clone verification wf_4be80bed-13f (reads CI on 8cab9c9). PR description updated (helper,
+  read back).
+- **Next:** on PASS and CI green: mark ready, wait for approval-of-record's re-run, merge with method merge and
+  expectedHeadSha 8cab9c9 (unless the base moved again: then merge it, re-check, push, verify again); unsubscribe;
+  then PR 6.
 - **Galleries** (private): before 1280 https://claude.ai/artifact/JTLJX4saVr5nQ59EEvDDo7, 390
   https://claude.ai/artifact/E7CDHT8hUTpPZMq6TKK18J; after the build (4f0b526) 1280
   https://claude.ai/artifact/7f5Xg3Kj8992F1jBTh7Hew, 390 https://claude.ai/artifact/N1ikEiBauh8PDGvVnNNhgU; after the fix
@@ -143,3 +145,5 @@ session (Lane A or Lane B) continues from here.
 | 2026-10-28 02:00 | Pushed 34f7427 | Polish fixes 001cdbf verified; base 0dd1ba7 merged (ae26bf7, no conflict; Playwright 1.64.1); the merge re-check (wf_86747e03-b6c): every check green on 34f7427, the merge audit kept both sides (one matrix.ts lag from 001cdbf fixed in 34f7427). One push of the fix round. PR description rewritten (read back identical). Waiting on CI, then the verification. |
 
 | 2026-10-28 02:00 | CI green; base moved | CI on 34f7427: every check green. The base moved to a6e754f (#79, ux-table-scroll); merging it (14 conflicts: 7 by hand, 7 page files by wf_6b9c6983-f04 with an adversarial audit and the merge re-check). |
+
+| 2026-10-28 02:58 | #79 merged in; verification | 8cab9c9 pushed (the #79 merge, wf_6b9c6983-f04: resolve, adversarial audit, re-check). The fresh-clone verification started: wf_4be80bed-13f. |
