@@ -374,13 +374,20 @@ const CHAIN_ORDER = `
    WHERE m.practice_id = $1 AND m.kind IN ('claim', 'recoupment')
    ORDER BY m.matched_at, CASE WHEN m.kind = 'claim' THEN 0 WHEN m.claim_id IS NOT NULL THEN 1 ELSE 2 END, r.bpr16_date, coalesce(c.created_at, a.created_at), a.position, coalesce(c.id, a.id), m.id`;
 
-/** Reads what the chains of the case lines of `claimIds` (their own claims) are walked from. */
-export async function chainContext(scope: Scope, practiceId: string, claimIds: readonly string[], entries: readonly StoredEntry[]): Promise<ChainContext> {
+/** The practice's claim and recoupment matches in chain order, and when each was made. */
+async function chainMatches(scope: Scope, practiceId: string): Promise<Pick<ChainContext, 'matches' | 'matchedAt'>> {
   const { rows: order } = await scope.client.query<{ id: string; matched_at: string }>(CHAIN_ORDER, [practiceId]);
   const position = new Map(order.map((row, index) => [row.id, index]));
   const matches = (await ledgerMatches(scope, practiceId)).filter((match) => position.has(match.id)).sort((a, b) => (position.get(a.id) as number) - (position.get(b.id) as number));
-  const claims = [...new Set([...claimIds, ...matches.filter((match) => match.kind === 'claim').map((match) => match.claimId as string)])];
-  const { rows: reversals } = await scope.client.query<{ id: string; remittance_id: string; reversed_claim_id: string; paid_on: string; loaded_at: string; beside: boolean }>(
+  return { matches, matchedAt: new Map(order.map((row) => [row.id, BigInt(row.matched_at)])) };
+}
+
+/** The claims the practice's claim matches name. */
+const matchedClaims = (matches: readonly StoredMatch[]): string[] => matches.filter((match) => match.kind === 'claim').map((match) => match.claimId as string);
+
+/** The loaded reversals of the claims named, in the order they were paid (ORDER BY r.bpr16_date, v.created_at, v.id). */
+async function claimReversals(scope: Scope, practiceId: string, claims: readonly string[]): Promise<LoadedReversal[]> {
+  const { rows } = await scope.client.query<{ id: string; remittance_id: string; reversed_claim_id: string; paid_on: string; loaded_at: string; beside: boolean }>(
     `SELECT v.id, v.remittance_id, v.reversal_of_claim_id AS reversed_claim_id, r.bpr16_date::text AS paid_on, (extract(epoch FROM v.created_at) * 1000000)::bigint::text AS loaded_at,
             EXISTS (SELECT 1 FROM claim n WHERE n.id = x.superseded_by_claim_id AND n.remittance_id = v.remittance_id) AS beside
        FROM claim v JOIN remittance r ON r.id = v.remittance_id JOIN claim x ON x.id = v.reversal_of_claim_id
@@ -388,6 +395,11 @@ export async function chainContext(scope: Scope, practiceId: string, claimIds: r
       ORDER BY r.bpr16_date, v.created_at, v.id`,
     [practiceId, claims],
   );
+  return rows.map((row) => ({ id: row.id, remittanceId: row.remittance_id, reversedClaimId: row.reversed_claim_id, paidOn: row.paid_on, loadedAt: BigInt(row.loaded_at), beside: row.beside }));
+}
+
+/** Each match's counted recouped entries, summed. */
+function recoupedOf(entries: readonly StoredEntry[]): Map<string, Cents> {
   const byId = entriesById(entries);
   const recouped = new Map<string, Cents>();
   for (const entry of entries) {
@@ -395,12 +407,78 @@ export async function chainContext(scope: Scope, practiceId: string, claimIds: r
       recouped.set(entry.matchId, cents((recouped.get(entry.matchId) ?? ZERO_CENTS) + entry.amountCents));
     }
   }
+  return recouped;
+}
+
+/** Reads what the chains of the case lines of `claimIds` (their own claims) are walked from. */
+export async function chainContext(scope: Scope, practiceId: string, claimIds: readonly string[], entries: readonly StoredEntry[]): Promise<ChainContext> {
+  const { matches, matchedAt } = await chainMatches(scope, practiceId);
+  const claims = [...new Set([...claimIds, ...matchedClaims(matches)])];
+  const reversals = await claimReversals(scope, practiceId, claims);
+  const recouped = recoupedOf(entries);
+  return { matches, matchedAt, lines: await claimLines(scope, claims), reversals, recouped };
+}
+
+/**
+ * The part of chainContext that is the practice's whatever lines are asked about, read once for a reader that asks in
+ * batches (the audit report's patient balance, SUITE-CAP-1a D18; docs/adr/0083): its matches in chain order, the lines
+ * and loaded reversals of every claim a claim match names, and the recouped entries; and which claims those are.
+ * chainContextFor adds a batch's own claims to it.
+ */
+export interface PracticeChains {
+  readonly context: ChainContext;
+  /** The claims the practice's claim matches name, whose lines and reversals `context` holds. */
+  readonly claims: ReadonlySet<string>;
+}
+
+export async function practiceChains(scope: Scope, practiceId: string, entries: readonly StoredEntry[]): Promise<PracticeChains> {
+  const { matches, matchedAt } = await chainMatches(scope, practiceId);
+  const claims = [...new Set(matchedClaims(matches))];
+  // A practice with no claim match has no matched claim to read lines or reversals of.
+  const reversals = claims.length === 0 ? [] : await claimReversals(scope, practiceId, claims);
+  const recouped = recoupedOf(entries);
+  const lines = claims.length === 0 ? new Map<string, ClaimLine[]>() : await claimLines(scope, claims);
+  return { context: { matches, matchedAt, lines, reversals, recouped }, claims: new Set(claims) };
+}
+
+/**
+ * The reversals' order as the query gives it: by payment date (bpr16_date is NOT NULL, and its ISO text sorts as the
+ * date), when loaded (created_at to the microsecond, as loadedAt holds it), then ID (a UUID's lower-case text sorts as
+ * its bytes, which is how PostgreSQL compares UUIDs).
+ */
+function byPayment(a: LoadedReversal, b: LoadedReversal): number {
+  if (a.paidOn !== b.paidOn) {
+    return a.paidOn < b.paidOn ? -1 : 1;
+  }
+  if (a.loadedAt !== b.loadedAt) {
+    return a.loadedAt < b.loadedAt ? -1 : 1;
+  }
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/**
+ * chainContext for the case lines of `claimIds`, from the practice's part read once (practiceChains) and the lines and
+ * loaded reversals of those claims it does not already hold, read here (SUITE-CAP-1a D18; docs/adr/0083). Each line's
+ * chain reads its own claim's lines and the matched claims' lines and reversals alone (lineChain, reversalRule), and a
+ * reversal belongs to the one claim it reverses, so the two parts are disjoint and together hold, for each of these
+ * lines, what one chainContext call over every line would: the claim lines by claim, and the reversals merged into the
+ * query's order (payment date, when loaded, ID), each once.
+ */
+export async function chainContextFor(scope: Scope, practiceId: string, practice: PracticeChains, claimIds: readonly string[]): Promise<ChainContext> {
+  const own = [...new Set(claimIds)].filter((claimId) => !practice.claims.has(claimId));
+  if (own.length === 0) {
+    return practice.context;
+  }
+  const reversals = await claimReversals(scope, practiceId, own);
+  const lines = await claimLines(scope, own);
+  const merged = new Map<string, LoadedReversal>();
+  for (const reversal of [...practice.context.reversals, ...reversals]) {
+    merged.set(reversal.id, merged.get(reversal.id) ?? reversal);
+  }
   return {
-    matches,
-    matchedAt: new Map(order.map((row) => [row.id, BigInt(row.matched_at)])),
-    lines: await claimLines(scope, claims),
-    reversals: reversals.map((row) => ({ id: row.id, remittanceId: row.remittance_id, reversedClaimId: row.reversed_claim_id, paidOn: row.paid_on, loadedAt: BigInt(row.loaded_at), beside: row.beside })),
-    recouped,
+    ...practice.context,
+    lines: new Map([...lines, ...practice.context.lines]),
+    reversals: [...merged.values()].sort(byPayment),
   };
 }
 

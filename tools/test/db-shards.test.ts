@@ -52,14 +52,14 @@ describe.each([4, 6])('the database suite in %i shards', (count) => {
     expect(shards.files).toEqual(expect.arrayContaining(['packages/db/src/catalog.db.test.ts', 'packages/db/src/cross-tenant.db.test.ts']));
   });
 
-  it('starts each shard’s generated route tests and SCR-19’s lease wait first when no duration is recorded', () => {
+  it('starts each shard’s generated route tests, SCR-19’s lease wait and CAS-41’s bounded readers first when no duration is recorded', () => {
     for (const shard of shards.shards) {
       expect([...shard.coldOrder].sort(), `shard ${String(shard.index)}`).toEqual(shard.files);
       const slow = shard.coldOrder.map((file) => SLOW_FIRST.some((pattern) => pattern.test(file)));
       expect(slow.indexOf(false) === -1 || !slow.slice(slow.indexOf(false)).includes(true), `shard ${String(shard.index)}: ${shard.coldOrder.join(', ')}`).toBe(true);
     }
     const all = shards.shards.flatMap((shard) => shard.files);
-    expect(all.filter((file) => SLOW_FIRST.some((pattern) => pattern.test(file)))).toHaveLength(13);
+    expect(all.filter((file) => SLOW_FIRST.some((pattern) => pattern.test(file)))).toHaveLength(15);
   });
 });
 
