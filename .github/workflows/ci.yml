@@ -731,9 +731,9 @@ jobs:
           package-manager-cache: false
       - name: The web archive holds the image buildx built
         if: ${{ !cancelled() && steps.web.outcome == 'success' }}
-        env: { METADATA: "${{ steps.web.outputs.metadata }}" }
+        env: { BUILT: "${{ fromJSON(steps.web.outputs.metadata)['containerimage.config.digest'] }}" }
         run: |
-          built="$(jq -r '."containerimage.config.digest" // empty' <<< "$METADATA")"
+          built="$BUILT"
           read="$(node tools/screening-capacity/image-id.ts "$RUNNER_TEMP/image/web.tar" | jq -r '.config')"
           if [ -z "$built" ] || [ "$read" != "$built" ]; then
             echo "::error title=The web archive::its config digest is ${read:-unreadable}, and buildx built ${built:-nothing it reported}"
@@ -743,9 +743,9 @@ jobs:
       - name: The worker archive holds the image buildx built, and loads as itself
         id: worker-identity
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
-        env: { METADATA: "${{ steps.worker.outputs.metadata }}" }
+        env: { BUILT: "${{ fromJSON(steps.worker.outputs.metadata)['containerimage.config.digest'] }}" }
         run: |
-          built="$(jq -r '."containerimage.config.digest" // empty' <<< "$METADATA")"
+          built="$BUILT"
           identity="$(node tools/screening-capacity/image-id.ts "$RUNNER_TEMP/image/worker.tar")"
           config="$(jq -r '.config' <<< "$identity")"
           target="$(jq -r '.target // empty' <<< "$identity")"
