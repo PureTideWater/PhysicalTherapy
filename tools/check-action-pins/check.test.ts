@@ -194,6 +194,87 @@ ${Array.from({ length: 10 }, (_, i) => `      - uses: octo/a${String(i)}@${sha(s
     expect(offline.errors).toEqual([expect.stringMatching(/^the setup-buildx steps name 2 builders, not one/)]);
   });
 
+  it('takes the builder’s newness from the base’s workflows, so a change that edits the checker leaves an unchanged builder not new (E4)', async () => {
+    const BUILDX = sha('b');
+    const DIGEST = `sha256:${'3'.repeat(64)}`;
+    const OTHER = `sha256:${'4'.repeat(64)}`;
+    const builder = `${workflow(CHECKOUT)}      - uses: docker/setup-buildx-action@${BUILDX} # v4.4.1\n        with: { driver-opts: "image=moby/buildkit:v0.34.1@${DIGEST}" }\n`;
+    // The change edits the checker, so every pin is verified again; the builder itself is the base's.
+    const repo = repository({ baseWorkflow: builder, headWorkflow: builder, baseChecker: true, headCheckerEdit: true });
+    expect(baseState(repo.dir, repo.base).everyPin).toBe('this change edits tools/check-action-pins');
+    const transport = recordedTransport({
+      tags: { 'octo/checkout': lightweight('v7.0.1', CHECKOUT), 'octo/setup-node': lightweight('v7.1.0', NODE), 'docker/setup-buildx-action': lightweight('v4.4.1', BUILDX) },
+      files: {
+        [blob('octo/checkout', CHECKOUT)]: 'inputs:\n  persist-credentials: {}\nruns:\n  using: node24\n  main: x.js\n',
+        [blob('octo/setup-node', NODE)]: 'inputs:\n  node-version: {}\nruns:\n  using: node24\n  main: x.js\n',
+        [blob('docker/setup-buildx-action', BUILDX)]: 'inputs:\n  driver-opts: {}\nruns:\n  using: node24\n  main: x.js\n',
+      },
+      // Docker Hub moved the builder's tag after the base was merged.
+      urls: { 'https://hub.docker.com/v2/repositories/moby/buildkit/tags/v0.34.1': JSON.stringify({ digest: OTHER }), 'https://hub.docker.com/v2/repositories/moby/buildkit/tags?page_size=100&ordering=last_updated': '{"results":[]}' },
+    });
+    const result = await checkActionPins({ root: repo.dir, base: repo.base, event: 'pull_request', transport, now: new Date('2030-01-10T00:00:00Z') });
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([`the builder moby/buildkit:v0.34.1: its tag is the index ${OTHER}, not ${DIGEST}`]);
+  });
+
+  it('warns about every fault of the builder on a push, a new builder’s included, since the pull request was the gate (E4)', async () => {
+    const BUILDX = sha('b');
+    const DIGEST = `sha256:${'3'.repeat(64)}`;
+    const OTHER = `sha256:${'4'.repeat(64)}`;
+    const steps = (image: string) => `${workflow(CHECKOUT)}      - uses: docker/setup-buildx-action@${BUILDX} # v4.4.1\n        with: { driver-opts: "${image}" }\n`;
+    // The builder is new against the previous head: another version at another digest.
+    const repo = repository({ baseWorkflow: steps(`image=moby/buildkit:v0.34.0@${OTHER}`), headWorkflow: steps(`image=moby/buildkit:v0.34.1@${DIGEST}`), baseChecker: true });
+    const answers = (tag: string | number) =>
+      recordedTransport({
+        tags: { 'docker/setup-buildx-action': lightweight('v4.4.1', BUILDX) },
+        files: { [blob('docker/setup-buildx-action', BUILDX)]: 'inputs:\n  driver-opts: {}\nruns:\n  using: node24\n  main: x.js\n' },
+        urls: { 'https://hub.docker.com/v2/repositories/moby/buildkit/tags/v0.34.1': tag, 'https://hub.docker.com/v2/repositories/moby/buildkit/tags?page_size=100&ordering=last_updated': '{"results":[]}' },
+      });
+    const now = new Date('2030-01-10T00:00:00Z');
+    const moved = await checkActionPins({ root: repo.dir, base: repo.base, event: 'push', transport: answers(JSON.stringify({ digest: OTHER })), now });
+    expect(moved.errors).toEqual([]);
+    expect(moved.warnings).toContain(`the builder moby/buildkit:v0.34.1: its tag is the index ${OTHER}, not ${DIGEST}`);
+    const limited = await checkActionPins({ root: repo.dir, base: repo.base, event: 'push', transport: answers(429), now });
+    expect(limited.errors).toEqual([]);
+    expect(limited.warnings).toEqual(expect.arrayContaining([expect.stringMatching(/^the builder moby\/buildkit:v0\.34\.1: hub\.docker\.com: GET .* failed 3 times \(last: HTTP 429\)/)]));
+    // The same fault on a pull request is the gate's failure.
+    expect((await checkActionPins({ root: repo.dir, base: repo.base, event: 'pull_request', transport: answers(JSON.stringify({ digest: OTHER })), now })).errors).toEqual([`the builder moby/buildkit:v0.34.1: its tag is the index ${OTHER}, not ${DIGEST}`]);
+  });
+
+  it('on a push, warns about a failed read or a moved tag of a pin the base already ran, keeps a problem in what was read an error, and stops at its deadline (S4)', async () => {
+    // The change edits the checker, so every pin is verified again on its merge's push.
+    const repo = repository({ baseWorkflow: workflow(CHECKOUT), headWorkflow: workflow(CHECKOUT), baseChecker: true, headCheckerEdit: true });
+    const files = {
+      [blob('octo/checkout', CHECKOUT)]: 'inputs:\n  persist-credentials: {}\nruns:\n  using: node24\n  main: x.js\n',
+      // The action no longer declares the input the step gives: no outage or upstream move makes that.
+      [blob('octo/setup-node', NODE)]: 'inputs:\n  version: {}\nruns:\n  using: node24\n  main: x.js\n',
+    };
+    const moved = recordedTransport({ tags: { 'octo/checkout': lightweight('v7.0.1', NEWER), 'octo/setup-node': lightweight('v7.1.0', NODE) }, files });
+    const first = await checkActionPins({ root: repo.dir, base: repo.base, event: 'push', transport: moved });
+    expect(first.errors).toEqual([`ci.yml build step 2 (octo/setup-node@${NODE}): gives the input node-version, which octo/setup-node@${NODE}:action.yml does not declare (it declares: version)`]);
+    expect(first.warnings).toContain(`octo/checkout@${CHECKOUT}: the tag v7.0.1 of octo/checkout is the commit ${NEWER}, not ${CHECKOUT}; the base already ran this pin, so on a push this is a warning`);
+
+    const down = recordedTransport({ tags: { 'octo/checkout': new Error('Connection reset by peer'), 'octo/setup-node': lightweight('v7.1.0', NODE) }, files: { ...files, [blob('octo/setup-node', NODE)]: 'inputs:\n  node-version: {}\nruns:\n  using: node24\n  main: x.js\n' } });
+    const second = await checkActionPins({ root: repo.dir, base: repo.base, event: 'push', transport: down });
+    expect(second.errors).toEqual([]);
+    expect(second.warnings).toContain(
+      `octo/checkout@${CHECKOUT}: github.com: git ls-remote of octo/checkout refs/tags/v7.0.1 failed 3 times (last: Connection reset by peer); the check fails closed; the base already ran this pin, so on a push this is a warning`,
+    );
+
+    // A github.com that accepts and never answers: the loop ends at its deadline, the pins it left one warning.
+    const hung = recordedTransport({ tags: { 'octo/checkout': HANG, 'octo/setup-node': HANG } });
+    const started = Date.now();
+    const third = await checkActionPins({ root: repo.dir, base: repo.base, event: 'push', transport: hung, pushDeadlineMs: 200 });
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(third.errors).toEqual([]);
+    expect(third.warnings).toContain(`the push run's verify reads stopped at their 0.2 s deadline with 2 pin(s) the base already ran unread (octo/checkout@${CHECKOUT}, octo/setup-node@${NODE}); they still run the commits they name`);
+
+    // A pin new against the previous head keeps every error, on a push too.
+    const added = repository({ baseWorkflow: workflow(CHECKOUT), headWorkflow: workflow(NEWER), baseChecker: true });
+    const fresh = await checkActionPins({ root: added.dir, base: added.base, event: 'push', transport: recordedTransport({ tags: { 'octo/checkout': new Error('Connection reset by peer') } }) });
+    expect(fresh.errors).toEqual([`octo/checkout@${NEWER}: github.com: git ls-remote of octo/checkout refs/tags/v7.0.2 failed 3 times (last: Connection reset by peer); the check fails closed`]);
+  });
+
   it('fails closed when a new pin cannot be read in three tries, naming the host', async () => {
     const repo = repository({ baseWorkflow: workflow(CHECKOUT), headWorkflow: workflow(NEWER), baseChecker: true });
     const down = recordedTransport({ tags: { 'octo/checkout': new Error('Connection reset by peer') } });

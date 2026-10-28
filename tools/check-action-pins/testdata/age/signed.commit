@@ -1,0 +1,12 @@
+tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+author Synthetic <synthetic@example.invalid> 1748736000 +0000
+committer Synthetic <synthetic@example.invalid> 1748736000 +0000
+gpgsig -----BEGIN PGP SIGNATURE-----
+ 
+ iHUEABYKAB0WIQRlrEsizzFvSRMPuI+szgwTFaHDLQUCaDuYAAAKCRCszgwTFaHD
+ LZbbAP9JFSIHWkfpjWUU4z8WMNWtvFBe3fHeH4txNkvqUkAKQgEA1q/252r4HXt8
+ rk1RQpKHC3B5QY2X0X09PbgA8NGuFgM=
+ =7SRl
+ -----END PGP SIGNATURE-----
+
+signed by the current key
