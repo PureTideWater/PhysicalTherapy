@@ -5,11 +5,11 @@ session_01L3tN5LCq2aNYetEQBNJYZg, a Lane B item session started 2026-10-27 by La
 (session_01TrKDxeLbxVo7t7zwRXFzrg). Follow-on in this session after it merges: PR 9 `co-001/ux-home-figures`
 (status `lane-b-ux-home-figures-status.md`).
 
-## Now (2026-10-27 22:45 UTC)
+## Now (2026-10-28 00:20 UTC)
 - **PR #78** (draft) into claude/build-platform: https://github.com/PureTideWater/PhysicalTherapy/pull/78. Head **e36a68b** (the fix round aa4176f, f4b0107, 872f05b, 74ca6af and the merge of claude/build-platform ecebdc90: #76, #77), pushed 22:37 UTC; description rewritten for the fix round and checked byte for byte (c1eff40 the code and tests, 63aaa7f ADR 0079, test-matrix DLR-01 to DLR-04 and synth module 18). Description from the template, written with update_pull_request and checked byte for byte. Subscribed to its activity.
 - **Stage 4, reviews: done** (`wf_1c44b1a2-762`, resumed once after the 5-hour limit). Security: SEC-01 should-fix, SEC-02 and SEC-03 nits. UX and brand (74 after shots at 63aaa7f): UX-DLR-01 to 07 should-fix, 08 to 15 nits. Each verified by an independent skeptic: 16 real, UX-DLR-12 and 13 not defects. Findings and verdicts: `approval-summaries/lane-b-ux-download-refusals-review-findings.json`.
 - **Stage 5, fix round: done.** Part 1 `wf_959acf20-bf4` (aa4176f, f4b0107; the full local suite passed on f4b0107, record `approval-summaries/lane-b-ux-download-refusals-fix-suite.md`), part 2 `wf_9a7d5490-4a9` (872f05b, 74ca6af; typecheck, lint, 6,477 unit, 15 e2e). Base merged (e36a68b, no conflicts, generators clean; setup re-run for #77's Chromium 1248); typecheck, lint, 6,562 unit, build and 18 e2e passed on it. One push.
-- **Stage 6, verification, running:** `wf_8a1a9b4b-bb5`: the fresh-clone verification reading CI on e36a68b, and the fix round's changed screens retaken at e36a68b (`screens-after2`) with a UX and brand re-check.
+- **Stage 6, verification, running:** `wf_8a1a9b4b-bb5` (stopped by the 5-hour limit at ~23:00 UTC with both agents mid-run; resumed 00:16 UTC with resumeFromRunId, each continuing from its progress file). CI is green on every check on e36a68b (22:47 UTC). the fresh-clone verification reading CI on e36a68b, and the fix round's changed screens retaken at e36a68b (`screens-after2`) with a UX and brand re-check.
 - **Next:** stage 7 when the verification passes and CI is green: mark ready, wait for approval-of-record's re-run, merge with expectedHeadSha e36a68bc…; then PR 9 (`co-001/ux-home-figures`). Earlier plan for reference: stage 6, the fresh-clone verification reading CI; stage 7, merge (base merged in, CI green, ready, merge with expectedHeadSha).
 - **If this container is gone:** the branch and PR hold the work; re-run the reviews from their archived script in a new session (no resume across sessions); the before shots are only in this scratchpad, so retake them at e908c21 with the same TOUR_ONLY (in `approval-summaries/lane-b-ux-download-refusals-wip/dlr-capture-before.md`).
 - **Before shots:** 70 at e908c21 (wf_c067d77c-56b); the tour's refused-download caps are on claude/build-ops (a5c50b1f, then the ForgetRefusal tolerance).
@@ -18,7 +18,7 @@ session_01L3tN5LCq2aNYetEQBNJYZg, a Lane B item session started 2026-10-27 by La
 - **Migration:** none. **#42 files:** none but the shared test-matrix, matrix.ts and registry.ts (rows added).
 - **GitHub login:** `PureTideWater`. **Machine:** every setup line OK, playwright included.
 - **Overlaps:** ux-forms PR #74 (open; compliance page, reports pages, compliance route, synth lines) and ux-table-scroll (in build): LANES rule 6.
-- **Safety check-in:** send_later at 2026-10-28T00:20Z.
+- **Safety check-in:** send_later at 2026-10-28T05:26Z.
 
 ## Log
 - 2026-10-27 01:45 UTC: machine set up; brief, LANES.md, lanes/lane-b.md read; branch cut; #42 file check done.
@@ -35,6 +35,8 @@ session_01L3tN5LCq2aNYetEQBNJYZg, a Lane B item session started 2026-10-27 by La
 - 2026-10-27 19:45 UTC: reviews done and verified; fix round wf_959acf20-bf4 started.
 - 2026-10-27 22:25 UTC: fix round part 1 done, full suite passed (6,463 unit, 9,222 db, 55 e2e); part 2 started; design §7 records the fix round's changes.
 - 2026-10-27 22:37 UTC: fix round part 2 done; base ecebdc90 merged (e36a68b); pushed once; PR description rewritten (checked byte for byte); verification wf_8a1a9b4b-bb5 started.
+- 2026-10-27 22:47 UTC: CI green on every check on e36a68b.
+- 2026-10-27 ~23:00 UTC: the 5-hour limit stopped the verification's two agents; resumed 00:16 UTC after setup (PostgreSQL was down).
 
 ## Waiting on someone
 - Nothing.
