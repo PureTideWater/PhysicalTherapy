@@ -5,8 +5,9 @@ import { z } from 'zod';
 
 import { underPacketRules } from '../cases/refusals';
 import { requestApproval } from '../cases/workbench';
+import { keptId, returnPage } from '../http/download-refusal';
 import { practiceRoute } from '../http/invoke';
-import { type Download, InputError, type MutationResult, NotFoundError, type PracticeContext } from '../http/route';
+import { type Download, InputError, type MutationResult, NotFoundError, type PracticeContext, type ReturnTo } from '../http/route';
 import { type DraftView, packetDrafts, reviewNarrativeDrafts } from '../models/narrative-drafts';
 import { modelFeatures } from '../models/path';
 import { canSetCorrespondence } from '../packets/contact';
@@ -293,6 +294,15 @@ async function exported(context: PracticeContext<z.output<typeof downloadParams>
   return { download: file === 'pdf' ? { filename, contentType: 'application/pdf', body: bytes } : { filename, contentType: 'text/csv; charset=utf-8', body: bytes } };
 }
 
+/**
+ * Where a browser's refused export file goes back to (docs/adr/0079): the builder's export history, on the version the
+ * builder showed (its links carry ?version= when that is not the current one).
+ */
+const exportHistoryPage: ReturnTo = (params) => returnPage('/p/[practiceId]/cases/[caseId]/packet', params, { version: keptId(params.version) });
+
+/** Where the reviewer's refused file goes back to: the version's review, beside its exported files. */
+const exportReviewPage: ReturnTo = (params) => returnPage('/p/[practiceId]/cases/[caseId]/packet/[versionId]/review', params);
+
 /** The exported PDF (the packet with its identifiers inserted: line-level PHI), for the roles that export PHI. */
 export const packetPdf = practiceRoute({
   id: 'practice.cases.packet.pdf',
@@ -303,6 +313,7 @@ export const packetPdf = practiceRoute({
   phi: true,
   permission: 'phi.export',
   params: downloadParams,
+  returnTo: exportHistoryPage,
   // The file's name is the packet's reference (payment-dispute-<REF>.pdf), never a record ID, a payer's or a patient's name.
   handle: (context): Promise<Download<Uint8Array<ArrayBuffer>>> => exported(context, 'pdf'),
   sample: { params: (refs) => ({ practiceId: refs.practiceId, caseId: refs.submittedCaseId, versionId: refs.exportedVersionId }) },
@@ -318,6 +329,7 @@ export const packetCsv = practiceRoute({
   phi: true,
   permission: 'phi.export',
   params: downloadParams,
+  returnTo: exportHistoryPage,
   handle: (context): Promise<Download<Uint8Array<ArrayBuffer>>> => exported(context, 'csv'),
   sample: { params: (refs) => ({ practiceId: refs.practiceId, caseId: refs.submittedCaseId, versionId: refs.exportedVersionId }) },
 });
@@ -431,6 +443,7 @@ export const reviewPacketPdf = practiceRoute({
   phi: true,
   permission: 'audit_finding.validate',
   params: downloadParams,
+  returnTo: exportReviewPage,
   handle: (context): Promise<Download<Uint8Array<ArrayBuffer>>> => exported(context, 'pdf'),
   sample: { params: (refs) => ({ practiceId: refs.practiceId, caseId: refs.submittedCaseId, versionId: refs.exportedVersionId }) },
 });
@@ -445,6 +458,7 @@ export const reviewPacketCsv = practiceRoute({
   phi: true,
   permission: 'audit_finding.validate',
   params: downloadParams,
+  returnTo: exportReviewPage,
   handle: (context): Promise<Download<Uint8Array<ArrayBuffer>>> => exported(context, 'csv'),
   sample: { params: (refs) => ({ practiceId: refs.practiceId, caseId: refs.submittedCaseId, versionId: refs.exportedVersionId }) },
 });

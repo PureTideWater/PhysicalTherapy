@@ -258,7 +258,10 @@ describe('the copy lint: what it reads', () => {
   it('reads the web app’s source, the report templates, the email, and the packages whose words the screens show; never docs, tests, test support or other code', () => {
     const forbidden = "export const words = 'The ProofPack, by AI';\n";
     const read = [
+      // A source directory named coverage is read: the coverage report is written outside every directory read.
+      'apps/web/src/app/p/[practiceId]/coverage/page.tsx',
       'apps/web/src/app/page.tsx',
+      'apps/web/src/components/coverage/letter.tsx',
       'apps/worker/src/billing/dunning.ts',
       'apps/worker/src/digest/view.ts',
       'apps/worker/src/mail/template.ts',
@@ -325,6 +328,12 @@ describe('the copy lint: what it reads', () => {
       // The worker's release reader and the content calendar's family titles (docs/adr/0071).
       'apps/worker/src/price/release.ts',
       'packages/rules/src/calendar.ts',
+      // Coverage's screen, its letter and what it reads are copy, and so is a refused download's notice (docs/adr/0079).
+      'apps/web/src/app/p/[practiceId]/coverage/page.tsx',
+      'apps/web/src/components/coverage/letter.tsx',
+      'apps/web/src/components/coverage/share.tsx',
+      'apps/web/src/lib/coverage/in-effect.ts',
+      'apps/web/src/components/download-refusal.tsx',
     ]) {
       expect(files, file).toContain(file);
     }

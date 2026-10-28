@@ -1,12 +1,14 @@
 import { quarterNameOf } from '@tp/rules';
-import { Alert, AlertDescription, AlertTitle, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
+import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../components/action-form';
-import { CheckboxField, CheckboxGroup, Field, SelectField } from '../../../../components/field';
+import { CheckboxField, CheckboxGroup } from '../../../../components/field';
 import { QuestionList, TotalsText } from '../../../../components/contracts/display';
+import { LETTER_CONTROLS, PayerLetter } from '../../../../components/coverage/letter';
 import { Figure } from '../../../../components/coverage/share';
+import { ForgetRefusal } from '../../../../components/forget-refusal';
 import { utc } from '../../../../components/format';
 import { ChecklistCard, HandEntryNotice, ModelNoticeAlert } from '../../../../components/models/display';
 import { MonthsWaitingOnContent } from '../../../../components/pricing/content';
@@ -20,6 +22,7 @@ import { REMEDY_SCREEN_NAMES, remedyPath } from '../../../../lib/contracts/remed
 import type { FeeSchedulePeriod } from '../../../../lib/coverage/in-effect';
 import { waitingHeadline } from '../../../../lib/pricing/location';
 import { shareOf } from '../../../../lib/pricing/view';
+import { downloadRefusal } from '../../../../lib/http/download-refusal';
 import { loadPage } from '../../../../lib/http/next';
 import { coveragePage } from '../../../../lib/routes/coverage';
 import { generateReportDocumentFormAction } from '../reports/documents/actions';
@@ -93,7 +96,7 @@ function UnconfirmedFormats({ practiceId, sources }: { readonly practiceId: stri
  * The Coverage screen (PRD 7): the share of lines and dollars priced, the unpriced reasons by count
  * with each reason's remedy linked to the screen it is taken on, the dollars waiting on mappings, what
  * to obtain to raise coverage, and the request-to-payer letter for a missing schedule (a text file from
- * a fixed template). Shares and counts are each line's result in its pricing in effect, across every
+ * a fixed template; a refused letter comes back to its form, marked, never to a JSON page). Shares and counts are each line's result in its pricing in effect, across every
  * run in effect (lib/coverage/in-effect.ts, as the dashboard and the digest read them), with the run
  * that took effect last named beside them; until a run takes effect, they are zero. Lines read from an
  * ERA export of an unconfirmed format are flagged, per format, with its name and why (CO-03). The months waiting on
@@ -103,7 +106,14 @@ function UnconfirmedFormats({ practiceId, sources }: { readonly practiceId: stri
 export default async function CoveragePage(props: Props) {
   const page = await loadPage(coveragePage, props);
   if (page.kind === 'forbidden') {
-    return <Forbidden shell={page.shell} section="coverage" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
+    // A refused letter comes back here to a role this page refuses too: the refusal and the letter's entries leave the
+    // address bar.
+    return (
+      <>
+        <Forbidden shell={page.shell} section="coverage" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />
+        {downloadRefusal(await props.searchParams) === null ? null : <ForgetRefusal also={LETTER_CONTROLS} />}
+      </>
+    );
   }
   const {
     practiceId,
@@ -136,6 +146,8 @@ export default async function CoveragePage(props: Props) {
   const inEffect = share.runs > 0;
   const of = inEffect ? share.of : { lines: lines.lines, chargeCents: lines.chargeCents };
   const path = `/p/${practiceId}/coverage`;
+  // A refused letter's marks and entries (components/coverage/letter.tsx): display only, so read here, not in the route.
+  const searchParams = await props.searchParams;
   return (
     <AppShell shell={page.shell} section="coverage">
       <div className="flex flex-col gap-1">
@@ -420,35 +432,8 @@ export default async function CoveragePage(props: Props) {
           <CardTitle>Request a missing fee schedule from a payer</CardTitle>
           <CardDescription>A letter from a fixed template asking the payer for the schedule (or the page) that sets the rate for the codes you name. It downloads as a text file to sign and send.</CardDescription>
         </CardHeader>
-        <CardContent>
-          {payers.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Payers appear once their 835s load.</p>
-          ) : (
-            <form method="get" action={`${path}/letter`} className="grid max-w-xl grid-cols-1 gap-3" aria-label="Letter">
-              <SelectField id="letter-payer" label="Payer" name="payer" required options={payers.map((payer) => ({ value: payer.id, label: payer.name }))} showChosen />
-              <SelectField
-                id="letter-contract"
-                label="The payer’s contract (optional)"
-                name="contract"
-                options={[
-                  { value: '', label: 'None named' },
-                  ...payers
-                    .filter((payer) => contracts.some((contract) => contract.payerId === payer.id))
-                    .map((payer) => ({
-                      group: payer.name,
-                      options: contracts.filter((contract) => contract.payerId === payer.id).map((contract) => ({ value: contract.id, label: contract.title })),
-                    })),
-                ]}
-                showChosen
-              />
-              <Field id="letter-codes" label="Procedure codes (optional)" name="codes" placeholder="97110, 97530" maxLength={400} hint="Leave blank to ask for the complete schedule." />
-              <div>
-                <Button type="submit" variant="outline">
-                  Download the letter
-                </Button>
-              </div>
-            </form>
-          )}
+        <CardContent className="flex flex-col gap-3">
+          <PayerLetter path={path} payers={payers} contracts={contracts} searchParams={searchParams} />
         </CardContent>
       </Card>
     </AppShell>

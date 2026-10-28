@@ -4,18 +4,21 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { VerifiedSeal } from '../../../../../../components/brand';
+import { DownloadRefusal } from '../../../../../../components/download-refusal';
+import { ForgetRefusal } from '../../../../../../components/forget-refusal';
 import { utc } from '../../../../../../components/format';
 import { proofLevelWords, recoveredLabel } from '../../../../../../components/reconciliation/display';
 import { Money } from '../../../../../../components/remittances/display';
 import { RoiFigure } from '../../../../../../components/reports/roi';
 import { ShareLink } from '../../../../../../components/share';
 import { AppShell, Forbidden } from '../../../../../../components/shell';
+import { downloadRefusal } from '../../../../../../lib/http/download-refusal';
 import { loadPage } from '../../../../../../lib/http/next';
 import { roiStatementPage } from '../../../../../../lib/routes/roi';
 
 export const metadata: Metadata = { title: 'ROI statement' };
 
-type Props = { readonly params: Promise<{ practiceId: string; statementId: string }> };
+type Props = { readonly params: Promise<{ practiceId: string; statementId: string }>; readonly searchParams: Promise<Record<string, string | string[] | undefined>> };
 
 /**
  * An ROI statement (PRD 13, ROI statement: "fees paid to the product in the period; recovered
@@ -23,15 +26,22 @@ type Props = { readonly params: Promise<{ practiceId: string; statementId: strin
  * logged; the ratio of net recovered to fees. Every figure links to its entries"; test matrix LED-11):
  * each figure recomputed here from the entries it links, each entry linking to its case's ledger; the
  * proof level stated; fees as billing records them (none yet, so no ratio); its PDF, once printed, and
- * its CSV.
+ * its CSV. A refused download of either comes back here, said beside them (docs/adr/0079).
  */
 export default async function RoiStatementPage(props: Props) {
   const page = await loadPage(roiStatementPage, props);
   if (page.kind === 'forbidden') {
-    return <Forbidden shell={page.shell} section="reports" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
+    // A refused download comes back here to a role this page refuses too: the refusal leaves the address bar.
+    return (
+      <>
+        <Forbidden shell={page.shell} section="reports" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />
+        {downloadRefusal(await props.searchParams) === null ? null : <ForgetRefusal />}
+      </>
+    );
   }
   const { practiceId, detail, origin } = page.data;
   const path = `/p/${practiceId}/reports/roi/${detail.id}`;
+  const refusal = downloadRefusal(await props.searchParams);
   return (
     <AppShell shell={page.shell} section="reports">
       <div className="flex flex-col gap-1">
@@ -65,6 +75,7 @@ export default async function RoiStatementPage(props: Props) {
           <CardDescription>The PDF is printed by the worker and stored sealed with the practice’s key; the CSV lists each figure and the entries it sums. Every download is audited.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-2 text-sm">
+          <DownloadRefusal refusal={refusal} />
           <p data-print={detail.print}>
             {detail.print === 'printed' ? (
               <>

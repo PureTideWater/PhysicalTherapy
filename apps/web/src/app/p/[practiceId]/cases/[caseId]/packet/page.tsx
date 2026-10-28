@@ -5,7 +5,10 @@ import Link from 'next/link';
 
 import { ActionForm } from '../../../../../../components/action-form';
 import { UtcTime } from '../../../../../../components/dates';
+import { DownloadLink, DownloadLinks } from '../../../../../../components/download-link';
+import { DownloadRefusal } from '../../../../../../components/download-refusal';
 import { TextAreaField } from '../../../../../../components/field';
+import { ForgetRefusal } from '../../../../../../components/forget-refusal';
 import { FormKeys } from '../../../../../../components/form-keys';
 import { utc } from '../../../../../../components/format';
 import { DraftBadge, HandEntryNotice, ModelNoticeAlert, draftOf } from '../../../../../../components/models/display';
@@ -19,6 +22,7 @@ import { Money } from '../../../../../../components/remittances/display';
 import { ScrollTable } from '../../../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../../../components/shell';
 import { CaseStateBadge, stageLabel } from '../../../../../../components/triage/display';
+import { downloadRefusal } from '../../../../../../lib/http/download-refusal';
 import { loadPage } from '../../../../../../lib/http/next';
 import { waitText } from '../../../../../../lib/packets/approval';
 import { CONTACT_MALFORMED_TEXT, CONTACT_MISSING_TEXT, type ContactNow, PAYER_COPY_TEXT, correspondenceSettingsPath } from '../../../../../../lib/packets/contact';
@@ -168,16 +172,40 @@ function ExportBlocked({ version }: { readonly version: VersionView }) {
  * worksheets; each trace's SHA-256 and the words version stay below them, outside the payer's words. The approve and
  * export forms post the words version the page was rendered with, so a step asked from a page another renderer wrote
  * is refused. The schedule links a line to its trace page only for a role that opens it.
+ *
+ * A refused export file comes back here (docs/adr/0079), and every role refused its line-level PHI, an analyst's
+ * aside, is refused this page too: the permission state then says who downloads the files rather than who builds
+ * packets (an analyst builds them, yet cannot download them), and the refusal leaves the address bar.
  */
 export default async function PacketPage(props: Props) {
   const page = await loadPage(packetPage, props);
   if (page.kind === 'forbidden') {
-    return <Forbidden shell={page.shell} section="cases" roles={page.roles} message={page.message} nextStep="A billing manager, an analyst or a firm principal builds packets; open the case to see its state." />;
+    const refused = downloadRefusal(await props.searchParams);
+    return (
+      <>
+        <Forbidden
+          shell={page.shell}
+          section="cases"
+          roles={page.roles}
+          message={page.message}
+          nextStep={
+            refused?.status === 'forbidden'
+              ? 'The packet’s PDF and CSV hold line-level PHI, which your role cannot download: a billing manager or a firm principal downloads them. Open the case to see its state.'
+              : 'A billing manager, an analyst or a firm principal builds packets; open the case to see its state.'
+          }
+        />
+        {refused === null ? null : <ForgetRefusal />}
+      </>
+    );
   }
   const { practiceId, case: item, builder, notice, canApprove, canExport, asOf, canDraftWithModel, drafts, modelNotice, canSetContact, canOpenLines, wordsVersion } = page.data;
   const casePath = `/p/${practiceId}/cases/${item.id}`;
   const version = builder.version;
   const approval = builder.approval;
+  // A refused export file comes back here (docs/adr/0079): the file links name the version shown, unless it is the current one.
+  // A click downloads it in place (DownloadLink), so words typed in the version form above stay.
+  const refusal = downloadRefusal(await props.searchParams);
+  const shownVersion = version === null || version.current ? '' : `?version=${version.id}`;
   return (
     <AppShell shell={page.shell} section="cases">
       <div className="flex flex-col gap-1">
@@ -565,98 +593,101 @@ export default async function PacketPage(props: Props) {
           <CardTitle>Versions and export history</CardTitle>
           <CardDescription>Every version of the packet, newest first; a version never changes once written.</CardDescription>
         </CardHeader>
-        <CardContent>
-          {builder.versions.length === 0 ? (
-            <EmptyState title="No version yet" nextStep="Write the first version above." />
-          ) : (
-            <ScrollTable label="Versions">
-              <table className="w-full min-w-[54rem] text-sm" aria-label="Versions">
-                <thead>
-                  <tr className="border-b text-left">
-                    <th className="px-2 py-1 font-medium">Version</th>
-                    <th className="px-2 py-1 font-medium">Written</th>
-                    <th className="px-2 py-1 font-medium">Verifier</th>
-                    <th className="px-2 py-1 font-medium">Deadline stated</th>
-                    <th className="px-2 py-1 font-medium">Approved</th>
-                    <th className="px-2 py-1 font-medium">Exported, SHA-256</th>
-                    <th className="px-2 py-1 font-medium">Files</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {builder.versions.map((entry) => (
-                    <tr key={entry.id} className="border-b align-top last:border-0" data-version={entry.versionNo}>
-                      <td className="px-2 py-1">
-                        <Link className="underline" href={`${casePath}/packet?version=${entry.id}`}>
-                          Version {entry.versionNo}
-                        </Link>
-                        {entry.current ? ' (current)' : ''}
-                        {draftOf(drafts, entry.id) === undefined ? '' : ', drafted by the model'}
-                      </td>
-                      <td className="px-2 py-1">
-                        <span className="block min-w-40 wrap-anywhere">
-                          <UtcTime at={entry.writtenAt} />, {entry.writtenBy ?? '—'}
-                        </span>
-                      </td>
-                      <td className="px-2 py-1">{entry.verifierPassed ? 'Passed' : 'Failed'}</td>
-                      <td className="px-2 py-1">
-                        <DeadlineChip status={entry.deadlineStatus} />
-                      </td>
-                      <td className="px-2 py-1">
-                        {entry.approvedAt === null ? (
-                          '—'
-                        ) : (
-                          <span className="block min-w-40 wrap-anywhere">
-                            <UtcTime at={entry.approvedAt} />, {entry.approvedBy ?? '—'}
-                            {entry.approvedAlone ? ' (alone, flagged)' : ''}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-2 py-1">
-                        {entry.exportedAt === null ? (
-                          '—'
-                        ) : (
-                          <span className="flex min-w-32 flex-col">
-                            <span>
-                              <UtcTime at={entry.exportedAt} />
-                            </span>
-                            <span>
-                              PDF <Hash value={entry.exportSha256} />
-                            </span>
-                            <span>
-                              CSV <Hash value={entry.exportCsvSha256} />
-                            </span>
-                            <span>
-                              {entry.attestedAt === null ? (
-                                'Not attested yet'
-                              ) : (
-                                <>
-                                  Attested <UtcTime at={entry.attestedAt} />
-                                </>
-                              )}
-                            </span>
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-2 py-1">
-                        {entry.exportedAt === null || !canExport ? (
-                          '—'
-                        ) : (
-                          <span className="flex flex-col">
-                            <a className="underline" href={`${casePath}/packet/${entry.id}/pdf`}>
-                              PDF
-                            </a>
-                            <a className="underline" href={`${casePath}/packet/${entry.id}/csv`}>
-                              CSV
-                            </a>
-                          </span>
-                        )}
-                      </td>
+        <CardContent className="flex flex-col gap-4">
+          {/* A file downloaded here says its refusal above the versions, in place of the one the page arrived with. */}
+          <DownloadLinks arrived={<DownloadRefusal refusal={refusal} />}>
+            {builder.versions.length === 0 ? (
+              <EmptyState title="No version yet" nextStep="Write the first version above." />
+            ) : (
+              <ScrollTable label="Versions">
+                <table className="w-full min-w-[54rem] text-sm" aria-label="Versions">
+                  <thead>
+                    <tr className="border-b text-left">
+                      <th className="px-2 py-1 font-medium">Version</th>
+                      <th className="px-2 py-1 font-medium">Written</th>
+                      <th className="px-2 py-1 font-medium">Verifier</th>
+                      <th className="px-2 py-1 font-medium">Deadline stated</th>
+                      <th className="px-2 py-1 font-medium">Approved</th>
+                      <th className="px-2 py-1 font-medium">Exported, SHA-256</th>
+                      <th className="px-2 py-1 font-medium">Files</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </ScrollTable>
-          )}
+                  </thead>
+                  <tbody>
+                    {builder.versions.map((entry) => (
+                      <tr key={entry.id} className="border-b align-top last:border-0" data-version={entry.versionNo}>
+                        <td className="px-2 py-1">
+                          <Link className="underline" href={`${casePath}/packet?version=${entry.id}`}>
+                            Version {entry.versionNo}
+                          </Link>
+                          {entry.current ? ' (current)' : ''}
+                          {draftOf(drafts, entry.id) === undefined ? '' : ', drafted by the model'}
+                        </td>
+                        <td className="px-2 py-1">
+                          <span className="block min-w-40 wrap-anywhere">
+                            <UtcTime at={entry.writtenAt} />, {entry.writtenBy ?? '—'}
+                          </span>
+                        </td>
+                        <td className="px-2 py-1">{entry.verifierPassed ? 'Passed' : 'Failed'}</td>
+                        <td className="px-2 py-1">
+                          <DeadlineChip status={entry.deadlineStatus} />
+                        </td>
+                        <td className="px-2 py-1">
+                          {entry.approvedAt === null ? (
+                            '—'
+                          ) : (
+                            <span className="block min-w-40 wrap-anywhere">
+                              <UtcTime at={entry.approvedAt} />, {entry.approvedBy ?? '—'}
+                              {entry.approvedAlone ? ' (alone, flagged)' : ''}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-2 py-1">
+                          {entry.exportedAt === null ? (
+                            '—'
+                          ) : (
+                            <span className="flex min-w-32 flex-col">
+                              <span>
+                                <UtcTime at={entry.exportedAt} />
+                              </span>
+                              <span>
+                                PDF <Hash value={entry.exportSha256} />
+                              </span>
+                              <span>
+                                CSV <Hash value={entry.exportCsvSha256} />
+                              </span>
+                              <span>
+                                {entry.attestedAt === null ? (
+                                  'Not attested yet'
+                                ) : (
+                                  <>
+                                    Attested <UtcTime at={entry.attestedAt} />
+                                  </>
+                                )}
+                              </span>
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-2 py-1">
+                          {entry.exportedAt === null || !canExport ? (
+                            '—'
+                          ) : (
+                            <span className="flex flex-col">
+                              <DownloadLink className="underline" href={`${casePath}/packet/${entry.id}/pdf${shownVersion}`}>
+                                PDF
+                              </DownloadLink>
+                              <DownloadLink className="underline" href={`${casePath}/packet/${entry.id}/csv${shownVersion}`}>
+                                CSV
+                              </DownloadLink>
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </ScrollTable>
+            )}
+          </DownloadLinks>
         </CardContent>
       </Card>
     </AppShell>

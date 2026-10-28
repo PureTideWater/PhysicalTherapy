@@ -10,7 +10,7 @@ import { Money } from '../remittances/display';
  * computed from integers by shareOf (tenths of a percent, never a float on an amount).
  */
 
-/** A count or a share, set as a figure. */
+/** A count, a share or a code, set as a figure (mono, tabular numerals). */
 export function Figure({ children }: { readonly children: ReactNode }) {
   return <span className="font-mono tabular-nums">{children}</span>;
 }
