@@ -5,3 +5,9 @@
 - [x] 2 PORTED images fix -> bd589960 (ci.yml lines 734/736 and 746/748 only; workflows.test.ts 1802/1803/1811 pins + one new test 'gives no step a build's whole metadata as one variable...' covering step env and with inputs, real workflows [] + the two BUILT reads named + 5 shapes). Failing-first: on the unfixed tree (CI_TREE=git archive of 89d33579) both the pins test and the new test fail; fixed tree: workflows.test.ts 115/115 passed; actionlint 1.7.7 -ignore 'label "ubuntu-26\.04" is unknown' exit 0; eslint on the test file 0. NOTE: CLAUDE.md wants pnpm actions:check + toolchain:check after a workflow change: add to step 3
 - [ ] 3 checks
 - [ ] 4 push
+## Step 3 decisions (delta since 46974a25 = #74's merge 89d33579 + the port bd589960)
+- MUTATION: tools/stryker/affected.ts --event pull_request --base 46974a25 -> money/pricing/ledger/packets not affected, "shards: none (no money path changed)" -> no shard and no gate run (output scratchpad/pr42f-affected.out/.md)
+- CAPACITY: the capacity workflow's own matching (watched-paths.txt of 46974a25 and HEAD vs git diff --name-only 46974a25...HEAD) -> 21 watched hits (#74's action-form.tsx, field.tsx, form-issues.tsx, http/form.ts, http/next.ts, routes/sign-in.ts, ui button/input/loading-*, synth matrix etc; list scratchpad/pr42f-watched-hits.txt) -> run S1,S4 binding with a FRESH --out (capacity-out-<UTC stamp>)
+- Workflow changed -> also pnpm actions:check and BASE=origin/claude/build-platform pnpm toolchain:check (CLAUDE.md)
+- e2e: playwright has ONE project (chromium); "as CI" = CI's 2 shards, CI=true (retry 1 + failOnFlakyTests), E2E_PREBUILT=1 on the stamped build of the build step
+- suite script: scratchpad/pr42f/suite.sh; results scratchpad/pr42f/suite/results.tsv (+ .done); dbs tp_pr6b4f_*
