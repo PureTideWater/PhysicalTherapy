@@ -1,0 +1,370 @@
+import type { ComponentProps, ReactNode } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+
+import { CheckboxField, CheckboxGroup, Field, SelectField, TextAreaField } from './field';
+import { FieldError, FormIssues, FormIssuesContext, type FormState, PendingStatus, RefusalSummary, type RefusalSummaryProps } from './form-issues';
+import { PasswordField } from './password-field';
+
+/**
+ * The shared fields as the server renders them inside a refused form and outside one (test matrix FRM-04; docs/adr/0077,
+ * D2 and D3): the message under the control, the control marked and described, the names a summary reads, and the
+ * secrets' markers. Synthetic values only. The browser behaviour is action-form.browser.test.tsx's.
+ */
+
+type Issues = readonly { readonly field: string; readonly message: string }[];
+
+function inForm(node: ReactNode, issues: Issues = [], refused = issues.length > 0, final = false): string {
+  return renderToStaticMarkup(<FormIssuesContext value={{ issues, refused, final }}>{node}</FormIssuesContext>);
+}
+
+/** An element's attribute, by the element's id. */
+function attribute(html: string, id: string, name: string): string | null {
+  const tag = new RegExp(`<[a-z]+ [^>]*id="${id}"[^>]*>`).exec(html)?.[0];
+  if (tag === undefined) {
+    throw new Error(`no element with id ${id}`);
+  }
+  // HTML attribute names are case-insensitive: React writes spellCheck, the browser reads spellcheck.
+  return new RegExp(` ${name}="([^"]*)"`, 'i').exec(tag)?.[1] ?? null;
+}
+
+/** The text of the element with this id, which holds text only. */
+function textOf(html: string, id: string): string | undefined {
+  return new RegExp(`id="${id}"[^>]*>([^<]*)<`).exec(html)?.[1];
+}
+
+const ZIP = { field: 'zip', message: 'five digits, or ZIP+4 such as 27601-1234' };
+
+describe('Field (FRM-04)', () => {
+  it('shows the form’s message under the control, marked, described by the message first and then the hint', () => {
+    const html = inForm(<Field label="Billing ZIP (ZIP+4 if Medicare needs one)" name="zip" defaultValue="27601" hint="Five digits." />, [ZIP]);
+    expect(attribute(html, 'field-zip', 'aria-invalid')).toBe('true');
+    expect(attribute(html, 'field-zip', 'aria-describedby')).toBe('field-zip-error field-zip-hint');
+    // The described element holds the message alone (the shape #42's screening.spec.ts:718 asserts exactly).
+    expect(textOf(html, 'field-zip-error')).toBe(ZIP.message);
+    expect(html).toMatch(/<div data-field-error="true" class="[^"]*text-destructive[^"]*"><svg aria-hidden="true" focusable="false"[^>]*>.*<\/svg><span aria-hidden="true" class="font-semibold">Error:<\/span><p id="field-zip-error">/);
+  });
+
+  it('shows nothing without an issue for it, and nothing outside a form that refuses', () => {
+    const html = inForm(<Field label="Billing ZIP" name="zip" hint="Five digits." />, [{ field: 'city', message: 'fill this in' }]);
+    expect(attribute(html, 'field-zip', 'aria-invalid')).toBeNull();
+    expect(attribute(html, 'field-zip', 'aria-describedby')).toBe('field-zip-hint');
+    expect(html).not.toContain('data-field-error');
+    expect(renderToStaticMarkup(<Field label="Billing ZIP" name="zip" />)).not.toContain('aria-invalid');
+  });
+
+  it('takes its own error over the form’s, and joins several of the form’s messages', () => {
+    expect(textOf(inForm(<Field label="ZIP" name="zip" error="not loaded" />, [ZIP]), 'field-zip-error')).toBe('not loaded');
+    const html = inForm(<Field label="Facility" name="facility" issueFor={['settings']} />, [
+      { field: 'facility', message: 'list at least one place of service' },
+      { field: 'settings.2', message: 'a code is in both lists' },
+    ]);
+    expect(textOf(html, 'field-facility-error')).toBe('list at least one place of service; a code is in both lists');
+    expect(attribute(html, 'field-facility', 'data-issue-for')).toBe('settings');
+  });
+
+  it('writes the summary’s name and the secret marker on the control: a one-time code is a secret, an email is not', () => {
+    expect(attribute(inForm(<Field label="Why (for “Other” only)" name="why" errorName="Why" />), 'field-why', 'data-error-name')).toBe('Why');
+    const code = inForm(<Field label="Six-digit code" name="code" autoComplete="one-time-code" hint="Six digits. Spaces are fine." />);
+    expect(attribute(code, 'field-code', 'data-secret')).toBe('');
+    expect(attribute(inForm(<Field label="Email" name="email" type="email" />), 'field-email', 'data-secret')).toBeNull();
+  });
+
+  it('keeps a one-time code from a spelling service, as a password is, whatever the caller passes (S-SEC-3’s follow-up)', () => {
+    const marks = (html: string) => ['data-secret', 'spellcheck', 'autocorrect', 'autocapitalize'].map((name) => attribute(html, 'field-code', name));
+    expect(marks(inForm(<Field label="Six-digit code" name="code" autoComplete="one-time-code" />))).toEqual(['', 'false', 'off', 'none']);
+    // A spread cast past the props type (TypeScript reads no hyphenated name) undoes none of them.
+    const forced = { 'data-secret': undefined, spellCheck: true, autoCorrect: 'on', autoCapitalize: 'sentences' } as object;
+    expect(marks(inForm(<Field label="Six-digit code" name="code" autoComplete="one-time-code" {...forced} />))).toEqual(['', 'false', 'off', 'none']);
+    // Any other field is left as the caller writes it.
+    expect(['spellcheck', 'autocorrect'].map((name) => attribute(inForm(<Field label="Email" name="email" type="email" />), 'field-email', name))).toEqual([null, null]);
+  });
+
+  it('says a refused code was emptied, after the error and before the hint', () => {
+    const issue = { field: 'code', message: 'enter the code your authenticator app shows now' };
+    const html = inForm(<Field label="Six-digit code" name="code" autoComplete="one-time-code" hint="Six digits. Spaces are fine." />, [issue]);
+    expect(attribute(html, 'field-code', 'aria-describedby')).toBe('field-code-error field-code-emptied field-code-hint');
+    expect(html).toContain('<p id="field-code-emptied" data-slot="emptied-note" class="text-sm text-muted-foreground">Emptied for your security.</p>');
+    // A refusal with no issue on the code (the first step's) still empties it, and says so.
+    expect(inForm(<Field label="Six-digit code" name="code" autoComplete="one-time-code" />, [], true)).toContain('Emptied for your security.');
+  });
+});
+
+describe('SelectField and TextAreaField (FRM-04)', () => {
+  it('are marked, described and named like Field, with a hint, passing other props through', () => {
+    const select = inForm(
+      <SelectField
+        label="Response"
+        name="response"
+        hint="What the payer’s letter says."
+        defaultValue="partial"
+        errorName="Payer response"
+        options={[
+          { value: 'accepted', label: 'Accepted' },
+          { value: 'partial', label: 'Partially accepted' },
+        ]}
+        disabled
+      />,
+      [{ field: 'response', message: 'choose one' }],
+    );
+    expect(attribute(select, 'field-response', 'aria-invalid')).toBe('true');
+    expect(attribute(select, 'field-response', 'aria-describedby')).toBe('field-response-error field-response-hint');
+    expect(attribute(select, 'field-response', 'data-error-name')).toBe('Payer response');
+    expect(attribute(select, 'field-response', 'disabled')).toBe('');
+    expect(textOf(select, 'field-response-hint')).toBe('What the payer’s letter says.');
+
+    const area = inForm(<TextAreaField label="Why (for “Other” only)" name="why" hint="No patient details." />, [{ field: 'why', message: 'fill this in' }]);
+    expect(attribute(area, 'field-why', 'aria-invalid')).toBe('true');
+    expect(attribute(area, 'field-why', 'aria-describedby')).toBe('field-why-error field-why-hint');
+    expect(textOf(area, 'field-why-error')).toBe('fill this in');
+    expect(attribute(inForm(<TextAreaField label="Why" name="why" />), 'field-why', 'aria-invalid')).toBeNull();
+  });
+});
+
+describe('a rule said once for several fields (`describedBy`; the UX re-check of the fix round)', () => {
+  it('describes each control by the text it names, after the control’s own message and hint, and writes no attribute of its own', () => {
+    const idle = inForm(
+      <>
+        <Field label="Subject" name="subject" describedBy="support-rule" />
+        <TextAreaField label="What happened, and what you expected" name="message" describedBy="support-rule" />
+        <SelectField label="What is it about" name="category" hint="The screen’s area." describedBy="support-rule" options={[{ value: 'question', label: 'A question' }]} />
+      </>,
+    );
+    expect(attribute(idle, 'field-subject', 'aria-describedby')).toBe('support-rule');
+    expect(attribute(idle, 'field-message', 'aria-describedby')).toBe('support-rule');
+    expect(attribute(idle, 'field-category', 'aria-describedby')).toBe('field-category-hint support-rule');
+    // The prop is the field's own: no control carries it as an attribute.
+    expect(idle).not.toMatch(/ describedby=/i);
+    const refused = inForm(<Field label="Subject" name="subject" describedBy="support-rule" />, [{ field: 'subject', message: 'a ticket takes no patient information' }]);
+    expect(attribute(refused, 'field-subject', 'aria-describedby')).toBe('field-subject-error support-rule');
+  });
+});
+
+describe('SelectField options in runs (the UX re-check’s polish)', () => {
+  it('holds an option given in runs as the runs joined, so the list and the chosen-text line say the same words', () => {
+    const html = renderToStaticMarkup(
+      <SelectField
+        label="Document"
+        name="documentId"
+        showChosen
+        options={[
+          { value: 'letter', label: [{ text: 'SYNTHETIC payer letter, SHA-256 ' }, { text: '0123456789ab…', mono: true }] },
+          { value: 'short', label: 'Letter' },
+        ]}
+      />,
+    );
+    expect(html).toContain('<option value="letter">SYNTHETIC payer letter, SHA-256 0123456789ab…</option>');
+    expect(html).toContain('<option value="short">Letter</option>');
+    // Measured in the browser: the server renders no line (action-form.browser.test.tsx reads it).
+    expect(html).not.toContain('chosen-text');
+  });
+});
+
+describe('CheckboxField (FRM-04)', () => {
+  it('marks and describes its box, and its wrapper carries data-invalid, only when refused', () => {
+    const confirm = <CheckboxField name="confirm" label="This line will not be pursued." errorName="Confirmation" required />;
+    const html = inForm(confirm, [{ field: 'confirm', message: 'tick the box to confirm' }]);
+    expect(html).toMatch(/^<div data-slot="checkbox-field" data-invalid=""/);
+    expect(attribute(html, 'field-confirm', 'aria-invalid')).toBe('true');
+    expect(attribute(html, 'field-confirm', 'aria-describedby')).toBe('field-confirm-error');
+    expect(attribute(html, 'field-confirm', 'data-error-name')).toBe('Confirmation');
+    expect(textOf(html, 'field-confirm-error')).toBe('tick the box to confirm');
+    expect(html).toContain('<label for="field-confirm">This line will not be pursued.</label>');
+    const clean = inForm(confirm);
+    expect(clean).not.toContain('data-invalid');
+    expect(attribute(clean, 'field-confirm', 'aria-invalid')).toBeNull();
+  });
+});
+
+describe('CheckboxGroup (FRM-04)', () => {
+  const group = (
+    <CheckboxGroup
+      legend="Components affected"
+      issueKey="components"
+      hint="Each part of the service this touches."
+      options={[
+        { name: 'components[]', value: 'uploads', label: 'Uploads' },
+        { name: 'components[]', value: 'pricing', label: 'Pricing', defaultChecked: true },
+      ]}
+    />
+  );
+
+  it('puts the message inside the fieldset after the legend and hint, and the fieldset names both', () => {
+    const html = inForm(group, [{ field: 'components', message: 'choose at least one component' }]);
+    expect(html).toMatch(/^<fieldset data-issue-for="components" data-invalid="" aria-describedby="group-components-error group-components-hint"/);
+    expect(html.indexOf('<legend')).toBeLessThan(html.indexOf('id="group-components-hint"'));
+    expect(html.indexOf('id="group-components-hint"')).toBeLessThan(html.indexOf('data-field-error'));
+    expect(html.indexOf('data-field-error')).toBeLessThan(html.indexOf('type="checkbox"'));
+    expect(textOf(html, 'group-components-error')).toBe('choose at least one component');
+    expect(html).toContain('name="components[]" checked="" value="pricing"');
+  });
+
+  it('reads an issue on one of its entries ("kept.3"), and nothing without one', () => {
+    const kept = (
+      <CheckboxGroup
+        legend="Keep the items that apply"
+        issueKey="kept"
+        options={[
+          { name: 'keep:0', label: 'First' },
+          { name: 'keep:1', label: 'Second' },
+        ]}
+      />
+    );
+    expect(inForm(kept, [{ field: 'kept.1', message: 'that item is no longer on the checklist' }])).toContain('data-invalid=""');
+    expect(inForm(group)).not.toContain('data-invalid');
+    expect(inForm(group)).toMatch(/^<fieldset data-issue-for="components" aria-describedby="group-components-hint"/);
+  });
+
+  it('takes the refusal of a box the route names by its own key, and an itemized list names its boxes by the legend', () => {
+    const confirm = (itemized: boolean) => (
+      <CheckboxGroup
+        legend="Confirm each item before you attest"
+        issueKey="confirm"
+        itemized={itemized}
+        options={[
+          { name: 'confirm_coverage', label: 'Every line in the period was read.', required: true },
+          { name: 'confirm_gaps', label: 'Each gap is listed with its reason.', required: true },
+        ]}
+      />
+    );
+    const html = inForm(confirm(true), [{ field: 'confirm_gaps', message: 'confirm this item' }]);
+    expect(html).toMatch(/^<fieldset data-issue-for="confirm confirm_coverage confirm_gaps" data-invalid="" aria-describedby="group-confirm-error"/);
+    expect(textOf(html, 'group-confirm-error')).toBe('confirm this item');
+    // The summary reads data-error-name before a box's label: a sentence is no name.
+    expect(attribute(html, 'group-confirm-1', 'data-error-name')).toBe('Confirm each item before you attest');
+    // Independent boxes keep their own labels as names (the versions page's Medicare adjustments).
+    expect(attribute(inForm(confirm(false), [{ field: 'confirm_gaps', message: 'confirm this item' }]), 'group-confirm-1', 'data-error-name')).toBeNull();
+  });
+});
+
+describe('PasswordField (FRM-07)', () => {
+  const field = (
+    <PasswordField
+      label="New password"
+      name="password"
+      showName=" new password"
+      autoComplete="new-password"
+      required
+      hint="At least 12 characters, with a lowercase letter, an uppercase letter, a digit and a symbol."
+    />
+  );
+
+  it('is a secret password field with no spelling service, described by its hint alone before any refusal', () => {
+    const html = inForm(field);
+    for (const [name, value] of [
+      ['type', 'password'],
+      ['data-secret', ''],
+      ['spellcheck', 'false'],
+      ['autocorrect', 'off'],
+      ['autocapitalize', 'none'],
+      ['autocomplete', 'new-password'],
+      ['aria-describedby', 'field-password-hint'],
+    ] as const) {
+      expect(attribute(html, 'field-password', name), name).toBe(value);
+    }
+  });
+
+  it('holds its type, its secret mark and the spelling service off, whatever a caller passes', () => {
+    // A caller cannot write them: the props type leaves them out (and the ref the submit-time hide needs).
+    expectTypeOf<ComponentProps<typeof PasswordField>>().not.toHaveProperty('type');
+    expectTypeOf<ComponentProps<typeof PasswordField>>().not.toHaveProperty('spellCheck');
+    expectTypeOf<ComponentProps<typeof PasswordField>>().not.toHaveProperty('autoCorrect');
+    expectTypeOf<ComponentProps<typeof PasswordField>>().not.toHaveProperty('autoCapitalize');
+    expectTypeOf<ComponentProps<typeof PasswordField>>().not.toHaveProperty('ref');
+    // Nor does a cast past the type undo them: the component writes them after the caller's props.
+    const forced = { type: 'text', 'data-secret': undefined, spellCheck: true, autoCorrect: 'on', autoCapitalize: 'sentences' } as object;
+    const html = inForm(<PasswordField label="New password" name="password" showName=" new password" autoComplete="new-password" {...forced} />);
+    for (const [name, value] of [
+      ['type', 'password'],
+      ['data-secret', ''],
+      ['spellcheck', 'false'],
+      ['autocorrect', 'off'],
+      ['autocapitalize', 'none'],
+    ] as const) {
+      expect(attribute(html, 'field-password', name), name).toBe(value);
+    }
+  });
+
+  it('renders Show hidden until mounted, named by its words and never an aria-label', () => {
+    const html = inForm(field);
+    expect(html).toMatch(/<button [^>]*type="button" aria-pressed="false" aria-controls="field-password" hidden="">Show<span class="sr-only"> new password<\/span><\/button>/);
+    expect(html).not.toContain('aria-label');
+  });
+
+  it('after a refusal, is described by its error, then the emptied note, then its hint', () => {
+    const html = inForm(field, [{ field: 'password', message: 'it still needs an uppercase letter, a digit and a symbol' }]);
+    expect(attribute(html, 'field-password', 'aria-describedby')).toBe('field-password-error field-password-emptied field-password-hint');
+    expect(html).toContain('<p id="field-password-emptied" data-slot="emptied-note" class="text-sm text-muted-foreground">Emptied for your security: type it again.</p>');
+    // Where no press can succeed, the note asks for nothing.
+    const final = inForm(field, [], true, true);
+    expect(final).toContain('<p id="field-password-emptied" data-slot="emptied-note" class="text-sm text-muted-foreground">Emptied for your security.</p>');
+  });
+
+  it('asks for nothing under a locked account or an expired invitation, as the post without JavaScript renders them; any other refusal asks again', () => {
+    const note = (state: FormState) => textOf(renderToStaticMarkup(<FormIssues state={state}>{field}</FormIssues>), 'field-password-emptied');
+    expect(note({ error: 'This account is locked after ten failed attempts. A platform administrator can unlock it.', locked: true })).toBe('Emptied for your security.');
+    // Refused before any password is checked: the right one would be refused too (lib/routes/sign-in.ts).
+    expect(note({ error: 'This invitation has expired. Ask your organization’s administrator to send it again.', final: true })).toBe('Emptied for your security.');
+    expect(note({ error: 'Sign-in could not continue. Start again.', final: true })).toBe('Emptied for your security.');
+    expect(note({ error: 'Too many attempts in a short time. Wait 15 minutes and try again.' })).toBe('Emptied for your security: type it again.');
+    expect(note({ error: 'That did not match. Check the email, the password or the code, and try again.' })).toBe('Emptied for your security: type it again.');
+  });
+});
+
+describe('FieldError and PendingStatus', () => {
+  it('renders no error line without a message', () => {
+    expect(renderToStaticMarkup(<FieldError id="field-zip" error={undefined} />)).toBe('');
+  });
+
+  it('is a polite status from the first render, empty until pending', () => {
+    expect(renderToStaticMarkup(<PendingStatus pending={false} />)).toBe('<p role="status" class="text-sm text-muted-foreground" data-slot="pending-status"></p>');
+    expect(renderToStaticMarkup(<PendingStatus pending />)).toContain('>Working…</p>');
+  });
+});
+
+describe('RefusalSummary as the server renders it (FRM-04, FRM-06: the post without JavaScript)', () => {
+  const summary = (state: RefusalSummaryProps['state'], fromBrowser = false) => renderToStaticMarkup(<RefusalSummary state={state} fromBrowser={fromBrowser} submit="Open ticket" formRef={{ current: null }} />);
+
+  it('renders nothing without a refusal', () => {
+    expect(summary({})).toBe('');
+  });
+
+  it('is first-in-form markup: focusable, on a line of its own, with each message alone and never a key', () => {
+    const html = summary({ error: 'Fix the fields listed here, then try again.', invalid: true, issues: [{ field: 'organizationName', message: 'this form takes no patient information' }, { field: 'input', message: 'one of the two is needed' }] });
+    expect(html).toMatch(/^<div data-slot="refusal-summary" role="alert" class="[^"]*col-span-full basis-full w-full[^"]*" data-state="error" tabindex="-1">/);
+    expect(html).toContain('<div data-slot="alert-title" class="font-medium tracking-tight">Not done</div>');
+    // Before the page is read, the lead counts the issues whose key could be a field: one here.
+    expect(html).toContain('<p>Fix the field listed here, then try again.</p>');
+    expect(html).toContain('>This form takes no patient information</li>');
+    expect(html).toContain('>One of the two is needed</li>');
+    expect(html).not.toContain('organizationName');
+    expect(html).not.toContain('<a ');
+  });
+
+  it('says a page out of date was not saved, and invites a press again only after the person’s own press', () => {
+    // The server's words end in a reload, for a form that does not read the page again (next.ts); the summary writes its own from the flag.
+    const stale = { error: 'This page was out of date, so nothing was saved. Reload the page and try again.', stale: true };
+    expect(summary(stale)).toContain('<p>This page was out of date, so nothing was saved. Check the form, then send it again if you still mean to.</p>');
+    expect(summary(stale, true)).toContain('<p>This page was out of date, so nothing was saved. It is up to date now: press “Open ticket” again.</p>');
+    expect(summary(stale, true)).not.toContain('Reload');
+  });
+
+  it('draws a key used before as the neutral notice, an earlier press having saved, and every refusal that did nothing in the failure colour; each an alert the focus can reach', () => {
+    const duplicate = summary({ error: 'This form was already sent, so nothing new was saved. Reload the page to see the result.', duplicate: true });
+    expect(duplicate).toMatch(/^<div data-slot="refusal-summary" role="alert" class="[^"]*\btext-card-foreground\b[^"]*" data-state="duplicate" tabindex="-1">/);
+    expect(duplicate).not.toContain('text-destructive');
+    expect(duplicate).toContain('>Already sent</div>');
+    const failures: readonly FormState[] = [{ error: 'Not available to your role.' }, { error: 'Ten failed attempts locked this account.', locked: true }, { unconfirmed: true, seq: 1 }];
+    for (const state of failures) {
+      expect(summary(state)).toMatch(/^<div data-slot="refusal-summary" role="alert" class="[^"]*\btext-destructive\b[^"]*" data-state="[a-z]+" tabindex="-1">/);
+    }
+  });
+
+  it('names a locked account and an unconfirmed save in its title and state', () => {
+    expect(summary({ error: 'Ten failed attempts locked this account.', locked: true })).toMatch(/data-state="locked"[^>]*>.*>Account locked<\/div>/);
+    const unconfirmed = summary({ unconfirmed: true, seq: 2 }, true);
+    expect(unconfirmed).toContain('data-state="unconfirmed"');
+    expect(unconfirmed).toContain('>Not confirmed</div>');
+    expect(unconfirmed).toContain('then press “Open ticket” again.</p>');
+  });
+});
