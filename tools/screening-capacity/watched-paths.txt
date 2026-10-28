@@ -93,6 +93,7 @@ apps/web/src/lib/routes/onboarding.ts
 apps/web/src/lib/routes/schemas.ts
 apps/web/src/lib/routes/sign-in.ts
 apps/web/src/lib/routes/support.ts
+apps/web/src/lib/screening/address.ts
 apps/web/src/lib/screening/content-span.ts
 apps/web/src/lib/screening/labels.ts
 apps/web/src/lib/screening/messages.ts
@@ -103,6 +104,9 @@ apps/web/src/lib/screening/retention.ts
 apps/web/src/lib/screening/routes.ts
 apps/web/src/lib/screening/sent.ts
 apps/web/src/lib/screening/template.ts
+apps/web/src/lib/screening/tlds.ts
+apps/web/src/lib/screening/validation-credentials.ts
+apps/web/src/lib/screening/validation.ts
 apps/web/src/lib/server/config.ts
 apps/web/src/lib/server/services.ts
 apps/web/src/lib/uploads/limits.ts
@@ -142,7 +146,9 @@ apps/worker/src/jobs/public.ts
 apps/worker/src/jobs/registry.ts
 apps/worker/src/jobs/runs.ts
 apps/worker/src/jobs/screening.ts
+apps/worker/src/mail/events.ts
 apps/worker/src/mail/mail.ts
+apps/worker/src/mail/streams.ts
 apps/worker/src/mail/template.ts
 apps/worker/src/main.ts
 apps/worker/src/monitor/chain.ts
@@ -173,6 +179,7 @@ apps/worker/src/parse/loader.ts
 apps/worker/src/parse/plan.ts
 apps/worker/src/parse/report.ts
 apps/worker/src/platform/audit-copy.ts
+apps/worker/src/platform/mail-events.ts
 apps/worker/src/platform/monitoring-schedule.ts
 apps/worker/src/platform/pg-dump-restorer.ts
 apps/worker/src/platform/rds-restorer.ts
@@ -297,6 +304,7 @@ packages/db/src/crypto/key-provider.ts
 packages/db/src/crypto/kms-key-provider.ts
 packages/db/src/crypto/practice-keys.ts
 packages/db/src/index.ts
+packages/db/src/mail-address.ts
 packages/db/src/migrate.ts
 packages/db/src/retention.ts
 packages/db/src/roles.ts

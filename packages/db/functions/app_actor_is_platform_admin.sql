@@ -15,6 +15,8 @@
 -- Called by policy: support_grant.support_grant_created_by_platform_administrator
 -- Called by policy: support_grant.support_grant_platform_administrators_read
 -- Called by policy: support_grant.support_grant_read_by_practice_and_platform
+-- Called by policy: support_grant_notice.support_grant_notice_read_by_practice_and_platform
+-- Called by policy: support_grant_notice_recipient.support_grant_notice_recipient_read_by_practice_and_platform
 -- Called by policy: user.user_invited_by_administrators
 -- Called by policy: user.user_self_and_administrators
 -- Called by policy: user.user_self_and_platform_admin_update

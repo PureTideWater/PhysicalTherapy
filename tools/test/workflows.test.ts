@@ -1799,8 +1799,8 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
     // Each archive's config digest, read from its bytes, is the one buildx reports for its build.
     const web = stepNamed(steps, 'The web archive holds the image buildx built');
     expect(web.if).toBe("${{ !cancelled() && steps.web.outcome == 'success' }}");
-    expect(web.env).toEqual({ METADATA: '${{ steps.web.outputs.metadata }}' });
-    expect(web.run).toContain(`built="$(jq -r '."containerimage.config.digest" // empty' <<< "$METADATA")"`);
+    expect(web.env).toEqual({ BUILT: "${{ fromJSON(steps.web.outputs.metadata || '{}')['containerimage.config.digest'] }}" });
+    expect(web.run).toContain('built="$BUILT"');
     expect(web.run).toContain(`read="$(node tools/screening-capacity/image-id.ts "$RUNNER_TEMP/image/web.tar" | jq -r '.config')"`);
     expect(web.run).toContain('if [ -z "$built" ] || [ "$read" != "$built" ]; then');
     // The worker's too, then it loads as the archive's top-level descriptor on the containerd store (its config digest
@@ -1808,7 +1808,8 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
     const worker = stepNamed(steps, 'The worker archive holds the image buildx built, and loads as itself');
     expect(worker.id).toBe('worker-identity');
     expect(worker.if).toBe("${{ !cancelled() && steps.worker.outcome == 'success' }}");
-    expect(worker.env).toEqual({ METADATA: '${{ steps.worker.outputs.metadata }}' });
+    expect(worker.env).toEqual({ BUILT: "${{ fromJSON(steps.worker.outputs.metadata || '{}')['containerimage.config.digest'] }}" });
+    expect(worker.run).toContain('built="$BUILT"');
     const script = worker.run ?? '';
     expect(script).toContain('identity="$(node tools/screening-capacity/image-id.ts "$RUNNER_TEMP/image/worker.tar")"');
     expect(script).toContain('docker load --input "$RUNNER_TEMP/image/worker.tar"');

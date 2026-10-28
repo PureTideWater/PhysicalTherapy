@@ -1,6 +1,7 @@
 import { type EnvironmentSettings, environmentSettings } from '../../../infra/lib/environments';
 import { MIB, type Runner, cpuLayout, postgresLimit, productionLimits } from '../limits';
 import {
+  ADDRESS_CHECK_CHARGE_MS,
   ALL_SCENARIOS,
   type AppliedLimits,
   type ExpectedLimits,
@@ -126,6 +127,8 @@ export function uploadBase(overrides: Partial<UploadMeasure>): UploadMeasure {
     waitReason: null,
     queuePriority: 0,
     logged: null,
+    // The web's measured address checks: the stand-ins' 2-second delay and a few milliseconds of the web's own (G1).
+    addressCheckMs: ADDRESS_CHECK_CHARGE_MS + 13,
     ...overrides,
   };
 }
@@ -218,6 +221,8 @@ export function measured(overrides: Partial<Measurements> = {}): Measurements {
     only: [],
     notStarted: [],
     aborted: null,
+    // The screening stream seeded ready, no run held (PR 6b-4); each upload's address checks are its own (uploadBase).
+    mail: { screeningReady: true, heldLines: 0 },
     ...overrides,
   };
 }

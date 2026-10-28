@@ -2,7 +2,7 @@
 -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
 
 -- operator_due_support_notices(integer)
--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 26a8da73c49fe312
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 80da21d02daeadaa
 -- Trigger function of: (none)
 -- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.operator_due_support_notices(at_most integer)
@@ -13,7 +13,8 @@ CREATE OR REPLACE FUNCTION public.operator_due_support_notices(at_most integer)
 AS $function$
   (SELECT s.id, s.practice_id, 'support_grant_opened'
      FROM support_grant s
-    WHERE NOT EXISTS (
+    WHERE NOT EXISTS (SELECT 1 FROM support_grant_notice n WHERE n.support_grant_id = s.id AND n.notice = 'support_grant_opened')
+      AND NOT EXISTS (
       SELECT 1 FROM audit_event e
        WHERE e.action = 'notice_sent' AND e.actor_kind = 'system' AND e.object_type = 'support_grant' AND e.object_id = s.id AND e.purpose = 'support_grant_opened'
     )

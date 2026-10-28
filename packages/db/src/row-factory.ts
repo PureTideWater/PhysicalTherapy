@@ -189,6 +189,8 @@ const FIXED_VALUES: Readonly<Record<string, () => unknown>> = {
   'remittance.bpr_method': () => 'ACH',
   'remittance.payee_id_qualifier': () => 'XX',
   'claim.filing_indicator': () => 'CI',
+  // A break-glass notice handed to one administrator (migration 20261107090000; the recipient row the factory builds).
+  'support_grant_notice.recipients': () => 1,
 };
 
 /**
@@ -510,9 +512,16 @@ export class RowFactory {
       if (constraint.kind === 'p') {
         table.primaryKey.push(...constraint.columns);
       } else if (constraint.kind === 'f') {
-        const [column] = constraint.columns;
-        const [refColumn] = constraint.ref_columns;
-        if (constraint.columns.length !== 1 || column === undefined || refColumn === undefined || constraint.ref_table === null) {
+        // A key that also names the practice on both sides (a notice's recipient and its notice, migration 20261107090000)
+        // is its other column's: the row it references is built in the same world, so its practice is the row's.
+        const paired =
+          constraint.columns.length === 2 &&
+          constraint.columns.includes('practice_id') &&
+          constraint.columns.every((name, index) => (name === 'practice_id') === (constraint.ref_columns[index] === 'practice_id'));
+        const kept = paired ? constraint.columns.findIndex((name) => name !== 'practice_id') : 0;
+        const column = constraint.columns[kept];
+        const refColumn = constraint.ref_columns[kept];
+        if ((constraint.columns.length !== 1 && !paired) || column === undefined || refColumn === undefined || constraint.ref_table === null) {
           throw new RowFactoryError(`${constraint.table_name}: the factory handles single-column foreign keys only (${constraint.definition})`);
         }
         table.foreignKeys.set(column, { refTable: constraint.ref_table, refColumn });

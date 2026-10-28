@@ -1,0 +1,22 @@
+{
+  "case": "JOB-05",
+  "module": "JOB",
+  "title": "A mail event delivered twice, late or out of order (audit #76)",
+  "assertion": "The platform's mail_events job records each SES event once per message and event, in any order (a bounce before its send makes the message's row with SES's own send time; a delay after a delivery and a delivery after a complaint change nothing), and deletes it from the queue only after its record commits; an unreadable event is left on the queue and reaches the dead-letter queue, which alarms, as does a queue whose oldest event is 15 minutes old; the queue admits only the stack's two rules and is encrypted with the environment's key; each stream is probed at SES's simulator alone, at once after a resume, daily, and hourly while missed, never while paused, unconfirmed or before the identities are verified; a stream whose probes are not back logs MAIL_PROBE_MISSED on every run until both are, 26 hours after the older of its proofs since the last resume or an hour after the first probe sent since then, however often it goes again; and each probe event recorded is logged by its message ID and codes, no address",
+  "synthetic": true,
+  "completesIn": 6,
+  "assertedBy": [
+    "apps/worker/src/platform/mail-events.db.test.ts",
+    "apps/worker/src/mail/events.test.ts",
+    "packages/db/src/mail.db.test.ts",
+    "infra/test/mail-streams.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The events are synthetic EventBridge envelopes and simulator-shaped files the tests write; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

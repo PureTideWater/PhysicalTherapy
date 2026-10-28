@@ -9,6 +9,7 @@ import { PracticeSettingsError, type PracticeSettingsForm, practiceSettingsInput
 import { platformRoute } from '../http/invoke';
 import { InputError, type MutationResult, NotFoundError } from '../http/route';
 import { localityReading, releaseInForce } from '../pricing/location';
+import type { NoticeDelivery } from './practice';
 import { ZIP_CODE_FORMAT, type ZipCode, parseZipCode } from '../zip';
 import { opaqueId, optionalText, requiredText } from './schemas';
 
@@ -655,9 +656,10 @@ export interface ConsoleSupportGrant {
   readonly reason: string;
   readonly createdAt: Date;
   readonly expiresAt: Date;
-  readonly notifiedAt: Date | null;
   readonly reads: number;
   readonly open: boolean;
+  /** The opening and closing notices' delivery to the practice's administrators (docs/adr/0065, D10). */
+  readonly notices: { readonly opening: NoticeDelivery; readonly closing: NoticeDelivery };
 }
 
 export const supportPage = platformRoute({
@@ -676,10 +678,25 @@ export const supportPage = platformRoute({
       reason: string;
       created_at: Date;
       expires_at: Date;
-      notified_at: Date | null;
       reads: string;
       open: boolean;
-    }>("SELECT *, (now() < expires_at AND now() < created_at + interval '4 hours') AS open FROM console_support_grants() LIMIT 100");
+      opened_recipients: number | null;
+      opened_delivered: number;
+      opened_undelivered: number;
+      opened_pending: number;
+      opened_sent_at: Date | null;
+      closed_recipients: number | null;
+      closed_delivered: number;
+      closed_undelivered: number;
+      closed_pending: number;
+      closed_sent_at: Date | null;
+    }>(
+      `SELECT support_grant_id, practice_id, user_id, ticket, reason, created_at, expires_at, reads,
+              opened_recipients, opened_delivered, opened_undelivered, opened_pending, opened_sent_at,
+              closed_recipients, closed_delivered, closed_undelivered, closed_pending, closed_sent_at,
+              (now() < expires_at AND now() < created_at + interval '4 hours') AS open
+         FROM console_support_grants() LIMIT 100`,
+    );
     const practices = await scope.client.query<{ practice_id: string; name: string; status: string }>('SELECT practice_id, name, status FROM console_practices(NULL)');
     // Who a support grant can go to: support engineers, contract specialists and reimbursement reviewers (support_grant_role()).
     const engineers = await scope.client.query<{ id: string; email: string; role: 'support' | 'contract_specialist' | 'reviewer' }>(
@@ -705,9 +722,12 @@ export const supportPage = platformRoute({
           reason: row.reason,
           createdAt: row.created_at,
           expiresAt: row.expires_at,
-          notifiedAt: row.notified_at,
           reads: Number.parseInt(row.reads, 10),
           open: row.open,
+          notices: {
+            opening: { recipients: row.opened_recipients, delivered: row.opened_delivered, undelivered: row.opened_undelivered, pending: row.opened_pending, sentAt: row.opened_sent_at },
+            closing: { recipients: row.closed_recipients, delivered: row.closed_delivered, undelivered: row.closed_undelivered, pending: row.closed_pending, sentAt: row.closed_sent_at },
+          },
         }),
       ),
       practices: practices.rows.filter((row) => row.status === 'active').map((row) => ({ id: row.practice_id, name: row.name })),

@@ -4,7 +4,9 @@
   [0004](0004-job-singleton-keys.md) and [0019](0019-close-the-standing-access-paths-and-run-platform-jobs-as-an-operator-role.md)
   (pg-boss's login, the deploy job's logins, where the platform jobs run); amended by PR 6b-3 (below: the screening
   consumer's service, role, login, egress, alarms and launch value, the release's images, and the web's size by the
-  founder's ruling of 2026-10-22)
+  founder's ruling of 2026-10-22); amended by PR 6b-4 (below: the stack's SES streams and identities in two phases, the
+  mail-events queue and its two rules, the SQS endpoint, the narrowed SES grants and the mail alarms;
+  [0065](0065-send-mail-in-three-ses-streams-record-each-messages-delivery-send-notices-from-an-outbox-and-pause-the-screening-stream-alone.md))
 - **Date:** 2026-10-16
 - **Deciders:** founder (engineering)
 - **PRD sections:** 15 (Stack: compute, web, files, identity, email, observability, infrastructure as code; Environments;
@@ -321,3 +323,87 @@ deployed, likewise +$9.01. Every price is to be read again on AWS's pages before
 **Revisit when** staging measures the runner-to-Fargate factor (decision 15), arm64 images exist (#136), the screening's
 own sending identity arrives (PR 6b-4), or a zone's loss costing about 3 minutes of screening is no longer acceptable
 (a second task, about $72 a month more).
+
+## Amendment (PR 6b-4, 2026-10-23): the mail streams
+
+Audit #76, built under the founder's rulings of 2026-10-21 (Q1's mail costs, Q9's cut-off, Q12's sender);
+docs/adr/0065 holds the decision and the database's side, docs/runbooks/deliverability.md the procedures. Until now the
+stack sent through one SES identity verified by hand, with no configuration set, no event and no alarm.
+
+**SES owned by the stack** (`infra/lib/mail.ts`, `constructs/mail-streams.ts`):
+
+- three configuration sets, `tp-<env>-transactional`, `tp-<env>-notices` and `tp-<env>-screening`, each with reputation
+  metrics, TLS required, no tracking options, VDM's engagement metrics off and Auto Validation off; transactional and
+  notices suppress on bounces and complaints, and the screening set suppresses nothing (`SuppressedReasons: []`); no
+  set carries `SendingEnabled`, so a deploy never re-enables a paused set (the platform keeps the screening set in step
+  with its stream);
+- two domain identities, MailFromAddress's domain and `screening.<that domain>` (the screening's sender is
+  `results@screening.<domain>`, derived, not a parameter), each with Easy DKIM at 2,048 bits, MAIL FROM `bounce.<it>`
+  falling back to SES's own, and its default set;
+- **two phases** (D2): the parameter `MailIdentitiesVerified` (`false` by default, or `true`) and its condition
+  `MailIdentitiesReady`. Phase 1 creates everything and leaves Cognito on its own sender, since Cognito refuses an
+  unverified identity; the stack outputs each identity's DNS records (`Mail…` and `ScreeningMail…`: three DKIM CNAMEs,
+  the MAIL FROM MX and SPF, the recommended DMARC). Phase 2, once both read verified, sends Cognito's mail through the
+  transactional set (ADR 0055's amendment) and gives the platform `MAIL_IDENTITIES_VERIFIED=true`, which starts the
+  probes. Rolling back to phase 1 loses nothing.
+
+**The event path.** Each set's events (send, reject, bounce, complaint, delivery, delivery delay, rendering failure; no
+open, click or subscription) go to the default event bus. Rule `tp-<env>-mail-events` takes the three sets' events and
+rule `tp-<env>-mail-account-alarms` the two account warnings' ALARM state changes, each into the queue
+`tp-<env>-mail-events` with its own dead-letter target and a retry of 24 hours. The queue is encrypted under the
+environment key, keeps a message 4 days with a 60-second visibility, and moves it after five reads to
+`tp-<env>-mail-events-dlq` (14 days). Both queues' policies admit `sqs:SendMessage` from EventBridge only for the two
+rules' ARNs (`MailEventRulesOnly`) and refuse requests without TLS; the key admits EventBridge only for them
+(`MailEventRulesToEncryptedQueues`), and the rules' ARNs are built from their names so the key does not wait on the
+rules, which wait on the queue. No EventBridge archive is created.
+
+**The SQS endpoint** (`constructs/network.ts`): an interface endpoint joins the list, with a policy
+(`ThisAccountsQueuesOnly`) admitting only receive, delete, visibility and attribute reads on this account's queues by
+this account's principals, so a compromised task cannot use it to reach another account's queue. Queue traffic, which
+carries recipient addresses, stays off the internet path (the founder's Q1 (a); a NAT route would cost about $0.01 a
+month).
+
+**The grants, narrowed.** No SES statement names `identity/*` any more:
+
+| Role | Statement | What |
+| --- | --- | --- |
+| Application (web, worker) | `DigestEmail` | `ses:SendEmail` on MailFromAddress's identity and the transactional set, from MailFromAddress |
+| Application | `NoAddressValidationHere`, `NoRoleOfThisAccount` | refused `ses:GetEmailAddressInsights`, and `sts:AssumeRole` on any role of the environment's account (ADR 0065, review S3) |
+| Application | `AssumeAddressValidationRole` (its own policy, only once `MailValidationRoleArn` names a role) | `sts:AssumeRole` on that role, in the environment's address-validation account |
+| Address validation (`tp-<env>-address-validation`, its own account) | `ScreeningAddressValidation` | `ses:GetEmailAddressInsights` (no resource-level permission exists), assumable by the application role alone |
+| Operator (platform) | `NoticeEmail` | `ses:SendEmail` on MailFromAddress's identity and the notices set, from MailFromAddress |
+| Operator | `MailProbes` | `ses:SendEmail` on both identities and the three sets, only to SES's two simulator addresses, which the request must name (`ses:Recipients` present) |
+| Operator | `MailReconcileScreeningSet` | `ses:GetConfigurationSet` and `ses:PutConfigurationSetSendingOptions` on the screening set alone, so the cut-off can pause nothing else |
+| Operator | `MailIdentitiesRead`, `MailAccountRead` | the two identities' state, and `ses:GetAccount` (SES's enforcement status) |
+| Operator | `MailEventsQueue`, `MailEventsDecryptThroughSqs` | receive, delete and visibility on the mail-events queue, and the key through SQS only |
+| Screening | `ScreeningResultEmail` | `ses:SendEmail` on the screening identity and set only, from `results@screening.<domain>` (the plan's G4) |
+
+**Alarms** (17, to the operator topic): the account's bounce rate at 2.5% and 4% and complaint rate at 0.05% and 0.08%
+(the two warnings also pause the screening through the second rule), the screening set's bounce rate at 3% and
+complaint rate at 0.08%, the transactional set's bounce rate at 2%, a message in the dead-letter queue, the queue's
+oldest message past 15 minutes, and eight counted from the logs in namespace `TherapyPlatform/Mail`
+(`MAIL_STREAM_PAUSED`, `NOTICE_UNDELIVERED`, `NOTICE_UNDELIVERABLE`, `INVITATION_UNDELIVERED` and `MAIL_PROBE_MISSED`
+from the platform's log in five minutes, `MAIL_PROBE_UNSENT` from it in each of three five-minute periods,
+`MAIL_VALIDATION_REFUSED` from the web's in five minutes and `MAIL_VALIDATION_CAP_REACHED` from it in a day). No metric
+has an address as a dimension.
+
+**Settings** (`constructs/compute.ts`): the web gains `MAIL_VALIDATION=ses` and `MAIL_VALIDATION_DAILY_CAP` (1,000 in
+production, 50 elsewhere; the founder's Q1 (g)); the worker `MAIL_STREAM_PREFIX`; the platform `MAIL_STREAM_PREFIX`,
+`SCREENING_MAIL_FROM`, `SCREENING_REPLY_TO` (the support address), `MAIL_EVENTS_QUEUE_URL` and
+`MAIL_IDENTITIES_VERIFIED`; the screening consumer `MAIL_STREAM_PREFIX`, `SCREENING_MAIL_FROM` and
+`SCREENING_REPLY_TO`.
+
+**The database's log** (`constructs/database.ts`): the parameter group sets `log_parameter_max_length` and
+`log_parameter_max_length_on_error` to 0, so no statement's bind values, an address passed to a definer function among
+them, reach the log (open item O11, now held by the template rather than checked by hand).
+
+**Cost** (Q1; prices read from search results, to be read again on AWS's pages before the first deploy, O12): about $20
+a month per environment, the SQS endpoint $14.60 of it (two zones), 17 alarms $1.70, eight log metrics $2.40, the probes
+and requests well under $1, and the address-validation account's key $1 (ADR 0065); the founder's Q1 figure was about
+$18, and the review's fix round added about $1.80 (the unsent probe's and the refused validation's alarms and metrics,
+$0.80, and that key, $1). SES at Essentials' $0.16 per 1,000 messages; SES's validation of a screening address at $0.01, at most
+1,000 a day in production.
+
+**Revisit when** staging's phase 2 shows that Cognito needs a sending-authorization policy on the stack's identity, or
+that the account's reputation metrics do not publish at launch volume (O11); SES offers tenants with configurable
+thresholds at a known price; or the region's prices change (O12).

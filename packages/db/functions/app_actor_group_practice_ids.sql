@@ -6,6 +6,8 @@
 -- Trigger function of: (none)
 -- Called by policy: agreement.agreement_read_by_parties
 -- Called by policy: support_grant.support_grant_read_by_practice_and_platform
+-- Called by policy: support_grant_notice.support_grant_notice_read_by_practice_and_platform
+-- Called by policy: support_grant_notice_recipient.support_grant_notice_recipient_read_by_practice_and_platform
 CREATE OR REPLACE FUNCTION public.app_actor_group_practice_ids()
  RETURNS uuid[]
  LANGUAGE sql

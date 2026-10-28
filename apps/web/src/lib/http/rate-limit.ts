@@ -15,9 +15,9 @@ import type { Sealer } from '../auth/seal';
  * them, low enough that guessing and scraping stop within a window.
  */
 
-export type RateBucket = 'sign_in' | 'mfa' | 'mutation' | 'upload' | 'export' | 'public_form' | 'webhook' | 'screening' | 'screening_signal';
+export type RateBucket = 'sign_in' | 'mfa' | 'mutation' | 'upload' | 'export' | 'public_form' | 'webhook' | 'screening' | 'screening_signal' | 'screening_validation';
 
-export const RATE_BUCKETS: readonly RateBucket[] = ['sign_in', 'mfa', 'mutation', 'upload', 'export', 'public_form', 'webhook', 'screening', 'screening_signal'];
+export const RATE_BUCKETS: readonly RateBucket[] = ['sign_in', 'mfa', 'mutation', 'upload', 'export', 'public_form', 'webhook', 'screening', 'screening_signal', 'screening_validation'];
 
 export interface Limit {
   readonly hits: number;
@@ -31,6 +31,8 @@ export interface BucketLimits {
   readonly address?: Limit;
   /** Per account a sign-in step names (its email, or its pending step); for a screening, its email's domain or address. */
   readonly account?: Limit;
+  /** One count for the whole service, whoever asks (the day's address validations; no route takes it). */
+  readonly global?: Limit;
 }
 
 export const RATE_LIMITS: Readonly<Record<RateBucket, BucketLimits>> = {
@@ -51,6 +53,10 @@ export const RATE_LIMITS: Readonly<Record<RateBucket, BucketLimits>> = {
   // The result page's opened signal (docs/adr/0062): one a page view, so a person's own views never meet it, and a
   // script sending it in a loop stops within the hour.
   screening_signal: { address: { hits: 120, windowSeconds: 3600 } },
+  // The screening's address validations (docs/adr/0065, D9; Q1 (g)): one count a UTC day for the whole service, $0.01 a
+  // validation, at most 1,000 in production and 50 in staging. The server reads its own cap (MAIL_VALIDATION_DAILY_CAP)
+  // and takes it in src/lib/screening/validation.ts; this is production's. Past it, the address is not validated.
+  screening_validation: { global: { hits: 1_000, windowSeconds: 86_400 } },
 };
 
 export interface RateSubjects {
@@ -73,7 +79,7 @@ export function rateSubjectHash(sealer: Sealer, bucket: RateBucket, kind: keyof 
 export async function takeRateLimit(pool: ScopePool<ScopeClient>, sealer: Sealer, bucket: RateBucket, subjects: RateSubjects): Promise<RateVerdict> {
   const limits = RATE_LIMITS[bucket];
   const checks: { readonly subject: string; readonly limit: Limit }[] = [];
-  const values: Readonly<Record<keyof BucketLimits, string | null | undefined>> = { user: subjects.userId, address: subjects.address, account: subjects.account };
+  const values: Readonly<Record<'user' | 'address' | 'account', string | null | undefined>> = { user: subjects.userId, address: subjects.address, account: subjects.account };
   for (const kind of ['user', 'address', 'account'] as const) {
     const limit = limits[kind];
     const value = values[kind];

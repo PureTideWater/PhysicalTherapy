@@ -8,7 +8,8 @@ import type { NotificationView } from '../../lib/monitoring/queries';
 /**
  * How a notification reads (counts and totals only; docs/adr/0039): a run the monitoring chain priced
  * and triaged links to its run, a month's digest to its page, a recoupment to its case and its ledger, a follow-up that has
- * come to its case's submissions. Stage labels as
+ * come to its case's submissions, a support-access notice that did not reach every administrator to the grant (audit #76;
+ * docs/adr/0065, D10: the fallback channel the practice still sees). Stage labels as
  * everywhere: validated is contract-supported, flagged is investigatory and never a dollar figure.
  */
 
@@ -43,6 +44,19 @@ export function NotificationText({ practiceId, notification }: { readonly practi
           A follow-up is due
         </Link>
         : the payer has not answered a submission of this case in {count(counts, 'days_waiting')} days. Follow up through the payer&apos;s channel and record what it says.
+      </span>
+    );
+  }
+  if (notification.kind === 'support_notice_undelivered') {
+    // Its counts and totals are empty: the grant's page says how many administrators the notice reached. A right address
+    // SES holds back with the account's suppression list (an earlier bounce or spam report) is released by PaidWhole's
+    // support (docs/runbooks/deliverability.md, 3.3; the review of 2026-10-27).
+    return (
+      <span>
+        <Link className="font-medium underline" href={`/p/${practiceId}/support-access/${notification.supportGrantId ?? ''}`}>
+          A support-access {notification.notice === 'support_grant_closed' ? 'closing' : 'opening'} notice did not reach every administrator
+        </Link>
+        . Check your administrators&apos; email addresses; if an address is right, ask PaidWhole support to release it.
       </span>
     );
   }

@@ -53,13 +53,25 @@ test('makes an internal role use a hardware key, and lets the platform administr
   await other.close();
 });
 
-test('shows an internal role without the permission the permission state', async ({ page }) => {
+test('shows an internal role without the permission the permission state', async ({ page, browser }) => {
   await registerKeyAndSignIn(page, 'contract-specialist');
   // A contract specialist starts at the specialist queue, which reaches no practice without a grant.
   await expect(page.getByRole('heading', { level: 1, name: 'Specialist queue' })).toBeVisible();
   await page.goto('/console/support');
   await expect(page.getByText('Not available to your role')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Create support grant' })).toHaveCount(0);
+
+  // A retried test's first sign-in, in a fresh browser, finds the key its first attempt registered: the provider asks
+  // for that key, and the key the attempt kept signs in (helpers.ts, registerOrRestoreKeyAndSignIn), so a retry of any
+  // journey that registers a key can run again.
+  const retried = await browser.newContext();
+  try {
+    const again = await retried.newPage();
+    await registerKeyAndSignIn(again, 'contract-specialist');
+    await expect(again.getByRole('heading', { level: 1, name: 'Specialist queue' })).toBeVisible();
+  } finally {
+    await retried.close();
+  }
 });
 
 test('ends support access at four hours (SEC-05)', async ({ page }) => {

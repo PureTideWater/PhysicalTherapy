@@ -2,15 +2,15 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `a5ec7bfafcd5755aa64de38a071c7117bf3c4ddf` on branch `co-001/pr-06b-screening-consumer` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
-- Migrations applied: 44; head `20261106090000_screening_consumer.sql`
-- PostgreSQL 18; schema `public`: 90 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
-- PHI flag: 45 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 33 organization- or user-scoped tables with RLS forced; 8 global tables
-- RLS: 82 tables ENABLE and FORCE row-level security; 0 enable without forcing; 8 have none (the global tables); 168 policies
-- Functions in `public`: 338 (148 SECURITY DEFINER); triggers: 261, none disabled or replica-only; rewrite rules on tables: none
+- Generated at commit `efbc4a9c7ae36b6e0c040f208e73d13da8ca1268` on branch `co-001/pr-06b-mail-streams` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Migrations applied: 45; head `20261107090000_mail_streams.sql`
+- PostgreSQL 18; schema `public`: 98 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
+- PHI flag: 47 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 39 organization- or user-scoped tables with RLS forced; 8 global tables
+- RLS: 90 tables ENABLE and FORCE row-level security; 0 enable without forcing; 8 have none (the global tables); 180 policies
+- Functions in `public`: 376 (169 SECURITY DEFINER); triggers: 273, none disabled or replica-only; rewrite rules on tables: none
 - Default privileges (ALTER DEFAULT PRIVILEGES): none
 - Roles (group roles; login roles are per environment and not listed): `tp_app`, `tp_billing`, `tp_esign`, `tp_job`, `tp_operator`, `tp_owner`, `tp_screening`; every relation is owned by `tp_owner`
-- Divergences from the Data dictionary: 23 to approve, 42 tables and 148 columns not in it (informational); see [Divergences from the Data dictionary](#divergences-from-the-data-dictionary)
+- Divergences from the Data dictionary: 23 to approve, 50 tables and 148 columns not in it (informational); see [Divergences from the Data dictionary](#divergences-from-the-data-dictionary)
 
 ## Contents
 
@@ -47,7 +47,7 @@
 
 | # | Area | Data dictionary section | Tables | PHI (registered) | About |
 | --- | --- | --- | --- | --- | --- |
-| 4 | [Tenancy and access](#area-tenancy) | Tenancy and access | 13 | 4 | Organizations, practices (the tenant) and each practice's pricing location (its billing ZIP and ZIP+4), people, memberships and their roles, grants of practice access to other organizations, agreements, break-glass support grants, sign-in devices and sessions, the persona matrix and the PHI table registry itself. |
+| 4 | [Tenancy and access](#area-tenancy) | Tenancy and access | 15 | 6 | Organizations, practices (the tenant) and each practice's pricing location (its billing ZIP and ZIP+4), people, memberships and their roles, grants of practice access to other organizations, agreements, break-glass support grants and the outbox of their opening and closing notices (one row a notice, one a practice administrator, each with its message's delivery), sign-in devices and sessions, the persona matrix and the PHI table registry itself. |
 | 5 | [Documents and remittances](#area-documents) | Documents and remittances (PHI) | 9 | 9 | Every uploaded file, and the 835 remittance loaded from it: transaction sets, claims, service lines, CAS and PLB adjustments, the minimal patient identity, the parse report, and notes a person writes on a line. |
 | 6 | [Payers, contracts and rates](#area-contracts) | Payers, contracts and rates (PHI-adjacent; confidential) | 8 | 8 | Payers and plans as the remittances name them, the mapping of a plan to an agreement, contracts and their versions, rate records (each pricing term with its page, quote and hash), the contract calendar, and the questions a specialist raises on a version. |
 | 7 | [Global content](#area-content) | Global content (no practice_id; read-only to the application role) | 3 | 0 | Numbered rule releases and their records (fee schedule, adjustments, code lists, dispute windows), and the withdrawal of a release. No practice_id; the application role reads only. |
@@ -55,8 +55,8 @@
 | 9 | [Packets](#area-packets) | Pricing, triage and cases (PHI) | 4 | 4 | The dispute packet, its immutable verified versions (approval and export recorded on the version), the submissions a customer logs and the payer responses captured against them. |
 | 10 | [Ledger](#area-ledger) | Ledger and reconciliation (PHI) | 5 | 5 | The signed, append-only recovery ledger, the matches that pair its evidence, the posting-export and EFT-export rows it matches against, and the ROI statement. |
 | 11 | [Model gateway](#area-models) | Model gateway (PHI references only) | 4 | 2 | Each model call (references and hashes only), evaluation examples, the proposals a person decides, and budget holds taken before a call. |
-| 12 | [Billing and onboarding](#area-billing) | Operations (no PHI by design) | 20 | 0 | Stripe subscriptions, invoices and webhook events, the one-subscription claim, nightly usage counts and the billing standing view; the public audit request, with its attribution and decline reason, user invitations, and terms of use with their acceptances; and the free screening's prospects, uploads, runs and aggregate results, the day's tally of uploads its queue's share and cap count (a keyed subject and a row count, kept until the next UTC day ends), the platform place-of-service split (every practice's default since PR 6b), the counts-only outcome every screening leaves, the frozen summary a converted or consenting practice keeps for 12 months, and the campaign codes the founder lists (no PHI, no practice). |
-| 13 | [Operations](#area-operations) | Operations (no PHI by design) | 15 | 3 | The append-only audit log, job runs, in-app notifications and digests (counts and totals only), feature flags, mutation request keys, rate-limit counters, restore drills, the public status page, support tickets and the receipts of the support inbox, SOC 2 evidence records, and the migration ledger. |
+| 12 | [Billing and onboarding](#area-billing) | Operations (no PHI by design) | 21 | 0 | Stripe subscriptions, invoices and webhook events, the outbox of each invoice's dunning notices (one row a stage and billing owner, with its message's delivery), the one-subscription claim, nightly usage counts and the billing standing view; the public audit request, with its attribution and decline reason, user invitations (with the delivery of their Cognito message), and terms of use with their acceptances; and the free screening's prospects, uploads, runs and aggregate results, the day's tally of uploads its queue's share and cap count (a keyed subject and a row count, kept until the next UTC day ends), the platform place-of-service split (every practice's default since PR 6b), the counts-only outcome every screening leaves, the frozen summary a converted or consenting practice keeps for 12 months, and the campaign codes the founder lists (no PHI, no practice). |
+| 13 | [Operations](#area-operations) | Operations (no PHI by design) | 20 | 3 | The append-only audit log, job runs, in-app notifications and digests (counts and totals only), feature flags, mutation request keys, rate-limit counters, restore drills, the public status page, support tickets and the receipts of the support inbox, the mail streams and each message's delivery by SES's message ID (no address), the screening's refusal list (a keyed hash of an address that bounced or was reported, kept 12 months only to refuse it) and its bounce marks (keyed subjects, 7 days), SOC 2 evidence records, and the migration ledger. |
 
 ## PHI flag and row-level security by table
 
@@ -81,6 +81,7 @@
 | [`contract_question`](#table-contract-question) | Payers, contracts and rates | PHI (registered) | uuid NOT NULL | yes | yes | 2 | 2 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`contract_version`](#table-contract-version) | Payers, contracts and rates | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 4 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`digest`](#table-digest) | Operations | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 3 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
+| [`dunning_notice_recipient`](#table-dunning-notice-recipient) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 1 | - | - | - |
 | [`eft_row`](#table-eft-row) | Ledger | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 3 | SELECT, INSERT(cols) | - | - |
 | [`eval_example`](#table-eval-example) | Model gateway | tenant (nullable practice_id), not registered | uuid NULL | yes | yes | 2 | 2 | SELECT, INSERT(cols) | - | SELECT, INSERT(cols) |
 | [`feature_flag`](#table-feature-flag) | Operations | global (no practice_id, no RLS) | - | no | no | 0 | 1 | SELECT | - | SELECT |
@@ -92,6 +93,9 @@
 | [`ledger_match`](#table-ledger-match) | Ledger | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 3 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`line_note`](#table-line-note) | Documents and remittances | PHI (registered) | uuid NOT NULL | yes | yes | 2 | 2 | SELECT, INSERT(cols) | - | - |
 | [`line_status`](#table-line-status) | Pricing, triage and cases | PHI (registered) | uuid NOT NULL | yes | yes | 2 | 6 | SELECT, INSERT(cols) | - | - |
+| [`mail_recipient_key`](#table-mail-recipient-key) | Operations | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 2 | - | - | - |
+| [`mail_send`](#table-mail-send) | Operations | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 2 | - | - | - |
+| [`mail_stream`](#table-mail-stream) | Operations | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 1 | - | - | - |
 | [`marketing_campaign`](#table-marketing-campaign) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 2 | - | - | - |
 | [`membership`](#table-membership) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 4 | 6 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`model_budget_hold`](#table-model-budget-hold) | Model gateway | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 0 | SELECT, INSERT(cols), DELETE | - | - |
@@ -128,14 +132,16 @@
 | [`rule_release`](#table-rule-release) | Global content | global (no practice_id, no RLS) | - | no | no | 0 | 2 | SELECT | - | - |
 | [`rule_release_withdrawal`](#table-rule-release-withdrawal) | Global content | global (no practice_id, no RLS) | - | no | no | 0 | 3 | SELECT | - | - |
 | [`schema_migrations`](#table-schema-migrations) | Operations | global (no practice_id, no RLS) | - | no | no | 0 | 0 | - | - | - |
+| [`screening_bounce_mark`](#table-screening-bounce-mark) | Operations | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 0 | - | - | - |
 | [`screening_lead`](#table-screening-lead) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 4 | - | - | - |
 | [`screening_lead_product`](#table-screening-lead-product) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 3 | - | - | - |
+| [`screening_mail_refusal`](#table-screening-mail-refusal) | Operations | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 0 | - | - | - |
 | [`screening_outcome`](#table-screening-outcome) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 4 | - | - | - |
 | [`screening_prospect`](#table-screening-prospect) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 4 | - | - | - |
 | [`screening_queue_tally`](#table-screening-queue-tally) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 3 | - | - | - |
 | [`screening_result`](#table-screening-result) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 3 | - | - | - |
-| [`screening_run`](#table-screening-run) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 3 | - | - | - |
-| [`screening_upload`](#table-screening-upload) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 3 | - | - | - |
+| [`screening_run`](#table-screening-run) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 6 | - | - | - |
+| [`screening_upload`](#table-screening-upload) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 4 | - | - | - |
 | [`service_line`](#table-service-line) | Documents and remittances | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 2 | SELECT, INSERT(cols) | - | - |
 | [`source_document`](#table-source-document) | Documents and remittances | PHI (registered) | uuid NOT NULL | yes | yes | 4 | 3 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`status_component`](#table-status-component) | Operations | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 3 | 2 | SELECT, UPDATE(cols) | - | - |
@@ -145,6 +151,8 @@
 | [`subscription`](#table-subscription) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 3 | 3 | SELECT | SELECT, INSERT, UPDATE | - |
 | [`subscription_claim`](#table-subscription-claim) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 2 | 3 | - | SELECT, INSERT, UPDATE | - |
 | [`support_grant`](#table-support-grant) | Tenancy and access | PHI (registered) | uuid NOT NULL | yes | yes | 7 | 4 | SELECT, INSERT(cols) | - | - |
+| [`support_grant_notice`](#table-support-grant-notice) | Tenancy and access | PHI (registered) | uuid NOT NULL | yes | yes | 3 | 1 | SELECT | - | - |
+| [`support_grant_notice_recipient`](#table-support-grant-notice-recipient) | Tenancy and access | PHI (registered) | uuid NOT NULL | yes | yes | 3 | 1 | SELECT | - | - |
 | [`support_mail_receipt`](#table-support-mail-receipt) | Operations | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 1 | - | - | - |
 | [`support_ticket`](#table-support-ticket) | Operations | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 4 | 2 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`terms_acceptance`](#table-terms-acceptance) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 3 | 2 | SELECT, INSERT(cols) | - | - |
@@ -160,7 +168,7 @@ Registered tables whose registered policy does not qualify: none. Tenant tables 
 
 <a id="area-tenancy"></a>
 
-Organizations, practices (the tenant) and each practice's pricing location (its billing ZIP and ZIP+4), people, memberships and their roles, grants of practice access to other organizations, agreements, break-glass support grants, sign-in devices and sessions, the persona matrix and the PHI table registry itself.
+Organizations, practices (the tenant) and each practice's pricing location (its billing ZIP and ZIP+4), people, memberships and their roles, grants of practice access to other organizations, agreements, break-glass support grants and the outbox of their opening and closing notices (one row a notice, one a practice administrator, each with its message's delivery), sign-in devices and sessions, the persona matrix and the PHI table registry itself.
 
 | Table | Class | RLS / FORCE | Policies | tp_app | Created by | Dictionary |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -173,6 +181,8 @@ Organizations, practices (the tenant) and each practice's pricing location (its 
 | [`agreement`](#table-agreement) | tenant (nullable practice_id), not registered | yes / yes | 4 | SELECT, INSERT(cols) | `20261015140000_tenancy` | Signed documents |
 | [`agreement_event`](#table-agreement-event) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261030090000_customer_sign_in_and_readiness` | not in the Data dictionary |
 | [`support_grant`](#table-support-grant) | PHI (registered) | yes / yes | 7 | SELECT, INSERT(cols) | `20261015140000_tenancy` | Break-glass access |
+| [`support_grant_notice`](#table-support-grant-notice) | PHI (registered) | yes / yes | 3 | SELECT | `20261107090000_mail_streams` | not in the Data dictionary |
+| [`support_grant_notice_recipient`](#table-support-grant-notice-recipient) | PHI (registered) | yes / yes | 3 | SELECT | `20261107090000_mail_streams` | not in the Data dictionary |
 | [`role_permission`](#table-role-permission) | global (no practice_id, no RLS) | no / no | 0 | SELECT | `20261015170000_identity_and_permissions` | not in the Data dictionary |
 | [`user_device`](#table-user-device) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 2 | SELECT, INSERT(cols), UPDATE(cols) | `20261015170000_identity_and_permissions` | not in the Data dictionary |
 | [`user_session`](#table-user-session) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 2 | SELECT, INSERT(cols), UPDATE(cols) | `20261015170000_identity_and_permissions` | not in the Data dictionary |
@@ -707,6 +717,110 @@ Invariants enforced by triggers:
 - `support_grant_security_events`: `AFTER INSERT OR UPDATE OF expires_at ON support_grant FOR EACH ROW EXECUTE FUNCTION support_grant_security_events()`
 
 Maintains `updated_at`: `support_grant_updated_at`.
+
+### Table `support_grant_notice`
+
+<a id="table-support-grant-notice"></a>
+
+- Class: PHI (registered); registry policy `support_grant_notice_tenant`, registered by `20261107090000_mail_streams`, qualifies: yes
+- Row-level security: enabled, forced; 3 policies; owner `tp_owner`
+- Dictionary: not in the Data dictionary
+- Created by `20261107090000_mail_streams` (ADR 0065)
+- Primary key: `id`
+- Privileges: `tp_app` SELECT
+
+| # | Column | Type | Null | Default | References | Since | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `id` | `uuid` | NOT NULL | `gen_random_uuid()` |  | `20261107090000` |  |
+| 2 | `support_grant_id` | `uuid` | NOT NULL |  | `support_grant(id)` | `20261107090000` |  |
+| 3 | `practice_id` | `uuid` | NOT NULL |  | `practice(id)` | `20261107090000` |  |
+| 4 | `notice` | `text` | NOT NULL |  |  | `20261107090000` | one of support_grant_opened, support_grant_closed |
+| 5 | `recipients` | `smallint` | NOT NULL |  |  | `20261107090000` |  |
+| 6 | `created_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261107090000` |  |
+| 7 | `undelivered_reported_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
+| 8 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261107090000` |  |
+
+Keys:
+- Primary: (id)
+- Unique `support_grant_notice_once`: `UNIQUE (support_grant_id, notice)`
+- Unique `support_grant_notice_practice`: `UNIQUE (id, practice_id)`
+- Foreign `support_grant_notice_practice_id_fkey`: (practice_id) -> `practice`(id), on delete no action
+- Foreign `support_grant_notice_support_grant_id_fkey`: (support_grant_id) -> `support_grant`(id), on delete no action
+
+Indexes:
+- `support_grant_notice_by_practice`: `USING btree (practice_id, support_grant_id)`
+
+Policies (3):
+- `support_grant_notice_owner`: PERMISSIVE FOR ALL TO tp_owner
+  - USING `true`
+  - WITH CHECK `true`
+- `support_grant_notice_read_by_practice_and_platform`: RESTRICTIVE FOR SELECT TO tp_app
+  - USING `((practice_id = ANY (( SELECT app_actor_group_practice_ids() AS app_actor_group_practice_ids)::uuid[])) OR ( SELECT app_actor_is_platform_admin() AS app_actor_is_platform_admin))`
+- `support_grant_notice_tenant`: PERMISSIVE FOR ALL TO public
+  - USING `(practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))`
+  - WITH CHECK `(practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))`
+
+Invariants enforced by constraints:
+- `support_grant_notice_kind`: `CHECK (notice = ANY (ARRAY['support_grant_opened'::text, 'support_grant_closed'::text]))`
+- `support_grant_notice_recipients`: `CHECK (recipients >= 0 AND recipients <= 500)`
+
+Maintains `updated_at`: `support_grant_notice_updated_at`.
+
+### Table `support_grant_notice_recipient`
+
+<a id="table-support-grant-notice-recipient"></a>
+
+- Class: PHI (registered); registry policy `support_grant_notice_recipient_tenant`, registered by `20261107090000_mail_streams`, qualifies: yes
+- Row-level security: enabled, forced; 3 policies; owner `tp_owner`
+- Dictionary: not in the Data dictionary
+- Created by `20261107090000_mail_streams` (ADR 0065)
+- Primary key: `id`
+- Privileges: `tp_app` SELECT
+
+| # | Column | Type | Null | Default | References | Since | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `id` | `uuid` | NOT NULL | `gen_random_uuid()` |  | `20261107090000` |  |
+| 2 | `notice_id` | `uuid` | NOT NULL |  |  | `20261107090000` |  |
+| 3 | `practice_id` | `uuid` | NOT NULL |  |  | `20261107090000` |  |
+| 4 | `user_id` | `uuid` | NOT NULL |  | `user(id)` | `20261107090000` |  |
+| 5 | `ses_message_id` | `text` | null |  |  | `20261107090000` |  |
+| 6 | `state` | `text` | NOT NULL | `'pending'::text` |  | `20261107090000` | one of pending, sent, delayed, delivered, complained, bounced, suppressed, rejected, failed |
+| 7 | `attempts` | `smallint` | NOT NULL | `0` |  | `20261107090000` |  |
+| 8 | `next_attempt_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261107090000` |  |
+| 9 | `failure_code` | `text` | null |  |  | `20261107090000` |  |
+| 10 | `sent_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
+| 11 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261107090000` |  |
+
+Keys:
+- Primary: (id)
+- Unique `support_grant_notice_recipient_once`: `UNIQUE (notice_id, user_id)`
+- Unique `support_grant_notice_recipient_ses_message_id_key`: `UNIQUE (ses_message_id)`
+- Foreign `support_grant_notice_recipient_notice_id_practice_id_fkey`: (notice_id, practice_id) -> `support_grant_notice`(id, practice_id), on delete no action
+- Foreign `support_grant_notice_recipient_user_id_fkey`: (user_id) -> `user`(id), on delete no action
+
+Indexes:
+- `support_grant_notice_recipient_by_practice`: `USING btree (practice_id, notice_id)`
+- `support_grant_notice_recipient_pending`: `USING btree (next_attempt_at) WHERE (state = 'pending'::text)`
+
+Policies (3):
+- `support_grant_notice_recipient_owner`: PERMISSIVE FOR ALL TO tp_owner
+  - USING `true`
+  - WITH CHECK `true`
+- `support_grant_notice_recipient_read_by_practice_and_platform`: RESTRICTIVE FOR SELECT TO tp_app
+  - USING `((practice_id = ANY (( SELECT app_actor_group_practice_ids() AS app_actor_group_practice_ids)::uuid[])) OR ( SELECT app_actor_is_platform_admin() AS app_actor_is_platform_admin))`
+- `support_grant_notice_recipient_tenant`: PERMISSIVE FOR ALL TO public
+  - USING `(practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))`
+  - WITH CHECK `(practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))`
+
+Invariants enforced by constraints:
+- `support_grant_notice_recipient_attempts`: `CHECK (attempts >= 0 AND attempts <= 5)`
+- `support_grant_notice_recipient_failed`: `CHECK ((state = 'failed'::text) = (failure_code IS NOT NULL))`
+- `support_grant_notice_recipient_failure_code`: `CHECK (failure_code ~ '^[A-Za-z]{1,64}$'::text)`
+- `support_grant_notice_recipient_message_id`: `CHECK (ses_message_id ~ '^[A-Za-z0-9-]{20,100}$'::text)`
+- `support_grant_notice_recipient_sent`: `CHECK ((ses_message_id IS NULL) = (state = ANY (ARRAY['pending'::text, 'failed'::text])) AND (ses_message_id IS NULL) = (sent_at IS NULL))`
+- `support_grant_notice_recipient_state`: `CHECK (state = ANY (ARRAY['pending'::text, 'sent'::text, 'delayed'::text, 'delivered'::text, 'complained'::text, 'bounced'::text, 'suppressed'::text, 'rejected'::text, 'failed'::text]))`
+
+Maintains `updated_at`: `support_grant_notice_recipient_updated_at`.
 
 ### Table `role_permission`
 
@@ -4069,13 +4183,14 @@ Invariants enforced by constraints:
 
 <a id="area-billing"></a>
 
-Stripe subscriptions, invoices and webhook events, the one-subscription claim, nightly usage counts and the billing standing view; the public audit request, with its attribution and decline reason, user invitations, and terms of use with their acceptances; and the free screening's prospects, uploads, runs and aggregate results, the day's tally of uploads its queue's share and cap count (a keyed subject and a row count, kept until the next UTC day ends), the platform place-of-service split (every practice's default since PR 6b), the counts-only outcome every screening leaves, the frozen summary a converted or consenting practice keeps for 12 months, and the campaign codes the founder lists (no PHI, no practice).
+Stripe subscriptions, invoices and webhook events, the outbox of each invoice's dunning notices (one row a stage and billing owner, with its message's delivery), the one-subscription claim, nightly usage counts and the billing standing view; the public audit request, with its attribution and decline reason, user invitations (with the delivery of their Cognito message), and terms of use with their acceptances; and the free screening's prospects, uploads, runs and aggregate results, the day's tally of uploads its queue's share and cap count (a keyed subject and a row count, kept until the next UTC day ends), the platform place-of-service split (every practice's default since PR 6b), the counts-only outcome every screening leaves, the frozen summary a converted or consenting practice keeps for 12 months, and the campaign codes the founder lists (no PHI, no practice).
 
 | Table | Class | RLS / FORCE | Policies | tp_app | Created by | Dictionary |
 | --- | --- | --- | --- | --- | --- | --- |
 | [`subscription`](#table-subscription) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 3 | SELECT | `20261029150000_billing` | Billing |
 | [`subscription_claim`](#table-subscription-claim) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 2 | - | `20261101090000_billing_review` | not in the Data dictionary |
 | [`invoice`](#table-invoice) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 3 | SELECT | `20261029150000_billing` | Billing |
+| [`dunning_notice_recipient`](#table-dunning-notice-recipient) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261107090000_mail_streams` | not in the Data dictionary |
 | [`billing_event`](#table-billing-event) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261029150000_billing` | not in the Data dictionary |
 | [`usage_snapshot`](#table-usage-snapshot) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 3 | SELECT | `20261029150000_billing` | Billing |
 | [`billing_standing`](#table-billing-standing) | view | no / no | 0 | SELECT | `20261029150000_billing` | not in the Data dictionary |
@@ -4302,6 +4417,59 @@ Invariants enforced by triggers:
   - "an invoice's first failed payment moves earlier only"
 
 Maintains `updated_at`: `invoice_updated_at`.
+
+### Table `dunning_notice_recipient`
+
+<a id="table-dunning-notice-recipient"></a>
+
+- Class: organization- or user-scoped (RLS, no practice_id)
+- Row-level security: enabled, forced; 1 policy; owner `tp_owner`
+- Dictionary: not in the Data dictionary
+- Created by `20261107090000_mail_streams` (ADR 0065)
+- Primary key: `invoice_id`, `stage`, `user_id`
+- Privileges: none for any group role
+
+| # | Column | Type | Null | Default | References | Since | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `invoice_id` | `uuid` | NOT NULL |  | `invoice(id)` | `20261107090000` |  |
+| 2 | `stage` | `text` | NOT NULL |  |  | `20261107090000` | one of payment_failed, second_notice, third_notice, final_notice, suspended, reinstated |
+| 3 | `organization_id` | `uuid` | NOT NULL |  | `organization(id)` | `20261107090000` |  |
+| 4 | `user_id` | `uuid` | NOT NULL |  | `user(id)` | `20261107090000` |  |
+| 5 | `ses_message_id` | `text` | null |  |  | `20261107090000` |  |
+| 6 | `state` | `text` | NOT NULL | `'pending'::text` |  | `20261107090000` | one of pending, sent, delayed, delivered, complained, bounced, suppressed, rejected, failed |
+| 7 | `attempts` | `smallint` | NOT NULL | `0` |  | `20261107090000` |  |
+| 8 | `next_attempt_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261107090000` |  |
+| 9 | `failure_code` | `text` | null |  |  | `20261107090000` |  |
+| 10 | `sent_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
+| 11 | `created_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261107090000` |  |
+| 12 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261107090000` |  |
+
+Keys:
+- Primary: (invoice_id, stage, user_id)
+- Unique `dunning_notice_recipient_ses_message_id_key`: `UNIQUE (ses_message_id)`
+- Foreign `dunning_notice_recipient_invoice_id_fkey`: (invoice_id) -> `invoice`(id), on delete no action
+- Foreign `dunning_notice_recipient_organization_id_fkey`: (organization_id) -> `organization`(id), on delete no action
+- Foreign `dunning_notice_recipient_user_id_fkey`: (user_id) -> `user`(id), on delete no action
+
+Indexes:
+- `dunning_notice_recipient_by_organization`: `USING btree (organization_id, invoice_id)`
+- `dunning_notice_recipient_pending`: `USING btree (next_attempt_at) WHERE (state = 'pending'::text)`
+
+Policies (1):
+- `dunning_notice_recipient_owner`: PERMISSIVE FOR ALL TO tp_owner
+  - USING `true`
+  - WITH CHECK `true`
+
+Invariants enforced by constraints:
+- `dunning_notice_recipient_attempts`: `CHECK (attempts >= 0 AND attempts <= 5)`
+- `dunning_notice_recipient_failed`: `CHECK ((state = 'failed'::text) = (failure_code IS NOT NULL))`
+- `dunning_notice_recipient_failure_code`: `CHECK (failure_code ~ '^[A-Za-z]{1,64}$'::text)`
+- `dunning_notice_recipient_message_id`: `CHECK (ses_message_id ~ '^[A-Za-z0-9-]{20,100}$'::text)`
+- `dunning_notice_recipient_sent`: `CHECK ((ses_message_id IS NULL) = (state = ANY (ARRAY['pending'::text, 'failed'::text])) AND (ses_message_id IS NULL) = (sent_at IS NULL))`
+- `dunning_notice_recipient_stage`: `CHECK (stage = ANY (ARRAY['payment_failed'::text, 'second_notice'::text, 'third_notice'::text, 'final_notice'::text, 'suspended'::text, 'reinstated'::text]))`
+- `dunning_notice_recipient_state`: `CHECK (state = ANY (ARRAY['pending'::text, 'sent'::text, 'delayed'::text, 'delivered'::text, 'complained'::text, 'bounced'::text, 'suppressed'::text, 'rejected'::text, 'failed'::text]))`
+
+Maintains `updated_at`: `dunning_notice_recipient_updated_at`.
 
 ### Table `billing_event`
 
@@ -4533,7 +4701,7 @@ Maintains `updated_at`: `prospect_request_updated_at`.
 - Class: organization- or user-scoped (RLS, no practice_id)
 - Row-level security: enabled, forced; 2 policies; owner `tp_owner`
 - Dictionary: not in the Data dictionary
-- Created by `20261030090000_customer_sign_in_and_readiness` (ADR 0043, ADR 0053)
+- Created by `20261030090000_customer_sign_in_and_readiness` (ADR 0043, ADR 0053); its DDL, policies or trigger functions changed by `20261107090000_mail_streams`
 - Primary key: `id`
 - Privileges: `tp_app` SELECT
 
@@ -4551,6 +4719,8 @@ Maintains `updated_at`: `prospect_request_updated_at`.
 | 10 | `accepted_at` | `timestamp with time zone` | null |  |  | `20261030090000` |  |
 | 11 | `created_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261030090000` |  |
 | 12 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261030090000` |  |
+| 13 | `undelivered_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
+| 14 | `undelivered_reason` | `text` | null |  |  | `20261107090000` | one of bounced, suppressed, rejected, complained |
 
 Keys:
 - Primary: (id)
@@ -4574,6 +4744,8 @@ Policies (2):
 
 Invariants enforced by constraints:
 - `invitation_sends_check`: `CHECK (sends >= 1 AND sends <= 1000)`
+- `invitation_undelivered`: `CHECK ((undelivered_at IS NULL) = (undelivered_reason IS NULL))`
+- `invitation_undelivered_reason`: `CHECK (undelivered_reason = ANY (ARRAY['bounced'::text, 'suppressed'::text, 'rejected'::text, 'complained'::text]))`
 - `invitation_window`: `CHECK (expires_at > sent_at AND expires_at <= (sent_at + '7 days'::interval))`
 
 Invariants enforced by triggers:
@@ -4752,7 +4924,7 @@ Invariants enforced by triggers:
 - Class: organization- or user-scoped (RLS, no practice_id)
 - Row-level security: enabled, forced; 1 policy; owner `tp_owner`
 - Dictionary: not in the Data dictionary
-- Created by `20261104090000_free_screening` (ADR 0062); its DDL, policies or trigger functions changed by `20261105090000_pricing_location_and_zip_plus_four`
+- Created by `20261104090000_free_screening` (ADR 0062); its DDL, policies or trigger functions changed by `20261105090000_pricing_location_and_zip_plus_four`, `20261107090000_mail_streams`
 - Primary key: `id`
 - Privileges: none for any group role
 
@@ -4808,6 +4980,8 @@ Invariants enforced by triggers:
   - "% is append-only: % is refused"
 - `screening_upload_kept_until_expiry`: `BEFORE DELETE ON screening_upload FOR EACH ROW EXECUTE FUNCTION screening_kept_until_expiry()`
   - "a screening is kept until it expires, 30 days after its upload, or a later screening of the same practice replaces it"
+- `screening_upload_mail_gate`: `BEFORE INSERT ON screening_upload FOR EACH ROW WHEN (new.status = 'accepted'::text) EXECUTE FUNCTION screening_upload_mail_gate()`
+  - "new screenings are paused while their result emails cannot be sent"
 - `screening_upload_no_truncate`: `BEFORE TRUNCATE ON screening_upload FOR EACH STATEMENT EXECUTE FUNCTION reject_change()`
   - "% is append-only: % is refused"
 
@@ -4857,7 +5031,7 @@ Invariants enforced by triggers:
 - Class: organization- or user-scoped (RLS, no practice_id)
 - Row-level security: enabled, forced; 1 policy; owner `tp_owner`
 - Dictionary: not in the Data dictionary
-- Created by `20261104090000_free_screening` (ADR 0062); its DDL, policies or trigger functions changed by `20261106090000_screening_consumer`
+- Created by `20261104090000_free_screening` (ADR 0062); its DDL, policies or trigger functions changed by `20261106090000_screening_consumer`, `20261107090000_mail_streams`
 - Primary key: `id`
 - Privileges: none for any group role
 
@@ -4887,6 +5061,7 @@ Invariants enforced by triggers:
 | 22 | `wait_reason` | `text` | null |  |  | `20261106090000` | one of account_share, daily_cap |
 | 23 | `queue_priority` | `smallint` | NOT NULL | `0` |  | `20261106090000` |  |
 | 24 | `progress_at` | `timestamp with time zone` | null |  |  | `20261106090000` |  |
+| 25 | `client_subject` | `text` | null |  |  | `20261107090000` |  |
 
 Keys:
 - Primary: (id)
@@ -4907,6 +5082,7 @@ Policies (1):
 
 Invariants enforced by constraints:
 - `screening_run_attempts`: `CHECK (attempts >= 0 AND attempts <= 3)`
+- `screening_run_client_subject`: `CHECK (client_subject ~ '^[0-9a-f]{64}$'::text)`
 - `screening_run_complete`: `CHECK ((status = 'complete'::text) = (result_token_sha256 IS NOT NULL) AND (status = 'complete'::text) = (completed_at IS NOT NULL) AND (status = 'complete'::text) = (engine_version IS NOT NULL))`
 - `screening_run_converted`: `CHECK ((converted_at IS NULL) = (converted_prospect_request_id IS NULL) AND (converted_at IS NULL OR status = 'complete'::text))`
 - `screening_run_engine_version`: `CHECK (engine_version ~ '^[a-z0-9][a-z0-9./-]{0,31}$'::text)`
@@ -4927,8 +5103,15 @@ Invariants enforced by constraints:
 - `screening_run_wait_reason`: `CHECK (wait_reason = ANY (ARRAY['account_share'::text, 'daily_cap'::text]))`
 
 Invariants enforced by triggers:
+- `screening_run_client_subject_fixed`: `BEFORE UPDATE OF client_subject ON screening_run FOR EACH ROW WHEN (new.client_subject IS DISTINCT FROM old.client_subject) EXECUTE FUNCTION reject_change()`
+  - "% is append-only: % is refused"
 - `screening_run_kept_until_expiry`: `BEFORE DELETE ON screening_run FOR EACH ROW EXECUTE FUNCTION screening_kept_until_expiry()`
   - "a screening is kept until it expires, 30 days after its upload, or a later screening of the same practice replaces it"
+- `screening_run_mail_gate`: `BEFORE UPDATE OF status ON screening_run FOR EACH ROW EXECUTE FUNCTION screening_run_mail_gate()`
+  - "the screening's mail is not sending: the run waits"
+- `screening_run_mail_refusal`: `BEFORE INSERT ON screening_run FOR EACH ROW EXECUTE FUNCTION screening_run_mail_refusal()`
+  - "too many recent screening emails from this sender could not be delivered"
+  - "a screening's result cannot be emailed to its contact address"
 - `screening_run_no_truncate`: `BEFORE TRUNCATE ON screening_run FOR EACH STATEMENT EXECUTE FUNCTION reject_change()`
   - "% is append-only: % is refused"
 - `screening_run_rules`: `BEFORE UPDATE ON screening_run FOR EACH ROW EXECUTE FUNCTION screening_run_rules()`
@@ -5373,7 +5556,7 @@ Invariants enforced by triggers:
 
 <a id="area-operations"></a>
 
-The append-only audit log, job runs, in-app notifications and digests (counts and totals only), feature flags, mutation request keys, rate-limit counters, restore drills, the public status page, support tickets and the receipts of the support inbox, SOC 2 evidence records, and the migration ledger.
+The append-only audit log, job runs, in-app notifications and digests (counts and totals only), feature flags, mutation request keys, rate-limit counters, restore drills, the public status page, support tickets and the receipts of the support inbox, the mail streams and each message's delivery by SES's message ID (no address), the screening's refusal list (a keyed hash of an address that bounced or was reported, kept 12 months only to refuse it) and its bounce marks (keyed subjects, 7 days), SOC 2 evidence records, and the migration ledger.
 
 | Table | Class | RLS / FORCE | Policies | tp_app | Created by | Dictionary |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -5390,6 +5573,11 @@ The append-only audit log, job runs, in-app notifications and digests (counts an
 | [`status_incident_update`](#table-status-incident-update) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 3 | SELECT, INSERT(cols) | `20261030090000_customer_sign_in_and_readiness` | not in the Data dictionary |
 | [`support_ticket`](#table-support-ticket) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 4 | SELECT, INSERT(cols), UPDATE(cols) | `20261030090000_customer_sign_in_and_readiness` | not in the Data dictionary |
 | [`support_mail_receipt`](#table-support-mail-receipt) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261101120000_support_mail` | not in the Data dictionary |
+| [`mail_stream`](#table-mail-stream) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261107090000_mail_streams` | not in the Data dictionary |
+| [`mail_send`](#table-mail-send) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261107090000_mail_streams` | not in the Data dictionary |
+| [`mail_recipient_key`](#table-mail-recipient-key) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261107090000_mail_streams` | not in the Data dictionary |
+| [`screening_mail_refusal`](#table-screening-mail-refusal) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261107090000_mail_streams` | not in the Data dictionary |
+| [`screening_bounce_mark`](#table-screening-bounce-mark) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261107090000_mail_streams` | not in the Data dictionary |
 | [`compliance_record`](#table-compliance-record) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 3 | SELECT, INSERT(cols) | `20261030090000_customer_sign_in_and_readiness` | not in the Data dictionary |
 | [`schema_migrations`](#table-schema-migrations) | global (no practice_id, no RLS) | no / no | 0 | - | the migration runner (packages/db/src/migrate.ts, CREATE TABLE IF NOT EXISTS before the first migration; ADR 0009) | not in the Data dictionary |
 
@@ -5400,7 +5588,7 @@ The append-only audit log, job runs, in-app notifications and digests (counts an
 - Class: tenant (nullable practice_id), not registered
 - Row-level security: enabled, forced; 5 policies; owner `tp_owner`
 - Dictionary: Operations (no PHI by design): Append-only
-- Created by `20261015140500_audit_and_operations` (ADR 0013, ADR 0014); its DDL, policies or trigger functions changed by `20261015180000_tenancy_hardening`, `20261103090000_deadline_verification_and_export_attestation`
+- Created by `20261015140500_audit_and_operations` (ADR 0013, ADR 0014); its DDL, policies or trigger functions changed by `20261015180000_tenancy_hardening`, `20261103090000_deadline_verification_and_export_attestation`, `20261107090000_mail_streams`
 - Primary key: `id`
 - Privileges: `tp_app` SELECT, INSERT(cols); `tp_operator` SELECT
 - Column grant: `tp_app` INSERT (`action`, `actor_id`, `actor_kind`, `grant_id`, `id`, `object_id`, `object_type`, `practice_id`, `purpose`, `request_id`)
@@ -5437,7 +5625,7 @@ Policies (5):
 - `audit_event_operator_record`: PERMISSIVE FOR INSERT TO tp_owner
   - WITH CHECK `true`
 - `audit_event_record`: PERMISSIVE FOR INSERT TO tp_app
-  - WITH CHECK `((actor_id = app_actor_id()) AND (actor_kind = ANY (ARRAY['user'::text, 'service'::text])) AND (action <> ALL (ARRAY['notice_sent'::text, 'security_event'::text, 'sign_in_failed'::text, 'data_key_destroyed'::text])) AND ((practice_id IS NULL) OR (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))))`
+  - WITH CHECK `((actor_id = app_actor_id()) AND (actor_kind = ANY (ARRAY['user'::text, 'service'::text])) AND (action <> ALL (ARRAY['notice_sent'::text, 'security_event'::text, 'sign_in_failed'::text, 'data_key_destroyed'::text, 'notice_undelivered'::text, 'mail_stream_paused'::text, 'mail_stream_resumed'::text])) AND ((practice_id IS NULL) OR (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))))`
 
 Invariants enforced by constraints:
 - `audit_event_action_check`: `CHECK (action ~ '^[a-z][a-z0-9_]{0,63}$'::text)`
@@ -5532,7 +5720,7 @@ Maintains `updated_at`: `job_run_updated_at`.
 - Class: PHI (registered); registry policy `notification_tenant`, registered by `20261020090000_monitoring_digests_notifications`, qualifies: yes
 - Row-level security: enabled, forced; 4 policies; owner `tp_owner`
 - Dictionary: Operations (no PHI by design): In-app
-- Created by `20261020090000_monitoring_digests_notifications` (ADR 0039); its DDL, policies or trigger functions changed by `20261023120000_recovery_ledger`, `20261027090000_packet_and_ledger_review`
+- Created by `20261020090000_monitoring_digests_notifications` (ADR 0039); its DDL, policies or trigger functions changed by `20261023120000_recovery_ledger`, `20261027090000_packet_and_ledger_review`, `20261107090000_mail_streams`
 - Primary key: `id`
 - Privileges: `tp_app` SELECT, INSERT(cols), UPDATE(cols)
 - Column grant: `tp_app` INSERT (`counts`, `id`, `kind`, `practice_id`, `subject_id`, `totals_cents`, `user_id`)
@@ -5543,7 +5731,7 @@ Maintains `updated_at`: `job_run_updated_at`.
 | 1 | `id` | `uuid` | NOT NULL | `gen_random_uuid()` |  | `20261020090000` |  |
 | 2 | `practice_id` | `uuid` | NOT NULL |  | `practice(id)` | `20261020090000` | not in the dictionary |
 | 3 | `user_id` | `uuid` | NOT NULL |  | `user(id)` | `20261020090000` |  |
-| 4 | `kind` | `text` | NOT NULL |  |  | `20261020090000` | one of monitoring_run, digest, recoupment, follow_up |
+| 4 | `kind` | `text` | NOT NULL |  |  | `20261020090000` | one of monitoring_run, digest, recoupment, follow_up, support_notice_undelivered |
 | 5 | `subject_id` | `uuid` | NOT NULL |  |  | `20261020090000` | not in the dictionary |
 | 6 | `counts` | `jsonb` | NOT NULL |  |  | `20261020090000` |  |
 | 7 | `totals_cents` | `jsonb` | NOT NULL |  |  | `20261020090000` |  |
@@ -5574,7 +5762,7 @@ Policies (4):
 
 Invariants enforced by constraints:
 - `notification_counts_only`: `CHECK (figures_are_counts(counts))`
-- `notification_kind_check`: `CHECK (kind = ANY (ARRAY['monitoring_run'::text, 'digest'::text, 'recoupment'::text, 'follow_up'::text]))`
+- `notification_kind_check`: `CHECK (kind = ANY (ARRAY['monitoring_run'::text, 'digest'::text, 'recoupment'::text, 'follow_up'::text, 'support_notice_undelivered'::text]))`
 - `notification_totals_only`: `CHECK (figures_are_cents(totals_cents))`
 
 Invariants enforced by triggers:
@@ -6054,6 +6242,232 @@ Invariants enforced by triggers:
 - `support_mail_receipt_append_only`: `BEFORE DELETE OR UPDATE ON support_mail_receipt FOR EACH ROW EXECUTE FUNCTION reject_change()`
   - "% is append-only: % is refused"
 
+### Table `mail_stream`
+
+<a id="table-mail-stream"></a>
+
+- Class: organization- or user-scoped (RLS, no practice_id)
+- Row-level security: enabled, forced; 1 policy; owner `tp_owner`
+- Dictionary: not in the Data dictionary
+- Created by `20261107090000_mail_streams` (ADR 0065)
+- Primary key: `stream`
+- Privileges: none for any group role
+
+| # | Column | Type | Null | Default | References | Since | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `stream` | `text` | NOT NULL |  |  | `20261107090000` | one of transactional, notices, screening |
+| 2 | `paused_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
+| 3 | `paused_reason` | `text` | null |  |  | `20261107090000` | one of bounce_rate, complaint_rate, account_rate, account_review, operator |
+| 4 | `paused_by` | `uuid` | null |  | `user(id)` | `20261107090000` |  |
+| 5 | `pause_sends` | `integer` | null |  |  | `20261107090000` |  |
+| 6 | `pause_bounces` | `integer` | null |  |  | `20261107090000` |  |
+| 7 | `pause_complaints` | `integer` | null |  |  | `20261107090000` |  |
+| 8 | `window_starts_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261107090000` |  |
+| 9 | `resumed_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
+| 10 | `ses_enabled_confirmed_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
+| 11 | `probe_sent_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
+| 12 | `first_probe_sent_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
+| 13 | `probe_delivered_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
+| 14 | `probe_bounced_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
+| 15 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261107090000` |  |
+
+Keys:
+- Primary: (stream)
+- Foreign `mail_stream_paused_by_fkey`: (paused_by) -> `user`(id), on delete no action
+
+Policies (1):
+- `mail_stream_owner`: PERMISSIVE FOR ALL TO tp_owner
+  - USING `true`
+  - WITH CHECK `true`
+
+Invariants enforced by constraints:
+- `mail_stream_name`: `CHECK (stream = ANY (ARRAY['transactional'::text, 'notices'::text, 'screening'::text]))`
+- `mail_stream_only_screening_pauses`: `CHECK (stream = 'screening'::text OR paused_at IS NULL)`
+- `mail_stream_pause_bounces`: `CHECK (pause_bounces >= 0)`
+- `mail_stream_pause_by`: `CHECK ((paused_by IS NOT NULL) = (NOT paused_reason IS DISTINCT FROM 'operator'::text))`
+- `mail_stream_pause_complaints`: `CHECK (pause_complaints >= 0)`
+- `mail_stream_pause_counts`: `CHECK ((paused_at IS NULL) = (pause_sends IS NULL) AND (pause_sends IS NULL) = (pause_bounces IS NULL) AND (pause_sends IS NULL) = (pause_complaints IS NULL))`
+- `mail_stream_pause_reason`: `CHECK ((paused_at IS NULL) = (paused_reason IS NULL))`
+- `mail_stream_pause_sends`: `CHECK (pause_sends >= 0)`
+- `mail_stream_paused_reason`: `CHECK (paused_reason = ANY (ARRAY['bounce_rate'::text, 'complaint_rate'::text, 'account_rate'::text, 'account_review'::text, 'operator'::text]))`
+- `mail_stream_paused_unconfirmed`: `CHECK (paused_at IS NULL OR ses_enabled_confirmed_at IS NULL)`
+
+Maintains `updated_at`: `mail_stream_updated_at`.
+
+### Table `mail_send`
+
+<a id="table-mail-send"></a>
+
+- Class: organization- or user-scoped (RLS, no practice_id)
+- Row-level security: enabled, forced; 1 policy; owner `tp_owner`
+- Dictionary: not in the Data dictionary
+- Created by `20261107090000_mail_streams` (ADR 0065)
+- Primary key: `ses_message_id`
+- Privileges: none for any group role
+
+| # | Column | Type | Null | Default | References | Since | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `ses_message_id` | `text` | NOT NULL |  |  | `20261107090000` |  |
+| 2 | `stream` | `text` | NOT NULL |  | `mail_stream(stream)` | `20261107090000` |  |
+| 3 | `kind` | `text` | NOT NULL |  |  | `20261107090000` | one of cognito, digest, dunning, support_grant_opened, support_grant_closed, screening_result, screening_failed, screening_reminder, screening_withdrawal, probe |
+| 4 | `subject_id` | `uuid` | null |  |  | `20261107090000` |  |
+| 5 | `recipient_user_id` | `uuid` | null |  | `user(id)` | `20261107090000` |  |
+| 6 | `screening_prospect_id` | `uuid` | null |  | `screening_prospect(id)` | `20261107090000` |  |
+| 7 | `state` | `text` | NOT NULL |  |  | `20261107090000` | one of sent, delayed, delivered, bounced, suppressed, rejected, complained |
+| 8 | `bounce_kind` | `text` | null |  |  | `20261107090000` | one of permanent, transient, undetermined |
+| 9 | `bounce_subtype` | `text` | null |  |  | `20261107090000` | one of general, no_email, suppressed, on_account_suppression_list, on_configuration_set_suppression_list, mailbox_full, message_too_large, content_rejected, attachment_rejected, undetermined, other |
+| 10 | `complaint_type` | `text` | null |  |  | `20261107090000` | one of abuse, auth_failure, fraud, not_spam, virus, other, unspecified |
+| 11 | `sent_at` | `timestamp with time zone` | NOT NULL |  |  | `20261107090000` |  |
+| 12 | `delivered_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
+| 13 | `undelivered_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
+| 14 | `complained_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
+| 15 | `recorded_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261107090000` |  |
+| 16 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261107090000` |  |
+| 17 | `expires_at` | `timestamp with time zone` | NOT NULL |  |  | `20261107090000` |  |
+
+Keys:
+- Primary: (ses_message_id)
+- Foreign `mail_send_recipient_user_id_fkey`: (recipient_user_id) -> `user`(id), on delete no action
+- Foreign `mail_send_screening_prospect_id_fkey`: (screening_prospect_id) -> `screening_prospect`(id), on delete set null
+- Foreign `mail_send_stream_fkey`: (stream) -> `mail_stream`(stream), on delete no action
+
+Indexes:
+- `mail_send_by_expiry`: `USING btree (expires_at)`
+- `mail_send_by_prospect`: `USING btree (screening_prospect_id) WHERE (screening_prospect_id IS NOT NULL)`
+- `mail_send_by_stream`: `USING btree (stream, sent_at)`
+- `mail_send_by_subject`: `USING btree (kind, subject_id) WHERE (subject_id IS NOT NULL)`
+- `mail_send_undelivered`: `USING btree (stream, undelivered_at) WHERE (undelivered_at IS NOT NULL)`
+
+Policies (1):
+- `mail_send_owner`: PERMISSIVE FOR ALL TO tp_owner
+  - USING `true`
+  - WITH CHECK `true`
+
+Invariants enforced by constraints:
+- `mail_send_bounce`: `CHECK ((state = ANY (ARRAY['bounced'::text, 'suppressed'::text])) = (bounce_kind IS NOT NULL) AND (bounce_kind IS NULL) = (bounce_subtype IS NULL))`
+- `mail_send_bounce_kind`: `CHECK (bounce_kind = ANY (ARRAY['permanent'::text, 'transient'::text, 'undetermined'::text]))`
+- `mail_send_bounce_subtype`: `CHECK (bounce_subtype = ANY (ARRAY['general'::text, 'no_email'::text, 'suppressed'::text, 'on_account_suppression_list'::text, 'on_configuration_set_suppression_list'::text, 'mailbox_full'::text, 'message_too_large'::text, 'content_rejected'::text, 'attachment_rejected'::text, 'undetermined'::text, 'other'::text]))`
+- `mail_send_complaint`: `CHECK ((state = 'complained'::text) = (complaint_type IS NOT NULL))`
+- `mail_send_complaint_type`: `CHECK (complaint_type = ANY (ARRAY['abuse'::text, 'auth_failure'::text, 'fraud'::text, 'not_spam'::text, 'virus'::text, 'other'::text, 'unspecified'::text]))`
+- `mail_send_expiry_window`: `CHECK (expires_at > sent_at AND expires_at <= (sent_at + '91 days'::interval))`
+- `mail_send_kind`: `CHECK (kind = ANY (ARRAY['cognito'::text, 'digest'::text, 'dunning'::text, 'support_grant_opened'::text, 'support_grant_closed'::text, 'screening_result'::text, 'screening_failed'::text, 'screening_reminder'::text, 'screening_withdrawal'::text, 'probe'::text]))`
+- `mail_send_message_id`: `CHECK (ses_message_id ~ '^[A-Za-z0-9-]{20,100}$'::text)`
+- `mail_send_prospect_on_screening`: `CHECK (stream = 'screening'::text OR screening_prospect_id IS NULL)`
+- `mail_send_screening_names_no_user`: `CHECK (stream <> 'screening'::text OR recipient_user_id IS NULL)`
+- `mail_send_state`: `CHECK (state = ANY (ARRAY['sent'::text, 'delayed'::text, 'delivered'::text, 'bounced'::text, 'suppressed'::text, 'rejected'::text, 'complained'::text]))`
+- `mail_send_stream_kind`: `CHECK (stream = 'transactional'::text AND (kind = ANY (ARRAY['cognito'::text, 'digest'::text, 'probe'::text])) OR stream = 'notices'::text AND (kind = ANY (ARRAY['support_grant_opened'::text, 'support_grant_closed'::text, 'dunning'::text, 'probe'::text])) OR stream = 'screening'::text AND (kind = ANY (ARRAY['screening_result'::text, 'screening_failed'::text, 'screening_reminder'::text, 'screening_withdrawal'::text, 'probe'::text])))`
+- `mail_send_subject`: `CHECK ((kind = ANY (ARRAY['cognito'::text, 'probe'::text])) = (subject_id IS NULL))`
+
+Invariants enforced by triggers:
+- `mail_send_expiry`: `BEFORE INSERT OR UPDATE OF stream, sent_at, expires_at ON mail_send FOR EACH ROW EXECUTE FUNCTION mail_send_expiry()`
+
+Maintains `updated_at`: `mail_send_updated_at`.
+
+### Table `mail_recipient_key`
+
+<a id="table-mail-recipient-key"></a>
+
+- Class: organization- or user-scoped (RLS, no practice_id)
+- Row-level security: enabled, forced; 1 policy; owner `tp_owner`
+- Dictionary: not in the Data dictionary
+- Created by `20261107090000_mail_streams` (ADR 0065)
+- Primary key: `id`
+- Privileges: none for any group role
+
+| # | Column | Type | Null | Default | References | Since | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `id` | `boolean` | NOT NULL | `true` |  | `20261107090000` |  |
+| 2 | `pepper` | `text` | NOT NULL |  |  | `20261107090000` |  |
+
+Keys:
+- Primary: (id)
+
+Policies (1):
+- `mail_recipient_key_owner`: PERMISSIVE FOR ALL TO tp_owner
+  - USING `true`
+  - WITH CHECK `true`
+
+Invariants enforced by constraints:
+- `mail_recipient_key_one`: `CHECK (id)`
+- `mail_recipient_key_pepper`: `CHECK (pepper ~ '^[0-9a-f]{64}$'::text)`
+
+Invariants enforced by triggers:
+- `mail_recipient_key_fixed`: `BEFORE DELETE OR UPDATE ON mail_recipient_key FOR EACH ROW EXECUTE FUNCTION reject_change()`
+  - "% is append-only: % is refused"
+- `mail_recipient_key_no_truncate`: `BEFORE TRUNCATE ON mail_recipient_key FOR EACH STATEMENT EXECUTE FUNCTION reject_change()`
+  - "% is append-only: % is refused"
+
+### Table `screening_mail_refusal`
+
+<a id="table-screening-mail-refusal"></a>
+
+- Class: organization- or user-scoped (RLS, no practice_id)
+- Row-level security: enabled, forced; 1 policy; owner `tp_owner`
+- Dictionary: not in the Data dictionary
+- Created by `20261107090000_mail_streams` (ADR 0065)
+- Primary key: `recipient_sha256`
+- Privileges: none for any group role
+
+| # | Column | Type | Null | Default | References | Since | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `recipient_sha256` | `text` | NOT NULL |  |  | `20261107090000` |  |
+| 2 | `reason` | `text` | NOT NULL |  |  | `20261107090000` | one of bounced, complained |
+| 3 | `recorded_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261107090000` |  |
+| 4 | `expires_at` | `timestamp with time zone` | NOT NULL |  |  | `20261107090000` |  |
+
+Keys:
+- Primary: (recipient_sha256)
+
+Indexes:
+- `screening_mail_refusal_by_expiry`: `USING btree (expires_at)`
+
+Policies (1):
+- `screening_mail_refusal_owner`: PERMISSIVE FOR ALL TO tp_owner
+  - USING `true`
+  - WITH CHECK `true`
+
+Invariants enforced by constraints:
+- `screening_mail_refusal_expiry`: `CHECK (expires_at > recorded_at AND expires_at <= (recorded_at + '366 days'::interval))`
+- `screening_mail_refusal_reason`: `CHECK (reason = ANY (ARRAY['bounced'::text, 'complained'::text]))`
+- `screening_mail_refusal_recipient`: `CHECK (recipient_sha256 ~ '^[0-9a-f]{64}$'::text)`
+
+### Table `screening_bounce_mark`
+
+<a id="table-screening-bounce-mark"></a>
+
+- Class: organization- or user-scoped (RLS, no practice_id)
+- Row-level security: enabled, forced; 1 policy; owner `tp_owner`
+- Dictionary: not in the Data dictionary
+- Created by `20261107090000_mail_streams` (ADR 0065)
+- Primary key: `subject_kind`, `subject`, `ses_message_id`
+- Privileges: none for any group role
+
+| # | Column | Type | Null | Default | References | Since | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `subject` | `text` | NOT NULL |  |  | `20261107090000` |  |
+| 2 | `subject_kind` | `text` | NOT NULL |  |  | `20261107090000` | one of client, account |
+| 3 | `ses_message_id` | `text` | NOT NULL |  | `mail_send(ses_message_id)` | `20261107090000` |  |
+| 4 | `bounced_at` | `timestamp with time zone` | NOT NULL |  |  | `20261107090000` |  |
+| 5 | `expires_at` | `timestamp with time zone` | NOT NULL |  |  | `20261107090000` |  |
+
+Keys:
+- Primary: (subject_kind, subject, ses_message_id)
+- Foreign `screening_bounce_mark_ses_message_id_fkey`: (ses_message_id) -> `mail_send`(ses_message_id), on delete cascade
+
+Indexes:
+- `screening_bounce_mark_by_expiry`: `USING btree (expires_at)`
+- `screening_bounce_mark_by_message`: `USING btree (ses_message_id)`
+
+Policies (1):
+- `screening_bounce_mark_owner`: PERMISSIVE FOR ALL TO tp_owner
+  - USING `true`
+  - WITH CHECK `true`
+
+Invariants enforced by constraints:
+- `screening_bounce_mark_expiry`: `CHECK (expires_at = (bounced_at + '7 days'::interval))`
+- `screening_bounce_mark_subject`: `CHECK (subject ~ '^[0-9a-f]{64}$'::text)`
+- `screening_bounce_mark_subject_kind`: `CHECK (subject_kind = ANY (ARRAY['client'::text, 'account'::text]))`
+
 ### Table `compliance_record`
 
 <a id="table-compliance-record"></a>
@@ -6227,40 +6641,48 @@ The dictionary gives each tenancy table a one-phrase policy. "Live policies" is 
 | D6 | [`case_activity`](#table-case-activity) | Pricing, triage and cases | PHI (registered) | `20261024110000_case_workbench` | ADR 0044 |
 | D7 | [`compliance_record`](#table-compliance-record) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
 | D8 | [`contract_question`](#table-contract-question) | Payers, contracts and rates | PHI (registered) | `20261016200000_contract_questions_and_queue` | ADR 0028, ADR 0030 |
-| D9 | [`invitation`](#table-invitation) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D10 | [`ledger_match`](#table-ledger-match) | Ledger | PHI (registered) | `20261023120000_recovery_ledger` | ADR 0042 |
-| D11 | [`line_note`](#table-line-note) | Documents and remittances | PHI (registered) | `20261016120000_remittances` | ADR 0015, ADR 0021, ADR 0025, ADR 0027 |
-| D12 | [`marketing_campaign`](#table-marketing-campaign) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
-| D13 | [`model_budget_hold`](#table-model-budget-hold) | Model gateway | PHI (registered) | `20261031090000_model_budget_holds` | ADR 0054 |
-| D14 | [`model_proposal`](#table-model-proposal) | Model gateway | PHI (registered) | `20261029190000_model_proposals` | ADR 0052 |
-| D15 | [`mutation_request`](#table-mutation-request) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
-| D16 | [`place_of_service_split`](#table-place-of-service-split) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
-| D17 | [`practice_site`](#table-practice-site) | Tenancy and access | PHI (registered) | `20261105090000_pricing_location_and_zip_plus_four` | ADR 0013, ADR 0017, ADR 0039, ADR 0040, ADR 0062, ADR 0064 |
-| D18 | [`prospect_request`](#table-prospect-request) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D19 | [`rate_limit_counter`](#table-rate-limit-counter) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D20 | [`report_document`](#table-report-document) | Pricing, triage and cases | PHI (registered) | `20261025090000_report_documents_and_export_history` | ADR 0040, ADR 0045 |
-| D21 | [`restore_drill`](#table-restore-drill) | Operations | global (no practice_id, no RLS) | `20261015140500_audit_and_operations` | ADR 0013, ADR 0014 |
-| D22 | [`role_permission`](#table-role-permission) | Tenancy and access | global (no practice_id, no RLS) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
-| D23 | [`rule_release_withdrawal`](#table-rule-release-withdrawal) | Global content | global (no practice_id, no RLS) | `20261019150000_reruns_and_release_withdrawal` | ADR 0037 |
-| D24 | [`schema_migrations`](#table-schema-migrations) | Operations | global (no practice_id, no RLS) | the migration runner (packages/db/src/migrate.ts, CREATE TABLE IF NOT EXISTS before the first migration; ADR 0009) | - |
-| D25 | [`screening_lead`](#table-screening-lead) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
-| D26 | [`screening_lead_product`](#table-screening-lead-product) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
-| D27 | [`screening_outcome`](#table-screening-outcome) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
-| D28 | [`screening_prospect`](#table-screening-prospect) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
-| D29 | [`screening_queue_tally`](#table-screening-queue-tally) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261106090000_screening_consumer` | ADR 0014, ADR 0019, ADR 0049, ADR 0062 |
-| D30 | [`screening_result`](#table-screening-result) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
-| D31 | [`screening_run`](#table-screening-run) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
-| D32 | [`screening_upload`](#table-screening-upload) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
-| D33 | [`status_component`](#table-status-component) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D34 | [`status_incident`](#table-status-incident) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D35 | [`status_incident_update`](#table-status-incident-update) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D36 | [`subscription_claim`](#table-subscription-claim) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261101090000_billing_review` | ADR 0050, ADR 0055 |
-| D37 | [`support_mail_receipt`](#table-support-mail-receipt) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261101120000_support_mail` | ADR 0055 |
-| D38 | [`support_ticket`](#table-support-ticket) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D39 | [`terms_acceptance`](#table-terms-acceptance) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D40 | [`terms_version`](#table-terms-version) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D41 | [`user_device`](#table-user-device) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
-| D42 | [`user_session`](#table-user-session) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
+| D9 | [`dunning_notice_recipient`](#table-dunning-notice-recipient) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261107090000_mail_streams` | ADR 0065 |
+| D10 | [`invitation`](#table-invitation) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D11 | [`ledger_match`](#table-ledger-match) | Ledger | PHI (registered) | `20261023120000_recovery_ledger` | ADR 0042 |
+| D12 | [`line_note`](#table-line-note) | Documents and remittances | PHI (registered) | `20261016120000_remittances` | ADR 0015, ADR 0021, ADR 0025, ADR 0027 |
+| D13 | [`mail_recipient_key`](#table-mail-recipient-key) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261107090000_mail_streams` | ADR 0065 |
+| D14 | [`mail_send`](#table-mail-send) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261107090000_mail_streams` | ADR 0065 |
+| D15 | [`mail_stream`](#table-mail-stream) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261107090000_mail_streams` | ADR 0065 |
+| D16 | [`marketing_campaign`](#table-marketing-campaign) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D17 | [`model_budget_hold`](#table-model-budget-hold) | Model gateway | PHI (registered) | `20261031090000_model_budget_holds` | ADR 0054 |
+| D18 | [`model_proposal`](#table-model-proposal) | Model gateway | PHI (registered) | `20261029190000_model_proposals` | ADR 0052 |
+| D19 | [`mutation_request`](#table-mutation-request) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
+| D20 | [`place_of_service_split`](#table-place-of-service-split) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D21 | [`practice_site`](#table-practice-site) | Tenancy and access | PHI (registered) | `20261105090000_pricing_location_and_zip_plus_four` | ADR 0013, ADR 0017, ADR 0039, ADR 0040, ADR 0062, ADR 0064 |
+| D22 | [`prospect_request`](#table-prospect-request) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D23 | [`rate_limit_counter`](#table-rate-limit-counter) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D24 | [`report_document`](#table-report-document) | Pricing, triage and cases | PHI (registered) | `20261025090000_report_documents_and_export_history` | ADR 0040, ADR 0045 |
+| D25 | [`restore_drill`](#table-restore-drill) | Operations | global (no practice_id, no RLS) | `20261015140500_audit_and_operations` | ADR 0013, ADR 0014 |
+| D26 | [`role_permission`](#table-role-permission) | Tenancy and access | global (no practice_id, no RLS) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
+| D27 | [`rule_release_withdrawal`](#table-rule-release-withdrawal) | Global content | global (no practice_id, no RLS) | `20261019150000_reruns_and_release_withdrawal` | ADR 0037 |
+| D28 | [`schema_migrations`](#table-schema-migrations) | Operations | global (no practice_id, no RLS) | the migration runner (packages/db/src/migrate.ts, CREATE TABLE IF NOT EXISTS before the first migration; ADR 0009) | - |
+| D29 | [`screening_bounce_mark`](#table-screening-bounce-mark) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261107090000_mail_streams` | ADR 0065 |
+| D30 | [`screening_lead`](#table-screening-lead) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D31 | [`screening_lead_product`](#table-screening-lead-product) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D32 | [`screening_mail_refusal`](#table-screening-mail-refusal) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261107090000_mail_streams` | ADR 0065 |
+| D33 | [`screening_outcome`](#table-screening-outcome) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D34 | [`screening_prospect`](#table-screening-prospect) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D35 | [`screening_queue_tally`](#table-screening-queue-tally) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261106090000_screening_consumer` | ADR 0014, ADR 0019, ADR 0049, ADR 0062 |
+| D36 | [`screening_result`](#table-screening-result) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D37 | [`screening_run`](#table-screening-run) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D38 | [`screening_upload`](#table-screening-upload) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D39 | [`status_component`](#table-status-component) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D40 | [`status_incident`](#table-status-incident) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D41 | [`status_incident_update`](#table-status-incident-update) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D42 | [`subscription_claim`](#table-subscription-claim) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261101090000_billing_review` | ADR 0050, ADR 0055 |
+| D43 | [`support_grant_notice`](#table-support-grant-notice) | Tenancy and access | PHI (registered) | `20261107090000_mail_streams` | ADR 0065 |
+| D44 | [`support_grant_notice_recipient`](#table-support-grant-notice-recipient) | Tenancy and access | PHI (registered) | `20261107090000_mail_streams` | ADR 0065 |
+| D45 | [`support_mail_receipt`](#table-support-mail-receipt) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261101120000_support_mail` | ADR 0055 |
+| D46 | [`support_ticket`](#table-support-ticket) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D47 | [`terms_acceptance`](#table-terms-acceptance) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D48 | [`terms_version`](#table-terms-version) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D49 | [`user_device`](#table-user-device) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
+| D50 | [`user_session`](#table-user-session) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
 
 ### E. Columns not in the Data dictionary (informational)
 
@@ -6309,6 +6731,8 @@ Columns whose CHECK constraint admits a closed list of values: the column's own 
 | `user.status` | `invited`, `active`, `disabled` |
 | `membership.role` | `practice_admin`, `billing_manager`, `analyst`, `viewer`, `firm_principal`, `firm_analyst`, `platform_admin`, `contract_specialist`, `reviewer`, `support` |
 | `agreement.kind` | `baa`, `engagement`, `terms`, `data_rights`, `dpa` |
+| `support_grant_notice.notice` | `support_grant_opened`, `support_grant_closed` |
+| `support_grant_notice_recipient.state` | `pending`, `sent`, `delayed`, `delivered`, `complained`, `bounced`, `suppressed`, `rejected`, `failed` |
 | `role_permission.role` | `practice_admin`, `billing_manager`, `analyst`, `viewer`, `firm_principal`, `firm_analyst`, `platform_admin`, `contract_specialist`, `reviewer`, `support` |
 | `role_permission.effect` | `allow`, `deny` |
 | `user_session.mfa_method` | `totp`, `webauthn` |
@@ -6378,12 +6802,15 @@ Columns whose CHECK constraint admits a closed list of values: the column's own 
 | `invoice.status` | `draft`, `open`, `paid`, `void`, `uncollectible` |
 | `invoice.payment_method_kind` | `us_bank_account`, `card` |
 | `invoice.dunning_stage` | `payment_failed`, `second_notice`, `third_notice`, `final_notice`, `suspended`, `reinstated`, `resolved` |
+| `dunning_notice_recipient.stage` | `payment_failed`, `second_notice`, `third_notice`, `final_notice`, `suspended`, `reinstated` |
+| `dunning_notice_recipient.state` | `pending`, `sent`, `delayed`, `delivered`, `complained`, `bounced`, `suppressed`, `rejected`, `failed` |
 | `billing_event.outcome` | `received`, `applied`, `stale`, `ignored`, `unknown_customer` |
 | `prospect_request.billing_arrangement` | `in_house`, `billing_firm`, `mixed`, `other` |
 | `prospect_request.status` | `new`, `contacted`, `converted`, `declined` |
 | `prospect_request.source` | named by conditional CHECKs only: `search`, `billing_firm`, `colleague`, `association`, `event`, `social`, `paidwhole_email`, `article`, `other` |
 | `prospect_request.paid_click` | `paid_search`, `paid_social` |
 | `prospect_request.declined_reason` | named by conditional CHECKs only: `no_response`, `not_now`, `price`, `too_little_to_recover`, `chose_other`, `doing_it_themselves`, `data_unavailable`, `compliance_declined`, `not_a_fit`, `not_a_prospect`, `other`, `not_recorded` |
+| `invitation.undelivered_reason` | `bounced`, `suppressed`, `rejected`, `complained` |
 | `screening_prospect.state` | `AL`, `AK`, `AZ`, `AR`, `CA`, `CO`, `CT`, `DE`, `FL`, `GA`, `HI`, `ID`, `IL`, `IN`, `IA`, `KS`, `KY`, `LA`, `ME`, `MD`, `MA`, `MI`, `MN`, `MS`, `MO`, `MT`, `NE`, `NV`, `NH`, `NJ`, `NM`, `NY`, `NC`, `ND`, `OH`, `OK`, `OR`, `PA`, `RI`, `SC`, `SD`, `TN`, `TX`, `UT`, `VT`, `VA`, `WA`, `WV`, `WI`, `WY`, `DC`, `PR`, `VI`, `GU`, `AS`, `MP` |
 | `screening_prospect.source` | named by conditional CHECKs only: `search`, `billing_firm`, `colleague`, `association`, `event`, `social`, `paidwhole_email`, `article`, `other` |
 | `screening_prospect.paid_click` | `paid_search`, `paid_social` |
@@ -6409,7 +6836,7 @@ Columns whose CHECK constraint admits a closed list of values: the column's own 
 | `audit_event.actor_kind` | `user`, `service`, `system` |
 | `job_run.job_type` | `intake`, `parse_835`, `monitor`, `price`, `triage`, `audit_report`, `reconcile`, `digest`, `export`, `packet_export`, `roi_statement`, `report_document` |
 | `job_run.outcome` | `running`, `retrying`, `succeeded`, `failed`, `refused` |
-| `notification.kind` | `monitoring_run`, `digest`, `recoupment`, `follow_up` |
+| `notification.kind` | `monitoring_run`, `digest`, `recoupment`, `follow_up`, `support_notice_undelivered` |
 | `feature_flag.key` | `model.kill_switch`, `model.read_denial_letter`, `model.daily_budget_cents`, `platform.maintenance` |
 | `feature_flag.scope` | `global`, `organization`, `practice` |
 | `restore_drill.outcome` | `passed`, `failed` |
@@ -6422,6 +6849,15 @@ Columns whose CHECK constraint admits a closed list of values: the column's own 
 | `support_ticket.status` | `open`, `answered`, `closed` |
 | `support_ticket.source` | `form`, `mail` |
 | `support_mail_receipt.outcome` | `opened`, `withheld`, `unknown_sender`, `unverified_sender`, `unreadable` |
+| `mail_stream.stream` | `transactional`, `notices`, `screening` |
+| `mail_stream.paused_reason` | `bounce_rate`, `complaint_rate`, `account_rate`, `account_review`, `operator` |
+| `mail_send.kind` | `cognito`, `digest`, `dunning`, `support_grant_opened`, `support_grant_closed`, `screening_result`, `screening_failed`, `screening_reminder`, `screening_withdrawal`, `probe` |
+| `mail_send.state` | `sent`, `delayed`, `delivered`, `bounced`, `suppressed`, `rejected`, `complained` |
+| `mail_send.bounce_kind` | `permanent`, `transient`, `undetermined` |
+| `mail_send.bounce_subtype` | `general`, `no_email`, `suppressed`, `on_account_suppression_list`, `on_configuration_set_suppression_list`, `mailbox_full`, `message_too_large`, `content_rejected`, `attachment_rejected`, `undetermined`, `other` |
+| `mail_send.complaint_type` | `abuse`, `auth_failure`, `fraud`, `not_spam`, `virus`, `other`, `unspecified` |
+| `screening_mail_refusal.reason` | `bounced`, `complained` |
+| `screening_bounce_mark.subject_kind` | `client`, `account` |
 | `compliance_record.kind` | `policy_approval`, `access_review`, `tabletop_exercise`, `training_attestation`, `vendor_review`, `risk_analysis`, `security_official` |
 
 ## Appendix B: encrypted columns
@@ -6479,7 +6915,11 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `audit_report_download_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `1ab1a28f01764be6` |
 | `audit_report_download_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `dcc9fa8b0d88cd5c` |
 | `audit_report_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `10563903a4f96c71` |
-| `billing_owner_emails(uuid)` | `TABLE(email text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_billing |  | `98dafc8c17d7f83b` |
+| `billing_dunning_notice_claim(uuid,text,uuid)` | `TABLE(email text)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_billing |  | `62e38d39b0766391` |
+| `billing_dunning_notice_failed(uuid,text,uuid,text,boolean,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_billing |  | `9a19a46006e25479` |
+| `billing_dunning_notice_sent(uuid,text,uuid,text,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_billing |  | `5c7d1fcbfd4f6e0a` |
+| `billing_dunning_notices_pending(integer)` | `TABLE(invoice_id uuid, stage text, organization_id uuid, user_id uuid)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_billing |  | `36abc45aa224268c` |
+| `billing_open_dunning_notice(uuid,text,text)` | `TABLE(recipients integer, opened boolean)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_billing |  | `e5adee9b6a517801` |
 | `billing_record_audit(text,text,uuid,text,text)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_billing |  | `f9a85d22da427ca1` |
 | `billing_records_kept()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `610c0de9c4c6b698` |
 | `billing_usage_counts()` | `TABLE(organization_id uuid, granted_practices integer, active_practices integer)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_billing |  | `82e27747d11f1494` |
@@ -6502,16 +6942,20 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `console_approve_place_of_service_split(jsonb)` | `uuid` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `f330f4ac65a5e2e6` |
 | `console_contract_queue()` | `TABLE(practice_id uuid, name text, documents_awaiting bigint, drafts bigint, proposals_awaiting bigint, awaiting_sign_off bigint, open_questions bigint, regulations_awaiting bigint, support_grant_ends_at timestamp with time zone)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes | `34782bbb84bc92d2` |
 | `console_grants(uuid)` | `TABLE(grant_id uuid, organization_id uuid, practice_id uuid, scope jsonb, starts_at timestamp with time zone, ends_at timestamp with time zone, agreement_id uuid, approved_by_user_id uuid, revoked_at timestamp with time zone, created_at timestamp with time zone)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `99b8bdc1d3dee83b` |
+| `console_mail_streams()` | `TABLE(stream text, paused_at timestamp with time zone, paused_reason text, paused_by uuid, pause_sends integer, pause_bounces integer, pause_complaints integer, window_starts_at timestamp with time zone, window_sends integer, window_bounces integer, window_complaints integer, resumed_at timestamp with time zone, confirmed_at timestamp with time zone, sending boolean, ready boolean, probe_sent_at timestamp with time zone, probe_delivered_at timestamp with time zone, probe_bounced_at timestamp with time zone, client_marks integer, account_marks integer)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `b178b66699759acf` |
+| `console_mail_undelivered(timestamp with time zone)` | `TABLE(stream text, kind text, state text, recipient_user_id uuid, practice_id uuid, subject_id uuid, undelivered_at timestamp with time zone, messages integer)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `2cf128abb1f398dd` |
 | `console_model_spend(date)` | `TABLE(practice_id uuid, organization_id uuid, name text, calls integer, spent_unrounded numeric)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes | `e376a7bc2663c81e` |
+| `console_pause_mail_stream(text,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `23619fe754a7ceb1` |
 | `console_place_of_service_splits()` | `TABLE(id uuid, settings jsonb, approved_by uuid, approved_by_email text, approved_at timestamp with time zone, in_force boolean)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `43a1900cd1033483` |
 | `console_practice_settings(uuid)` | `TABLE(practice_id uuid, organization_id uuid, name text, zip text, zip_plus_four text, settings jsonb)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `7a2eef20ce73d1ac` |
 | `console_practices(uuid)` | `TABLE(practice_id uuid, organization_id uuid, name text, status text, created_at timestamp with time zone)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `76b2df303a07e7c7` |
 | `console_register_marketing_campaign(text,text)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `77e5b8145f5d7a10` |
 | `console_release_runs()` | `TABLE(release_no integer, practice_id uuid, name text, runs bigint, runs_in_effect bigint, reruns bigint, reruns_accepted bigint, changed_lines bigint)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes | `adc1da81e4e077a8` |
 | `console_restore_drills(integer)` | `TABLE(started_at timestamp with time zone, completed_at timestamp with time zone, duration_ms bigint, outcome text, catalog_problems integer, error_code text)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `399a93a1a8318075` |
+| `console_resume_mail_stream(text,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `f2458e37f39a9b9d` |
 | `console_set_practice_location(uuid,text,text)` | `text` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes | `7958eb1f42b77e10` |
 | `console_set_practice_settings(uuid,text,jsonb)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes | `16e2b183396953b5` |
-| `console_support_grants()` | `TABLE(support_grant_id uuid, practice_id uuid, user_id uuid, ticket text, reason text, created_at timestamp with time zone, expires_at timestamp with time zone, notified_at timestamp with time zone, reads bigint)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `b335e4849f0c246b` |
+| `console_support_grants()` | `TABLE(support_grant_id uuid, practice_id uuid, user_id uuid, ticket text, reason text, created_at timestamp with time zone, expires_at timestamp with time zone, notified_at timestamp with time zone, reads bigint, opened_recipients integer, opened_delivered integer, opened_undelivered integer, opened_pending integer, opened_sent_at timestamp with time zone, closed_recipients integer, closed_delivered integer, closed_undelivered integer, closed_pending integer, closed_sent_at timestamp with time zone)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `02d24b3bf405477f` |
 | `console_support_tickets(text,integer)` | `TABLE(ticket_id uuid, number bigint, requester_email text, organizations text[], screen text, category text, subject text, message text, status text, created_at timestamp with time zone, status_changed_at timestamp with time zone)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `581668ca764c385c` |
 | `contract_calendar_event_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `9d49e01ff62b1725` |
 | `contract_question_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `8aae4f70b8112e03` |
@@ -6526,6 +6970,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `current_terms_version()` | `uuid` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1f6b0bde64fc4a4b` |
 | `data_rights_permit(uuid,uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app, tp_operator |  | `97a340475b983d2f` |
 | `digest_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `ece3b3718d970e66` |
+| `dunning_notice_report_undelivered(uuid,text,text)` | `boolean` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `838433efa7b733e6` |
 | `effective_practice_access()` | `TABLE(practice_id uuid, via text, grant_id uuid, role text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `53666b6ed9d54a7f` |
 | `end_support_grant(uuid)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes | `81470c8d2b42a2b3` |
 | `eval_example_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `11a31add3dfa4c6d` |
@@ -6555,6 +7000,13 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `line_status_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `6d34625159838cf3` |
 | `locality_status(integer,text,text,date,date)` | `TABLE(status text, carrier text, locality text)` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `93f19de141f69e25` |
 | `ma_dispute_route_confirmed()` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `b7b976b0230f8b43` |
+| `mail_recipient_canonical(text,boolean)` | `text` | plpgsql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` |  |  | `72aaa3efc513682c` |
+| `mail_recipient_sha256(text,boolean)` | `text` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `f0116bf504ae08aa` |
+| `mail_send_expiry()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `3cd6d13742c65cc1` |
+| `mail_state_rank(text)` | `integer` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` |  |  | `72f7fbe980da4163` |
+| `mail_stream_cutoff(text)` | `text` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `fe3e57d4187593b9` |
+| `mail_stream_pause(text,uuid,text)` | `boolean` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `0e5bcfa22d6f3411` |
+| `mail_window_counts(text)` | `TABLE(starts_at timestamp with time zone, sends integer, bounces integer, complaints integer)` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `1207dd7886f86d3c` |
 | `maintenance_on()` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1a688a810ac58550` |
 | `marketing_campaign_kept(text)` | `text` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `fc3ead84269c9c23` |
 | `marketing_campaign_listed_only()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `918ae38efbc9e36e` |
@@ -6578,10 +7030,16 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `open_practice_scope(uuid[])` | `TABLE(practice_id uuid, via text, grant_id uuid, role text)` | plpgsql | invoker | volatile |  | tp_app | yes | `e21550df4fb65689` |
 | `operator_active_practice_ids()` | `SETOF uuid` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `b36b35df381aabd5` |
 | `operator_assert_scope(uuid)` | `void` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `533c2fbe71370114` |
-| `operator_due_support_notices(integer)` | `TABLE(support_grant_id uuid, practice_id uuid, notice text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `26a8da73c49fe312` |
-| `operator_practice_administrator_emails(uuid)` | `TABLE(email text)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `e66800658c20c850` |
+| `operator_due_support_notices(integer)` | `TABLE(support_grant_id uuid, practice_id uuid, notice text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `80da21d02daeadaa` |
+| `operator_mail_account_signal(text,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `2684abb0a6c123b1` |
+| `operator_mail_cutoff(text)` | `text` | sql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `aec6c3e8b9262b47` |
+| `operator_mail_expire(integer)` | `integer` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `faa298581d4c5479` |
+| `operator_mail_probe_sent(text)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `1d712c911dfd58cf` |
+| `operator_mail_stream_confirmed(text,boolean)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `58a4b66cc84c84e4` |
+| `operator_mail_streams()` | `TABLE(stream text, paused boolean, confirmed boolean, probe_due boolean, probe_missed boolean)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `2fcf2f8b70481744` |
+| `operator_open_support_notice(uuid,text,text)` | `TABLE(notice_id uuid, recipients integer, opened boolean)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `dbbd884fcd0805f7` |
+| `operator_record_mail_event(text,text,text,timestamp with time zone,timestamp with time zone,text,text,uuid,uuid,uuid,text,text,text,text)` | `TABLE(recorded boolean, state text, notice_undelivered uuid, invoice_undelivered uuid, invitation_undelivered uuid, stream_paused text)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `3c175325fc14b48c` |
 | `operator_record_support_mail(text,text,text,text,text,text)` | `TABLE(outcome text, ticket_number bigint)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `2903a95e22531e32` |
-| `operator_record_support_notice(uuid,text,text)` | `TABLE(recorded boolean, reads bigint)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `cd723eaf7325fa60` |
 | `operator_screening_claim(uuid)` | `TABLE(release_no integer, release_manifest_sha256 text, release_available boolean, zip text, zip_plus_four text, settings jsonb, as_of date, row_count integer, attempt integer)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator, tp_screening |  | `a35a25f1df1aa1c8` |
 | `operator_screening_complete(uuid,text,text,text,text,integer)` | `TABLE(contact_email text, row_count integer, kept_with text, received_at timestamp with time zone, wait_reason text)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator, tp_screening |  | `8220d43ccceb8bb4` |
 | `operator_screening_due(integer,integer)` | `TABLE(run_id uuid, status text, attempts integer, queue_priority smallint)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator, tp_screening |  | `fdc77fa72cba256f` |
@@ -6596,6 +7054,10 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `operator_screening_run_keys(uuid)` | `TABLE(codes text[], zip text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator, tp_screening |  | `1e83fdac05e34b0c` |
 | `operator_screening_run_records(uuid)` | `TABLE(record_type text, key jsonb, value jsonb, effective_from text, effective_to text, sha256 text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator, tp_screening |  | `9ace505ceb4a0be2` |
 | `operator_support_mail_read(text[])` | `TABLE(mail_ref text)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `da2a6ab110478618` |
+| `operator_support_notice_claim(uuid,uuid)` | `TABLE(email text, reads bigint)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `051d1e85151cd3f6` |
+| `operator_support_notice_failed(uuid,uuid,text,boolean,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `a4d9a671b6fcc581` |
+| `operator_support_notice_sent(uuid,uuid,text,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `1478080f10eb672a` |
+| `operator_support_notices_pending(integer)` | `TABLE(notice_id uuid, practice_id uuid, user_id uuid, support_grant_id uuid, notice text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `0c7b06513ec36f98` |
 | `organization_administrator_count(uuid)` | `bigint` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `45fcaf44bc28ae33` |
 | `organization_kind_fixed()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `d5a3d13bd118aac9` |
 | `organization_kind_of(uuid)` | `text` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `9ba89ea8163257bc` |
@@ -6707,6 +7169,8 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `rule_release_immutable()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `495c52b559208d41` |
 | `rule_release_withdrawal_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `c0f7ed15484f7fd1` |
 | `screening_band_days(text)` | `daterange` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `f912bb8d6e15fdd1` |
+| `screening_bounce_budget_spent(text,text)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `3de7fd3276da7f3f` |
+| `screening_contact_refused(text)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `656ff76ac5546175` |
 | `screening_count_band(bigint)` | `text` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `3c43fb92e0243276` |
 | `screening_difference_band(bigint)` | `text` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `02bf48b2aefc21ae` |
 | `screening_freeze_lead(uuid,uuid,text,boolean,text)` | `uuid` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `0621e0dd445907d7` |
@@ -6716,6 +7180,9 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `screening_lead_product_kept()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `5918c9fea644753d` |
 | `screening_lead_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `4cacbc9f27720745` |
 | `screening_lead_withdraw(text,text)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `788ee69fa361503e` |
+| `screening_mail_gate()` | `TABLE(sending boolean, resumed_at timestamp with time zone)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_screening |  | `f13944487e4f314a` |
+| `screening_mail_sending()` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `c64cb3f0f00a6d91` |
+| `screening_mail_status()` | `TABLE(paused boolean, ready boolean)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `ac5037be1bd34766` |
 | `screening_modifiers_valid(text[])` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `5ce982845defbad6` |
 | `screening_open_band(timestamp with time zone,timestamp with time zone)` | `text` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `5378a847ee1b6828` |
 | `screening_outcome_campaign_listed()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `2f4aca68279c8f28` |
@@ -6736,9 +7203,13 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `screening_result_rows(text,integer)` | `TABLE(row_no integer, procedure_code text, modifiers text[], units integer, place_of_service text, payer_product text, service_band text, claim_count integer, observed_allowed_cents bigint, expected_line_cents bigint, expected_cents bigint, difference_cents bigint, in_reduction_pool boolean, reduced_line_cents bigint, reduced_cents bigint, reduced_difference_cents bigint, standing text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1fc6b8482bf8d179` |
 | `screening_result_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `740dacdcc9915f56` |
 | `screening_result_summary(text)` | `TABLE(run_id uuid, practice_name text, state text, zip text, release_no integer, engine_version text, created_at timestamp with time zone, expires_at timestamp with time zone, rows integer, claim_lines bigint, observed_cents bigint, priced_rows integer, priced_claim_lines bigint, expected_cents bigint, priced_observed_cents bigint, difference_cents bigint, pooled_rows integer, reduced_cents bigint, reduced_difference_cents bigint, contract_rows integer, contract_claim_lines bigint, contract_observed_cents bigint, not_screened_rows integer, not_screened_claim_lines bigint, not_screened_observed_cents bigint, unpriced_rows integer, unpriced_claim_lines bigint, unpriced_observed_cents bigint, left_out_rows integer, left_out_claim_lines bigint, left_out_observed_cents bigint, converted boolean, release_withdrawn boolean, kept_with text, outside_content_rows integer, outside_content_claim_lines bigint, outside_content_observed_cents bigint, zip_plus_four text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `fb9b9c255c87b3fd` |
+| `screening_run_mail_gate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `d65ca371246a478f` |
+| `screening_run_mail_refusal()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `975f94b6061dd3a9` |
 | `screening_run_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `f15d5e31592d5d9e` |
 | `screening_standing(bigint,bigint,bigint,bigint)` | `text` | sql | invoker | immutable |  |  |  | `d8feb37d697d3992` |
 | `screening_status()` | `TABLE(release_no integer, place_of_service_split_id uuid)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `00660ad1e09bf1da` |
+| `screening_submit_mail_refusal(text,text)` | `text` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `68638b412b4b2db0` |
+| `screening_upload_mail_gate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `4bfa2e936ef0a8bb` |
 | `screening_wait(uuid)` | `TABLE(queue_priority smallint, wait_reason text, pricing integer, queued_ahead integer)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `8b60abe3ed17d2aa` |
 | `screening_wait_limits()` | `TABLE(account_rows integer, daily_rows integer)` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` |  |  | `9366f730bda41f40` |
 | `service_line_priced_in_effect(uuid)` | `uuid` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `25da75c9275ad787` |
@@ -6761,13 +7232,16 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `submission_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `918129137c88ee12` |
 | `submit_prospect_request(text,text,text,integer,text[],text)` | `uuid` | sql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `e2ae418d0e1c59c6` |
 | `submit_prospect_request(text,text,text,integer,text[],text,text,text,text,text,text,text)` | `uuid` | sql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `e227f669a9295eeb` |
-| `submit_screening(text,text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],integer,integer,bigint,integer,bigint,bigint,text,text,text,text,text,text,text,text,timestamp with time zone,text,text)` | `uuid` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `8ea4e5450dbe8708` |
+| `submit_screening(text,text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],integer,integer,bigint,integer,bigint,bigint,text,text,text,text,text,text,text,text,timestamp with time zone,text,text,text)` | `uuid` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `2cfb8601ff15390c` |
 | `subscription_claim_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `24615116b611dcb0` |
 | `subscription_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `9bff8d1f6d16f0e6` |
 | `support_grant_fixed()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `4e2ccf3fc52ddc22` |
 | `support_grant_grantee()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `decdf5063e0c761f` |
 | `support_grant_role(uuid)` | `text` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `23e71bc2ce447f8c` |
 | `support_grant_security_events()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `b3584867853ea265` |
+| `support_notice_administrators(uuid)` | `TABLE(user_id uuid)` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `332bb830b68cf65a` |
+| `support_notice_counts(uuid,text)` | `TABLE(recipients integer, delivered integer, undelivered integer, pending integer, sent_at timestamp with time zone)` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `c59146a9b2523fa3` |
+| `support_notice_report_undelivered(uuid,text)` | `boolean` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `0aaaf020f6dfac6b` |
 | `support_ticket_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `4a090c61fdc7f2e9` |
 | `terms_accepted_now()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `657b65330865e56b` |
 | `terms_published_now()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `f63274938b5accb0` |
@@ -6839,13 +7313,14 @@ Every migration applied to the database, from `schema_migrations`, with the SHA-
 | 42 | `20261104090000_free_screening.sql` | ADR 0062 | `8bc938ac54150a7d1d93255acb4610851b3d2bd85f37d6b7a521a6ed950b0a43` |
 | 43 | `20261105090000_pricing_location_and_zip_plus_four.sql` | ADR 0013, ADR 0017, ADR 0039, ADR 0040, ADR 0062, ADR 0064 | `2182a581fe94dde7667ef5561c12c8e78969c6c4bbbe3a406aff525edd9dc293` |
 | 44 | `20261106090000_screening_consumer.sql` | ADR 0014, ADR 0019, ADR 0049, ADR 0062 | `d6e449698132fa47d2f89ce7e27a96111efa27b1a258cde899576754f44e26b0` |
+| 45 | `20261107090000_mail_streams.sql` | ADR 0065 | `744437897a65a3f88c415c637184c02906427228746434cdc3c38d98cec2f3d1` |
 
 ## Cross-checks
 
 Run against the same migrated database by `packages/db/src/domain-model/cross-check.ts`: the Drizzle schema (packages/db/src/schema) against the live columns, as packages/db/src/migrate.db.test.ts does, and the repository's own catalog test function, catalogProblems() in packages/db/src/catalog.ts.
 
 ```text
-Drizzle tables: 89; migrated tables (excluding schema_migrations): 89
+Drizzle tables: 97; migrated tables (excluding schema_migrations): 97
 In the database, not in Drizzle: none
 In Drizzle, not in the database: none
 Column differences (name, type, nullability): 0
@@ -6854,6 +7329,6 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 ## Approval
 
-This document describes the schema at migration head `20261106090000_screening_consumer.sql` (44 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1 and C5. It does not decide C2, C3 and C4, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
+This document describes the schema at migration head `20261107090000_mail_streams.sql` (45 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1 and C5. It does not decide C2, C3 and C4, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: Tyler Williams  Date: 2026-10-23  Document SHA-256: `6d7a143dd4e5a7145943324afd21a583f9036925978e90d8b9cecf6b4e97f712`
+Approved by: ________  Date: ________  Document SHA-256: `b23fed0ec4fa9658a7751af0b6e58974acc64996343f8ae683d2149b495d2518`

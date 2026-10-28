@@ -13,6 +13,7 @@ import { afterAll, beforeAll } from 'vitest';
 
 import type { NotificationConfig } from '../../config';
 import { SCREENING_BOSS_OPTIONS } from '../../jobs/screening';
+import { DEVELOPMENT_MAIL_STREAM_PREFIX } from '../../mail/streams';
 import { startWorker } from '../../worker';
 import { startScreeningConsumer } from '../consumer';
 
@@ -62,9 +63,12 @@ export async function until<T>(read: () => Promise<T>, done: (value: T) => boole
   }
 }
 
-/** The consumer's notifications in these tests: email to a local outbox directory, links to the synthetic origin. */
+/**
+ * The consumer's notifications in these tests: email to a local outbox directory through the development streams'
+ * configuration sets (DEVELOPMENT_MAIL_STREAM_PREFIX) with no events directory, links to the synthetic origin.
+ */
 export function localMail(dir: string): NotificationConfig {
-  return { mail: { kind: 'local', dir }, appOrigin: ORIGIN, staticAssetOrigin: null };
+  return { mail: { kind: 'local', dir, eventsDir: null, streamPrefix: DEVELOPMENT_MAIL_STREAM_PREFIX }, appOrigin: ORIGIN, staticAssetOrigin: null };
 }
 
 const letters = () =>

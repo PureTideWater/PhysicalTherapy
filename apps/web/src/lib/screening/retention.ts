@@ -1,4 +1,4 @@
-import { KEPT_COUNTS, KEPT_IF_REQUESTED, KEPT_SUMMARY, type KeptWith, MATCHED } from '@tp/worker/screening-wording';
+import { ADDRESS_CHECK_KEPT, KEPT_COUNTS, KEPT_IF_REQUESTED, KEPT_SUMMARY, type KeptWith, MATCHED, REFUSED_ADDRESS_KEPT } from '@tp/worker/screening-wording';
 
 /**
  * What the screening's pages say is kept, and for how long (audit #57; the founder's rulings of 2026-10-20, decisions
@@ -12,7 +12,13 @@ import { KEPT_COUNTS, KEPT_IF_REQUESTED, KEPT_SUMMARY, type KeptWith, MATCHED } 
  * legal surface counsel reviews before the screening opens (docs/product/legal-surfaces.md).
  */
 
-export { KEPT_COUNTS, KEPT_SUMMARY } from '@tp/worker/screening-wording';
+/**
+ * What outlives a screening's address, as every surface that says the address is deleted says it (the result email
+ * too): its coded form, when its email could not be delivered or was reported as spam (REFUSED_ADDRESS_KEPT, Q11 (b)),
+ * and the mail service's 90-day record of the check that it can receive email (ADDRESS_CHECK_KEPT; docs/adr/0065,
+ * residual 1; the review of 2026-10-27).
+ */
+export { ADDRESS_CHECK_KEPT, KEPT_COUNTS, KEPT_SUMMARY, REFUSED_ADDRESS_KEPT } from '@tp/worker/screening-wording';
 export type { KeptWith } from '@tp/worker/screening-wording';
 
 /** The result page: until when the link opens the result, what is deleted then, and what is kept, by what its summary is kept with. */
@@ -20,7 +26,7 @@ export function resultRetention(until: string, keptWith: KeptWith, converted: bo
   const closes = `This link still closes on ${until}, and then we delete the result’s rows and figures.`;
   switch (keptWith) {
     case 'none':
-      return `This link opens it until ${until}, or until a later screening for the same practice or from the same email address replaces it. Then we delete the result: its rows and figures, and the practice name, ZIP code and email address you gave. If you request an audit from it, we keep ${KEPT_SUMMARY} with your request for 12 months from the screening. We keep a record of counts that names no one: ${KEPT_COUNTS}.`;
+      return `This link opens it until ${until}, or until a later screening for the same practice or from the same email address replaces it. Then we delete the result: its rows and figures, and the practice name, ZIP code and email address you gave. ${REFUSED_ADDRESS_KEPT} ${ADDRESS_CHECK_KEPT} If you request an audit from it, we keep ${KEPT_SUMMARY} with your request for 12 months from the screening. We keep a record of counts that names no one: ${KEPT_COUNTS}.`;
     case 'own_request':
       return `Because you requested an audit, we keep ${KEPT_SUMMARY} with your request for 12 months from the screening. ${closes} We also keep a record of counts for every screening that names no one: ${KEPT_COUNTS}; while we keep your request, yours can be matched to it.`;
     case 'earlier_request':
@@ -31,16 +37,16 @@ export function resultRetention(until: string, keptWith: KeptWith, converted: bo
 }
 
 /** The closed link's page: it cannot say whether the screening was kept with a request, so it says what happens if it was. */
-export const CLOSED_LINK_KEPT = `A screening link opens its result for 30 days from the upload, or until a later screening for the same practice or from the same email address replaces it. Then we delete the result and the details given with it, and keep a record of counts that names no one. ${KEPT_IF_REQUESTED}`;
+export const CLOSED_LINK_KEPT = `A screening link opens its result for 30 days from the upload, or until a later screening for the same practice or from the same email address replaces it. Then we delete the result and the details given with it, and keep a record of counts that names no one. ${REFUSED_ADDRESS_KEPT} ${ADDRESS_CHECK_KEPT} ${KEPT_IF_REQUESTED}`;
 
 /** The upload form's hint under the email address. */
-export const UPLOAD_EMAIL_HINT = `The result is emailed here as a link that opens it for 30 days, or until a later screening of the practice replaces it. Then we delete the result and what you enter here, and keep a record of counts that names no one. ${KEPT_IF_REQUESTED}`;
+export const UPLOAD_EMAIL_HINT = `The result is emailed here as a link that opens it for 30 days, or until a later screening of the practice replaces it. Then we delete the result and what you enter here, and keep a record of counts that names no one. ${REFUSED_ADDRESS_KEPT} ${ADDRESS_CHECK_KEPT} ${KEPT_IF_REQUESTED}`;
 
 /** The upload form's "About your practice" card. */
 export const ABOUT_PRACTICE = 'Used to price your file at your locality and to send the result.';
 
 /** The "sent" alert, after its sentences on the email. */
-export const SENT_KEPT = `Then we delete it with your details, and keep a record of counts that names no one. ${KEPT_IF_REQUESTED}`;
+export const SENT_KEPT = `Then we delete it with your details, and keep a record of counts that names no one. ${REFUSED_ADDRESS_KEPT} ${ADDRESS_CHECK_KEPT} ${KEPT_IF_REQUESTED}`;
 
 /** The audit request form, which collects how the requester heard of us and the campaign link they came from. */
 export const REQUEST_AUDIT_KEPT =

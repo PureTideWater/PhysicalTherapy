@@ -48,10 +48,13 @@ import { BILLING_ARRANGEMENT_LABELS, PROSPECT_SOURCE_OPTIONS } from '../routes/o
 import { optionalText } from '../routes/schemas';
 import type { ScreeningLaunch } from '../server/config';
 import { ZIP_CODE_FORMAT, parseZipCode } from '../zip';
+import { ADDRESS_REFUSED, MAILBOX_UNCONFIRMED, addressHint } from './address';
+import { SCREENING_BOUNCE_BUDGET, SCREENING_PAUSED } from './messages';
 import { contentQuarters, quarterRowsLayBefore } from './content-span';
 import { SCREENING_STANDINGS, type ScreeningStanding } from './labels';
 import { screeningRateAccount } from './rate';
 import { SCREENING_WAIT_STATES, type ScreeningWaitState, screeningSentPath, screeningWaitStateOf } from './sent';
+import { checkScreeningAddress } from './validation';
 
 /**
  * The free screening's routes (Change Order 001, CO-04; reconciliation-001 D18 to D21; docs/adr/0062):
@@ -74,7 +77,11 @@ import { SCREENING_WAIT_STATES, type ScreeningWaitState, screeningSentPath, scre
  *   the ZIP+4"), and the ZIP+4 is kept only for such a ZIP. A Medicare row in a quarter outside the content the release
  *   in force has loaded (rule_release_content_span(), audit #7) is left out by the browser and counted, three numbers
  *   beside the floor's; one sent anyway is refused by its row (band_outside_content), as submit_screening() refuses it
- *   too (the founder's answer of 2026-10-21 to PR 6b's Q6 (a)).
+ *   too (the founder's answer of 2026-10-21 to PR 6b's Q6 (a)). The address the result goes to is checked last (audit
+ *   #76; docs/adr/0065, D9): a likely typo or an ending not in use is said first (the prospect may keep it), then DNS
+ *   and SES's validation together; the database refuses an address on the screening's refusal list and a client or
+ *   account past its bounce budget, and one sentence answers every refused address. While the screening's mail stream
+ *   is paused the page says so and nothing is taken.
  * - The result (/screening/results/[resultId], public): the token in the link, looked up by its SHA-256 alone; a link
  *   that is unknown, expired or not yet complete is not found. Every figure is the database's bigint sum of the
  *   engine's per-row results, before sequestration; a code in the reduction across codes has two figures (before
@@ -138,8 +145,14 @@ export interface ScreeningPageData {
   readonly sent: boolean;
   /** After an upload, how long its result is likely to take (SCREENING_WAIT_STATES); null on the form itself. */
   readonly wait: ScreeningWaitState | null;
-  /** A rule release is in force and a place-of-service split is approved. */
+  /** A rule release is in force and a place-of-service split is approved, and the screening's mail can be sent. */
   readonly open: boolean;
+  /**
+   * Why a page that could otherwise screen is closed: `mail_paused` while the screening's mail stream is paused (the
+   * page says so, D7), `not_ready` in staging or production until its mail path is proven (D8). Null when open, and when
+   * closed for any other reason (the page says screening is not open yet).
+   */
+  readonly closedReason: ScreeningClosedReason | null;
   readonly releaseNo: number | null;
   readonly columns: readonly ScreeningColumn[];
   readonly products: readonly (typeof SCREENING_PAYER_PRODUCTS)[number][];
@@ -187,13 +200,14 @@ export const screeningPage = publicRoute({
   // file arrived (screeningWaitStateOf), and never answers 404.
   params: z.object({ sent: optionalText(z.literal('1')), wait: optionalText(z.string()) }),
   handle: async ({ params, services }): Promise<ScreeningPageData> => {
-    const { open, releaseNo } = await screeningOpen(services.pool, services.environment, services.screeningLaunch);
+    const { open, releaseNo, reason } = await screeningOpen(services.pool, services.environment, services.screeningLaunch);
     const now = services.now();
     const sent = params.sent !== undefined;
     return {
       sent,
       wait: sent ? screeningWaitStateOf(params.wait) : null,
       open,
+      closedReason: reason ?? null,
       releaseNo,
       columns: SCREENING_COLUMNS,
       products: SCREENING_PAYER_PRODUCTS,
@@ -358,6 +372,9 @@ function reasonIssues(reasons: readonly ScreeningRejection[], total: number): Is
 
 const SCREENING_CLOSED: Issue = { field: 'input', message: 'screening is not open yet; try again later' };
 
+/** Why a screening that could otherwise open is closed by its mail (D7 and D8). */
+export type ScreeningClosedReason = 'mail_paused' | 'not_ready';
+
 /** A launch value's report hash: the SHA-256 of the tag's passing capacity report, in lowercase hex. */
 const REPORT_SHA256 = /^[0-9a-f]{64}$/;
 
@@ -384,22 +401,40 @@ export function screeningLaunched(environment: Environment, launch: ScreeningLau
  * Whether screening is open: a rule release in force and a place-of-service split approved, and, on a production
  * server, counsel's review of what the screening says is kept recorded (src/lib/legal-surfaces.ts: until then nothing is
  * screened or kept there under wording counsel has not confirmed) and the deploy's launch value for this server's
- * release (screeningLaunched).
+ * release (screeningLaunched). The screening's mail must also be able to go (audit #76; docs/adr/0065, D7 and D8): it is
+ * closed while its mail stream is paused, everywhere (`mail_paused`), and in staging and production until the mail path
+ * is proven ready (`not_ready`: sending, SES confirmed, and a delivered and a bounced probe within 48 hours and since
+ * the last resume, screening_mail_status()). Development ignores readiness, which has no probes, but honours a pause.
+ * The database refuses an upload while paused as well (screening_paused), so this page is the first of two closings.
  */
-async function screeningOpen(pool: ScopePool<ScopeClient>, environment: Environment, launch: ScreeningLaunch): Promise<{ readonly open: boolean; readonly releaseNo: number | null }> {
+async function screeningOpen(
+  pool: ScopePool<ScopeClient>,
+  environment: Environment,
+  launch: ScreeningLaunch,
+): Promise<{ readonly open: boolean; readonly releaseNo: number | null; readonly reason?: ScreeningClosedReason }> {
   if (!showsLegalSurfaces(SCREENING_LEGAL_SURFACES, environment)) {
     return { open: false, releaseNo: null };
   }
   if (!screeningLaunched(environment, launch)) {
     return { open: false, releaseNo: null };
   }
-  const status = await withClient(pool, async (client) => {
-    const { rows } = await client.query<{ release_no: number | null; place_of_service_split_id: string | null }>('SELECT release_no, place_of_service_split_id FROM screening_status()');
-    return rows[0];
+  const { status, mail } = await withClient(pool, async (client) => {
+    const screening = await client.query<{ release_no: number | null; place_of_service_split_id: string | null }>('SELECT release_no, place_of_service_split_id FROM screening_status()');
+    const mailStatus = await client.query<{ paused: boolean; ready: boolean }>('SELECT paused, ready FROM screening_mail_status()');
+    return { status: screening.rows[0], mail: mailStatus.rows[0] };
   });
   const releaseNo = status?.release_no ?? null;
-  const open = releaseNo !== null && (status?.place_of_service_split_id ?? null) !== null;
-  return { open, releaseNo: open ? releaseNo : null };
+  if (releaseNo === null || (status?.place_of_service_split_id ?? null) === null) {
+    return { open: false, releaseNo: null };
+  }
+  // No row reads paused and not ready (screening_mail_status() itself says so).
+  if (mail?.paused !== false) {
+    return { open: false, releaseNo: null, reason: 'mail_paused' };
+  }
+  if (environment !== 'dev' && mail.ready !== true) {
+    return { open: false, releaseNo: null, reason: 'not_ready' };
+  }
+  return { open: true, releaseNo };
 }
 
 /** The header cells the browser sent, or null when they are not a JSON array of at most 64 bounded strings. */
@@ -511,6 +546,9 @@ export const screeningSubmit = publicRoute({
     // How the prospect heard of us (PROSPECT_SOURCES; blank is none) and a referring firm (optional).
     heardFrom: field(32),
     referringFirm: field(400),
+    // `1` when the prospect chose to keep an address the form questioned (a likely typo, an ending not in use, or a
+    // mailbox SES could not confirm); a refused address is refused whatever this says.
+    keepAddress: field(4),
   }),
   handle: async ({ input, services, request }): Promise<MutationResult> => {
     // When the web received this upload: the proxy's stamp at header time, before Next read the multipart body, copied
@@ -519,9 +557,9 @@ export const screeningSubmit = publicRoute({
     // submit_screening() clamps it into the ten minutes before its own clock.
     const receivedAt = request.receivedAt ?? new Date();
     // Nothing about a prospect is recorded before screening opens (release 1), not even a refusal.
-    const { open, releaseNo } = await screeningOpen(services.pool, services.environment, services.screeningLaunch);
+    const { open, releaseNo, reason } = await screeningOpen(services.pool, services.environment, services.screeningLaunch);
     if (!open || releaseNo === null) {
-      throw new InputError([SCREENING_CLOSED]);
+      throw new InputError([reason === 'mail_paused' ? { field: 'input', message: SCREENING_PAUSED.refusal } : SCREENING_CLOSED]);
     }
     const prospect = prospectFields(input);
     const headers = headerCells(input.headers);
@@ -576,13 +614,49 @@ export const screeningSubmit = publicRoute({
       throw new InputError([{ field: 'contactEmail', message: 'an email address: the result’s link is sent there' }]);
     }
     const rateAccountSubject = rateSubjectHash(services.sealer, 'screening', 'account', account);
+    // The client the rate limiter counts, as it keeps it: its keyed hash, or null where no trusted proxy names one. The
+    // database holds the run to the client's bounce budget beside the account's (Q10 (a)).
+    const clientSubject = request.clientAddress === undefined || request.clientAddress === null ? null : rateSubjectHash(services.sealer, 'screening', 'address', request.clientAddress);
+    // The address (audit #76; docs/adr/0065, D9), only now that the upload passed its own checks and the rate limit. A
+    // likely typo, or an ending not in use, is said first: it costs nothing and reads the address alone, so it is said
+    // alike whether or not the address is on the refusal list, and the prospect who mistyped is told the likely fix.
+    const kept = input.keepAddress.trim() === '1';
+    const hint = addressHint(prospect.contactEmail);
+    if (hint.message !== null && !kept) {
+      throw new InputError([{ field: 'contactEmail', message: hint.message }]);
+    }
+    // What the database would refuse for the submitter, in its order (closed, paused, the submitter's bounce budget),
+    // before any check that is asked or paid for (review S4): the day's validations are never spent on an upload the
+    // database refuses for its mail, and a client or an account past its budget gets the budget's sentence whatever the
+    // address (S1). The address's refusal list is not asked here: submit_screening()'s run trigger answers for it after
+    // the address checks and the ZIP, row and band checks, so a ZIP the release cannot price or a mailbox SES cannot
+    // confirm is answered alike for a listed and an unlisted address, and nothing tells the list to a client that sends
+    // no screening (the review of 2026-10-27). The triggers stay the backstop.
+    const refusal = await withClient(services.pool, async (client) =>
+      (await client.query<{ refusal: string | null }>('SELECT screening_submit_mail_refusal($1, $2) AS refusal', [rateAccountSubject, clientSubject])).rows[0]?.refusal ?? null,
+    );
+    if (refusal !== null) {
+      throw new InputError([submitIssue(refusal)]);
+    }
+    // Then DNS and SES's validation run together, so the time added is at most one 2-second timeout (the plan's G1). One
+    // sentence answers every refused address, here and for the database's refusal list. Their time, measured here from
+    // after the database's answer, is logged with the run once it is stored (below).
+    const checksStarted = performance.now();
+    const verdict = await checkScreeningAddress(prospect.contactEmail, { checks: services.addressChecks, pool: services.pool, sealer: services.sealer, logger: services.logger, kept });
+    const addressCheckMs = Math.round(performance.now() - checksStarted);
+    if (verdict === 'refuse') {
+      throw new InputError([{ field: 'contactEmail', message: ADDRESS_REFUSED }]);
+    }
+    if (verdict === 'warn') {
+      throw new InputError([{ field: 'contactEmail', message: MAILBOX_UNCONFIRMED }]);
+    }
     let runId: string;
     try {
       runId = await withClient(services.pool, async (client) => {
         // The database hashes the rows it stores (their canonical form); no hash is taken from the browser.
         const result = await client.query<{ run_id: string }>(
           `SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
-                                   $28, $29, $30) AS run_id`,
+                                   $28, $29, $30, $31) AS run_id`,
           [
           prospect.practiceName,
           prospect.state,
@@ -610,6 +684,7 @@ export const screeningSubmit = publicRoute({
           receivedAt.toISOString(),
           rateAccountSubject,
           request.requestId,
+          clientSubject,
           ],
         );
         return result.rows[0]?.run_id ?? '';
@@ -621,6 +696,10 @@ export const screeningSubmit = publicRoute({
       }
       throw error;
     }
+    // How long the address checks took for this upload, by its run alone (never the address or its domain): the capacity
+    // harness reads the line and holds every measured upload to the checks' worst case, one 2-second timeout (the plan's
+    // G1), so a change that skips or shortens them on its path fails the gate instead of passing it about 2 s fast.
+    services.logger.info('screening address checked', { screening_run_id: runId, elapsed_ms: addressCheckMs });
     // Where the run stands in the queue: its tier (Q7), and how many runs are pricing or ahead of it.
     let wait: ScreeningQueuePlace | null;
     try {
@@ -644,6 +723,9 @@ export const screeningSubmit = publicRoute({
     return { redirect: screeningSentPath(screeningWaitState(place, services.screeningSlots)) };
   },
 });
+
+/** The mail's sentences (src/lib/screening/messages.ts holds them, for the page and the browser). */
+export { SCREENING_BOUNCE_BUDGET, SCREENING_PAUSED };
 
 /** The "sent" page's four states and its path (src/lib/screening/sent.ts holds their words). */
 export { SCREENING_WAIT_STATES, type ScreeningWaitState, screeningSentPath };
@@ -716,6 +798,15 @@ function submitIssue(constraint: string | undefined): Issue {
       return { field: 'zip', message: SCREENING_ZIP_MESSAGES.screening_locality_not_loaded };
     case 'screening_band_outside_content':
       return { field: 'upload', message: 'a Medicare row is in a quarter outside the Medicare content PaidWhole has loaded; choose the file again, and the page leaves it out' };
+    // The mail stream paused between the page and the upload (D7): the database's backstop.
+    case 'screening_paused':
+      return { field: 'input', message: SCREENING_PAUSED.refusal };
+    // The address is on the screening's refusal list (Q11 (b)): the same sentence as every refused address, so the form
+    // says nothing about an earlier screening.
+    case 'screening_contact_undeliverable':
+      return { field: 'contactEmail', message: ADDRESS_REFUSED };
+    case 'screening_bounce_budget':
+      return { field: 'input', message: SCREENING_BOUNCE_BUDGET };
     case 'screening_rows':
     case 'screening_result_once':
     case 'screening_upload_accepted_rows':

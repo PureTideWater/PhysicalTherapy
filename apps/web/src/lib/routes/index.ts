@@ -7,6 +7,7 @@ import { ACCOUNT_ROUTES } from './account';
 import { BILLING_ROUTES } from './billing';
 import { COMPLIANCE_ROUTES } from './compliance';
 import { CONSOLE_ROUTES } from './console';
+import { CONSOLE_MAIL_ROUTES } from './console-mail';
 import { CONSOLE_MODEL_ROUTES } from './console-models';
 import { CONSOLE_ONBOARDING_ROUTES } from './console-onboarding';
 import { CONTRACT_ROUTES } from './contracts';
@@ -91,6 +92,7 @@ export const ROUTES: readonly Route[] = [
   ...SECURITY_ROUTES,
   ...COMPLIANCE_ROUTES,
   ...CONSOLE_MODEL_ROUTES,
+  ...CONSOLE_MAIL_ROUTES,
   ...SCREENING_ROUTES,
 ];
 
