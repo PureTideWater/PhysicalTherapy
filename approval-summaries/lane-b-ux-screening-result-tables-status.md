@@ -27,7 +27,7 @@ The UX review's PR 4 (UX-005, UX-040, UX-042, UX-043, UX-132, UX-206; clusters C
   - e2e 6 of 6: screening-phone, screening (no flake), tables-phone, layout-1280.
 - **The two copies differ in tone on purpose** (P4-DR-03): on a phone an anomaly shows in the unpriced tone; the table copy keeps Short until UX PR 4b (#42's pins).
 - **`watched-paths.txt`, by its generator:** +`components/screening/table-parts.tsx`, +`components/stacked-rows.tsx`; `lib/copy/words.ts` stays on the merged tree, because #74's sign-in imports it.
-- **Running:** the base merge of 165c599 (#74 ux-forms merged) with the generator re-run and checks (wf_a6c7f099-c90, from 05:20 UTC). Safety check-in 06:49 UTC (trig_012Z6LWe5FpAY22BmWsUz8K4).
+- **Running:** the base merge of 165c599 (#74 ux-forms merged) with the generator re-run and checks (wf_a6c7f099-c90, from 05:20 UTC). Safety check-in 10:20 UTC (trig_014vh315v1NTqmgwpDQghedC).
 - **Next:** push the merge; the draft PR (template) and subscribe; the shots (design 7.1 with P4-DR-09) and the two reviews; the fix round with the full suite; the verification; the merge.
 
 ## Overlaps (checked 2026-10-28 01:45 UTC)
@@ -39,6 +39,7 @@ The UX review's PR 4 (UX-005, UX-040, UX-042, UX-043, UX-132, UX-206; clusters C
 - **ux-forms** (`co-001/ux-forms`): none of the planned files.
 
 ## Log
+- 2026-10-28 05:15 UTC: resumed on the orchestrator's message (the 5-hour limit had stopped the session ~04:05-04:27; the build had already finished at 04:05, nothing to resume). Check-in moved to 10:20 UTC. Next: the base merge's result, then the draft PR.
 - 2026-10-28 04:05 UTC: build done at 0c261ee (all checks pass); 05:13: the machine had restarted (PostgreSQL down): setup re-run, OK; 0c261ee pushed; 05:20: base merge (#74) started.
 - 2026-10-28 03:20 UTC: Lane A agreed Q1 (re-pin under the same name, no migration), with three conditions for 4b, recorded in design 12.1.
 - 2026-10-28 ~01:50-03:00 UTC: the design workflow wf_9855cdd7-e28 (three scouts, author, reviewer). 03:00: the review folded in (section 12). 03:05: build started.
