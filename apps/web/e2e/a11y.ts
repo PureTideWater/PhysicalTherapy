@@ -1,5 +1,5 @@
 import { AxeBuilder } from '@axe-core/playwright';
-import { type Page, expect } from '@playwright/test';
+import { type Locator, type Page, expect } from '@playwright/test';
 
 /**
  * The accessibility check of the e2e suite (PRD 6, Cross-cutting requirements: "Accessibility
@@ -212,4 +212,36 @@ function sidewaysScroll(): { readonly scrollWidth: number; readonly overflowing:
       return `${element.tagName.toLowerCase()}${hooks.join('')}${classes === '' ? '' : `.${classes}`} (right ${String(Math.round(element.getBoundingClientRect().right))})`;
     });
   return { scrollWidth: document.documentElement.scrollWidth, overflowing };
+}
+
+/** What a select shows: its chosen option's text, its outer width, and whether it cuts that text short. */
+export interface SelectShown {
+  readonly text: string;
+  readonly width: number;
+  readonly cut: boolean;
+}
+
+/**
+ * What the select shows as the page stands, measured as `SelectField`'s `showChosen` measures (components/field.tsx,
+ * docs/adr/0077, D6): against a hidden copy of the select that holds the chosen option alone, so the browser's own
+ * arrow and padding count and nothing is guessed from a font. The copy is gone before the call returns.
+ */
+export async function selectShows(select: Locator): Promise<SelectShown> {
+  return select.evaluate((element) => {
+    if (!(element instanceof HTMLSelectElement)) {
+      throw new Error('selectShows measures a select');
+    }
+    const text = element.selectedOptions[0]?.text ?? '';
+    const copy = document.createElement('select');
+    copy.className = element.className;
+    copy.style.cssText = 'position: absolute; visibility: hidden; width: auto; max-width: none';
+    copy.setAttribute('aria-hidden', 'true');
+    copy.tabIndex = -1;
+    copy.append(new Option(text));
+    element.after(copy);
+    // Padding boxes: a refused select's wider border is not the text's room.
+    const needed = copy.clientWidth;
+    copy.remove();
+    return { text, width: element.getBoundingClientRect().width, cut: needed > element.clientWidth };
+  });
 }

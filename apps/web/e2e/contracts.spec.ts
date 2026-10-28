@@ -5,7 +5,7 @@ import { type Page, type Request, expect, test } from '@playwright/test';
 import { assertNoPhi } from '@tp/observability';
 
 import { SYNTHETIC_PRACTICES, personaEmail } from '../scripts/synthetic-personas';
-import { atPhoneWidth } from './a11y';
+import { atPhoneWidth, selectShows } from './a11y';
 import { practiceId, refusal, registerKeyAndSignIn, signInWithTotp } from './helpers';
 import { startLocalWorker } from './worker';
 
@@ -79,6 +79,24 @@ test('a contract abstracted by hand, approved and signed off becomes the version
     const kind = panel.getByLabel('Kind of document');
     await expect(kind).toHaveValue('');
     await expect(kind).toHaveAccessibleDescription('A document’s kind cannot be changed once it is uploaded.');
+    // The select keeps its width while the words under it come and go, and shows its placeholder whole, at a phone's
+    // width too, where it is 16 px, refused or not (the merged #74 shots' M4-1 and M4-3; docs/adr/0077, D6).
+    const unrefused = await selectShows(kind);
+    expect(unrefused).toMatchObject({ text: 'Choose a kind', cut: false });
+    const wide = page.viewportSize();
+    const atPhone = async (check: () => Promise<void>) => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      try {
+        await check();
+      } finally {
+        if (wide !== null) {
+          await page.setViewportSize(wide);
+        }
+      }
+    };
+    await atPhone(async () => {
+      await expect.poll(() => selectShows(kind)).toMatchObject({ text: 'Choose a kind', cut: false });
+    });
     const requested: string[] = [];
     const onRequest = (request: Request) => {
       if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/uploads/request')) {
@@ -98,6 +116,11 @@ test('a contract abstracted by hand, approved and signed off becomes the version
     await expect(kind).toBeFocused();
     await expect(kind).toHaveAttribute('aria-invalid', 'true');
     await expect(kind).toHaveAccessibleDescription(/^Choose the kind of document for this file, then upload it\. A document’s kind cannot be changed/);
+    expect(await selectShows(kind)).toEqual(unrefused);
+    await atPhone(async () => {
+      await expect.poll(() => selectShows(kind)).toMatchObject({ text: 'Choose a kind', cut: false });
+    });
+    await expect(kind).toBeFocused();
     // A second choice joins the first and changes the words under the select, so they are announced again.
     await panel.getByLabel('Choose files to upload').setInputFiles([agreement]);
     await expect(waiting).toContainText('version-1.pdf');
@@ -112,6 +135,7 @@ test('a contract abstracted by hand, approved and signed off becomes the version
     await kind.selectOption('contract');
     await expect(panel.locator('#upload-kind-error')).toHaveCount(0);
     await expect(waiting.getByRole('button', { name: 'Upload 1 file' })).toBeVisible();
+    expect(await selectShows(kind)).toEqual({ ...unrefused, text: 'Contract' });
     expect(requested).toEqual([]);
     await expect(panel.getByRole('region', { name: 'This batch' })).toHaveCount(0);
     await uploadWithWorker(page, async () => {

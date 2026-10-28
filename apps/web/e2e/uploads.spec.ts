@@ -7,7 +7,7 @@ import { asOwner, createPracticeWithLocation } from '@tp/db/testing';
 import { assertNoPhi } from '@tp/observability';
 
 import { personaEmail } from '../scripts/synthetic-personas';
-import { atPhoneWidth } from './a11y';
+import { atPhoneWidth, selectShows } from './a11y';
 import { practiceId, signInWithTotp, withDatabase } from './helpers';
 import { startLocalWorker } from './worker';
 
@@ -34,13 +34,26 @@ test('a billing manager uploads an 835 and a zip; the worker takes them in and l
   }).not.toThrow();
   await expect(page.getByRole('heading', { level: 1, name: 'Uploads' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Drop zone' })).toBeVisible();
-  // At a phone's width the drop zone's selects shrink to it, though the zone sizes to its content: the kind's long
-  // option, then the ERA export's system list and its hint (FRM-08; docs/adr/0077, D6).
+  // At a phone's width the drop zone's fields stay inside it, though the zone sizes its other children to their
+  // content: the kind, then the ERA export's system list and its hint (FRM-08; docs/adr/0077, D6). The two selects
+  // line up and show their chosen text whole, so neither needs it shown under it (the merged #74 shots' M4-2).
   await atPhoneWidth(page, 'Uploads');
   const kind = page.getByLabel('Kind of document');
   await kind.selectOption('era_export');
-  await expect(page.getByLabel('Which system’s export')).toHaveAccessibleDescription(/^The practice-management system the ERA export came from\./);
+  const system = page.getByLabel('Which system’s export');
+  await expect(system).toHaveAccessibleDescription(/^The practice-management system the ERA export came from\./);
   await atPhoneWidth(page, 'Uploads, an ERA export chosen');
+  const wide = page.viewportSize();
+  await page.setViewportSize({ width: 390, height: 844 });
+  try {
+    await expect.poll(() => selectShows(kind)).toMatchObject({ text: 'ERA export', cut: false });
+    await expect.poll(() => selectShows(system)).toMatchObject({ text: 'Choose the system', cut: false });
+    expect((await selectShows(system)).width).toBe((await selectShows(kind)).width);
+  } finally {
+    if (wide !== null) {
+      await page.setViewportSize(wide);
+    }
+  }
   await kind.selectOption('x12_835');
   const local = await startLocalWorker();
   try {

@@ -92,8 +92,22 @@ export interface UploaderProps {
 /** The kind a panel without `kinds` takes: an 835, with the limits' types. */
 const DEFAULT_835 = { kind: 'x12_835', label: '835 remittance' } as const;
 
-/** The kind select's first, disabled option, shown while no kind is chosen. */
-export const CHOOSE_KIND_PLACEHOLDER = 'Choose the kind of document';
+/**
+ * The kind select's first, disabled option, shown while no kind is chosen, under the label "Kind of document": short
+ * enough to show whole in the drop zone's column at a phone's width, where controls are 16 px (docs/adr/0077, D6).
+ */
+export const CHOOSE_KIND_PLACEHOLDER = 'Choose a kind';
+
+/**
+ * The kind's and the ERA export system's field: as wide as the drop zone's column, up to the 28rem of the app's
+ * one-column forms (`max-w-md`), whatever is written under it. The drop zone sizes its other children to their content,
+ * so a field that did too would take the width of its widest line, and its select would widen when the words under it
+ * came and narrow when they went. The words and the help wrap inside the field.
+ */
+const FIELD_BOX = 'flex w-full min-w-0 max-w-md flex-col gap-1';
+
+/** The field's select: the field's whole width, so the kind's and the system's line up and neither follows its words. */
+const FIELD_SELECT = 'h-9 w-full rounded-md border bg-background px-2 text-sm';
 
 /** The kind select's help, under it on every panel that offers kinds: a kind is the person's choice before the upload (UX-4). */
 export const KIND_HELP = 'A document’s kind cannot be changed once it is uploaded.';
@@ -309,8 +323,8 @@ function put(file: File, target: UploadTarget, csrfToken: string, onProgress: (s
  * The kind select, its label, what it waits for and its help (UX-1, UX-4). While files wait for the kind, the select is
  * marked invalid and described first by what to do, then by its help, as every refused field is (controlMarks, the
  * shared FieldError and Hint; docs/adr/0077, D3 and D9): the words under it in an alert, re-inserted at each attempt
- * (`attempt`) so a second drop of the same files is announced too. The select's change only sets the kind: nothing
- * uploads on it.
+ * (`attempt`) so a second drop of the same files is announced too. The select keeps its width while those words come
+ * and go (FIELD_BOX). The select's change only sets the kind: nothing uploads on it.
  */
 export function KindField({
   kinds,
@@ -332,7 +346,7 @@ export function KindField({
   readonly selectRef: RefObject<HTMLSelectElement | null>;
 }) {
   return (
-    <div className="flex min-w-0 max-w-full flex-col gap-1">
+    <div className={FIELD_BOX}>
       <label htmlFor="upload-kind" className="text-sm font-medium">
         Kind of document
       </label>
@@ -348,7 +362,7 @@ export function KindField({
             onChange(chosen);
           }
         }}
-        className="h-9 max-w-full rounded-md border bg-background px-2 text-sm"
+        className={FIELD_SELECT}
       >
         {startedUnchosen ? (
           <option value="" disabled>
@@ -362,11 +376,11 @@ export function KindField({
         ))}
       </select>
       {problem === null ? null : (
-        <div key={attempt} role="alert" className="max-w-prose">
+        <div key={attempt} role="alert">
           <FieldError id="upload-kind" error={problem} />
         </div>
       )}
-      <Hint id="upload-kind" className="max-w-prose" hint={KIND_HELP} />
+      <Hint id="upload-kind" hint={KIND_HELP} />
     </div>
   );
 }
@@ -659,7 +673,7 @@ export function Uploader(props: UploaderProps) {
             />
           )}
           {kind?.formats === undefined ? null : (
-            <div className="flex min-w-0 max-w-full flex-col gap-1">
+            <div className={FIELD_BOX}>
               <label htmlFor="upload-format" className="text-sm font-medium">
                 Which system’s export
               </label>
@@ -675,7 +689,7 @@ export function Uploader(props: UploaderProps) {
                     setProblems([]);
                   }
                 }}
-                className="h-9 max-w-full rounded-md border bg-background px-2 text-sm"
+                className={FIELD_SELECT}
               >
                 <option value="">Choose the system</option>
                 {kind.formats.map((candidate) => (
@@ -685,13 +699,13 @@ export function Uploader(props: UploaderProps) {
                 ))}
               </select>
               {formatProblem === undefined ? null : (
-                <div key={attempt} role="alert" className="max-w-prose">
+                <div key={attempt} role="alert">
                   <FieldError id="upload-format" error={formatProblem} />
                 </div>
               )}
-              <Hint id="upload-format" className="max-w-prose" hint={FORMAT_HELP} />
+              <Hint id="upload-format" hint={FORMAT_HELP} />
               {format?.unconfirmed === true ? (
-                <div className="flex max-w-prose flex-col gap-1 text-sm text-muted-foreground" role="note" aria-label="Format unconfirmed">
+                <div className="flex flex-col gap-1 text-sm text-muted-foreground" role="note" aria-label="Format unconfirmed">
                   <FormatUnconfirmedBadge />
                   <span>
                     No description of this format has been received from its vendor yet, so PaidWhole reads it with a placeholder layout and flags its lines on the Coverage screen until the

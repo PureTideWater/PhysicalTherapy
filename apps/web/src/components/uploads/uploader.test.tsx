@@ -84,7 +84,8 @@ describe('the panel’s kind select', () => {
     const { select, options } = kindSelect(rendered({ kinds: [CONTRACT, LETTER] }));
     expect(select).toContain('required');
     expect(options).toEqual([`<option value="" disabled="" selected="">${CHOOSE_KIND_PLACEHOLDER}</option>`, '<option value="contract">Contract</option>', '<option value="payer_letter">Payer letter</option>']);
-    expect(CHOOSE_KIND_PLACEHOLDER).toBe('Choose the kind of document');
+    // Short enough to show whole at a phone's width, where controls are 16 px (docs/adr/0077, D6; M4-1).
+    expect(CHOOSE_KIND_PLACEHOLDER).toBe('Choose a kind');
   });
 
   it('says, where the kind is chosen, that a document’s kind cannot be changed once it is uploaded, on every panel that offers kinds (UX-4)', () => {
@@ -94,7 +95,7 @@ describe('the panel’s kind select', () => {
       expect(select).toContain('aria-describedby="upload-kind-hint"');
       expect(select).not.toContain('aria-invalid=');
       // The shared Hint (docs/adr/0077, D9): 14 px, as every field's.
-      expect(html).toContain(`<p id="upload-kind-hint" class="max-w-prose text-sm text-muted-foreground">${KIND_HELP}</p>`);
+      expect(html).toContain(`<p id="upload-kind-hint" class="text-sm text-muted-foreground">${KIND_HELP}</p>`);
     }
   });
 
@@ -190,10 +191,25 @@ describe('the kind field while files wait for it (UX-1, UX-5)', () => {
     // The shared field error (docs/adr/0077, D3): "Error:" and its icon beside the message, which the element the select
     // names holds alone; in an alert, so each drop or choice that leaves files waiting is announced.
     expect(html).toMatch(
-      /<div role="alert" class="max-w-prose"><div data-field-error="true" class="[^"]*\btext-sm text-destructive"><svg aria-hidden="true"[^>]*>.*?<\/svg><span aria-hidden="true" class="font-semibold">Error:<\/span><p id="upload-kind-error">Choose the kind of document for these 3 files, then upload them\.<\/p><\/div><\/div>/,
+      /<div role="alert"><div data-field-error="true" class="[^"]*\btext-sm text-destructive"><svg aria-hidden="true"[^>]*>.*?<\/svg><span aria-hidden="true" class="font-semibold">Error:<\/span><p id="upload-kind-error">Choose the kind of document for these 3 files, then upload them\.<\/p><\/div><\/div>/,
     );
     expect(html.indexOf('</select>')).toBeLessThan(html.indexOf('id="upload-kind-error"'));
     expect(html.indexOf('id="upload-kind-error"')).toBeLessThan(html.indexOf('id="upload-kind-hint"'));
+  });
+
+  it('keeps the select’s width while the words come and go: the field is the column’s width up to 28rem, its select the field’s (M4-3)', () => {
+    const box = (html: string) => /^<div class="([^"]*)">/.exec(html)?.[1];
+    const selectClass = (html: string) => /class="([^"]*)"/.exec(openingTag(html, 'upload-kind'))?.[1];
+    const waiting = field(waitingText('kind', 1));
+    const settled = field(null);
+    expect(box(waiting)).toBe('flex w-full min-w-0 max-w-md flex-col gap-1');
+    expect(box(settled)).toBe(box(waiting));
+    expect(selectClass(waiting)).toBe('h-9 w-full rounded-md border bg-background px-2 text-sm');
+    expect(selectClass(settled)).toBe(selectClass(waiting));
+    // The ERA export's system field is the same box, so the two selects line up.
+    const era = rendered({ kinds: [ANSI, ERA], initialKind: 'era_export' });
+    expect(era).toContain(`<div class="${String(box(settled))}"><label for="upload-format"`);
+    expect(/class="([^"]*)"/.exec(openingTag(era, 'upload-format'))?.[1]).toBe(selectClass(settled));
   });
 
   it('drops the mark and the words once nothing waits for the kind', () => {

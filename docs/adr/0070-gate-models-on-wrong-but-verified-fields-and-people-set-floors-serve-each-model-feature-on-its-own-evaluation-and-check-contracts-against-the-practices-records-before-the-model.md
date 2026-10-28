@@ -962,7 +962,12 @@ CLAUDE.md allows (log IDs) and an operator needs to know which practice is refus
 That is a departure from #120's words, recorded here.
 
 **The upload panel** (`apps/web/src/components/uploads/uploader.tsx`; notice N4). A panel that offers more than one
-kind starts with none: its select is required and leads with a disabled, selected "Choose the kind of document".
+kind starts with none: its select is required and leads with a disabled, selected "Choose a kind", under the label
+"Kind of document", short enough to show whole at a phone's width, where controls are 16 px (ADR 0077, D6). The kind's
+field, and an ERA export's system field, are as wide as the drop zone's column up to 28rem, the width of the app's
+one-column forms, whatever is written under them, so a select never widens or narrows as its words come and go. The
+Uploads page offers its kinds by the names its receipts give them ("835 remittance", "ERA export"), which show whole
+there at that width; the system's select and its help say where an ERA export comes from.
 
 - A drop or a choice of files while no kind is chosen keeps the files in the browser and sends nothing. They are
   listed by name under "Waiting to upload", and the kind select is marked `aria-invalid`, described first by "Choose
