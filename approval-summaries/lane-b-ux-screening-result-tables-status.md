@@ -11,6 +11,8 @@ The UX review's PR 4 (UX-005, UX-040, UX-042, UX-043, UX-132, UX-206; clusters C
   - scope any `data-slot` locator to `[data-stacked-copy]` or `:visible` (ADR 0078's renders-twice note).
   - `action-form.tsx`'s refusal hand-off stays UX PR 34's.
 
+**MERGE HOLD** (Lane A's orchestrator, 2026-10-28 07:20 UTC): #83 does not merge until #75 (contract-phi-check) merges, or until 11:00 UTC, whichever comes first, because both touch the test matrix, synth matrix and registry. Every stage up to the merge goes on. After the hold, merge the base into #83 once (rule 6), then merge as usual. The orchestrator messages when the hold lifts. (#78 merged at 06:50 UTC.)
+
 ## Current state (2026-10-28 05:50 UTC)
 - **PR #83** (draft): https://github.com/PureTideWater/PhysicalTherapy/pull/83. Head **f4a9766**, the clean base merge of 165c599 (#74). Every check passed locally on it (unit 6,581; e2e 26 of 26 over 11 specs). The description is from the template, written with update_pull_request and read back byte for byte. This session is subscribed to the PR.
 - **Build:** done (wf_9184e225-f39, 03:05-04:05 UTC), 6 commits:
@@ -49,6 +51,7 @@ The UX review's PR 4 (UX-005, UX-040, UX-042, UX-043, UX-132, UX-206; clusters C
 - **ux-forms** (`co-001/ux-forms`): none of the planned files.
 
 ## Log
+- 2026-10-28 07:20 UTC: merge hold on #83 until #75 merges or 11:00 UTC (the orchestrator).
 - 2026-10-28 05:52 UTC: CI green on f4a9766. 06:12: both reviews done (merge after fixes; 14 findings, all taken). 06:20: fix round started.
 - 2026-10-28 05:40 UTC: the base merge f4a9766 (#74) is clean, the generator re-run and all checks pass; pushed. 05:45: draft PR #83 opened, its description read back, subscribed. 05:48: the reviews workflow started.
 - 2026-10-28 05:15 UTC: resumed on the orchestrator's message (the 5-hour limit had stopped the session ~04:05-04:27; the build had already finished at 04:05, nothing to resume). Check-in moved to 10:20 UTC. Next: the base merge's result, then the draft PR.
