@@ -3,7 +3,10 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../../../../../components/action-form';
+import { DownloadLink, DownloadLinks } from '../../../../../../../../components/download-link';
+import { DownloadRefusal } from '../../../../../../../../components/download-refusal';
 import { CheckboxGroup } from '../../../../../../../../components/field';
+import { ForgetRefusal } from '../../../../../../../../components/forget-refusal';
 import { FormKeys } from '../../../../../../../../components/form-keys';
 import { utc } from '../../../../../../../../components/format';
 import { CalculationWords } from '../../../../../../../../components/packets/calculation-words';
@@ -12,6 +15,7 @@ import { PricingNowPanel } from '../../../../../../../../components/packets/pric
 import { StaleExportReview } from '../../../../../../../../components/packets/unattested';
 import { Money } from '../../../../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../../../../components/shell';
+import { downloadRefusal } from '../../../../../../../../lib/http/download-refusal';
 import { loadPage } from '../../../../../../../../lib/http/next';
 import { CONTACT_MALFORMED_TEXT, CONTACT_MISSING_TEXT, PAYER_COPY_REVIEW_TEXT } from '../../../../../../../../lib/packets/contact';
 import { ATTESTED_WORDING_NOTE, COMPUTED_BY_CODE_NOTE, PACKET_ATTESTATION_TEXT, attestedItems } from '../../../../../../../../lib/packets/review';
@@ -29,7 +33,10 @@ type Props = { readonly params: Promise<{ practiceId: string; caseId: string; ve
  * its evidence, each line's calculation, who wrote and approved it, downloads the exported PDF and CSV
  * from here (each checked against its SHA-256 as it is served and recorded as their download) and attests
  * over their SHA-256. The attest button stays disabled, saying why, until both files are downloaded (the
- * owner's addition of 2026-10-18: the handler and the database refuse an attestation before it). The
+ * owner's addition of 2026-10-18: the handler and the database refuse an attestation before it). Each file downloads
+ * in place (DownloadLink; docs/adr/0079): a refused one is said beside the files without loading the page again, so
+ * the ticks of a checklist already open stay, and once a file is saved the page is read again (router.refresh), so
+ * the checklist opens as the second file is downloaded. The
  * attestation is the only record the reviewer writes; the database refuses one by anyone who drafted, wrote
  * or approved the packet, and a submission is logged only after it. An export whose pricing is no longer
  * current (audit item #4) shows its stale lines with their figures then and now, and the attest button is
@@ -51,7 +58,14 @@ type Props = { readonly params: Promise<{ practiceId: string; caseId: string; ve
 export default async function PacketReviewPage(props: Props) {
   const page = await loadPage(packetReviewPage, props);
   if (page.kind === 'forbidden') {
-    return <Forbidden shell={page.shell} section="packet_reviews" roles={page.roles} message={page.message} nextStep="A packet's export is attested by a reimbursement reviewer under a support grant." />;
+    // A file refused to this role comes back here too, refused for this page's own permission: the permission state
+    // says it, and the refusal leaves the address bar as it does beside the files.
+    return (
+      <>
+        <Forbidden shell={page.shell} section="packet_reviews" roles={page.roles} message={page.message} nextStep="A packet's export is attested by a reimbursement reviewer under a support grant." />
+        {downloadRefusal(await props.searchParams) === null ? null : <ForgetRefusal />}
+      </>
+    );
   }
   const { practiceId, review, checklist, notice, sentWithoutSignOff, unattestedReason, canOpenLines, wordsVersion } = page.data;
   const path = `/p/${practiceId}/cases/${review.caseId}/packet/${review.versionId}/review`;
@@ -75,6 +89,8 @@ export default async function PacketReviewPage(props: Props) {
   const stale = review.attestation === null && blocked === 'pricing_not_current';
   const downloadedBoth = review.viewerDownloaded.pdf && review.viewerDownloaded.csv;
   const missing = [review.viewerDownloaded.pdf ? null : 'the PDF', review.viewerDownloaded.csv ? null : 'the CSV schedule'].filter((file) => file !== null).join(' and ');
+  // A refused file comes back here, said beside the exported files (docs/adr/0079).
+  const refusal = downloadRefusal(await props.searchParams);
   return (
     <AppShell shell={page.shell} section="packet_reviews">
       <div className="flex flex-col gap-1">
@@ -115,31 +131,38 @@ export default async function PacketReviewPage(props: Props) {
                 : `Exported ${utc(review.exportedAt)}. Download both files and review them before you attest: each download is checked against its SHA-256 as it is served and recorded as yours, and the attestation names their SHA-256.`}
           </CardDescription>
         </CardHeader>
-        {review.exportedAt === null ? null : (
+        {review.exportedAt === null && refusal === null ? null : (
           <CardContent className="flex flex-col gap-2 text-sm">
-            <p data-download="pdf" data-downloaded={review.viewerDownloaded.pdf ? 'true' : 'false'}>
-              <a className="underline" href={`${path}/pdf`} download>
-                PDF
-              </a>{' '}
-              SHA-256 <Hash value={review.exportSha256} label="PDF SHA-256" />
-              {stale && !review.viewerDownloaded.pdf ? null : (
-                <span className="block text-muted-foreground">{review.viewerDownloaded.pdf ? 'You downloaded it after the export, checked against this SHA-256.' : 'You have not downloaded it yet.'}</span>
+            {/* A file downloaded here says its refusal above the files, in place of the one the page arrived with. */}
+            <DownloadLinks arrived={<DownloadRefusal refusal={refusal} />}>
+              {review.exportedAt === null ? null : (
+                <>
+                  <p data-download="pdf" data-downloaded={review.viewerDownloaded.pdf ? 'true' : 'false'}>
+                    <DownloadLink className="underline" href={`${path}/pdf`} refresh={!downloadedBoth}>
+                      PDF
+                    </DownloadLink>{' '}
+                    SHA-256 <Hash value={review.exportSha256} label="PDF SHA-256" />
+                    {stale && !review.viewerDownloaded.pdf ? null : (
+                      <span className="block text-muted-foreground">{review.viewerDownloaded.pdf ? 'You downloaded it after the export, checked against this SHA-256.' : 'You have not downloaded it yet.'}</span>
+                    )}
+                  </p>
+                  <p data-download="csv" data-downloaded={review.viewerDownloaded.csv ? 'true' : 'false'}>
+                    <DownloadLink className="underline" href={`${path}/csv`} refresh={!downloadedBoth}>
+                      CSV schedule
+                    </DownloadLink>{' '}
+                    (line-level PHI: the download is recorded) SHA-256 <Hash value={review.exportCsvSha256} label="CSV SHA-256" />
+                    {stale && !review.viewerDownloaded.csv ? null : (
+                      <span className="block text-muted-foreground">{review.viewerDownloaded.csv ? 'You downloaded it after the export, checked against this SHA-256.' : 'You have not downloaded it yet.'}</span>
+                    )}
+                  </p>
+                  {review.exportVerifier === null ? null : (
+                    <p data-export-verifier={review.exportVerifier.passed ? 'passed' : 'failed'}>
+                      The verifier checked the narrative the export printed: {review.exportVerifier.passed ? 'passed' : 'failed'}, {review.exportVerifier.checked} figures, placeholders and citations in {review.exportVerifier.sentences} sentences.
+                    </p>
+                  )}
+                </>
               )}
-            </p>
-            <p data-download="csv" data-downloaded={review.viewerDownloaded.csv ? 'true' : 'false'}>
-              <a className="underline" href={`${path}/csv`} download>
-                CSV schedule
-              </a>{' '}
-              (line-level PHI: the download is recorded) SHA-256 <Hash value={review.exportCsvSha256} label="CSV SHA-256" />
-              {stale && !review.viewerDownloaded.csv ? null : (
-                <span className="block text-muted-foreground">{review.viewerDownloaded.csv ? 'You downloaded it after the export, checked against this SHA-256.' : 'You have not downloaded it yet.'}</span>
-              )}
-            </p>
-            {review.exportVerifier === null ? null : (
-              <p data-export-verifier={review.exportVerifier.passed ? 'passed' : 'failed'}>
-                The verifier checked the narrative the export printed: {review.exportVerifier.passed ? 'passed' : 'failed'}, {review.exportVerifier.checked} figures, placeholders and citations in {review.exportVerifier.sentences} sentences.
-              </p>
-            )}
+            </DownloadLinks>
           </CardContent>
         )}
       </Card>
@@ -334,7 +357,8 @@ export default async function PacketReviewPage(props: Props) {
                   Attest the export
                 </Button>
                 <p id="attest-blocked" className="pt-1 text-sm text-muted-foreground">
-                  Download {missing} under Exported files first: you attest only files you have downloaded since the export, each checked against its SHA-256. Then reload this page.
+                  Download {missing} under Exported files first: you attest only files you have downloaded since the export, each checked against its SHA-256. The checklist opens here once
+                  both are downloaded; after a download in another tab, reload this page.
                 </p>
               </div>
             </div>

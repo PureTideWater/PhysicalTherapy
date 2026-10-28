@@ -16,11 +16,12 @@ import { practiceRunRefusal } from '@tp/worker/billing';
 import { ERA_EXPORT_FORMATS, isUnconfirmed } from '@tp/worker/era-formats';
 import { z } from 'zod';
 
+import { cameFrom, returnPage } from '../http/download-refusal';
 import { practiceRoute } from '../http/invoke';
 import { type Download, InputError, NotFoundError } from '../http/route';
 import { declaredTypeProblem } from '../uploads/csv-exports';
 import { CONTENT_TYPES, MAX_FILES_PER_BATCH, MAX_UPLOAD_BYTES, allowedContentType } from '../uploads/limits';
-import type { Receipt } from '../uploads/receipt-labels';
+import { REPORT_FROM, type Receipt } from '../uploads/receipt-labels';
 import { type ReceiptPage, listReceipts, receiptOf, receiptReport } from '../uploads/receipts';
 import { UPLOAD_TOKEN } from '../uploads/token';
 import { type UploadTarget, UploadSizeError } from '../uploads/targets';
@@ -368,6 +369,7 @@ export const retryUpload = practiceRoute({
   sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ documentId: refs.documentId }) },
 });
 
+/** A receipt's error report (CSV): the file's receipt and, for a zip, one per file in it; named by the document's opaque ID. */
 export const uploadReport = practiceRoute({
   id: 'practice.uploads.report',
   kind: 'handler',
@@ -377,6 +379,9 @@ export const uploadReport = practiceRoute({
   phi: true,
   permission: 'practice.open',
   params: z.object({ practiceId: opaqueId, documentId: opaqueId }),
+  // A browser's refused report comes back to the page that linked it (docs/adr/0079): the Uploads screen's receipts
+  // (?from=uploads), or by default the file's own receipt.
+  returnTo: (params) => returnPage(cameFrom(params, REPORT_FROM) === 'uploads' ? '/p/[practiceId]/uploads' : '/p/[practiceId]/uploads/[documentId]', params),
   handle: async ({ scope, practiceId, params, request }): Promise<Download> => {
     const body = await receiptReport(scope, practiceId, params.documentId, request.requestId);
     if (body === undefined) {

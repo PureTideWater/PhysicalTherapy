@@ -81,8 +81,12 @@ export const COPY_FILES = [
 
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx']);
 
-/** Dependencies, build output and test support (a directory, or a package's test-support.ts), which hold fixture data rather than copy. */
-const SKIPPED_DIRECTORIES = new Set(['node_modules', '.next', 'dist', 'coverage', 'test-support', '__fixtures__', 'fixtures', 'e2e']);
+/**
+ * Dependencies, build output and test support (a directory, or a package's test-support.ts), which hold fixture data
+ * rather than copy. Never `coverage`: the coverage report is written to the repository's own coverage/ (vitest.config.ts),
+ * outside every directory read, while Coverage's screen, its letter and lib/coverage are copy (docs/adr/0079).
+ */
+const SKIPPED_DIRECTORIES = new Set(['node_modules', '.next', 'dist', 'test-support', '__fixtures__', 'fixtures', 'e2e']);
 
 export type CopyRule =
   | 'proof-pack'

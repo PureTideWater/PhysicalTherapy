@@ -15,6 +15,7 @@ import {
 import { COMPLIANCE_RECORD_KINDS } from '@tp/db/runtime';
 import { z } from 'zod';
 
+import { returnPage } from '../http/download-refusal';
 import { platformRoute } from '../http/invoke';
 import { type Download, InputError, type MutationResult } from '../http/route';
 import type { Services } from '../server/services';
@@ -188,6 +189,8 @@ export const exportEvidence = platformRoute({
   rateLimit: 'export',
   permission: 'compliance.manage',
   params: z.object({}),
+  // A browser's refused export comes back to the checklist, beside its download link (docs/adr/0079).
+  returnTo: (params) => returnPage('/console/compliance', params),
   handle: async ({ scope, services }): Promise<Download> => {
     const { checklist } = await readEvidence(scope.client, services);
     const evidence = buildExport(checklist, { environment: services.environment, generatedAt: services.now() });

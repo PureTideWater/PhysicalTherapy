@@ -3,10 +3,14 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../../../components/action-form';
+import { DownloadLink, DownloadLinks } from '../../../../../../components/download-link';
+import { DownloadRefusal } from '../../../../../../components/download-refusal';
 import { CheckboxGroup } from '../../../../../../components/field';
+import { ForgetRefusal } from '../../../../../../components/forget-refusal';
 import { utc } from '../../../../../../components/format';
 import { Headline, ReportSections } from '../../../../../../components/reports/display';
 import { AppShell, Forbidden } from '../../../../../../components/shell';
+import { downloadRefusal } from '../../../../../../lib/http/download-refusal';
 import { loadPage } from '../../../../../../lib/http/next';
 import { REPORT_RELEASE_WITHDRAWN_TEXT } from '../../../../../../lib/reports/queries';
 import { ATTESTATION_TEXT, reviewChecklistPage } from '../../../../../../lib/routes/reports';
@@ -24,34 +28,59 @@ type Props = { readonly params: Promise<{ practiceId: string; reportId: string }
  * grant, reads the report's numbers and its PDF, confirms every item and signs over the SHA-256 of the
  * files shown here; the signature is the only record the reviewer writes. A report whose rule release was
  * withdrawn since it was generated (audit item #4) is not signed: the checklist says why and the button is
- * disabled (the attest route and the database refuse it too).
+ * disabled (the attest route and the database refuse it too). A refused download of the PDF or the line CSV comes back
+ * here (the PDF's link says ?from=review), said below the links (docs/adr/0079). Each downloads in place
+ * (DownloadLink): a refused one is said there without loading the page again, so the items already ticked stay ticked.
+ * This page takes a narrower permission than the PDF, which every role that reads reports downloads, so a refusal can
+ * come back here to a role this page refuses: its permission state then says where the report's files are, and the
+ * refusal leaves the address bar.
  */
 export default async function ReviewChecklistPage(props: Props) {
   const page = await loadPage(reviewChecklistPage, props);
   if (page.kind === 'forbidden') {
-    return <Forbidden shell={page.shell} section="reports" roles={page.roles} message={page.message} nextStep="The checklist is signed by a reimbursement reviewer under a support grant." />;
+    const refused = downloadRefusal(await props.searchParams);
+    return (
+      <>
+        <Forbidden
+          shell={page.shell}
+          section="reports"
+          roles={page.roles}
+          message={page.message}
+          nextStep={
+            refused === null
+              ? 'The checklist is signed by a reimbursement reviewer under a support grant.'
+              : 'The checklist is signed by a reimbursement reviewer under a support grant. The report’s own page lists its files for the roles that download them.'
+          }
+        />
+        {refused === null ? null : <ForgetRefusal />}
+      </>
+    );
   }
   const { practiceId, report, checklist } = page.data;
   const path = `/p/${practiceId}/reports/${report.id}`;
+  const refusal = downloadRefusal(await props.searchParams);
   return (
     <AppShell shell={page.shell} section="reports">
-      <div className="flex flex-col gap-1">
-        <Link className="text-sm underline" href={path}>
-          Audit report
-        </Link>
-        <h1 className="text-[2rem] font-bold leading-display tracking-display">Reviewer checklist</h1>
-        <p className="text-base text-muted-foreground">
-          Service {report.periodFrom} to {report.periodTo}; windows judged on {report.asOf ?? '—'}. Read the report, its{' '}
-          <a className="underline" href={`${path}/pdf`}>
-            PDF
-          </a>{' '}
-          and its{' '}
-          <a className="underline" href={`${path}/review/csv`}>
-            line CSV
-          </a>{' '}
-          (line-level PHI: the download is recorded), check each finding against the practice’s contracts, then sign.
-        </p>
-      </div>
+      {/* A file downloaded here says its refusal below the header, in place of the one the page arrived with. */}
+      <DownloadLinks arrived={<DownloadRefusal refusal={refusal} />} below>
+        <div className="flex flex-col gap-1">
+          <Link className="text-sm underline" href={path}>
+            Audit report
+          </Link>
+          <h1 className="text-[2rem] font-bold leading-display tracking-display">Reviewer checklist</h1>
+          <p className="text-base text-muted-foreground">
+            Service {report.periodFrom} to {report.periodTo}; windows judged on {report.asOf ?? '—'}. Read the report, its{' '}
+            <DownloadLink className="underline" href={`${path}/pdf?from=review`}>
+              PDF
+            </DownloadLink>{' '}
+            and its{' '}
+            <DownloadLink className="underline" href={`${path}/review/csv`}>
+              line CSV
+            </DownloadLink>{' '}
+            (line-level PHI: the download is recorded), check each finding against the practice’s contracts, then sign.
+          </p>
+        </div>
+      </DownloadLinks>
       {report.status === 'ready' && report.releaseWithdrawn && report.attestedAt === null ? (
         <Alert variant="destructive" data-state="release-withdrawn">
           <AlertTitle>Rule release withdrawn since this report was generated</AlertTitle>

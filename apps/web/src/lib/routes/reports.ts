@@ -3,8 +3,9 @@ import { randomUUID } from 'node:crypto';
 import { type PracticeScope, type ScopeClient, rolesPermit } from '@tp/db/runtime';
 import { z } from 'zod';
 
+import { cameFrom, returnPage } from '../http/download-refusal';
 import { practiceRoute } from '../http/invoke';
-import { type Download, InputError, type MutationResult, NotFoundError } from '../http/route';
+import { type Download, InputError, type MutationResult, NotFoundError, type ReturnTo } from '../http/route';
 import type { Services } from '../server/services';
 import { type ExportRecord, type ReportDocumentSummary, exportHistory, listReportDocuments } from '../reports/documents';
 import { type Attestation, type DownloadRecord, REPORT_RELEASE_WITHDRAWN_TEXT, type ReportDetail, type ReportSummary, downloads, listReports, reportFile, reportOf } from '../reports/queries';
@@ -292,6 +293,15 @@ async function file(scope: PracticeScope<ScopeClient>, services: Services, pract
   return bytes;
 }
 
+/**
+ * Where a browser's refused report file goes back to (docs/adr/0079): the page whose link it was, as the link's ?from=
+ * names it (the Reports screen's list, the reviewer's checklist), else the report's own page, beside its files.
+ */
+const reportFilePage: ReturnTo = (params) => {
+  const from = cameFrom(params, ['list', 'review']);
+  return returnPage(from === 'list' ? reportsPage.path : from === 'review' ? reviewChecklistPage.path : reportPage.path, params);
+};
+
 /** The report's PDF (its numbers by stage, no line-level PHI), checked against its SHA-256; the download is recorded. */
 export const reportPdf = practiceRoute({
   id: 'practice.reports.pdf',
@@ -302,6 +312,7 @@ export const reportPdf = practiceRoute({
   phi: true,
   permission: 'report.read',
   params: z.object({ practiceId: opaqueId, reportId: opaqueId }),
+  returnTo: reportFilePage,
   handle: async ({ scope, practiceId, params, request, services }): Promise<Download<Uint8Array<ArrayBuffer>>> => ({
     // The file's name is the report's opaque ID, never the practice's or a payer's name.
     download: { filename: `audit-report-${params.reportId}.pdf`, contentType: 'application/pdf', body: await file(scope, services, practiceId, params.reportId, 'pdf', request.requestId) },
@@ -319,6 +330,7 @@ export const reportCsv = practiceRoute({
   phi: true,
   permission: 'phi.export',
   params: z.object({ practiceId: opaqueId, reportId: opaqueId }),
+  returnTo: reportFilePage,
   handle: async ({ scope, practiceId, params, request, services }): Promise<Download<Uint8Array<ArrayBuffer>>> => ({
     download: { filename: `audit-report-lines-${params.reportId}.csv`, contentType: 'text/csv; charset=utf-8', body: await file(scope, services, practiceId, params.reportId, 'csv', request.requestId) },
   }),
@@ -340,6 +352,8 @@ export const reviewCsv = practiceRoute({
   phi: true,
   permission: 'audit_finding.validate',
   params: z.object({ practiceId: opaqueId, reportId: opaqueId }),
+  // A browser's refused file comes back to the checklist that links it (docs/adr/0079).
+  returnTo: (params) => returnPage(reviewChecklistPage.path, params),
   handle: async ({ scope, practiceId, params, request, services }): Promise<Download<Uint8Array<ArrayBuffer>>> => ({
     download: { filename: `audit-report-lines-${params.reportId}.csv`, contentType: 'text/csv; charset=utf-8', body: await file(scope, services, practiceId, params.reportId, 'csv', request.requestId) },
   }),
