@@ -11,3 +11,8 @@
 - Workflow changed -> also pnpm actions:check and BASE=origin/claude/build-platform pnpm toolchain:check (CLAUDE.md)
 - e2e: playwright has ONE project (chromium); "as CI" = CI's 2 shards, CI=true (retry 1 + failOnFlakyTests), E2E_PREBUILT=1 on the stamped build of the build step
 - suite script: scratchpad/pr42f/suite.sh; results scratchpad/pr42f/suite/results.tsv (+ .done); dbs tp_pr6b4f_*
+## Resume 1 (2026-10-28, after an interruption)
+- Found: HEAD bd589960 clean; origin/claude/build-platform still 165c5993 (no new base); origin PR head still 46974a25. Steps 1-2 verified in the code (ci.yml 4 lines, test pins + new test).
+- Suite results so far: typecheck 0 (22 projects passed). lint was cut by the interruption (apps/web 624 files 0/0, packages 505 files 0/0 passed; '.' group killed, no result row) -> rerun lint and continue.
+- Step 3 results (bd589960): typecheck 0 (22 projects); lint 0 (1,673 files in 3 groups, 0 errors 0 warnings); lint:copy 0 (529 files); lint:logs 0 (1,081 files); check:fixtures 0 (333 read, 3,908 searched); synth --all 0 (258 cases 0 written/650 unchanged; 8 EMR 0/16) + diff clean + nothing untracked; engine-freeze 0 (no problems)
+- Next: unit golden oracle verify-content (chunk B, started)
