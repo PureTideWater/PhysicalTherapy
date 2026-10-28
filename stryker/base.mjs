@@ -47,10 +47,12 @@ export const MUTATE = {
   ledger: ['packages/ledger/src/**/*.ts', '!packages/ledger/src/**/*.test.ts'],
   packets: [
     // The packet verifier: its check, and the reading of a narrative it rests on (what the text shows, the figures it
-    // holds, the payer and plan as the payer's copy names them, the placeholders).
+    // holds, the role each figure's words give it, the payer and plan as the payer's copy names them, the placeholders).
     'packages/packets/src/verifier/**/*.ts',
     'packages/packets/src/readable.ts',
     'packages/packets/src/scan.ts',
+    'packages/packets/src/roles.ts',
+    'packages/packets/src/roles-words.ts',
     'packages/packets/src/facts.ts',
     'packages/packets/src/payer.ts',
     'packages/packets/src/placeholders.ts',

@@ -1,4 +1,4 @@
-import type { EvidenceGapCode, EvidenceKind, MismatchCode, SourceKind } from '@tp/packets';
+import type { EvidenceGapCode, EvidenceKind, FigureRole, MismatchCode, SourceKind } from '@tp/packets';
 import type { DeadlineStatus, DeadlineUnverifiedCause } from '@tp/triage';
 
 /**
@@ -8,7 +8,7 @@ import type { DeadlineStatus, DeadlineUnverifiedCause } from '@tp/triage';
  */
 
 export const MISMATCH_TEXT: Readonly<Record<MismatchCode, string>> = {
-  figure_not_in_input: 'a figure that is not in the packet’s input records',
+  figure_not_in_input: 'a figure that is not in the packet’s input records in the role its words give it',
   sentence_without_citation: 'a sentence that cites none of the numbered sources',
   unknown_citation: 'a citation marker that names no source of this version',
   unknown_placeholder: 'an identifier placeholder that names no schedule row or kind',
@@ -26,7 +26,7 @@ export const FIGURE_KIND_TEXT: Readonly<Record<string, string>> = {
   month_day: 'day of a month',
   code: 'code',
   modifier: 'modifier',
-  number: 'number or count',
+  number: 'number or count; say what it counts or names: 3 claims, 6 units, page 2, 3650 days, release 900001',
   identifier: 'identifier',
   placeholder: 'placeholder',
   citation: 'citation',
@@ -53,10 +53,58 @@ export function mismatchShown(code: MismatchCode, written: string): string | nul
   }
 }
 
-/** A mismatch in words: what it is, and of what kind. */
-export function mismatchText(code: MismatchCode, kind: string | null): string {
+/**
+ * What each role a figure is read in means (@tp/packets FIGURE_ROLES; docs/adr/0086), for the editor's words beside a
+ * failing figure: "read as a count of claims". Every role the reader has is here, so a role it gains has its words.
+ */
+export const ROLE_TEXT: Readonly<Record<FigureRole, string>> = {
+  window_days: 'the dispute window’s days',
+  days_to_pay: 'the days the payer has to pay',
+  days_late: 'the days a payment was late',
+  citation_page: 'the cited clause’s page',
+  window_page: 'the dispute window’s page',
+  version: 'the contract’s version',
+  release: 'a rule release',
+  level: 'the dispute level',
+  lines: 'a count of lines',
+  claims: 'a count of claims',
+  patients: 'a count of patients',
+  units: 'a count of units',
+  line_units: 'each line’s units',
+  row: 'a row of the schedule',
+  claim_row: 'one of the claims',
+  patient_row: 'one of the patients',
+  expected: 'what the contract requires',
+  allowed: 'what the payer allowed',
+  paid: 'what the payer paid',
+  variance: 'the shortfall',
+  interest: 'interest',
+  patient_share: 'the patient’s share',
+  calculation: 'a step of a line’s calculation',
+  contract_percent: 'the contract’s percentage',
+  interest_rate: 'the interest rate',
+  service_date: 'a date of service',
+  paid_date: 'a payment date',
+  received_date: 'the date the payer received a claim',
+  due_date: 'the date payment was due',
+  deadline: 'the dispute deadline',
+  effective_date: 'the contract’s effective date',
+  as_of_date: 'the packet’s date',
+  schedule_year: 'the fee schedule’s year',
+};
+
+/** The roles a figure was read in, in words: "read as a count of claims or a count of lines". */
+export function readAsText(roles: readonly FigureRole[]): string {
+  return `read as ${roles.map((role) => ROLE_TEXT[role]).join(' or ')}`;
+}
+
+/** A mismatch in words: what it is, of what kind, and, for a figure its words give a role, what it was read as. */
+export function mismatchText(code: MismatchCode, kind: string | null, roles: readonly FigureRole[] | null = null): string {
   const what = MISMATCH_TEXT[code];
-  return kind === null || code !== 'figure_not_in_input' ? what : `${what} (${FIGURE_KIND_TEXT[kind] ?? kind})`;
+  if (kind === null || code !== 'figure_not_in_input') {
+    return what;
+  }
+  return `${what} (${FIGURE_KIND_TEXT[kind] ?? kind}${roles === null || roles.length === 0 ? '' : `, ${readAsText(roles)}`})`;
 }
 
 export const EVIDENCE_KIND_TEXT: Readonly<Record<EvidenceKind, string>> = {

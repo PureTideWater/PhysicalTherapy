@@ -179,6 +179,18 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     assertion:
       'Submitting the materiality and pursuit forms with the values the page pre-fills keeps lineMaterialityCents 500, caseMaterialityCents 25000 and staffRateCentsPerHour 4500; for every amount, the helper’s output read back through the save’s dollars field gives the same cents; a model budget entered as 5.00 or 5 is stored as 500 cents',
   },
+  {
+    id: 'CAS-43',
+    title: 'A narrative states an input’s figure in another role (the window’s 10000 days as visits, a date’s year as claims, a page as a code, a release as units, a quoted clause’s or name’s number as the record’s, the allowed amount as the shortfall or as paid, a service date as the payment date, the days to pay as the window, calendar days as business days)',
+    assertion:
+      'The verifier fails each figure (`figure_not_in_input`, at the figure, with its kind); approval is blocked; the export refuses a version an older reading passed; the editor says what the figure was read as',
+  },
+  {
+    id: 'CAS-44',
+    title: 'A narrative states each figure in the role its input holds, or as a quoted text holds it',
+    assertion:
+      'Passes: days, pages, versions, releases, levels, years, counts, units and rows each with their words, in digits, with commas or in words; a quoted figure beside its own words; at least 100 hand-written forms not drawn from the drafting templates; a number with no role fails',
+  },
   { id: 'LED-01', title: 'Packet submitted', assertion: 'No entry' },
   { id: 'LED-02', title: 'Adjusted remittance with higher allowed matching a case line', assertion: '`approved` entry for the difference' },
   { id: 'LED-03', title: 'Adjusted remittance matching no case', assertion: 'Listed for manual match; no entry' },

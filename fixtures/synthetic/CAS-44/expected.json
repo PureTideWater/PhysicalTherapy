@@ -1,0 +1,22 @@
+{
+  "case": "CAS-44",
+  "module": "CAS",
+  "title": "A narrative states each figure in the role its input holds, or as a quoted text holds it",
+  "assertion": "Passes: days, pages, versions, releases, levels, years, counts, units and rows each with their words, in digits, with commas or in words; a quoted figure beside its own words; at least 100 hand-written forms not drawn from the drafting templates; a number with no role fails",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": [
+    "packages/packets/src/verifier.test.ts",
+    "packages/packets/src/roles.test.ts",
+    "packages/packets/src/roles.property.test.ts",
+    "packages/model-gateway/src/functions/narrative-roles.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Narratives against the SYNTHETIC packets of @tp/packets/testing (role-examples.ts): no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

@@ -1,7 +1,7 @@
 'use client';
 
 import type { PacketContent } from '@tp/packets';
-import { checkNarrative } from '@tp/packets/check';
+import { checkFigures, checkNarrative } from '@tp/packets/check';
 import { Badge, Label } from '@tp/ui';
 import { useMemo, useState } from 'react';
 
@@ -12,12 +12,16 @@ import { mismatchShown, mismatchText } from '../../lib/packets/view';
  * results"): the person writes the pattern statement with the version's identifier placeholders and its
  * numbered sources, and the verifier's own check (@tp/packets/check, the code the server runs when the
  * version is written) runs against the version's content on every keystroke, listing each mismatch with
- * the words it is about. This is advice while typing: saving writes a new version, whose stored result
- * the server computes again and which alone decides whether it can be approved.
+ * the words it is about and, for a figure in the wrong role, the role its words gave it ("read as a count of
+ * claims"). This is advice while typing: saving writes a new version, whose stored result the server
+ * computes again and which alone decides whether it can be approved.
  */
 export function NarrativeEditor({ name, initial, content, maxLength }: { readonly name: string; readonly initial: string; readonly content: PacketContent; readonly maxLength: number }) {
   const [text, setText] = useState(initial);
   const check = useMemo(() => checkNarrative(text, content), [text, content]);
+  // What each figure was read as (docs/adr/0086), so a failing figure says the role its words gave it.
+  const figures = useMemo(() => checkFigures(text, content), [text, content]);
+  const readAs = (start: number, end: number) => figures.find((figure) => figure.start === start && figure.end === end)?.roles ?? null;
   return (
     <div className="flex flex-col gap-2">
       <Label htmlFor="narrative">Narrative</Label>
@@ -45,7 +49,7 @@ export function NarrativeEditor({ name, initial, content, maxLength }: { readonl
             {check.mismatches.map((mismatch) => (
               <li key={`${String(mismatch.start)}:${String(mismatch.end)}:${mismatch.code}`}>
                 {mismatch.sentence < 0 ? '' : `Sentence ${String(mismatch.sentence + 1)}: `}
-                {mismatchText(mismatch.code, mismatch.kind)}
+                {mismatchText(mismatch.code, mismatch.kind, readAs(mismatch.start, mismatch.end))}
                 {(() => {
                   const shown = mismatchShown(mismatch.code, text.slice(mismatch.start, mismatch.end));
                   return shown === null ? null : (

@@ -1,0 +1,24 @@
+{
+  "case": "CAS-43",
+  "module": "CAS",
+  "title": "A narrative states an input’s figure in another role (the window’s 10000 days as visits, a date’s year as claims, a page as a code, a release as units, a quoted clause’s or name’s number as the record’s, the allowed amount as the shortfall or as paid, a service date as the payment date, the days to pay as the window, calendar days as business days)",
+  "assertion": "The verifier fails each figure (`figure_not_in_input`, at the figure, with its kind); approval is blocked; the export refuses a version an older reading passed; the editor says what the figure was read as",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": [
+    "packages/packets/src/verifier.test.ts",
+    "packages/packets/src/roles.test.ts",
+    "packages/packets/src/roles.property.test.ts",
+    "packages/model-gateway/src/functions/narrative-roles.test.ts",
+    "apps/worker/src/packets/packets.db.test.ts",
+    "apps/web/src/lib/packets/view.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Narratives against the SYNTHETIC packets of @tp/packets/testing (role-examples.ts): no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

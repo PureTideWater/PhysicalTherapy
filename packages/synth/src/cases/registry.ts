@@ -249,6 +249,21 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/routes/console-routes.db.test.ts',
     'apps/web/e2e/triage.spec.ts',
   ]),
+  // Lane B (co-001/packet-day-counts; docs/adr/0086): every narrative figure in the role its words give it.
+  'CAS-43': none(8, 'Narratives against the SYNTHETIC packets of @tp/packets/testing (role-examples.ts): no file.', [
+    'packages/packets/src/verifier.test.ts',
+    'packages/packets/src/roles.test.ts',
+    'packages/packets/src/roles.property.test.ts',
+    'packages/model-gateway/src/functions/narrative-roles.test.ts',
+    'apps/worker/src/packets/packets.db.test.ts',
+    'apps/web/src/lib/packets/view.test.ts',
+  ]),
+  'CAS-44': none(8, 'Narratives against the SYNTHETIC packets of @tp/packets/testing (role-examples.ts): no file.', [
+    'packages/packets/src/verifier.test.ts',
+    'packages/packets/src/roles.test.ts',
+    'packages/packets/src/roles.property.test.ts',
+    'packages/model-gateway/src/functions/narrative-roles.test.ts',
+  ]),
   'LED-01': none(9, 'A packet marked submitted: an action that must create no entry; no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
   'LED-02': { completesIn: 9, build: workflow.led02, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts'] },
   'LED-03': { completesIn: 9, build: workflow.led03, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts'] },

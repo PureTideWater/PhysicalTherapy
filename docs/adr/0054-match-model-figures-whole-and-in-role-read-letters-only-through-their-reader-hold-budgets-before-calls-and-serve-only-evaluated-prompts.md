@@ -3,7 +3,9 @@
 - **Status:** accepted; the real-model gate still waits on model access (see Consequences); amended 2026-10-26 by
   [0070](0070-gate-models-on-wrong-but-verified-fields-and-people-set-floors-serve-each-model-feature-on-its-own-evaluation-and-check-contracts-against-the-practices-records-before-the-model.md), Part 1: the permitted run's report and comparison, and Part 2: production serves each model feature
   on its own evaluation ("Amendment (`co-001/model-eval-gate`, 2026-10-26)", below); amended 2026-10-27: the letter
-  reader's redaction in one pass over one folded view ("Amendment (`co-001/redact-placeholders`, 2026-10-27)", below)
+  reader's redaction in one pass over one folded view ("Amendment (`co-001/redact-placeholders`, 2026-10-27)", below);
+  amended 2026-10-28 by [0086](0086-read-every-narrative-figure-in-the-role-its-words-give-it-and-hold-each-input-to-the-roles-its-record-gives-it.md): the role check's grammar moves into `@tp/packets` ("Amendment (`co-001/packet-day-counts`,
+  2026-10-28)", below)
 - **Date:** 2026-10-17
 - **Deciders:** founder (engineering)
 - **PRD sections:** 14 (Purposes and their verifiers; PHI minimization; Provider and data path; Operational limits;
@@ -376,3 +378,13 @@ or a period between them (`12/34/5678`, `1234.5678`) are not a number, being how
 part written in lower case with a space inside it (`jo ann`) is not a name. Recorded with the second review round: a
 date of birth with its day or month spelled out as a word (`MARCH THIRD 1961`), which `datesIn` does not read; and the
 `)` after a member ID written `ZZ(1234567)`, which is sent after the placeholder (`[MEMBER_ID])`) and holds no digit.
+
+## Amendment (`co-001/packet-day-counts`, 2026-10-28): the packets verifier holds figures to their roles
+
+"A narrative's figures are held to their roles" (Decision) is now the packets verifier's own rule ([0086](0086-read-every-narrative-figure-in-the-role-its-words-give-it-and-hold-each-input-to-the-roles-its-record-gives-it.md)): one reader,
+`packages/packets/src/roles.ts`, reads every figure's role, and the verifier fails a figure its inputs do not hold in
+that role, on a person's narrative, in the editor, when a version is written and at export, not only on a model's
+draft. `roleMismatches()` (`functions/narrative-roles.ts`) keeps its API and reads the same facts: of the figures the
+packets verifier failed, those whose value the inputs hold in another role are `figure_in_wrong_role`, so the person
+sees a figure misstated rather than missing. Its roles are `@tp/packets`' `FIGURE_ROLES`, which split what the
+remittances show into what the payer allowed and what it paid. The harness's swap faults now fail with both codes.

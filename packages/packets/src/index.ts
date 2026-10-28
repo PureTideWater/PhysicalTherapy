@@ -5,7 +5,8 @@
  * the packet's reference derived from its approved hash, the practice's correspondence contact, and the payer and plan as
  * the payer's copy names them (never in their remittance-key form), and (combined audit #38, docs/adr/0072) every
  * figure of a calculation explained in words from its stored trace (./explain: the renderer, also the browser-safe
- * subpath @tp/packets/explain; explainPacket() binds a version's words to the traces its approval names). Pure
+ * subpath @tp/packets/explain; explainPacket() binds a version's words to the traces its approval names), and
+ * (docs/adr/0086) every narrative figure read in the role its words give it (./roles.ts) and held to it. Pure
  * functions over the records a case and its approved contract hold: no database, network or model inside. The
  * verifier is a hard gate with no bypass; the database refuses an approval of a version it failed.
  * Printing the export (PDF and CSV) is the worker's (apps/worker/src/packets).
@@ -70,7 +71,7 @@ export {
   feeScheduleWorksheets,
   plainText,
 } from './explain/index';
-export { type NarrativeFacts, narrativeFacts } from './facts';
+export { type NarrativeFacts, heldRoles, narrativeFacts } from './facts';
 export {
   type CalculationStep,
   type CitedMethod,
@@ -143,8 +144,9 @@ export {
   remittanceKey,
 } from './payer';
 export { type ReadableText, type TextSpan, readableText } from './readable';
+export { FIGURE_ROLES, type FigureReading, type FigureRole, type ReadKind, readFigures } from './roles';
 export { PACKET_REFERENCE_PATTERN, exportFileName, normalizePacketReference, packetReference, packetReferencePrefix, withPacketReference } from './reference';
 export { type Figure, type FigureKind, type Span, canonicalNumber, isoDate, numbersInWords, romanValue, scanText, sentenceSpans } from './scan';
-export { MISMATCH_CODES, type Mismatch, type MismatchCode, type VerifierReport, identifierForms, narrativeSha256, verifyNarrative } from './verifier';
+export { type CheckedFigure, MISMATCH_CODES, type Mismatch, type MismatchCode, type VerifierReport, checkedFigures, identifierForms, narrativeSha256, verifyNarrative } from './verifier';
 export { wordsVersionOf } from './words-version';
 export { type AppealLevel, type NextWindow, type NextWindowBasis, type WindowLength, nextDisputeWindow } from './windows';
