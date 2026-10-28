@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 
 import { consistencyProblems, formProblems, parsePin } from '../check-action-pins/workflows';
+import { readDockerfile } from '../check-toolchain/images';
 import { MAX_OPENED_PER_RUN } from '../content-calendar/render';
 import { repositoryRoot } from '../content-files';
 import { REQUIRED_CHECKS } from '../required-checks';
@@ -2827,29 +2828,55 @@ describe('Postgres from docker-compose.yml (CI-13; docs/adr/0066, Part 2)', () =
 
 describe('images by digest (CI-13)', () => {
   const DIGEST_PIN = /@sha256:[0-9a-f]{64}$/;
-  it('name every base and service image with its digest, in both Dockerfiles and the compose file', () => {
-    const DIGEST = /@sha256:[0-9a-f]{64}$/;
-    for (const app of ['web', 'worker']) {
-      const from = readFileSync(path.join(CI_ROOT, 'apps', app, 'Dockerfile'), 'utf8')
-        .split('\n')
-        .filter((line) => /^FROM\s/i.test(line))
-        .map((line) => line.split(/\s+/)[1] ?? '');
-      expect(from.length, app).toBeGreaterThan(0);
-      for (const image of from) expect(image, `${app}: ${image}`).toMatch(DIGEST);
+
+  /** The one frontend a build may be handed: docker/dockerfile by version and digest. */
+  const FRONTEND = /^docker\/dockerfile:\d+\.\d+(?:\.\d+)?@sha256:[0-9a-f]{64}$/;
+
+  /**
+   * A Dockerfile read through check-toolchain's readDockerfile, the image rule's own port of BuildKit v0.34.1's parser,
+   * so CI-13 and the rule cannot read a file differently (the security review's S1 and S2, and its proposal of one
+   * reader): every line placed (no JSON Dockerfile, no parse BuildKit refuses, no FROM or from= line it does not read as
+   * one), a FROM at least, each FROM that is not an earlier stage by digest, and each frontend (a `# syntax=` or
+   * `//syntax=` line, after a byte-order mark or a `#!` line) docker/dockerfile by version and digest: a frontend pulls
+   * its image by tag on every build otherwise. The problems, or none.
+   */
+  function dockerfileDigestProblems(text: string): string[] {
+    const read = readDockerfile(text);
+    const problems = read.problems.map(({ line, message }) => `line ${String(line)}: ${message}`);
+    if (read.stages.length === 0) problems.push('no FROM');
+    const stages: string[] = [];
+    for (const { line, image, name } of read.stages) {
+      if (!stages.includes(image.toLowerCase()) && !DIGEST_PIN.test(image)) problems.push(`line ${String(line)}: FROM ${image} names no digest`);
+      if (name !== null) stages.push(name.toLowerCase());
     }
+    for (const { line, image } of read.frontends) if (!FRONTEND.test(image)) problems.push(`line ${String(line)}: the frontend ${image} is not docker/dockerfile:<version>@sha256:<64 hex>`);
+    return problems;
+  }
+
+  it('name every base and service image with its digest, in both Dockerfiles and the compose file', () => {
+    for (const app of ['web', 'worker']) expect(dockerfileDigestProblems(readFileSync(path.join(CI_ROOT, 'apps', app, 'Dockerfile'), 'utf8')), app).toEqual([]);
     const compose = parse(readFileSync(path.join(CI_ROOT, 'docker-compose.yml'), 'utf8')) as { services: Record<string, { image?: string }> };
-    for (const [name, service] of Object.entries(compose.services)) expect(service.image, name).toMatch(DIGEST);
+    for (const [name, service] of Object.entries(compose.services)) expect(service.image, name).toMatch(DIGEST_PIN);
   });
 
-  it('name every image a build runs by digest: the Dockerfile frontend and the BuildKit builder, one version on every setup-buildx step (the security review\'s S4)', () => {
-    // The frontend: a `# syntax=` line pulls its image from Docker Hub by tag on every build, so either none (the
-    // frontend built into the pinned BuildKit) or one by digest.
-    for (const app of ['web', 'worker']) {
-      const syntax = readFileSync(path.join(CI_ROOT, 'apps', app, 'Dockerfile'), 'utf8')
-        .split('\n')
-        .filter((line) => /^#\s*syntax\s*=/i.test(line));
-      for (const line of syntax) expect(line, app).toMatch(/^# syntax=docker\/dockerfile:\d+\.\d+(?:\.\d+)?@sha256:[0-9a-f]{64}$/);
-    }
+  it('read a Dockerfile as BuildKit does, so a FROM or frontend that a line-by-line read misses is held to its digest, and a FROM line BuildKit does not read as one is refused (the security review’s S1, S2)', () => {
+    const node = `node:24-trixie-slim@sha256:${'a'.repeat(64)}`;
+    const bom = String.fromCharCode(0xfeff);
+    const frontend = 'line 1: the frontend docker/dockerfile:1 is not docker/dockerfile:<version>@sha256:<64 hex>';
+    const cases: readonly (readonly [string, string, readonly unknown[]])[] = [
+      ['a byte-order mark before # syntax=', `${bom}# syntax=docker/dockerfile:1\nFROM ${node}\n`, [frontend]],
+      ['a // syntax line', `//syntax=docker/dockerfile:1\nFROM ${node}\n`, [frontend]],
+      ['an indented FROM', `FROM ${node} AS build\n  FROM synthetic/hidden:latest\n`, ['line 2: FROM synthetic/hidden:latest names no digest']],
+      ['a FROM split by a continuation', `FROM ${node} AS build\nFR\\\nOM synthetic/hidden:latest\n`, ['line 2: FROM synthetic/hidden:latest names no digest']],
+      ['a FROM line in a heredoc body', `FROM ${node} AS build\nRUN <<EOF\nFROM synthetic/hidden:1@sha256:${'b'.repeat(64)}\nEOF\n`, [expect.stringMatching(/^line 3: a FROM line BuildKit does not read as a FROM instruction \(a heredoc's body/)]],
+    ];
+    // Each of these passed the line-by-line read CI-13 had before (no problem), and each is a real FROM or frontend to BuildKit, or a line it cannot vouch for.
+    for (const [what, text, problems] of cases) expect(dockerfileDigestProblems(text), what).toEqual(problems);
+    // A FROM of an earlier stage names no image of its own.
+    expect(dockerfileDigestProblems(`FROM ${node} AS build\nFROM build AS test\n`)).toEqual([]);
+  });
+
+  it('name every image a build runs by digest: the Dockerfile frontend (dockerfileDigestProblems, above) and the BuildKit builder, one version on every setup-buildx step (the security review\'s S4)', () => {
     // The builder: setup-buildx's docker-container driver runs moby/buildkit, by default by the mutable buildx-stable-1.
     const steps = workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => (job.steps ?? []).map((step, index) => ({ where: `${file} ${id} step ${String(index + 1)}`, file, id, index, step }))));
     const buildx = steps.filter(({ step }) => usesAction(step, 'docker/setup-buildx-action'));
