@@ -1,0 +1,175 @@
+{
+ "verify": {
+  "passed": true,
+  "ciOnHead": [
+   {
+    "check": "all green (ci)",
+    "conclusion": "success"
+   },
+   {
+    "check": "mutation (mutation)",
+    "conclusion": "success"
+   },
+   {
+    "check": "screening-capacity gate (screening-capacity)",
+    "conclusion": "success"
+   },
+   {
+    "check": "approval-of-record (run 40595917358)",
+    "conclusion": "success"
+   },
+   {
+    "check": "approval-of-record (run 40596143135, after the description edit)",
+    "conclusion": "success"
+   },
+   {
+    "check": "static",
+    "conclusion": "success"
+   },
+   {
+    "check": "lint",
+    "conclusion": "success"
+   },
+   {
+    "check": "unit",
+    "conclusion": "success"
+   },
+   {
+    "check": "db (1/4)",
+    "conclusion": "success"
+   },
+   {
+    "check": "db (2/4)",
+    "conclusion": "success"
+   },
+   {
+    "check": "db (3/4)",
+    "conclusion": "success"
+   },
+   {
+    "check": "db (4/4)",
+    "conclusion": "success"
+   },
+   {
+    "check": "domain model",
+    "conclusion": "success"
+   },
+   {
+    "check": "build",
+    "conclusion": "success"
+   },
+   {
+    "check": "images",
+    "conclusion": "success"
+   },
+   {
+    "check": "e2e (1/2)",
+    "conclusion": "success"
+   },
+   {
+    "check": "e2e (2/2)",
+    "conclusion": "success"
+   },
+   {
+    "check": "capacity (screening-capacity)",
+    "conclusion": "success"
+   },
+   {
+    "check": "changes (mutation)",
+    "conclusion": "success"
+   },
+   {
+    "check": "changes (screening-capacity)",
+    "conclusion": "success"
+   },
+   {
+    "check": "stryker (${{ matrix.shard }})",
+    "conclusion": "skipped (legitimate: changes said any=false, no money path changed; affected.ts run locally agrees that money, pricing, ledger and packets are all unaffected)"
+   },
+   {
+    "check": "notify (screening-capacity)",
+    "conclusion": "skipped (legitimate: it runs only on failure() and never on pull_request events)"
+   }
+  ],
+  "problems": [
+   {
+    "severity": "should-fix",
+    "what": "The base branch has moved since the head was cut. claude/build-platform is now at 0dd1ba7e (PR #80 merged: model-gateway redaction, MOD-13/14). That merge also touches docs/product/test-matrix.md, packages/synth/src/cases/matrix.ts and registry.ts. The ruleset on the base requires checks to pass on an up-to-date branch (strict_required_status_checks_policy true), so the green CI on e36a68bc will not be enough to merge. This is not a defect in the PR. I tried the merge in my own clone (c9d85b29): no conflicts. synth --all wrote 0 files (245 cases), watched.ts --write changed nothing, and vitest on packages/synth and tools/screening-capacity passed (21 files, 387 tests).",
+    "fix": "Before merging, merge origin/claude/build-platform (0dd1ba7e) into the branch, run synth --all and watched.ts --write again in case anything changed, and wait for CI on the new head."
+   },
+   {
+    "severity": "nit",
+    "what": "The description's local unit count ('6,562 passed, 4 skipped; workflows.test.ts 114 of 114 once a local orphan was pruned') does not say that the recorded merge-check unit log shows 2 failures in workflows.test.ts, caused by a local orphan playwright-core@1.56.1. No log of the 114/114 re-run is kept in merge-check/. In the fresh clone, workflows.test.ts passes 114 of 114, so the claim holds.",
+    "fix": "Optional: say outright that the 2 local failures came from the orphan, or keep the log of the 114/114 re-run beside the merge-check logs."
+   }
+  ],
+  "checked": [
+   "Fresh clone of co-001/ux-download-refusals at e36a68bc… (scratchpad/verify-clone); continued the interrupted earlier run from its progress file. PR #78 live: head still e36a68bc, draft, open, and the description matches pr-body-2.md byte for byte (checked again at 00:16 UTC).",
+   "1 Tree: git diff --name-only ecebdc90..e36a68bc gives 62 files, the same list as the earlier run. Each file is named in the design (§6/§7) or ADR 0079, or justified in the build/fix-suite records. Of the PR #42 files, only test-matrix.md (+14), matrix.ts (+24), registry.ts (+22) and watched-paths.txt (+3) change, with 63 insertions and 0 deletions. No migration and nothing under packages/pricing. The only model identifiers in the 8 commit messages are the 8 Co-Authored-By and 8 Claude-Session attribution lines, and there are none in the added diff lines. The DLR fixtures are synthetic with no PHI shape.",
+   "2 Claims (earlier run, spot-checked again): 15 downloadHandler routes and 15 returnTo entries (compliance 1, coverage 1, monitoring 1, packets 4, report-documents 2, reports 3, roi 2, uploads 1). The closed codes, the words byte for byte, the letter's behaviour, where the DownloadLink placements are, the forbidden branches and the named tests all match the description. Every finding marked fixed is fixed: SEC-01..03, UX-DLR-01..11, 14 and 15. UX-DLR-12 is no change and UX-DLR-13 is an ADR row with a Revisit-when, as the records say. The counts in the description match the fix-suite and merge-check records.",
+   "3 Fast checks under flock: install --frozen-lockfile rc=0; typecheck rc=0 (22 projects); lint rc=0 (1,637 files, 0 errors, 0 warnings); lint:copy rc=0 (530 files); vitest unit on apps/web/src/lib/http, apps/web/src/components, packages/synth, tools/screening-capacity and tools/test/workflows.test.ts: 56 files, 987 passed; workflows.test.ts alone: 114/114; synth --all: 0 written, 635 unchanged, git diff clean, 0 untracked; watched.ts --write: 536 lines, git diff clean.",
+   "4 CI on e36a68bc: 22 check runs and 5 workflow runs (ci, mutation, screening-capacity, approval-of-record x2), all completed. Read the logs of the required jobs: all green (8 needed jobs succeeded), mutation (any=false, no mutation run), screening-capacity gate (MEASURE=true, capacity success, no warnings) and approval-of-record (no approval-line change; APPROVAL_REVIEW_REQUIRED is unset, which gives a notice only). The two skips are legitimate, by their if-conditions.",
+   "Base ruleset: required checks are all green, mutation, screening-capacity gate and approval-of-record, with the strict policy on. The base moved to 0dd1ba7e; I tried the merge in my own clone and it is clean. The clone is back at e36a68bc and clean."
+  ],
+  "summary": "PR #78 passes verification at e36a68bc. In a fresh clone, all four checks hold:\n1. The tree contains only the expected files. The PR #42 files gain added rows only, there is no migration and nothing under packages/pricing, the only model identifiers are attribution lines, and there is no PHI.\n2. The description's claims match the code, and every finding marked fixed is fixed.\n3. Every fast check passed, including lint:copy, the unit set (987 tests) and workflows.test.ts (114/114). synth --all and watched.ts --write both left git clean.\n4. CI on the head is complete and green: the four required checks and every other job passed, and the two skips are legitimate.\n\nThe earlier run was cut off during lint:copy; I picked it up from /tmp/claude-0/-home-user-PhysicalTherapy/12cbf3a7-985c-52b3-adc0-b6d7ac05d769/scratchpad/progress/dlr-verify.md, which is now up to date.\n\nOne thing to do before merging: the base has moved to 0dd1ba7e (PR #80), and the base's ruleset requires checks on an up-to-date branch. The branch needs the new base merged in and CI re-run. A trial merge in my own clone was clean, and synth, watched-paths and the related tests stayed unchanged and passing.\n\nLogs are in /tmp/claude-0/-home-user-PhysicalTherapy/12cbf3a7-985c-52b3-adc0-b6d7ac05d769/scratchpad/verify-logs and /tmp/claude-0/-home-user-PhysicalTherapy/12cbf3a7-985c-52b3-adc0-b6d7ac05d769/scratchpad/verify-ci."
+ },
+ "screens-recheck": {
+  "findings": [
+   {
+    "id": "UX-DLR-16",
+    "severity": "should-fix",
+    "file": "apps/web/src/components/download-link.tsx",
+    "line": 208,
+    "title": "A download fetched in place shows nothing while it runs, so the click looks dead until the whole file is saved",
+    "failure": "The fix round moved six links onto DownloadLink: the receipts' Report, the export review's PDF and CSV, the reviewer checklist's PDF and line CSV, the packet history's PDF and CSV, and the console export. A plain click now runs preventDefault and fetches the whole file with fetch() (download-link.tsx:178-185). The browser shows its download only after saveFile clicks a blob link, once the whole body has arrived. Meanwhile the link's only change is aria-busy (:208). No style reads aria-busy (git grep finds it only in loading-state.tsx). No text and no status message change either, and a second click is silently swallowed (:180-182). The plain <a> it replaced was a navigation, which showed the browser's own loading indicator from the click, and then its download as soon as the headers came. On Uploads the case is the slowest: while a batch's PUTs fill the connection, a receipt's Report fetch can take seconds with nothing on screen. The person may click again, conclude the link is broken, or leave. The product's own busy controls say what they are doing: ActionForm shows 'Working…' (action-form.tsx:112) and the screening form 'Sending…' (screening/upload-form.tsx:283). No shot shows this state (judged from code).",
+    "fix": "Say the fetch in DownloadLinks' notice slot, where its refusal is said, so the sentences the links sit in (the reviewer checklist's) stay whole. DownloadLinks keeps a mounted, empty-when-idle `<p role=\"status\" className=\"text-sm text-muted-foreground\">` in that slot. While any DownloadLink inside it is fetching, the slot reads 'Downloading the file…'. The link reports busy through the same context it says refusals through. Keep aria-busy on the link and add `aria-busy:cursor-progress`. Clear the status on save or refusal; the refusal's alert then takes the slot as now. Files: components/download-link.tsx and download-link.test.tsx (a status case). No migration, no freeze exception, no founder or brand-owner decision."
+   },
+   {
+    "id": "UX-DLR-17",
+    "severity": "nit",
+    "file": "apps/web/src/components/coverage/letter-marks.tsx",
+    "line": 61,
+    "title": "After a refused payer-and-contract pair, fixing the payer leaves the contract marked 'Error' until the letter is sent",
+    "failure": "In p.coverage.error-letter-contract.1280, .390 and .1280-dark at e36a68b, payer Q is shown with payer N's contract, and the contract is marked ('Error: Choose one of this payer’s contracts, or None named.', red border, aria-invalid, focused). If the person fixes the pair by changing the payer to N, LetterContractCheck sees a valid pair and clears its custom validity (letter-contract-check.tsx:24-27). But watchLetterMarks clears only the edited control's own mark (letter-marks.tsx:61-67), so the contract keeps its red 'Error:' line. A screen reader landing on it hears 'invalid entry' and that message for a contract that now belongs to the payer. The visible error also invites switching to None named, which would drop the contract the letter should name. The e2e codifies this ('the contract's mark stays until the letter is sent', download-refusals.spec.ts:191-193). This is the same rule UX-DLR-04 fixed for the edited control.",
+    "fix": "Clear a contract mark once the pair holds. In letter.tsx:204, give the contract's entry in LetterMarks the payer as a second trigger: { control: 'letter-contract', message: 'letter-contract-error', also: ['letter-payer'] }. In watchLetterMarks, a change of an `also` control clears that mark when `control.checkValidity()` is true (LetterContractCheck has just set its validity). Change the e2e step at spec:191-193 to expect the contract's mark gone after the payer change, and add a letter-marks unit case. Files: coverage/letter-marks.tsx, coverage/letter.tsx, coverage/letter.test.tsx, e2e/download-refusals.spec.ts. No migration."
+   },
+   {
+    "id": "UX-DLR-18",
+    "severity": "nit",
+    "file": "apps/web/src/app/p/[practiceId]/reports/[reportId]/review/page.tsx",
+    "line": 51,
+    "title": "The reviewer checklist's refused permission state points to 'the report’s own page' with no way to open it",
+    "failure": "New in 872f05b: a file refusal that comes back to the reviewer checklist for a role the checklist refuses gets the next step 'The checklist is signed by a reimbursement reviewer under a support grant. The report’s own page lists its files for the roles that download them.' Forbidden (components/shell.tsx:373-379) renders PermissionState as text only, so that page is named but not linked. The person has to find Reports in the navigation and then the report. The packet page's refused state, seen in p.packet.refused-forbidden.1280/.390/.1280-dark, ends the same way: 'Open the case to see its state.' Those words predate the PR, but they now follow the file's words. The reviewer checklist's state has no shot (judged from code).",
+    "fix": "Give Forbidden an optional `next?: { href: string; label: string }` that PermissionState renders as a Link under its next step. Pass { href: `/p/${practiceId}/reports/${reportId}`, label: 'Open the audit report' } on the checklist's refused branch, and { href: casePath, label: 'Open the case' } on the packet page's. Drop 'Open the case to see its state.' from the packet sentence when the link carries it. This touches shell.tsx (already changed on the base by #77; this PR left it untouched), so it can land as the small follow-up the fix suite already lists for the Forbidden branches. No migration."
+   }
+  ],
+  "fixRoundHolds": [
+   "UX-DLR-01 (should-fix): holds by code. ForgetRefusal now uses replaceState(null) on a timer, and RefusalNotice keeps the notice through a router refresh. The recorded path of every refused shot is clean (p.report.refused-forbidden.* /reports/<id>, p.packet.refused-not-found.* /packet), with the notice still shown and focused at 1280. The router-refresh path itself is not in the tour; the e2e step (download-refusals.spec.ts:317-327) covers it, and I did not run it.",
+   "UX-DLR-02 (should-fix): holds by code. DownloadLink covers the receipts' Report (and a zip's file list), the export review's PDF and CSV (refresh until both are downloaded), the reviewer checklist, the packet history and the console export, and Uploader has a beforeunload guard while it sends. No shot shows an in-place refusal. The default shots show the links unchanged: console.compliance.default is pixel-identical to the earlier after run, and Uploads, the export review, the reviewer checklist and the packet differ in data only. Remaining gap: new UX-DLR-16 (no busy cue).",
+   "UX-DLR-03 (should-fix): holds. The FRM-04 walk (scratchpad/ux-probe/hints.cjs with TypeScript 6.0.3) over the head's letter.tsx prints '181 Input described= true'. All three controls write aria-describedby as their own attribute.",
+   "UX-DLR-04 (should-fix): holds by code and e2e. LetterMarks clears an edited control's mark, and a sent letter clears every mark and takes refused, fields, retry, payer, contract and codes out of the URL. A static shot cannot show it. Remaining gap: new UX-DLR-17 (the pair case).",
+   "UX-DLR-05 (should-fix): holds on screen. p.packet.refused-forbidden.1280, .390 and .1280-dark now add 'The packet’s PDF and CSV hold line-level PHI, which your role cannot download: a billing manager or a firm principal downloads them. Open the case to see its state.' The recorded path is /packet, so the refusal has left the address bar. The first sentence still names drafting ('cannot build and draft packets'); read together with the second, it is clear. The reviewer checklist's and the export review's Forbidden branches and the nine equal-permission pages were judged from code: ForgetRefusal is a sibling on each.",
+   "UX-DLR-06 (should-fix): holds on screen. p.coverage.error-letter-payer.1280, .390 and .1280-dark show 'Choose a payer' under 'Error: Choose one of the payers listed.', focused. The before shots were raw JSON, and the earlier after shots showed SYNTHETIC PAYER N under the mark.",
+   "UX-DLR-07 (should-fix): holds on screen. The codes field is empty, with no placeholder, in every letter state and the default at 1280, 390 and dark.",
+   "UX-DLR-08 (nit): holds on screen. p.report.refused-forbidden.1280, .390 and .1280-dark read 'Not downloaded' and 'Your role cannot download this file. Ask your organization’s administrator, who manages users and roles.' p.packet.refused-not-found reads 'Not downloaded' and 'This file is not available here now. This page lists the files that are.', with the same placement and size as before.",
+   "UX-DLR-09 (nit): holds on screen. In the hint, '97110' and '97530' are each set in mono with the comma in the sentence face (zoom crop ux-crops2/codes-hint-zoom.png). Typed 'ABC' stays mono in the field.",
+   "UX-DLR-10 (nit): holds on screen. The messages now read 'Error: Each code must be five letters or digits.', 'Error: Choose one of this payer’s contracts, or None named.' and 'Error: Choose one of the payers listed.' The codes state is 16 px shorter at 1280 and 32 px at 390, because the message takes one line.",
+   "UX-DLR-11 (nit): recorded, not changed, as dispositioned. On screen the markup is unchanged (text-xs, no icon, 'Error:' inside the described element). The PR body's #74 overlap line (body line 98) states the second-merge move.",
+   "UX-DLR-12 and UX-DLR-13: not defects per the verdicts. 12 is unchanged. For 13, a zip's file list now has its own DownloadLinks, so its report downloads in place (by code).",
+   "UX-DLR-14 (nit): holds by code. DownloadRefusal on the letter passes forget=LETTER_CONTROLS, and Reports passes RETURN_ONLY ['list']; the e2e step at spec:229-246 covers the letter's rate-limit notice. The letter's rate-limit notice has no shot.",
+   "UX-DLR-15 (nit): holds by code and e2e. LetterContractCheck holds the contract with setCustomValidity in the same words. The error-letter-contract shots show the no-script path, which still marks the contract."
+  ],
+  "notSeen": [
+   "No shot shows any in-place refusal: Uploads above Receipts, a zip's file list, the export review's Exported files card, the reviewer checklist below its header, the packet history above the versions table, and the console export above its link row. I judged these from code: each uses the same RefusalAlert (destructive Alert, text-sm, scroll-mt-18) as the arrived notices in p.report.refused-forbidden and p.packet.refused-not-found, focused through focusNotice's ref.",
+   "The permission states of the reviewer checklist, the export review and the nine equal-permission pages (refused, then Forbidden plus ForgetRefusal) have no shot; judged from code. Only the packet's (p.packet.refused-forbidden.*) was seen.",
+   "The letter's rate-limited notice, mark clearing on edit, LetterContractCheck's native bubble, and the clean URL after a valid send: judged from code and the e2e (download-refusals.spec.ts:155-246), which I did not run.",
+   "The export review's checklist opening after the second in-place download: no e2e covers it, because packets.spec.ts:372 and :378 still reload by hand. The PR body (in-place section) and the page's new words ('The checklist opens here once both are downloaded') claim it. Not checked.",
+   "Focus at 390 on a link notice: in p.report.refused-forbidden.390 the capture blurred it ('focused field was blurred'), the same as the earlier run.",
+   "Screen-reader output for the in-place alert (inserted role=alert plus focus) and for the mark clearing: not checked with assistive technology.",
+   "The beforeunload guard on Uploads mid-batch, and Firefox and Safari behaviour of blob saves: not checked.",
+   "p.coverage.refused-and-unconfirmed.1280 and .390 were skipped, as in every earlier run (the tour's notReached).",
+   "Routes outside the PR's sample: not seen, by sample. The fix round changes no shared stylesheet, token or packages/ui file. The merge's shell.tsx change is the base's (#77), not this PR's."
+  ],
+  "summary": "I retook the AFTER shots at e36a68bc and re-checked the fix round as the UX and brand reviewer. Result: no blocking findings, one new should-fix and two new nits. Every earlier UX-DLR fix holds, on screen where the tour shoots it and in code elsewhere.\n\nCapture:\n- An earlier run of this step had already captured, cleaned up and tiled before it was interrupted. I resumed from its progress file and checked its work.\n- Tour: claude/build-ops at e0fc65d6, Playwright 1.64.1 / Chromium 1248, TOUR_DIR screens-after2, TOUR_REF e36a68bc, the same 16-prefix TOUR_ONLY as before. 74 shots, 2 skipped (the existing notReached), no shot failed, so the spec was not changed and nothing was pushed.\n- The lock was held 22:41:08 to 22:49:30. The server stopped at 22:49:30 and the lock passed to another session's queued job in the same second, so the lock and the server ended together.\n- I re-verified the cleanup now: the tp_e2e_screens database is dropped, no temp directories are left, and nothing is listening on port 3297. Tiled with tile.py: 308 tiles.\n- One tour note: p.packet.refused-forbidden passes, but its check of ?refused= races ForgetRefusal's timer, because the Forbidden branch renders no [data-download-refusal]. Worth making tolerant later; no shot failed, so I left it.\n\nScope of the review:\n- The fix round's own web diff is 63aaa7f4..74ca6afc (34 files). The merge e36a68b adds only the base's 15 web files, shell.tsx among them; the PR changes none of those.\n- Every 390 width is the same in the before, after and after2 runs, so the fix round adds no sideways scroll.\n- console.compliance.default is pixel-identical to the earlier after run. The other default screens differ in data only. The only height change is the codes error state, 16 px shorter at 1280 and 32 px at 390, because its message now takes one line.\n\nSeen on screen in after2:\n- Payer state: 'Choose a payer' under 'Error: Choose one of the payers listed.'\n- The codes placeholder is gone.\n- The example codes are each in mono, with the comma in the sentence face.\n- The new messages: 'Each code must be five letters or digits.', 'Choose one of this payer’s contracts, or None named.'\n- The report notice reads 'Not downloaded' with the new forbidden body, at 1280, 390 and dark.\n- The packet's permission state says the file's words, and the refusal has left the address bar.\n- No palette colours were added.\n\nNew findings:\n- UX-DLR-16, should-fix: DownloadLink fetches the whole file with no visible busy state. The link only gains aria-busy, which nothing styles, and a second click is silently ignored. The plain link it replaced showed the browser's own loading indicator.\n- UX-DLR-17, nit: when a refused payer-and-contract pair is fixed by changing the payer, the contract keeps its 'Error:' mark until the letter is sent. The e2e codifies this.\n- UX-DLR-18, nit: the reviewer checklist's new refused permission state names 'the report’s own page' without a link, because Forbidden cannot hold one.\n\nStill open from the baseline, not caused by this change:\n- UX-011 sideways scroll at 390, widths unchanged: report 502, ROI 502, report-document 539, report-review 506, uploads 534, contracts 664, compliance 492, reconciliation 405.\n- At 390 the packet versions table scrolls with no cue, and its PDF/CSV links are off screen.\n- The 'Report', 'PDF' and 'CSV' links do not name their row (2.4.4). The PR rewrote these elements but not their names.\n- The Forbidden permission state has no h1 naming the page.\n- An evidence row on the console shows an unfilled '%s' from a quoted test title (polish).\n\nPR description: its Screens line still cites only the before (e908c21) and after (63aaa7f) runs. It could add this retake at e36a68b (74 shots).\n\nPaths:\n- Progress: /tmp/claude-0/-home-user-PhysicalTherapy/12cbf3a7-985c-52b3-adc0-b6d7ac05d769/scratchpad/progress/dlr-capture-after2.md\n- Shots and tiles: /tmp/claude-0/-home-user-PhysicalTherapy/12cbf3a7-985c-52b3-adc0-b6d7ac05d769/scratchpad/screens-after2 (tiles/index.json)\n- Crops and compare scripts: /tmp/claude-0/-home-user-PhysicalTherapy/12cbf3a7-985c-52b3-adc0-b6d7ac05d769/scratchpad/ux-crops2\n- Review clone at e36a68bc, read-only: /tmp/claude-0/-home-user-PhysicalTherapy/12cbf3a7-985c-52b3-adc0-b6d7ac05d769/scratchpad/dlr-after2-clone\n\nSynthetic data only. No PHI seen, no legal text changed, no model identifier written."
+ }
+}
