@@ -27,7 +27,17 @@ The UX review's PR 4 (UX-005, UX-040, UX-042, UX-043, UX-132, UX-206; clusters C
   - e2e 6 of 6: screening-phone, screening (no flake), tables-phone, layout-1280.
 - **The two copies differ in tone on purpose** (P4-DR-03): on a phone an anomaly shows in the unpriced tone; the table copy keeps Short until UX PR 4b (#42's pins).
 - **`watched-paths.txt`, by its generator:** +`components/screening/table-parts.tsx`, +`components/stacked-rows.tsx`; `lib/copy/words.ts` stays on the merged tree, because #74's sign-in imports it.
-- **Running:** wf_7237972d-adf (from 05:48 UTC): the correctness review of the two copies and the words, in a fresh clone; the before and after shots (165c599, f4a9766), then the UX and brand review. Safety check-in 10:20 UTC (trig_014vh315v1NTqmgwpDQghedC).
+- **CI on f4a9766:** every check green (all green, mutation, screening-capacity gate, approval-of-record). Since then #81 merged (56ed627), so the PR is "behind"; the fix round merges it first.
+- **Reviews:** done (wf_7237972d-adf). Both say "merge after fixes" (`approval-summaries/lane-b-ux-screening-result-tables-review-findings.json`).
+  - Correctness: P4-RC-01 should fix, -02 to -06 nits. No defect in what renders; 0 mismatches between the copies.
+  - UX and brand: UXR-01 should fix (the audit request at the foot of a longer page worsens UX-134: a link at the top is taken here), -02 to -08 nits.
+  - Shots: before at 165c599 and after at f4a9766.
+- **Running:** the fix round wf_4147d4ff-acd (from ~06:20 UTC):
+  1. the base merge of 56ed627 (#81), with the generator;
+  2. every finding;
+  3. the full local suite once;
+  4. the shots re-taken.
+  - Safety check-in 10:20 UTC (trig_014vh315v1NTqmgwpDQghedC).
 - **Next:** the fix round (every finding, the full local suite once, one push); the fresh-clone verification reading CI; mark ready; merge. Then, the day #42 merges, UX PR 4b.
 
 ## Overlaps (checked 2026-10-28 01:45 UTC)
@@ -39,6 +49,7 @@ The UX review's PR 4 (UX-005, UX-040, UX-042, UX-043, UX-132, UX-206; clusters C
 - **ux-forms** (`co-001/ux-forms`): none of the planned files.
 
 ## Log
+- 2026-10-28 05:52 UTC: CI green on f4a9766. 06:12: both reviews done (merge after fixes; 14 findings, all taken). 06:20: fix round started.
 - 2026-10-28 05:40 UTC: the base merge f4a9766 (#74) is clean, the generator re-run and all checks pass; pushed. 05:45: draft PR #83 opened, its description read back, subscribed. 05:48: the reviews workflow started.
 - 2026-10-28 05:15 UTC: resumed on the orchestrator's message (the 5-hour limit had stopped the session ~04:05-04:27; the build had already finished at 04:05, nothing to resume). Check-in moved to 10:20 UTC. Next: the base merge's result, then the draft PR.
 - 2026-10-28 04:05 UTC: build done at 0c261ee (all checks pass); 05:13: the machine had restarted (PostgreSQL down): setup re-run, OK; 0c261ee pushed; 05:20: base merge (#74) started.
@@ -48,3 +59,19 @@ The UX review's PR 4 (UX-005, UX-040, UX-042, UX-043, UX-132, UX-206; clusters C
 
 ## Waiting on someone
 - Nothing. (Q1 decided, design 12.1. Lane A confirmed it at ~03:20 UTC, with three conditions UX PR 4b must meet: the `labels.test.ts` comment and the rule's exact words; `git ls-remote --tags origin` again before 4b merges, and if any tag exists the labels part goes to Lane A as a new version; the decision recorded in 4b's PR description.)
+
+## Proposals (improve as you go; not built here)
+- **Before the first release tag** (for LANES.md or the launch checklist):
+  - UX PR 4b must land: until then the table copy's Short is UX-040, still open (UXR-07);
+  - so must UX PR 63: the result's answer and next step stay far down a long page.
+- **For UX PR 4b:**
+  - the page sentence's "the table’s last row" becomes "the last entry" (UXR-08);
+  - "Expected under Medicare, …" becomes "Medicare figure, …" (design P5);
+  - GroupStatus says "its" for one row;
+  - scope `screening.spec.ts:517` to `[data-stacked-copy="table"]`.
+- **Stacked items:** a stacked anomaly item could show its standing chip with the heading, as coverage shows its outcome, so a reader scanning 50 cards finds the anomaly.
+- **Page weight:** the 512 KiB cap measures renderToString only; the served page also carries the RSC flight payload, so measure what a phone downloads.
+- **`StackedRows`:** a shared `copiesAgree(html)` check for every paired caller.
+- **Width-threshold e2e steps:** derive the viewport from the measured scrollbar width (this PR's 994, and #79's 1263).
+- **The tour:** screening-result shots at 994 and 768 px, and a "one other group" harness state.
+- **The reviewer checklist:** "a stacked list's items carry their own hooks, never the table's"; "a status that is a sentence wraps above a floor in its cell".
