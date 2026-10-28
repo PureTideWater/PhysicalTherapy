@@ -16,6 +16,7 @@ import {
   MAIL_CUTOFF,
   MAIL_KINDS,
   MAIL_PAUSE_REASONS,
+  MAIL_PROBE_FIRST_PROOF_HOURS,
   MAIL_PROBE_MISSED_HOURS,
   MAIL_PROBE_READY_HOURS,
   MAIL_REFUSAL_REASONS,
@@ -172,8 +173,8 @@ async function resetScreening(): Promise<void> {
   await owner.query("DELETE FROM mail_send WHERE stream = 'screening'");
   await owner.query(
     `UPDATE mail_stream SET paused_at = NULL, paused_reason = NULL, paused_by = NULL, pause_sends = NULL, pause_bounces = NULL, pause_complaints = NULL,
-            window_starts_at = now() - interval '30 days', resumed_at = NULL, ses_enabled_confirmed_at = now(), probe_sent_at = NULL, probe_delivered_at = NULL,
-            probe_bounced_at = NULL
+            window_starts_at = now() - interval '30 days', resumed_at = NULL, ses_enabled_confirmed_at = now(), probe_sent_at = NULL, first_probe_sent_at = NULL,
+            probe_delivered_at = NULL, probe_bounced_at = NULL
       WHERE stream = 'screening'`,
   );
 }
@@ -814,11 +815,11 @@ describe('the screening stream’s cut-off (SCR-21; the founder’s Q9)', () => 
     expect(await code(consoleCall(platformAdmin, 'SELECT console_resume_mail_stream($1, $2)', ['screening', 'because']))).toBe('23514');
     expect(await consoleCall(platformAdmin, 'SELECT console_resume_mail_stream($1, $2) AS resumed', ['screening', 'cause_fixed'])).toEqual([{ resumed: true }]);
     expect(await consoleCall(platformAdmin, 'SELECT console_resume_mail_stream($1, $2) AS resumed', ['screening', 'cause_fixed'])).toEqual([{ resumed: false }]);
-    const resumed = await owner.query<{ fresh_window: boolean; resumed: boolean; paused_at: null; probe_sent_at: null; confirmed: boolean }>(
-      `SELECT window_starts_at > now() - interval '1 minute' AS fresh_window, resumed_at IS NOT NULL AS resumed, paused_at, probe_sent_at,
+    const resumed = await owner.query<{ fresh_window: boolean; resumed: boolean; paused_at: null; probe_sent_at: null; first_probe_sent_at: null; confirmed: boolean }>(
+      `SELECT window_starts_at > now() - interval '1 minute' AS fresh_window, resumed_at IS NOT NULL AS resumed, paused_at, probe_sent_at, first_probe_sent_at,
               ses_enabled_confirmed_at IS NOT NULL AS confirmed FROM mail_stream WHERE stream = 'screening'`,
     );
-    expect(resumed.rows).toEqual([{ fresh_window: true, resumed: true, paused_at: null, probe_sent_at: null, confirmed: false }]);
+    expect(resumed.rows).toEqual([{ fresh_window: true, resumed: true, paused_at: null, probe_sent_at: null, first_probe_sent_at: null, confirmed: false }]);
     expect((await owner.query("SELECT actor_kind, actor_id, purpose FROM audit_event WHERE action = 'mail_stream_resumed'")).rows).toEqual([
       { actor_kind: 'user', actor_id: platformAdmin, purpose: 'cause_fixed' },
     ]);
@@ -837,7 +838,7 @@ describe('the screening stream’s cut-off (SCR-21; the founder’s Q9)', () => 
     expect(await code(as(OPERATOR_ROLE, "SELECT operator_mail_stream_confirmed('elsewhere', true)"))).toBe('23514');
   });
 
-  it('is ready only with a delivered and a bounced probe come back within 48 hours and since the last resume, the probes go daily or after 26 hours unanswered, and a stream is missed 26 hours after its last proof', async () => {
+  it('is ready only with a delivered and a bounced probe come back within 48 hours and since the last resume, the probes go daily and hourly while missed, and a stream is missed 26 hours after its last proof or an hour after its first unanswered probe since the resume', async () => {
     await resetScreening();
     const status = async () => (await as<{ paused: boolean; ready: boolean }>(APP_ROLE, 'SELECT * FROM screening_mail_status()'))[0];
     const probe = (event: string) =>
@@ -860,51 +861,73 @@ describe('the screening stream’s cut-off (SCR-21; the founder’s Q9)', () => 
     expect(await status()).toEqual({ paused: false, ready: true });
     await as(OPERATOR_ROLE, 'SELECT operator_mail_account_signal($1, $2)', ['enforcement_not_healthy', request()]);
     expect(await status()).toEqual({ paused: true, ready: false });
-    // The schedule: daily once the last came back; again 26 hours after one that did not. Missed (review M3) reads the
-    // stream's last proof, the older of its delivered and bounced probe, 26 hours old, whether a probe went since or not:
-    // the daily probe goes at 24 hours, so one sent and lost is missed 2 hours later, 22 before readiness lapses at 48.
+    // The schedule: daily once the last came back, and hourly while the stream is missed, so a fixed event path reopens
+    // the screening within the hour. Missed (review M3) reads the stream's proofs since the last resume: with both back,
+    // the older 26 hours old, whether a probe went since or not (the daily probe goes at 24 hours, so one sent and lost is
+    // missed 2 hours later, 22 before readiness lapses at 48); with one not back since the resume, the first probe sent
+    // since then an hour old, which a re-send never moves (the review of 2026-10-27: counted from the last send, the
+    // alarm cleared at each re-send and came back 26 hours later).
     await resetScreening();
     const due = async () => (await as<{ stream: string; probe_due: boolean; probe_missed: boolean }>(OPERATOR_ROLE, 'SELECT stream, probe_due, probe_missed FROM operator_mail_streams()')).find((row) => row.stream === 'screening');
     expect(await due()).toEqual({ stream: 'screening', probe_due: true, probe_missed: false });
     expect(MAIL_PROBE_READY_HOURS - MAIL_PROBE_MISSED_HOURS).toBe(22);
-    for (const [sent, returned, wanted] of [
-      ['23 hours', '22 hours', { probe_due: false, probe_missed: false }],
-      ['25 hours', '24 hours', { probe_due: true, probe_missed: false }],
-      ['25 hours', null, { probe_due: false, probe_missed: false }],
-      ['27 hours', null, { probe_due: true, probe_missed: true }],
-      ['27 hours', '28 hours', { probe_due: true, probe_missed: true }],
+    expect(MAIL_PROBE_FIRST_PROOF_HOURS).toBe(1);
+    for (const [sent, first, returned, wanted] of [
+      ['23 hours', '30 days', '22 hours', { probe_due: false, probe_missed: false }],
+      ['25 hours', '30 days', '24 hours', { probe_due: true, probe_missed: false }],
+      // Nothing back yet: missed an hour after the first probe went, and still missed after a re-send.
+      ['59 minutes', '59 minutes', null, { probe_due: false, probe_missed: false }],
+      ['1 hour 1 minute', '1 hour 1 minute', null, { probe_due: true, probe_missed: true }],
+      ['27 hours', '27 hours', null, { probe_due: true, probe_missed: true }],
+      ['1 minute', '27 hours', null, { probe_due: false, probe_missed: true }],
+      ['27 hours', '30 days', '28 hours', { probe_due: true, probe_missed: true }],
       // Sent 24 hours after the last came back, and lost.
-      ['2 hours', `${String(MAIL_PROBE_MISSED_HOURS)} hours 1 minute`, { probe_due: false, probe_missed: true }],
-      ['2 hours', `${String(MAIL_PROBE_MISSED_HOURS - 1)} hours 59 minutes`, { probe_due: false, probe_missed: false }],
-      ['3 hours', '27 hours', { probe_due: false, probe_missed: true }],
+      ['2 hours', '30 days', `${String(MAIL_PROBE_MISSED_HOURS)} hours 1 minute`, { probe_due: true, probe_missed: true }],
+      ['2 hours', '30 days', `${String(MAIL_PROBE_MISSED_HOURS - 1)} hours 59 minutes`, { probe_due: false, probe_missed: false }],
+      ['3 hours', '30 days', '27 hours', { probe_due: true, probe_missed: true }],
       // None sent since the last came back (every send refused).
-      ['28 hours', '27 hours', { probe_due: true, probe_missed: true }],
-      ['26 hours', '25 hours', { probe_due: true, probe_missed: false }],
+      ['28 hours', '30 days', '27 hours', { probe_due: true, probe_missed: true }],
+      ['26 hours', '30 days', '25 hours', { probe_due: true, probe_missed: false }],
     ] as const) {
       await owner.query(
-        "UPDATE mail_stream SET probe_sent_at = now() - $1::interval, probe_delivered_at = now() - $2::interval, probe_bounced_at = now() - $2::interval WHERE stream = 'screening'",
-        [sent, returned],
+        `UPDATE mail_stream SET probe_sent_at = now() - $1::interval, first_probe_sent_at = now() - $2::interval, probe_delivered_at = now() - $3::interval,
+                                probe_bounced_at = now() - $3::interval WHERE stream = 'screening'`,
+        [sent, first, returned],
       );
-      expect(await due(), `${sent} ${String(returned)}`).toEqual({ stream: 'screening', ...wanted });
+      expect(await due(), `${sent} ${first} ${String(returned)}`).toEqual({ stream: 'screening', ...wanted });
     }
-    // The older of the two proofs decides. A proof from before the last resume does not count: one not back since the
-    // resume counts from the probe sent after it, and with none sent yet the stream is due and not missed.
-    for (const [sent, delivered, bounced, resumed, wanted] of [
-      ['2 hours', '1 hour', '27 hours', null, { probe_due: false, probe_missed: true }],
-      ['2 hours', '27 hours', '1 hour', null, { probe_due: false, probe_missed: true }],
-      [null, '30 hours', '30 hours', '1 minute', { probe_due: true, probe_missed: false }],
-      ['1 minute', '30 hours', '30 hours', '2 minutes', { probe_due: false, probe_missed: false }],
-      ['27 hours', '30 hours', '30 hours', '28 hours', { probe_due: true, probe_missed: true }],
-      ['27 hours', '26 hours 59 minutes', '30 hours', '28 hours', { probe_due: true, probe_missed: true }],
-      ['2 hours', '1 hour', '30 hours', '28 hours', { probe_due: false, probe_missed: false }],
+    // The older of the two proofs decides. A proof from before the last resume does not count: with one not back since
+    // the resume, the first probe sent after it decides, an hour after it went, and with none sent yet the stream is due
+    // and not missed.
+    for (const [sent, first, delivered, bounced, resumed, wanted] of [
+      ['2 hours', '30 days', '1 hour', '27 hours', null, { probe_due: true, probe_missed: true }],
+      ['2 hours', '30 days', '27 hours', '1 hour', null, { probe_due: true, probe_missed: true }],
+      [null, null, '30 hours', '30 hours', '1 minute', { probe_due: true, probe_missed: false }],
+      ['1 minute', '1 minute', '30 hours', '30 hours', '2 minutes', { probe_due: false, probe_missed: false }],
+      ['59 minutes', '59 minutes', '30 hours', '30 hours', '2 hours', { probe_due: false, probe_missed: false }],
+      ['1 hour 1 minute', '1 hour 1 minute', '30 hours', '30 hours', '2 hours', { probe_due: true, probe_missed: true }],
+      ['27 hours', '27 hours', '30 hours', '30 hours', '28 hours', { probe_due: true, probe_missed: true }],
+      ['1 minute', '27 hours', '30 hours', '30 hours', '28 hours', { probe_due: false, probe_missed: true }],
+      ['27 hours', '27 hours', '26 hours 59 minutes', '30 hours', '28 hours', { probe_due: true, probe_missed: true }],
+      ['2 hours', '2 hours', '1 hour', '30 hours', '28 hours', { probe_due: true, probe_missed: true }],
+      ['2 hours', '2 hours', '1 hour', '1 hour', '28 hours', { probe_due: false, probe_missed: false }],
     ] as const) {
       await owner.query(
-        `UPDATE mail_stream SET probe_sent_at = now() - $1::interval, probe_delivered_at = now() - $2::interval, probe_bounced_at = now() - $3::interval,
-                                resumed_at = now() - $4::interval WHERE stream = 'screening'`,
-        [sent, delivered, bounced, resumed],
+        `UPDATE mail_stream SET probe_sent_at = now() - $1::interval, first_probe_sent_at = now() - $2::interval, probe_delivered_at = now() - $3::interval,
+                                probe_bounced_at = now() - $4::interval, resumed_at = now() - $5::interval WHERE stream = 'screening'`,
+        [sent, first, delivered, bounced, resumed],
       );
-      expect(await due(), `${String(sent)} ${delivered} ${bounced} ${String(resumed)}`).toEqual({ stream: 'screening', ...wanted });
+      expect(await due(), `${String(sent)} ${String(first)} ${delivered} ${bounced} ${String(resumed)}`).toEqual({ stream: 'screening', ...wanted });
     }
+    // A probe's send moves its last send, never its first since the resume, which a resume clears.
+    await owner.query("UPDATE mail_stream SET probe_sent_at = now() - interval '27 hours', first_probe_sent_at = now() - interval '27 hours' WHERE stream = 'screening'");
+    await as(OPERATOR_ROLE, "SELECT operator_mail_probe_sent('screening')");
+    expect(
+      (await owner.query("SELECT probe_sent_at > now() - interval '1 minute' AS sent_now, first_probe_sent_at < now() - interval '26 hours' AS first_kept FROM mail_stream WHERE stream = 'screening'")).rows,
+    ).toEqual([{ sent_now: true, first_kept: true }]);
+    await owner.query("UPDATE mail_stream SET probe_sent_at = NULL, first_probe_sent_at = NULL WHERE stream = 'screening'");
+    await as(OPERATOR_ROLE, "SELECT operator_mail_probe_sent('screening')");
+    expect((await owner.query("SELECT first_probe_sent_at = probe_sent_at AS same FROM mail_stream WHERE stream = 'screening'")).rows).toEqual([{ same: true }]);
     // Never while unconfirmed (a paused stream always is): a stream not meant to be sending is not missed.
     await owner.query("UPDATE mail_stream SET resumed_at = NULL, probe_sent_at = now() - interval '28 hours', probe_delivered_at = now() - interval '27 hours', probe_bounced_at = now() - interval '27 hours' WHERE stream = 'screening'");
     expect(await due()).toEqual({ stream: 'screening', probe_due: true, probe_missed: true });

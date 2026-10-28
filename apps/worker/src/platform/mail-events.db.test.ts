@@ -60,7 +60,7 @@ beforeEach(async () => {
   await owner.query('DELETE FROM mail_send');
   await owner.query('DELETE FROM screening_mail_refusal');
   await owner.query(`UPDATE mail_stream SET paused_at = NULL, paused_reason = NULL, paused_by = NULL, pause_sends = NULL, pause_bounces = NULL,
-                       pause_complaints = NULL, ses_enabled_confirmed_at = now(), probe_sent_at = NULL, probe_delivered_at = NULL,
+                       pause_complaints = NULL, ses_enabled_confirmed_at = now(), probe_sent_at = NULL, first_probe_sent_at = NULL, probe_delivered_at = NULL,
                        probe_bounced_at = NULL, resumed_at = NULL, window_starts_at = now() - interval '1 minute'`);
 });
 
@@ -333,30 +333,39 @@ describe('the mail_events job', () => {
   });
 
   it('logs MAIL_PROBE_MISSED when a probe has not come back in 26 hours, and sends it again', async () => {
-    await owner.query("UPDATE mail_stream SET probe_sent_at = now() - interval '27 hours', probe_delivered_at = NULL, probe_bounced_at = NULL WHERE stream = 'notices'");
+    await owner.query(
+      "UPDATE mail_stream SET probe_sent_at = now() - interval '27 hours', first_probe_sent_at = now() - interval '27 hours', probe_delivered_at = NULL, probe_bounced_at = NULL WHERE stream = 'notices'",
+    );
     await owner.query("UPDATE mail_stream SET probe_sent_at = now(), probe_delivered_at = now(), probe_bounced_at = now() WHERE stream <> 'notices'");
     const mail = new MemoryMailSender();
     const { lines, logger } = capture();
     const result = await run({ source: new MemoryQueue(), mail, probes: true }, logger);
     expect(result).toMatchObject({ probed: ['notices'], probesMissed: ['notices'] });
-    expect(lines).toEqual([expect.objectContaining({ level: 'error', msg: 'notices mail probe has not come back in 26 hours', error_code: 'MAIL_PROBE_MISSED' })]);
+    expect(lines).toEqual([expect.objectContaining({ level: 'error', msg: 'notices mail probe has not come back', error_code: 'MAIL_PROBE_MISSED' })]);
     expect(mail.sent.map((message) => message.identity.stream)).toEqual(['notices', 'notices']);
   });
 
-  it('logs MAIL_PROBE_MISSED on every run once the stream’s last proof is 26 hours old, whether its next probe went and was lost or could not be sent, and not for a proof from before the last resume (review M3)', async () => {
-    const missed = (stream: string): unknown => expect.objectContaining({ level: 'error', msg: `${stream} mail probe has not come back in 26 hours`, error_code: 'MAIL_PROBE_MISSED' });
+  it('logs MAIL_PROBE_MISSED on every run once the stream’s last proof is 26 hours old, whether its next probe went and was lost or could not be sent, sends it again hourly until one is back, and not for a proof from before the last resume (review M3)', async () => {
+    const missed = (stream: string): unknown => expect.objectContaining({ level: 'error', msg: `${stream} mail probe has not come back`, error_code: 'MAIL_PROBE_MISSED' });
     const unsent = expect.objectContaining({ level: 'warn', error_code: 'MAIL_PROBE_UNSENT' });
-    // Sent and lost: both probes came back 27 hours ago and the next went 3 hours ago. It is not due again for 23 hours,
-    // but the stream is missed now, 22 hours before the screening's readiness would lapse at 48, and on each run after.
+    // Sent and lost: both probes came back 27 hours ago and the next went 3 hours ago. The stream is missed now, 22 hours
+    // before the screening's readiness would lapse at 48, and on each run after; its probe goes again at once and then
+    // hourly while it is missed, so a fixed event path reopens the screening within the hour.
     await owner.query("UPDATE mail_stream SET probe_sent_at = now(), probe_delivered_at = now(), probe_bounced_at = now() WHERE stream <> 'screening'");
     await owner.query("UPDATE mail_stream SET probe_sent_at = now() - interval '3 hours', probe_delivered_at = now() - interval '27 hours', probe_bounced_at = now() - interval '27 hours' WHERE stream = 'screening'");
     const mail = new MemoryMailSender();
-    for (const attempt of ['first', 'second']) {
+    for (const [attempt, probed] of [
+      ['first', ['screening']],
+      ['second', []],
+    ] as const) {
       const { lines, logger } = capture();
-      expect(await run({ source: new MemoryQueue(), mail, probes: true }, logger), attempt).toMatchObject({ probed: [], probesMissed: ['screening'] });
+      expect(await run({ source: new MemoryQueue(), mail, probes: true }, logger), attempt).toMatchObject({ probed, probesMissed: ['screening'] });
       expect(lines, attempt).toEqual([missed('screening')]);
     }
-    expect(mail.sent).toEqual([]);
+    expect(mail.sent.map((message) => message.identity.stream)).toEqual(['screening', 'screening']);
+    await owner.query("UPDATE mail_stream SET probe_sent_at = now() - interval '61 minutes' WHERE stream = 'screening'");
+    expect(await run({ source: new MemoryQueue(), mail, probes: true })).toMatchObject({ probed: ['screening'], probesMissed: ['screening'] });
+    mail.sent.length = 0;
     // The older of the two proofs decides: the delivery back and the bounce still 27 hours old is missed.
     await owner.query("UPDATE mail_stream SET probe_delivered_at = now() WHERE stream = 'screening'");
     expect(await run({ source: new MemoryQueue(), mail, probes: true })).toMatchObject({ probed: [], probesMissed: ['screening'] });
@@ -386,12 +395,66 @@ describe('the mail_events job', () => {
     const resumed = capture();
     expect(await run({ source: new MemoryQueue(), mail, probes: true }, resumed.logger)).toMatchObject({ probed: ['screening'], probesMissed: [] });
     expect(resumed.lines).toEqual([]);
-    // A proof not back since the resume counts from the probe that went for it: 27 hours on, missed, and sent again.
-    await owner.query("UPDATE mail_stream SET resumed_at = now() - interval '28 hours', probe_sent_at = now() - interval '27 hours' WHERE stream = 'screening'");
+    // A proof not back since the resume counts from the first probe that went after it, an hour on (the screening stays
+    // closed until both are back), and a re-send never moves that (the review of 2026-10-27: counted from the last send,
+    // the alarm cleared a minute after each re-send and came back 26 hours later). Missed on every run, re-sent or not.
+    await owner.query("UPDATE mail_stream SET resumed_at = now() - interval '62 minutes', probe_sent_at = now() - interval '61 minutes', first_probe_sent_at = now() - interval '61 minutes' WHERE stream = 'screening'");
+    for (const [attempt, probed] of [
+      ['first', ['screening']],
+      ['second', []],
+    ] as const) {
+      const hour = capture();
+      expect(await run({ source: new MemoryQueue(), mail, probes: true }, hour.logger), attempt).toMatchObject({ probed, probesMissed: ['screening'] });
+      expect(hour.lines, attempt).toEqual([missed('screening')]);
+    }
+    await owner.query("UPDATE mail_stream SET resumed_at = now() - interval '28 hours', probe_sent_at = now() - interval '27 hours', first_probe_sent_at = now() - interval '27 hours' WHERE stream = 'screening'");
     const again = capture();
     expect(await run({ source: new MemoryQueue(), mail, probes: true }, again.logger)).toMatchObject({ probed: ['screening'], probesMissed: ['screening'] });
     expect(again.lines).toEqual([missed('screening')]);
-    expect(mail.sent.map((message) => message.identity.stream)).toEqual(['screening', 'screening', 'screening', 'screening']);
+    const after = capture();
+    expect(await run({ source: new MemoryQueue(), mail, probes: true }, after.logger)).toMatchObject({ probed: [], probesMissed: ['screening'] });
+    expect(after.lines).toEqual([missed('screening')]);
+    // At the resume, an hour on, and 27 hours on: two probes each.
+    expect(mail.sent.map((message) => message.identity.stream)).toEqual(Array.from({ length: 6 }, () => 'screening'));
+    // The delivered probe back since the resume and the bounced one never: still missed, run after run.
+    await owner.query("UPDATE mail_stream SET probe_delivered_at = now() WHERE stream = 'screening'");
+    for (const attempt of ['first', 'second']) {
+      expect(await run({ source: new MemoryQueue(), mail, probes: true }), attempt).toMatchObject({ probesMissed: ['screening'] });
+    }
+    // An environment's first activation, with no proof ever: the same, from its first probe.
+    await owner.query(
+      "UPDATE mail_stream SET resumed_at = NULL, probe_sent_at = now() - interval '27 hours', first_probe_sent_at = now() - interval '27 hours', probe_delivered_at = NULL, probe_bounced_at = NULL WHERE stream = 'transactional'",
+    );
+    expect(await run({ source: new MemoryQueue(), mail, probes: true })).toMatchObject({ probed: ['transactional'], probesMissed: ['screening', 'transactional'] });
+    expect(await run({ source: new MemoryQueue(), mail, probes: true })).toMatchObject({ probed: [], probesMissed: ['screening', 'transactional'] });
+    // Both back: the alarm's line stops.
+    await owner.query("UPDATE mail_stream SET probe_delivered_at = now(), probe_bounced_at = now() WHERE stream IN ('screening', 'transactional')");
+    expect(await run({ source: new MemoryQueue(), mail, probes: true })).toMatchObject({ probed: [], probesMissed: [] });
+  });
+
+  it('logs each probe event it records by its message ID, stream, SES event type, state and bounce subtype codes, and no address, so a staging check reads its outcome (the review of 2026-10-27)', async () => {
+    const queue = new MemoryQueue();
+    // A probe the platform sent, delivered; and one sent by hand through the notices set to an address on the account's
+    // suppression list for an earlier complaint, which SES answers with a Complaint of subtype OnAccountSuppressionList.
+    const delivered = events(queue, MAIL_PROBE_RECIPIENTS.delivered, { stream: 'transactional', kind: 'probe' });
+    const held = `0100019a${randomUUID()}-000000`;
+    const time = new Date().toISOString();
+    const mail = { timestamp: time, messageId: held, destination: ['synthetic.operator@clinic.synthetic.test'], tags: { 'ses:configuration-set': [`${PREFIX}-notices`], tp_kind: ['probe'] } };
+    const envelope = (detail: object) => JSON.stringify({ version: '0', id: randomUUID(), 'detail-type': 'SES event', source: 'aws.ses', time, region: 'local', resources: [], detail: { mail, ...detail } });
+    queue.push(envelope({ eventType: 'Send', send: {} }));
+    queue.push(envelope({ eventType: 'Complaint', complaint: { complaintSubType: 'OnAccountSuppressionList', timestamp: time } }));
+    // A customer's message is not logged so.
+    events(queue, 'success@simulator.amazonses.com', { stream: 'transactional', kind: 'digest', subjectId: randomUUID(), recipientUserId: world.adminUserId });
+    const { lines, logger } = capture();
+    await run({ source: queue }, logger);
+    const probes = lines.filter((line) => line.msg === 'mail probe event recorded');
+    expect(probes).toEqual([
+      expect.objectContaining({ level: 'info', ses_message_id: delivered, mail_stream_code: 'transactional', ses_event_type: 'Send', mail_state_code: 'sent', bounce_subtype_code: null }),
+      expect.objectContaining({ level: 'info', ses_message_id: delivered, mail_stream_code: 'transactional', ses_event_type: 'Delivery', mail_state_code: 'delivered', bounce_subtype_code: null }),
+      expect.objectContaining({ level: 'info', ses_message_id: held, mail_stream_code: 'notices', ses_event_type: 'Send', mail_state_code: 'sent', bounce_subtype_code: null }),
+      expect.objectContaining({ level: 'info', ses_message_id: held, mail_stream_code: 'notices', ses_event_type: 'Complaint', mail_state_code: 'suppressed', bounce_subtype_code: 'on_account_suppression_list' }),
+    ]);
+    expect(JSON.stringify(lines)).not.toMatch(/@|simulator|synthetic/);
   });
 
   it('reports a break-glass notice not delivered to an administrator once, by the grant’s ID, from its events in any order (SEC-19)', async () => {

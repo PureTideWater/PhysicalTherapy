@@ -67,6 +67,7 @@ describe('the mail-events queue’s messages', () => {
         messageId: MESSAGE_ID,
         stream: 'screening',
         event: 'send',
+        sesEventType: 'Send',
         mailAt: new Date(SENT_AT),
         eventAt: new Date(AT),
         recipient: 'bounce@simulator.amazonses.com',
@@ -87,7 +88,7 @@ describe('the mail-events queue’s messages', () => {
       ['Complaint', { complaint: { complaintFeedbackType: 'abuse', timestamp: AT } }, 'complaint'],
     ];
     for (const [type, detail, event] of events) {
-      expect(parse(sesEvent(type, detail))).toMatchObject({ type: 'event', record: { event } });
+      expect(parse(sesEvent(type, detail))).toMatchObject({ type: 'event', record: { event, sesEventType: type } });
     }
   });
 
@@ -147,7 +148,7 @@ describe('the mail-events queue’s messages', () => {
     const suppressed = parse(sesEvent('Complaint', { complaint: { complaintSubType: 'OnAccountSuppressionList', complainedRecipients: [{ emailAddress: 'x' }], timestamp: AT, feedbackId: 'synthetic' } }));
     expect(suppressed).toMatchObject({
       type: 'event',
-      record: { event: 'bounce', bounceKind: 'permanent', bounceSubtype: 'on_account_suppression_list', complaintType: null, eventAt: new Date(AT) },
+      record: { event: 'bounce', sesEventType: 'Complaint', bounceKind: 'permanent', bounceSubtype: 'on_account_suppression_list', complaintType: null, eventAt: new Date(AT) },
     });
     expect(MAIL_BOUNCE_SUBTYPES).toContain('on_account_suppression_list');
     // The same on every stream: a support notice's, a dunning notice's and Cognito's.

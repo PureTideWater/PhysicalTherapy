@@ -199,6 +199,12 @@ export const MAIL_PROBE_READY_HOURS = 48;
  * last resume, is this many hours old (review M3): 2 hours after a daily probe sent and lost, 22 before readiness lapses.
  */
 export const MAIL_PROBE_MISSED_HOURS = 26;
+/**
+ * A stream with a probe not back since the last resume is missed this many hours after the first probe sent since then
+ * (first_probe_sent_at, which a re-send never moves; the review of 2026-10-27), and a missed stream's probe goes again
+ * this often until one comes back.
+ */
+export const MAIL_PROBE_FIRST_PROOF_HOURS = 1;
 
 /** The pepper of the keyed hash: 32 bytes as hex, made at the migration, read only by mail_recipient_sha256(). */
 export const mailRecipientKey = pgTable('mail_recipient_key', {
@@ -220,6 +226,8 @@ export const mailStream = pgTable('mail_stream', {
   /** When the platform's reconcile read the stream's SES set enabled while open; cleared by a pause, a resume or a read of it disabled. */
   sesEnabledConfirmedAt: timestamp('ses_enabled_confirmed_at', { withTimezone: true }),
   probeSentAt: timestamp('probe_sent_at', { withTimezone: true }),
+  /** The first probe sent since the last resume (or ever); a re-send never moves it, and a resume clears it. */
+  firstProbeSentAt: timestamp('first_probe_sent_at', { withTimezone: true }),
   probeDeliveredAt: timestamp('probe_delivered_at', { withTimezone: true }),
   probeBouncedAt: timestamp('probe_bounced_at', { withTimezone: true }),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

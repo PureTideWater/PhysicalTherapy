@@ -98,14 +98,16 @@ export type MailPlatformAlarmCode = (typeof MAIL_PLATFORM_ALARM_CODES)[number];
 export const MAIL_PLATFORM_ALARM_PERIOD_SECONDS = 300;
 
 /**
- * The probes' hours as the database decides them (D5, D8; review M3), which the tests read from the generated
- * packages/db/functions: a probe goes daily; a stream is missed once its last proof, the older of its last delivered and
- * bounced probe, is 26 hours old (operator_mail_streams().probe_missed), and the platform then logs MAIL_PROBE_MISSED on
- * every minute's run until a probe comes back, so the alarm stays raised; the screening is ready only while both came
- * back within 48 hours (screening_mail_status()). A daily probe sent and lost pages 2 hours after it went, 22 before
- * readiness lapses.
+ * The probes' hours as the database decides them (D5, D8; review M3 and the review of 2026-10-27), which the tests read
+ * from the generated packages/db/functions: a probe goes daily, and hourly while its stream is missed; a stream is
+ * missed once its last proof, the older of its last delivered and bounced probe since the last resume, is 26 hours old,
+ * or, with one not back since the resume, an hour after the first probe sent since then, which a re-send never moves
+ * (operator_mail_streams().probe_missed); the platform then logs MAIL_PROBE_MISSED on every minute's run until both
+ * come back, so the alarm stays raised; the screening is ready only while both came back within 48 hours
+ * (screening_mail_status()). A daily probe sent and lost pages 2 hours after it went, 22 before readiness lapses; a
+ * resumed stream whose probes do not come back pages an hour after they went.
  */
-export const MAIL_PROBE_HOURS = { daily: 24, missed: 26, ready: 48 } as const;
+export const MAIL_PROBE_HOURS = { daily: 24, firstProof: 1, missed: 26, ready: 48 } as const;
 
 /**
  * A probe the platform could not send (review M3). While a stream's probe is due, each minute's mail_events run tries

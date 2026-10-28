@@ -176,6 +176,9 @@ CREATE TABLE mail_stream (
   -- cleared by a pause, by a resume and by a read of the set disabled. The screening's runs are claimed only with it.
   ses_enabled_confirmed_at timestamptz,
   probe_sent_at timestamptz,
+  -- The first probe sent since the last resume (or ever): a re-send never moves it, so a stream whose probes have not come
+  -- back since stays missed (operator_mail_streams(), the review of 2026-10-27); cleared by a resume.
+  first_probe_sent_at timestamptz,
   probe_delivered_at timestamptz,
   probe_bounced_at timestamptz,
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -1124,26 +1127,30 @@ BEGIN
 END;
 $$;
 
--- For the reconcile and the probes: each stream's pause and SES confirmation; a probe is due daily once the last came
--- back, at once after a resume, and again 26 hours after one that has not come back, never while paused or unconfirmed.
--- probe_missed (MAIL_PROBE_MISSED, review M3) reads the stream's last proof, not its last send: open and confirmed, and
--- the older of its last delivered and bounced probe 26 hours old, whether a probe went since or not. A proof counts only
--- since the last resume, as readiness counts it (screening_mail_status()); one not back since then counts from the probe
--- last sent, and with none sent yet nothing is missed. So a daily probe sent and lost is missed 2 hours after it went,
--- and one that cannot be sent 26 hours after the last came back: either way 22 hours before readiness lapses at 48.
+-- For the reconcile and the probes: each stream's pause and SES confirmation. probe_missed (MAIL_PROBE_MISSED, review M3
+-- and the review of 2026-10-27) reads the stream's proofs since the last resume, as readiness counts them
+-- (screening_mail_status()), never its last send, while it is open and confirmed: with both its delivered and its
+-- bounced probe back since then, the older 26 hours old, whether a probe went since or not, so a daily probe sent and
+-- lost is missed 2 hours after it went and one that cannot be sent 26 hours after the last came back, either way 22
+-- hours before readiness lapses at 48; with one not back since then, the first probe sent since then an hour old
+-- (first_probe_sent_at, which a re-send never moves), while the screening is closed for want of it; with none sent yet,
+-- nothing. A probe is due at once after a resume, daily once the last came back, and hourly while the stream is missed,
+-- so a fixed event path reopens the screening within the hour; never while paused or unconfirmed.
 CREATE FUNCTION operator_mail_streams() RETURNS TABLE (stream text, paused boolean, confirmed boolean, probe_due boolean, probe_missed boolean)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
   SELECT s.stream, s.paused_at IS NOT NULL, s.ses_enabled_confirmed_at IS NOT NULL,
          s.paused_at IS NULL AND s.ses_enabled_confirmed_at IS NOT NULL
            AND (s.probe_sent_at IS NULL
                 OR (NOT o.outstanding AND s.probe_sent_at <= now() - interval '24 hours')
-                OR (o.outstanding AND s.probe_sent_at <= now() - interval '26 hours')),
-         s.paused_at IS NULL AND s.ses_enabled_confirmed_at IS NOT NULL AND coalesce(p.proved_at <= now() - interval '26 hours', false)
+                OR (m.missed AND s.probe_sent_at <= now() - interval '1 hour')),
+         s.paused_at IS NULL AND s.ses_enabled_confirmed_at IS NOT NULL AND m.missed
     FROM mail_stream s,
          LATERAL (SELECT s.probe_sent_at IS NOT NULL
                          AND (coalesce(s.probe_delivered_at < s.probe_sent_at, true) OR coalesce(s.probe_bounced_at < s.probe_sent_at, true)) AS outstanding) o,
-         LATERAL (SELECT least(CASE WHEN s.probe_delivered_at >= coalesce(s.resumed_at, '-infinity') THEN s.probe_delivered_at ELSE s.probe_sent_at END,
-                               CASE WHEN s.probe_bounced_at >= coalesce(s.resumed_at, '-infinity') THEN s.probe_bounced_at ELSE s.probe_sent_at END) AS proved_at) p
+         LATERAL (SELECT CASE WHEN s.probe_delivered_at >= coalesce(s.resumed_at, '-infinity') THEN s.probe_delivered_at END AS delivered,
+                         CASE WHEN s.probe_bounced_at >= coalesce(s.resumed_at, '-infinity') THEN s.probe_bounced_at END AS bounced) p,
+         LATERAL (SELECT coalesce(CASE WHEN p.delivered IS NOT NULL AND p.bounced IS NOT NULL THEN least(p.delivered, p.bounced) <= now() - interval '26 hours'
+                                       ELSE s.first_probe_sent_at <= now() - interval '1 hour' END, false) AS missed) m
    ORDER BY s.stream
 $$;
 
@@ -1175,7 +1182,7 @@ BEGIN
   IF stream IS NULL OR stream NOT IN ('transactional', 'notices', 'screening') THEN
     RAISE EXCEPTION 'unknown mail stream' USING ERRCODE = 'check_violation', CONSTRAINT = 'mail_stream_name';
   END IF;
-  UPDATE mail_stream s SET probe_sent_at = now() WHERE s.stream = stream;
+  UPDATE mail_stream s SET probe_sent_at = now(), first_probe_sent_at = coalesce(s.first_probe_sent_at, now()) WHERE s.stream = stream;
 END;
 $$;
 
@@ -1271,7 +1278,7 @@ BEGIN
   END IF;
   UPDATE mail_stream s
      SET paused_at = NULL, paused_reason = NULL, paused_by = NULL, pause_sends = NULL, pause_bounces = NULL, pause_complaints = NULL,
-         window_starts_at = now(), resumed_at = now(), probe_sent_at = NULL, ses_enabled_confirmed_at = NULL
+         window_starts_at = now(), resumed_at = now(), probe_sent_at = NULL, first_probe_sent_at = NULL, ses_enabled_confirmed_at = NULL
    WHERE s.stream = stream AND s.paused_at IS NOT NULL;
   IF NOT FOUND THEN
     RETURN false;
