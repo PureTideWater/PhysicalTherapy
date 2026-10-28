@@ -8,15 +8,18 @@ import type { NamedOnBuildBranch } from './tree';
 
 /**
  * The image rule (docs/adr/0066, Part 5; test matrix CI-22): every image the tree names is held to the founder's F2 (b)
- * release age, as npm versions are, measured from the push time Docker Hub recorded. Every image means each Dockerfile's
- * `FROM` and `# syntax=` lines, docker-compose.yml's services, and every workflow's job container, service container,
- * `docker://` step and setup-buildx builder (`driver-opts` `image=`). Offline (`imageFormRule`), each is
- * `name:tag@sha256:<64 hex>`, and every image reference the rule does not read is refused, so "every image" holds on its
- * own (S6). Networked (`imageRule`), only a digest the base names nowhere is read (no bootstrapping, E2): Docker Hub's tag
- * for it, or else the repository's most recently updated tags, four reads at a time under one deadline (E3). A young
- * digest fails unless a live security-fix entry in image-age-exceptions.json names it; a digest Hub shows on no tag fails
- * under every entry (B1); a registry other than Docker Hub is "age unprovable" unless a live age-unprovable entry names
- * the image. On a push every age finding is a warning; the pull request is the gate.
+ * release age, as npm versions are, measured from the push time Docker Hub recorded. Every image means each
+ * Dockerfile's `FROM` lines and frontend, read as BuildKit v0.34.1 reads the file (readDockerfile, which CI-13 uses),
+ * docker-compose.yml's services (merge keys honoured), and every workflow's job container, service container,
+ * `docker://` step, setup-buildx builder (`driver-opts` `image=`) and setup-qemu image. Offline (`imageFormRule`), each
+ * is `name:tag@sha256:<64 hex>`, and every image reference the rule does not read, or line of a Dockerfile it cannot
+ * place, is refused, so "every image" holds on its own (S6, SEC-S1, SEC-S2). Networked (`imageRule`), only a digest the
+ * base names nowhere is read (no bootstrapping, E2): a digest the build branch's first-parent history named at least
+ * the floor ago is old enough by that commit's time (a revert, CI-S3); any other, Docker Hub's tag for it, or else the
+ * repository's most recently updated tags, four reads at a time under one deadline (E3). A young digest fails unless a
+ * live security-fix entry in image-age-exceptions.json names it; a digest Hub shows on no tag fails under every entry
+ * (B1); a registry other than Docker Hub is "age unprovable" unless a live age-unprovable entry names the image. On a
+ * push every age finding, and every exceptions entry outside its window, is a warning; the pull request is the gate.
  */
 
 /** The compose file the image rule reads, the one `pnpm dev` and CI's database jobs run. */
@@ -863,10 +866,11 @@ function parseDockerfile(body: string): { readonly instructions: DockerfileInstr
 /**
  * Reads a Dockerfile as BuildKit v0.34.1, the pinned builder, reads it (SEC-S1, SEC-S2): its frontend images, its
  * stages and instructions, and the problems that keep the reader from vouching for them. The image rule reads every
- * Dockerfile through it, and so does CI-13 (tools/test/workflows.test.ts), so the two cannot read a file differently.
+ * Dockerfile through it, and CI-13 (tools/test/workflows.test.ts) uses it too, so the two cannot read a file
+ * differently.
  */
 export function readDockerfile(text: string): DockerfileRead {
-  const body = text.startsWith('﻿') ? text.slice(1) : text;
+  const body = text.startsWith('\uFEFF') ? text.slice(1) : text;
   const raw = body.split('\n');
   const problems: { line: number; message: string }[] = [];
   const frontends: { line: number; image: string }[] = [];
