@@ -10,8 +10,9 @@ import { StatusChip } from './status';
 
 /**
  * The one stacked-row layout (docs/adr/0078; test matrix TBL-04; UX-079 (c); the design review's DR-07, DR-08 and
- * DR-13). A server component, so the markup it owns is proven here; the switch between the copies in a real browser
- * is proven by its first user's phone spec. Every row is SYNTHETIC, written by hand.
+ * DR-13; an item's description and the terms' 40% column from its first user, the screening result). A server
+ * component, so the markup it owns is proven here; the switch between the copies in a real browser is proven by its
+ * first user's phone spec. Every row is SYNTHETIC, written by hand.
  */
 
 /** One constant for the table's headers and the rows' labels, read in order for both (DR-08). */
@@ -87,6 +88,23 @@ const PAIRED = '@max-[24rem]:not-last:pb-2';
 const VALUE = `class="min-w-0 wrap-anywhere [&amp;_[data-slot=status-chip]]:whitespace-normal [&amp;_[data-slot=badge]]:whitespace-normal ${PAIRED}"`;
 const MONO = `class="min-w-0 font-mono tabular-nums wrap-anywhere ${PAIRED}"`;
 
+/** What a row's actions or description may be when they render nothing: a condition that is false, an empty string or an empty list. */
+const NOTHING: readonly (readonly [string, ReactNode])[] = [
+  ['false', false],
+  ['an empty string', ''],
+  ['an empty list', []],
+  ['a list of nothing', [false, null]],
+  ['undefined', undefined],
+  ['null', null],
+  ['true', true],
+];
+/** A number, text or an element renders. */
+const SOMETHING: readonly (readonly [string, ReactNode])[] = [
+  ['zero', 0],
+  ['text', 'Read only'],
+  ['a list of an element', [<span key="a">Read only</span>]],
+];
+
 describe('one stacked-row layout', () => {
   it('is a list named by its label, or by the id of the title that names it, with one item per row carrying the row’s key; a list by its role too, which Safari drops from an unstyled list', () => {
     const html = renderToStaticMarkup(<StackedRows label="Cases" rows={[caseRow('case-1'), caseRow('case-2')]} />);
@@ -107,10 +125,44 @@ describe('one stacked-row layout', () => {
     }
   });
 
-  it('gives each field a term and a value in one definition list, under the given labels, terms above values until the list is wide enough for two columns, each pair apart from the next while they stand so', () => {
+  it('puts a row’s description, when given, between its heading and its facts, outside the heading, and none for a description that renders nothing', () => {
+    const description = 'Each figure is the sum of the SYNTHETIC cases this page does not list.';
+    const html = renderToStaticMarkup(
+      <StackedRows
+        label="Cases"
+        rows={[
+          caseRow('others', {
+            heading: 'The other 2 cases, summed',
+            description,
+            actions: (
+              <Link className="underline" href="/p/synthetic/cases">
+                Open the cases
+              </Link>
+            ),
+          }),
+          caseRow('case-1'),
+        ]}
+      />,
+    );
+    // The heading stays the naming cell alone, so a list read by its headings stays short; the line comes before the figures it explains.
+    expect(item(html, 'others')).toMatch(
+      new RegExp(`^<h3 class="text-base font-semibold wrap-anywhere">The other 2 cases, summed</h3><p class="mt-1 text-sm text-muted-foreground">${description}</p><dl [^>]*>[\\s\\S]*</dl><div class="mt-3 flex flex-col items-start gap-2">`),
+    );
+    expect(html.match(/<p /g)).toHaveLength(1);
+    expect(item(html, 'case-1')).toMatch(/<\/h3><dl /);
+    for (const [what, nothing] of NOTHING) {
+      expect(item(renderToStaticMarkup(<StackedRows label="Cases" rows={[caseRow('case-1', { description: nothing })]} />), 'case-1'), what).toMatch(/<\/h3><dl /);
+    }
+    for (const [what, something] of SOMETHING) {
+      expect(item(renderToStaticMarkup(<StackedRows label="Cases" rows={[caseRow('case-1', { description: something })]} />), 'case-1'), what).toMatch(/<\/h3><p class="mt-1 text-sm text-muted-foreground">[\s\S]+<\/p><dl /);
+    }
+  });
+
+  it('gives each field a term and a value in one definition list, under the given labels, terms above values until the list is wide enough for two columns and beside them after, in a term column of at most 40% of the list, each pair apart from the next while they stand so', () => {
     const html = item(renderToStaticMarkup(<StackedRows label="Cases" rows={[caseRow('case-1')]} />), 'case-1');
     expect(html.match(/<dl /g)).toHaveLength(1);
-    expect(html).toContain('<dl class="mt-2 grid grid-cols-1 gap-y-1 text-sm @min-[24rem]:grid-cols-[max-content_1fr] @min-[24rem]:gap-x-4">');
+    // fit-content(40%): the term column takes its longest term up to 40% of the list, so a longer term wraps between words rather than leave its value a sliver.
+    expect(html).toContain('<dl class="mt-2 grid grid-cols-1 gap-y-1 text-sm @min-[24rem]:grid-cols-[fit-content(40%)_1fr] @min-[24rem]:gap-x-4">');
     expect(terms(html)).toEqual(Object.values(COLUMNS));
     expect(html.match(/<dd /g)).toHaveLength(fields().length);
     expect(html.match(/<dt class="text-muted-foreground">/g)).toHaveLength(fields().length);
@@ -213,27 +265,13 @@ describe('one stacked-row layout', () => {
   });
 
   it('renders no actions box for actions that render nothing: a condition that is false, an empty string or an empty list', () => {
-    const nothing: readonly (readonly [string, ReactNode])[] = [
-      ['false', false],
-      ['an empty string', ''],
-      ['an empty list', []],
-      ['a list of nothing', [false, null]],
-      ['undefined', undefined],
-      ['null', null],
-      ['true', true],
-    ];
-    for (const [what, actions] of nothing) {
+    for (const [what, actions] of NOTHING) {
       expect(rendersNothing(actions), what).toBe(true);
       const html = renderToStaticMarkup(<StackedRows label="Cases" rows={[caseRow('case-1', { actions })]} />);
       expect(item(html, 'case-1'), what).toMatch(/<\/dl>$/);
     }
     // A number, text or an element renders, so it gets the box.
-    const something: readonly (readonly [string, ReactNode])[] = [
-      ['zero', 0],
-      ['text', 'Read only'],
-      ['a list of an element', [<span key="a">Read only</span>]],
-    ];
-    for (const [what, actions] of something) {
+    for (const [what, actions] of SOMETHING) {
       expect(rendersNothing(actions), what).toBe(false);
       const html = renderToStaticMarkup(<StackedRows label="Cases" rows={[caseRow('case-1', { actions })]} />);
       expect(item(html, 'case-1'), what).toMatch(/<div class="mt-3 flex flex-col items-start gap-2">/);

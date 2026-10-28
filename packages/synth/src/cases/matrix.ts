@@ -455,7 +455,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'TBL-01',
     title: "A wide table's scroller and a fixed-height text box",
     assertion:
-      'Rendered on the server as a region named after its table with ", scrolls sideways" added (a text box: ", scrolls") with tabindex 0, the containing block of what its table positions, with a visible focus outline, so it is reachable before any script runs; in the browser it has no role, name or tab stop while its content fits and the scroller itself does not hold focus (a link inside it does not count), and is a region again when the content overflows; edge fades show only at an edge with content past it and the caption "Scroll sideways for more columns." only while it overflows, both from classes and data attributes alone (no style attribute); every table in apps/web/src is the direct and only child of the ScrollTable of components/scroll-table, under whatever name it is imported, and none is made by createElement or written in markup, but in the #42 pages listed with the pull requests that wrap them, and an exemption that no longer matches fails',
+      'Rendered on the server as a region named after its table with ", scrolls sideways" added (a text box: ", scrolls") with tabindex 0, the containing block of what its table positions, with a visible focus outline, so it is reachable before any script runs; in the browser it has no role, name or tab stop while its content fits and the scroller itself does not hold focus (a link inside it does not count), and is a region again when the content overflows; edge fades show only at an edge with content past it and the caption "Scroll sideways for more columns." only while it overflows, both from classes and data attributes alone (no style attribute); at 390 px Tab reaches the region of a wide table, whose frame draws a 2 px focus outline, an arrow key scrolls it, only the end edge fades at the start, both in the middle and only the start at the end, and the first link inside it draws its ring inside its own box, within the clip of the scroller; every table in apps/web/src is the direct and only child of the ScrollTable of components/scroll-table, under whatever name it is imported, and none is made by createElement or written in markup, but in the #42 pages listed with the pull requests that wrap them, and an exemption that no longer matches fails; no ScrollTable label is the same in every row of a list, in its file or through a component or import; and wrap-anywhere is never on a td or th, and inside one only on or within a block with a min-w',
   },
   {
     id: 'TBL-02',
@@ -467,12 +467,36 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'TBL-03',
     title: "Every changed route at a phone's width passes axe",
     assertion:
-      "At 390 px every changed route, each with its wide table populated and overflowing, has no axe-core WCAG 2.1 A or AA violation, a scrollable region the keyboard cannot reach (scrollable-region-focusable) among them, and every scroller's state agrees with its measurement before axe runs; the screening result's is the review's fourth pull request's",
+      "At 390 px every changed route, each with its wide table populated and overflowing, has no axe-core WCAG 2.1 A or AA violation, a scrollable region the keyboard cannot reach (scrollable-region-focusable) among them, and no two landmarks of a role share a name (axe's landmark-unique), every scroller's state agreeing with its measurement before axe runs; the screening result's is TBL-07",
   },
   {
     id: 'TBL-04',
     title: 'One stacked-row layout',
     assertion:
-      "Each stacked row is a list item headed by its naming cell at the level the caller gives (a link when the row has one), then a definition list of each column's label and value, then the row's actions; expected, paid and short are given together and in that order, and the stacked rows keep the table's column order, each figure in the mono face with tabular numerals; a status wraps inside the card; the rows carry their own hooks, never the table's, and no id or hook repeats between the two copies; with a table, the table shows from the table's own width up and the rows below it, by a container query on a full-width wrapper",
+      "Each stacked row is an item of a list named by its label or by the title that names it, a list by its role too (Safari drops the role of an unstyled list), headed by its naming cell at the level the caller gives (h3 by default; a link when the row has one), then, when given, a line that describes it, then a definition list of each column's label and value, terms over values until the list is 24rem wide and beside them after, in a term column of at most 40% of the list, then the row's actions, with no actions box when they render nothing; expected, paid and short are given together and in that order, and the stacked rows keep the table's column order, each figure, code and count in the mono face with tabular numerals; a status chip, a Badge and a key longer than the card wrap inside it; the rows carry their own hooks, never the table's, and no id or hook repeats between the two copies; with a table, the table shows from the table's own width up and the rows below it, by a container query on a full-width wrapper that is never squeezed to nothing; a list with no name is refused",
+  },
+  {
+    id: 'TBL-05',
+    title: "The screening result's rows on a phone",
+    assertion:
+      "At 390 px each row of the screening result's three tables, the anomalies by code and payer product, the coverage and the rows with the largest differences, is an item of a list named by its card's title, headed by its naming cells (a group by its code and payer product, a coverage row by its payer product and outcome, a top row by its number, code and payer product) and holding every other column under the table's own header and in the table's order: the Medicare figures, the allowed amount in the file and the differences together and in that order, in the mono face, a missing second figure said in words, and the status in words on its tint; the other groups, summed, are the last item, their note under its heading; every value lies inside the window, no status is cut and no page scrolls sideways; the items carry their own hooks, never the table rows', and no id or hook repeats between the two copies",
+  },
+  {
+    id: 'TBL-06',
+    title: "The screening result's tables from a desktop's width",
+    assertion:
+      "At 1280 px the three tables show, each in its scroller named after its card's title, with one row for each group, coverage row and top row the database returns, and the lists are hidden from view and from assistive technology; each card switches at its own table's width, so at 820 px the anomalies and the top rows stack while the coverage keeps its table, and without script the switch is the same; the table and the list render from one row array and one list of column labels; a status wraps in its cell above a 10rem floor, so the synthetic result's anomalies and coverage fit their cards at 1280 px and at 994 px, the narrowest width at which all three tables show, while at 1280 px the rows with the largest differences scroll in their region with the caption; a table that was hidden measures again when it shows",
+  },
+  {
+    id: 'TBL-07',
+    title: 'The screening result passes axe at 1280 and 390 px',
+    assertion:
+      "A result the screening consumer prices from a synthetic upload, opened from its emailed link once its run is complete, has no axe-core WCAG 2.1 A or AA violation at 1280 px, and at 390 px, loaded at that width, none and no two landmarks of a role sharing a name, every scroller's state agreeing with its measurement before axe runs",
+  },
+  {
+    id: 'TBL-08',
+    title: "The screening result's words and tones",
+    assertion:
+      "The top rows head their claim-line count Claim lines; one sentence above each table of differences says that each difference is its Medicare figure less the allowed amount in the file and which way its sign runs; the coverage shows an unpriced reason in words alone, its code kept in its row's data attribute; the could-not-price card and the top rows say what PaidWhole prices, never the engine; every count on the result groups its digits and takes a noun that agrees with it (the one other group, its rows summed); an empty value is said as none; on a phone an anomaly shows in the unpriced tone and every other standing neutral, never Short or Whole; never owed, underpaid or recovered",
   },
 ];

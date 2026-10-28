@@ -84,6 +84,12 @@ export interface PhoneWidthOptions {
    * fits at 390 px by design (three or fewer short columns, docs/adr/0078) is not named.
    */
   readonly tables?: readonly string[];
+  /**
+   * The stacked lists the route must show at 390 px, each by its name (exact; docs/adr/0078): visible, every value of
+   * every item rendered and inside the window, and no status chip cut. A list's own table is hidden at this width and is
+   * not named in `tables`.
+   */
+  readonly lists?: readonly string[];
   /** Each check reports its failure and the call goes on (expect.soft), so one test reports every route that fails. */
   readonly soft?: boolean;
 }
@@ -91,12 +97,13 @@ export interface PhoneWidthOptions {
 /**
  * The page at a phone's width (390 px): it does not scroll sideways (a wide table scrolls inside its own region); every
  * table on it sits in a ScrollTable (the rendered half of src/app/tables.test.ts's guard, for a table its source walk
- * cannot see); each table named in `tables` is there, overflowing and saying so; every scroller's role and tab stop
- * agree with what it measures; and then axe-core finds no violation, a scrollable region a keyboard cannot reach among
- * them, and no two landmarks of a role share a name (its best-practice rule landmark-unique: at this width every wide
- * table is a region named after it, so a table repeated in each row of a list would repeat one name). The scrollers
- * are waited for before axe because a scroller that fitted at the width before becomes a region only once its
- * ResizeObserver has fired and React has committed. The viewport is put back as it was.
+ * cannot see); each table named in `tables` is there, overflowing and saying so; each list named in `lists` is there,
+ * every value of its items in the window and no status cut; every scroller's role and tab stop agree with what it
+ * measures; and then axe-core finds no violation, a scrollable region a keyboard cannot reach among them, and no two
+ * landmarks of a role share a name (its best-practice rule landmark-unique: at this width every wide table is a region
+ * named after it, so a table repeated in each row of a list would repeat one name). The scrollers are waited for before
+ * axe because a scroller that fitted at the width before becomes a region only once its ResizeObserver has fired and
+ * React has committed. The viewport is put back as it was.
  */
 export async function atPhoneWidth(page: Page, what: string, options: PhoneWidthOptions = {}): Promise<void> {
   const check = options.soft === true ? expect.configure({ soft: true }) : expect;
@@ -107,6 +114,9 @@ export async function atPhoneWidth(page: Page, what: string, options: PhoneWidth
     await check.poll(() => page.evaluate(tablesOutsideScrollers), { message: `${what}: every table in a ScrollTable` }).toEqual([]);
     for (const name of options.tables ?? []) {
       await check.poll(() => cutOff(page, name), { message: `${what}: the table “${name}” at 390 px, populated, cut off and saying it scrolls` }).toEqual([]);
+    }
+    for (const name of options.lists ?? []) {
+      await check.poll(() => valuesOutOfView(page, name), { message: `${what}: the list “${name}” at 390 px, populated, every value in the window and no status cut` }).toEqual([]);
     }
     await expectScrollersAgree(page, `${what}, at 390 px`, options);
     if (options.axe !== false) {
@@ -145,6 +155,45 @@ async function cutOff(page: Page, name: string): Promise<string[]> {
         ...(holder.getAttribute('data-scroll') === 'overflows' ? [] : [`data-scroll="${holder.getAttribute('data-scroll') ?? ''}"`]),
         ...(caption !== null && caption.getClientRects().length > 0 ? [] : ['no caption']),
       ];
+    });
+  }, name);
+}
+
+/**
+ * What stops the named stacked list (components/stacked-rows.tsx) from proving its route at a phone's width, by each
+ * item's data-stacked-row and the term: none visible, no item, a value that says nothing, has no rendered box or passes
+ * an edge of the window by more than half a pixel, or a status chip whose words are cut (wider than its box by more
+ * than a pixel, as the scrollers round).
+ */
+async function valuesOutOfView(page: Page, name: string): Promise<string[]> {
+  return page.getByRole('list', { name, exact: true }).evaluateAll((lists, wanted) => {
+    if (lists.length === 0) {
+      return [`no visible list named “${wanted}”`];
+    }
+    const width = window.innerWidth;
+    return lists.flatMap((list) => {
+      const items = [...list.querySelectorAll(':scope > li[data-stacked-row]')];
+      if (items.length === 0) {
+        return ['no item'];
+      }
+      return items.flatMap((item) => {
+        const key = item.getAttribute('data-stacked-row') ?? '';
+        const values = [...item.querySelectorAll('dd')].flatMap((value) => {
+          const term = (value.previousElementSibling?.textContent ?? '').trim();
+          if ((value.textContent ?? '').trim() === '') {
+            return [`${key}: ${term}: says nothing`];
+          }
+          if (!value.checkVisibility()) {
+            return [`${key}: ${term}: not rendered`];
+          }
+          const box = value.getBoundingClientRect();
+          return box.left < -0.5 || box.right > width + 0.5 ? [`${key}: ${term}: from ${String(Math.round(box.left))} to ${String(Math.round(box.right))} px`] : [];
+        });
+        const cut = [...item.querySelectorAll('[data-slot="status-chip"]')]
+          .filter((chip) => chip.scrollWidth - chip.clientWidth > 1)
+          .map((chip) => `${key}: the status “${(chip.textContent ?? '').trim()}” is cut`);
+        return [...values, ...cut];
+      });
     });
   }, name);
 }

@@ -1,0 +1,20 @@
+{
+  "case": "TBL-05",
+  "module": "TBL",
+  "title": "The screening result's rows on a phone",
+  "assertion": "At 390 px each row of the screening result's three tables, the anomalies by code and payer product, the coverage and the rows with the largest differences, is an item of a list named by its card's title, headed by its naming cells (a group by its code and payer product, a coverage row by its payer product and outcome, a top row by its number, code and payer product) and holding every other column under the table's own header and in the table's order: the Medicare figures, the allowed amount in the file and the differences together and in that order, in the mono face, a missing second figure said in words, and the status in words on its tint; the other groups, summed, are the last item, their note under its heading; every value lies inside the window, no status is cut and no page scrolls sideways; the items carry their own hooks, never the table rows', and no id or hook repeats between the two copies",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": [
+    "apps/web/src/components/screening/result-tables.test.tsx",
+    "apps/web/e2e/screening-phone.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The result is rendered from synthetic groups, rows and coverage the test writes by hand, and the browser opens a result the screening consumer prices from a synthetic upload built in memory (CLEAN_ROWS, e2e/screening.ts); no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
