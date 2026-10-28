@@ -1,8 +1,8 @@
+import { ageWords, excludeWindowProblems, expiredExclude, releaseAgeMinutes } from './exclude-window';
 import {
   AUDIT_EXCEPTION_MAX_DAYS,
   DAY_MS,
   EXACT_SPEC,
-  EXCLUDE_MAX_DAYS,
   MINIMUM_RELEASE_AGE_MINUTES,
   MINUTE_MS,
   type PackageJson,
@@ -129,11 +129,6 @@ function readConfig(tree: Tree): Config {
     pnpmfile: tree.pnpmfile !== undefined,
     problems,
   };
-}
-
-/** "three days" for 4,320 minutes, otherwise the minutes and the days. */
-function ageWords(minutes: number): string {
-  return minutes === MINIMUM_RELEASE_AGE_MINUTES ? 'three days' : `${String(minutes)} minutes (${(minutes / 1440).toFixed(2)} days)`;
 }
 
 function failClosed(rule: string, error: unknown): Finding {
@@ -500,47 +495,34 @@ async function releaseAgeExcludeRule(head: Config, base: Config, input: CheckInp
   const edited =
     JSON.stringify([...listed].sort()) !== JSON.stringify([...(base.workspace.minimumReleaseAgeExclude ?? [])].sort()) ||
     JSON.stringify(head.releaseAgeExceptions.map((entry) => JSON.stringify(entry)).sort()) !== JSON.stringify([...baseEntries].sort());
-  const now = input.now.getTime();
   for (const entry of head.releaseAgeExceptions) {
-    const added = Date.parse(entry.added);
-    const expires = Date.parse(entry.expires);
     if (!EXACT_SPEC.test(entry.package)) {
       findings.push({ level: 'error', rule, message: `${FILES.releaseAgeExceptions}: "${entry.package}" is not one exact version (name@x.y.z)` });
       continue;
     }
     // An entry this change adds (or rewrites) covers its version's whole young window and never outlives seven days.
     if (!baseEntries.has(JSON.stringify(entry))) {
-      if (added > now) {
-        findings.push({ level: 'error', rule, message: `${entry.package}: added ${entry.added}, a time in the future` });
-      }
-      if (expires > added + EXCLUDE_MAX_DAYS * DAY_MS) {
-        findings.push({ level: 'error', rule, message: `${entry.package}: expires ${entry.expires}, more than ${String(EXCLUDE_MAX_DAYS)} days after it was added (${entry.added}); F2 (b) allows seven` });
-      }
       const { name, version } = splitSpec(entry.package);
+      let published: string | undefined;
+      let unread: Finding | undefined;
       try {
-        const published = (await registry.packument(name)).time[version];
-        if (published === undefined) {
-          findings.push({ level: 'error', rule, message: `${entry.package}: registry.npmjs.org gives no publish time for it` });
-        } else if (expires < Date.parse(published) + minutes * MINUTE_MS) {
-          findings.push({
-            level: 'error',
-            rule,
-            message: `${entry.package}: expires ${entry.expires}, before the version is ${ageWords(minutes)} old (${new Date(Date.parse(published) + minutes * MINUTE_MS).toISOString()}; published ${published}), so it would lapse while still needed`,
-          });
-        }
+        published = (await registry.packument(name)).time[version];
       } catch (error) {
-        findings.push(failClosed(rule, error));
+        unread = failClosed(rule, error);
+      }
+      const known = published === undefined ? null : { what: 'the version', at: published, as: 'published' };
+      findings.push(...excludeWindowProblems(entry.package, entry, { kind: 'security-fix', known, minutes }, input.now).map((message): Finding => ({ level: 'error', rule, message })));
+      if (unread !== undefined) {
+        findings.push(unread);
+      } else if (published === undefined) {
+        findings.push({ level: 'error', rule, message: `${entry.package}: registry.npmjs.org gives no publish time for it` });
       }
       findings.push(...(await excludeAdvisoryFindings(entry, base, registry)));
     }
-    if (expires <= now) {
-      // Once expired the version is three days old, so the exclude changes no resolution: it fails only where the
-      // lists are being edited, and warns elsewhere (a push follows a green pull request; Dependabot's touch only the lockfile).
-      findings.push({
-        level: input.event === 'pull_request' && edited ? 'error' : 'warning',
-        rule,
-        message: `${entry.package}: expired ${entry.expires}; remove it from both lists (the weekly triage, docs/runbooks/dependency-upgrades.md)`,
-      });
+    // Once expired the version is three days old, so the exclude changes no resolution (Dependabot's pull requests touch only the lockfile).
+    const expired = expiredExclude(entry.package, entry.expires, input.now, { event: input.event, edited, list: 'both lists' });
+    if (expired !== null) {
+      findings.push({ ...expired, rule });
     }
   }
   return findings.length > 0 ? findings : [{ level: 'ok', rule, message: `${String(listed.length)} exclude(s), each one exact version, equal in both lists and in date` }];
@@ -826,7 +808,7 @@ export async function checkToolchain(input: CheckInput, registry: Registry): Pro
   const findings: Finding[] = base.problems.map((message) => ({ level: 'warning', rule: 'files', message: `the base's ${message}; its lists are read as empty` }));
   findings.push(...gatesRule(head));
   findings.push(...settingsRule(head));
-  const minutes = Math.max(head.workspace.minimumReleaseAge ?? 0, MINIMUM_RELEASE_AGE_MINUTES);
+  const minutes = releaseAgeMinutes(head.workspace);
   const live = liveExcludes(head, input.now);
   const version = pnpmVersion(head.packageJson.packageManager);
   if (version === null) {
