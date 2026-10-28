@@ -223,3 +223,81 @@ None. No command failed and no flake re-run was needed.
 - UX-DLR-18 waits for #42: `Forbidden`'s optional link, and the packet page's and the reviewer checklist's links (ADR 0079, Revisit when).
 - A refusal said in place takes the focus even when the person has moved on while the fetch ran, for example into the packet page's version form. This predates this pass; ADR 0079 D4 says the notice is focused as it mounts.
 - The PR #78 description still needs the fix rounds' lines, this pass's included.
+
+## Part 4: the merge of #79, its adversarial check, and the full local suite
+
+Worktree /home/user/ux-download-refusals, branch co-001/ux-download-refusals. #79 (co-001/ux-table-scroll, UX PR 3; ADR 0078) merged into claude/build-platform as a6e754fc…, and git merge-tree found conflicts in 10 files. Nothing was pushed. There was no rebase, no force and no --no-verify. There was no migration, nothing under packages/pricing and no model identifier. Against a6e754fc… the #42 files touched are test-matrix.md, matrix.ts and registry.ts (rows only: 14, 24 and 22 lines added, 0 removed) and watched-paths.txt (3 rows, the generator's). components/shell.tsx is untouched.
+
+### Commits after b459ba73…
+- 646f060a…: the merge (parents b459ba73… and a6e754fc…), made by the merge agent (LANES.md rule 6: this PR merged second, so it keeps both).
+  - The 10 conflicts:
+    - receipts.tsx, the packet's Versions and Reports' Generated reports: each takes #79's `ScrollTable`, with the table its only child, inside this PR's `DownloadLinks`. They keep this PR's `DownloadLink` (no download attribute), `${shownVersion}` and `?from=list`.
+    - Coverage: keeps `PayerLetter`, with #79's `w-full min-w-0` selects carried into letter.tsx.
+    - Synth and test matrix: `CASE_MODULES`, `MODULE_NUMBER`, matrix, registry and test-matrix hold TBL (17), then DLR (18).
+    - Personas: both sides' entries and doc comment.
+  - download-refusals.spec.ts names the Receipts and Generated reports regions with `exact: true` (ADR 0078's rule).
+  - The generators (install, watched.ts, synth) wrote nothing.
+- f47437eb…: this check's one fix (4 files: download-link.tsx and its test, download-refusals.spec.ts, ADR 0079).
+
+Final head: f47437eb….
+
+### Adversarial check of the merge against both parents
+- **Every file is accounted for.** I compared each side's own change (from the merge base 0dd1ba7e…) with what the merge adds to the other parent, as multisets of +/- lines.
+  - The 44 files only this PR changed equal b459ba73…, except the merge's two ports (letter.tsx, and download-refusals.spec.ts's `exact: true`).
+  - The 83 files only #79 changed equal a6e754fc…. So #79's tests and guards are whole: tables.test.ts, scroll-table.test.tsx, stacked-rows.test.tsx, tables-phone.spec.ts, a11y.ts's phone checks, dates.tsx, brand.css, ADR 0078 and the TBL fixtures.
+  - In the 18 files both sides changed, every difference is a planned resolution or a re-indentation pair. test-matrix.md, matrix.ts and registry.ts hold both sides' rows whole.
+- **The four conflicted pages and receipts.tsx hold.**
+  - Render order: in each, `DownloadLinks`' place (the busy status, then the notice) renders above the `ScrollTable`, never inside the scroller.
+  - The notice per list on Reports sits above each table.
+  - The `?from=`, `?version=` and `reportHref` link counts equal this PR's in all 7 files that carry them.
+  - No `<a … download>` is left in apps/web/src (multi-line search).
+  - Every `Forbidden` branch keeps its `ForgetRefusal`.
+- **Nesting.** No `DownloadLinks` is inside a `ScrollTable`. Each wraps its table from outside, and the guard holds each table as its scroller's only child. The Uploads screen's outer `DownloadLinks` still says the receipts' refusals above its list.
+- **Stacked rows.** None to check: no page renders `StackedRows` yet (ADR 0078 ships it adopted at no site), so no download link is in a stacked copy and no `DownloadLinks` is duplicated.
+- **Focus: one defect, found and fixed (f47437eb…).**
+  - Since #79, the receipts' Report link and the packet's version files sit in the scroller. The scroller is a region with a tab stop while its table overflows (on a phone) and before it is measured.
+  - Safari does not focus a clicked link; it focuses the link's nearest focusable ancestor, here the scroller. `focusIsFree` freed only the page and a download link, so on an iPhone a refused file said in place would not have taken the focus. Chromium focuses the link, so CI could not see this.
+  - The fix: `focusIsFree` also frees an element that holds a download link. A person who moved on while the file was fetched (to another table, or into the version form's narrative) keeps their place, as before.
+  - Tests: a unit case covers the fix. A new e2e step on Uploads at 390 px focuses the receipts' scroller, as Safari would, and clicks Report without moving the focus. It expects the refusal focused, above the scroller and not in it, with the page kept.
+  - ADR 0079 D4 now names the scroller, and its Not verified here says Safari is stood in for in Chromium.
+  - Mutation check: with the old line put back, download-refusals.spec failed at the new step (`toBeFocused`, received "inactive": the notice rendered, the focus stayed on the scroller). It passes with the fix.
+- **The letter holds.** Its columns are `flex min-w-0 flex-col` and the selects `w-full min-w-0` (#79's af13cc06…), so a long contract title does not widen Coverage at 390 px. Its marks, `LetterMarks` and `LetterContractCheck` are unchanged.
+
+### Local suite on f47437eb…
+Every command ran under `flock /tmp/laneb-heavy.lock`, one at a time, with Node 24.22.0 and PG18 on 5433. Logs are in scratchpad/m79s/*.log. The tree was clean before and after each step, so the e2e ran the stamped build of the commit.
+
+| Command | Result |
+| --- | --- |
+| merge agent, on the merged tree before its commit: pnpm install --frozen-lockfile --config.modules-cache-max-age=0; watched.ts --write; pnpm synth --all | Pass. Each wrote nothing. Synth: 249 cases, 0 written, 641 unchanged. |
+| apps/web: tsc --noEmit -p .; vitest run download-link.test.tsx; eslint --max-warnings 0 over the 3 changed .ts/.tsx; pnpm lint:copy (before the fix commit) | Pass. 19 tests; 0 problems; 532 files. |
+| pnpm typecheck | Pass. 22 projects (25 s). |
+| pnpm lint | Pass. 1,644 files in 3 groups, 0 errors, 0 warnings (81 s). |
+| pnpm lint:copy | Pass. 532 files. |
+| pnpm lint:logs | Pass. 1,069 files. |
+| pnpm test (the whole unit project) | Pass. 392 files: 6,679 passed, 4 skipped (175 s), coverage thresholds met. That includes #79's tables.test.ts guard, scroll-table, stacked-rows and dates, and the new focus case. |
+| pnpm synth --all, then git diff --exit-code | Pass. 249 cases: 0 written, 641 unchanged, 0 removed. EMR: 8 formats, 16 unchanged. TBL-01 to TBL-04 and DLR-01 to DLR-04 are both present. |
+| tsx tools/screening-capacity/watched.ts --write, then git diff --exit-code | Pass. 536 lines, unchanged. |
+| tsx tools/stryker/affected.ts --event pull_request --base a6e754fc… | Pass. Money, pricing, ledger and packets are not affected: any=false, no shards. |
+| tsx tools/stryker/gate.ts (empty reports, --expected '[]') | Pass: "No money path changed", "mutation gate: passed". |
+| DATABASE_URL=…5433/postgres pnpm test:db --shard=1/6 | Pass. 22 files, 2,432 passed (92 s). |
+| --shard=2/6 | Pass. 21 files, 824 passed, 1 skipped (58 s). |
+| --shard=3/6 | Pass. 21 files, 2,510 passed (98 s). |
+| --shard=4/6 | Pass. 21 files, 1,836 passed (88 s). |
+| --shard=5/6 | Pass. 21 files, 1,398 passed (192 s). |
+| --shard=6/6 | Pass. 21 files, 222 passed (58 s). |
+| test:db total | 127 files: 9,222 passed, 1 skipped, 0 failed. |
+| pnpm build | Pass. Web and worker (25 s). The tree was clean afterwards. |
+| build-stamp.ts --write f47437eb… | Stamped f47437eb…. Both e2e web servers read "the build is f47437eb…'s". |
+| E2E_ADMIN_URL=…5433/postgres E2E_PREBUILT=1 E2E_DATABASE=tp_e2e_pr78e E2E_PORT=3184 pnpm test:e2e --shard=1/2 --workers=2 | Pass. 29 passed (5.4 min). download-refusals (DLR-04) is included, with the new Safari stand-in step. |
+| same, --shard=2/2 | Pass. 28 passed (4.1 min). tables-phone (both tests), uploads, packets, reports, reconciliation and screening are included. |
+| e2e total | 57 passed, 0 failed: the whole suite (57 tests in 28 files, `playwright test --list`). |
+| Clean-up | tp_e2e_pr78e was dropped and its /tmp directories removed (0 left). Nothing is listening on 3184. |
+| Mutation check: the old `focusIsFree` line restored; E2E_DATABASE=tp_e2e_pr78m E2E_PORT=3185 pnpm test:e2e download-refusals --workers=1 (built here) | Failed as intended. download-refusals.spec failed at the new step (spec line 398, the notice not focused). The positional filter did not narrow the run (`playwright test download-refusals --list` lists all 57), so the run was stopped with SIGINT after the failure: 31 passed, 1 interrupted (reconciliation, mid-run), 24 not run. Then the file was restored (tree clean), tp_e2e_pr78m dropped (0 /tmp directories, 3185 free), and the clean tree rebuilt and stamped f47437eb… again, so `.next` holds no build of the mutated line. |
+
+### Failures
+None in the suite. No flake re-run was needed. The only failure was the intended one in the mutation check.
+
+### Still open (carried)
+- No test runs Safari. Its focus on a clicked link's scroller is stood in for in Chromium (ADR 0079, Not verified here).
+- `prettier --check` fails on download-link.tsx, download-link.test.tsx and download-refusals.spec.ts. It failed on them at 646f060a… already. Prettier is not one of the repo's gates and no round has run it, so they were not reformatted.
+- Carried from Part 3: UX-DLR-18 waits for #42. The PR #78 description still needs the fix rounds' lines, plus this merge: the receipts', Versions' and Generated reports' tables scroll in #79's regions inside this PR's `DownloadLinks`, and the focus fix.
