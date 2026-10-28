@@ -11,24 +11,24 @@ The UX review's PR 4 (UX-005, UX-040, UX-042, UX-043, UX-132, UX-206; clusters C
   - scope any `data-slot` locator to `[data-stacked-copy]` or `:visible` (ADR 0078's renders-twice note).
   - `action-form.tsx`'s refusal hand-off stays UX PR 34's.
 
-## Current state (2026-10-28 03:05 UTC)
-- **Branch:** `co-001/ux-screening-result-tables` pushed at a6e754f (no commits yet). #42 is still an open draft (6f23c42), so the scope is the design's: everything that keeps every pin of #42's `result.test.tsx`, plus a follow-on, UX PR 4b, the day #42 merges.
-- **Design:** done and reviewed. `designs/lane-b-ux-screening-result-tables.md`: its section 12 folds in all 10 findings of `designs/lane-b-ux-screening-result-tables-review.json` (build with changes, no migration; one blocking, P4-DR-01, the stream lock taken inline). ADR 0078 gets a dated amendment.
-- **Closes here:**
-  - UX-005 (the stacked rows at 390; the anomalies table fits at 1280);
-  - UX-043 ("Claim lines");
-  - UX-042 in part: the sign key;
-  - UX-132 in part: the code is gone from the cell, and "PaidWhole", not "the engine";
-  - UX-040 on the phone (the rows copy in the unpriced tone);
-  - UX-154's top-rows sentence (for UX PR 85's entry).
-- **Waits for #42** (UX PR 4b, `co-001/ux-screening-result-words`, design section 11):
-  - UX-040 in the table copy;
-  - UX-206, the count sentence;
-  - the "$5 a claim line" wording;
-  - UX-042's header names and UX-132's reason words (both in `labels.ts`).
-- **Running:** the build wf_9184e225-f39 (from ~03:05 UTC): A (StackedRows) first, then B (the result tables and words) and C (the browser proof) in parallel, then D (documents, synth, `watched-paths.txt` by its generator), then a checker. Safety check-in 06:49 UTC (trig_012Z6LWe5FpAY22BmWsUz8K4).
-- **If stopped:** in this session, resume wf_9184e225-f39. From GitHub alone: re-run the build from the design. The scouts' notes and progress files are in `lane-b-ux-screening-result-tables-wip/`.
-- **Next:** push; the draft PR (template); the before and after shots (design 7.1 and P4-DR-09); two reviews (UX and brand; the correctness of the two copies and of the result's words, 7.2); the fix round with the full suite; the verification; the merge.
+## Current state (2026-10-28 05:25 UTC)
+- **Branch:** `co-001/ux-screening-result-tables` pushed at **0c261ee**, on a6e754f. No PR yet.
+- **Build:** done (wf_9184e225-f39, 03:05-04:05 UTC), 6 commits:
+  - 995f568 and 8c23530, StackedRows' description and the 40% term column;
+  - ed08391, the three tables on StackedRows and the words;
+  - cf36117, `screening-phone.spec.ts` and `atPhoneWidth`'s `lists` option;
+  - 5a4cbe5, the ADR 0078 amendment, TBL-05 to TBL-08, TBL-01, -03 and -04 reworded, synth and `watched-paths.txt` by its generator;
+  - 0c261ee, a cleanup.
+- **The checker's results on 0c261ee** (all pass):
+  - typecheck, lint, lint:copy, lint:logs, synth and verify-content clean;
+  - unit 6,475 passed, 4 skipped, with #42's `result.test.tsx` unedited and passing;
+  - `watched.test.ts` 6 of 6;
+  - the large result page test: page 1 is 387 KB, was 144 KB, under the 512 KiB cap;
+  - e2e 6 of 6: screening-phone, screening (no flake), tables-phone, layout-1280.
+- **The two copies differ in tone on purpose** (P4-DR-03): on a phone an anomaly shows in the unpriced tone; the table copy keeps Short until UX PR 4b (#42's pins).
+- **`watched-paths.txt`, by its generator:** +`components/screening/table-parts.tsx`, +`components/stacked-rows.tsx`; `lib/copy/words.ts` stays on the merged tree, because #74's sign-in imports it.
+- **Running:** the base merge of 165c599 (#74 ux-forms merged) with the generator re-run and checks (wf_a6c7f099-c90, from 05:20 UTC). Safety check-in 06:49 UTC (trig_012Z6LWe5FpAY22BmWsUz8K4).
+- **Next:** push the merge; the draft PR (template) and subscribe; the shots (design 7.1 with P4-DR-09) and the two reviews; the fix round with the full suite; the verification; the merge.
 
 ## Overlaps (checked 2026-10-28 01:45 UTC)
 - **#42** (`co-001/pr-06b-mail-streams` at 6f23c42, 212 files):
@@ -39,6 +39,7 @@ The UX review's PR 4 (UX-005, UX-040, UX-042, UX-043, UX-132, UX-206; clusters C
 - **ux-forms** (`co-001/ux-forms`): none of the planned files.
 
 ## Log
+- 2026-10-28 04:05 UTC: build done at 0c261ee (all checks pass); 05:13: the machine had restarted (PostgreSQL down): setup re-run, OK; 0c261ee pushed; 05:20: base merge (#74) started.
 - 2026-10-28 03:20 UTC: Lane A agreed Q1 (re-pin under the same name, no migration), with three conditions for 4b, recorded in design 12.1.
 - 2026-10-28 ~01:50-03:00 UTC: the design workflow wf_9855cdd7-e28 (three scouts, author, reviewer). 03:00: the review folded in (section 12). 03:05: build started.
 - 2026-10-28 01:45 UTC: branch cut at a6e754f in `/home/user/ux-screening-result-tables`, installed. Next: the design workflow (scouts, author, one reviewer).
