@@ -318,8 +318,8 @@ test('a billing manager creates a pricing run; the worker prices it, and its lin
           if (text.includes('This re-run: can no longer be accepted, because a newer run of these service dates is in effect; the page is updated to name it')) {
             document.body.dataset.refusalSeen = 'true';
           }
-          // Every issue is on the form's hidden run field: no "fields marked below" (UX review of PR #50, UX-3).
-          if (text.includes('Check the fields marked below.')) {
+          // Every issue is on the form's hidden run field: no "Fix the field listed here" (UX review of PR #50, UX-3).
+          if (text.includes('listed here, then try again.')) {
             document.body.dataset.genericSeen = 'true';
           }
         };

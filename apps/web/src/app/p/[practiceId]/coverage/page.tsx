@@ -1,9 +1,10 @@
 import { quarterNameOf } from '@tp/rules';
-import { Alert, AlertDescription, AlertTitle, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Label } from '@tp/ui';
+import { Alert, AlertDescription, AlertTitle, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../components/action-form';
+import { CheckboxField, CheckboxGroup, Field, SelectField } from '../../../../components/field';
 import { QuestionList, TotalsText } from '../../../../components/contracts/display';
 import { Figure } from '../../../../components/coverage/share';
 import { utc } from '../../../../components/format';
@@ -359,23 +360,24 @@ export default async function CoveragePage(props: Props) {
             checklist={checklist}
             review={(shown) => (
               <ActionForm action={reviewEvidenceFormAction} submit="Keep the checked items" className="flex flex-col gap-3">
+                <FormKeys />
                 <input type="hidden" name="practiceId" value={practiceId} />
                 <input type="hidden" name="proposalId" value={shown.id} />
-                <fieldset className="flex flex-col gap-2 text-sm">
-                  <legend className="font-medium">Keep the items that apply</legend>
-                  {shown.items.map((item, index) => (
-                    <label key={`${item.reason}:${String(index)}`} className="flex items-start gap-2" data-item={index}>
-                      <input type="checkbox" name={`keep:${String(index)}`} value="on" defaultChecked />
+                <CheckboxGroup
+                  legend="Keep the items that apply"
+                  issueKey="kept"
+                  options={shown.items.map((item, index) => ({
+                    name: `keep:${String(index)}`,
+                    value: 'on',
+                    defaultChecked: true,
+                    label: (
                       <span>
                         <span className="font-medium">{item.document}</span> ({item.reason}): {item.why}
                       </span>
-                    </label>
-                  ))}
-                  <label className="flex items-center gap-2 border-t pt-2">
-                    <input type="checkbox" name="dismiss" value="on" />
-                    Dismiss the whole checklist
-                  </label>
-                </fieldset>
+                    ),
+                  }))}
+                />
+                <CheckboxField id="evidence-dismiss" name="dismiss" value="on" errorName="Dismiss the checklist" label="Dismiss the whole checklist" />
               </ActionForm>
             )}
           />
@@ -422,41 +424,24 @@ export default async function CoveragePage(props: Props) {
           {payers.length === 0 ? (
             <p className="text-sm text-muted-foreground">Payers appear once their 835s load.</p>
           ) : (
-            <form method="get" action={`${path}/letter`} className="grid max-w-xl gap-3" aria-label="Letter">
-              <div className="flex min-w-0 flex-col gap-1.5">
-                <Label htmlFor="letter-payer">Payer</Label>
-                <select id="letter-payer" name="payer" required className="h-9 w-full min-w-0 rounded-md border bg-background px-2 text-sm">
-                  {payers.map((payer) => (
-                    <option key={payer.id} value={payer.id}>
-                      {payer.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex min-w-0 flex-col gap-1.5">
-                <Label htmlFor="letter-contract">The payer’s contract (optional)</Label>
-                <select id="letter-contract" name="contract" className="h-9 w-full min-w-0 rounded-md border bg-background px-2 text-sm">
-                  <option value="">None named</option>
-                  {payers
+            <form method="get" action={`${path}/letter`} className="grid max-w-xl grid-cols-1 gap-3" aria-label="Letter">
+              <SelectField id="letter-payer" label="Payer" name="payer" required options={payers.map((payer) => ({ value: payer.id, label: payer.name }))} showChosen />
+              <SelectField
+                id="letter-contract"
+                label="The payer’s contract (optional)"
+                name="contract"
+                options={[
+                  { value: '', label: 'None named' },
+                  ...payers
                     .filter((payer) => contracts.some((contract) => contract.payerId === payer.id))
-                    .map((payer) => (
-                      <optgroup key={payer.id} label={payer.name}>
-                        {contracts
-                          .filter((contract) => contract.payerId === payer.id)
-                          .map((contract) => (
-                            <option key={contract.id} value={contract.id}>
-                              {contract.title}
-                            </option>
-                          ))}
-                      </optgroup>
-                    ))}
-                </select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="letter-codes">Procedure codes (optional)</Label>
-                <Input id="letter-codes" name="codes" placeholder="97110, 97530" maxLength={400} />
-                <p className="text-xs text-muted-foreground">Leave blank to ask for the complete schedule.</p>
-              </div>
+                    .map((payer) => ({
+                      group: payer.name,
+                      options: contracts.filter((contract) => contract.payerId === payer.id).map((contract) => ({ value: contract.id, label: contract.title })),
+                    })),
+                ]}
+                showChosen
+              />
+              <Field id="letter-codes" label="Procedure codes (optional)" name="codes" placeholder="97110, 97530" maxLength={400} hint="Leave blank to ask for the complete schedule." />
               <div>
                 <Button type="submit" variant="outline">
                   Download the letter

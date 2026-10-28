@@ -1,10 +1,11 @@
-import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Label, PermissionState } from '@tp/ui';
+import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, PermissionState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { ActionForm } from '../../../../components/action-form';
 import { UtcTime } from '../../../../components/dates';
+import { CheckboxField, TextAreaField } from '../../../../components/field';
 import { roleNames, utc } from '../../../../components/format';
 import { EVIDENCE_WORDS, KindBadge, LedgerTotals, LineCorrectionWords, correctionWords, entryStage, exportStatusText, levelWords, lineEntriesEmptyText } from '../../../../components/reconciliation/display';
 import { UnattestedSubmissions } from '../../../../components/packets/unattested';
@@ -40,14 +41,8 @@ function ReverseForm({ practiceId, matchId, label = 'Reverse this match', idSuff
         <FormKeys />
         <input type="hidden" name="practiceId" value={practiceId} />
         <input type="hidden" name="matchId" value={matchId} />
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`reason-${matchId}${idSuffix}`}>Why it is reversed</Label>
-          <textarea id={`reason-${matchId}${idSuffix}`} name="reason" required maxLength={2000} rows={2} className="rounded-md border bg-background p-2 text-sm" />
-        </div>
-        <label className="flex items-start gap-2 text-sm">
-          <input type="checkbox" name="confirm" required className="mt-1" />
-          <span>{REVERSAL_CONSEQUENCE} Reverse it.</span>
-        </label>
+        <TextAreaField id={`reason-${matchId}${idSuffix}`} label="Why it is reversed" name="reason" required maxLength={2000} rows={2} />
+        <CheckboxField id={`confirm-${matchId}${idSuffix}`} name="confirm" errorName="Confirmation" required label={`${REVERSAL_CONSEQUENCE} Reverse it.`} />
       </ActionForm>
     </details>
   );

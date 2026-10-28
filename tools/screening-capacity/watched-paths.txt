@@ -43,6 +43,7 @@ apps/web/src/components/brand/Mark.tsx
 apps/web/src/components/brand/Verified.tsx
 apps/web/src/components/brand/index.ts
 apps/web/src/components/field.tsx
+apps/web/src/components/form-issues.tsx
 apps/web/src/components/format.ts
 apps/web/src/components/public-header.tsx
 apps/web/src/components/screening/anomalies.tsx
@@ -74,6 +75,7 @@ apps/web/src/lib/billing/provider.ts
 apps/web/src/lib/billing/runs.ts
 apps/web/src/lib/brand.ts
 apps/web/src/lib/contracts/remedies.ts
+apps/web/src/lib/copy/words.ts
 apps/web/src/lib/fonts.ts
 apps/web/src/lib/http/attribution.ts
 apps/web/src/lib/http/csrf.ts
@@ -525,6 +527,7 @@ packages/ui/src/index.ts
 packages/ui/src/lib/cn.ts
 packages/ui/src/states/empty-state.tsx
 packages/ui/src/states/error-state.tsx
+packages/ui/src/states/loading-announcement.tsx
 packages/ui/src/states/loading-state.tsx
 packages/ui/src/states/permission-state.tsx
 packages/ui/src/states/state-mark.tsx

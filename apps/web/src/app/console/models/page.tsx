@@ -75,7 +75,7 @@ export default async function ConsoleModelsPage(props: { readonly searchParams: 
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <ActionForm action={setModelFlagAction} submit="Set the flag" className="grid max-w-2xl gap-4" labels={{ key: 'Flag', target: 'Applies to', value: 'Value' }}>
+          <ActionForm action={setModelFlagAction} submit="Set the flag" className="grid max-w-2xl gap-4">
             <FormKeys />
             <SelectField label="Flag" name="key" options={keys} />
             <SelectField label="Applies to" name="target" options={targets} />

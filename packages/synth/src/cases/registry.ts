@@ -652,6 +652,41 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/components/pricing/content.test.tsx',
     'tools/test/workflows.test.ts',
   ]),
+  // The forms of the UX baseline review's first pull request (docs/adr/0077).
+  'FRM-01': none(1, 'The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.', [
+    'apps/web/src/components/action-form.browser.test.tsx',
+    'apps/web/src/components/screening/split-form.browser.test.tsx',
+    'apps/web/src/lib/http/next.test.ts',
+    'apps/web/e2e/forms-keep-input.spec.ts',
+    'apps/web/e2e/triage.spec.ts',
+    'apps/web/e2e/packets.spec.ts',
+  ]),
+  'FRM-02': none(1, 'Synthetic personas save a support ticket, an ROI statement and a console incident after a refusal; no file.', ['apps/web/e2e/forms-keep-input.spec.ts']),
+  'FRM-03': none(1, 'The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.', ['apps/web/src/components/action-form.browser.test.tsx', 'apps/web/e2e/forms-keep-input.spec.ts']),
+  'FRM-04': none(1, 'The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.', [
+    'apps/web/src/components/action-form.browser.test.tsx',
+    'apps/web/src/components/action-form.test.tsx',
+    'apps/web/src/components/form-issues.test.ts',
+    'apps/web/src/components/form-hints.test.ts',
+    'apps/web/src/components/fields.test.tsx',
+    'apps/web/e2e/forms-keep-input.spec.ts',
+  ]),
+  'FRM-05': none(1, 'The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.', ['apps/web/src/components/action-form.browser.test.tsx', 'apps/web/e2e/forms-keep-input.spec.ts']),
+  'FRM-06': none(1, 'The public request form is posted from a browser with scripts off; no file.', ['apps/web/src/components/fields.test.tsx', 'apps/web/e2e/forms-keep-input.spec.ts']),
+  'FRM-07': none(1, 'Synthetic personas sign in through the local identity provider; no file.', [
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/src/lib/http/next.test.ts',
+    'apps/web/src/components/action-form.browser.test.tsx',
+    'apps/web/src/components/fields.test.tsx',
+    'apps/web/e2e/forms-keep-input.spec.ts',
+  ]),
+  'FRM-08': none(1, 'The public request form, synthetic practices’ forms, the uploads drop zone and the console’s status page are measured and scanned in the browser; no file.', [
+    'apps/web/src/components/action-form.browser.test.tsx',
+    'apps/web/src/components/form-hints.test.ts',
+    'apps/web/e2e/forms-keep-input.spec.ts',
+    'apps/web/e2e/packets.spec.ts',
+    'apps/web/e2e/uploads.spec.ts',
+  ]),
   // The tables of the UX baseline review's third pull request (docs/adr/0078).
   'TBL-01': none(1, 'The scroller is rendered from a synthetic table the test passes in memory, the source guard reads the app’s own files and sources it holds in memory, and the browser measures the scroller on synthetic practices the journeys load; no file.', [
     'apps/web/src/components/scroll-table.test.tsx',

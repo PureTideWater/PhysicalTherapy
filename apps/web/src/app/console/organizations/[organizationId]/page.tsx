@@ -84,7 +84,7 @@ export default async function OrganizationPage(props: { readonly params: Promise
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             {practices.length === 0 ? (
-              <EmptyState title="No practices yet" nextStep="Create the group's first practice, then invite its practice administrator." />
+              <EmptyState title="No practices yet" nextStep="Create the group’s first practice, then invite its practice administrator." />
             ) : (
               <ul className="flex flex-col gap-1 text-sm" aria-label="Practices">
                 {practices.map((practice) => (
@@ -106,8 +106,8 @@ export default async function OrganizationPage(props: { readonly params: Promise
               <FormKeys />
               <input type="hidden" name="organizationId" value={organization.id} />
               <Field label="Practice name" name="name" required maxLength={200} />
-              <Field label="NPI (optional)" name="npi" inputMode="numeric" pattern="[0-9]{10}" />
-              <Field label="Tax ID, last four (optional)" name="taxIdLast4" inputMode="numeric" pattern="[0-9]{4}" />
+              <Field label="NPI (optional)" name="npi" inputMode="numeric" pattern="[0-9]{10}" hint="Ten digits." />
+              <Field label="Tax ID, last four (optional)" name="taxIdLast4" inputMode="numeric" pattern="[0-9]{4}" hint="The last four digits." />
               <Field
                 label="Billing ZIP (ZIP+4 if Medicare needs one)"
                 name="zip"
@@ -125,7 +125,7 @@ export default async function OrganizationPage(props: { readonly params: Promise
       <Card>
         <CardHeader>
           <CardTitle>Members</CardTitle>
-          <CardDescription>One role per membership. Ending a membership revokes the user's sessions at once.</CardDescription>
+          <CardDescription>One role per membership. Ending a membership revokes the user’s sessions at once.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {members.length === 0 ? (
@@ -305,11 +305,11 @@ export default async function OrganizationPage(props: { readonly params: Promise
             <Field label="Version" name="version" required maxLength={40} />
             <Field label="Signer" name="signer" required maxLength={200} />
             <Field label="Signed on" name="signedOn" type="date" required />
-            <Field label="Document reference" name="documentRef" required hint="The e-signature vendor's envelope or document reference." />
-            <Field label="SHA-256" name="sha256" required pattern="[0-9a-fA-F]{64}" hint="The signed document's SHA-256, 64 hexadecimal characters." />
+            <Field label="Document reference" name="documentRef" required hint="The e-signature vendor’s envelope or document reference." />
+            <Field label="SHA-256" name="sha256" required pattern="[0-9a-fA-F]{64}" hint="The signed document’s SHA-256, 64 hexadecimal characters." />
           </ActionForm>
           <h3 className="text-sm font-semibold">Or upload the signed PDF</h3>
-          <p className="text-xs text-muted-foreground">The server hashes it and keeps it under an opaque key; an agreement signed through the e-signature vendor arrives by its webhook instead.</p>
+          <p className="text-sm text-muted-foreground">PaidWhole records its SHA-256 and keeps the file under the organization’s and the agreement’s IDs, never a name; an agreement signed through the e-signature vendor arrives by its webhook instead.</p>
           <ActionForm action={uploadAgreementAction} submit="Upload agreement" className="grid max-w-xl gap-3">
             <FormKeys />
             <input type="hidden" name="organizationId" value={organization.id} />
@@ -335,7 +335,7 @@ export default async function OrganizationPage(props: { readonly params: Promise
         </CardHeader>
         <CardContent>
           {grants.length === 0 ? (
-            <EmptyState title="No grants" nextStep="A practice administrator approves a firm's grant from the practice's settings." />
+            <EmptyState title="No grants" nextStep="A practice administrator approves a firm’s grant from the practice’s settings." />
           ) : (
             <ScrollTable label="Grants">
               <table className="w-full min-w-[48rem] text-left text-sm" aria-label="Grants">
