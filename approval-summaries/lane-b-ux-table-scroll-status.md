@@ -5,7 +5,7 @@
   - every required check was green on 7102b8b (all green, mutation, screening-capacity gate, approval-of-record, re-run after ready);
   - CI totals: unit 6,459 passed, 1 skipped; db 9,223; e2e 56 of 56;
   - the fresh-clone verification (wf_c49ed9e6-4c8) passed; its two nits are fixed in the description, plus marking the PR ready.
-- **After the merge:** unsubscribed from #79; the check-in was deleted; the main checkout is at a6e754f; the worktree and local branch were removed (the remote branches `co-001/ux-table-scroll` and `co-001/wip-ux-table-scroll` stay: Lane B deletes no branch). The push runs on a6e754f are read in the log below.
+- **After the merge:** unsubscribed from #79; the check-in was deleted; the main checkout is at a6e754f; the worktree and local branch were removed (the remote branches `co-001/ux-table-scroll` and `co-001/wip-ux-table-scroll` stay: Lane B deletes no branch). The push runs on a6e754f: ci, mutation and screening-capacity all success (01:44 to 01:52 UTC).
 - **Galleries** (private to this account): 1280 px https://claude.ai/artifact/QPXJc5Z8YUQGXW5Ka7qi5K, 390 px https://claude.ai/artifact/7eEUVKRqb4trRyfYkFbqAd.
 - **Next in this session:** PR 4, `co-001/ux-screening-result-tables` (status `lane-b-ux-screening-result-tables-status.md`), cut from a6e754f.
 
@@ -21,6 +21,7 @@ The UX review's PR 3 (UX-011 / C-002; UX-079 / C-043 part (a)). Run as a Lane B 
 - **ux-forms (`co-001/ux-forms`, 17bbb70, another session):** shares `console/compliance/page.tsx`, `console/organizations/[organizationId]/page.tsx`, `p/[practiceId]/cases/page.tsx`, `p/[practiceId]/settings/pricing/page.tsx`, `components/reconciliation/template-mapper.tsx`. The PR merged second keeps both (rule 6).
 
 ## Log
+- 2026-10-28 01:52 UTC: the push runs on a6e754f all succeeded: ci 40615991431, mutation 40615991421, screening-capacity 40615991449.
 - 2026-10-28 01:30-01:37 UTC: the verification passed; description updated (DR-15 shard times, DR-02 locator list) and read back; marked ready; approval-of-record re-ran green; merged as a6e754f; unsubscribed, cleaned up.
 - 2026-10-28 01:18 UTC: base merge 7102b8b pushed (checked locally: unit 6,456 passed; e2e of the 14 specs 27 of 27 on chromium-1248). 01:22: PR description final. 01:24: fresh-clone verification wf_c49ed9e6-4c8 started.
 - 2026-10-27 22:05 UTC: CI on 88a66bd all green, mergeable clean. (The worker restarted twice; resumed at 00:52 UTC on the safety check-in.) 2026-10-28 00:53: galleries published (private). 00:55: the base had moved to 0dd1ba7 (#77, #80); base-merge check wf_447fa2f5-5ee started.
