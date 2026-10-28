@@ -28,4 +28,4 @@ None.
 - The packets verifier's `identifierSpans` (`packages/packets/src/verifier/mismatches.ts`), which checks the model's narrative for identifiers, has the same character-for-character gaps (diacritics, typographic apostrophes, hyphenated halves, invisible characters). Its own PR in `packages/packets` (a money package), reusing the gateway's fold once this merges.
 
 ## Next step
-The fix round (wf_e3685db9-6a8; resume with resumeFromRunId if stopped), its one push with the full local suite, one push; then the fresh-clone verification reading CI; then merge per lanes/lane-b.md.
+Done: merged as #80 (0dd1ba7). The follow-on item (packet day counts) continues in `lane-b-packet-day-counts-status.md`.
