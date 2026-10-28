@@ -29,7 +29,8 @@
 /** ASCII white space at either end: space, tab, line feed, vertical tab, form feed and carriage return. */
 const EDGE_SPACE = /^[ \t\n\v\f\r]+|[ \t\n\v\f\r]+$/g;
 const ASCII_UPPER = /[A-Z]/g;
-const NOT_ASCII = /[^\x00-\x7f]/;
+/** Any UTF-16 code unit outside ASCII (a surrogate of a character beyond the BMP included): mail_recipient_canonical()'s [^\x01-\x7F]. */
+const NOT_ASCII = /[\u0080-\uffff]/;
 
 /** Each provider's other names for one mailbox (step 5). */
 const GMAIL = 'gmail.com';
