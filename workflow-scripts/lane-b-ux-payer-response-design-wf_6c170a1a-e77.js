@@ -3,6 +3,8 @@ export const meta = {
   description: 'Design for co-001/ux-payer-response (UX PR 10: UX-035 and UX-007): three scouts, the author, one adversarial reviewer (security, money and UX lenses), the revision',
   phases: [{ title: 'Scout' }, { title: 'Author' }, { title: 'Review' }, { title: 'Revise' }],
 }
+// RESUMED 2026-10-28 05:16 UTC: the account's 5-hour limit stopped this run at ~04:20 UTC after the scouts and the author;
+// the review and the revision run now. Every agent keeps its progress file; heavy commands under the lock.
 const SP = '/tmp/claude-0/-home-user-PhysicalTherapy/d75bf211-7cd4-58d6-b13d-568cbdc1db2a/scratchpad'
 const SAVE = (file, what) => `Save as you go: keep ${SP}/progress/${file} up to date (${what}), so an interruption loses nothing. If it already exists when you start, an earlier run of yours was interrupted: read it, trust what it holds unless the code says otherwise, and continue from where it stopped.`
 const WT = '/home/user/ux-payer-response'
