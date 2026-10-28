@@ -16,12 +16,11 @@ export const metadata: Metadata = { title: 'Support' };
 const STATUS: Readonly<Record<string, string>> = { open: 'Open', answered: 'Answered', closed: 'Closed' };
 
 /**
- * The rule a ticket keeps, in the hint of each field a person types into, so the field itself says it (docs/adr/0077).
- * Mail to the support address opens a ticket too, and no hint reaches it: the card says the rule for the mail, and
- * describes the address's link with it, so a person who tabs to the link hears it.
+ * The rule a ticket and a mail to the support address keep alike, said once, last in the card, just above the fields
+ * (docs/adr/0077, D9). It stands alone, since it is also the description of each control it covers: the address's
+ * link, so a person who tabs to it hears it, and the Subject and the Message, which no hint then repeats.
  */
-const NO_PATIENT_INFORMATION = 'No patient names, dates of birth, member IDs or claim numbers. Name the screen and the record’s ID.';
-const MAIL_RULE = 'Your mail takes no patient information either: no names, dates of birth, member IDs or claim numbers. Name the screen and the record’s ID.';
+const NO_PATIENT_INFORMATION = 'Neither a ticket nor a mail takes patient information: no names, dates of birth, member IDs or claim numbers. Name the screen and the record’s ID.';
 
 /**
  * Support (PRD 19, Support: "a support address that creates a ticket; a published response target"; docs/adr/0053):
@@ -49,10 +48,10 @@ export default async function SupportPage(props: { readonly searchParams: Promis
           <CardTitle>Open a ticket</CardTitle>
           <CardDescription>
             We answer within {responseTarget}. Or write to{' '}
-            <a className="underline" href={`mailto:${supportEmail}`} aria-describedby="support-mail-rule">
+            <a className="underline" href={`mailto:${supportEmail}`} aria-describedby="support-rule">
               {supportEmail}
             </a>{' '}
-            from the address you sign in with: the mail opens a ticket here too. <span id="support-mail-rule">{MAIL_RULE}</span>
+            from the address you sign in with: the mail opens a ticket here too. <span id="support-rule">{NO_PATIENT_INFORMATION}</span>
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -60,8 +59,8 @@ export default async function SupportPage(props: { readonly searchParams: Promis
             <FormKeys />
             <input type="hidden" name="screen" value={from} />
             <SelectField label="What is it about" name="category" options={categories} defaultValue={category ?? undefined} />
-            <Field label="Subject" name="subject" required maxLength={200} hint={NO_PATIENT_INFORMATION} />
-            <TextAreaField label="What happened, and what you expected" name="message" required maxLength={4000} rows={6} hint={NO_PATIENT_INFORMATION} />
+            <Field label="Subject" name="subject" required maxLength={200} describedBy="support-rule" />
+            <TextAreaField label="What happened, and what you expected" name="message" required maxLength={4000} rows={6} describedBy="support-rule" />
           </ActionForm>
         </CardContent>
       </Card>

@@ -113,8 +113,9 @@ function attributeTexts(source: ts.SourceFile, value: ts.JsxAttributeValue | und
 const SIZED = /(^|\s)text-(xs|sm|base|lg|xl)(\s|$)/;
 
 /**
- * Each element a control's `aria-describedby` names in the same file (by the same literal, or the same template), with
- * whether it is written at 12 px; and each shared `Hint` whose className sets a size, which only layout may.
+ * Each element a control's `aria-describedby`, or a shared field's `describedBy`, names in the same file (by the same
+ * literal, or the same template), with whether it is written at 12 px; and each shared `Hint` whose className sets a
+ * size, which only layout may.
  */
 function descriptions(file: string, text: string): { readonly described: Description[]; readonly sizedHints: string[] } {
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -124,7 +125,8 @@ function descriptions(file: string, text: string): { readonly described: Descrip
   const visit = (node: ts.Node): void => {
     if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
       const attributes = new Map(node.attributes.properties.flatMap((attribute) => (ts.isJsxAttribute(attribute) ? [[attribute.name.getText(source), attributeTexts(source, attribute.initializer)] as const] : [])));
-      for (const value of attributes.get('aria-describedby') ?? []) {
+      // A shared field's `describedBy` names text elsewhere on the page as its control's description too.
+      for (const value of [...(attributes.get('aria-describedby') ?? []), ...(attributes.get('describedBy') ?? [])]) {
         for (const part of value.startsWith('`') ? [value] : value.split(/\s+/)) {
           named.add(part);
         }

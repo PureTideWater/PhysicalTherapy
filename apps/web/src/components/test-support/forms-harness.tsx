@@ -6,7 +6,7 @@ import { createRoot } from 'react-dom/client';
 // rules (the refused mark, 16 px controls, scroll padding, a refused row that wraps) apply as in the app.
 import '../../../../../packages/brand/src/tokens.css';
 import '../../../../../packages/ui/src/styles.css';
-import { ActionForm, takesFocus, takesOrphanedRefusal } from '../action-form';
+import { ActionForm, RefusalFallback, noteRefusal, takesFocus, takesOrphanedRefusal } from '../action-form';
 import { CheckboxField, CheckboxGroup, Field, SelectField, TextAreaField } from '../field';
 import type { RefusalState } from '../form-issues';
 import { HardwareKeySignIn } from '../hardware-key';
@@ -123,6 +123,12 @@ const RUNS = [
   { value: 'long', label: 'SYNTHETIC REMITTANCES OF THE FIRST QUARTER (release 3)' },
 ];
 
+/** A document's choice as the submissions page gives it: its SHA-256's prefix a run set in Plex Mono on the line. */
+const DOCUMENTS = [
+  { value: 'letter', label: [{ text: 'SYNTHETIC payer letter, uploaded 2026-10-27 21:36 UTC, SHA-256 ' }, { text: '0123456789ab…', mono: true }] },
+  { value: 'short', label: [{ text: 'Letter' }] },
+];
+
 /** Each form, rendered from the page's keys (a refresh renders it again with the keys the server gives then). */
 const forms: Record<string, (page: PageKeys) => ReactNode> = {
   /** Every kind of control a refusal must keep, and every secret it must empty (FRM-01). */
@@ -237,6 +243,22 @@ const forms: Record<string, (page: PageKeys) => ReactNode> = {
       </HarnessForm>
     </div>
   ),
+  /** A select whose cut choice holds a SHA-256, as the submissions page's Document does (the UX re-check's polish). */
+  document: () => (
+    <div className="narrow">
+      <HarnessForm submit="Save">
+        <SelectField label="Document" name="documentId" defaultValue="letter" showChosen options={DOCUMENTS} />
+      </HarnessForm>
+    </div>
+  ),
+  /**
+   * The note a refused row's form leaves when the refresh removes the row (RefusalFallback), for a key used before:
+   * noted as the form notes it, then taken by the note on mount.
+   */
+  fallback: () => {
+    noteRefusal('gone:row-1', Date.now(), [], 'duplicate');
+    return <RefusalFallback prefix="gone:" present={[]} lead="SYNTHETIC: its row left the list." />;
+  },
   /** A form whose beforeSubmit may refuse to send (4.6). */
   split: () => (
     <HarnessForm submit="Approve this split" beforeSubmit={() => control.allow}>
