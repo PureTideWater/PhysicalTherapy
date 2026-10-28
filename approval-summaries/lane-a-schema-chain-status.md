@@ -124,6 +124,16 @@ GitHub login: PureTideWater.
 - #42's merge (SS-01's PR opens after it).
 - The founder: each schema PR's domain-model approval.
 
+## SUITE-CAP-1a merged as #81 (56ed6279; the orchestrator, 05:55 UTC)
+- **Running: wf_96af352a-4ed** (script `workflow-scripts/lane-a-base-into-ss01-sc1b-deferred-wf_96af352a-4ed.js`), from
+  05:45 UTC, beside the interest build (two heavy workflows): the latest claude/build-platform (#74, #79, #80, #81)
+  merged into SS-01 (#79's ScrollTable and #74's kept input applied to SS-01's tables and forms; whole e2e suite), SS-01
+  merged into 1b (1a's ADR 0083 and CAS-41 rows kept beside 1b's), then 1b's deferred parts: the measurement gate,
+  CAS-42.1 and .2, SLOW_FIRST, ADR 0083's 1b section; a read-only scout of the real-size runs' route (8-CPU runner);
+  then 1b's full local suite and one push.
+- #81's notes: about 650 s of the real-size report is claimLines without D15 (stays in 1b); CAS-41.2's sizes are
+  10,000 and 20,000 as built; both triage and the report fail 53200 on the default lock table until 1b.
+
 ## For SS-01's base merge at PR time (the orchestrator, 04:15 UTC)
 - The base moved since f5bd6201: #80 (0dd1ba7), #79 (a6e754f: every table in ScrollTable, phone stacked rows), #74
   (165c599: forms keep input). #79 merged first, so SS-01 keeps both: #79's ScrollTable and stacked rows and SS-01's
@@ -151,3 +161,4 @@ GitHub login: PureTideWater.
 - 2026-10-28 04:02 UTC: interest fix build started (wf_4860596d-bb1).
 - 2026-10-28 04:16 UTC: orchestrator's base-merge notes recorded; SUITE-CAP-3 claimed elsewhere.
 - 2026-10-28 05:18 UTC: resumed after the usage limit and a restart; interest fix build resumed in its re-read.
+- 2026-10-28 05:45 UTC: 1a merged (#81); wf_96af352a-4ed started (base into SS-01, SS-01 into 1b, 1b's deferred parts).
