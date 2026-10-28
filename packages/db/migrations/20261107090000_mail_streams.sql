@@ -20,10 +20,12 @@
 --   others (mail_send_expiry). States move one way: sent, delayed, delivered, then bounced, suppressed, rejected or
 --   complained, and a lower-ranked event never overwrites a higher one, so events land in any order and once.
 -- - mail_recipient_key and mail_recipient_sha256(): SHA-256 of a pepper made at this migration and the mailbox the
---   address reaches (mail_recipient_canonical(): case, white space, Unicode NFKC, a +tag, googlemail.com and Gmail's
---   dots), so every spelling of one inbox keys alike. The only address-derived value kept is screening_mail_refusal's
---   (Q11 (b)): a screening address that bounced permanently or was reported as spam (not not_spam), for 365 days, read
---   only to refuse a new screening to it. No customer stream's outcome is ever on the list.
+--   address reaches (mail_recipient_canonical(): ASCII case and white space, a +tag, googlemail.com, me.com and mac.com,
+--   and Gmail's dots; an address with any character outside ASCII stands as read), so every spelling of one inbox keys
+--   alike. The only address-derived value kept is screening_mail_refusal's (Q11 (b)): a screening address reported as
+--   spam (not not_spam), keyed by its mailbox, or that bounced permanently, keyed by its mailbox with its +tag kept (a
+--   +tag spelling bounces where the server has no sub-addressing, which says nothing of the base mailbox), for 365 days,
+--   read only to refuse a new screening to it. No customer stream's outcome is ever on the list.
 -- - screening_bounce_mark (Q10 (a)): one 7-day mark per screening permanent bounce for each of the run's keyed subjects,
 --   its account's (screening_run.rate_subject, migration 20261106090000) and its client's (screening_run.client_subject,
 --   new: the rate limiter's keyed HMAC of the client address, null when the web had none); a subject with 3 live marks
@@ -98,23 +100,32 @@ ALTER TABLE mail_recipient_key FORCE ROW LEVEL SECURITY;
 CREATE POLICY mail_recipient_key_owner ON mail_recipient_key FOR ALL TO tp_owner USING (true) WITH CHECK (true);
 
 -- The mailbox an address reaches, so every spelling of one inbox keys alike (review S2): canonicalMailbox() in
--- packages/db/src/mail-address.ts is the same rule, and mail.db.test.ts holds the two equal on a table of spellings.
--- Unicode NFKC (which composes as NFC does); ASCII white space dropped at either end; ASCII letters in lower case (the
--- "C" collation's rule, whatever the database's locale); split at the last @, an address with no local part or no
--- domain standing as read so far; the domain's trailing dots dropped and googlemail.com read as gmail.com; everything
--- from the local part's first + dropped, at every domain; and at gmail.com alone, the local part's dots dropped (Google:
--- dots do not matter in a Gmail address, and do in a Google Workspace one). A local part those two would leave empty is
--- kept. Used only to look an address up, never to send. Granted to no role.
-CREATE FUNCTION mail_recipient_canonical(address text) RETURNS text
+-- packages/db/src/mail-address.ts is the same rule, and mail.db.test.ts holds the two equal on a table of spellings and
+-- on every Unicode code point. ASCII white space dropped at either end; ASCII letters in lower case (the "C" collation's
+-- rule, whatever the database's locale); then an address with any character outside ASCII stands as read, so no
+-- Unicode table, whose version moves with the server and with Node, decides a key (the review of 2026-10-27: NFKC
+-- differed on U+A7F1; the screening's form takes only ASCII); split at the last @, an address with no local part or no
+-- domain standing as read so far; the domain's trailing dots dropped, googlemail.com read as gmail.com, and me.com and
+-- mac.com as icloud.com (one account's mailbox under each provider's names, the names reserved across them); everything
+-- from the local part's first + dropped, at every domain, unless keep_tag; and at gmail.com alone, the local part's dots
+-- dropped (Google: dots do not matter in a Gmail address, and do in a Google Workspace one) and its +tag dropped even
+-- with keep_tag (Gmail delivers every +tag to the base mailbox). A local part those would leave empty is kept. keep_tag
+-- keys a permanent bounce (the review of 2026-10-27): a +tag spelling bounces where the server has no sub-addressing,
+-- which says nothing of the base mailbox. Used only to look an address up, never to send. Granted to no role.
+CREATE FUNCTION mail_recipient_canonical(address text, keep_tag boolean DEFAULT false) RETURNS text
 LANGUAGE plpgsql IMMUTABLE SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
-  as_read text := lower(btrim(normalize(coalesce(address, ''), NFKC), E' \t\n\r\f' || chr(11)) COLLATE "C");
-  -- The last @, counted from the end.
-  last_at integer := strpos(reverse(as_read), '@');
+  as_read text := lower(btrim(coalesce(address, ''), E' \t\n\r\f' || chr(11)) COLLATE "C");
+  last_at integer;
   local_part text;
   domain_part text;
   mailbox_part text;
 BEGIN
+  IF as_read ~ '[^\x01-\x7F]' THEN
+    RETURN as_read;
+  END IF;
+  -- The last @, counted from the end.
+  last_at := strpos(reverse(as_read), '@');
   IF last_at = 0 THEN
     RETURN as_read;
   END IF;
@@ -125,8 +136,10 @@ BEGIN
   END IF;
   IF domain_part = 'googlemail.com' THEN
     domain_part := 'gmail.com';
+  ELSIF domain_part IN ('me.com', 'mac.com') THEN
+    domain_part := 'icloud.com';
   END IF;
-  mailbox_part := split_part(local_part, '+', 1);
+  mailbox_part := CASE WHEN keep_tag AND domain_part <> 'gmail.com' THEN local_part ELSE split_part(local_part, '+', 1) END;
   IF domain_part = 'gmail.com' THEN
     mailbox_part := replace(mailbox_part, '.', '');
   END IF;
@@ -134,12 +147,12 @@ BEGIN
 END;
 $$;
 
--- The keyed hash of an address: SHA-256 of the pepper and the mailbox it reaches (mail_recipient_canonical()), as hex.
--- Granted to no role; it runs as its caller, the owner inside the definer functions and triggers below. It never raises
--- with its input.
-CREATE FUNCTION mail_recipient_sha256(address text) RETURNS text
+-- The keyed hash of an address: SHA-256 of the pepper and the mailbox it reaches (mail_recipient_canonical(), its +tag
+-- kept with keep_tag), as hex. Granted to no role; it runs as its caller, the owner inside the definer functions and
+-- triggers below. It never raises with its input.
+CREATE FUNCTION mail_recipient_sha256(address text, keep_tag boolean DEFAULT false) RETURNS text
 LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp AS $$
-  SELECT encode(sha256(decode(k.pepper, 'hex') || convert_to(mail_recipient_canonical(address), 'UTF8')), 'hex') FROM mail_recipient_key k
+  SELECT encode(sha256(decode(k.pepper, 'hex') || convert_to(mail_recipient_canonical(address, keep_tag), 'UTF8')), 'hex') FROM mail_recipient_key k
 $$;
 
 -- ---------------------------------------------------------------------------------------------------
@@ -332,10 +345,15 @@ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp AS $$
       OR (SELECT count(*) FROM screening_bounce_mark b WHERE b.subject_kind = 'client' AND b.subject = $2 AND b.expires_at > now()) >= 3
 $$;
 
--- Whether a contact address's mailbox is on the refusal list (Q11 (b)). Granted to no role, as above.
+-- Whether a contact address is on the refusal list (Q11 (b)): its mailbox, for either reason, or its spelling with its
+-- +tag kept, for a permanent bounce (the review of 2026-10-27). So a bounce of the base address, whose tag-kept key is its
+-- mailbox's, refuses every +tag of it, and a bounce of a +tag the server does not deliver refuses that spelling alone.
+-- Granted to no role, as above.
 CREATE FUNCTION screening_contact_refused(address text) RETURNS boolean
 LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp AS $$
-  SELECT EXISTS (SELECT 1 FROM screening_mail_refusal f WHERE f.recipient_sha256 = mail_recipient_sha256($1) AND f.expires_at > now())
+  SELECT EXISTS (SELECT 1 FROM screening_mail_refusal f
+                  WHERE f.expires_at > now()
+                    AND (f.recipient_sha256 = mail_recipient_sha256($1) OR (f.reason = 'bounced' AND f.recipient_sha256 = mail_recipient_sha256($1, true))))
 $$;
 
 -- An accepted upload is refused while the screening stream is paused (D7). A refused upload is never emailed, so it is
@@ -927,7 +945,8 @@ $$;
 -- takes the state, and the notice's or the invoice's first undelivered recipient is reported (notice_undelivered: the
 -- support grant's ID; invoice_undelivered: the invoice's); a Cognito message to an invited user flags the invitation
 -- (invitation_undelivered); a screening message links its prospect, and a permanent bounce or a complaint other than
--- not_spam puts the address's keyed hash on the refusal list, a permanent bounce marks the run's subjects, and either can
+-- not_spam puts the address's keyed hash on the refusal list (a bounce's with its +tag kept, a complaint's of its
+-- mailbox: screening_contact_refused()), a permanent bounce marks the run's subjects, and either can
 -- pause the screening stream (stream_paused: the reason). recipient is read only to resolve a Cognito user and to hash a
 -- refused screening address; it is never stored, logged or returned. A notice's event runs in its practice's scope.
 CREATE FUNCTION operator_record_mail_event(message_id text, stream text, event text, mail_at timestamptz, event_at timestamptz, recipient text,
@@ -1075,7 +1094,7 @@ BEGIN
      AND ((held.state = 'bounced' AND held.bounce_kind = 'permanent') OR (held.state = 'complained' AND held.complaint_type <> 'not_spam')) THEN
     IF recipient IS NOT NULL AND btrim(recipient) <> '' THEN
       INSERT INTO screening_mail_refusal (recipient_sha256, reason, recorded_at, expires_at)
-      VALUES (mail_recipient_sha256(recipient), CASE WHEN held.state = 'bounced' THEN 'bounced' ELSE 'complained' END, now(), now() + interval '365 days')
+      VALUES (mail_recipient_sha256(recipient, held.state = 'bounced'), CASE WHEN held.state = 'bounced' THEN 'bounced' ELSE 'complained' END, now(), now() + interval '365 days')
       ON CONFLICT (recipient_sha256) DO UPDATE SET reason = EXCLUDED.reason, recorded_at = EXCLUDED.recorded_at, expires_at = EXCLUDED.expires_at;
     END IF;
     IF held.state = 'bounced' AND priced.id IS NOT NULL THEN
@@ -1520,7 +1539,7 @@ REVOKE ALL ON mail_recipient_key, mail_stream, mail_send, screening_mail_refusal
   support_grant_notice, support_grant_notice_recipient FROM PUBLIC;
 GRANT SELECT ON support_grant_notice, support_grant_notice_recipient TO tp_app;
 
-REVOKE ALL ON FUNCTION mail_recipient_canonical(text), mail_recipient_sha256(text), mail_send_expiry(), mail_state_rank(text), mail_window_counts(text),
+REVOKE ALL ON FUNCTION mail_recipient_canonical(text, boolean), mail_recipient_sha256(text, boolean), mail_send_expiry(), mail_state_rank(text), mail_window_counts(text),
   screening_mail_sending(), screening_mail_gate(), screening_mail_status(), screening_bounce_budget_spent(text, text), screening_contact_refused(text),
   screening_submit_mail_refusal(text, text),
   screening_upload_mail_gate(), screening_run_mail_refusal(), screening_run_mail_gate(),

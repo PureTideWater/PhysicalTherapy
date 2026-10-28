@@ -32,7 +32,7 @@ import {
 } from './schema';
 import { canonicalMailbox } from './mail-address';
 import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from './testing';
-import { MAILBOX_SPELLINGS } from './test-support/mailbox-spellings';
+import { MAILBOX_SPELLINGS, MAILBOX_TAGGED_SPELLINGS } from './test-support/mailbox-spellings';
 
 /**
  * The mail streams, delivery recorded by message, the notices' outboxes and the screening's cut-off (audit #76; migration
@@ -370,8 +370,8 @@ describe('the mail tables and their grants (SEC-18)', () => {
 
   it('grants every function of the migration to exactly its role, sets each one’s search path, and drops the three the outboxes replace', async () => {
     const expected: Readonly<Record<string, { readonly definer: boolean; readonly grantees: readonly string[] }>> = {
-      'mail_recipient_canonical(text)': { definer: false, grantees: [] },
-      'mail_recipient_sha256(text)': { definer: false, grantees: [] },
+      'mail_recipient_canonical(text,boolean)': { definer: false, grantees: [] },
+      'mail_recipient_sha256(text,boolean)': { definer: false, grantees: [] },
       'mail_send_expiry()': { definer: false, grantees: [] },
       'mail_state_rank(text)': { definer: false, grantees: [] },
       'mail_window_counts(text)': { definer: false, grantees: [] },
@@ -438,9 +438,10 @@ describe('the mail tables and their grants (SEC-18)', () => {
         config: ['search_path=pg_catalog, public, pg_temp'],
       });
     }
-    // The keyed hash is executable by no login and no role but its owner.
+    // The keyed hash and the canonical rule are executable by no login and no role but their owner.
     const logins = await owner.query<{ rolname: string; may: boolean }>(
-      "SELECT rolname, has_function_privilege(oid, 'mail_recipient_sha256(text)', 'EXECUTE') AS may FROM pg_roles WHERE rolname LIKE 'tp\\_%' AND rolname <> $1 ORDER BY 1",
+      `SELECT rolname, has_function_privilege(oid, 'mail_recipient_sha256(text, boolean)', 'EXECUTE') OR has_function_privilege(oid, 'mail_recipient_canonical(text, boolean)', 'EXECUTE') AS may
+         FROM pg_roles WHERE rolname LIKE 'tp\\_%' AND rolname <> $1 ORDER BY 1`,
       [OWNER_ROLE],
     );
     expect(logins.rows.filter((row) => row.may)).toEqual([]);
@@ -516,6 +517,15 @@ describe('the keyed hash of a screening address (Q11 (b); SEC-18)', () => {
     for (const row of rows) {
       expect(row.canonical, JSON.stringify(row.given)).toBe(canonicalMailbox(row.given));
     }
+    // With the +tag kept, which keys a permanent bounce (the review of 2026-10-27): the same in both, and gmail.com's
+    // dropped even so.
+    const tagged = await owner.query<{ given: string; canonical: string }>('SELECT g AS given, mail_recipient_canonical(g, true) AS canonical FROM unnest($1::text[]) g', [
+      MAILBOX_TAGGED_SPELLINGS.map(([given]) => given),
+    ]);
+    expect(tagged.rows.map((row) => [row.given, row.canonical])).toEqual(MAILBOX_TAGGED_SPELLINGS.map(([given, mailbox]) => [given, mailbox]));
+    for (const row of tagged.rows) {
+      expect(row.canonical, JSON.stringify(row.given)).toBe(canonicalMailbox(row.given, { keepTag: true }));
+    }
     // The keyed hash is of the mailbox: one hash for its every spelling, and the pepper and the canonical mailbox are
     // all it hashes.
     const hash = async (value: string) => (await owner.query<{ h: string }>('SELECT mail_recipient_sha256($1) AS h', [value])).rows[0]?.h;
@@ -529,6 +539,49 @@ describe('the keyed hash of a screening address (Q11 (b); SEC-18)', () => {
     expect(await hash('synthetic.keyed@workspace.synthetic.test')).not.toBe(await hash('synthetickeyed@workspace.synthetic.test'));
     expect(await hash('synthetic.keyed+x@workspace.synthetic.test')).toBe(await hash('synthetic.keyed@workspace.synthetic.test'));
   });
+
+  it('agrees with the TypeScript rule on every Unicode code point, at an address\'s edges and in each of its parts, so no Unicode table of the server or of Node decides a key (the review of 2026-10-27)', async () => {
+    // Each template has its code point (#) at both ends, in the local part, in the +tag and in the domain. The two rules'
+    // keys are compared in blocks of 4,096 code points by a digest of each key's UTF-8 length and bytes, so a block that
+    // differs is named. Node's NFKC mapped U+A7F1 (Unicode 17) where PostgreSQL 18's Unicode 16 did not: neither rule
+    // reads Unicode now, so every block agrees whatever either one's version.
+    const templates = ['#J.a#ne+T#@Google#Mail.COM.#', '# Jane.D#oe+#x@M#e.com #'];
+    const codePoints = (block: number) => {
+      const points: number[] = [];
+      for (let point = Math.max(block * 4096, 1); point < Math.min((block + 1) * 4096, 0x110000); point += 1) {
+        if (point < 0xd800 || point > 0xdfff) {
+          points.push(point);
+        }
+      }
+      return points;
+    };
+    const blocks = Array.from({ length: 0x110000 / 4096 }, (_, block) => block);
+    for (const template of templates) {
+      for (const keepTag of [false, true]) {
+        const { rows } = await owner.query<{ block: number; digest: string }>(
+          `SELECT c >> 12 AS block,
+                  encode(sha256(convert_to(string_agg(octet_length(k.key)::text || ':' || k.key, '' ORDER BY c), 'UTF8')), 'hex') AS digest
+             FROM generate_series(1, 1114111) c
+             CROSS JOIN LATERAL (SELECT mail_recipient_canonical(replace($1, '#', chr(c)), $2) AS key) k
+            WHERE c NOT BETWEEN 55296 AND 57343
+            GROUP BY 1 ORDER BY 1`,
+          [template, keepTag],
+        );
+        const typed = blocks.map((block) => {
+          const joined = codePoints(block)
+            .map((point) => {
+              const key = canonicalMailbox(template.replaceAll('#', String.fromCodePoint(point)), { keepTag });
+              return `${String(Buffer.byteLength(key, 'utf8'))}:${key}`;
+            })
+            .join('');
+          return { block, digest: createHash('sha256').update(joined, 'utf8').digest('hex') };
+        });
+        const differ = typed.filter((row, index) => rows[index]?.digest !== row.digest).map((row) => `U+${(row.block * 4096).toString(16).toUpperCase()}`);
+        expect(differ, `${template} keepTag ${String(keepTag)}`).toEqual([]);
+        expect(rows).toHaveLength(blocks.length);
+      }
+    }
+  }, 180_000);
 
   it('names no address in any error a mail function raises', async () => {
     const given = address('error.text');

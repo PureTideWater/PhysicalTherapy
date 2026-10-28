@@ -1671,6 +1671,55 @@ describe('PR 6b-4: the screening’s mail (migration 20261107090000; audit #76, 
     await resetScreeningMail();
   });
 
+  it('keys a permanent bounce by the spelling with its +tag kept and a complaint by the mailbox: a +tag that bounced refuses that spelling alone, and the base address that bounced refuses every +tag of it (the review of 2026-10-27)', async () => {
+    const refusal = (email: string) => submit({ email, practice: `Synthetic Tagged ${letters()}` }).then(() => 'accepted', (error: unknown) => (error as { constraint?: string }).constraint);
+    const name = letters();
+    // A server with no sub-addressing bounces the +tag spelling as an unknown mailbox; the base mailbox is another
+    // address there, and stays open.
+    const tagged = `victim.${name}+zz@clinic.synthetic.test`;
+    await mailEvent(await submit({ email: tagged }), 'bounce', tagged, { bounceSubtype: 'no_email' });
+    expect(await refusal(`victim.${name}@clinic.synthetic.test`)).toBe('accepted');
+    expect(await refusal(`victim.${name}+other@clinic.synthetic.test`)).toBe('accepted');
+    expect(await refusal(` VICTIM.${name.toUpperCase()}+ZZ@Clinic.Synthetic.Test `)).toBe('screening_contact_undeliverable');
+    const kept = await admin.query<{ reason: string; tagged: boolean; base: boolean }>(
+      `SELECT reason, recipient_sha256 = mail_recipient_sha256($1, true) AS tagged, recipient_sha256 = mail_recipient_sha256($1) AS base
+         FROM screening_mail_refusal WHERE recipient_sha256 IN (mail_recipient_sha256($1, true), mail_recipient_sha256($1))`,
+      [tagged],
+    );
+    expect(kept.rows).toEqual([{ reason: 'bounced', tagged: true, base: false }]);
+    // A complaint from a +tag spelling is the person's own: every spelling of the mailbox is refused.
+    const complained = `reported.${name}+t@clinic.synthetic.test`;
+    await mailEvent(await submit({ email: complained }), 'complaint', complained, { complaintType: 'abuse' });
+    for (const spelling of [`reported.${name}@clinic.synthetic.test`, `reported.${name}+u@clinic.synthetic.test`, complained]) {
+      expect(await refusal(spelling), spelling).toBe('screening_contact_undeliverable');
+    }
+    // The base address that bounced refuses every +tag of it (its tag-kept key is its mailbox's).
+    const base = `base.${name}@clinic.synthetic.test`;
+    await mailEvent(await submit({ email: base }), 'bounce', base, { bounceSubtype: 'general' });
+    for (const spelling of [`base.${name}+screening@clinic.synthetic.test`, `BASE.${name.toUpperCase()}@clinic.synthetic.test`]) {
+      expect(await refusal(spelling), spelling).toBe('screening_contact_undeliverable');
+    }
+    // Gmail delivers every +tag to the base mailbox, so a +tag that bounced there refuses the mailbox.
+    const gmail = `synthetic.${name}+t@gmail.com`;
+    await mailEvent(await submit({ email: gmail }), 'bounce', gmail, { bounceSubtype: 'no_email' });
+    expect(await refusal(`synthetic${name}@gmail.com`)).toBe('screening_contact_undeliverable');
+    await resetScreeningMail();
+  });
+
+  it('reads me.com and mac.com as icloud.com, one mailbox under three names (the review of 2026-10-27)', async () => {
+    const refusal = (email: string) => submit({ email, practice: `Synthetic iCloud ${letters()}` }).then(() => 'accepted', (error: unknown) => (error as { constraint?: string }).constraint);
+    const name = letters();
+    const reported = `synthetic.${name}@me.com`;
+    await mailEvent(await submit({ email: reported }), 'complaint', reported, { complaintType: 'abuse' });
+    for (const spelling of [`synthetic.${name}@icloud.com`, `synthetic.${name}@mac.com`, `Synthetic.${name}+x@Me.com`]) {
+      expect(await refusal(spelling), spelling).toBe('screening_contact_undeliverable');
+    }
+    // Dots keep their meaning there, and a subdomain is another domain.
+    expect(await refusal(`synthetic${name}@icloud.com`)).toBe('accepted');
+    expect(await refusal(`synthetic.${name}@mail.me.com`)).toBe('accepted');
+    await resetScreeningMail();
+  });
+
   it('links each screening message to its prospect, holds no address-derived value on it, and lets the link go with the prospect', async () => {
     const given = `linked.${letters()}@synthetic.test`;
     const run = await submit({ email: given });

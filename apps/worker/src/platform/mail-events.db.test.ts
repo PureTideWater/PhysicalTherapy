@@ -496,13 +496,16 @@ describe('the mail_events job', () => {
     await run({ source: queue }, logger);
     expect(lines).toEqual(expect.arrayContaining([expect.objectContaining({ level: 'warn', invitation_id: invitation[0]?.id, error_code: 'INVITATION_UNDELIVERED' })]));
     expect((await owner.query('SELECT undelivered_reason FROM invitation WHERE id = $1', [invitation[0]?.id])).rows).toEqual([{ undelivered_reason: 'bounced' }]);
-    // The refusal list holds the keyed hash, not the address nor its plain SHA-256; no mail record holds either.
-    const { rows } = await owner.query<{ keyed: string; plain: string }>(
-      "SELECT mail_recipient_sha256('bounce+refused@simulator.amazonses.com') AS keyed, encode(sha256(convert_to('bounce+refused@simulator.amazonses.com', 'UTF8')), 'hex') AS plain",
+    // The refusal list holds the keyed hash, not the address nor its plain SHA-256; no mail record holds either. A
+    // permanent bounce is keyed by the spelling with its +tag kept, not by the base mailbox (the review of 2026-10-27).
+    const { rows } = await owner.query<{ keyed: string; mailbox: string; plain: string }>(
+      `SELECT mail_recipient_sha256('bounce+refused@simulator.amazonses.com', true) AS keyed, mail_recipient_sha256('bounce@simulator.amazonses.com') AS mailbox,
+              encode(sha256(convert_to('bounce+refused@simulator.amazonses.com', 'UTF8')), 'hex') AS plain`,
     );
     const refusals = await owner.query<{ recipient_sha256: string }>('SELECT recipient_sha256 FROM screening_mail_refusal');
     expect(refusals.rows).toEqual([{ recipient_sha256: rows[0]?.keyed }]);
     expect(rows[0]?.keyed).not.toBe(rows[0]?.plain);
+    expect(rows[0]?.keyed).not.toBe(rows[0]?.mailbox);
     const sends = JSON.stringify((await owner.query('SELECT * FROM mail_send')).rows);
     expect(sends).not.toMatch(/@|simulator/i);
     expect(sends).not.toContain(rows[0]?.keyed ?? 'none');

@@ -2,7 +2,7 @@
 -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
 
 -- operator_record_mail_event(text,text,text,timestamp with time zone,timestamp with time zone,text,text,uuid,uuid,uuid,text,text,text,text)
--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: eda27a15443050cf
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 3c175325fc14b48c
 -- Trigger function of: (none)
 -- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.operator_record_mail_event(message_id text, stream text, event text, mail_at timestamp with time zone, event_at timestamp with time zone, recipient text, kind text, subject uuid, recipient_user uuid, practice uuid, bounce_kind text, bounce_subtype text, complaint_type text, request text)
@@ -152,7 +152,7 @@ BEGIN
      AND ((held.state = 'bounced' AND held.bounce_kind = 'permanent') OR (held.state = 'complained' AND held.complaint_type <> 'not_spam')) THEN
     IF recipient IS NOT NULL AND btrim(recipient) <> '' THEN
       INSERT INTO screening_mail_refusal (recipient_sha256, reason, recorded_at, expires_at)
-      VALUES (mail_recipient_sha256(recipient), CASE WHEN held.state = 'bounced' THEN 'bounced' ELSE 'complained' END, now(), now() + interval '365 days')
+      VALUES (mail_recipient_sha256(recipient, held.state = 'bounced'), CASE WHEN held.state = 'bounced' THEN 'bounced' ELSE 'complained' END, now(), now() + interval '365 days')
       ON CONFLICT (recipient_sha256) DO UPDATE SET reason = EXCLUDED.reason, recorded_at = EXCLUDED.recorded_at, expires_at = EXCLUDED.expires_at;
     END IF;
     IF held.state = 'bounced' AND priced.id IS NOT NULL THEN
