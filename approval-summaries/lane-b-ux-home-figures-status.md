@@ -6,8 +6,10 @@ UX-003 (C-009), UX-015 (C-048), UX-140 (C-183); `designs/lane-b-ux-review.md` §
 started 2026-10-27 by Lane A's orchestrator (session_01TrKDxeLbxVo7t7zwRXFzrg), as the follow-on of PR 5
 (`co-001/ux-download-refusals`, merged as #78, 83d71fd, 2026-10-28 06:51 UTC).
 
-## Now (2026-10-28 07:50 UTC)
-- **Stage 1 done:** the design `designs/lane-b-ux-home-figures.md` (D1 to D11; the predicate in `apps/worker/src/triage/actionable-now.ts`, exported through `@tp/worker/triage`, since `@tp/triage` holds no SQL) and its adversarial review (`wf_132e0b59-2b4`: build with changes; no migration; no frozen code; 13 findings, all taken, dispositions at the design's end, which win). ADR 0082 is taken. **Next: stage 2, builders.**
+## Now (2026-10-28 07:36 UTC)
+- **Stage 1 done:** the design `designs/lane-b-ux-home-figures.md` (D1 to D11; the predicate in `apps/worker/src/triage/actionable-now.ts`, exported through `@tp/worker/triage`, since `@tp/triage` holds no SQL) and its adversarial review (`wf_132e0b59-2b4`: build with changes; no migration; no frozen code; 13 findings, all taken, dispositions at the design's end, which win). ADR 0082 is taken.
+- **Stage 2, builders, running:** `wf_5fc0815b-69d` (core, then the screens and the records, then an integration check with the CAS-41 cost gate); builders do not commit. **Before shots, running:** `wf_0f9ac53c-daf` at 83d71fd.
+- **Safety check-in:** send_later at 2026-10-28T12:04Z.
 - **Branch:** `co-001/ux-home-figures`, worktree `/home/user/ux-home-figures`, cut from claude/build-platform 83d71fd,
   pushed (no commits of its own yet). No PR.
 - **Reserved:** ADR 0082 if needed; test-matrix HOM-01 to HOM-04, a new series; `packages/synth` module 20 (HOM) if needed.
@@ -20,7 +22,8 @@ started 2026-10-27 by Lane A's orchestrator (session_01TrKDxeLbxVo7t7zwRXFzrg), 
 
 ## Log
 - 2026-10-28 06:55 UTC: PR 5 merged (#78); PR 9 started: branch cut, status file written.
-- 2026-10-28 07:45 UTC: design and review done (wf_132e0b59-2b4); dispositions written.
+- 2026-10-28 ~07:30 UTC: design and review done (wf_132e0b59-2b4); dispositions written.
+- 2026-10-28 07:36 UTC: builders wf_5fc0815b-69d and before shots wf_0f9ac53c-daf started.
 
 ## Waiting on someone
 - Nothing.
