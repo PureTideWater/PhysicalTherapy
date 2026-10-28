@@ -421,8 +421,10 @@ function nextPage(link: string | undefined, api: string): string | undefined {
 
 /**
  * The arrival read (E12): the newest push or merge inside the floor's window whose `after` the fetch holds with the pin
- * as an ancestor and whose `before` it does not hold, or holds without the pin. Best effort: one try a page, at most
- * three pages, no wait; any outcome but an arrival is a note, since an absent entry proves nothing.
+ * as an ancestor and whose `before` it holds without the pin, the `before` fetched by its SHA when the branch's fetch
+ * does not hold it (a force push's); a `before` that cannot be fetched or read still counts, since an arrival only makes
+ * the pin younger. Best effort: one try a page, at most three pages, no wait; any outcome but an arrival is a note,
+ * since an absent entry proves nothing.
  */
 async function arrival(context: Context, facts: Facts, branch: string): Promise<{ note: string; signal?: Signal }> {
   const { input } = context;
@@ -455,11 +457,24 @@ async function arrival(context: Context, facts: Facts, branch: string): Promise<
       const after = await pinIn(input.transport, facts.repo, facts.sha, entry.after, input.signal);
       if (after.state === 'unread') return { note: `activity: the commit ${entry.after.slice(0, 12)} an entry names could not be read (${after.why}); the arrival on ${branch} is not known` };
       if (after.state !== 'carries') continue;
-      const before = typeof entry.before === 'string' && COMMIT_SHA.test(entry.before) ? await pinIn(input.transport, facts.repo, facts.sha, entry.before, input.signal) : { state: 'absent' as const };
+      const named = typeof entry.before === 'string' && COMMIT_SHA.test(entry.before) && !/^0{40}$/.test(entry.before) ? entry.before : undefined;
+      let before: Held = named === undefined ? { state: 'absent' } : await pinIn(input.transport, facts.repo, facts.sha, named, input.signal);
+      if (named !== undefined && before.state === 'absent') {
+        // A force push's before is off the branch the fetch holds: fetched by its SHA, one try, so a rewritten history
+        // that already carried the pin is no arrival (the ci-infra review's N7).
+        const why = await input.transport.fetchSha(facts.repo, named, input.signal).then(
+          (served) => (served ? undefined : 'github.com does not serve it by its SHA'),
+          (error: unknown) => failure(error).split('\n')[0] ?? '',
+        );
+        before = why === undefined ? await pinIn(input.transport, facts.repo, facts.sha, named, input.signal) : { state: 'unread', why };
+        if (before.state === 'absent') before = { state: 'unread', why: 'not held after its fetch' };
+      }
       if (before.state === 'carries') continue;
       const kind = typeof entry.activity_type === 'string' ? entry.activity_type : 'push';
+      // A before that cannot be read still counts: the arrival can only make the pin younger, the safe direction.
+      const unread = before.state === 'unread' && named !== undefined ? `; its before ${named.slice(0, 12)} could not be read (${before.why}), so the entry counts as the arrival (the safe direction)` : '';
       return {
-        note: `activity: the pin arrived on ${branch} at ${entry.timestamp} (${kind} ${String(entry.before).slice(0, 12)}..${entry.after.slice(0, 12)})`,
+        note: `activity: the pin arrived on ${branch} at ${entry.timestamp} (${kind} ${String(entry.before).slice(0, 12)}..${entry.after.slice(0, 12)})${unread}`,
         signal: { source: `arrival on ${branch}`, at: entry.timestamp, ms: at, recorded: false },
       };
     }

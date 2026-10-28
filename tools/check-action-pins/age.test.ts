@@ -86,6 +86,8 @@ interface Upstream {
   readonly objects?: Readonly<Record<string, string | Buffer | Error>>;
   /** False: the fetch lists the annotated tag but its object cannot be read. */
   readonly tagHeld?: boolean;
+  /** Further commits github.com serves by SHA alone (off the default branch). */
+  readonly bySha?: Readonly<Record<string, string | Buffer | Error>>;
   readonly ancestors?: Readonly<Record<string, readonly string[]>>;
   readonly head?: string;
   /** The API's answers by path under /repos/<repo>/ (CI only). */
@@ -119,7 +121,7 @@ function network(upstreams: readonly Upstream[], extra: { readonly urls?: Readon
       head,
       tags: tag === undefined ? {} : { [version]: tag },
       objects: { ...(upstream.offBranch === true ? {} : own), ...upstream.objects, ...tagRaw },
-      bySha: upstream.offBranch === true ? own : {},
+      bySha: { ...(upstream.offBranch === true ? own : {}), ...upstream.bySha },
       ancestors: upstream.ancestors ?? {},
     };
     for (const [where, answer] of Object.entries(upstream.api ?? {})) urls[`${API}/repos/${repo}/${where}`] = answer;
@@ -477,6 +479,40 @@ describe('the times read', SPAWNS, () => {
       expect(result.errors, event).toEqual([]);
       expect(result.notes, event).toEqual(expect.arrayContaining([expect.stringContaining(`; activity: the commit ${after.sha.slice(0, 12)} an entry names could not be read (The operation was aborted); the arrival on main is not known`)]));
     }
+  });
+
+  it('take an entry as the arrival only when its before, fetched by its SHA when the branch no longer holds it, lacks the pin, and count one whose before cannot be fetched, saying so (CI-N7)', async () => {
+    const commit = signedObject('signed.commit');
+    const now = SIGNED + 30 * DAY;
+    // A force push rewrote main inside the window: its before, the old head, already carried the pin.
+    const old = unsigned(SIGNED + DAY, 'old head');
+    const rewritten = unsigned(SIGNED + 2 * DAY, 'rewritten head');
+    const activity = `activity?ref=refs/heads/main&per_page=100`;
+    const entry = [{ id: 1, before: old.sha, after: rewritten.sha, ref: 'refs/heads/main', timestamp: iso(now - DAY), activity_type: 'force_push' }];
+    const upstream = (served: boolean) => ({
+      commit,
+      head: rewritten.sha,
+      objects: { [rewritten.sha]: rewritten.raw },
+      bySha: served ? { [old.sha]: old.raw } : {},
+      ancestors: { [rewritten.sha]: [commit.sha, rewritten.sha], [old.sha]: [commit.sha, old.sha] },
+      api: { [`git/commits/${commit.sha}`]: verified(iso(SIGNED)), [activity]: JSON.stringify(entry) },
+    });
+    const transport = network([upstream(true)]);
+    const rewrite = await run(adds(commit.sha), transport, { now: new Date(now), ...CI });
+    expect(rewrite.errors).toEqual([]);
+    expect(rewrite.notes).toEqual(expect.arrayContaining([expect.stringContaining('; activity: no push brought the pin onto main in the 1 entries GitHub lists')]));
+    expect(transport.reads).toContain(`fetchSha ${REPO} ${old.sha}`);
+
+    // A before github.com no longer serves: the entry still counts as the arrival, the safe direction, and the note says why.
+    const gone = await run(adds(commit.sha), network([upstream(false)]), { now: new Date(now), ...CI });
+    expect(gone.errors).toEqual([expect.stringContaining(`: under three days old: the youngest time read is the arrival on main ${iso(now - DAY)}`)]);
+    expect(gone.notes).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          `; activity: the pin arrived on main at ${iso(now - DAY)} (force_push ${old.sha.slice(0, 12)}..${rewritten.sha.slice(0, 12)}); its before ${old.sha.slice(0, 12)} could not be read (github.com does not serve it by its SHA), so the entry counts as the arrival (the safe direction)`,
+        ),
+      ]),
+    );
   });
 
   it('fail closed with "re-run" when the fetch cannot read the annotated tag it fetched, never dropping its tagger date (CI-N1)', async () => {
