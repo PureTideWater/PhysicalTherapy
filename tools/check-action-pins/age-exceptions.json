@@ -1,0 +1,4 @@
+{
+  "$comment": "Action pins excused from one rule of the release age (docs/adr/0066, Part 5; tools/check-action-pins/age.ts): pin (owner/repo@<40 hex>, one commit), version (vX.Y.Z, the pin's comment), kind, advisory, reason, added and expires as UTC instants. security-fix waives the three-day floor and names its GHSA advisory, which CI checks against GitHub's advisory database; its expiry is no earlier than the pin's youngest time plus the floor. age-unprovable waives only the need for a time GitHub recorded, and off-default-branch only the default-branch rule; each takes a null advisory and a reason, and the pin is still held to the floor by every time read. Every entry expires no later than seven days after it was added, and the weekly triage removes expired ones (docs/runbooks/dependency-upgrades.md).",
+  "entries": []
+}

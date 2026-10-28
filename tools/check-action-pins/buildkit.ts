@@ -1,3 +1,5 @@
+import { ageWords } from '../check-toolchain/exclude-window';
+import { MINIMUM_RELEASE_AGE_MINUTES, MINUTE_MS } from '../check-toolchain/policy';
 import { withRetries, type Transport } from './network';
 import { actionUses, type WorkflowText } from './workflows';
 
@@ -8,16 +10,17 @@ import { actionUses, type WorkflowText } from './workflows';
  * - the steps name one builder (workflows.test.ts holds the form offline);
  * - the version's tag is that index digest: a failure when the builder is new against the base, else a warning, since
  *   the digest still runs what it names;
- * - a newer release at least three days old, the age the workspace holds every dependency to, is a warning naming it,
- *   so the manual upgrade in docs/runbooks/dependency-upgrades.md is not forgotten.
- * A read that fails after three tries fails a new builder closed and only warns about an unchanged one.
+ * - a newer release at least the release age old (pnpm-workspace.yaml's minimumReleaseAge, read through
+ *   check-toolchain's releaseAgeMinutes, so the builder's two age questions read one floor), is a warning naming it, so
+ *   the manual upgrade in docs/runbooks/dependency-upgrades.md is not forgotten.
+ * A read that fails after three tries fails a new builder closed and only warns about an unchanged one. On a push every
+ * fault is a warning: the pull request was the gate (docs/adr/0066, Part 5). The builder's own age is check-toolchain's
+ * image rule's, with every other image's.
  */
 
 export const BUILDKIT_REPOSITORY = 'moby/buildkit';
 const DRIVER_OPTS = /^image=moby\/buildkit:(v(\d+)\.(\d+)\.(\d+))@(sha256:[0-9a-f]{64})$/;
 const RELEASE = /^v(\d+)\.(\d+)\.(\d+)$/;
-/** The release age the workspace holds every dependency to (pnpm-workspace.yaml's minimumReleaseAge). */
-export const BUILDKIT_AGE_MS = 3 * 24 * 60 * 60 * 1000;
 
 export interface Builder {
   readonly version: string;
@@ -65,13 +68,22 @@ interface HubTag {
 export async function checkBuilder(
   transport: Transport,
   builder: Builder,
-  options: { readonly isNew: boolean; readonly now: Date; readonly signal?: AbortSignal },
+  options: {
+    readonly isNew: boolean;
+    readonly now: Date;
+    readonly signal?: AbortSignal;
+    /** The release age in minutes (releaseAgeMinutes of pnpm-workspace.yaml); never under MINIMUM_RELEASE_AGE_MINUTES. */
+    readonly floor?: number;
+    /** A push run: every fault is a warning. */
+    readonly push?: boolean;
+  },
 ): Promise<{ errors: string[]; warnings: string[]; notes: string[] }> {
   const errors: string[] = [];
   const warnings: string[] = [];
   const notes: string[] = [];
   const name = `${BUILDKIT_REPOSITORY}:${builder.version}`;
-  const fault = (text: string) => (options.isNew ? errors : warnings).push(text);
+  const floor = Math.max(options.floor ?? MINIMUM_RELEASE_AGE_MINUTES, MINIMUM_RELEASE_AGE_MINUTES);
+  const fault = (text: string) => (options.isNew && options.push !== true ? errors : warnings).push(text);
   try {
     const tagUrl = `https://${HOST}/v2/repositories/${BUILDKIT_REPOSITORY}/tags/${builder.version}`;
     const tag = await withRetries(transport, HOST, `GET ${tagUrl}`, () => transport.get(tagUrl, options.signal), refuse, options.signal);
@@ -90,13 +102,13 @@ export async function checkBuilder(
       const pushed = typeof entry.tag_last_pushed === 'string' ? Date.parse(entry.tag_last_pushed) : Number.NaN;
       return match === null || Number.isNaN(pushed) ? [] : [{ name: entry.name as string, pushed, numbers: [Number(match[1]), Number(match[2]), Number(match[3])] as const }];
     });
-    const ready = releases.filter((release) => options.now.getTime() - release.pushed >= BUILDKIT_AGE_MS && newer(release.numbers, builder.numbers));
+    const ready = releases.filter((release) => options.now.getTime() - release.pushed >= floor * MINUTE_MS && newer(release.numbers, builder.numbers));
     ready.sort((a, b) => (newer(a.numbers, b.numbers) ? -1 : newer(b.numbers, a.numbers) ? 1 : 0));
     const latest = ready[0];
-    if (latest === undefined) notes.push(`the builder ${name}: no newer release is three days old`);
+    if (latest === undefined) notes.push(`the builder ${name}: no newer release is ${ageWords(floor)} old`);
     else {
       warnings.push(
-        `the builder ${name}: ${BUILDKIT_REPOSITORY} ${latest.name} was pushed ${new Date(latest.pushed).toISOString()}, three days ago or more; Dependabot cannot update setup-buildx's driver-opts, so move every step to it by hand (docs/runbooks/dependency-upgrades.md)`,
+        `the builder ${name}: ${BUILDKIT_REPOSITORY} ${latest.name} was pushed ${new Date(latest.pushed).toISOString()}, ${ageWords(floor)} ago or more; Dependabot cannot update setup-buildx's driver-opts, so move every step to it by hand (docs/runbooks/dependency-upgrades.md)`,
       );
     }
   } catch (error) {

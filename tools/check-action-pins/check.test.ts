@@ -31,6 +31,21 @@ jobs:
         with: ${nodeWith}
 `;
 
+/** The age rule's view of a fixture pin (docs/adr/0066, Part 5): an old unsigned commit on main with an old immutable release, verified_at null. */
+const OLD = 'tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904\nauthor Synthetic <synthetic@example.invalid> 1577836800 +0000\ncommitter Synthetic <synthetic@example.invalid> 1577836800 +0000\n\nsynthetic\n';
+const API = 'https://api.github.com/repos';
+const aged = (repo: string, tags: Record<string, string>) => ({
+  git: { [repo]: { head: Object.values(tags).at(-1), tags: Object.fromEntries(Object.entries(tags).map(([version, commit]) => [version, { object: commit, commit }])), objects: Object.fromEntries(Object.values(tags).map((commit) => [commit, OLD])) } },
+  urls: Object.fromEntries(
+    Object.entries(tags).flatMap(([version, commit]) => [
+      [`${API}/${repo}/git/commits/${commit}`, JSON.stringify({ verification: { verified: false, reason: 'unsigned', verified_at: null } })],
+      [`${API}/${repo}/releases/tags/${version}`, JSON.stringify({ tag_name: version, published_at: '2020-01-02T00:00:00Z', immutable: true })],
+    ]),
+  ),
+});
+const checkoutAge = aged('octo/checkout', { 'v7.0.1': CHECKOUT, 'v7.0.2': NEWER });
+const nodeAge = aged('octo/setup-node', { 'v7.1.0': NODE });
+
 const network = () =>
   recordedTransport({
     tags: { 'octo/checkout': lightweight('v7.0.1', CHECKOUT) + lightweight('v7.0.2', NEWER), 'octo/setup-node': lightweight('v7.1.0', NODE) },
@@ -39,7 +54,12 @@ const network = () =>
       [blob('octo/checkout', NEWER)]: 'inputs:\n  persist-credentials: { default: true }\nruns:\n  using: node24\n  main: x.js\n',
       [blob('octo/setup-node', NODE)]: 'inputs:\n  node-version: {}\n  cache: {}\nruns:\n  using: node24\n  main: x.js\n',
     },
+    git: { ...checkoutAge.git, ...nodeAge.git },
+    urls: { ...checkoutAge.urls, ...nodeAge.urls },
   });
+
+/** On CI the age rule reads GitHub's API with the job's token; a made-up one here. */
+const CI = { ci: true, token: 'synthetic-token' } as const;
 
 // Made before the tests run, not when the file is collected (tools/test/collection.test.ts).
 let scratch = '';
@@ -50,8 +70,11 @@ afterAll(() => {
   rmSync(scratch, { recursive: true, force: true });
 });
 
-/** A repository whose first commit holds this workflow (and, if asked, the checker), with a later head commit. */
-function repository(options: { baseWorkflow: string; headWorkflow: string; baseChecker: boolean; headCheckerEdit?: boolean }) {
+/**
+ * A repository whose first commit holds this workflow (and, if asked, the checker, with its age rule unless `baseAge` is
+ * false), with a later head commit.
+ */
+function repository(options: { baseWorkflow: string; headWorkflow: string; baseChecker: boolean; baseAge?: boolean; headCheckerEdit?: boolean }) {
   const dir = mkdtempSync(path.join(scratch, 'repo-'));
   const env = { ...process.env, HOME: dir, GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'Synthetic', GIT_AUTHOR_EMAIL: 'synthetic@example.invalid', GIT_COMMITTER_NAME: 'Synthetic', GIT_COMMITTER_EMAIL: 'synthetic@example.invalid' };
   const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env, encoding: 'utf8' }).trim();
@@ -62,6 +85,7 @@ function repository(options: { baseWorkflow: string; headWorkflow: string; baseC
   git('init', '-q', '-b', 'main');
   write('.github/workflows/ci.yml', options.baseWorkflow);
   if (options.baseChecker) write('tools/check-action-pins/index.ts', '// the checker\n');
+  if (options.baseAge ?? true) write('tools/check-action-pins/age.ts', '// the age rule\n');
   git('add', '.');
   git('commit', '-q', '-m', 'base');
   const base = git('rev-parse', 'HEAD');
@@ -80,14 +104,21 @@ describe('the pins the network reads', () => {
     const result = await checkActionPins({ root: repo.dir, base: repo.base, event: 'pull_request', transport });
     expect(result).toMatchObject({ errors: [], warnings: [] });
     expect(transport.reads).toEqual([]);
-    expect(result.notes).toContain('no pin is new or used with changed inputs: no action read from the network');
+    expect(result.notes).toEqual(expect.arrayContaining(['no pin is new or used with changed inputs: no action read from the network', 'age: no pin new against the base, nothing read']));
   });
 
   it('are the new pin alone, with its tag and its inputs read, and a step whose inputs changed', async () => {
     const bumped = repository({ baseWorkflow: workflow(CHECKOUT), headWorkflow: workflow(NEWER), baseChecker: true });
     const transport = network();
-    expect(await checkActionPins({ root: bumped.dir, base: bumped.base, event: 'pull_request', transport })).toMatchObject({ errors: [], warnings: [] });
-    expect(transport.reads).toEqual(['ls-remote https://github.com/octo/checkout refs/tags/v7.0.2 refs/tags/v7.0.2^{}', `git ${blob('octo/checkout', NEWER)}`]);
+    expect(await checkActionPins({ root: bumped.dir, base: bumped.base, event: 'pull_request', transport, ...CI })).toMatchObject({ errors: [], warnings: [] });
+    expect(transport.reads).toEqual([
+      'ls-remote https://github.com/octo/checkout refs/tags/v7.0.2 refs/tags/v7.0.2^{}',
+      `git ${blob('octo/checkout', NEWER)}`,
+      'fetchRefs octo/checkout v7.0.2',
+      `GET ${API}/octo/checkout/git/commits/${NEWER}`,
+      `GET ${API}/octo/checkout/releases/tags/v7.0.2`,
+      `GET ${API}/octo/checkout/activity?ref=refs/heads/main&per_page=100`,
+    ]);
 
     const changed = repository({ baseWorkflow: workflow(CHECKOUT), headWorkflow: workflow(CHECKOUT, '{ node-version: 24, cache: pnpm }'), baseChecker: true });
     const again = network();
@@ -97,12 +128,12 @@ describe('the pins the network reads', () => {
 
   it('are every pin when the base has no checker, when the change edits the checker, or when no BASE is given', async () => {
     for (const [name, repo] of [
-      ['no checker at the base', repository({ baseWorkflow: workflow(CHECKOUT), headWorkflow: workflow(CHECKOUT), baseChecker: false })],
+      ['no checker at the base', repository({ baseWorkflow: workflow(CHECKOUT), headWorkflow: workflow(CHECKOUT), baseChecker: false, baseAge: false })],
       ['the checker edited', repository({ baseWorkflow: workflow(CHECKOUT), headWorkflow: workflow(CHECKOUT), baseChecker: true, headCheckerEdit: true })],
     ] as const) {
       expect(baseState(repo.dir, repo.base).everyPin, name).toBeDefined();
       const transport = network();
-      expect(await checkActionPins({ root: repo.dir, base: repo.base, event: 'pull_request', transport }), name).toMatchObject({ errors: [] });
+      expect(await checkActionPins({ root: repo.dir, base: repo.base, event: 'pull_request', transport, ...CI }), name).toMatchObject({ errors: [] });
       expect(transport.reads.filter((read) => read.startsWith('ls-remote')), name).toHaveLength(2);
     }
     const repo = repository({ baseWorkflow: workflow(CHECKOUT), headWorkflow: workflow(CHECKOUT), baseChecker: true });

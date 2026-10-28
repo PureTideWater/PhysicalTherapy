@@ -10,7 +10,8 @@ on:
   push:
     branches: [claude/build-platform]
 
-# The jobs read the repository and nothing else: no step calls the GitHub API (docs/adr/0063).
+# The jobs read the repository and nothing else. One step, Action pins, reads public facts about the pinned actions
+# from GitHub's API with this read-only token (docs/adr/0066, Part 5).
 permissions:
   contents: read
 
@@ -81,10 +82,13 @@ jobs:
       # Every action pinned to a full commit SHA with its version, one per action across the workflows; a pin new
       # against the base, or a step whose inputs changed, read from GitHub: the tag's commit, the inputs the action
       # declares, every action a composite nests pinned by SHA, and release.yml's nested caches turned off
-      # (tools/check-action-pins; docs/adr/0066, Part 2).
+      # (tools/check-action-pins; docs/adr/0066, Part 2). A pin new against the base must also be on its upstream's
+      # default branch, its tag still naming it, and three days old by the times GitHub records, read from GitHub's
+      # API with the job's read-only token, which this step alone is given (tools/check-action-pins/age.ts;
+      # docs/adr/0066, Part 5).
       - name: Action pins
         if: ${{ !cancelled() && steps.install.outcome == 'success' && steps.range.outcome == 'success' }}
-        env: { BASE: "${{ steps.range.outputs.base }}" }
+        env: { BASE: "${{ steps.range.outputs.base }}", GITHUB_TOKEN: "${{ github.token }}" }
         run: pnpm actions:check
       # The pnpm packageManager names, without advisories and at least three days old; every version the lockfile adds
       # against the base at least three days old or a dated exclude; the exceptions' lists held to their records

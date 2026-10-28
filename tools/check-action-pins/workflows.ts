@@ -111,6 +111,19 @@ export function formProblems(workflows: readonly WorkflowText[]): string[] {
 }
 
 /**
+ * Rule (a), for a job: no job calls a reusable workflow of another repository (`jobs.<id>.uses`), since the pins and
+ * images it runs are its own and nothing here reads them; its steps belong in a workflow of this repository (docs/adr/0066,
+ * Part 5; design S7). A reusable workflow of this repository (`./…`) is refused by the form rule as a local reference.
+ */
+export function reusableWorkflowProblems(workflows: readonly WorkflowText[]): string[] {
+  return workflows.flatMap(({ file, text }) =>
+    actionUses(file, text)
+      .filter((use) => use.step === -1 && !use.uses.startsWith('./'))
+      .map((use) => `${file}: the job ${use.job} calls the reusable workflow ${use.uses}, whose own pins and images this check does not read; move its steps into a workflow here`),
+  );
+}
+
+/**
  * Rule (b): one commit and one version per action repository across every workflow (actions/cache/restore and
  * actions/cache/save are one repository, one release), so a pin cannot drift between files and every comment names the
  * release its SHA is. Only well-formed pins are compared; rule (a) reports the rest.
