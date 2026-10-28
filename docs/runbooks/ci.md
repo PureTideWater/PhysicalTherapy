@@ -112,11 +112,12 @@ differential test, which prices the base's engine and this commit's.
        in docs/runbooks/dependency-upgrades.md. The `images` rule (docs/adr/0066, Part 5) names each image with where it
        is: offline, a reference not `name:tag@sha256:<64 hex>`, or one the rule does not read (a `--from=` naming an
        image, a `docker-image://` context, another tracked Dockerfile or compose file, a compose `build:`, `include:` or
-       `extends`, a setup-buildx step with no builder image); networked, for a digest new against the base, "was pushed
-       …, under three days ago; it is old enough from <instant>", "none of the … most recently updated tags … carries"
-       it (pin a tag's current digest), or "is not Docker Hub … its age is unprovable". "no image is new against the
-       base, so nothing is read" is the usual line. "hub.docker.com: the image reads stopped at their deadline" and
-       a Docker Hub read that failed three times are outages: re-run the job. On a push the age findings are warnings.
+       `extends`, a setup-buildx step with no builder image, a `docker/bake-action` step); networked, for a digest new
+       against the base, "was pushed …, under three days ago; it is old enough from <instant>", "none of the … most
+       recently updated tags … carries" it (pin a tag's current digest), or "is not Docker Hub … its age is
+       unprovable". "no image is new against the base, so nothing is read" is the usual line. "hub.docker.com: the
+       image reads stopped at their deadline" and a Docker Hub read that failed three times are outages: re-run the
+       job. On a push the age findings are warnings.
    - **"Wait for the database" in `db`, `domain model` or `e2e`:** compose's own log follows the error. A pull refused
      or slow (Docker Hub) is an infrastructure failure: re-run the job. A healthcheck that never passes is the image's
      or `docker-compose.yml`'s; read the last step, "The database's log".

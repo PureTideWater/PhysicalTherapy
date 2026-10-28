@@ -252,6 +252,9 @@ function workflowImages(file: string, text: string, uses: ImageUse[], unread: st
         if (typeof contexts === 'string' && /docker-image:\/\//i.test(contexts)) {
           unread.push(`${where}: build-contexts names an image (docker-image://), which the image rule does not read; build FROM a pinned image in the Dockerfile instead (${RUNBOOK})`);
         }
+      } else if (action.startsWith('docker/bake-action@')) {
+        // A bake file names its own targets' images, contexts and Dockerfiles, none of which this rule reads.
+        unread.push(`${where}: docker/bake-action builds from bake files, whose images and docker-image:// contexts the image rule does not read; build with docker/build-push-action from a Dockerfile FROM a pinned image (${RUNBOOK})`);
       }
     });
   }

@@ -252,8 +252,8 @@ lockfile entry against the release age and the trust policy on every install (`t
   - An image from a registry other than Docker Hub is "age unprovable", since no push time is read there.
   - Offline, every image is `name:tag@sha256:<64 hex>`, and a reference the rule does not read is refused: a
     `COPY --from=` or `RUN --mount=…,from=` naming an image, a `docker-image://` build context, another tracked
-    `Dockerfile*`, `Containerfile*` or compose file, a compose `build:`, `include:` or `extends`, and a setup-buildx step
-    that names no builder image.
+    `Dockerfile*`, `Containerfile*` or compose file, a compose `build:`, `include:` or `extends`, a setup-buildx step
+    that names no builder image, and a `docker/bake-action` step.
   - A push run only warns: the pull request was the gate.
 - **An image exclude** in `tools/check-toolchain/image-age-exceptions.json`, only when the image cannot wait. Each entry
   names one exact `image` (`name:tag@sha256:<64 hex>`), its `kind`, `advisory`, `reason`, `added` and `expires` (UTC

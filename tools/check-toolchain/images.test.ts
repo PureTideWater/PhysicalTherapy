@@ -456,24 +456,30 @@ describe('the image rule', () => {
         images: {
           'runs-on': 'ubuntu-26.04',
           steps: [
-            { uses: `docker/setup-buildx-action@${'1'.repeat(40)}` },
+            // An action's name is matched as GitHub matches it, whatever its case.
+            { uses: `Docker/Setup-Buildx-Action@${'1'.repeat(40)}` },
             { uses: `docker/build-push-action@${'2'.repeat(40)}`, with: { context: '.', file: 'apps/web/Dockerfile', 'build-contexts': 'tools=docker-image://synthetic/tools:1' } },
+            { uses: `docker/bake-action@${'3'.repeat(40)}`, with: { files: 'docker-bake.hcl' } },
           ],
         },
       },
     });
     const composed = stringify({ include: ['other-compose.yml'], services: { db: { build: '.' }, cache: { extends: { file: 'base.yml', service: 'cache' }, image: POSTGRES } } });
-    const findings = checkOffline(tree({ dockerfiles: { 'apps/web/Dockerfile': web, 'apps/worker/Dockerfile': dockerfile(NODE) }, compose: composed, workflows: { '.github/workflows/ci.yml': workflow }, imageFiles: ['compose.yaml', 'deploy/Dockerfile.dev'] }));
+    // Under a `# escape=` directive the backtick continues a line, so the instruction is read whole.
+    const worker = ['# escape=`', dockerfile(NODE, ['COPY `', '  --from=synthetic/escaped:3 /x /y'])].join('\n');
+    const findings = checkOffline(tree({ dockerfiles: { 'apps/web/Dockerfile': web, 'apps/worker/Dockerfile': worker }, compose: composed, workflows: { '.github/workflows/ci.yml': workflow }, imageFiles: ['compose.yaml', 'deploy/Dockerfile.dev'] }));
     const stage = '; the image rule reads only FROM and # syntax= lines, so';
     expect(problems(findings)).toEqual([
       `images: apps/web/Dockerfile:8: COPY --from=synthetic/tools:1 names an image, not an earlier stage${stage} copy from a stage built FROM a pinned image (${RUNBOOK})`,
       `images: apps/web/Dockerfile:10: RUN --mount=…,from=synthetic/tools:1 names an image, not an earlier stage${stage} mount from a stage built FROM a pinned image (${RUNBOOK})`,
       `images: apps/web/Dockerfile:14: COPY --from=synthetic/other:2 names an image, not an earlier stage${stage} copy from a stage built FROM a pinned image (${RUNBOOK})`,
+      `images: apps/worker/Dockerfile:6: COPY --from=synthetic/escaped:3 names an image, not an earlier stage${stage} copy from a stage built FROM a pinned image (${RUNBOOK})`,
       'images: docker-compose.yml: include: brings in another compose file, whose images the image rule does not read; name every service in docker-compose.yml',
       'images: docker-compose.yml services.db: build: builds an image the image rule does not read; run an image by digest (image: name:tag@sha256:<64 hex>)',
       "images: docker-compose.yml services.cache: extends: names another compose file, whose images the image rule does not read; name the service's image in docker-compose.yml",
       'images: .github/workflows/ci.yml images step 1: setup-buildx names no builder image (driver-opts image=…), so it runs moby/buildkit:buildx-stable-1 by tag; name it as image=moby/buildkit:vX.Y.Z@sha256:<64 hex>',
       `images: .github/workflows/ci.yml images step 2: build-contexts names an image (docker-image://), which the image rule does not read; build FROM a pinned image in the Dockerfile instead (${RUNBOOK})`,
+      `images: .github/workflows/ci.yml images step 3: docker/bake-action builds from bake files, whose images and docker-image:// contexts the image rule does not read; build with docker/build-push-action from a Dockerfile FROM a pinned image (${RUNBOOK})`,
       ...['compose.yaml', 'deploy/Dockerfile.dev'].map(
         (file) =>
           `images: ${file}: an image file outside apps/<name>/Dockerfile and docker-compose.yml, the files the image rule reads (release.yml and release-dry-run.yml compute file:, so any Dockerfile can be built, and Compose prefers compose.yaml to docker-compose.yml); remove it, or name its images in those files`,

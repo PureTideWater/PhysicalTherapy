@@ -1364,7 +1364,8 @@ on its own:
 - a `docker-image://` build context;
 - a tracked `Dockerfile*`, `Containerfile*` or compose file other than the three read;
 - a compose `build:`, `include:` or `extends.file`;
-- a setup-buildx step that names no builder image (unless its driver is `docker`, which runs none).
+- a setup-buildx step that names no builder image (unless its driver is `docker`, which runs none);
+- a `docker/bake-action` step, whose bake files name images of their own.
 
 Networked, only a digest the base names nowhere is read (images are not bootstrapped):
 - **Its age.** Docker Hub's tag record gives the youngest of `tag_last_pushed`, `last_updated` and each
