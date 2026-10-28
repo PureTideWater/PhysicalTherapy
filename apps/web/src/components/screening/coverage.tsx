@@ -2,6 +2,7 @@ import type { Cents } from '@tp/money';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 
 import { type ScreeningDisposition, dispositionLabel, productLabel, unpricedReasonLabel } from '../../lib/screening/labels';
+import { ScrollTable } from '../scroll-table';
 import { type StatusTone, StatusChip } from '../status';
 import { ScreeningCount, ScreeningMoney } from './result-summary';
 
@@ -46,20 +47,23 @@ function shareText(part: number, whole: number): string {
   return percent === 0 && part > 0 ? 'under 1%' : `${String(percent)}%`;
 }
 
+/** The card's title, which also names its table (aria-labelledby) and the table's scroller. */
+const TITLE = 'Coverage, and the rows missing a contract';
+
 export function ScreeningCoverage({ coverage }: { readonly coverage: readonly ScreeningCoverageRow[] }) {
   const rows = coverage.reduce((sum, entry) => sum + entry.rows, 0);
   const contractRows = coverage.filter((entry) => entry.disposition === 'contract_required').reduce((sum, entry) => sum + entry.rows, 0);
   return (
     <Card data-section="coverage">
       <CardHeader>
-        <CardTitle id="screening-coverage">Coverage, and the rows missing a contract</CardTitle>
+        <CardTitle id="screening-coverage">{TITLE}</CardTitle>
         <CardDescription>
           What the screening could do with each row of your file, by payer product. {shareText(contractRows, rows)} of the rows ({contractRows.toLocaleString('en-US')} of {rows.toLocaleString('en-US')}) cannot be priced without a contract.
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm" aria-labelledby="screening-coverage">
+        <ScrollTable label={TITLE}>
+          <table className="w-full min-w-[40rem] text-left text-sm" aria-labelledby="screening-coverage">
             <thead className="text-muted-foreground">
               <tr>
                 <th className="py-1 pr-3 font-medium">Payer product</th>
@@ -105,7 +109,7 @@ export function ScreeningCoverage({ coverage }: { readonly coverage: readonly Sc
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollTable>
       </CardContent>
     </Card>
   );

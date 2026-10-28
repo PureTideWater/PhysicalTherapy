@@ -5,8 +5,10 @@ import type { ReactNode } from 'react';
 
 import { WINDOW_RULE_NOT_COMPUTED_TEXT, windowRuleComparison, windowText } from '../../lib/contracts/display';
 import type { FieldReview, RecordReview, VersionReview } from '../../lib/contracts/review';
+import { UtcTime } from '../dates';
 import { utc } from '../format';
 import { Fact } from '../remittances/display';
+import { ScrollTable } from '../scroll-table';
 import { CitationText, CitedPageView, VersionStatusBadge } from './display';
 import { documentLabel } from './forms';
 
@@ -179,6 +181,13 @@ export function VersionFacts({ review, versionHref }: { readonly review: Version
   );
 }
 
+/**
+ * A record's table of fields, named after its card ("Rate record N"), so no two records' tables share a name. The
+ * table takes no min-w: two columns, the field and its terms with their approval under them, in a card half the grid's
+ * width from xl (about 418 px at 1280), which the smallest width of docs/adr/0078 (32rem) would pass, and on a phone.
+ */
+const fieldsLabel = (index: number) => `Fields of rate record ${String(index + 1)}`;
+
 export function ReviewBody({ review, href, controls }: { readonly review: VersionReview; readonly href: (query: Record<string, string>) => string; readonly controls?: ReviewControls }) {
   const { cited, records, documents } = review;
   return (
@@ -237,36 +246,38 @@ export function ReviewBody({ review, href, controls }: { readonly review: Versio
                     Show the cited page
                   </Link>
                 )}
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm" aria-label="Fields">
+                <ScrollTable label={fieldsLabel(index)}>
+                  <table className="w-full text-left text-sm" aria-label={fieldsLabel(index)}>
                     <tbody>
                       {record.fields.map((field) => (
                         <tr key={field.field} className="border-t align-top" data-field={field.field}>
                           <th scope="row" className="py-1 pr-3 font-medium whitespace-nowrap">
                             {field.label}
                           </th>
-                          <td className="py-1 pr-3">{field.text}</td>
-                          {/* The approval wraps between its words and keeps its time on one line: a long approver never pushes the table past its card. */}
-                          <td className="py-1 pr-3 text-xs" data-approval>
-                            {field.approvedBy === null ? (
-                              <span className="text-destructive">Not approved</span>
-                            ) : (
-                              <span>
-                                Approved by {field.approvedBy}
-                                {field.approvedAt === null ? null : (
-                                  <>
-                                    , <span className="whitespace-nowrap">{utc(field.approvedAt)}</span>
-                                  </>
-                                )}
-                              </span>
-                            )}
+                          <td className="py-1 pr-3">
+                            {/* The terms wrap between their words. The approval stands under them, so the two columns fit a phone; its date and its time stay whole, and only an approver wider than 8rem breaks. */}
+                            {field.text}
+                            <div className="min-w-32 pt-1 text-xs wrap-anywhere" data-approval>
+                              {field.approvedBy === null ? (
+                                <span className="text-destructive">Not approved</span>
+                              ) : (
+                                <>
+                                  Approved by {field.approvedBy}
+                                  {field.approvedAt === null ? null : (
+                                    <>
+                                      , <UtcTime at={field.approvedAt} />
+                                    </>
+                                  )}
+                                </>
+                              )}
+                            </div>
                           </td>
                           {controls?.field === undefined ? null : <td className="py-1">{controls.field(record, field)}</td>}
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </ScrollTable>
                 {record.verifiedBy === null ? null : (
                   <p className="text-xs text-muted-foreground">
                     Fields checked against the cited page by {record.verifiedBy}

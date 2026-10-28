@@ -1,9 +1,10 @@
 import { SUBMISSION_CHANNELS } from '@tp/packets';
-import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Label } from '@tp/ui';
+import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../../../components/action-form';
+import { CheckboxField, Field, SelectField, TextAreaField } from '../../../../../../components/field';
 import { utc } from '../../../../../../components/format';
 import { Hash } from '../../../../../../components/packets/display';
 import { PricingNowPanel } from '../../../../../../components/packets/pricing';
@@ -70,35 +71,12 @@ function SubmissionForm({
       <input type="hidden" name="caseId" value={caseId} />
       <input type="hidden" name="versionId" value={versionId} />
       <div className="flex flex-wrap gap-3">
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={id('submitted-on')}>Submitted on</Label>
-          <Input id={id('submitted-on')} name="submittedOn" type="date" defaultValue={maxOn} min={minOn} max={maxOn} required />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={id('channel')}>Channel</Label>
-          <select id={id('channel')} name="channel" className="h-9 rounded-md border bg-background px-2 text-sm" required>
-            {SUBMISSION_CHANNELS.map((channel) => (
-              <option key={channel} value={channel}>
-                {CHANNEL_TEXT[channel]}
-              </option>
-            ))}
-          </select>
-        </div>
+        <Field id={id('submitted-on')} label="Submitted on" name="submittedOn" type="date" defaultValue={maxOn} min={minOn} max={maxOn} required />
+        <SelectField id={id('channel')} label="Channel" name="channel" required options={SUBMISSION_CHANNELS.map((channel) => ({ value: channel, label: CHANNEL_TEXT[channel] }))} />
       </div>
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor={id('reference')}>Payer’s reference (a portal confirmation, a fax receipt)</Label>
-        <Input id={id('reference')} name="reference" maxLength={200} />
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor={id('follow-up-on')}>Follow up on (blank: 45 days after the submission, {defaultFollowUpOn} for today’s)</Label>
-        <Input id={id('follow-up-on')} name="followUpOn" type="date" />
-      </div>
-      {withoutSignOff ? (
-        <label className="flex items-start gap-2 text-sm" data-confirm="sent-without-sign-off">
-          <input type="checkbox" name="sentWithoutSignOff" required className="mt-1" />
-          <span>{STALE_EXPORT_SUBMISSION.confirm}</span>
-        </label>
-      ) : null}
+      <Field id={id('reference')} label="Payer’s reference (a portal confirmation, a fax receipt)" name="reference" maxLength={200} />
+      <Field id={id('follow-up-on')} label={`Follow up on (blank: 45 days after the submission, ${defaultFollowUpOn} for today’s)`} name="followUpOn" type="date" />
+      {withoutSignOff ? <CheckboxField id={id('sent-without-sign-off')} name="sentWithoutSignOff" errorName="Confirmation" required label={STALE_EXPORT_SUBMISSION.confirm} /> : null}
     </ActionForm>
   );
 }
@@ -302,60 +280,43 @@ export default async function SubmissionsPage(props: Props) {
                 <input type="hidden" name="caseId" value={item.id} />
                 <input type="hidden" name="submissionId" value={latest.submissionId} />
                 <div className="flex flex-wrap gap-3">
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="response-kind">Response</Label>
-                    <select id="response-kind" name="kind" className="h-9 rounded-md border bg-background px-2 text-sm" required>
-                      {PERSON_RESPONSE_KINDS.map((kind) => (
-                        <option key={kind} value={kind}>
-                          {RESPONSE_TEXT[kind]}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="received-on">Received on</Label>
-                    <Input id="received-on" name="receivedOn" type="date" defaultValue={asOf} min={latest.submittedOn} max={asOf} required />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="amount">Additional amount the payer will pay (accepted or partial only, dollars)</Label>
-                    <Input id="amount" name="amount" inputMode="decimal" aria-describedby="amount-hint" />
-                    <p id="amount-hint" className="text-xs text-muted-foreground">
-                      The additional payment the letter states, not the allowed amount; the patient’s share is never part of it.
-                    </p>
-                  </div>
+                  <SelectField id="response-kind" label="Response" name="kind" required options={PERSON_RESPONSE_KINDS.map((kind) => ({ value: kind, label: RESPONSE_TEXT[kind] }))} />
+                  <Field id="received-on" label="Received on" name="receivedOn" type="date" defaultValue={asOf} min={latest.submittedOn} max={asOf} required />
+                  <Field
+                    id="amount"
+                    label="Additional amount the payer will pay (accepted or partial only, dollars)"
+                    name="amount"
+                    inputMode="decimal"
+                    hint="The additional payment the letter states, not the allowed amount; the patient’s share is never part of it."
+                  />
                 </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="response-document">Document</Label>
-                  <select id="response-document" name="documentId" className="h-9 rounded-md border bg-background px-2 text-sm" required>
-                    {documents.map((document) => (
-                      <option key={document.id} value={document.id}>
-                        {KIND_TEXT[document.kind] ?? document.kind}, uploaded {utc(document.uploadedAt)}
-                        {document.sha256 === null ? '' : `, SHA-256 ${document.sha256.slice(0, 12)}…`}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <SelectField
+                  id="response-document"
+                  label="Document"
+                  name="documentId"
+                  required
+                  // The SHA-256's prefix is its own run, so the line under the select sets it in Plex Mono, as
+                  // this page sets every SHA-256; the list itself shows the runs joined.
+                  options={documents.map((document) => ({
+                    value: document.id,
+                    label: [
+                      { text: `${KIND_TEXT[document.kind] ?? document.kind}, uploaded ${utc(document.uploadedAt)}${document.sha256 === null ? '' : ', SHA-256 '}` },
+                      ...(document.sha256 === null ? [] : [{ text: `${document.sha256.slice(0, 12)}…`, mono: true }]),
+                    ],
+                  }))}
+                  showChosen
+                />
                 <div className="flex flex-wrap items-end gap-3">
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="denial-category">Denial reason (denials only)</Label>
-                    <select id="denial-category" name="denialCategory" className="h-9 rounded-md border bg-background px-2 text-sm" defaultValue="">
-                      <option value="">None</option>
-                      {DENIAL_CATEGORIES.map((category) => (
-                        <option key={category} value={category}>
-                          {DENIAL_TEXT[category]}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" name="reopensCase" />
-                    Reopen the case for the next dispute level (a denial with its reason)
-                  </label>
+                  <SelectField
+                    id="denial-category"
+                    label="Denial reason (denials only)"
+                    name="denialCategory"
+                    defaultValue=""
+                    options={[{ value: '', label: 'None' }, ...DENIAL_CATEGORIES.map((category) => ({ value: category, label: DENIAL_TEXT[category] ?? category }))]}
+                  />
+                  <CheckboxField id="reopens-case" name="reopensCase" errorName="Reopen the case" label="Reopen the case for the next dispute level (a denial with its reason)" />
                 </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="response-notes">Notes (kept encrypted)</Label>
-                  <textarea id="response-notes" name="notes" maxLength={2000} rows={2} className="w-full rounded-md border bg-background p-2 text-sm" />
-                </div>
+                <TextAreaField id="response-notes" label="Notes (kept encrypted)" name="notes" maxLength={2000} rows={2} />
               </ActionForm>
             )}
           </CardContent>

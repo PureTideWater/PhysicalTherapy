@@ -6,6 +6,7 @@ import { ActionForm } from '../../../components/action-form';
 import { Field, SelectField } from '../../../components/field';
 import { FormKeys } from '../../../components/form-keys';
 import { roleNames } from '../../../components/format';
+import { ScrollTable } from '../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
 import { compliancePage } from '../../../lib/routes/compliance';
@@ -125,7 +126,7 @@ export default async function CompliancePage(props: { readonly searchParams: Pro
               {control.name} <Badge variant={status === 'ready' ? 'outline' : 'destructive'}>{CONTROL_STATUS[status]}</Badge>
             </CardTitle>
             <CardDescription>
-              SOC 2 {control.soc2.join(', ')} · HIPAA §{control.hipaa.join(', §')}. {control.implementation}. Plan&apos;s evidence: {control.planEvidence}.
+              SOC 2 {control.soc2.join(', ')} · HIPAA §{control.hipaa.join(', §')}. {control.implementation}. Plan’s evidence: {control.planEvidence}.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -153,23 +154,27 @@ export default async function CompliancePage(props: { readonly searchParams: Pro
       <Card>
         <CardHeader>
           <CardTitle>Policies</CardTitle>
-          <CardDescription>Markdown in the repository, with versions. Each is in force once the security official&apos;s approval of its version is recorded.</CardDescription>
+          <CardDescription>Markdown in the repository, with versions. Each is in force once the security official’s approval of its version is recorded.</CardDescription>
         </CardHeader>
         <CardContent>
-          <table className="w-full text-left text-sm" aria-label="Policies">
-            <tbody>
-              {checklist.policies.map((item) => (
-                <tr key={item.policy.id} className="border-t first:border-t-0" data-policy-status={item.status}>
-                  <td className="py-1">{item.policy.title}</td>
-                  <td className="py-1 font-mono text-xs">{item.policy.file}</td>
-                  <td className="py-1">version {item.policy.version}</td>
-                  <td className="py-1">
-                    <Badge variant={item.status === 'approved' ? 'outline' : 'destructive'}>{item.status === 'approved' ? `Approved ${item.approvedOn ?? ''}` : item.status === 'stale' ? 'Review due' : 'Draft, awaiting approval'}</Badge>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ScrollTable label="Policies">
+            <table className="w-full min-w-[36rem] text-left text-sm" aria-label="Policies">
+              <tbody>
+                {checklist.policies.map((item) => (
+                  <tr key={item.policy.id} className="border-t first:border-t-0" data-policy-status={item.status}>
+                    <td className="py-1 pr-3">{item.policy.title}</td>
+                    <td className="py-1 pr-3 font-mono text-xs">
+                      <span className="block min-w-32 wrap-anywhere">{item.policy.file}</span>
+                    </td>
+                    <td className="py-1 pr-3">version {item.policy.version}</td>
+                    <td className="py-1">
+                      <Badge variant={item.status === 'approved' ? 'outline' : 'destructive'}>{item.status === 'approved' ? `Approved ${item.approvedOn ?? ''}` : item.status === 'stale' ? 'Review due' : 'Draft, awaiting approval'}</Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollTable>
         </CardContent>
       </Card>
       <Card>
@@ -183,12 +188,12 @@ export default async function CompliancePage(props: { readonly searchParams: Pro
         <CardContent>
           <ActionForm action={recordEvidenceAction} submit="Record" className="grid max-w-xl gap-3">
             <FormKeys />
-            <SelectField label="What" name="kind" options={recordKinds} />
-            <SelectField label="Policy (for an approval)" name="policy" options={[{ value: '', label: '—' }, ...policies.map((policy) => ({ value: policy.id, label: `${policy.title} ${policy.version}` }))]} />
-            <SelectField label="Workforce member (for an attestation or the security official)" name="member" options={[{ value: '', label: '—' }, ...workforce.map((member) => ({ value: member.userId, label: `${member.email} (${roleNames(member.roles)})` }))]} />
+            <SelectField label="What" name="kind" options={recordKinds} showChosen />
+            <SelectField label="Policy (for an approval)" name="policy" options={[{ value: '', label: '—' }, ...policies.map((policy) => ({ value: policy.id, label: `${policy.title} ${policy.version}` }))]} showChosen />
+            <SelectField label="Workforce member (for an attestation or the security official)" name="member" options={[{ value: '', label: '—' }, ...workforce.map((member) => ({ value: member.userId, label: `${member.email} (${roleNames(member.roles)})` }))]} showChosen />
             <Field label="Date it happened" name="occurredOn" type="date" required />
-            <Field label="Document reference" name="documentRef" required maxLength={200} />
-            <Field label="SHA-256" name="sha256" required pattern="[0-9a-fA-F]{64}" />
+            <Field label="Document reference" name="documentRef" required maxLength={200} hint="Where the record is kept, never a person’s name: letters, digits, colons, slashes, dots, underscores and hyphens, such as records:training/2026." />
+            <Field label="SHA-256" name="sha256" required pattern="[0-9a-fA-F]{64}" hint="The document’s SHA-256, 64 hexadecimal characters." />
           </ActionForm>
         </CardContent>
       </Card>
@@ -197,28 +202,36 @@ export default async function CompliancePage(props: { readonly searchParams: Pro
         {records.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nothing recorded yet.</p>
         ) : (
-          <table className="w-full text-left text-sm" aria-label="Evidence records">
-            <thead className="text-muted-foreground">
-              <tr>
-                <th className="py-1 pr-3 font-medium">What</th>
-                <th className="py-1 pr-3 font-medium">Subject</th>
-                <th className="py-1 pr-3 font-medium">On</th>
-                <th className="py-1 font-medium">Reference</th>
-              </tr>
-            </thead>
-            <tbody>
-              {records.map((record) => (
-                <tr key={record.id} className="border-t">
-                  <td className="py-1 pr-3">{recordKinds.find((kind) => kind.value === record.kind)?.label ?? record.kind}</td>
-                  <td className="py-1 pr-3 font-mono text-xs">{workforce.find((member) => member.userId === record.subject)?.email ?? record.subject}</td>
-                  <td className="py-1 pr-3">{record.occurredOn}</td>
-                  <td className="py-1 font-mono text-xs" title={record.sha256}>
-                    {record.documentRef}
-                  </td>
+          <ScrollTable label="Evidence records">
+            <table className="w-full min-w-[48rem] text-left text-sm" aria-label="Evidence records">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="py-1 pr-3 font-medium">What</th>
+                  <th className="py-1 pr-3 font-medium">Subject</th>
+                  <th className="py-1 pr-3 font-medium">On</th>
+                  <th className="py-1 pr-3 font-medium">Reference</th>
+                  <th className="py-1 font-medium">SHA-256</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {records.map((record) => (
+                  <tr key={record.id} className="border-t">
+                    <td className="py-1 pr-3">{recordKinds.find((kind) => kind.value === record.kind)?.label ?? record.kind}</td>
+                    <td className="py-1 pr-3 font-mono text-xs">
+                      <span className="block min-w-40 wrap-anywhere">{workforce.find((member) => member.userId === record.subject)?.email ?? record.subject}</span>
+                    </td>
+                    <td className="py-1 pr-3 whitespace-nowrap">{record.occurredOn}</td>
+                    <td className="py-1 pr-3 font-mono text-xs">
+                      <span className="block min-w-32 wrap-anywhere">{record.documentRef}</span>
+                    </td>
+                    <td className="py-1 font-mono text-xs">
+                      <span className="block min-w-32 wrap-anywhere">{record.sha256}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollTable>
         )}
       </section>
     </AppShell>

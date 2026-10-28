@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../../../../../components/action-form';
+import { CheckboxGroup } from '../../../../../../../../components/field';
 import { FormKeys } from '../../../../../../../../components/form-keys';
 import { utc } from '../../../../../../../../components/format';
 import { CalculationWords } from '../../../../../../../../components/packets/calculation-words';
@@ -345,12 +346,7 @@ export default async function PacketReviewPage(props: Props) {
               <input type="hidden" name="versionId" value={review.versionId} />
               <input type="hidden" name="pdfSha256" value={review.exportSha256 ?? ''} />
               <input type="hidden" name="csvSha256" value={review.exportCsvSha256 ?? ''} />
-              {checklist.map((item) => (
-                <label key={item.id} className="flex items-start gap-2 text-sm">
-                  <input type="checkbox" name={`confirm_${item.id}`} required className="mt-1" />
-                  <span>{item.text}</span>
-                </label>
-              ))}
+              <CheckboxGroup legend="Confirm each item before you attest" issueKey="confirm" itemized options={checklist.map((item) => ({ name: `confirm_${item.id}`, label: item.text, required: true }))} />
               <p className="text-sm">{PACKET_ATTESTATION_TEXT}</p>
             </ActionForm>
           )}

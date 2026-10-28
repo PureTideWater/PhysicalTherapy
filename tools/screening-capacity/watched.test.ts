@@ -80,6 +80,16 @@ describe('the watched list', () => {
     // The harness's Postgres image comes from the compose file (containers.ts), so a digest bump measures (CI-13).
     expect(WATCHED_FIXED).toContain('docker-compose.yml');
     expect(committed).toContain('docker-compose.yml');
+    // The capacity job runs the system packages' check and the browser check, and the browser check reads browser.json
+    // and the file lists beside it (it refuses a record whose list is missing or does not hash to its treeSha256), so a
+    // change to any of them is measured on the job's own runner image (the review's N7; docs/adr/0066, Part 3).
+    for (const file of ['tools/ci/apt-archives.sh', 'tools/ci/browser-build.ts', 'apps/web/e2e/browser.json', 'apps/web/e2e/browser-builds/*']) {
+      expect(WATCHED_FIXED, file).toContain(file);
+      expect(committed, file).toContain(file);
+    }
+    for (const list of ['apps/web/e2e/browser-builds/chrome-linux64.sha256', 'apps/web/e2e/browser-builds/chrome-headless-shell-linux64.sha256']) {
+      expect(committed.some((line) => matchesWatched(list, line)), list).toBe(true);
+    }
   });
 
   it('is inside what a push to the build branch measures', () => {

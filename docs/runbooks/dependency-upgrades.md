@@ -259,11 +259,15 @@ lockfile entry against the release age and the trust policy on every install (`t
   `PgBoss` sets `migrate: false`, and a test enforces it. Until then take a pg-boss minor only in its own pull request,
   and deploy the worker first.
 - **Playwright, with its baselines.** The `browser-tests` group moves `@playwright/test`, `playwright`,
-  `playwright-core`, `@axe-core/playwright` and `axe-core` together. It is red by design: a new Playwright pins a new
-  Chromium, whose rendering moves the brand journey's seven baselines (and, from docs/adr/0066's Part 3, the
-  `browser.json` check names the expected and found builds). Regenerate them on Linux with Playwright's Chromium
-  (`pnpm --filter @tp/web exec playwright test e2e/brand.spec.ts --update-snapshots`), have a person inspect the seven
-  images, and commit them in the same pull request (docs/adr/0058).
+  `playwright-core` (one catalog line, which the worker and the tools take as `catalog:`), `@axe-core/playwright` and
+  `axe-core` together. It is red by design, the one exception to an unaided green: a new Playwright pins a new Chrome
+  for Testing build, so `tools/ci/browser-build.ts`, right after every browser install, fails with the found and the
+  recorded builds (`apps/web/e2e/browser.json`) and names ADR 0058's procedure, while every later step still runs, so
+  the same run shows what the new browser does to the journeys and the baselines. Follow `docs/runbooks/ci.md`,
+  "Upgrading the browser": lay the new build out, update `browser.json` and its file lists, regenerate the seven
+  baselines with `--update-snapshots=all`, read CI's baseline step, inspect every image, fix any finding a new axe rule
+  brings, and commit it all in that pull request (docs/adr/0058). The worker image needs nothing: it copies the
+  lockfile's playwright-core from its build stage.
 - **TypeScript 7.** Its own pull request, once typescript-eslint declares support (8.72.0 declares
   `typescript <6.1.0`); `typecheck.sh`'s time and `pnpm typecheck`'s are re-measured.
 - **The Anthropic SDK.** The `anthropic-sdk` group is never merged as it stands: a model-gateway change passes the

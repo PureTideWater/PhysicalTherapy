@@ -134,11 +134,11 @@ test('a billing manager creates a pricing run; the worker prices it, and its lin
     await expect(fee).toContainText(/Fee schedule: the \d{4} records in force on \d{4}-\d{2}-\d{2}\./);
     await expect(fee.getByRole('table', { name: 'Fee schedule worksheet 1' })).toBeVisible();
     await expect(steps.locator(':scope > li[data-step="rounding"]')).toContainText(/Rounded once, half up to the cent/);
-    // What the engine recorded sits in a closed disclosure under the words: open it, then read its rule records.
+    // What PaidWhole recorded sits in a closed disclosure under the words: open it, then read its rule records.
     // Each step's title is a heading under Trace (h2), named in its record's summary for a screen reader.
     await expect(fee.getByRole('heading', { level: 3, name: 'Step 2, continued: the fee schedule' })).toBeVisible();
     await expect(page.getByRole('list', { name: 'Rule records of Step 2, continued: the fee schedule' })).toBeHidden();
-    await fee.getByText('As the engine recorded it').click();
+    await fee.getByText('As PaidWhole recorded it').click();
     await expect(page.getByRole('list', { name: 'Rule records of Step 2, continued: the fee schedule' })).toContainText('pfs_rvu');
     await expectAccessible(page, 'the line trace page, its fee schedule record open');
     await atPhoneWidth(page, 'the line trace page, its fee schedule record open');
@@ -235,7 +235,7 @@ test('a billing manager creates a pricing run; the worker prices it, and its lin
   await test.step('the release note shows release 900001 in force', async () => {
     await page.goto(`/p/${other}/releases`);
     await expect(page.getByRole('heading', { level: 1, name: 'Rule release notes' })).toBeVisible();
-    await expect(page.getByRole('region', { name: 'Release 900001' })).toContainText('In force: runs created now pin it.');
+    await expect(page.getByRole('region', { name: 'Release 900001', exact: true })).toContainText('In force: runs created now pin it.');
     await expect(page.getByRole('region', { name: 'Runs it would change' })).toContainText('No run in effect is pinned to another release.');
   });
 
@@ -318,8 +318,8 @@ test('a billing manager creates a pricing run; the worker prices it, and its lin
           if (text.includes('This re-run: can no longer be accepted, because a newer run of these service dates is in effect; the page is updated to name it')) {
             document.body.dataset.refusalSeen = 'true';
           }
-          // Every issue is on the form's hidden run field: no "fields marked below" (UX review of PR #50, UX-3).
-          if (text.includes('Check the fields marked below.')) {
+          // Every issue is on the form's hidden run field: no "Fix the field listed here" (UX review of PR #50, UX-3).
+          if (text.includes('listed here, then try again.')) {
             document.body.dataset.genericSeen = 'true';
           }
         };
