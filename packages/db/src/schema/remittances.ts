@@ -170,6 +170,10 @@ export const claim = pgTable(
     index('claim_by_reversed')
       .on(table.reversalOfClaimId)
       .where(sql`reversal_of_claim_id IS NOT NULL`),
+    // claimLines' correction chain looks claims up by the claim they supersede (migration 20261109090000).
+    index('claim_by_superseded')
+      .on(table.supersededByClaimId)
+      .where(sql`superseded_by_claim_id IS NOT NULL`),
   ],
 );
 

@@ -2,15 +2,15 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `d763ba7860efe32d84998f8ebddbe293fc56de2c` on branch `co-001/ss-01-suspension-refusal`, with uncommitted changes to its inputs (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
-- Migrations applied: 46; head `20261108090000_suspension_refusal.sql`
-- PostgreSQL 18; schema `public`: 99 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
-- PHI flag: 47 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 40 organization- or user-scoped tables with RLS forced; 8 global tables
-- RLS: 91 tables ENABLE and FORCE row-level security; 0 enable without forcing; 8 have none (the global tables); 182 policies
-- Functions in `public`: 382 (173 SECURITY DEFINER); triggers: 276, none disabled or replica-only; rewrite rules on tables: none
+- Generated at commit `f5bd6201632052613970f4b19bb004eb7a8194a7` on branch `co-001/suite-cap-1-triage-locks`, with uncommitted changes to its inputs (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Migrations applied: 47; head `20261109090000_line_status_heads.sql`
+- PostgreSQL 18; schema `public`: 100 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
+- PHI flag: 48 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 40 organization- or user-scoped tables with RLS forced; 8 global tables
+- RLS: 92 tables ENABLE and FORCE row-level security; 0 enable without forcing; 8 have none (the global tables); 183 policies
+- Functions in `public`: 382 (174 SECURITY DEFINER); triggers: 278, none disabled or replica-only; rewrite rules on tables: none
 - Default privileges (ALTER DEFAULT PRIVILEGES): none
 - Roles (group roles; login roles are per environment and not listed): `tp_app`, `tp_billing`, `tp_esign`, `tp_job`, `tp_operator`, `tp_owner`, `tp_screening`; every relation is owned by `tp_owner`
-- Divergences from the Data dictionary: 23 to approve, 51 tables and 150 columns not in it (informational); see [Divergences from the Data dictionary](#divergences-from-the-data-dictionary)
+- Divergences from the Data dictionary: 23 to approve, 52 tables and 150 columns not in it (informational); see [Divergences from the Data dictionary](#divergences-from-the-data-dictionary)
 
 ## Contents
 
@@ -51,7 +51,7 @@
 | 5 | [Documents and remittances](#area-documents) | Documents and remittances (PHI) | 9 | 9 | Every uploaded file, and the 835 remittance loaded from it: transaction sets, claims, service lines, CAS and PLB adjustments, the minimal patient identity, the parse report, and notes a person writes on a line. |
 | 6 | [Payers, contracts and rates](#area-contracts) | Payers, contracts and rates (PHI-adjacent; confidential) | 8 | 8 | Payers and plans as the remittances name them, the mapping of a plan to an agreement, contracts and their versions, rate records (each pricing term with its page, quote and hash), the contract calendar, and the questions a specialist raises on a version. |
 | 7 | [Global content](#area-content) | Global content (no practice_id; read-only to the application role) | 3 | 0 | Numbered rule releases and their records (fee schedule, adjustments, code lists, dispute windows), and the withdrawal of a release. No practice_id; the application role reads only. |
-| 8 | [Pricing, triage and cases](#area-pricing) | Pricing, triage and cases (PHI) | 10 | 10 | Pricing runs and their immutable priced lines, anomaly cohorts, the stage of each line, cases and their lines and activity, the audit report and its downloads, and the coverage report and monthly summary. |
+| 8 | [Pricing, triage and cases](#area-pricing) | Pricing, triage and cases (PHI) | 11 | 11 | Pricing runs and their immutable priced lines, anomaly cohorts, the stage of each line (each line's current stage is also kept on one head row, which orders its events), cases and their lines and activity, the audit report and its downloads, and the coverage report and monthly summary. |
 | 9 | [Packets](#area-packets) | Pricing, triage and cases (PHI) | 4 | 4 | The dispute packet, its immutable verified versions (approval and export recorded on the version), the submissions a customer logs and the payer responses captured against them. |
 | 10 | [Ledger](#area-ledger) | Ledger and reconciliation (PHI) | 5 | 5 | The signed, append-only recovery ledger, the matches that pair its evidence, the posting-export and EFT-export rows it matches against, and the ROI statement. |
 | 11 | [Model gateway](#area-models) | Model gateway (PHI references only) | 4 | 2 | Each model call (references and hashes only), evaluation examples, the proposals a person decides, and budget holds taken before a call. |
@@ -93,6 +93,7 @@
 | [`ledger_match`](#table-ledger-match) | Ledger | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 3 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`line_note`](#table-line-note) | Documents and remittances | PHI (registered) | uuid NOT NULL | yes | yes | 2 | 2 | SELECT, INSERT(cols) | - | - |
 | [`line_status`](#table-line-status) | Pricing, triage and cases | PHI (registered) | uuid NOT NULL | yes | yes | 2 | 6 | SELECT, INSERT(cols) | - | - |
+| [`line_status_head`](#table-line-status-head) | Pricing, triage and cases | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 2 | SELECT | - | - |
 | [`mail_recipient_key`](#table-mail-recipient-key) | Operations | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 2 | - | - | - |
 | [`mail_send`](#table-mail-send) | Operations | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 2 | - | - | - |
 | [`mail_stream`](#table-mail-stream) | Operations | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 1 | - | - | - |
@@ -1322,6 +1323,7 @@ Indexes:
 - `claim_by_patient`: `USING btree (practice_id, patient_ref_id)`
 - `claim_by_payer_claim_control_number`: `USING btree (practice_id, payer_claim_control_number_hash)`
 - `claim_by_reversed`: `USING btree (reversal_of_claim_id) WHERE (reversal_of_claim_id IS NOT NULL)`
+- `claim_by_superseded`: `USING btree (superseded_by_claim_id) WHERE (superseded_by_claim_id IS NOT NULL)`
 
 Policies (1):
 - `claim_tenant`: PERMISSIVE FOR ALL TO public
@@ -2379,7 +2381,7 @@ Invariants enforced by triggers:
 
 <a id="area-pricing"></a>
 
-Pricing runs and their immutable priced lines, anomaly cohorts, the stage of each line, cases and their lines and activity, the audit report and its downloads, and the coverage report and monthly summary.
+Pricing runs and their immutable priced lines, anomaly cohorts, the stage of each line (each line's current stage is also kept on one head row, which orders its events), cases and their lines and activity, the audit report and its downloads, and the coverage report and monthly summary.
 
 | Table | Class | RLS / FORCE | Policies | tp_app | Created by | Dictionary |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -2387,6 +2389,7 @@ Pricing runs and their immutable priced lines, anomaly cohorts, the stage of eac
 | [`priced_line`](#table-priced-line) | PHI (registered) | yes / yes | 1 | SELECT, INSERT(cols) | `20261018090000_pricing_runs` | Per run and line |
 | [`anomaly`](#table-anomaly) | PHI (registered) | yes / yes | 1 | SELECT, INSERT(cols), UPDATE(cols) | `20261019160000_triage_cases_and_audit_reports` | Investigatory cohort |
 | [`line_status`](#table-line-status) | PHI (registered) | yes / yes | 2 | SELECT, INSERT(cols) | `20261019160000_triage_cases_and_audit_reports` | Stage per line |
+| [`line_status_head`](#table-line-status-head) | PHI (registered) | yes / yes | 1 | SELECT | `20261109090000_line_status_heads` | not in the Data dictionary |
 | [`case`](#table-case) | PHI (registered) | yes / yes | 2 | SELECT, INSERT(cols) | `20261019160000_triage_cases_and_audit_reports` | A payer pattern to pursue |
 | [`case_line`](#table-case-line) | PHI (registered) | yes / yes | 2 | SELECT, INSERT(cols), UPDATE(cols) | `20261019160000_triage_cases_and_audit_reports` | Membership |
 | [`case_activity`](#table-case-activity) | PHI (registered) | yes / yes | 2 | SELECT, INSERT(cols) | `20261024110000_case_workbench` | not in the Data dictionary |
@@ -2652,7 +2655,7 @@ Maintains `updated_at`: `anomaly_updated_at`.
 - Class: PHI (registered); registry policy `line_status_tenant`, registered by `20261019160000_triage_cases_and_audit_reports`, qualifies: yes
 - Row-level security: enabled, forced; 2 policies; owner `tp_owner`
 - Dictionary: Pricing, triage and cases (PHI): Stage per line
-- Created by `20261019160000_triage_cases_and_audit_reports` (ADR 0028, ADR 0038); its DDL, policies or trigger functions changed by `20261022090000_review_guards_visit_shortfalls_and_practice_settings`, `20261023090000_packets_submissions_and_responses`, `20261023120000_recovery_ledger`, `20261027090000_packet_and_ledger_review`
+- Created by `20261019160000_triage_cases_and_audit_reports` (ADR 0028, ADR 0038); its DDL, policies or trigger functions changed by `20261022090000_review_guards_visit_shortfalls_and_practice_settings`, `20261023090000_packets_submissions_and_responses`, `20261023120000_recovery_ledger`, `20261027090000_packet_and_ledger_review`, `20261109090000_line_status_heads`
 - Primary key: `id`
 - Privileges: `tp_app` SELECT, INSERT(cols)
 - Column grant: `tp_app` INSERT (`id`, `practice_id`, `priced_line_id`, `reason`, `reopened_from`, `service_line_id`, `set_by`, `stage`)
@@ -2715,6 +2718,45 @@ Invariants enforced by triggers:
   - "a reopen names the stage the line is at"
   - "a reopen keeps the line at its stage or moves it back; moving forward is not a reopen"
   - "a reopen is a person's explicit action"
+
+### Table `line_status_head`
+
+<a id="table-line-status-head"></a>
+
+- Class: PHI (registered); registry policy `line_status_head_tenant`, registered by `20261109090000_line_status_heads`, qualifies: yes
+- Row-level security: enabled, forced; 1 policy; owner `tp_owner`
+- Dictionary: not in the Data dictionary
+- Created by `20261109090000_line_status_heads` (ADR 0009, ADR 0083)
+- Primary key: `id`
+- Privileges: `tp_app` SELECT
+
+| # | Column | Type | Null | Default | References | Since | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `id` | `uuid` | NOT NULL | `gen_random_uuid()` |  | `20261109090000` |  |
+| 2 | `practice_id` | `uuid` | NOT NULL |  |  | `20261109090000` |  |
+| 3 | `service_line_id` | `uuid` | NOT NULL |  |  | `20261109090000` |  |
+| 4 | `stage` | `text` | NOT NULL |  |  | `20261109090000` | one of flagged, validated, actionable, payer_approved, recovered |
+| 5 | `seq` | `bigint` | NOT NULL |  |  | `20261109090000` |  |
+| 6 | `created_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261109090000` |  |
+| 7 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261109090000` |  |
+
+Keys:
+- Primary: (id)
+- Unique index `line_status_head_once`: `USING btree (practice_id, service_line_id)`
+
+Policies (1):
+- `line_status_head_tenant`: PERMISSIVE FOR ALL TO public
+  - USING `(practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))`
+  - WITH CHECK `(practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))`
+
+Invariants enforced by constraints:
+- `line_status_head_stage_check`: `CHECK (stage = ANY (ARRAY['flagged'::text, 'validated'::text, 'actionable'::text, 'payer_approved'::text, 'recovered'::text]))`
+
+Invariants enforced by triggers:
+- `line_status_head_never_deleted`: `BEFORE DELETE ON line_status_head FOR EACH ROW EXECUTE FUNCTION triage_never_deleted()`
+  - "% rows are never deleted: triage, cases and reports keep what they recorded"
+- `line_status_head_no_truncate`: `BEFORE TRUNCATE ON line_status_head FOR EACH STATEMENT EXECUTE FUNCTION triage_no_truncate()`
+  - "% cannot be truncated: triage, cases and reports keep what they recorded"
 
 ### Table `case`
 
@@ -3725,7 +3767,7 @@ Invariants enforced by triggers:
 - Class: PHI (registered); registry policy `ledger_entry_tenant`, registered by `20261023120000_recovery_ledger`, qualifies: yes
 - Row-level security: enabled, forced; 1 policy; owner `tp_owner`
 - Dictionary: Ledger and reconciliation (PHI): Signed, append-only
-- Created by `20261023120000_recovery_ledger` (ADR 0042); its DDL, policies or trigger functions changed by `20261026090000_recovery_ledger_review`, `20261027090000_packet_and_ledger_review`
+- Created by `20261023120000_recovery_ledger` (ADR 0042); its DDL, policies or trigger functions changed by `20261026090000_recovery_ledger_review`, `20261027090000_packet_and_ledger_review`, `20261109090000_line_status_heads`
 - Primary key: `id`
 - Privileges: `tp_app` SELECT, INSERT(cols)
 - Column grant: `tp_app` INSERT (`allocated`, `amount_cents`, `case_id`, `created_by`, `effective_on`, `evidence_id`, `evidence_kind`, `id`, `match_id`, `practice_id`, `reason`, `service_line_id`, `stage`)
@@ -6711,45 +6753,46 @@ The dictionary gives each tenancy table a one-phrase policy. "Live policies" is 
 | D10 | [`invitation`](#table-invitation) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
 | D11 | [`ledger_match`](#table-ledger-match) | Ledger | PHI (registered) | `20261023120000_recovery_ledger` | ADR 0042 |
 | D12 | [`line_note`](#table-line-note) | Documents and remittances | PHI (registered) | `20261016120000_remittances` | ADR 0015, ADR 0021, ADR 0025, ADR 0027 |
-| D13 | [`mail_recipient_key`](#table-mail-recipient-key) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261107090000_mail_streams` | ADR 0065 |
-| D14 | [`mail_send`](#table-mail-send) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261107090000_mail_streams` | ADR 0065 |
-| D15 | [`mail_stream`](#table-mail-stream) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261107090000_mail_streams` | ADR 0065 |
-| D16 | [`marketing_campaign`](#table-marketing-campaign) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
-| D17 | [`model_budget_hold`](#table-model-budget-hold) | Model gateway | PHI (registered) | `20261031090000_model_budget_holds` | ADR 0054 |
-| D18 | [`model_proposal`](#table-model-proposal) | Model gateway | PHI (registered) | `20261029190000_model_proposals` | ADR 0052 |
-| D19 | [`mutation_request`](#table-mutation-request) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
-| D20 | [`organization_status_change`](#table-organization-status-change) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | `20261108090000_suspension_refusal` | ADR 0009, ADR 0050, ADR 0055, ADR 0080 |
-| D21 | [`place_of_service_split`](#table-place-of-service-split) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
-| D22 | [`practice_site`](#table-practice-site) | Tenancy and access | PHI (registered) | `20261105090000_pricing_location_and_zip_plus_four` | ADR 0013, ADR 0017, ADR 0039, ADR 0040, ADR 0062, ADR 0064 |
-| D23 | [`prospect_request`](#table-prospect-request) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D24 | [`rate_limit_counter`](#table-rate-limit-counter) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D25 | [`report_document`](#table-report-document) | Pricing, triage and cases | PHI (registered) | `20261025090000_report_documents_and_export_history` | ADR 0040, ADR 0045 |
-| D26 | [`restore_drill`](#table-restore-drill) | Operations | global (no practice_id, no RLS) | `20261015140500_audit_and_operations` | ADR 0013, ADR 0014 |
-| D27 | [`role_permission`](#table-role-permission) | Tenancy and access | global (no practice_id, no RLS) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
-| D28 | [`rule_release_withdrawal`](#table-rule-release-withdrawal) | Global content | global (no practice_id, no RLS) | `20261019150000_reruns_and_release_withdrawal` | ADR 0037 |
-| D29 | [`schema_migrations`](#table-schema-migrations) | Operations | global (no practice_id, no RLS) | the migration runner (packages/db/src/migrate.ts, CREATE TABLE IF NOT EXISTS before the first migration; ADR 0009) | - |
-| D30 | [`screening_bounce_mark`](#table-screening-bounce-mark) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261107090000_mail_streams` | ADR 0065 |
-| D31 | [`screening_lead`](#table-screening-lead) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
-| D32 | [`screening_lead_product`](#table-screening-lead-product) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
-| D33 | [`screening_mail_refusal`](#table-screening-mail-refusal) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261107090000_mail_streams` | ADR 0065 |
-| D34 | [`screening_outcome`](#table-screening-outcome) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
-| D35 | [`screening_prospect`](#table-screening-prospect) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
-| D36 | [`screening_queue_tally`](#table-screening-queue-tally) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261106090000_screening_consumer` | ADR 0014, ADR 0019, ADR 0049, ADR 0062 |
-| D37 | [`screening_result`](#table-screening-result) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
-| D38 | [`screening_run`](#table-screening-run) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
-| D39 | [`screening_upload`](#table-screening-upload) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
-| D40 | [`status_component`](#table-status-component) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D41 | [`status_incident`](#table-status-incident) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D42 | [`status_incident_update`](#table-status-incident-update) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D43 | [`subscription_claim`](#table-subscription-claim) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261101090000_billing_review` | ADR 0050, ADR 0055 |
-| D44 | [`support_grant_notice`](#table-support-grant-notice) | Tenancy and access | PHI (registered) | `20261107090000_mail_streams` | ADR 0065 |
-| D45 | [`support_grant_notice_recipient`](#table-support-grant-notice-recipient) | Tenancy and access | PHI (registered) | `20261107090000_mail_streams` | ADR 0065 |
-| D46 | [`support_mail_receipt`](#table-support-mail-receipt) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261101120000_support_mail` | ADR 0055 |
-| D47 | [`support_ticket`](#table-support-ticket) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D48 | [`terms_acceptance`](#table-terms-acceptance) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D49 | [`terms_version`](#table-terms-version) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D50 | [`user_device`](#table-user-device) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
-| D51 | [`user_session`](#table-user-session) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
+| D13 | [`line_status_head`](#table-line-status-head) | Pricing, triage and cases | PHI (registered) | `20261109090000_line_status_heads` | ADR 0009, ADR 0083 |
+| D14 | [`mail_recipient_key`](#table-mail-recipient-key) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261107090000_mail_streams` | ADR 0065 |
+| D15 | [`mail_send`](#table-mail-send) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261107090000_mail_streams` | ADR 0065 |
+| D16 | [`mail_stream`](#table-mail-stream) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261107090000_mail_streams` | ADR 0065 |
+| D17 | [`marketing_campaign`](#table-marketing-campaign) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D18 | [`model_budget_hold`](#table-model-budget-hold) | Model gateway | PHI (registered) | `20261031090000_model_budget_holds` | ADR 0054 |
+| D19 | [`model_proposal`](#table-model-proposal) | Model gateway | PHI (registered) | `20261029190000_model_proposals` | ADR 0052 |
+| D20 | [`mutation_request`](#table-mutation-request) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
+| D21 | [`organization_status_change`](#table-organization-status-change) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | `20261108090000_suspension_refusal` | ADR 0009, ADR 0050, ADR 0055, ADR 0080 |
+| D22 | [`place_of_service_split`](#table-place-of-service-split) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D23 | [`practice_site`](#table-practice-site) | Tenancy and access | PHI (registered) | `20261105090000_pricing_location_and_zip_plus_four` | ADR 0013, ADR 0017, ADR 0039, ADR 0040, ADR 0062, ADR 0064 |
+| D24 | [`prospect_request`](#table-prospect-request) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D25 | [`rate_limit_counter`](#table-rate-limit-counter) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D26 | [`report_document`](#table-report-document) | Pricing, triage and cases | PHI (registered) | `20261025090000_report_documents_and_export_history` | ADR 0040, ADR 0045 |
+| D27 | [`restore_drill`](#table-restore-drill) | Operations | global (no practice_id, no RLS) | `20261015140500_audit_and_operations` | ADR 0013, ADR 0014 |
+| D28 | [`role_permission`](#table-role-permission) | Tenancy and access | global (no practice_id, no RLS) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
+| D29 | [`rule_release_withdrawal`](#table-rule-release-withdrawal) | Global content | global (no practice_id, no RLS) | `20261019150000_reruns_and_release_withdrawal` | ADR 0037 |
+| D30 | [`schema_migrations`](#table-schema-migrations) | Operations | global (no practice_id, no RLS) | the migration runner (packages/db/src/migrate.ts, CREATE TABLE IF NOT EXISTS before the first migration; ADR 0009) | - |
+| D31 | [`screening_bounce_mark`](#table-screening-bounce-mark) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261107090000_mail_streams` | ADR 0065 |
+| D32 | [`screening_lead`](#table-screening-lead) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D33 | [`screening_lead_product`](#table-screening-lead-product) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D34 | [`screening_mail_refusal`](#table-screening-mail-refusal) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261107090000_mail_streams` | ADR 0065 |
+| D35 | [`screening_outcome`](#table-screening-outcome) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D36 | [`screening_prospect`](#table-screening-prospect) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D37 | [`screening_queue_tally`](#table-screening-queue-tally) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261106090000_screening_consumer` | ADR 0014, ADR 0019, ADR 0049, ADR 0062 |
+| D38 | [`screening_result`](#table-screening-result) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D39 | [`screening_run`](#table-screening-run) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D40 | [`screening_upload`](#table-screening-upload) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D41 | [`status_component`](#table-status-component) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D42 | [`status_incident`](#table-status-incident) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D43 | [`status_incident_update`](#table-status-incident-update) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D44 | [`subscription_claim`](#table-subscription-claim) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261101090000_billing_review` | ADR 0050, ADR 0055 |
+| D45 | [`support_grant_notice`](#table-support-grant-notice) | Tenancy and access | PHI (registered) | `20261107090000_mail_streams` | ADR 0065 |
+| D46 | [`support_grant_notice_recipient`](#table-support-grant-notice-recipient) | Tenancy and access | PHI (registered) | `20261107090000_mail_streams` | ADR 0065 |
+| D47 | [`support_mail_receipt`](#table-support-mail-receipt) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261101120000_support_mail` | ADR 0055 |
+| D48 | [`support_ticket`](#table-support-ticket) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D49 | [`terms_acceptance`](#table-terms-acceptance) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D50 | [`terms_version`](#table-terms-version) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D51 | [`user_device`](#table-user-device) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
+| D52 | [`user_session`](#table-user-session) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
 
 ### E. Columns not in the Data dictionary (informational)
 
@@ -6840,6 +6883,7 @@ Columns whose CHECK constraint admits a closed list of values: the column's own 
 | `priced_line.unpriced_reason` | `NO_AGREEMENT`, `NO_MAPPING`, `AMBIGUOUS_RATE`, `NO_RATE_FOR_CODE`, `NO_PFS_VALUE`, `UNSUPPORTED_METHOD`, `SECONDARY_PAYER`, `MUE_EXCEEDED`, `UNITS_RULE_UNKNOWN`, `DATE_OUTSIDE_VERSIONS`, `REVERSED_CLAIM`, `ENGINE_ERROR` |
 | `line_status.stage` | `flagged`, `validated`, `actionable`, `payer_approved`, `recovered` |
 | `line_status.reopened_from` | `flagged`, `validated`, `actionable`, `payer_approved`, `recovered` |
+| `line_status_head.stage` | `flagged`, `validated`, `actionable`, `payer_approved`, `recovered` |
 | `case.state` | `open`, `submitted`, `awaiting_response`, `partially_resolved`, `resolved`, `closed_written_off` |
 | `case_line.written_off_reason` | `window_passed`, `payer_correct_on_review`, `not_worth_pursuit`, `duplicate`, `other` |
 | `case_activity.kind` | `note`, `assigned`, `approval_requested` |
@@ -7056,8 +7100,8 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `invitation_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `3ee00363f7b466b1` |
 | `invoice_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `7c926f90860ad20e` |
 | `ledger_entry_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `abbcba68f46fd135` |
-| `ledger_entry_within_evidence()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `d0bb740ca00d3883` |
-| `ledger_entry_within_line()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `559ce266b8f75722` |
+| `ledger_entry_within_evidence()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `5fae7e8217951979` |
+| `ledger_entry_within_line()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `1205becd94f0d185` |
 | `ledger_export_row_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `29c7670a2e40ee0d` |
 | `ledger_line_net(uuid,text)` | `bigint` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `f151e27ea09f28c1` |
 | `ledger_line_stage(uuid)` | `text` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `fe8938ec3ec27c76` |
@@ -7070,7 +7114,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `line_status_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `7ff9c809c72d6495` |
 | `line_status_ledger_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `146f2bd81224539e` |
 | `line_status_refresh_cases()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `02c5548a429bb9c2` |
-| `line_status_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `6d34625159838cf3` |
+| `line_status_rules()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `d2b97d48b8b792fd` |
 | `locality_status(integer,text,text,date,date)` | `TABLE(status text, carrier text, locality text)` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `93f19de141f69e25` |
 | `ma_dispute_route_confirmed()` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `b7b976b0230f8b43` |
 | `mail_recipient_canonical(text)` | `text` | plpgsql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` |  |  | `3cd5ce229f5df323` |
@@ -7393,13 +7437,14 @@ Every migration applied to the database, from `schema_migrations`, with the SHA-
 | 44 | `20261106090000_screening_consumer.sql` | ADR 0014, ADR 0019, ADR 0049, ADR 0062 | `d6e449698132fa47d2f89ce7e27a96111efa27b1a258cde899576754f44e26b0` |
 | 45 | `20261107090000_mail_streams.sql` | ADR 0065 | `23767dd2eeeaf49ed086d75299b4a45b7325e784207c1aa14150756953496868` |
 | 46 | `20261108090000_suspension_refusal.sql` | ADR 0009, ADR 0050, ADR 0055, ADR 0080 | `42d1885de95b0763735a856698bdc7f72822a90a4132122954bb7ba3ee7ea0f9` |
+| 47 | `20261109090000_line_status_heads.sql` | ADR 0009, ADR 0083 | `68f42516933890daa77c24a0a773cda4fd0a16ab6b5ef7870d844f0011b5f65b` |
 
 ## Cross-checks
 
 Run against the same migrated database by `packages/db/src/domain-model/cross-check.ts`: the Drizzle schema (packages/db/src/schema) against the live columns, as packages/db/src/migrate.db.test.ts does, and the repository's own catalog test function, catalogProblems() in packages/db/src/catalog.ts.
 
 ```text
-Drizzle tables: 98; migrated tables (excluding schema_migrations): 98
+Drizzle tables: 99; migrated tables (excluding schema_migrations): 99
 In the database, not in Drizzle: none
 In Drizzle, not in the database: none
 Column differences (name, type, nullability): 0
@@ -7408,6 +7453,6 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 ## Approval
 
-This document describes the schema at migration head `20261108090000_suspension_refusal.sql` (46 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1 and C5. It does not decide C2, C3 and C4, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
+This document describes the schema at migration head `20261109090000_line_status_heads.sql` (47 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1 and C5. It does not decide C2, C3 and C4, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: ________  Date: ________  Document SHA-256: `6559c5b90af3d1249e80d9369da18885971e118fbd4411c4a6a5bb8775c2fadc`
+Approved by: ________  Date: ________  Document SHA-256: `81d0ac762702a2c2a2bb1f1b523ffdbf38be30320a619837ca93598b80254065`

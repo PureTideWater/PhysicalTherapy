@@ -81,6 +81,26 @@ export const lineStatus = pgTable(
   (table) => [index('line_status_by_line').on(table.practiceId, table.serviceLineId, table.seq.desc())],
 );
 
+/**
+ * One row per service line with any stage event: its current stage and the seq of its latest event (migration
+ * 20261109090000; docs/adr/0083). line_status_rules() is its only writer, and writing it is the line's lock; the
+ * application role may only read it, within its practices. No foreign keys: the stage event the trigger checks carries
+ * the same references.
+ */
+export const lineStatusHead = pgTable(
+  'line_status_head',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    practiceId: uuid('practice_id').notNull(),
+    serviceLineId: uuid('service_line_id').notNull(),
+    stage: text('stage', { enum: LINE_STAGE_VALUES }).notNull(),
+    seq: bigint('seq', { mode: 'bigint' }).notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [uniqueIndex('line_status_head_once').on(table.practiceId, table.serviceLineId)],
+);
+
 export const caseTable = pgTable(
   'case',
   {
@@ -208,6 +228,7 @@ export function auditReportKey(practiceId: string, auditReportId: string, object
 
 export type AnomalyRow = typeof anomaly.$inferSelect;
 export type LineStatusRow = typeof lineStatus.$inferSelect;
+export type LineStatusHeadRow = typeof lineStatusHead.$inferSelect;
 export type CaseRow = typeof caseTable.$inferSelect;
 export type CaseLineRow = typeof caseLine.$inferSelect;
 export type AuditReportRow = typeof auditReport.$inferSelect;

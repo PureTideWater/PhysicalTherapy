@@ -129,6 +129,7 @@ describe('migrate', () => {
           'ledger_match',
           'line_note',
           'line_status',
+          'line_status_head',
           'mail_recipient_key',
           'mail_send',
           'mail_stream',

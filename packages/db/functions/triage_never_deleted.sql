@@ -9,6 +9,7 @@
 -- Trigger function of: case.case_never_deleted
 -- Trigger function of: case_line.case_line_never_deleted
 -- Trigger function of: line_status.line_status_never_deleted
+-- Trigger function of: line_status_head.line_status_head_never_deleted
 -- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.triage_never_deleted()
  RETURNS trigger

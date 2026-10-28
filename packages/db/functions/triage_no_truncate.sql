@@ -10,6 +10,7 @@
 -- Trigger function of: case_activity.case_activity_no_truncate
 -- Trigger function of: case_line.case_line_no_truncate
 -- Trigger function of: line_status.line_status_no_truncate
+-- Trigger function of: line_status_head.line_status_head_no_truncate
 -- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.triage_no_truncate()
  RETURNS trigger

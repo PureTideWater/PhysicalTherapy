@@ -2,7 +2,7 @@
 -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
 
 -- ledger_entry_within_line()
--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 559ce266b8f75722
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 1205becd94f0d185
 -- Trigger function of: ledger_entry.ledger_entry_within_line
 -- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.ledger_entry_within_line()
@@ -36,7 +36,7 @@ BEGIN
     counted := root.stage;
   END IF;
   IF NEW.service_line_id IS NOT NULL AND counted IN ('approved', 'posted', 'deposited') THEN
-    PERFORM pg_advisory_xact_lock(hashtextextended('ledger_line:' || NEW.service_line_id::text, 0));
+    PERFORM pg_advisory_xact_lock(hashtextextended('ledger:' || NEW.practice_id::text, 0));
     approved := ledger_line_net(NEW.service_line_id, 'approved') + CASE WHEN counted = 'approved' THEN NEW.amount_cents ELSE 0 END;
     posted := ledger_line_net(NEW.service_line_id, 'posted') + CASE WHEN counted = 'posted' THEN NEW.amount_cents ELSE 0 END;
     deposited := ledger_line_net(NEW.service_line_id, 'deposited') + CASE WHEN counted = 'deposited' THEN NEW.amount_cents ELSE 0 END;
