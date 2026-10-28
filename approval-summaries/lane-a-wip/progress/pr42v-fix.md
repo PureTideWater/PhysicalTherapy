@@ -52,3 +52,4 @@
 - e2e on 46974a25: 58 passed (9.7 min, 2 workers, no retry)
 - capacity on 46974a25 INVALID: reused --out dir capacity-out-v (from the ffb27b11 run ~1 h before) -> the harness read the earlier run's outbox: times -3412 s etc, result links 404; the web's logged times (32.8 s) fine. Harness defect (run.ts reuses <out>/data/mail without clearing): open item, not fixed here. Rerun with fresh out capacity-out-v2 (suite2b.sh capacity, tp_pr6b4v_cap_2) queued under the lock
 - [x] capacity on 46974a25 (fresh out capacity-out-v2, process, binding, S1,S4): S1-1 34.2, S1-2 2.7; S4#1 40.1/40.2/39.3/30.3; S4#2 37.1/39.0/38.5/28.3 (middle, 39.0 s); S4#3 38.2/37.2/38.6/28.0; address checks 14/14 at 2.0-2.3 s; verdict fail only on environment (limits, cold start, S2/S3 oracles not run, partial). mutation running
+- mutation on 46974a25: packets-scan, packets-rest, packets-explain 0; pricing shards running (03:49)
