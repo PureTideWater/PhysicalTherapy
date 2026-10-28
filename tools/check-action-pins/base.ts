@@ -24,6 +24,10 @@ export interface BaseState {
   readonly workflows: readonly WorkflowText[];
   /** Why every pin is read, or undefined when only new and changed ones are. */
   readonly everyPin: string | undefined;
+  /** Whether the merge base has the age rule (tools/check-action-pins/age.ts); without it every pin is aged (bootstrapping). */
+  readonly hasAge: boolean;
+  /** The merge base's tools/check-action-pins/age-exceptions.json, or undefined when it has none. */
+  readonly ageExceptions: string | undefined;
 }
 
 /** The merge base of BASE and HEAD, with the base's workflows and the checker's presence and change. */
@@ -45,7 +49,9 @@ export function baseState(root: string, base: string): BaseState {
   const changed = git(root, ['diff', '--name-only', mergeBase, '--', CHECKER_DIR]);
   if (changed.status !== 0) throw new Error(`git diff against ${mergeBase} failed: ${changed.stderr.trim()}`);
   const everyPin = !hasChecker ? `the base ${mergeBase.slice(0, 12)} has no ${CHECKER_DIR}` : changed.stdout.trim() !== '' ? `this change edits ${CHECKER_DIR}` : undefined;
-  return { mergeBase, workflows, everyPin };
+  const hasAge = git(root, ['cat-file', '-e', `${mergeBase}:${CHECKER_DIR}/age.ts`]).status === 0;
+  const exceptions = git(root, ['show', `${mergeBase}:${CHECKER_DIR}/age-exceptions.json`]);
+  return { mergeBase, workflows, everyPin, hasAge, ageExceptions: exceptions.status === 0 ? exceptions.stdout : undefined };
 }
 
 /** A use's signature: the pin and the inputs its step gives, with release.yml's steps apart (their caches are checked). */

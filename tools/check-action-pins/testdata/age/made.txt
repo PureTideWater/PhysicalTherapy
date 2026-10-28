@@ -1,0 +1,10 @@
+# Written by make.sh: the synthetic keys' primary fingerprints, the retired key's expiry, and each object's SHA.
+current 65AC4B22CF316F49130FB88FACCE0C1315A1C32D
+retired A8879327057DB7963DCB82F06590B85671482B41
+unknown 204425780CB4AEE29C1960532B80245EEEACBF4A
+retired-expires 2025-01-31T00:00:00Z
+signed.commit 722b066b1ebb3ac211c171e881ecd95bf17192d2
+unknown.commit f7d720a9c03c41810c63e49735302e01a614484a
+retired-before.commit a3a4463a7b1b40c695e815c8b6c3e362b6d64023
+retired-after.commit 337a71ee9214806b075d817e18c22f6e89829d43
+v1.2.3.tag 476e420e6ad9e1f9f4f824434243abf2582e9fb3

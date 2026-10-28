@@ -163,6 +163,28 @@ describe('a composite’s nested actions', () => {
   });
 });
 
+describe('a Docker action', () => {
+  it('is refused unless its image is pinned by digest, at the top level and nested at any depth (S7)', async () => {
+    const DOCKER = sha('d');
+    const DIGEST = `docker://ghcr.io/octo/tool@sha256:${'4'.repeat(64)}`;
+    const docker = (image: string) => `name: d\nruns:\n  using: docker\n  image: ${image}\n`;
+    const at = async (image: string, nested = false) => {
+      const wrapper = `name: w\nruns:\n  using: composite\n  steps:\n    - uses: octo/docker@${DOCKER}\n`;
+      const transport = recordedTransport({
+        tags: { 'octo/top': lightweight('v1.0.0', sha('c')) },
+        files: { [blob('octo/top', sha('c'))]: nested ? wrapper : docker(image), [blob('octo/docker', DOCKER)]: docker(image) },
+      });
+      const step: ActionUse = { file: 'ci.yml', job: 'j', step: 0, uses: `octo/top@${sha('c')}`, with: {} };
+      return (await verifyPin(transport, new ActionReader(transport), step.uses, 'v1.0.0', [step])).problems;
+    };
+    expect(await at('Dockerfile')).toEqual([`octo/top@${sha('c')}: a Docker action whose image is "Dockerfile", not docker://…@sha256:<64 hex>; a Dockerfile or an image by tag pulls a mutable image at run time`]);
+    expect(await at('docker://ghcr.io/octo/tool:v1')).toEqual([expect.stringContaining('a Docker action whose image is "docker://ghcr.io/octo/tool:v1"')]);
+    expect(await at(DIGEST)).toEqual([]);
+    expect(await at('Dockerfile', true)).toEqual([`octo/top@${sha('c')} > octo/docker@${DOCKER}: a Docker action whose image is "Dockerfile", not docker://…@sha256:<64 hex>; a Dockerfile or an image by tag pulls a mutable image at run time`]);
+    expect(await at(DIGEST, true)).toEqual([]);
+  });
+});
+
 describe('release.yml’s nested caches', () => {
   it('are each traced through the bindings to the input that gates them, and pass when release.yml sets it false', async () => {
     const transport = network();
@@ -278,5 +300,50 @@ describe('the git transport', () => {
     } finally {
       transport.close();
     }
+  });
+
+  it('fetches the age rule’s default branch alone, with the whole history a shallow file read cuts, answers ancestry and objects, fetches a commit by SHA, and close() removes it all', async () => {
+    const dir = path.join(scratch, 'octo', 'aged');
+    mkdirSync(dir, { recursive: true });
+    const env = { ...process.env, HOME: scratch, GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'Synthetic', GIT_AUTHOR_EMAIL: 'synthetic@example.invalid', GIT_COMMITTER_NAME: 'Synthetic', GIT_COMMITTER_EMAIL: 'synthetic@example.invalid' };
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env, encoding: 'utf8' }).trim();
+    git('init', '-q', '-b', 'main');
+    git('config', 'uploadpack.allowFilter', 'true');
+    git('config', 'uploadpack.allowAnySHA1InWant', 'true');
+    const commit = (message: string) => {
+      writeFileSync(path.join(dir, 'action.yml'), node(`  ${message}: {}\n`));
+      git('add', '.');
+      git('commit', '-q', '-m', message);
+      return git('rev-parse', 'HEAD');
+    };
+    const first = commit('first');
+    const second = commit('second');
+    git('tag', '-a', '-m', 'v1.0.0', 'v1.0.0', second);
+    const third = commit('third');
+    git('checkout', '-q', '-b', 'side', first);
+    const side = commit('side');
+    git('checkout', '-q', 'main');
+
+    const transport = gitTransport(`file://${scratch}`);
+    try {
+      // A shallow read of the newest commit first: its boundary must not cut the age rule's history.
+      expect(await transport.file('octo/aged', third, 'action.yml')).toBe(node('  third: {}\n'));
+      const refs = await transport.fetchRefs('octo/aged', 'v1.0.0');
+      expect(refs).toEqual({ branch: 'main', head: third, tag: { object: git('rev-parse', 'refs/tags/v1.0.0'), commit: second } });
+      expect(await transport.isAncestor('octo/aged', first, third)).toBe(true);
+      expect((await transport.object('octo/aged', refs.tag?.object ?? ''))?.type).toBe('tag');
+      expect((await transport.object('octo/aged', first))?.raw.toString('latin1')).toMatch(/^tree [0-9a-f]{40}\n/);
+      // The default branch alone: another branch's commit is not held, and asking for it fetches nothing.
+      expect(await transport.object('octo/aged', side)).toBeUndefined();
+      expect((await transport.fetchRefs('octo/aged', 'v9.9.9')).tag).toBeUndefined();
+      expect(await transport.fetchSha('octo/aged', side)).toBe(true);
+      expect(await transport.isAncestor('octo/aged', side, third)).toBe(false);
+      expect(await transport.fetchSha('octo/aged', 'f'.repeat(40))).toBe(false);
+    } finally {
+      transport.close();
+    }
+    // Both bare repositories are gone with the scratch directory.
+    expect(await transport.object('octo/aged', first)).toBeUndefined();
+    await expect(transport.file('octo/aged', third, 'action.yml')).rejects.toThrow();
   });
 });

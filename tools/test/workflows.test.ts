@@ -1315,13 +1315,20 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
 
   it('runs on every pull request and every push to the build branch, with no path filter, a read-only token and bash with pipefail', () => {
     expect(ci.on).toEqual({ pull_request: null, push: { branches: ['claude/build-platform'] } });
-    // The whole workflow reads the repository and nothing more, and no checkout keeps the token.
+    // The whole workflow reads the repository and nothing more, no checkout keeps the token, and only the Action pins step is given it.
     expect(ci.permissions).toEqual({ contents: 'read' });
     for (const [id, job] of Object.entries(ci.jobs)) {
       for (const step of job.steps.filter((candidate) => usesAction(candidate, 'actions/checkout'))) {
         expect(step.with?.['persist-credentials'], id).toBe(false);
       }
     }
+    // The token is named once, in that step's env, and under no other name: secrets.GITHUB_TOKEN is the same token, and
+    // the github context carries it, so no secrets., github[ or toJSON of either (docs/adr/0066, Part 5; E8, S8).
+    const text = readFileSync(path.join(WORKFLOWS, 'ci.yml'), 'utf8');
+    expect(text.match(/github\.token/g)).toHaveLength(1);
+    expect(Object.values(ci.jobs).flatMap((job) => job.steps.filter((step) => JSON.stringify(step).includes('github.token')).map((step) => step.name))).toEqual(['Action pins']);
+    expect(ci.jobs.static?.steps.find((step) => step.name === 'Action pins')?.env?.GITHUB_TOKEN).toBe('${{ github.token }}');
+    expect(text).not.toMatch(/secrets\.|github\[|toJSON\(\s*(?:github|secrets)\b/);
     expect(ci.defaults).toEqual({ run: { shell: 'bash' } });
   });
 
@@ -1393,12 +1400,17 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
       // The action pins and the toolchain, each once, after the install and the range step, against the range's base:
       // on every run, with no condition beyond the two steps they need (docs/adr/0066, Part 2).
       const range = stepIndex(steps(), (step) => step.id === 'range');
-      for (const run of ['pnpm actions:check', 'pnpm toolchain:check']) {
+      // The action pins step alone also gets the job's read-only token, for the age rule's API reads (Part 5); the
+      // toolchain reads npm and Docker Hub only.
+      for (const [run, env] of [
+        ['pnpm actions:check', { BASE: '${{ steps.range.outputs.base }}', GITHUB_TOKEN: '${{ github.token }}' }],
+        ['pnpm toolchain:check', { BASE: '${{ steps.range.outputs.base }}' }],
+      ] as const) {
         const at = stepIndex(steps(), (step) => step.run === run);
         expect(steps().filter((step) => step.run === run), run).toHaveLength(1);
         expect([at > install, at > range], run).toEqual([true, true]);
         expect(steps()[at]?.if, run).toBe("${{ !cancelled() && steps.install.outcome == 'success' && steps.range.outcome == 'success' }}");
-        expect(steps()[at]?.env, run).toEqual({ BASE: '${{ steps.range.outputs.base }}' });
+        expect(steps()[at]?.env, run).toEqual(env);
       }
       // Every step after the install runs on its own condition, so a red one leaves the others' verdicts.
       for (const step of steps().slice(install + 1)) expect(step.if, step.name ?? step.run ?? step.uses).toMatch(/^\$\{\{ (?:github\.event_name == 'pull_request' && )?!cancelled\(\)/);

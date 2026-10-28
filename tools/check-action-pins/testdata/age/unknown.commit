@@ -1,0 +1,13 @@
+tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+parent 722b066b1ebb3ac211c171e881ecd95bf17192d2
+author Synthetic <synthetic@example.invalid> 1748736000 +0000
+committer Synthetic <synthetic@example.invalid> 1748736000 +0000
+gpgsig -----BEGIN PGP SIGNATURE-----
+ 
+ iHUEABYKAB0WIQQgRCV4DLSu4pwZYFMrgCRe7qy/SgUCaDuYAAAKCRArgCRe7qy/
+ Si0qAP9uLsD75d+dLcwsmgR9sWwm50JWT/5Q0eXBiP3tUefu6wEA33CzbQPUQmDs
+ qAvAq0ZYT39d3YaLlQM55Sqn9m6cpQ4=
+ =dEer
+ -----END PGP SIGNATURE-----
+
+signed by a key nobody trusts

@@ -17,7 +17,10 @@ import { parsePin, type ActionUse } from './workflows';
  *   tools/test/workflows.test.ts's assertions of release.yml's explicit inputs (package-manager-cache: false,
  *   cache: false, cache-binary: false), which are the guard for JavaScript actions;
  * - a warning, not a failure, when the action runs on a Node.js runtime GitHub has deprecated (node20 or older), which
- *   the runner forces onto a newer Node.js today and will one day refuse.
+ *   the runner forces onto a newer Node.js today and will one day refuse;
+ * - a Docker action, at the top level or nested at any depth, runs an image pinned by digest (`runs.image` of the form
+ *   docker://…@sha256:<64 hex>), since a Dockerfile or an image by tag pulls a mutable image at run time (docs/adr/0066,
+ *   Part 5; design S7).
  */
 
 /** The newest Node.js runtime GitHub has deprecated for actions; an action on it or older is warned about. */
@@ -32,6 +35,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 export interface ActionMeta {
   readonly file: string;
   readonly using: string;
+  /** A Docker action's `runs.image`, when it names one. */
+  readonly image?: string;
   readonly inputs: Readonly<Record<string, { readonly required: boolean; readonly default: unknown; readonly hasDefault: boolean }>>;
   readonly steps: readonly { readonly uses?: string; readonly if?: string; readonly with: Readonly<Record<string, unknown>> }[];
 }
@@ -52,7 +57,7 @@ export function parseActionMeta(file: string, text: string): ActionMeta {
         with: isRecord(step.with) ? step.with : {},
       }))
     : [];
-  return { file, using: parsed.runs.using, inputs, steps };
+  return { file, using: parsed.runs.using, ...(typeof parsed.runs.image === 'string' ? { image: parsed.runs.image } : {}), inputs, steps };
 }
 
 /** Reads action metadata at a commit, once per action and commit. */
@@ -61,11 +66,11 @@ export class ActionReader {
 
   constructor(private readonly transport: Transport) {}
 
-  read(repo: string, path: string, sha: string): Promise<ActionMeta | undefined> {
+  read(repo: string, path: string, sha: string, signal?: AbortSignal): Promise<ActionMeta | undefined> {
     const key = `${repo}/${path}@${sha}`;
     let found = this.cache.get(key);
     if (found === undefined) {
-      found = actionFile(this.transport, repo, path, sha).then((file) => (file === undefined ? undefined : parseActionMeta(`${repo}@${sha}:${file.name}`, file.text)));
+      found = actionFile(this.transport, repo, path, sha, signal).then((file) => (file === undefined ? undefined : parseActionMeta(`${repo}@${sha}:${file.name}`, file.text)));
       this.cache.set(key, found);
     }
     return found;
@@ -87,11 +92,17 @@ export function inputProblems(meta: ActionMeta, given: Readonly<Record<string, u
 /** A digest-pinned image a composite may run directly. */
 const DOCKER_DIGEST = /^docker:\/\/[^@\s]+@sha256:[0-9a-f]{64}$/;
 
+/** Why a Docker action's image is not pinned by digest: a Dockerfile, or an image by tag, pulls a mutable image when it runs. */
+export function dockerProblem(meta: ActionMeta, chain: string): string | undefined {
+  if (meta.using !== 'docker' || (meta.image !== undefined && DOCKER_DIGEST.test(meta.image))) return undefined;
+  return `${chain}: a Docker action whose image is ${meta.image === undefined ? 'not named' : JSON.stringify(meta.image)}, not docker://…@sha256:<64 hex>; a Dockerfile or an image by tag pulls a mutable image at run time`;
+}
+
 /**
  * Every action a composite runs, pinned by full SHA at every depth; a tag, a branch, a local path or an image by tag
- * fails, naming the chain of actions down to it.
+ * fails, naming the chain of actions down to it, and so does a nested Docker action whose image is not pinned by digest.
  */
-export async function nestedProblems(reader: ActionReader, meta: ActionMeta, chain: readonly string[], seen = new Set<string>()): Promise<string[]> {
+export async function nestedProblems(reader: ActionReader, meta: ActionMeta, chain: readonly string[], seen = new Set<string>(), signal?: AbortSignal): Promise<string[]> {
   if (meta.using !== 'composite') return [];
   const problems: string[] = [];
   for (const step of meta.steps) {
@@ -105,12 +116,14 @@ export async function nestedProblems(reader: ActionReader, meta: ActionMeta, cha
     }
     if (seen.has(step.uses)) continue;
     seen.add(step.uses);
-    const nested = await reader.read(pin.repo, pin.path, pin.sha);
+    const nested = await reader.read(pin.repo, pin.path, pin.sha, signal);
     if (nested === undefined) {
       problems.push(`${path}: the nested action has no action.yml or action.yaml at that commit`);
       continue;
     }
-    problems.push(...(await nestedProblems(reader, nested, [...chain, step.uses], seen)));
+    const docker = dockerProblem(nested, path);
+    if (docker !== undefined) problems.push(docker);
+    problems.push(...(await nestedProblems(reader, nested, [...chain, step.uses], seen, signal)));
   }
   return problems;
 }
@@ -199,6 +212,8 @@ export interface PinVerdict {
   readonly problems: string[];
   readonly notes: string[];
   readonly warnings: string[];
+  /** Those of `problems` about the tag (moved or gone), which an upstream move makes; the rest are in what was read. */
+  readonly tagProblems?: readonly string[];
 }
 
 /** The warning for an action on a deprecated Node.js runtime, if it is on one. */
@@ -212,26 +227,29 @@ export function runtimeWarning(ref: string, version: string, using: string): str
  * Verifies one pin: its tag, its inputs in every step that uses it, its nested actions, and, for the steps of
  * release.yml, its nested caches.
  */
-export async function verifyPin(transport: Transport, reader: ActionReader, ref: string, version: string | undefined, uses: readonly ActionUse[]): Promise<PinVerdict> {
+export async function verifyPin(transport: Transport, reader: ActionReader, ref: string, version: string | undefined, uses: readonly ActionUse[], signal?: AbortSignal): Promise<PinVerdict> {
   const pin = parsePin(ref);
   if (pin === undefined) return { ref, problems: [`${ref}: not a pinned reference`], notes: [], warnings: [] };
   if (version === undefined) return { ref, problems: [`${ref}: no release version to verify the commit against`], notes: [], warnings: [] };
   const problems: string[] = [];
   const notes: string[] = [];
-  const tagged = await tagCommit(transport, pin.repo, version);
+  const tagged = await tagCommit(transport, pin.repo, version, signal);
   if (tagged === undefined) problems.push(`${ref}: ${pin.repo} has no tag ${version}`);
   else if (tagged !== pin.sha) problems.push(`${ref}: the tag ${version} of ${pin.repo} is the commit ${tagged}, not ${pin.sha}`);
   else notes.push(`${ref}: ${version} is this commit`);
+  const tagProblems = [...problems];
   const job = uses.filter((use) => use.step === -1);
   if (job.length > 0) notes.push(`${ref}: called as a reusable workflow; its tag is checked, its inputs are not read`);
   const steps = uses.filter((use) => use.step !== -1);
-  if (steps.length === 0) return { ref, problems, notes, warnings: [] };
-  const meta = await reader.read(pin.repo, pin.path, pin.sha);
-  if (meta === undefined) return { ref, problems: [...problems, `${ref}: no action.yml or action.yaml at that commit`], notes, warnings: [] };
+  if (steps.length === 0) return { ref, problems, notes, warnings: [], tagProblems };
+  const meta = await reader.read(pin.repo, pin.path, pin.sha, signal);
+  if (meta === undefined) return { ref, problems: [...problems, `${ref}: no action.yml or action.yaml at that commit`], notes, warnings: [], tagProblems };
   for (const use of steps) {
     problems.push(...inputProblems(meta, use.with).map((problem) => `${use.file} ${use.job} step ${String(use.step + 1)} (${ref}): ${problem}`));
   }
-  problems.push(...(await nestedProblems(reader, meta, [ref])));
+  const docker = dockerProblem(meta, ref);
+  if (docker !== undefined) problems.push(docker);
+  problems.push(...(await nestedProblems(reader, meta, [ref], new Set<string>(), signal)));
   const release = steps.filter((use) => use.file === 'release.yml');
   if (release.length > 0) {
     const gates = await cacheGates(reader, meta, [ref]);
@@ -243,5 +261,5 @@ export async function verifyPin(transport: Transport, reader: ActionReader, ref:
   }
   notes.push(`${ref}: ${meta.using}, ${String(steps.length)} step(s), inputs declared`);
   const runtime = runtimeWarning(ref, version, meta.using);
-  return { ref, problems, notes, warnings: runtime === undefined ? [] : [runtime] };
+  return { ref, problems, notes, warnings: runtime === undefined ? [] : [runtime], tagProblems };
 }

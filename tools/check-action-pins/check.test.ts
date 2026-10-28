@@ -31,6 +31,21 @@ jobs:
         with: ${nodeWith}
 `;
 
+/** The age rule's view of a fixture pin (docs/adr/0066, Part 5): an old unsigned commit on main with an old immutable release, verified_at null. */
+const OLD = 'tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904\nauthor Synthetic <synthetic@example.invalid> 1577836800 +0000\ncommitter Synthetic <synthetic@example.invalid> 1577836800 +0000\n\nsynthetic\n';
+const API = 'https://api.github.com/repos';
+const aged = (repo: string, tags: Record<string, string>) => ({
+  git: { [repo]: { head: Object.values(tags).at(-1), tags: Object.fromEntries(Object.entries(tags).map(([version, commit]) => [version, { object: commit, commit }])), objects: Object.fromEntries(Object.values(tags).map((commit) => [commit, OLD])) } },
+  urls: Object.fromEntries(
+    Object.entries(tags).flatMap(([version, commit]) => [
+      [`${API}/${repo}/git/commits/${commit}`, JSON.stringify({ verification: { verified: false, reason: 'unsigned', verified_at: null } })],
+      [`${API}/${repo}/releases/tags/${version}`, JSON.stringify({ tag_name: version, published_at: '2020-01-02T00:00:00Z', immutable: true })],
+    ]),
+  ),
+});
+const checkoutAge = aged('octo/checkout', { 'v7.0.1': CHECKOUT, 'v7.0.2': NEWER });
+const nodeAge = aged('octo/setup-node', { 'v7.1.0': NODE });
+
 const network = () =>
   recordedTransport({
     tags: { 'octo/checkout': lightweight('v7.0.1', CHECKOUT) + lightweight('v7.0.2', NEWER), 'octo/setup-node': lightweight('v7.1.0', NODE) },
@@ -39,7 +54,12 @@ const network = () =>
       [blob('octo/checkout', NEWER)]: 'inputs:\n  persist-credentials: { default: true }\nruns:\n  using: node24\n  main: x.js\n',
       [blob('octo/setup-node', NODE)]: 'inputs:\n  node-version: {}\n  cache: {}\nruns:\n  using: node24\n  main: x.js\n',
     },
+    git: { ...checkoutAge.git, ...nodeAge.git },
+    urls: { ...checkoutAge.urls, ...nodeAge.urls },
   });
+
+/** On CI the age rule reads GitHub's API with the job's token; a made-up one here. */
+const CI = { ci: true, token: 'synthetic-token' } as const;
 
 // Made before the tests run, not when the file is collected (tools/test/collection.test.ts).
 let scratch = '';
@@ -50,8 +70,11 @@ afterAll(() => {
   rmSync(scratch, { recursive: true, force: true });
 });
 
-/** A repository whose first commit holds this workflow (and, if asked, the checker), with a later head commit. */
-function repository(options: { baseWorkflow: string; headWorkflow: string; baseChecker: boolean; headCheckerEdit?: boolean }) {
+/**
+ * A repository whose first commit holds this workflow (and, if asked, the checker, with its age rule unless `baseAge` is
+ * false), with a later head commit.
+ */
+function repository(options: { baseWorkflow: string; headWorkflow: string; baseChecker: boolean; baseAge?: boolean; headCheckerEdit?: boolean }) {
   const dir = mkdtempSync(path.join(scratch, 'repo-'));
   const env = { ...process.env, HOME: dir, GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'Synthetic', GIT_AUTHOR_EMAIL: 'synthetic@example.invalid', GIT_COMMITTER_NAME: 'Synthetic', GIT_COMMITTER_EMAIL: 'synthetic@example.invalid' };
   const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env, encoding: 'utf8' }).trim();
@@ -62,6 +85,7 @@ function repository(options: { baseWorkflow: string; headWorkflow: string; baseC
   git('init', '-q', '-b', 'main');
   write('.github/workflows/ci.yml', options.baseWorkflow);
   if (options.baseChecker) write('tools/check-action-pins/index.ts', '// the checker\n');
+  if (options.baseAge ?? true) write('tools/check-action-pins/age.ts', '// the age rule\n');
   git('add', '.');
   git('commit', '-q', '-m', 'base');
   const base = git('rev-parse', 'HEAD');
@@ -80,14 +104,21 @@ describe('the pins the network reads', () => {
     const result = await checkActionPins({ root: repo.dir, base: repo.base, event: 'pull_request', transport });
     expect(result).toMatchObject({ errors: [], warnings: [] });
     expect(transport.reads).toEqual([]);
-    expect(result.notes).toContain('no pin is new or used with changed inputs: no action read from the network');
+    expect(result.notes).toEqual(expect.arrayContaining(['no pin is new or used with changed inputs: no action read from the network', 'age: no pin new against the base, nothing read']));
   });
 
   it('are the new pin alone, with its tag and its inputs read, and a step whose inputs changed', async () => {
     const bumped = repository({ baseWorkflow: workflow(CHECKOUT), headWorkflow: workflow(NEWER), baseChecker: true });
     const transport = network();
-    expect(await checkActionPins({ root: bumped.dir, base: bumped.base, event: 'pull_request', transport })).toMatchObject({ errors: [], warnings: [] });
-    expect(transport.reads).toEqual(['ls-remote https://github.com/octo/checkout refs/tags/v7.0.2 refs/tags/v7.0.2^{}', `git ${blob('octo/checkout', NEWER)}`]);
+    expect(await checkActionPins({ root: bumped.dir, base: bumped.base, event: 'pull_request', transport, ...CI })).toMatchObject({ errors: [], warnings: [] });
+    expect(transport.reads).toEqual([
+      'ls-remote https://github.com/octo/checkout refs/tags/v7.0.2 refs/tags/v7.0.2^{}',
+      `git ${blob('octo/checkout', NEWER)}`,
+      'fetchRefs octo/checkout v7.0.2',
+      `GET ${API}/octo/checkout/git/commits/${NEWER}`,
+      `GET ${API}/octo/checkout/releases/tags/v7.0.2`,
+      `GET ${API}/octo/checkout/activity?ref=refs/heads/main&per_page=100`,
+    ]);
 
     const changed = repository({ baseWorkflow: workflow(CHECKOUT), headWorkflow: workflow(CHECKOUT, '{ node-version: 24, cache: pnpm }'), baseChecker: true });
     const again = network();
@@ -97,12 +128,12 @@ describe('the pins the network reads', () => {
 
   it('are every pin when the base has no checker, when the change edits the checker, or when no BASE is given', async () => {
     for (const [name, repo] of [
-      ['no checker at the base', repository({ baseWorkflow: workflow(CHECKOUT), headWorkflow: workflow(CHECKOUT), baseChecker: false })],
+      ['no checker at the base', repository({ baseWorkflow: workflow(CHECKOUT), headWorkflow: workflow(CHECKOUT), baseChecker: false, baseAge: false })],
       ['the checker edited', repository({ baseWorkflow: workflow(CHECKOUT), headWorkflow: workflow(CHECKOUT), baseChecker: true, headCheckerEdit: true })],
     ] as const) {
       expect(baseState(repo.dir, repo.base).everyPin, name).toBeDefined();
       const transport = network();
-      expect(await checkActionPins({ root: repo.dir, base: repo.base, event: 'pull_request', transport }), name).toMatchObject({ errors: [] });
+      expect(await checkActionPins({ root: repo.dir, base: repo.base, event: 'pull_request', transport, ...CI }), name).toMatchObject({ errors: [] });
       expect(transport.reads.filter((read) => read.startsWith('ls-remote')), name).toHaveLength(2);
     }
     const repo = repository({ baseWorkflow: workflow(CHECKOUT), headWorkflow: workflow(CHECKOUT), baseChecker: true });
@@ -192,6 +223,87 @@ ${Array.from({ length: 10 }, (_, i) => `      - uses: octo/a${String(i)}@${sha(s
     writeFileSync(path.join(two.dir, '.github/workflows/b.yml'), builder.replace('name: ci', 'name: b'));
     const offline = await checkActionPins({ root: two.dir, base: two.base, event: 'pull_request', transport: recordedTransport({}), offline: true });
     expect(offline.errors).toEqual([expect.stringMatching(/^the setup-buildx steps name 2 builders, not one/)]);
+  });
+
+  it('takes the builder’s newness from the base’s workflows, so a change that edits the checker leaves an unchanged builder not new (E4)', async () => {
+    const BUILDX = sha('b');
+    const DIGEST = `sha256:${'3'.repeat(64)}`;
+    const OTHER = `sha256:${'4'.repeat(64)}`;
+    const builder = `${workflow(CHECKOUT)}      - uses: docker/setup-buildx-action@${BUILDX} # v4.4.1\n        with: { driver-opts: "image=moby/buildkit:v0.34.1@${DIGEST}" }\n`;
+    // The change edits the checker, so every pin is verified again; the builder itself is the base's.
+    const repo = repository({ baseWorkflow: builder, headWorkflow: builder, baseChecker: true, headCheckerEdit: true });
+    expect(baseState(repo.dir, repo.base).everyPin).toBe('this change edits tools/check-action-pins');
+    const transport = recordedTransport({
+      tags: { 'octo/checkout': lightweight('v7.0.1', CHECKOUT), 'octo/setup-node': lightweight('v7.1.0', NODE), 'docker/setup-buildx-action': lightweight('v4.4.1', BUILDX) },
+      files: {
+        [blob('octo/checkout', CHECKOUT)]: 'inputs:\n  persist-credentials: {}\nruns:\n  using: node24\n  main: x.js\n',
+        [blob('octo/setup-node', NODE)]: 'inputs:\n  node-version: {}\nruns:\n  using: node24\n  main: x.js\n',
+        [blob('docker/setup-buildx-action', BUILDX)]: 'inputs:\n  driver-opts: {}\nruns:\n  using: node24\n  main: x.js\n',
+      },
+      // Docker Hub moved the builder's tag after the base was merged.
+      urls: { 'https://hub.docker.com/v2/repositories/moby/buildkit/tags/v0.34.1': JSON.stringify({ digest: OTHER }), 'https://hub.docker.com/v2/repositories/moby/buildkit/tags?page_size=100&ordering=last_updated': '{"results":[]}' },
+    });
+    const result = await checkActionPins({ root: repo.dir, base: repo.base, event: 'pull_request', transport, now: new Date('2030-01-10T00:00:00Z') });
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([`the builder moby/buildkit:v0.34.1: its tag is the index ${OTHER}, not ${DIGEST}`]);
+  });
+
+  it('warns about every fault of the builder on a push, a new builder’s included, since the pull request was the gate (E4)', async () => {
+    const BUILDX = sha('b');
+    const DIGEST = `sha256:${'3'.repeat(64)}`;
+    const OTHER = `sha256:${'4'.repeat(64)}`;
+    const steps = (image: string) => `${workflow(CHECKOUT)}      - uses: docker/setup-buildx-action@${BUILDX} # v4.4.1\n        with: { driver-opts: "${image}" }\n`;
+    // The builder is new against the previous head: another version at another digest.
+    const repo = repository({ baseWorkflow: steps(`image=moby/buildkit:v0.34.0@${OTHER}`), headWorkflow: steps(`image=moby/buildkit:v0.34.1@${DIGEST}`), baseChecker: true });
+    const answers = (tag: string | number) =>
+      recordedTransport({
+        tags: { 'docker/setup-buildx-action': lightweight('v4.4.1', BUILDX) },
+        files: { [blob('docker/setup-buildx-action', BUILDX)]: 'inputs:\n  driver-opts: {}\nruns:\n  using: node24\n  main: x.js\n' },
+        urls: { 'https://hub.docker.com/v2/repositories/moby/buildkit/tags/v0.34.1': tag, 'https://hub.docker.com/v2/repositories/moby/buildkit/tags?page_size=100&ordering=last_updated': '{"results":[]}' },
+      });
+    const now = new Date('2030-01-10T00:00:00Z');
+    const moved = await checkActionPins({ root: repo.dir, base: repo.base, event: 'push', transport: answers(JSON.stringify({ digest: OTHER })), now });
+    expect(moved.errors).toEqual([]);
+    expect(moved.warnings).toContain(`the builder moby/buildkit:v0.34.1: its tag is the index ${OTHER}, not ${DIGEST}`);
+    const limited = await checkActionPins({ root: repo.dir, base: repo.base, event: 'push', transport: answers(429), now });
+    expect(limited.errors).toEqual([]);
+    expect(limited.warnings).toEqual(expect.arrayContaining([expect.stringMatching(/^the builder moby\/buildkit:v0\.34\.1: hub\.docker\.com: GET .* failed 3 times \(last: HTTP 429\)/)]));
+    // The same fault on a pull request is the gate's failure.
+    expect((await checkActionPins({ root: repo.dir, base: repo.base, event: 'pull_request', transport: answers(JSON.stringify({ digest: OTHER })), now })).errors).toEqual([`the builder moby/buildkit:v0.34.1: its tag is the index ${OTHER}, not ${DIGEST}`]);
+  });
+
+  it('on a push, warns about a failed read or a moved tag of a pin the base already ran, keeps a problem in what was read an error, and stops at its deadline (S4)', async () => {
+    // The change edits the checker, so every pin is verified again on its merge's push.
+    const repo = repository({ baseWorkflow: workflow(CHECKOUT), headWorkflow: workflow(CHECKOUT), baseChecker: true, headCheckerEdit: true });
+    const files = {
+      [blob('octo/checkout', CHECKOUT)]: 'inputs:\n  persist-credentials: {}\nruns:\n  using: node24\n  main: x.js\n',
+      // The action no longer declares the input the step gives: no outage or upstream move makes that.
+      [blob('octo/setup-node', NODE)]: 'inputs:\n  version: {}\nruns:\n  using: node24\n  main: x.js\n',
+    };
+    const moved = recordedTransport({ tags: { 'octo/checkout': lightweight('v7.0.1', NEWER), 'octo/setup-node': lightweight('v7.1.0', NODE) }, files });
+    const first = await checkActionPins({ root: repo.dir, base: repo.base, event: 'push', transport: moved });
+    expect(first.errors).toEqual([`ci.yml build step 2 (octo/setup-node@${NODE}): gives the input node-version, which octo/setup-node@${NODE}:action.yml does not declare (it declares: version)`]);
+    expect(first.warnings).toContain(`octo/checkout@${CHECKOUT}: the tag v7.0.1 of octo/checkout is the commit ${NEWER}, not ${CHECKOUT}; the base already ran this pin, so on a push this is a warning`);
+
+    const down = recordedTransport({ tags: { 'octo/checkout': new Error('Connection reset by peer'), 'octo/setup-node': lightweight('v7.1.0', NODE) }, files: { ...files, [blob('octo/setup-node', NODE)]: 'inputs:\n  node-version: {}\nruns:\n  using: node24\n  main: x.js\n' } });
+    const second = await checkActionPins({ root: repo.dir, base: repo.base, event: 'push', transport: down });
+    expect(second.errors).toEqual([]);
+    expect(second.warnings).toContain(
+      `octo/checkout@${CHECKOUT}: github.com: git ls-remote of octo/checkout refs/tags/v7.0.1 failed 3 times (last: Connection reset by peer); the check fails closed; the base already ran this pin, so on a push this is a warning`,
+    );
+
+    // A github.com that accepts and never answers: the loop ends at its deadline, the pins it left one warning.
+    const hung = recordedTransport({ tags: { 'octo/checkout': HANG, 'octo/setup-node': HANG } });
+    const started = Date.now();
+    const third = await checkActionPins({ root: repo.dir, base: repo.base, event: 'push', transport: hung, pushDeadlineMs: 200 });
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(third.errors).toEqual([]);
+    expect(third.warnings).toContain(`the push run's verify reads stopped at their 0.2 s deadline with 2 pin(s) the base already ran unread (octo/checkout@${CHECKOUT}, octo/setup-node@${NODE}); they still run the commits they name`);
+
+    // A pin new against the previous head keeps every error, on a push too.
+    const added = repository({ baseWorkflow: workflow(CHECKOUT), headWorkflow: workflow(NEWER), baseChecker: true });
+    const fresh = await checkActionPins({ root: added.dir, base: added.base, event: 'push', transport: recordedTransport({ tags: { 'octo/checkout': new Error('Connection reset by peer') } }) });
+    expect(fresh.errors).toEqual([`octo/checkout@${NEWER}: github.com: git ls-remote of octo/checkout refs/tags/v7.0.2 failed 3 times (last: Connection reset by peer); the check fails closed`]);
   });
 
   it('fails closed when a new pin cannot be read in three tries, naming the host', async () => {
