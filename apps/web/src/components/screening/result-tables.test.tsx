@@ -1,8 +1,11 @@
 import { type Cents, cents } from '@tp/money';
+import { buttonVariants } from '@tp/ui';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
+import type { ActionState } from '../../lib/http/next';
 import { ANOMALY_RULE, unpricedReasonLabel } from '../../lib/screening/labels';
+import type { ScreeningResultData } from '../../lib/screening/routes';
 import { type StackedRow, brandOrderProblems, repeatedIds } from '../stacked-rows';
 import {
   ANOMALY_COLUMNS,
@@ -18,12 +21,14 @@ import {
 } from './anomalies';
 import { COVERAGE_COLUMNS, type ScreeningCoverageRow, ScreeningCoverage, coverageItems } from './coverage';
 import { type ScreeningSummaryData, ScreeningSummary, groupedCount } from './result-summary';
+import { ScreeningResultView } from './result-view';
 
 /**
  * The screening result's three tables, each with its stacked rows for a phone (docs/adr/0078; test matrix TBL-05,
  * TBL-06 and TBL-08; UX-005, UX-042, UX-043, UX-132): one list of columns per table read in order for the table's
  * headers, each row's cells and the stacked fields; the table's hooks in the table copy alone; the status wrapping
- * above its floor in a cell; and the words this change writes. The switch between the copies in a real browser is
+ * above its floor in a cell; the words this change writes; and, since the stacked rows make a phone's page long, the
+ * link under the heading to the audit request (UX-134). The switch between the copies in a real browser is
  * e2e/screening-phone.spec.ts's. result.test.tsx (#42's) pins the table copy's markup and words as they were.
  * SYNTHETIC figures, written by hand from G01's codes as SYNTHETIC release 900001 prices them before sequestration
  * (97110 GP: $36.84 alone, $31.45 fully reduced; 97140 GP: $24.58 and $18.20; 97161 GP: $59.17, one figure).
@@ -649,6 +654,48 @@ describe('the screening result’s words (TBL-08)', () => {
     expect(cellsOf(later.table, 'data-group="others"').at(-1)).toContain('data-tone="short"');
     for (const html of [LATER, TOP, COVERED]) {
       expect(html).not.toContain('data-tone="whole"');
+    }
+  });
+});
+
+describe('the result’s one action, at its top (UX-134)', () => {
+  const convert = (state: ActionState): Promise<ActionState> => Promise.resolve(state);
+  const DATA: ScreeningResultData = {
+    resultId: PATH.slice(PATH.lastIndexOf('/') + 1),
+    requested: false,
+    converted: false,
+    summary: { ...SUMMARY, createdAt: new Date(SUMMARY.createdAt), expiresAt: new Date(SUMMARY.expiresAt) },
+    groups: LATER_GROUPS,
+    groupPage: LATER_PAGE,
+    coverage: COVERAGE,
+    rows: ROWS,
+    arrangements: [{ value: 'in_house', label: 'In-house billing' }],
+  };
+  const view = (state: Partial<Pick<ScreeningResultData, 'requested' | 'converted'>> = {}) => renderToStaticMarkup(<ScreeningResultView data={{ ...DATA, ...state }} convert={convert} />);
+
+  it('links from directly under the heading to the audit request’s title, in the title’s words and the primary button’s style; the kept paragraph stays where it was', () => {
+    const html = view();
+    const link = /<a class="([^"]*)" href="#screening-convert" data-link="convert">([^<]*)<\/a>/.exec(html);
+    expect(link?.[2]).toBe('Ask for a PaidWhole audit');
+    expect(link?.[1]).toBe(buttonVariants({ className: 'self-start' }));
+    expect(html.match(/data-link="convert"/g)).toHaveLength(1);
+    // The title it lands on: the same words, the one element of its id, focusable out of the tab order so the link moves the focus there.
+    expect(html.match(/id="screening-convert"/g)).toHaveLength(1);
+    expect(html).toMatch(/<h2 [^>]*id="screening-convert" tabindex="-1">Ask for a PaidWhole audit<\/h2>/);
+    // The heading's block, the kept paragraph last in it, then the link, then everything else.
+    const kept = html.indexOf('data-legal-surface="screening-kept-result"');
+    expect(kept).toBeGreaterThan(html.indexOf('<h1'));
+    expect(html.slice(html.indexOf('</p>', kept))).toMatch(/^<\/p><\/div><a [^>]*data-link="convert"/);
+    expect(html.indexOf('data-slot="card"')).toBeGreaterThan(html.indexOf('data-link="convert"'));
+    expect(html.indexOf('data-legal-surface="screening-kept-convert"')).toBeGreaterThan(html.indexOf('id="screening-convert"'));
+  });
+
+  it('shows no link once an audit is requested, since the form it goes to is gone', () => {
+    for (const state of [{ requested: true, converted: true }, { converted: true }]) {
+      const html = view(state);
+      expect(html).not.toContain('data-link="convert"');
+      expect(html).not.toContain('#screening-convert');
+      expect(html).not.toContain('id="screening-convert"');
     }
   });
 });

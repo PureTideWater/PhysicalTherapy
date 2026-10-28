@@ -11,19 +11,21 @@ import { outboxFor } from './outbox';
 import { CLEAN_ROWS, SCREENING_HEADER, SCREENING_ZIP, resultLinkIn, screeningRowsCsv, startLocalScreeningConsumer } from './screening';
 
 /**
- * The screening result on a phone and from a desktop's width (test matrix TBL-05 to TBL-07; docs/adr/0078; UX-005). A
- * prospect, with no account, screens CLEAN_ROWS (e2e/screening.ts) at 390 px; the screening consumer prices it and
- * emails the link; the link opens the result. Loaded at 390 px, each of the three tables (the anomalies by code and
- * payer product, the coverage, the rows with the largest differences) is a list of stacked items named by its card's
- * title and its table is hidden: one item for each group, coverage row and top row the database returns, each group's
- * status the database's standing in words, an anomaly in the unpriced tone (P4-DR-03), and each item's terms its
- * table's headers but the naming columns, in their order; every value lies in the window, no status is cut, the page
- * does not scroll sideways, and axe finds nothing. Without script the switch is the same: it is a container query. At
- * 820 px the anomalies and the top rows stack while the coverage keeps its table. At 1280 px the three tables show,
- * with the database's rows, and the lists are hidden; the tables hidden since the first load measure again, so the
- * anomalies and the coverage fit their cards (each status wraps in its cell above a floor) and the top rows scroll in
- * their region with the cue; axe finds nothing. At 994 px, the narrowest width at which the tables show (the cards'
- * content exactly 54rem, P4-DR-02), the anomalies and the coverage still fit.
+ * The screening result on a phone and from a desktop's width (test matrix TBL-05 to TBL-07; docs/adr/0078; UX-005,
+ * UX-134). A prospect, with no account, screens CLEAN_ROWS (e2e/screening.ts) at 390 px; the screening consumer prices
+ * it and emails the link; the link opens the result. Loaded at 390 px, the link to the audit request under the heading
+ * is in view, and followed from the keyboard it puts the focus on the form's title, from which Tab goes into the form.
+ * Each of the three tables (the anomalies by code and payer product, the coverage, the rows with the largest
+ * differences) is a list of stacked items named by its card's title and its table is hidden: one item for each group,
+ * coverage row and top row the database returns, each group's status the database's standing in words, an anomaly in
+ * the unpriced tone (P4-DR-03), and each item's terms its table's headers but the naming columns, in their order; every
+ * value lies in the window, no status is cut, the page does not scroll sideways, and axe finds nothing. Without script
+ * the switch is the same: it is a container query. At 820 px the anomalies and the top rows stack while the coverage
+ * keeps its table. At 1280 px the three tables show, with the database's rows, and the lists are hidden; the tables
+ * hidden since the first load measure again, so the anomalies and the coverage fit their cards (each status wraps in
+ * its cell above a floor) and the top rows scroll in their region with the cue; axe finds nothing. At 994 px, the
+ * narrowest width at which the tables show (the cards' content exactly 54rem, P4-DR-02), the anomalies and the coverage
+ * still fit.
  *
  * Free of the screening journey's known races (screening.spec.ts; LANES.md "Handed to Lane A"): its own practice and
  * its own address on a .test domain of its own, so no other spec's screening is replaced and no other bucket of the
@@ -83,6 +85,8 @@ const PRACTICE = 'SYNTHETIC PHONE SCREENING CLINIC';
 /** The prospect's address: one per worker, so a retry (a new worker) has an outbox and a rate limit's account of its own. */
 const CONTACT = `screening-phone-${randomBytes(4).toString('hex')}@clinic-phone.synthetic.test`;
 const FORBIDDEN = /\b(?:owed|under-?paid|recovered)\b/i;
+/** The audit request's title, which the link under the result's heading reads too (components/screening/convert-form.tsx). */
+const CONVERT_TITLE = 'Ask for a PaidWhole audit';
 
 /**
  * The result's three cards, in the page's order: each card's title names its table and its stacked list, and the
@@ -177,6 +181,8 @@ phoneTest('the screening result reads on a phone: its three tables as stacked ro
   await test.step('loaded at 390 px, each table is a list of stacked items with every column, every value in the window, and axe finds nothing (TBL-05, TBL-07)', async () => {
     await page.goto(link);
     await expect(page.getByRole('heading', { level: 1, name: 'Your free screening' })).toBeVisible();
+    // The prospect's one action is in view on load, above every stacked list (UX-134).
+    await expect(page.getByRole('link', { name: CONVERT_TITLE, exact: true })).toBeInViewport();
     for (const card of CARDS) {
       await expect(page.getByRole('list', { name: card.title, exact: true })).toBeVisible();
       await expect(page.getByRole('table', { name: card.title, exact: true })).toHaveCount(0);
@@ -225,6 +231,20 @@ phoneTest('the screening result reads on a phone: its three tables as stacked ro
     expect(await page.locator('body').innerText()).not.toMatch(FORBIDDEN);
 
     await atPhoneWidth(page, 'the screening result', { lists: CARDS.map((card) => card.title) });
+  });
+
+  await test.step('at 390 px the link under the heading takes the keyboard to the audit request: the form’s title holds the focus, in view, and Tab goes on into the form (UX-134)', async () => {
+    await page.evaluate(() => {
+      window.scrollTo(0, 0);
+    });
+    const title = page.getByRole('heading', { level: 2, name: CONVERT_TITLE, exact: true });
+    await expect(title).not.toBeInViewport();
+    await page.getByRole('link', { name: CONVERT_TITLE, exact: true }).focus();
+    await page.keyboard.press('Enter');
+    await expect(title).toBeFocused();
+    await expect(title).toBeInViewport();
+    await page.keyboard.press('Tab');
+    await expect(page.getByLabel('Your name', { exact: true })).toBeFocused();
   });
 
   await test.step('without script, at 390 px, the lists show and the tables do not: the switch is a container query (TBL-06)', async () => {
