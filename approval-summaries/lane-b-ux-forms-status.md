@@ -18,7 +18,13 @@ session (Lane A or Lane B) continues from here.
 - **Local checks on the head:** the full local suite on a57fbf5 (unit 6,367, golden 376, oracle 687, db 9,222, e2e 60)
   and, after the merge, on 34f7427/ae26bf7: typecheck, lint, copy, logs, fixtures, synth, unit 6,524 (browser tests in
   Chromium 1248), db 9,222, build, stamp, e2e 60/60 against the new brand baselines; no mutation shard affected.
-- **Next:** CI green on 34f7427 (every required check); the fresh-clone verification reading CI (one agent); ready;
+- **CI on 34f7427: every check green** (all green, mutation, screening-capacity gate, approval-of-record, e2e 1/2 and
+  2/2, db 1-4, unit, static, lint, images, build, capacity, domain model; 01:49 UTC). But the base moved to a6e754f
+  (#79, UX PR 3 table scroll, 30 shared files): **merge in progress** in /home/user/ux-forms (uncommitted, MERGE_HEAD
+  set): the shared documents, synth module lists (FRM 16, TBL 17), ADR 0056 (amended by 0058, 0077 and 0078) and
+  personas resolved by hand (both kept); seven page and component conflicts being resolved, audited and re-checked by
+  wf_6b9c6983-f04 (script archived). If this container is gone: redo the merge of a6e754f into 34f7427 the same way.
+- **Next:** commit the merge, one push; CI green on that head; the fresh-clone verification reading CI; ready;
   approval-of-record's re-run; merge with method merge and expectedHeadSha; unsubscribe; then PR 6.
 - **Galleries** (private): before 1280 https://claude.ai/artifact/JTLJX4saVr5nQ59EEvDDo7, 390
   https://claude.ai/artifact/E7CDHT8hUTpPZMq6TKK18J; after the build (4f0b526) 1280
@@ -28,7 +34,7 @@ session (Lane A or Lane B) continues from here.
 - **WIP refs** (no PR, no CI; superseded by the push, kept, never forced): co-001/wip-ux-forms, -2 to -5.
 - **Deferred:** U-UX-6 to UX PR 10 `co-001/ux-payer-response` (the baseline's UX-035; a blocking defect: a write-off
   reason and a payer response that open pre-answered). **Proposal to the orchestrator:** claim it soon.
-  Check-in trig_01G5QKJaZpoGyZjNqFxKRwXC at 05:26 UTC.
+  Check-in trig_01N9s6CGXZwDNXd96ZUXEt2C at 07:02 UTC.
 
 ## Handoff
 - **Branch:** `co-001/ux-forms`, head **17bbb70**, pushed, on claude/build-platform 7ef421b (#54 included). Two commits:
@@ -135,3 +141,5 @@ session (Lane A or Lane B) continues from here.
 | 2026-10-28 00:25 | Suite green; polish; limit | Fix round part 2 (wf_7a81ed15-858): polish a57fbf5 (20 follow-ups), the full local suite green on it, the after shots retaken (156) and the UX re-check: 11/11 fixed, 3 new polish problems. Fix-round galleries published. The polish fix (wf_8db44178-8ff) stopped by the limit at ~23:55; WIP saved to co-001/wip-ux-forms-4; PostgreSQL restarted; resumed 00:20. Base moved to 0dd1ba7 (#77, #80): to merge next. |
 
 | 2026-10-28 02:00 | Pushed 34f7427 | Polish fixes 001cdbf verified; base 0dd1ba7 merged (ae26bf7, no conflict; Playwright 1.64.1); the merge re-check (wf_86747e03-b6c): every check green on 34f7427, the merge audit kept both sides (one matrix.ts lag from 001cdbf fixed in 34f7427). One push of the fix round. PR description rewritten (read back identical). Waiting on CI, then the verification. |
+
+| 2026-10-28 02:00 | CI green; base moved | CI on 34f7427: every check green. The base moved to a6e754f (#79, ux-table-scroll); merging it (14 conflicts: 7 by hand, 7 page files by wf_6b9c6983-f04 with an adversarial audit and the merge re-check). |
