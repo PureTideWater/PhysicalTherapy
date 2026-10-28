@@ -5,7 +5,12 @@ with the email kept (UX-012, UX-128; C-007 "now" part, C-042's step marker on th
 session_01TAgFZo3SGSTBEfKRjX1jeG (a Lane B item session started by Lane A's orchestrator, session_01TrKDxeLbxVo7t7zwRXFzrg),
 after #74 (UX PR 1) merged; then PR 7 (`co-001/ux-sign-in-recovery`) in the same session.
 
-## Now (2026-10-28 03:45 UTC)
+## Now (2026-10-28 03:55 UTC): paused after the design, for UX PR 10
+- **Paused on the orchestrator's order (03:45 UTC):** UX PR 10 (`co-001/ux-payer-response`) runs first in this
+  session. This PR's design workflow (wf_3c17f552-0ea) was already running; it finishes (never cut off mid-run) and
+  its design is committed to `designs/lane-b-ux-sign-in-time.md`. Nothing is built; the branch is unpushed and its
+  worktree stays. **Resume after PR 10 merges:** merge the latest claude/build-platform into the branch, re-read the
+  design against it, then the builders.
 - **Branch:** `co-001/ux-sign-in-time`, cut from claude/build-platform 165c599 (#74's merge); worktree
   /home/user/ux-sign-in-time (pnpm install done). Not pushed yet.
 - **Reserved:** ADR 0081 if the design needs one (shared with PR 7); test-matrix SGN-01 to SGN-04 (a new series; PR 7
@@ -26,3 +31,4 @@ after #74 (UX PR 1) merged; then PR 7 (`co-001/ux-sign-in-recovery`) in the same
 | Time (UTC) | Stage | Detail |
 |---|---|---|
 | 2026-10-28 03:45 | Started | #74 merged (165c599). Branch and worktree cut from it; design workflow started. |
+| 2026-10-28 03:55 | Paused | The orchestrator's order: UX PR 10 first. The running design workflow finishes; build resumes after PR 10 merges. |
