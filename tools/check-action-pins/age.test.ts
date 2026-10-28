@@ -83,7 +83,9 @@ interface Upstream {
   /** Off the default branch: github.com serves the commit by its SHA alone. */
   readonly offBranch?: boolean;
   /** Further commits the fetch holds, and each held commit's ancestors. */
-  readonly objects?: Readonly<Record<string, string | Buffer>>;
+  readonly objects?: Readonly<Record<string, string | Buffer | Error>>;
+  /** False: the fetch lists the annotated tag but its object cannot be read. */
+  readonly tagHeld?: boolean;
   readonly ancestors?: Readonly<Record<string, readonly string[]>>;
   readonly head?: string;
   /** The API's answers by path under /repos/<repo>/ (CI only). */
@@ -110,7 +112,7 @@ function network(upstreams: readonly Upstream[], extra: { readonly urls?: Readon
     tags[repo] = (tags[repo] ?? '') + lightweight(version, upstream.verifyTag ?? pin);
     for (const where of upstream.paths ?? ['']) files[blob(repo, pin, where === '' ? 'action.yml' : `${where}/action.yml`)] = 'name: act\ninputs:\n  extra: {}\nruns:\n  using: node24\n  main: index.js\n';
     const tag = upstream.tag === undefined ? { object: pin, commit: pin } : upstream.tag === null ? undefined : 'lightweight' in upstream.tag ? { object: upstream.tag.lightweight, commit: upstream.tag.lightweight } : { object: upstream.tag.sha, commit: upstream.tag.commit };
-    const tagRaw = upstream.tag !== undefined && upstream.tag !== null && 'raw' in upstream.tag ? { [upstream.tag.sha]: upstream.tag.raw } : {};
+    const tagRaw = upstream.tag !== undefined && upstream.tag !== null && 'raw' in upstream.tag && upstream.tagHeld !== false ? { [upstream.tag.sha]: upstream.tag.raw } : {};
     const own = { [pin]: upstream.commit.raw };
     const head = upstream.head ?? (upstream.offBranch === true ? Object.keys(upstream.objects ?? {})[0] : pin);
     git[repo] = {
@@ -458,6 +460,55 @@ describe('the times read', SPAWNS, () => {
       expect(transport.reads.filter((read) => read.includes('/activity?')), said).toHaveLength(1);
       expect(transport.pauses, said).toEqual([]);
     }
+  });
+
+  it('never throw from the arrival read: an entry’s commit whose read rejects, as when the deadline kills git, is a note on a pull request and on a push (CI-N1, SEC-N3)', async () => {
+    const commit = signedObject('signed.commit');
+    const now = SIGNED + 30 * DAY;
+    const before = unsigned(SIGNED + DAY, 'before');
+    const after = unsigned(SIGNED + 2 * DAY, 'after');
+    const head = unsigned(SIGNED + 3 * DAY, 'head');
+    const killed = Object.assign(new Error('The operation was aborted'), { code: 'ABORT_ERR' });
+    const activity = `activity?ref=refs/heads/main&per_page=100`;
+    const entry = [{ id: 1, before: before.sha, after: after.sha, ref: 'refs/heads/main', timestamp: iso(now - DAY), activity_type: 'push' }];
+    for (const event of ['pull_request', 'push']) {
+      const transport = network([{ commit, head: head.sha, objects: { [before.sha]: before.raw, [after.sha]: killed, [head.sha]: head.raw }, api: { [`git/commits/${commit.sha}`]: verified(iso(SIGNED)), [activity]: JSON.stringify(entry) } }]);
+      const result = await run(adds(commit.sha), transport, { now: new Date(now), event, ...CI });
+      expect(result.errors, event).toEqual([]);
+      expect(result.notes, event).toEqual(expect.arrayContaining([expect.stringContaining(`; activity: the commit ${after.sha.slice(0, 12)} an entry names could not be read (The operation was aborted); the arrival on main is not known`)]));
+    }
+  });
+
+  it('fail closed with "re-run" when the fetch cannot read the annotated tag it fetched, never dropping its tagger date (CI-N1)', async () => {
+    const commit = signedObject('signed.commit');
+    const tag = annotatedTag(VERSION, commit.sha, SIGNED + 29 * DAY);
+    const result = await run(adds(commit.sha), network([{ commit, tag: { ...tag, commit: commit.sha }, tagHeld: false }]), { now: new Date(SIGNED + 30 * DAY) });
+    expect(result.errors).toEqual([`${REPO}@${commit.sha} ${VERSION}: the annotated tag ${VERSION} (${tag.sha}) could not be read after its fetch, so its tagger date is not known; re-run the check`]);
+  });
+
+  it('read a committer, author or tagger time past the range of a date as a finding naming it, never a crash, and name the instant a time at that range’s end matures as past it (SEC-N3)', async () => {
+    const raw = 'tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904\nauthor Synthetic <synthetic@example.invalid> 1577836800 +0000\ncommitter Synthetic <synthetic@example.invalid> 99999999999999 +0000\n\nsynthetic\n';
+    const commit = { sha: objectSha('commit', raw), raw };
+    const tagRaw = `object ${commit.sha}\ntype commit\ntag ${VERSION}\ntagger Synthetic <synthetic@example.invalid> ${'9'.repeat(400)} +0000\n\n${VERSION}\n`;
+    const tag = { sha: objectSha('tag', tagRaw), raw: tagRaw, commit: commit.sha };
+    const unreadable = [
+      `${REPO}@${commit.sha} ${VERSION}: the committer date (epoch 99999999999999) is past the range of a date, so the pin's age cannot be read from it; choose another release`,
+      `${REPO}@${commit.sha} ${VERSION}: the tagger date (epoch 99999999999999999999…) is past the range of a date, so the pin's age cannot be read from it; choose another release`,
+    ];
+    const pr = await run(adds(commit.sha), network([{ commit, tag }]), { now: new Date('2030-01-10T00:00:00Z') });
+    expect(pr.errors).toEqual(expect.arrayContaining(unreadable));
+    const push = await run(adds(commit.sha), network([{ commit, tag }]), { now: new Date('2030-01-10T00:00:00Z'), event: 'push' });
+    expect(push.errors).toEqual([]);
+    expect(push.warnings).toEqual(expect.arrayContaining(unreadable));
+    // verified_at at the last instant a date holds: in the future, and old enough only past that range.
+    const signed = signedObject('signed.commit');
+    const last = '+275760-09-13T00:00:00.000Z';
+    const future = await run(adds(signed.sha), network([{ commit: signed, api: { [`git/commits/${signed.sha}`]: verified(last) } }]), { now: new Date(SIGNED + 30 * DAY), ...CI });
+    expect(future.errors).toEqual(
+      expect.arrayContaining([
+        `${REPO}@${signed.sha} ${VERSION}: the verified_at ${last} is in the future, so the pin counts as young until past +275760-09-13T00:00:00Z, the last instant a date holds; no exclude clears a time in the future: choose another release`,
+      ]),
+    );
   });
 
   it('send the API its token, version and User-Agent at GITHUB_API_URL alone, take a 3xx as the answer, and print no request header', async () => {

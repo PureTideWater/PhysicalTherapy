@@ -69,7 +69,7 @@ export interface Transport {
    * fails.
    */
   fetchRefs(repo: string, version: string, signal?: AbortSignal): Promise<Refs>;
-  /** An object the age fetch holds, or undefined when it does not hold it (never fetched on demand). */
+  /** An object the age fetch holds, or undefined when it does not hold it or cannot read it (never fetched on demand; never rejects). */
   object(repo: string, sha: string, signal?: AbortSignal): Promise<GitObject | undefined>;
   /** Whether `ancestor` is `descendant` or one of its ancestors, in the age fetch's history. Rejects when either is not held. */
   isAncestor(repo: string, ancestor: string, descendant: string, signal?: AbortSignal): Promise<boolean>;
@@ -228,14 +228,15 @@ export function gitTransport(origin = 'https://github.com'): Transport & { close
       return { branch, head: head === '' ? undefined : head, tag: found };
     },
     async object(repo, sha, signal) {
-      const dir = await ageRepository(repo);
-      let type: string;
+      // Any failure reads as "not held", the deadline's included, so no caller's read of an object can throw (the
+      // ci-infra review's N1): a caller that needs the object fails closed on its absence.
       try {
-        type = (await git(['-C', dir, 'cat-file', '-t', sha], signal)).trim();
+        const dir = await ageRepository(repo);
+        const type = (await git(['-C', dir, 'cat-file', '-t', sha], signal)).trim();
+        return { type, raw: await gitBytes(['-C', dir, 'cat-file', type, sha], signal) };
       } catch {
         return undefined;
       }
-      return { type, raw: await gitBytes(['-C', dir, 'cat-file', type, sha], signal) };
     },
     async isAncestor(repo, ancestor, descendant, signal) {
       const dir = await ageRepository(repo);

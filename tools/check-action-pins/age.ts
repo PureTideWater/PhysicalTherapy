@@ -126,8 +126,19 @@ export function exceptionProblems(text: string | undefined): string[] {
   return problems;
 }
 
-/** An instant as messages print it: ISO 8601 in UTC, whole seconds without the zero milliseconds. */
-const iso = (ms: number) => new Date(ms).toISOString().replace(/\.000Z$/, 'Z');
+/** The furthest a date reaches either side of 1970, in milliseconds (ECMAScript's time value range). */
+const DATE_RANGE_MS = 8.64e15;
+const inRange = (ms: number) => Number.isFinite(ms) && Math.abs(ms) <= DATE_RANGE_MS;
+
+/**
+ * An instant as messages print it: ISO 8601 in UTC, whole seconds without the zero milliseconds; one past the range
+ * of a date is named as such rather than thrown on (the security review's N3).
+ */
+const iso = (ms: number) => {
+  if (inRange(ms)) return new Date(ms).toISOString().replace(/\.000Z$/, 'Z');
+  if (Number.isNaN(ms)) return 'no instant';
+  return ms > 0 ? 'past +275760-09-13T00:00:00Z, the last instant a date holds' : 'before -271821-04-20T00:00:00Z, the first instant a date holds';
+};
 
 /** A time read for a pin: where it came from, as read, and whether GitHub recorded it. */
 interface Signal {
@@ -158,6 +169,8 @@ interface Facts extends Group {
   readonly read: string[];
   /** Reads that failed: the pin fails closed with these, and no age verdict is given. */
   readonly faults: string[];
+  /** Times read that no date can hold: each a finding, since no outage makes one (the security review's N3). */
+  readonly unreadable: string[];
 }
 
 export interface AgeInput {
@@ -250,10 +263,16 @@ export function splitObject(raw: Buffer): { headers: Map<string, string>; signat
   return { headers, signature: signature.length === 0 ? undefined : `${signature.join('\n')}\n`, payload: Buffer.from(kept.map((line) => `${line}\n`).join('') + rest, 'latin1') };
 }
 
-/** The time of an author, committer or tagger header: `Name <email> <epoch seconds> <zone>`. */
-function identityTime(value: string | undefined): number | undefined {
+/**
+ * The time of an author, committer or tagger header: `Name <email> <epoch seconds> <zone>`, or the epoch as written when
+ * it lies past the range of a date (git accepts any digits there), or undefined when the header has no time.
+ */
+function identityTime(value: string | undefined): { readonly ms: number } | { readonly epoch: string } | undefined {
   const match = value === undefined ? null : /\s(\d+)\s[+-]\d{4}$/.exec(value);
-  return match === null ? undefined : Number.parseInt(match[1] ?? '', 10) * 1000;
+  if (match === null) return undefined;
+  const digits = match[1] ?? '';
+  const ms = Number(digits) * 1000;
+  return inRange(ms) ? { ms } : { epoch: digits.length > 20 ? `${digits.slice(0, 20)}…` : digits };
 }
 
 const execFileAsync = promisify(execFile);
@@ -299,10 +318,10 @@ class SignatureReader {
     }
     const primary = valid[11] ?? valid[2] ?? '';
     const stamp = valid[4] ?? '';
-    const at = /^\d+$/.test(stamp) ? Number.parseInt(stamp, 10) * 1000 : Date.parse(stamp.replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})$/, '$1-$2-$3T$4:$5:$6Z'));
+    const at = /^\d+$/.test(stamp) ? Number(stamp) * 1000 : Date.parse(stamp.replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})$/, '$1-$2-$3T$4:$5:$6Z'));
     const expired = lines.some((line) => line.startsWith('[GNUPG:] EXPKEYSIG '));
     const revoked = lines.some((line) => line.startsWith('[GNUPG:] REVKEYSIG '));
-    if (Number.isNaN(at)) return { said: `signed, but gpgv gave no signature time (${stamp})` };
+    if (!inRange(at)) return { said: `signed, but gpgv gave no signature time a date holds (${stamp})` };
     if (!revoked && primary === this.keys.current) return { at, said: `key ${primary}` };
     if (!revoked && primary === this.keys.retired.fingerprint && expired && at < Date.parse(this.keys.retired.expired)) return { at, said: `the retired key ${primary}, before its expiry ${this.keys.retired.expired}` };
     if (primary === this.keys.retired.fingerprint) return { said: `signed ${iso(at)} by the retired web-flow key ${primary}, after its expiry ${this.keys.retired.expired}: no signal` };
@@ -371,12 +390,22 @@ function verificationRefusal(answer: Answer): string | undefined {
   return undefined;
 }
 
-/** The commit an activity entry names, held by the fetch with the pin among its ancestors. */
-async function carriesPin(transport: Transport, repo: string, pin: string, commit: unknown, signal: AbortSignal): Promise<boolean> {
-  if (typeof commit !== 'string' || !/^[0-9a-f]{40}$/.test(commit)) return false;
-  if ((await transport.object(repo, commit, signal)) === undefined) return false;
-  return transport.isAncestor(repo, pin, commit, signal).catch(() => false);
+/**
+ * What the fetch says of a commit an activity entry names: it holds it with the pin among its ancestors (`carries`) or
+ * without (`lacks`), it does not hold it (`absent`), or a read failed (`unread`, with why). It never throws: the arrival
+ * read is best effort (E12; the ci-infra review's N1).
+ */
+type Held = { readonly state: 'carries' | 'lacks' | 'absent' } | { readonly state: 'unread'; readonly why: string };
+async function pinIn(transport: Transport, repo: string, pin: string, commit: string, signal: AbortSignal): Promise<Held> {
+  try {
+    if ((await transport.object(repo, commit, signal)) === undefined) return signal.aborted ? { state: 'unread', why: 'stopped by the deadline' } : { state: 'absent' };
+    return { state: (await transport.isAncestor(repo, pin, commit, signal)) ? 'carries' : 'lacks' };
+  } catch (error) {
+    return { state: 'unread', why: failure(error).split('\n')[0] ?? '' };
+  }
 }
+
+const COMMIT_SHA = /^[0-9a-f]{40}$/;
 
 /** The `next` page of a Link header, on the API's own origin only, so the token is never sent elsewhere. */
 function nextPage(link: string | undefined, api: string): string | undefined {
@@ -422,13 +451,17 @@ async function arrival(context: Context, facts: Facts, branch: string): Promise<
       }
       const at = Date.parse(entry.timestamp);
       if (at < start) return { note: `activity: no push brought the pin onto ${branch} since ${iso(start)} (${String(entries)} entries read)` };
-      if ((await carriesPin(input.transport, facts.repo, facts.sha, entry.after, input.signal)) && !(await carriesPin(input.transport, facts.repo, facts.sha, entry.before, input.signal))) {
-        const kind = typeof entry.activity_type === 'string' ? entry.activity_type : 'push';
-        return {
-          note: `activity: the pin arrived on ${branch} at ${entry.timestamp} (${kind} ${String(entry.before).slice(0, 12)}..${String(entry.after).slice(0, 12)})`,
-          signal: { source: `arrival on ${branch}`, at: entry.timestamp, ms: at, recorded: false },
-        };
-      }
+      if (typeof entry.after !== 'string' || !COMMIT_SHA.test(entry.after)) continue;
+      const after = await pinIn(input.transport, facts.repo, facts.sha, entry.after, input.signal);
+      if (after.state === 'unread') return { note: `activity: the commit ${entry.after.slice(0, 12)} an entry names could not be read (${after.why}); the arrival on ${branch} is not known` };
+      if (after.state !== 'carries') continue;
+      const before = typeof entry.before === 'string' && COMMIT_SHA.test(entry.before) ? await pinIn(input.transport, facts.repo, facts.sha, entry.before, input.signal) : { state: 'absent' as const };
+      if (before.state === 'carries') continue;
+      const kind = typeof entry.activity_type === 'string' ? entry.activity_type : 'push';
+      return {
+        note: `activity: the pin arrived on ${branch} at ${entry.timestamp} (${kind} ${String(entry.before).slice(0, 12)}..${entry.after.slice(0, 12)})`,
+        signal: { source: `arrival on ${branch}`, at: entry.timestamp, ms: at, recorded: false },
+      };
     }
     url = nextPage(answer.headers.link, context.api);
   }
@@ -441,7 +474,7 @@ async function arrival(context: Context, facts: Facts, branch: string): Promise<
 async function readFacts(context: Context, group: Group): Promise<Facts> {
   const { input } = context;
   const { transport, signal } = input;
-  const facts: Facts = { ...group, signals: [], read: [], faults: [] };
+  const facts: Facts = { ...group, signals: [], read: [], faults: [], unreadable: [] };
   const fault = (error: unknown) => {
     facts.faults.push(error instanceof NetworkError ? `${error.message}; re-run the check` : failure(error));
   };
@@ -492,20 +525,34 @@ async function readFacts(context: Context, group: Group): Promise<Facts> {
     facts.signals.push({ source, at, ms, recorded });
     facts.read.push(`${source} ${at}${beside}`);
   };
+  /** A git identity's time: a signal, or, past the range of a date, a finding naming the epoch as written. */
+  const identity = (source: string, time: ReturnType<typeof identityTime>) => {
+    if (time === undefined) return;
+    if ('ms' in time) {
+      signalOf(source, iso(time.ms), time.ms, false);
+      return;
+    }
+    facts.unreadable.push(`the ${source} (epoch ${time.epoch}) is past the range of a date`);
+    facts.read.push(`${source} unreadable (epoch ${time.epoch})`);
+  };
   const own = splitObject(commit.raw);
   for (const [header, source] of [
     ['committer', 'committer date'],
     ['author', 'author date'],
   ] as const) {
-    const at = identityTime(own.headers.get(header));
-    if (at !== undefined) signalOf(source, iso(at), at, false);
+    identity(source, identityTime(own.headers.get(header)));
   }
   try {
     if (facts.tag === 'names' && refs.tag !== undefined && refs.tag.object !== refs.tag.commit) {
+      // The fetch brought the tag's object with the tag, so an object not read is a failed read, never "no tagger date".
       const tag = await transport.object(group.repo, refs.tag.object, signal);
-      const at = tag === undefined ? undefined : identityTime(splitObject(tag.raw).headers.get('tagger'));
+      if (tag === undefined) {
+        facts.faults.push(`the annotated tag ${group.version} (${refs.tag.object}) could not be read after its fetch, so its tagger date is not known; re-run the check`);
+        return facts;
+      }
+      const at = identityTime(splitObject(tag.raw).headers.get('tagger'));
       if (at === undefined) facts.read.push('the annotated tag gives no tagger date');
-      else signalOf('tagger date', iso(at), at, false);
+      else identity('tagger date', at);
     }
     if (own.signature === undefined) {
       facts.read.push('unsigned');
@@ -560,7 +607,8 @@ async function readFacts(context: Context, group: Group): Promise<Facts> {
       fault(error);
       return facts;
     }
-    const arrived = await arrival(context, facts, branch);
+    // Best effort: whatever fails in it is a note, never a throw out of the pool (the ci-infra review's N1).
+    const arrived = await arrival(context, facts, branch).catch((error: unknown) => ({ note: `activity: not read (${failure(error).split('\n')[0] ?? ''}); the arrival on ${branch} is not known`, signal: undefined }));
     facts.read.push(arrived.note);
     if (arrived.signal !== undefined) facts.signals.push(arrived.signal);
   }
@@ -582,6 +630,7 @@ function judge(input: AgeInput, facts: Facts, entries: readonly AgeException[]):
   const youngest = facts.signals.reduce<Signal | undefined>((found, signal) => (found === undefined || signal.ms > found.ms ? signal : found), undefined);
   const known = youngest === undefined ? null : { what: 'the pin', at: youngest.at, as: youngest.source };
   if (facts.faults.length > 0) return { errors: facts.faults.map((fault) => `${name}: ${fault}`), notes, known };
+  for (const unreadable of facts.unreadable) errors.push(`${name}: ${unreadable}, so the pin's age cannot be read from it; choose another release`);
 
   if (facts.tag === 'missing') errors.push(`${name}: no tag ${facts.version} in ${facts.repo} (git ls-remote), so the pin names no release; pin a release's commit`);
   if (facts.tag === 'moved') errors.push(`${name}: tag moved: the tag ${facts.version} of ${facts.repo} names ${facts.tagCommit ?? ''}, not the pin ${facts.sha}; its tagger date is not counted, and the pin is aged from its own commit`);

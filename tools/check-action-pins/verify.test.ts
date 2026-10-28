@@ -324,6 +324,38 @@ describe('the git transport', () => {
     }
   });
 
+  it('answers an object it cannot read as not held, never rejecting, so no read of the age fetch can crash the run (CI-N1)', async () => {
+    const dir = path.join(scratch, 'octo', 'flaky');
+    mkdirSync(dir, { recursive: true });
+    const env = { ...process.env, HOME: scratch, GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'Synthetic', GIT_AUTHOR_EMAIL: 'synthetic@example.invalid', GIT_COMMITTER_NAME: 'Synthetic', GIT_COMMITTER_EMAIL: 'synthetic@example.invalid' };
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env, encoding: 'utf8' }).trim();
+    git('init', '-q', '-b', 'main');
+    git('config', 'uploadpack.allowFilter', 'true');
+    writeFileSync(path.join(dir, 'action.yml'), node(''));
+    git('add', '.');
+    git('commit', '-q', '-m', 'first');
+    const first = git('rev-parse', 'HEAD');
+    // A git that answers `cat-file -t` and then fails reading the commit, as one the deadline kills between the two.
+    const real = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
+    const bin = path.join(scratch, 'flaky-bin');
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(path.join(bin, 'git'), `#!/bin/sh\ncase " $* " in *" cat-file commit "*) echo 'fatal: killed' >&2; exit 128;; esac\nexec '${real}' "$@"\n`, { mode: 0o755 });
+    const saved = process.env.PATH;
+    process.env.PATH = `${bin}${path.delimiter}${saved ?? ''}`;
+    let transport: ReturnType<typeof gitTransport>;
+    try {
+      transport = gitTransport(`file://${scratch}`);
+    } finally {
+      process.env.PATH = saved;
+    }
+    try {
+      expect((await transport.fetchRefs('octo/flaky', 'v1.0.0')).head).toBe(first);
+      expect(await transport.object('octo/flaky', first)).toBeUndefined();
+    } finally {
+      transport.close();
+    }
+  });
+
   it('fetches the age rule’s default branch alone, with the whole history a shallow file read cuts, answers ancestry and objects, fetches a commit by SHA, and close() removes it all', async () => {
     const dir = path.join(scratch, 'octo', 'aged');
     mkdirSync(dir, { recursive: true });
