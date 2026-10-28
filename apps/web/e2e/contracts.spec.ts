@@ -143,8 +143,8 @@ test('a contract abstracted by hand, approved and signed off becomes the version
       };
       await cite('Provider may dispute a payment within 365 days of the remittance date.', 'calendar days', 'the remittance date');
       await expect(refusal(specialist).filter({ hasText: 'Not done' })).toContainText('The quote is not on the cited page');
-      // The refused form is reset, as the rate record's is: the page, the quote and the rule are entered again. Recorded in months, the
-      // window is stated in its own unit beside the rule the product computes, and it cannot be verified.
+      // The refused form keeps what was typed (docs/adr/0077); entering the page, the quote and the rule again overwrites it. Recorded in
+      // months, the window is stated in its own unit beside the rule the product computes, and it cannot be verified.
       await cite('Provider may dispute a payment within 120 days of the remittance date.', 'months', 'the remittance date');
       await expect(specialist.locator('[data-window="unverified"]')).toBeVisible();
       const rule = window.getByRole('group', { name: 'The cited rule and the computed rule' });

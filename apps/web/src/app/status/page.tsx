@@ -6,6 +6,7 @@ import { utc } from '../../components/format';
 import { loadPublicPage } from '../../lib/http/next';
 import { INCIDENT_STATUS_LABELS, STATUS_LABELS, statusPage } from '../../lib/routes/support';
 import { PublicHeader } from '../../components/public-header';
+import { ScrollTable } from '../../components/scroll-table';
 
 export const metadata: Metadata = { title: 'Service status' };
 
@@ -31,18 +32,20 @@ export default async function StatusPage() {
           <CardTitle>Components</CardTitle>
         </CardHeader>
         <CardContent>
-          <table className="w-full text-left text-sm" aria-label="Components">
-            <tbody>
-              {components.map((component) => (
-                <tr key={component.key} className="border-t first:border-t-0" data-component={component.key} data-status={component.status}>
-                  <td className="py-1.5">{component.name}</td>
-                  <td className="py-1.5 text-right">
-                    <Badge variant={component.status === 'operational' ? 'outline' : 'destructive'}>{STATUS_LABELS[component.status]}</Badge>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ScrollTable label="Components">
+            <table className="w-full text-left text-sm" aria-label="Components">
+              <tbody>
+                {components.map((component) => (
+                  <tr key={component.key} className="border-t first:border-t-0" data-component={component.key} data-status={component.status}>
+                    <td className="py-1.5">{component.name}</td>
+                    <td className="py-1.5 text-right">
+                      <Badge variant={component.status === 'operational' ? 'outline' : 'destructive'}>{STATUS_LABELS[component.status]}</Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollTable>
         </CardContent>
       </Card>
       <section className="flex flex-col gap-3" aria-label="Incidents">

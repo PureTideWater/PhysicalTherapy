@@ -142,15 +142,21 @@ function nextCode(secret = SECRET): string {
 }
 
 describe('the password and TOTP steps', () => {
-  it('moves from the password to the code to a session, setting and clearing the cookies', async () => {
+  it('moves from the password to the code to a session, setting and clearing the cookies; a wrong code names the code, and one written with a space is taken (FRM-07)', async () => {
     const user = await person();
     const browser = new Browser();
     expect(await step(signInWithPassword, browser, { email: user.email, password: PASSWORD })).toEqual({ status: 'ok', data: { redirect: '/sign-in/mfa' } });
     expect(browser.get(SIGN_IN_COOKIE)).toMatch(/^v1\./);
     expect(await step(mfaPage, browser)).toEqual({ status: 'ok', data: { email: user.email } });
     expect(await step(answerMfa, browser, { code: 'abc' })).toMatchObject({ status: 'invalid' });
-    expect(await step(answerMfa, browser, { code: '000000' })).toMatchObject({ status: 'ok', data: { error: expect.stringContaining('did not match') } });
-    expect(await step(answerMfa, browser, { code: nextCode() })).toEqual({ status: 'ok', data: { redirect: '/' } });
+    // FRM-07: a wrong code, after the password proved the account, names the code (and still says it did not match).
+    expect(await step(answerMfa, browser, { code: '000000' })).toEqual({
+      status: 'ok',
+      data: { error: expect.stringContaining('did not match'), issues: [{ field: 'code', message: 'enter the code your authenticator app shows now' }] },
+    });
+    // FRM-07: a code as an authenticator app shows it, "123 456", is accepted.
+    const code = nextCode();
+    expect(await step(answerMfa, browser, { code: `${code.slice(0, 3)} ${code.slice(3)}` })).toEqual({ status: 'ok', data: { redirect: '/' } });
     expect(browser.get(SIGN_IN_COOKIE)).toBeUndefined();
     expect(browser.get(SESSION_COOKIE)).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(browser.get(DEVICE_COOKIE)).toMatch(/^[A-Za-z0-9_-]{43}$/);
@@ -160,20 +166,31 @@ describe('the password and TOTP steps', () => {
     expect(await step(answerMfa, browser, { code: nextCode() })).toEqual({ status: 'ok', data: { redirect: '/sign-in?reason=step_expired' } });
   });
 
-  it('takes an invited user through a new password and enrollment', async () => {
+  it('takes an invited user through a new password and enrollment; a weak or mismatched password is an issue on its own field, and a code with a hyphen is taken (FRM-07)', async () => {
     const invited = await person({ temporary: true, totp: false });
     const browser = new Browser();
     expect(await step(signInWithPassword, browser, { email: invited.email, password: PASSWORD })).toEqual({ status: 'ok', data: { redirect: '/sign-in/new-password' } });
     expect(await step(newPasswordPage, browser)).toEqual({ status: 'ok', data: { email: invited.email } });
-    expect(await step(chooseNewPassword, browser, { password: 'Chosen-Pass-2026', confirm: 'Chosen-Pass-2027' })).toMatchObject({ status: 'invalid', issues: [{ field: 'confirm' }] });
-    expect(await step(chooseNewPassword, browser, { password: 'weak-password', confirm: 'weak-password' })).toMatchObject({ status: 'ok', data: { problems: expect.arrayContaining(['a digit']) } });
+    // FRM-07: two passwords that differ, and a weak one, are issues on their own fields.
+    expect(await step(chooseNewPassword, browser, { password: 'Chosen-Pass-2026', confirm: 'Chosen-Pass-2027' })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'confirm', message: 'the two passwords do not match: type the same password in both fields' }],
+    });
+    expect(await step(chooseNewPassword, browser, { password: '', confirm: '' })).toMatchObject({ status: 'invalid', issues: [{ field: 'password', message: 'fill this in' }] });
+    expect(await step(chooseNewPassword, browser, { password: 'weakpassword', confirm: 'weakpassword' })).toEqual({
+      status: 'ok',
+      data: { error: 'Choose a stronger password.', issues: [{ field: 'password', message: 'it still needs an uppercase letter, a digit and a symbol' }] },
+    });
     expect(await step(chooseNewPassword, browser, { password: 'Chosen-Pass-2026', confirm: 'Chosen-Pass-2026' })).toEqual({ status: 'ok', data: { redirect: '/sign-in/enroll' } });
     const enrollment = await step(enrollPage, browser);
     if (enrollment.status !== 'ok' || !('secret' in enrollment.data)) {
       throw new Error('expected the enrollment secret');
     }
     expect(enrollment.data).toMatchObject({ email: invited.email, uri: expect.stringContaining('otpauth://totp/') });
-    expect(await step(enrollTotp, browser, { code: nextCode(enrollment.data.secret) })).toEqual({ status: 'ok', data: { redirect: '/' } });
+    expect(await step(enrollTotp, browser, { code: '000000' })).toMatchObject({ status: 'ok', data: { error: 'That did not match.', issues: [{ field: 'code' }] } });
+    // FRM-07: a code copied with a hyphen, "123-456", is accepted.
+    const code = nextCode(enrollment.data.secret);
+    expect(await step(enrollTotp, browser, { code: `${code.slice(0, 3)}-${code.slice(3)}` })).toEqual({ status: 'ok', data: { redirect: '/' } });
     expect(await step(enrollPage, new Browser())).toEqual({ status: 'ok', data: { redirect: '/sign-in?reason=step_expired' } });
     expect(await step(newPasswordPage, new Browser())).toEqual({ status: 'ok', data: { redirect: '/sign-in?reason=step_expired' } });
     expect(await step(chooseNewPassword, new Browser(), { password: 'x', confirm: 'x' })).toEqual({ status: 'ok', data: { redirect: '/sign-in?reason=step_expired' } });
@@ -184,7 +201,11 @@ describe('the password and TOTP steps', () => {
     const user = await person();
     const browser = new Browser();
     for (let attempt = 0; attempt < 9; attempt += 1) {
-      expect(await step(signInWithPassword, browser, { email: user.email, password: 'Wrong-Pass-2026!' })).toMatchObject({ status: 'ok', data: { error: expect.any(String) } });
+      // The first step names no field: a wrong password and an unknown email read the same (account enumeration).
+      expect(await step(signInWithPassword, browser, { email: user.email, password: 'Wrong-Pass-2026!' })).toEqual({
+        status: 'ok',
+        data: { error: 'That did not match. Check the email, the password or the code, and try again.' },
+      });
     }
     expect(await step(signInWithPassword, browser, { email: user.email, password: 'Wrong-Pass-2026!' })).toEqual({
       status: 'ok',

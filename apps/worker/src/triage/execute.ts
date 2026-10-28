@@ -69,6 +69,26 @@ export interface TriageJobContext {
 export interface TriageOptions {
   /** The triage date; today in UTC unless a test names one. */
   readonly asOf?: string;
+  /** How many candidate rows a batch holds; CANDIDATE_BATCH_LINES unless a test names fewer (TriageBatches). */
+  readonly batches?: TriageBatches;
+}
+
+/**
+ * The batch sizes of triage's reader (SUITE-CAP-1a D13; docs/adr/0083). Production names none and reads
+ * CANDIDATE_BATCH_LINES at a time; a test names a smaller one (down to 1) so that a few lines cross batch boundaries
+ * and the folds are proved across them with real values. No environment variable sets it.
+ */
+export interface TriageBatches {
+  readonly candidateLines?: number;
+}
+
+/** A batch size as named, or the default: a positive whole number, since it is written into a FETCH. */
+export function batchSize(named: number | undefined, fallback: number): number {
+  const size = named ?? fallback;
+  if (!Number.isSafeInteger(size) || size < 1) {
+    throw new Error('a batch size is a positive whole number');
+  }
+  return size;
 }
 
 export interface TriageSummary {
@@ -201,52 +221,54 @@ async function screenedLines(scope: PracticeScope<ScopeClient>, practiceId: stri
 }
 
 /**
+ * The candidates' query: the lines that may be validated and in no case yet, each from its pricing in effect with
+ * positive variance, in service line order. $1 is the practice, $2 the pricing run (null for none). candidateRows
+ * runs it whole and judgedCandidates through a cursor, so the two read the same rows in the same order.
+ */
+const CANDIDATE_QUERY = `WITH current_stage AS (
+     SELECT DISTINCT ON (s.service_line_id) s.service_line_id, s.stage
+       FROM line_status s WHERE s.practice_id = $1 ORDER BY s.service_line_id, s.seq DESC
+   ), wanted AS (
+     SELECT x.service_line_id FROM priced_line x WHERE x.pricing_run_id = $2 AND x.practice_id = $1
+     UNION
+     SELECT cs.service_line_id FROM current_stage cs WHERE cs.stage = 'validated'
+   ), in_effect AS (${PRICED_IN_EFFECT('$1', 'p.service_line_id IN (SELECT service_line_id FROM wanted)')})
+   SELECT p.id AS priced_line_id, p.practice_id, p.service_line_id, r.release_no, p.variance_cents::text, p.window_ends_on::text, p.trace,
+          m.mapping_kind, p.contract_version_id, v.status AS version_status,
+          coalesce(payer_plan_mapping_in_force(l.payer_plan_key, coalesce(l.service_date, c.service_from)) = p.mapping_id, false) AS mapping_in_force,
+          (p.contract_version_id IS NULL OR coalesce(v.effective_from <= coalesce(l.service_date, c.service_from)
+             AND (v.effective_to IS NULL OR coalesce(l.service_date, c.service_from) < v.effective_to), false)) AS version_covers_service,
+          EXISTS (SELECT 1 FROM rule_release_withdrawal w WHERE w.release_no = r.release_no) AS release_withdrawn,
+          p.rate_record_id, pl.payer_id, pl.id AS plan_id,
+          (c.claim_status_code = '22' OR EXISTS (SELECT 1 FROM claim x WHERE x.reversal_of_claim_id = c.id)) AS reversed,
+          c.superseded_by_claim_id IS NOT NULL AS superseded,
+          false AS written_off,
+          priced_line_visit_variance_cents(p.id)::text AS visit_variance_cents,
+          coalesce(p.trace #> '{outcome,review_flags}', '[]'::jsonb) AS review_flags
+     FROM in_effect p
+     JOIN pricing_run r ON r.id = p.pricing_run_id
+     JOIN service_line l ON l.id = p.service_line_id
+     JOIN claim c ON c.id = l.claim_id
+     JOIN plan pl ON pl.id = l.payer_plan_key
+     LEFT JOIN payer_plan_mapping m ON m.id = p.mapping_id
+     LEFT JOIN contract_version v ON v.id = p.contract_version_id
+    WHERE p.variance_cents > 0
+      AND NOT EXISTS (SELECT 1 FROM case_line cl WHERE cl.service_line_id = p.service_line_id)
+    ORDER BY p.service_line_id`;
+
+/**
  * The lines that may be validated and in no case yet, each from its pricing in effect with positive
  * variance: the run's own lines, and the lines an earlier triage validated whose pattern was held below
  * the case materiality (only those when no run is named: the workbench's patterns waiting for a case).
  * A line whose pricing in effect no longer shows a shortfall (an accepted re-run priced it again at
- * what was paid) or that no run in effect prices is left out.
+ * what was paid) or that no run in effect prices is left out. Read whole; triage and the workbench read
+ * them through judgedCandidates, which holds a batch at a time.
  */
 export async function candidateRows(scope: PracticeScope<ScopeClient>, practiceId: string, pricingRunId: string | null, requestId: string): Promise<CandidateRow[]> {
   return readWithAudit(
     scope,
     { objectType: 'priced_line', purpose: 'triage', requestId },
-    async (client) =>
-      (
-        await client.query<CandidateRow>(
-          `WITH current_stage AS (
-             SELECT DISTINCT ON (s.service_line_id) s.service_line_id, s.stage
-               FROM line_status s WHERE s.practice_id = $1 ORDER BY s.service_line_id, s.seq DESC
-           ), wanted AS (
-             SELECT x.service_line_id FROM priced_line x WHERE x.pricing_run_id = $2 AND x.practice_id = $1
-             UNION
-             SELECT cs.service_line_id FROM current_stage cs WHERE cs.stage = 'validated'
-           ), in_effect AS (${PRICED_IN_EFFECT('$1', 'p.service_line_id IN (SELECT service_line_id FROM wanted)')})
-           SELECT p.id AS priced_line_id, p.practice_id, p.service_line_id, r.release_no, p.variance_cents::text, p.window_ends_on::text, p.trace,
-                  m.mapping_kind, p.contract_version_id, v.status AS version_status,
-                  coalesce(payer_plan_mapping_in_force(l.payer_plan_key, coalesce(l.service_date, c.service_from)) = p.mapping_id, false) AS mapping_in_force,
-                  (p.contract_version_id IS NULL OR coalesce(v.effective_from <= coalesce(l.service_date, c.service_from)
-                     AND (v.effective_to IS NULL OR coalesce(l.service_date, c.service_from) < v.effective_to), false)) AS version_covers_service,
-                  EXISTS (SELECT 1 FROM rule_release_withdrawal w WHERE w.release_no = r.release_no) AS release_withdrawn,
-                  p.rate_record_id, pl.payer_id, pl.id AS plan_id,
-                  (c.claim_status_code = '22' OR EXISTS (SELECT 1 FROM claim x WHERE x.reversal_of_claim_id = c.id)) AS reversed,
-                  c.superseded_by_claim_id IS NOT NULL AS superseded,
-                  false AS written_off,
-                  priced_line_visit_variance_cents(p.id)::text AS visit_variance_cents,
-                  coalesce(p.trace #> '{outcome,review_flags}', '[]'::jsonb) AS review_flags
-             FROM in_effect p
-             JOIN pricing_run r ON r.id = p.pricing_run_id
-             JOIN service_line l ON l.id = p.service_line_id
-             JOIN claim c ON c.id = l.claim_id
-             JOIN plan pl ON pl.id = l.payer_plan_key
-             LEFT JOIN payer_plan_mapping m ON m.id = p.mapping_id
-             LEFT JOIN contract_version v ON v.id = p.contract_version_id
-            WHERE p.variance_cents > 0
-              AND NOT EXISTS (SELECT 1 FROM case_line cl WHERE cl.service_line_id = p.service_line_id)
-            ORDER BY p.service_line_id`,
-          [practiceId, pricingRunId],
-        )
-      ).rows,
+    async (client) => (await client.query<CandidateRow>(CANDIDATE_QUERY, [practiceId, pricingRunId])).rows,
     (row) => ({ objectId: row.priced_line_id, practiceId: row.practice_id }),
   );
 }
@@ -261,8 +283,11 @@ async function readReleaseFacts(client: ScopeClient, releaseNo: number): Promise
   return { references: releaseReferences(await typedRelease(client, releaseNo, BEHAVIOR_RECORD_TYPES)), spans: await releaseContentSpans(client, releaseNo) };
 }
 
-/** The facts of each release the candidates were priced under, read once each. */
-function factsByRelease(client: ScopeClient): (releaseNo: number) => Promise<ReleaseFacts> {
+/** Reads a release's facts for the candidates priced under it. */
+export type ReleaseFactsLoader = (releaseNo: number) => Promise<ReleaseFacts>;
+
+/** The facts of each release the candidates were priced under, read once each for as long as the loader is kept. */
+function factsByRelease(client: ScopeClient): ReleaseFactsLoader {
   const loaded = new Map<number, Promise<ReleaseFacts>>();
   return async (releaseNo) => {
     let facts = loaded.get(releaseNo);
@@ -278,9 +303,9 @@ function factsByRelease(client: ScopeClient): (releaseNo: number) => Promise<Rel
  * The candidates as @tp/triage judges them: each with its pattern (the adjustment behavior detected from its
  * trace), whether its deadline is verified (lineDeadlines: D17 a, at L2), a line the loader cannot read being
  * unverified, and whether its trace read the MPPR or the MUE on a date its release's spans do not cover (audit #7).
+ * A caller judging rows in batches passes one `releases` loader for all of them, so each release is read once.
  */
-export async function candidateLines(client: ScopeClient, rows: readonly CandidateRow[]): Promise<CandidateLine[]> {
-  const releases = factsByRelease(client);
+export async function candidateLines(client: ScopeClient, rows: readonly CandidateRow[], releases: ReleaseFactsLoader = factsByRelease(client)): Promise<CandidateLine[]> {
   const deadlines = await lineDeadlines(
     client,
     rows.map((row) => row.priced_line_id),
@@ -322,20 +347,55 @@ export async function candidateLines(client: ScopeClient, rows: readonly Candida
   return lines;
 }
 
+/** How many candidate rows triage holds at a time (SUITE-CAP-1a D13; docs/adr/0083). */
+export const CANDIDATE_BATCH_LINES = 2000;
+
+/**
+ * candidateRows' candidates as candidateLines judges them, in the same order, read through a cursor
+ * CANDIDATE_BATCH_LINES rows at a time (SUITE-CAP-1a D13; docs/adr/0083): each batch is audited as candidateRows
+ * audits it (one event per row read), judged while its traces are in hand, and dropped, so only the judged lines
+ * are kept. One release loader serves every batch; the deadlines are read per batch. The cursor lives in the
+ * caller's transaction (the job's, or the web's practice scope) and is closed before this returns; an error
+ * aborts the transaction, which ends it.
+ */
+export async function judgedCandidates(scope: PracticeScope<ScopeClient>, practiceId: string, pricingRunId: string | null, requestId: string, batches: TriageBatches = {}): Promise<CandidateLine[]> {
+  const { client } = scope;
+  const size = batchSize(batches.candidateLines, CANDIDATE_BATCH_LINES);
+  const releases = factsByRelease(client);
+  const judged: CandidateLine[] = [];
+  await client.query(`DECLARE triage_candidates NO SCROLL CURSOR FOR ${CANDIDATE_QUERY}`, [practiceId, pricingRunId]);
+  for (;;) {
+    const batch = await readWithAudit(
+      scope,
+      { objectType: 'priced_line', purpose: 'triage', requestId },
+      async (reader) => (await reader.query<CandidateRow>(`FETCH ${size} FROM triage_candidates`)).rows,
+      (row) => ({ objectId: row.priced_line_id, practiceId: row.practice_id }),
+    );
+    if (batch.length === 0) {
+      break;
+    }
+    judged.push(...(await candidateLines(client, batch, releases)));
+    if (batch.length < size) {
+      break;
+    }
+  }
+  await client.query('CLOSE triage_candidates');
+  return judged;
+}
+
 /** Stage events for lines that are not yet at the stage: forward only, the priced line named. */
 async function advanceStages(client: ScopeClient, practiceId: string, stage: 'flagged' | 'validated' | 'actionable', lines: readonly { readonly serviceLineId: string; readonly pricedLineId: string | null }[]): Promise<number> {
   if (lines.length === 0) {
     return 0;
   }
+  // Each wanted line's latest event, found through line_status_by_line whatever the statistics say (SUITE-CAP-1a D12).
   const { rowCount } = await client.query(
-    `WITH wanted AS (
-       SELECT t.service_line_id, t.priced_line_id FROM unnest($2::uuid[], $3::uuid[]) AS t (service_line_id, priced_line_id)
-     ), current_stage AS (
-       SELECT DISTINCT ON (s.service_line_id) s.service_line_id, s.stage FROM line_status s
-        WHERE s.practice_id = $1 AND s.service_line_id IN (SELECT service_line_id FROM wanted) ORDER BY s.service_line_id, s.seq DESC
-     )
-     INSERT INTO line_status (practice_id, service_line_id, stage, priced_line_id)
-     SELECT $1, w.service_line_id, $4, w.priced_line_id FROM wanted w LEFT JOIN current_stage cs ON cs.service_line_id = w.service_line_id
+    `INSERT INTO line_status (practice_id, service_line_id, stage, priced_line_id)
+     SELECT $1, w.service_line_id, $4, w.priced_line_id
+       FROM unnest($2::uuid[], $3::uuid[]) AS w (service_line_id, priced_line_id)
+       LEFT JOIN LATERAL (SELECT s.stage FROM line_status s
+                           WHERE s.practice_id = $1 AND s.service_line_id = w.service_line_id
+                           ORDER BY s.seq DESC LIMIT 1) cs ON true
       WHERE cs.stage IS NULL OR line_stage_rank(cs.stage) < line_stage_rank($4)
       ORDER BY w.service_line_id`,
     [practiceId, lines.map((line) => line.serviceLineId), lines.map((line) => line.pricedLineId), stage],
@@ -421,7 +481,7 @@ export async function closePassedWindows(scope: PracticeScope<ScopeClient>, prac
 }
 
 /** Triage in the transaction's scope (the report job runs it before it reads the run's numbers). */
-export async function triageInScope(scope: PracticeScope<ScopeClient>, practiceId: string, pricingRunId: string, requestId: string, asOf: string): Promise<TriageOutcome> {
+export async function triageInScope(scope: PracticeScope<ScopeClient>, practiceId: string, pricingRunId: string, requestId: string, asOf: string, batches: TriageBatches = {}): Promise<TriageOutcome> {
   const { client } = scope;
   await lockPractice(client, practiceId);
   const run = await lockedRun(client, practiceId, pricingRunId);
@@ -444,7 +504,7 @@ export async function triageInScope(scope: PracticeScope<ScopeClient>, practiceI
   await advanceStages(client, practiceId, 'flagged', flagged);
 
   const windowsClosed = await closeWindows(client, practiceId, asOf);
-  const candidates = await candidateLines(client, await candidateRows(scope, practiceId, pricingRunId, requestId));
+  const candidates = await judgedCandidates(scope, practiceId, pricingRunId, requestId, batches);
   // Validated: a positive shortfall (a per-visit line's at most its visit's), whatever else holds.
   const validated = candidates.filter((line) => judgeLine(line, settings.lineMaterialityCents, asOf).validated);
   await advanceStages(client, practiceId, 'validated', validated);
@@ -479,5 +539,5 @@ export async function triageInScope(scope: PracticeScope<ScopeClient>, practiceI
 
 export async function executeTriage(context: TriageJobContext, practiceId: string, pricingRunId: string, options: TriageOptions = {}): Promise<TriageOutcome> {
   const asOf = options.asOf ?? todayUtc();
-  return context.transaction((scope) => triageInScope(scope, practiceId, pricingRunId, context.jobId, asOf));
+  return context.transaction((scope) => triageInScope(scope, practiceId, pricingRunId, context.jobId, asOf, options.batches));
 }

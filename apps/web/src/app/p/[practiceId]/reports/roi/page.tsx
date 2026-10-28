@@ -3,10 +3,11 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../../components/action-form';
+import { UtcTime } from '../../../../../components/dates';
 import { Field } from '../../../../../components/field';
-import { utc } from '../../../../../components/format';
 import { proofLevelWords } from '../../../../../components/reconciliation/display';
 import { Money, Pager } from '../../../../../components/remittances/display';
+import { ScrollTable } from '../../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { loadPage } from '../../../../../lib/http/next';
 import { roiStatementsPage } from '../../../../../lib/routes/roi';
@@ -60,44 +61,49 @@ export default async function RoiStatementsPage(props: Props) {
         {statements.total === 0 ? (
           <EmptyState title="No ROI statement yet" nextStep="The quarter’s statement is written once its quarter ends; a billing manager can generate one for any period now." />
         ) : (
-          <table aria-label="ROI statements" className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-left">
-                <th className="py-1 pr-3">Period</th>
-                <th className="py-1 pr-3">Kind</th>
-                <th className="py-1 pr-3 text-right">Recovered (posted or deposited)</th>
-                <th className="py-1 pr-3 text-right">Interest</th>
-                <th className="py-1 pr-3">Proof level</th>
-                <th className="py-1 pr-3">Generated</th>
-                <th className="py-1">PDF</th>
-              </tr>
-            </thead>
-            <tbody>
-              {statements.items.map((statement) => (
-                <tr key={statement.id} className="border-b" data-statement={statement.id}>
-                  <td className="py-1 pr-3">
-                    <Link className="underline" href={`${path}/${statement.id}`}>
-                      {statement.periodFrom} to {statement.periodTo}
-                    </Link>
-                  </td>
-                  <td className="py-1 pr-3">{statement.quarterly ? <Badge variant="secondary">Quarterly</Badge> : <Badge variant="outline">On demand</Badge>}</td>
-                  <td className="py-1 pr-3 text-right">
-                    <Money value={statement.recoveredCents} />
-                  </td>
-                  <td className="py-1 pr-3 text-right">
-                    <Money value={statement.interestCents} />
-                  </td>
-                  <td className="py-1 pr-3">{proofLevelWords(statement.proofLevel)}</td>
-                  <td className="py-1 pr-3">
-                    {utc(statement.generatedAt)} {statement.generatedBy === null ? 'by the reconcile job' : `by ${statement.generatedBy}`}
-                  </td>
-                  <td className="py-1" data-print={statement.print}>
-                    {statement.print === 'printed' ? 'Printed' : statement.print === 'failed' ? 'Print failed; the operator was alerted' : 'Being printed'}
-                  </td>
+          <ScrollTable label="ROI statements">
+            <table aria-label="ROI statements" className="w-full min-w-[48rem] text-sm">
+              <thead>
+                <tr className="border-b text-left">
+                  <th className="py-1 pr-3">Period</th>
+                  <th className="py-1 pr-3">Kind</th>
+                  <th className="py-1 pr-3 text-right">Recovered (posted or deposited)</th>
+                  <th className="py-1 pr-3 text-right">Interest</th>
+                  <th className="py-1 pr-3">Proof level</th>
+                  <th className="py-1 pr-3">Generated</th>
+                  <th className="py-1">PDF</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {statements.items.map((statement) => (
+                  <tr key={statement.id} className="border-b" data-statement={statement.id}>
+                    <td className="py-1 pr-3">
+                      <Link className="underline" href={`${path}/${statement.id}`}>
+                        <span className="whitespace-nowrap">{statement.periodFrom}</span> to <span className="whitespace-nowrap">{statement.periodTo}</span>
+                      </Link>
+                    </td>
+                    <td className="py-1 pr-3">{statement.quarterly ? <Badge variant="secondary">Quarterly</Badge> : <Badge variant="outline">On demand</Badge>}</td>
+                    <td className="py-1 pr-3 text-right">
+                      <Money value={statement.recoveredCents} />
+                    </td>
+                    <td className="py-1 pr-3 text-right">
+                      <Money value={statement.interestCents} />
+                    </td>
+                    <td className="py-1 pr-3">{proofLevelWords(statement.proofLevel)}</td>
+                    <td className="py-1 pr-3">
+                      {/* The date and the time stay whole; only an email wider than the column breaks. */}
+                      <span className="block min-w-40 wrap-anywhere">
+                        <UtcTime at={statement.generatedAt} /> {statement.generatedBy === null ? 'by the reconcile job' : `by ${statement.generatedBy}`}
+                      </span>
+                    </td>
+                    <td className="py-1" data-print={statement.print}>
+                      {statement.print === 'printed' ? 'Printed' : statement.print === 'failed' ? 'Print failed; the operator was alerted' : 'Being printed'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollTable>
         )}
         <Pager path={path} query={{}} page={statements.page} pages={statements.pages} total={statements.total} noun="Statements" />
       </section>

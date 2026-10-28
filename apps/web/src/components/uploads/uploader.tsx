@@ -6,6 +6,7 @@ import { type DragEvent, useCallback, useEffect, useRef, useState } from 'react'
 
 import { spreadsheetExportProblem } from '../../lib/uploads/csv-exports';
 import { type Receipt, formatBytes, receiptState } from '../../lib/uploads/receipt-labels';
+import { Hint } from '../field';
 import { FormatUnconfirmedBadge } from './format-flag';
 import { ReceiptList, type ReceiptPage, ReceiptStatus } from './receipts';
 
@@ -316,7 +317,7 @@ export function Uploader(props: UploaderProps) {
             before anything reads it.
           </p>
           {kinds === undefined ? null : (
-            <div className="flex flex-col gap-1">
+            <div className="flex max-w-full flex-col gap-1">
               <label htmlFor="upload-kind" className="text-sm font-medium">
                 Kind of document
               </label>
@@ -327,7 +328,7 @@ export function Uploader(props: UploaderProps) {
                   setKind(kinds.find((candidate) => candidate.kind === event.target.value) ?? kind);
                   setFormatId('');
                 }}
-                className="h-9 rounded-md border bg-background px-2 text-sm"
+                className="h-9 max-w-full rounded-md border bg-background px-2 text-sm"
               >
                 {kinds.map((candidate) => (
                   <option key={candidate.kind} value={candidate.kind}>
@@ -346,7 +347,7 @@ export function Uploader(props: UploaderProps) {
                 id="upload-format"
                 value={formatId}
                 required
-                aria-describedby="upload-format-help"
+                aria-describedby="upload-format-hint"
                 onChange={(event) => {
                   setFormatId(event.target.value);
                 }}
@@ -359,11 +360,13 @@ export function Uploader(props: UploaderProps) {
                   </option>
                 ))}
               </select>
-              <p id="upload-format-help" className="max-w-prose text-xs text-muted-foreground">
-                The practice-management system the ERA export came from. Each file of the batch is read with its layout; a CSV export only.
-              </p>
+              <Hint
+                id="upload-format"
+                className="max-w-prose"
+                hint="The practice-management system the ERA export came from. Each file of the batch is read with its layout; a CSV export only."
+              />
               {format?.unconfirmed === true ? (
-                <div className="flex max-w-prose flex-col gap-1 text-xs text-muted-foreground" role="note" aria-label="Format unconfirmed">
+                <div className="flex max-w-prose flex-col gap-1 text-sm text-muted-foreground" role="note" aria-label="Format unconfirmed">
                   <FormatUnconfirmedBadge />
                   <span>
                     No description of this format has been received from its vendor yet, so PaidWhole reads it with a placeholder layout and flags its lines on the Coverage screen until the
@@ -380,6 +383,10 @@ export function Uploader(props: UploaderProps) {
             multiple
             className="sr-only"
             aria-label="Choose files to upload"
+            // Out of the tab order and hidden from assistive technology: "Choose files" is the one control and opens the
+            // picker, so a keyboard meets one stop, not an invisible input and then the button (docs/adr/0077).
+            tabIndex={-1}
+            aria-hidden="true"
             onChange={(event) => {
               void start([...(event.target.files ?? [])]);
               event.target.value = '';
@@ -416,9 +423,8 @@ export function Uploader(props: UploaderProps) {
                 const receipt = item.documentId === undefined ? undefined : receipts.get(item.documentId);
                 return (
                   <li key={item.key} className="flex flex-wrap items-start gap-3 text-sm" data-phase={item.phase}>
-                    <span className="min-w-48 truncate" title={item.file.name}>
-                      {item.file.name}
-                    </span>
+                    {/* The whole name, never cut to a hover title a phone cannot reach: it breaks only past 12rem. */}
+                    <span className="min-w-48 wrap-anywhere">{item.file.name}</span>
                     {receipt !== undefined ? (
                       <ReceiptStatus receipt={receipt} />
                     ) : item.phase === 'failed' ? (

@@ -2,9 +2,10 @@ import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, Empty
 import type { Metadata } from 'next';
 
 import { ActionForm } from '../../../components/action-form';
+import { UtcTime } from '../../../components/dates';
 import { Field } from '../../../components/field';
 import { FormKeys } from '../../../components/form-keys';
-import { utc } from '../../../components/format';
+import { ScrollTable } from '../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
 import { consoleTermsPage } from '../../../lib/routes/console-onboarding';
@@ -28,32 +29,38 @@ export default async function ConsoleTermsPage() {
       {versions.length === 0 ? (
         <EmptyState mark title="No version published" nextStep="Publish the first version below; customers accept it at their next request." />
       ) : (
-        <table className="w-full text-left text-sm" aria-label="Terms versions">
-          <thead className="text-muted-foreground">
-            <tr>
-              <th className="py-1 pr-3 font-medium">Version</th>
-              <th className="py-1 pr-3 font-medium">Published</th>
-              <th className="py-1 pr-3 font-medium">Document</th>
-              <th className="py-1 pr-3 font-medium">SHA-256</th>
-              <th className="py-1 font-medium">Acceptances</th>
-            </tr>
-          </thead>
-          <tbody>
-            {versions.map((version) => (
-              <tr key={version.id} className="border-t">
-                <td className="py-1 pr-3">
-                  {version.version} {version.inForce ? <Badge variant="outline">in force</Badge> : null}
-                </td>
-                <td className="py-1 pr-3">{utc(version.publishedAt)}</td>
-                <td className="py-1 pr-3 font-mono text-xs">{version.documentRef}</td>
-                <td className="py-1 pr-3 font-mono text-xs" title={version.sha256}>
-                  {version.sha256.slice(0, 12)}…
-                </td>
-                <td className="py-1 font-mono tabular-nums">{version.acceptances}</td>
+        <ScrollTable label="Terms versions">
+          <table className="w-full min-w-[40rem] text-left text-sm" aria-label="Terms versions">
+            <thead className="text-muted-foreground">
+              <tr>
+                <th className="py-1 pr-3 font-medium">Version</th>
+                <th className="py-1 pr-3 font-medium">Published</th>
+                <th className="py-1 pr-3 font-medium">Document</th>
+                <th className="py-1 pr-3 font-medium">SHA-256</th>
+                <th className="py-1 font-medium">Acceptances</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {versions.map((version) => (
+                <tr key={version.id} className="border-t">
+                  <td className="py-1 pr-3">
+                    {version.version} {version.inForce ? <Badge variant="outline">in force</Badge> : null}
+                  </td>
+                  <td className="py-1 pr-3">
+                    <UtcTime at={version.publishedAt} />
+                  </td>
+                  <td className="py-1 pr-3 font-mono text-xs">
+                    <span className="block min-w-32 wrap-anywhere">{version.documentRef}</span>
+                  </td>
+                  <td className="py-1 pr-3 font-mono text-xs">
+                    <span className="block min-w-32 wrap-anywhere">{version.sha256}</span>
+                  </td>
+                  <td className="py-1 font-mono tabular-nums">{version.acceptances}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </ScrollTable>
       )}
       <Card>
         <CardHeader>
@@ -63,9 +70,9 @@ export default async function ConsoleTermsPage() {
         <CardContent>
           <ActionForm action={publishTermsAction} submit="Publish version" className="grid max-w-xl gap-3">
             <FormKeys />
-            <Field label="Version" name="version" required maxLength={40} hint="Letters, digits and . _ - (for example 2026-11)." />
-            <Field label="Document reference" name="documentRef" required maxLength={200} hint="Where the signed-off document is kept." />
-            <Field label="SHA-256" name="sha256" required pattern="[0-9a-fA-F]{64}" hint="The document's SHA-256, 64 hexadecimal characters." />
+            <Field label="Version" name="version" required maxLength={40} hint="Letters, digits, dots, underscores and hyphens, such as 2026-11." />
+            <Field label="Document reference" name="documentRef" required maxLength={200} hint="Where the signed-off document is kept: letters, digits, colons, slashes, dots, underscores and hyphens, such as terms/2026-11." />
+            <Field label="SHA-256" name="sha256" required pattern="[0-9a-fA-F]{64}" hint="The document’s SHA-256, 64 hexadecimal characters." />
           </ActionForm>
         </CardContent>
       </Card>
