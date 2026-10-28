@@ -45,3 +45,4 @@
 - mutation so far: packets-scan, packets-rest, packets-explain canary/stryker/gate 0; pricing-engine running (01:39)
 - [x] mutation on ffb27b11: 6 shards canary 5/5 + stryker + gate 0; gate passed: pricing 98.67% (1934 detected, 26 undetected = 26 equivalents, 12 load failures), packets 97.75% (4310, 99 = 99 equivalents, 2 load failures). Next capacity, e2e
 - [x] capacity on ffb27b11 (process, binding, S1,S4): S1-1 32.1, S1-2 2.7; S4#1 36.6/37.8/35.9/26.8; S4#2 40.4/39.0/41.2/28.7; S4#3 37.9/37.8/38.4/28.5 (middle S4#3 38.4 s); address checks 14/14 at 2.0-3.4 s; verdict fail only on environment (partial run, limits/cold start not applied, oracles S2/S3 not run). e2e next
+- [x] e2e on ffb27b11: 56 passed (8.7 min, 2 workers, no retry). SUITE COMPLETE on ffb27b11. Leftover dbs tp_pr6b4v_t1, tp_pr6b4v_dm_1 (first run) dropped. NEXT: push ffb27b11, then body
