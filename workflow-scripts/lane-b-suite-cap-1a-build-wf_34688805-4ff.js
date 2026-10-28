@@ -8,6 +8,9 @@ export const meta = {
   ],
 }
 
+// RESUMED 2026-10-28 ~00:20 UTC: the account's 5-hour limit stopped slice 4 (build-s4-memory), slice 5 and the check at
+// about 23:00 UTC; PostgreSQL was restarted by the setup script. The reproduction and slices 1 to 3 replay from cache;
+// slice 4 continues from its progress file. Heavy commands stay under flock /tmp/laneb-heavy.lock.
 const SP = '/tmp/claude-0/-home-user-PhysicalTherapy/b8fe4f4f-26ab-5bdd-9556-0e8c28ea8bc8/scratchpad'
 const WT = '/home/user/suite-cap-1-bounded-reads'
 const DESIGN = '/home/user/ops/designs/suite-cap-1-triage-locks.md'
