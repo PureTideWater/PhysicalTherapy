@@ -10,10 +10,11 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 
 import { consistencyProblems, formProblems, parsePin } from '../check-action-pins/workflows';
-import { MAX_OPENED_PER_RUN } from '../content-calendar/render';
+import { MAX_FILE_BYTES, MAX_OPENED_PER_RUN } from '../content-calendar/render';
 import { repositoryRoot } from '../content-files';
 import { REQUIRED_CHECKS } from '../required-checks';
 import { RELEASE_RUNNER } from '../screening-capacity/launch-check';
+import { CONFIG, attestedArchive } from '../screening-capacity/test-support/image-archive';
 
 /**
  * Many of these tests run a workflow step's script, git or a fake gh as GitHub would, hundreds of processes for the
@@ -274,6 +275,22 @@ function runScript(script: string, env: Record<string, string>, cwd: string): { 
   const result = spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', script], { cwd, encoding: 'utf8', env: { PATH: process.env.PATH ?? '/usr/bin:/bin', ...env }, timeout: TEST_TIMEOUT_MS, killSignal: 'SIGKILL' });
   expect(result.error).toBeUndefined();
   return { status: result.status, output: result.stdout + result.stderr };
+}
+
+/**
+ * A stand-in docker in <dir>/bin, for the scripts that load an image and read its ID (release.yml's push check, ci.yml's
+ * worker identity step): `info` names the containerd snapshotter on that store alone, `load` succeeds, `image inspect`
+ * prints <dir>/id-<the image's name>, any other command exits 97, and every call is appended to <dir>/calls.
+ */
+function standInDocker(dir: string, store: 'classic' | 'containerd'): string {
+  const bin = path.join(dir, 'bin');
+  mkdirSync(bin);
+  writeFileSync(
+    path.join(bin, 'docker'),
+    `#!/usr/bin/env bash\nprintf '%s\\n' "$*" >> '${dir}/calls'\ncase "$1" in\n  info) [ '${store}' = containerd ] && echo io.containerd.snapshotter.v1; exit 0 ;;\n  load) exit 0 ;;\n  image) ref="\${@: -1}"; name="\${ref##*/}"; cat '${dir}/id-'"\${name%%:*}" ;;\n  *) exit 97 ;;\nesac\n`,
+    { mode: 0o755 },
+  );
+  return bin;
 }
 
 /**
@@ -824,9 +841,7 @@ describe('workflows', () => {
       function check(setup: { store: 'classic' | 'containerd'; tamper?: string; ids: (identity: { config: string; target: string }) => string }) {
         const dir = mkdtempSync(path.join(scratch, 'release-check-'));
         const temp = path.join(dir, 'runner-temp');
-        const bin = path.join(dir, 'bin');
         mkdirSync(path.join(temp, 'image'), { recursive: true });
-        mkdirSync(bin);
         const outputs: Record<string, string> = {};
         for (const image of ['web', 'web-staging', 'web-production', 'worker']) {
           const archive = path.join(temp, 'image', `${image}.tar.gz`);
@@ -838,11 +853,7 @@ describe('workflows', () => {
           writeFileSync(path.join(dir, `id-${image}`), `${setup.ids(identity)}\n`);
           if (setup.tamper === image) writeFileSync(archive, `another archive of ${image}`);
         }
-        writeFileSync(
-          path.join(bin, 'docker'),
-          `#!/usr/bin/env bash\nprintf '%s\\n' "$*" >> '${dir}/calls'\ncase "$1" in\n  info) [ '${setup.store}' = containerd ] && echo io.containerd.snapshotter.v1; exit 0 ;;\n  load) exit 0 ;;\n  image) ref="\${@: -1}"; name="\${ref##*/}"; cat '${dir}/id-'"\${name%%:*}" ;;\n  *) exit 97 ;;\nesac\n`,
-          { mode: 0o755 },
-        );
+        const bin = standInDocker(dir, setup.store);
         const script = job('push').steps.find((step) => /\bdocker load\b/.test(step.run ?? ''))?.run ?? '';
         const result = runScript(script, { ...SCRIPT_ENV, PATH: `${bin}:${process.env.PATH ?? '/usr/bin:/bin'}`, RUNNER_TEMP: temp, BUILD: JSON.stringify(outputs) }, dir);
         const calls = existsSync(path.join(dir, 'calls')) ? readFileSync(path.join(dir, 'calls'), 'utf8').trim().split('\n') : [];
@@ -1799,8 +1810,8 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
     // Each archive's config digest, read from its bytes, is the one buildx reports for its build.
     const web = stepNamed(steps, 'The web archive holds the image buildx built');
     expect(web.if).toBe("${{ !cancelled() && steps.web.outcome == 'success' }}");
-    expect(web.env).toEqual({ METADATA: '${{ steps.web.outputs.metadata }}' });
-    expect(web.run).toContain(`built="$(jq -r '."containerimage.config.digest" // empty' <<< "$METADATA")"`);
+    expect(web.env).toEqual({ BUILT: "${{ fromJSON(steps.web.outputs.metadata || '{}')['containerimage.config.digest'] }}" });
+    expect(web.run).toContain('built="$BUILT"');
     expect(web.run).toContain(`read="$(node tools/screening-capacity/image-id.ts "$RUNNER_TEMP/image/web.tar" | jq -r '.config')"`);
     expect(web.run).toContain('if [ -z "$built" ] || [ "$read" != "$built" ]; then');
     // The worker's too, then it loads as the archive's top-level descriptor on the containerd store (its config digest
@@ -1808,7 +1819,8 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
     const worker = stepNamed(steps, 'The worker archive holds the image buildx built, and loads as itself');
     expect(worker.id).toBe('worker-identity');
     expect(worker.if).toBe("${{ !cancelled() && steps.worker.outcome == 'success' }}");
-    expect(worker.env).toEqual({ METADATA: '${{ steps.worker.outputs.metadata }}' });
+    expect(worker.env).toEqual({ BUILT: "${{ fromJSON(steps.worker.outputs.metadata || '{}')['containerimage.config.digest'] }}" });
+    expect(worker.run).toContain('built="$BUILT"');
     const script = worker.run ?? '';
     expect(script).toContain('identity="$(node tools/screening-capacity/image-id.ts "$RUNNER_TEMP/image/worker.tar")"');
     expect(script).toContain('docker load --input "$RUNNER_TEMP/image/worker.tar"');
@@ -1821,6 +1833,113 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
     expect(browser.if).toBe("${{ !cancelled() && steps.worker-identity.outcome == 'success' }}");
     const scans = steps.filter(isScan).map((step) => steps.indexOf(step));
     expect([Math.max(...scans) < node, node < steps.indexOf(web), steps.indexOf(web) < steps.indexOf(worker), steps.indexOf(worker) < steps.indexOf(browser)]).toEqual([true, true, true, true]);
+  });
+
+  /**
+   * buildx's metadata output as build-push-action sets it (`JSON.stringify(metadata, null, 2)`, its src/main.ts:139 at
+   * v7.4.0), keyed as buildx v0.38.1 writes it on a pull request (#42's job 122624309161): its provenance holds the whole
+   * event, whose description here is a synthetic ruler, cut so the output is exactly `bytes` bytes of UTF-8.
+   */
+  function buildxMetadata(digest: string | undefined, bytes: number): string {
+    let ruler = '| Row | Characters so far | What it is |\n| --- | --- | --- |\n';
+    for (let row = 1; row <= 1_400; row += 1) {
+      const prefix = `| ${String(row).padStart(4, '0')} | `;
+      ruler += `${prefix}${String(ruler.length + 100).padStart(7, '0')}${' | synthetic length-test row, no data |\n'.padStart(100 - prefix.length - 7)}`;
+    }
+    const text = (body: string) =>
+      JSON.stringify(
+        {
+          'buildx.build.provenance': {
+            buildType: 'https://mobyproject.org/buildkit@v1',
+            invocation: { environment: { github_event_name: 'pull_request', github_event_payload: { action: 'synchronize', number: 1, pull_request: { number: 1, title: 'Synthetic length test', body } } } },
+          },
+          'buildx.build.ref': 'builder-synthetic/builder-synthetic0/synthetic',
+          ...(digest === undefined ? {} : { 'containerimage.config.digest': digest }),
+          'containerimage.digest': `sha256:${'0'.repeat(64)}`,
+          'image.name': 'docker.io/library/tp-synthetic:scan',
+        },
+        null,
+        2,
+      );
+    // Each character cut is at least one byte (a newline two, as \n), so the cut leaves at most `bytes`; dots fill the rest.
+    let body = ruler.slice(0, ruler.length - (Buffer.byteLength(text(ruler)) - bytes));
+    while (Buffer.byteLength(text(body)) < bytes) body += '.';
+    return text(body);
+  }
+
+  /**
+   * A step's env as the runner evaluates it from the builds' metadata outputs, in the two forms an identity step has
+   * had: the whole output, or `fromJSON(output || '{}')[key]`, whose missing key (or a non-object) is null and so ''
+   * (docs/adr/0066, Part 3, N29). Any other form fails the test.
+   */
+  function identityEnv(step: Step, metadata: Readonly<Record<string, string>>): Record<string, string> {
+    return Object.fromEntries(
+      Object.entries(step.env ?? {}).map(([name, value]): [string, string] => {
+        const whole = /^\$\{\{ steps\.([\w-]+)\.outputs\.metadata \}\}$/.exec(value);
+        if (whole !== null) return [name, metadata[whole[1] ?? ''] ?? ''];
+        const keyed = /^\$\{\{ fromJSON\(steps\.([\w-]+)\.outputs\.metadata \|\| '\{\}'\)\['([^']+)'\] \}\}$/.exec(value);
+        if (keyed === null) throw new Error(`${name}: ${value} is a form this emulator does not know`);
+        const parsed: unknown = JSON.parse(metadata[keyed[1] ?? ''] || '{}');
+        const found = isRecord(parsed) ? parsed[keyed[2] ?? ''] : undefined;
+        if (typeof found === 'string') return [name, found];
+        if (found === undefined || found === null) return [name, ''];
+        throw new Error(`${name}: ${value} is a ${typeof found}, a value this emulator does not know`);
+      }),
+    );
+  }
+
+  it('starts and passes both identity steps when buildx’s metadata is 132,377 bytes, and names a missing or other digest (run 40630123457)', () => {
+    const steps = ciJob('images').steps;
+    const web = stepNamed(steps, 'The web archive holds the image buildx built');
+    const worker = stepNamed(steps, 'The worker archive holds the image buildx built, and loads as itself');
+    const dir = mkdtempSync(path.join(scratch, 'identity-'));
+    const temp = path.join(dir, 'runner-temp');
+    mkdirSync(path.join(temp, 'image'), { recursive: true });
+    // A synthetic archive of each image, as image-id.ts reads buildx's type=docker export.
+    const images = { web: attestedArchive(), worker: attestedArchive(CONFIG.replace('"User":"node"', '"User":"worker"')) };
+    expect(images.worker.config).not.toBe(images.web.config);
+    writeFileSync(path.join(temp, 'image/web.tar'), images.web.archive);
+    writeFileSync(path.join(temp, 'image/worker.tar'), images.worker.archive);
+    // docker on either image store: tp-worker:scan loads as the archive's top-level descriptor on the containerd store,
+    // as its config digest on the classic one.
+    const dockerOn = (store: 'classic' | 'containerd') => {
+      const home = mkdtempSync(path.join(dir, `docker-${store}-`));
+      writeFileSync(path.join(home, 'id-tp-worker'), `${store === 'containerd' ? images.worker.target : images.worker.config}\n`);
+      return standInDocker(home, store);
+    };
+    const bins = { containerd: dockerOn('containerd'), classic: dockerOn('classic') };
+    /** The step's script as the runner starts it (a file, bash --noprofile --norc -e -o pipefail), with this environment alone. */
+    const run = (step: Step, metadata: Readonly<Record<string, string>>, store: 'classic' | 'containerd' = 'containerd') => {
+      const env = { PATH: `${bins[store]}:${process.env.PATH ?? '/usr/bin:/bin'}`, RUNNER_TEMP: temp, ...identityEnv(step, metadata) };
+      const file = path.join(dir, 'step.sh');
+      writeFileSync(file, step.run ?? '');
+      const result = spawnSync('bash', ['--noprofile', '--norc', '-e', '-o', 'pipefail', file], { cwd: repositoryRoot, encoding: 'utf8', env, timeout: TEST_TIMEOUT_MS, killSignal: 'SIGKILL' });
+      // First, as #42's job met it: one environment string over 131,072 bytes stops bash before it starts (E2BIG), and
+      // there is no output to read.
+      expect(result.error?.message, `${step.name ?? ''}: bash did not start`).toBeUndefined();
+      // Every string of the step's environment, each with its name, its = and its NUL.
+      expect(Object.entries(env).reduce((bytes, [name, value]) => bytes + Buffer.byteLength(`${name}=${value}`) + 1, 0)).toBeLessThan(131_072);
+      return [result.status, result.stdout + result.stderr] as const;
+    };
+    const outputs = (webDigest: string | undefined, workerDigest: string | undefined) => ({ web: buildxMetadata(webDigest, 132_377), worker: buildxMetadata(workerDigest, 132_377) });
+
+    // #42's size: the web metadata whole, as METADATA= and its NUL, was 132,387 bytes.
+    const built = outputs(images.web.config, images.worker.config);
+    expect([Buffer.byteLength(built.web), Buffer.byteLength(`METADATA=${built.web}`) + 1]).toEqual([132_377, 132_387]);
+    expect(run(web, built)).toEqual([0, expect.stringContaining(`web: config ${images.web.config}\n`)]);
+    for (const store of ['containerd', 'classic'] as const) {
+      const id = store === 'containerd' ? images.worker.target : images.worker.config;
+      expect(run(worker, built, store), store).toEqual([0, expect.stringContaining(`worker: config ${images.worker.config}, target ${images.worker.target}, loaded as ${id} on the ${store} image store\n`)]);
+    }
+    // An empty output (its build failed or was cancelled) and a metadata without the key each stop on the step's own message.
+    for (const [why, nothing] of Object.entries({ 'an empty output': { web: '', worker: '' }, 'no config digest': outputs(undefined, undefined) })) {
+      expect(run(web, nothing), why).toEqual([1, expect.stringContaining(`::error title=The web archive::its config digest is ${images.web.config}, and buildx built nothing it reported`)]);
+      expect(run(worker, nothing), why).toEqual([1, expect.stringContaining(`::error title=The worker archive::its config digest is ${images.worker.config}, and buildx built nothing it reported`)]);
+    }
+    // Another digest names both.
+    const other = `sha256:${'1'.repeat(64)}`;
+    expect(run(web, outputs(other, other))).toEqual([1, expect.stringContaining(`its config digest is ${images.web.config}, and buildx built ${other}`)]);
+    expect(run(worker, outputs(other, other))).toEqual([1, expect.stringContaining(`its config digest is ${images.worker.config}, and buildx built ${other}`)]);
   });
 
   it('checks production licenses against the allowlist on every pull request', () => {
@@ -2656,6 +2775,536 @@ describe('concurrency groups', () => {
     expect(problems(`name: mutation\nconcurrency: { cancel-in-progress: true }\n${job}`)).toEqual(['fixture.yml the workflow: a concurrency with no group']);
     expect(problems("name: ci\njobs: { a: { runs-on: ubuntu-24.04, concurrency: 'deploy', steps: [] } }")).toEqual(['fixture.yml job a: the group deploy starts with neither ${{ github.workflow }}- nor ci-']);
     expect(problems("name: ci\njobs: { a: { runs-on: ubuntu-24.04, concurrency: { group: '${{ github.workflow }}${{ github.ref }}' }, steps: [] } }")).toHaveLength(1);
+  });
+});
+
+/**
+ * One environment string stops at 131,072 bytes, its name, its = and its NUL included (Linux's MAX_ARG_STRLEN): one
+ * longer and bash never starts ("Argument list too long", #42's job 122624309161, where a build's whole metadata, with
+ * the pull request's description in it, reached 132,387). So nothing that can grow past it may reach a step's
+ * environment, an action's input (an INPUT_* variable) or a script. Every expression there is read as the runner reads
+ * it (actions/runner's LexicalAnalyzer: whitespace skipped before every token, a name before "(" a function, names and
+ * keys without case) and admitted only from a closed list: values GitHub or the workflow bounds, and each step output or
+ * value one job hands another, listed with its bound (docs/adr/0066, Part 3, N29).
+ */
+describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, Part 3, N29)', () => {
+  type Token = { readonly kind: 'string' | 'number' | 'keyword' | 'name' | 'function' | 'punctuation' | 'operator' | 'star'; readonly text: string };
+  type Expression =
+    | { readonly t: 'literal'; readonly kind: 'string' | 'number' | 'keyword'; readonly value: string }
+    | { readonly t: 'not'; readonly operand: Expression }
+    | { readonly t: 'binary'; readonly operator: string; readonly left: Expression; readonly right: Expression }
+    | { readonly t: 'call'; readonly name: string; readonly args: readonly Expression[] }
+    | { readonly t: 'reference'; readonly name: string }
+    | { readonly t: 'access'; readonly target: Expression; readonly path: readonly Access[] };
+  type Access = { readonly name: string } | { readonly star: true } | { readonly computed: Expression };
+
+  /** An expression's tokens, after the runner's lexer: names, functions and keywords in lower case, '' one quote in a string. */
+  function lexExpression(text: string): Token[] {
+    const tokens: Token[] = [];
+    let at = 0;
+    while (at < text.length) {
+      const rest = text.slice(at);
+      const char = text.charAt(at);
+      if (/\s/.test(char)) {
+        at += 1;
+      } else if (char === "'") {
+        let value = '';
+        let end = at + 1;
+        for (;;) {
+          if (end >= text.length) throw new SyntaxError('a string with no closing quote');
+          if (text.charAt(end) === "'") {
+            if (text.charAt(end + 1) !== "'") break;
+            value += "'";
+            end += 2;
+          } else {
+            value += text.charAt(end);
+            end += 1;
+          }
+        }
+        tokens.push({ kind: 'string', text: value });
+        at = end + 1;
+      } else if (/^(?:&&|\|\||==|!=|<=|>=)/.test(rest)) {
+        tokens.push({ kind: 'operator', text: rest.slice(0, 2) });
+        at += 2;
+      } else if (char === '<' || char === '>') {
+        tokens.push({ kind: 'operator', text: char });
+        at += 1;
+      } else if ('()[],.!'.includes(char)) {
+        tokens.push({ kind: 'punctuation', text: char });
+        at += 1;
+      } else if (char === '*') {
+        tokens.push({ kind: 'star', text: char });
+        at += 1;
+      } else {
+        const word = /^[A-Za-z_][A-Za-z0-9_-]*/.exec(rest)?.[0];
+        const number = /^[-+]?(?:0x[0-9a-fA-F]+|[0-9]+(?:\.[0-9]+)?(?:[eE][-+]?[0-9]+)?)/.exec(rest)?.[0];
+        if (word !== undefined) {
+          const name = word.toLowerCase();
+          const call = /^\s*\(/.test(text.slice(at + word.length));
+          tokens.push({ kind: ['true', 'false', 'null'].includes(name) ? 'keyword' : call ? 'function' : 'name', text: name });
+          at += word.length;
+        } else if (number !== undefined) {
+          tokens.push({ kind: 'number', text: number });
+          at += number.length;
+        } else {
+          throw new SyntaxError(`an unexpected ${char}`);
+        }
+      }
+    }
+    return tokens;
+  }
+
+  /** The tree of an expression's tokens: references with their property path, calls and operators (each left to right). */
+  function parseExpression(tokens: readonly Token[]): Expression {
+    let at = 0;
+    const peek = (): Token | undefined => tokens[at];
+    const take = (): Token => {
+      const token = tokens[at];
+      if (token === undefined) throw new SyntaxError('an expression that stops short');
+      at += 1;
+      return token;
+    };
+    const punctuation = (token: Token | undefined, text: string) => token?.kind === 'punctuation' && token.text === text;
+    const close = (text: string) => {
+      if (!punctuation(take(), text)) throw new SyntaxError(`no ${text}`);
+    };
+    const primary = (): Expression => {
+      const token = take();
+      let node: Expression;
+      if (token.kind === 'string' || token.kind === 'number' || token.kind === 'keyword') {
+        node = { t: 'literal', kind: token.kind, value: token.text };
+      } else if (token.kind === 'function') {
+        close('(');
+        const args: Expression[] = [];
+        if (!punctuation(peek(), ')')) {
+          args.push(expression());
+          while (punctuation(peek(), ',')) {
+            take();
+            args.push(expression());
+          }
+        }
+        close(')');
+        node = { t: 'call', name: token.text, args };
+      } else if (token.kind === 'name') {
+        node = { t: 'reference', name: token.text };
+      } else if (punctuation(token, '(')) {
+        node = expression();
+        close(')');
+      } else if (punctuation(token, '!')) {
+        return { t: 'not', operand: primary() };
+      } else {
+        throw new SyntaxError(`an unexpected ${token.text}`);
+      }
+      const path: Access[] = [];
+      for (;;) {
+        if (punctuation(peek(), '.')) {
+          take();
+          const property = take();
+          if (property.kind === 'star') path.push({ star: true });
+          else if (property.kind === 'name' || property.kind === 'function' || property.kind === 'keyword' || property.kind === 'number') path.push({ name: property.text });
+          else throw new SyntaxError(`a property named ${property.text}`);
+        } else if (punctuation(peek(), '[')) {
+          take();
+          if (peek()?.kind === 'star') {
+            take();
+            path.push({ star: true });
+          } else {
+            const index = expression();
+            path.push(index.t === 'literal' && index.kind !== 'keyword' ? { name: index.kind === 'string' ? index.value.toLowerCase() : index.value } : { computed: index });
+          }
+          close(']');
+        } else {
+          break;
+        }
+      }
+      return path.length === 0 ? node : { t: 'access', target: node, path };
+    };
+    const expression = (): Expression => {
+      let left = primary();
+      for (let next = peek(); next?.kind === 'operator'; next = peek()) {
+        take();
+        left = { t: 'binary', operator: next.text, left, right: primary() };
+      }
+      return left;
+    };
+    const tree = expression();
+    if (at !== tokens.length) throw new SyntaxError(`${tokens[at]?.text ?? ''} after the expression`);
+    return tree;
+  }
+
+  /** A reference and its literal property names, or undefined where the path holds a * or a computed index. */
+  function namesOf(node: Expression): string[] | undefined {
+    if (node.t === 'reference') return [node.name];
+    if (node.t !== 'access' || node.target.t !== 'reference') return undefined;
+    const names = [node.target.name];
+    for (const access of node.path) {
+      if (!('name' in access)) return undefined;
+      names.push(access.name);
+    }
+    return names;
+  }
+
+  /** The github context's paths admitted whole: scalars GitHub bounds, the ones in use. */
+  const BOUNDED_GITHUB = new Set(['actor', 'base_ref', 'event_name', 'ref', 'ref_name', 'repository', 'run_id', 'server_url', 'sha', 'token', 'event.before', 'event.pull_request.number', 'event.pull_request.base.sha', 'event.pull_request.head.sha', 'event.repository.private']);
+  /**
+   * Contexts admitted one level down: a runner, strategy, matrix or job value, a variable the workflow sets (each held
+   * here where it is set), and a repository variable or a secret, each at most 48 KB (GitHub's documentation).
+   */
+  const ONE_LEVEL = new Set(['runner', 'strategy', 'matrix', 'job', 'env', 'vars', 'secrets']);
+  /** The input types that bound an input; a string input has no bound GitHub documents. */
+  const BOUNDED_INPUT_TYPES = new Set(['choice', 'boolean', 'number']);
+  /** The only variables a script may write to $GITHUB_ENV: ci.yml's engine freeze base, a commit SHA. */
+  const GITHUB_ENV_NAMES = new Set(['ENGINE_FREEZE_BASE']);
+  /** A $GITHUB_ENV write in the one form admitted, its name from GITHUB_ENV_NAMES. */
+  const GITHUB_ENV_WRITE = /^\s*echo "([A-Z_][A-Z0-9_]*)=[^"]*" >> "\$GITHUB_ENV"\s*$/;
+  /** The one form a build's metadata output may take: its config digest, '' for an empty output (fromJSON('') fails a step). */
+  const DIGEST_KEY = 'containerimage.config.digest';
+
+  /** Why this expression is not admitted (none when it is), and the step outputs and cross-job values it reads, for BOUNDED_VALUES. */
+  function expressionProblems(tree: Expression, inputs: Readonly<Record<string, unknown>>, values: string[]): string[] {
+    const problems: string[] = [];
+    const reference = (names: readonly string[] | undefined, inToJson = false): void => {
+      if (names === undefined) {
+        problems.push('a wildcard or a computed index');
+        return;
+      }
+      const [base = '', ...rest] = names;
+      const dotted = names.join('.');
+      if (base === 'github') {
+        if (!BOUNDED_GITHUB.has(rest.join('.'))) problems.push(`${dotted}, not a bounded github value`);
+      } else if (ONE_LEVEL.has(base)) {
+        if (rest.length !== 1) problems.push(`${dotted}, not one level of ${base}`);
+      } else if (base === 'inputs') {
+        if (rest.length !== 1 || !BOUNDED_INPUT_TYPES.has(String(inputs[rest[0] ?? '']))) problems.push(`${dotted}, an input whose type does not bound it`);
+      } else if ((base === 'needs' && rest.length === 2 && rest[1] === 'result') || (base === 'steps' && rest.length === 2 && (rest[1] === 'outcome' || rest[1] === 'conclusion'))) {
+        // A result, an outcome or a conclusion: one word.
+      } else if (base === 'steps' && rest.length === 3 && rest[1] === 'outputs' && rest[2] === 'metadata') {
+        problems.push(`${dotted} whole`);
+      } else if ((base === 'steps' || base === 'needs') && rest.length === 3 && rest[1] === 'outputs') {
+        values.push(dotted);
+      } else if (inToJson && base === 'needs' && (rest.length === 0 || (rest.length === 2 && rest[1] === 'outputs'))) {
+        values.push(`tojson(${dotted})`);
+      } else {
+        problems.push(dotted);
+      }
+    };
+    const walk = (node: Expression): void => {
+      switch (node.t) {
+        case 'literal':
+          return;
+        case 'not':
+          walk(node.operand);
+          return;
+        case 'binary':
+          walk(node.left);
+          walk(node.right);
+          return;
+        case 'reference':
+          reference([node.name]);
+          return;
+        case 'access': {
+          const target = node.target;
+          if (target.t !== 'call') {
+            reference(namesOf(node));
+            return;
+          }
+          const [argument] = target.args;
+          const [key] = node.path;
+          if (target.name === 'fromjson' && target.args.length === 1 && argument?.t === 'binary' && argument.operator === '||' && argument.right.t === 'literal' && argument.right.kind === 'string' && argument.right.value === '{}' && node.path.length === 1 && key !== undefined && 'name' in key && key.name === DIGEST_KEY) {
+            const names = namesOf(argument.left);
+            if (names?.length === 4 && names[0] === 'steps' && names[2] === 'outputs' && names[3] === 'metadata') {
+              values.push(`fromjson(${names.join('.')} || '{}')['${DIGEST_KEY}']`);
+              return;
+            }
+          }
+          // fromJSON of an admitted value, then literal keys alone (the matrices).
+          if (target.name === 'fromjson' && node.path.every((access) => 'name' in access)) {
+            walk(target);
+            return;
+          }
+          problems.push(`an index or a wildcard on ${target.name}()`);
+          return;
+        }
+        case 'call': {
+          if (['success', 'failure', 'always', 'cancelled'].includes(node.name) && node.args.length === 0) return;
+          if (node.name === 'tojson') {
+            const [argument] = node.args;
+            const names = node.args.length === 1 && argument !== undefined ? namesOf(argument) : undefined;
+            if (names?.[0] === 'needs') reference(names, true);
+            else problems.push(`toJSON of ${names?.join('.') ?? 'an expression'}`);
+            return;
+          }
+          if (node.name === 'fromjson' && node.args.length === 1) {
+            node.args.forEach(walk);
+            return;
+          }
+          // hashFiles and any other function of literals alone.
+          if (!node.args.every((argument) => argument.t === 'literal')) problems.push(`${node.name}() of a context`);
+          return;
+        }
+      }
+    };
+    walk(tree);
+    return problems;
+  }
+
+  interface FoundValue {
+    readonly file: string;
+    readonly job: string;
+    readonly value: string;
+  }
+
+  /**
+   * Every expression of a workflow that reaches a process, read as the runner reads it: the workflow's env; each job's
+   * env, outputs, strategy, container, services, with and secrets; each step's env, with and run (`if:` and `name:`
+   * reach none). What it refuses, each naming its file, job, step and key, and the values it found for BOUNDED_VALUES.
+   */
+  function unboundedValueProblems(file: string, parsed: unknown): { problems: string[]; values: FoundValue[] } {
+    const problems: string[] = [];
+    const values: FoundValue[] = [];
+    const root = isRecord(parsed) ? parsed : {};
+    const inputs: Record<string, unknown> = {};
+    for (const trigger of ['workflow_dispatch', 'workflow_call']) {
+      const on = isRecord(root.on) ? root.on[trigger] : undefined;
+      const declared = isRecord(on) && isRecord(on.inputs) ? on.inputs : {};
+      for (const [name, declaration] of Object.entries(declared)) inputs[name.toLowerCase()] = isRecord(declaration) ? declaration.type : undefined;
+    }
+    const visit = (value: unknown, where: string, job: string): void => {
+      if (typeof value === 'string') {
+        for (const match of value.matchAll(/\$\{\{([\s\S]*?)\}\}/g)) {
+          const text = match[1] ?? '';
+          const found: string[] = [];
+          let refused: string[];
+          try {
+            refused = expressionProblems(parseExpression(lexExpression(text)), inputs, found);
+          } catch (error) {
+            refused = [`does not parse (${error instanceof Error ? error.message : 'unknown'})`];
+          }
+          problems.push(...refused.map((problem) => `${file} ${where}: ${problem}, in \${{${text}}}`));
+          values.push(...found.map((entry) => ({ file, job, value: entry.toLowerCase() })));
+        }
+      } else if (isList(value)) {
+        value.forEach((item, index) => visit(item, `${where}[${String(index)}]`, job));
+      } else if (isRecord(value)) {
+        for (const [key, item] of Object.entries(value)) visit(item, `${where}.${key}`, job);
+      }
+    };
+    visit(root.env, 'env', '-');
+    for (const [id, job] of Object.entries(isRecord(root.jobs) ? root.jobs : {})) {
+      if (!isRecord(job)) continue;
+      for (const key of ['env', 'outputs', 'strategy', 'container', 'services', 'with', 'secrets']) visit(job[key], `job ${id} ${key}`, id);
+      (isList(job.steps) ? job.steps : []).forEach((step, index) => {
+        if (!isRecord(step)) return;
+        const named = `job ${id} step ${typeof step.name === 'string' ? JSON.stringify(step.name) : String(index)}`;
+        for (const key of ['env', 'with', 'run']) visit(step[key], `${named} ${key}`, id);
+        for (const line of (typeof step.run === 'string' ? step.run : '').split('\n').filter((text) => text.includes('GITHUB_ENV'))) {
+          if (!GITHUB_ENV_NAMES.has(GITHUB_ENV_WRITE.exec(line)?.[1] ?? '')) problems.push(`${file} ${named} run: a $GITHUB_ENV write outside its closed list: ${line.trim()}`);
+        }
+      });
+    }
+    return { problems, values };
+  }
+
+  it('admits into a step’s environment, an input or a script only values GitHub, the workflow or the table bounds, read as the runner reads an expression, in every workflow', () => {
+    expect(workflowFiles().flatMap((file) => unboundedValueProblems(file, workflow(file)).problems)).toEqual([]);
+  });
+
+  it('refuses each route a value could take whole', () => {
+    const fixture = (expression: string) =>
+      unboundedValueProblems(
+        'fixture.yml',
+        parse(
+          `name: fixture\non:\n  workflow_dispatch:\n    inputs:\n      runner: { type: choice, options: [ubuntu-24.04, ubuntu-26.04] }\n      note: { type: string }\njobs:\n  images:\n    runs-on: ubuntu-26.04\n    steps:\n      - name: The step\n        env:\n          VALUE: "\${{ ${expression} }}"\n        run: echo "$VALUE"\n`,
+        ),
+      );
+    const refused = [
+      'steps.web.outputs.metadata',
+      'steps.web.outputs.METADATA',
+      'steps.*.outputs.metadata',
+      'toJSON(github)',
+      'toJSON(github.event)',
+      'ToJson(GitHub.Event)',
+      'toJSON (github.event)',
+      'toJSON(steps)',
+      'github.event',
+      'github.event.pull_request.body',
+      'github . event . pull_request . body',
+      "github.event.pull_request['body']",
+      'github.event.pull_request.title',
+      'github.event.head_commit.message',
+      "github['event']",
+      "github['event']['pull_request']['body']",
+      "join(steps.web.outputs.*, '')",
+      "steps.web.outputs[format('meta{0}', 'data')]",
+      "fromJSON(steps.web.outputs.metadata || '{}')['buildx.build.provenance']",
+      // The hand-over's form: fromJSON('') of a build's empty output fails a step its if: would skip.
+      "fromJSON(steps.web.outputs.metadata)['containerimage.config.digest']",
+      "toJSON(fromJSON(steps.web.outputs.metadata || '{}'))",
+      "format('{0}', github.event.pull_request.body)",
+      'inputs.note',
+      'toJSON(needs.build)',
+      'needs.build.outputs[github.ref]',
+    ];
+    for (const expression of refused) {
+      expect(fixture(expression).problems, expression).toEqual([expect.stringMatching(/^fixture\.yml job images step "The step" env\.VALUE: .+, in \$\{\{ .+ \}\}$/)]);
+    }
+    const accepted: readonly (readonly [string, readonly string[]])[] = [
+      ["fromJSON(steps.web.outputs.metadata || '{}')['containerimage.config.digest']", ["fromjson(steps.web.outputs.metadata || '{}')['containerimage.config.digest']"]],
+      ["FromJSON( steps.web.outputs.metadata || '{}' )[ 'containerimage.config.digest' ]", ["fromjson(steps.web.outputs.metadata || '{}')['containerimage.config.digest']"]],
+      ['github.event.pull_request.number', []],
+      ["github['sha']", []],
+      ['toJSON(needs)', ['tojson(needs)']],
+      ['runner.temp', []],
+      ["hashFiles('pnpm-lock.yaml')", []],
+      ['inputs.runner', []],
+    ];
+    for (const [expression, values] of accepted) {
+      expect(fixture(expression), expression).toEqual({ problems: [], values: values.map((value) => ({ file: 'fixture.yml', job: 'images', value })) });
+    }
+
+    // The whole metadata is refused in every place a value reaches a process.
+    const whole = '"${{ steps.web.outputs.metadata }}"';
+    const places: (readonly [string, string])[] = [
+      [`env: { VALUE: ${whole} }\njobs: { images: { runs-on: ubuntu-26.04, steps: [] } }`, 'env.VALUE'],
+      [`jobs: { images: { runs-on: ubuntu-26.04, env: { VALUE: ${whole} }, steps: [] } }`, 'job images env.VALUE'],
+      [`jobs: { images: { runs-on: ubuntu-26.04, outputs: { value: ${whole} }, steps: [] } }`, 'job images outputs.value'],
+      [`jobs: { images: { runs-on: ubuntu-26.04, strategy: { matrix: { value: [${whole}] } }, steps: [] } }`, 'job images strategy.matrix.value[0]'],
+      [`jobs: { images: { runs-on: ubuntu-26.04, container: { image: 'node:24', env: { VALUE: ${whole} } }, steps: [] } }`, 'job images container.env.VALUE'],
+      [`jobs: { images: { runs-on: ubuntu-26.04, services: { db: { image: 'postgres:18', env: { VALUE: ${whole} } } }, steps: [] } }`, 'job images services.db.env.VALUE'],
+      [`jobs: { images: { uses: ./.github/workflows/fixture.yml, with: { value: ${whole} } } }`, 'job images with.value'],
+      [`jobs: { images: { uses: ./.github/workflows/fixture.yml, secrets: { value: ${whole} } } }`, 'job images secrets.value'],
+      [`jobs: { images: { runs-on: ubuntu-26.04, steps: [{ name: The step, uses: actions/fixture@v1, with: { value: ${whole} } }] } }`, 'job images step "The step" with.value'],
+      [`jobs: { images: { runs-on: ubuntu-26.04, steps: [{ name: The step, run: ${whole} }] } }`, 'job images step "The step" run'],
+    ];
+    for (const [jobs, where] of places) {
+      expect(unboundedValueProblems('fixture.yml', parse(`name: fixture\non: push\n${jobs}\n`)).problems, where).toEqual([`fixture.yml ${where}: steps.web.outputs.metadata whole, in \${{ steps.web.outputs.metadata }}`]);
+    }
+
+    // $GITHUB_ENV: one form, its variable from a closed list.
+    const write = (line: string) => unboundedValueProblems('fixture.yml', parse(`name: fixture\non: push\njobs:\n  images:\n    runs-on: ubuntu-26.04\n    steps:\n      - name: The step\n        run: |\n          ${line}\n`)).problems;
+    expect(write('echo "ENGINE_FREEZE_BASE=$base" >> "$GITHUB_ENV"')).toEqual([]);
+    expect(write('echo "BODY=$x" >> "$GITHUB_ENV"')).toEqual(['fixture.yml job images step "The step" run: a $GITHUB_ENV write outside its closed list: echo "BODY=$x" >> "$GITHUB_ENV"']);
+    expect(write('cat file >> $GITHUB_ENV')).toEqual(['fixture.yml job images step "The step" run: a $GITHUB_ENV write outside its closed list: cat file >> $GITHUB_ENV']);
+  });
+
+  interface BoundedValue extends FoundValue {
+    /** The producer and its bound, with file and line. */
+    readonly bound: string;
+    /** The one value known to be over the limit, and the item that owns its transport. */
+    readonly over?: 'ci-findings-transport';
+  }
+
+  const runnerImage = (where: string) => `the runner image step (${where}) writes the runner image's name and version, $ImageOS-$ImageVersion and $ImageOS`;
+  const cacheKey = (where: string, parts: string) => `actions/cache/restore echoes the key it was given (${where}), made of ${parts}`;
+  const RUNNER_HASH = 'runner.os and a hashFiles digest';
+  const APT_KEY = "the runner image's key and a hashFiles digest";
+  const identity = (where: string) => `the identity step (${where}) writes the archive's SHA-256 and the config and top-level digests image-id.ts reads, each 64 hexadecimal digits`;
+  const AFFECTED = 'tools/stryker/affected.ts:776 writes any (true or false), packages and shards (JSON lists of the mutation packages, stryker/base.mjs, and their shards)';
+  const RELEASE_BUILD = (where: string, digests: string) => `the build job's outputs (${where}), ${digests} digests of 64 hexadecimal digits, by the identity step`;
+
+  /**
+   * Every step output and every value one job hands another that reaches a process, each with its bound: a new one fails
+   * the test below until a reviewed row names its bound (docs/adr/0066, Part 3, N29).
+   */
+  const BOUNDED_VALUES: readonly BoundedValue[] = [
+    { file: 'ci.yml', job: 'all-green', value: 'tojson(needs)', bound: 'the eight jobs it needs (ci.yml:779), each a result word, and their outputs, of which there are none: no ci.yml job declares outputs (asserted below)' },
+    { file: 'ci.yml', job: 'db', value: 'steps.runner-image.outputs.key', bound: runnerImage('ci.yml:324-332') },
+    { file: 'ci.yml', job: 'db', value: 'steps.runner-image.outputs.os', bound: runnerImage('ci.yml:324-332') },
+    { file: 'ci.yml', job: 'db', value: 'steps.vitest-cache.outputs.cache-primary-key', bound: cacheKey('ci.yml:370', 'runner.os, strategy.job-total, matrix.shard and github.sha') },
+    { file: 'ci.yml', job: 'e2e', value: 'steps.runner-image.outputs.key', bound: runnerImage('ci.yml:523-531') },
+    { file: 'ci.yml', job: 'e2e', value: 'steps.runner-image.outputs.os', bound: runnerImage('ci.yml:523-531') },
+    { file: 'ci.yml', job: 'images', value: "fromjson(steps.web.outputs.metadata || '{}')['containerimage.config.digest']", bound: "buildx's config digest of the web build (ci.yml:678-688), sha256: and 64 hexadecimal digits, or '' when the metadata lacks it" },
+    { file: 'ci.yml', job: 'images', value: "fromjson(steps.worker.outputs.metadata || '{}')['containerimage.config.digest']", bound: "buildx's config digest of the worker build (ci.yml:701-712), sha256: and 64 hexadecimal digits, or '' when the metadata lacks it" },
+    { file: 'ci.yml', job: 'static', value: 'steps.range.outputs.base', bound: 'the commits step (ci.yml:55-74) writes origin/ and the base branch, github.event.before or a commit SHA, each checked to name a commit' },
+    { file: 'ci.yml', job: 'static', value: 'steps.tsc-cache.outputs.cache-primary-key', bound: cacheKey('ci.yml:146', `${RUNNER_HASH} and github.sha`) },
+    { file: 'ci.yml', job: 'unit', value: 'steps.apt.outputs.cache-primary-key', bound: cacheKey('ci.yml:229', APT_KEY) },
+    { file: 'ci.yml', job: 'unit', value: 'steps.browsers.outputs.cache-primary-key', bound: cacheKey('ci.yml:209', RUNNER_HASH) },
+    { file: 'ci.yml', job: 'unit', value: 'steps.runner-image.outputs.key', bound: runnerImage('ci.yml:212-220') },
+    { file: 'ci.yml', job: 'unit', value: 'steps.runner-image.outputs.os', bound: runnerImage('ci.yml:212-220') },
+    {
+      file: 'content-calendar.yml',
+      job: 'check',
+      value: 'steps.calendar.outputs.findings',
+      bound: 'base64 of findings.json (content-calendar.yml:60), at most 700,000 bytes (MAX_FILE_BYTES, tools/content-calendar/render.ts:17-18, :127-135), so 933,336 characters: a job output, under GitHub’s 1 MB, which reaches no process in this job',
+    },
+    {
+      file: 'content-calendar.yml',
+      job: 'notify',
+      value: 'needs.check.outputs.findings',
+      bound: 'FINDINGS_B64 (content-calendar.yml:78), the same base64 of up to 933,336 characters: over 131,072 bytes as one environment string, the open defect whose transport is its own item',
+      over: 'ci-findings-transport',
+    },
+    { file: 'large-zip.yml', job: 'large-zip', value: 'steps.runner-image.outputs.key', bound: runnerImage('large-zip.yml:37-45') },
+    { file: 'large-zip.yml', job: 'large-zip', value: 'steps.runner-image.outputs.os', bound: runnerImage('large-zip.yml:37-45') },
+    { file: 'mutation.yml', job: 'changes', value: 'steps.affected.outputs.any', bound: AFFECTED },
+    { file: 'mutation.yml', job: 'changes', value: 'steps.affected.outputs.packages', bound: AFFECTED },
+    { file: 'mutation.yml', job: 'changes', value: 'steps.affected.outputs.shards', bound: AFFECTED },
+    { file: 'mutation.yml', job: 'mutation', value: 'needs.changes.outputs.any', bound: `the changes job's outputs (mutation.yml:44-47): ${AFFECTED}` },
+    { file: 'mutation.yml', job: 'mutation', value: 'needs.changes.outputs.packages', bound: `the changes job's outputs (mutation.yml:44-47): ${AFFECTED}` },
+    { file: 'mutation.yml', job: 'mutation', value: 'needs.changes.outputs.shards', bound: `the changes job's outputs (mutation.yml:44-47): ${AFFECTED}` },
+    { file: 'mutation.yml', job: 'stryker', value: 'needs.changes.outputs.shards', bound: `the shards' matrix (mutation.yml:77): ${AFFECTED}` },
+    {
+      file: 'publish-content.yml',
+      job: 'publish',
+      value: 'steps.publish.outputs.releases',
+      bound: 'the release numbers tools/publish-content.sh publishes (:15-19, :49), separated by spaces (publish-content.yml:48), and read in a script, which the runner writes to a file (the file is frozen to its copy)',
+    },
+    { file: 'release-capacity.yml', job: 'capacity', value: 'steps.measure.outputs.advisories', bound: 'base64 of at most one advisory line (tools/release-capacity/checks.ts:181-195), written by tools/release-capacity/run.ts:535-536' },
+    { file: 'release-capacity.yml', job: 'notify', value: 'needs.capacity.outputs.advisories', bound: 'ADVISORIES_B64 (release-capacity.yml:137): base64 of at most one advisory line (tools/release-capacity/checks.ts:181-195)' },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.config_web', bound: identity('release-dry-run.yml:160-188') },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.config_worker', bound: identity('release-dry-run.yml:160-188') },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.sha256_web', bound: identity('release-dry-run.yml:160-188') },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.sha256_worker', bound: identity('release-dry-run.yml:160-188') },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.target_web', bound: identity('release-dry-run.yml:160-188') },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.target_worker', bound: identity('release-dry-run.yml:160-188') },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.dockerfile', bound: 'one of two Dockerfile paths (release-dry-run.yml:101-104)' },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.origin', bound: "'' or a repository variable, at most 48 KB (release-dry-run.yml:96-109)" },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.ref', bound: "ghcr.io, the repository, the matrix's image and dry-run- with the run's ID (release-dry-run.yml:99)" },
+    { file: 'release-dry-run.yml', job: 'capacity', value: 'tojson(needs.build.outputs)', bound: RELEASE_BUILD('release-dry-run.yml:70-76', 'six') },
+    { file: 'release-dry-run.yml', job: 'push', value: 'tojson(needs.build.outputs)', bound: RELEASE_BUILD('release-dry-run.yml:70-76', 'six') },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web', bound: identity('release.yml:165-193') },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web-production', bound: identity('release.yml:165-193') },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web-staging', bound: identity('release.yml:165-193') },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_worker', bound: identity('release.yml:165-193') },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_web', bound: identity('release.yml:165-193') },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_web-production', bound: identity('release.yml:165-193') },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_web-staging', bound: identity('release.yml:165-193') },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_worker', bound: identity('release.yml:165-193') },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_web', bound: identity('release.yml:165-193') },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_web-production', bound: identity('release.yml:165-193') },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_web-staging', bound: identity('release.yml:165-193') },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_worker', bound: identity('release.yml:165-193') },
+    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.dockerfile', bound: 'one of two Dockerfile paths (release.yml:90-93)' },
+    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.origin', bound: "'' or a repository variable, at most 48 KB (release.yml:85-98)" },
+    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.ref', bound: "ghcr.io, the repository, the matrix's image and the tag's name (release.yml:88)" },
+    { file: 'release.yml', job: 'capacity', value: 'tojson(needs.build.outputs)', bound: RELEASE_BUILD('release.yml:55-67', 'twelve') },
+    { file: 'release.yml', job: 'push', value: 'tojson(needs.build.outputs)', bound: RELEASE_BUILD('release.yml:55-67', 'twelve') },
+    { file: 'release.yml', job: 'report', value: 'steps.attest.outputs.bundle-path', bound: 'the path of the bundle actions/attest-build-provenance writes (release.yml:442-446)' },
+    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.apt.outputs.cache-primary-key', bound: cacheKey('screening-capacity.yml:249', APT_KEY) },
+    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.measure.outputs.sizing', bound: "one sentence of numbers and an upload's label (tools/screening-capacity/report.ts:835-838), written by run.ts:1036-1039" },
+    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.measure.outputs.time-warnings', bound: 'one line per judged scenario upload of a fixed list (tools/screening-capacity/report.ts:635-639), joined (:866-867)' },
+    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.runner-image.outputs.key', bound: runnerImage('screening-capacity.yml:233-241') },
+    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.runner-image.outputs.os', bound: runnerImage('screening-capacity.yml:233-241') },
+    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.scale-release.outputs.cache-primary-key', bound: cacheKey('screening-capacity.yml:281', 'one hashFiles digest') },
+    { file: 'screening-capacity.yml', job: 'changes', value: 'steps.watched.outputs.measure', bound: 'true or false (screening-capacity.yml:88-130)' },
+    { file: 'screening-capacity.yml', job: 'gate', value: 'needs.capacity.outputs.sizing', bound: "SIZING (screening-capacity.yml:346): one sentence of numbers and an upload's label (tools/screening-capacity/report.ts:835-838)" },
+    { file: 'screening-capacity.yml', job: 'gate', value: 'needs.capacity.outputs.time-warnings', bound: 'TIME_WARNINGS (screening-capacity.yml:347): one line per judged scenario upload of a fixed list (tools/screening-capacity/report.ts:635-639)' },
+    { file: 'screening-capacity.yml', job: 'gate', value: 'needs.changes.outputs.measure', bound: 'MEASURE (screening-capacity.yml:344): true or false (:88-130)' },
+  ];
+
+  it('hands a step another step’s or job’s output only from the list below, each with its bound', () => {
+    const key = ({ file, job, value }: FoundValue) => `${file} ${job} ${value}`;
+    const found = new Set(workflowFiles().flatMap((file) => unboundedValueProblems(file, workflow(file)).values.map(key)));
+    expect([...found].sort()).toEqual(BOUNDED_VALUES.map(key).sort());
+    // Each row names its producer's file and line.
+    for (const row of BOUNDED_VALUES) expect(row.bound, key(row)).toMatch(/[\w-]+\.(?:ya?ml|ts|mjs|sh):\d+/);
+    // ci.yml's gate reads toJSON(needs): results alone, since no ci.yml job declares outputs.
+    expect(Object.entries(workflow('ci.yml').jobs).filter(([, job]) => 'outputs' in job).map(([id]) => id)).toEqual([]);
+    // One row is over the limit, and says so: the content calendar's findings as FINDINGS_B64, base64 of a file bounded
+    // at MAX_FILE_BYTES. When ci-findings-transport changes the bound or the transport, this turns red and it rewrites the row.
+    expect(BOUNDED_VALUES.filter((row) => row.over !== undefined).map(key)).toEqual(['content-calendar.yml notify needs.check.outputs.findings']);
+    expect(workflow('content-calendar.yml').jobs.notify?.steps.map((step) => step.env?.FINDINGS_B64).filter((value) => value !== undefined)).toEqual(['${{ needs.check.outputs.findings }}']);
+    expect(4 * Math.ceil(MAX_FILE_BYTES / 3) + 'FINDINGS_B64='.length + 1).toBeGreaterThan(131_072);
   });
 });
 
