@@ -3306,6 +3306,20 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     expect(workflow('content-calendar.yml').jobs.notify?.steps.map((step) => step.env?.FINDINGS_B64).filter((value) => value !== undefined)).toEqual(['${{ needs.check.outputs.findings }}']);
     expect(4 * Math.ceil(MAX_FILE_BYTES / 3) + 'FINDINGS_B64='.length + 1).toBeGreaterThan(131_072);
   });
+
+  it('sets BUILDX_METADATA_PROVENANCE: disabled on every docker/build-push-action step of every workflow, and nothing else writes or reads buildx’s metadata provenance', () => {
+    // buildx v0.38.1 copies the whole event into every build record's provenance and, in its default mode (min), into
+    // the metadata file build-push-action prints and outputs; disabled leaves the key out, and buildx reads the word
+    // exactly (Disabled would be min). Matched in lower case: usesAction's prefix is case-sensitive.
+    const steps = workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => job.steps.map((step) => ({ where: `${file} ${id} ${step.name ?? step.id ?? ''}`, step }))));
+    const builds = steps.filter(({ step }) => step.uses?.toLowerCase().startsWith('docker/build-push-action@') === true);
+    expect(builds).toHaveLength(7);
+    expect(builds.filter(({ step }) => step.env?.BUILDX_METADATA_PROVENANCE !== 'disabled').map(({ where }) => where)).toEqual([]);
+    // Nothing writes buildx's metadata another way, and nothing reads its provenance.
+    expect(steps.filter(({ step }) => step.uses?.toLowerCase().startsWith('docker/bake-action@') === true).map(({ where }) => where)).toEqual([]);
+    expect(steps.filter(({ step }) => step.run?.includes('--metadata-file') === true).map(({ where }) => where)).toEqual([]);
+    expect(workflowFiles().filter((file) => readFileSync(path.join(WORKFLOWS, file), 'utf8').includes('buildx.build.provenance'))).toEqual([]);
+  });
 });
 
 describe('Chromium before vitest (CI-05)', () => {
