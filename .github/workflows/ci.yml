@@ -731,7 +731,7 @@ jobs:
           package-manager-cache: false
       - name: The web archive holds the image buildx built
         if: ${{ !cancelled() && steps.web.outcome == 'success' }}
-        env: { BUILT: "${{ fromJSON(steps.web.outputs.metadata)['containerimage.config.digest'] }}" }
+        env: { BUILT: "${{ fromJSON(steps.web.outputs.metadata || '{}')['containerimage.config.digest'] }}" }
         run: |
           built="$BUILT"
           read="$(node tools/screening-capacity/image-id.ts "$RUNNER_TEMP/image/web.tar" | jq -r '.config')"
@@ -743,7 +743,7 @@ jobs:
       - name: The worker archive holds the image buildx built, and loads as itself
         id: worker-identity
         if: ${{ !cancelled() && steps.worker.outcome == 'success' }}
-        env: { BUILT: "${{ fromJSON(steps.worker.outputs.metadata)['containerimage.config.digest'] }}" }
+        env: { BUILT: "${{ fromJSON(steps.worker.outputs.metadata || '{}')['containerimage.config.digest'] }}" }
         run: |
           built="$BUILT"
           identity="$(node tools/screening-capacity/image-id.ts "$RUNNER_TEMP/image/worker.tar")"

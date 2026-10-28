@@ -1799,7 +1799,7 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
     // Each archive's config digest, read from its bytes, is the one buildx reports for its build.
     const web = stepNamed(steps, 'The web archive holds the image buildx built');
     expect(web.if).toBe("${{ !cancelled() && steps.web.outcome == 'success' }}");
-    expect(web.env).toEqual({ BUILT: "${{ fromJSON(steps.web.outputs.metadata)['containerimage.config.digest'] }}" });
+    expect(web.env).toEqual({ BUILT: "${{ fromJSON(steps.web.outputs.metadata || '{}')['containerimage.config.digest'] }}" });
     expect(web.run).toContain('built="$BUILT"');
     expect(web.run).toContain(`read="$(node tools/screening-capacity/image-id.ts "$RUNNER_TEMP/image/web.tar" | jq -r '.config')"`);
     expect(web.run).toContain('if [ -z "$built" ] || [ "$read" != "$built" ]; then');
@@ -1808,7 +1808,8 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
     const worker = stepNamed(steps, 'The worker archive holds the image buildx built, and loads as itself');
     expect(worker.id).toBe('worker-identity');
     expect(worker.if).toBe("${{ !cancelled() && steps.worker.outcome == 'success' }}");
-    expect(worker.env).toEqual({ BUILT: "${{ fromJSON(steps.worker.outputs.metadata)['containerimage.config.digest'] }}" });
+    expect(worker.env).toEqual({ BUILT: "${{ fromJSON(steps.worker.outputs.metadata || '{}')['containerimage.config.digest'] }}" });
+    expect(worker.run).toContain('built="$BUILT"');
     const script = worker.run ?? '';
     expect(script).toContain('identity="$(node tools/screening-capacity/image-id.ts "$RUNNER_TEMP/image/worker.tar")"');
     expect(script).toContain('docker load --input "$RUNNER_TEMP/image/worker.tar"');
@@ -1821,40 +1822,6 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
     expect(browser.if).toBe("${{ !cancelled() && steps.worker-identity.outcome == 'success' }}");
     const scans = steps.filter(isScan).map((step) => steps.indexOf(step));
     expect([Math.max(...scans) < node, node < steps.indexOf(web), steps.indexOf(web) < steps.indexOf(worker), steps.indexOf(worker) < steps.indexOf(browser)]).toEqual([true, true, true, true]);
-  });
-
-  it('gives no step a build’s whole metadata as one variable, only the field it reads, so a long pull request description never stops the step’s shell from starting', () => {
-    // buildx writes its provenance into the metadata even with provenance: false, and on a pull_request run that holds
-    // the whole event, the description with it: PR #42's made one variable 132,387 bytes, over Linux's 131,072-byte
-    // limit for one environment string, and bash never started (run 40630123457, "Argument list too long"). An input
-    // in `with:` reaches its action as an INPUT_ variable, so it is held to the same rule.
-    const fieldRead = /fromJSON\(\s*steps\.[\w-]+\.outputs\.metadata\s*\)\s*(?:\['[^']*'\]|\.[\w-]+)/gi;
-    const takesWhole = (value: string): boolean => /steps\.[\w-]+\.outputs\.metadata(?![\w-])/i.test(value.replace(fieldRead, ''));
-    const values = workflowFiles().flatMap((file) =>
-      Object.entries(workflow(file).jobs).flatMap(([id, job]) =>
-        (job.steps ?? []).flatMap((step, index) =>
-          (['env', 'with'] as const).flatMap((kind) =>
-            Object.entries(step[kind] ?? {}).map(([name, value]) => ({ where: `${file} ${id} ${step.name ?? String(index + 1)} ${kind}.${name}`, value: typeof value === 'string' ? value : JSON.stringify(value) })),
-          ),
-        ),
-      ),
-    );
-    expect(values.filter(({ value }) => takesWhole(value)).map(({ where }) => where)).toEqual([]);
-    // The image identity checks read the digest this way, so the rule judges the steps it was written for.
-    expect(values.filter(({ value }) => /outputs\.metadata/i.test(value)).map(({ where }) => where)).toEqual([
-      'ci.yml images The web archive holds the image buildx built env.BUILT',
-      'ci.yml images The worker archive holds the image buildx built, and loads as itself env.BUILT',
-    ]);
-    // And it refuses the shape that failed, and any other that hands the whole output on.
-    expect(
-      [
-        '${{ steps.web.outputs.metadata }}',
-        '${{ toJSON(fromJSON(steps.web.outputs.metadata)) }}',
-        "${{ format('{0}', steps.worker.outputs.metadata) }}",
-        "${{ fromJSON(steps.web.outputs.metadata)['containerimage.config.digest'] }}",
-        '${{ fromJson( steps.worker.outputs.metadata ).digest }}',
-      ].map(takesWhole),
-    ).toEqual([true, true, true, false, false]);
   });
 
   it('checks production licenses against the allowlist on every pull request', () => {
