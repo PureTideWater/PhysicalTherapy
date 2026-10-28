@@ -1,25 +1,15 @@
 # Status: every table scrolls by keyboard and shows that it scrolls; phones get one stacked-row layout (`co-001/ux-table-scroll`)
 
-## Current state (2026-10-27 22:00 UTC)
-- **PR #79** (draft): https://github.com/PureTideWater/PhysicalTherapy/pull/79. Pushed head **88a66bd**, on base 085299b (#76 merged in at e0557d9). CI is running on it. This session is subscribed to the PR.
-- **Fix round:** done (wf_90ac8f1b-a42, 19:42-21:45 UTC). All 15 review findings are fixed in 18165df, ccc4e1f, d8169b8 and 88a66bd (`approval-summaries/lane-b-ux-table-scroll-fix.json`). Also taken:
-  - axe's landmark-unique in atPhoneWidth;
-  - two new guard rules: a repeated literal label, and wrap-anywhere on a td or th;
-  - `components/dates.tsx` (UtcTime, WholeDates).
-- **Full local suite once on 88a66bd** (`approval-summaries/lane-b-ux-table-scroll-fix-suite.md`): all 26 steps pass.
-  - unit 380 files, 6,303 passed, 4 skipped;
-  - golden 376; oracle 687 fixtures;
-  - db 127 files, 9,222 passed, 1 skipped;
-  - e2e 56 of 56 (screening passed first time);
-  - stryker: no shard affected, the gate passed.
-- **Shots re-taken at 88a66bd** (`approval-summaries/lane-b-ux-table-scroll-shots-recheck.md`): every UX finding shows fixed.
-- **Running:** the gallery prep (wf_aad33eec-f05); then the private galleries are published and named in the PR description.
+## Current state (2026-10-28 01:25 UTC)
+- **PR #79** (draft): https://github.com/PureTideWater/PhysicalTherapy/pull/79. Pushed head **7102b8b**, the base merge of 0dd1ba7 (#77 ci-browser, #80): up to date with the base, and its checks passed locally. CI is running on it.
+  - The PR description is final (template, every section), written with update_pull_request and read back. It holds the full suite on 88a66bd, the checks after the base merge, every review finding with its fixing commit, and the galleries.
+- **Galleries** (private): 1280 px https://claude.ai/artifact/QPXJc5Z8YUQGXW5Ka7qi5K, 390 px https://claude.ai/artifact/7eEUVKRqb4trRyfYkFbqAd.
+- **Running:** the fresh-clone verification wf_c49ed9e6-4c8 (from 01:24 UTC). It waits for CI on 7102b8b, reads it, and checks the diff against the design, the findings and #42's files. Safety check-in 06:05 UTC (trig_01RPf1gpFYEooHKMywvjAwU6).
 - **Next:**
-  1. the PR description: the checks, the reviewers' table, the galleries;
-  2. the fresh-clone verification reading CI on 88a66bd;
-  3. the latest base merged again if it moved;
-  4. mark ready, then merge;
-  5. then PR 4.
+  1. if the verification passes and the base has not moved: mark ready (update_pull_request draft false), wait for approval-of-record's re-run, then merge_pull_request with method merge and expectedHeadSha 7102b8b;
+  2. read the push runs; unsubscribe; the records;
+  3. then PR 4 (`co-001/ux-screening-result-tables`), cut from the new claude/build-platform.
+  - If the base moves first: merge it again, check, push, and verify again.
 
 The UX review's PR 3 (UX-011 / C-002; UX-079 / C-043 part (a)). Run as a Lane B item by a parallel session (https://claude.ai/code/session_019VghcxKzP9LAj3WK8k6u1D), started by Lane A's orchestrator (session_01TrKDxeLbxVo7t7zwRXFzrg) on 2026-10-27. Follow-on in the same session after this merges: PR 4, `co-001/ux-screening-result-tables` (status `lane-b-ux-screening-result-tables-status.md`).
 
@@ -33,6 +23,8 @@ The UX review's PR 3 (UX-011 / C-002; UX-079 / C-043 part (a)). Run as a Lane B 
 - **ux-forms (`co-001/ux-forms`, 17bbb70, another session):** shares `console/compliance/page.tsx`, `console/organizations/[organizationId]/page.tsx`, `p/[practiceId]/cases/page.tsx`, `p/[practiceId]/settings/pricing/page.tsx`, `components/reconciliation/template-mapper.tsx`. The PR merged second keeps both (rule 6).
 
 ## Log
+- 2026-10-28 01:18 UTC: base merge 7102b8b pushed (checked locally: unit 6,456 passed; e2e of the 14 specs 27 of 27 on chromium-1248). 01:22: PR description final. 01:24: fresh-clone verification wf_c49ed9e6-4c8 started.
+- 2026-10-27 22:05 UTC: CI on 88a66bd all green, mergeable clean. (The worker restarted twice; resumed at 00:52 UTC on the safety check-in.) 2026-10-28 00:53: galleries published (private). 00:55: the base had moved to 0dd1ba7 (#77, #80); base-merge check wf_447fa2f5-5ee started.
 - 2026-10-27 21:45-21:55 UTC: fix round done; full suite green on 88a66bd; pushed (one push; the commits were first saved on `co-001/wip-ux-table-scroll`).
 - 2026-10-27 19:39 UTC: both reviews done (merge after fixes; 15 findings, all taken). 19:42: the fix round wf_90ac8f1b-a42 started, with the base (#76) merged in first.
 - 2026-10-27 ~17:11 UTC: the account's 5-hour limit stopped the reviews workflow (all three agents mid-run; the before tour run had its 49 shots; the correctness review had one finding, F1). The machine restarted. 19:08: resumed on the orchestrator's message; setup re-run (all ok); wf_e7456d3d-fde resumed with resumeFromRunId and a RESUMED note (each agent continues from its progress file, copied to `lane-b-ux-table-scroll-wip/progress/`). Safety check-in moved to 00:19 UTC (trig_01EX8La4gBcbgfPmHhwMXmnQ).
