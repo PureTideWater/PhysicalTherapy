@@ -69,6 +69,26 @@ export interface TriageJobContext {
 export interface TriageOptions {
   /** The triage date; today in UTC unless a test names one. */
   readonly asOf?: string;
+  /** How many candidate rows a batch holds; CANDIDATE_BATCH_LINES unless a test names fewer (TriageBatches). */
+  readonly batches?: TriageBatches;
+}
+
+/**
+ * The batch sizes of triage's reader (SUITE-CAP-1a D13; docs/adr/0083). Production names none and reads
+ * CANDIDATE_BATCH_LINES at a time; a test names a smaller one (down to 1) so that a few lines cross batch boundaries
+ * and the folds are proved across them with real values. No environment variable sets it.
+ */
+export interface TriageBatches {
+  readonly candidateLines?: number;
+}
+
+/** A batch size as named, or the default: a positive whole number, since it is written into a FETCH. */
+export function batchSize(named: number | undefined, fallback: number): number {
+  const size = named ?? fallback;
+  if (!Number.isSafeInteger(size) || size < 1) {
+    throw new Error('a batch size is a positive whole number');
+  }
+  return size;
 }
 
 export interface TriageSummary {
@@ -338,8 +358,9 @@ export const CANDIDATE_BATCH_LINES = 2000;
  * caller's transaction (the job's, or the web's practice scope) and is closed before this returns; an error
  * aborts the transaction, which ends it.
  */
-export async function judgedCandidates(scope: PracticeScope<ScopeClient>, practiceId: string, pricingRunId: string | null, requestId: string): Promise<CandidateLine[]> {
+export async function judgedCandidates(scope: PracticeScope<ScopeClient>, practiceId: string, pricingRunId: string | null, requestId: string, batches: TriageBatches = {}): Promise<CandidateLine[]> {
   const { client } = scope;
+  const size = batchSize(batches.candidateLines, CANDIDATE_BATCH_LINES);
   const releases = factsByRelease(client);
   const judged: CandidateLine[] = [];
   await client.query(`DECLARE triage_candidates NO SCROLL CURSOR FOR ${CANDIDATE_QUERY}`, [practiceId, pricingRunId]);
@@ -347,14 +368,14 @@ export async function judgedCandidates(scope: PracticeScope<ScopeClient>, practi
     const batch = await readWithAudit(
       scope,
       { objectType: 'priced_line', purpose: 'triage', requestId },
-      async (reader) => (await reader.query<CandidateRow>(`FETCH ${CANDIDATE_BATCH_LINES} FROM triage_candidates`)).rows,
+      async (reader) => (await reader.query<CandidateRow>(`FETCH ${size} FROM triage_candidates`)).rows,
       (row) => ({ objectId: row.priced_line_id, practiceId: row.practice_id }),
     );
     if (batch.length === 0) {
       break;
     }
     judged.push(...(await candidateLines(client, batch, releases)));
-    if (batch.length < CANDIDATE_BATCH_LINES) {
+    if (batch.length < size) {
       break;
     }
   }
@@ -460,7 +481,7 @@ export async function closePassedWindows(scope: PracticeScope<ScopeClient>, prac
 }
 
 /** Triage in the transaction's scope (the report job runs it before it reads the run's numbers). */
-export async function triageInScope(scope: PracticeScope<ScopeClient>, practiceId: string, pricingRunId: string, requestId: string, asOf: string): Promise<TriageOutcome> {
+export async function triageInScope(scope: PracticeScope<ScopeClient>, practiceId: string, pricingRunId: string, requestId: string, asOf: string, batches: TriageBatches = {}): Promise<TriageOutcome> {
   const { client } = scope;
   await lockPractice(client, practiceId);
   const run = await lockedRun(client, practiceId, pricingRunId);
@@ -483,7 +504,7 @@ export async function triageInScope(scope: PracticeScope<ScopeClient>, practiceI
   await advanceStages(client, practiceId, 'flagged', flagged);
 
   const windowsClosed = await closeWindows(client, practiceId, asOf);
-  const candidates = await judgedCandidates(scope, practiceId, pricingRunId, requestId);
+  const candidates = await judgedCandidates(scope, practiceId, pricingRunId, requestId, batches);
   // Validated: a positive shortfall (a per-visit line's at most its visit's), whatever else holds.
   const validated = candidates.filter((line) => judgeLine(line, settings.lineMaterialityCents, asOf).validated);
   await advanceStages(client, practiceId, 'validated', validated);
@@ -518,5 +539,5 @@ export async function triageInScope(scope: PracticeScope<ScopeClient>, practiceI
 
 export async function executeTriage(context: TriageJobContext, practiceId: string, pricingRunId: string, options: TriageOptions = {}): Promise<TriageOutcome> {
   const asOf = options.asOf ?? todayUtc();
-  return context.transaction((scope) => triageInScope(scope, practiceId, pricingRunId, context.jobId, asOf));
+  return context.transaction((scope) => triageInScope(scope, practiceId, pricingRunId, context.jobId, asOf, options.batches));
 }

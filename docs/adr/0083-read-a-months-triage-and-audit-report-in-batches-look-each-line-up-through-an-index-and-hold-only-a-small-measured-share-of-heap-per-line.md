@@ -149,8 +149,25 @@ live-heap log line and its alarm), and D22 (the migration's `NOWAIT` lock loop).
   `arena.rows()` and releases the arena in a `finally`, then runs `auditReconciliation`, prints and writes the PDF and
   runs the same `UPDATE`, all in the same transaction. Chromium never runs while the arena is held. The CSV's SHA-256
   is the same, since the same plaintext bytes pass the hashing tap.
-- `patientBalanceCases(scope, practiceId, caseIds, entries)` reads its case lines through `report_case_lines` in
-  batches of 2,000 and folds `foldPatientBalance` per case (`PATIENT_BALANCE_UNSEEN`, `patientBalanceOf`, beside an
+- `gatherReport` creates the arena first and releases it on every path that does not hand it to the caller: anything
+  that throws, in the line loop or after it (`practiceLedgerSettings`, `ledgerEntries`, `patientBalanceCases`, building
+  the content), releases it once and the error goes on. `release()` is idempotent, so the caller's own `finally` after
+  a handed-over arena is safe. A test fails `gatherReport` after its line loop, at the ledger read and at the patient
+  balance's cursor, and finds the arena released once.
+- **A failed print leaves the CSV stored.** Because the CSV is written before Chromium prints (design 5.3 point 4), a
+  failure in `auditReconciliation`, the print or the PDF's write leaves the sealed CSV under this attempt's own key with
+  no `audit_report` row naming it, where the base stored nothing on a failed print. It is not deleted, and cannot be:
+  the documents bucket is written once per key, and the application role holds no `s3:DeleteObject` and no Object Lock
+  bypass on any bucket (`infra/lib/constructs/application-role.ts`; `infra/test/application-role.test.ts`, "cannot
+  delete objects"), and `SealedBytes` has no delete. It is the same class of object the base already left when the CSV's
+  write failed after the PDF was stored: a sealed copy of one practice's report under a fresh random key of that
+  practice (`auditReportKey`, one per attempt, so at most three per report across its retries), sealed with the
+  practice's data key (ADR 0018), named by no row, readable by no screen or link. The rule that covers it is ADR 0018's
+  data lifecycle: the documents bucket keeps current objects until the practice's data key is destroyed at its
+  deletion, which makes every one of its objects unreadable, orphans included (noncurrent versions expire after the
+  35-day backup window). No figure or byte of a stored report changes.
+- `patientBalanceCases(scope, practiceId, caseIds, entries, batchLines?)` reads its case lines through
+  `report_case_lines` in batches of 2,000 and folds `foldPatientBalance` per case (`PATIENT_BALANCE_UNSEEN`, `patientBalanceOf`, beside an
   unchanged `casePatientBalance` in `apps/worker/src/reconcile/patient-share.ts`). A line's answer from
   `lineCorrections` depends only on its own claim, so batching by line is safe; the test checks that too. The case
   lines come in their claim's order, so each batch holds whole claims and the batches together read each claim's lines
@@ -158,8 +175,29 @@ live-heap log line and its alarm), and D22 (the migration's `NOWAIT` lock loop).
   and each batch read the claims of nearly all its lines again (the Check phase's 100,000-line probe: 7,584 claim rows
   for each batch of 2,000 case lines, 2.6 times the whole call's rows, each `claimLines` call about 50 s until
   SUITE-CAP-1b's `claim_by_superseded`).
+- **The chains' practice-wide part is read once per report.** `chainContext` reads, for any call, the practice's
+  matches in chain order (`CHAIN_ORDER`, `ledgerMatches`) and the lines (`claimLines`) and loaded reversals of every
+  claim a claim match names, beside the call's own claims. Called once per batch of case lines, that part was read
+  again for every 2,000 case lines (about 17 times for a 100,000-line month, where the base read it once). Now
+  `patientBalanceCases` reads it once, before its first batch, through `practiceCorrections` (`practiceChains` in
+  `remittances.ts`, with what each match's entries approved), and each batch's `lineCorrections` reads only its own
+  claims' lines and reversals (`chainContextFor`). A line's chain reads its own claim's lines and the matched claims'
+  lines and reversals alone, and a reversal belongs to the one claim it reverses, so the two parts are disjoint; merged
+  (claim lines by claim; reversals in the query's order, payment date, when loaded, ID, each once) they hold for each
+  line what one call over every line would. `chainContext` itself sends the same queries in the same order as before,
+  so its other callers (`remittances.ts`, `postings.ts`, `shortfalls.ts`, `manual.ts`, and through them the web) are
+  unchanged.
+  The test counts the queries the batched `patientBalanceCases` sends (a client proxy): the chain order, the matches and
+  the matched claims' reversals once per report, and on a two-line case on two claims at batches of one, the matched
+  claims' lines once.
 - `lineShares` is exported and groups once (D16). `lineCorrections` takes an optional fourth argument, the ledger
-  entries; the web's callers keep today's signature through its default.
+  entries or the practice's part read once (`PracticeCorrections`); the web's callers keep today's signature through its
+  default, which reads the entries and the chains whole as before.
+- **Batch sizes a test can name.** `TriageOptions.batches` (`candidateLines`), `ReportOptions.batches` and
+  `GatherInput.batches` (`ReportBatches`: `candidateLines`, `reportLines`, `caseLines`, `csvChunkBytes`) default to
+  `CANDIDATE_BATCH_LINES`, `REPORT_BATCH_LINES` and `CSV_ARENA_CHUNK_BYTES`; production names none, and no environment
+  variable sets them. `batchSize` refuses anything but a positive whole number, since the size is written into a
+  `FETCH`.
 
 Cursor names are fixed per reader, so a second declare in the same transaction fails loudly; no caller runs two of
 one at once (the report's inline triage closes its cursor before `gatherReport` declares its own). A cursor is planned
@@ -192,6 +230,14 @@ constant, not per line.
   the bound would fail on readers that are bounded. From 10,000 lines the readers are in their steady state.
 - **Measured** (Node 24, PostgreSQL 18): the base's whole reads grow by 5,477 bytes per added candidate and 5,350 per
   added line, and fail; the bounded readers grow by 802 and -230 (807 and -336 with a 5 ms timer), and pass.
+- **Across batch boundaries.** Every comparison through the job (the CAS fixtures for triage and the report, LED-06,
+  LED-15, and LED-15's two lines on two claims with its partial EFT) runs again with batches of one line and 61-byte
+  arena chunks, so each line is a batch of its own for triage's candidates, the report's lines and its case lines, and
+  every row falls across chunks: the same content, CSV bytes and SHA-256, PDF HTML and audit events. The figures folded
+  are non-zero there: LED-06's payer approved and recovered 3,000 cents, LED-15's patient balance, and the two-claim
+  case's 3,000 still actionable, 1,000 approved, 1,000 recovered and its patient balance, each line in its own batch.
+  The generated month's readers also run in batches of seven with 61-byte chunks (splitting its multi-byte payer names),
+  and `lineCorrections` in batches sharing the practice's part equals the one call on every fixture.
 - **The arena** (`apps/worker/src/report/csv-arena.test.ts`): rows in random order come out in the comparator's order,
   byte-equal to `auditCsv` across chunk boundaries, with non-ASCII names, quoting, formula prefixes, ties by line ID and
   a row longer than a chunk.

@@ -7,15 +7,15 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type * as ReleaseModule from '../price/release';
 import type { Practice } from '../price/test-support/pricing-world';
 import { ledgerEntries, practiceLedgerSettings } from '../reconcile/ledger';
-import { lineCorrections, lineShares } from '../reconcile/patient-share';
+import { type LineCorrection, lineCorrections, lineShares, practiceCorrections } from '../reconcile/patient-share';
 import { LED_PLAN, LedgerWorld, ledSettings } from '../reconcile/test-support/ledger-world';
 import { collect } from '../storage/documents';
 import { CAS_AS_OF, CAS_RUNS } from '../triage/test-support/cas-runs';
 import { GENERATED_AS_OF, GENERATED_FULL_LINES, type GeneratedMonth, generatedMonth, inJobScope } from '../triage/test-support/generated-month';
 import { measure, perAdded } from '../triage/test-support/memory';
 import { type ReadEvent, recordingContext, rolledBack, sortedEvents, storedEvents } from '../triage/test-support/recorded';
-import { type AuditReportContent, type GatherInput, gatherReport, patientBalanceCases } from './content';
-import { CSV_ARENA_CHUNK_BYTES } from './csv-arena';
+import { type AuditReportContent, type GatherInput, type ReportBatches, gatherReport, patientBalanceCases } from './content';
+import { CSV_ARENA_CHUNK_BYTES, CsvArena } from './csv-arena';
 import { CSV_COLUMNS, auditCsv, csvText } from './csv';
 import { generateAuditReport } from './generate';
 import { auditHtml, auditReconciliation } from './html';
@@ -36,8 +36,17 @@ import { wholeGatherReport, wholeLineCorrections, wholeLineShares, wholePatientB
  * memory (CAS-41.2): from that month to one twice its size, the heap gatherReport holds, while it reads and with its
  * content and arena in hand before the CSV is written, grows by at most REPORT_HEAP_BYTES per added line, and the CSV's
  * rows are held outside the heap, in arena chunks that hold their bytes within one chunk (test-support/memory.ts
- * measures it).
+ * measures it). Across batch boundaries: every comparison through the job runs again with batches of one line and
+ * 61-byte arena chunks (ACROSS), so each line of a fixture is its own batch of triage's candidates, the report's lines
+ * and its case lines, and every CSV row and multi-byte name falls across chunks; with recovery and the patient's share
+ * non-zero (LED-06, LED-15, and LED-15's two lines on two claims). lineCorrections over batches that share the
+ * practice's part read once (practiceCorrections) answers each line as one call over every line, and that part
+ * (the chain order, the matches, the matched claims' lines and reversals) is read once per report, not once per batch.
+ * And the arena is released when gatherReport fails after its line loop.
  */
+
+/** Batches of one line and 61-byte chunks: a fixture's few lines and rows cross every batch and chunk boundary. */
+const ACROSS: ReportBatches = { candidateLines: 1, reportLines: 1, caseLines: 1, csvChunkBytes: 61 };
 
 /** While set, the price job reads every content as loaded: a run priced as it was before the content refusal (audit #7). */
 const pricing = vi.hoisted(() => ({ beforeRefusal: false }));
@@ -103,7 +112,7 @@ const stored = (content: AuditReportContent): unknown => JSON.parse(JSON.stringi
  * Generates the queued report twice from the same rows: the whole-read reference, rolled back, then the job; and
  * checks that the job stored and printed what the reference made, with the same audit events.
  */
-async function sameReport(practice: Practice, auditReportId: string, asOf: string): Promise<AuditReportContent> {
+async function sameReport(practice: Practice, auditReportId: string, asOf: string, batches?: ReportBatches): Promise<AuditReportContent> {
   const reference = await rolledBack(w.triage, practice.practiceId, (scope, requestId) => wholeReport(scope, w.keys, practice.practiceId, auditReportId, asOf, requestId));
   const whole = reference.result;
   if (whole.outcome !== 'ready') {
@@ -112,7 +121,7 @@ async function sameReport(practice: Practice, auditReportId: string, asOf: strin
   const events: ReadEvent[] = [];
   const context = recordingContext(w.triage, practice.practiceId, events);
   const pdf = recordingRenderer();
-  const outcome = await generateAuditReport(context, { documents: w.triage.reports, keys: w.keys, pdf }, practice.practiceId, auditReportId, { asOf });
+  const outcome = await generateAuditReport(context, { documents: w.triage.reports, keys: w.keys, pdf }, practice.practiceId, auditReportId, batches === undefined ? { asOf } : { asOf, batches });
   const [row] = await w.rows<{ content: unknown; csv_key: string; csv_sha256: string; pdf_sha256: string }>(practice, 'SELECT content, csv_key, csv_sha256, pdf_sha256 FROM audit_report WHERE id = $1', [auditReportId]);
   expect(outcome).toEqual({ outcome: 'ready', pdfSha256: sha256(PDF), csvSha256: sha256(whole.csv) });
   expect(row?.content).toEqual(stored(whole.content));
@@ -124,8 +133,58 @@ async function sameReport(practice: Practice, auditReportId: string, asOf: strin
   return whole.content;
 }
 
-/** The new readers' answers beside the filtering versions' for the practice's case lines and their claims. */
-async function samePatientShares(practice: Practice): Promise<{ readonly patientBalance: readonly string[]; readonly corrections: number }> {
+/** One query a scope's client sent: its text and its parameters. */
+interface SentQuery {
+  readonly text: string;
+  readonly values: readonly unknown[];
+}
+
+const forward = <T extends object>(target: T, key: string | symbol): unknown => {
+  const value: unknown = Reflect.get(target, key, target);
+  return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+};
+
+/**
+ * The scope with every query its client sends recorded into `sent` (as test-support/memory.ts watches a reader), and
+ * the first whose text includes `failAt`, if named, refused before it is sent: an injected failure.
+ */
+function loggingScope(scope: PracticeScope<ScopeClient>, sent: SentQuery[], failAt?: string): PracticeScope<ScopeClient> {
+  const client = new Proxy(scope.client, {
+    get(target, key) {
+      if (key !== 'query') {
+        return forward(target, key);
+      }
+      return (...args: unknown[]) => {
+        const [text, values] = args;
+        const sql = typeof text === 'string' ? text : '';
+        if (failAt !== undefined && sql.includes(failAt)) {
+          return Promise.reject(new Error('SYNTHETIC injected failure'));
+        }
+        sent.push({ text: sql, values: Array.isArray(values) ? values : [] });
+        return (target.query as (...query: unknown[]) => unknown).apply(target, args);
+      };
+    },
+  });
+  return new Proxy(scope, { get: (target, key) => (key === 'client' ? client : forward(target, key)) });
+}
+
+/** The chain readers' practice-wide queries, by a phrase of their text (reconcile/remittances.ts and ledger.ts). */
+const CHAIN_ORDER_SENT = "m.kind IN ('claim', 'recoupment')";
+const LEDGER_MATCHES_SENT = 'FROM ledger_match m WHERE m.practice_id = $1 ORDER BY m.matched_at, m.id';
+const CLAIM_LINES_SENT = 'WITH RECURSIVE named';
+const REVERSALS_SENT = "v.claim_status_code = '22' AND v.reversal_of_claim_id";
+
+const sentWith = (sent: readonly SentQuery[], phrase: string) => sent.filter((query) => query.text.includes(phrase));
+/** The claim IDs a claimLines or reversals query was sent with. */
+const claimsSent = (query: SentQuery): string[] => (query.values.find((value): value is string[] => Array.isArray(value)) ?? []).map(String);
+
+/**
+ * The new readers' answers beside the filtering versions' for the practice's case lines and their claims. The case lines
+ * are also read in batches of `batchLines` (patientBalanceCases, and lineCorrections over batches that share the
+ * practice's part read once), each line answered as by one call for every line; the queries the batched
+ * patientBalanceCases sends are returned, so a test can count the practice-wide ones.
+ */
+async function samePatientShares(practice: Practice, batchLines: number): Promise<{ readonly patientBalance: readonly string[]; readonly corrections: number; readonly sent: readonly SentQuery[]; readonly matchedClaims: readonly string[] }> {
   const { practiceId } = practice;
   const found = await inJobScope(w.triage, practice, async (scope: PracticeScope<ScopeClient>) => {
     const { rows } = await scope.client.query<{ case_id: string; service_line_id: string; claim_id: string }>(
@@ -144,34 +203,65 @@ async function samePatientShares(practice: Practice): Promise<{ readonly patient
         alone.set(key, value);
       }
     }
+    // In batches that share the practice's part, read once: every line as the one call over every line answers it.
+    const shared = await practiceCorrections(scope, practiceId, entries);
+    const batched = new Map<string, LineCorrection>();
+    for (let from = 0; from < lineIds.length; from += batchLines) {
+      for (const [key, value] of await lineCorrections(scope, practiceId, lineIds.slice(from, from + batchLines), shared)) {
+        batched.set(key, value);
+      }
+    }
+    const sent: SentQuery[] = [];
+    const balanceInBatches = await patientBalanceCases(loggingScope(scope, sent), practiceId, caseIds, entries, batchLines);
+    const { rows: matched } = await scope.client.query<{ claim_id: string }>("SELECT DISTINCT claim_id FROM ledger_match WHERE practice_id = $1 AND kind = 'claim' ORDER BY claim_id", [practiceId]);
     return {
       shares: await lineShares(scope, practiceId, claimIds),
       wholeShares: await wholeLineShares(scope, practiceId, claimIds),
       balance: await patientBalanceCases(scope, practiceId, caseIds, entries),
+      balanceInBatches,
       wholeBalance: await wholePatientBalanceCases(scope, practiceId, caseIds),
       corrections: await lineCorrections(scope, practiceId, lineIds),
       correctionsFromEntries: await lineCorrections(scope, practiceId, lineIds, entries),
+      batched,
       whole,
       alone,
       sample: lineIds.slice(0, 200),
+      sent,
+      matchedClaims: matched.map((row) => row.claim_id),
+      caseLines: rows.length,
     };
   });
   expect(found.shares).toEqual(found.wholeShares);
   expect(found.balance).toEqual(found.wholeBalance);
+  expect(found.balanceInBatches).toEqual(found.wholeBalance);
   expect(found.corrections).toEqual(found.whole);
   expect(found.correctionsFromEntries).toEqual(found.whole);
+  expect(found.batched).toEqual(found.whole);
   expect(found.alone).toEqual(new Map(found.sample.flatMap((id) => (found.whole.has(id) ? [[id, found.whole.get(id)]] : []))));
-  return { patientBalance: [...found.wholeBalance].sort(), corrections: found.whole.size };
+  // The practice-wide part of the chains is read once per report, however many batches the case lines take.
+  if (found.caseLines > 0) {
+    expect(sentWith(found.sent, CHAIN_ORDER_SENT)).toHaveLength(1);
+    expect(sentWith(found.sent, LEDGER_MATCHES_SENT)).toHaveLength(1);
+  }
+  if (found.matchedClaims.length > 0) {
+    // The matched claims' reversals are read once, with every matched claim; no batch reads them again.
+    const reversals = sentWith(found.sent, REVERSALS_SENT).filter((query) => claimsSent(query).some((id) => found.matchedClaims.includes(id)));
+    expect(reversals).toHaveLength(1);
+    expect(new Set(claimsSent(reversals[0] as SentQuery))).toEqual(new Set(found.matchedClaims));
+  }
+  return { patientBalance: [...found.wholeBalance].sort(), corrections: found.whole.size, sent: found.sent, matchedClaims: found.matchedClaims };
 }
 
 describe('the audit report through the job streams and stores what the whole read stored (CAS-41.1)', () => {
   for (const run of CAS_RUNS) {
     describe(run.label, () => {
       let practice: Practice;
+      let runId: string;
 
       it('the job stores and prints what the whole read did', async () => {
         const setup = await run.setup(w.triage, `streamed ${run.label}`);
         practice = setup.practice;
+        runId = setup.runId;
         // Triaged first by the job, so the cases and anomalies both reports name are the same rows (the reference's own
         // triage, rolled back, would draw other IDs); the report's inline triage is then a re-triage, and the batched
         // triage's first pass is compared in triage/batched.db.test.ts.
@@ -181,14 +271,19 @@ describe('the audit report through the job streams and stores what the whole rea
         expect(content.report_id).toBe(id);
       }, 240_000);
 
+      it('at batches of one line and 61-byte chunks, the job stores and prints what the whole read did', async () => {
+        const id = await w.triage.requestReport(practice, runId);
+        expect((await sameReport(practice, id, CAS_AS_OF, ACROSS)).report_id).toBe(id);
+      }, 240_000);
+
       it('the patient shares and balances are the filtering versions’', async () => {
-        await samePatientShares(practice);
+        await samePatientShares(practice, 1);
       }, 120_000);
     });
   }
 
-  let recovered: Practice;
-  let corrected: { readonly practice: Practice; readonly caseId: string };
+  let recovered: { readonly practice: Practice; readonly runId: string };
+  let corrected: { readonly practice: Practice; readonly caseId: string; readonly runId: string };
 
   it('after a recovery (LED-06, CAS-08): the job stores and prints what the whole read did, payer approved and recovered from the ledger', async () => {
     const practice = await w.practice(`streamed after recovery ${randomUUID().slice(0, 8)}`, ledSettings('deposited'));
@@ -214,11 +309,16 @@ describe('the audit report through the job streams and stores what the whole rea
     await w.reconcile(practice, { documentId: await w.stageExport(practice, 'LED-06/eft-export.csv', 'eft_export') });
     const content = await sameReport(practice, await w.triage.requestReport(practice, march), CAS_AS_OF);
     expect(content.headline).toMatchObject({ actionable_cents: '9000', payer_approved_cents: '3000', recovered_cents: '3000' });
-    recovered = practice;
+    recovered = { practice, runId: march };
+  }, 300_000);
+
+  it('after a recovery, at batches of one line and 61-byte chunks: the same report, payer approved and recovered folded across batches', async () => {
+    const content = await sameReport(recovered.practice, await w.triage.requestReport(recovered.practice, recovered.runId), CAS_AS_OF, ACROSS);
+    expect(content.headline).toMatchObject({ actionable_cents: '9000', payer_approved_cents: '3000', recovered_cents: '3000' });
   }, 300_000);
 
   it('after a recovery, the patient shares and balances are the filtering versions’', async () => {
-    expect((await samePatientShares(recovered)).corrections).toBe(4);
+    expect((await samePatientShares(recovered.practice, 1)).corrections).toBe(4);
   }, 120_000);
 
   it('of a case whose correction the patient’s share took whole (LED-15): the job stores and prints what the whole read did', async () => {
@@ -233,11 +333,87 @@ describe('the audit report through the job streams and stores what the whole rea
     await w.reconcile(practice);
     const content = await sameReport(practice, await w.triage.requestReport(practice, march), CAS_AS_OF);
     expect(content.cases).toEqual([expect.objectContaining({ case_id: line?.case_id, patient_balance: true })]);
-    corrected = { practice, caseId: line?.case_id ?? '' };
+    corrected = { practice, caseId: line?.case_id ?? '', runId: march };
+  }, 300_000);
+
+  it('of a case whose correction the patient’s share took whole, at batches of one line and 61-byte chunks: the same report, its patient balance folded across batches', async () => {
+    const content = await sameReport(corrected.practice, await w.triage.requestReport(corrected.practice, corrected.runId), CAS_AS_OF, ACROSS);
+    expect(content.cases).toEqual([expect.objectContaining({ case_id: corrected.caseId, patient_balance: true })]);
   }, 300_000);
 
   it('of a case whose correction the patient’s share took whole, the patient balances are the filtering versions’', async () => {
-    expect((await samePatientShares(corrected.practice)).patientBalance).toEqual([corrected.caseId]);
+    expect((await samePatientShares(corrected.practice, 1)).patientBalance).toEqual([corrected.caseId]);
+  }, 120_000);
+
+  let split: { readonly practice: Practice; readonly caseId: string; readonly runId: string };
+
+  it('of a two-line case on two claims (LED-15 and its partial claim), each line its own batch: the same report, payer approved, recovered and the patient balance folded across batches', async () => {
+    const practice = await w.practice(`streamed two claims ${randomUUID().slice(0, 8)}`, ledSettings('deposited'));
+    await w.load(practice, 'LED-15/original.835');
+    await w.load(practice, 'LED-15/partial-original.835');
+    const contract = await w.triage.fixedContract(practice, SCHEDULE);
+    const march = await w.triage.pricedRun(practice, { plans: [{ key: LED_PLAN, versionId: contract.versionId }], from: '2026-03-01', to: '2026-03-31' });
+    await w.triage.triage(practice, march, CAS_AS_OF);
+    const lines = await w.rows<{ case_id: string; claim_id: string }>(practice, 'SELECT cl.case_id, l.claim_id FROM case_line cl JOIN service_line l ON l.id = cl.service_line_id');
+    // One case, its two lines on two claims: at batches of one, each line and each claim is a batch of its own.
+    expect(lines).toHaveLength(2);
+    expect(new Set(lines.map((line) => line.case_id)).size).toBe(1);
+    expect(new Set(lines.map((line) => line.claim_id)).size).toBe(2);
+    const caseId = lines[0]?.case_id ?? '';
+    await w.submit(practice, caseId, '2026-05-04');
+    await w.load(practice, 'LED-15/adjusted.835');
+    await w.load(practice, 'LED-15/partial-adjusted.835');
+    await w.reconcile(practice);
+    await w.reconcile(practice, { documentId: await w.stageExport(practice, 'LED-15/partial-eft-export.csv', 'eft_export') });
+    const content = await sameReport(practice, await w.triage.requestReport(practice, march), CAS_AS_OF, ACROSS);
+    expect(content.cases).toEqual([
+      expect.objectContaining({ case_id: caseId, lines: 2, actionable_now_cents: '3000', payer_approved_cents: '1000', recovered_cents: '1000', patient_balance: true }),
+    ]);
+    expect(content.headline).toMatchObject({ actionable_cents: '3000', payer_approved_cents: '1000', recovered_cents: '1000' });
+    // And at the default batch sizes, the same report again.
+    await sameReport(practice, await w.triage.requestReport(practice, march), CAS_AS_OF);
+    split = { practice, caseId, runId: march };
+  }, 300_000);
+
+  it('of a two-line case on two claims, lineCorrections in batches of one with the practice’s part read once answers each line as one call; that part is read once, not per batch', async () => {
+    const found = await samePatientShares(split.practice, 1);
+    expect(found.patientBalance).toEqual([split.caseId]);
+    // Both claims' corrections are matched, one to each line.
+    expect(found.matchedClaims).toHaveLength(2);
+    // The matched claims' lines are read once, all together; a batch reads its own claim and its own line's chain alone.
+    const withEvery = sentWith(found.sent, CLAIM_LINES_SENT).filter((query) => found.matchedClaims.every((id) => claimsSent(query).includes(id)));
+    expect(withEvery).toHaveLength(1);
+  }, 120_000);
+
+  it('releases the arena once when gatherReport fails after its line loop, at the ledger or at the patient balance', async () => {
+    for (const failAt of ['FROM ledger_entry e WHERE e.practice_id = $1', 'DECLARE report_case_lines']) {
+      const release = vi.spyOn(CsvArena.prototype, 'release');
+      const sent: SentQuery[] = [];
+      try {
+        await expect(
+          inJobScope(w.triage, split.practice, async (scope) =>
+            gatherReport(loggingScope(scope, sent, failAt), {
+              practiceId: split.practice.practiceId,
+              auditReportId: randomUUID(),
+              pricingRunId: split.runId,
+              asOf: CAS_AS_OF,
+              requestId: randomUUID(),
+              cipher: await loadPracticeCipher(scope, w.keys, split.practice.practiceId),
+              batches: ACROSS,
+            }),
+          ),
+          failAt,
+        ).rejects.toThrow('SYNTHETIC injected failure');
+        // The line loop had ended (its cursor closed) and its rows were in the arena when the failure came.
+        expect(sentWith(sent, 'CLOSE report_lines'), failAt).toHaveLength(1);
+        expect(release, failAt).toHaveBeenCalledTimes(1);
+        const arena = release.mock.contexts[0] as CsvArena;
+        expect(arena.heldBytes, failAt).toBe(0);
+        await expect(collect(arena.rows()), failAt).rejects.toThrow('released');
+      } finally {
+        release.mockRestore();
+      }
+    }
   }, 120_000);
 });
 
@@ -249,13 +425,14 @@ describe('the audit report’s readers on a generated month (CAS-41.1)', () => {
     month = await generatedMonth(w.triage, { label: 'streamed generated month', contentLoaded });
   }, 900_000);
 
-  const input = async (scope: PracticeScope<ScopeClient>, requestId: string, target: GeneratedMonth = month): Promise<GatherInput> => ({
+  const input = async (scope: PracticeScope<ScopeClient>, requestId: string, target: GeneratedMonth = month, batches?: ReportBatches): Promise<GatherInput> => ({
     practiceId: target.practice.practiceId,
     auditReportId,
     pricingRunId: target.runId,
     asOf: GENERATED_AS_OF,
     requestId,
     cipher: await loadPracticeCipher(scope, w.keys, target.practice.practiceId),
+    ...(batches === undefined ? {} : { batches }),
   });
 
   it('the reader folds the whole read’s content, streams its CSV byte for byte, prints its HTML and audits the same reads', async () => {
@@ -265,19 +442,28 @@ describe('the audit report’s readers on a generated month (CAS-41.1)', () => {
       const reconciliation = auditReconciliation(content, (await practiceLedgerSettings(scope, practiceId)).proofLevel);
       return { content, lines, csv: Buffer.from(auditCsv(lines), 'utf8'), html: auditHtml(content, reconciliation) };
     });
-    const streamed = await rolledBack(w.triage, practiceId, async (scope, requestId) => {
-      const { content, arena } = await gatherReport(scope, await input(scope, requestId));
-      const csv = await collect(arena.rows());
-      arena.release();
-      const reconciliation = auditReconciliation(content, (await practiceLedgerSettings(scope, practiceId)).proofLevel);
-      return { content, csv, html: auditHtml(content, reconciliation) };
-    });
+    const streamedAt = (batches?: ReportBatches) =>
+      rolledBack(w.triage, practiceId, async (scope, requestId) => {
+        const { content, arena } = await gatherReport(scope, await input(scope, requestId, month, batches));
+        const csv = await collect(arena.rows());
+        arena.release();
+        const reconciliation = auditReconciliation(content, (await practiceLedgerSettings(scope, practiceId)).proofLevel);
+        return { content, csv, html: auditHtml(content, reconciliation) };
+      });
+    const streamed = await streamedAt();
     expect(whole.result.lines).toHaveLength(month.lines);
-    expect(streamed.result.content).toEqual(whole.result.content);
-    expect(stored(streamed.result.content)).toEqual(stored(whole.result.content));
-    expect(streamed.result.csv.equals(whole.result.csv)).toBe(true);
-    expect(streamed.result.html === whole.result.html).toBe(true);
-    expect(sortedEvents(streamed.events)).toEqual(sortedEvents(whole.events));
+    // At the default sizes, and in batches of seven lines and case lines with 61-byte chunks (which split the
+    // month's multi-byte payer names across chunks): the same content, CSV bytes, HTML and audit events.
+    for (const [label, each] of [
+      ['default', streamed],
+      ['sevens', await streamedAt({ reportLines: 7, caseLines: 7, csvChunkBytes: 61 })],
+    ] as const) {
+      expect(each.result.content, label).toEqual(whole.result.content);
+      expect(stored(each.result.content), label).toEqual(stored(whole.result.content));
+      expect(each.result.csv.equals(whole.result.csv), label).toBe(true);
+      expect(each.result.html === whole.result.html, label).toBe(true);
+      expect(sortedEvents(each.events), label).toEqual(sortedEvents(whole.events));
+    }
     // One event per row read: each of the run's priced lines once, and nothing else.
     expect(streamed.events.filter((event) => event.object_type === 'priced_line' && event.purpose === 'audit_report')).toHaveLength(month.lines);
     expect(new Set(streamed.events.map((event) => event.object_id)).size).toBe(month.lines);
@@ -311,7 +497,7 @@ describe('the audit report’s readers on a generated month (CAS-41.1)', () => {
   }, 600_000);
 
   it('the patient shares and balances are the filtering versions’, and lineCorrections answers a line alike in any call', async () => {
-    const found = await samePatientShares(month.practice);
+    const found = await samePatientShares(month.practice, 7);
     expect(found.corrections).toBeGreaterThan(2_000);
   }, 600_000);
 

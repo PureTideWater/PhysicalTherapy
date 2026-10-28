@@ -27,8 +27,9 @@ import { parseCoverage } from '../price/coverage';
 import { RUN_IN_EFFECT } from '../price/in-effect';
 import { type ContentRead, type ContentSpans, contentGapsOf, familyOf, releaseContentSpans, typedRelease } from '../price/release';
 import { type StoredEntry, ledgerEntries, practiceLedgerSettings } from '../reconcile/ledger';
-import { PATIENT_BALANCE_UNSEEN, type PatientBalanceFold, foldPatientBalance, lineCorrections, patientBalanceOf } from '../reconcile/patient-share';
+import { PATIENT_BALANCE_UNSEEN, type PatientBalanceFold, type PracticeCorrections, foldPatientBalance, lineCorrections, patientBalanceOf, practiceCorrections } from '../reconcile/patient-share';
 import { lineDeadlines } from '../triage/deadline';
+import { type TriageBatches, batchSize } from '../triage/execute';
 import { CsvArena, type LineOrderKey, compareLineOrder, compareText } from './csv-arena';
 import { UNPRICED_REMEDIES } from './remedies';
 
@@ -361,6 +362,24 @@ export interface GatherInput {
   readonly asOf: string;
   readonly requestId: string;
   readonly cipher: PracticeCipher;
+  /** The readers' batch sizes and the arena's chunk; the defaults unless a test names smaller ones (ReportBatches). */
+  readonly batches?: ReportBatches;
+}
+
+/**
+ * The batch sizes of the report's readers and its arena's chunk (SUITE-CAP-1a D14, D18; docs/adr/0083), with triage's
+ * (the job triages first). Production names none: REPORT_BATCH_LINES run lines and case lines at a time, chunks of
+ * CSV_ARENA_CHUNK_BYTES. A test names smaller ones (down to one line and a few bytes) so that a fixture's few lines and
+ * rows cross batch and chunk boundaries and the folds are proved across them with real values. No environment variable
+ * sets them.
+ */
+export interface ReportBatches extends TriageBatches {
+  /** The run's lines a batch holds (REPORT_BATCH_LINES). */
+  readonly reportLines?: number;
+  /** The case lines a patient-balance batch holds (REPORT_BATCH_LINES). */
+  readonly caseLines?: number;
+  /** The CSV arena's chunk (CSV_ARENA_CHUNK_BYTES). */
+  readonly csvChunkBytes?: number;
 }
 
 const text = (value: Cents) => centsToString(value);
@@ -436,19 +455,30 @@ async function runCases(client: ScopeClient, input: GatherInput): Promise<CaseRo
 /**
  * The cases, of those named, whose corrections paid nothing more because the patient's share took them (docs/adr/0067):
  * the one rule the Reconciliation and case screens read too (reconcile/patient-share.ts casePatientBalance), over every
- * line of the case, whichever run priced it. The case lines are read through a cursor REPORT_BATCH_LINES at a time and
- * the rule folded per case (foldPatientBalance), each batch's corrections read from the practice's ledger entries as
- * the caller read them (SUITE-CAP-1a D18; docs/adr/0083): a line's correction reads its own claim alone, so a batch
- * answers each of its lines as one call for every line would. The lines come in their claim's order, so a batch holds
- * whole claims (but at its edges) and the batches together read each claim's lines and chain once, as one call did;
- * in no order, each batch would read the claims of nearly all its lines again (2.6 times the rows at 100,000 lines).
+ * line of the case, whichever run priced it. The case lines are read through a cursor `batchLines` (REPORT_BATCH_LINES)
+ * at a time and the rule folded per case (foldPatientBalance), each batch's corrections read from the practice's ledger
+ * entries as the caller read them (SUITE-CAP-1a D18; docs/adr/0083): a line's correction reads its own claim alone, so a
+ * batch answers each of its lines as one call for every line would. What lineCorrections reads of the practice whatever
+ * the lines (its matches in chain order and the lines and reversals of every claim they name) is read once, before the
+ * first batch (practiceCorrections), and each batch reads only its own claims; read per batch, that practice-wide part
+ * would be read again for every 2,000 case lines. The lines come in their claim's order, so a batch holds whole claims
+ * (but at its edges) and the batches together read each claim's lines and chain once, as one call did; in no order, each
+ * batch would read the claims of nearly all its lines again (2.6 times the rows at 100,000 lines).
  */
-export async function patientBalanceCases(scope: PracticeScope<ScopeClient>, practiceId: string, caseIds: readonly string[], entries: readonly StoredEntry[]): Promise<Set<string>> {
+export async function patientBalanceCases(
+  scope: PracticeScope<ScopeClient>,
+  practiceId: string,
+  caseIds: readonly string[],
+  entries: readonly StoredEntry[],
+  batchLines?: number,
+): Promise<Set<string>> {
   if (caseIds.length === 0) {
     return new Set();
   }
+  const size = batchSize(batchLines, REPORT_BATCH_LINES);
   const { client } = scope;
   const folds = new Map<string, PatientBalanceFold>();
+  let practice: PracticeCorrections | undefined;
   await client.query(
     `DECLARE report_case_lines NO SCROLL CURSOR FOR
      SELECT cl.case_id, cl.service_line_id, cl.written_off_reason IS NOT NULL AS written_off,
@@ -459,21 +489,22 @@ export async function patientBalanceCases(scope: PracticeScope<ScopeClient>, pra
     [practiceId, caseIds],
   );
   for (;;) {
-    const { rows } = await client.query<{ case_id: string; service_line_id: string; written_off: boolean; stage: string | null }>(`FETCH ${REPORT_BATCH_LINES} FROM report_case_lines`);
+    const { rows } = await client.query<{ case_id: string; service_line_id: string; written_off: boolean; stage: string | null }>(`FETCH ${size} FROM report_case_lines`);
     if (rows.length === 0) {
       break;
     }
+    practice ??= await practiceCorrections(scope, practiceId, entries);
     const corrections = await lineCorrections(
       scope,
       practiceId,
       rows.map((row) => row.service_line_id),
-      entries,
+      practice,
     );
     for (const row of rows) {
       const line = { correction: corrections.get(row.service_line_id)?.correction ?? null, writtenOff: row.written_off, stage: row.stage };
       folds.set(row.case_id, foldPatientBalance(folds.get(row.case_id) ?? PATIENT_BALANCE_UNSEEN, line));
     }
-    if (rows.length < REPORT_BATCH_LINES) {
+    if (rows.length < size) {
       break;
     }
   }
@@ -761,10 +792,25 @@ function foldLine(figures: ReportFigures, reasonsListed: readonly string[], row:
  * stream and release. The run's lines are read through a cursor REPORT_BATCH_LINES at a time (SUITE-CAP-1a D14, D17,
  * D18; docs/adr/0083): each batch is audited (one event per row read), its deadlines read, each row mapped to its line,
  * the line folded into the figures and its CSV row appended to the arena, and the batch dropped. The cursor lives in
- * the job's transaction and is closed before this returns; an error aborts the transaction, which ends it.
+ * the job's transaction and is closed before this returns; an error aborts the transaction, which ends it. The arena
+ * holds the month's line-level CSV, so it is released on every path that does not hand it to the caller: whatever
+ * throws, in the line loop or after it (the ledger, the patient balance, the content), releases it once before the
+ * error goes on (design 5.3: released on every path).
  */
 export async function gatherReport(scope: PracticeScope<ScopeClient>, input: GatherInput): Promise<{ readonly content: AuditReportContent; readonly arena: CsvArena }> {
+  const arena = new CsvArena({ chunkBytes: input.batches?.csvChunkBytes });
+  try {
+    return { content: await gatherInto(scope, input, arena), arena };
+  } catch (error) {
+    arena.release();
+    throw error;
+  }
+}
+
+/** gatherReport's reading and folding, its rows appended to `arena`, which gatherReport releases if this throws. */
+async function gatherInto(scope: PracticeScope<ScopeClient>, input: GatherInput, arena: CsvArena): Promise<AuditReportContent> {
   const { client } = scope;
+  const lineBatch = batchSize(input.batches?.reportLines, REPORT_BATCH_LINES);
   const run = (
     await client.query<{ id: string; period_from: string; period_to: string; release_no: number; engine_version: string; coverage: unknown; completed_at: Date; manifest_sha256: string }>(
       `SELECT r.id, r.period_from::text, r.period_to::text, r.release_no, r.engine_version, r.coverage, r.completed_at, rr.manifest_sha256
@@ -793,39 +839,33 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
 
   const figures = reportFigures();
   const reasonsListed = notActionableReasons();
-  const arena = new CsvArena();
-  try {
-    await client.query(`DECLARE report_lines NO SCROLL CURSOR FOR ${RUN_LINES_QUERY}`, [input.pricingRunId, input.practiceId]);
-    for (;;) {
-      const batch = await readWithAudit(
-        scope,
-        { objectType: 'priced_line', purpose: 'audit_report', requestId: input.requestId },
-        async (reader) => (await reader.query<LineRow>(`FETCH ${REPORT_BATCH_LINES} FROM report_lines`)).rows,
-        (row) => ({ objectId: row.priced_line_id, practiceId: row.practice_id }),
-      );
-      if (batch.length === 0) {
-        break;
-      }
-      // Whether each line's deadline is verified (D17 a), as triage judged it.
-      const deadlines = await lineDeadlines(
-        client,
-        batch.map((row) => row.priced_line_id),
-      );
-      const reading: LineReading = { input, settings, references, spans, anomalyOf, deadlines };
-      for (const row of batch) {
-        const { line, contentKey } = reportLineOf(row, reading);
-        foldLine(figures, reasonsListed, row, line, contentKey, deadlines);
-        arena.append(line);
-      }
-      if (batch.length < REPORT_BATCH_LINES) {
-        break;
-      }
+  await client.query(`DECLARE report_lines NO SCROLL CURSOR FOR ${RUN_LINES_QUERY}`, [input.pricingRunId, input.practiceId]);
+  for (;;) {
+    const batch = await readWithAudit(
+      scope,
+      { objectType: 'priced_line', purpose: 'audit_report', requestId: input.requestId },
+      async (reader) => (await reader.query<LineRow>(`FETCH ${lineBatch} FROM report_lines`)).rows,
+      (row) => ({ objectId: row.priced_line_id, practiceId: row.practice_id }),
+    );
+    if (batch.length === 0) {
+      break;
     }
-    await client.query('CLOSE report_lines');
-  } catch (error) {
-    arena.release();
-    throw error;
+    // Whether each line's deadline is verified (D17 a), as triage judged it.
+    const deadlines = await lineDeadlines(
+      client,
+      batch.map((row) => row.priced_line_id),
+    );
+    const reading: LineReading = { input, settings, references, spans, anomalyOf, deadlines };
+    for (const row of batch) {
+      const { line, contentKey } = reportLineOf(row, reading);
+      foldLine(figures, reasonsListed, row, line, contentKey, deadlines);
+      arena.append(line);
+    }
+    if (batch.length < lineBatch) {
+      break;
+    }
   }
+  await client.query('CLOSE report_lines');
 
   const notActionable = reasonsListed
     .map((reason, place) => {
@@ -856,6 +896,7 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
     input.practiceId,
     caseRows.map((row) => row.id),
     ledger,
+    input.batches?.caseLines,
   );
 
   const cases: ReportCase[] = caseRows.map((row) => {
@@ -1044,5 +1085,5 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
     pursuit: { estimated, cost_cents: pursuitTotal === null ? null : text(pursuitTotal), net_expected_cents: pursuitTotal === null ? null : text(cents(actionableCents - pursuitTotal)) },
     evidence_gaps: gaps,
   };
-  return { content, arena };
+  return content;
 }

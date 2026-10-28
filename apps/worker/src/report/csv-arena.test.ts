@@ -166,5 +166,9 @@ describe('the line CSV arena (CAS-41.3)', () => {
     expect(arena.heldBytes).toBe(0);
     expect(() => arena.append(LINE)).toThrow();
     await expect(streamed(arena)).rejects.toThrow();
+    // A second release (gatherReport's on a failure path, then a caller's finally) does nothing and throws nothing.
+    expect(() => arena.release()).not.toThrow();
+    expect(arena.heldBytes).toBe(0);
+    expect(arena.lines).toBe(0);
   });
 });

@@ -177,8 +177,14 @@ export class CsvArena {
     return undefined;
   }
 
-  /** Gives the chunks and keys back; the arena takes and streams nothing after. */
+  /**
+   * Gives the chunks and keys back; the arena takes and streams nothing after. Idempotent: a second call (a caller's
+   * finally after gatherReport's own release on a failure path) does nothing.
+   */
   release(): void {
+    if (this.released) {
+      return;
+    }
     this.released = true;
     this.chunks = [];
     this.used = 0;

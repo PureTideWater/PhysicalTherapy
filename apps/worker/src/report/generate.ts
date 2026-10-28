@@ -7,7 +7,7 @@ import type { JobHandler } from '../jobs/handlers';
 import { practiceLedgerSettings } from '../reconcile/ledger';
 import type { DocumentStore, WrittenDocument } from '../storage/documents';
 import { type TriageJobContext, todayUtc, triageInScope } from '../triage/execute';
-import { gatherReport } from './content';
+import { type ReportBatches, gatherReport } from './content';
 import { auditHtml, auditReconciliation } from './html';
 import type { PdfRenderer } from './pdf';
 
@@ -48,6 +48,8 @@ export type ReportOutcome =
 export interface ReportOptions {
   /** The triage date; today in UTC unless a test names an earlier one. */
   readonly asOf?: string;
+  /** The readers' batch sizes and the CSV arena's chunk; the defaults unless a test names smaller ones (ReportBatches). */
+  readonly batches?: ReportBatches;
 }
 
 export async function generateAuditReport(context: TriageJobContext, services: ReportServices, practiceId: string, auditReportId: string, options: ReportOptions = {}): Promise<ReportOutcome> {
@@ -69,7 +71,7 @@ export async function generateAuditReport(context: TriageJobContext, services: R
       await scope.client.query("UPDATE audit_report SET status = 'failed', failure_code = 'release_withdrawn' WHERE id = $1 AND practice_id = $2 AND status = 'queued'", [auditReportId, practiceId]);
       return { outcome: 'release_withdrawn' };
     }
-    const triaged = await triageInScope(scope, practiceId, report.pricing_run_id, context.jobId, asOf);
+    const triaged = await triageInScope(scope, practiceId, report.pricing_run_id, context.jobId, asOf, options.batches);
     if (triaged.outcome === 'not_in_effect') {
       await scope.client.query("UPDATE audit_report SET status = 'failed', failure_code = 'run_not_in_effect' WHERE id = $1 AND practice_id = $2 AND status = 'queued'", [auditReportId, practiceId]);
       return { outcome: 'not_in_effect' };
@@ -78,11 +80,15 @@ export async function generateAuditReport(context: TriageJobContext, services: R
       return { outcome: triaged.outcome === 'missing' ? 'missing' : 'not_complete' };
     }
     const cipher = await loadPracticeCipher(scope, services.keys, practiceId);
-    const { content, arena } = await gatherReport(scope, { practiceId, auditReportId, pricingRunId: report.pricing_run_id, asOf, requestId: context.jobId, cipher });
+    const { content, arena } = await gatherReport(scope, { practiceId, auditReportId, pricingRunId: report.pricing_run_id, asOf, requestId: context.jobId, cipher, batches: options.batches });
     const pdfKey = auditReportKey(practiceId, auditReportId, randomUUID(), 'pdf');
     const csvKey = auditReportKey(practiceId, auditReportId, randomUUID(), 'csv');
     // The line CSV is streamed from its arena and the arena released before Chromium prints (SUITE-CAP-1a D14, D17;
-    // docs/adr/0083), so the report never holds its lines while the PDF prints.
+    // docs/adr/0083), so the report never holds its lines while the PDF prints. If the print or the PDF's write then
+    // fails, the CSV stays stored, sealed under this attempt's own key with no row naming it: the application cannot
+    // delete an object (the documents bucket is written once per key and its role holds no delete), so it is the same
+    // kind of object as a failed CSV write's stored PDF, kept and unreadable once the practice's data key is destroyed
+    // (docs/adr/0018; ADR 0083, As built).
     let writtenCsv: WrittenDocument;
     try {
       writtenCsv = await services.documents.write(cipher, csvKey, arena.rows());

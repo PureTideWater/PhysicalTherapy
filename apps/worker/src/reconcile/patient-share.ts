@@ -2,7 +2,7 @@ import { type PatientShare, type PatientShareChange, type ShareLine, claimAlloca
 import { type Cents, ZERO_CENTS, cents, parseCents } from '@tp/money';
 
 import { type Scope, type StoredEntry, ledgerEntries } from './ledger';
-import { type ChainClaim, type ClaimLine, type LineChain, chainContext, claimLines, lineChain } from './remittances';
+import { type ChainClaim, type ChainContext, type ClaimLine, type LineChain, type PracticeChains, chainContext, chainContextFor, claimLines, lineChain, practiceChains } from './remittances';
 
 /**
  * "Billable to the patient" and the payer's corrections that pay nothing more (PRD 13, Matching step 1;
@@ -216,12 +216,42 @@ export function patientBalanceOf(fold: PatientBalanceFold): boolean {
 }
 
 /**
+ * What lineCorrections reads of the practice whatever lines it is asked about, read once by a caller that asks in batches
+ * (the audit report's patient balance, SUITE-CAP-1a D18; docs/adr/0083): what each match's own entries approved, from the
+ * ledger entries the caller read, and the practice's part of the chains (practiceChains: its matches in chain order and
+ * the lines and reversals of every claim they name). A batch then reads only its own claims (chainContextFor).
+ */
+export interface PracticeCorrections {
+  /** What each match's own entries approved (net of their corrections). */
+  readonly approvedBy: ReadonlyMap<string, bigint>;
+  readonly chains: PracticeChains;
+}
+
+/** What each match's own entries approved (net of their corrections). */
+function approvedByMatch(ledger: readonly StoredEntry[]): Map<string, bigint> {
+  const byId = entriesById(ledger);
+  const approvedBy = new Map<string, bigint>();
+  for (const entry of ledger) {
+    if (entry.matchId !== null && countedStage(entry, byId) === 'approved') {
+      approvedBy.set(entry.matchId, (approvedBy.get(entry.matchId) ?? 0n) + entry.amountCents);
+    }
+  }
+  return approvedBy;
+}
+
+export async function practiceCorrections(scope: Scope, practiceId: string, entries: readonly StoredEntry[]): Promise<PracticeCorrections> {
+  return { approvedBy: approvedByMatch(entries), chains: await practiceChains(scope, practiceId, entries) };
+}
+
+/**
  * The case lines named, each with its claim matches read in payment terms, its correction and its billable to the patient.
  * A line's answer reads its own claim's chain and shares alone, so it is the same whichever other lines share the call.
- * `entries` are the practice's ledger entries when the caller has read them already (the audit report reads them once
- * for its cases and every batch of their lines, SUITE-CAP-1a D18); otherwise they are read here.
+ * `given` is the practice's ledger entries when the caller has read them already, or, for a caller that asks in batches,
+ * the practice's part read once (practiceCorrections), so that each batch reads only its own claims' lines and reversals
+ * and its answer for each line is the one call's for every line (SUITE-CAP-1a D18; docs/adr/0083); otherwise the
+ * entries are read here and the chains read whole (chainContext), as before.
  */
-export async function lineCorrections(scope: Scope, practiceId: string, serviceLineIds: readonly string[], entries?: readonly StoredEntry[]): Promise<Map<string, LineCorrection>> {
+export async function lineCorrections(scope: Scope, practiceId: string, serviceLineIds: readonly string[], given?: readonly StoredEntry[] | PracticeCorrections): Promise<Map<string, LineCorrection>> {
   const corrections = new Map<string, LineCorrection>();
   if (serviceLineIds.length === 0) {
     return corrections;
@@ -230,16 +260,17 @@ export async function lineCorrections(scope: Scope, practiceId: string, serviceL
     'SELECT cl.case_id, cl.service_line_id, l.claim_id FROM case_line cl JOIN service_line l ON l.id = cl.service_line_id WHERE cl.practice_id = $1 AND cl.service_line_id = ANY ($2::uuid[])',
     [practiceId, serviceLineIds],
   );
-  const ledger = entries ?? (await ledgerEntries(scope, practiceId));
-  const byId = entriesById(ledger);
-  // What each match's own entries approved (net of their corrections).
-  const approvedBy = new Map<string, bigint>();
-  for (const entry of ledger) {
-    if (entry.matchId !== null && countedStage(entry, byId) === 'approved') {
-      approvedBy.set(entry.matchId, (approvedBy.get(entry.matchId) ?? 0n) + entry.amountCents);
-    }
+  const claimIds = rows.map((row) => row.claim_id);
+  let approvedBy: ReadonlyMap<string, bigint>;
+  let context: ChainContext;
+  if (given !== undefined && 'chains' in given) {
+    approvedBy = given.approvedBy;
+    context = await chainContextFor(scope, practiceId, given.chains, claimIds);
+  } else {
+    const ledger = given ?? (await ledgerEntries(scope, practiceId));
+    approvedBy = approvedByMatch(ledger);
+    context = await chainContext(scope, practiceId, claimIds, ledger);
   }
-  const context = await chainContext(scope, practiceId, rows.map((row) => row.claim_id), ledger);
   const chains = rows.map((row) => ({ row, chain: lineChain(context, { serviceLineId: row.service_line_id, claimId: row.claim_id }) }));
   const shares = await lineShares(
     scope,

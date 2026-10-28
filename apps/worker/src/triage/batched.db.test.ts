@@ -5,8 +5,8 @@ import { type NotActionableReason, judgeLine, triageSettings } from '@tp/triage'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type * as ReleaseModule from '../price/release';
-import { candidateLines, candidateRows, executeTriage, judgedCandidates } from './execute';
-import { CAS_AS_OF, CAS_RUNS } from './test-support/cas-runs';
+import { type TriageBatches, candidateLines, candidateRows, executeTriage, judgedCandidates } from './execute';
+import { CAS_AS_OF, CAS_RUNS, type CasRun } from './test-support/cas-runs';
 import { GENERATED_AS_OF, GENERATED_FULL_LINES, GENERATED_SETTINGS, type GeneratedMonth, generatedMonth, inJobScope } from './test-support/generated-month';
 import { measure, perAdded } from './test-support/memory';
 import { recordingContext, rolledBack, snapshot, sortedEvents, storedEvents } from './test-support/recorded';
@@ -15,7 +15,8 @@ import { wholeTriageInScope } from './test-support/whole-triage';
 
 /**
  * Triage reads its candidates in batches and keeps only what it judges (CAS-41.1, SUITE-CAP-1a D13; docs/adr/0083), and
- * answers as the whole read did. Through the job on the CAS fixtures: executeTriage leaves the same stage events, cases,
+ * answers as the whole read did. Through the job on the CAS fixtures, at the default batch size and at batches of one
+ * candidate (ACROSS, so every fixture crosses batch boundaries): executeTriage leaves the same stage events, cases,
  * case lines and anomalies, returns the same summary and records the same audit events (one per row read) as the
  * whole-read triage of 085299bd (test-support/whole-triage.ts), run first on the same rows and rolled back. Through the
  * reader on a generated month (test-support/generated-month.ts, priced under SYNTHETIC release 900007): judgedCandidates
@@ -77,10 +78,17 @@ afterAll(async () => {
   await w.close();
 });
 
+/** Batches of one candidate: each line of a CAS fixture is a batch of its own, so the judging is proved across batch boundaries. */
+const ACROSS: TriageBatches = { candidateLines: 1 };
+
 describe('triage through the job reads in batches and leaves what the whole read left (CAS-41.1)', () => {
-  for (const run of CAS_RUNS) {
-    it(`on ${run.label}, a first triage and a second`, async () => {
-      const { practice, runId } = await run.setup(w, `batched ${run.label}`);
+  for (const [run, batches] of CAS_RUNS.flatMap((item): [CasRun, TriageBatches | undefined][] => [
+    [item, undefined],
+    [item, ACROSS],
+  ])) {
+    const at = batches === undefined ? '' : ', at batches of one candidate';
+    it(`on ${run.label}, a first triage and a second${at}`, async () => {
+      const { practice, runId } = await run.setup(w, `batched ${run.label}${at}`);
       for (const pass of ['first', 'second']) {
         const reference = await rolledBack(w, practice.practiceId, async (scope, requestId) => {
           const outcome = await wholeTriageInScope(scope, practice.practiceId, runId, requestId, CAS_AS_OF);
@@ -88,7 +96,7 @@ describe('triage through the job reads in batches and leaves what the whole read
         });
         const events: Parameters<typeof recordingContext>[2] = [];
         const context = recordingContext(w, practice.practiceId, events);
-        const outcome = await executeTriage(context, practice.practiceId, runId, { asOf: CAS_AS_OF });
+        const outcome = await executeTriage(context, practice.practiceId, runId, batches === undefined ? { asOf: CAS_AS_OF } : { asOf: CAS_AS_OF, batches });
         expect(reference.result.outcome.outcome, `${pass} triage`).toBe('triaged');
         expect(outcome, `${pass} triage`).toEqual(reference.result.outcome);
         expect(await context.transaction((scope) => snapshot(scope.client, practice.practiceId)), `${pass} triage`).toEqual(reference.result.state);
@@ -115,6 +123,10 @@ describe('the candidate reader on a generated month (CAS-41.1)', () => {
       expect(batched.result.length, String(runId)).toBe(whole.result.length);
       expect(batched.result, String(runId)).toEqual(whole.result);
       expect(sortedEvents(batched.events), String(runId)).toEqual(sortedEvents(whole.events));
+      // In batches of seven, which divide no batch of the default size, the same candidates in the same order.
+      const sevens = await rolledBack(w, practiceId, (scope, requestId) => judgedCandidates(scope, practiceId, runId, requestId, { candidateLines: 7 }));
+      expect(sevens.result, String(runId)).toEqual(whole.result);
+      expect(sortedEvents(sevens.events), String(runId)).toEqual(sortedEvents(whole.events));
       // One event per row read: a candidate is a row.
       expect(batched.events).toHaveLength(whole.result.length);
     }
