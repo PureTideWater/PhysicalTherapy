@@ -10,29 +10,30 @@ Forms keep what the person typed, and name the refused field (the UX baseline re
 session_01VNsi2Kru6pfk8CAbQ2AaYB; stopped cleanly at 2026-10-26 10:10 UTC on the orchestrator's wind-down. The next
 session (Lane A or Lane B) continues from here.
 
-## Now (2026-10-27 19:20 UTC)
-- **PR #74** (draft), head **4f0b526**, subscribed. CI on 4f0b526: green but e2e (1/2), FRM-06's test bug (commented on
-  the PR; fixed in the worktree, rides the fix round's push).
-- **Reviews done** (`approval-summaries/lane-b-ux-forms-reviews.md`): 16 real findings, all fixed in this PR but U-UX-6,
-  deferred to UX PR 10 `co-001/ux-payer-response` (the baseline's UX-035).
-- **Galleries** (private to this account; the co-founder shares them from each page's Share menu): before (e908c21)
-  1280 https://claude.ai/artifact/JTLJX4saVr5nQ59EEvDDo7, 390 https://claude.ai/artifact/E7CDHT8hUTpPZMq6TKK18J;
-  after (4f0b526, what the reviews saw) 1280 https://claude.ai/artifact/7f5Xg3Kj8992F1jBTh7Hew, 390
-  https://claude.ai/artifact/N1ikEiBauh8PDGvVnNNhgU.
-- **Fix round part 1, wf_723c6bc6-add:** the three fixers finished (F1 form core, F2 fields and styles, F3 words and
-  components); the account's 5-hour limit stopped the run at ~17:12 UTC (records, check, verifiers). **Resumed 19:12
-  UTC** with resumeFromRunId (PostgreSQL restarted by the setup script). The fixers' work in progress is saved at
-  **`co-001/wip-ux-forms` 44ed04f** (no PR, no CI): if this container is gone, check that commit out over 4f0b526 and
-  continue the fix round from `approval-summaries/lane-b-ux-forms-wip/fix-*.md`. Check-in trig_01UDQayFbYZBj7M92B9swn7Q
-  at 2026-10-28 00:20 UTC.
-- **Fix round part 1 done** (19:12 to ~20:45 UTC): every fix verified; two that fell short re-fixed (S-A11Y-2's expired
-  invitation, U-UX-2's uploads drop zone). Local commits, **not pushed**: 3b94e23 (the fix round) and ab197e4 (a merge
-  of claude/build-platform 085299b, #76, tests only, no overlap). Saved unpushed-safe at `co-001/wip-ux-forms-2`
-  (ab197e4; no PR, no CI). If this container is gone: check out co-001/wip-ux-forms-2 as co-001/ux-forms's next head.
-- **Running:** fix round part 2, wf_7a81ed15-858: the verifiers' optional follow-ups (one local commit), then the full
-  local suite once; in parallel the after shots retaken at that head and every UX finding re-checked from them.
-- **Next:** one push of the PR branch; the PR description (checks, reviewer table, galleries); the fresh-clone
-  verification reading CI; merge.
+## Now (2026-10-28 00:25 UTC)
+- **PR #74** (draft), pushed head still **4f0b526** (CI: green but FRM-06's e2e test bug, commented). Everything since
+  is **local, not pushed**, one push to come: 3b94e23 (the review fix round), ab197e4 (merge of claude/build-platform
+  085299b, #76), a57fbf5 (the fix verifiers' follow-ups), and the UX re-check's three polish fixes (being committed).
+- **WIP on GitHub** (no PR, no CI; never forced): `co-001/wip-ux-forms` 44ed04f (fixers' tree), `-2` ab197e4, `-3` a57fbf5,
+  `-4` e20914b (a57fbf5 plus the polish fixes, uncommitted at the limit stop). **If this container is gone:** check out
+  `co-001/wip-ux-forms-4`'s tree over a57fbf5 (`-3`), finish the polish fixes from
+  `approval-summaries/lane-b-ux-forms-wip/fix3.md`, commit, then the steps below.
+- **Done:** the full local suite on a57fbf5 (`approval-summaries/lane-b-ux-forms-wip/suite.md`): typecheck, lint,
+  lint:copy, lint:logs, verify-content, check:fixtures, synth, licenses, unit 6,367 passed and 1 skipped, golden 376,
+  oracle 687 fixtures, test:db 9,222 passed and 1 skipped (4 shards), build and stamp, e2e 60/60 (2 shards); no mutation
+  shard affected. The UX re-check (`wip/ux-recheck.md`): all 11 UX findings fixed on the shots; three new polish
+  problems from the fix round (the support rule said three to five times, a hash in sans on the chosen-text line,
+  "Already sent" in the failure colour), being fixed: wf_8db44178-8ff (resumed 00:20 after the limit stop at ~23:55).
+- **Galleries** (private): before 1280 https://claude.ai/artifact/JTLJX4saVr5nQ59EEvDDo7, 390
+  https://claude.ai/artifact/E7CDHT8hUTpPZMq6TKK18J; after the build (4f0b526) 1280
+  https://claude.ai/artifact/7f5Xg3Kj8992F1jBTh7Hew, 390 https://claude.ai/artifact/N1ikEiBauh8PDGvVnNNhgU; after the fix
+  round (a57fbf5) 1280 https://claude.ai/artifact/X2vUgzfCWqxnZhtyj2MfQw, 390
+  https://claude.ai/artifact/22MQXWDuHMMJiNRVzt93tT.
+- **The base moved** to 0dd1ba7 (#77 ci-browser: Playwright 1.64.1, Chromium 1248, regenerated baselines; #80 the letter
+  reader's redaction). Next after the polish commit: merge it with a merge commit (pnpm install, regenerated generated
+  files, shared documents keep both), re-check what it touches (typecheck, lint, unit with the browser tests in the new
+  Chromium, the whole e2e), **one push**, the PR description, the fresh-clone verification reading CI, merge.
+  Check-in trig_01G5QKJaZpoGyZjNqFxKRwXC at 05:26 UTC.
 
 ## Handoff
 - **Branch:** `co-001/ux-forms`, head **17bbb70**, pushed, on claude/build-platform 7ef421b (#54 included). Two commits:
@@ -135,3 +136,5 @@ session (Lane A or Lane B) continues from here.
 | 2026-10-27 19:20 | Limit stop; resumed | Fix round part 1 (wf_723c6bc6-add): the three fixers done by ~16:51; the 5-hour limit stopped records, check and verifiers at ~17:12. The four galleries published (private). 19:08 the orchestrator's resume: WIP saved to co-001/wip-ux-forms 44ed04f, PostgreSQL restarted, the workflow resumed from its run. |
 
 | 2026-10-27 20:50 | Fix round part 1 done; part 2 | wf_723c6bc6-add finished on resume: check 30/30 e2e and every unit, lint and db check green; 15 fix verifiers (13 resolved, 2 short), re-fix of both (25/25 e2e). Committed locally 3b94e23; base #76 merged ab197e4; saved to co-001/wip-ux-forms-2. Part 2 started: wf_7a81ed15-858. |
+
+| 2026-10-28 00:25 | Suite green; polish; limit | Fix round part 2 (wf_7a81ed15-858): polish a57fbf5 (20 follow-ups), the full local suite green on it, the after shots retaken (156) and the UX re-check: 11/11 fixed, 3 new polish problems. Fix-round galleries published. The polish fix (wf_8db44178-8ff) stopped by the limit at ~23:55; WIP saved to co-001/wip-ux-forms-4; PostgreSQL restarted; resumed 00:20. Base moved to 0dd1ba7 (#77, #80): to merge next. |
