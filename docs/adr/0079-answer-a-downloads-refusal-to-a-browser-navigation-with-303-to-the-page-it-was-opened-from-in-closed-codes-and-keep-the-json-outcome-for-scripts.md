@@ -167,8 +167,8 @@ gone, and 980 px wide on a phone (UX-010). The cause was general, not the letter
      `forbidden` "Your role cannot download this file. Ask your organization’s administrator, who manages users and
      roles.", and on the console "Only a platform administrator can download the evidence export."; `not_found` "This
      file is not available here now. This page lists the files that are." The notice takes `tabIndex={-1}` and
-     `autoFocus`, and keeps clear of the sticky header with `scroll-margin-top` (`scroll-mt-18`: the header's 56 px and
-     16 px) until ux-forms' page-wide `scroll-padding-top` (ADR 0077 D4) lands (Revisit when).
+     `autoFocus`, and is kept clear of the sticky header by ADR 0077 D4's page-wide `scroll-padding-top` (the header's
+     56 px and 16 px), with no margin of its own, which would add to it (UX-DLR-11, done once #74 merged first).
    - **Out of the address bar.** Once shown, the notice takes its keys (`refused`, `fields`, `retry`) out of the
      address bar with `history.replaceState` (`ForgetRefusal`, `components/forget-refusal.tsx`), and with them the
      page's own keys that only a refusal gives meaning to (`DownloadRefusal`'s `forget`: the letter's `payer`,
@@ -190,12 +190,20 @@ gone, and 980 px wide on a phone (UX-010). The cause was general, not the letter
      principal downloads them. Open the case to see its state."; the reviewer checklist, whose PDF every role that reads
      reports downloads, adds "The report’s own page lists its files for the roles that download them."; the export
      review, whose files take its own permission, keeps its words.
-   - **Coverage's letter** marks the refused control instead of a notice: `aria-invalid`, "Error: " and its message
-     in `letter-<control>-error` ("Choose one of the payers listed.", "Choose one of this payer’s contracts, or None
-     named.", "Each code must be five letters or digits.": what is wrong, while the label names the field and the
-     hint gives the format; UX-DLR-10), named first by an `aria-describedby` each control writes as an attribute of its
-     own, never through a spread, so ux-forms' static check of described fields (FRM-04) reads it (UX-DLR-03), and
-     `autoFocus` on the first marked control. It keeps the validated entries as the form's defaults (a payer or
+   - **Coverage's letter** marks the refused control instead of a notice, as ADR 0077 D3 marks every field (UX-DLR-11,
+     moved once #74 merged first): `aria-invalid` (the 2 px danger border), and under the control `form-issues`'
+     `FieldError`, an icon and an `aria-hidden` "Error:" beside the message, which `letter-<control>-error` holds alone
+     ("Choose one of the payers listed.", "Choose one of this payer’s contracts, or None named.", "Each code must be
+     five letters or digits.": what is wrong, while the label names the field and the hint gives the format;
+     UX-DLR-10), named first in the control's `aria-describedby` by `form-issues`' `describedBy`, then its hint, and
+     `autoFocus` on the first marked control. The payer and contract selects are the shared `SelectField`, given the
+     message as `error` and `showChosen` (ADR 0077 D6), so they look and read as every select does. The codes input is
+     written beside `FieldError` rather than as a `Field`, because a `Field`'s hint is a string and this one sets each
+     example code in mono (UX-DLR-09), and because ux-forms' static check of pattern fields (FRM-04) reads only a
+     `hint` or an `aria-describedby` on the element: it writes `aria-describedby` as an attribute of its own, never
+     through a spread (UX-DLR-03), naming its hint, written at the shared `Hint`'s 14 px under the message (ADR 0077
+     D9). `SelectField` writes no attribute on an option, so `LetterContractCheck` is given each listed contract's
+     payer by ID. It keeps the validated entries as the form's defaults (a payer or
      contract only when it is one of the form's own options); a marked payer that is none of them starts unanswered,
      on a first option "Choose a payer" that the select's `required` holds, never as another payer shown under the
      mark (UX-DLR-06). A mark clears as the person edits its control, the contract's also once a change of the payer
@@ -269,8 +277,8 @@ gone, and 980 px wide on a phone (UX-010). The cause was general, not the letter
   address bar (`ForgetRefusal`), so a reload shows the page as it is now, and no notice tells the person to reload: each
   says what to do on the page itself. The letter clears its own marks, a control's as the person edits it (the
   contract's also as a change of the payer makes the pair hold) and all of them, with the refusal and the entries in the
-  address bar, once the letter is sent (`LetterMarks`): ux-forms' `Field` does not clear a mark as the person types
-  (`co-001/ux-forms` at 4f0b526d).
+  address bar, once the letter is sent (`LetterMarks`, which hides `FieldError`'s whole line): ADR 0077's shared fields
+  do not clear a mark as the person types (#74).
 - **A refused plain link loads its page again**, on a page that holds nothing a reload would lose. Every page that
   holds work beside a download link (Uploads, the export review, the audit report's reviewer checklist, the packet
   page and the console's evidence checklist) downloads it in place (4), so a refused file leaves the ticks, the typed
@@ -324,12 +332,11 @@ gone, and 980 px wide on a phone (UX-010). The cause was general, not the letter
 
 - Sign-in gains a return path (UX-006, and UX PR 59's maintenance return path): a refused download then may come back
   to its page after sign-in, a second redirect surface that needs its own design and checks (R17).
-- ux-forms (ADR 0077, #74) merges beside this pull request: whichever of the two merges second moves the letter's
-  three controls onto `components/form-issues.tsx`'s `FieldError` and `describedBy` (the message alone in
-  `letter-<control>-error`, with the icon and an `aria-hidden` "Error:", ADR 0077 D3), and drops `scroll-mt-18` from
-  the notice, the letter's selects and its codes field for ADR 0077 D4's page-wide `scroll-padding-top`, which would
-  otherwise add to it (144 px where 72 px is meant; UX-DLR-11). The letter keeps `LetterMarks` until a shared field
-  clears its own mark.
+- A shared field (ADR 0077's `SelectField` or `Field`) comes to clear its own mark as the person edits it: the letter
+  then drops `LetterMarks`' per-control clearing, keeping its clearing of every mark, the refusal and the entries on a
+  sent letter. (The move onto `FieldError` and `describedBy`, and the drop of `scroll-mt-18` for ADR 0077 D4's
+  `scroll-padding-top`, which had added to it, 144 px where 72 px was meant, are done: UX-DLR-11, by this pull
+  request, merged after #74.)
 - Another page comes to hold what a reload would lose beside a download link: its links move onto `DownloadLink`.
 - #42 merges: `Forbidden` (`components/shell.tsx`, a #42 file this pull request leaves untouched) takes an optional
   link, which `PermissionState` renders under its next step, so the packet page's permission state links the case

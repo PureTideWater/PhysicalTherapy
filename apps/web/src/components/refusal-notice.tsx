@@ -1,6 +1,6 @@
 'use client';
 
-import { Alert, AlertDescription, AlertTitle, cn } from '@tp/ui';
+import { Alert, AlertDescription, AlertTitle } from '@tp/ui';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 
@@ -31,8 +31,9 @@ export function heldRefusal(held: HeldRefusal | null, notice: ShownRefusal | nul
 
 /**
  * A refused download's notice as it looks wherever it is said (docs/adr/0079): a destructive alert that takes the focus
- * when it mounts (tabIndex -1, autoFocus) and keeps clear of the sticky header, its closed code and wait in data
- * attributes. A page's notice is RefusalNotice; a download fetched in place says its refusal with this alone.
+ * when it mounts (tabIndex -1, autoFocus), its closed code and wait in data attributes. The page's scroll-padding-top
+ * (packages/ui styles.css; ADR 0077 D4) keeps it clear of the sticky header, so it adds no margin of its own, which
+ * would double the offset. A page's notice is RefusalNotice; a download fetched in place says its refusal with this alone.
  */
 export function RefusalAlert({ notice, className }: { readonly notice: ShownRefusal; readonly className?: string }) {
   return (
@@ -41,7 +42,7 @@ export function RefusalAlert({ notice, className }: { readonly notice: ShownRefu
       role="alert"
       tabIndex={-1}
       autoFocus
-      className={cn('scroll-mt-18', className)}
+      className={className}
       data-download-refusal={notice.status}
       data-retry-minutes={notice.retryMinutes ?? undefined}
     >

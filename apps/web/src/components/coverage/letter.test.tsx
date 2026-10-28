@@ -70,6 +70,23 @@ function shown(markup: string, id: string): string | undefined {
   return (options.find((option) => / selected=""/.test(option[0])) ?? options[0])?.[1];
 }
 
+/**
+ * The line under a refused control, as form-issues' FieldError writes it for every field (ADR 0077 D3): an icon and an
+ * "Error:" that are both aria-hidden, then the message alone in `{id}-error`, the one part the control's description
+ * names. Returns the message's text; a failure names what differs.
+ */
+function fieldErrorLine(markup: string, id: string): string {
+  const line = new RegExp(`<div data-field-error="[^"]*" class="([^"]*)">(<svg [^>]*>[\\s\\S]*?</svg>)<span ([^>]*)>Error:</span><p id="${id}-error">([^<]*)</p></div>`).exec(markup);
+  if (line === null) {
+    throw new Error(`no FieldError line for #${id}`);
+  }
+  const [, classes = '', icon = '', label = '', message = ''] = line;
+  expect(classes.split(' ')).toEqual(expect.arrayContaining(['text-sm', 'text-destructive']));
+  expect(icon).toMatch(/^<svg aria-hidden="true" focusable="false"/);
+  expect(label).toBe('aria-hidden="true" class="font-semibold"');
+  return text(message);
+}
+
 /** What takes the focus on arrival: each element with autofocus, by its id or its notice's status. */
 function autofocused(markup: string): string[] {
   return [...markup.matchAll(/<[a-z]+ [^>]*\bautofocus=""[^>]*>/g)].map((match) => /\bid="([^"]*)"/.exec(match[0])?.[1] ?? /data-download-refusal="([^"]*)"/.exec(match[0])?.[1] ?? match[0]);
@@ -113,9 +130,15 @@ describe('Coverage’s letter form', () => {
     expect(codes.get('value')).toBe('ABC');
     expect(codes.get('aria-invalid')).toBe('true');
     expect(codes.get('aria-describedby')).toBe('letter-codes-error letter-codes-hint');
-    expect(codes.get('class')).toContain('scroll-mt-18');
-    // The message says what is wrong; the label names the field and the hint, read after it, gives the format.
-    expect(textOf(page, 'letter-codes-error')).toBe('Error: Each code must be five letters or digits.');
+    // The page's scroll-padding-top keeps a focused control clear of the sticky header (ADR 0077 D4): no margin of its own.
+    expect(codes.get('class')).not.toMatch(/\bscroll-m/);
+    // The message says what is wrong; the label names the field and the hint, read after it, gives the format. It is
+    // FieldError's line, as under every other field: the description names the message alone, never "Error:" twice.
+    expect(fieldErrorLine(page, 'letter-codes')).toBe('Each code must be five letters or digits.');
+    expect(textOf(page, 'letter-codes-error')).toBe('Each code must be five letters or digits.');
+    // The line under the control, then the hint (ADR 0077 D9's place).
+    expect(page.indexOf('id="letter-codes"')).toBeLessThan(page.indexOf('id="letter-codes-error"'));
+    expect(page.indexOf('id="letter-codes-error"')).toBeLessThan(page.indexOf('id="letter-codes-hint"'));
     expect(autofocused(page)).toEqual(['letter-codes']);
     expect(shown(page, 'letter-payer')).toBe(PAYER_Q);
     expect(shown(page, 'letter-contract')).toBe(CONTRACT_Q);
@@ -130,8 +153,8 @@ describe('Coverage’s letter form', () => {
     const contract = attributes(page, 'letter-contract');
     expect(contract.get('aria-invalid')).toBe('true');
     expect(contract.get('aria-describedby')).toBe('letter-contract-error');
-    expect(contract.get('class')).toContain('scroll-mt-18');
-    expect(textOf(page, 'letter-contract-error')).toBe('Error: Choose one of this payer’s contracts, or None named.');
+    expect(contract.get('class')).not.toMatch(/\bscroll-m/);
+    expect(fieldErrorLine(page, 'letter-contract')).toBe('Choose one of this payer’s contracts, or None named.');
     expect(autofocused(page)).toEqual(['letter-contract']);
     expect(shown(page, 'letter-payer')).toBe(PAYER_R);
     expect(shown(page, 'letter-contract')).toBe(CONTRACT_Q);
@@ -144,7 +167,7 @@ describe('Coverage’s letter form', () => {
     expect(payer.get('aria-invalid')).toBe('true');
     expect(payer.get('aria-describedby')).toBe('letter-payer-error');
     expect(payer.has('required')).toBe(true);
-    expect(textOf(page, 'letter-payer-error')).toBe('Error: Choose one of the payers listed.');
+    expect(fieldErrorLine(page, 'letter-payer')).toBe('Choose one of the payers listed.');
     expect(autofocused(page)).toEqual(['letter-payer']);
     // Never a listed payer under the mark: the choice starts unanswered, and required holds the next letter until it is made.
     expect(shown(page, 'letter-payer')).toBe('');

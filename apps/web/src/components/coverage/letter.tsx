@@ -6,6 +6,7 @@ import { type RefusedDownload, downloadRefusal, keptCodes, keptId } from '../../
 import type { PayerOption } from '../../lib/remittances/queries';
 import { DownloadRefusal } from '../download-refusal';
 import { SelectField } from '../field';
+import { FieldError, describedBy } from '../form-issues';
 import { LetterContractCheck, contractOwners } from './letter-contract-check';
 import { LetterMarks } from './letter-marks';
 import { Figure } from './share';
@@ -17,9 +18,10 @@ import { Figure } from './share';
  * contract before the form is sent; the route's check stays the rule. Each select is the shared SelectField, which
  * shows a choice it cuts short whole under it (showChosen; docs/adr/0077 D6). A letter the route refuses comes back here
  * (payerLetter's returnTo; docs/adr/0079) with the entries it was asked for kept as the form's defaults, and the refused
- * control marked: its message under it, after "Error:", named first by its aria-describedby, and the first marked
- * control focused on arrival; a payer the route did not find comes back unanswered ("Choose a payer"), never as another
- * payer shown under its mark. A mark clears as the person edits its control (the contract's also once a change of the
+ * control marked as every field of ADR 0077 D3 is: aria-invalid, and under it form-issues' FieldError (an icon and an
+ * aria-hidden "Error:" beside the message, which letter-<control>-error holds alone), named first in its
+ * aria-describedby by form-issues' describedBy, then its hint, and the first marked control focused on arrival; a payer
+ * the route did not find comes back unanswered ("Choose a payer"), never as another payer shown under its mark. A mark clears as the person edits its control (the contract's also once a change of the
  * payer makes the pair hold), and a letter sent clears them all and takes the refusal and its entries out of the
  * address bar (LetterMarks). A refusal of nothing the form can mark (a rate limit, say) is the download's notice in its
  * place, and the entries leave the address bar with it. Nothing from the URL is ever said in words: a kept payer or
@@ -65,9 +67,12 @@ function single(searchParams: LetterSearchParams, key: string): string | undefin
   return typeof value === 'string' ? value : undefined;
 }
 
-/** A control's element id and its message's, one rule for the form, its descriptions and its client checks. */
+/**
+ * A control's element id and its message's, one rule for the form, its descriptions and its client checks: the message
+ * is FieldError's `{id}-error`.
+ */
 const controlId = (control: LetterControl) => `letter-${control}`;
-const errorId = (control: LetterControl) => `letter-${control}-error`;
+const errorId = (control: LetterControl) => `${controlId(control)}-error`;
 
 /**
  * The other controls whose change can answer a control's refusal: a contract refused as not the payer's is answered by
@@ -75,38 +80,15 @@ const errorId = (control: LetterControl) => `letter-${control}-error`;
  */
 const ANSWERED_BY: Readonly<Partial<Record<LetterControl, readonly LetterControl[]>>> = { contract: ['payer'] };
 
-/**
- * A control's aria-describedby: its message first when refused, then its hint. Each control writes it as an attribute
- * of its own, never through a spread, so a static check of the form (ux-forms' FRM-04) sees that a field is described.
- */
-function describedBy(control: LetterControl, marked: ReadonlySet<LetterControl>, hint?: string): string | undefined {
-  const ids = [marked.has(control) ? errorId(control) : null, hint ?? null].filter((id) => id !== null).join(' ');
-  return ids === '' ? undefined : ids;
+/** A control's message when the refusal marks it: the field's error, as FieldError says it. */
+function errorOf(control: LetterControl, marked: ReadonlySet<LetterControl>): string | undefined {
+  return marked.has(control) ? MESSAGES[control] : undefined;
 }
 
-/** A refused control's marks: aria-invalid, and the focus when it is the first marked. */
-function invalidMarks(control: LetterControl, marked: ReadonlySet<LetterControl>) {
-  return {
-    'aria-invalid': marked.has(control) ? true : undefined,
-    autoFocus: LETTER_CONTROLS.find((each) => marked.has(each)) === control ? true : undefined,
-  } as const;
+/** Whether a control takes the focus on arrival: the first the refusal marks. */
+function focusOf(control: LetterControl, marked: ReadonlySet<LetterControl>): true | undefined {
+  return LETTER_CONTROLS.find((each) => marked.has(each)) === control ? true : undefined;
 }
-
-/** A marked control's message, under it; "Error:" says it in words, never by its colour alone. */
-function LetterError({ control, marked }: { readonly control: LetterControl; readonly marked: ReadonlySet<LetterControl> }) {
-  return marked.has(control) ? (
-    <p id={errorId(control)} className="text-xs text-destructive" data-field-error={control}>
-      Error: {MESSAGES[control]}
-    </p>
-  ) : null;
-}
-
-/**
- * The select's look, today's: the width of its column and never wider (w-full min-w-0 in a min-w-0 column, so a long
- * contract title never widens the page at 390 px; docs/adr/0078), with a refused one's border (as Input marks
- * aria-invalid) and room under the sticky header when focused. It replaces SelectField's own classes.
- */
-const SELECT = 'h-9 w-full min-w-0 scroll-mt-18 rounded-md border bg-background px-2 text-sm aria-invalid:border-destructive';
 
 /**
  * The letter's form (or, before any 835 has loaded a payer, why there is none), with a refused letter's marks and
@@ -136,6 +118,7 @@ export function PayerLetter({
   // A marked payer that is none of the options starts unanswered, so the mark never sits under a payer nobody chose and
   // the select's required holds the next letter until one is.
   const choose = marked.has('payer') && payer === undefined;
+  const codesError = errorOf('codes', marked);
   return (
     <>
       {marked.size === 0 || payers.length === 0 ? <DownloadRefusal refusal={refusal} forget={LETTER_CONTROLS} /> : null}
@@ -143,39 +126,31 @@ export function PayerLetter({
         <p className="text-sm text-muted-foreground">Payers appear once their 835s load.</p>
       ) : (
         <form method="get" action={`${path}/letter`} className="grid max-w-xl grid-cols-1 gap-3" aria-label="Letter">
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <SelectField
-              id={controlId('payer')}
-              label="Payer"
-              name="payer"
-              required
-              options={[...(choose ? [{ value: '', label: 'Choose a payer' }] : []), ...payers.map((option) => ({ value: option.id, label: option.name }))]}
-              showChosen
-              defaultValue={choose ? '' : payer}
-              className={SELECT}
-              aria-describedby={describedBy('payer', marked)}
-              {...invalidMarks('payer', marked)}
-            />
-            <LetterError control="payer" marked={marked} />
-          </div>
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <SelectField
-              id={controlId('contract')}
-              label="The payer’s contract (optional)"
-              name="contract"
-              options={[
-                { value: '', label: 'None named' },
-                ...named.map((each) => ({ group: each.name, options: listed.filter((option) => option.payerId === each.id).map((option) => ({ value: option.id, label: option.title })) })),
-              ]}
-              showChosen
-              defaultValue={contract}
-              className={SELECT}
-              aria-describedby={describedBy('contract', marked)}
-              {...invalidMarks('contract', marked)}
-            />
-            <LetterError control="contract" marked={marked} />
-            <LetterContractCheck payer={controlId('payer')} contract={controlId('contract')} owners={contractOwners(listed)} message={MESSAGES.contract} />
-          </div>
+          <SelectField
+            id={controlId('payer')}
+            label="Payer"
+            name="payer"
+            required
+            options={[...(choose ? [{ value: '', label: 'Choose a payer' }] : []), ...payers.map((option) => ({ value: option.id, label: option.name }))]}
+            showChosen
+            defaultValue={choose ? '' : payer}
+            error={errorOf('payer', marked)}
+            autoFocus={focusOf('payer', marked)}
+          />
+          <SelectField
+            id={controlId('contract')}
+            label="The payer’s contract (optional)"
+            name="contract"
+            options={[
+              { value: '', label: 'None named' },
+              ...named.map((each) => ({ group: each.name, options: listed.filter((option) => option.payerId === each.id).map((option) => ({ value: option.id, label: option.title })) })),
+            ]}
+            showChosen
+            defaultValue={contract}
+            error={errorOf('contract', marked)}
+            autoFocus={focusOf('contract', marked)}
+          />
+          <LetterContractCheck payer={controlId('payer')} contract={controlId('contract')} owners={contractOwners(listed)} message={MESSAGES.contract} />
           <div className="flex min-w-0 flex-col gap-1.5">
             <Label htmlFor={controlId('codes')}>Procedure codes (optional)</Label>
             <Input
@@ -186,11 +161,15 @@ export function PayerLetter({
               maxLength={400}
               autoCapitalize="characters"
               spellCheck={false}
-              className="scroll-mt-18 font-mono tabular-nums"
-              aria-describedby={describedBy('codes', marked, 'letter-codes-hint')}
-              {...invalidMarks('codes', marked)}
+              className="font-mono tabular-nums"
+              aria-invalid={codesError === undefined ? undefined : true}
+              // Its own attribute, never a spread, so FRM-04's static check reads it: the message, then the hint, which
+              // is named as `also` since its example codes are runs in mono, not the string Field's hint takes.
+              aria-describedby={describedBy(controlId('codes'), { error: codesError, also: 'letter-codes-hint' })}
+              autoFocus={focusOf('codes', marked)}
             />
-            <LetterError control="codes" marked={marked} />
+            <FieldError id={controlId('codes')} error={codesError} />
+            {/* The shared Hint's place and size (ADR 0077 D9), written here because it holds the codes in mono. */}
             <p id="letter-codes-hint" className="text-sm text-muted-foreground">
               Five-character codes separated by commas, such as <Figure>97110</Figure>, <Figure>97530</Figure>. Leave blank to ask for the whole schedule.
             </p>

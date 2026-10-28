@@ -5,8 +5,9 @@ import { useEffect } from 'react';
 import { forgetRefusalUrl } from '../forget-refusal';
 
 /**
- * A marked control and the message under it, by their element ids (letter.tsx), and the other controls whose change
- * can answer its refusal (also: the payer, for a contract refused as not the payer's).
+ * A marked control and the message under it, by their element ids (letter.tsx; the message is FieldError's
+ * `{id}-error`), and the other controls whose change can answer its refusal (also: the payer, for a contract refused as
+ * not the payer's).
  */
 export interface LetterMarkIds {
   readonly control: string;
@@ -27,8 +28,9 @@ export interface MarkedControl extends EventTarget {
 }
 
 /**
- * A marked control, the message that says its mark (null when the page has none), that message's id, and the other
- * controls whose change clears the mark once the control holds (none when not given).
+ * A marked control, the line that says its mark (FieldError's: its icon, "Error:" and the message; null when the page
+ * has none), the message's id, and the other controls whose change clears the mark once the control holds (none when
+ * not given).
  */
 export interface LetterMark {
   readonly control: MarkedControl;
@@ -44,10 +46,10 @@ export function describedWithout(describedBy: string | null, id: string): string
 }
 
 /**
- * Clears a control's mark while it still has one: aria-invalid (and with it the destructive border), and its message,
- * hidden and taken out of the control's aria-describedby (a hidden message it still named would still be read), its
- * hint kept. The message is hidden, never removed: React owns it, and takes it out itself once the page renders with no
- * refusal.
+ * Clears a control's mark while it still has one: aria-invalid (and with it the 2 px danger border), and its message,
+ * its whole line hidden (the icon and "Error:" with it) and the message taken out of the control's aria-describedby (a
+ * hidden message it still named would still be read), its hint kept. The line is hidden, never removed: React owns it,
+ * and takes it out itself once the page renders with no refusal.
  */
 export function clearMark(mark: LetterMark): void {
   if (mark.control.getAttribute('aria-invalid') !== 'true') {
@@ -125,7 +127,10 @@ export function LetterMarks({ marks, forget }: { readonly marks: readonly Letter
     const found = marks.flatMap((ids) => {
       const control = document.getElementById(ids.control);
       const also = (ids.also ?? []).flatMap((id) => document.getElementById(id) ?? []);
-      return control instanceof HTMLInputElement || control instanceof HTMLSelectElement ? [{ control, message: document.getElementById(ids.message), messageId: ids.message, also }] : [];
+      const message = document.getElementById(ids.message);
+      // FieldError's line, which holds the message beside its icon and "Error:", so all three go together.
+      const line = message?.closest<HTMLElement>('[data-field-error]') ?? message;
+      return control instanceof HTMLInputElement || control instanceof HTMLSelectElement ? [{ control, message: line, messageId: ids.message, also }] : [];
     });
     const form = found[0]?.control.form ?? null;
     if (form === null) {

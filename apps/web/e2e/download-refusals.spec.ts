@@ -135,10 +135,12 @@ test('a refused letter comes back to Coverage marked, focused and kept; a good o
       await expect(codes).toHaveValue('ABC');
       await expect(codes).toHaveAttribute('aria-invalid', 'true');
       await expect(codes).toHaveAttribute('aria-describedby', 'letter-codes-error letter-codes-hint');
-      // The message says what is wrong, then the hint gives the format.
+      // The message says what is wrong, then the hint gives the format. The line under the field is FieldError's, as
+      // under every field (ADR 0077 D3): its "Error:" is shown but aria-hidden, so the description is the message alone.
       await expect(codes).toHaveAccessibleDescription(
-        'Error: Each code must be five letters or digits. Five-character codes separated by commas, such as 97110, 97530. Leave blank to ask for the whole schedule.',
+        'Each code must be five letters or digits. Five-character codes separated by commas, such as 97110, 97530. Leave blank to ask for the whole schedule.',
       );
+      await expect(form.locator('[data-field-error]:has(#letter-codes-error)')).toContainText('Error:');
       await expect(codes).toBeFocused();
       await expect(payer).toHaveValue(payerId);
       await expect(contract).toHaveValue(contractId);
@@ -177,7 +179,7 @@ test('a refused letter comes back to Coverage marked, focused and kept; a good o
       await submit.click();
       await expect(page).toHaveURL(new RegExp(`${coverage}\\?refused=invalid&fields=contract&`));
       await expect(contract).toHaveAttribute('aria-invalid', 'true');
-      await expect(contract).toHaveAccessibleDescription('Error: Choose one of this payer’s contracts, or None named.');
+      await expect(contract).toHaveAccessibleDescription('Choose one of this payer’s contracts, or None named.');
       await expect(contract).toBeFocused();
       await expect(payer.locator('option:checked')).toHaveText(PAYER_NONE);
       await expect(codes).toHaveValue('97110');
@@ -193,7 +195,8 @@ test('a refused letter comes back to Coverage marked, focused and kept; a good o
       await payer.selectOption({ label: PAYER_Q });
       expect(await contractHeld()).toBe(false);
       await expect(contract).not.toHaveAttribute('aria-invalid');
-      await expect(page.locator('#letter-contract-error')).toBeHidden();
+      // FieldError's whole line goes, its icon and "Error:" with the message.
+      await expect(page.locator('[data-field-error]:has(#letter-contract-error)')).toBeHidden();
       await expect(contract).toHaveAccessibleDescription('');
       const [download] = await Promise.all([page.waitForEvent('download'), submit.click()]);
       expect(download.suggestedFilename()).toMatch(/^request-to-payer-[0-9a-f-]{36}\.txt$/);
@@ -216,7 +219,7 @@ test('a refused letter comes back to Coverage marked, focused and kept; a good o
       await page.goto(`${coverage}/letter?payer=${NO_PAYER}&codes=97110`);
       await expect(page).toHaveURL(`${E2E_ORIGIN}${coverage}?refused=not_found&payer=${NO_PAYER}&codes=97110`);
       await expect(payer).toHaveAttribute('aria-invalid', 'true');
-      await expect(payer).toHaveAccessibleDescription('Error: Choose one of the payers listed.');
+      await expect(payer).toHaveAccessibleDescription('Choose one of the payers listed.');
       await expect(payer).toBeFocused();
       // Never a listed payer under the mark: the choice is unanswered, and the browser holds the letter until it is made.
       await expect(payer.locator('option:checked')).toHaveText('Choose a payer');
@@ -227,7 +230,8 @@ test('a refused letter comes back to Coverage marked, focused and kept; a good o
         await payer.selectOption({ label: PAYER_Q });
         await expect(payer).not.toHaveAttribute('aria-invalid', { timeout: 1_000 });
       }).toPass({ timeout: 15_000 });
-      await expect(page.locator('#letter-payer-error')).toBeHidden();
+      // FieldError's whole line goes, its icon and "Error:" with the message.
+      await expect(page.locator('[data-field-error]:has(#letter-payer-error)')).toBeHidden();
       await expect(payer).toHaveAccessibleDescription('');
       await expect(codes).toHaveValue('97110');
     });

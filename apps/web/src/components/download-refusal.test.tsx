@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
@@ -22,6 +25,12 @@ const text = (markup: string) =>
     .replace(/\s+/g, ' ')
     .trim();
 
+/**
+ * The stylesheet's page-wide rule that keeps what takes the focus clear of the sticky header (h-14, 3.5rem) with a
+ * 16 px gap (packages/ui styles.css; ADR 0077 D4), which the notice relies on in place of a margin of its own.
+ */
+const STYLES = readFileSync(path.resolve(import.meta.dirname, '../../../../packages/ui/src/styles.css'), 'utf8');
+
 describe('the notice of a refused download', () => {
   it('renders nothing when there is no refusal', () => {
     expect(renderToStaticMarkup(<DownloadRefusal refusal={null} />)).toBe('');
@@ -34,7 +43,9 @@ describe('the notice of a refused download', () => {
     expect(markup).toContain('role="alert"');
     expect(markup).toContain('tabindex="-1"');
     expect(markup).toContain('autofocus=""');
-    expect(markup).toContain('scroll-mt-18');
+    // Clear of the header by the page's scroll-padding-top alone: a margin of its own would add to it (UX-DLR-11).
+    expect(STYLES).toMatch(/\nhtml \{\n {2}scroll-padding-top: calc\(3\.5rem \+ 1rem\);\n\}/);
+    expect(markup).not.toMatch(/\bscroll-m/);
     expect(markup).toContain(`data-download-refusal="${status}"`);
     const words = refusal === null ? undefined : downloadRefusalWords(refusal);
     expect(text(markup)).toBe(`${words?.title ?? ''} ${words?.body ?? ''}`);
