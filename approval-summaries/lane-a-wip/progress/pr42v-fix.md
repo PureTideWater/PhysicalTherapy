@@ -38,3 +38,4 @@
 - NEXT: suite (scratchpad/pr42vf2/suite/results.tsv) on 8b60d74a
 - suite started ~00:27 UTC on 8b60d74a in background (run-all.sh: suite.sh then suite2.sh; results scratchpad/pr42vf2/suite/results.tsv; ALLDONE in results.tsv.done)
 - suite run 1 ABORTED at 00:31 (lint: packages/db/src/mail-address.ts:32 no-control-regex \x00); fixed in ffb27b11 (regex [\u0080-\uffff], same semantics); suite restarted on the new head (logs of the aborted run in scratchpad/pr42vf2/suite-aborted)
+- body drafts: scratchpad/pr42vf2/body-{head,verification,legal,wording,actions,tail}.md, new-findings-table.md, body-s3-capacity-merge.md, dm-summary.md; checks table to fill after the suite
