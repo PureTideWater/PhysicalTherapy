@@ -7,9 +7,9 @@ import { RefusalNotice } from './refusal-notice';
  * a next step per status (lib/http/download-refusal-words.ts, which a client component that downloads in place says
  * its refusals in too), never text from the URL. It renders where the person's link or form is, takes focus on arrival
  * (tabIndex -1, autoFocus; no fragment, which would stop the focus) and stays clear of the sticky header by the page's
- * scroll-padding-top (the header's 3.5rem plus 16 px; ADR 0077 D4). Once shown, the refusal leaves the address bar (ForgetRefusal), with the page's own keys it names (forget), so
- * a reload shows the page as it is now; the notice stays on screen through a router refresh while the person stays on
- * the page (RefusalNotice). A form that marks its refused field instead (the letter) renders no notice, so the field
+ * scroll-padding-top (the header's 3.5rem plus 16 px; ADR 0077 D4). Once shown, the refusal leaves the address bar
+ * (ForgetRefusal), with the page's own keys it names (forget), so a reload shows the page as it is now; the notice stays
+ * on screen through a router refresh while the person stays on the page (RefusalNotice). A form that marks its refused field instead (the letter) renders no notice, so the field
  * takes the focus, and its marks stay in the URL, so a reload keeps them with the entries.
  */
 

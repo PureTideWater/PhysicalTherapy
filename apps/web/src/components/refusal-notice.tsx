@@ -32,8 +32,8 @@ export function heldRefusal(held: HeldRefusal | null, notice: ShownRefusal | nul
 /**
  * A refused download's notice as it looks wherever it is said (docs/adr/0079): a destructive alert that takes the focus
  * when it mounts (tabIndex -1, autoFocus), its closed code and wait in data attributes. The page's scroll-padding-top
- * (packages/ui styles.css; ADR 0077 D4) keeps it clear of the sticky header, so it adds no margin of its own, which
- * would double the offset. A page's notice is RefusalNotice; a download fetched in place says its refusal with this alone.
+ * (packages/ui styles.css; ADR 0077 D4) keeps it clear of the sticky header, so it takes no margin of its own, which
+ * would add to that padding. A page's notice is RefusalNotice; a download fetched in place says its refusal with this alone.
  */
 export function RefusalAlert({ notice, className }: { readonly notice: ShownRefusal; readonly className?: string }) {
   return (

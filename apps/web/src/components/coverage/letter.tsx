@@ -1,31 +1,31 @@
-import { Button, Input, Label } from '@tp/ui';
+import { Button } from '@tp/ui';
 
 import type { ContractOption } from '../../lib/contracts/contract-queries';
 import { LETTER_CODES_PATTERN } from '../../lib/contracts/letter';
 import { type RefusedDownload, downloadRefusal, keptCodes, keptId } from '../../lib/http/download-refusal';
 import type { PayerOption } from '../../lib/remittances/queries';
 import { DownloadRefusal } from '../download-refusal';
-import { SelectField } from '../field';
-import { FieldError, describedBy } from '../form-issues';
+import { Field, type FieldWords, SelectField } from '../field';
 import { LetterContractCheck, contractOwners } from './letter-contract-check';
 import { LetterMarks } from './letter-marks';
-import { Figure } from './share';
 
 /**
  * Coverage's request-to-payer letter (PRD 7: "create a request-to-payer letter for a missing schedule"): a GET form whose
  * file downloads while the page stays. The codes field takes the route's own rule as its pattern (letterCodes), and the
  * contract is held to the payer chosen (LetterContractCheck), so the browser stops a mistyped code or another payer's
- * contract before the form is sent; the route's check stays the rule. Each select is the shared SelectField, which
- * shows a choice it cuts short whole under it (showChosen; docs/adr/0077 D6). A letter the route refuses comes back here
+ * contract before the form is sent; the route's check stays the rule. Its three controls are the shared fields
+ * (docs/adr/0077): each select a SelectField, which shows a choice it cuts short whole under it (showChosen, D6), and
+ * the codes a Field, whose hint sets each example code in mono. A letter the route refuses comes back here
  * (payerLetter's returnTo; docs/adr/0079) with the entries it was asked for kept as the form's defaults, and the refused
- * control marked as every field of ADR 0077 D3 is: aria-invalid, and under it form-issues' FieldError (an icon and an
- * aria-hidden "Error:" beside the message, which letter-<control>-error holds alone), named first in its
- * aria-describedby by form-issues' describedBy, then its hint, and the first marked control focused on arrival; a payer
- * the route did not find comes back unanswered ("Choose a payer"), never as another payer shown under its mark. A mark clears as the person edits its control (the contract's also once a change of the
- * payer makes the pair hold), and a letter sent clears them all and takes the refusal and its entries out of the
- * address bar (LetterMarks). A refusal of nothing the form can mark (a rate limit, say) is the download's notice in its
- * place, and the entries leave the address bar with it. Nothing from the URL is ever said in words: a kept payer or
- * contract is selected only when it is one of the form's own options, and the kept codes are only the field's value.
+ * control marked as every field of ADR 0077 D3 is, by the field's own `error`: aria-invalid, and under it FieldError
+ * (an icon and an aria-hidden "Error:" beside the message, which letter-<control>-error holds alone), named first in
+ * its aria-describedby, then its hint, and the first marked control focused on arrival; a payer the route did not find
+ * comes back unanswered ("Choose a payer"), never as another payer shown under its mark. A mark clears as the person
+ * edits its control (the contract's also once a change of the payer makes the pair hold), and a letter sent clears them
+ * all and takes the refusal and its entries out of the address bar (LetterMarks). A refusal of nothing the form can
+ * mark (a rate limit, say) is the download's notice in its place, and the entries leave the address bar with it.
+ * Nothing from the URL is ever said in words: a kept payer or contract is selected only when it is one of the form's
+ * own options, and the kept codes are only the field's value.
  */
 
 /** The page's search parameters, as Next gives them (awaited). */
@@ -80,6 +80,18 @@ const errorId = (control: LetterControl) => `${controlId(control)}-error`;
  */
 const ANSWERED_BY: Readonly<Partial<Record<LetterControl, readonly LetterControl[]>>> = { contract: ['payer'] };
 
+/**
+ * The codes' format, under the field and read after its message: each example code set as the page sets a code
+ * (UX-DLR-09), the separators not.
+ */
+const CODES_HINT: FieldWords = [
+  { text: 'Five-character codes separated by commas, such as ' },
+  { text: '97110', mono: true },
+  { text: ', ' },
+  { text: '97530', mono: true },
+  { text: '. Leave blank to ask for the whole schedule.' },
+];
+
 /** A control's message when the refusal marks it: the field's error, as FieldError says it. */
 function errorOf(control: LetterControl, marked: ReadonlySet<LetterControl>): string | undefined {
   return marked.has(control) ? MESSAGES[control] : undefined;
@@ -118,7 +130,6 @@ export function PayerLetter({
   // A marked payer that is none of the options starts unanswered, so the mark never sits under a payer nobody chose and
   // the select's required holds the next letter until one is.
   const choose = marked.has('payer') && payer === undefined;
-  const codesError = errorOf('codes', marked);
   return (
     <>
       {marked.size === 0 || payers.length === 0 ? <DownloadRefusal refusal={refusal} forget={LETTER_CONTROLS} /> : null}
@@ -151,29 +162,20 @@ export function PayerLetter({
             autoFocus={focusOf('contract', marked)}
           />
           <LetterContractCheck payer={controlId('payer')} contract={controlId('contract')} owners={contractOwners(listed)} message={MESSAGES.contract} />
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <Label htmlFor={controlId('codes')}>Procedure codes (optional)</Label>
-            <Input
-              id={controlId('codes')}
-              name="codes"
-              defaultValue={kept.codes}
-              pattern={LETTER_CODES_PATTERN}
-              maxLength={400}
-              autoCapitalize="characters"
-              spellCheck={false}
-              className="font-mono tabular-nums"
-              aria-invalid={codesError === undefined ? undefined : true}
-              // Its own attribute, never a spread, so FRM-04's static check reads it: the message, then the hint, which
-              // is named as `also` since its example codes are runs in mono, not the string Field's hint takes.
-              aria-describedby={describedBy(controlId('codes'), { error: codesError, also: 'letter-codes-hint' })}
-              autoFocus={focusOf('codes', marked)}
-            />
-            <FieldError id={controlId('codes')} error={codesError} />
-            {/* The shared Hint's place and size (ADR 0077 D9), written here because it holds the codes in mono. */}
-            <p id="letter-codes-hint" className="text-sm text-muted-foreground">
-              Five-character codes separated by commas, such as <Figure>97110</Figure>, <Figure>97530</Figure>. Leave blank to ask for the whole schedule.
-            </p>
-          </div>
+          <Field
+            id={controlId('codes')}
+            label="Procedure codes (optional)"
+            name="codes"
+            hint={CODES_HINT}
+            defaultValue={kept.codes}
+            pattern={LETTER_CODES_PATTERN}
+            maxLength={400}
+            autoCapitalize="characters"
+            spellCheck={false}
+            className="font-mono tabular-nums"
+            error={errorOf('codes', marked)}
+            autoFocus={focusOf('codes', marked)}
+          />
           <div>
             <Button type="submit" variant="outline">
               Download the letter

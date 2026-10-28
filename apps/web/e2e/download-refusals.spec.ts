@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { type Page, type Request, expect, test } from '@playwright/test';
+import { type Locator, type Page, type Request, expect, test } from '@playwright/test';
 import { asOwner } from '@tp/db/testing';
 import { assertNoPhi } from '@tp/observability';
 
@@ -45,6 +45,24 @@ const NO_DOCUMENT = '00000000-0000-4000-8000-00000000d1e1';
 /** Opaque IDs of a case and a packet version: a role refused the export is refused before either is read. */
 const NO_CASE = '00000000-0000-4000-8000-00000000d1e2';
 const NO_VERSION = '00000000-0000-4000-8000-00000000d1e3';
+
+/**
+ * A refused control's mark as the browser draws it, against the danger token's colour: ADR 0077 D3's 2 px border, from
+ * the stylesheet's one rule for every aria-invalid control, beside the words of its "Error:" line.
+ */
+async function expectDangerMark(control: Locator): Promise<void> {
+  const mark = await control.evaluate((element) => {
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--destructive)';
+    document.body.append(probe);
+    const danger = getComputedStyle(probe).color;
+    probe.remove();
+    const style = getComputedStyle(element);
+    return { width: style.borderTopWidth, color: style.borderTopColor, danger };
+  });
+  expect(mark.width).toBe('2px');
+  expect(mark.color).toBe(mark.danger);
+}
 
 /** Does what is asked of the letter's form and holds that the browser sent no letter for it (its own checks stopped it). */
 async function sendsNoLetter(page: Page, coverage: string, act: () => Promise<void>): Promise<void> {
@@ -141,6 +159,7 @@ test('a refused letter comes back to Coverage marked, focused and kept; a good o
         'Each code must be five letters or digits. Five-character codes separated by commas, such as 97110, 97530. Leave blank to ask for the whole schedule.',
       );
       await expect(form.locator('[data-field-error]:has(#letter-codes-error)')).toContainText('Error:');
+      await expectDangerMark(codes);
       await expect(codes).toBeFocused();
       await expect(payer).toHaveValue(payerId);
       await expect(contract).toHaveValue(contractId);
@@ -180,6 +199,8 @@ test('a refused letter comes back to Coverage marked, focused and kept; a good o
       await expect(page).toHaveURL(new RegExp(`${coverage}\\?refused=invalid&fields=contract&`));
       await expect(contract).toHaveAttribute('aria-invalid', 'true');
       await expect(contract).toHaveAccessibleDescription('Choose one of this payer’s contracts, or None named.');
+      // The shared SelectField's select takes the same mark as every refused control.
+      await expectDangerMark(contract);
       await expect(contract).toBeFocused();
       await expect(payer.locator('option:checked')).toHaveText(PAYER_NONE);
       await expect(codes).toHaveValue('97110');

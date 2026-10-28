@@ -11,9 +11,9 @@ import { type LetterMark, type MarkedControl, clearMark, describedWithout, watch
 /**
  * Coverage's letter form, rendered as the page renders it (docs/adr/0079; test matrix DLR-04): the route's rule as the
  * codes field's pattern with its hint, each contract listed under its payer and its payer by ID for the check that
- * holds the contract to the payer, and a refused letter's return marked on the control it names, a payer the route did not find unanswered, its
- * entries kept only as the form's own options and the codes' alphabet allow, and never a word from the URL; then the
- * marks cleared as the person edits and sends (LetterMarks), the contract held to its payer before the letter is sent
+ * holds the contract to the payer, and a refused letter's return marked on the control it names, a payer the route did
+ * not find unanswered, its entries kept only as the form's own options and the codes' alphabet allow, and never a word
+ * from the URL; then the marks cleared as the person edits and sends (LetterMarks), the contract held to its payer before the letter is sent
  * (LetterContractCheck), and a refused pair's contract mark cleared once a change of the payer makes the pair hold
  * (UX-DLR-17), over fake controls (there is no DOM here). Synthetic IDs only. Written by hand.
  */
@@ -130,7 +130,8 @@ describe('Coverage’s letter form', () => {
     expect(codes.get('value')).toBe('ABC');
     expect(codes.get('aria-invalid')).toBe('true');
     expect(codes.get('aria-describedby')).toBe('letter-codes-error letter-codes-hint');
-    // The page's scroll-padding-top keeps a focused control clear of the sticky header (ADR 0077 D4): no margin of its own.
+    // The page's scroll-padding-top keeps a focused control clear of the sticky header (ADR 0077 D4): no margin of its
+    // own, which would add to it.
     expect(codes.get('class')).not.toMatch(/\bscroll-m/);
     // The message says what is wrong; the label names the field and the hint, read after it, gives the format. It is
     // FieldError's line, as under every other field: the description names the message alone, never "Error:" twice.

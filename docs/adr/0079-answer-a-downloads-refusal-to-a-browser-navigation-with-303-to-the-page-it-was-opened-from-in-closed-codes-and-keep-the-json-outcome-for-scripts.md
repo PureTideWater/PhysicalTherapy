@@ -4,7 +4,10 @@
   Adds to [0017](0017-one-route-wrapper-a-route-registry-and-the-persona-matrix-as-data.md) (one route wrapper and a
   route registry: a download route now names its page) and to
   [0053](0053-onboard-customers-through-recorded-agreements-gate-every-request-on-csrf-rate-limits-terms-and-maintenance-and-keep-soc2-evidence-as-a-checked-map.md)
-  (the gates whose refusals a download now says in words); reverses none of their rulings
+  (the gates whose refusals a download now says in words), and to
+  [0077](0077-submit-forms-from-the-browser-keep-what-was-typed-name-each-refused-field-by-its-label-and-size-controls-for-phones.md)
+  (a field's hint, like an option's label, may give its words in runs, so a code in it is set in mono); reverses none
+  of their rulings
 - **Date:** 2026-10-27
 - **Deciders:** the founder, under the standing rule of 2026-10-18; the co-founder, under the founder's delegation of
   2026-10-25, whose rulings have the build take each recommended option and wording without asking; the build
@@ -196,14 +199,15 @@ gone, and 980 px wide on a phone (UX-010). The cause was general, not the letter
      ("Choose one of the payers listed.", "Choose one of this payer’s contracts, or None named.", "Each code must be
      five letters or digits.": what is wrong, while the label names the field and the hint gives the format;
      UX-DLR-10), named first in the control's `aria-describedby` by `form-issues`' `describedBy`, then its hint, and
-     `autoFocus` on the first marked control. The payer and contract selects are the shared `SelectField`, given the
-     message as `error` and `showChosen` (ADR 0077 D6), so they look and read as every select does. The codes input is
-     written beside `FieldError` rather than as a `Field`, because a `Field`'s hint is a string and this one sets each
-     example code in mono (UX-DLR-09), and because ux-forms' static check of pattern fields (FRM-04) reads only a
-     `hint` or an `aria-describedby` on the element: it writes `aria-describedby` as an attribute of its own, never
-     through a spread (UX-DLR-03), naming its hint, written at the shared `Hint`'s 14 px under the message (ADR 0077
-     D9). `SelectField` writes no attribute on an option, so `LetterContractCheck` is given each listed contract's
-     payer by ID. It keeps the validated entries as the form's defaults (a payer or
+     `autoFocus` on the first marked control. The three controls are the shared fields, each given its message as its
+     own `error` (the letter is a GET form outside `ActionForm`, so no refusal reaches them through `FormIssues`), and
+     look and read as every field does: the payer and contract selects are `SelectField`s with `showChosen` (ADR 0077
+     D6), and the codes are a `Field` whose `hint`, set by the shared `Hint` under the message (ADR 0077 D9), gives its
+     words in runs, as an option's label may (D6), so each example code is in mono and the separators are not
+     (UX-DLR-09). This adds to ADR 0077: a hint, like an option's label, may give its words in runs (`FieldWords`), and
+     the control's description names it all the same; the `hint` on the element is what ux-forms' static check of
+     pattern fields (FRM-04) reads. `SelectField` writes no attribute on an option, so `LetterContractCheck` is given
+     each listed contract's payer by ID. It keeps the validated entries as the form's defaults (a payer or
      contract only when it is one of the form's own options); a marked payer that is none of them starts unanswered,
      on a first option "Choose a payer" that the select's `required` holds, never as another payer shown under the
      mark (UX-DLR-06). A mark clears as the person edits its control, the contract's also once a change of the payer
@@ -334,9 +338,10 @@ gone, and 980 px wide on a phone (UX-010). The cause was general, not the letter
   to its page after sign-in, a second redirect surface that needs its own design and checks (R17).
 - A shared field (ADR 0077's `SelectField` or `Field`) comes to clear its own mark as the person edits it: the letter
   then drops `LetterMarks`' per-control clearing, keeping its clearing of every mark, the refusal and the entries on a
-  sent letter. (The move onto `FieldError` and `describedBy`, and the drop of `scroll-mt-18` for ADR 0077 D4's
-  `scroll-padding-top`, which had added to it, 144 px where 72 px was meant, are done: UX-DLR-11, by this pull
-  request, merged after #74.)
+  sent letter. (The move onto the shared fields and `FieldError`, and the drop of `scroll-mt-18` for ADR 0077 D4's
+  `scroll-padding-top`, are done: UX-DLR-11, by this pull request, merged after #74. The margin added to the padding:
+  a scroll that puts the element at the top would have stopped it 144 px down where 72 px is meant, and a focus that
+  centres it, as Chromium's does, 36 px lower.)
 - Another page comes to hold what a reload would lose beside a download link: its links move onto `DownloadLink`.
 - #42 merges: `Forbidden` (`components/shell.tsx`, a #42 file this pull request leaves untouched) takes an optional
   link, which `PermissionState` renders under its next step, so the packet page's permission state links the case

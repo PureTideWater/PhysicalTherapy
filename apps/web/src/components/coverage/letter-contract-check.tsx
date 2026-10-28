@@ -7,7 +7,10 @@ export interface PayerChoice extends EventTarget {
   readonly value: string;
 }
 
-/** The contract select, as the check reads and holds it: its value (a contract's ID, or '' for None named) and its validity. */
+/**
+ * The contract select, as the check reads and holds it: its value (a contract's ID, or '' for None named) and its
+ * validity.
+ */
 export interface ContractChoice extends EventTarget {
   readonly value: string;
   setCustomValidity(message: string): void;

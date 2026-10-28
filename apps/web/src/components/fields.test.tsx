@@ -160,6 +160,20 @@ describe('SelectField options in runs (the UX re-check’s polish)', () => {
   });
 });
 
+describe('a hint in runs (Coverage’s letter; docs/adr/0079)', () => {
+  it('sets each mono run as the page sets a code, the rest as plain text, and describes the control by the same hint', () => {
+    const hint = [{ text: 'Codes such as ' }, { text: '97110', mono: true }, { text: ', ' }, { text: '97530', mono: true }, { text: '.' }];
+    const idle = inForm(<Field id="codes" label="Procedure codes" name="codes" pattern="[0-9A-Za-z]{5}" hint={hint} />);
+    expect(idle).toContain('<p id="codes-hint" class="text-sm text-muted-foreground">Codes such as <span class="font-mono tabular-nums">97110</span>, <span class="font-mono tabular-nums">97530</span>.</p>');
+    expect(attribute(idle, 'codes', 'aria-describedby')).toBe('codes-hint');
+    const refused = inForm(<Field id="codes" label="Procedure codes" name="codes" hint={hint} error="Each code must be five letters or digits." />);
+    expect(attribute(refused, 'codes', 'aria-invalid')).toBe('true');
+    expect(attribute(refused, 'codes', 'aria-describedby')).toBe('codes-error codes-hint');
+    // The message, then the hint, under the control.
+    expect(refused.indexOf('id="codes-error"')).toBeLessThan(refused.indexOf('id="codes-hint"'));
+  });
+});
+
 describe('CheckboxField (FRM-04)', () => {
   it('marks and describes its box, and its wrapper carries data-invalid, only when refused', () => {
     const confirm = <CheckboxField name="confirm" label="This line will not be pursued." errorName="Confirmation" required />;
