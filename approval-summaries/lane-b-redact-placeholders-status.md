@@ -13,11 +13,18 @@ Follow-on in this session after it merges: packet day counts (`co-001/packet-day
 - 2026-10-27 22:15: CI all green on 6c371e5. Fix round done (wf_e3685db9-6a8, resumed once: the security-reviewer agent type twice ended without returning its structured result, so its completion pass ran as a default agent following .claude/agents/security-reviewer.md, continuing from its notes). Fixer applied every finding; the security completion found algorithmic DoS (97 s for a crafted 100 kB letter) and a missed dotted middle initial, fixed by a second pass. Full local suite passed (lint, typecheck, lint:logs, verify-content, unit 6,328, golden 376, oracle, test:db 6 shards on PG18 9,222, build, e2e 54/54; no mutation shard affected). Pushed 25759c0 (one push); PR description updated and read back identical.
 - Note for the lane (from the suite agent): local test:db and e2e need DATABASE_URL=postgres://postgres:test@localhost:5433/postgres (PG18, as CI); vitest's default port 5432 is PG16 on this machine.
 - 2026-10-27 22:35: CI all green on 25759c0. The base had moved (#77 ci-browser, ecebdc9): merged in with a merge commit (clean; pnpm install and watched.ts --write gave no diff; synth 185, gateway 513 unit tests, typecheck 22 projects pass), pushed 351262e. Fresh-clone verification running (wf_658451b6-c62), reading CI on 351262e. #75 (contract-phi-check) told us it rewrites parts of redact.ts; replied: whoever merges second resolves keeping both (LANES rule 6).
+- 2026-10-27 22:32: e2e (2/2) failed on 351262e: the known screening timing flake (screening.spec.ts:339 `priced` for `accepted`, retry at helpers.ts:87; LANES "Handed to Lane A"). The fix exists on #42's branch but screening.spec.ts is a #42 file, so not ported; commented once on #80 and re-ran the job once: green.
+- 2026-10-27 22:58: fresh-clone verification passed (wf_658451b6-c62): local tests, typecheck, lint, the section 1 probes, the diff's scope, and CI on 351262e (every required check success).
+- 2026-10-28 00:15: marked ready; approval-of-record re-ran (success); base unchanged (ecebdc9). **Merged as #80 (0dd1ba7, 2026-10-28 00:15 UTC)**, method merge with expectedHeadSha 351262e. Unsubscribed; safety check-in cancelled; main checkout fast-forwarded and installed; worktree and local branch removed.
 
 ## Waiting on someone
 None.
 
 ## Proposals (outside this PR)
+- #75 (contract-phi-check) merges second: its `identifierPattern` widening has no function left in redact.ts after #80 (replaced by the folded matcher); its screen could reuse `identifierTokenRuns` (told to its session 2026-10-27 22:20).
+- Local test:db and e2e need DATABASE_URL on port 5433 (PG18, as CI); the lane's "How Lane B runs" could say so.
+- Read digits of other scripts and common confusable letters through the fold (the security review's proposal; recorded residuals today).
+- PRD 14 question for the founder: redact Social Security and phone numbers by pattern in letters?
 - The packets verifier's `identifierSpans` (`packages/packets/src/verifier/mismatches.ts`), which checks the model's narrative for identifiers, has the same character-for-character gaps (diacritics, typographic apostrophes, hyphenated halves, invisible characters). Its own PR in `packages/packets` (a money package), reusing the gateway's fold once this merges.
 
 ## Next step
