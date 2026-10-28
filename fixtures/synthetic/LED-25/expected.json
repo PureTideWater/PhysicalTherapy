@@ -1,0 +1,17 @@
+{
+  "case": "LED-25",
+  "module": "LED",
+  "title": "A line's chain read back",
+  "assertion": "Its matches in the order the ledger made them, within one reconcile and across reconciles, never by their IDs; the claims a correction supersedes found by index at 50,000 claims",
+  "synthetic": true,
+  "completesIn": 9,
+  "assertedBy": ["apps/worker/src/reconcile/chain.db.test.ts","apps/worker/src/reconcile/chain.large.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "database tests",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

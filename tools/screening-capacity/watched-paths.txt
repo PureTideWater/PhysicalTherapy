@@ -196,6 +196,7 @@ apps/worker/src/price/rerun.ts
 apps/worker/src/price/settings.ts
 apps/worker/src/price/store.ts
 apps/worker/src/reconcile/exports.ts
+apps/worker/src/reconcile/interest-chains.ts
 apps/worker/src/reconcile/job.ts
 apps/worker/src/reconcile/ledger.ts
 apps/worker/src/reconcile/pass.ts
@@ -339,6 +340,7 @@ packages/edi835/src/values.ts
 packages/ledger/src/allocation.ts
 packages/ledger/src/csv.ts
 packages/ledger/src/index.ts
+packages/ledger/src/interest.ts
 packages/ledger/src/matching.ts
 packages/ledger/src/pairing.ts
 packages/ledger/src/payment.ts

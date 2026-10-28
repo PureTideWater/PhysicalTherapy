@@ -3,7 +3,9 @@
 - **Status:** accepted (PR 15b, combined audit #12); amends
   [0042](0042-keep-recovery-in-a-signed-append-only-ledger-of-matched-evidence-and-move-lines-to-recovered-only-from-its-entries.md)
   and [0046](0046-pair-reprocessed-lines-prove-rows-within-their-amounts-and-take-export-rows-from-the-job-only.md) for
-  the amounts matching writes, the cash shares, the reversal take-back and the payer-response amount.
+  the amounts matching writes, the cash shares, the reversal take-back and the payer-response amount; amended by
+  [0084](0084-credit-interest-from-the-plb-l6-that-pays-it-attribute-it-by-the-claims-amt-i-take-back-what-the-payer-takes-back-and-read-matches-in-the-order-the-ledger-made-them.md)
+  (where interest comes from, by dated amendments of 2026-10-28 below its text)
 - **Date:** 2026-10-26
 - **Deciders:** the founder, Tyler Williams, who adopted the combined audit as a whole on 2026-10-20 at about 15:10
   UTC, item #12's ledger freeze exception and PRD 13's two definitions of "approved" among it; Q1 and Q2 ruled on
@@ -160,7 +162,8 @@ leave it approved and never provable by the 24.00 deposit (probe E8, now LED-14'
 - **A reversal of claim `x`** with no correction of it beside it takes back 0 while a claim matched to the line after
   `x` still stands, and otherwise `min(remaining, max(0, (paid(x) − p0) − max(0, S − p0)))`, `S` the paid amount of the
   latest earlier claim of the chain (the original included) that no loaded reversal reverses, or 0 when none stands.
-- **A PLB WO's capacities and interest's weights** read `remaining`, so they are in payment terms with no code change.
+- **A PLB WO's capacities and interest's weights** read `remaining`, so they are in payment terms with no code change
+  (the interest itself is the PLB L6's since docs/adr/0084). *Amended 2026-10-28 (Lane A, `co-001/ledger-interest-once`).*
 - **A payer response** keeps its split and cap; its amount is the payer's payment (the form asks for "the amount the
   payer will pay"), at most the allowed variance it accepted.
 
@@ -232,7 +235,8 @@ stored rows. The line is never recovered and never "no change", and no ledger st
   baseline, so a later rise can only be classed lower (confirmed or no change rather than approved): an
   understatement, never an overstatement.
 - Interest a claim pays on a line with nothing remaining (a patient-balance line) is dropped, because no weight is
-  above zero, as for any line with nothing approved.
+  above zero, as for any line with nothing approved (the interest itself is the PLB L6's since docs/adr/0084).
+  *Amended 2026-10-28 (Lane A, `co-001/ledger-interest-once`).*
 
 ## What does not change
 
