@@ -19,9 +19,9 @@ export function Money({ value }: { readonly value: string | null }) {
   return <span className="font-mono tabular-nums">{value === null ? '—' : formatUsd(cents(BigInt(value)))}</span>;
 }
 
-/** A count and its noun, singular for one (counted's rule), the count in the mono face as <Money> sets an amount: "1 minute". */
+/** A count and its noun, singular for one and its digits grouped (counted's rule), the count in the mono face as <Money> sets an amount: "1 minute", "1,204 lines". */
 export function Counted({ value, one, many }: { readonly value: number; readonly one: string; readonly many?: string }) {
-  const count = String(value);
+  const count = value.toLocaleString('en-US');
   return (
     <>
       <span className="font-mono tabular-nums">{count}</span>

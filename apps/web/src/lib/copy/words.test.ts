@@ -13,6 +13,13 @@ describe('a count with its noun', () => {
     expect(counted(1, 'line')).toBe('1 line');
     expect(counted(32, 'line')).toBe('32 lines');
   });
+
+  it('groups the digits by thousands', () => {
+    expect(counted(12_345, 'row')).toBe('12,345 rows');
+    expect(counted(1_000, 'claim line')).toBe('1,000 claim lines');
+    expect(counted(999, 'line')).toBe('999 lines');
+    expect(counted(1_234_567, 'more group', 'more groups')).toBe('1,234,567 more groups');
+  });
 });
 
 describe('a list in words', () => {

@@ -20,7 +20,7 @@ import {
   topRowItems,
 } from './anomalies';
 import { COVERAGE_COLUMNS, type ScreeningCoverageRow, ScreeningCoverage, coverageItems } from './coverage';
-import { type ScreeningSummaryData, ScreeningSummary, groupedCount } from './result-summary';
+import { type ScreeningSummaryData, ScreeningSummary } from './result-summary';
 import { ScreeningResultView } from './result-view';
 
 /**
@@ -609,10 +609,9 @@ describe('the screening result’s words (TBL-08)', () => {
     expect(couldNot).toBe('Medicare rows PaidWhole could not price, or whose rates change within the quarter. Coverage, below, gives each reason.');
   });
 
-  it('groups the digits of every count, with its noun', () => {
-    expect(groupedCount(12_345, 'row')).toBe('12,345 rows');
-    expect(groupedCount(1, 'claim line')).toBe('1 claim line');
-    expect(groupedCount(2, 'more group', 'more groups')).toBe('2 more groups');
+  it('groups the digits of every count, with its noun (the app’s one counted(), lib/copy/words.ts)', () => {
+    const pages = /<nav[^>]*data-slot="group-pages"[^>]*>([\s\S]*?)<\/nav>/.exec(LATER)?.[1] ?? '';
+    expect(text(pages)).toContain('Page 2 of 411 (20,507 groups)');
     const summary = text(renderToStaticMarkup(<ScreeningSummary summary={SUMMARY} />));
     expect(summary).toContain('Original Medicare and Medicare Advantage rows without a contract: 12,345 rows, 40,000 claim lines.');
     expect(summary).toContain('1,234 rows of a code in the reduction across codes fully reduced; the others at their one figure.');

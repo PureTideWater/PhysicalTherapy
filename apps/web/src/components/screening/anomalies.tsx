@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState }
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
+import { counted } from '../../lib/copy/words';
 import {
   ANOMALY_RULE,
   DIFFERENCE_LABEL,
@@ -20,7 +21,7 @@ import {
 import { ScrollTable } from '../scroll-table';
 import { type StackedRow, StackedRows } from '../stacked-rows';
 import { StatusChip } from '../status';
-import { ALLOWED_IN_FILE, CLAIM_LINES, None, ScreeningCount, ScreeningMoney, differenceWords, groupedCount } from './result-summary';
+import { ALLOWED_IN_FILE, CLAIM_LINES, None, ScreeningCount, ScreeningMoney, differenceWords } from './result-summary';
 import { ColumnCells, ColumnHeads, type Copy, type ScreeningColumn, fieldColumns, fieldsFrom } from './table-parts';
 
 /**
@@ -172,7 +173,7 @@ function GroupStatus({ group, copy }: { readonly group: ScreeningGroup; readonly
   if (group.standing === 'anomaly' && group.rows > 1) {
     return (
       <Standing standing="anomaly" copy={copy}>
-        {`Anomaly: ${group.anomalyRows.toLocaleString('en-US')} of ${groupedCount(group.rows, 'row')} more than $5 a claim line below their lowest figure`}
+        {`Anomaly: ${group.anomalyRows.toLocaleString('en-US')} of ${counted(group.rows, 'row')} more than $5 a claim line below their lowest figure`}
       </Standing>
     );
   }
@@ -195,11 +196,11 @@ export function anomaliesDescription(page: Pick<ScreeningGroupPage, 'groups' | '
   const anomalies = page.anomalyGroups;
   const within = page.withinReductionGroups;
   const all = page.groups.toLocaleString('en-US');
-  const first = anomalies === 0 ? `No group of ${all} is an anomaly.` : `${groupedCount(anomalies, 'group')} of ${all} ${anomalies === 1 ? 'is an anomaly' : 'are anomalies'}.`;
+  const first = anomalies === 0 ? `No group of ${all} is an anomaly.` : `${counted(anomalies, 'group')} of ${all} ${anomalies === 1 ? 'is an anomaly' : 'are anomalies'}.`;
   const second =
     within === 0
       ? ''
-      : ` ${groupedCount(within, anomalies === 0 ? 'group' : 'more group')} ${within === 1 ? 'is' : 'are'} within the range of the reduction across codes: between ${within === 1 ? 'its' : 'their'} two figures, which is not an anomaly.`;
+      : ` ${counted(within, anomalies === 0 ? 'group' : 'more group')} ${within === 1 ? 'is' : 'are'} within the range of the reduction across codes: between ${within === 1 ? 'its' : 'their'} two figures, which is not an anomaly.`;
   const shown =
     page.pages <= 1
       ? ''
@@ -231,7 +232,7 @@ function GroupPages({ path, page }: { readonly path: string; readonly page: Scre
       {link(page.page - 1, 'Previous', page.page > 1)}
       <span>
         Page <span className="font-mono tabular-nums">{page.page.toLocaleString('en-US')}</span> of <span className="font-mono tabular-nums">{page.pages.toLocaleString('en-US')}</span> (
-        {groupedCount(page.groups, 'group')})
+        {counted(page.groups, 'group')})
       </span>
       {link(page.page + 1, 'Next', page.page < page.pages)}
       {link(page.pages, 'Last', page.page < page.pages)}
@@ -315,7 +316,7 @@ const OTHERS_NOTE = 'The fully reduced figures take each row at its lowest: full
 
 /** The other groups' name, one group named as one. */
 function othersName(others: ScreeningOtherGroups): string {
-  return others.groups === 1 ? 'The one other group, its rows summed' : `The other ${groupedCount(others.groups, 'group')}, summed`;
+  return others.groups === 1 ? 'The one other group, its rows summed' : `The other ${counted(others.groups, 'group')}, summed`;
 }
 
 /** How many of the other groups are anomalies, in words. */
@@ -323,7 +324,7 @@ function othersStanding(others: ScreeningOtherGroups): string {
   if (others.groups === 1) {
     return others.anomalyGroups > 0 ? 'It is an anomaly' : 'It is not an anomaly';
   }
-  return others.anomalyGroups === 0 ? 'No group among them is an anomaly' : `${groupedCount(others.anomalyGroups, 'group')} among them ${others.anomalyGroups === 1 ? 'is an anomaly' : 'are anomalies'}`;
+  return others.anomalyGroups === 0 ? 'No group among them is an anomaly' : `${counted(others.anomalyGroups, 'group')} among them ${others.anomalyGroups === 1 ? 'is an anomaly' : 'are anomalies'}`;
 }
 
 /**

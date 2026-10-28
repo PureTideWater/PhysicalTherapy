@@ -2,6 +2,7 @@ import { type Cents, formatUsd } from '@tp/money';
 import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 import type { ReactNode } from 'react';
 
+import { counted } from '../../lib/copy/words';
 import {
   BEFORE_REDUCTION_FIGURE,
   DIFFERENCE_LABEL,
@@ -86,11 +87,6 @@ export function ScreeningMoney({ cents, className }: { readonly cents: Cents; re
 /** A count: the mono face, tabular numerals. */
 export function ScreeningCount({ value }: { readonly value: number }) {
   return <span className="font-mono tabular-nums">{value.toLocaleString('en-US')}</span>;
-}
-
-/** A count with its noun, its digits grouped as every count on the result is. */
-export function groupedCount(count: number, one: string, more = `${one}s`): string {
-  return `${count.toLocaleString('en-US')} ${count === 1 ? one : more}`;
 }
 
 /** Nothing in a cell or a field, said as None to a screen reader where the eye sees a dash. */
@@ -234,7 +230,7 @@ export function ScreeningSummary({ summary }: { readonly summary: ScreeningSumma
         <CardHeader>
           <CardTitle>Priced under Medicare</CardTitle>
           <CardDescription>
-            Original Medicare and Medicare Advantage rows without a contract: {groupedCount(priced.rows, 'row')}, {groupedCount(priced.claimLines, 'claim line')}. {MEDICARE_FIGURE_NOTE}
+            Original Medicare and Medicare Advantage rows without a contract: {counted(priced.rows, 'row')}, {counted(priced.claimLines, 'claim line')}. {MEDICARE_FIGURE_NOTE}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
@@ -255,7 +251,7 @@ export function ScreeningSummary({ summary }: { readonly summary: ScreeningSumma
               <Stat label={REDUCED_FIGURE_LABEL} slot="priced-reduced">
                 <ScreeningMoney cents={priced.reducedCents} />
                 <span className="block text-xs font-normal text-muted-foreground">
-                  {groupedCount(priced.pooledRows, 'row')} of a code in the reduction across codes fully reduced; the others at their one figure.
+                  {counted(priced.pooledRows, 'row')} of a code in the reduction across codes fully reduced; the others at their one figure.
                 </span>
               </Stat>
               <Stat label={ALLOWED_IN_FILE} slot="priced-reduced-allowed">
