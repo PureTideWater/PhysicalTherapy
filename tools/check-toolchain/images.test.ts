@@ -442,6 +442,27 @@ describe('the image rule', () => {
     expect(notes(passed)).toEqual(['images: 4 image references, each name:tag@sha256:<64 hex>, and none the image rule does not read']);
   });
 
+  it('reads a compose service built from a YAML merge key, and refuses a service’s extends:, which takes its image from another service (SEC-N1)', () => {
+    const composed = [
+      'name: synthetic',
+      'x-base: &base',
+      '  image: synthetic/merged:latest',
+      'services:',
+      '  db:',
+      `    image: ${POSTGRES}`,
+      '  extra:',
+      '    <<: *base',
+      '  local:',
+      '    extends:',
+      '      service: db',
+      '',
+    ].join('\n');
+    expect(problems(checkOffline(tree({ compose: composed })))).toEqual([
+      "images: docker-compose.yml services.local: extends: takes the service from another one, in this file or another, which the image rule does not follow; name the service's image in docker-compose.yml",
+      'images: docker-compose.yml services.extra: synthetic/merged:latest names no digest, so what runs can change under the same name; pin it as name:tag@sha256:<64 hex>',
+    ]);
+  });
+
   it('refuses a COPY --from= or RUN --mount=…,from= naming an image, a docker-image:// build context, a tracked image file outside the three read, and a compose build: (S6)', () => {
     const web = [
       `FROM ${NODE} AS build`,
@@ -489,7 +510,7 @@ describe('the image rule', () => {
       `images: apps/worker/Dockerfile:6: COPY --from=synthetic/escaped:3 names an image, not an earlier stage${stage} copy from a stage built FROM a pinned image (${RUNBOOK})`,
       'images: docker-compose.yml: include: brings in another compose file, whose images the image rule does not read; name every service in docker-compose.yml',
       'images: docker-compose.yml services.db: build: builds an image the image rule does not read; run an image by digest (image: name:tag@sha256:<64 hex>)',
-      "images: docker-compose.yml services.cache: extends: names another compose file, whose images the image rule does not read; name the service's image in docker-compose.yml",
+      "images: docker-compose.yml services.cache: extends: takes the service from another one, in this file or another, which the image rule does not follow; name the service's image in docker-compose.yml",
       'images: .github/workflows/ci.yml images step 1: setup-buildx names no builder image (driver-opts image=…), so it runs moby/buildkit:buildx-stable-1 by tag; name it as image=moby/buildkit:vX.Y.Z@sha256:<64 hex>',
       `images: .github/workflows/ci.yml images step 2: build-contexts names an image (docker-image://), which the image rule does not read; build FROM a pinned image in the Dockerfile instead (${RUNBOOK})`,
       `images: .github/workflows/ci.yml images step 3: docker/bake-action builds from bake files, whose images and docker-image:// contexts the image rule does not read; build with docker/build-push-action from a Dockerfile FROM a pinned image (${RUNBOOK})`,

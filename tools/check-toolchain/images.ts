@@ -264,7 +264,8 @@ function composeImages(text: string | undefined, uses: ImageUse[], unread: strin
   }
   let parsed: unknown;
   try {
-    parsed = parse(text);
+    // Merge keys honoured, as Compose resolves `<<: *anchor` (SEC-N1), so a service built from one is read.
+    parsed = parse(text, { merge: true });
   } catch (error) {
     unread.push(`${COMPOSE_FILE}: not YAML (${error instanceof Error ? error.message : String(error)}), so the images it names cannot be read`);
     return;
@@ -281,8 +282,9 @@ function composeImages(text: string | undefined, uses: ImageUse[], unread: strin
     if (service.build !== undefined) {
       unread.push(`${where}: build: builds an image the image rule does not read; run an image by digest (image: ${FORM})`);
     }
-    if (isRecord(service.extends) && service.extends.file !== undefined) {
-      unread.push(`${where}: extends: names another compose file, whose images the image rule does not read; name the service's image in ${COMPOSE_FILE}`);
+    if (service.extends !== undefined) {
+      // From another file, or another service of this one: either way the image it takes is not this service's own.
+      unread.push(`${where}: extends: takes the service from another one, in this file or another, which the image rule does not follow; name the service's image in ${COMPOSE_FILE}`);
     }
     if (typeof service.image === 'string') {
       uses.push({ image: service.image, where });
