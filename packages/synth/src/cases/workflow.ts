@@ -9,9 +9,9 @@ import { type CalendarDate, addDays, calendarDate } from '../core/dates';
 import { prettyJson } from '../core/json';
 import { eftExport, postingExport } from '../formats/csv';
 import { dollars, reversalOf } from '../x12/factory';
-import { type CasSegment, type Claim, type ServiceLine } from '../x12/model';
+import { type CasSegment, type Claim, type ProviderAdjustment, type ServiceLine } from '../x12/model';
 import { type CaseBuilder } from './builder';
-import { therapyClaim, therapyLine, traceNumber } from './common';
+import { caseKey, therapyClaim, therapyLine, traceNumber } from './common';
 import { addExhibit } from './contracts';
 import { type Basics, basics, file, oneRemittance } from './par';
 
@@ -496,7 +496,9 @@ function otherClaim(b: CaseBuilder, n: number): Claim {
 
 function ledRemittance(b: CaseBuilder, base: Basics, n: number, paid: CalendarDate, claims: readonly Claim[], extra: NonNullable<Parameters<typeof oneRemittance>[4]> = {}) {
   const remittance835 = oneRemittance(b, { ...base, paid }, claims, n, extra);
-  return { file: file(b, remittance835, n, paid), check: sumCents(claims.map((item) => item.paid)), trace: traceNumber(b.info.id, n, extra.method ?? 'ACH') };
+  // BPR02: the claims' payments less every PLB amount (docs/adr/0021), what a deposit of the check carries.
+  const plbCents = sumCents((extra.providerAdjustments ?? []).flatMap((plb) => plb.items.map((item) => item.amount)));
+  return { file: file(b, remittance835, n, paid), check: subtractCents(sumCents(claims.map((item) => item.paid)), plbCents), trace: traceNumber(b.info.id, n, extra.method ?? 'ACH') };
 }
 
 function lineOf(claim: Claim, index = 0): ServiceLine {
@@ -941,9 +943,10 @@ export function led15(b: CaseBuilder): void {
  * 20.00); the correction 80.00 of an allowed 100.00, the copay unchanged, so the payer's 30.00 increase is
  * the allowed increase and nothing is billable to the patient. Two lines of one claim (two-lines-*), its
  * own case: 97110 x 2 with coinsurance and 97110-59 x 2 with the copay, each allowed 70.00 and then 100.00
- * (paying 56.00 then 80.00, and 50.00 then 80.00); the correction's interest (AMT I 5.40) is split by what
- * the payer pays on each line (24.00 and 30.00), 2.40 and 3.00, and a later PLB WO of 30.00 naming the
- * corrected claim is taken in line order from those amounts, 24.00 and 6.00.
+ * (paying 56.00 then 80.00, and 50.00 then 80.00); the correction's interest (AMT I 5.40, paid in the same
+ * check by a PLB L6 of -5.40 naming it, so BPR02 holds it; docs/adr/0084) is split by what the payer pays on
+ * each line (24.00 and 30.00), 2.40 and 3.00, and a later PLB WO of 30.00 naming the corrected claim is taken
+ * in line order from those amounts, 24.00 and 6.00.
  */
 export function led16(b: CaseBuilder): void {
   const base = ledBase(b);
@@ -965,11 +968,12 @@ export function led16(b: CaseBuilder): void {
   const twoCorrectedLines = correctionOf(b, 4, twoOriginal, [shareLine(b, 10000n, 'coinsurance'), shareLine(b, 10000n, 'copay', ['59'])]);
   // The claim's own interest (AMT I); under the sign convention its CLP04 is the charge less every CAS (docs/adr/0021).
   const twoCorrected: Claim = { ...twoCorrectedLines, amounts: [...(twoCorrectedLines.amounts ?? []), { qualifier: 'I', amount: interest }] };
-  const twoAdjusted = ledRemittance(b, base, 4, adjustedOn, [reversalOf(twoOriginal), twoCorrected]);
+  // The interest itself is the PLB L6 naming the correction, inside BPR02; AMT I only says whose it is (docs/adr/0084).
+  const twoAdjusted = ledRemittance(b, base, 4, adjustedOn, [reversalOf(twoOriginal), twoCorrected], interestPlb(base, [{ reference: twoCorrected.payerClaimControlNumber, amount: negateCents(interest) }]));
   b.add835(
     'two-lines-adjusted.835',
     twoAdjusted.file,
-    'Its adjusted remittance: the original reversed (paid -106.00) and the correction, 97110 allowed 100.00, PR-2 coinsurance 20.00, paid 80.00, and 97110-59 allowed 100.00, PR-3 copay 20.00, paid 80.00, with claim interest AMT I 5.40: BPR02 54.00.',
+    `Its adjusted remittance: the original reversed (paid -106.00) and the correction, 97110 allowed 100.00, PR-2 coinsurance 20.00, paid 80.00, and 97110-59 allowed 100.00, PR-3 copay 20.00, paid 80.00, with claim interest AMT I 5.40 and PLB L6 -5.40 naming the correction (${twoCorrected.payerClaimControlNumber}): BPR02 59.40.`,
   );
   const withheld = dollars('30.00');
   const wo = ledRemittance(b, base, 5, calendarDate(2026, 8, 3), [otherClaim(b, 5)], {
@@ -994,6 +998,7 @@ export function led16(b: CaseBuilder): void {
       L1: [ledEntry('approved', first), ledEntry('interest', firstInterest), ledEntry('recouped', negateCents(firstTaken))],
       L2: [ledEntry('approved', second), ledEntry('interest', subtractCents(interest, firstInterest)), ledEntry('recouped', negateCents(subtractCents(withheld, firstTaken)))],
       interestAllocated: true,
+      interestEvidence: 'two-lines-adjusted.835 PLB L6',
       note: 'interest split and the withholding taken in line order by what the payer pays on each line; by allowed they would be 2.70 and 2.70, and 30.00 and 0',
     },
   });
@@ -1089,6 +1094,279 @@ export function led18(b: CaseBuilder): void {
     billableToPatient: { coinsuranceCents: centsToString(subtractCents(shareOf(lineOf(corrected), '2'), shareOf(lineOf(original), '2'))) },
     countedIn: 'no figure, statement, link or CSV',
     typedAllowed: { acceptedCents: centsToString(allowedIncrease), shortfallCents: centsToString(subtractCents(allowedIncrease, accepted)), coinsuranceCents: centsToString(subtractCents(allowedIncrease, accepted)) },
+  });
+}
+
+/** One PLB segment of L6 interest items (PLB03-2 left out when no reference is given), the payee's, for the fiscal year's end. */
+function interestPlb(base: Basics, items: readonly { readonly reference?: string; readonly amount: Cents }[]): { readonly providerAdjustments: ProviderAdjustment[] } {
+  return { providerAdjustments: [{ providerId: base.payee.id.value, fiscalPeriodDate: calendarDate(2026, 12, 31), items: items.map((item) => ({ code: 'L6', ...item })) }] };
+}
+
+/** The claim with its own interest (AMT I) added; a reversal of it then carries the interest negated. */
+function withInterest(claim: Claim, amount: Cents): Claim {
+  return { ...claim, amounts: [...(claim.amounts ?? []), { qualifier: 'I', amount }] };
+}
+
+/** A 97110 x 2 line charged 150.00 and allowed `allowed` (AMT B6) whose PR-2 coinsurance is `coinsurance`, so the payment moves with the allowed amount cent for cent. */
+function coinsuranceOf(b: CaseBuilder, allowed: bigint, coinsurance: bigint): ServiceLine {
+  return therapyLine(b.world, { code: '97110', units: 2, date: LED_SERVICE_DATE, unitCharge: 7500n, allowed, b6: true, share: 'none', overrides: { patientShare: [{ reason: '2', amount: cents(coinsurance) }] } });
+}
+
+/** A 97110-59 x 2 line charged 150.00 and allowed `allowed` (AMT B6) whose PR-3 copay is `copay`. */
+function copayOf(b: CaseBuilder, allowed: bigint, copay: bigint): ServiceLine {
+  return therapyLine(b.world, { code: '97110', modifiers: ['59'], units: 2, date: LED_SERVICE_DATE, unitCharge: 7500n, allowed, b6: true, share: 'none', overrides: { patientShare: [{ reason: '3', amount: cents(copay) }] } });
+}
+
+const LED_INTEREST = dollars('5.40');
+const OTHER_INTEREST = dollars('2.00');
+
+/**
+ * LED-23 and LED-24's case (docs/adr/0084): LED-16's two case lines under the case's own control numbers, 97110 x 2
+ * with 20% coinsurance and 97110-59 x 2 with a 20.00 copay, each allowed 70.00 (paying 56.00 and 50.00), and the
+ * correction C allowing 100.00 on each (paying 80.00 and 80.00, 24.00 and 30.00 more) with AMT I 5.40. paired.835 pays
+ * C's interest by a PLB L6 of -5.40 naming it (V07's shape, BPR02 59.40); adjusted.835 is the same remittance, which
+ * the ledger oracle loads, and eft-export.csv its deposit.
+ */
+function interestCase(b: CaseBuilder) {
+  const base = ledBase(b);
+  const original = ledOriginal(b, 1, [shareLine(b, 7000n, 'coinsurance'), shareLine(b, 7000n, 'copay', ['59'])]);
+  b.add835(
+    'original.835',
+    ledRemittance(b, base, 1, base.paid, [original]).file,
+    'The original payment of two case lines on one day: 97110 x 2 allowed 70.00, CO-45 80.00, PR-2 coinsurance 14.00, paid 56.00, and 97110-59 x 2 allowed 70.00, CO-45 80.00, PR-3 copay 20.00, paid 50.00: BPR02 106.00.',
+  );
+  const adjustedOn = calendarDate(2026, 6, 8);
+  const correction = withInterest(correctionOf(b, 2, original, [shareLine(b, 10000n, 'coinsurance'), shareLine(b, 10000n, 'copay', ['59'])]), LED_INTEREST);
+  const ccn = correction.payerClaimControlNumber;
+  const paired = ledRemittance(b, base, 2, adjustedOn, [reversalOf(original), correction], interestPlb(base, [{ reference: ccn, amount: negateCents(LED_INTEREST) }]));
+  const pairedText = `The original reversed (paid -106.00) and the correction C (${ccn}), 97110 allowed 100.00, PR-2 coinsurance 20.00, paid 80.00, and 97110-59 allowed 100.00, PR-3 copay 20.00, paid 80.00, with AMT I 5.40, and PLB L6 -5.40 naming C: BPR02 59.40.`;
+  b.add835('paired.835', paired.file, pairedText);
+  b.add835('adjusted.835', paired.file, `paired.835's remittance, which the ledger oracle loads after original.835: ${pairedText}`);
+  b.addFile('eft-export.csv', eftExport([{ depositedOn: addDays(adjustedOn, 1), description: `${base.payer.name} HCCLAIMPMT`, trace: paired.trace, amount: paired.check }]), 'csv', 'The bank export: one deposit of 59.40, the paired check, matched by trace number and amount.');
+  const [first, second] = [0, 1].map((index) => subtractCents(lineOf(correction, index).paid, lineOf(original, index).paid)) as [Cents, Cents];
+  const firstInterest = cents((LED_INTEREST * first) / (first + second));
+  return { base, original, correction, ccn, adjustedOn, paired, first, second, firstInterest, secondInterest: subtractCents(LED_INTEREST, firstInterest) };
+}
+
+/**
+ * LED-23: a remittance's interest reported on its claims (AMT I) and paid at the provider level (PLB L6), credited once
+ * per line from the PLB L6 (docs/adr/0084). Each variant is a practice of its own with original.835's case open; every
+ * claim is the same payer's, and "another patient's claim" K is on no case line. C's interest is split by what the payer
+ * pays on each line (24.00 and 30.00): 2.40 and 3.00.
+ */
+export function led23(b: CaseBuilder): void {
+  const { base, original, correction, ccn, adjustedOn, first, second, firstInterest, secondInterest } = interestCase(b);
+  const reversal = reversalOf(original);
+  const other = withInterest(otherClaim(b, 3), OTHER_INTEREST);
+  const pool = (amount: Cents) => interestPlb(base, [{ amount }]);
+  b.add835(
+    'unnamed.835',
+    ledRemittance(b, base, 3, adjustedOn, [reversal, correction, other], pool(dollars('-7.40'))).file,
+    `As paired.835, beside another patient's claim K (${other.payerClaimControlNumber}) paying 150.00 with AMT I 2.00, and one PLB L6 of -7.40 naming nothing: BPR02 211.40.`,
+  );
+  b.add835(
+    'named-net.835',
+    ledRemittance(b, base, 4, adjustedOn, [reversal, correction, other], interestPlb(base, [{ reference: ccn, amount: dollars('-7.40') }])).file,
+    `As unnamed.835, the PLB L6 of -7.40 naming C (${ccn}), the net interest of both claims: BPR02 211.40.`,
+  );
+  const identifiers = `${correction.patientControlNumber} ${ccn} ${traceNumber(b.info.id, 5)}`;
+  b.add835(
+    'identifiers.835',
+    ledRemittance(b, base, 5, adjustedOn, [reversal, correction], interestPlb(base, [{ reference: identifiers, amount: negateCents(LED_INTEREST) }])).file,
+    `As paired.835, the PLB L6's reference carrying CLP01, CLP07 and TRN02 ("${identifiers}"): BPR02 59.40.`,
+  );
+  b.add835('reported-only.835', ledRemittance(b, base, 6, adjustedOn, [reversal, correction]).file, 'As paired.835 with no PLB L6: AMT I 5.40 outside the check, BPR02 54.00.');
+  const restatedOn = calendarDate(2026, 7, 6);
+  const again = withInterest(correctionOf(b, 4, correction, [coinsuranceOf(b, 10200n, 2000n), shareLine(b, 10000n, 'copay', ['59'])]), LED_INTEREST);
+  b.add835(
+    'net-zero.835',
+    ledRemittance(b, base, 7, restatedOn, [reversalOf(correction), again]).file,
+    `After paired.835: C reversed (paid -160.00, AMT I -5.40) and corrected again (${again.payerClaimControlNumber}), 97110 allowed 102.00, PR-2 coinsurance 20.00, paid 82.00, and 97110-59 as before, with AMT I 5.40, and no PLB L6 (the interest nets to zero): BPR02 2.00.`,
+  );
+  b.add835(
+    'net-zero-beside.835',
+    ledRemittance(b, base, 8, restatedOn, [reversalOf(correction), again, other], pool(negateCents(OTHER_INTEREST))).file,
+    "After paired.835: net-zero.835's pair beside K paying 150.00 with AMT I 2.00, and one PLB L6 of -2.00 naming nothing: BPR02 154.00.",
+  );
+  b.add835(
+    'later-l6.835',
+    ledRemittance(b, base, 9, calendarDate(2026, 8, 3), [otherClaim(b, 5)], interestPlb(base, [{ reference: ccn, amount: negateCents(LED_INTEREST) }])).file,
+    `After reported-only.835: a later remittance whose PLB L6 of -5.40 names C (${ccn}), beside another patient's claim paying 150.00 with no AMT I: BPR02 155.40.`,
+  );
+  b.add835(
+    'zero-l6.835',
+    ledRemittance(b, base, 10, adjustedOn, [reversal, correction], interestPlb(base, [{ reference: ccn, amount: negateCents(LED_INTEREST) }, { reference: ccn, amount: cents(0n) }])).file,
+    'As paired.835 with a second PLB L6 of 0 naming C: BPR02 59.40.',
+  );
+  const renumbered: Claim = {
+    ...reversalOf(correction),
+    payerClaimControlNumber: `SYNCCN${caseKey(b.info.id)}0006`,
+    refs: [...(correction.refs ?? []).filter((ref) => ref.qualifier !== 'F8'), { qualifier: 'F8', value: ccn }],
+  };
+  const renumberedCorrection = withInterest(correctionOf(b, 7, correction, [coinsuranceOf(b, 10200n, 2000n), shareLine(b, 10000n, 'copay', ['59'])]), LED_INTEREST);
+  b.add835(
+    'renumbered-reversal.835',
+    ledRemittance(b, base, 11, restatedOn, [renumbered, renumberedCorrection, other], pool(negateCents(OTHER_INTEREST))).file,
+    `After paired.835, a known gap pinned: C reversed under its own new CLP07 (${renumbered.payerClaimControlNumber}) with REF F8 naming C (paid -160.00, AMT I -5.40), which the loader leaves unlinked; its correction (${renumberedCorrection.payerClaimControlNumber}, REF F8 naming C) paying 97110 2.00 more on an allowed 102.00, AMT I 5.40; K paying 150.00 with AMT I 2.00; one PLB L6 of -2.00 naming nothing: BPR02 154.00.`,
+  );
+  recoveryScenario(b);
+  const caseLines = [0, 1].map((line) => ({ file: 'original.835', transaction: 0, claim: 0, line }));
+  b.scenario({
+    caseLines,
+    variants: {
+      paired: ['paired.835'],
+      unnamed: ['unnamed.835'],
+      namedNet: ['named-net.835'],
+      identifiers: ['identifiers.835'],
+      reportedOnly: ['reported-only.835'],
+      netZero: ['paired.835', 'net-zero.835'],
+      netZeroBeside: ['paired.835', 'net-zero-beside.835'],
+      laterL6: ['reported-only.835', 'later-l6.835'],
+      zeroL6: ['zero-l6.835'],
+      renumberedReversal: ['paired.835', 'renumbered-reversal.835'],
+    },
+  });
+  const interest = [ledEntry('interest', firstInterest, 'paired.835 PLB L6'), ledEntry('interest', secondInterest, 'paired.835 PLB L6')];
+  b.outcome({
+    entries: [
+      ledEntry('approved', first, 'adjusted.835 transaction 0 claim 1'),
+      ledEntry('approved', second, 'adjusted.835 transaction 0 claim 1'),
+      ...interest.map((entry) => ({ ...entry, evidence: 'adjusted.835 PLB L6' })),
+      ledEntry('deposited', first, 'eft-export.csv row 1'),
+      ledEntry('deposited', second, 'eft-export.csv row 1'),
+    ],
+    recoveredCents: centsToString(sumCents([first, second])),
+    postedEntries: 0,
+    interestAllocated: true,
+    variants: {
+      paired: { interest, totalCents: centsToString(LED_INTEREST) },
+      unnamed: { interest, note: "K's 2.00 on no case line" },
+      namedNet: { interest, note: "the PLB L6 covers C's 5.40 first; the other 2.00 is K's" },
+      identifiers: { interest, note: 'named by the CLP07 among the identifiers' },
+      reportedOnly: { interest: [], reported: { amountCents: centsToString(LED_INTEREST), note: 'shown as reported (AMT I), counted nowhere' } },
+      netZero: { approvedL1: centsToString(dollars('2.00')), interest: [], note: 'no new interest entry: the reversal and its correction net to zero' },
+      netZeroBeside: { interest: [], note: "no new interest on the case lines; K's 2.00 on no case line" },
+      laterL6: { interest: [ledEntry('interest', firstInterest, 'later-l6.835 PLB L6'), ledEntry('interest', secondInterest, 'later-l6.835 PLB L6')], effectiveOn: '2026-08-03' },
+      zeroL6: { interest, reconciles: 3, note: 'the PLB L6 of zero moves nothing and every reconcile completes' },
+      renumberedReversal: {
+        approvedL1: centsToString(dollars('2.00')),
+        interest: [ledEntry('interest', LED_INTEREST, 'renumbered-reversal.835 PLB L6')],
+        links: { reversalOfClaim: null, supersededBy: renumberedCorrection.payerClaimControlNumber },
+        note: "a known gap: the unlinked reversal's -5.40 reaches no line, so the correction's 5.40 counts again; the pull request that links a renumbered reversal changes this to no new interest",
+      },
+    },
+  });
+}
+
+/**
+ * LED-24: one PLB L6 over lines approved at different times, or attributed again after a later upload; then interest
+ * taken back (docs/adr/0084). Each variant is a practice of its own. first.835 and second.835: the PLB L6 names the
+ * first correction F1 when only line 1 has an approval remaining, and a month later F2, which corrects F1 (REF F8),
+ * pays line 2 more: 5.40 on line 1, never more. taken-back.835, restated-taken-back.835 and both-ways.835 take C's
+ * interest back from the lines holding it. short.835 shares a short pool by AMT I. The out-of-order files name a claim
+ * Z, correcting a second patient's case line, that is uploaded last: the first patient's lines keep their 5.40 and the
+ * second patient's line gets nothing (triage groups both patients' lines into one case, by payer pattern).
+ */
+export function led24(b: CaseBuilder): void {
+  const { base, original, correction, adjustedOn, first, second, firstInterest, secondInterest } = interestCase(b);
+  const firstOn = calendarDate(2026, 6, 15);
+  const f1 = correctionOf(b, 3, original, [shareLine(b, 10000n, 'coinsurance'), copayOf(b, 9000n, 4000n)]);
+  b.add835(
+    'first.835',
+    ledRemittance(b, base, 3, firstOn, [reversalOf(original), f1], interestPlb(base, [{ reference: f1.payerClaimControlNumber, amount: negateCents(LED_INTEREST) }])).file,
+    `The original reversed (paid -106.00) and F1 (${f1.payerClaimControlNumber}): 97110 allowed 100.00, PR-2 coinsurance 20.00, paid 80.00, and 97110-59 allowed 90.00, PR-3 copay 40.00, paid 50.00 (its allowed amount up, its payment not); PLB L6 -5.40 naming F1: BPR02 29.40.`,
+  );
+  const f2 = correctionOf(b, 4, f1, [shareLine(b, 10000n, 'coinsurance'), shareLine(b, 10000n, 'copay', ['59'])]);
+  b.add835(
+    'second.835',
+    ledRemittance(b, base, 4, calendarDate(2026, 7, 13), [reversalOf(f1), f2]).file,
+    `A month later: F1 reversed (paid -130.00) and F2 (${f2.payerClaimControlNumber}, REF F8 naming F1), 97110 as F1, 97110-59 allowed 100.00, PR-3 copay 20.00, paid 80.00 (its allowed amount and its payment up): BPR02 30.00.`,
+  );
+  const laterOn = calendarDate(2026, 8, 3);
+  const pool = (amount: Cents) => interestPlb(base, [{ amount }]);
+  b.add835(
+    'taken-back.835',
+    ledRemittance(b, base, 5, laterOn, [reversalOf(correction), otherClaim(b, 5), otherClaim(b, 6)], pool(LED_INTEREST)).file,
+    "After paired.835: C reversed alone (paid -160.00, AMT I -5.40), beside two other patients' claims paying 150.00 each, and one PLB L6 of 5.40 naming nothing, taking the interest back: BPR02 134.60.",
+  );
+  const restated = withInterest(correctionOf(b, 7, correction, [shareLine(b, 10000n, 'coinsurance'), shareLine(b, 10000n, 'copay', ['59'])]), LED_INTEREST);
+  b.add835(
+    'restated.835',
+    ledRemittance(b, base, 6, calendarDate(2026, 7, 6), [reversalOf(correction), restated, otherClaim(b, 8)]).file,
+    `After paired.835: C reversed (paid -160.00, AMT I -5.40) and restated (${restated.payerClaimControlNumber}) with the same amounts and AMT I 5.40, beside another patient's claim paying 150.00, and no PLB L6: BPR02 150.00.`,
+  );
+  b.add835(
+    'restated-taken-back.835',
+    ledRemittance(b, base, 7, laterOn, [reversalOf(restated), otherClaim(b, 9), otherClaim(b, 10)], pool(LED_INTEREST)).file,
+    "After restated.835: the restatement reversed alone (paid -160.00, AMT I -5.40), beside two other patients' claims paying 150.00 each, and one PLB L6 of 5.40 naming nothing: BPR02 134.60.",
+  );
+  b.add835(
+    'both-ways.835',
+    ledRemittance(b, base, 8, laterOn, [reversalOf(correction), withInterest(otherClaim(b, 11), OTHER_INTEREST), otherClaim(b, 12)], pool(dollars('3.40'))).file,
+    "After paired.835: C reversed alone (paid -160.00, AMT I -5.40) beside another patient's claim paying 150.00 with AMT I 2.00 and a third paying 150.00, and one PLB L6 of 3.40 naming nothing, netting 2.00 paid against 5.40 taken back: BPR02 136.60.",
+  );
+  b.add835(
+    'short.835',
+    ledRemittance(b, base, 9, adjustedOn, [reversalOf(original), correction, withInterest(otherClaim(b, 13), OTHER_INTEREST)], pool(dollars('-5.00'))).file,
+    "The original reversed and C with AMT I 5.40, beside another patient's claim paying 150.00 with AMT I 2.00, and one PLB L6 of -5.00 naming nothing, short of the 7.40 reported: BPR02 209.00.",
+  );
+  const secondPatient = ledOriginal(b, 14, [shareLine(b, 7000n, 'coinsurance')]);
+  b.add835(
+    'out-of-order-original.835',
+    ledRemittance(b, base, 10, base.paid, [original, secondPatient]).file,
+    `original.835's two-line claim beside a second patient's claim (${secondPatient.payerClaimControlNumber}), 97110 x 2 allowed 70.00, PR-2 coinsurance 14.00, paid 56.00, a case line of its own: BPR02 162.00.`,
+  );
+  const z = correctionOf(b, 15, secondPatient, [shareLine(b, 10000n, 'coinsurance')]);
+  b.add835(
+    'out-of-order-2.835',
+    ledRemittance(b, base, 11, calendarDate(2026, 7, 6), [reversalOf(original), correction], interestPlb(base, [{ reference: z.payerClaimControlNumber, amount: negateCents(LED_INTEREST) }])).file,
+    `Uploaded first, dated later: the original reversed and C with AMT I 5.40, and a PLB L6 of -5.40 naming Z (${z.payerClaimControlNumber}), a claim no upload has yet: BPR02 59.40.`,
+  );
+  b.add835(
+    'out-of-order-1.835',
+    ledRemittance(b, base, 12, calendarDate(2026, 6, 22), [reversalOf(secondPatient), z]).file,
+    `Uploaded last, dated earlier: the second patient's claim reversed (paid -56.00) and Z (${z.payerClaimControlNumber}, REF F8 naming it), allowed 100.00, PR-2 coinsurance 20.00, paid 80.00, with no AMT I: BPR02 24.00.`,
+  );
+  recoveryScenario(b);
+  b.scenario({
+    caseLines: [0, 1].map((line) => ({ file: 'original.835', transaction: 0, claim: 0, line })),
+    variants: {
+      approvedLater: ['first.835', 'second.835'],
+      takenBack: ['paired.835', 'taken-back.835'],
+      restatedTakenBack: ['paired.835', 'restated.835', 'restated-taken-back.835'],
+      bothWays: ['paired.835', 'both-ways.835'],
+      short: ['short.835'],
+      outOfOrder: { original: 'out-of-order-original.835', files: ['out-of-order-2.835', 'out-of-order-1.835'] },
+    },
+  });
+  const takenBack = [ledEntry('interest', negateCents(firstInterest), 'taken-back.835 PLB L6'), ledEntry('interest', negateCents(secondInterest), 'taken-back.835 PLB L6')];
+  const shortShare = dollars('3.65');
+  b.outcome({
+    entries: [
+      ledEntry('approved', first, 'adjusted.835 transaction 0 claim 1'),
+      ledEntry('approved', second, 'adjusted.835 transaction 0 claim 1'),
+      ledEntry('interest', firstInterest, 'adjusted.835 PLB L6'),
+      ledEntry('interest', secondInterest, 'adjusted.835 PLB L6'),
+      ledEntry('deposited', first, 'eft-export.csv row 1'),
+      ledEntry('deposited', second, 'eft-export.csv row 1'),
+      ledEntry('recouped', negateCents(first), 'taken-back.835 transaction 0 claim 0'),
+      ledEntry('recouped', negateCents(second), 'taken-back.835 transaction 0 claim 0'),
+      ...takenBack,
+    ],
+    recoveredCents: '0',
+    postedEntries: 0,
+    variants: {
+      approvedLater: { L1: [ledEntry('interest', LED_INTEREST, 'first.835 PLB L6')], L2: [], allocated: false, reconciles: 3, note: 'never split again when line 2 gains an approval: 5.40 on line 1, not 8.40' },
+      takenBack: { interest: takenBack, interestTotalCents: '0' },
+      restatedTakenBack: { interest: [ledEntry('interest', negateCents(firstInterest), 'restated-taken-back.835 PLB L6'), ledEntry('interest', negateCents(secondInterest), 'restated-taken-back.835 PLB L6')] },
+      bothWays: { interest: [ledEntry('interest', negateCents(firstInterest), 'both-ways.835 PLB L6'), ledEntry('interest', negateCents(secondInterest), 'both-ways.835 PLB L6')], note: "the other claim's 2.00 on no case line" },
+      short: { correctionCents: centsToString(shortShare), interest: [ledEntry('interest', dollars('1.62'), 'short.835 PLB L6'), ledEntry('interest', dollars('2.03'), 'short.835 PLB L6')], allocated: true },
+      outOfOrder: {
+        afterSecond: [ledEntry('interest', firstInterest, 'out-of-order-2.835 PLB L6'), ledEntry('interest', secondInterest, 'out-of-order-2.835 PLB L6')],
+        afterFirst: { firstPatientCents: centsToString(LED_INTEREST), secondPatientCents: '0', supersededBy: z.payerClaimControlNumber },
+        reconciles: 3,
+      },
+    },
   });
 }
 
