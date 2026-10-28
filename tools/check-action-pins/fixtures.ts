@@ -28,14 +28,15 @@ export interface RecordedAnswer {
  * An upstream repository as the age rule reads it: the default branch and its commit, the tags (each its own object
  * and the commit it names), the objects the fetch of the branch and the tags holds, the objects github.com serves only
  * by SHA (held once fetched), and each held commit's ancestors. By default the default branch's commit has every held
- * object as an ancestor and any other commit only itself.
+ * object as an ancestor and any other commit only itself. An object given as an Error is held, but every read of it
+ * rejects with that Error, as a git the deadline kills does.
  */
 export interface RecordedRepository {
   readonly branch?: string;
   readonly head?: string;
   readonly tags?: Readonly<Record<string, { readonly object: string; readonly commit: string }>>;
-  readonly objects?: Readonly<Record<string, string | Buffer>>;
-  readonly bySha?: Readonly<Record<string, string | Buffer>>;
+  readonly objects?: Readonly<Record<string, string | Buffer | Error>>;
+  readonly bySha?: Readonly<Record<string, string | Buffer | Error>>;
   readonly ancestors?: Readonly<Record<string, readonly string[]>>;
 }
 
@@ -87,7 +88,7 @@ export function recordedTransport(options: {
     const found = options.git?.[repo];
     return found === undefined || found instanceof Error || found === HANG ? undefined : found;
   };
-  const held = (repo: string, sha: string): string | Buffer | undefined => {
+  const held = (repo: string, sha: string): string | Buffer | Error | undefined => {
     const found = repository(repo);
     return found?.objects?.[sha] ?? (served.has(`${repo}@${sha}`) ? found?.bySha?.[sha] : undefined);
   };
@@ -146,11 +147,14 @@ export function recordedTransport(options: {
     object(repo, sha) {
       const raw = held(repo, sha);
       if (raw === undefined) return Promise.resolve(undefined);
+      if (raw instanceof Error) return Promise.reject(raw);
       const bytes = typeof raw === 'string' ? Buffer.from(raw, 'latin1') : raw;
       return Promise.resolve<GitObject>({ type: bytes.subarray(0, 7).toString('latin1') === 'object ' ? 'tag' : 'commit', raw: bytes });
     },
     isAncestor(repo, ancestor, descendant) {
       const found = repository(repo);
+      const killed = [held(repo, ancestor), held(repo, descendant)].find((raw) => raw instanceof Error);
+      if (killed instanceof Error) return Promise.reject(killed);
       if (held(repo, ancestor) === undefined || held(repo, descendant) === undefined) return Promise.reject(new Error(`fatal: Not a valid commit name ${held(repo, ancestor) === undefined ? ancestor : descendant}`));
       const ancestors = found?.ancestors?.[descendant] ?? (descendant === found?.head ? Object.keys(found.objects ?? {}) : []);
       return Promise.resolve(ancestor === descendant || ancestors.includes(ancestor));

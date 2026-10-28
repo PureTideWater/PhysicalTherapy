@@ -91,4 +91,19 @@ describe('the builder on Docker Hub', () => {
     expect(await checkBuilder(hub([], 429), builder, { isNew: false, now: NOW })).toMatchObject({ errors: [], warnings: [expect.stringContaining('failed 3 times')] });
     expect((await checkBuilder(hub([], 404), builder, { isNew: true, now: NOW })).errors).toEqual(['the builder moby/buildkit:v0.34.1: Docker Hub has no such tag']);
   });
+
+  it('waits out a rate limit on either Hub read for the time Hub names, as the age rule and the image rule do, capped at 60 s (integrator)', async () => {
+    const limited = (headers: Record<string, string>) => ({ status: 429, body: '{"message":"rate limited"}', headers });
+    const reset = String(Math.floor(NOW.getTime() / 1000) + 45);
+    const transport = recordedTransport({
+      urls: {
+        [TAG]: [limited({ 'Retry-After': '30' }), { status: 200, body: JSON.stringify({ name: 'v0.34.1', digest: DIGEST }) }],
+        [LIST]: [limited({ 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': reset }), limited({ 'Retry-After': '600' }), { status: 200, body: '{"results":[]}' }],
+      },
+    });
+    const result = await checkBuilder(transport, builder, { isNew: true, now: NOW, clock: () => NOW.getTime() });
+    expect(result).toMatchObject({ errors: [], warnings: [], notes: [`the builder moby/buildkit:v0.34.1: its tag is the index ${DIGEST}`, 'the builder moby/buildkit:v0.34.1: no newer release is three days old'] });
+    // Retry-After's 30 s; x-ratelimit-reset's 45 s; a Retry-After of ten minutes held to the 60 s cap.
+    expect(transport.pauses).toEqual([30_000, 45_000, 60_000]);
+  });
 });

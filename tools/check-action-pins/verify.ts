@@ -60,6 +60,13 @@ export function parseActionMeta(file: string, text: string): ActionMeta {
   return { file, using: parsed.runs.using, ...(typeof parsed.runs.image === 'string' ? { image: parsed.runs.image } : {}), inputs, steps };
 }
 
+/**
+ * Whether an action runs as this kind (docker, composite): the runner compares `runs.using` ignoring case
+ * (actions/runner's ActionManifestManager, StringComparison.OrdinalIgnoreCase), so `Docker` and `Composite` run as
+ * those kinds and are read as them here (the security review's S4).
+ */
+export const runsAs = (meta: ActionMeta, kind: 'docker' | 'composite'): boolean => meta.using.toLowerCase() === kind;
+
 /** Reads action metadata at a commit, once per action and commit. */
 export class ActionReader {
   private readonly cache = new Map<string, Promise<ActionMeta | undefined>>();
@@ -94,7 +101,7 @@ const DOCKER_DIGEST = /^docker:\/\/[^@\s]+@sha256:[0-9a-f]{64}$/;
 
 /** Why a Docker action's image is not pinned by digest: a Dockerfile, or an image by tag, pulls a mutable image when it runs. */
 export function dockerProblem(meta: ActionMeta, chain: string): string | undefined {
-  if (meta.using !== 'docker' || (meta.image !== undefined && DOCKER_DIGEST.test(meta.image))) return undefined;
+  if (!runsAs(meta, 'docker') || (meta.image !== undefined && DOCKER_DIGEST.test(meta.image))) return undefined;
   return `${chain}: a Docker action whose image is ${meta.image === undefined ? 'not named' : JSON.stringify(meta.image)}, not docker://…@sha256:<64 hex>; a Dockerfile or an image by tag pulls a mutable image at run time`;
 }
 
@@ -103,7 +110,7 @@ export function dockerProblem(meta: ActionMeta, chain: string): string | undefin
  * fails, naming the chain of actions down to it, and so does a nested Docker action whose image is not pinned by digest.
  */
 export async function nestedProblems(reader: ActionReader, meta: ActionMeta, chain: readonly string[], seen = new Set<string>(), signal?: AbortSignal): Promise<string[]> {
-  if (meta.using !== 'composite') return [];
+  if (!runsAs(meta, 'composite')) return [];
   const problems: string[] = [];
   for (const step of meta.steps) {
     if (step.uses === undefined) continue;
@@ -157,7 +164,7 @@ export type CacheGate = { readonly chain: string; readonly input: string } | { r
  * that input to one of its own (`${{ inputs.<name> }}`), or set it to false, or leave it at a false default.
  */
 export async function cacheGates(reader: ActionReader, meta: ActionMeta, chain: readonly string[], depth = 0): Promise<CacheGate[]> {
-  if (meta.using !== 'composite') return [];
+  if (!runsAs(meta, 'composite')) return [];
   // Beyond its depth the check cannot see what runs, so it fails closed rather than reading nothing there.
   if (depth > MAX_DEPTH) return [{ chain: chain.join(' > '), problem: `composites nested deeper than ${String(MAX_DEPTH)} levels, which this check does not follow; a cache there could not be seen, so the check fails closed` }];
   const gates: CacheGate[] = [];
@@ -216,9 +223,9 @@ export interface PinVerdict {
   readonly tagProblems?: readonly string[];
 }
 
-/** The warning for an action on a deprecated Node.js runtime, if it is on one. */
+/** The warning for an action on a deprecated Node.js runtime, if it is on one; `runs.using` read in any case, as the runner reads it. */
 export function runtimeWarning(ref: string, version: string, using: string): string | undefined {
-  const node = /^node(\d+)$/.exec(using);
+  const node = /^node(\d+)$/i.exec(using);
   if (node === null || Number(node[1]) > DEPRECATED_NODE_UP_TO) return undefined;
   return `${ref}: ${version} runs on ${using}, a Node.js runtime GitHub has deprecated; move to a release that runs on node24`;
 }
