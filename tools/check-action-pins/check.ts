@@ -17,9 +17,10 @@ import { actionUses, consistencyProblems, formProblems, parsePin, reusableWorkfl
  * the pins the base does not already vouch for (base.ts): the tag, the inputs, the nested actions and release.yml's
  * nested caches (verify.ts); then the BuildKit builder (buildkit.ts) and the age rule (age.ts), under one deadline of
  * AGE_DEADLINE_MS. On a push run every finding about something read from upstream is a warning, since the pull request
- * was the gate and a red build branch blocks every lane: the verify loop's failed reads and moved tags of the refs the
- * base already ran (a problem in what was read, which no outage or upstream move makes, stays an error), under
- * PUSH_DEADLINE_MS; the builder's faults; and every age finding. A push run also reads every other pin's tag again, a
+ * was the gate and a red build branch blocks every lane: the verify loop's failed reads, moved tags and the refs its
+ * deadline (PUSH_DEADLINE_MS) left unread, for every ref, new against the previous head or not (the ci-infra review's
+ * S4; a problem in what was read, which no outage or upstream move makes, stays an error); the builder's faults; and
+ * every age finding. A push run also reads every other pin's tag again, a
  * tag that moved or could not be read a warning: a SHA pin runs what it names whatever its tag does. Those re-reads run
  * PUSH_CONCURRENCY at a time under one deadline for them all (the ci-infra review's S1): a github.com that accepts and
  * never answers stops them at PUSH_DEADLINE_MS, and every tag still unread is named in one warning, so the push run's
@@ -150,7 +151,7 @@ export async function checkActionPins(options: CheckOptions): Promise<CheckResul
   const { verify, unchanged } = selectPins(workflows, base);
   const versions = versionsByRef(workflows);
   const uses = workflows.flatMap(({ file, text }) => actionUses(file, text));
-  // The refs the base's workflows already ran, whatever `everyPin` says: on a push, an upstream fault of one is a warning.
+  // The refs the base's workflows already ran, whatever `everyPin` says: a push's warning about an upstream fault says which.
   const ran = new Set((state?.workflows ?? []).flatMap(({ file, text }) => actionUses(file, text)).map((use) => use.uses));
   const reader = new ActionReader(options.transport);
   const failed = new Set<string>();
@@ -158,6 +159,8 @@ export async function checkActionPins(options: CheckOptions): Promise<CheckResul
   const verifyDeadline = push ? deadline(verifyDeadlineMs) : undefined;
   const unverified: string[] = [];
   const stopped = () => verifyDeadline?.signal.aborted === true;
+  /** Why an upstream fault of this ref is a warning on a push. */
+  const onPush = (ref: string) => (ran.has(ref) ? 'the base already ran this pin, so on a push this is a warning' : 'the pull request that added this pin was the gate, so on a push this is a warning');
   try {
     for (const ref of [...verify].sort()) {
       // Rule (a) already refuses a reference that is not a pin; the network has nothing to say about it.
@@ -176,9 +179,9 @@ export async function checkActionPins(options: CheckOptions): Promise<CheckResul
           uses.filter((use) => use.uses === ref),
           verifyDeadline?.signal,
         );
-        const moved = push && ran.has(ref) ? (verdict.tagProblems ?? []) : [];
+        const moved = push ? (verdict.tagProblems ?? []) : [];
         errors.push(...verdict.problems.filter((problem) => !moved.includes(problem)));
-        warnings.push(...moved.map((problem) => `${problem}; the base already ran this pin, so on a push this is a warning`));
+        warnings.push(...moved.map((problem) => `${problem}; ${onPush(ref)}`));
         notes.push(...verdict.notes);
         warnings.push(...verdict.warnings);
       } catch (error) {
@@ -188,7 +191,8 @@ export async function checkActionPins(options: CheckOptions): Promise<CheckResul
           continue;
         }
         const message = `${ref}: ${error instanceof Error ? error.message : String(error)}`;
-        if (push && ran.has(ref)) warnings.push(`${message}; the base already ran this pin, so on a push this is a warning`);
+        // A read that failed every try is an outage; anything else (an action.yml that does not parse) is in what was read.
+        if (push && error instanceof NetworkError) warnings.push(`${message}; ${onPush(ref)}`);
         else errors.push(message);
       }
     }
@@ -200,7 +204,7 @@ export async function checkActionPins(options: CheckOptions): Promise<CheckResul
     const old = unverified.filter((ref) => ran.has(ref));
     const fresh = unverified.filter((ref) => !ran.has(ref));
     if (old.length > 0) warnings.push(`${late} with ${String(old.length)} pin(s) the base already ran unread (${old.join(', ')}); they still run the commits they name`);
-    if (fresh.length > 0) errors.push(`${late} with ${String(fresh.length)} new pin(s) unread (${fresh.join(', ')}): github.com did not answer in time; re-run the check`);
+    if (fresh.length > 0) warnings.push(`${late} with ${String(fresh.length)} new pin(s) unread (${fresh.join(', ')}): github.com did not answer in time; the pull request that added them was the gate, so on a push this is a warning`);
   }
   if (verify.size === 0) notes.push('no pin is new or used with changed inputs: no action read from the network');
 

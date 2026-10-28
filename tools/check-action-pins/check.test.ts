@@ -294,7 +294,7 @@ ${Array.from({ length: 10 }, (_, i) => `      - uses: octo/a${String(i)}@${sha(s
     expect((await checkActionPins({ root: repo.dir, base: repo.base, event: 'pull_request', transport: answers(JSON.stringify({ digest: OTHER })), now })).errors).toEqual([`the builder moby/buildkit:v0.34.1: its tag is the index ${OTHER}, not ${DIGEST}`]);
   });
 
-  it('on a push, warns about a failed read or a moved tag of a pin the base already ran, keeps a problem in what was read an error, and stops at its deadline (S4)', async () => {
+  it('on a push, warns about a failed read, a moved tag or a deadline’s leftovers of every pin, new against the previous head or not, keeps a problem in what was read an error, and stops at its deadline (S4, CI-S4)', async () => {
     // The change edits the checker, so every pin is verified again on its merge's push.
     const repo = repository({ baseWorkflow: workflow(CHECKOUT), headWorkflow: workflow(CHECKOUT), baseChecker: true, headCheckerEdit: true });
     const files = {
@@ -322,10 +322,28 @@ ${Array.from({ length: 10 }, (_, i) => `      - uses: octo/a${String(i)}@${sha(s
     expect(third.errors).toEqual([]);
     expect(third.warnings).toContain(`the push run's verify reads stopped at their 0.2 s deadline with 2 pin(s) the base already ran unread (octo/checkout@${CHECKOUT}, octo/setup-node@${NODE}); they still run the commits they name`);
 
-    // A pin new against the previous head keeps every error, on a push too.
+    // An action.yml that does not parse is a problem in what was read: no outage or upstream move makes it.
+    const unread = recordedTransport({ tags: { 'octo/checkout': lightweight('v7.0.1', CHECKOUT), 'octo/setup-node': lightweight('v7.1.0', NODE) }, files: { ...files, [blob('octo/setup-node', NODE)]: 'name: n\n' } });
+    const broken = await checkActionPins({ root: repo.dir, base: repo.base, event: 'push', transport: unread });
+    expect(broken.errors).toEqual([`octo/setup-node@${NODE}: octo/setup-node@${NODE}:action.yml declares no runs.using`]);
+
+    // A pin new against the previous head warns the same way on a push: its pull request was the gate (CI-S4).
     const added = repository({ baseWorkflow: workflow(CHECKOUT), headWorkflow: workflow(NEWER), baseChecker: true });
+    const gate = 'the pull request that added this pin was the gate, so on a push this is a warning';
     const fresh = await checkActionPins({ root: added.dir, base: added.base, event: 'push', transport: recordedTransport({ tags: { 'octo/checkout': new Error('Connection reset by peer') } }) });
-    expect(fresh.errors).toEqual([`octo/checkout@${NEWER}: github.com: git ls-remote of octo/checkout refs/tags/v7.0.2 failed 3 times (last: Connection reset by peer); the check fails closed`]);
+    expect(fresh.errors).toEqual([]);
+    expect(fresh.warnings).toContain(`octo/checkout@${NEWER}: github.com: git ls-remote of octo/checkout refs/tags/v7.0.2 failed 3 times (last: Connection reset by peer); the check fails closed; ${gate}`);
+    const newer = { [blob('octo/checkout', NEWER)]: 'inputs:\n  persist-credentials: {}\nruns:\n  using: node24\n  main: x.js\n' };
+    const retagged = await checkActionPins({ root: added.dir, base: added.base, event: 'push', transport: recordedTransport({ tags: { 'octo/checkout': lightweight('v7.0.2', CHECKOUT) }, files: newer }) });
+    expect(retagged.errors).toEqual([]);
+    expect(retagged.warnings).toContain(`octo/checkout@${NEWER}: the tag v7.0.2 of octo/checkout is the commit ${CHECKOUT}, not ${NEWER}; ${gate}`);
+    const late = await checkActionPins({ root: added.dir, base: added.base, event: 'push', transport: recordedTransport({ tags: { 'octo/checkout': HANG, 'octo/setup-node': HANG } }), pushDeadlineMs: 200 });
+    expect(late.errors).toEqual([]);
+    expect(late.warnings).toContain(`the push run's verify reads stopped at their 0.2 s deadline with 1 new pin(s) unread (octo/checkout@${NEWER}): github.com did not answer in time; the pull request that added them was the gate, so on a push this is a warning`);
+    // And a problem in what was read of a new pin stays an error.
+    const undeclared = { [blob('octo/checkout', NEWER)]: 'inputs:\n  other: {}\nruns:\n  using: node24\n  main: x.js\n' };
+    const wrong = await checkActionPins({ root: added.dir, base: added.base, event: 'push', transport: recordedTransport({ tags: { 'octo/checkout': lightweight('v7.0.2', NEWER) }, files: undeclared }) });
+    expect(wrong.errors).toEqual([`ci.yml build step 1 (octo/checkout@${NEWER}): gives the input persist-credentials, which octo/checkout@${NEWER}:action.yml does not declare (it declares: other)`]);
   });
 
   it('fails closed when a new pin cannot be read in three tries, naming the host', async () => {
