@@ -7,7 +7,7 @@ started 2026-10-27 by Lane A's orchestrator (session_01TrKDxeLbxVo7t7zwRXFzrg), 
 (`co-001/ux-download-refusals`, merged as #78, 83d71fd, 2026-10-28 06:51 UTC).
 
 ## Now (2026-10-28 06:55 UTC)
-- **Stage 1, design with one reviewer, starting** (a workflow: a design author, then an adversarial design review with
+- **Stage 1, design with one reviewer, running:** `wf_132e0b59-2b4` (script archived; a design author, then an adversarial design review with
   the payment-engine checklist and the UX lens).
 - **Branch:** `co-001/ux-home-figures`, worktree `/home/user/ux-home-figures`, cut from claude/build-platform 83d71fd,
   pushed (no commits of its own yet). No PR.
