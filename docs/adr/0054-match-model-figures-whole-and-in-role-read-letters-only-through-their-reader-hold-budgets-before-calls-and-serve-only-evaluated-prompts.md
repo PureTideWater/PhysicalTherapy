@@ -2,9 +2,10 @@
 
 - **Status:** accepted; the real-model gate still waits on model access (see Consequences); amended 2026-10-26 by
   [0070](0070-gate-models-on-wrong-but-verified-fields-and-people-set-floors-serve-each-model-feature-on-its-own-evaluation-and-check-contracts-against-the-practices-records-before-the-model.md), Part 1: the permitted run's report and comparison, and Part 2: production serves each model feature
-  on its own evaluation ("Amendment (`co-001/model-eval-gate`, 2026-10-26)", below); amended 2026-10-27 by 0070,
-  Part 3: a contract or exhibit is checked against the practice's records before the model ("Amendment
-  (`co-001/contract-phi-check`, 2026-10-27)", below)
+  on its own evaluation ("Amendment (`co-001/model-eval-gate`, 2026-10-26)", below); amended 2026-10-27: the letter
+  reader's redaction in one pass over one folded view ("Amendment (`co-001/redact-placeholders`, 2026-10-27)", below);
+  amended 2026-10-27 by 0070, Part 3: a contract or exhibit is checked against the practice's records before the
+  model ("Amendment (`co-001/contract-phi-check`, 2026-10-27)", below)
 - **Date:** 2026-10-17
 - **Deciders:** founder (engineering)
 - **PRD sections:** 14 (Purposes and their verifiers; PHI minimization; Provider and data path; Operational limits;
@@ -266,6 +267,118 @@ serves only what the gate recorded" above).
   `RecordedEvaluation` and `assertPricesConfirmed` are removed; serving is `servingDecisions` in `src/evaluated.ts`,
   and an unconfirmed price turns off only the features whose models it prices (`price_unconfirmed`).
 
+## Amendment (`co-001/redact-placeholders`, 2026-10-27): the letter reader's redaction, in one pass and complete
+
+Probed with synthetic twins on 085299b, redaction (`src/redact.ts`) had two kinds of fault. It rewrote the letter once
+per form, longest first, each pass over the text the earlier ones had rewritten, so a name part that a placeholder
+spells (`CLAIM`, `DATE`, `ID`, `NAME` ...) rewrote the placeholder: the model lost `[CLAIM_1]`, or a clean letter was
+refused (`identifier_left`). And it matched character for character, so a name written with marks (José for JOSE), a
+typographic apostrophe or dash, half a hyphenated surname, a soft hyphen, `ß`, a space inside a part or an initial, and
+a member ID or claim number written with `_`, `.` or a zero-width space, were sent; the one-patient screen
+(`identifierCandidates`) missed another patient's ID written those ways. "Strips names, dates of birth, member IDs and
+claim numbers by exact match" (PRD 14) is read as below; the text above stays as it was decided, and where it differs,
+this amendment holds.
+
+- **One pass.** Every match (dates of birth, numbers, names, initials) is found on the letter as it is, mapped to the
+  NFKC text, and overlapping matches merged; the output is the NFKC letter with each merged span replaced, built once.
+  No placeholder is ever scanned, so each survives exactly. A merged span's placeholder is chosen by kind, not length:
+  `[CLAIM_n]` (the lowest n) if any claim's number is in it, else `[MEMBER_ID]`, else `[DATE_OF_BIRTH]`, else
+  `[PATIENT_NAME]`. Every placeholder hides the whole span; the claim's is the one the task needs.
+- **One folded view.** Each code point is decomposed, its marks dropped and its case folded in full (`ß` and `ẞ` are
+  `SS`), each unit mapped back to the code point it came from. A run of default-ignorable code points (soft hyphen,
+  zero-width space, word joiner ...), or of marks with nothing to sit on, becomes one character that is neither a
+  letter nor a digit, so it still ends a word ("Dear<ZWSP>Jane"), and that every joiner class holds, so it still joins
+  inside one ("Van<SHY>tree"). The Hangul fillers and U+180E are white space. Dates are read twice, with the invisible
+  characters dropped and read as spaces, and the readings united. Every form (names, member IDs, claim numbers) is
+  compacted from the same fold of its stored value.
+- **Numbers** (member IDs, claim numbers; two letters or digits or more) match with any white space, dash (with U+2212
+  MINUS SIGN and U+2043 HYPHEN BULLET) or invisible character between their characters, and `_`, `.`, `/`, `:`, `#` or
+  `(` only next to a letter (`SYN.555001`, `ZZ/1234567`, `ZZ#1234567`, never `150.00`). Digits alone are kept in two
+  cases only. A claim's digits written as an amount, after a currency sign and with cents (`$15000.00` for claim
+  15000), are kept: with their cents they are never the claim's own written form; `$555001`, `555001.01` and
+  `555001,12` are the claim's. A member ID is never read as an amount (`$12345678` for member 12345678 is replaced).
+  And digits inside a date that is not a date of birth are kept only when the match itself holds a dash and the date
+  is separated (written with a slash, a backslash, a period, a dash, `_`, `|` or a month word) and has a calendar
+  reading ("Appeal by 2027-03-15" keeps its deadline). An invisible character or a space is no date separator, and
+  numbers shaped like a date no calendar holds are no date, so `1234<ZWSP>5678`, `12-34-56`, `1234-56-78`, `03 15 61`
+  and "Claim 20270315" are replaced.
+- **Names**: each whole name, each word and each part (the words split on white space, `,`, `;`, `/`; the parts on
+  dashes, apostrophes, `.` and `_`), two letters or digits or more. Dashes, apostrophes, `_` and invisible characters
+  join anywhere; between the parts the records hold apart, white space, `.` and `,` too; inside a part, a space or `.`
+  only where it leaves pieces of two letters or more, each capitalized as written (`Jo Ann`, never `in a`, `is a`,
+  `to be`). A dash (or an invisible character) before a line break joins inside a part whatever the pieces' case: a word
+  hyphenated at the end of a line (`Van-⏎tree`, `Vantr-⏎ee`, `Jo-⏎ann`). A name match that is the month word of a
+  separated date with a calendar reading that is not a date of birth is not taken ("due June 30, 2027" keeps its
+  deadline for a patient named JUNE; "May 45, 2027" is no date, so MAY is replaced); a date of birth is replaced whole.
+- **Dates of birth** are read with any dash (U+2212 and U+2043 too), a slash, a backslash, a period, `_` or `|`
+  between numbers (`03_03_1961`, `03\03\1961`, `03|03|1961`, each a separated date), with spaces alone
+  (`03 03 1961`), with a straight or typographic apostrophe before a two-digit year (`Mar 3 ’61`), and with a month word
+  between slashes or dashes (`3/Mar/1961`, `03/Mar/61`), as well as the forms above. A date written with spaces
+  alone, or compact, is read as a date of birth but never kept as another date, since an ID is written that way too.
+  Where one date form holds another, the longer is kept unless only the shorter has a calendar reading.
+- **Initials.** A letter standing alone that is the first letter of a part of the patient's name is a name when it is
+  next to a name or another taken initial: before one, past an optional `.` and white space, apostrophes or dashes
+  (`J.Vantree`, `J. Q. Vantree`, `O’Brien`); after one, past an optional comma, when `.` follows it or no word written
+  in lower case does (`Vantree, J.`, `Vantree, J Q`, never `Vantree, I am`). After a taken initial, the gap is
+  measured past that initial's `.`, so a dotted chain after the name is taken whole (`Vantree J.Q.`, `Vantree J. Q.`,
+  `Vantree, J.Q.`). Initials are taken to a fixed point. An initial is capitalized as written, or the name next to it
+  is in lower case (`j. vantree`).
+- **Time linear in the letter.** The letter's text comes from the payer, so no step may be quadratic in it. The gap
+  after a name is one starred class and an optional comma tail (no two overlapping starred classes), and a candidate
+  initial is tested only when the run of gap characters before it reaches back to the name or initial it would follow
+  (a prefix array of where each run starts). The date spans are kept in one sweep in order of start (longest first),
+  tracking the furthest end of a span with a reading and of any span, which gives the pairwise rule's result since
+  holding is transitive. Whether a match lies in another date is a binary search over the dates by start with a
+  running maximum of their ends. A 100 kB letter crafted against each step (a long gap after a name followed by 49 000
+  initials, 97 s before; dates one after another, up to 9 s with the checks) redacts and checks in well under a
+  second.
+- **The letter's own brackets.** Before matching, each `[` and `]` the letter writes becomes `(` and `)` (one UTF-16
+  unit for one, so no position moves). The only square brackets sent are placeholders, so a letter that writes a
+  placeholder-shaped token itself (`[CLAIM_1]`, `[claim_2]`, a full-width `［MEMBER_ID］`) cannot have it cited as a
+  claim of the call or read as a placeholder by any check.
+- **The self-check** (`holdsIdentifier`, still the guard in `prepare`) masks each exact placeholder with U+0001, which
+  is not a letter, digit, joiner, mark or default-ignorable and which the fold keeps, then runs the same matcher. A
+  claim placeholder numbered past the call's claims keeps its digits between two barriers, so `[CLAIM_555001]` still
+  holds claim 555001. The guard is defence in depth: the property test asserts no generated letter reaches it.
+- **The screen's tokens.** `identifierTokenRuns` is the one tokenizer for "which run of a text is an identifier": a
+  token is a maximal run of letters, digits and marks; a run joins up to `maxTokens` tokens while a caller's join rule
+  accepts what lies between. `identifierCandidates` masks the exact placeholders' words (only those, so `[QQ_7654321]`
+  is read, and a claim placeholder keeps its digits: `[CLAIM_7654321]` offers 7654321, while a redacted letter's
+  `[CLAIM_n]` never reaches five characters) and joins up to three tokens across white space, dashes, invisible
+  characters, and `_`, `.`, `/`, `:`, `#` or `(` next to a letter, so `ID:ZZ7654321`, `ZZ_7654321`, `ZZ/7654321`,
+  `ZZ#7654321`, `YY<ZWSP>7654321`, `REF<ZWSP>ZZ7654321` and a digits-only `765 4321` are offered.
+- **The narrative drafter's check** (`mentionsIdentifier`, before a `draftPacketNarrative` call) uses the same
+  matcher, names as names and member IDs and claim numbers as numbers (`NarrativeInput.names`, which the worker's
+  `packetDraftInputs` now passes), so a fact text that writes an identifier another way is refused. Every number there
+  is read as a member ID is (never an amount: `$12345678` is refused for number 12345678), and the facts' `$300.00`
+  and `2026-03-05` never read as 30000 or 20260305, since a period never joins digits and a dashed date with a
+  calendar reading is kept.
+
+Tests: test matrix MOD-13 (generated letters, the generator as the oracle, digits-only numbers written with dashes and
+invisible characters and dates' digits written as numbers among them; today's redaction frozen as a second oracle:
+nothing it replaced is now sent, but in a date that is not a date of birth and that the test reads, on its own, as a
+calendar date with its separators, or a claim's digits written as an amount; common phrases, amounts and deadlines
+sent unchanged) and MOD-14 (the screen's candidates, digits-only IDs among them), in `src/redact.property.test.ts`,
+and each probed case, the review rounds' reproductions included, by name in `functions/denial-letter.test.ts` (the
+crafted slow letters each with a time budget of 3 s for the redaction and both checks). Before relying on unseeded
+runs, the five properties were run once over 60 seeds at 400 runs each with no failure.
+
+Still not covered, recorded as residuals (none is new): nicknames (Bob for Robert); homoglyphs (Cyrillic `а` for Latin
+`a`: a payer letter's text is not adversarial, and OCR in Latin mode does not emit them); digits of other scripts
+(`٣`); a name in a script other than the records'; a date of birth in a form `datesIn` does not read (`1961 March 3`); a
+name glued to the word before it by a lost space (`DearJane` from PDF text), which is not a whole word; a bare monogram
+(`JQV`); an identifier split into more than three tokens, which the screen does not join (the contract screen's runs are
+not limited to three); another patient's identifier the screen sees only with a digit and five characters or more,
+while the stored side keeps values from two; another patient's name, which the screen does not look for; and addresses,
+phone numbers and Social Security numbers, which PRD 14 does not list for redaction. Recorded with the review round
+(each the cost of keeping what the task reads, or not new): a digits-only member ID or claim number that is itself a
+real calendar date written with dashes reads as that date and is sent (member 031561 written `03-15-61`); a claim's
+digits written after a currency sign and with cents are sent as an amount (`$555001.00`); digits alone with a slash
+or a period between them (`12/34/5678`, `1234.5678`) are not a number, being how dates and amounts are written; and a
+part written in lower case with a space inside it (`jo ann`) is not a name. Recorded with the second review round: a
+date of birth with its day or month spelled out as a word (`MARCH THIRD 1961`), which `datesIn` does not read; and the
+`)` after a member ID written `ZZ(1234567)`, which is sent after the placeholder (`[MEMBER_ID])`) and holds no digit.
+
 ## Amendment (`co-001/contract-phi-check`, 2026-10-27): the contract screen
 
 Combined audit #120, adopted by the founder with the whole audit on 2026-10-20, adds a step to "Terms are proposed
@@ -297,5 +410,7 @@ holds.
   made audited.
 - A screen's refusal is now logged by the gateway, one line with `practice_id` and an `error_code`, for the letter's
   `more_than_one_patient` as for the contract's codes; the screen's own message is never logged.
-- The letter reader's check, `otherPatientRecords`, is unchanged. Moving it onto the issued, practice-bound check is
-  a follow-up (0070, P9).
+- The letter reader's check, `otherPatientRecords`, is unchanged. Moving it onto the issued, practice-bound check is a
+  follow-up (0070, P9). The contract screen does not tokenize through `identifierTokenRuns` (amendment of
+  `co-001/redact-placeholders`, above): it streams its own runs (`someIdentifierRun`), which join differently, each path
+  for its task (0070, Part 3, N6).

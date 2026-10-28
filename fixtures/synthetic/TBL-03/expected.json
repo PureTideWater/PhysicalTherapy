@@ -1,0 +1,26 @@
+{
+  "case": "TBL-03",
+  "module": "TBL",
+  "title": "Every changed route at a phone's width passes axe",
+  "assertion": "At 390 px every changed route, each with its wide table populated and overflowing, has no axe-core WCAG 2.1 A or AA violation, a scrollable region the keyboard cannot reach (scrollable-region-focusable) among them, and every scroller's state agrees with its measurement before axe runs; the screening result's is the review's fourth pull request's",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": [
+    "apps/web/e2e/tables-phone.spec.ts",
+    "apps/web/e2e/reconciliation.spec.ts",
+    "apps/web/e2e/reports.spec.ts",
+    "apps/web/e2e/packets.spec.ts",
+    "apps/web/e2e/onboarding.spec.ts",
+    "apps/web/e2e/models.spec.ts",
+    "apps/web/e2e/unattested.spec.ts",
+    "apps/web/e2e/pricing.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The routes read synthetic practices and sign-ins the journeys and the seed create; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

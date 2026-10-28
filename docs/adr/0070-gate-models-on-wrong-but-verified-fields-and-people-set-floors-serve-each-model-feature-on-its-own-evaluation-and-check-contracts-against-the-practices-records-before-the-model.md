@@ -794,8 +794,9 @@ go with it.
   "(ZZ1234567)" each hold the identifier as a token.
   - A run extends from a token over the following tokens while each gap between them joins. First the gap's invisible
     characters are taken out: format characters and default-ignorable code points, such as a soft hyphen, a zero-width
-    space or joiner, a word joiner or a byte-order mark. NFKC keeps these characters, and `compactIdentifier` drops
-    them. They still count as token boundaries, so "ID<zero-width space>ZZ1234567" holds the token ZZ1234567.
+    space or joiner, a word joiner or a byte-order mark. NFKC keeps these characters, and `compactIdentifier` drops them
+    (all but the Hangul fillers, which are letters by class: "Not caught"). They still count as token boundaries, so
+    "ID<zero-width space>ZZ1234567" holds the token ZZ1234567.
   - What is left joins two tokens when it is nothing; one space; one hyphen, dash or minus sign (U+2212), with at most
     one space on either side; one dot, slash, underscore or asterisk, with no space beside it (`^(?:[ ]|[
     ]?[\p{Pd}\u2212][ ]?|[./_*])?$`); or a separator the practice's own kept values hold, exactly as they hold it
@@ -997,8 +998,14 @@ over time", S2 as "The practice's access log", S3 under "The audit trail", S4 un
 - **Not caught:**
   - an identifier wrapped across lines; split by a tab, two or more spaces, two dashes, a dot or slash with a space
     beside it, or two separators together; split by any other character (a comma, a colon, a hash, a plus sign, a
-    parenthesis, a combining mark) that none of the practice's own kept values holds; or written with a separator
-    other than the practice's own (stored "SYNPCN#12001", written "SYNPCN:12001");
+    parenthesis, a combining mark, U+2043 HYPHEN BULLET) that none of the practice's own kept values holds; written with
+    a separator other than the practice's own (stored "SYNPCN#12001", written "SYNPCN:12001"); or holding a Hangul
+    filler (U+115F, U+1160, U+3164 or U+FFA0), which is a letter by class, so the run keeps it and equals no stored
+    value; or written with an accented letter where the stored value has the plain one ("ZŽ1234567" against a stored
+    "ZZ1234567"), since a run is compared as NFKC writes it. Among these, the letter path reads the line break, the
+    tab, the spaces, the dashes, U+2043, the mark, the filler and the accent, and next to a letter a colon, a hash, an
+    opening parenthesis, and a dot or slash with a space or another separator beside it; never a comma, a plus sign or
+    a closing parenthesis (N6);
   - an identifier with a prefix or suffix glued on (a person-code or dependent suffix, payer letters, a check digit:
     "ZZ712003401" or "XYZZZ7120034" against a stored "ZZ7120034"), since the match is exact on whole tokens. It arises
     only when the page prints a form neither the 835's patient (QC) nor its insured (IL) segment carried: the loader
@@ -1294,12 +1301,39 @@ The fix round of the pull request's review (2026-10-27) adds these:
   separator set (punctuation only, no PHI) must be stored and returned with them, or F1's gap comes back.
 - **N6.** The denial-letter screen (`functions/denial-letter.ts`, `apps/worker/src/packets/letter-records.ts`) is
   unchanged by this part (design review m9): it runs in a worker job, has no production caller and is off by default.
-  Unifying it with this check is P9. The letter redaction's identifier pattern (`identifierPattern`, used by
-  `redactLetter` and `holdsIdentifier`) matches the separators the contract screen's tokenizer now joins too: any run
-  of white space, dashes, minus signs, dots, slashes, underscores, asterisks and invisible characters between two of
-  an identifier's characters, so a letter is redacted of at least what the screen would find, and the property test
-  that ties the two stays true. The letter path's other-patient screen (`identifierCandidates`) is unchanged: it still
-  drops a word with inner punctuation or a format character, and that gap is P9's.
+  Unifying it with this check is P9. The letter reader's redaction now matches in one pass over a folded view
+  (`matchesIn`, behind `redactLetter` and `holdsIdentifier`), and its other-patient screen (`identifierCandidates`)
+  tokenizes through `identifierTokenRuns` (pull request #80; ADR 0054, amendment of 2026-10-27). This part had widened
+  the old `identifierPattern` to the screen's separators; that function went with #80, whose matching this part takes as
+  it is. The contract screen keeps its own streamed tokenizer (`someIdentifierRun`), and the two paths now join
+  differently, each for its own task:
+  - Both join an identifier's tokens over nothing, one space, a dash or minus sign with at most one space beside it,
+    invisible characters, and a dot, slash or underscore next to a letter.
+  - Only the contract screen joins over a dot, slash or underscore between two digits, an asterisk anywhere
+    ("1234.567890", "20261234/01", "SYN*PCN*44551"), any separator the practice's own kept values hold, and more than
+    three tokens, where the letter's candidates stop at three. The letter redaction rewrites the text the model reads,
+    so it must leave "150.00" an amount and "03/15/2027" a deadline. The screen rewrites nothing; it refuses. Joining
+    digits over a dot or a slash costs it at most a false refusal ("Refused that names no patient", counted under
+    "Measured: the false refusals"), where not joining would send an identifier written in groups.
+  - Only the letter path joins over any run of white space and dashes (two spaces, a tab, a line break, two dashes, a
+    dash with two spaces beside it), U+2043 HYPHEN BULLET, and, next to a letter, any such run with a dot, slash,
+    underscore, colon, "#" or "(" in it ("ZZ:1234567", "ZZ(1234567", "ZZ. 1234567", "ZZ / 1234567", "ZZ-.1234567");
+    neither path joins over a comma, a plus sign or a closing parenthesis. The letter path also reads a Hangul filler
+    as a space and a lone combining mark as invisible, and its matcher (`holdsIdentifier`, not `identifierCandidates`)
+    folds an accented letter to its plain one ("ZŽ1234567" is ZZ1234567). The screen ends a run at each of these unless
+    the practice's own values hold that separator (never at a tab, a line break, two spaces or a dash with two spaces,
+    which `storedSeparators` does not keep), and keeps an accented letter apart from its plain one. A contract's
+    tables are why: across a column gap, a field's tab or a line break, the cells of a fee schedule would join into
+    runs that equal one of up to 50,000 kept identifiers by chance, while the letter's matcher looks only for the one
+    patient's own values. Each is in "Not caught".
+  - `src/redact.test.ts` holds the difference: a property (2,000 runs) that, over every gap the screen's own join rule
+    takes (`JOIN`), the screen finds each writing and the letter path reads exactly those with no asterisk and no dot,
+    slash or underscore between two digits (`holdsIdentifier`, and `identifierCandidates` when the writing spans at most
+    three tokens and holds a digit), leaving out a writing of digits alone that a letter reads as a separated calendar
+    date, which the letter's deadline rule keeps; and a table of each writing only the letter path reads, which the
+    screen finds only when the practice's own value holds its separator, of the five only the screen reads, and of
+    the comma, plus sign and closing parenthesis neither reads. A letter is therefore no longer redacted of everything
+    the screen would find (P14).
 
 - **N14.** The request's cap is 1,000,000 bytes, as sent and in NFKC form (the reasoning is under "The request's
   length"), and its notice says "This document is too long to send to the model, so nothing was sent. Enter its terms by
@@ -1354,9 +1388,10 @@ MOD-12, "Contract or exhibit naming a patient of the practice", is asserted by:
   separators or another character; never inside a longer token; the run lengths; the practice's own separators
   (`storedSeparators`), and a value written as stored found whatever it holds (a property, 3,000 runs); every run the
   9b7eadfe tokenizer found still found (a property against its code, kept verbatim in the test); the index answering
-  exactly as the plain runs (a property); the first match stopping the stream; no run built off an index hit; the
-  bound (16 MiB through `pagesName` in a 96 MiB child); properties against `identifierPattern` and for whole tokens;
-  the floors and stored-side rules.
+  exactly as the plain runs (a property); the first match stopping the stream; no run built off an index hit; the bound
+  (16 MiB through `pagesName` in a 96 MiB child); a property against the letter path (`holdsIdentifier` and
+  `identifierCandidates`, N6), a table of the writings only the letter path reads, and a property for whole tokens; the
+  floors and stored-side rules.
 - `src/patient-records.test.ts`: every construction refusal, the scope refusal when `access()` answers but
   `practiceIds` lacks the practice among them; a frozen, unforgeable check; the reads as the service screen with
   purpose `contract_screen` and the joined request ID, once per check; cross-tenant; query, decrypt, person and
@@ -1506,3 +1541,10 @@ is fixed in this pull request: "The request's length", above; so is P12, the dat
 under "Bound to the caller's scope".) P13 a deep freeze of `PROMPTS`
 (each prompt version, its model map and its schema), so no code in the process can point a call at a model the gate
 did not evaluate (Part 2's, not this part's: the provider adapters' use of the schema objects is checked first).
+P14 the letter path joins an asterisk next to a letter (#80's `GAP.numberNearLetter` and `letterJoins`), as this
+part's fix round had the old `identifierPattern` join it, so a letter's "SYN*PCN*44551" is redacted and offered as a
+candidate (N6; digits joined over a dot or slash stay #80's recorded residual); measured first against #80's
+properties and its amounts rule (a Lane B item, no migration). P15 the contract screen joins U+2043 HYPHEN BULLET as
+a dash (`JOIN` and `storedSeparators`) and reads a Hangul filler as a space before it tokenizes, as the letter path
+does since #80 ("Not caught"); measured first against set v2's false refusals and gate.golden (a Lane B item, no
+migration).

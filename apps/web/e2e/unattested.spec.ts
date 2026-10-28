@@ -59,7 +59,7 @@ test('an export whose pricing went stale after it was made is never attested, an
     await test.step('the reviewer finds the export listed apart as never attested, and its attestation refused for good, with why, that an export already sent is logged first, and the three steps instead', async () => {
       await reviewer.goto(`/p/${practiceId}/packet-reviews`);
       // Not work waiting: listed apart, marked never attested.
-      await expect(reviewer.getByRole('region', { name: 'Exports waiting' })).toContainText('No export is waiting');
+      await expect(reviewer.getByRole('region', { name: 'Exports waiting', exact: true })).toContainText('No export is waiting');
       const never = reviewer.getByRole('table', { name: 'Exports never attested' });
       await expect(never.locator('[data-never-attested="true"]')).toContainText('Never attested: pricing went stale after the export');
       await never.getByRole('link').first().click();
@@ -91,7 +91,7 @@ test('an export whose pricing went stale after it was made is never attested, an
       await expect(attestation).not.toContainText('Confirm every item');
       await expect(attestation).not.toContainText('The PDF and the CSV are fit to send to the payer');
       await expectAccessible(reviewer, 'Packet review, an export whose pricing went stale after it was made');
-      await atPhoneWidth(reviewer, 'Packet review, an export whose pricing went stale after it was made');
+      await atPhoneWidth(reviewer, 'Packet review, an export whose pricing went stale after it was made', { tables: ['Lines not on current pricing', 'Line schedule'] });
       assertNoPhi('url', reviewer.url(), { known: KNOWN });
     });
 
@@ -168,8 +168,8 @@ test('an export whose pricing went stale after it was made is never attested, an
       await expect(why.locator('[data-if-sent]')).toHaveCount(0);
       await expect(reviewer.getByRole('region', { name: 'Attestation' }).getByRole('button', { name: 'Attest the export' })).toBeDisabled();
       await reviewer.goto(`/p/${practiceId}/packet-reviews`);
-      await expect(reviewer.getByRole('region', { name: 'Exports waiting' })).toContainText('No export is waiting');
-      await expect(reviewer.getByRole('region', { name: 'Exports never attested' })).toHaveCount(0);
+      await expect(reviewer.getByRole('region', { name: 'Exports waiting', exact: true })).toContainText('No export is waiting');
+      await expect(reviewer.getByRole('region', { name: 'Exports never attested', exact: true })).toHaveCount(0);
     });
   } finally {
     await context.close();

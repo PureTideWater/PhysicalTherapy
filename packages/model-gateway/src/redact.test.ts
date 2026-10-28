@@ -13,7 +13,9 @@ import {
   SCREEN_MAX_RUN,
   SCREEN_MIN_RUN,
   compactIdentifier,
+  datesIn,
   holdsIdentifier,
+  identifierCandidates,
   identifierRuns,
   isCompactCalendarDate,
   runIndex,
@@ -162,23 +164,74 @@ describe('identifierRuns: the page runs the contract screen compares', () => {
     expect(identifierRuns('ABCDEF', { minLength: 6, maxLength: 5 })).toEqual([]);
   });
 
-  it('agrees with the letter redaction’s identifier pattern on every single-line, single-separator writing (property)', () => {
+  it('finds every single-line writing the letter path reads over the separators the screen joins, and the letter path reads exactly those with no "*" and no ".", "/" or "_" between two digits (property; docs/adr/0070 Part 3, N6)', () => {
     const group = fc.string({ unit: fc.constantFrom(...'ABCDEFGHJKLMNPQRSTUVWXYZ0123456789abcz'), minLength: 1, maxLength: 6 });
-    const separator = fc.constantFrom('', ' ', '-', ' - ', '–', ' – ', ' ', '- ', ' -', '.', '/', '_', '*', '\u2212', ' \u2212 ', '\u00AD', '\u200B', '\uFEFF', '-\u200B');
+    // Every gap the screen's JOIN takes: none, one space, a dash or minus sign with at most one space on either side,
+    // one dot, slash, underscore or asterisk, and invisible characters anywhere in a gap.
+    const separator = fc.constantFrom('', ' ', '-', ' - ', '–', ' – ', ' ', '- ', ' -', '.', '/', '_', '*', '\u2212', ' \u2212 ', '\u00AD', '\u200B', '\uFEFF', '-\u200B', '\u200B.', '_\u00AD');
     const before = fc.constantFrom('', 'Member ID:', 'Claim#', '(', 'ID ', 'see the claim ', 'X\n', '\t');
     const after = fc.constantFrom('', ')', '.', ',', ' on file', '\n', '  next', ';');
+    const letter = /\p{L}/u;
     fc.assert(
       fc.property(fc.array(fc.tuple(group, separator), { minLength: 1, maxLength: 4 }), before, after, (groups, prefix, suffix) => {
         const written = groups.map(([text, sep], index) => (index === 0 ? text : `${sep}${text}`)).join('');
         const compact = compactIdentifier(written);
-        fc.pre(compact.length >= 6 && compact.length <= 30);
+        fc.pre(compact.length >= SCREEN_MIN_RUN && compact.length <= 30);
         const text = `${prefix}${written}${suffix}`;
-        const tokenizer = runs(text).includes(compact);
-        const pattern = holdsIdentifier(text, { pseudonym: 'synthetic', names: [], datesOfBirth: [], memberIds: [written] }, []);
-        return tokenizer && pattern;
+        // Digits alone written as a separated calendar date stay that date in a letter (docs/adr/0054, amendment of
+        // 2026-10-27): the letter's deadline rule, not this property's case.
+        fc.pre(!(/^\d+$/u.test(compact) && datesIn(text).some((span) => span.separated && span.dates.length > 0)));
+        // What the letter path joins over these gaps: all but "*", and ".", "/" or "_" only next to a letter.
+        const letterReads = groups.slice(1).every(([next, sep], index) => !sep.includes('*') && (!/[./_]/u.test(sep) || letter.test(groups[index]?.[0].at(-1) ?? '') || letter.test(next[0] ?? '')));
+        const tokens = 1 + groups.slice(1).filter(([, sep]) => sep !== '').length;
+        const screen = runs(text).includes(compact);
+        const matcher = holdsIdentifier(text, { pseudonym: 'synthetic', names: [], datesOfBirth: [], memberIds: [written] }, []);
+        const candidate = identifierCandidates(text).includes(compact);
+        // The letter's candidates (identifierCandidates) join at most three tokens and offer only a run with a digit.
+        return screen && matcher === letterReads && candidate === (letterReads && tokens <= 3 && /\d/u.test(compact));
       }),
-      { numRuns: 1000 },
+      { numRuns: 2000 },
     );
+  }, 60_000);
+
+  it('pins each writing the letter path reads and the screen does not, unless the practice’s own value holds its separator, and the writings neither reads (docs/adr/0070 Part 3, N6)', () => {
+    // [what lies inside the identifier, the page's writing, the stored value, whether a value stored as written is found]
+    const cases: readonly (readonly [string, string, string, boolean])[] = [
+      ['two spaces', 'ZZ  1234567', 'ZZ1234567', false],
+      ['a tab', 'ZZ\t1234567', 'ZZ1234567', false],
+      ['a line break', 'ZZ\n1234567', 'ZZ1234567', false],
+      ['a dash with two spaces after it', 'ZZ-  1234567', 'ZZ1234567', false],
+      ['two dashes', 'ZZ--1234567', 'ZZ1234567', true],
+      ['a hyphen bullet (U+2043)', 'ZZ\u20431234567', 'ZZ1234567', true],
+      ['a colon next to a letter', 'ZZ:1234567', 'ZZ1234567', true],
+      ['"#" next to a letter', 'ZZ#1234567', 'ZZ1234567', true],
+      ['"(" next to a letter', 'ZZ(1234567', 'ZZ1234567', true],
+      ['a dot and a space next to a letter', 'ZZ. 1234567', 'ZZ1234567', true],
+      ['a slash with a space on each side next to a letter', 'ZZ / 1234567', 'ZZ1234567', true],
+      ['a dash and a dot together next to a letter', 'ZZ-.1234567', 'ZZ1234567', true],
+      ['a combining mark on a digit', '1234\u0301567890', '1234567890', true],
+      ['a Hangul filler', 'ZZ\u31641234567', 'ZZ1234567', true],
+      ['an accented letter for its plain one', 'Z\u017D1234567', 'ZZ1234567', true],
+    ];
+    for (const [what, written, stored, asStored] of cases) {
+      const text = `Member ${written} on file`;
+      expect(holdsIdentifier(text, { pseudonym: 'synthetic', names: [], datesOfBirth: [], memberIds: [stored] }, []), what).toBe(true);
+      expect(screens(text, [stored]), what).toBe(false);
+      expect(screens(text, [written]), what).toBe(asStored);
+    }
+    // And the other way: digits alone joined by ".", "/" or "_", and "*" anywhere, which the screen reads and the letter path does not.
+    for (const written of ['1234.567890', '20261234/01', '1234_567890', 'SYN*PCN*44551', '123*4567890']) {
+      const text = `Member ${written} on file`;
+      expect(screens(text, [compactIdentifier(written)]), written).toBe(true);
+      expect(holdsIdentifier(text, { pseudonym: 'synthetic', names: [], datesOfBirth: [], memberIds: [compactIdentifier(written)] }, []), written).toBe(false);
+    }
+    // And neither: a comma, a plus sign or a closing parenthesis, which the screen joins only as the practice's own separator.
+    for (const written of ['ZZ,1234567', 'ZZ+1234567', 'ZZ)1234567']) {
+      const text = `Member ${written} on file`;
+      expect(holdsIdentifier(text, { pseudonym: 'synthetic', names: [], datesOfBirth: [], memberIds: ['ZZ1234567'] }, []), written).toBe(false);
+      expect(screens(text, ['ZZ1234567']), written).toBe(false);
+      expect(screens(text, [written]), written).toBe(true);
+    }
   });
 
   it('never finds a single-token identifier with a letter or digit joined to it (property)', () => {

@@ -4,14 +4,17 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { ActionForm } from '../../../../components/action-form';
+import { UtcTime } from '../../../../components/dates';
 import { roleNames, utc } from '../../../../components/format';
 import { EVIDENCE_WORDS, KindBadge, LedgerTotals, LineCorrectionWords, correctionWords, entryStage, exportStatusText, levelWords, lineEntriesEmptyText } from '../../../../components/reconciliation/display';
 import { UnattestedSubmissions } from '../../../../components/packets/unattested';
 import { Money, Pager } from '../../../../components/remittances/display';
+import { ScrollTable } from '../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { stageLabel } from '../../../../components/triage/display';
 import { Uploader } from '../../../../components/uploads/uploader';
 import { loadPage } from '../../../../lib/http/next';
+import type { ListPage } from '../../../../lib/http/paging';
 import type { EntryView, LinkageLine, MatchView, RemittanceChoice } from '../../../../lib/reconciliation/queries';
 import { REVERSAL_CONSEQUENCE, type ReconciliationNotice, reconciliationPage } from '../../../../lib/routes/reconciliation';
 import { matchClaimFormAction, matchDepositFormAction, matchPostingFormAction, reverseMatchFormAction } from './actions';
@@ -109,7 +112,7 @@ function EntryRows({ entries, practiceId, phi }: { readonly entries: readonly En
       {entries.map((entry) => (
         <tr key={entry.id} id={`entry-${entry.id}`} data-entry={entry.id} data-stage={entry.stage} className="border-b align-top">
           <td className="py-1 pr-3 font-mono text-xs">{entry.seq}</td>
-          <td className="py-1 pr-3">{entry.effectiveOn}</td>
+          <td className="py-1 pr-3 whitespace-nowrap">{entry.effectiveOn}</td>
           <td className="py-1 pr-3">
             {entryStage(entry.stage)}
             {entry.allocated ? ' (allocated pro rata)' : ''}
@@ -123,8 +126,11 @@ function EntryRows({ entries, practiceId, phi }: { readonly entries: readonly En
             </Link>
           </td>
           <td className="py-1 pr-3">{EVIDENCE_WORDS[entry.evidenceKind] ?? entry.evidenceKind}</td>
-          <td className="py-1 pr-3">{entry.byJob ? 'the reconcile job' : (entry.createdBy ?? '—')}</td>
-          <td className="py-1">{phi ? (entry.reason ?? '') : ''}</td>
+          <td className="py-1 pr-3">
+            <span className="block min-w-40 wrap-anywhere">{entry.byJob ? 'the reconcile job' : (entry.createdBy ?? '—')}</span>
+          </td>
+          {/* A person's reason: its words wrap whole, and only a token wider than the column breaks. */}
+          <td className="py-1">{phi ? <span className="block min-w-40 wrap-anywhere">{entry.reason ?? ''}</span> : ''}</td>
         </tr>
       ))}
     </>
@@ -141,8 +147,8 @@ function EntryTable({ entries, practiceId, phi, label, empty }: { readonly entri
     );
   }
   return (
-    <div className="overflow-x-auto">
-      <table aria-label={label} className="w-full text-sm">
+    <ScrollTable label={label}>
+      <table aria-label={label} className="w-full min-w-[54rem] text-sm">
         <thead>
           <tr className="border-b text-left">
             <th className="py-1 pr-3">#</th>
@@ -159,7 +165,7 @@ function EntryTable({ entries, practiceId, phi, label, empty }: { readonly entri
           <EntryRows entries={entries} practiceId={practiceId} phi={phi} />
         </tbody>
       </table>
-    </div>
+    </ScrollTable>
   );
 }
 
@@ -169,12 +175,21 @@ function patientShareOf(line: LinkageLine): string | null {
   return share === '0' ? null : share;
 }
 
-function LinkageItem({ line, practiceId, canReconcile, phi }: { readonly line: LinkageLine; readonly practiceId: string; readonly canReconcile: boolean; readonly phi: boolean }) {
+/**
+ * The place of a page's first item in the whole list: every page but the last is full, so the last page starts at the
+ * total less its own items. A case line is named by its place, unique on the page and not PHI.
+ */
+function firstPlace(list: ListPage<unknown>): number {
+  return (list.page === list.pages ? list.total - list.items.length : (list.page - 1) * list.items.length) + 1;
+}
+
+function LinkageItem({ line, place, total, practiceId, canReconcile, phi }: { readonly line: LinkageLine; readonly place: number; readonly total: number; readonly practiceId: string; readonly canReconcile: boolean; readonly phi: boolean }) {
   const shared = { practiceId, canReconcile, phi };
+  const name = `Case line ${String(place)} of ${String(total)}`;
   return (
     <li className="flex flex-col gap-3 rounded-md border p-3" data-line={line.serviceLineId} data-correction-kind={line.correction.kind ?? 'none'}>
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="font-medium">{phi ? `${line.procedureCode ?? ''} on ${line.serviceDate ?? '—'}` : 'Case line'}</span>
+        <span className="font-medium">{phi ? `${name}, ${line.procedureCode ?? ''} on ${line.serviceDate ?? '—'}` : name}</span>
         <span data-line-stage={line.stage ?? 'none'}>{line.stage === null ? 'no stage' : stageLabel(line.stage as Parameters<typeof stageLabel>[0])}</span>
         <Link className="underline" href={`/p/${practiceId}/cases/${line.caseId}`}>
           Case
@@ -207,7 +222,7 @@ function LinkageItem({ line, practiceId, canReconcile, phi }: { readonly line: L
           with a further submission.
         </p>
       )}
-      <EntryTable entries={line.entries} practiceId={practiceId} phi={phi} label="Entries of the line" empty={lineEntriesEmptyText(line.correction.kind)} />
+      <EntryTable entries={line.entries} practiceId={practiceId} phi={phi} label={`Entries of case line ${String(place)}`} empty={lineEntriesEmptyText(line.correction.kind)} />
     </li>
   );
 }
@@ -303,30 +318,34 @@ export default async function ReconciliationPage(props: Props) {
             {data.exports.total === 0 ? (
               <EmptyState title="No export uploaded yet" nextStep="Upload the practice-management system’s payment-posting export and the bank’s EFT export above." />
             ) : (
-              <table aria-label="Exports" className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left">
-                    <th className="py-1 pr-3">Kind</th>
-                    <th className="py-1 pr-3">Uploaded</th>
-                    <th className="py-1 pr-3">What became of it</th>
-                    <th className="py-1 pr-3 text-right">Rows</th>
-                    <th className="py-1 text-right">Matched</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.exports.items.map((item) => (
-                    <tr key={item.id} className="border-b" data-document={item.id} data-status={item.status}>
-                      <td className="py-1 pr-3">
-                        <KindBadge kind={item.kind} />
-                      </td>
-                      <td className="py-1 pr-3">{utc(item.uploadedAt)}</td>
-                      <td className="py-1 pr-3">{exportStatusText(item.status, item.kind, data.template.system !== null)}</td>
-                      <td className="py-1 pr-3 text-right">{item.rows}</td>
-                      <td className="py-1 text-right">{item.matchedRows}</td>
+              <ScrollTable label="Exports">
+                <table aria-label="Exports" className="w-full min-w-[36rem] text-sm">
+                  <thead>
+                    <tr className="border-b text-left">
+                      <th className="py-1 pr-3">Kind</th>
+                      <th className="py-1 pr-3">Uploaded</th>
+                      <th className="py-1 pr-3">What became of it</th>
+                      <th className="py-1 pr-3 text-right">Rows</th>
+                      <th className="py-1 text-right">Matched</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {data.exports.items.map((item) => (
+                      <tr key={item.id} className="border-b" data-document={item.id} data-status={item.status}>
+                        <td className="py-1 pr-3">
+                          <KindBadge kind={item.kind} />
+                        </td>
+                        <td className="py-1 pr-3">
+                          <UtcTime at={item.uploadedAt} />
+                        </td>
+                        <td className="py-1 pr-3">{exportStatusText(item.status, item.kind, data.template.system !== null)}</td>
+                        <td className="py-1 pr-3 text-right font-mono tabular-nums">{item.rows}</td>
+                        <td className="py-1 text-right font-mono tabular-nums">{item.matchedRows}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </ScrollTable>
             )}
             <Pager path={path} query={query} page={data.exports.page} pages={data.exports.pages} total={data.exports.total} noun="Exports" param="exports" />
           </section>
@@ -446,8 +465,8 @@ export default async function ReconciliationPage(props: Props) {
           <EmptyState title="No case line has a ledger entry or a match yet" nextStep="Adjusted remittances are matched to case lines after they load; posting and EFT exports after they are uploaded." />
         ) : (
           <ul aria-label="Case lines" className="flex flex-col gap-3">
-            {data.linkage.items.map((line) => (
-              <LinkageItem key={line.serviceLineId} line={line} {...shared} />
+            {data.linkage.items.map((line, index) => (
+              <LinkageItem key={line.serviceLineId} line={line} place={firstPlace(data.linkage) + index} total={data.linkage.total} {...shared} />
             ))}
           </ul>
         )}

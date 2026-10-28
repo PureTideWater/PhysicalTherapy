@@ -11,6 +11,7 @@ import { ChecklistCard, HandEntryNotice, ModelNoticeAlert } from '../../../../co
 import { MonthsWaitingOnContent } from '../../../../components/pricing/content';
 import { MonthsWaitingOnLocation } from '../../../../components/pricing/location';
 import { Money, Pager } from '../../../../components/remittances/display';
+import { ScrollTable } from '../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { FormatUnconfirmedBadge } from '../../../../components/uploads/format-flag';
 import { type UnconfirmedFormatSource, unconfirmedFormatExplanation } from '../../../../lib/contracts/format-sources';
@@ -242,38 +243,42 @@ export default async function CoveragePage(props: Props) {
           {waitingPlans.total === 0 ? (
             <p className="text-sm text-muted-foreground">Nothing is waiting on a mapping.</p>
           ) : (
-            <table className="w-full text-left text-sm" aria-label="Plans waiting on mapping">
-              <thead className="text-muted-foreground">
-                <tr>
-                  <th className="py-1 pr-3 font-medium">Payer</th>
-                  <th className="py-1 pr-3 font-medium">Plan</th>
-                  <th className="py-1 pr-3 text-right font-medium">Lines</th>
-                  <th className="py-1 pr-3 text-right font-medium">Claims</th>
-                  <th className="py-1 pr-3 text-right font-medium">Billed</th>
-                  <th className="py-1 text-right font-medium">Paid</th>
-                </tr>
-              </thead>
-              <tbody>
-                {waitingPlans.plans.map((plan) => (
-                  <tr key={plan.planId} className="border-t" data-plan={plan.planId}>
-                    <td className="py-1 pr-3">{plan.payerName}</td>
-                    <td className="py-1 pr-3">
-                      <Link className="underline" href={`/p/${practiceId}/mapping/${plan.planId}`}>
-                        {plan.planKey}
-                      </Link>
-                    </td>
-                    <td className="py-1 pr-3 text-right font-mono tabular-nums">{plan.waiting.lines}</td>
-                    <td className="py-1 pr-3 text-right font-mono tabular-nums">{plan.waiting.claims}</td>
-                    <td className="py-1 pr-3 text-right">
-                      <Money value={plan.waiting.chargeCents} />
-                    </td>
-                    <td className="py-1 text-right">
-                      <Money value={plan.waiting.paidCents} />
-                    </td>
+            <ScrollTable label="Plans waiting on mapping">
+              <table className="w-full min-w-[48rem] text-left text-sm" aria-label="Plans waiting on mapping">
+                <thead className="text-muted-foreground">
+                  <tr>
+                    <th className="py-1 pr-3 font-medium">Payer</th>
+                    <th className="py-1 pr-3 font-medium">Plan</th>
+                    <th className="py-1 pr-3 text-right font-medium">Lines</th>
+                    <th className="py-1 pr-3 text-right font-medium">Claims</th>
+                    <th className="py-1 pr-3 text-right font-medium">Billed</th>
+                    <th className="py-1 text-right font-medium">Paid</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {waitingPlans.plans.map((plan) => (
+                    <tr key={plan.planId} className="border-t" data-plan={plan.planId}>
+                      <td className="py-1 pr-3">{plan.payerName}</td>
+                      <td className="py-1 pr-3">
+                        <span className="block min-w-32 wrap-anywhere">
+                          <Link className="underline" href={`/p/${practiceId}/mapping/${plan.planId}`}>
+                            {plan.planKey}
+                          </Link>
+                        </span>
+                      </td>
+                      <td className="py-1 pr-3 text-right font-mono tabular-nums">{plan.waiting.lines}</td>
+                      <td className="py-1 pr-3 text-right font-mono tabular-nums">{plan.waiting.claims}</td>
+                      <td className="py-1 pr-3 text-right">
+                        <Money value={plan.waiting.chargeCents} />
+                      </td>
+                      <td className="py-1 text-right">
+                        <Money value={plan.waiting.paidCents} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollTable>
           )}
           <Pager path={path} query={{}} page={waitingPlans.page} pages={waitingPlans.pages} total={waitingPlans.total} noun="plans" />
         </CardContent>
@@ -293,49 +298,51 @@ export default async function CoveragePage(props: Props) {
             offers to price their months again.
           </p>
         ))}
-        <table className="w-full text-left text-sm" aria-label="Unpriced reasons and their remedies">
-          <thead className="text-muted-foreground">
-            <tr>
-              <th className="py-1 pr-3 font-medium">Reason</th>
-              <th className="py-1 pr-3 font-medium">Meaning</th>
-              <th className="py-1 pr-3 text-right font-medium">Lines</th>
-              <th className="py-1 font-medium">Remedy</th>
-            </tr>
-          </thead>
-          <tbody>
-            {reasons.map((reason) => (
-              <tr key={reason.reason} className="border-t align-top" data-reason={reason.reason}>
-                <td className="py-1 pr-3 font-mono text-xs">{reason.reason}</td>
-                <td className="py-1 pr-3">{reason.meaning}</td>
-                <td className="py-1 pr-3 text-right font-mono tabular-nums">{reason.lines}</td>
-                <td className="py-1">
-                  {reason.reason === 'NO_PFS_VALUE' && feeScheduleWaiting > 0 ? (
-                    <span className={feeScheduleWaiting < reason.lines ? 'block' : undefined} data-state="fee-schedule-waiting">
-                      <span className="font-mono tabular-nums">{feeScheduleWaiting}</span> of these {feeScheduleWaiting === 1 ? 'waits' : 'wait'} on the{' '}
-                      {feeScheduleNotLoaded.map((gap) => periodWords(gap.period)).join(' or ')} fee schedule PaidWhole has not loaded; nothing for you to check.
-                    </span>
-                  ) : null}
-                  {reason.reason === 'NO_PFS_VALUE' && feeScheduleWaiting > 0 && feeScheduleWaiting >= reason.lines ? null : (
-                    <>
-                      {reason.reason === 'NO_PFS_VALUE' && feeScheduleWaiting > 0 ? 'For the rest: ' : null}
-                      {reason.remedy}
-                      {reason.screen === null ? null : (
-                        <>
-                          {' '}
-                          (
-                          <Link className="underline" href={remedyPath(practiceId, reason.screen)}>
-                            {REMEDY_SCREEN_NAMES[reason.screen]}
-                          </Link>
-                          )
-                        </>
-                      )}
-                    </>
-                  )}
-                </td>
+        <ScrollTable label="Unpriced reasons and their remedies">
+          <table className="w-full min-w-[40rem] text-left text-sm" aria-label="Unpriced reasons and their remedies">
+            <thead className="text-muted-foreground">
+              <tr>
+                <th className="py-1 pr-3 font-medium">Reason</th>
+                <th className="py-1 pr-3 font-medium">Meaning</th>
+                <th className="py-1 pr-3 text-right font-medium">Lines</th>
+                <th className="py-1 font-medium">Remedy</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {reasons.map((reason) => (
+                <tr key={reason.reason} className="border-t align-top" data-reason={reason.reason}>
+                  <td className="py-1 pr-3 font-mono text-xs">{reason.reason}</td>
+                  <td className="py-1 pr-3">{reason.meaning}</td>
+                  <td className="py-1 pr-3 text-right font-mono tabular-nums">{reason.lines}</td>
+                  <td className="py-1">
+                    {reason.reason === 'NO_PFS_VALUE' && feeScheduleWaiting > 0 ? (
+                      <span className={feeScheduleWaiting < reason.lines ? 'block' : undefined} data-state="fee-schedule-waiting">
+                        <span className="font-mono tabular-nums">{feeScheduleWaiting}</span> of these {feeScheduleWaiting === 1 ? 'waits' : 'wait'} on the{' '}
+                        {feeScheduleNotLoaded.map((gap) => periodWords(gap.period)).join(' or ')} fee schedule PaidWhole has not loaded; nothing for you to check.
+                      </span>
+                    ) : null}
+                    {reason.reason === 'NO_PFS_VALUE' && feeScheduleWaiting > 0 && feeScheduleWaiting >= reason.lines ? null : (
+                      <>
+                        {reason.reason === 'NO_PFS_VALUE' && feeScheduleWaiting > 0 ? 'For the rest: ' : null}
+                        {reason.remedy}
+                        {reason.screen === null ? null : (
+                          <>
+                            {' '}
+                            (
+                            <Link className="underline" href={remedyPath(practiceId, reason.screen)}>
+                              {REMEDY_SCREEN_NAMES[reason.screen]}
+                            </Link>
+                            )
+                          </>
+                        )}
+                      </>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </ScrollTable>
       </section>
       <section aria-label="What to obtain" className="flex flex-col gap-2">
         <h2 className="text-xl font-bold tracking-display">What to obtain</h2>
@@ -416,9 +423,9 @@ export default async function CoveragePage(props: Props) {
             <p className="text-sm text-muted-foreground">Payers appear once their 835s load.</p>
           ) : (
             <form method="get" action={`${path}/letter`} className="grid max-w-xl gap-3" aria-label="Letter">
-              <div className="flex flex-col gap-1.5">
+              <div className="flex min-w-0 flex-col gap-1.5">
                 <Label htmlFor="letter-payer">Payer</Label>
-                <select id="letter-payer" name="payer" required className="h-9 rounded-md border bg-background px-2 text-sm">
+                <select id="letter-payer" name="payer" required className="h-9 w-full min-w-0 rounded-md border bg-background px-2 text-sm">
                   {payers.map((payer) => (
                     <option key={payer.id} value={payer.id}>
                       {payer.name}
@@ -426,9 +433,9 @@ export default async function CoveragePage(props: Props) {
                   ))}
                 </select>
               </div>
-              <div className="flex flex-col gap-1.5">
+              <div className="flex min-w-0 flex-col gap-1.5">
                 <Label htmlFor="letter-contract">The payer’s contract (optional)</Label>
-                <select id="letter-contract" name="contract" className="h-9 rounded-md border bg-background px-2 text-sm">
+                <select id="letter-contract" name="contract" className="h-9 w-full min-w-0 rounded-md border bg-background px-2 text-sm">
                   <option value="">None named</option>
                   {payers
                     .filter((payer) => contracts.some((contract) => contract.payerId === payer.id))

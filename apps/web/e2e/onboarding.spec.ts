@@ -98,6 +98,8 @@ test('a new customer is invited, signs up, enrolls MFA, accepts the terms, pays 
     await page.goto('/console/prospects');
     await expect(page.getByRole('heading', { level: 1, name: 'Audit requests' })).toBeVisible();
     await expectAccessible(page, 'Audit requests');
+    // At a phone's width each console table scrolls in a region of its own (TBL-03).
+    await atPhoneWidth(page, 'Audit requests', { tables: ['Audit requests'] });
     const row = page.getByRole('row').filter({ hasText: clinic });
     await row.getByRole('button', { name: 'Create practice group' }).click();
     await page.waitForURL(/\/console\/organizations\/[0-9a-f-]{36}$/);
@@ -140,6 +142,7 @@ test('a new customer is invited, signs up, enrolls MFA, accepts the terms, pays 
     expect(forged.status()).toBe(400);
     await page.reload();
     await expect(page.getByRole('table', { name: 'Agreements' }).getByRole('row')).toHaveCount(5);
+    await atPhoneWidth(page, 'Organization with its invitation and agreements', { tables: ['Invitations', 'Agreements'] });
 
   });
 
@@ -156,6 +159,14 @@ test('a new customer is invited, signs up, enrolls MFA, accepts the terms, pays 
     const evidence = (await exported.json()) as { format: string; controls: unknown[] };
     expect(evidence.format).toBe('tp-compliance-evidence/1');
     expect(evidence.controls).toHaveLength(17);
+    // A record kept, by its reference and SHA-256 (synthetic), so the records table is read at a phone's width too.
+    await page.getByLabel('What', { exact: true }).selectOption({ label: 'Incident response tabletop' });
+    await page.getByLabel('Date it happened').fill('2026-10-01');
+    await page.getByLabel('Document reference').fill(`records:synthetic/tabletop-${run}.pdf`);
+    await page.getByLabel('SHA-256').fill('d'.repeat(64));
+    await page.getByRole('button', { name: 'Record', exact: true }).click();
+    await expect(page.getByRole('table', { name: 'Evidence records' })).toContainText(`records:synthetic/tabletop-${run}.pdf`);
+    await atPhoneWidth(page, 'SOC 2 evidence', { tables: ['Policies', 'Evidence records'] });
   });
 
   const context = await browser.newContext();
@@ -232,6 +243,7 @@ test('a new customer is invited, signs up, enrolls MFA, accepts the terms, pays 
       await expect(admin.locator('[data-invoice-status="open"]')).toHaveCount(1);
       await admin.getByRole('button', { name: 'Settle pending test ACH payments' }).click();
       await expect(admin.locator('[data-invoice-status="paid"]')).toHaveCount(1);
+      await atPhoneWidth(admin, 'Billing, its invoice paid', { tables: ['Invoices'] });
     });
 
     await test.step('reaches the dashboard, with onboarding done but the first upload', async () => {
@@ -305,6 +317,7 @@ test('shows the status page and the support form, and opens a ticket from a scre
   await expect(page.getByRole('heading', { level: 1, name: 'Service status' })).toBeVisible();
   await expect(page.locator('[data-component]')).toHaveCount(7);
   await expectAccessible(page, 'Status page');
+  await atPhoneWidth(page, 'Status page');
   await signInWithTotp(page, 'remittances-viewer');
   await page.goto('/support?from=remittances');
   await expectAccessible(page, 'Support');
@@ -313,6 +326,7 @@ test('shows the status page and the support form, and opens a ticket from a scre
   await page.getByRole('button', { name: 'Open ticket' }).click();
   await expect(page.getByText(/Ticket \d+ opened/)).toBeVisible();
   await expect(page.getByRole('table', { name: 'Tickets' })).toContainText('Where is the receipt?');
+  await atPhoneWidth(page, 'Support, a ticket opened', { tables: ['Tickets'] });
   const screen = await withDatabase(async (client) => (await client.query<{ screen: string }>("SELECT screen FROM support_ticket WHERE subject = 'Where is the receipt?'")).rows);
   expect(screen).toEqual([{ screen: 'remittances' }]);
 });
@@ -398,6 +412,7 @@ test('a practice created with no seeded settings reaches a priced month from its
       await page.getByRole('button', { name: 'Upload agreement' }).click();
       await expect(page.getByRole('table', { name: 'Agreements' }).getByRole('row')).toHaveCount(which === 'ready' ? 2 : 3);
     }
+    await atPhoneWidth(page, 'Organization with its members and agreements', { tables: ['Members', 'Agreements'] });
   });
 
   const adminContext = await browser.newContext();
@@ -478,6 +493,12 @@ test('a practice created with no seeded settings reaches a priced month from its
       );
       // (The screening journey may approve the same settings again meanwhile, so the run's split is read by its settings.)
       expect(pinned).toEqual([{ status: 'complete', settings: PREPARED_SPLIT, unpriced: 0 }]);
+    });
+
+    await test.step('the console’s rule releases count the practice’s run under release 900001, and read at a phone’s width', async () => {
+      await page.goto('/console/rule-releases');
+      await expect(page.getByRole('table', { name: 'Affected runs by practice' }).locator(`[data-practice="${practices.ready}"]`)).toBeVisible();
+      await atPhoneWidth(page, 'Rule releases with a practice’s run', { tables: ['Rule releases', 'Affected runs by practice'] });
     });
 
     await test.step('the month of the practice whose ZIP needs its ZIP+4 waits with no line kept, is named with its dollars, and is not planned again each day', async () => {
