@@ -1,6 +1,7 @@
 # 0061. Verify a deadline only from signed-off evidence, refuse an unverified export in SQL, and attest the export over its hashes
 
-- **Status:** accepted
+- **Status:** accepted; amended 2026-10-28 by [0086](0086-read-every-narrative-figure-in-the-role-its-words-give-it-and-hold-each-input-to-the-roles-its-record-gives-it.md): the tp-packet/2 facts hold the contract window's days and page in
+  their own roles ("Amendment (`co-001/packet-day-counts`, 2026-10-28)", below)
 - **Date:** 2026-10-18
 - **Deciders:** the owner (D15 option a, D16 options a and c, D17 option a, in `docs/product/reconciliation-001.md`, approved 2026-10-17; the schema approved, the reviewer's downloads added and D16 (a) without a practice approver and contract appeal-level evidence placed in later pull requests, 2026-10-18; the best-option audit's items #4, #5, #26 and #61 folded in, 2026-10-18; see Owner rulings); the build (PR 5 of Change Order 001)
 - **PRD sections:** 2 (point 8, dispute windows), 6 (Packet builder; Submissions and payer responses), 8 (packet_version; Invariants), 11 (step 8, the window), 12 (From validated to actionable; The packet; Approval; Submission), 15 (Stack: compute, database), 16 (a narrative inventing a number; Secrets); Data dictionary, Contracts and Pricing, triage and cases; Change Order 001, CO-05, CO-06 ("an unverified deadline blocks actionability and export") and CO-12 (`packet_version.deadline_verification_status`); ADRs 0009, 0019, 0028, 0038, 0040, 0041, 0044, 0047, 0049 and 0055 (the worker gains a login of its own, beside billing's and the e-signature webhook's)
@@ -1189,3 +1190,12 @@ The founder, Tyler Williams, ruled on this pull request on 2026-10-18:
   security, compliance and dispute success, never weighted by build effort. This extends the migration the founder
   approved, so the domain model's new SHA-256 waits for the founder's confirmation (CO-02), given on 2026-10-21 (Owner
   rulings (2026-10-21)).
+
+## Amendment (`co-001/packet-day-counts`, 2026-10-28): the window's days and page are role facts
+
+The facts of a tp-packet/2 version (Decision, the narrative's facts) hold the contract window's day count as the
+window's days and its page as the window's page, each a role fact like every other ([0086](0086-read-every-narrative-figure-in-the-role-its-words-give-it-and-hold-each-input-to-the-roles-its-record-gives-it.md)), instead of a set of day counts
+read only before "days" and a set of pages read only after "page". The window's quoted clause is kept as its words, so
+a figure it holds is repeated only beside them: "Disputes are raised within 10000 days" passes, "It affected 10000
+visits" fails (product observation (b), the reported defect). Above the first level the payer's copy states the
+level's own window alone, so the lines' first-level window, its days, its page and its clause are still no figure.

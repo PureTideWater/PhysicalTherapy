@@ -440,6 +440,8 @@ checks above.
 | --- | --- | --- |
 | `money-ledger` | money, then the ledger | 3 min 37 s (money 32 s, the ledger 3 min 5 s) |
 | `packets-scan` | packets' `scan.ts` | 6 min 13 s |
+| `packets-roles` | packets' `roles.ts`, the role reader (docs/adr/0086) | TIME_ROLES |
+| `packets-words` | packets' `roles-words.ts`, the reader's words | TIME_WORDS |
 | `packets-rest` | the rest of packets' set | 5 min 43 s |
 | `pricing-engine` | pricing's `engine.ts` | 8 min 25 s |
 | `pricing-recompute` | pricing's `recompute.ts` | 3 min 47 s |

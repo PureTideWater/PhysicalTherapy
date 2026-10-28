@@ -1,5 +1,5 @@
 {
-  "$comment": "The mutation workflow's shard jobs (stryker/base.mjs, TP_MUTATION_SHARD; docs/adr/0066, Part 4). Every file a package's config mutates is in exactly one shard, and a shard runs its files in full. The split balances the wall time and summed mutant time Stryker 10.1.1 measured at 49514e8 (the mutation scout's 10.1.1 reports, 4 shared CPUs): money (34 s) with ledger (2 min 28 s); packets' scan.ts (939 s of mutant time) against the rest of packets (997 s), and the calculation words (packages/packets/src/explain*, docs/adr/0072) in a shard of their own, so packets-rest keeps its time; pricing's engine.ts (1,232 s), recompute.ts (952 s) and the rest of pricing (804 s). noMutants lists the files a shard holds that Stryker 10.1.1 finds no mutant in (imports, re-exports, types and `as const` values, which its instrumenter reads as types; tools/stryker/shards.test.ts holds each to that), the only files a shard's report may leave out: the gate requires every other file of the shard in it.",
+  "$comment": "The mutation workflow's shard jobs (stryker/base.mjs, TP_MUTATION_SHARD; docs/adr/0066, Part 4). Every file a package's config mutates is in exactly one shard, and a shard runs its files in full. The split balances the wall time and summed mutant time Stryker 10.1.1 measured at 49514e8 (the mutation scout's 10.1.1 reports, 4 shared CPUs): money (34 s) with ledger (2 min 28 s); packets' scan.ts (939 s of mutant time) against the rest of packets (997 s), the calculation words (packages/packets/src/explain*, docs/adr/0072) in a shard of their own, so packets-rest keeps its time, and the role reader (docs/adr/0086) in two of its own, its reading (packages/packets/src/roles.ts, packets-roles) and its words (packages/packets/src/roles-words.ts, packets-words), since the two in one shard took 33 min on 4 shared CPUs (1,850 mutants, measured in co-001/packet-day-counts on 2026-10-28), over the job's 30; pricing's engine.ts (1,232 s), recompute.ts (952 s) and the rest of pricing (804 s). noMutants lists the files a shard holds that Stryker 10.1.1 finds no mutant in (imports, re-exports, types and `as const` values, which its instrumenter reads as types; tools/stryker/shards.test.ts holds each to that), the only files a shard's report may leave out: the gate requires every other file of the shard in it.",
   "noMutants": [
     "packages/ledger/src/index.ts",
     "packages/money/src/index.ts",
@@ -39,6 +39,22 @@
       "mutate": {
         "packets": [
           "packages/packets/src/scan.ts"
+        ]
+      }
+    },
+    {
+      "name": "packets-roles",
+      "mutate": {
+        "packets": [
+          "packages/packets/src/roles.ts"
+        ]
+      }
+    },
+    {
+      "name": "packets-words",
+      "mutate": {
+        "packets": [
+          "packages/packets/src/roles-words.ts"
         ]
       }
     },

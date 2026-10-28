@@ -361,8 +361,8 @@ describe('on this repository', () => {
 
   it('selects every shard of each affected package', () => {
     expect(shardsFor(['money'])).toEqual(['money-ledger']);
-    expect(shardsFor(['pricing', 'packets'])).toEqual(['packets-scan', 'packets-rest', 'packets-explain', 'pricing-engine', 'pricing-recompute', 'pricing-rest']);
-    expect(shardsFor([...MUTATION_PACKAGES])).toHaveLength(7);
+    expect(shardsFor(['pricing', 'packets'])).toEqual(['packets-scan', 'packets-roles', 'packets-words', 'packets-rest', 'packets-explain', 'pricing-engine', 'pricing-recompute', 'pricing-rest']);
+    expect(shardsFor([...MUTATION_PACKAGES])).toHaveLength(9);
     expect(shardsFor([] as MutationPackage[])).toEqual([]);
   });
 });

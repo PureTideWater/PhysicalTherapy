@@ -675,8 +675,9 @@ describe('the gate fails on injected faults, each rerunning only the cases it sp
     const part = await spliced(swapAmounts(reference, { cases: ids }), ids, 'narratives');
     // Each of the three reference styles, swapped.
     expect(gate(part, baseline, held).problems.slice(1)).toEqual([{ code: 'narrative_failures', count: 3, cases: ids }]);
+    // The packets verifier fails each swapped figure itself (docs/adr/0086), and the gateway names its role.
     for (const failure of part.narratives?.failures ?? []) {
-      expect(failure, failure.id).toMatchObject({ problems: ['verifier_failed'], mismatches: ['figure_in_wrong_role'] });
+      expect(failure, failure.id).toMatchObject({ problems: ['verifier_failed'], mismatches: ['figure_in_wrong_role', 'figure_not_in_input'] });
     }
   });
 
@@ -691,6 +692,6 @@ describe('the gate fails on injected faults, each rerunning only the cases it sp
     const ids = picked.map((index) => narratives.cases[index]?.id ?? '');
     const part = await spliced(swapCounts(reference, { cases: ids }), ids, 'narratives');
     expect(codes(gate(part, baseline, held))).toEqual(['narrative_failures']);
-    expect(part.narratives?.failures.map((failure) => [failure.id, failure.problems, failure.mismatches])).toEqual([...ids].sort().map((id) => [id, ['verifier_failed'], ['figure_in_wrong_role']]));
+    expect(part.narratives?.failures.map((failure) => [failure.id, failure.problems, failure.mismatches])).toEqual([...ids].sort().map((id) => [id, ['verifier_failed'], ['figure_in_wrong_role', 'figure_not_in_input']]));
   });
 });

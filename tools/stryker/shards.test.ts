@@ -20,7 +20,7 @@ describe('the shard partition', () => {
 
   it('lists each package’s shards', () => {
     for (const pkg of MUTATION_PACKAGES) expect(shardsOf(pkg).length, pkg).toBeGreaterThan(0);
-    expect(shards.map((shard) => shard.name)).toEqual(['money-ledger', 'packets-scan', 'packets-rest', 'packets-explain', 'pricing-engine', 'pricing-recompute', 'pricing-rest']);
+    expect(shards.map((shard) => shard.name)).toEqual(['money-ledger', 'packets-scan', 'packets-roles', 'packets-words', 'packets-rest', 'packets-explain', 'pricing-engine', 'pricing-recompute', 'pricing-rest']);
     expect(new Set(shards.map((shard) => shard.name)).size).toBe(shards.length);
     for (const shard of shards) {
       expect(shard.name, 'a job, artifact and directory name').toMatch(/^[a-z]+(?:-[a-z]+)*$/);
@@ -66,7 +66,7 @@ describe('the shard partition', () => {
   it('names a shard’s packages and finds a shard by name', () => {
     expect(packagesOf(shardNamed('money-ledger'))).toEqual(['money', 'ledger']);
     expect(shardsOf('pricing').map((shard) => shard.name)).toEqual(['pricing-engine', 'pricing-recompute', 'pricing-rest']);
-    expect(() => shardNamed('nowhere')).toThrow('stryker/shards.json has no shard "nowhere": money-ledger, packets-scan, packets-rest, packets-explain, pricing-engine, pricing-recompute, pricing-rest');
+    expect(() => shardNamed('nowhere')).toThrow('stryker/shards.json has no shard "nowhere": money-ledger, packets-scan, packets-roles, packets-words, packets-rest, packets-explain, pricing-engine, pricing-recompute, pricing-rest');
   });
 });
 

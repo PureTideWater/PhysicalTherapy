@@ -1,7 +1,8 @@
 # 0047. Read narratives as they show, refuse the case's identifiers, bound ledger corrections, and give them and the regulation's confirmation to the specialist
 
 - **Status:** accepted (amends 0041 for the verifier, approval and submissions; 0042 and 0046 for who adjusts an entry
-  and how far; 0044 for the packet builder's approval panel; 0045 for the monthly summary)
+  and how far; 0044 for the packet builder's approval panel; 0045 for the monthly summary); amended 2026-10-28 by
+  [0086](0086-read-every-narrative-figure-in-the-role-its-words-give-it-and-hold-each-input-to-the-roles-its-record-gives-it.md): each figure held to the role its words give it ("Amendment (`co-001/packet-day-counts`, 2026-10-28)", below)
 - **Date:** 2026-10-27
 - **Deciders:** founder (engineering)
 - **PRD sections:** 2 (step 5), 6 (Submissions and payer responses), 12 (The packet, Approval, Submission, response
@@ -148,3 +149,12 @@ counts it from the practice's own packets and their current versions instead (ab
 
 A payer's narrative needs a script other than Latin digits; a practice asks a billing manager to correct amounts; the
 model gateway drafts narratives (milestone 10), whose verifier is this one.
+
+## Amendment (`co-001/packet-day-counts`, 2026-10-28): each figure in its role
+
+The verifier still reads the narrative as it shows (this ADR), and now holds each figure to the role its own words give
+it, not to its kind alone ([0086](0086-read-every-narrative-figure-in-the-role-its-words-give-it-and-hold-each-input-to-the-roles-its-record-gives-it.md)): "3650 days" is the dispute window's days, "page 2" the citation's page, "3 claims" the
+claim count, "the payer allowed $70.00" the allowed amount, and a value the inputs hold in another role fails
+(`figure_not_in_input`, with the figure's kind). A quoted text's figure is repeated only with its own words, never in
+a role of the record's. The report's format, codes and kinds are unchanged (`tp-packet-verifier/2`); the export's
+re-verification refuses a stored version an older reading passed. Test matrix CAS-43 and CAS-44.

@@ -7,10 +7,10 @@ import { describe, expect, it } from 'vitest';
 
 import { type AssemblyLine, assemblePacket } from './assemble';
 import { draftNarrative } from './draft';
-import { narrativeFacts } from './facts';
-import type { PacketContent } from './format';
+import { heldRoles, narrativeFacts } from './facts';
+import type { PacketContent, PacketContentV2 } from './format';
 import { scanText } from './scan';
-import { assemblyInput, contractCitation, line } from './test-support';
+import { HAND_WRITTEN, MISSTATED, STATED, assemblyInput, contractCitation, line, roleContents, roleOracle } from './test-support';
 import { type VerifierReport, identifierForms, verifyNarrative } from './verifier';
 import { identifierSpans } from './verifier/mismatches';
 
@@ -26,7 +26,6 @@ const EXPECTED = JSON.parse(readFileSync(fileURLToPath(new URL('../../../fixture
 };
 
 const content = assemblePacket(assemblyInput());
-const facts = narrativeFacts(content);
 const verify = (narrative: string, of: PacketContent = content, identifiers: readonly string[] = []) => verifyNarrative(narrative, narrativeFacts(of), identifiers);
 const codes = (report: VerifierReport) => report.mismatches.map((mismatch) => mismatch.code);
 
@@ -172,10 +171,11 @@ describe('figures in other characters', () => {
       expect(report.passed, narrative).toBe(false);
       expect(codes(report), narrative).toContain(code);
     }
-    // Read, a figure in words is checked like any other: twice is 2 (each line's units) and March fifth
-    // a service date, both of which this content holds.
-    expect(verify('Each line billed twice [3].').passed).toBe(true);
+    // Read, a figure in words is checked like any other: March fifth is a service date this content holds. Twice is
+    // 2 of nothing its words name, so it fails as a number with no role would (docs/adr/0086); "2 units" passes.
     expect(verify('A line was billed on March fifth [3].').passed).toBe(true);
+    expect(codes(verify('Each line billed twice [3].'))).toEqual(['figure_not_in_input']);
+    expect(verify('Each line billed 2 units [3].').passed).toBe(true);
   });
 
   it('reads a figure the input holds in compatibility digits as that figure, and says where a hidden one is', () => {
@@ -273,10 +273,12 @@ describe('the edges of the check', () => {
     ]);
   });
 
-  it('accepts a five-digit figure read as a code when the inputs hold it as a number', () => {
+  it('reads a five-digit figure as the number its words make it, and only then as one', () => {
     const paged = assemblePacket(assemblyInput({ citation: contractCitation({ page: 12345 }) }));
     expect(verify('The clause is on page 12345 [1].', paged).passed).toBe(true);
-    expect(verify('The clause is on page 12345 [1].').mismatches.map((item) => [item.code, item.kind])).toEqual([['figure_not_in_input', 'code']]);
+    expect(verify('The clause is on page 12345 [1].').mismatches.map((item) => [item.code, item.kind])).toEqual([['figure_not_in_input', 'number']]);
+    // Named as nothing but a code, it is a code: the page's 12345 is no procedure code.
+    expect(verify('CPT 12345 was billed [1].', paged).mismatches.map((item) => [item.code, item.kind])).toEqual([['figure_not_in_input', 'code']]);
   });
 
   it('compares each identifier whole and word by word, in NFKC, longest first', () => {
@@ -354,20 +356,68 @@ const contentArbitrary = fc.array(lineArbitrary, { minLength: 1, maxLength: 8 })
 
 /**
  * Counts for the properties below: any from 2 to 100,000, and a quarter of the time one beside a figure the inputs hold
- * (each numeric code and its neighbours, the service year and the next), where in and not in the input meet. A
- * five-digit count reads as a procedure code, so one equal to an input's code is that code (97140 at seed 2019154346).
+ * (each numeric code and its neighbours, the service year and the next), where in and not in the input meet.
  */
 const countArbitrary = fc.oneof(
   { weight: 3, arbitrary: fc.integer({ min: 2, max: 100_000 }) },
   { weight: 1, arbitrary: fc.constantFrom(...CODES.filter((code) => /^\d+$/.test(code)).flatMap((code) => [-1, 0, 1].map((step) => Number.parseInt(code, 10) + step)), 2026, 2027) },
 );
-/** Whether the verifier finds a count, written in ASCII digits, in the inputs: among their numbers, or their codes. */
-const inInput = (generated: PacketContent, count: number) => {
-  const facts = narrativeFacts(generated);
-  return facts.numbers.has(String(count)) || facts.codes.has(String(count));
+/**
+ * Whether "It affected N visits" states a count the inputs hold: visits are lines or claims (../roles.ts), and a
+ * five-digit N after "affected" is a count, never the code (only an article or a preposition before it makes it
+ * the code of the visits). The oracle reads the content's fields (./role-examples.ts roleOracle()), not the facts.
+ */
+const visitsHeld = (generated: PacketContentV2, count: number) => {
+  const oracle = roleOracle(generated);
+  return ['lines', 'claims'].some((role) => oracle.get(role)?.has(String(count)) === true);
+};
+/** Every amount any role's inputs hold. */
+const amountsHeld = (generated: PacketContentV2) => {
+  const oracle = roleOracle(generated);
+  return new Set(['expected', 'allowed', 'paid', 'variance', 'interest', 'patient_share', 'calculation'].flatMap((role) => [...(oracle.get(role) ?? [])]));
+};
+/** The first amount from `from` up that no input holds: a value not held, by construction (no fc.pre). */
+const notHeldAmount = (generated: PacketContentV2, from: bigint) => {
+  const held = amountsHeld(generated);
+  let amount = from;
+  while (held.has(amount.toString())) {
+    amount += 1n;
+  }
+  return amount;
 };
 
-const FILLER = ['the', 'payer', 'paid', 'these', 'lines', 'under', 'its', 'contract', 'short', 'of', 'what', 'it', 'requires', 'and'] as const;
+/** Words that name no role of any figure (no cue, no label, no noun), so the figure beside them keeps its own words'. */
+const FILLER = ['the', 'payer', 'these', 'under', 'its', 'of', 'what', 'it', 'and', 'so', 'here', 'note'] as const;
+
+/** Each role's words around a figure the inputs hold in it (../roles.ts), the figure written where `{}` is. */
+const ROLE_WORDS: Readonly<Record<string, string>> = {
+  lines: '{} lines',
+  claims: '{} claims',
+  patients: '{} patients',
+  units: '{} units in all',
+  line_units: '{} units per line',
+  row: 'line {}',
+  claim_row: 'claim {}',
+  patient_row: 'patient {}',
+  version: 'version {}',
+  citation_page: 'the clause on page {}',
+  window_page: 'the window on page {}',
+  window_days: 'within {} days',
+  release: 'release {}',
+  level: 'a level {} appeal',
+  expected: 'expected {}',
+  allowed: 'allowed {}',
+  paid: 'paid {}',
+  variance: 'a shortfall of {}',
+  patient_share: 'a {} patient share',
+  calculation: '{}',
+  service_date: 'billed on {}',
+  paid_date: 'paid on {}',
+  effective_date: 'effective {}',
+};
+
+/** The amount roles, whose values the pool writes in dollars. */
+const AMOUNT_ROLE_NAMES = { expected: true, allowed: true, paid: true, variance: true, patient_share: true, calculation: true } as const;
 
 describe('properties of the verifier', () => {
   it('passes the code-built draft of any pattern', () => {
@@ -382,8 +432,8 @@ describe('properties of the verifier', () => {
 
   it('fails a draft into which any amount not in the input is written', () => {
     fc.assert(
-      fc.property(contentArbitrary, fc.bigInt({ min: 1n, max: 10_000_000n }), fc.boolean(), (generated, amount, sign) => {
-        fc.pre(!narrativeFacts(generated).amounts.has(amount.toString()));
+      fc.property(contentArbitrary, fc.bigInt({ min: 1n, max: 10_000_000n }), fc.boolean(), (generated, from, sign) => {
+        const amount = notHeldAmount(generated, from);
         const written = `${sign ? '$' : ''}${formatCents(cents(amount))}`;
         const narrative = `${draftNarrative(generated)} The payer kept ${written} [3].`;
         const report = verify(narrative, generated);
@@ -397,7 +447,7 @@ describe('properties of the verifier', () => {
     fc.assert(
       fc.property(contentArbitrary, countArbitrary, (generated, count) => {
         const narrative = `${draftNarrative(generated)} It affected ${String(count)} visits [3].`;
-        expect(flagged(narrative, verify(narrative, generated))).toEqual(inInput(generated, count) ? [] : [String(count)]);
+        expect(flagged(narrative, verify(narrative, generated))).toEqual(visitsHeld(generated, count) ? [] : [String(count)]);
       }),
     );
   });
@@ -413,19 +463,17 @@ describe('properties of the verifier', () => {
     );
   });
 
-  it('passes any narrative made of the inputs’ own figures, prose and markers', () => {
+  it('passes any narrative made of the inputs’ own figures, each with its role’s words, prose and markers', () => {
     fc.assert(
       fc.property(
         contentArbitrary,
         fc.array(fc.tuple(fc.array(fc.constantFrom(...FILLER), { minLength: 1, maxLength: 4 }), fc.nat(), fc.constantFrom(1, 2, 3)), { minLength: 1, maxLength: 6 }),
         (generated, sentences) => {
-          const own = narrativeFacts(generated);
-          const pool = [
-            ...[...own.amounts].filter((amount) => !amount.startsWith('-')).map((amount) => `$${formatCents(cents(BigInt(amount)))}`),
-            ...[...own.dates],
-            ...[...own.codes],
-            ...[...own.numbers].filter((number) => /^\d+$/.test(number)),
-          ];
+          const oracle = roleOracle(generated);
+          const written = (role: string, value: string) => (/_date$/.test(role) ? value : role in AMOUNT_ROLE_NAMES ? `$${formatCents(cents(BigInt(value)))}` : value);
+          const pool = Object.entries(ROLE_WORDS).flatMap(([role, words]) =>
+            [...(oracle.get(role) ?? [])].filter((value) => !value.startsWith('-')).map((value) => words.replace('{}', written(role, value))),
+          );
           const narrative = sentences
             .map(([words, pick, marker]) => `${words.join(' ')} ${pool[pick % pool.length] ?? ''} [${String(marker)}].`)
             .map((sentence) => sentence.charAt(0).toUpperCase() + sentence.slice(1))
@@ -444,7 +492,7 @@ describe('properties of the verifier', () => {
           // Digits it does not read fail whatever their value.
           expect(report.passed).toBe(false);
           expect(codes(report)).toContain('unreadable_figure');
-        } else if (inInput(generated, count)) {
+        } else if (visitsHeld(generated, count)) {
           // Read as ASCII digits, a count in the input is that figure, as in the property above.
           expect(codes(report)).not.toContain('figure_not_in_input');
         } else {
@@ -495,9 +543,14 @@ describe('properties of the verifier', () => {
   });
 });
 
-it('holds the facts of the CAS-08 content', () => {
-  expect([...facts.amounts]).toEqual(expect.arrayContaining(['5000', '21000', '30000', '9000']));
-  expect(facts.amounts.has('123456')).toBe(false);
+it('holds the facts of the CAS-08 content, each in its role', () => {
+  // Read in the test, never when the file loads, so the reader's mutants are tried per test (docs/adr/0066, Part 4).
+  const facts = narrativeFacts(content);
+  expect([...heldRoles(facts, 'amount', '5000')]).toEqual(['expected']);
+  expect([...heldRoles(facts, 'amount', '21000')]).toEqual(['allowed']);
+  expect([...heldRoles(facts, 'amount', '30000')]).toEqual(['expected']);
+  expect([...heldRoles(facts, 'amount', '9000')]).toEqual(['variance']);
+  expect(heldRoles(facts, 'amount', '123456').size).toBe(0);
 });
 
 // ---------------------------------------------------------------------------------------------------
@@ -514,16 +567,13 @@ describe('the check: the inputs each rule separates', () => {
     }),
   );
 
-  it('accepts a day count before its own word, singular or plural, with calendar, business or working and any spaces between', () => {
-    for (const passes of [
-      'It is a 3650 day window [1].',
-      'The window is 3650 business days [1].',
-      'The window is 3650 working days [1].',
-      'The window is 3650 calendar  days [1].',
-      'The window is 3650 business  days [1].',
-      'The window is 3650 working  days [1].',
-    ]) {
+  it('accepts a day count before its own word, singular or plural, with calendar and any spaces between, and business or working days only where the record counts them', () => {
+    for (const passes of ['It is a 3650 day window [1].', 'The window is 3650 calendar  days [1].', 'The window is 3650 calendar days [1].']) {
       expect(verify(passes, window), passes).toMatchObject({ passed: true });
+    }
+    // The contract window counts calendar days (D17): its days are no business or working days.
+    for (const fails of ['The window is 3650 business days [1].', 'The window is 3650 working days [1].', 'The window is 3650 business  days [1].']) {
+      expect(flagged(fails, verify(fails, window)), fails).toEqual(['3650']);
     }
   });
 
@@ -533,10 +583,9 @@ describe('the check: the inputs each rule separates', () => {
     }
   });
 
-  it('takes a day count as days only when its word follows it at once, not later in the text nor joined by a hyphen', () => {
-    for (const fails of ['It billed 3650 units in the days after notice [1].', 'It is a 3650-day window [1].']) {
-      expect(flagged(fails, verify(fails, window)), fails).toEqual(['3650']);
-    }
+  it('takes a day count as days only when its word follows it at once or joined by a hyphen, not later in the text', () => {
+    expect(flagged('It billed 3650 units in the days after notice [1].', verify('It billed 3650 units in the days after notice [1].', window))).toEqual(['3650']);
+    expect(verify('It is a 3650-day window [1].', window).passed).toBe(true);
   });
 
   it('takes a page’s number as a page only right after its word, at the text’s start or after any spaces', () => {
@@ -547,13 +596,15 @@ describe('the check: the inputs each rule separates', () => {
     expect(verify(counted, window).mismatches.map((item) => [item.code, item.kind, item.start])).toEqual([['figure_not_in_input', 'number', counted.lastIndexOf('9')]]);
   });
 
-  it('accepts a month and a day of a month that only a quoted clause names', () => {
+  it('accepts a month and a day of a month that only a quoted clause names, repeated as the clause holds them', () => {
     const quoted = assemblePacket(assemblyInput({ citation: contractCitation({ quote: '97110 is paid 50.00 per unit from July 2026, billed by March 20' }) }));
-    expect(verify('It was paid in July 2026 [1].', quoted).passed).toBe(true);
-    expect(verify('It was billed on March 20 [1].', quoted).passed).toBe(true);
-    // Neither is among the content's dates: the quote alone allows them.
-    expect(verify('It was paid in July 2026 [1].').passed).toBe(false);
-    expect(verify('It was billed on March 20 [1].').passed).toBe(false);
+    expect(verify('The rate applies from July 2026 [1].', quoted).passed).toBe(true);
+    expect(verify('Lines billed by March 20 [1].', quoted).passed).toBe(true);
+    // Neither is among the content's dates: the quote alone allows them, and only as it holds them, never as the
+    // payment's month or a service date (docs/adr/0086).
+    expect(verify('The rate applies from July 2026 [1].').passed).toBe(false);
+    expect(verify('It was paid in July 2026 [1].', quoted).passed).toBe(false);
+    expect(verify('It was billed on March 20 [1].', quoted).passed).toBe(false);
   });
 
   it('accepts a modifier the lines hold, and never takes a modifier for a number', () => {
@@ -562,7 +613,7 @@ describe('the check: the inputs each rule separates', () => {
     expect(verify('The lines with modifier GP were short [3].', modified).passed).toBe(true);
     // 90 is a number the quoted clause holds (90 days), never the modifier 90.
     const quoted = assemblePacket(assemblyInput({ citation: contractCitation({ quote: '97110 is paid 50.00 per unit within 90 days' }) }));
-    expect(verify('It pays within 90 days [1].', quoted).passed).toBe(true);
+    expect(verify('97110 is paid 50.00 per unit within 90 days [1].', quoted).passed).toBe(true);
     expect(verify('The 97110-90 lines were short [3].', quoted).mismatches.map((item) => [item.code, item.kind])).toEqual([['figure_not_in_input', 'modifier']]);
   });
 
@@ -577,5 +628,37 @@ describe('the check: the inputs each rule separates', () => {
   it('puts a mismatch between two sentences in neither of them', () => {
     const between = `Paid short [3].${cp(0x200b)} Next [3].`;
     expect(at(between, verify(between))).toEqual([['hidden_character', -1, cp(0x200b)]]);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------
+// Each figure in the role its words give it (test matrix CAS-43 and CAS-44; docs/adr/0086): the design's every class of
+// a figure stated in another role fails at that figure, and every way of stating a figure in its own role, the
+// hand-written ones among them, passes.
+// ---------------------------------------------------------------------------------------------------
+
+describe('a figure stated in another role (CAS-43)', () => {
+  const contents = roleContents();
+  it.each(MISSTATED)('$id: fails at the figure, with its kind', ({ content, narrative, figure, kind }) => {
+    const report = verify(narrative, contents[content]);
+    expect(report.passed).toBe(false);
+    expect(report.mismatches.map((item) => [item.code, item.kind, item.sentence, narrative.slice(item.start, item.end)])).toEqual([['figure_not_in_input', kind, 0, figure]]);
+  });
+});
+
+describe('a figure stated in its own role, or as a quoted text holds it (CAS-44)', () => {
+  const contents = roleContents();
+  it.each([...STATED, ...HAND_WRITTEN])('$id: passes', ({ content, narrative }) => {
+    expect(verify(narrative, contents[content]).mismatches).toEqual([]);
+  });
+
+  it('holds at least a hundred hand-written forms, none of them a drafting template’s', () => {
+    expect(HAND_WRITTEN.length).toBeGreaterThanOrEqual(100);
+    // No hand-written sentence opens with a drafted sentence's first four words.
+    const opening = (sentence: string) => sentence.split(' ').slice(0, 4).join(' ');
+    const drafts = new Set(Object.values(contents).flatMap((content) => draftNarrative(content).split(/(?<=\])\. /).map(opening)));
+    for (const { narrative } of HAND_WRITTEN) {
+      expect(drafts.has(opening(narrative)), narrative).toBe(false);
+    }
   });
 });

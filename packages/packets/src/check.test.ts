@@ -2,11 +2,11 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { assemblePacket } from './assemble';
-import { checkNarrative } from './check';
+import { checkFigures, checkNarrative } from './check';
 import { draftNarrative } from './draft';
 import { narrativeFacts } from './facts';
 import { assemblyInput } from './test-support';
-import { verifyNarrative } from './verifier';
+import { checkedFigures, verifyNarrative } from './verifier';
 
 /**
  * The builder's check in the browser (@tp/packets/check) says what the stored verifier says: the same
@@ -34,5 +34,19 @@ describe('checkNarrative', () => {
         expect(check).toEqual({ passed: stored.passed, sentences: stored.sentences, checked: stored.checked, mismatches: stored.mismatches });
       }),
     );
+  });
+
+  it('says what each figure was read as, whether it passed, and where the inputs hold a failing one (docs/adr/0086)', () => {
+    // A hidden character before the second sentence moves its positions in the readable text, not in the narrative.
+    const narrative = 'There were 3 claims [3].\u200b The shortfall was $210.00 and the payer allowed 3650 [3].';
+    const figures = checkFigures(narrative, content);
+    expect(figures.map((figure) => [narrative.slice(figure.start, figure.end), figure.kind, figure.roles, figure.passed, figure.heldAs, figure.sentence])).toEqual([
+      ['3', 'number', ['claims'], true, [], 0],
+      ['$210.00', 'amount', ['variance'], false, ['allowed'], 1],
+      ['3650', 'number', null, false, ['window_days'], 1],
+    ]);
+    expect(checkedFigures(narrative, narrativeFacts(content))).toEqual(figures);
+    // A figure no input holds in any role is held in none.
+    expect(checkFigures('The payer kept $1.23 [3].', content).map((figure) => [figure.passed, figure.heldAs])).toEqual([[false, []]]);
   });
 });
