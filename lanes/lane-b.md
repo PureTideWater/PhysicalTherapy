@@ -981,3 +981,15 @@ HANDOFF.md; LANES.md rule 10).
   - CI on 46974a25: unit, db 1 to 4, e2e 1 and 2, lint, static, build, mutation, capacity, screening-capacity gate and approval-of-record are green.
   - Red: `domain model` (expected: only the founder's approval line, hash `b23fed0e…`) and `images` (being root-caused now).
 - Eight sessions told to resume: the schema chain, SUITE-CAP-1a, packet day counts, download refusals, screening-result-tables, CI P1, #120, and ux-forms (UX PR 10).
+
+### 2026-10-28 05:50 UTC: #42's `images` failure root-caused; its final round started
+- `images` on 46974a25 was not #42's code. #77's image identity steps pass the whole build-push-action metadata into one environment variable, and buildx's metadata carries the pull_request event, description included. #42's description (95,324 characters) made it 132,387 bytes, over Linux's 131,072, so bash never started. Push runs pass, and a re-run cannot help.
+- The fix goes to the base as `co-001/ci-images-digest` (the CI session): pass only the config digest.
+- #42's final round (wf_fb12f910-d87):
+  - merge #74 and port the same fix;
+  - run the checks the delta needs;
+  - push once;
+  - cut the description below GitHub's 65,536-character cap, moving the review tables to `approval-summaries/pr6b4-review-record.md`;
+  - post one PR comment on the images failure;
+  - a fresh-clone verification reading CI.
+- Then I post the approval line as a suggested change and tell the founder exactly what to do.
