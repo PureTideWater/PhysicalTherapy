@@ -10,29 +10,24 @@ Forms keep what the person typed, and name the refused field (the UX baseline re
 session_01VNsi2Kru6pfk8CAbQ2AaYB; stopped cleanly at 2026-10-26 10:10 UTC on the orchestrator's wind-down. The next
 session (Lane A or Lane B) continues from here.
 
-## Now (2026-10-28 00:25 UTC)
-- **PR #74** (draft), pushed head still **4f0b526** (CI: green but FRM-06's e2e test bug, commented). Everything since
-  is **local, not pushed**, one push to come: 3b94e23 (the review fix round), ab197e4 (merge of claude/build-platform
-  085299b, #76), a57fbf5 (the fix verifiers' follow-ups), and the UX re-check's three polish fixes (being committed).
-- **WIP on GitHub** (no PR, no CI; never forced): `co-001/wip-ux-forms` 44ed04f (fixers' tree), `-2` ab197e4, `-3` a57fbf5,
-  `-4` e20914b (a57fbf5 plus the polish fixes, uncommitted at the limit stop). **If this container is gone:** check out
-  `co-001/wip-ux-forms-4`'s tree over a57fbf5 (`-3`), finish the polish fixes from
-  `approval-summaries/lane-b-ux-forms-wip/fix3.md`, commit, then the steps below.
-- **Done:** the full local suite on a57fbf5 (`approval-summaries/lane-b-ux-forms-wip/suite.md`): typecheck, lint,
-  lint:copy, lint:logs, verify-content, check:fixtures, synth, licenses, unit 6,367 passed and 1 skipped, golden 376,
-  oracle 687 fixtures, test:db 9,222 passed and 1 skipped (4 shards), build and stamp, e2e 60/60 (2 shards); no mutation
-  shard affected. The UX re-check (`wip/ux-recheck.md`): all 11 UX findings fixed on the shots; three new polish
-  problems from the fix round (the support rule said three to five times, a hash in sans on the chosen-text line,
-  "Already sent" in the failure colour), being fixed: wf_8db44178-8ff (resumed 00:20 after the limit stop at ~23:55).
+## Now (2026-10-28 02:00 UTC)
+- **PR #74** (draft), head **34f7427**, pushed (the fix round's one push), subscribed. It holds: the review fix round
+  3b94e23, the base merge ab197e4 (#76), the verifiers' follow-ups a57fbf5, the UX re-check's polish fixes 001cdbf, the
+  base merge ae26bf7 (0dd1ba7: #77 Playwright 1.64.1 and Chromium 1248, #80) and 34f7427 (matrix.ts word for word).
+  Description rewritten from the template (checks, reviewer table of every finding, galleries), read back identical.
+- **Local checks on the head:** the full local suite on a57fbf5 (unit 6,367, golden 376, oracle 687, db 9,222, e2e 60)
+  and, after the merge, on 34f7427/ae26bf7: typecheck, lint, copy, logs, fixtures, synth, unit 6,524 (browser tests in
+  Chromium 1248), db 9,222, build, stamp, e2e 60/60 against the new brand baselines; no mutation shard affected.
+- **Next:** CI green on 34f7427 (every required check); the fresh-clone verification reading CI (one agent); ready;
+  approval-of-record's re-run; merge with method merge and expectedHeadSha; unsubscribe; then PR 6.
 - **Galleries** (private): before 1280 https://claude.ai/artifact/JTLJX4saVr5nQ59EEvDDo7, 390
   https://claude.ai/artifact/E7CDHT8hUTpPZMq6TKK18J; after the build (4f0b526) 1280
   https://claude.ai/artifact/7f5Xg3Kj8992F1jBTh7Hew, 390 https://claude.ai/artifact/N1ikEiBauh8PDGvVnNNhgU; after the fix
   round (a57fbf5) 1280 https://claude.ai/artifact/X2vUgzfCWqxnZhtyj2MfQw, 390
   https://claude.ai/artifact/22MQXWDuHMMJiNRVzt93tT.
-- **The base moved** to 0dd1ba7 (#77 ci-browser: Playwright 1.64.1, Chromium 1248, regenerated baselines; #80 the letter
-  reader's redaction). Next after the polish commit: merge it with a merge commit (pnpm install, regenerated generated
-  files, shared documents keep both), re-check what it touches (typecheck, lint, unit with the browser tests in the new
-  Chromium, the whole e2e), **one push**, the PR description, the fresh-clone verification reading CI, merge.
+- **WIP refs** (no PR, no CI; superseded by the push, kept, never forced): co-001/wip-ux-forms, -2 to -5.
+- **Deferred:** U-UX-6 to UX PR 10 `co-001/ux-payer-response` (the baseline's UX-035; a blocking defect: a write-off
+  reason and a payer response that open pre-answered). **Proposal to the orchestrator:** claim it soon.
   Check-in trig_01G5QKJaZpoGyZjNqFxKRwXC at 05:26 UTC.
 
 ## Handoff
@@ -138,3 +133,5 @@ session (Lane A or Lane B) continues from here.
 | 2026-10-27 20:50 | Fix round part 1 done; part 2 | wf_723c6bc6-add finished on resume: check 30/30 e2e and every unit, lint and db check green; 15 fix verifiers (13 resolved, 2 short), re-fix of both (25/25 e2e). Committed locally 3b94e23; base #76 merged ab197e4; saved to co-001/wip-ux-forms-2. Part 2 started: wf_7a81ed15-858. |
 
 | 2026-10-28 00:25 | Suite green; polish; limit | Fix round part 2 (wf_7a81ed15-858): polish a57fbf5 (20 follow-ups), the full local suite green on it, the after shots retaken (156) and the UX re-check: 11/11 fixed, 3 new polish problems. Fix-round galleries published. The polish fix (wf_8db44178-8ff) stopped by the limit at ~23:55; WIP saved to co-001/wip-ux-forms-4; PostgreSQL restarted; resumed 00:20. Base moved to 0dd1ba7 (#77, #80): to merge next. |
+
+| 2026-10-28 02:00 | Pushed 34f7427 | Polish fixes 001cdbf verified; base 0dd1ba7 merged (ae26bf7, no conflict; Playwright 1.64.1); the merge re-check (wf_86747e03-b6c): every check green on 34f7427, the merge audit kept both sides (one matrix.ts lag from 001cdbf fixed in 34f7427). One push of the fix round. PR description rewritten (read back identical). Waiting on CI, then the verification. |

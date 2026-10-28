@@ -1,11 +1,11 @@
 # fix3 progress (UX re-check's three polish fixes, PR #74, /home/user/ux-forms, start head a57fbf5)
 
 ## Status
-- [ ] 1. /support rule said once
-- [ ] 2. chosen-text line mono for hashes
-- [ ] 3. duplicate state neutral Alert
-- [ ] checks
-- [ ] commit
+- [x] 1. /support rule said once
+- [x] 2. chosen-text line mono for hashes
+- [x] 3. duplicate state neutral Alert
+- [x] checks
+- [x] commit
 
 ## Notes
 Plan (decided):
@@ -34,3 +34,12 @@ Design edits go to /home/user/ops/designs/lane-b-ux-forms.md (ops repo, already 
 - commit message drafted: scratchpad/fix3-commit-msg.txt
 - e2e-1 interim: forms-keep-input 6/6 passed (support test included); packets running
 - e2e-1 FINISHED: 8/8 passed (forms-keep-input 6, packets 2), exit 0, 22:49Z. (Run 2 resumed 00:17Z: re-verify diff, re-run checks after the during-run edits, cleanup, commit.)
+- Run 2: diff re-read, matches notes (all 3 code + tests + ADR/test-matrix + design 12.4 done). Files changed after e2e-1's start (22:45:33Z: field.tsx, action-form.tsx, form-issues.tsx, submissions page, specs, browser test) -> re-running ALL checks on the final tree: typecheck, lint, lint:copy, unit 4 files, e2e-2.
+- typecheck-2 PASS (22 projects)
+- lint-2 PASS (1,624 files, 0 errors, 0 warnings)
+- lint:copy-2 PASS (517 files)
+- unit-2 PASS (fields, action-form, form-hints, action-form.browser: 4 files 85/85)
+- e2e-2 STARTED 2026-10-28T00:23:44Z: forms-keep-input + packets --workers=2; log fix3-logs/e2e-2.log
+- e2e-2 PASS 8/8 (forms-keep-input 6, packets 2), 00:23:44Z-00:27:59Z
+- cleanup done (DB tp_e2e_fix3 dropped, /tmp/tp-e2e-tp_e2e_fix3-* removed, port 4811 free). #42 overlap check (REST file list): only docs/product/test-matrix.md, a shared doc under LANES rule 6, FRM rows are this branch's own. Committing.
+- [x] COMMITTED 001cdbf8 'Forms: the UX re-check's three polish fixes' (15 files); git status clean. Not pushed. DONE.
