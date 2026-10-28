@@ -16,3 +16,13 @@
 - Suite results so far: typecheck 0 (22 projects passed). lint was cut by the interruption (apps/web 624 files 0/0, packages 505 files 0/0 passed; '.' group killed, no result row) -> rerun lint and continue.
 - Step 3 results (bd589960): typecheck 0 (22 projects); lint 0 (1,673 files in 3 groups, 0 errors 0 warnings); lint:copy 0 (529 files); lint:logs 0 (1,081 files); check:fixtures 0 (333 read, 3,908 searched); synth --all 0 (258 cases 0 written/650 unchanged; 8 EMR 0/16) + diff clean + nothing untracked; engine-freeze 0 (no problems)
 - Next: unit golden oracle verify-content (chunk B, started)
+## Resume 2 (2026-10-28 ~05:45 UTC): orchestrator stopped run at bd589960 to take #81 too
+- bd589960's check results above DO NOT COUNT for the push; step 3 restarts from the start on the new head.
+- origin/claude/build-platform now 56ed6279 (#81 SUITE-CAP-1a: d3a9a3d7, 483c3167, f25333a6). PR head on origin still 46974a25.
+- [ ] 1b merge 56ed6279 after bd589960 (own merge commit), generators, tables.test
+- [x] 1b MERGED 56ed6279 (#81) -> 17e233f0 (parents bd589960, 56ed6279), clean. Files both sides changed (auto-merged): docs/product/test-matrix.md, packages/synth/src/cases/matrix.ts, registry.ts (CAS-41), watched-paths.txt (+csv-arena.ts). db-shards.test 15 slow-first = 12 route tests (unchanged by #42) + lease + 2 CAS-41. Generators: install --frozen-lockfile 'Already up to date' (lock ba976a82 unchanged); watched.ts --write 544 lines, nothing beyond the merge; synth --all 259 cases 0 written/651 unchanged, 8 EMR 0/16; nothing untracked under fixtures/. tables.test.ts 7/7, exemptions 1/2/1 unchanged (#81 touches no apps/web) -> no edit.
+- [ ] 3 checks on 17e233f0 FROM THE START (new results dir scratchpad/pr42f/suite2)
+## Step 3 decisions RE-DERIVED on 17e233f0 (delta 46974a25...17e233f0 = #74 + port + #81; 138 changed paths)
+- MUTATION: affected.ts --event pull_request --base 46974a25 -> money/pricing/ledger/packets not affected, "shards: none (no money path changed)" -> no shard, no gate (scratchpad/pr42f-affected2.out). #81's reconcile/report/triage files are apps/worker, outside every mutation closure.
+- CAPACITY: screening-capacity.yml's own matching (base+head watched lists vs diff) -> 27 watched hits incl. #81's triage/execute.ts, report/content.ts, csv-arena.ts, generate.ts, reconcile/patient-share.ts, remittances.ts (scratchpad/pr42f-watched-hits2.txt) -> run S1,S4 --time-mode binding, FRESH --out
+- e2e: 2 shards (public repo -> CI's [1,2]), one playwright project 'chromium'
