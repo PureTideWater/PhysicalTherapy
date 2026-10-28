@@ -1,0 +1,591 @@
+[
+ {
+  "head": "f5bd6201632052613970f4b19bb004eb7a8194a7",
+  "pr42_sha": "6f23c42bd54747577b5bd77b64e43e9243421b42",
+  "domain_model_sha256": "6559c5b90af3d1249e80d9369da18885971e118fbd4411c4a6a5bb8775c2fadc",
+  "approval_line_number": 7413,
+  "checks": [
+   {
+    "command": "git fetch origin co-001/pr-06b-mail-streams; git merge --no-ff origin/co-001/pr-06b-mail-streams",
+    "passed": true,
+    "note": "#42's head was exactly 6f23c42b. The only conflict was docs/product/domain-model.md, which was regenerated. settings.ts, test-matrix.md and synth matrix.ts merged on their own with no overlapping hunks, and both sides were kept. Merge commit f5bd6201 was pushed after the pre-push hook passed (fixture guard and gitleaks)."
+   },
+   {
+    "command": "pnpm install; pnpm -s exec tsx tools/screening-capacity/watched.ts --write",
+    "passed": true,
+    "note": "Neither the lockfile nor watched-paths.txt changed after regeneration (537 lines)."
+   },
+   {
+    "command": "pnpm db:migrate && pnpm db:domain-model --out --strict (fresh tp_ss01_m_1 from empty, dropped after)",
+    "passed": true,
+    "note": "46 migrations applied. 99 tables, 1 view, 229 divergence rows (23 to approve), 0 explanation problems. 381 function files with 0 written and 0 removed. Cross-checks: Drizzle 98 = migrated 98, 0 column differences, catalogProblems 0."
+   },
+   {
+    "command": "pnpm -s db:domain-model --check",
+    "passed": true,
+    "note": "The document and functions match the schema at 20261108090000. SHA-256 is 6559c5b9...c2fadc and the approval line is at 7413."
+   },
+   {
+    "command": "pnpm -s db:domain-model --check --require-approval",
+    "passed": false,
+    "note": "Expected failure (exit 1): the line is unapproved, with no name or date."
+   },
+   {
+    "command": "pnpm typecheck",
+    "passed": true,
+    "note": "22 projects passed."
+   },
+   {
+    "command": "NODE_OPTIONS=--max-old-space-size=6144 pnpm lint",
+    "passed": true,
+    "note": "1,654 files, 0 errors, 0 warnings."
+   },
+   {
+    "command": "pnpm lint:copy",
+    "passed": true
+   },
+   {
+    "command": "pnpm lint:logs",
+    "passed": true,
+    "note": "1,074 files scanned."
+   },
+   {
+    "command": "pnpm test",
+    "passed": true,
+    "note": "390 files, 6,492 passed and 4 skipped. apps/worker/src/web-entries.test.ts now passes: 3/3 when run alone."
+   },
+   {
+    "command": "pnpm db:migrate && pnpm test:db --shard=k/4 (k=1..4, each on a fresh tp_ss01_m_s<k>, run one after another, dropped after)",
+    "passed": true,
+    "note": "Shard 1: 34 files, 3,292 passed and 1 skipped. Shard 2: 33 files, 2,658. Shard 3: 33 files, 2,568. Shard 4: 33 files, 982. Total: 133 files, 9,500 passed and 1 skipped. The skip is restore-drill's pg_dump case: pg_dump 16 cannot dump PostgreSQL 18, and /opt/pg18 has no client tools, so PG_BIN_DIR cannot close it."
+   },
+   {
+    "command": "pnpm verify-content",
+    "passed": true
+   },
+   {
+    "command": "pnpm synth --all",
+    "passed": true,
+    "note": "245 cases, 0 files written. 8 EMR formats, 0 written."
+   },
+   {
+    "command": "pnpm check:fixtures",
+    "passed": true
+   },
+   {
+    "command": "playwright test e2e/billing.spec.ts (E2E_PORT=4961, E2E_DATABASE=tp_ss01_m_e2e on 5433, dropped after)",
+    "passed": true,
+    "note": "6 passed. It ran because #42 also changed apps/web/src/lib/routes/settings.ts, which SS-01 touches too (separate hunks)."
+   }
+  ],
+  "migration_changes": [
+   "None. #42's new commits leave the audit_event_record policy alone: its body and reserved list are the same as in 20261107090000 at 098636e3. On the merged database, pg_get_expr(polwithcheck) is #42's body with organization_suspended and organization_reinstated added, which is what SS-01 intends.",
+   "The function sets do not overlap. #42 changed 13 mail and screening function files (mail_recipient_canonical, mail_recipient_sha256, mail_stream_cutoff, mail_window_counts, operator_mail_cutoff, operator_record_mail_event, screening_bounce_budget_spent, screening_contact_refused, screening_run_mail_refusal replacing screening_run_bounce_budget, screening_submit_mail_refusal, screening_upload_mail_gate, console_mail_streams). SS-01 has 14 function files of its own (practice_* holds and refusals, console_set_organization_status, organization_status_rules, practice_grants, packet_export_refusal_codes, refuse_new_work_while_suspended, reject_change, app_actor_platform_permitted, run_starting_permissions, and organization_run_refusal, which it drops). Regeneration wrote 0 function files, so pg_get_functiondef on the merged database matches SS-01's function files at d763ba78.",
+   "#42 does not touch the organization table, its grants, practice_grants or any trigger SS-01 recreates. No #42 code calls organization_run_refusal."
+  ],
+  "open_items": [
+   "For #42's own review, not SS-01's: hazard read of #42's changed function files since the merge's first parent. Both new SECURITY DEFINER functions set search_path to pg_catalog, public, pg_temp and revoke PUBLIC. Each has exactly one grant: operator_mail_cutoff(text) to tp_operator, and screening_submit_mail_refusal(text,text,text) to tp_app. These are grants on new functions, not new grants to existing ones. No app.* settings, dynamic EXECUTE, LEAKPROOF, STRICT change or owner change.",
+   "restore-drill.db.test.ts's pg_dump case stays skipped here for an environmental reason: there are no PostgreSQL 18 client tools under /opt/pg18/bin, so PG_BIN_DIR=/opt/pg18/bin fails with 'pg_dump could not be started'. This matches the skip recorded in earlier CI runs.",
+   "Differences from the design: none. SS-01's migration is unchanged and the marker route was not used.",
+   "Progress file: /tmp/claude-0/-home-user-PhysicalTherapy/2d6572d6-2076-5676-9f8f-7a15571707e4/scratchpad/progress/ss01-merge42.md"
+  ]
+ },
+ {
+  "summary": "Builder D's database part of SUITE-CAP-1b (slices 2 and 3) is built, committed as db64ad00 and pushed to co-001/suite-cap-1-triage-locks. The branch was cut from f5bd6201.\n\nWhat it contains:\n- One migration, 20261109090000_line_status_heads.sql, written through the marker route. It does six things:\n  - Preflight asserts the three bodies it replaces and that no claim_by_superseded index exists yet.\n  - One combined NOWAIT lock loop over claim and line_status, run once before the backfill.\n  - The line_status_head table (id primary key, unique index line_status_head_once), with forced RLS, a registry row, a tenant policy and the never_deleted/no_truncate guards.\n  - A backfill of every line's latest event.\n  - claim_by_superseded, built under the lock the loop already holds.\n  - line_status_rules() becomes a SECURITY DEFINER that writes the head row as the line's lock. Under the granted freeze exception, the two ledger triggers take the practice's ledger: key. Their regenerated function files differ only in the lock line (plus the generated body-hash header line).\n- The Drizzle mirror, areas.json, the regenerated domain model and five function files, the CAS-40 tests (40.1 to 40.5 and 40.7 to 40.11 in packages/db, 40.6 in apps/worker), and the catalog and migrate test lists. watched-paths.txt came out unchanged when regenerated.\n\nFailing first on the base (f5bd6201):\n- line-status.db.test.ts failed 14 of 14:\n  - 40.2 stored flagged, actionable, validated: the event-order race reproduced.\n  - 40.9 and 40.10 hit 53200 \"out of shared memory\".\n  - 40.8 failed on four points: the rules function was not a definer, there was no index, there was no migration file, and the ledger bodies were unchanged.\n  - The guard tests (40.1, 40.3, 40.4) failed only when they read the head table, after their rule checks had passed.\n- stage-head.db.test.ts failed 1 of 1: the head table did not exist.\n- After the migration, all 15 pass. 40.11 printed 966 ms for 10,000 events and 4,401 ms for 40,000.\n\nOne difference from the design: line_status_head grants SELECT to tp_app. The design and the re-read said no grant at all. Without it, access.db.test.ts (6 tests) and cross-tenant.db.test.ts (8 tests) fail with permission denied, because they read every tenant table as tp_app, and I was told not to change those tests. There is still no write grant to any role, and the trigger remains the only writer.",
+  "head": "db64ad00805ff8ae7d21bfa7cfdbe1bc48100e70",
+  "files": [
+   "/home/user/sc1b/packages/db/migrations/20261109090000_line_status_heads.sql",
+   "/home/user/sc1b/packages/db/src/schema/triage.ts",
+   "/home/user/sc1b/packages/db/src/schema/remittances.ts",
+   "/home/user/sc1b/packages/db/src/schema/index.ts",
+   "/home/user/sc1b/packages/db/domain-model/areas.json",
+   "/home/user/sc1b/docs/product/domain-model.md",
+   "/home/user/sc1b/packages/db/functions/line_status_rules.sql",
+   "/home/user/sc1b/packages/db/functions/ledger_entry_within_evidence.sql",
+   "/home/user/sc1b/packages/db/functions/ledger_entry_within_line.sql",
+   "/home/user/sc1b/packages/db/functions/triage_never_deleted.sql",
+   "/home/user/sc1b/packages/db/functions/triage_no_truncate.sql",
+   "/home/user/sc1b/packages/db/src/line-status.db.test.ts",
+   "/home/user/sc1b/apps/worker/src/reconcile/stage-head.db.test.ts",
+   "/home/user/sc1b/packages/db/src/catalog.db.test.ts",
+   "/home/user/sc1b/packages/db/src/migrate.db.test.ts",
+   "/tmp/claude-0/-home-user-PhysicalTherapy/2d6572d6-2076-5676-9f8f-7a15571707e4/scratchpad/progress/sc1b-db.md",
+   "/tmp/claude-0/-home-user-PhysicalTherapy/2d6572d6-2076-5676-9f8f-7a15571707e4/scratchpad/sc1b/20261109090000_line_status_heads.sql"
+  ],
+  "checks": [
+   {
+    "command": "DATABASE_URL=.../postgres pnpm exec vitest run --project db packages/db/src/line-status.db.test.ts (on base f5bd6201, before the migration)",
+    "passed": false,
+    "note": "Expected failing-first: 14 of 14 failed (40.2 order fault, 40.9 and 40.10 hit 53200, 40.8 found no definer, index, migration or ledger change, the rest found no head table). Log: scratchpad/sc1b/cas40-base2.log"
+   },
+   {
+    "command": "vitest run --project db apps/worker/src/reconcile/stage-head.db.test.ts (on base)",
+    "passed": false,
+    "note": "Expected failing-first: 1 of 1 failed (relation line_status_head does not exist)"
+   },
+   {
+    "command": "vitest run --project db packages/db/src/line-status.db.test.ts apps/worker/src/reconcile/stage-head.db.test.ts (head)",
+    "passed": true,
+    "note": "15 of 15 passed"
+   },
+   {
+    "command": "pnpm db:migrate on fresh tp_sc1b_d_1 (47 migrations from empty)",
+    "passed": true
+   },
+   {
+    "command": "pnpm db:migrate --dry-run on tp_sc1b_d_2, migrated to the 46 earlier migrations",
+    "passed": true,
+    "note": "Applied and rolled back 20261109090000; database unchanged"
+   },
+   {
+    "command": "pnpm db:domain-model --out --strict (fresh database)",
+    "passed": true,
+    "note": "Cross-checks: Drizzle 99 tables = migrated 99, no differences, catalogProblems 0. Five function files written; the two ledger files differ only in the lock line (and the generated body-hash header)"
+   },
+   {
+    "command": "pnpm -s db:domain-model --check",
+    "passed": true,
+    "note": "Matches the schema at 20261109090000; SHA-256 b57f9391... at first generation (the line regenerated after the grant change carries the current hash)"
+   },
+   {
+    "command": "pnpm -s exec tsx tools/screening-capacity/watched.ts --write",
+    "passed": true,
+    "note": "537 lines, no change"
+   },
+   {
+    "command": "flock pnpm typecheck",
+    "passed": true,
+    "note": "22 projects passed (run twice, the second after the last edits)"
+   },
+   {
+    "command": "flock pnpm lint",
+    "passed": true,
+    "note": "1,656 files, 0 errors, 0 warnings (run twice)"
+   },
+   {
+    "command": "vitest run --project unit packages/db",
+    "passed": true,
+    "note": "18 files, 276 tests passed"
+   },
+   {
+    "command": "vitest run --project db packages/db apps/worker/src/{reconcile,triage,report,packets,platform} (first run)",
+    "passed": false,
+    "note": "14 failures, all 'permission denied for table line_status_head' in access.db.test.ts (6) and cross-tenant.db.test.ts (8). Fixed by GRANT SELECT to tp_app"
+   },
+   {
+    "command": "vitest run --project db packages/db apps/worker/src/{reconcile,triage,report,packets,platform} (after the fix)",
+    "passed": true,
+    "note": "52 files: 1861 passed, 1 skipped (a pre-existing Chromium skipIf). Includes catalog, cross-tenant, migrate, access, domain-model and function-files tests, ledger.db (LED-02 to LED-13), ledger-oracle, chain, lines, exports, vendor-exports, settings, payment-terms, report-ledger, triage, packets and restore-drill"
+   },
+   {
+    "command": "git push -u origin co-001/suite-cap-1-triage-locks",
+    "passed": true,
+    "note": "Pre-push hook passed (fixture guard and gitleaks); marker confirmed absent before the commit"
+   }
+  ],
+  "differences_from_design": [
+   "line_status_head grants SELECT to tp_app (no INSERT, UPDATE or DELETE for any role). D4, 4.6 and the re-read said no grant to any login role, but the generated cross-tenant and access tests read every tenant table as tp_app and fail with 42501 without it, and those tests may not change. Reads stay tenant-scoped by forced RLS and show the same current stage tp_app already reads from line_status. The trigger is still the only writer. D4, 2.2 ('the application role has no grant on it'), ADR 0083 and the domain-model wording need this noted.",
+   "Re-read deltas applied: an id primary key plus the unique index line_status_head_once; one combined NOWAIT loop (claim SHARE, then line_status SHARE ROW EXCLUSIVE) run once before the backfill, with claim_by_superseded built under that lock and no loop of its own; CAS-40.7 migrates a temp copy of every migration that sorts before this one; CAS-40.8 holds an open stage insert and an open claim insert and checks that a third connection's stage insert commits both while both are held and after the stage holder ends.",
+   "Each ledger function's one-line ADR 0083 comment sits above its CREATE OR REPLACE, outside the body. Inside the body it would have changed the function file beyond the lock line, which the task forbids. Bodies are cited as :550-577 and :147-198 / :219-270, per the re-read.",
+   "Preflight uses ERRCODE object_not_in_prerequisite_state (and duplicate_object for an existing claim_by_superseded). The design names no code."
+  ],
+  "interfaces": "The table line_status_head (Triage area 'pricing'; registered with policy line_status_head_tenant):\n- Columns: id uuid PK DEFAULT gen_random_uuid(); practice_id uuid NOT NULL; service_line_id uuid NOT NULL; stage text NOT NULL CHECK (flagged | validated | actionable | payer_approved | recovered); seq bigint NOT NULL; created_at and updated_at timestamptz NOT NULL DEFAULT now().\n- Unique index line_status_head_once on (practice_id, service_line_id). No foreign keys.\n- ENABLE and FORCE RLS; policy line_status_head_tenant USING/WITH CHECK practice_id = ANY (current_setting('app.practice_ids', true)::uuid[]).\n- Triggers line_status_head_never_deleted (triage_never_deleted) and line_status_head_no_truncate (triage_no_truncate).\n- REVOKE ALL FROM PUBLIC; GRANT SELECT to tp_app only. Owned by tp_owner.\n\nTrigger behaviour other builders rely on:\n- line_status_rules() keeps its name and timing (BEFORE INSERT OR UPDATE FOR EACH ROW). It is now SECURITY DEFINER, owned by tp_owner, with SET search_path = pg_catalog, public, pg_temp and REVOKE ALL FROM PUBLIC. It writes the line's head row first with INSERT ... ON CONFLICT (practice_id, service_line_id) DO UPDATE ... RETURNING WITH (OLD AS prior, NEW AS next).\n- A second writer of the same line waits on that row lock: a transactionid wait in pg_stat_activity, no longer an advisory one.\n- A line's first event keeps its identity seq; every later event draws nextval('line_status_seq_seq') under the lock, so seq follows commit order.\n- No advisory lock is taken per line. Checks and messages are unchanged byte for byte. A refusal undoes the head write with the statement or savepoint.\n- Writers must have app.practice_ids set (asOwner or a scope) for the head write to pass RLS.\n\nThe lock loop's message, word for word, for the runbook, section 6 and CAS-40.8:\nline_status or claim stayed in use for five minutes; run the deploy again (docs/adr/0083)\nIt is raised with ERRCODE lock_not_available after 300 tries one second apart.\n\nThe two ledger functions' changed line:\n- ledger_entry_within_evidence() (body :147-198), line `  PERFORM pg_advisory_xact_lock(hashtextextended('ledger_evidence:' || row_id::text, 0));` becomes `  PERFORM pg_advisory_xact_lock(hashtextextended('ledger:' || NEW.practice_id::text, 0));`\n- ledger_entry_within_line() (body :219-270), inside its IF and indented four spaces, `    PERFORM pg_advisory_xact_lock(hashtextextended('ledger_line:' || NEW.service_line_id::text, 0));` becomes `    PERFORM pg_advisory_xact_lock(hashtextextended('ledger:' || NEW.practice_id::text, 0));`\n- Both stay invokers with the same search_path and ACL {tp_owner=X/tp_owner}.\n\nDrizzle: lineStatusHead and type LineStatusHeadRow are exported from @tp/db's schema; claim gains index claim_by_superseded.",
+  "open_items": [
+   "Deferred until SUITE-CAP-1a merges: slice 1 (the measurement gate), CAS-42.1 and CAS-42.2 (the triage and report large tests), the harness's before-and-after real-size runs, and ADR 0083's edits (status and lock section; 1a creates the file). docs/adr/0083-*.md was not created. The domain model already cites ADR 0083 (from the migration's comments), which does not exist in this tree yet.",
+   "After 1a merges into this branch, regenerate docs/product/domain-model.md and watched-paths.txt on the merged tree from a freshly migrated database. The founder's SHA-256 approval belongs to that final regeneration, never written by a session.",
+   "The decision on GRANT SELECT ON line_status_head TO tp_app (a difference from D4) goes to the design owner and the reviewers. D4, 2.2, ADR 0083's lock section and the runbook should say the application role may read the table within its practices.",
+   "Other builders' parts were not built here: D19 heap line, D23 alarm, the harness (D10, D20, step 7b), CAS-42.3, ADR 0038's note, the runbooks, test-matrix and synth CAS-40/CAS-42 rows, and the reconciliation-001 exception. The synth registry entry for CAS-40 should list packages/db/src/line-status.db.test.ts and apps/worker/src/reconcile/stage-head.db.test.ts.",
+   "The full `pnpm test:db` (web and other worker folders) and `pnpm test:e2e` were not run here; I ran the db tests of packages/db and the worker folders this change touches.",
+   "On the base, CAS-40.9 and 40.10 really do run the shared cluster's lock table out (53200). Anyone re-running the failing-first check should do it under the heavy lock, since it can briefly fail other sessions' tests on port 5433."
+  ]
+ },
+ {
+  "summary": "Builder H finished the heap line (D19) and the heap alarm (D23) and pushed them as f1f9cdf7 on co-001/suite-cap-1-triage-locks, on top of D's db64ad00. Every check passed on my files. The repo-wide `pnpm lint` fails with 3 errors, all in another builder's uncommitted file apps/worker/src/reconcile/reconcile.large.db.test.ts, which I did not touch.\n\nWhat was built:\n- New apps/worker/src/heap.ts. `startHeapWatch()` sets up one shared observer of major garbage collections for the whole process. It is started by `startWorker` and ends when the last worker stops. After each major collection it records the heap in use. `jobHeap()` gives a handle whose `end()` returns the largest value seen since the job began, in MiB rounded up, plus `heap_size_limit` from v8 in MiB rounded down. A job with no collection while it ran reports the latest value from before it began. Before any collection at all, it reports the heap in use at that moment, garbage included, so never zero. heap.ts does not import infra/lib/heap.ts.\n- In worker.ts, `attempt()` opens the handle before running the job. In a `finally` it logs `logger.info('job heap', { job_id, job_type, heap_live_peak_mib, heap_limit_mib })` once per attempt, whether the job completed, failed or had its payload rejected. The message is also exported as `export const JOB_HEAP_MESSAGE = 'job heap';`.\n- In fields.ts, `NUMERIC_LOG_FIELDS` is now `['elapsed_ms', 'record_count', 'heap_live_peak_mib', 'heap_limit_mib']`. fields.test.ts has the new list, the unit regex `/^[a-z]+(_[a-z]+)*_(ms|count|mib)$/` and the title 'milliseconds, a count or mebibytes'.\n- infra/lib/jobs.ts gains `JOB_HEAP_MESSAGE`, `JOB_HEAP_METRIC` (`{ namespace: 'TherapyPlatform/Worker', metricName: 'JobHeapLivePeak' }`) and `JOB_HEAP_ALARM_PERCENT = 75`.\n- monitoring.ts adds a metric filter on the worker log group for `$.msg = \"job heap\"`, taking `$.heap_live_peak_mib`. The alarm `jobHeapAlarm` reads its maximum over 300 s and fires when it is greater than `HEAP_MIB.worker * 75 / 100` (420 MiB). Missing data does not breach, the action is `addAlarmAction(notify)`, and the class comment mentions the alarm.\n- monitoring.test.ts checks the written-out copies in worker.ts and fields.ts (as its existing line 48 does), the 75% / 420 MiB threshold, and the filter and alarm properties. The filter count goes from 22 to 23 and the alarm list gains the new alarm. Its old pin of the `NUMERIC_LOG_FIELDS` line had to be updated, since it is the one other place that pinned the list.\n- watched-paths.txt changed because worker.ts now imports heap.ts, so I regenerated it with `watched.ts --write`. The only change is one added line, apps/worker/src/heap.ts.\n\nTests failed first: with worker.ts restored to the base and no heap.ts, 8 tests failed (all 7 in heap.test.ts and the new one in worker.test.ts). With the change, those two files pass 29 tests. One heap test forces real collections (`--expose-gc` turned on through v8 and vm) and checks that about 64 MiB held across a collection raises the peak by at least 60 MiB. The checks themselves are in the checks list.",
+  "head": "f1f9cdf7980a99c79d9f710c66af23d08269310a",
+  "files": [
+   "/home/user/sc1b/apps/worker/src/heap.ts",
+   "/home/user/sc1b/apps/worker/src/heap.test.ts",
+   "/home/user/sc1b/apps/worker/src/worker.ts",
+   "/home/user/sc1b/apps/worker/src/worker.test.ts",
+   "/home/user/sc1b/packages/observability/src/fields.ts",
+   "/home/user/sc1b/packages/observability/src/fields.test.ts",
+   "/home/user/sc1b/infra/lib/jobs.ts",
+   "/home/user/sc1b/infra/lib/constructs/monitoring.ts",
+   "/home/user/sc1b/infra/test/monitoring.test.ts",
+   "/home/user/sc1b/tools/screening-capacity/watched-paths.txt"
+  ],
+  "checks": [
+   {
+    "command": "npx vitest run src/heap.test.ts src/worker.test.ts (apps/worker), base worker.ts and no heap.ts",
+    "passed": true,
+    "note": "Failing first as intended: 8 failed (7 in heap.test.ts, 1 in worker.test.ts)"
+   },
+   {
+    "command": "npx vitest run src/heap.test.ts src/worker.test.ts (apps/worker), after the change",
+    "passed": true,
+    "note": "29 passed"
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock npx vitest run --project unit apps/worker/",
+    "passed": true,
+    "note": "60 files, 760 tests passed"
+   },
+   {
+    "command": "DATABASE_URL=postgres://postgres:test@localhost:5433/postgres flock /tmp/laneb-heavy.lock npx vitest run --project db apps/worker/src/worker.db.test.ts",
+    "passed": true,
+    "note": "4 passed; the helper creates and drops its own scratch databases"
+   },
+   {
+    "command": "npx vitest run (packages/observability)",
+    "passed": true,
+    "note": "84 passed"
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock pnpm test (infra)",
+    "passed": true,
+    "note": "26 files, 702 tests passed"
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock npx cdk synth --quiet -o <scratchpad>/sc1b/cdk.out (infra)",
+    "passed": true,
+    "note": "tp-dev, tp-staging and tp-production each have the filter (TherapyPlatform/Worker, JobHeapLivePeak, $.heap_live_peak_mib) and the alarm (420, Maximum, 300 s, GreaterThanThreshold, notBreaching). The address-validation stacks have neither, as expected."
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock pnpm typecheck",
+    "passed": true,
+    "note": "22 projects passed"
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock pnpm lint",
+    "passed": false,
+    "note": "4 errors. One was mine (an import() type annotation in heap.test.ts), now fixed. The other 3 are in apps/worker/src/reconcile/reconcile.large.db.test.ts, another builder's uncommitted file: unused parseHandler, plus unsafe call and member access at 195 and 211."
+   },
+   {
+    "command": "npx eslint on my 9 changed .ts files",
+    "passed": true,
+    "note": "clean after the fix"
+   },
+   {
+    "command": "pnpm -s lint:logs",
+    "passed": true,
+    "note": "1075 files scanned; every log call uses allowlisted fields"
+   },
+   {
+    "command": "pnpm -s exec tsx tools/screening-capacity/watched.ts, diffed against watched-paths.txt",
+    "passed": true,
+    "note": "The script has no --check flag, so I diffed its printed output. It added apps/worker/src/heap.ts; regenerated with --write (538 lines)."
+   },
+   {
+    "command": "npx vitest run --project unit tools/screening-capacity/watched",
+    "passed": true,
+    "note": "6 passed after regeneration"
+   },
+   {
+    "command": "git push -u origin co-001/suite-cap-1-triage-locks",
+    "passed": true,
+    "note": "db64ad00..f1f9cdf7; the pre-push fixture guard and gitleaks were clean"
+   }
+  ],
+  "differences_from_design": [
+   "The heap line is logged in attempt(), as 5.4 says, so it covers every job kind: practice, platform and screening jobs, and payloads that are rejected. D19 says 'each practice job'. The alarm's filter is only on the worker log group, so platform and screening lines (their own log groups) are measured but never alarm.",
+   "The alarm threshold is written as HEAP_MIB.worker * JOB_HEAP_ALARM_PERCENT / 100, with JOB_HEAP_ALARM_PERCENT = 75 in infra/lib/jobs.ts. It equals HEAP_MIB.worker * 0.75 = 420, and the test asserts that equality. Comparison is GreaterThanThreshold, one evaluation period.",
+   "The metric filter sets no unit. CloudWatch has no mebibyte unit, and Megabytes would mislabel MiB values.",
+   "Rounding: heap_live_peak_mib is rounded up and heap_limit_mib rounded down, both whole MiB. The design does not say how to round.",
+   "Before any major collection, the value is the heap in use, garbage included, rather than zero. The design covers only 'the latest value from before it began'.",
+   "The heap line uses heap_size_limit, which with --max-old-space-size=560 includes the young generation, so heap_limit_mib reads somewhat above 560. The alarm uses HEAP_MIB.worker (560) as D23 says; the harness's 75% check (D10) uses each line's heap_limit_mib."
+  ],
+  "interfaces": "apps/worker/src/heap.ts: startHeapWatch(): () => void (shared, reference-counted; the observer ends with the last stop); jobHeap(): JobHeap { end(): { heapLivePeakMib: number; heapLimitMib: number } }; onCollections(entries, readLive?) (exported for tests). apps/worker/src/worker.ts: export const JOB_HEAP_MESSAGE = 'job heap'. Each attempt logs info 'job heap' with exactly job_id, job_type, heap_live_peak_mib (integer MiB, rounded up) and heap_limit_mib (integer MiB, rounded down, from v8 heap_size_limit), whether the attempt completed, failed or had its payload rejected. The release-capacity harness (D10) can read these lines back by job_id. infra/lib/jobs.ts: JOB_HEAP_MESSAGE, JOB_HEAP_METRIC { namespace: 'TherapyPlatform/Worker', metricName: 'JobHeapLivePeak' }, JOB_HEAP_ALARM_PERCENT = 75. Monitoring.jobHeapAlarm (construct id JobHeapLivePeak). @tp/observability NUMERIC_LOG_FIELDS = ['elapsed_ms', 'record_count', 'heap_live_peak_mib', 'heap_limit_mib'].",
+  "open_items": [
+   "pnpm lint fails on another builder's uncommitted apps/worker/src/reconcile/reconcile.large.db.test.ts (3 errors at 9:10, 195:20 and 211:88). Reported, not fixed.",
+   "docs/runbooks/incident-response.md needs the heap alarm entry (what it means; first steps: find the job by ID in the worker log, then the weekly run's last summary). That runbook is not in my files.",
+   "When SUITE-CAP-1a merges, watched-paths.txt is regenerated again on the merged tree (D owns that). My regeneration added only apps/worker/src/heap.ts.",
+   "Code comments in heap.ts, worker.ts, jobs.ts and monitoring.ts cite docs/adr/0083, which 1a creates. It does not exist in this tree yet.",
+   "Deferred until 1a merges (not built by H): slice 1, CAS-42.1 and CAS-42.2, the harness's real-size runs, and ADR 0083's edits. ADR 0083's heap section should note the heap line covers every job kind and give the rounding rule."
+  ]
+ },
+ {
+  "summary": "Builder M (slice 7, without ADR 0083) is done and pushed. Commit 16b94d7d on co-001/suite-cap-1-triage-locks, pushed through the pre-push hook (fixture guard and gitleaks both clean).\n\n- **ADR 0038:** a dated 2026-10-28 note under \"Who triages and when\". It says the per-line lock is now a row lock on `line_status_head` (ADR 0083, migration 20261109090000), and that \"an advisory lock per practice\", one transaction per triage and per report, and the stage rules all stay true.\n- **Test matrix:** CAS-40 and CAS-42 come right after CAS-39, word for word from the design's section 7. CAS-41's place is left empty.\n- **Synth:** matching entries in matrix.ts and registry.ts (CAS module, completesIn 8, the design's no-file reasons). `pnpm synth --all` generated fixtures/synthetic/CAS-40 and CAS-42 `expected.json`; nothing was hand-edited.\n- **ci.md:** the release-capacity row now names the reconcile phase, the large-jobs-together phase and the new failing checks. A new \"Reading a red release-capacity run\" covers an attempt, lock-count, live-heap or memory failure.\n- **deploy-and-rollback.md:** new section \"A line's stage lock\". It gives the NOWAIT lock loop and its message word for word (\"line_status or claim stayed in use for five minutes; run the deploy again (docs/adr/0083)\", 55P03), what to do when it fires (run the deploy again), the transactionid wait in place of the advisory one, and D21's rule that you never roll back past SUITE-CAP-1a.\n- **incident-response.md:** the JobHeapLivePeak alarm, marked as operational rather than a security event: what it means and the first steps (find the job by ID in the log, read the weekly run's last summary, fix forward).\n- **reconciliation-001.md, \"Ledger semantics\":**\n  - The old :465 sentence claiming a guard test enforces the freeze is corrected. I confirmed no such test exists: engine-freeze covers only the engine, the golden lines and the rule tables.\n  - The Q1 exception is recorded word for word, with who (the founder, Tyler Williams, relayed by the co-founder) and when (2026-10-27 20:49 UTC).\n  - It states what 4.5 changes: only the lock key in the two functions, `ledger_evidence:` and `ledger_line:` becoming `ledger:`.\n  - It states what stays frozen: no check, refusal, message, amount, stage or entry; the same invoker, search_path, owner, grants and trigger order; packages/ledger untouched; LED-01 to LED-17 and the oracle unchanged.",
+  "head": "16b94d7d",
+  "files": [
+   "/home/user/sc1b/docs/adr/0038-triage-runs-into-anomalies-and-cases-keep-five-stages-and-release-an-audit-report-only-once-a-reviewer-signs.md",
+   "/home/user/sc1b/docs/product/test-matrix.md",
+   "/home/user/sc1b/packages/synth/src/cases/matrix.ts",
+   "/home/user/sc1b/packages/synth/src/cases/registry.ts",
+   "/home/user/sc1b/fixtures/synthetic/CAS-40/expected.json",
+   "/home/user/sc1b/fixtures/synthetic/CAS-42/expected.json",
+   "/home/user/sc1b/docs/runbooks/ci.md",
+   "/home/user/sc1b/docs/runbooks/deploy-and-rollback.md",
+   "/home/user/sc1b/docs/runbooks/incident-response.md",
+   "/home/user/sc1b/docs/product/reconciliation-001.md",
+   "/tmp/claude-0/-home-user-PhysicalTherapy/2d6572d6-2076-5676-9f8f-7a15571707e4/scratchpad/progress/sc1b-docs.md"
+  ],
+  "checks": [
+   {
+    "command": "flock /tmp/laneb-heavy.lock pnpm synth --all",
+    "passed": true,
+    "note": "exit 0; 247 cases; 2 files written (CAS-40, CAS-42 expected.json), 637 unchanged, 0 removed; committed as generated"
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock pnpm exec vitest run packages/synth",
+    "passed": true,
+    "note": "13 files, 185 tests passed"
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock pnpm exec vitest run --reporter=verbose packages/synth/src/fixtures.test.ts",
+    "passed": true,
+    "note": "23 tests passed, including 'points only at tests that exist' and the matrix/registry word-for-word comparison"
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock pnpm verify-content",
+    "passed": true,
+    "note": "every content set passes"
+   },
+   {
+    "command": "markdown relative-link check (python script) over the six changed .md files, plus existence of cited paths",
+    "passed": true,
+    "note": "3 links, 0 broken; infra/lib/heap.ts, apps/worker/src/reconcile/ledger.ts, tools/engine-freeze and the runbooks exist. ADR 0083 is cited in plain text, not linked, since the file does not exist yet"
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock pnpm exec eslint packages/synth/src/cases/matrix.ts packages/synth/src/cases/registry.ts",
+    "passed": true
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock pnpm typecheck",
+    "passed": true,
+    "note": "22 projects passed"
+   },
+   {
+    "command": "git push -u origin co-001/suite-cap-1-triage-locks",
+    "passed": true,
+    "note": "pre-push fixture guard and gitleaks clean; f1f9cdf7..16b94d7d"
+   }
+  ],
+  "open_items": [
+   "Waiting on SUITE-CAP-1a's merge: CAS-42's assertedBy names only the tests on this branch now (tools/release-capacity/checks.test.ts and scenario.test.ts), because the fixtures test 'points only at tests that exist' refuses a missing file. Add apps/worker/src/triage/triage.large.db.test.ts (CAS-42.1/.2, and together.large.db.test.ts if it gets split out) once it exists, then regenerate with pnpm synth --all.",
+   "apps/worker/src/reconcile/reconcile.large.db.test.ts (CAS-42.3) is untracked in the worktree: another builder's work, not yet on the branch. Add it to CAS-42's assertedBy once it is committed, then regenerate the fixture.",
+   "The ci.md release-capacity text describes the harness as section 5.5 designs it: the new checks, the reconcile phase (step 7b), the large-jobs-together phase and the Attempts and Live heap columns. tools/release-capacity on this branch does not have them yet. Check the wording against the harness builder's code once it lands.",
+   "Deferred until 1a merges (from the task): slice 1 (the measurement gate), CAS-42.1 and CAS-42.2, the harness's before-and-after real-size runs, and ADR 0083's status and lock section. Also, from D's difference, ADR 0083 and the runbook should say tp_app may read line_status_head within its practices. docs/adr/0083-*.md was not created.",
+   "CAS-41's matrix and registry rows are 1a's. On merging 1a, its CAS-41 rows go between CAS-39 and CAS-40, with both sides kept.",
+   "The interest PR (designs/ledger-interest-once.md) adds its own dated exception under the same reconciliation-001 'Ledger semantics' check. The PR that merges second keeps both, and should keep the corrected 'no guard test' sentence.",
+   "Not mine, noted: packages/synth/src/cases/matrix.ts and registry.ts already fail `prettier --check` on the base (f1f9cdf7); prettier is not part of pnpm lint, and the generated expected.json files follow the generator's format. I did not reformat them."
+  ],
+  "differences_from_design": [
+   "Registry entries use completesIn 8, as the design's `none(8, ...)` says. The task's 'module 5' is the CAS module, the fifth in CASE_MODULES, which the registry takes from the ID.",
+   "CAS-42's assertedBy names only tests that exist on the branch (checks.test.ts, scenario.test.ts), not the design's full list. The fixtures test refuses tests that are not yet present.",
+   "The design asks for ADR 0083 to be cited, but it is in plain text with no markdown link, because the file is 1a's and does not exist in this tree.",
+   "reconciliation-001's exception describes the ADR 0083 comment as the migration's comment above each CREATE OR REPLACE, outside the function body. That is where builder D put it, and it differs from 4.5's 'each gets a one-line comment'. It also says the two function files change by the lock line plus their body SHA-256 header line, which is what the generated files show.",
+   "The heap alarm went into incident-response.md as section 5.7 says, but as a separate operational section marked 'not a security event', since that runbook is otherwise about security incidents."
+  ]
+ },
+ {
+  "summary": "Builder R is done: CAS-42.3 and the harness code (CAS-42.4/.5, D10, D20, step 7b) are committed and pushed to co-001/suite-cap-1-triage-locks, with no real-size runs.\n\nThe main finding is that CAS-42.3 cannot run at the design's 20,000 lines in CI. The reconcile pass gets slower much faster than its line count grows, and the locks are not the cause. With the lock fix in place (D's head), 2,000 lines took 57.7 s and 6,000 lines took 341.8 s. Setup took 1,177 s at 6,000, so 20,000 would take hours. Three things in the reconcile code cause it:\n- candidatesFor (remittances.ts:179) runs two queries for every open case line on every pass. The by-patient query reads every claim with the same code and date and decrypts each one.\n- claimLines does a recursive read for each line.\n- syncLineStages writes each stage as its own statement. Each statement fires line_status_refresh_cases, which updates the case, and case_rules then recomputes over every line in that case.\n\nSo the test defaults to 2,000 lines; `TP_LARGE_RECONCILE_LINES` sets any other size, 20,000 included. It proves the lock bound at any size. On D's head it passes: 2,000 posted entries, every line recovered, at most 1 advisory lock per backend across 2,202 samples, setup 168.1 s, pass 58.5 s, 230.9 s in all. On the base (f5bd6201) it fails first: the sampled peak was 6,001 locks, about three per line, so the assertion `expected 6001 to be <= 1` fails. At this size the base fails on that bound rather than on 53200 (out of shared memory).\n\nThe test builds its 835s from the LED-06 fixtures' segments. The worker package does not depend on @tp/synth, and adding that dependency would change package.json and the lockfile, which are not mine. Setup runs through the parse, price, triage and reconcile code in chunks of 2,000 lines, which stays inside the base's lock table for each transaction.\n\nHarness changes:\n- **checks.ts:** jobs now carry a phase, their attempt count and their `job heap` line. New failing checks: a measured job completed on a later attempt, or with an unread attempt count; a backend above `ADVISORY_LOCKS_PER_TRANSACTION` (`TRACE_LOCK_BUCKETS`, imported, not copied); a live heap above `HEAP_LIVE_PERCENT = 75` of its limit, or a measured job with no `job heap` line; memory above 90% in any of five sampled periods (the concurrent phase, A's triage, A's audit report, A's reconcile, the large jobs together), or a period sampled too rarely or missing; the large jobs together queued as anything other than 7 jobs; A's posted entries not equal to its actionable lines. Anything unread fails. The summary gains Attempts and Live heap columns, a line per sampled period and an advisory-lock line.\n- **scenario.ts:** adds `largeTogetherLines` (100,000 full size, 2,000 small) for D and E, and ledger settings in `SETTINGS`. `reprocessing()` writes the 835s for step 7b and a posting export with one line-level row per actionable line at its expected amount. Also new: `actionableLines()` and `stagePostingExport()`.\n- **run.ts:** seeds D and E, prices D during setup, stages C's second set of 835s, and samples advisory locks every second on a connection of its own. It samples memory per chain job. Step 7b parses A's reprocessing 835s, then reconciles the posting export in one job. Step 7c queues A's second report, D's triage, E's price and C's four parses together. It also reads `retry_count` and parses each job's heap lines out of the worker log.\n\nThe new harness tests fail first: against the base checks.ts and scenario.ts, both test files fail on import (0 tests run). They pass now (38 tests). A scratch probe, not committed, confirmed step 7b's 835s load against insertClaims' bulk-inserted claims: 95 of 95 reversals linked, 95 originals marked superseded, and the payer and plans were reused rather than created. I ran the full harness neither at small nor at full size: this container has 4 CPUs and the harness stops as RUNNER_TOO_SMALL below the CPU count it needs (runnerTooSmall). ss01 was used only for the base run: a temporary copy of the test, removed afterwards, and the tree left clean.",
+  "head": "358dc53f",
+  "files": [
+   "/home/user/sc1b/apps/worker/src/reconcile/reconcile.large.db.test.ts",
+   "/home/user/sc1b/tools/release-capacity/checks.ts",
+   "/home/user/sc1b/tools/release-capacity/checks.test.ts",
+   "/home/user/sc1b/tools/release-capacity/scenario.ts",
+   "/home/user/sc1b/tools/release-capacity/scenario.test.ts",
+   "/home/user/sc1b/tools/release-capacity/run.ts",
+   "/tmp/claude-0/-home-user-PhysicalTherapy/2d6572d6-2076-5676-9f8f-7a15571707e4/scratchpad/progress/sc1b-harness.md"
+  ],
+  "checks": [
+   {
+    "command": "pnpm typecheck (flock)",
+    "passed": true,
+    "note": "22 projects passed"
+   },
+   {
+    "command": "pnpm lint (flock)",
+    "passed": true,
+    "note": "1,659 files, 0 errors, 0 warnings"
+   },
+   {
+    "command": "pnpm -s lint:logs",
+    "passed": true
+   },
+   {
+    "command": "pnpm exec vitest run --project unit tools/release-capacity/",
+    "passed": true,
+    "note": "38 passed. Failing first: with the base checks.ts and scenario.ts, both test files fail on import (0 tests run)."
+   },
+   {
+    "command": "DATABASE_URL=postgres://postgres:test@localhost:5433/postgres flock /tmp/laneb-heavy.lock pnpm exec vitest run --project db apps/worker/src/reconcile/reconcile.large.db.test.ts (D's head, default 2,000 lines)",
+    "passed": true,
+    "note": "setup 168.1 s, pass 58.5 s (budget 150 s), peak advisory locks per backend 1 over 2,202 samples, 230.9 s in all"
+   },
+   {
+    "command": "the same test on the base, /home/user/ss01 at f5bd6201 (temporary copy, removed)",
+    "passed": false,
+    "note": "Expected failure first: peak 6,001 advisory locks (assertion <= 1), pass 73.3 s"
+   },
+   {
+    "command": "the same test with TP_LARGE_RECONCILE_LINES=6000 (D's head)",
+    "passed": false,
+    "note": "Measurement only: setup 1,177.3 s, pass 341.8 s (over budget), peak locks 1. Shows the pass grows faster than its lines."
+   },
+   {
+    "command": "pnpm -s exec tsx tools/screening-capacity/watched.ts (compared with watched-paths.txt)",
+    "passed": true,
+    "note": "identical; no regeneration needed"
+   }
+  ],
+  "open_items": [
+   "Blocking for the design owner: one reconcile pass grows faster than its line count, independent of locks (2,000 lines 57.7 s, 6,000 lines 341.8 s on 4 CPUs). Causes: candidatesFor's two queries per open case line per pass, the by-patient one decrypting every claim of the same code and date; claimLines' recursive read per line; syncLineStages' one-row stage inserts, each refreshing the whole case through line_status_refresh_cases and case_rules. CAS-42.3 at 20,000 lines and the weekly run's step 7b (about 33k lines at 0.5 vCPU) will exceed a CI shard and likely the 15-minute job attempt until this is fixed. It needs its own item; the code is outside this PR's files and next to the ledger freeze.",
+   "The weekly run's step 7b is therefore expected to fail its first-attempt or completion check at full size until the item above lands. The run also does more work now (D and E seeded at 100k each, D priced, steps 7b and 7c) against the workflow's 180-minute timeout.",
+   "The harness has not been run end to end: this container has 4 CPUs and run.ts stops as RUNNER_TOO_SMALL. A --small smoke run on an 8-CPU runner should come before the real-size before-and-after runs.",
+   "Deferred until SUITE-CAP-1a merges: slice 1 (the measurement gate), CAS-42.1 and CAS-42.2, the harness's before-and-after real-size runs (CAS-42.5/.6), and ADR 0083's edits. docs/adr/0083-*.md was not created.",
+   "Synth registry and fixtures/synthetic/CAS-42/expected.json (docs builder's files): CAS-42's assertedBy should add apps/worker/src/reconcile/reconcile.large.db.test.ts, then regenerate the fixture.",
+   "vitest.config.ts SLOW_FIRST was not changed (the design names only triage.large). reconcile.large takes about 4 minutes; consider adding it to SLOW_FIRST once CAS-42.1/.2 land.",
+   "Not done: a base run at 6,000+ lines to show 53200 itself. It would hold the shared heavy lock about 25 minutes; the base failure was shown by the lock bound instead (6,001 locks)."
+  ],
+  "differences_from_design": [
+   "CAS-42.3 defaults to 2,000 lines, not 20,000 (TP_LARGE_RECONCILE_LINES sets any size), because the reconcile pass grows faster than its lines. On the base it fails first on the sampled bound (6,001 locks against at most 1), not on 53200; 53200 needs more lines than the lock table holds.",
+   "Section 8.4 gives no reconcile time, so CAS-42.3's pass budget is 150 s, about 2.5 times the measured 57.7 s, following 8.4's rule. The pass runs in-process, not in a child process under a 420 MiB heap flag; the design asks for that only for CAS-42.1.",
+   "CAS-42.3's 835s are LED-06's fixture segments repeated under new SYNTHETIC numbers, because @tp/synth is not a dependency of the worker. Lines are spread over 9 days per chunk and 5 codes so the measurement is of the pass's locks, not the per-date matching cost.",
+   "Step 7b reprocesses every claim with an actionable line (reversal plus correction paying the expected amount) in checks of 20 claims, 100 checks per 835, before the posting export. Without a reprocessing remittance no posting row matches anything and nothing would be posted. The approvals and the postings happen in one reconcile job.",
+   "Step 7b's posting export is staged the way intake leaves a clean upload (as C's 835s are staged) and the reconcile job is queued with that document's ID, instead of running the intake job. The reprocessing payment and posting date is 2026-12-31, the original remittance's date.",
+   "New check not named in D10: A's posted entries must equal its actionable lines (fails closed when uncounted), the same kind of check as the priced-line count.",
+   "The lock sampler limits pg_locks to the run's own database (database = current_database()), so other databases on a shared local cluster are not counted.",
+   "Every practice's settings now include proof_level 'posted' and the SYNTHETIC posting template, needed for A's reconcile and harmless for B to E. Memory is sampled in five named periods; the summary's phase column uses the short phase names."
+  ],
+  "interfaces": "checks.ts exports ADVISORY_LOCKS_PER_TRANSACTION (= TRACE_LOCK_BUCKETS, 64), HEAP_LIVE_PERCENT = 75, CONCURRENT_JOBS = 6, TOGETHER_JOBS = 7, SAMPLED_PERIODS = ['the concurrent phase', 'A\u2019s triage', 'A\u2019s audit report', 'A\u2019s reconcile', 'the large jobs together'], type JobPhase = 'setup' | 'concurrent' | 'chain' | 'reconcile' | 'together', JobOutcome { what, name, phase, jobId, state, elapsedMs, attempts, heap: { peakMib, limitMib } | null }, SampledPeriod { what, peakBytes, samples, ms }, WorkerMemory { limitBytes, peakBytes, periods, oomKills, oomKilled, restarts, running }, CapacityMeasurements gains postedEntries, advisoryLocks { peak, samples } | null and expected.postedEntries, and jobHeaps(lines) returns a Map from job ID to the largest { peakMib, limitMib } (it reads the `{\"msg\":\"job heap\",\"job_id\",\"heap_live_peak_mib\",\"heap_limit_mib\"}` lines). scenario.ts exports SETTINGS, ScenarioSize.largeTogetherLines, REPROCESSING_CHECK_CLAIMS = 20, REPROCESSING_CHECKS_PER_FILE = 100, REPROCESSING_PAID_ON, lineKey(claimNo, lineNo), claimNumber(label, claimNo), reprocessing(label, claims, expected) returning { files, postingExport, lines }, actionableLines(seeding, practice, runId) and stagePostingExport(seeding, practice, content). Failing-check wording the runbook may quote: 'X (type) completed on attempt N, not its first (phase)', 'a backend held N advisory locks at once, above 64 (a lock per line or per row is back)', 'X (type jobId) had a live heap of N MiB, above 75% of its L MiB limit (\u2026)', 'X (type) logged no job heap line (phase)', 'the large jobs together queued N jobs, not seven (\u2026)'."
+ },
+ {
+  "head": "358dc53f5340092daf57226a0769486218bd5418",
+  "domain_model_sha256": "81d0ac762702a2c2a2bb1f1b523ffdbf38be30320a619837ca93598b80254065",
+  "approval_line_number": 7458,
+  "scope_ok": true,
+  "fixes": [],
+  "checks": [
+   {
+    "command": "git pull --no-rebase origin co-001/suite-cap-1-triage-locks; git status; find for .allow-protected-edit",
+    "passed": true,
+    "note": "Already up to date at 358dc53f. The tree is clean and there is no marker anywhere."
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock pnpm typecheck",
+    "passed": true,
+    "note": "22 projects passed"
+   },
+   {
+    "command": "flock /tmp/laneb-heavy.lock pnpm lint",
+    "passed": true,
+    "note": "1,659 files in 3 groups, 0 errors, 0 warnings. The 3 errors H reported in reconcile.large.db.test.ts are gone since R's commit."
+   },
+   {
+    "command": "pnpm lint:copy",
+    "passed": true,
+    "note": "527 files"
+   },
+   {
+    "command": "pnpm lint:logs",
+    "passed": true,
+    "note": "1,075 files, every log call uses allowlisted fields (heap_live_peak_mib and heap_limit_mib included)"
+   },
+   {
+    "command": "pnpm -s exec tsx tools/screening-capacity/watched.ts --write",
+    "passed": true,
+    "note": "538 lines, no change from the committed file"
+   },
+   {
+    "command": "pnpm install --frozen-lockfile --offline",
+    "passed": true,
+    "note": "pnpm-lock.yaml unchanged; no package.json changed in the diff"
+   },
+   {
+    "command": "pnpm db:migrate --dev-login (fresh tp_sc1b_i_1) && pnpm db:domain-model --out --strict",
+    "passed": true,
+    "note": "47 migrations applied. The regenerated domain-model.md differs from the committed one only in the provenance line, which the hash and --check ignore (reverted). 381 function files, 0 written."
+   },
+   {
+    "command": "pnpm -s db:domain-model --check",
+    "passed": true,
+    "note": "Matches the schema at 20261109090000_line_status_heads.sql and the 381 function names"
+   },
+   {
+    "command": "pnpm -s db:domain-model --check --require-approval",
+    "passed": false,
+    "note": "Expected: it fails only because the approval line is blank (no name or date). The line is at docs/product/domain-model.md:7458 and carries SHA-256 81d0ac762702a2c2a2bb1f1b523ffdbf38be30320a619837ca93598b80254065. The founder signs it; no session writes it."
+   },
+   {
+    "command": "flock pnpm test (unit, with coverage)",
+    "passed": true,
+    "note": "391 files, 6,522 passed, 1 skipped. The skip is an existing test that runs only when Chromium is installed (skipIf); it is not in this diff."
+   },
+   {
+    "command": "flock pnpm test:golden",
+    "passed": true,
+    "note": "5 files, 376 passed"
+   },
+   {
+    "command": "flock pnpm test:db --shard=1/4 (fresh tp_sc1b_i_s1, migrated first)",
+    "passed": true,
+    "note": "34 files, 3,277 passed, 1 skipped, 319 s"
+   },
+   {
+    "command": "flock pnpm test:db --shard=2/4 (fresh tp_sc1b_i_s2)",
+    "passed": true,
+    "note": "34 files, 2,178 passed, 192 s"
+   },
+   {
+    "command": "flock pnpm test:db --shard=3/4 (fresh tp_sc1b_i_s3)",
+    "passed": true,
+    "note": "34 files, 3,094 passed, 321 s"
+   },
+   {
+    "command": "flock pnpm test:db --shard=4/4 (fresh tp_sc1b_i_s4)",
+    "passed": true,
+    "note": "34 files, 990 passed, 172 s. In all, 136 files (every db file once), 9,539 passed. CAS-42.3 at 2,000 lines: setup 181.7 s, pass 65.5 s, at most 1 advisory lock per backend over 2,461 samples. CAS-40.11 printed 1,043 ms for 10,000 events and 4,260 ms for 40,000."
+   },
+   {
+    "command": "vitest run --project db apps/worker/src/reconcile/ledger-oracle.db.test.ts (fresh tp_sc1b_i_or)",
+    "passed": true,
+    "note": "Ledger oracle: 10 of 10 passed, unchanged"
+   },
+   {
+    "command": "flock pnpm verify-content",
+    "passed": true,
+    "note": "Every content set passes"
+   },
+   {
+    "command": "flock pnpm synth --all; git diff --exit-code -- fixtures/synthetic && no untracked files; pnpm check:fixtures",
+    "passed": true,
+    "note": "247 cases: 0 files written, 639 unchanged. 8 EMR formats: 16 unchanged. The fixture guard read 333 files, all synthetic."
+   },
+   {
+    "command": "flock pnpm --filter ./infra test",
+    "passed": true,
+    "note": "26 files, 702 passed (monitoring.test.ts with the JobHeapLivePeak filter and alarm included)"
+   },
+   {
+    "command": "pnpm -s exec tsx tools/engine-freeze/check.ts f5bd6201632052613970f4b19bb004eb7a8194a7",
+    "passed": true,
+    "note": "No problems; no non-test file under packages/pricing/src changes"
+   },
+   {
+    "command": "git diff --name-only f5bd6201...HEAD (scope)",
+    "passed": true,
+    "note": "41 files, all in the re-read's files_1b list or generated (fixtures/synthetic/CAS-40 and CAS-42 expected.json). One new migration (20261109090000_line_status_heads.sql); no other migration added, changed or removed. packages/ledger, packages/pricing/src, packages/rules, fixtures/golden and content/releases are untouched. No docs/adr/0083-*.md."
+   },
+   {
+    "command": "adversarial re-read (migration, catalog of a fresh database, function bodies)",
+    "passed": true,
+    "note": "Concurrency: a line's head row is locked by the upsert, and seq is drawn while that lock is held. A line's first event keeps its own identity value, which no other event of that line can come before. The only BEFORE triggers on line_status are ledger_rules and then rules, so no later trigger can make the head row drift. No function or app path takes a per-line advisory lock; every remaining key is per practice or per other object. Deploy: the lock loop takes both tables with NOWAIT in one subtransaction, so it never queues a writer, and test 40.8 proves it (no Lock wait; the third and fourth stage writers commit). Ledger freeze: a line-by-line diff of each ledger body against 20261027090000 (:147-198 and :219-270) shows only the lock line changed; both stay invokers with search_path set and ACL {tp_owner=X/tp_owner}. Security: line_status_head has forced RLS, the tenant policy, its registry row and both guard triggers; the ACL is tp_owner plus tp_app=r only; no tp_* role has a grant on any sequence; line_status_rules is a definer with search_path pinned and no PUBLIC execute. Reliability: jobHeap, end() and logger.info do not throw; attempt() wraps practice, platform and screening jobs; the alarm is the maximum over 300 s above 560*75/100 = 420 MiB, treats missing data as not breaching and calls notify. Nothing found needed a fix."
+   }
+  ],
+  "open_items": [
+   "Deferred until 1a merges: slice 1, the measurement gate (CAS-42.1 and 42.2 run on 1a's merge with Chromium, and the live-heap peaks recorded before anything else).",
+   "Deferred until 1a merges: CAS-42.1, apps/worker/src/triage/triage.large.db.test.ts (each job alone at 100,000 lines under a 420 MiB heap; at most 1 advisory lock; the budgets). It also needs the vitest.config.ts SLOW_FIRST entry and the matching count in tools/test/db-shards.test.ts.",
+   "Deferred until 1a merges: CAS-42.2, the large report and another practice's triage together under 560 MiB (the same file, or together.large.db.test.ts if the shard's time demands it).",
+   "Deferred until 1a merges: the harness's before-and-after real-size runs (CAS-42.5 and 42.6: --worker-image on the base's and the head's image at FULL_SIZE, with the reconcile phase and the large-jobs-together phase). The harness has never run end to end here, at either size: this container has 4 CPUs and the harness stops as RUNNER_TOO_SMALL.",
+   "Deferred until 1a merges: ADR 0083's edits (its status line and the lock section as built). 1a creates docs/adr/0083-*.md; the migration, the runbooks and reconciliation-001 already cite docs/adr/0083.",
+   "After 1a merges: regenerate tools/screening-capacity/watched-paths.txt and resolve the shared documents (test-matrix with CAS-41, then CAS-40 and CAS-42; synth matrix.ts and registry.ts) under LANES.md rule 6. Then run the full suite, regenerate the domain model on a freshly migrated database, and give the founder the new SHA-256 if the schema text changed.",
+   "Difference from the design (builder D): line_status_head grants SELECT to tp_app. Sections 4.6 and D4 and the re-read say no grant to any role. Without the grant, access.db.test.ts (6 tests) and cross-tenant.db.test.ts (8 tests) fail, because they read every tenant table as tp_app, and those tests may not be loosened. No role has a write grant, RLS is forced, and test 40.8 asserts that exact ACL. The founder's approval of the domain model should cover this explicitly.",
+   "Difference from the design (builder R): CAS-42.3 runs 2,000 lines by default, not 20,000. TP_LARGE_RECONCILE_LINES sets any size. The reconcile code grows faster than its line count, and the locks are not the cause: candidatesFor's two queries per open case line, claimLines' recursive read per line, and syncLineStages' one statement per stage each firing line_status_refresh_cases and case_rules. 6,000 lines took 341.8 s, so 20,000 would take hours. On the base the test fails first on the lock bound (6,001 locks), not on 53200. Proposed: a reconcile performance item for Lane A or B.",
+   "CI timing risk: reconcile.large.db.test.ts takes about 230 to 250 s locally (setup 181.7 s, pass 65.5 s) inside a db shard with a 20-minute limit. It is not in SLOW_FIRST, and adding it means changing the count of 13 in tools/test/db-shards.test.ts, which is outside 1b's files. Watch its shard's time on the PR, and add it to SLOW_FIRST together with triage.large.",
+   "Difference from the design (builder R): the CAS-42.3 test builds its 835s from the LED-06 synthetic fixtures' segments rather than @tp/synth, because the worker package does not depend on @tp/synth and adding it would change package.json and the lockfile. The harness's posting export does use @tp/synth's postingExport.",
+   "The PR is not opened (as instructed). When it is: open it with pnpm db:domain-model --summary-since <base> --function-diffs list, and post the approval line as one suggested-change comment on docs/product/domain-model.md:7458."
+  ]
+ }
+]

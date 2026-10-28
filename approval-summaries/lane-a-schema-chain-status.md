@@ -65,6 +65,36 @@ GitHub login: PureTideWater.
   **Deferred until part 1a merges** (1a still building in session_019i9ifDUYaz9Hta77Vukkzo): the measurement gate
   (slice 1), CAS-42.1 and .2, the harness's real-size runs, ADR 0083's 1b section (1a creates the file), then 1b's
   full local suite.
+- **03:55 UTC: wf_8bd6852a-2dd done** (result `approval-summaries/lane-a-ss01-merge42-sc1b-build-result.json`):
+  - **SS-01 with #42's 6f23c42b merged: head f5bd6201** (pushed). Only conflict the generated domain model
+    (regenerated). #42's new commits leave the audit_event_record policy, the organization table and SS-01's functions
+    alone: SS-01's migration unchanged. Typecheck, lint (1,654), lint:copy, lint:logs, unit 6,492 passed + 4 skipped
+    (web-entries.test.ts now passes), test:db 9,500 + 1 skipped (restore-drill's pg_dump 16 vs PG 18, environmental),
+    billing.spec 6 passed, content, synth, fixtures. **Domain model SHA-256 6559c5b9…c2fadc, approval line 7413.**
+  - **SUITE-CAP-1b: head 358dc53f** on `co-001/suite-cap-1-triage-locks` (worktree /home/user/sc1b): migration
+    20261109090000 (line_status_head with id PK and line_status_head_once; one NOWAIT loop over claim and line_status;
+    claim_by_superseded; line_status_rules as a definer writing the head row; 4.5's two ledger triggers on the practice's
+    ledger: key, their files differing only in the lock line); CAS-40 15 tests (failed 15 of 15 on f5bd6201, pass after);
+    heap line and alarm; CAS-42.3 and the harness code; ADR 0038 note, matrix and registry rows CAS-40 and CAS-42,
+    runbooks, reconciliation-001's Q1 exception word for word. Checks: typecheck, lint 1,659, lint:copy, lint:logs,
+    unit 6,522, golden 376, test:db 9,539, ledger oracle 10/10 unchanged, infra 702, content, synth, engine-freeze clean;
+    scope 41 files. **Domain model SHA-256 81d0ac76…254065, approval line 7458.**
+  - Decisions taken (recommended; recorded for the PR description and ADR 0083):
+    - **line_status_head grants SELECT to tp_app** (the design said no grant): the access and cross-tenant suites read
+      every tenant table as tp_app and must not be loosened; RLS forced, practice policy, no write grant to any role,
+      CAS-40.8 asserts the exact ACL. Safer than exempting the table from the tenancy tests.
+    - **CAS-42.3 runs 2,000 lines by default** (TP_LARGE_RECONCILE_LINES sets any size): a reconcile pass grows faster
+      than its lines for reasons other than locks (6,000 lines 341.8 s), so 20,000 cannot fit a CI shard. Its lock
+      bound (at most 1 advisory lock per backend) is the point under test and holds.
+    - CAS-42.3's 835s come from LED-06's synthetic segments (no new @tp/synth dependency in the worker).
+  - **Proposal (for the orchestrator; a new item, not this PR):** reconcile performance at real size: candidatesFor's
+    two queries per open case line per pass (the by-patient one decrypting every claim of a code and date), claimLines'
+    recursive read per line, syncLineStages' one-row stage inserts each refreshing the case. Until then the weekly
+    run's step 7b at full size is expected to fail its attempt check. It sits beside the ledger freeze.
+  - **Deferred until part 1a merges:** slice 1 (the measurement gate), CAS-42.1 and .2 (with SLOW_FIRST and
+    tools/test/db-shards.test.ts's count, reconcile.large added beside triage.large), the harness's real-size runs
+    (they need an 8-CPU runner: this container's 4 CPUs stop as RUNNER_TOO_SMALL), ADR 0083's 1b section, the shared
+    documents merged with 1a's CAS-41 rows, then 1b's full local suite and a fresh domain model.
 - **Superseded:** when Stryker and its gate pass, push d763ba78; then merge #42's head 6f23c42b into SS-01 (merge commit;
   domain model and function files regenerated, never hand-merged), re-check, push; then SUITE-CAP-1b's build on it.
 - **Then:** read the build's result; the PR waits for #42 to merge (then merge #42's head and the latest
@@ -73,8 +103,8 @@ GitHub login: PureTideWater.
 ## Items
 | # | Item | Branch | State |
 | --- | --- | --- | --- |
-| 1 | SS-01 (`designs/ss-01-suspension.md`; ADR 0080; BIL-07 to BIL-10; synth module 15) | `co-001/ss-01-suspension-refusal` (on #42's branch) | Building |
-| 2 | SUITE-CAP-1b (`designs/suite-cap-1-triage-locks.md` part 1b; ADR 0083; CAS-40, CAS-42) | `co-001/suite-cap-1-triage-locks` (on SS-01's); the ledger part (section 4.5) goes in the PR: Q1 granted | Not started |
+| 1 | SS-01 (`designs/ss-01-suspension.md`; ADR 0080; BIL-07 to BIL-10; synth module 15) | `co-001/ss-01-suspension-refusal` (on #42's branch) | Built; full local suite passed; #42's 6f23c42b merged (f5bd6201); PR waits on #42's merge |
+| 2 | SUITE-CAP-1b (`designs/suite-cap-1-triage-locks.md` part 1b; ADR 0083; CAS-40, CAS-42) | `co-001/suite-cap-1-triage-locks` (on SS-01's); the ledger part (section 4.5) goes in the PR: Q1 granted | Built but the 1a-dependent parts (358dc53f); waits on 1a and SS-01 |
 | 3 | The interest fix (`designs/ledger-interest-once.md`; ADR 0084; LED-23 to LED-25; synth module 6) | `co-001/ledger-interest-once` (on SUITE-CAP-1b's) | Not started; exception granted, PR opens after SS-01 and SUITE-CAP-1b merge |
 
 ## Decisions taken (recommended option; security: the safer), with reasons
@@ -99,3 +129,4 @@ GitHub login: PureTideWater.
 - 2026-10-28 00:20 UTC: resumed after the usage limit and a second restart; integrator finishing Stryker and pushing.
 - 2026-10-28 00:27 UTC: SS-01 build workflow done; Stryker's remaining shards running in the session.
 - 2026-10-28 01:07 UTC: SS-01 suite complete, d763ba78 pushed; wf_8bd6852a-2dd started (merge #42; SUITE-CAP-1b build).
+- 2026-10-28 03:58 UTC: #42 merged into SS-01 (f5bd6201); SUITE-CAP-1b built but its 1a-dependent parts (358dc53f).
