@@ -4,6 +4,7 @@ import { type Page, expect, test } from '@playwright/test';
 import { databaseClient } from '@tp/db';
 
 import { WITHIN_REDUCTION_RANGE } from '../src/lib/screening/labels';
+import { SCREENING_GROUPS_PER_PAGE } from '../src/lib/screening/routes';
 import { atPhoneWidth, expectAccessible, expectScrollersAgree } from './a11y';
 import { e2eDatabaseUrl } from './env';
 import { withDatabase } from './helpers';
@@ -22,10 +23,11 @@ import { CLEAN_ROWS, SCREENING_HEADER, SCREENING_ZIP, resultLinkIn, screeningRow
  * value lies in the window, no status is cut, the page does not scroll sideways, and axe finds nothing. Without script
  * the switch is the same: it is a container query. At 820 px the anomalies and the top rows stack while the coverage
  * keeps its table. At 1280 px the three tables show, with the database's rows, and the lists are hidden; the tables
- * hidden since the first load measure again, so the anomalies and the coverage fit their cards (each status wraps in
- * its cell above a floor) and the top rows scroll in their region with the cue; axe finds nothing. At 994 px, the
- * narrowest width at which the tables show (the cards' content exactly 54rem, P4-DR-02), the anomalies and the coverage
- * still fit.
+ * hidden since the first load measure again, so the synthetic result's anomalies and coverage fit their cards (each
+ * status wraps in its cell above a floor; a result whose figures run wider scrolls in the region with the cue) and the
+ * top rows scroll in their region with the cue; axe finds nothing. Where the cards' content is exactly 54rem, the
+ * narrowest width at which the tables show (994 px without a classic scrollbar; the step adds the bar's width, P4-DR-02,
+ * P4-RC-03), the anomalies and the coverage still fit.
  *
  * Free of the screening journey's known races (screening.spec.ts; LANES.md "Handed to Lane A"): its own practice and
  * its own address on a .test domain of its own, so no other spec's screening is replaced and no other bucket of the
@@ -158,12 +160,17 @@ phoneTest('the screening result reads on a phone: its three tables as stacked ro
     link = resultLinkIn(message);
   });
 
-  // What the page must list, from the database, in the order the route reads it.
+  // What the page must list, from the database, in the order and at the page size the route reads it (P4-RC-05).
   const token = link.slice(link.lastIndexOf('/') + 1);
   const listed = await withDatabase(async (client) => {
     const sha = createHash('sha256').update(token).digest('hex');
     return {
-      groups: (await client.query<{ grp: string; standing: string }>("SELECT procedure_code || ':' || payer_product AS grp, standing FROM screening_result_groups($1, 1, 100) ORDER BY group_no", [sha])).rows,
+      groups: (
+        await client.query<{ grp: string; standing: string }>("SELECT procedure_code || ':' || payer_product AS grp, standing FROM screening_result_groups($1, 1, $2) ORDER BY group_no", [
+          sha,
+          SCREENING_GROUPS_PER_PAGE,
+        ])
+      ).rows,
       coverage: (
         await client.query<{ entry: string; reason: string | null }>(
           "SELECT c.payer_product || ':' || c.disposition AS entry, c.unpriced_reason AS reason FROM screening_result_coverage($1) WITH ORDINALITY AS c ORDER BY c.ordinality",
@@ -279,7 +286,7 @@ phoneTest('the screening result reads on a phone: its three tables as stacked ro
     await expectScrollersAgree(page, 'the screening result at 820 px');
   });
 
-  await test.step('at 1280 px the three tables show with the database’s rows, the hidden tables measure again, the anomalies and the coverage fit, and axe finds nothing (TBL-06, TBL-07)', async () => {
+  await test.step('at 1280 px the three tables show with the database’s rows, the hidden tables measure again, the synthetic result’s anomalies and coverage fit, and axe finds nothing (TBL-06, TBL-07)', async () => {
     await page.setViewportSize({ width: 1280, height: 720 });
     const rows: Readonly<Record<Section, number>> = { anomalies: listed.groups.length, coverage: listed.coverage.length, 'top-rows': listed.rows.length };
     for (const card of CARDS) {
@@ -301,15 +308,21 @@ phoneTest('the screening result reads on a phone: its three tables as stacked ro
     await expectAccessible(page, 'the screening result at 1280 px');
   });
 
-  await test.step('at 994 px, the narrowest width at which the tables show, the anomalies and the coverage still fit (TBL-06)', async () => {
-    await page.setViewportSize({ width: 994, height: 720 });
+  await test.step('where the cards’ content is exactly 54rem, the narrowest width at which the tables show (994 px without a classic scrollbar), the synthetic result’s anomalies and coverage still fit (TBL-06; P4-RC-03)', async () => {
+    // A classic scrollbar (a headed browser on most desktops) takes its width from the layout, so the viewport adds it:
+    // the step means the same width of content headed, headless and on every platform.
+    const bar = await page.evaluate(() => window.innerWidth - document.documentElement.clientWidth);
+    const width = 994 + bar;
+    await page.setViewportSize({ width, height: 720 });
+    // The container its query reads: the anomalies card's content, 54rem.
+    await expect.poll(() => page.evaluate(() => document.querySelector('[data-section="anomalies"] [data-slot="stacked-rows"]')?.clientWidth), { message: 'the cards’ content is 54rem' }).toBe(54 * 16);
     for (const card of [ANOMALIES, COVERAGE]) {
       await expect(page.getByRole('table', { name: card.title, exact: true })).toBeVisible();
       await expect(page.getByRole('list', { name: card.title, exact: true })).toHaveCount(0);
     }
-    await expectScrollersAgree(page, 'the screening result at 994 px');
-    await expect.poll(() => fitOf(page, 'anomalies'), { message: `${ANOMALIES.title} fits its card at 994 px` }).toMatchObject({ scroll: 'fits' });
-    await expect.poll(() => fitOf(page, 'coverage'), { message: `${COVERAGE.title} fits its card at 994 px` }).toMatchObject({ scroll: 'fits' });
-    await expect.poll(() => sidewaysOverflow(page), { message: 'the screening result at 994 px scrolls sideways' }).toBe(0);
+    await expectScrollersAgree(page, `the screening result at ${String(width)} px`);
+    await expect.poll(() => fitOf(page, 'anomalies'), { message: `${ANOMALIES.title} fits its card at ${String(width)} px` }).toMatchObject({ scroll: 'fits' });
+    await expect.poll(() => fitOf(page, 'coverage'), { message: `${COVERAGE.title} fits its card at ${String(width)} px` }).toMatchObject({ scroll: 'fits' });
+    await expect.poll(() => sidewaysOverflow(page), { message: `the screening result at ${String(width)} px scrolls sideways` }).toBe(0);
   });
 });
