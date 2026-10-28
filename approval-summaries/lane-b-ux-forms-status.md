@@ -147,3 +147,4 @@ session (Lane A or Lane B) continues from here.
 | 2026-10-28 02:00 | CI green; base moved | CI on 34f7427: every check green. The base moved to a6e754f (#79, ux-table-scroll); merging it (14 conflicts: 7 by hand, 7 page files by wf_6b9c6983-f04 with an adversarial audit and the merge re-check). |
 
 | 2026-10-28 02:58 | #79 merged in; verification | 8cab9c9 pushed (the #79 merge, wf_6b9c6983-f04: resolve, adversarial audit, re-check). The fresh-clone verification started: wf_4be80bed-13f. |
+| 2026-10-28 03:20 | Verified | CI on 8cab9c9: all 22 check runs green (all green, mutation, screening-capacity gate, approval-of-record). The fresh-clone verification: **PASS**, no blocker (`approval-summaries/lane-b-ux-forms-verification.md`); its two wording notes corrected in the description. Next: ready, approval-of-record's re-run, merge with expectedHeadSha 8cab9c9. |
