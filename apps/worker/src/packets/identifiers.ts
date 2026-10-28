@@ -27,6 +27,8 @@ export interface ScheduleIdentifiers {
   readonly rows: Map<number, RowIdentifiers>;
   /** Every identifier of the rows (patient and insured names and member IDs, claim numbers): what no narrative may hold. */
   readonly all: readonly string[];
+  /** Which of them are names (the patients' and insureds' last and first names): the rest are member IDs and claim numbers. */
+  readonly names: readonly string[];
 }
 
 export async function scheduleIdentifiers(
@@ -55,6 +57,7 @@ export async function scheduleIdentifiers(
   const decrypt = (column: 'patient_ref.last_name' | 'patient_ref.first_name' | 'patient_ref.member_id', value: string | null) => (value === null ? null : cipher.decrypt(column, value));
   const rows = new Map<number, RowIdentifiers>();
   const all = new Set<string>();
+  const names = new Set<string>();
   for (const line of content.lines) {
     const row = byLine.get(line.service_line_id);
     if (row === undefined) {
@@ -64,6 +67,8 @@ export async function scheduleIdentifiers(
     const first = decrypt('patient_ref.first_name', row.first_name);
     const member = decrypt('patient_ref.member_id', row.member_id);
     const insuredMember = decrypt('patient_ref.member_id', row.insured_member_id);
+    const insuredLast = decrypt('patient_ref.last_name', row.insured_last_name);
+    const insuredFirst = decrypt('patient_ref.first_name', row.insured_first_name);
     const identifiers: RowIdentifiers = {
       claim_control_number: cipher.decrypt('claim.payer_claim_control_number', row.payer_claim_control_number),
       patient_control_number: cipher.decrypt('claim.patient_control_number', row.patient_control_number),
@@ -71,6 +76,11 @@ export async function scheduleIdentifiers(
       member_id: member ?? insuredMember,
     };
     rows.set(line.row, identifiers);
+    for (const name of [last, first, insuredLast, insuredFirst]) {
+      if (name !== null && name.trim() !== '') {
+        names.add(name);
+      }
+    }
     for (const value of [
       identifiers.claim_control_number,
       identifiers.patient_control_number,
@@ -78,13 +88,13 @@ export async function scheduleIdentifiers(
       first,
       member,
       insuredMember,
-      decrypt('patient_ref.last_name', row.insured_last_name),
-      decrypt('patient_ref.first_name', row.insured_first_name),
+      insuredLast,
+      insuredFirst,
     ]) {
       if (value !== null && value.trim() !== '') {
         all.add(value);
       }
     }
   }
-  return { rows, all: [...all] };
+  return { rows, all: [...all], names: [...names] };
 }
