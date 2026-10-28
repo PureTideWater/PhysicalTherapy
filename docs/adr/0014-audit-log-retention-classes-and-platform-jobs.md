@@ -131,8 +131,11 @@ jobs call and 0050 the dunning outbox.
   deleted from the queue only after that commits (JOB-05); an account alarm's state change pauses the screening
   stream. It logs IDs and codes only: `MAIL_STREAM_PAUSED`, `NOTICE_UNDELIVERED` (with the support grant's or the
   invoice's ID), `INVITATION_UNDELIVERED` (with the invitation's ID), `MAIL_PROBE_MISSED` (on each run while a
-  stream has had no probe back in 26 hours; ADR 0065), and
-  `MAIL_EVENT_UNREADABLE` (with the queue message's ID; the message is left for the dead-letter queue).
+  stream's probes have not come back: the older of its delivered and bounced probe since the last resume 26 hours old,
+  or one not back an hour after the first probe sent since then; the probes then go hourly; ADR 0065), and
+  `MAIL_EVENT_UNREADABLE` (with the queue message's ID; the message is left for the dead-letter queue). Each probe
+  event it records is logged at info by SES's message ID and codes alone (the stream, SES's event type, the state and
+  the bounce subtype), which the deliverability runbook's staging checks read (the review of 2026-10-27).
 - **`mail_expiry`, nightly at 03:50 UTC.** It deletes, 1,000 of each a call until none is left
   (`operator_mail_expire()`), the mail records past their days: a message's row 30 days after it was sent on the
   screening stream (its prospect's own 30) and 90 on the others; a bounce mark after 7 days; a refused screening

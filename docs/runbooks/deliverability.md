@@ -91,7 +91,7 @@ a synthetic mailbox you control, and reads IDs and counts.
   | `NOTICE_UNDELIVERED` | a notice not delivered to every recipient (platform log) | 3.3 |
   | `NOTICE_UNDELIVERABLE` | a notice with no recipient (platform log) | 3.3 |
   | `INVITATION_UNDELIVERED` | an invitation's email undelivered (platform log) | 3.4 |
-  | `MAIL_PROBE_MISSED` | a stream with no probe back in 26 hours, 22 hours before its readiness lapses (platform log) | 3.7 |
+  | `MAIL_PROBE_MISSED` | a stream with no probe back in 26 hours, 22 hours before its readiness lapses, or none back an hour after the first since a resume; raised until both come back (platform log) | 3.7 |
   | `MAIL_PROBE_UNSENT` | a probe that could not be sent, in each of three 5-minute periods (platform log) | 3.7 |
   | `MAIL_VALIDATION_CAP_REACHED` | the day's validation cap reached (web log) | 3.5 |
   | `MAIL_VALIDATION_REFUSED` | AWS refused an address validation: the address-validation role or its call (web log) | 3.8 |
@@ -145,16 +145,25 @@ a synthetic mailbox you control, and reads IDs and counts.
 4. **Staging checks (open item O11), once, in staging after its phase 2**, with a synthetic mailbox you control
    (`<you+tp-check>@…`, never a customer's). Tag each message you send by hand `tp_kind=probe`, so the platform records
    it as a probe and counts it toward nothing (an untagged message's events cannot be read and go to the dead-letter
-   queue):
+   queue). **Read each one's outcome by its message ID:** `aws sesv2 send-email` prints its `MessageId`, and the
+   platform logs each event of a probe it records as `mail probe event recorded`, with that `ses_message_id`, the
+   `mail_stream_code`, the `ses_event_type` SES sent (`Send`, `Delivery`, `Bounce`, `Complaint`, ...), the
+   `mail_state_code` recorded and the `bounce_subtype_code`, and no address. The console's undelivered list leaves
+   probes out. Within a few minutes of a send:
+
+   ```
+   aws logs filter-log-events --log-group-name /tp/staging/platform --start-time $(( ($(date +%s) - 3600) * 1000 )) \
+     --filter-pattern '{ $.ses_message_id = "<MessageId>" }' --query 'events[].message' --output text
+   ```
+
    - **Cognito sends through the stack's identity.** Invite the synthetic mailbox from the console; the invitation
      arrives from MailFromAddress, and `aws sesv2 get-configuration-set --configuration-set-name tp-staging-transactional`
      exists with its sends counted in CloudWatch (`AWS/SES`, `Send`, by `ses:configuration-set`). If Cognito refuses
      (the user pool's update or the invitation fails as not authorized to send), the identity needs a sending
      authorization policy for Cognito: stop and raise it as a change to `infra/lib/constructs/mail-streams.ts`.
    - **The screening set checks nothing against the account's list, and adds nothing to it.** Put the synthetic
-     mailbox on the account's list, send to it through each set, and read each message's event in the platform's log
-     (or the console's undelivered list): through screening it is delivered, through notices it is suppressed. Then
-     take it off:
+     mailbox on the account's list, send to it through each set, and read each message's outcome by its message ID
+     (above): through screening its `mail_state_code` reads `delivered`, through notices `suppressed`. Then take it off:
 
      ```
      aws sesv2 put-suppressed-destination --email-address <you+tp-check>@… --reason BOUNCE
@@ -169,17 +178,30 @@ a synthetic mailbox you control, and reads IDs and counts.
 
      Do the same with `--reason COMPLAINT` and the notices set alone: SES answers a send to an address the account's
      list holds with a Bounce of subtype `OnAccountSuppressionList` or a Complaint whose `complaintSubType` is
-     `OnAccountSuppressionList`, and the platform must record either as suppressed (not delivered, and in the console's
-     undelivered list), never as a complaint, which would read as delivered (ADR 0065, review M1). Record which event
-     came, then take the address off again.
+     `OnAccountSuppressionList`, and the platform must record either as suppressed (`mail_state_code` `suppressed`,
+     `bounce_subtype_code` `on_account_suppression_list`), never as a complaint, which would read as delivered (ADR
+     0065, review M1). Record which event came (its `ses_event_type`, `Bounce` or `Complaint`), then take the address
+     off again.
 
      Then send through the screening set, the same way, to a mailbox that does not exist on a domain you control (a hard
      bounce), and confirm `aws sesv2 get-suppressed-destination --email-address <that address>` answers
      `NotFoundException`. Never send that bounce through transactional or notices: they would add it to the list.
      Within a few minutes, send to the same address through the screening set once more and record the subtype the
-     platform records for it (its log line or its `mail_send` row, by message ID): SES's global suppression list
-     answers `Permanent`/`Suppressed` on a set whose own suppression is off, which the cut-off counts, as SES does; if it
+     platform records for it (the `bounce_subtype_code` of its line, by message ID): SES's global suppression list
+     answers `Permanent`/`Suppressed` on a set whose own suppression is off, which the platform records with
+     `mail_state_code` `bounced` and `bounce_subtype_code` `suppressed`, and the cut-off counts, as SES does; if it
      reads anything else, note it for ADR 0065's mapping.
+   - **A send through a disabled set is refused as paused.** A screening result or failure notice already past the
+     run's gate when a pause commits, and the sweep's completion, roll back only when SES refuses the send with
+     `SendingPausedException` (ADR 0065, review M6 and M7; `screeningMailPaused()` in
+     `apps/worker/src/screening/job.ts`). Pause the screening on the console; within a minute the platform disables the
+     set (`aws sesv2 get-configuration-set --configuration-set-name tp-staging-screening --query
+     SendingOptions.SendingEnabled` reads `false`). Send one message through it by hand, as above (`--email-tags
+     Name=tp_kind,Value=probe`, to the synthetic mailbox), and record the error's name the command prints (`An error
+     occurred (<name>) when calling the SendEmail operation`). Then resume with "It was a false alarm" and wait until
+     "Ready to open" reads yes. If the name is not `SendingPausedException`, keep the screening closed and raise it as
+     a change to `screeningMailPaused()` and its tests: until then a result or notice a pause races is lost, or a fully
+     priced run failed.
    - **The account's reputation metrics publish.** After a day of staging mail, `AWS/SES` `Reputation.BounceRate` with
      no dimension has data points. If it has none at launch volume, the two account warnings never fire (missing data is
      not a breach); the `account_review` trigger, which reads SES's enforcement status, still works. Record what you see.
@@ -257,12 +279,31 @@ mailbox works.
 
 ### 3.4 An invitation undelivered (`INVITATION_UNDELIVERED`; `TransactionalSetBounce`)
 
-The users page shows the invitation "Not delivered" with its date. Tell the administrator who invited the person to
-check the address, then invite again. An invitation the person reported as spam reads "Reported as spam" instead: it
-reached them, and SES now holds the address back from the transactional stream, so another would not arrive. The
-person finds the invitation in their spam folder; take the address off the suppression list (3.3) only if they need a
-new one and confirm they expect it. A transactional bounce rate at 2% means invitations are going to bad addresses
-at volume: look for one organization's import.
+The users page says why, and the administrator acts on it there or asks support (the review of 2026-10-27):
+
+- **"Not delivered … check the address, then invite again"** (it bounced or was rejected): the administrator checks
+  the address and sends it again. If the address is right, it may be on SES's account suppression list from an earlier
+  hard bounce: check it as below.
+- **"Not delivered …: our mail service is holding this address back"** (SES held it back with the account's
+  suppression list, after an earlier bounce or spam report): the page offers no "Send again", since SES would hold the
+  new one back too.
+- **"Reported as spam"**: the email reached the person, and SES now holds the address back from the transactional
+  stream. The person finds the invitation in their spam folder before it expires; the page offers no "Send again",
+  because SES would hold the new one back and Cognito's resend replaces the temporary password of the one they would
+  find.
+
+When the administrator asks support to release an address, first have the person confirm the mailbox is theirs and
+works, and that they expect the invitation. Then:
+
+```
+aws sesv2 get-suppressed-destination --email-address <the address> --query 'SuppressedDestination.{reason: Reason, since: LastUpdateTime}'
+aws sesv2 delete-suppressed-destination --email-address <the address>
+```
+
+(`NotFoundException` from the first means SES holds nothing back: the address itself is wrong, or the mailbox is
+gone.) Then send the invitation again from the console's organization page ("Send again" on its invitations), and
+record it in the support ticket. A transactional bounce rate at 2% means invitations are going to bad addresses at
+volume: look for one organization's import.
 
 ### 3.5 The validation cap reached (`MAIL_VALIDATION_CAP_REACHED`)
 
@@ -283,20 +324,23 @@ A message older than the queue's 4 days is gone; its message's state stays as la
 
 ### 3.7 A probe missed, or not sent (`MAIL_PROBE_MISSED`, `MAIL_PROBE_UNSENT`)
 
-`MAIL_PROBE_MISSED`: no probe of the stream has come back in 26 hours, read from the older of its last delivered and
-bounced probe since the last resume (review M3). The daily probe goes 24 hours after the last came back, so a probe
-that went and was lost pages 2 hours after it went, and the stream's readiness lapses 48 hours after the last came
-back: about 22 hours after the page. The platform logs it on every run until a probe comes back, so the alarm stays
-raised until then. With `MAIL_PROBE_UNSENT` as well, no probe was sent: follow its steps below. Alone, a probe went and
-its events did not come back: the event path is broken somewhere. Check, in order, the identity (still verified), the
-set's event destination, rule `<p>-mail-events` (its invocations and failed invocations), the queue and the job. The
-console's mail page shows the stream's last probe sent, delivered and bounced. Once the path is fixed, the stream is
-proven again when a probe's events come back: one not back goes again 26 hours after it went, so after a fix made
-once readiness has lapsed, the screening can stay closed until that send.
+`MAIL_PROBE_MISSED`: a stream's probes have not come back (review M3 and the review of 2026-10-27), read from its
+delivered and bounced probes since the last resume. With both back since then, it is missed once the older is 26 hours
+old: the daily probe goes 24 hours after the last came back, so a probe that went and was lost pages 2 hours after it
+went, and the stream's readiness lapses 48 hours after the last came back, about 22 hours after the page. With one not
+back since a resume (or since an environment's first probes), it is missed an hour after the first probe sent since
+then; the screening is already closed, since it opens only once both are back. Re-sending a probe does not clear it:
+the platform logs it on every run until both come back, so the alarm stays raised until then, and while it is raised
+the platform sends the probes again every hour. With `MAIL_PROBE_UNSENT` as well, no probe was sent: follow its steps
+below. Alone, a probe went and its events did not come back: the event path is broken somewhere. Check, in order, the
+identity (still verified), the set's event destination, rule `<p>-mail-events` (its invocations and failed
+invocations), the queue and the job. The console's mail page shows the stream's last probe sent, delivered and bounced.
+Once the path is fixed, the next hourly probe proves it and the alarm clears; a screening whose readiness lapsed opens
+again by itself once both are back.
 
 `MAIL_PROBE_UNSENT`: for 15 minutes every run's probe send was refused, so nothing goes out to come back:
-`MAIL_PROBE_MISSED` follows 26 hours after the stream's last probe came back, and its readiness lapses at 48 (about a
-day from now). Check, in order:
+`MAIL_PROBE_MISSED` follows 26 hours after the stream's last probe came back (an hour after the first probe since a
+resume, when none came back since), and its readiness lapses at 48 (about a day from now). Check, in order:
 
 1. the account's sending and enforcement (`aws sesv2 get-account --query '{sending: SendingEnabled, enforcement:
    EnforcementStatus}'`: `true` and `HEALTHY`);
