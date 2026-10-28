@@ -2,12 +2,12 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `f5bd6201632052613970f4b19bb004eb7a8194a7` on branch `co-001/suite-cap-1-triage-locks`, with uncommitted changes to its inputs (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
-- Migrations applied: 47; head `20261109090000_line_status_heads.sql`
+- Generated at commit `358dc53f5340092daf57226a0769486218bd5418` on branch `co-001/ledger-interest-once`, with uncommitted changes to its inputs (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Migrations applied: 48; head `20261110090000_ledger_interest_once.sql`
 - PostgreSQL 18; schema `public`: 100 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
 - PHI flag: 48 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 40 organization- or user-scoped tables with RLS forced; 8 global tables
 - RLS: 92 tables ENABLE and FORCE row-level security; 0 enable without forcing; 8 have none (the global tables); 183 policies
-- Functions in `public`: 382 (174 SECURITY DEFINER); triggers: 278, none disabled or replica-only; rewrite rules on tables: none
+- Functions in `public`: 383 (174 SECURITY DEFINER); triggers: 279, none disabled or replica-only; rewrite rules on tables: none
 - Default privileges (ALTER DEFAULT PRIVILEGES): none
 - Roles (group roles; login roles are per environment and not listed): `tp_app`, `tp_billing`, `tp_esign`, `tp_job`, `tp_operator`, `tp_owner`, `tp_screening`; every relation is owned by `tp_owner`
 - Divergences from the Data dictionary: 23 to approve, 52 tables and 150 columns not in it (informational); see [Divergences from the Data dictionary](#divergences-from-the-data-dictionary)
@@ -89,7 +89,7 @@
 | [`invitation`](#table-invitation) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 2 | 2 | SELECT | - | - |
 | [`invoice`](#table-invoice) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 3 | 3 | SELECT | SELECT, INSERT, UPDATE | - |
 | [`job_run`](#table-job-run) | Operations | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 1 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
-| [`ledger_entry`](#table-ledger-entry) | Ledger | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 4 | SELECT, INSERT(cols) | - | - |
+| [`ledger_entry`](#table-ledger-entry) | Ledger | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 5 | SELECT, INSERT(cols) | - | - |
 | [`ledger_match`](#table-ledger-match) | Ledger | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 3 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`line_note`](#table-line-note) | Documents and remittances | PHI (registered) | uuid NOT NULL | yes | yes | 2 | 2 | SELECT, INSERT(cols) | - | - |
 | [`line_status`](#table-line-status) | Pricing, triage and cases | PHI (registered) | uuid NOT NULL | yes | yes | 2 | 6 | SELECT, INSERT(cols) | - | - |
@@ -3767,7 +3767,7 @@ Invariants enforced by triggers:
 - Class: PHI (registered); registry policy `ledger_entry_tenant`, registered by `20261023120000_recovery_ledger`, qualifies: yes
 - Row-level security: enabled, forced; 1 policy; owner `tp_owner`
 - Dictionary: Ledger and reconciliation (PHI): Signed, append-only
-- Created by `20261023120000_recovery_ledger` (ADR 0042); its DDL, policies or trigger functions changed by `20261026090000_recovery_ledger_review`, `20261027090000_packet_and_ledger_review`, `20261109090000_line_status_heads`
+- Created by `20261023120000_recovery_ledger` (ADR 0042); its DDL, policies or trigger functions changed by `20261026090000_recovery_ledger_review`, `20261027090000_packet_and_ledger_review`, `20261109090000_line_status_heads`, `20261110090000_ledger_interest_once`
 - Primary key: `id`
 - Privileges: `tp_app` SELECT, INSERT(cols)
 - Column grant: `tp_app` INSERT (`allocated`, `amount_cents`, `case_id`, `created_by`, `effective_on`, `evidence_id`, `evidence_kind`, `id`, `match_id`, `practice_id`, `reason`, `service_line_id`, `stage`)
@@ -3821,7 +3821,7 @@ Invariants enforced by constraints:
 - `ledger_entry_matched`: `CHECK (match_id IS NOT NULL OR (evidence_kind = ANY (ARRAY['payer_response'::text, 'ledger_entry'::text])))`
 - `ledger_entry_reason_check`: `CHECK (btrim(reason) <> ''::text AND char_length(reason) <= 8000)`
 - `ledger_entry_reason_encrypted`: `CHECK (reason ~ '^enc:v1:[A-Za-z0-9_-]+$'::text)`
-- `ledger_entry_sign`: `CHECK ( CASE stage     WHEN 'recouped'::text THEN amount_cents < 0     WHEN 'reversed'::text THEN amount_cents <> 0     WHEN 'adjusted'::text THEN amount_cents <> 0     ELSE amount_cents > 0 END)`
+- `ledger_entry_sign`: `CHECK ( CASE stage     WHEN 'recouped'::text THEN amount_cents < 0     WHEN 'reversed'::text THEN amount_cents <> 0     WHEN 'adjusted'::text THEN amount_cents <> 0     WHEN 'interest'::text THEN amount_cents <> 0     ELSE amount_cents > 0 END)`
 - `ledger_entry_stage_check`: `CHECK (stage = ANY (ARRAY['approved'::text, 'posted'::text, 'deposited'::text, 'recouped'::text, 'reversed'::text, 'adjusted'::text, 'interest'::text]))`
 
 Invariants enforced by triggers:
@@ -3850,6 +3850,11 @@ Invariants enforced by triggers:
   - "the posted or deposited entries of a posting or EFT row never sum past the row's amount"
   - "the posted or deposited entries of a posting or EFT row, their corrections included, never net below zero"
   - "a line-level posting posts only the lines of its row's code and date of service"
+- `ledger_entry_within_interest`: `BEFORE INSERT ON ledger_entry FOR EACH ROW EXECUTE FUNCTION ledger_entry_within_interest()`
+  - "interest is credited from the PLB L6 that pays or takes it back"
+  - "interest a PLB L6 pays never sums past what it paid, plus the interest its remittance reports taken back"
+  - "interest a PLB L6 takes back never sums past what it took back, plus the interest its remittance reports paid"
+  - "a line's interest, net of what the payer took back, never goes below zero"
 - `ledger_entry_within_line`: `BEFORE INSERT ON ledger_entry FOR EACH ROW EXECUTE FUNCTION ledger_entry_within_line()`
   - "a line's posted and deposited never exceed what was approved for it"
   - "an adjustment keeps its entry between zero and what the entry's evidence shows"
@@ -3861,7 +3866,7 @@ Invariants enforced by triggers:
 - Class: PHI (registered); registry policy `ledger_match_tenant`, registered by `20261023120000_recovery_ledger`, qualifies: yes
 - Row-level security: enabled, forced; 1 policy; owner `tp_owner`
 - Dictionary: not in the Data dictionary
-- Created by `20261023120000_recovery_ledger` (ADR 0042); its DDL, policies or trigger functions changed by `20261027090000_packet_and_ledger_review`
+- Created by `20261023120000_recovery_ledger` (ADR 0042); its DDL, policies or trigger functions changed by `20261027090000_packet_and_ledger_review`, `20261110090000_ledger_interest_once`
 - Primary key: `id`
 - Privileges: `tp_app` SELECT, INSERT(cols), UPDATE(cols)
 - Column grant: `tp_app` INSERT (`allocated`, `claim_id`, `eft_row_id`, `id`, `kind`, `level`, `matched_by`, `outcome`, `posting_row_id`, `practice_id`, `provider_adjustment_id`, `remittance_id`, `service_line_id`)
@@ -3889,9 +3894,11 @@ Invariants enforced by triggers:
 | 18 | `evidence_id` | `uuid` | NOT NULL |  |  | `20261023120000` | generated from `COALESCE(posting_row_id, eft_row_id, provider_adjustment_id, claim_id)` |
 | 19 | `created_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261023120000` |  |
 | 20 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261023120000` |  |
+| 21 | `seq` | `bigint` | NOT NULL |  |  | `20261110090000` | generated always as identity |
 
 Keys:
 - Primary: (id)
+- Unique index `ledger_match_by_seq`: `USING btree (practice_id, seq)`
 - Unique index `ledger_match_standing`: `USING btree (kind, evidence_id, service_line_id) NULLS NOT DISTINCT WHERE (reversed_at IS NULL)`
 - Foreign `ledger_match_claim_id_fkey`: (claim_id) -> `claim`(id), on delete no action
 - Foreign `ledger_match_eft_row_id_fkey`: (eft_row_id) -> `eft_row`(id), on delete no action
@@ -3914,7 +3921,7 @@ Policies (1):
 
 Invariants enforced by constraints:
 - `ledger_match_allocated`: `CHECK (NOT allocated OR kind = 'posting'::text AND level = 'check'::text OR kind = 'interest'::text)`
-- `ledger_match_evidence`: `CHECK ( CASE kind     WHEN 'claim'::text THEN claim_id IS NOT NULL AND num_nonnulls(posting_row_id, eft_row_id, provider_adjustment_id, level) = 0 AND service_line_id IS NOT NULL AND outcome IS NOT NULL     WHEN 'posting'::text THEN posting_row_id IS NOT NULL AND num_nonnulls(eft_row_id, provider_adjustment_id, service_line_id, outcome) = 0 AND (level = ANY (ARRAY['claim'::text, 'check'::text])) AND (claim_id IS NOT NULL) = (level = 'claim'::text)     WHEN 'deposit'::text THEN eft_row_id IS NOT NULL AND num_nonnulls(claim_id, posting_row_id, provider_adjustment_id, service_line_id, outcome) = 0 AND (level = ANY (ARRAY['check'::text, 'batch'::text]))     ELSE num_nonnulls(claim_id, provider_adjustment_id) = 1 AND num_nonnulls(posting_row_id, eft_row_id, outcome, level) = 0 AND service_line_id IS NOT NULL END)`
+- `ledger_match_evidence`: `CHECK ( CASE kind     WHEN 'claim'::text THEN claim_id IS NOT NULL AND num_nonnulls(posting_row_id, eft_row_id, provider_adjustment_id, level) = 0 AND service_line_id IS NOT NULL AND outcome IS NOT NULL     WHEN 'posting'::text THEN posting_row_id IS NOT NULL AND num_nonnulls(eft_row_id, provider_adjustment_id, service_line_id, outcome) = 0 AND (level = ANY (ARRAY['claim'::text, 'check'::text])) AND (claim_id IS NOT NULL) = (level = 'claim'::text)     WHEN 'deposit'::text THEN eft_row_id IS NOT NULL AND num_nonnulls(claim_id, posting_row_id, provider_adjustment_id, service_line_id, outcome) = 0 AND (level = ANY (ARRAY['check'::text, 'batch'::text]))     WHEN 'interest'::text THEN num_nonnulls(claim_id, provider_adjustment_id) >= 1 AND num_nonnulls(posting_row_id, eft_row_id, outcome, level) = 0 AND service_line_id IS NOT NULL     ELSE num_nonnulls(claim_id, provider_adjustment_id) = 1 AND num_nonnulls(posting_row_id, eft_row_id, outcome, level) = 0 AND service_line_id IS NOT NULL END)`
 - `ledger_match_kind_check`: `CHECK (kind = ANY (ARRAY['claim'::text, 'posting'::text, 'deposit'::text, 'recoupment'::text, 'interest'::text]))`
 - `ledger_match_level_check`: `CHECK (level = ANY (ARRAY['claim'::text, 'check'::text, 'batch'::text]))`
 - `ledger_match_outcome_check`: `CHECK (outcome = ANY (ARRAY['approved'::text, 'decreased'::text, 'no_change'::text]))`
@@ -3939,7 +3946,8 @@ Invariants enforced by triggers:
   - "a posting match is of a posting row of its practice, and a line-level one of a claim of its remittance"
   - "a deposit match is of an EFT row of its practice"
   - "a recoupment is a PLB WO or a reversing claim of its remittance"
-  - "interest is a PLB L6 or a claim's interest of its remittance"
+  - "interest is matched from a PLB L6 of its remittance, for a claim"
+  - "interest reaches a line only through a claim the line has a standing match to"
 
 Maintains `updated_at`: `ledger_match_updated_at`.
 
@@ -7101,11 +7109,12 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `invoice_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `7c926f90860ad20e` |
 | `ledger_entry_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `abbcba68f46fd135` |
 | `ledger_entry_within_evidence()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `5fae7e8217951979` |
+| `ledger_entry_within_interest()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `dc69e28293d2fb44` |
 | `ledger_entry_within_line()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `1205becd94f0d185` |
 | `ledger_export_row_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `29c7670a2e40ee0d` |
 | `ledger_line_net(uuid,text)` | `bigint` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `f151e27ea09f28c1` |
 | `ledger_line_stage(uuid)` | `text` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `fe8938ec3ec27c76` |
-| `ledger_match_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `442d6a755ca70c28` |
+| `ledger_match_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `6b67952d52e9fd1d` |
 | `ledger_never_changed()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `4e6328f4a28594a0` |
 | `ledger_no_truncate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `c28c8fef48df43ac` |
 | `ledger_proof_level(uuid)` | `text` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `9830a2f9478006bf` |
@@ -7438,6 +7447,7 @@ Every migration applied to the database, from `schema_migrations`, with the SHA-
 | 45 | `20261107090000_mail_streams.sql` | ADR 0065 | `23767dd2eeeaf49ed086d75299b4a45b7325e784207c1aa14150756953496868` |
 | 46 | `20261108090000_suspension_refusal.sql` | ADR 0009, ADR 0050, ADR 0055, ADR 0080 | `42d1885de95b0763735a856698bdc7f72822a90a4132122954bb7ba3ee7ea0f9` |
 | 47 | `20261109090000_line_status_heads.sql` | ADR 0009, ADR 0083 | `68f42516933890daa77c24a0a773cda4fd0a16ab6b5ef7870d844f0011b5f65b` |
+| 48 | `20261110090000_ledger_interest_once.sql` | ADR 0009, ADR 0084 | `edc2f86425fbff4757bd5fbf8de52353f6ebdfa057e8b199657c1b0301032bf0` |
 
 ## Cross-checks
 
@@ -7453,6 +7463,6 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 ## Approval
 
-This document describes the schema at migration head `20261109090000_line_status_heads.sql` (47 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1 and C5. It does not decide C2, C3 and C4, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
+This document describes the schema at migration head `20261110090000_ledger_interest_once.sql` (48 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1 and C5. It does not decide C2, C3 and C4, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: ________  Date: ________  Document SHA-256: `81d0ac762702a2c2a2bb1f1b523ffdbf38be30320a619837ca93598b80254065`
+Approved by: ________  Date: ________  Document SHA-256: `3083defa33a312050b998319bf5396ee650d5271946267bd14aded140daa0d09`
