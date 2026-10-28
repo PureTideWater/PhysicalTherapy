@@ -542,6 +542,56 @@ describe('the image rule', () => {
     ]);
   });
 
+  it('★ refuses the build-push-action inputs that change what a build runs unread: a BUILDKIT_SYNTAX build-arg, a context outside the checkout, a literal file: other than apps/<name>/Dockerfile, a cache other than type=gha; and passes the forms the workflows use (SEC-S2)', () => {
+    const push = (inputs: Readonly<Record<string, string>>) => ({ uses: `docker/build-push-action@${'2'.repeat(40)}`, with: { context: '.', file: 'apps/web/Dockerfile', ...inputs } });
+    const workflow = stringify({
+      name: 'synthetic',
+      on: 'push',
+      jobs: {
+        images: {
+          'runs-on': 'ubuntu-26.04',
+          steps: [
+            { uses: `docker/setup-buildx-action@${'1'.repeat(40)}`, with: { 'driver-opts': `image=${BUILDER}` } },
+            // The forms the workflows use: a computed file:, a build-arg's value by expression, a type=gha cache, and a cache-to only the build branch's push writes.
+            push({
+              file: '${{ steps.image.outputs.dockerfile }}',
+              'build-args': 'STATIC_ASSET_ORIGIN=${{ steps.image.outputs.origin }}',
+              'cache-from': 'type=gha,scope=synthetic-web',
+              'cache-to': "${{ github.event_name == 'push' && github.ref == 'refs/heads/synthetic' && 'type=gha,mode=min,scope=synthetic-web' || '' }}",
+            }),
+            push({ context: 'apps/web', file: 'apps/web/Dockerfile' }),
+            push({ 'build-args': 'NODE_ENV=production\nBUILDKIT_SYNTAX=synthetic/frontend:latest' }),
+            push({ 'build-args': '${{ inputs.argument }}=synthetic/frontend:latest' }),
+            push({ context: 'https://github.com/synthetic-owner/synthetic.git#main' }),
+            push({ context: 'github.com/synthetic-owner/synthetic' }),
+            push({ context: '../elsewhere' }),
+            push({ file: 'build/spec.txt' }),
+            push({ 'cache-from': 'type=registry,ref=synthetic/cache:latest' }),
+            push({ 'cache-from': 'type=gha,url=https://cache.example.invalid/' }),
+            push({ 'cache-to': "${{ github.event_name == 'push' && 'type=local,dest=/tmp/cache' || '' }}" }),
+            push({ 'cache-to': '${{ inputs.cache }}' }),
+          ],
+        },
+      },
+    });
+    const at = (step: number) => `images: .github/workflows/ci.yml images step ${String(step)}`;
+    const context = (step: number, value: string) => `${at(step)}: context: ${value} is not a directory of this checkout, so the build reads a Dockerfile and files the image rule does not; build from the checkout (context: .) (${RUNBOOK})`;
+    const cache = (step: number, input: string, entry: string) =>
+      `${at(step)}: ${input}: ${entry} is not a GitHub Actions cache (type=gha, with only scope, mode, ignore-error or timeout), so the build can take its layers from a cache the image rule does not read; cache with type=gha (${RUNBOOK})`;
+    expect(problems(checkOffline(tree({ workflows: { '.github/workflows/ci.yml': workflow } })))).toEqual([
+      `${at(4)}: build-args sets BUILDKIT_SYNTAX, which hands the whole build to that frontend image before the Dockerfile is read, and the image rule does not read it; name a frontend, if any, in the Dockerfile's # syntax= line (${RUNBOOK})`,
+      `${at(5)}: build-args names an argument by an expression, which can be BUILDKIT_SYNTAX; name each argument as written (${RUNBOOK})`,
+      context(6, 'https://github.com/synthetic-owner/synthetic.git#main'),
+      context(7, 'github.com/synthetic-owner/synthetic'),
+      context(8, '../elsewhere'),
+      `${at(9)}: file: build/spec.txt is not apps/<name>/Dockerfile, the Dockerfiles the image rule reads; build one of those (${RUNBOOK})`,
+      cache(10, 'cache-from', 'type=registry,ref=synthetic/cache:latest'),
+      cache(11, 'cache-from', 'type=gha,url=https://cache.example.invalid/'),
+      cache(12, 'cache-to', 'type=local,dest=/tmp/cache'),
+      `${at(13)}: cache-to is an expression the image rule cannot read (it reads \${{ <condition> && '<value>' || '<value>' }}), so its cache cannot be checked; write it in that form or as a value (${RUNBOOK})`,
+    ]);
+  });
+
   it('refuses a COPY --from= or RUN --mount=…,from= naming an image, a docker-image:// build context, a tracked image file outside the three read, and a compose build: (S6)', () => {
     const web = [
       `FROM ${NODE} AS build`,

@@ -1021,6 +1021,100 @@ function dockerfileImages(file: string, text: string, uses: ImageUse[], unread: 
   }
 }
 
+/** An app's Dockerfile, the one form of Dockerfile the image rule reads (tree.ts lists every other as an image file). */
+const APP_DOCKERFILE = /^apps\/[^/]+\/Dockerfile$/;
+/** A GitHub Actions cache entry's keys; `url`, `url_v2` and `token` would point it at another server. */
+const GHA_CACHE_KEYS = new Set(['type', 'scope', 'mode', 'ignore-error', 'timeout']);
+/** A GitHub expression's string literal, `''` an escaped quote. */
+const LITERAL = "'((?:[^']|'')*)'";
+
+/**
+ * The values a `with:` input can take: itself when it holds no expression; the literals of a whole-value
+ * `${{ '<a>' }}` or `${{ <condition> && '<a>' || '<b>' }}` whose condition has no `||` (so it yields <a> or <b>,
+ * nothing else); null for any other expression, whose value the rule cannot know.
+ */
+function expressionOutcomes(value: string): string[] | null {
+  if (!value.includes('${{')) {
+    return [value];
+  }
+  const expression = /^\$\{\{([\s\S]*)\}\}$/.exec(value.trim())?.[1]?.trim();
+  if (expression === undefined || expression.includes('${{') || expression.includes('}}')) {
+    return null;
+  }
+  const unquote = (literal: string | undefined) => (literal ?? '').replace(/''/g, "'");
+  const single = new RegExp(`^${LITERAL}$`).exec(expression);
+  if (single !== null) {
+    return [unquote(single[1])];
+  }
+  const choice = new RegExp(`^([\\s\\S]+?)&&\\s*${LITERAL}\\s*\\|\\|\\s*${LITERAL}$`).exec(expression);
+  if (choice === null || (choice[1] ?? '').replace(new RegExp(LITERAL, 'g'), "''").includes('||')) {
+    return null;
+  }
+  return [unquote(choice[2]), unquote(choice[3])];
+}
+
+/** A cache entry buildx reads as type=gha with only the keys of GHA_CACHE_KEYS (quotes dropped, so stricter than its CSV). */
+function ghaCache(entry: string): boolean {
+  const pairs = entry
+    .replace(/"/g, '')
+    .split(',')
+    .map((field) => {
+      const equals = field.indexOf('=');
+      return equals === -1 ? null : { key: field.slice(0, equals).trim().toLowerCase(), value: field.slice(equals + 1).trim() };
+    });
+  const types = pairs.filter((pair) => pair?.key === 'type');
+  return pairs.every((pair) => pair !== null && GHA_CACHE_KEYS.has(pair.key)) && types.length === 1 && types[0]?.value.toLowerCase() === 'gha';
+}
+
+/** A local directory of the checkout: `.`, or a relative path whose first part has no dot (github.com/… is a git URL to buildx) and no part is `..`. */
+const localContext = (value: unknown) => typeof value === 'string' && (value === '.' || (/^(?:\.\/)?[A-Za-z0-9_-]+(?:\/[A-Za-z0-9._-]+)*\/?$/.test(value) && !value.split('/').includes('..')));
+
+/**
+ * A docker/build-push-action step's inputs that change what the build runs without the image rule reading it
+ * (SEC-S2): BUILDKIT_SYNTAX among its build-args (a frontend image the build is handed to before the Dockerfile is
+ * read), or an argument named by an expression; a context outside the checkout (a git or https URL, a parent
+ * directory); a literal `file:` other than apps/<name>/Dockerfile (a computed one is release.yml's case statement);
+ * a cache-from or cache-to entry other than type=gha, whose layers a registry or another server would supply.
+ */
+function buildPushProblems(where: string, inputs: Readonly<Record<string, unknown>>): string[] {
+  const problems: string[] = [];
+  const text = (value: unknown) => (typeof value === 'string' ? value : JSON.stringify(value));
+  if (inputs['build-args'] !== undefined) {
+    const args = text(inputs['build-args']);
+    if (/BUILDKIT_SYNTAX/i.test(args)) {
+      problems.push(`${where}: build-args sets BUILDKIT_SYNTAX, which hands the whole build to that frontend image before the Dockerfile is read, and the image rule does not read it; name a frontend, if any, in the Dockerfile's # syntax= line (${RUNBOOK})`);
+    }
+    if (args.split(/\r?\n/).some((line) => (line.split('=')[0] ?? '').includes('${{'))) {
+      problems.push(`${where}: build-args names an argument by an expression, which can be BUILDKIT_SYNTAX; name each argument as written (${RUNBOOK})`);
+    }
+  }
+  if (inputs.context !== undefined && !localContext(inputs.context)) {
+    problems.push(`${where}: context: ${text(inputs.context)} is not a directory of this checkout, so the build reads a Dockerfile and files the image rule does not; build from the checkout (context: .) (${RUNBOOK})`);
+  }
+  const dockerfile = inputs.file;
+  if (dockerfile !== undefined && !(typeof dockerfile === 'string' && (dockerfile.includes('${{') || APP_DOCKERFILE.test(dockerfile)))) {
+    problems.push(`${where}: file: ${text(dockerfile)} is not apps/<name>/Dockerfile, the Dockerfiles the image rule reads; build one of those (${RUNBOOK})`);
+  }
+  for (const input of ['cache-from', 'cache-to']) {
+    if (inputs[input] === undefined) {
+      continue;
+    }
+    const outcomes = expressionOutcomes(text(inputs[input]));
+    if (outcomes === null) {
+      problems.push(`${where}: ${input} is an expression the image rule cannot read (it reads \${{ <condition> && '<value>' || '<value>' }}), so its cache cannot be checked; write it in that form or as a value (${RUNBOOK})`);
+      continue;
+    }
+    for (const entry of new Set(outcomes.flatMap((outcome) => outcome.split(/\r?\n/)).map((entry) => entry.trim()))) {
+      if (entry !== '' && !ghaCache(entry)) {
+        problems.push(
+          `${where}: ${input}: ${entry} is not a GitHub Actions cache (type=gha, with only scope, mode, ignore-error or timeout), so the build can take its layers from a cache the image rule does not read; cache with type=gha (${RUNBOOK})`,
+        );
+      }
+    }
+  }
+  return problems;
+}
+
 function workflowImages(file: string, text: string, uses: ImageUse[], unread: string[]): void {
   let parsed: unknown;
   try {
@@ -1079,6 +1173,7 @@ function workflowImages(file: string, text: string, uses: ImageUse[], unread: st
         if (typeof contexts === 'string' && /docker-image:\/\//i.test(contexts)) {
           unread.push(`${where}: build-contexts names an image (docker-image://), which the image rule does not read; build FROM a pinned image in the Dockerfile instead (${RUNBOOK})`);
         }
+        unread.push(...buildPushProblems(where, inputs));
       } else if (action.startsWith('docker/bake-action@')) {
         // A bake file names its own targets' images, contexts and Dockerfiles, none of which this rule reads.
         unread.push(`${where}: docker/bake-action builds from bake files, whose images and docker-image:// contexts the image rule does not read; build with docker/build-push-action from a Dockerfile FROM a pinned image (${RUNBOOK})`);
