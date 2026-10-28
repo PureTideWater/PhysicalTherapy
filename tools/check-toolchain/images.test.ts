@@ -8,6 +8,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { stringify } from 'yaml';
 
 import { type CheckEvent, type Finding, type Tree, checkOffline, checkToolchain } from './check';
+import { imagesOf } from './images';
 import { type HubTag, type HubTagPage, NetworkReadError, type Packument, type Registry } from './registry';
 import { type NamedOnBuildBranch, buildBranchHistory } from './tree';
 
@@ -666,6 +667,47 @@ describe('the image rule', () => {
     ]);
   });
 
+  it('★ refuses what has a build run an image the rule does not read: any build-contexts, an SBOM scan, a setup-buildx driver other than docker-container or docker, and setup-qemu without its image by digest, which it reads (improve as you go)', () => {
+    const push = (inputs: Readonly<Record<string, string>>) => ({ uses: `docker/build-push-action@${'2'.repeat(40)}`, with: { context: '.', file: 'apps/web/Dockerfile', ...inputs } });
+    const binfmt = `synthetic/binfmt:1@${digest('binfmt')}`;
+    const workflow = stringify({
+      name: 'synthetic',
+      on: 'push',
+      jobs: {
+        images: {
+          'runs-on': 'ubuntu-26.04',
+          steps: [
+            { uses: `docker/setup-buildx-action@${'1'.repeat(40)}`, with: { 'driver-opts': `image=${BUILDER}` } },
+            { uses: `docker/setup-buildx-action@${'1'.repeat(40)}`, with: { driver: 'remote', endpoint: 'tcp://builder.example.invalid:1234', 'driver-opts': `image=${BUILDER}` } },
+            { uses: `docker/setup-buildx-action@${'1'.repeat(40)}`, with: { driver: 'docker' } },
+            push({ 'build-contexts': 'node=https://github.com/synthetic-owner/rootfs.git' }),
+            push({ sbom: 'true' }),
+            push({ attests: 'type=sbom' }),
+            push({ sbom: 'false', provenance: 'false' }),
+            { uses: `docker/setup-qemu-action@${'3'.repeat(40)}` },
+            { uses: `docker/setup-qemu-action@${'3'.repeat(40)}`, with: { image: binfmt } },
+          ],
+        },
+      },
+    });
+    const at = (step: number) => `images: .github/workflows/ci.yml images step ${String(step)}`;
+    const findings = checkOffline(tree({ workflows: { '.github/workflows/ci.yml': workflow } }));
+    expect(problems(findings)).toEqual([
+      `${at(2)}: setup-buildx's driver: remote is not docker-container or docker, so the builds can run on a builder the image rule does not read; use the docker-container driver with image=moby/buildkit:vX.Y.Z@sha256:<64 hex> (${RUNBOOK})`,
+      `${at(4)}: build-contexts gives the build named contexts, each taking the place of the stage or image of its name (docker-image://, a git or https URL, a directory), and the image rule reads none of them; build FROM a pinned image in the Dockerfile instead (${RUNBOOK})`,
+      `${at(5)}: sbom: or attests: has BuildKit run its SBOM scanner, an image the image rule does not read; leave the bill of materials to the release's Trivy scan (${RUNBOOK})`,
+      `${at(6)}: sbom: or attests: has BuildKit run its SBOM scanner, an image the image rule does not read; leave the bill of materials to the release's Trivy scan (${RUNBOOK})`,
+      `${at(8)}: setup-qemu names no image, so it runs tonistiigi/binfmt:latest by tag; name it as image: tonistiigi/binfmt:<tag>@sha256:<64 hex>`,
+    ]);
+    // setup-qemu's image, when named, is read with the builders, so it is held to the form and aged.
+    const read = imagesOf(tree({ workflows: { '.github/workflows/ci.yml': workflow } })).uses.filter((use) => use.where.startsWith('.github/'));
+    expect(read.map((use) => `${use.where}: ${use.image}`)).toEqual([
+      `.github/workflows/ci.yml images step 1: ${BUILDER}`,
+      `.github/workflows/ci.yml images step 2: ${BUILDER}`,
+      `.github/workflows/ci.yml images step 9: ${binfmt}`,
+    ]);
+  });
+
   it('refuses a COPY --from= or RUN --mount=…,from= naming an image, a docker-image:// build context, a tracked image file outside the three read, and a compose build: (S6)', () => {
     const web = [
       `FROM ${NODE} AS build`,
@@ -717,7 +759,7 @@ describe('the image rule', () => {
       'images: docker-compose.yml services.db: build: builds an image the image rule does not read; run an image by digest (image: name:tag@sha256:<64 hex>)',
       "images: docker-compose.yml services.cache: extends: takes the service from another one, in this file or another, which the image rule does not follow; name the service's image in docker-compose.yml",
       'images: .github/workflows/ci.yml images step 1: setup-buildx names no builder image (driver-opts image=…), so it runs moby/buildkit:buildx-stable-1 by tag; name it as image=moby/buildkit:vX.Y.Z@sha256:<64 hex>',
-      `images: .github/workflows/ci.yml images step 2: build-contexts names an image (docker-image://), which the image rule does not read; build FROM a pinned image in the Dockerfile instead (${RUNBOOK})`,
+      `images: .github/workflows/ci.yml images step 2: build-contexts gives the build named contexts, each taking the place of the stage or image of its name (docker-image://, a git or https URL, a directory), and the image rule reads none of them; build FROM a pinned image in the Dockerfile instead (${RUNBOOK})`,
       `images: .github/workflows/ci.yml images step 3: docker/bake-action builds from bake files, whose images and docker-image:// contexts the image rule does not read; build with docker/build-push-action from a Dockerfile FROM a pinned image (${RUNBOOK})`,
       ...['compose.yaml', 'deploy/Dockerfile.dev'].map(
         (file) =>

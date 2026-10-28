@@ -1157,6 +1157,8 @@ function workflowImages(file: string, text: string, uses: ImageUse[], unread: st
       // An action's name is case-insensitive on GitHub.
       const action = step.uses.toLowerCase();
       const inputs = isRecord(step.with) ? step.with : {};
+      // An input as the runner hands it to the action: a string (YAML's other scalars by their text).
+      const input = (name: string) => (inputs[name] === undefined ? undefined : typeof inputs[name] === 'string' ? inputs[name] : JSON.stringify(inputs[name]));
       if (action.startsWith('docker://')) {
         uses.push({ image: step.uses.slice('docker://'.length), where });
       } else if (action.startsWith('docker/setup-buildx-action@')) {
@@ -1169,12 +1171,33 @@ function workflowImages(file: string, text: string, uses: ImageUse[], unread: st
         if (builders.length === 0 && inputs.driver !== 'docker') {
           unread.push(`${where}: setup-buildx names no builder image (driver-opts image=…), so it runs moby/buildkit:buildx-stable-1 by tag; name it as image=moby/buildkit:vX.Y.Z@sha256:<64 hex>`);
         }
+        // A remote or Kubernetes builder runs wherever its endpoint or cluster says, whatever image= names (improve as you go).
+        const driver = input('driver');
+        if (driver !== undefined && driver !== 'docker-container' && driver !== 'docker') {
+          unread.push(
+            `${where}: setup-buildx's driver: ${driver} is not docker-container or docker, so the builds can run on a builder the image rule does not read; use the docker-container driver with image=moby/buildkit:vX.Y.Z@sha256:<64 hex> (${RUNBOOK})`,
+          );
+        }
       } else if (action.startsWith('docker/build-push-action@')) {
-        const contexts = inputs['build-contexts'];
-        if (typeof contexts === 'string' && /docker-image:\/\//i.test(contexts)) {
-          unread.push(`${where}: build-contexts names an image (docker-image://), which the image rule does not read; build FROM a pinned image in the Dockerfile instead (${RUNBOOK})`);
+        // A named context takes the place of the stage or image of its name, whatever it is (improve as you go: before, docker-image:// only).
+        if (inputs['build-contexts'] !== undefined) {
+          unread.push(
+            `${where}: build-contexts gives the build named contexts, each taking the place of the stage or image of its name (docker-image://, a git or https URL, a directory), and the image rule reads none of them; build FROM a pinned image in the Dockerfile instead (${RUNBOOK})`,
+          );
+        }
+        // An SBOM attestation has BuildKit run its scanner image (docker/buildkit-syft-scanner, by tag unless named).
+        const sbom = input('sbom');
+        if ((sbom !== undefined && sbom.toLowerCase() !== 'false') || /sbom/i.test(input('attests') ?? '')) {
+          unread.push(`${where}: sbom: or attests: has BuildKit run its SBOM scanner, an image the image rule does not read; leave the bill of materials to the release's Trivy scan (${RUNBOOK})`);
         }
         unread.push(...buildPushProblems(where, inputs));
+      } else if (action.startsWith('docker/setup-qemu-action@')) {
+        // The binfmt image it runs to install the emulators: read when named, refused when left to its default by tag.
+        if (typeof inputs.image === 'string') {
+          uses.push({ image: inputs.image, where });
+        } else {
+          unread.push(`${where}: setup-qemu names no image, so it runs tonistiigi/binfmt:latest by tag; name it as image: tonistiigi/binfmt:<tag>@sha256:<64 hex>`);
+        }
       } else if (action.startsWith('docker/bake-action@')) {
         // A bake file names its own targets' images, contexts and Dockerfiles, none of which this rule reads.
         unread.push(`${where}: docker/bake-action builds from bake files, whose images and docker-image:// contexts the image rule does not read; build with docker/build-push-action from a Dockerfile FROM a pinned image (${RUNBOOK})`);
