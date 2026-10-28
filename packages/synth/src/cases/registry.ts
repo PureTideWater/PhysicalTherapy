@@ -249,6 +249,13 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/routes/console-routes.db.test.ts',
     'apps/web/e2e/triage.spec.ts',
   ]),
+  // Lane B (co-001/suite-cap-1-bounded-reads, SUITE-CAP-1a): triage and the audit report read a month in batches and give the whole read's answers; docs/adr/0083.
+  'CAS-41': none(8, 'Generated at size by the test: no file.', [
+    'apps/worker/src/triage/batched.db.test.ts',
+    'apps/worker/src/report/streamed.db.test.ts',
+    'apps/worker/src/report/csv-arena.test.ts',
+    'apps/worker/src/reconcile/patient-share.test.ts',
+  ]),
   // Lane B (co-001/packet-day-counts; docs/adr/0086): every narrative figure in the role its words give it.
   'CAS-43': none(8, 'Narratives against the SYNTHETIC packets of @tp/packets/testing (role-examples.ts): no file.', [
     'packages/packets/src/verifier.test.ts',
@@ -667,6 +674,60 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/components/pricing/content.test.tsx',
     'tools/test/workflows.test.ts',
   ]),
+  // The forms of the UX baseline review's first pull request (docs/adr/0077).
+  'FRM-01': none(1, 'The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.', [
+    'apps/web/src/components/action-form.browser.test.tsx',
+    'apps/web/src/components/screening/split-form.browser.test.tsx',
+    'apps/web/src/lib/http/next.test.ts',
+    'apps/web/e2e/forms-keep-input.spec.ts',
+    'apps/web/e2e/triage.spec.ts',
+    'apps/web/e2e/packets.spec.ts',
+  ]),
+  'FRM-02': none(1, 'Synthetic personas save a support ticket, an ROI statement and a console incident after a refusal; no file.', ['apps/web/e2e/forms-keep-input.spec.ts']),
+  'FRM-03': none(1, 'The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.', ['apps/web/src/components/action-form.browser.test.tsx', 'apps/web/e2e/forms-keep-input.spec.ts']),
+  'FRM-04': none(1, 'The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.', [
+    'apps/web/src/components/action-form.browser.test.tsx',
+    'apps/web/src/components/action-form.test.tsx',
+    'apps/web/src/components/form-issues.test.ts',
+    'apps/web/src/components/form-hints.test.ts',
+    'apps/web/src/components/fields.test.tsx',
+    'apps/web/e2e/forms-keep-input.spec.ts',
+  ]),
+  'FRM-05': none(1, 'The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.', ['apps/web/src/components/action-form.browser.test.tsx', 'apps/web/e2e/forms-keep-input.spec.ts']),
+  'FRM-06': none(1, 'The public request form is posted from a browser with scripts off; no file.', ['apps/web/src/components/fields.test.tsx', 'apps/web/e2e/forms-keep-input.spec.ts']),
+  'FRM-07': none(1, 'Synthetic personas sign in through the local identity provider; no file.', [
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/src/lib/http/next.test.ts',
+    'apps/web/src/components/action-form.browser.test.tsx',
+    'apps/web/src/components/fields.test.tsx',
+    'apps/web/e2e/forms-keep-input.spec.ts',
+  ]),
+  'FRM-08': none(1, 'The public request form, synthetic practices’ forms, the uploads drop zone and the console’s status page are measured and scanned in the browser; no file.', [
+    'apps/web/src/components/action-form.browser.test.tsx',
+    'apps/web/src/components/form-hints.test.ts',
+    'apps/web/e2e/forms-keep-input.spec.ts',
+    'apps/web/e2e/packets.spec.ts',
+    'apps/web/e2e/uploads.spec.ts',
+  ]),
+  // The tables of the UX baseline review's third pull request (docs/adr/0078).
+  'TBL-01': none(1, 'The scroller is rendered from a synthetic table the test passes in memory, the source guard reads the app’s own files and sources it holds in memory, and the browser measures the scroller on synthetic practices the journeys load; no file.', [
+    'apps/web/src/components/scroll-table.test.tsx',
+    'apps/web/src/app/tables.test.ts',
+    'apps/web/e2e/layout-1280.spec.ts',
+    'apps/web/e2e/tables-phone.spec.ts',
+  ]),
+  'TBL-02': none(1, 'A synthetic practice of its own loads SYNTHETIC CAS-08, CAS-02 and MAP-03, whose files belong to those cases; no file.', ['apps/web/e2e/tables-phone.spec.ts', 'apps/web/e2e/layout-1280.spec.ts']),
+  'TBL-03': none(1, 'The routes read synthetic practices and sign-ins the journeys and the seed create; no file.', [
+    'apps/web/e2e/tables-phone.spec.ts',
+    'apps/web/e2e/reconciliation.spec.ts',
+    'apps/web/e2e/reports.spec.ts',
+    'apps/web/e2e/packets.spec.ts',
+    'apps/web/e2e/onboarding.spec.ts',
+    'apps/web/e2e/models.spec.ts',
+    'apps/web/e2e/unattested.spec.ts',
+    'apps/web/e2e/pricing.spec.ts',
+  ]),
+  'TBL-04': none(1, 'The stacked rows are rendered from synthetic rows the test passes in memory; no file.', ['apps/web/src/components/stacked-rows.test.tsx']),
 };
 
 export interface CaseDefinition {

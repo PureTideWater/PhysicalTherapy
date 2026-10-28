@@ -20,12 +20,18 @@ describe('EmptyState', () => {
 });
 
 describe('LoadingState', () => {
-  it('announces itself as a busy status region with a label', () => {
+  it('shows its label beside the bar and holds a status region that is never busy', () => {
     const html = renderToStaticMarkup(<LoadingState label="Loading cases" rows={2} />);
     expect(html).toContain('role="status"');
-    expect(html).toContain('aria-busy="true"');
-    expect(html).toContain('Loading cases');
+    expect(html).not.toContain('aria-busy');
+    expect(html).toMatch(/<span[^>]*data-slot="loading-label"[^>]*>Loading cases<\/span>/);
     expect(html.match(/data-slot="skeleton"/g)).toHaveLength(2);
+  });
+
+  it('renders its status region empty, so the label arriving after mount is announced', () => {
+    const html = renderToStaticMarkup(<LoadingState label="Loading cases" />);
+    expect(html).toContain('<p role="status" class="sr-only"></p>');
+    expect(html.match(/Loading cases/g)).toHaveLength(1);
   });
 
   it('defaults to three rows and a generic label', () => {

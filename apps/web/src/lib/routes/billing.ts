@@ -356,7 +356,7 @@ export const setupIntentHandler = organizationRoute({
   sample: { params: (refs) => ({ organizationId: refs.organizationId }), input: () => ({}) },
 });
 
-const digits = (length: number, label: string) => z.string().trim().regex(new RegExp(`^\\d{${String(length)}}$`), label);
+const digits = (length: number, message: string) => z.string().trim().regex(new RegExp(`^\\d{${String(length)}}$`), message);
 
 /** The local simulator's form: one of its test accounts or cards (never a real number; the simulator refuses any other). */
 export const simulatedPaymentMethodAction = organizationRoute({
@@ -367,8 +367,8 @@ export const simulatedPaymentMethodAction = organizationRoute({
   permission: 'organization.billing',
   params: organizationParams,
   input: z.discriminatedUnion('method', [
-    z.object({ method: z.literal('us_bank_account'), routingNumber: digits(9, 'a nine-digit routing number'), accountNumber: z.string().trim().regex(/^\d{4,17}$/, 'an account number') }),
-    z.object({ method: z.literal('card'), cardNumber: digits(16, 'a sixteen-digit card number') }),
+    z.object({ method: z.literal('us_bank_account'), routingNumber: digits(9, 'enter the nine digits of the routing number'), accountNumber: z.string().trim().regex(/^\d{4,17}$/, 'enter the account number, 4 to 17 digits') }),
+    z.object({ method: z.literal('card'), cardNumber: digits(16, 'enter the sixteen digits of the card number') }),
   ]),
   audit: { action: 'billing_payment_method_added', objectType: 'organization' },
   handle: async ({ scope, organizationId, services, input, request }): Promise<MutationResult> => {
