@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import { ActionForm, RefusalFallback, RefusalTakeover, noteRefusal, summaryLead, takesFocus, takesOrphanedRefusal } from './action-form';
-import { RefusalLead, SUMMARY_TITLES, summaryKind } from './form-issues';
+import { RefusalLead, SUMMARY_TITLES, SUMMARY_VARIANTS, summaryKind } from './form-issues';
 
 /**
  * A refused form's first line, the hand-off of the focus from a refused form to the explanation that takes its place
@@ -49,6 +49,8 @@ describe('what a summary says it is (S-SEC-2, S-A11Y-2, U-UX-3, U-UX-4; docs/adr
     expect(summaryKind({ error: 'This form was already sent, so nothing new was saved. Reload the page to see the result.', duplicate: true })).toBe('duplicate');
     expect(summaryKind({ error: 'Not available to your role: harness.' })).toBe('error');
     expect(SUMMARY_TITLES).toEqual({ cleared: 'Form cleared', locked: 'Account locked', unconfirmed: 'Not confirmed', duplicate: 'Already sent', error: 'Not done' });
+    // A key used before saved earlier: the neutral notice. Every other kind did nothing, or may not have saved.
+    expect(SUMMARY_VARIANTS).toEqual({ cleared: 'destructive', locked: 'destructive', unconfirmed: 'destructive', duplicate: 'default', error: 'destructive' });
   });
 
   it('never invites a press on a form cleared for another person, and says whether the press before it saved', () => {

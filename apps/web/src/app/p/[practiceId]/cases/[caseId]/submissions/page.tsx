@@ -295,9 +295,14 @@ export default async function SubmissionsPage(props: Props) {
                   label="Document"
                   name="documentId"
                   required
+                  // The SHA-256's prefix is its own run, so the line under the select sets it in Plex Mono, as
+                  // this page sets every SHA-256; the list itself shows the runs joined.
                   options={documents.map((document) => ({
                     value: document.id,
-                    label: `${KIND_TEXT[document.kind] ?? document.kind}, uploaded ${utc(document.uploadedAt)}${document.sha256 === null ? '' : `, SHA-256 ${document.sha256.slice(0, 12)}…`}`,
+                    label: [
+                      { text: `${KIND_TEXT[document.kind] ?? document.kind}, uploaded ${utc(document.uploadedAt)}${document.sha256 === null ? '' : ', SHA-256 '}` },
+                      ...(document.sha256 === null ? [] : [{ text: `${document.sha256.slice(0, 12)}…`, mono: true }]),
+                    ],
                   }))}
                   showChosen
                 />

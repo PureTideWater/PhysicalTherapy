@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { type Page, expect, test } from '@playwright/test';
+import { type Locator, type Page, expect, test } from '@playwright/test';
 import { syntheticPdf } from '@tp/contracts/testing';
 import { assertNoPhi } from '@tp/observability';
 import { PACKET_REFERENCE_PATTERN, SYNTHETIC_CORRESPONDENCE_CONTACT, correspondenceText } from '@tp/packets';
@@ -493,6 +493,25 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
       // At a phone's width the refused column form stays inside the page: the Document select, whose choice holds a
       // date and a SHA-256, shrinks to the form instead of widening it (FRM-08).
       await atPhoneWidth(approver, 'Log a payer response, refused');
+      // At a phone's width the line under the Document select says its choice whole, and sets the SHA-256's prefix in
+      // the face this page sets every SHA-256 in (Plex Mono), not the line's own (FRM-08; the UX re-check's polish).
+      const wide = approver.viewportSize();
+      await approver.setViewportSize({ width: 390, height: 844 });
+      try {
+        const chosen = form.locator('[data-slot="chosen-text"]');
+        const prefix = chosen.locator('span');
+        const choice = (await form.getByLabel('Document', { exact: true }).locator('option:checked').textContent()) ?? '';
+        expect(choice).toMatch(/, SHA-256 [0-9a-f]{12}…$/);
+        await expect(chosen).toHaveText(choice);
+        await expect(prefix).toHaveText(/^[0-9a-f]{12}…$/);
+        const face = (element: Locator) => element.evaluate((node) => getComputedStyle(node).fontFamily);
+        expect(await face(prefix)).toBe(await face(approver.locator('[data-sha256]').first()));
+        expect(await face(prefix)).not.toBe(await face(chosen));
+      } finally {
+        if (wide !== null) {
+          await approver.setViewportSize(wide);
+        }
+      }
       await amount.fill('60.00');
       await form.getByRole('button', { name: 'Record the response' }).click();
       await expect(approver.locator('[data-notice="recorded"]')).toBeVisible();

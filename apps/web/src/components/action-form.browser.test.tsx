@@ -101,6 +101,14 @@ function invalid(...issues: readonly (readonly [string, string])[]): RefusalStat
 }
 
 const SUMMARY = '[data-slot="refusal-summary"]';
+/** The look of a refusal that did nothing (the destructive Alert), and of a press that saved before (the neutral one). */
+const FAILURE = { role: 'alert', failure: true };
+const NEUTRAL = { role: 'alert', failure: false };
+
+/** An Alert's role, and whether it is drawn in the failure colour (the stylesheet's own classes, read as the app writes them). */
+async function looks(page: Page, selector: string): Promise<{ readonly role: string | null; readonly failure: boolean }> {
+  return page.locator(selector).evaluate((alert) => ({ role: alert.getAttribute('role'), failure: alert.classList.contains('text-destructive') }));
+}
 const TITLE = `${SUMMARY} [data-slot="alert-title"]`;
 const DESCRIPTION = `${SUMMARY} [data-slot="alert-description"]`;
 /** A page out of date, in the server's words (next.ts), which end in a reload: a form that reads the page again writes its own. */
@@ -264,12 +272,17 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     expect(await page.getAttribute(SUMMARY, 'data-state')).toBe('duplicate');
     expect(await page.textContent(TITLE)).toBe('Already sent');
     expect(await page.textContent(DESCRIPTION)).toBe('This form was already sent, so nothing new was saved. Reload the page to see the result.');
+    // An earlier press saved: the neutral notice, never the failure colour, still an alert that takes the focus.
+    expect(await looks(page, SUMMARY)).toEqual(NEUTRAL);
     expect(await focused(page)).toBe('refusal-summary');
     expect(await refreshes(page)).toBe(0);
     // A refresh from elsewhere renders a new key: the next press still sends the used one, and is "Already sent" again.
     await rerender(page, { requestKey: 'synthetic-request-key-2' });
     await refusedWith(page, DUPLICATE);
     expect(await sentKeys(page)).toEqual([FIRST_KEY, FIRST_KEY]);
+    // A refusal that did nothing is drawn as a failure again.
+    await refusedWith(page, invalid(ZIP));
+    expect(await looks(page, SUMMARY)).toEqual(FAILURE);
     await page.close();
 
     const exported = await harness.open('export');
@@ -277,7 +290,18 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     await exported.getByRole('button', { name: 'Export PDF and CSV', exact: true }).click();
     await exported.waitForSelector('[data-state="duplicate"]');
     expect(await exported.textContent('[data-state="duplicate"] [data-slot="alert-title"]')).toBe('Already sent');
+    expect(await looks(exported, '[data-state="duplicate"]')).toEqual(NEUTRAL);
     await exported.close();
+
+    // The note a refused row leaves when the refresh removes it is titled and drawn as the form's summary was, and takes
+    // the focus.
+    const gone = await harness.open('fallback');
+    const note = '[data-state="refused-row-gone"]';
+    await gone.waitForSelector(note);
+    expect(await gone.textContent(`${note} [data-slot="alert-title"]`)).toBe('Already sent');
+    expect(await looks(gone, note)).toEqual(NEUTRAL);
+    await gone.waitForFunction(() => document.activeElement?.hasAttribute('data-takes-over') === true);
+    await gone.close();
   });
 
   it('FRM-01: the version form’s two buttons share one pinned key: a draft after a dropped save sends the save’s key (S-SEC-1)', async () => {
@@ -794,6 +818,22 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     await page.getByRole('button', { name: 'Start again', exact: true }).click();
     await page.waitForSelector(line, { state: 'detached' });
     expect(await page.inputValue('#field-run')).toBe('q1');
+    await page.close();
+  });
+
+  it('FRM-08: the line under a select sets a SHA-256 its option gives as a mono run in Plex Mono, as the page does, and says the option’s words whole (the UX re-check’s polish)', async () => {
+    const page = await harness.open('document');
+    const line = '[data-slot="chosen-text"]';
+    const words = 'SYNTHETIC payer letter, uploaded 2026-10-27 21:36 UTC, SHA-256 0123456789ab…';
+    await page.waitForSelector(line);
+    // The list holds the runs joined, and the line says the same words.
+    expect(await page.locator('#field-documentId option:checked').textContent()).toBe(words);
+    expect(await page.textContent(line)).toBe(words);
+    const runs = await page.locator(`${line} span`).evaluateAll((spans): (readonly [string | null, string])[] => spans.map((span) => [span.textContent, span.className] as const));
+    expect(runs).toEqual([['0123456789ab…', 'font-mono tabular-nums']]);
+    // A choice that fits shows no line.
+    await page.selectOption('#field-documentId', 'short');
+    await page.waitForSelector(line, { state: 'detached' });
     await page.close();
   });
 

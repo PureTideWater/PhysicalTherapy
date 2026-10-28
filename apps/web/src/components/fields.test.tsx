@@ -121,6 +121,45 @@ describe('SelectField and TextAreaField (FRM-04)', () => {
   });
 });
 
+describe('a rule said once for several fields (`describedBy`; the UX re-check of the fix round)', () => {
+  it('describes each control by the text it names, after the control’s own message and hint, and writes no attribute of its own', () => {
+    const idle = inForm(
+      <>
+        <Field label="Subject" name="subject" describedBy="support-rule" />
+        <TextAreaField label="What happened, and what you expected" name="message" describedBy="support-rule" />
+        <SelectField label="What is it about" name="category" hint="The screen’s area." describedBy="support-rule" options={[{ value: 'question', label: 'A question' }]} />
+      </>,
+    );
+    expect(attribute(idle, 'field-subject', 'aria-describedby')).toBe('support-rule');
+    expect(attribute(idle, 'field-message', 'aria-describedby')).toBe('support-rule');
+    expect(attribute(idle, 'field-category', 'aria-describedby')).toBe('field-category-hint support-rule');
+    // The prop is the field's own: no control carries it as an attribute.
+    expect(idle).not.toMatch(/ describedby=/i);
+    const refused = inForm(<Field label="Subject" name="subject" describedBy="support-rule" />, [{ field: 'subject', message: 'a ticket takes no patient information' }]);
+    expect(attribute(refused, 'field-subject', 'aria-describedby')).toBe('field-subject-error support-rule');
+  });
+});
+
+describe('SelectField options in runs (the UX re-check’s polish)', () => {
+  it('holds an option given in runs as the runs joined, so the list and the chosen-text line say the same words', () => {
+    const html = renderToStaticMarkup(
+      <SelectField
+        label="Document"
+        name="documentId"
+        showChosen
+        options={[
+          { value: 'letter', label: [{ text: 'SYNTHETIC payer letter, SHA-256 ' }, { text: '0123456789ab…', mono: true }] },
+          { value: 'short', label: 'Letter' },
+        ]}
+      />,
+    );
+    expect(html).toContain('<option value="letter">SYNTHETIC payer letter, SHA-256 0123456789ab…</option>');
+    expect(html).toContain('<option value="short">Letter</option>');
+    // Measured in the browser: the server renders no line (action-form.browser.test.tsx reads it).
+    expect(html).not.toContain('chosen-text');
+  });
+});
+
 describe('CheckboxField (FRM-04)', () => {
   it('marks and describes its box, and its wrapper carries data-invalid, only when refused', () => {
     const confirm = <CheckboxField name="confirm" label="This line will not be pursued." errorName="Confirmation" required />;
@@ -308,6 +347,17 @@ describe('RefusalSummary as the server renders it (FRM-04, FRM-06: the post with
     expect(summary(stale)).toContain('<p>This page was out of date, so nothing was saved. Check the form, then send it again if you still mean to.</p>');
     expect(summary(stale, true)).toContain('<p>This page was out of date, so nothing was saved. It is up to date now: press “Open ticket” again.</p>');
     expect(summary(stale, true)).not.toContain('Reload');
+  });
+
+  it('draws a key used before as the neutral notice, an earlier press having saved, and every refusal that did nothing in the failure colour; each an alert the focus can reach', () => {
+    const duplicate = summary({ error: 'This form was already sent, so nothing new was saved. Reload the page to see the result.', duplicate: true });
+    expect(duplicate).toMatch(/^<div data-slot="refusal-summary" role="alert" class="[^"]*\btext-card-foreground\b[^"]*" data-state="duplicate" tabindex="-1">/);
+    expect(duplicate).not.toContain('text-destructive');
+    expect(duplicate).toContain('>Already sent</div>');
+    const failures: readonly FormState[] = [{ error: 'Not available to your role.' }, { error: 'Ten failed attempts locked this account.', locked: true }, { unconfirmed: true, seq: 1 }];
+    for (const state of failures) {
+      expect(summary(state)).toMatch(/^<div data-slot="refusal-summary" role="alert" class="[^"]*\btext-destructive\b[^"]*" data-state="[a-z]+" tabindex="-1">/);
+    }
   });
 
   it('names a locked account and an unconfirmed save in its title and state', () => {

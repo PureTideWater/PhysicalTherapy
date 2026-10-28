@@ -54,12 +54,14 @@ refused the "123 456" an authenticator app copies; and that several fields check
   dropped press; the version form's two actions share one pin, as they share the guard below, and one count of
   responses, so the form shows the answer that came last and, while one button's press is out, never the other's older
   answer. A key used before is answered `duplicate`, which pins it too and is titled "Already sent", never "Not done"
-  (nor is the note a Re-run's row leaves when the refresh removes it), over the server's words "This form was already
-  sent, so nothing new was saved. Reload the page to see the result."; only a form with `refreshOnError` (Re-run,
-  Accept) reads the page again for it, whose fields are all hidden and whose pin holds, so no fresh key is ever sent
-  under the kept values. An outcome the adapter has no words for is a plain refusal, never "Already sent". A success
-  resets the form through Next's redirect remount, with no reset code of its own. Two conditions keep that true, and
-  `components/action-form.tsx`'s header comment states both: the hook on `<form action>` takes the server action
+  (nor is the note a Re-run's row leaves when the refresh removes it), in the Alert's default, neutral look (its title
+  in the text's colour), never the destructive one, since an earlier press saved: the summary, the export form's and
+  that note alike (`SUMMARY_VARIANTS`), each still an alert that takes the focus, over the server's words "This form
+  was already sent, so nothing new was saved. Reload the page to see the result."; only a form with `refreshOnError`
+  (Re-run, Accept) reads the page again for it, whose fields are all hidden and whose pin holds, so no fresh key is ever
+  sent under the kept values. An outcome the adapter has no words for is a plain refusal, never "Already sent". A
+  success resets the form through Next's redirect remount, with no reset code of its own. Two conditions keep that true,
+  and `components/action-form.tsx`'s header comment states both: the hook on `<form action>` takes the server action
   itself, never a client wrapper; and `<FormKeys/>` is rendered by pages, never by a layout, or a second submit after a
   success would replay the old request key. A ref, not React state, guards a second press: it is the only guard that
   stops two presses in one frame.
@@ -118,7 +120,10 @@ refused the "123 456" an authenticator app copies; and that several fields check
   browser against a hidden copy of the select that holds that one option, so the browser's own arrow and padding
   count; `aria-hidden`, since a screen reader reads the select's value whole; and absent wherever nothing is cut (no
   line at 1280 px, none on a select wide enough at 390 px). The copy is styled through the CSSOM, which the
-  Content-Security-Policy's `style-src` does not govern; no `style` attribute is written in markup.
+  Content-Security-Policy's `style-src` does not govern; no `style` attribute is written in markup. The line is page
+  text, so it sets a figure, a code or a hash as the page does: an option may give its label in runs (`{ text, mono }`),
+  which the list holds joined, and the line sets a `mono` run in Plex Mono with tabular numerals (the submissions
+  page's Document passes its SHA-256's prefix so). Nothing is guessed from the words.
 - **D7. A six-digit code is accepted as an authenticator app copies it.** Spaces and hyphens are dropped before the
   six digits are checked, and the code fields carry no `pattern`, whose generic browser message no paste with a space
   could get past.
@@ -133,11 +138,13 @@ refused the "123 456" an authenticator app copies; and that several fields check
   and its name unchanged; in forced colours (a Windows contrast theme), whose palette would make both looks one, a
   pressed button takes the system's `Highlight` and `HighlightText` (one unlayered rule).
 - **D9. Every field checked by `pattern` states its format in its hint**, held by `components/form-hints.test.ts`. A
-  hint is 14 px (`text-sm`), the size of the message beside it on 0056's type scale, because the password policy, the
-  no-patient-information rule and the formats are read there. A hint written beside a hand-written control uses the
-  shared `Hint` too (the uploader's system list, the pursuit cost's rule, the packet reference, a share link), whose
-  `className` adds layout only; the same test fails on any text a control's `aria-describedby` names that is written
-  at 12 px, except the screening upload's two, a #42 file, until it takes `Hint` after #42 merges.
+  hint is 14 px (`text-sm`), the size of the message beside it on 0056's type scale, because the password policy and
+  the formats are read there. A rule a card says once for several fields is not repeated in each hint: the fields name
+  it through `describedBy`, read after their own message and hint, which `form-hints.test.ts` follows as it follows
+  `aria-describedby` (the support card's no-patient-information rule). A hint written beside a hand-written control
+  uses the shared `Hint` too (the uploader's system list, the pursuit cost's rule, the packet reference, a share link),
+  whose `className` adds layout only; the same test fails on any text a control's `aria-describedby` names that is
+  written at 12 px, except the screening upload's two, a #42 file, until it takes `Hint` after #42 merges.
 - **D10. A page whose CSRF token or request key is out of date is read again in place, and a form whose page then
   shows another person is cleared.** `next.ts` maps `csrf_refused` and a refusal whose only issue is `requestKey` to
   `{ error, stale: true }`; the form calls `router.refresh()`, which renders a fresh token and key while the
@@ -219,13 +226,14 @@ refused the "123 456" an authenticator app copies; and that several fields check
 - The summary is an `Alert` whose `data-slot` is `refusal-summary` (the props it is given come after the Alert's own
   slot), so it carries no `[data-slot="alert"]`: `e2e/helpers.ts`'s `refusal()` matches both slots, and a locator for
   a form's refusal uses `[data-slot="refusal-summary"]`.
-- The summary's titles are "Not done", "Account locked", "Not confirmed", "Already sent" and "Form cleared";
-  `contracts.spec.ts` and the tour still find "Not done" over every refusal that did nothing.
+- The summary's titles are "Not done", "Account locked", "Not confirmed", "Already sent" (the one drawn neutral) and
+  "Form cleared"; `contracts.spec.ts` and the tour still find "Not done" over every refusal that did nothing.
 - `SelectField` takes option groups (`{ group, options }`), so a raw select with `optgroup`s (Coverage's contract) is a
   `SelectField` like any other.
-- Mail to the support address opens a ticket and no field hint reaches it, so the support card says the
-  no-patient-information rule for mail and describes the address's link with it; a ticket refused for patient
-  information, and a status-page incident refused for an identifier, name every field that holds one at once.
+- A ticket and a mail to the support address keep one no-patient-information rule, so the support card says it once,
+  for both ("Neither a ticket nor a mail takes patient information: …"), last, just above the fields, and it describes
+  the address's link, the Subject and the Message; no hint repeats it. A ticket refused for patient information, and a
+  status-page incident refused for an identifier, name every field that holds one at once.
 - The FRM rows of the test matrix hold the behaviour: a browser harness over the real components in the unit project,
   and `apps/web/e2e/forms-keep-input.spec.ts` with five personas of its own.
 

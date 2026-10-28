@@ -8,7 +8,7 @@ import { type FormEvent, type ReactNode, useActionState, useEffect, useRef, useS
 import type { ActionState } from '../../lib/http/next';
 import type { ExportAttemptWords } from '../../lib/packets/export-attempts';
 import { RefreshAfterRefusal } from '../action-form';
-import { PendingStatus, RefusalLead, SUMMARY_TITLES, usePersonChange } from '../form-issues';
+import { PendingStatus, RefusalLead, SUMMARY_TITLES, SUMMARY_VARIANTS, usePersonChange } from '../form-issues';
 
 /**
  * A packet version's export, as its packet page shows it (the best-option audit's item #26, the founder's ruling
@@ -94,6 +94,8 @@ export function ExportRequestForm({
   }
   const reasons = (state.issues ?? []).filter((issue) => refusalCodes.includes(issue.field));
   const others = (state.issues ?? []).filter((issue) => !refusalCodes.includes(issue.field));
+  // A key used before is "Already sent" in the summary's neutral look; anything else did nothing (form-issues.tsx).
+  const refusedKind = state.duplicate === true ? 'duplicate' : 'error';
   return (
     <form ref={formRef} action={formAction} onSubmit={onSubmit} className="flex flex-col gap-2">
       {children}
@@ -111,8 +113,8 @@ export function ExportRequestForm({
           </AlertDescription>
         </Alert>
       ) : state.error === undefined ? null : (
-        <Alert variant="destructive" data-state={state.duplicate === true ? 'duplicate' : 'error'}>
-          <AlertTitle>{SUMMARY_TITLES[state.duplicate === true ? 'duplicate' : 'error']}</AlertTitle>
+        <Alert variant={SUMMARY_VARIANTS[refusedKind]} data-state={refusedKind}>
+          <AlertTitle>{SUMMARY_TITLES[refusedKind]}</AlertTitle>
           <AlertDescription>
             {/* No field of this form is the person's to fill (none placed): an invalid request's messages stand alone (#50's rule). */}
             <RefusalLead state={state} placed={0} fromBrowser={pressedHere} submit="Export PDF and CSV" />

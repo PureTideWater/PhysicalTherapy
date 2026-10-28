@@ -5,7 +5,17 @@ import { useRouter } from 'next/navigation';
 import { Fragment, type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type { ActionState } from '../lib/http/next';
-import { FormIssues, PendingStatus, RefusalSummary, SUMMARY_TITLES, type SummaryKind, summaryKind, useClearedForAnotherPerson, useGuardedSubmit } from './form-issues';
+import {
+  FormIssues,
+  PendingStatus,
+  RefusalSummary,
+  SUMMARY_TITLES,
+  SUMMARY_VARIANTS,
+  type SummaryKind,
+  summaryKind,
+  useClearedForAnotherPerson,
+  useGuardedSubmit,
+} from './form-issues';
 
 export { summaryLead } from './form-issues';
 
@@ -192,8 +202,8 @@ export function RefusalFallback({ prefix, present, lead }: { readonly prefix: st
       className="rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       {taken === null ? null : (
-        <Alert variant="destructive" data-state="refused-row-gone">
-          {/* Titled as the form's summary was: a key used before is "Already sent", its row gone or not. */}
+        <Alert variant={SUMMARY_VARIANTS[taken.kind]} data-state="refused-row-gone">
+          {/* Titled and drawn as the form's summary was: a key used before is "Already sent", its row gone or not. */}
           <AlertTitle>{SUMMARY_TITLES[taken.kind]}</AlertTitle>
           <AlertDescription>
             <p>{lead}</p>

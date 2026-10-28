@@ -413,16 +413,21 @@ test('a practice’s ROI form keeps the typed period, keeps its button focused a
 test('the support form keeps what was typed through a dropped connection, a page out of date and a refusal, and starts fresh once the ticket is saved; a press whose answer was lost is never saved twice, and a page read again under another person clears the form (FRM-01, FRM-02, FRM-05)', async ({ page }) => {
   await signInWithTotp(page, 'forms-manager');
   await page.goto('/support?from=remittances');
-  // Mail to the support address opens a ticket that no field's hint reaches: the card says the rule, and the address's
-  // link is described by it, so a person who tabs to it hears it (U-UX-5).
-  const mailRule = 'Your mail takes no patient information either: no names, dates of birth, member IDs or claim numbers. Name the screen and the record’s ID.';
-  await expect(page.locator('#support-mail-rule')).toHaveText(mailRule);
-  await expect(page.locator('a[href^="mailto:"][aria-describedby="support-mail-rule"]')).toHaveAccessibleDescription(mailRule);
+  // A ticket and a mail to the support address keep one rule: the card says it once, for both, and it describes the
+  // address's link, the Subject and the Message, so a person who tabs to any of them hears it and no hint repeats it
+  // (U-UX-5; the UX re-check's polish).
+  const rule = 'Neither a ticket nor a mail takes patient information: no names, dates of birth, member IDs or claim numbers. Name the screen and the record’s ID.';
+  const ruleWords = page.getByText('no names, dates of birth, member IDs or claim numbers');
+  await expect(page.locator('#support-rule')).toHaveText(rule);
+  await expect(ruleWords).toHaveCount(1);
+  await expect(page.locator('a[href^="mailto:"][aria-describedby="support-rule"]')).toHaveAccessibleDescription(rule);
   const form = formWith(page, 'Open ticket');
   const category = form.getByLabel('What is it about', { exact: true });
   const subject = form.getByLabel('Subject', { exact: true });
   const message = form.getByLabel('What happened, and what you expected', { exact: true });
   const summary = summaryOf(form);
+  await expect(subject).toHaveAccessibleDescription(rule);
+  await expect(message).toHaveAccessibleDescription(rule);
   const kept = async (expected: string) => {
     await expect(category).toHaveValue('question');
     await expect(subject).toHaveValue(expected);
@@ -472,8 +477,15 @@ test('the support form keeps what was typed through a dropped connection, a page
   await test.step('a subject naming a date of birth is refused, and every value stays (FRM-01)', async () => {
     await subject.fill('A question about the date of birth column');
     await page.getByRole('button', { name: 'Open ticket' }).click();
-    await expect(summary).toContainText('Subject: a ticket takes no patient information');
+    const refusal =
+      'a ticket takes no patient information: remove names, dates of birth, member IDs, claim numbers, other identifiers and phone numbers, and name the screen and the record’s ID instead';
+    await expect(summary).toContainText(`Subject: ${refusal}`);
     await expect(subject).toBeFocused();
+    // The refusal says the rule in the summary and under the field; the card still says it once, and the field reads
+    // its error first, then the card's rule, with no hint between.
+    await expect(subject).toHaveAccessibleDescription(`${refusal} ${rule}`);
+    await expect(ruleWords).toHaveCount(1);
+    await expect(form.locator('#field-subject-hint, #field-message-hint')).toHaveCount(0);
     await kept('A question about the date of birth column');
   });
 

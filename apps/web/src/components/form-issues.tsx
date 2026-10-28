@@ -150,9 +150,21 @@ export function EmptiedNote({ id, secret }: { readonly id: string; readonly secr
   ) : null;
 }
 
-/** The ids that describe a control: its error first (read first), then the emptied note of a secret field, then its hint. */
-export function describedBy(id: string, parts: { readonly error?: string | undefined; readonly emptied?: boolean; readonly hint?: string | undefined }): string | undefined {
-  const ids = [parts.error === undefined ? null : `${id}-error`, parts.emptied === true ? `${id}-emptied` : null, parts.hint === undefined ? null : `${id}-hint`].filter((part) => part !== null);
+/**
+ * The ids that describe a control: its error first (read first), then the emptied note of a secret field, then its
+ * hint, then `also`, the id of text elsewhere on the page that describes it too (a rule a card says once for several
+ * fields).
+ */
+export function describedBy(
+  id: string,
+  parts: { readonly error?: string | undefined; readonly emptied?: boolean; readonly hint?: string | undefined; readonly also?: string | undefined },
+): string | undefined {
+  const ids = [
+    parts.error === undefined ? null : `${id}-error`,
+    parts.emptied === true ? `${id}-emptied` : null,
+    parts.hint === undefined ? null : `${id}-hint`,
+    parts.also === undefined || parts.also === '' ? null : parts.also,
+  ].filter((part) => part !== null);
   return ids.length === 0 ? undefined : ids.join(' ');
 }
 
@@ -494,6 +506,19 @@ export const SUMMARY_TITLES: Readonly<Record<SummaryKind, string>> = {
   error: 'Not done',
 };
 
+/**
+ * Each kind's look: a key used before is the Alert's default notice, its title in the text's colour on the card, since
+ * an earlier press saved and nothing failed; every other kind did nothing, or may not have saved, and keeps the
+ * destructive look. Either way the summary keeps its role, is focused and is announced (3.5, 3.6).
+ */
+export const SUMMARY_VARIANTS: Readonly<Record<SummaryKind, 'default' | 'destructive'>> = {
+  cleared: 'destructive',
+  locked: 'destructive',
+  unconfirmed: 'destructive',
+  duplicate: 'default',
+  error: 'destructive',
+};
+
 /** A state's kind, as its summary shows it. */
 export function summaryKind(state: FormState): SummaryKind {
   if (state.otherPerson === true) {
@@ -563,7 +588,7 @@ function Summary({ state, fromBrowser, submit, formRef }: RefusalSummaryProps) {
   const targets = read?.targets ?? null;
   const kind = summaryKind(state);
   return (
-    <Alert variant="destructive" data-state={kind} data-slot="refusal-summary" ref={summaryRef} tabIndex={-1} className="col-span-full basis-full w-full">
+    <Alert variant={SUMMARY_VARIANTS[kind]} data-state={kind} data-slot="refusal-summary" ref={summaryRef} tabIndex={-1} className="col-span-full basis-full w-full">
       <AlertTitle>{SUMMARY_TITLES[kind]}</AlertTitle>
       <AlertDescription>
         <RefusalLead
