@@ -1,7 +1,7 @@
 # PR 42 (6b-4) final integrate round (progress)
 - Start 2026-10-28 UTC: fresh (no earlier file). Head expected 46974a25.
 ## Steps
-- [ ] 1 merge claude/build-platform (#74 165c5993 or newer), generators, tables.test counts
-- [ ] 2 port images fix (ci.yml + workflows.test.ts), actionlint, workflows test
+- [x] 1 MERGED origin/claude/build-platform 165c5993 (#74) -> 89d33579, clean (no conflict). Files both sides changed (auto-merged): apps/web/e2e/helpers.ts, docs/product/test-matrix.md, packages/synth/src/cases/matrix.ts, registry.ts, tools/screening-capacity/watched-paths.txt. Generators on the merged tree: pnpm install --frozen-lockfile 'Already up to date' (lock sha ba976a82 unchanged); watched.ts --write 543 lines, nothing written; synth --all 258 cases 0 written (650 unchanged) + 8 EMR formats 0 written; nothing untracked under fixtures/. tables.test.ts: #74 changed neither it nor the three files; test 7/7 passed; exemptions 1/2/1 still match -> no edit (decision: leave; no count changed, wrapping belongs to the UX PRs named in removedBy)
+- [x] 2 PORTED images fix -> bd589960 (ci.yml lines 734/736 and 746/748 only; workflows.test.ts 1802/1803/1811 pins + one new test 'gives no step a build's whole metadata as one variable...' covering step env and with inputs, real workflows [] + the two BUILT reads named + 5 shapes). Failing-first: on the unfixed tree (CI_TREE=git archive of 89d33579) both the pins test and the new test fail; fixed tree: workflows.test.ts 115/115 passed; actionlint 1.7.7 -ignore 'label "ubuntu-26\.04" is unknown' exit 0; eslint on the test file 0. NOTE: CLAUDE.md wants pnpm actions:check + toolchain:check after a workflow change: add to step 3
 - [ ] 3 checks
 - [ ] 4 push
