@@ -32,11 +32,6 @@ import { actionUses, parsePin, VERSION, versionsByRef, type WorkflowText } from 
 
 /** How many commits are aged at once. */
 export const AGE_CONCURRENCY = 4;
-/**
- * The one deadline for the age reads and the builder's (E3): three minutes, which fits a rate limit's 60 s wait and a
- * read tried again, and keeps `static` (timeout-minutes: 15) clear of an outage.
- */
-export const AGE_DEADLINE_MS = 180_000;
 /** The REST API version every request names (E7): the same fields for every endpoint read, and no end of support. */
 export const API_VERSION = '2026-03-10';
 export const USER_AGENT = 'check-action-pins';

@@ -1,8 +1,8 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { releaseAgeMinutes } from '../check-toolchain/exclude-window';
-import { AGE_DEADLINE_MS, ageRule, exceptionProblems, webFlowKeys, type WebFlowKeys } from './age';
+import { READ_DEADLINE_MS, releaseAgeMinutes } from '../check-toolchain/exclude-window';
+import { ageRule, exceptionProblems, webFlowKeys, type WebFlowKeys } from './age';
 import { AGE_EXCEPTIONS, baseState, selectPins, type BaseState } from './base';
 import { builderOf, checkBuilder } from './buildkit';
 import { NetworkError, pool, tagCommit, type Transport } from './network';
@@ -16,7 +16,9 @@ import { actionUses, consistencyProblems, formProblems, parsePin, reusableWorkfl
  * age-exceptions.json well formed. Networked, for
  * the pins the base does not already vouch for (base.ts): the tag, the inputs, the nested actions and release.yml's
  * nested caches (verify.ts); then the BuildKit builder (buildkit.ts) and the age rule (age.ts), under one deadline of
- * AGE_DEADLINE_MS. On a push run every finding about something read from upstream is a warning, since the pull request
+ * READ_DEADLINE_MS (check-toolchain's exclude-window.ts, the constant its image reads take too; E3: three minutes, which
+ * fits a rate limit's 60 s wait and a read tried again, and keeps `static`, timeout-minutes: 15, clear of an outage).
+ * On a push run every finding about something read from upstream is a warning, since the pull request
  * was the gate and a red build branch blocks every lane: the verify loop's failed reads, moved tags and the refs its
  * deadline (PUSH_DEADLINE_MS) left unread, for every ref, new against the previous head or not (the ci-infra review's
  * S4; a problem in what was read, which no outage or upstream move makes, stays an error); the builder's faults; and
@@ -58,7 +60,7 @@ export interface CheckOptions {
   readonly apiUrl?: string;
   /** The web-flow keys signatures are checked against (github-web-flow.asc; synthetic keys in the tests). */
   readonly keys?: WebFlowKeys;
-  /** The deadline the builder's and the age rule's reads share (AGE_DEADLINE_MS; shorter in the tests). */
+  /** The deadline the builder's and the age rule's reads share (READ_DEADLINE_MS; shorter in the tests). */
   readonly ageDeadlineMs?: number;
   /** The gpgv binary (gpgv). */
   readonly gpgv?: string;
@@ -209,7 +211,7 @@ export async function checkActionPins(options: CheckOptions): Promise<CheckResul
   if (verify.size === 0) notes.push('no pin is new or used with changed inputs: no action read from the network');
 
   // The builder and the age rule share one deadline (E3), so an outage cannot hold `static` past its timeout.
-  const ageDeadlineMs = options.ageDeadlineMs ?? AGE_DEADLINE_MS;
+  const ageDeadlineMs = options.ageDeadlineMs ?? READ_DEADLINE_MS;
   const ageDeadline = deadline(ageDeadlineMs);
   const now = options.now ?? new Date();
   // The time a rate limit's wait is measured from: the run's own clock, or the fixed time a test gives.

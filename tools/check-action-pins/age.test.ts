@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import os from 'node:os';
 import path from 'node:path';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { exceptionProblems, ghsaRangeHolds, webFlowKeys } from './age';
 import { AGE_EXCEPTIONS, AGE_FILE, CHECKER_FILE } from './base';
@@ -625,6 +625,30 @@ describe('the times read', SPAWNS, () => {
     const commit = signedObject('signed.commit');
     const slow = await run(adds(commit.sha), network([{ commit }]), { now: new Date(SIGNED + 10 * DAY), ageDeadlineMs: 300, gpgv: stuck });
     expect(slow.errors).toEqual([`the age reads stopped at their 0.3 s deadline with 1 of 1 commit(s) unread (${REPO}@${commit.sha}): github.com did not answer in time; re-run the check`]);
+  });
+
+  it('take their deadline from check-toolchain’s READ_DEADLINE_MS, the one constant both checkers’ age reads share (E3; the fix round’s seam)', async () => {
+    // READ_DEADLINE_MS set to 200 ms in a fresh copy of the modules: a check that reads it stops there; one with its own 180 s does not.
+    vi.resetModules();
+    vi.doMock('../check-toolchain/exclude-window', async (original) => ({ ...(await original<Record<string, unknown>>()), READ_DEADLINE_MS: 200 }));
+    try {
+      const fresh = await import('./check');
+      const pin = { repo: 'octo/a0', sha: sha('1') };
+      const repo = repository({ base: workflow([]), head: workflow([{ ref: `${pin.repo}@${pin.sha}`, version: VERSION }]) });
+      const transport = recordedTransport({
+        tags: { [pin.repo]: lightweight(VERSION, pin.sha) },
+        files: { [blob(pin.repo, pin.sha)]: 'name: a\nruns:\n  using: node24\n  main: index.js\n' },
+        git: { [pin.repo]: HANG },
+      });
+      const result = await Promise.race([
+        fresh.checkActionPins({ root: repo.dir, base: repo.base, event: 'pull_request', transport, keys: KEYS, now: new Date('2030-01-10T00:00:00Z') }),
+        new Promise<'still reading after 5 s'>((resolve) => setTimeout(() => resolve('still reading after 5 s'), 5_000).unref()),
+      ]);
+      expect(typeof result === 'string' ? result : result.errors).toEqual([`the age reads stopped at their 0.2 s deadline with 1 of 1 commit(s) unread (${pin.repo}@${pin.sha}): github.com did not answer in time; re-run the check`]);
+    } finally {
+      vi.doUnmock('../check-toolchain/exclude-window');
+      vi.resetModules();
+    }
   });
 });
 
