@@ -1,0 +1,24 @@
+# pay-build-B progress (slice B: uploader + letter field)
+Started 2026-10-28. Reading design.
+- Design read in full (sections 1-9). Code read: uploader.tsx, field.tsx, action-form.tsx, form-issues.tsx, forms-harness.tsx, browser.ts, uploads.ts, reconciliation.ts.
+- Plan: 1 uploader.tsx (a-e) -> 2 response-letter.tsx -> 3 uploads.ts uploadGate + reconciliation.ts -> 4 forms-harness ?form=response-letter -> 5 browser test -> 6 checks.
+- DONE uploader.tsx (a)-(e): BatchReport exported, onBatchChange (dedup by words in effect), single, headingLevel (also Receipts heading), Retry type=button, lone kind hides select.
+- DONE uploads.ts uploadGate(scope, practiceId) exported, uploadsPage uses it; reconciliation.ts uses it.
+- NEXT response-letter.tsx
+- DONE response-letter.tsx (ResponseLetters, ResponseLetterFieldProps, ResponseLetterField). Rule chosen: field chooses only when select is '' or holds its own earlier choice (strict "never over the person's choice").
+- CHECK 1: eslint on 4 slice-B files clean; apps/web tsc --noEmit clean (at that moment, other slices in progress).
+- NEXT forms-harness ?form=response-letter, then browser test.
+- DONE forms-harness.tsx ?form=response-letter (ResponseLetterForm; control.letters/upload/holdRefreshes/failRefreshes/releaseRefreshes/serve/serving; refresh sets answer in startTransition, page reads with use()).
+- WRITTEN response-letter.browser.test.tsx (items 1-13 + lost refresh). NEXT: run it under lock.
+- TEST browser response-letter: 14/14 pass (40 s). Mutation checks: Retry without type=button -> Enter test fails; no input event on batch -> person test fails. Both restored.
+- TEST browser action-form + split-form (harness regression): 41/41 pass.
+- TEST db uploads + billing-routes + reconciliation-routes: 35/35 pass.
+- lint:copy clean (521 files). Unit form-hints/type-scale/tables/registry/fields/action-form/brand-copy: 328/328 pass.
+- NEXT full pnpm typecheck + eslint on all 6 files.
+- CHANGE: response-letter.tsx now imports ResponseLetters from lib/packets/submissions (slice C defined it there) and re-exports it (one type, server-side).
+- eslint 6 files: clean. Browser test re-run: 14/14.
+- pnpm typecheck #1: only errors in slice C files (submissions page, lib/routes/submissions.ts) and slice E (workbench-routes.db.test.ts:618).
+- Hoisted LETTER_TYPES/LETTER_KINDS/ONE_LETTER constants in response-letter.tsx.
+- FINAL: eslint 6 files clean; browser test 14/14 (3rd pass); gitleaks 8.24.3 on the 6 files: no leaks.
+- pnpm typecheck #2: remaining errors only in slice C (submissions/page.tsx:123,318,321) and slice E (workbench-routes.db.test.ts:618).
+- SLICE B DONE. No e2e owned by slice B (not run: other slices mid-edit break the app build).

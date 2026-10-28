@@ -35,9 +35,13 @@ on Lane A's orchestrator's order of 2026-10-28 03:45 UTC: next after #74, before
      never recorded cannot be tagged or read by roles without `phi.read` (design 2.8, 8.1).
 - **Waiting on someone (the founder):** whether a line already at Payer approved or Recovered may be written off, and
   with which reasons (a money and stage ruling; recorded, not decided; design 8.2).
-- **Running:** the build workflow wf_0fd81a80-111 (script archived; progress `progress/pay-build-*.md`, `pay-critic.md`,
-  `pay-fix.md` in this session's scratchpad; worktree /home/user/ux-payer-response, uncommitted).
-- **Next:** commit and push (a WIP ref first if a limit stops the build);
+- **Built** (wf_0fd81a80-111): 30 files, committed and pushed as **29dded5**. Integration check green: typecheck,
+  lint, copy, logs, fixtures, synth, unit 1,142, db 183 plus the covering route-test shards 4,635, e2e 9/9. The
+  design critic: 8 nits, no blocking or should-fix (carried into the fix round). Progress files `lane-b-ux-payer-response-wip/`.
+- **Draft PR #85** opened from the template (description by the helper, read back), subscribed.
+- **Running:** the reviews workflow wf_be925c9b-c8d (security with the money lens in a fresh clone; UX and brand from
+  before 165c599 and after 29dded5 tour shots; each finding verified). Script archived.
+- **Next:**
   the draft PR; two reviews (UX and brand with shots; security with the money lens); fix round with the full suite; the
   fresh-clone verification; merge. Check-in trig_01VmPUaCgFFjDLZev4GuKyfh at 10:24 UTC.
 
@@ -50,3 +54,5 @@ on Lane A's orchestrator's order of 2026-10-28 03:45 UTC: next after #74, before
 | 2026-10-28 05:55 | Design done | wf_6c170a1a-e77 finished on resume: review 28 findings, all applied. Decisions, Lane A items and the founder's question recorded above. Build next. |
 
 | 2026-10-28 06:00 | Build | wf_0fd81a80-111 started: builders A to E, integration check, critic, fixer. |
+
+| 2026-10-28 07:45 | Built; PR #85; reviews | Build 29dded5 pushed; draft PR #85; reviews workflow wf_be925c9b-c8d started. |
