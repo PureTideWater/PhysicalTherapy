@@ -41,8 +41,31 @@ request. Each issue they open holds only public references: page addresses, file
 | --- | --- | --- |
 | `content-calendar`, `check` | daily at 07:17 UTC, on request, and on a push to `claude/build-platform` or a pull request touching the calendar, `records.ts`, `tools/content-calendar` or `content/`: `tools/content-calendar/index.ts` over the calendar, the newest published release's `COVERAGE.md`, the prepared releases, the drafts and the source pages; the findings to its summary (docs/runbooks/content-updates.md). Read-only, no secret | 15 min |
 | `content-calendar`, `notify` | not on a pull request: one `content-due` issue per finding not already open under the same title (every page of the open issues read), at most 20 new ones a run with the rest listed in one "findings not filed" issue, or one saying the check failed or handed on no findings list, commented on at each later failing run. It alone holds `issues: write`, checks nothing out and runs no repository code | 5 min |
-| `release-capacity`, `capacity` | weekly on Tuesday at 03:29 UTC and on request: the worker image built, the quarterly scale release 900110 built outside the repository, and `tools/release-capacity/run.ts`, the real-size price job, triage and reports at the worker task's limits (RCC-07); its report kept as `release-capacity` | 180 min |
+| `release-capacity`, `capacity` | weekly on Tuesday at 03:29 UTC and on request: the worker image built, the quarterly scale release 900110 built outside the repository, and `tools/release-capacity/run.ts`, the real-size price job, triage and reports at the worker task's limits (RCC-07), then A's reconcile of a SYNTHETIC posting export, then the large jobs together (A's second report, D's triage, E's price job and C's second set of parses, queued at once; CAS-42); it fails on a measured job that completed only on a later attempt, a backend above 64 advisory locks at any sample, a job's live heap above 75% of its heap limit or a measured job with no `job heap` line, a phase's or a chain job's memory above 90% of the task, or a job of the new phase not completed; its report kept as `release-capacity` | 180 min |
 | `release-capacity`, `notify` | on its failure or cancel (the 180-minute timeout among them): opens or comments on the issue "Release capacity test failing"; on a pass with an advisory (the windows query over its 5 s budget): "Release capacity advisory" (label `release-capacity`), the advisory lines in the body. It alone holds `issues: write` and checks nothing out | 5 min |
+
+Reading a red `release-capacity` run (SUITE-CAP-1b, ADR 0083). The summary's table names each measured job with its
+"Attempts" and "Live heap", and the memory line names each phase's and each chain job's peak; the failing check names
+the job, by ID and type only.
+- **A job completed on attempt 2 or 3.** An earlier attempt failed and pg-boss retried it, which a person in production
+  would have waited on. Read the worker log of the run's report for that job ID's error code (53200
+  "out of shared memory" is a lock count; a heap out-of-memory ends the worker's process). The run never counts a retry
+  as a pass.
+- **A backend held more than 64 advisory locks.** The sampler reads, each second, the largest advisory-lock count any
+  one backend holds (`pg_locks`, `locktype = 'advisory'`, grouped by `pid`); 64 is the loader's trace bound
+  (`TRACE_LOCK_BUCKETS`, equal to the default `max_locks_per_transaction`). A job that takes a lock per line or per row
+  is back: find the statement by the job type the check names, and fix the code, never the bound. A line's stage lock
+  is its row in `line_status_head`, and the ledger triggers take only the practice's `ledger:` key, so triage, the
+  report and reconcile each hold one advisory lock.
+- **A job's live heap passed 75% of its limit, or a measured job logged no `job heap` line.** Each job attempt logs
+  `job heap` with `heap_live_peak_mib` (the heap in use just after the largest major collection while it ran) and
+  `heap_limit_mib`. Above 75% the month outgrew the bounded readers' margin: find which job by its ID, then which reader
+  holds a month's lines (ADR 0083's rule: no job holds a month's lines beyond a small, measured per-line holder). A
+  missing line means the worker image does not log it, or the job never ended: read the worker's log for the job ID.
+  Production alarms at the same line (docs/runbooks/incident-response.md).
+- **A phase's or a chain job's memory above 90%.** The task's `memory.current`, sampled each second, passed 921.6 MiB;
+  the line names the phase and the chain job. The large jobs together share one worker process, so read their live
+  heaps beside the peak.
 
 Each `static` check runs once the install succeeded, whatever the check before it did, so one red step does not hide
 the others' verdicts. Every verdict a job writes to its summary it also writes to its log, which is what the verifier

@@ -249,6 +249,12 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/routes/console-routes.db.test.ts',
     'apps/web/e2e/triage.spec.ts',
   ]),
+  // SUITE-CAP-1b (co-001/suite-cap-1-triage-locks, ADR 0083): a line's stage lock is its head row, so a real-size month triages and reports.
+  'CAS-40': none(8, 'Concurrent stage events on generated lines: no file.', ['packages/db/src/line-status.db.test.ts', 'apps/worker/src/reconcile/stage-head.db.test.ts']),
+  'CAS-42': none(8, 'Generated at size by the test, and release 900110 built outside the repository by the weekly run: no file.', [
+    'tools/release-capacity/checks.test.ts',
+    'tools/release-capacity/scenario.test.ts',
+  ]),
   'LED-01': none(9, 'A packet marked submitted: an action that must create no entry; no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
   'LED-02': { completesIn: 9, build: workflow.led02, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts'] },
   'LED-03': { completesIn: 9, build: workflow.led03, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts'] },

@@ -179,6 +179,18 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     assertion:
       'Submitting the materiality and pursuit forms with the values the page pre-fills keeps lineMaterialityCents 500, caseMaterialityCents 25000 and staffRateCentsPerHour 4500; for every amount, the helper’s output read back through the save’s dollars field gives the same cents; a model budget entered as 5.00 or 5 is stored as 500 cents',
   },
+  {
+    id: 'CAS-40',
+    title: "Concurrent writers of one line's stages",
+    assertion:
+      "The second of two forward events is refused; a reopen naming a stage that has since moved is refused; a line's events sort by commit order, so a duplicate forward event is refused; no new deadlock; every line's head row equals its latest event, through the ledger's stages too; 30,000 stage events in one transaction hold no advisory lock per line, and another practice's events commit meanwhile; an empty table's statistics add no sequential scan per event",
+  },
+  {
+    id: 'CAS-42',
+    title: 'A real-size month triages and reports',
+    assertion:
+      "A 100,000-line run triages and reports in one transaction each under 75% of the worker's heap, holding at most its practice's one advisory lock, within the time budget; a 100,000-line report and another practice's 100,000-line triage complete together under the worker's heap; the weekly run under release 900110 completes every measured job on its first attempt, with no backend above 64 advisory locks, no job's live heap above 75% of the limit and the worker's memory at or under 90%",
+  },
   { id: 'LED-01', title: 'Packet submitted', assertion: 'No entry' },
   { id: 'LED-02', title: 'Adjusted remittance with higher allowed matching a case line', assertion: '`approved` entry for the difference' },
   { id: 'LED-03', title: 'Adjusted remittance matching no case', assertion: 'Listed for manual match; no entry' },

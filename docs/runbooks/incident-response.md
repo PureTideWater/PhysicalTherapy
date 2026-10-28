@@ -84,6 +84,29 @@ the practice approves again, turn maintenance off, and resolve the status incide
 Write the post-incident review: timeline, cause, what was affected, what is changed (code, configuration, policy), and
 who owns each change. Update the risk analysis. If a control failed, add the test that would have caught it.
 
+## An operational alarm, not a security event: a worker job's live heap (ADR 0083)
+
+The alarm `JobHeapLivePeak` (on the operator topic, with the worker's other alarms) fires when a worker job's live heap
+passed 75% of the worker's heap limit (420 of 560 MiB, `infra/lib/heap.ts`) in a five-minute period. Each job attempt
+logs `job heap` as it ends, completed or failed, with `job_id`, `job_type`, `heap_live_peak_mib` (the heap in use just
+after the largest major collection while it ran) and `heap_limit_mib`; the alarm takes the largest peak. It is the line
+the weekly real-size run fails at (docs/runbooks/ci.md, `release-capacity`). Nothing has failed yet: it says a month, or
+several practices' large jobs at once, came near the margin that keeps the worker's process from running out of heap,
+which would fail every practice's jobs in flight. It is not a security event: open no incident record unless something
+else here applies.
+
+1. In the worker's log group, find the `job heap` lines of the period above 420 and read their `job_id` and `job_type`.
+   Then read that job's other lines by its ID (its start, its outcome, any error code) and which other jobs ran at the
+   same time; the process is shared, so their heaps add up. Never copy a log line with anything but IDs and numbers into
+   a ticket.
+2. Read the weekly run's last summary (the `release-capacity` report, its "Live heap" column and each phase's peak): a
+   month near the same size passing there points at the reader that holds a month's lines; a pass there points at size
+   or overlap in production.
+3. If jobs are failing too (a heap out-of-memory ends the worker's process, and pg-boss retries what was in flight;
+   the job-failure alarm fires on a job's last failed attempt), record the job IDs. Then fix forward: the bound goes
+   back to the reader that outgrew it (ADR 0083: no job holds a month's lines beyond a small, measured per-line holder),
+   never a larger heap alone.
+
 ## The yearly tabletop
 
 Run this runbook on a synthetic scenario (for example, a support grant left open past its ticket, or a leaked

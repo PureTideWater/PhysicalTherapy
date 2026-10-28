@@ -1,0 +1,17 @@
+{
+  "case": "CAS-42",
+  "module": "CAS",
+  "title": "A real-size month triages and reports",
+  "assertion": "A 100,000-line run triages and reports in one transaction each under 75% of the worker's heap, holding at most its practice's one advisory lock, within the time budget; a 100,000-line report and another practice's 100,000-line triage complete together under the worker's heap; the weekly run under release 900110 completes every measured job on its first attempt, with no backend above 64 advisory locks, no job's live heap above 75% of the limit and the worker's memory at or under 90%",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": ["tools/release-capacity/checks.test.ts","tools/release-capacity/scenario.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "Generated at size by the test, and release 900110 built outside the repository by the weekly run: no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

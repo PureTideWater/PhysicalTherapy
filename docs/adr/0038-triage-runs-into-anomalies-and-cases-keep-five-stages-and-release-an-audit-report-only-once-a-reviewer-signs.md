@@ -64,6 +64,12 @@ stage, who triages and when, where the reviewer stands in the tenancy model, and
   from the Cases screen (the triage job), and the report job triages its run again on the day it prints, so a report's
   windows are judged on its own date. Triage is idempotent (an advisory lock per practice; anomalies once per run and
   cohort; stages only forward; a line in at most one case).
+  *Note 2026-10-28 (SUITE-CAP-1b, `co-001/suite-cap-1-triage-locks`; ADR 0083):* the per-line lock behind "stages only
+  forward" is a row lock, no longer an advisory lock per line. `line_status_rules()` writes the line's head row in
+  `line_status_head` first (`20261109090000_line_status_heads.sql`), so a second writer of the same line waits on that
+  row, a line's events sort in commit order, and a triage or report of a whole month holds no lock per line. "An
+  advisory lock per practice" above stays true, and so do one transaction per triage and per report, the stage rules and
+  their messages.
 - **Only the run in effect is triaged or reported on** (ADR 0037: a complete first run, or a re-run once a person
   accepts it). The Cases and Reports screens offer only runs in effect and their actions refuse any other; the triage
   job leaves a re-run nobody has accepted, or a run an accepted re-run replaced (`not_in_effect`, logged); the report

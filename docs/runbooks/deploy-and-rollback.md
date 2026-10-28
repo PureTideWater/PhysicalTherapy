@@ -275,6 +275,36 @@ operator_screening_run_keys(uuid), operator_screening_run_records(uuid), operato
 operator_screening_record(...), operator_screening_complete(...), operator_screening_fail(...) FROM tp_operator`, with
 their exact signatures from the migration, once no platform task of an image before PR 6b-3 can run.
 
+## A line's stage lock (ADR 0083; SUITE-CAP-1b)
+
+**The migration's lock loop.** `20261109090000_line_status_heads.sql` takes `claim`'s SHARE lock and `line_status`'s
+SHARE ROW EXCLUSIVE lock together with `NOWAIT`, once a second, up to 300 tries, before it backfills `line_status_head`,
+replaces `line_status_rules()` and builds `claim_by_superseded`. A refused try holds and queues nothing, so stage writers
+(triage, the audit report, opening a case, reconcile, manual ledger work and a person's reopen) and 835 loads go on
+while it waits for a moment with neither in flight. Once it holds both locks, stage writes wait for the backfill (a few
+seconds per million events) and 835 loads for the index build. If no such moment comes in five minutes, the migration
+task fails with
+
+> line_status or claim stayed in use for five minutes; run the deploy again (docs/adr/0083)
+
+(`lock_not_available`, 55P03). The migration runs in one transaction, so nothing changed, and no service moved (step 4:
+no service moves until the migration task exits 0). It means a long triage or audit report, or an 835 load, held its
+transaction through the whole five minutes. Run the deploy again, at a quieter hour if it repeats; never take the locks
+by hand or end another session's transaction to make room.
+
+**After it.** Two writers of the same line wait on that line's row in `line_status_head`: in `pg_stat_activity` the
+waiting backend shows `wait_event_type = 'Lock'` with `wait_event = 'transactionid'` (`tuple` for a third writer queued
+behind it), where before it was `advisory`. It is the same wait at the same grain, not new contention. Triage, the
+report and reconcile each hold one advisory lock, their practice's (`triage:` or `ledger:`).
+
+**Rollback across SUITE-CAP-1b** (to an earlier image, below) keeps the migration: the previous image's stage writers run
+the same statements, and the trigger writes the head row for them. From launch on, SUITE-CAP-1a (the bounded reads)
+reaches production in an earlier release than SUITE-CAP-1b (ADR 0083, D21), so the previous image already reads a month
+in batches. Never roll back past SUITE-CAP-1a on this schema: that image reads a month's lines whole, and on the new
+trigger a large month's report would take the worker down with a heap out-of-memory instead of failing 53200; roll
+forward with a fix instead. If the trigger itself had to be undone, a later migration restores the earlier body; the
+head table can stay, unused, since it is derived from `line_status`.
+
 ## Rollback
 
 Redeploy the previous image, without migrating:
