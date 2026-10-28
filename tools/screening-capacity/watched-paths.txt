@@ -209,6 +209,7 @@ apps/worker/src/reconcile/statements.ts
 apps/worker/src/report/brand-files.ts
 apps/worker/src/report/brand.ts
 apps/worker/src/report/content.ts
+apps/worker/src/report/csv-arena.ts
 apps/worker/src/report/csv.ts
 apps/worker/src/report/documents.ts
 apps/worker/src/report/escape.ts
