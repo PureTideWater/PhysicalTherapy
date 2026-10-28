@@ -7,12 +7,14 @@ option (the co-founder's ruling of 2026-10-26 ~00:20 UTC), recorded here and in 
 Open questions: none.
 
 <!-- RESUME-BLOCK -->
-## Current state (2026-10-28 04:05 UTC): P1 draft PR #82 open, every check green on b574d4e8; its fix round running (wf_dfb43bb4-b4c)
+## Current state (2026-10-28 05:20 UTC): P1 draft PR #82 green on b574d4e8; its fix round resumed after the 5-hour limit (wf_dfb43bb4-b4c)
 - **ci-browser: merged** (#77, ecebdc90); push runs green; the O5 probe on #41.
 - **P1 PR [#82](https://github.com/PureTideWater/PhysicalTherapy/pull/82)** (draft; subscribed), head **b574d4e8** on 0dd1ba7e (11 commits: B2 1-3, B1 4-5, the merge, the seam (NaN floor), commit 6 documents, a test timeout, Part 5's live readings, bake-action refused). Local: 386 files, 6,480 + 1. **CI green on b574d4e8** (every check; unit 395 files, 6,627 + 1 against base 165c5993's 392 and 6,565 + 1; `Action pins` aged all 12 pins with the token: every `verified_at` present with reason valid, 8 immutable releases, youngest login-action 4.50 days; the token reads another owner's `/activity`). Build summary `lane-b-ci-pin-age-build-summary.md`.
 - **Reviews** (`lane-b-ci-pin-age-review-{ci-infra,security-supply}.md`): CI 0 B, 4 S, 7 N; security 0 B, 4 S, 4 N. All taken. CI-S4 supersedes E16 (on a push every read fault warns); CI-S3's revert path through the base's first-parent history; SEC-S1/S2 a BuildKit-faithful Dockerfile reader shared with CI-13.
 - **Fix round** wf_dfb43bb4-b4c (script to archive as `workflow-scripts/lane-b-ci-pin-age-fix-round-*.js`): F1 check-toolchain in `/home/user/ci-pin-age-f1`, F2 check-action-pins in `/home/user/ci-pin-age-f2`, then the integrator in `/home/user/ci-pin-age` (workflows test, documents, design §16, the base merged in (165c5993 or later), the full local suite once, one push, description v2 read back). Progress in `scratchpad/p1fix/progress/`.
-- **Check-in:** trig_01VRYza7kBainue2gH5RZVHo at 05:25 UTC (the window ends near 05:00; resume the fix round with `resumeFromRunId` if stopped).
+- **Stopped and resumed:** the account's 5-hour limit stopped the fix round at ~04:05 UTC (F2 had five commits 413e5812..7e14ea0e and uncommitted edits; F1 nothing committed); the container restarted. At 05:13: setup re-run (OK), F2's commits pushed for continuity as `co-001/wip-ci-pin-age-f2`, the script given a RESUMED note, the round resumed with `resumeFromRunId`.
+- **Check-in:** trig_01VRYza7kBainue2gH5RZVHo at 10:25 UTC.
+- **Dependabot, Wednesday 04:44 UTC:** the images runs (docker 40634046721, docker_compose 40634047077) succeeded at 165c5993; #33 is still open and untouched; the logs are being read for why (`scratchpad/dependabot-wed.md`).
 - **Next:** CI on the fix round's head; the fresh-clone verification; ready; merge. Then P2, P4. Dependabot's Wednesday 04:43 UTC images run to read.
 <!-- RESUME-BLOCK -->
 
