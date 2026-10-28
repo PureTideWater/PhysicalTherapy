@@ -8,7 +8,7 @@ import { z } from 'zod';
 
 import { ageWords, excludeWindowProblems, expiredExclude, type KnownTime } from '../check-toolchain/exclude-window';
 import { compareVersions, MINUTE_MS } from '../check-toolchain/policy';
-import type { BaseState } from './base';
+import { AGE_EXCEPTIONS, AGE_FILE, type BaseState } from './base';
 import { armoredFingerprints, dearmor } from './keys';
 import { childEnv, NetworkError, pool, rateLimitWait, withRetries, type Answer, type GitObject, type Headers, type Refs, type Transport } from './network';
 import { actionUses, parsePin, VERSION, versionsByRef, type WorkflowText } from './workflows';
@@ -30,8 +30,6 @@ import { actionUses, parsePin, VERSION, versionsByRef, type WorkflowText } from 
  * On a push every finding is a warning: the pull request was the gate.
  */
 
-export const AGE_FILE = 'tools/check-action-pins/age.ts';
-export const AGE_EXCEPTIONS = 'tools/check-action-pins/age-exceptions.json';
 /** How many commits are aged at once. */
 export const AGE_CONCURRENCY = 4;
 /**

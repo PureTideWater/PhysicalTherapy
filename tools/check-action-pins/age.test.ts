@@ -7,6 +7,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { exceptionProblems, ghsaRangeHolds, webFlowKeys } from './age';
+import { AGE_EXCEPTIONS, AGE_FILE, CHECKER_FILE } from './base';
 import { checkActionPins, type CheckOptions } from './check';
 import { blob, HANG, lightweight, recordedTransport, sha } from './fixtures';
 import { armoredFingerprints, dearmor, packets } from './keys';
@@ -164,15 +165,15 @@ function repository(options: {
   };
   git('init', '-q', '-b', 'main');
   write('.github/workflows/ci.yml', options.base);
-  write('tools/check-action-pins/index.ts', '// the checker\n');
-  if (options.baseAge ?? true) write('tools/check-action-pins/age.ts', '// the age rule\n');
-  if (options.baseExceptions !== undefined) write('tools/check-action-pins/age-exceptions.json', JSON.stringify(options.baseExceptions));
+  write(CHECKER_FILE, '// the checker\n');
+  if (options.baseAge ?? true) write(AGE_FILE, '// the age rule\n');
+  if (options.baseExceptions !== undefined) write(AGE_EXCEPTIONS, JSON.stringify(options.baseExceptions));
   git('add', '.');
   git('commit', '-q', '-m', 'base');
   const base = git('rev-parse', 'HEAD');
   write('.github/workflows/ci.yml', options.head);
-  if (options.headCheckerEdit === true) write('tools/check-action-pins/index.ts', '// the checker, edited\n');
-  if (options.headExceptions !== undefined) write('tools/check-action-pins/age-exceptions.json', JSON.stringify(options.headExceptions));
+  if (options.headCheckerEdit === true) write(CHECKER_FILE, '// the checker, edited\n');
+  if (options.headExceptions !== undefined) write(AGE_EXCEPTIONS, JSON.stringify(options.headExceptions));
   write('README.md', 'head\n');
   git('add', '.');
   git('commit', '-q', '-m', 'head');

@@ -1,11 +1,12 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { baseState, selectPins } from './base';
+import { AGE_EXCEPTIONS, AGE_FILE, baseState, CHECKER_FILE, selectPins } from './base';
 import { checkActionPins, PUSH_CONCURRENCY } from './check';
 import { blob, HANG, lightweight, recordedTransport, sha } from './fixtures';
 
@@ -84,14 +85,14 @@ function repository(options: { baseWorkflow: string; headWorkflow: string; baseC
   };
   git('init', '-q', '-b', 'main');
   write('.github/workflows/ci.yml', options.baseWorkflow);
-  if (options.baseChecker) write('tools/check-action-pins/index.ts', '// the checker\n');
-  if (options.baseAge ?? true) write('tools/check-action-pins/age.ts', '// the age rule\n');
+  if (options.baseChecker) write(CHECKER_FILE, '// the checker\n');
+  if (options.baseAge ?? true) write(AGE_FILE, '// the age rule\n');
   for (const [file, text] of Object.entries(options.baseFiles ?? {})) write(file, text);
   git('add', '.');
   git('commit', '-q', '-m', 'base');
   const base = git('rev-parse', 'HEAD');
   write('.github/workflows/ci.yml', options.headWorkflow);
-  if (options.headCheckerEdit === true) write('tools/check-action-pins/index.ts', '// the checker, edited\n');
+  if (options.headCheckerEdit === true) write(CHECKER_FILE, '// the checker, edited\n');
   for (const [file, text] of Object.entries(options.headFiles ?? {})) write(file, text);
   write('README.md', 'head\n');
   git('add', '.');
@@ -175,6 +176,18 @@ describe('the pins the network reads', () => {
     expect(result.errors).toContain(refusal);
     // New against the base's top-level workflows: verified and aged, not vouched for by the parked copy.
     expect(transport.reads).toEqual(expect.arrayContaining(['ls-remote https://github.com/octo/setup-python refs/tags/v7.2.0 refs/tags/v7.2.0^{}', 'fetchRefs octo/setup-python v7.2.0']));
+  });
+
+  it('name each path read at the merge base once, in base.ts, and each is a file the head holds, so a rename that leaves one behind fails here instead of bootstrapping every later pull request (CI-N4)', async () => {
+    const root = fileURLToPath(new URL('../../', import.meta.url));
+    for (const file of [CHECKER_FILE, AGE_FILE, AGE_EXCEPTIONS]) expect(existsSync(path.join(root, file)), file).toBe(true);
+    // The selection and the age rule read the one marker: a base without it bootstraps, and the note names it.
+    const without = repository({ baseWorkflow: workflow(CHECKOUT), headWorkflow: workflow(CHECKOUT), baseChecker: true, baseAge: false });
+    expect(baseState(without.dir, without.base).hasAge).toBe(false);
+    const result = await checkActionPins({ root: without.dir, base: without.base, event: 'pull_request', transport: network(), ...CI });
+    expect(result.notes).toContain(`age: the merge base ${without.base.slice(0, 12)} has no ${AGE_FILE}, so every pin is aged (bootstrapping)`);
+    const repo = repository({ baseWorkflow: workflow(CHECKOUT), headWorkflow: workflow(CHECKOUT), baseChecker: true });
+    expect(baseState(repo.dir, repo.base).hasAge).toBe(true);
   });
 
   it('read the base with a git that never sees the job’s token, as the networked reads’ git and gpgv do not (SEC-N4)', () => {

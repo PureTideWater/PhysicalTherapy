@@ -12,6 +12,15 @@ import { actionUses, type ActionUse, type WorkflowText } from './workflows';
  */
 
 export const CHECKER_DIR = 'tools/check-action-pins';
+/**
+ * The paths read at the merge base, each named once, here (the ci-infra review's N4): the checker's entry point, whose
+ * absence means the base predates the checker and every pin is read; the age rule, the bootstrapping marker, whose
+ * absence means every pin is aged; and the age rule's excludes. check.test.ts holds each to a file the head has, so a
+ * rename that leaves one behind fails there, not on every later pull request as a silent bootstrap.
+ */
+export const CHECKER_FILE = `${CHECKER_DIR}/index.ts`;
+export const AGE_FILE = `${CHECKER_DIR}/age.ts`;
+export const AGE_EXCEPTIONS = `${CHECKER_DIR}/age-exceptions.json`;
 const WORKFLOWS_DIR = '.github/workflows';
 
 /** A git command in the checkout, run without the job's token, which no local read needs (the security review's N4). */
@@ -26,9 +35,9 @@ export interface BaseState {
   readonly workflows: readonly WorkflowText[];
   /** Why every pin is read, or undefined when only new and changed ones are. */
   readonly everyPin: string | undefined;
-  /** Whether the merge base has the age rule (tools/check-action-pins/age.ts); without it every pin is aged (bootstrapping). */
+  /** Whether the merge base has the age rule (AGE_FILE); without it every pin is aged (bootstrapping). */
   readonly hasAge: boolean;
-  /** The merge base's tools/check-action-pins/age-exceptions.json, or undefined when it has none. */
+  /** The merge base's age-exceptions.json (AGE_EXCEPTIONS), or undefined when it has none. */
   readonly ageExceptions: string | undefined;
 }
 
@@ -54,12 +63,12 @@ export function baseState(root: string, base: string): BaseState {
       if (shown.status !== 0) throw new Error(`git show ${mergeBase}:${file} failed: ${shown.stderr.trim()}`);
       return { file: file.slice(WORKFLOWS_DIR.length + 1), text: shown.stdout };
     });
-  const hasChecker = git(root, ['cat-file', '-e', `${mergeBase}:${CHECKER_DIR}/index.ts`]).status === 0;
+  const hasChecker = git(root, ['cat-file', '-e', `${mergeBase}:${CHECKER_FILE}`]).status === 0;
   const changed = git(root, ['diff', '--name-only', mergeBase, '--', CHECKER_DIR]);
   if (changed.status !== 0) throw new Error(`git diff against ${mergeBase} failed: ${changed.stderr.trim()}`);
   const everyPin = !hasChecker ? `the base ${mergeBase.slice(0, 12)} has no ${CHECKER_DIR}` : changed.stdout.trim() !== '' ? `this change edits ${CHECKER_DIR}` : undefined;
-  const hasAge = git(root, ['cat-file', '-e', `${mergeBase}:${CHECKER_DIR}/age.ts`]).status === 0;
-  const exceptions = git(root, ['show', `${mergeBase}:${CHECKER_DIR}/age-exceptions.json`]);
+  const hasAge = git(root, ['cat-file', '-e', `${mergeBase}:${AGE_FILE}`]).status === 0;
+  const exceptions = git(root, ['show', `${mergeBase}:${AGE_EXCEPTIONS}`]);
   return { mergeBase, workflows, everyPin, hasAge, ageExceptions: exceptions.status === 0 ? exceptions.stdout : undefined };
 }
 
