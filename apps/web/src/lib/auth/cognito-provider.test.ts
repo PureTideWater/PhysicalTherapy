@@ -136,7 +136,7 @@ describe('CognitoAuthProvider: password, TOTP and new passwords', () => {
     const next = await provider.setNewPassword(challengeOf(step), 'Chosen-Pass-2026');
     expect(next.kind).toBe('mfa_setup_required');
     expect(sent[1]?.input).toMatchObject({ ChallengeName: 'NEW_PASSWORD_REQUIRED', ChallengeResponses: { NEW_PASSWORD: 'Chosen-Pass-2026', USERNAME: 'person@synthetic.test' } });
-    expect(await provider.setNewPassword(challengeOf(step), 'Chosen-Pass-2027')).toEqual({ kind: 'invalid_password', problems: ['a password the user pool accepts'] });
+    expect(await provider.setNewPassword(challengeOf(step), 'Chosen-Pass-2027')).toEqual({ kind: 'invalid_password', problems: [] });
   });
 
   it('enrolls TOTP: associate, verify, then answer MFA_SETUP', async () => {

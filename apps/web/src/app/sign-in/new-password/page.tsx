@@ -2,7 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/u
 import type { Metadata } from 'next';
 
 import { ActionForm } from '../../../components/action-form';
-import { Field } from '../../../components/field';
+import { PasswordField } from '../../../components/password-field';
 import { PASSWORD_MIN_LENGTH } from '../../../lib/auth/password';
 import { loadPublicPage } from '../../../lib/http/next';
 import { newPasswordPage } from '../../../lib/routes/sign-in';
@@ -18,15 +18,20 @@ export default async function NewPasswordPage() {
       <Card>
         <CardHeader>
           <CardTitle>{email}</CardTitle>
-          <CardDescription>
-            Your invitation to PaidWhole came with a temporary password. Choose your own: at least {PASSWORD_MIN_LENGTH} characters, with a lowercase letter, an uppercase letter, a digit and a
-            symbol.
-          </CardDescription>
+          <CardDescription>Your invitation to PaidWhole came with a temporary password. Choose your own.</CardDescription>
         </CardHeader>
         <CardContent>
           <ActionForm action={newPasswordStep} submit="Save password">
-            <Field label="New password" name="password" type="password" autoComplete="new-password" required minLength={PASSWORD_MIN_LENGTH} />
-            <Field label="New password again" name="confirm" type="password" autoComplete="new-password" required />
+            <PasswordField
+              label="New password"
+              name="password"
+              showName=" new password"
+              autoComplete="new-password"
+              required
+              minLength={PASSWORD_MIN_LENGTH}
+              hint={`At least ${String(PASSWORD_MIN_LENGTH)} characters, with a lowercase letter, an uppercase letter, a digit and a symbol.`}
+            />
+            <PasswordField label="New password again" name="confirm" showName=" new password again" autoComplete="new-password" required />
           </ActionForm>
         </CardContent>
       </Card>

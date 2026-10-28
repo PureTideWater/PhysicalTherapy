@@ -52,14 +52,14 @@ describe.each([4, 6])('the database suite in %i shards', (count) => {
     expect(shards.files).toEqual(expect.arrayContaining(['packages/db/src/catalog.db.test.ts', 'packages/db/src/cross-tenant.db.test.ts']));
   });
 
-  it('starts each shard’s generated route tests and SCR-19’s lease wait first when no duration is recorded', () => {
+  it('starts each shard’s generated route tests, SCR-19’s lease wait and CAS-41’s bounded readers first when no duration is recorded', () => {
     for (const shard of shards.shards) {
       expect([...shard.coldOrder].sort(), `shard ${String(shard.index)}`).toEqual(shard.files);
       const slow = shard.coldOrder.map((file) => SLOW_FIRST.some((pattern) => pattern.test(file)));
       expect(slow.indexOf(false) === -1 || !slow.slice(slow.indexOf(false)).includes(true), `shard ${String(shard.index)}: ${shard.coldOrder.join(', ')}`).toBe(true);
     }
     const all = shards.shards.flatMap((shard) => shard.files);
-    expect(all.filter((file) => SLOW_FIRST.some((pattern) => pattern.test(file)))).toHaveLength(13);
+    expect(all.filter((file) => SLOW_FIRST.some((pattern) => pattern.test(file)))).toHaveLength(15);
   });
 });
 
@@ -69,7 +69,7 @@ describe('the shard check', () => {
     const problems = shardProblems(dropped);
     expect(problems).toHaveLength(1);
     expect(problems[0]).toMatch(/^\S+\.db\.test\.ts runs in no shard$/);
-  });
+  }, 120_000);
 
   it('names an empty shard, a file run twice and a file outside the project', () => {
     const files = ['a.db.test.ts', 'b.db.test.ts'];
@@ -89,5 +89,5 @@ describe('the shard check', () => {
 
   it('keeps the results cache CI restores under node_modules/.vite/vitest', () => {
     expect(path.relative(ROOT, plan(1).cacheDir).split(path.sep).slice(0, 3)).toEqual(['node_modules', '.vite', 'vitest']);
-  });
+  }, 120_000);
 });

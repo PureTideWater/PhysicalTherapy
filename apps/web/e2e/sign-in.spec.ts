@@ -15,7 +15,7 @@ test('signs in with a password and a TOTP code, into a private, no-store practic
   const north = await practiceId('north');
   await expect(page).toHaveURL(new RegExp(`/p/${north}$`));
   await expect(page.getByRole('heading', { level: 1, name: SYNTHETIC_PRACTICES.north })).toBeVisible();
-  await page.getByLabel('Practice switcher').click();
+  await page.locator('[data-slot="practice-switcher"]').click();
   const switcher = page.getByRole('list', { name: 'Practices' });
   await expect(switcher.getByRole('link')).toHaveText([SYNTHETIC_PRACTICES.north, SYNTHETIC_PRACTICES.south]);
   await expect(page.getByText(SYNTHETIC_PRACTICES.other)).toHaveCount(0);
@@ -58,6 +58,8 @@ test('locks the account after ten failed sign-ins, even against the right passwo
   }
   await enterPassword(page, 'lockout', personaPassword('lockout'));
   await expect(refusal(page)).toContainText('Account locked');
+  // The emptied password's note asks for nothing: no password opens a locked account (docs/adr/0077, D2).
+  await expect(page.getByLabel('Password', { exact: true })).toHaveAccessibleDescription('Emptied for your security.');
   await expect(page).toHaveURL(/\/sign-in$/);
 });
 

@@ -1,13 +1,16 @@
 import { STAGE_LABELS } from '@tp/triage';
-import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Label, PermissionState } from '@tp/ui';
+import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, PermissionState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../components/action-form';
+import { UtcTime } from '../../../../components/dates';
+import { Field, SelectField } from '../../../../components/field';
 import { roleNames, utc } from '../../../../components/format';
 import { ReleaseState, ReportStatusBadge } from '../../../../components/reports/display';
 import { DocumentStatusBadge } from '../../../../components/reports/documents';
 import { Money, Pager } from '../../../../components/remittances/display';
+import { ScrollTable } from '../../../../components/scroll-table';
 import { ShareLink } from '../../../../components/share';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { loadPage } from '../../../../lib/http/next';
@@ -93,16 +96,7 @@ export default async function ReportsPage(props: Props) {
                 <ActionForm action={generateReportFormAction} submit="Generate the report" className="flex max-w-xl flex-col gap-3">
                   <FormKeys />
                   <input type="hidden" name="practiceId" value={practiceId} />
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="report-run">Pricing run</Label>
-                    <select id="report-run" name="runId" className="h-9 rounded-md border bg-background px-2 text-sm" required>
-                      {runs.map((run) => (
-                        <option key={run.id} value={run.id}>
-                          {run.periodFrom} to {run.periodTo} (release {run.releaseNo})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  <SelectField id="report-run" label="Pricing run" name="runId" options={runs.map((run) => ({ value: run.id, label: `${run.periodFrom} to ${run.periodTo} (release ${String(run.releaseNo)})` }))} required showChosen />
                 </ActionForm>
               )}
             </CardContent>
@@ -193,10 +187,7 @@ export default async function ReportsPage(props: Props) {
                 <FormKeys />
                 <input type="hidden" name="practiceId" value={practiceId} />
                 <input type="hidden" name="kind" value="monthly_summary" />
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="document-month">Month of service</Label>
-                  <Input id="document-month" name="month" type="month" defaultValue={lastMonth} required className="w-44" />
-                </div>
+                <Field id="document-month" label="Month of service" name="month" type="month" defaultValue={lastMonth} required className="w-44" />
               </ActionForm>
             ) : null}
           </CardContent>
@@ -236,45 +227,50 @@ export default async function ReportsPage(props: Props) {
         {documents.total === 0 ? (
           <p className="text-sm text-muted-foreground">None generated yet{canGenerate ? ': generate one above.' : '; a billing manager or analyst generates them.'}</p>
         ) : (
-          <table className="w-full text-left text-sm" aria-label="Generated reports">
-            <thead className="text-muted-foreground">
-              <tr>
-                <th className="py-1 pr-3 font-medium">Report</th>
-                <th className="py-1 pr-3 font-medium">Figures fixed</th>
-                <th className="py-1 pr-3 font-medium">PDF</th>
-                <th className="py-1 font-medium">Files</th>
-              </tr>
-            </thead>
-            <tbody>
-              {documents.items.map((document) => (
-                <tr key={document.id} className="border-t" data-document={document.id}>
-                  <td className="py-1 pr-3">
-                    <Link className="underline" href={`${path}/documents/${document.id}`}>
-                      {document.kind === 'coverage' ? 'Coverage report' : `Monthly summary, ${document.period ?? ''}`}
-                    </Link>
-                  </td>
-                  <td className="py-1 pr-3">
-                    {utc(document.generatedAt)} by {document.requestedBy ?? 'a member of the practice'}
-                  </td>
-                  <td className="py-1 pr-3">
-                    <DocumentStatusBadge status={document.status} />
-                  </td>
-                  <td className="py-1">
-                    <span className="flex flex-wrap gap-3">
-                      {document.status === 'ready' ? (
-                        <a className="underline" href={`${path}/documents/${document.id}/pdf`}>
-                          PDF
-                        </a>
-                      ) : null}
-                      <a className="underline" href={`${path}/documents/${document.id}/csv`}>
-                        CSV
-                      </a>
-                    </span>
-                  </td>
+          <ScrollTable label="Generated reports">
+            <table className="w-full min-w-[36rem] text-left text-sm" aria-label="Generated reports">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="py-1 pr-3 font-medium">Report</th>
+                  <th className="py-1 pr-3 font-medium">Figures fixed</th>
+                  <th className="py-1 pr-3 font-medium">PDF</th>
+                  <th className="py-1 font-medium">Files</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {documents.items.map((document) => (
+                  <tr key={document.id} className="border-t" data-document={document.id}>
+                    <td className="py-1 pr-3">
+                      <Link className="underline" href={`${path}/documents/${document.id}`}>
+                        {document.kind === 'coverage' ? 'Coverage report' : `Monthly summary, ${document.period ?? ''}`}
+                      </Link>
+                    </td>
+                    <td className="py-1 pr-3">
+                      {/* The date and the time stay whole; only an email wider than the column breaks. */}
+                      <span className="block min-w-40 wrap-anywhere">
+                        <UtcTime at={document.generatedAt} /> by {document.requestedBy ?? 'a member of the practice'}
+                      </span>
+                    </td>
+                    <td className="py-1 pr-3">
+                      <DocumentStatusBadge status={document.status} />
+                    </td>
+                    <td className="py-1">
+                      <span className="flex flex-wrap gap-3">
+                        {document.status === 'ready' ? (
+                          <a className="underline" href={`${path}/documents/${document.id}/pdf`}>
+                            PDF
+                          </a>
+                        ) : null}
+                        <a className="underline" href={`${path}/documents/${document.id}/csv`}>
+                          CSV
+                        </a>
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollTable>
         )}
         <Pager path={path} query={{ page: pageQuery.page, history: pageQuery.history }} page={documents.page} pages={documents.pages} total={documents.total} noun="Generated reports" param="documents" />
       </section>
@@ -284,37 +280,43 @@ export default async function ReportsPage(props: Props) {
         {history.total === 0 ? (
           <p className="text-sm text-muted-foreground">No report file has been downloaded.</p>
         ) : (
-          <table className="w-full text-left text-sm" aria-label="Exports">
-            <thead className="text-muted-foreground">
-              <tr>
-                <th className="py-1 pr-3 font-medium">When</th>
-                <th className="py-1 pr-3 font-medium">What</th>
-                <th className="py-1 font-medium">By</th>
-              </tr>
-            </thead>
-            <tbody>
-              {history.items.map((entry) => {
-                const href = exportHref(practiceId, entry);
-                const what = exportWhat(entry);
-                return (
-                  <tr key={entry.eventId} className="border-t" data-export={entry.kind} data-line-level={entry.lineLevel ? 'yes' : 'no'}>
-                    <td className="py-1 pr-3">{utc(entry.downloadedAt)}</td>
-                    <td className="py-1 pr-3">
-                      {href === null ? (
-                        what
-                      ) : (
-                        <Link className="underline" href={href}>
-                          {what}
-                        </Link>
-                      )}{' '}
-                      {entry.lineLevel ? <Badge variant="outline">Line-level PHI</Badge> : null}
-                    </td>
-                    <td className="py-1">{entry.downloadedBy ?? 'a member of the practice'}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <ScrollTable label="Exports">
+            <table className="w-full text-left text-sm" aria-label="Exports">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="py-1 pr-3 font-medium">When</th>
+                  <th className="py-1 pr-3 font-medium">What</th>
+                  <th className="py-1 font-medium">By</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.items.map((entry) => {
+                  const href = exportHref(practiceId, entry);
+                  const what = exportWhat(entry);
+                  return (
+                    <tr key={entry.eventId} className="border-t" data-export={entry.kind} data-line-level={entry.lineLevel ? 'yes' : 'no'}>
+                      <td className="py-1 pr-3">
+                        <UtcTime at={entry.downloadedAt} />
+                      </td>
+                      <td className="py-1 pr-3">
+                        {href === null ? (
+                          what
+                        ) : (
+                          <Link className="underline" href={href}>
+                            {what}
+                          </Link>
+                        )}{' '}
+                        {entry.lineLevel ? <Badge variant="outline">Line-level PHI</Badge> : null}
+                      </td>
+                      <td className="py-1">
+                        <span className="block min-w-40 wrap-anywhere">{entry.downloadedBy ?? 'a member of the practice'}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </ScrollTable>
         )}
         <Pager path={path} query={{ page: pageQuery.page, documents: pageQuery.documents }} page={history.page} pages={history.pages} total={history.total} noun="Downloads" param="history" />
       </section>

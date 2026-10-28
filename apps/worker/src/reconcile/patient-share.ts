@@ -1,8 +1,8 @@
 import { type PatientShare, type PatientShareChange, type ShareLine, claimAllocations, claimLevelShares, countedStage, entriesById, patientShareChange } from '@tp/ledger';
 import { type Cents, ZERO_CENTS, cents, parseCents } from '@tp/money';
 
-import { type Scope, ledgerEntries } from './ledger';
-import { type ChainClaim, type ClaimLine, type LineChain, chainContext, claimLines, lineChain } from './remittances';
+import { type Scope, type StoredEntry, ledgerEntries } from './ledger';
+import { type ChainClaim, type ChainContext, type ClaimLine, type LineChain, type PracticeChains, chainContext, chainContextFor, claimLines, lineChain, practiceChains } from './remittances';
 
 /**
  * "Billable to the patient" and the payer's corrections that pay nothing more (PRD 13, Matching step 1;
@@ -102,24 +102,37 @@ const asShare = (share: ShareCents): PatientShare => ({
  * The patient's share of every line of the claims named, by service line: its own PR rows by reason, and its part of
  * the claim's CAS at the claim's level by the cash's own rule (remittances.ts claimLines, @tp/ledger claimLevelShares:
  * the same lines take a part, by the same weights, keeping the same parts, the line's one rounded part split over
- * the claim's reasons), its PR reasons the patient's and flagged with the weights it was split by.
+ * the claim's reasons), its PR reasons the patient's and flagged with the weights it was split by. The adjustments are
+ * grouped once, the claim-level ones by claim and the line-level ones by line, each group in the query's order, so each
+ * line reads its own and its claim's in the order a filter of them all would give (SUITE-CAP-1a D16; docs/adr/0083).
  */
-async function lineShares(scope: Scope, practiceId: string, claimIds: readonly string[]): Promise<Map<string, Pick<ShareLine, 'share' | 'allocation'>>> {
+export async function lineShares(scope: Scope, practiceId: string, claimIds: readonly string[]): Promise<Map<string, Pick<ShareLine, 'share' | 'allocation'>>> {
   const ids = [...new Set(claimIds)];
   const { rows: adjustments } = await scope.client.query<AdjustmentRow>(
     "SELECT a.claim_id, a.service_line_id, a.group_code, a.reason_code, a.amount_cents::text AS amount_cents FROM adjustment a WHERE a.practice_id = $1 AND a.claim_id = ANY ($2::uuid[]) AND (a.service_line_id IS NULL OR a.group_code = 'PR') ORDER BY a.claim_id, a.position",
     [practiceId, ids],
   );
+  const claimLevelOf = new Map<string, AdjustmentRow[]>();
+  const lineLevelOf = new Map<string, AdjustmentRow[]>();
+  for (const row of adjustments) {
+    const [groups, key] = row.service_line_id === null ? [claimLevelOf, row.claim_id] : [lineLevelOf, row.service_line_id];
+    const group = groups.get(key);
+    if (group === undefined) {
+      groups.set(key, [row]);
+    } else {
+      group.push(row);
+    }
+  }
   const lines = await claimLines(scope, ids);
   const shares = new Map<string, Pick<ShareLine, 'share' | 'allocation'>>();
   for (const [claimId, claimLinesOf] of lines) {
-    const atClaim = adjustments.filter((row) => row.claim_id === claimId && row.service_line_id === null);
+    const atClaim = claimLevelOf.get(claimId) ?? [];
     const splits = claimLinesOf.map((line) => line.split);
     const parts = claimLevelShares({ lines: splits, reasonCents: atClaim.map((row) => parseCents(row.amount_cents)) });
     const allocations = atClaim.some((row) => row.group_code === 'PR') ? claimAllocations(splits) : splits.map(() => null);
     for (const [index, line] of claimLinesOf.entries()) {
       const share: ShareCents = { ...NO_SHARE };
-      for (const row of adjustments.filter((adjustment) => adjustment.service_line_id === line.serviceLineId)) {
+      for (const row of lineLevelOf.get(line.serviceLineId) ?? []) {
         share[shareKey(row.reason_code)] += parseCents(row.amount_cents);
       }
       for (const [position, row] of atClaim.entries()) {
@@ -158,7 +171,7 @@ function readingOf(outcome: MatchCorrection['outcome'], allowed: MatchCorrection
  * line_status stage). The case's stored state is case_rules' as ever; this is said beside it until the stored close
  * lands.
  */
-export function casePatientBalance(lines: readonly { readonly correction: CorrectionKind | null; readonly writtenOff: boolean; readonly stage: string | null }[]): boolean {
+export function casePatientBalance(lines: readonly PatientBalanceLine[]): boolean {
   const open = lines.filter((line) => !line.writtenOff);
   return (
     open.some((line) => line.correction === 'patient_balance') &&
@@ -166,8 +179,79 @@ export function casePatientBalance(lines: readonly { readonly correction: Correc
   );
 }
 
-/** The case lines named, each with its claim matches read in payment terms, its correction and its billable to the patient. */
-export async function lineCorrections(scope: Scope, practiceId: string, serviceLineIds: readonly string[]): Promise<Map<string, LineCorrection>> {
+/** A case line as casePatientBalance reads it: its correction, whether it is written off, and its latest stage. */
+export interface PatientBalanceLine {
+  readonly correction: CorrectionKind | null;
+  readonly writtenOff: boolean;
+  readonly stage: string | null;
+}
+
+/**
+ * casePatientBalance's "some" and "every", folded over a case's lines a part at a time (the audit report reads a case's
+ * lines in batches, SUITE-CAP-1a D18; docs/adr/0083): whether some line not written off is a correction the patient's
+ * share took whole, and whether every such line is one or is payer approved or recovered. Folding every line of a case
+ * from PATIENT_BALANCE_UNSEEN, in any order and in any parts, gives patientBalanceOf() equal to casePatientBalance() of
+ * them all (patient-share.test.ts).
+ */
+export interface PatientBalanceFold {
+  readonly some: boolean;
+  readonly every: boolean;
+}
+
+/** No line seen: some is false and every is true, as over no open line. */
+export const PATIENT_BALANCE_UNSEEN: PatientBalanceFold = { some: false, every: true };
+
+export function foldPatientBalance(fold: PatientBalanceFold, line: PatientBalanceLine): PatientBalanceFold {
+  if (line.writtenOff) {
+    return fold;
+  }
+  return {
+    some: fold.some || line.correction === 'patient_balance',
+    every: fold.every && (line.correction === 'patient_balance' || line.stage === 'payer_approved' || line.stage === 'recovered'),
+  };
+}
+
+export function patientBalanceOf(fold: PatientBalanceFold): boolean {
+  return fold.some && fold.every;
+}
+
+/**
+ * What lineCorrections reads of the practice whatever lines it is asked about, read once by a caller that asks in batches
+ * (the audit report's patient balance, SUITE-CAP-1a D18; docs/adr/0083): what each match's own entries approved, from the
+ * ledger entries the caller read, and the practice's part of the chains (practiceChains: its matches in chain order and
+ * the lines and reversals of every claim they name). A batch then reads only its own claims (chainContextFor).
+ */
+export interface PracticeCorrections {
+  /** What each match's own entries approved (net of their corrections). */
+  readonly approvedBy: ReadonlyMap<string, bigint>;
+  readonly chains: PracticeChains;
+}
+
+/** What each match's own entries approved (net of their corrections). */
+function approvedByMatch(ledger: readonly StoredEntry[]): Map<string, bigint> {
+  const byId = entriesById(ledger);
+  const approvedBy = new Map<string, bigint>();
+  for (const entry of ledger) {
+    if (entry.matchId !== null && countedStage(entry, byId) === 'approved') {
+      approvedBy.set(entry.matchId, (approvedBy.get(entry.matchId) ?? 0n) + entry.amountCents);
+    }
+  }
+  return approvedBy;
+}
+
+export async function practiceCorrections(scope: Scope, practiceId: string, entries: readonly StoredEntry[]): Promise<PracticeCorrections> {
+  return { approvedBy: approvedByMatch(entries), chains: await practiceChains(scope, practiceId, entries) };
+}
+
+/**
+ * The case lines named, each with its claim matches read in payment terms, its correction and its billable to the patient.
+ * A line's answer reads its own claim's chain and shares alone, so it is the same whichever other lines share the call.
+ * `given` is the practice's ledger entries when the caller has read them already, or, for a caller that asks in batches,
+ * the practice's part read once (practiceCorrections), so that each batch reads only its own claims' lines and reversals
+ * and its answer for each line is the one call's for every line (SUITE-CAP-1a D18; docs/adr/0083); otherwise the
+ * entries are read here and the chains read whole (chainContext), as before.
+ */
+export async function lineCorrections(scope: Scope, practiceId: string, serviceLineIds: readonly string[], given?: readonly StoredEntry[] | PracticeCorrections): Promise<Map<string, LineCorrection>> {
   const corrections = new Map<string, LineCorrection>();
   if (serviceLineIds.length === 0) {
     return corrections;
@@ -176,16 +260,17 @@ export async function lineCorrections(scope: Scope, practiceId: string, serviceL
     'SELECT cl.case_id, cl.service_line_id, l.claim_id FROM case_line cl JOIN service_line l ON l.id = cl.service_line_id WHERE cl.practice_id = $1 AND cl.service_line_id = ANY ($2::uuid[])',
     [practiceId, serviceLineIds],
   );
-  const entries = await ledgerEntries(scope, practiceId);
-  const byId = entriesById(entries);
-  // What each match's own entries approved (net of their corrections).
-  const approvedBy = new Map<string, bigint>();
-  for (const entry of entries) {
-    if (entry.matchId !== null && countedStage(entry, byId) === 'approved') {
-      approvedBy.set(entry.matchId, (approvedBy.get(entry.matchId) ?? 0n) + entry.amountCents);
-    }
+  const claimIds = rows.map((row) => row.claim_id);
+  let approvedBy: ReadonlyMap<string, bigint>;
+  let context: ChainContext;
+  if (given !== undefined && 'chains' in given) {
+    approvedBy = given.approvedBy;
+    context = await chainContextFor(scope, practiceId, given.chains, claimIds);
+  } else {
+    const ledger = given ?? (await ledgerEntries(scope, practiceId));
+    approvedBy = approvedByMatch(ledger);
+    context = await chainContext(scope, practiceId, claimIds, ledger);
   }
-  const context = await chainContext(scope, practiceId, rows.map((row) => row.claim_id), entries);
   const chains = rows.map((row) => ({ row, chain: lineChain(context, { serviceLineId: row.service_line_id, claimId: row.claim_id }) }));
   const shares = await lineShares(
     scope,

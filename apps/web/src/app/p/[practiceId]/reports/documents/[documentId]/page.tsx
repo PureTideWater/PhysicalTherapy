@@ -71,7 +71,7 @@ export default async function ReportDocumentPage(props: Props) {
             ) : (
               <span>PDF (not printed yet)</span>
             )}{' '}
-            {document.pdfSha256 === null ? null : <span className="font-mono text-xs">SHA-256 {document.pdfSha256}</span>}
+            {document.pdfSha256 === null ? null : <span className="font-mono text-xs wrap-anywhere">SHA-256 {document.pdfSha256}</span>}
           </p>
           <p>
             <a className="underline" href={`${path}/csv`}>

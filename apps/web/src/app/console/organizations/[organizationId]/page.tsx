@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ActionForm } from '../../../../components/action-form';
 import { Field, SelectField } from '../../../../components/field';
 import { roleName, roleNames, utcDate } from '../../../../components/format';
+import { ScrollTable } from '../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { loadPage } from '../../../../lib/http/next';
 import { organizationPage } from '../../../../lib/routes/console';
@@ -69,7 +70,7 @@ export default async function OrganizationPage(props: { readonly params: Promise
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             {practices.length === 0 ? (
-              <EmptyState title="No practices yet" nextStep="Create the group's first practice, then invite its practice administrator." />
+              <EmptyState title="No practices yet" nextStep="Create the group’s first practice, then invite its practice administrator." />
             ) : (
               <ul className="flex flex-col gap-1 text-sm" aria-label="Practices">
                 {practices.map((practice) => (
@@ -91,8 +92,8 @@ export default async function OrganizationPage(props: { readonly params: Promise
               <FormKeys />
               <input type="hidden" name="organizationId" value={organization.id} />
               <Field label="Practice name" name="name" required maxLength={200} />
-              <Field label="NPI (optional)" name="npi" inputMode="numeric" pattern="[0-9]{10}" />
-              <Field label="Tax ID, last four (optional)" name="taxIdLast4" inputMode="numeric" pattern="[0-9]{4}" />
+              <Field label="NPI (optional)" name="npi" inputMode="numeric" pattern="[0-9]{10}" hint="Ten digits." />
+              <Field label="Tax ID, last four (optional)" name="taxIdLast4" inputMode="numeric" pattern="[0-9]{4}" hint="The last four digits." />
               <Field
                 label="Billing ZIP (ZIP+4 if Medicare needs one)"
                 name="zip"
@@ -110,51 +111,60 @@ export default async function OrganizationPage(props: { readonly params: Promise
       <Card>
         <CardHeader>
           <CardTitle>Members</CardTitle>
-          <CardDescription>One role per membership. Ending a membership revokes the user's sessions at once.</CardDescription>
+          <CardDescription>One role per membership. Ending a membership revokes the user’s sessions at once.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {members.length === 0 ? (
             <EmptyState title="No members yet" nextStep={organization.kind === 'group' ? 'Invite the practice administrator.' : 'Invite the first member.'} />
           ) : (
-            <table className="w-full text-left text-sm" aria-label="Members">
-              <thead className="text-muted-foreground">
-                <tr>
-                  <th className="py-1 pr-3 font-medium">Email</th>
-                  <th className="py-1 pr-3 font-medium">Role</th>
-                  <th className="py-1 pr-3 font-medium">Account</th>
-                  <th className="py-1 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {members.map((member) => (
-                  <tr key={member.membershipId} className="border-t align-top" data-member={member.email}>
-                    <td className="py-1 pr-3">{member.email}</td>
-                    <td className="py-1 pr-3">{roleName(member.role)}</td>
-                    <td className="flex flex-wrap gap-1 py-1 pr-3">
-                      <Badge variant="outline">{member.userStatus}</Badge>
-                      {member.mfaEnrolled ? null : <Badge variant="outline">no MFA yet</Badge>}
-                      {member.locked ? <Badge variant="destructive">locked</Badge> : null}
-                      {member.current ? null : <Badge variant="secondary">ended {utcDate(member.endsAt ?? new Date())}</Badge>}
-                    </td>
-                    <td className="flex flex-wrap gap-2 py-1">
-                      {member.locked ? (
-                        <ActionForm action={unlockUserAction} submit="Unlock" variant="outline" className="flex flex-col gap-1">
-                          <FormKeys />
-                          <input type="hidden" name="organizationId" value={organization.id} />
-                          <input type="hidden" name="userId" value={member.userId} />
-                        </ActionForm>
-                      ) : null}
-                      {member.current ? (
-                        <ActionForm action={endMembershipAction} submit="End membership" variant="outline" className="flex flex-col gap-1">
-                          <FormKeys />
-                          <input type="hidden" name="membershipId" value={member.membershipId} />
-                        </ActionForm>
-                      ) : null}
-                    </td>
+            <ScrollTable label="Members">
+              <table className="w-full min-w-[40rem] text-left text-sm" aria-label="Members">
+                <thead className="text-muted-foreground">
+                  <tr>
+                    <th className="py-1 pr-3 font-medium">Email</th>
+                    <th className="py-1 pr-3 font-medium">Role</th>
+                    <th className="py-1 pr-3 font-medium">Account</th>
+                    <th className="py-1 font-medium">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {members.map((member) => (
+                    <tr key={member.membershipId} className="border-t align-top" data-member={member.email}>
+                      <td className="py-1 pr-3">
+                        <span className="block min-w-40 wrap-anywhere">{member.email}</span>
+                      </td>
+                      <td className="py-1 pr-3">{roleName(member.role)}</td>
+                      {/* The flex boxes sit inside the cells: a td that is itself a flex box is no longer a table cell. */}
+                      <td className="py-1 pr-3">
+                        <div className="flex flex-wrap gap-1">
+                          <Badge variant="outline">{member.userStatus}</Badge>
+                          {member.mfaEnrolled ? null : <Badge variant="outline">no MFA yet</Badge>}
+                          {member.locked ? <Badge variant="destructive">locked</Badge> : null}
+                          {member.current ? null : <Badge variant="secondary">ended {utcDate(member.endsAt ?? new Date())}</Badge>}
+                        </div>
+                      </td>
+                      <td className="py-1">
+                        <div className="flex flex-wrap gap-2">
+                          {member.locked ? (
+                            <ActionForm action={unlockUserAction} submit="Unlock" variant="outline" className="flex flex-col gap-1">
+                              <FormKeys />
+                              <input type="hidden" name="organizationId" value={organization.id} />
+                              <input type="hidden" name="userId" value={member.userId} />
+                            </ActionForm>
+                          ) : null}
+                          {member.current ? (
+                            <ActionForm action={endMembershipAction} submit="End membership" variant="outline" className="flex flex-col gap-1">
+                              <FormKeys />
+                              <input type="hidden" name="membershipId" value={member.membershipId} />
+                            </ActionForm>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollTable>
           )}
           <ActionForm action={inviteMemberAction} submit="Send invitation" className="grid max-w-xl gap-3">
             <FormKeys />
@@ -174,38 +184,59 @@ export default async function OrganizationPage(props: { readonly params: Promise
           {invitations.length === 0 ? (
             <p className="text-sm text-muted-foreground">No invitations sent from the application yet.</p>
           ) : (
-            <table className="w-full text-left text-sm" aria-label="Invitations">
-              <thead className="text-muted-foreground">
-                <tr>
-                  <th className="py-1 pr-3 font-medium">Email</th>
-                  <th className="py-1 pr-3 font-medium">Role</th>
-                  <th className="py-1 pr-3 font-medium">Sent</th>
-                  <th className="py-1 pr-3 font-medium">State</th>
-                  <th className="py-1 font-medium" />
-                </tr>
-              </thead>
-              <tbody>
-                {invitations.map((invitation) => (
-                  <tr key={invitation.id} className="border-t" data-invitation={invitation.acceptedAt !== null ? 'accepted' : invitation.expired ? 'expired' : 'pending'}>
-                    <td className="py-1 pr-3">{invitation.email}</td>
-                    <td className="py-1 pr-3">{roleName(invitation.role)}</td>
-                    <td className="py-1 pr-3">
-                      {utcDate(invitation.sentAt)} ({invitation.sends} {invitation.sends === 1 ? 'send' : 'sends'})
-                    </td>
-                    <td className="py-1 pr-3">{invitation.acceptedAt !== null ? `accepted ${utcDate(invitation.acceptedAt)}` : invitation.expired ? 'expired' : `open until ${utcDate(invitation.expiresAt)}`}</td>
-                    <td className="py-1">
-                      {invitation.acceptedAt === null ? (
-                        <ActionForm action={resendInvitationAction} submit="Send again" variant="outline" className="flex flex-col gap-1">
-                          <FormKeys />
-                          <input type="hidden" name="organizationId" value={organization.id} />
-                          <input type="hidden" name="invitationId" value={invitation.id} />
-                        </ActionForm>
-                      ) : null}
-                    </td>
+            <ScrollTable label="Invitations">
+              <table className="w-full min-w-[40rem] text-left text-sm" aria-label="Invitations">
+                <thead className="text-muted-foreground">
+                  <tr>
+                    <th className="py-1 pr-3 font-medium">Email</th>
+                    <th className="py-1 pr-3 font-medium">Role</th>
+                    <th className="py-1 pr-3 font-medium">Sent</th>
+                    <th className="py-1 pr-3 font-medium">State</th>
+                    <th className="py-1 font-medium">
+                      <span className="sr-only">Actions</span>
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {invitations.map((invitation) => (
+                    <tr key={invitation.id} className="border-t" data-invitation={invitation.acceptedAt !== null ? 'accepted' : invitation.expired ? 'expired' : 'pending'}>
+                      <td className="py-1 pr-3">
+                        <span className="block min-w-40 wrap-anywhere">{invitation.email}</span>
+                      </td>
+                      <td className="py-1 pr-3">{roleName(invitation.role)}</td>
+                      <td className="py-1 pr-3">
+                        <span className="whitespace-nowrap">{utcDate(invitation.sentAt)}</span>{' '}
+                        <span className="whitespace-nowrap">
+                          ({invitation.sends} {invitation.sends === 1 ? 'send' : 'sends'})
+                        </span>
+                      </td>
+                      <td className="py-1 pr-3">
+                        {invitation.acceptedAt !== null ? (
+                          <>
+                            accepted <span className="whitespace-nowrap">{utcDate(invitation.acceptedAt)}</span>
+                          </>
+                        ) : invitation.expired ? (
+                          'expired'
+                        ) : (
+                          <>
+                            open until <span className="whitespace-nowrap">{utcDate(invitation.expiresAt)}</span>
+                          </>
+                        )}
+                      </td>
+                      <td className="py-1">
+                        {invitation.acceptedAt === null ? (
+                          <ActionForm action={resendInvitationAction} submit="Send again" variant="outline" className="flex flex-col gap-1">
+                            <FormKeys />
+                            <input type="hidden" name="organizationId" value={organization.id} />
+                            <input type="hidden" name="invitationId" value={invitation.id} />
+                          </ActionForm>
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollTable>
           )}
         </CardContent>
       </Card>
@@ -219,34 +250,38 @@ export default async function OrganizationPage(props: { readonly params: Promise
           {agreements.length === 0 ? (
             <EmptyState title="No agreements yet" nextStep="Record the signed BAA and engagement letter from the e-signature vendor." />
           ) : (
-            <table className="w-full text-left text-sm" aria-label="Agreements">
-              <thead className="text-muted-foreground">
-                <tr>
-                  <th className="py-1 pr-3 font-medium">Kind</th>
-                  <th className="py-1 pr-3 font-medium">Practice</th>
-                  <th className="py-1 pr-3 font-medium">Version</th>
-                  <th className="py-1 pr-3 font-medium">Signer</th>
-                  <th className="py-1 pr-3 font-medium">Signed</th>
-                  <th className="py-1 pr-3 font-medium">Reference</th>
-                  <th className="py-1 font-medium">SHA-256</th>
-                </tr>
-              </thead>
-              <tbody>
-                {agreements.map((agreement) => (
-                  <tr key={agreement.id} className="border-t">
-                    <td className="py-1 pr-3">{AGREEMENT_KINDS.find((kind) => kind.value === agreement.kind)?.label ?? agreement.kind}</td>
-                    <td className="py-1 pr-3">{agreement.practiceId === null ? 'Whole organization' : (practiceName.get(agreement.practiceId) ?? 'Another organization’s practice')}</td>
-                    <td className="py-1 pr-3">{agreement.version}</td>
-                    <td className="py-1 pr-3">{agreement.signer}</td>
-                    <td className="py-1 pr-3">{utcDate(agreement.signedAt)}</td>
-                    <td className="py-1 pr-3 font-mono text-xs">{agreement.documentRef}</td>
-                    <td className="py-1 font-mono text-xs" title={agreement.sha256}>
-                      {agreement.sha256.slice(0, 12)}…
-                    </td>
+            <ScrollTable label="Agreements">
+              <table className="w-full min-w-[54rem] text-left text-sm" aria-label="Agreements">
+                <thead className="text-muted-foreground">
+                  <tr>
+                    <th className="py-1 pr-3 font-medium">Kind</th>
+                    <th className="py-1 pr-3 font-medium">Practice</th>
+                    <th className="py-1 pr-3 font-medium">Version</th>
+                    <th className="py-1 pr-3 font-medium">Signer</th>
+                    <th className="py-1 pr-3 font-medium">Signed</th>
+                    <th className="py-1 pr-3 font-medium">Reference</th>
+                    <th className="py-1 font-medium">SHA-256</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {agreements.map((agreement) => (
+                    <tr key={agreement.id} className="border-t">
+                      <td className="py-1 pr-3">{AGREEMENT_KINDS.find((kind) => kind.value === agreement.kind)?.label ?? agreement.kind}</td>
+                      <td className="py-1 pr-3">{agreement.practiceId === null ? 'Whole organization' : (practiceName.get(agreement.practiceId) ?? 'Another organization’s practice')}</td>
+                      <td className="py-1 pr-3">{agreement.version}</td>
+                      <td className="py-1 pr-3">{agreement.signer}</td>
+                      <td className="py-1 pr-3 whitespace-nowrap">{utcDate(agreement.signedAt)}</td>
+                      <td className="py-1 pr-3 font-mono text-xs">
+                        <span className="block min-w-32 wrap-anywhere">{agreement.documentRef}</span>
+                      </td>
+                      <td className="py-1 font-mono text-xs">
+                        <span className="block min-w-32 wrap-anywhere">{agreement.sha256}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollTable>
           )}
           <ActionForm action={recordAgreementAction} submit="Record agreement" className="grid max-w-xl gap-3">
             <FormKeys />
@@ -256,11 +291,11 @@ export default async function OrganizationPage(props: { readonly params: Promise
             <Field label="Version" name="version" required maxLength={40} />
             <Field label="Signer" name="signer" required maxLength={200} />
             <Field label="Signed on" name="signedOn" type="date" required />
-            <Field label="Document reference" name="documentRef" required hint="The e-signature vendor's envelope or document reference." />
-            <Field label="SHA-256" name="sha256" required pattern="[0-9a-fA-F]{64}" hint="The signed document's SHA-256, 64 hexadecimal characters." />
+            <Field label="Document reference" name="documentRef" required hint="The e-signature vendor’s envelope or document reference." />
+            <Field label="SHA-256" name="sha256" required pattern="[0-9a-fA-F]{64}" hint="The signed document’s SHA-256, 64 hexadecimal characters." />
           </ActionForm>
           <h3 className="text-sm font-semibold">Or upload the signed PDF</h3>
-          <p className="text-xs text-muted-foreground">The server hashes it and keeps it under an opaque key; an agreement signed through the e-signature vendor arrives by its webhook instead.</p>
+          <p className="text-sm text-muted-foreground">PaidWhole records its SHA-256 and keeps the file under the organization’s and the agreement’s IDs, never a name; an agreement signed through the e-signature vendor arrives by its webhook instead.</p>
           <ActionForm action={uploadAgreementAction} submit="Upload agreement" className="grid max-w-xl gap-3">
             <FormKeys />
             <input type="hidden" name="organizationId" value={organization.id} />
@@ -286,34 +321,44 @@ export default async function OrganizationPage(props: { readonly params: Promise
         </CardHeader>
         <CardContent>
           {grants.length === 0 ? (
-            <EmptyState title="No grants" nextStep="A practice administrator approves a firm's grant from the practice's settings." />
+            <EmptyState title="No grants" nextStep="A practice administrator approves a firm’s grant from the practice’s settings." />
           ) : (
-            <table className="w-full text-left text-sm" aria-label="Grants">
-              <thead className="text-muted-foreground">
-                <tr>
-                  <th className="py-1 pr-3 font-medium">Grantee</th>
-                  <th className="py-1 pr-3 font-medium">Practice</th>
-                  <th className="py-1 pr-3 font-medium">Roles admitted</th>
-                  <th className="py-1 pr-3 font-medium">From</th>
-                  <th className="py-1 pr-3 font-medium">Until</th>
-                  <th className="py-1 font-medium">State</th>
-                </tr>
-              </thead>
-              <tbody>
-                {grants.map((grant) => (
-                  <tr key={grant.id} className="border-t">
-                    <td className="py-1 pr-3">{grant.granteeName}</td>
-                    <td className="py-1 pr-3">{grant.practiceName}</td>
-                    <td className="py-1 pr-3">{roleNames(grant.roles)}</td>
-                    <td className="py-1 pr-3">{utcDate(grant.startsAt)}</td>
-                    <td className="py-1 pr-3">{utcDate(grant.endsAt)}</td>
-                    <td className="py-1" data-grantee-status={grant.granteeStatus}>
-                      {grantState(grant, now)}
-                    </td>
+            <ScrollTable label="Grants">
+              <table className="w-full min-w-[48rem] text-left text-sm" aria-label="Grants">
+                <thead className="text-muted-foreground">
+                  <tr>
+                    <th className="py-1 pr-3 font-medium">Grantee</th>
+                    <th className="py-1 pr-3 font-medium">Practice</th>
+                    <th className="py-1 pr-3 font-medium">Roles admitted</th>
+                    <th className="py-1 pr-3 font-medium">From</th>
+                    <th className="py-1 pr-3 font-medium">Until</th>
+                    <th className="py-1 font-medium">State</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {grants.map((grant) => (
+                    <tr key={grant.id} className="border-t">
+                      <td className="py-1 pr-3">{grant.granteeName}</td>
+                      <td className="py-1 pr-3">{grant.practiceName}</td>
+                      <td className="py-1 pr-3">
+                        <span className="block min-w-32 wrap-anywhere">{roleNames(grant.roles)}</span>
+                      </td>
+                      <td className="py-1 pr-3 whitespace-nowrap">{utcDate(grant.startsAt)}</td>
+                      <td className="py-1 pr-3 whitespace-nowrap">{utcDate(grant.endsAt)}</td>
+                      <td className="py-1" data-grantee-status={grant.granteeStatus}>
+                        {grant.revokedAt === null ? (
+                          grantState(grant, now)
+                        ) : (
+                          <>
+                            revoked <span className="whitespace-nowrap">{utcDate(grant.revokedAt)}</span>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollTable>
           )}
         </CardContent>
       </Card>

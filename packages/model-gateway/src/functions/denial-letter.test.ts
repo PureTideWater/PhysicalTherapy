@@ -3,9 +3,10 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import type { FlagRow } from '../flags';
-import { dateForms, datesIn, holdsIdentifier, identifierCandidates, redactLetter, redactionForms } from '../redact';
+import { BARRIER, dateForms, datesIn, fold, holdsIdentifier, identifierCandidates, redactLetter, redactionForms } from '../redact';
 import { SYNTHETIC_IDS, SYNTHETIC_LETTER, localGateway, registerOutput, syntheticLetterInput, syntheticLetterOutput, syntheticRecords } from '../testing';
 import { type DenialLetterInput, type DenialLetterOutput, denialLetterSpec, verifyDenialLetter } from './denial-letter';
+import { mentionsIdentifier } from './narrative';
 
 /**
  * readDenialLetter (PRD 14, v1.5): PHI minimized before the call (one patient's material only; names,
@@ -56,10 +57,14 @@ describe('PHI minimization before the call', () => {
     expect(redactLetter('JANET ZEPHYRAS', input.patient, input.claims).text).toBe('JANET ZEPHYRAS');
   });
 
-  it('refuses to send a letter that still holds an identifier after redaction', () => {
-    // An identifier that its own placeholder spells: the redacted text still holds it, so nothing is sent.
+  it('refuses to send a letter that still holds an identifier after redaction (the guard, on a hand-made redacted text)', () => {
+    // Redaction is complete (MOD-13), so no letter reaches the guard; it stays as defence in depth and is tested on its own.
+    expect(holdsIdentifier('RE: Patient [PATIENT_NAME], Zephyra', input.patient, input.claims)).toBe(true);
+    expect(holdsIdentifier('Claim number [CLAIM_1] SYN CLAIM 0001', input.patient, input.claims)).toBe(true);
+    expect(holdsIdentifier('RE: Patient [PATIENT_NAME], DOB [DATE_OF_BIRTH], Member ID [MEMBER_ID], claim [CLAIM_1]', input.patient, input.claims)).toBe(false);
+    // A name its own placeholder spells is redacted like any other, and the letter is read (section 1, A2).
     const patient = { ...input.patient, names: ['PATIENT_NAME'] };
-    expect(() => denialLetterSpec.prepare({ ...input, patient, text: 'Re: PATIENT_NAME' })).toThrow(expect.objectContaining({ code: 'identifier_left' }));
+    expect(denialLetterSpec.prepare({ ...input, patient, text: 'Re: PATIENT_NAME' }).user).toContain('Re: [PATIENT_NAME]');
   });
 
   it('leaves no identifier in any letter, whatever its synthetic names and numbers (property)', () => {
@@ -100,6 +105,12 @@ describe('PHI minimization reads every form a letter writes an identifier in (PR
     ['D.O.B.', '1961.03.03'],
     ['DOB:', '03.03.1961'],
     ['Patient', 'Mar 3 1961'],
+    ['DOB', '03–03–1961'],
+    ['DOB', '03−03−1961'],
+    ['DOB', '03 03 1961'],
+    ['DOB', 'Mar 3 ’61'],
+    ['DOB', '3/Mar/1961'],
+    ['DOB', '03/Mar/61'],
   ])('replaces the date of birth written as “%s %s”', (label, written) => {
     const redacted = redactLetter(`SYNTHETIC: ${label} ${written}. Service on 2026-03-05.`, patient, claims);
     expect(redacted.text).toBe(`SYNTHETIC: ${label} [DATE_OF_BIRTH]. Service on 2026-03-05.`);
@@ -112,9 +123,22 @@ describe('PHI minimization reads every form a letter writes an identifier in (PR
     expect(redacted.text).toBe('SYNTHETIC: DOB [DATE_OF_BIRTH]; seen 2026-03-05; appeal by 05/30/2026.');
   });
 
+  it('replaces a labeled date of birth the records do not hold however it is written: any dash, spaces alone, an apostrophe, slashes with a month word', () => {
+    for (const written of ['07–08–1959', '07\u221208\u22121959', '07 08 1959', 'Jul 8 ’59', '8/Jul/1959', '08/Jul/59', '02/30/1959']) {
+      expect(redactLetter(`SYNTHETIC: DOB: ${written}. Appeal by 05/30/2026.`, { ...patient, datesOfBirth: [] }, claims).text, written).toBe('SYNTHETIC: DOB: [DATE_OF_BIRTH]. Appeal by 05/30/2026.');
+    }
+  });
+
   it('reads every date form with each calendar date it can be', () => {
     expect(datesIn('on 03/04/61').map((span) => span.dates)).toEqual([['1961-03-04', '2061-03-04', '1961-04-03', '2061-04-03']]);
     expect(datesIn('31/12/2026 and 2/30/2026').map((span) => span.dates)).toEqual([['2026-12-31'], []]);
+    // Separated (a slash, a backslash, a period, a dash, "_", "|" or a month word) or not (spaces alone, compact): only a separated date is kept as written.
+    expect(datesIn('1961–03–04; 1961 03 04; 19610304; Mar 4 ’61').map((span) => [span.dates, span.separated])).toEqual([
+      [['1961-03-04'], true],
+      [['1961-03-04'], false],
+      [['1961-03-04'], false],
+      [['1961-03-04', '2061-03-04'], true],
+    ]);
   });
 
   it('replaces a member ID or claim number however the letter spaces or hyphenates it', () => {
@@ -144,6 +168,222 @@ describe('PHI minimization reads every form a letter writes an identifier in (PR
     );
     expect(identifierCandidates('[CLAIM_1] [MEMBER_ID] [DATE_OF_BIRTH]')).toEqual([]);
     expect(identifierCandidates('no figures at all')).toEqual([]);
+  });
+});
+
+describe('one pass over one folded view: every placeholder survives and no identifier does (MOD-13; docs/adr/0054, amendment of 2026-10-27)', () => {
+  // SYNTHETIC patients only. Each row of the design's section 1 table, then each input of its review.
+  const claim = (...claimNumbers: string[]) => [{ claimId: SYNTHETIC_IDS.claimOne, patientPseudonym: 'synthetic-patient-7', claimNumbers }];
+  const patient = (names: string[], memberIds: string[] = ['ZZ1234567'], datesOfBirth: string[] = ['1961-03-03']) => ({ pseudonym: 'synthetic-patient-7', names, datesOfBirth, memberIds });
+  const redact = (names: string[], text: string, claimNumbers: string[] = ['SYN555001'], memberIds?: string[], datesOfBirth?: string[]) => {
+    const who = patient(names, memberIds, datesOfBirth);
+    const redacted = redactLetter(text, who, claim(...claimNumbers));
+    expect(holdsIdentifier(redacted.text, who, claim(...claimNumbers)), text).toBe(false);
+    return redacted.text;
+  };
+
+  it.each([
+    ['A1: name parts equal to placeholder words', ['CLAIM DATE'], 'Claim SYN555001 for Date, DOB 03/03/1961', '[PATIENT_NAME] [CLAIM_1] for [PATIENT_NAME], DOB [DATE_OF_BIRTH]'],
+    ['A2: name parts NAME and ID (the letter is read, not refused)', ['NAME ID'], 'member ZZ1234567', 'member [MEMBER_ID]'],
+    ['B1: diacritics in the letter', ['JOSE GARCIA'], 'Dear José García', 'Dear [PATIENT_NAME]'],
+    ['B1: diacritics in the records', ['JOSÉ GARCÍA'], 'Dear Jose Garcia', 'Dear [PATIENT_NAME]'],
+    ['B2: a typographic apostrophe', ["MARY O'BRIEN"], 'Ms. O’Brien', 'Ms. [PATIENT_NAME]'],
+    ['B3: one half of a hyphenated surname', ['ANA SMITH-JONES'], 'Ms. Jones', 'Ms. [PATIENT_NAME]'],
+    ['B4: a dash, a space or a minus sign for the hyphen', ['ANA SMITH-JONES'], 'Smith–Jones, Smith Jones, Smith−Jones, Smith⁃Jones', '[PATIENT_NAME], [PATIENT_NAME], [PATIENT_NAME], [PATIENT_NAME]'],
+    ['B5: a soft hyphen inside a name', ['JANE VANTREE'], 'Ms. Van\u00ADtree', 'Ms. [PATIENT_NAME]'],
+    ['B6: a space inside a part', ['JOANN VANTREE'], 'Jo Ann Vantree; Jo Ann', '[PATIENT_NAME]; [PATIENT_NAME]'],
+    ['B7: full case folding', ['STRAUSS'], 'Ms. Strauß', 'Ms. [PATIENT_NAME]'],
+    ['B7: a capital sharp s in the records', ['STRAUẞ'], 'Ms. Strauss', 'Ms. [PATIENT_NAME]'],
+    ['B8: initials', ['JANE Q VANTREE'], 'Jane Q. Vantree, J. Vantree', '[PATIENT_NAME], [PATIENT_NAME]. [PATIENT_NAME]'],
+    ['C1: an underscore or a period next to a letter', ['JANE VANTREE'], 'ZZ_1234567, SYN.555001', '[MEMBER_ID], [CLAIM_1]'],
+    ['C2: a zero-width space or a minus sign inside an ID', ['JANE VANTREE'], 'ZZ\u200B1234567 and ZZ−1234567', '[MEMBER_ID] and [MEMBER_ID]'],
+  ])('%s', (_row, names, text, sent) => {
+    expect(redact(names, text)).toBe(sent);
+  });
+
+  it('D1: offers the screen another patient’s ID however the letter writes it, and never a placeholder', () => {
+    for (const written of ['ZZ_7654321', 'ZZ\u200B7654321', '[ZZ_7654321]', 'ID:ZZ7654321', 'REF\u200BZZ7654321', 'ZZ.7654321', 'ZZ 765 4321', 'ZZ-7654321']) {
+      expect(identifierCandidates(`SYNTHETIC: also ${written}.`), written).toContain('ZZ7654321');
+    }
+    expect(identifierCandidates('YY\u200B7654321')).toContain('YY7654321');
+    expect(identifierCandidates('[CLAIM_1] [CLAIM_12] [MEMBER_ID] [DATE_OF_BIRTH] [PATIENT_NAME]')).toEqual([]);
+  });
+
+  it('keeps a word boundary where a zero-width space or a blank stands between words', () => {
+    expect(redact(['JANE VANTREE'], 'Dear\u200BJane\u200BVantree, your claim')).toBe('Dear\u200B[PATIENT_NAME], your claim');
+    expect(redact(['JANE VANTREE'], 'Member\u200BZZ1234567')).toBe('Member\u200B[MEMBER_ID]');
+    expect(redact(['JANE VANTREE'], 'DOB 03/03/1961\u200B2')).toBe('DOB [DATE_OF_BIRTH]\u200B2');
+    expect(redact(['JANE VANTREE'], 'Dear\u3164Jane and Dear\uFFA0Jane')).toBe('Dear\u1160[PATIENT_NAME] and Dear\u1160[PATIENT_NAME]');
+  });
+
+  it('never makes a name of common words: a space inside a part needs capitalized pieces of two letters or more', () => {
+    expect(redact(['INA VANTREE'], 'records in a timely manner')).toBe('records in a timely manner');
+    expect(redact(['ISA VANTREE'], 'This is a request')).toBe('This is a request');
+    expect(redact(['ASA VANTREE'], 'resubmitted as a new claim')).toBe('resubmitted as a new claim');
+    expect(redact(['TOBE VANTREE'], 'sent to be reviewed')).toBe('sent to be reviewed');
+    expect(redact(['IDA VANTREE'], "I'd a question")).toBe("I'd a question");
+    // The whole name still matches across its own parts, whatever its case.
+    expect(redact(['INA VANTREE'], 'ina vantree, Ina')).toBe('[PATIENT_NAME], [PATIENT_NAME]');
+  });
+
+  it('never makes a number of an amount or of a date written with its separators', () => {
+    expect(redact(['JANE VANTREE'], 'We paid $150.00 of the billed amount; claim 15000.', ['15000'])).toBe('We paid $150.00 of the billed amount; claim [CLAIM_1].');
+    expect(redact(['JANE VANTREE'], 'Appeal by 2027-03-15. Claim 20270315.', ['20270315'])).toBe('Appeal by 2027-03-15. Claim [CLAIM_1].');
+    expect(redact(['JANE VANTREE'], 'Our reference is REF-SYN-77.')).toBe('Our reference is REF-SYN-77.');
+  });
+
+  it('gives an overlap of a claim’s number and a name the claim’s placeholder', () => {
+    expect(redact(['JANE VANTREE'], 'Re: Jane Vantree 01 was denied', ['VANTREE01'])).toBe('Re: [CLAIM_1] was denied');
+  });
+
+  it('keeps a deadline whose month is the patient’s name, and never a date of birth', () => {
+    expect(redact(['JUNE VANTREE'], 'Dear June, your appeal is due June 30, 2027. DOB June 3, 1961', undefined, undefined, ['1961-06-03'])).toBe(
+      'Dear [PATIENT_NAME], your appeal is due June 30, 2027. DOB [DATE_OF_BIRTH]',
+    );
+  });
+
+  it.each([
+    ['J.Vantree', '[PATIENT_NAME].[PATIENT_NAME]'],
+    ['J.Q. Vantree', '[PATIENT_NAME].[PATIENT_NAME]. [PATIENT_NAME]'],
+    ['Vantree, J.', '[PATIENT_NAME], [PATIENT_NAME].'],
+    ['Vantree, J Q', '[PATIENT_NAME], [PATIENT_NAME] [PATIENT_NAME]'],
+    ['j. vantree', '[PATIENT_NAME]. [PATIENT_NAME]'],
+    ['Q-Vantree', '[PATIENT_NAME]-[PATIENT_NAME]'],
+  ])('takes the initials in “%s”', (written, sent) => {
+    expect(redact(['JANE Q VANTREE'], written)).toBe(sent);
+  });
+
+  it('takes an initial before an apostrophe, and no word that only looks like an initial', () => {
+    expect(redact(["MARY O'BRIEN"], 'O’Brien, M.')).toBe('[PATIENT_NAME], [PATIENT_NAME].');
+    expect(redact(['IVY VANTREE'], 'Dear Ivy Vantree, I am writing')).toBe('Dear [PATIENT_NAME], I am writing');
+    expect(redact(['ANA VANTREE'], 'Dear Ana, A claim was denied')).toBe('Dear [PATIENT_NAME], A claim was denied');
+  });
+
+  it('folds astral letters with case and leaves an emoji next to a name', () => {
+    expect(redact(['𐐔𐐯𐑅𐐨𐑉𐐯𐐻 VANTREE'], 'Dear 𐐼𐐯𐑅𐐨𐑉𐐯𐐻 Vantree 😀Vantree😀')).toBe('Dear [PATIENT_NAME] 😀[PATIENT_NAME]😀');
+    // A spaced astral name the spacing rule turns down moves the search past the whole code point (it once looped there).
+    expect(redact(['𐐔𐐯𐑅𐐨𐑉𐐯𐐻 VANTREE'], 'Dear 𐐼𐐯 𐑅𐐨𐑉𐐯𐐻, 𐐔𐐯 𐐝𐐨𐑉𐐯𐐻')).toBe('Dear 𐐼𐐯 𐑅𐐨𐑉𐐯𐐻, [PATIENT_NAME]');
+  });
+
+  it('masks a placeholder with a barrier the fold keeps, so no match reaches across it', () => {
+    expect(fold(BARRIER)).toBe(BARRIER);
+    expect(holdsIdentifier('[CLAIM_1]_1', patient(['CLAIM DATE']), claim('SYN555001'))).toBe(false);
+  });
+
+  // The fix round's reproductions (design section 7), each by its review finding.
+  it('replaces a digits-only ID with an invisible character inside, even where the digits read as a date (an invisible character is no separator)', () => {
+    expect(redact(['JANE VANTREE'], 'Claim 1234​5678 was denied', ['12345678'])).toBe('Claim [CLAIM_1] was denied');
+    expect(redact(['JANE VANTREE'], 'Claim 1234­5678 was denied', ['12345678'])).toBe('Claim [CLAIM_1] was denied');
+    expect(redact(['JANE VANTREE'], 'Member 123​456', undefined, ['123456'])).toBe('Member [MEMBER_ID]');
+    // A real calendar date written with an invisible character is still the ID's digits.
+    expect(redact(['JANE VANTREE'], 'Claim 2027​0315; appeal by 2027-03-15', ['20270315'])).toBe('Claim [CLAIM_1]; appeal by 2027-03-15');
+    expect(mentionsIdentifier('claim 1234​5678', { names: [], numbers: ['12345678'] })).toBe(true);
+  });
+
+  it('replaces a digits-only ID written like a date no calendar holds; keeps only a real date written with its dashes', () => {
+    expect(redact(['JANE VANTREE'], 'Member 12-34-56', undefined, ['123456'])).toBe('Member [MEMBER_ID]');
+    expect(redact(['JANE VANTREE'], 'Member 12-34-5678', undefined, ['12345678'])).toBe('Member [MEMBER_ID]');
+    expect(redact(['JANE VANTREE'], 'Claim 1234-56-78; Claim 8765-43-21', ['12345678', '87654321'])).toBe('Claim [CLAIM_1]; Claim [CLAIM_1]');
+    expect(redact(['JANE VANTREE'], 'Patient acct 44-55-66', undefined, ['445566'])).toBe('Patient acct [MEMBER_ID]');
+    // Spaces alone are how an ID is spaced, never a kept date.
+    expect(redact(['JANE VANTREE'], 'Member 03 15 61', undefined, ['031561'])).toBe('Member [MEMBER_ID]');
+    // The recorded residual: a digits-only ID that is a real calendar date written with dashes reads as that date.
+    expect(redact(['JANE VANTREE'], 'Appeal by 03-15-61.', undefined, ['031561'])).toBe('Appeal by 03-15-61.');
+  });
+
+  it('takes a month word in a date no calendar holds as the name it is', () => {
+    expect(redact(['MAY VANTREE'], 'see May 45, 2027; due May 30, 2027')).toBe('see [PATIENT_NAME] 45, 2027; due May 30, 2027');
+  });
+
+  it.each([
+    ['the whole name and its lower-case part start together', ['AA, PATIENT'], 'Dear p. aa, Patient:', 'Dear [PATIENT_NAME]. [PATIENT_NAME]:'],
+    ['the whole name and its lower-case part end together', ['PATIENT CLAIM'], 'RE: Patient claim, p. was seen.', 'RE: [PATIENT_NAME], [PATIENT_NAME]. was seen.'],
+  ])('reads a lower-case initial against the nearest part of a name: %s', (_case, names, text, sent) => {
+    expect(redact(names, text)).toBe(sent);
+  });
+
+  it('takes a long run of initials next to a name on either side, in time linear in the run', () => {
+    const run = 'A '.repeat(20_000);
+    expect(redact(['IVY ANNA VANTREE'], `Vantree ${run}`)).toBe(`[PATIENT_NAME] ${'[PATIENT_NAME] '.repeat(20_000)}`);
+    expect(redact(['IVY ANNA VANTREE'], `${run}Vantree`)).toBe(`${'[PATIENT_NAME] '.repeat(20_000)}[PATIENT_NAME]`);
+  });
+
+  // The second fix round's reproductions (design section 7): a payer's letter crafted to make redaction slow.
+  // Each took seconds to minutes before; each is linear now, and its budget leaves room for a loaded runner.
+  const N = 100_000;
+  const fill = (unit: string) => unit.repeat(Math.floor(N / unit.length));
+  it.each([
+    ['a long gap after a name and many initials past it (97 s before)', ['JANE Q VANTREE'], `Vantree${' '.repeat(2_000)}x${' J'.repeat(49_000)}`, ['SYN555001']],
+    ['a gap after a name as long as the letter (4.6 s before)', ['JANE Q VANTREE'], `Vantree${' '.repeat(N - 20)}x J`, ['SYN555001']],
+    ['dates written with slashes, one after another (2.6 s before)', ['JANE Q VANTREE'], fill('1/1/11 '), ['SYN555001']],
+    ['dates written with spaces alone (4.7 s before)', ['JANE Q VANTREE'], fill('1 1 11 '), ['SYN555001']],
+    ['dates with a claim’s digits between them (5.0 s before)', ['JANE VANTREE'], fill('1-1-11 555001 '), ['555001']],
+  ])('redacts a letter crafted to be slow in time linear in its length: %s', (_case, names, text, claimNumbers) => {
+    const who = patient(names);
+    const started = performance.now();
+    const redacted = redactLetter(text, who, claim(...claimNumbers));
+    expect(holdsIdentifier(redacted.text, who, claim(...claimNumbers))).toBe(false);
+    expect(mentionsIdentifier(redacted.text, { names, numbers: [...who.memberIds, ...claimNumbers] })).toBe(false);
+    const seconds = (performance.now() - started) / 1000;
+    expect(seconds, `redacted and checked ${String(text.length)} characters in ${seconds.toFixed(2)} s`).toBeLessThan(3);
+  });
+
+  it.each([
+    ['Vantree J.Q.', '[PATIENT_NAME] [PATIENT_NAME].[PATIENT_NAME].'],
+    ['Vantree J. Q.', '[PATIENT_NAME] [PATIENT_NAME]. [PATIENT_NAME].'],
+    ['Vantree, J.Q.', '[PATIENT_NAME], [PATIENT_NAME].[PATIENT_NAME].'],
+    ['Vantree Q.J.', '[PATIENT_NAME] [PATIENT_NAME].[PATIENT_NAME].'],
+    ['Vantree J.Q', '[PATIENT_NAME] [PATIENT_NAME].[PATIENT_NAME]'],
+    ['Jane Vantree Q.', '[PATIENT_NAME] [PATIENT_NAME] [PATIENT_NAME].'],
+  ])('takes every initial of a dotted chain after the name: “%s”', (written, sent) => {
+    expect(redact(['JANE Q VANTREE'], `Dear ${written}, your appeal`)).toBe(`Dear ${sent}, your appeal`);
+  });
+
+  it('reads a claim’s digits as an amount only after a currency sign and with cents, and a member ID never', () => {
+    expect(redact(['JANE VANTREE'], 'Claim 555001.01 denied; Claims 555001,12 denied; Claim $555001 denied; paid $555001.00', ['555001'])).toBe(
+      'Claim [CLAIM_1].01 denied; Claims [CLAIM_1],12 denied; Claim $[CLAIM_1] denied; paid $555001.00',
+    );
+    expect(redact(['JANE VANTREE'], 'We paid $150.00 for claim 15000; $15000.00 in all', ['15000'])).toBe('We paid $150.00 for claim [CLAIM_1]; $15000.00 in all');
+    expect(redact(['JANE VANTREE'], 'member $12345678; member $12345678.00; Claim 87654321.00', ['87654321'], ['12345678'])).toBe('member $[MEMBER_ID]; member $[MEMBER_ID].00; Claim [CLAIM_1].00');
+    expect(mentionsIdentifier('paid $12345678', { names: [], numbers: ['12345678'] })).toBe(true);
+  });
+
+  it('joins a name hyphenated at a line break, whatever the case of its pieces', () => {
+    expect(redact(['IVY VANTREE'], 'Ms. Van-\ntree, Vantr-\nee, Van–\r\n  tree')).toBe('Ms. [PATIENT_NAME], [PATIENT_NAME], [PATIENT_NAME]');
+    expect(redact(['JOANN VANTREE'], 'Dear Jo-\nann,')).toBe('Dear [PATIENT_NAME],');
+    // The recorded residual: a part written in lower case with a space inside it ("jo ann") is not a name.
+    expect(redact(['JOANN VANTREE'], 'jo ann')).toBe('jo ann');
+  });
+
+  it('joins a number with a slash or a colon next to a letter, never between digits', () => {
+    expect(redact(['JANE VANTREE'], 'Member ZZ/1234567, ZZ:1234567; claim SYN/555001')).toBe('Member [MEMBER_ID], [MEMBER_ID]; claim [CLAIM_1]');
+    // The recorded residual: digits-only with a slash or a period between digits (a date's or an amount's writing).
+    expect(redact(['JANE VANTREE'], 'Ref 1234.5678 and 12/34/5678', ['12345678'])).toBe('Ref 1234.5678 and 12/34/5678');
+    expect(identifierCandidates('also ZZ/7654321')).toContain('ZZ7654321');
+  });
+
+  it('joins a number with "#" or "(" next to a letter, and reads a date written with "_", "\\" or "|"', () => {
+    expect(redact(['JANE VANTREE'], 'Member ZZ#1234567, ZZ(1234567); claim SYN#555001')).toBe('Member [MEMBER_ID], [MEMBER_ID]); claim [CLAIM_1]');
+    expect(redact(['JANE VANTREE'], 'Born 03_03_1961, 03\\03\\1961, 03|03|1961; seen 2026_03_05')).toBe(
+      'Born [DATE_OF_BIRTH], [DATE_OF_BIRTH], [DATE_OF_BIRTH]; seen 2026_03_05',
+    );
+    expect(redact(['JANE VANTREE'], 'DOB: 07_08_1959', undefined, undefined, [])).toBe('DOB: [DATE_OF_BIRTH]');
+    expect(datesIn('03_04_1961; 03\\04\\1961; 03|04|1961').map((span) => span.separated)).toEqual([true, true, true]);
+    expect(identifierCandidates('also ZZ#7654321 and ZZ(7654321)')).toEqual(expect.arrayContaining(['7654321', 'ZZ7654321']));
+  });
+
+  it('sends no square bracket of the letter’s own, so text shaped like a placeholder is never cited as a claim', () => {
+    const who = patient(['JANE VANTREE']);
+    const redacted = redactLetter('See [CLAIM_1] and [claim_2] and ［MEMBER_ID］; claim SYN555001', who, claim('SYN555001'));
+    expect(redacted.text).toBe('See (CLAIM_1) and (claim_2) and (MEMBER_ID); claim [CLAIM_1]');
+    expect(redacted.replaced).toBe(1);
+  });
+
+  it('offers the screen the digits of a claim placeholder past the call’s claims, and checks them against the patient', () => {
+    expect(identifierCandidates('also [CLAIM_7654321] here')).toContain('7654321');
+    expect(identifierCandidates('[CLAIM_1] [CLAIM_12] [CLAIM_99]')).toEqual([]);
+    expect(holdsIdentifier('Claim [CLAIM_555001]', patient(['JANE VANTREE']), claim('555001'))).toBe(true);
+    expect(holdsIdentifier('Claim [CLAIM_1]', patient(['JANE VANTREE']), claim('555001'))).toBe(false);
   });
 });
 

@@ -1,38 +1,37 @@
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-
 import { type Locator, type Page, expect, test } from '@playwright/test';
 
+import { expectScrollersAgree, tabTo } from './a11y';
 import { signInWithTotp, withDatabase } from './helpers';
-import { journeyPractice, pricedAndTriaged, signedOffSchedule, untilLoaded, uploadedEarlier } from './journeys';
+import { tourPractice } from './journeys';
 import { startLocalWorker } from './worker';
 
 /**
  * The screens the screen tour found too wide or running together, at a 1280 px desktop window (the tour's L1 to L3,
- * C1 to C3), on the tour's shape of data: in a practice of its own in the other group, a billing manager uploads
- * SYNTHETIC CAS-08 (payer Q, three 97110 lines in March, each 30.00 short) and CAS-02 (payer N, 32 lines in April);
- * payer Q's schedule is abstracted by the contract specialist (each field "Approved by the contract specialist" with
- * its time) and signed off beside the browser; payer N's plan is mapped as no agreement on screen; March and April are
- * priced and triaged by the worker (a case of payer Q's three lines; payer N's lines to anomaly screening, some
- * flagged as investigatory); and the billing manager writes the case's first packet version. Then, as the billing
- * manager, no page scrolls sideways (document.documentElement.scrollWidth is 1280): the contract version's rate record
- * fields, the packet's line schedule and the claims table (the billing manager's, with its PHI columns) each fit their
- * card with their last column inside it; the pricing runs' compare form fits its card; each table's headers stand apart
- * (the uploads, an upload, a contract and the coverage report's too); Settings, Correspondence and a packet found by
- * its reference fit the window too; a trace's code-pair step names NCCI in capitals; and a run that
- * priced every line shows its unpriced reasons as an empty state. Each check is soft, so one run reports every
- * screen that fails. Synthetic data only.
+ * C1 to C3), on the tour's shape of data (e2e/journeys.ts, tourPractice): in a practice of its own in the other group,
+ * a billing manager uploads SYNTHETIC CAS-08 (payer Q, three 97110 lines in March, each 30.00 short) and CAS-02 (payer
+ * N, 32 lines in April); payer Q's schedule is abstracted by the contract specialist (each field "Approved by the
+ * contract specialist" with its time) and signed off beside the browser; payer N's plan is mapped as no agreement on
+ * screen; March and April are priced and triaged by the worker (a case of payer Q's three lines; payer N's lines to
+ * anomaly screening, some flagged as investigatory); and the billing manager writes the case's first packet version.
+ * Then, as the billing manager, no page scrolls sideways (document.documentElement.scrollWidth is 1280): the contract
+ * version's rate record fields, the packet's line schedule and the claims table (the billing manager's, with its PHI
+ * columns) each fit their card with their last column inside it, at 1280 px and at 1280 less a classic scrollbar, and,
+ * fitting, say nothing of scrolling: no caption, and a scroller with no role and no tab stop, even while a link in the
+ * table holds focus (TBL-01, TBL-02; docs/adr/0078); the pricing runs' compare form fits its card; each table's headers
+ * stand apart (the uploads, an upload, a contract and the coverage report's too); Settings, Correspondence and a packet
+ * found by its reference fit the window too; a trace's code-pair step names NCCI in capitals; and a run that priced
+ * every line shows its unpriced reasons as an empty state. Each check is soft, so one run reports every screen that
+ * fails. Synthetic data only.
  */
 
-const FIXTURES = path.resolve(import.meta.dirname, '../../../fixtures/synthetic');
 const PRACTICE = 'SYNTHETIC OTHER PRACTICE LAYOUT';
-const SETTINGS = { place_of_service_settings: { '11': 'non_facility', '22': 'facility' }, default_rounding: 'HALF_UP_CENT', case_materiality_cents: '1000' };
 const MANAGER = 'pricing-manager';
 const WIDTH = 1280;
-const FILES = [
-  { name: 'era-payer-q.835', mimeType: 'application/octet-stream', buffer: readFileSync(path.join(FIXTURES, 'CAS-08/remit.835')) },
-  { name: 'era-payer-n.835', mimeType: 'application/octet-stream', buffer: readFileSync(path.join(FIXTURES, 'CAS-02/remit.835')) },
-];
+/**
+ * The width the fit is checked at again (DR-04): 1280 less a classic 17 px scrollbar, which a Windows desktop or a Mac
+ * set to show scrollbars takes from the page and headless Chromium does not.
+ */
+const WITH_SCROLLBAR = WIDTH - 17;
 /** The least space, in CSS px, between one header's words and the next header's: they never run together. */
 const HEADER_GAP = 6;
 
@@ -63,11 +62,37 @@ async function placement(table: Locator): Promise<{ readonly fits: boolean; read
   });
 }
 
-/** Expects the table to fit its card at this width, its last column's header inside it. */
+/**
+ * Expects the table to fit its card at 1280 px and at 1280 less a classic scrollbar, its last column's header inside
+ * it; and, once every scroller agrees with what it measures, its ScrollTable to say nothing of scrolling: it reads
+ * data-scroll="fits", its scroller has no role and no tab stop, and the page shows no caption (no idle tab stop at
+ * 1280; docs/adr/0078). The window is put back at 1280.
+ */
 async function expectFitsItsCard(table: Locator, what: string): Promise<void> {
-  const found = await placement(table);
-  expect.soft(found.past, `${what}: headers past the card (${found.widths})`).toEqual([]);
-  expect.soft(found.fits, `${what}: the table fits its card (${found.widths})`).toBe(true);
+  const page = table.page();
+  try {
+    for (const width of [WIDTH, WITH_SCROLLBAR]) {
+      await page.setViewportSize({ width, height: 900 });
+      const at = `${what} at ${String(width)} px`;
+      await expectScrollersAgree(page, at, { soft: true });
+      const found = await placement(table);
+      expect.soft(found.past, `${at}: headers past the card (${found.widths})`).toEqual([]);
+      expect.soft(found.fits, `${at}: the table fits its card (${found.widths})`).toBe(true);
+      await expect.soft(table.locator('xpath=ancestor::*[@data-slot="scroll-table"][1]'), `${at}: its ScrollTable fits`).toHaveAttribute('data-scroll', 'fits');
+      await expectPlainBox(table, at);
+      await expect.soft(page.locator('[data-state="scrolls-sideways"]'), `${at}: no caption says a table scrolls`).toHaveCount(0);
+    }
+  } finally {
+    await page.setViewportSize({ width: WIDTH, height: 900 });
+  }
+}
+
+/** Expects the table's scroller to be a plain box: no role, no name and no tab stop. */
+async function expectPlainBox(table: Locator, what: string): Promise<void> {
+  const scroller = table.locator('xpath=..');
+  await expect.soft(scroller, `${what}: the scroller is no region`).not.toHaveAttribute('role');
+  await expect.soft(scroller, `${what}: the scroller has no name`).not.toHaveAttribute('aria-label');
+  await expect.soft(scroller, `${what}: the scroller is no tab stop`).not.toHaveAttribute('tabindex');
 }
 
 /** Each pair of neighbouring headers in the table and the space between their words, in CSS px (a hidden header is skipped). */
@@ -105,46 +130,15 @@ async function expectNoSidewaysScroll(page: Page, what: string): Promise<void> {
 
 test('at 1280 px no page scrolls sideways, each wide table fits its card, and every table’s headers stand apart (the screen tour, L1 to L3 and C1 to C3)', async ({ page }) => {
   test.setTimeout(480_000);
-  const practiceId = await journeyPractice({ name: PRACTICE, settings: SETTINGS });
-  const at = (screen = '') => `/p/${practiceId}${screen}`;
   await signInWithTotp(page, MANAGER);
-
   const local = await startLocalWorker();
+  let practiceId = '';
   try {
-    await test.step('CAS-08 and CAS-02 load; payer Q’s schedule is signed off and payer N’s plan mapped as no agreement; March and April are priced and triaged', async () => {
-      // A retry finds the attempt before's uploads: each is waited for, not uploaded again (it would be a duplicate of itself).
-      const earlier = await uploadedEarlier(practiceId, FILES);
-      const fresh = FILES.filter((file) => !earlier.has(file.name));
-      if (fresh.length > 0) {
-        await page.goto(at('/uploads'));
-        await page.getByLabel('Choose files to upload').setInputFiles(fresh);
-        const batch = page.getByRole('region', { name: 'This batch' });
-        for (const file of fresh) {
-          await expect(batch.getByRole('listitem').filter({ hasText: file.name })).toContainText('Loaded 1 remittance', { timeout: 120_000 });
-        }
-      }
-      for (const documentId of earlier.values()) {
-        await untilLoaded(documentId);
-      }
-      await signedOffSchedule({ practiceId, managerKey: MANAGER, planKey: 'CE:SYNPLAN-FIX-ONE', disputeWindowDays: 365 });
-      const mapped = await withDatabase(
-        async (client) =>
-          ((await client.query("SELECT 1 FROM payer_plan_mapping m JOIN plan p ON p.id = m.plan_id WHERE m.practice_id = $1 AND p.plan_key = 'CE:SYNPLAN-OON-CAS'", [practiceId])).rowCount ?? 0) > 0,
-      );
-      if (!mapped) {
-        await page.goto(at('/mapping'));
-        await page.getByRole('table', { name: 'Payers and plans' }).getByRole('row').filter({ hasText: 'SYNPLAN-OON-CAS' }).getByRole('link', { name: 'CE:SYNPLAN-OON-CAS' }).click();
-        await page.getByLabel('Agreement', { exact: true }).selectOption({ label: 'No agreement (out of network)' });
-        await page.getByLabel('Effective from', { exact: true }).fill('2026-01-01');
-        await page.getByRole('button', { name: 'Save the mapping' }).click();
-        await expect(page.locator('[data-notice="mapped"]')).toBeVisible();
-      }
-      await pricedAndTriaged({ practiceId, managerKey: MANAGER, periodFrom: '2026-03-01', periodTo: '2026-03-31' });
-      await pricedAndTriaged({ practiceId, managerKey: MANAGER, periodFrom: '2026-04-01', periodTo: '2026-04-30' });
-    });
+    practiceId = await tourPractice(page, { name: PRACTICE, manager: MANAGER });
   } finally {
     await local.close();
   }
+  const at = (screen = '') => `/p/${practiceId}${screen}`;
 
   const { caseId, versionId, contractId, documentId, marchRun, aprilRun, remittanceId } = await withDatabase(async (client) => {
     const one = async (sql: string) => (await client.query<{ id: string }>(sql, [practiceId])).rows[0]?.id ?? '';
@@ -164,7 +158,7 @@ test('at 1280 px no page scrolls sideways, each wide table fits its card, and ev
 
   await test.step('the contract version: each rate record field’s approval, “the contract specialist” and its time, stays inside its card (L1)', async () => {
     await page.goto(at(`/contracts/versions/${versionId}`));
-    const record = page.getByRole('region', { name: 'Rate record 1' });
+    const record = page.getByRole('region', { name: 'Rate record 1', exact: true });
     const fields = record.getByRole('table', { name: 'Fields' });
     await expect(fields).toContainText('Approved by the contract specialist');
     await expectNoSidewaysScroll(page, 'the contract version');
@@ -204,6 +198,12 @@ test('at 1280 px no page scrolls sideways, each wide table fits its card, and ev
     await expectNoSidewaysScroll(page, 'claims and lines');
     await expectFitsItsCard(table, 'the claims table');
     await expectHeadersApart(table, 'the claims table');
+    // A link inside a table that fits takes focus by Tab, and its scroller stays a plain box: only the scroller's own
+    // focus keeps a region (DR-01), so nobody hears "scrolls sideways" over a table that does not.
+    const first = table.getByRole('link').first();
+    await tabTo(page, { role: 'link', name: ((await first.getAttribute('aria-label')) ?? (await first.textContent()) ?? '').trim() });
+    await expect(first).toBeFocused();
+    await expectPlainBox(table, 'the claims table, a link in it focused');
   });
 
   await test.step('remittances, a remittance, coverage and the runs: every header stands apart from the next (C2), and a run that priced every line shows no empty table (C3)', async () => {
@@ -243,7 +243,7 @@ test('at 1280 px no page scrolls sideways, each wide table fits its card, and ev
 
   await test.step('the uploads, an upload, a contract and the coverage report: every header stands apart from the next (C2)', async () => {
     await page.goto(at('/uploads'));
-    await expectHeadersApart(page.getByRole('region', { name: 'Receipts' }).getByRole('table'), 'the uploads’ receipts');
+    await expectHeadersApart(page.getByRole('region', { name: 'Receipts', exact: true }).getByRole('table'), 'the uploads’ receipts');
     await expectNoSidewaysScroll(page, 'the uploads');
     await page.goto(at(`/uploads/${documentId}`));
     await expectHeadersApart(page.getByRole('table', { name: 'Transaction sets' }), 'the upload’s transaction sets');

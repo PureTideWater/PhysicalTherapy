@@ -3,9 +3,10 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../components/action-form';
+import { UtcTime } from '../../components/dates';
 import { Field, SelectField, TextAreaField } from '../../components/field';
 import { FormKeys } from '../../components/form-keys';
-import { utc } from '../../components/format';
+import { ScrollTable } from '../../components/scroll-table';
 import { AppShell } from '../../components/shell';
 import { loadPage } from '../../lib/http/next';
 import { supportRequestPage } from '../../lib/routes/support';
@@ -14,6 +15,13 @@ import { createTicketAction } from './actions';
 export const metadata: Metadata = { title: 'Support' };
 
 const STATUS: Readonly<Record<string, string>> = { open: 'Open', answered: 'Answered', closed: 'Closed' };
+
+/**
+ * The rule a ticket and a mail to the support address keep alike, said once, last in the card, just above the fields
+ * (docs/adr/0077, D9). It stands alone, since it is also the description of each control it covers: the address's
+ * link, so a person who tabs to it hears it, and the Subject and the Message, which no hint then repeats.
+ */
+const NO_PATIENT_INFORMATION = 'Neither a ticket nor a mail takes patient information: no names, dates of birth, member IDs or claim numbers. Name the screen and the record’s ID.';
 
 /**
  * Support (PRD 19, Support: "a support address that creates a ticket; a published response target"; docs/adr/0053):
@@ -40,9 +48,11 @@ export default async function SupportPage(props: { readonly searchParams: Promis
         <CardHeader>
           <CardTitle>Open a ticket</CardTitle>
           <CardDescription>
-            We answer within {responseTarget}. Or write to <a className="underline" href={`mailto:${supportEmail}`}>{supportEmail}</a> from the address you sign in with: the mail opens a ticket
-            here too. Never send a patient&apos;s
-            name, date of birth, member ID or claim number: name the screen and the record&apos;s ID from its address instead.
+            We answer within {responseTarget}. Or write to{' '}
+            <a className="underline" href={`mailto:${supportEmail}`} aria-describedby="support-rule">
+              {supportEmail}
+            </a>{' '}
+            from the address you sign in with: the mail opens a ticket here too. <span id="support-rule">{NO_PATIENT_INFORMATION}</span>
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -50,8 +60,8 @@ export default async function SupportPage(props: { readonly searchParams: Promis
             <FormKeys />
             <input type="hidden" name="screen" value={from} />
             <SelectField label="What is it about" name="category" options={categories} defaultValue={category ?? undefined} />
-            <Field label="Subject" name="subject" required maxLength={200} />
-            <TextAreaField label="What happened, and what you expected" name="message" required maxLength={4000} rows={6} />
+            <Field label="Subject" name="subject" required maxLength={200} describedBy="support-rule" />
+            <TextAreaField label="What happened, and what you expected" name="message" required maxLength={4000} rows={6} describedBy="support-rule" />
           </ActionForm>
         </CardContent>
       </Card>
@@ -60,28 +70,35 @@ export default async function SupportPage(props: { readonly searchParams: Promis
         {tickets.length === 0 ? (
           <p className="text-sm text-muted-foreground">You have not opened a ticket yet.</p>
         ) : (
-          <table className="w-full text-left text-sm" aria-label="Tickets">
-            <thead className="text-muted-foreground">
-              <tr>
-                <th className="py-1 pr-3 font-medium">Number</th>
-                <th className="py-1 pr-3 font-medium">Subject</th>
-                <th className="py-1 pr-3 font-medium">Opened</th>
-                <th className="py-1 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tickets.map((ticket) => (
-                <tr key={ticket.id} className="border-t">
-                  <td className="py-1 pr-3 font-mono tabular-nums">{ticket.number}</td>
-                  <td className="py-1 pr-3">{ticket.subject}</td>
-                  <td className="py-1 pr-3">{utc(ticket.createdAt)}</td>
-                  <td className="py-1">
-                    <Badge variant="outline">{STATUS[ticket.status] ?? ticket.status}</Badge>
-                  </td>
+          <ScrollTable label="Tickets">
+            <table className="w-full min-w-[32rem] text-left text-sm" aria-label="Tickets">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="py-1 pr-3 font-medium">Number</th>
+                  <th className="py-1 pr-3 font-medium">Subject</th>
+                  <th className="py-1 pr-3 font-medium">Opened</th>
+                  <th className="py-1 font-medium">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {tickets.map((ticket) => (
+                  <tr key={ticket.id} className="border-t">
+                    <td className="py-1 pr-3 font-mono tabular-nums">{ticket.number}</td>
+                    <td className="py-1 pr-3">
+                      {/* What the person typed: words wrap whole, and only a pasted token wider than the column breaks. */}
+                      <span className="block min-w-40 wrap-anywhere">{ticket.subject}</span>
+                    </td>
+                    <td className="py-1 pr-3">
+                      <UtcTime at={ticket.createdAt} />
+                    </td>
+                    <td className="py-1">
+                      <Badge variant="outline">{STATUS[ticket.status] ?? ticket.status}</Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollTable>
         )}
       </section>
       <p className="text-sm text-muted-foreground">

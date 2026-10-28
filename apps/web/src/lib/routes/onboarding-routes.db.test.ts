@@ -311,7 +311,8 @@ describe('invitations (J2)', () => {
     await owner.query("UPDATE invitation SET sent_at = now() - interval '8 days', expires_at = now() - interval '1 day' WHERE id = $1", [invitation?.id]);
     const password = invitations.at(-1)?.password ?? '';
     const expired = await signInWithPassword.invoke({ cookies: new Jar(undefined), params: {}, input: { email, password }, requestId: `test-${randomUUID()}`, userAgent: null }, services);
-    expect(JSON.stringify(expired)).toContain('invitation has expired');
+    // Final: refused before the password is checked, so the form's password note asks for nothing (docs/adr/0077, D2).
+    expect(expired).toEqual({ status: 'ok', data: { error: 'This invitation has expired. Ask your organization’s administrator to send it again.', final: true } });
     ok(await call(resendInvitationAction, admin, { organizationId: world.organizationId }, { invitationId: invitation?.id }));
     expect(invitations.at(-1)?.email).toBe(email);
     const again = ok(await call(usersSettingsPage, admin, { organizationId: world.organizationId })).invitations.find((row) => row.id === invitation?.id);
@@ -369,6 +370,14 @@ describe('the terms of use', () => {
     expect(await call(practiceHome, customer, { practiceId: world.practiceId })).toEqual({ status: 'terms_required' });
     expect(ok(await call(termsPage, customer, {})).history.map((row) => row.version)).toEqual(['2026-10']);
     expect((await call(publishTerms, platformAdmin, {}, { version: '2026-11', documentRef: 'terms/again', sha256: sha('again') })).status).toBe('invalid');
+    // A version or reference outside its format is refused with the format in words, as the Version hint says it.
+    expect(await call(publishTerms, platformAdmin, {}, { version: '2026 12', documentRef: 'terms 2026-12', sha256: sha('terms 2026-12') })).toEqual({
+      status: 'invalid',
+      issues: [
+        { field: 'version', message: 'use only letters, digits, dots, underscores and hyphens, such as 2026-11' },
+        { field: 'documentRef', message: 'use only letters, digits, colons, slashes, dots, underscores and hyphens, such as terms/2026-11' },
+      ],
+    });
     // Everyone else in this file accepts the version in force.
     await asOwner(owner, [], () => owner.query("INSERT INTO terms_acceptance (user_id, terms_version_id, request_id) SELECT id, current_terms_version(), 'test' FROM \"user\" ON CONFLICT DO NOTHING"));
   });
@@ -471,9 +480,21 @@ describe('support', () => {
     const customer = await newCustomer('billing_manager');
     const opened = ok(await call(createTicket, customer, {}, { screen: 'cases', category: 'question', subject: 'Export button', message: 'Where do I export the packet?' }));
     expect(opened.redirect).toMatch(/^\/support\?sent=\d+$/);
-    expect(
-      (await call(createTicket, customer, {}, { screen: 'cases', category: 'problem', subject: 'Claim question', message: 'Member ID W123456789 was underpaid, DOB 1961-04-12.' })).status,
-    ).toBe('invalid');
+    // The refusal names the field and what to write instead, the record by the same name as the form's hints.
+    const refusal = (field: string) => ({
+      field,
+      message:
+        'a ticket takes no patient information: remove names, dates of birth, member IDs, claim numbers, other identifiers and phone numbers, and name the screen and the record’s ID instead',
+    });
+    expect(await call(createTicket, customer, {}, { screen: 'cases', category: 'problem', subject: 'Claim question', message: 'Member ID W123456789 was underpaid, DOB 1961-04-12.' })).toEqual({
+      status: 'invalid',
+      issues: [refusal('message')],
+    });
+    // Both fields at once: each is named, so both are fixed before the next press.
+    expect(await call(createTicket, customer, {}, { screen: 'cases', category: 'problem', subject: 'DOB 1961-04-12', message: 'Member ID W123456789 was underpaid.' })).toEqual({
+      status: 'invalid',
+      issues: [refusal('subject'), refusal('message')],
+    });
     // A patient written in words is refused too: the desk reads tickets with no support grant (docs/adr/0055).
     const inWords = await call(createTicket, customer, {}, {
       screen: 'cases',
@@ -507,6 +528,20 @@ describe('the status page and maintenance', () => {
     ok(await call(updateIncident, platformAdmin, {}, { incidentId: opened.objectId, status: 'resolved', message: 'Fixed.' }));
     expect((await call(updateIncident, platformAdmin, {}, { incidentId: opened.objectId, status: 'monitoring', message: 'Again.' })).status).toBe('invalid');
     expect((await call(openIncident, platformAdmin, {}, { title: 'Call 919-555-0134', impact: 'minor', components: 'web', message: 'x' })).status).toBe('invalid');
+    // Both fields at once: each is named, so both are fixed before the next press.
+    const publicRule = 'the status page is public: write no identifier, date of birth or phone number';
+    expect(await call(openIncident, platformAdmin, {}, { title: 'Call 919-555-0134', impact: 'minor', components: 'web', message: 'Or 919-555-0135.' })).toEqual({
+      status: 'invalid',
+      issues: [
+        { field: 'title', message: publicRule },
+        { field: 'message', message: publicRule },
+      ],
+    });
+    // No component ticked posts no field at all: the list's own words, never the parser's (FRM-04).
+    expect(await call(openIncident, platformAdmin, {}, { title: 'Slow uploads', impact: 'minor', message: 'x' })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'components', message: 'choose at least one component' }],
+    });
     const page = ok(await call(statusPage, null, {}));
     expect(page.incidents.map((incident) => [incident.title, incident.status, incident.components])).toEqual([['Slow uploads', 'resolved', ['uploads', 'jobs']]]);
     expect(page.incidents[0]?.updates.map((update) => update.message)).toEqual(['Fixed.', 'Uploads are slower than usual.']);
@@ -541,6 +576,16 @@ describe('the SOC 2 Type I evidence checklist', () => {
     ok(await call(recordEvidence, platformAdmin, {}, { kind: 'training_attestation', member: supportEngineer, occurredOn: today, documentRef: 'records:training/2026', sha256: sha('training') }));
     expect((await call(recordEvidence, platformAdmin, {}, { kind: 'training_attestation', member: world.adminUserId, occurredOn: today, documentRef: 'records:x', sha256: sha('x') })).status).toBe('invalid');
     expect((await call(recordEvidence, platformAdmin, {}, { kind: 'access_review', occurredOn: '2099-01-01', documentRef: 'records:x', sha256: sha('x') })).status).toBe('invalid');
+    // A reference outside its format is refused with the format in words, as its hint says it, never bare punctuation.
+    expect(await call(recordEvidence, platformAdmin, {}, { kind: 'access_review', occurredOn: today, documentRef: 'records x', sha256: sha('x') })).toEqual({
+      status: 'invalid',
+      issues: [
+        {
+          field: 'documentRef',
+          message: 'where the record is kept, never a person’s name: use only letters, digits, colons, slashes, dots, underscores and hyphens, such as records:training/2026',
+        },
+      ],
+    });
     const after = ok(await call(compliancePage, platformAdmin, {}));
     expect(after.checklist.policies.find((policy) => policy.policy.id === 'access-control')?.status).toBe('approved');
     const workforce = after.checklist.controls.find((control) => control.control.id === 'workforce')?.evidence[0];

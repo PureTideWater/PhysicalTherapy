@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -30,8 +30,10 @@ import {
   composePostgresImage,
   delayedRoundTripMs,
   dockerRunArgs,
+  imageStoreOf,
   interfaceByIndex,
   isScreeningService,
+  loadedImageProblems,
   masked,
   netemCommands,
   parseComposePostgresImage,
@@ -39,11 +41,13 @@ import {
   postgresRunArgs,
   processImagesProblems,
   processShellCommand,
+  proveLoadedImage,
   screeningServices,
   serviceCommand,
   stderrTail,
   workerPlaywrightVersion,
 } from './containers';
+import { CONFIG, attestedArchive, blobEntry } from './test-support/image-archive';
 
 /**
  * The capacity test's readers (audit #53 part 1): cgroup files of both versions, the consumer's phase and time-to-email
@@ -317,16 +321,107 @@ describe('the process runtime\'s images', () => {
       mkdirSync(path.join(images.web, 'apps/web'), { recursive: true });
       writeFileSync(path.join(images.web, 'apps/web/server.js'), '');
       // The integrator's first smoke run: dist and migrations alone, and every worker stopped as it loaded its bundle.
-      expect(processImagesProblems(images, '1.56.1')).toEqual([expect.stringMatching(/node_modules\/playwright-core is missing, not 1\.56\.1, .*npm install --no-save playwright-core@1\.56\.1/)]);
+      expect(processImagesProblems(images, '1.56.1')).toEqual([expect.stringMatching(/node_modules\/playwright-core is missing, not 1\.56\.1, the one the worker image copies beside its bundle from the lockfile's install \(cp -RL apps\/worker\/node_modules\/playwright-core .*\/worker\/node_modules\/\)$/)]);
       mkdirSync(path.join(images.worker, 'node_modules/playwright-core'), { recursive: true });
       writeFileSync(path.join(images.worker, 'node_modules/playwright-core/package.json'), JSON.stringify({ name: 'playwright-core', version: '1.55.0' }));
       expect(processImagesProblems(images, '1.56.1')).toEqual([expect.stringContaining('is at 1.55.0, not 1.56.1')]);
       writeFileSync(path.join(images.worker, 'node_modules/playwright-core/package.json'), JSON.stringify({ name: 'playwright-core', version: '1.56.1' }));
       expect(processImagesProblems(images, '1.56.1')).toEqual([]);
-      // The version the image installs is the worker's own pin.
-      expect(workerPlaywrightVersion()).toBe('1.56.1');
+      // The version the image holds is the lockfile's, read from the worker's installed package (its manifest names the
+      // catalog's entry): a tree with another installed version gives that one, and a tree with none gives none.
+      mkdirSync(path.join(dir, 'tree/apps/worker/node_modules/playwright-core'), { recursive: true });
+      writeFileSync(path.join(dir, 'tree/apps/worker/package.json'), JSON.stringify({ dependencies: { 'playwright-core': 'catalog:' } }));
+      writeFileSync(path.join(dir, 'tree/apps/worker/node_modules/playwright-core/package.json'), JSON.stringify({ name: 'playwright-core', version: '1.64.1' }));
+      expect(workerPlaywrightVersion(path.join(dir, 'tree'))).toBe('1.64.1');
+      expect(workerPlaywrightVersion(path.join(dir, 'no-tree'))).toBe('');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('the measured image proved to be the one built (docs/adr/0066, Part 3)', () => {
+  /** A stand-in docker on PATH: `info` gives this store, `image inspect` this ID, `save` this archive; it logs each call. */
+  async function withDocker<T>(setup: { store: 'classic' | 'containerd'; id: string; save?: Buffer | 'fail' }, body: (dir: string) => Promise<T>): Promise<{ result: T; calls: string[] }> {
+    const dir = mkdtempSync(path.join(tmpdir(), 'capacity-docker-'));
+    const saved = process.env.PATH;
+    try {
+      mkdirSync(path.join(dir, 'bin'));
+      writeFileSync(
+        path.join(dir, 'bin/docker'),
+        `#!/usr/bin/env bash\nprintf '%s\\n' "$*" >> '${dir}/calls'\ncase "$1" in\n  info) cat '${dir}/driver-status' ;;\n  image) cat '${dir}/id' ;;\n  save) if [ -f '${dir}/fail-save' ]; then echo "Error response from daemon: No such image: $2" >&2; exit 1; fi; cat '${dir}/save.tar' ;;\n  *) exit 97 ;;\nesac\n`,
+      );
+      chmodSync(path.join(dir, 'bin/docker'), 0o755);
+      writeFileSync(path.join(dir, 'driver-status'), setup.store === 'containerd' ? '[["driver-type","io.containerd.snapshotter.v1"]]\n' : '[["Backing Filesystem","extfs"],["Supports d_type","true"],["Using metacopy","false"],["Native Overlay Diff","true"],["userxattr","false"]]\n');
+      writeFileSync(path.join(dir, 'id'), `${setup.id}\n`);
+      if (setup.save === 'fail') writeFileSync(path.join(dir, 'fail-save'), '');
+      else if (setup.save !== undefined) writeFileSync(path.join(dir, 'save.tar'), setup.save);
+      process.env.PATH = `${path.join(dir, 'bin')}:${saved ?? '/usr/bin:/bin'}`;
+      const result = await body(dir);
+      let calls: string[] = [];
+      try {
+        calls = readFileSync(path.join(dir, 'calls'), 'utf8').trim().split('\n');
+      } catch {
+        calls = [];
+      }
+      return { result, calls };
+    } finally {
+      process.env.PATH = saved;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  const attested = attestedArchive();
+
+  it('reads the store from docker info: containerd’s snapshotter, or the classic graph driver', () => {
+    expect(imageStoreOf('[["driver-type","io.containerd.snapshotter.v1"]]')).toBe('containerd');
+    expect(imageStoreOf('[["Backing Filesystem","extfs"],["Supports d_type","true"]]')).toBe('classic');
+    expect(imageStoreOf('null')).toBe('classic');
+  });
+
+  it('passes a tag whose .Id is the archive’s config on the classic store, reading the archive and never docker save', async () => {
+    const { result, calls } = await withDocker({ store: 'classic', id: attested.config }, async (dir) => {
+      writeFileSync(path.join(dir, 'worker.tar'), attested.archive);
+      return proveLoadedImage('tp-worker:capacity', { archive: path.join(dir, 'worker.tar'), expectedConfig: attested.config });
+    });
+    expect(result).toEqual({ tag: 'tp-worker:capacity', identity: { config: attested.config, manifest: attested.manifest, target: attested.target }, store: 'classic', source: 'archive' });
+    expect(calls).toEqual(['info --format {{json .DriverStatus}}', 'image inspect -f {{.Id}} tp-worker:capacity']);
+  });
+
+  it('passes a tag whose .Id is the archive’s top-level descriptor on the containerd store, and stops on the amd64 manifest’s digest of an attested index (the review’s S2) or any other', async () => {
+    const run = (id: string) =>
+      withDocker({ store: 'containerd', id }, async (dir) => {
+        writeFileSync(path.join(dir, 'worker.tar'), attested.archive);
+        return proveLoadedImage('tp-worker:capacity', { archive: path.join(dir, 'worker.tar') });
+      });
+    expect((await run(attested.target)).result.store).toBe('containerd');
+    await expect(run(attested.manifest)).rejects.toThrow(`the image to measure is not the one built: tp-worker:capacity is ${attested.manifest} on the containerd image store, not the archive's top-level descriptor ${attested.target}`);
+    await expect(run(attested.config)).rejects.toThrow(`not the archive's top-level descriptor ${attested.target}`);
+    await expect(withDocker({ store: 'classic', id: attested.target }, async (dir) => {
+      writeFileSync(path.join(dir, 'worker.tar'), attested.archive);
+      return proveLoadedImage('tp-worker:capacity', { archive: path.join(dir, 'worker.tar') });
+    })).rejects.toThrow(`tp-worker:capacity is ${attested.target} on the classic image store, not the archive's config ${attested.config}`);
+  });
+
+  it('stops when the archive holds another config than the build recorded (--expect-image; the review’s S1)', async () => {
+    const other = attestedArchive(`${CONFIG} `);
+    await expect(withDocker({ store: 'classic', id: other.config }, async (dir) => {
+      writeFileSync(path.join(dir, 'worker.tar'), other.archive);
+      return proveLoadedImage('tp-worker:capacity', { archive: path.join(dir, 'worker.tar'), expectedConfig: attested.config });
+    })).rejects.toThrow(`the archive for tp-worker:capacity holds the config ${other.config}, not the ${attested.config} the build recorded`);
+  });
+
+  it('streams docker save of the tag when no archive is given (a local run), and fails with docker’s own error when the save fails', async () => {
+    const { result, calls } = await withDocker({ store: 'classic', id: attested.config, save: attested.archive }, async () => proveLoadedImage('tp-worker:capacity'));
+    expect(result.source).toBe('save');
+    expect(calls[0]).toBe('save tp-worker:capacity');
+    await expect(withDocker({ store: 'classic', id: attested.config, save: 'fail' }, async () => proveLoadedImage('tp-worker:missing'))).rejects.toThrow('docker save tp-worker:missing failed: Error response from daemon: No such image: tp-worker:missing');
+  });
+
+  it('names an archive with no index.json as unprovable on the containerd store', () => {
+    const config = blobEntry(CONFIG);
+    expect(loadedImageProblems('tp-web:capacity', config.digest, { config: config.digest }, 'containerd')).toEqual(["the archive for tp-web:capacity has no index.json, so it names no digest the containerd store's .Id could equal"]);
+    expect(loadedImageProblems('tp-web:capacity', config.digest, { config: config.digest }, 'classic')).toEqual([]);
+    expect(loadedImageProblems('tp-web:capacity', '', { config: config.digest }, 'classic')).toEqual([`tp-web:capacity is not loaded on the classic image store, not the archive's config ${config.digest}`]);
   });
 });

@@ -1,0 +1,17 @@
+{
+  "case": "FRM-03",
+  "module": "FRM",
+  "title": "A press while the form is working",
+  "assertion": "Two presses in one frame, a second click and Enter in a field each send one request; the button keeps focus, is aria-disabled and keeps its words; a polite status beside it says \"Working…\"",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": ["apps/web/src/components/action-form.browser.test.tsx","apps/web/e2e/forms-keep-input.spec.ts"],
+  "codeListRelease": null,
+  "noFileReason": "The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

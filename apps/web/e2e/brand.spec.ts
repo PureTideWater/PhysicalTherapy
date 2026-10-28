@@ -3,13 +3,14 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 
-import { type Page, expect, test } from '@playwright/test';
+import { type Locator, type Page, expect, test } from '@playwright/test';
 import { type LedgerEntry, type ReportReconciliation, entriesById, reportReconciliation } from '@tp/ledger';
 import { cents } from '@tp/money';
 
 import { mailBodyHtml } from '../../worker/src/mail/mail';
 import { EMAIL_LOCKUP_PATH } from '../../worker/src/mail/template';
 import { statementHtml } from '../../worker/src/reconcile/statement-html';
+import { personaEmail } from '../scripts/synthetic-personas';
 import { expectAccessible } from './a11y';
 import { signInWithTotp } from './helpers';
 import { journeyPractice, pricedAndTriaged, signedOffSchedule, untilLoaded, uploadedEarlier } from './journeys';
@@ -182,6 +183,97 @@ function shot(name: string): string {
   return path.join(SHOTS, name);
 }
 
+/**
+ * Every control in the header (its links, its disclosure summaries and any button, ARIA button, input or select, as many
+ * as the width shows) is named by what it shows (WCAG 2.5.3, Label in Name; test matrix CI-19): its accessible name
+ * starts with the first piece of its visible text and contains each later piece, lower-cased and with whitespace folded,
+ * as speech input reads it. Starting the name is Understanding 2.5.3's best practice, which every header control meets;
+ * held only to containing it, a one-letter piece (the account's initial at 390 px) would pass almost any name, "Account
+ * menu" for an initial among a, c, o, u, n, t, m and e. The name is Playwright's own computation of it
+ * (toHaveAccessibleName; an aria snapshot prints a summary's text, not its name). The visible text is the control's
+ * innerText without the text of a visually hidden element in it (a box of at most 1 x 1 px that clips what it holds, as
+ * sr-only does), or for an input or select the text of its visible labels (a button input's value), as one piece; then
+ * the generated content (::before and ::after) of each of its shown elements as a piece of its own, since the account's
+ * initial is drawn that way and innerText does not see it. At 390 px that initial is the account control's only visible
+ * text, and axe answers "incomplete" rather than a violation for a one-letter label (label-content-name-mismatch), so
+ * this check is the only guard there.
+ */
+async function expectHeaderNamesHoldTheirText(header: Locator, controls: number): Promise<void> {
+  const shown = header.locator(['a[href]', 'summary', 'button', '[role="button"]', 'input', 'select'].map((each) => `${each}:visible`).join(', '));
+  await expect(shown).toHaveCount(controls);
+  for (const control of await shown.all()) {
+    const { tag, showing, pieces } = await control.evaluate((element) => {
+      const fold = (text: string) => text.replace(/\s+/g, ' ').trim().toLowerCase();
+      // A computed content value holds its text as CSS strings ("W"); anything else (none, normal, a counter, an image)
+      // draws no text this check could read, and is dropped.
+      const generated = (value: string) => [...value.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((match) => (match[1] ?? '').replace(/\\(.)/g, '$1')).join('');
+      const clipped = (each: Element) => {
+        const box = each.getBoundingClientRect();
+        return box.width <= 1 && box.height <= 1 && getComputedStyle(each).overflow !== 'visible';
+      };
+      const hidden = (each: Element): boolean => !each.checkVisibility() || clipped(each) || (each !== element && each.parentElement !== null && hidden(each.parentElement));
+      // innerText keeps a visually hidden element's text; each one's is taken out (an outer one before what it holds).
+      const text = (each: HTMLElement) => [...each.querySelectorAll('*')].filter(clipped).reduce((rest, inner) => rest.replace((inner as HTMLElement).innerText, ' '), each.innerText);
+      const own =
+        element instanceof HTMLInputElement && ['button', 'submit', 'reset'].includes(element.type)
+          ? element.value
+          : element instanceof HTMLInputElement || element instanceof HTMLSelectElement
+            ? [...(element.labels ?? [])].filter((label) => !hidden(label)).map(text).join(' ')
+            : text(element as HTMLElement);
+      const drawn = [element, ...element.querySelectorAll('*')].filter((each) => !hidden(each)).flatMap((each) => ['::before', '::after'].map((pseudo) => generated(getComputedStyle(each, pseudo).content)));
+      return { tag: element.tagName.toLowerCase(), showing: fold(own), pieces: [fold(own), ...drawn.map(fold)].filter((piece) => piece !== '') };
+    });
+    const what = `the header's <${tag}> showing "${showing}"`;
+    expect.soft(pieces, `${what} shows no text`).not.toEqual([]);
+    // Soft, so one run names every control whose name leaves out what it shows, at this width.
+    for (const [index, piece] of pieces.entries()) {
+      const words = piece.split(' ').map(escaped).join('\\s+');
+      if (index === 0) {
+        await expect.soft(control, `${what}: its accessible name must start with its visible text "${piece}"`).toHaveAccessibleName(new RegExp(`^${words}`, 'i'));
+      } else {
+        await expect.soft(control, `${what}: its accessible name must contain its visible text "${piece}"`).toHaveAccessibleName(new RegExp(words, 'i'));
+      }
+    }
+  }
+}
+
+/** A string as a regular expression matches it, character for character. */
+function escaped(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * The name and the description Chromium itself gives an element, from its accessibility tree (CDP), which is what a
+ * screen reader on Chrome speaks. Playwright's own computation (toHaveAccessibleName) follows the specification, and
+ * so does not show Chromium also putting a control's content in its description when an aria-label names it.
+ */
+async function chromiumNameAndDescription(page: Page, selector: string): Promise<{ name: string; description: string }> {
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    const { root } = await cdp.send('DOM.getDocument', { depth: 0 });
+    const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector });
+    const { nodes } = await cdp.send('Accessibility.getPartialAXTree', { nodeId, fetchRelatives: false });
+    const value = (property: { value?: unknown } | undefined) => (typeof property?.value === 'string' ? property.value : '');
+    return { name: value(nodes[0]?.name), description: value(nodes[0]?.description) };
+  } finally {
+    await cdp.detach();
+  }
+}
+
+/**
+ * The practice switcher and the account are named from their content, in the words the co-founder's ruling took for
+ * them (UX-094; designs/lane-b-ux-review.md, section 6.1): what each shows (the practice's name; the address, visually
+ * hidden where only the initial shows), then a visually hidden ', switch practice' or ', account and sign out'. Neither
+ * has a description, so a screen reader does not say the practice or the address twice. Chromium puts a space before
+ * the comma, since the hidden words are an element of their own. Soft, so one run names every difference at this width.
+ */
+async function expectSwitcherAndAccountNamed(page: Page, practice: string, email: string): Promise<void> {
+  const named = (shown: string, purpose: string) => expect.stringMatching(new RegExp(`^${escaped(shown)} ?, ${purpose}$`));
+  const header = '[data-slot="app-header"]';
+  expect.soft(await chromiumNameAndDescription(page, `${header} [data-slot="practice-switcher"]`), 'the practice switcher').toEqual({ name: named(practice, 'switch practice'), description: '' });
+  expect.soft(await chromiumNameAndDescription(page, `${header} [data-slot="account-menu"]`), 'the account').toEqual({ name: named(email, 'account and sign out'), description: '' });
+}
+
 /** The page's width as the document lays it out, beside the window's: equal when nothing scrolls sideways. */
 async function pageWidths(page: Page): Promise<[number, number]> {
   return page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth] as [number, number]);
@@ -327,8 +419,12 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
     await page.goto(`/p/${practiceId}`);
     const header = page.locator('[data-slot="app-header"]');
     await expect(header.locator('[data-slot="lockup"]')).toContainText('PaidWhole');
-    await expect(header.getByLabel('Practice switcher')).toContainText(PRACTICE);
-    await expect(header.getByLabel('Account menu')).toBeVisible();
+    // The two controls are reached by their slots: getByLabel cannot find a summary named from its content.
+    await expect(header.locator('[data-slot="practice-switcher"]')).toContainText(PRACTICE);
+    await expect(header.locator('[data-slot="account-menu"]')).toBeVisible();
+    await expectSwitcherAndAccountNamed(page, PRACTICE, personaEmail('brand-manager'));
+    // Each control is named by what it shows: the lockup's link, the switcher and the account (CI-19).
+    await expectHeaderNamesHoldTheirText(header, 3);
     const active = page.getByRole('navigation', { name: 'Practice' }).getByRole('link', { name: 'Practice home', exact: true });
     await expect(active).toHaveAttribute('aria-current', 'page');
     await expect(active).toHaveCSS('text-decoration-color', BRASS);
@@ -420,6 +516,9 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
     const header = page.locator('[data-slot="app-header"]');
     await expect(header.locator('[data-slot="lockup"]')).toBeVisible();
     await expect(header.getByText('Menu')).toBeVisible();
+    // The same names at a phone width, where the account shows only its initial and the menu joins them (CI-19).
+    await expectSwitcherAndAccountNamed(page, PRACTICE, personaEmail('brand-manager'));
+    await expectHeaderNamesHoldTheirText(header, 4);
     await page.waitForLoadState('networkidle');
     await page.mouse.move(389, 843);
     await header.screenshot({ path: shot('header-390.png') });

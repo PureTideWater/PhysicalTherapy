@@ -1,0 +1,22 @@
+{
+  "case": "CI-20",
+  "module": "CI",
+  "title": "Runner images",
+  "assertion": "Every job on ubuntu-26.04 but the release's capacity chain, on the release runner; the probe's runner comes only from its dispatch input; the browser jobs' cached system packages are used only after each matches the signed index's SHA-256; the release binds images by the config digest hashed from the saved archive under either image store, carries each image's identities from the build as job outputs no later job can rewrite, proves the measured image, the loaded image before any push and the pushed image are that one, builds every checked image with no attestation manifest, and its push and report jobs run no repository code; the image scan reads the built archive",
+  "synthetic": true,
+  "completesIn": 0,
+  "assertedBy": [
+    "tools/test/workflows.test.ts",
+    "tools/ci/apt-archives.test.ts",
+    "tools/screening-capacity/image-id.test.ts",
+    "tools/screening-capacity/measure.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Every workflow file is read; the release's archive check runs on stand-in archives with a stand-in docker, the apt check with stand-in apt tools, and the archive reader and the harness's image proof on synthetic archives, each in a temporary directory; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

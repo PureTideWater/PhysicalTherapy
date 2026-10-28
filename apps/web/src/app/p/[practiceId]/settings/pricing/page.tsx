@@ -7,6 +7,7 @@ import { Field } from '../../../../../components/field';
 import { FormKeys } from '../../../../../components/form-keys';
 import { MonthsWaitingOnLocation } from '../../../../../components/pricing/location';
 import { Money } from '../../../../../components/remittances/display';
+import { ScrollTable } from '../../../../../components/scroll-table';
 import { SettingsNav, currentOrganization } from '../../../../../components/settings/nav';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { loadPage } from '../../../../../lib/http/next';
@@ -18,9 +19,6 @@ export const metadata: Metadata = { title: 'Pricing settings' };
 
 /** Where "tell us" goes: the support form, opened from Settings. */
 const SUPPORT_HREF = '/support?from=settings';
-
-/** The fields a refusal names, by their labels (the confirm form's shown location among them). */
-const FORM_LABELS = { zip: 'Billing ZIP', confirm: 'Confirmation', shownZip: 'Billing ZIP', shownZipPlusFour: 'ZIP+4' } as const;
 
 /** What a save says, by the location it leaves: one that prices (or waits only on PaidWhole's content), or one that still asks for something. */
 const SAVED_SETTLED = 'Months waiting on the billing ZIP are being priced.';
@@ -94,7 +92,7 @@ export default async function PricingSettingsPage(props: { readonly params: Prom
           </p>
           {canEdit ? (
             <div className="flex flex-col gap-4">
-              <ActionForm action={setPricingLocation} submit="Save the billing ZIP" className="grid max-w-md gap-3" labels={FORM_LABELS}>
+              <ActionForm action={setPricingLocation} submit="Save the billing ZIP" className="grid max-w-md gap-3">
                 <FormKeys />
                 <input type="hidden" name="practiceId" value={practiceId} />
                 <Field
@@ -109,7 +107,7 @@ export default async function PricingSettingsPage(props: { readonly params: Prom
                 />
               </ActionForm>
               {location !== null && settled && !confirmed ? (
-                <ActionForm action={confirmPricingLocation} submit="Confirm the billing ZIP" variant="outline" className="flex flex-col gap-2" labels={FORM_LABELS}>
+                <ActionForm action={confirmPricingLocation} submit="Confirm the billing ZIP" variant="outline" className="flex flex-col gap-2">
                   <FormKeys />
                   <input type="hidden" name="practiceId" value={practiceId} />
                   <input type="hidden" name="confirm" value="on" />
@@ -134,7 +132,7 @@ export default async function PricingSettingsPage(props: { readonly params: Prom
         </CardHeader>
         <CardContent className="flex flex-col gap-2 text-sm">
           {places.length === 0 ? null : (
-            <div className="w-full overflow-x-auto">
+            <ScrollTable label="Places of service in effect">
               <table className="w-full text-left" aria-label="Places of service in effect">
                 <thead className="text-muted-foreground">
                   <tr>
@@ -153,7 +151,7 @@ export default async function PricingSettingsPage(props: { readonly params: Prom
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollTable>
           )}
           {split === 'not_read' ? <p className="text-muted-foreground">The approved split’s places show here once a run of this practice has priced under it.</p> : null}
           {split === 'none' ? <p className="text-muted-foreground">No place-of-service split is approved yet, so only the practice’s own places apply.</p> : null}

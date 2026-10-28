@@ -43,11 +43,14 @@ const DEADLINE_TEXT: Readonly<Record<DeadlineState, string>> = {
   none: 'no window',
 };
 
-/** A deadline with its colour: passed, within 14 days, or later (PRD 7, Cases: "deadline colors"). */
+/**
+ * A deadline with its colour: passed, within 14 days, or later (PRD 7, Cases: "deadline colors"). The date stays
+ * whole, and in a narrow column its status wraps under it (docs/adr/0078), so the Cases table still fits its card.
+ */
 export function Deadline({ on, state }: { readonly on: string | null; readonly state: DeadlineState }) {
   return (
-    <span className="inline-flex items-center gap-1.5" data-deadline={state}>
-      <span className="font-mono tabular-nums">{on ?? '—'}</span>
+    <span className="inline-flex flex-wrap items-center gap-1.5" data-deadline={state}>
+      <span className="font-mono tabular-nums whitespace-nowrap">{on ?? '—'}</span>
       <StatusChip tone={DEADLINE_TONE[state]}>{DEADLINE_TEXT[state]}</StatusChip>
     </span>
   );

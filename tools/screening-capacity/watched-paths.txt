@@ -3,6 +3,8 @@
 # A line is a path, or a shell pattern whose * also matches across /.
 .github/workflows/screening-capacity.yml
 apps/web/Dockerfile
+apps/web/e2e/browser-builds/*
+apps/web/e2e/browser.json
 apps/web/next.config.ts
 apps/web/package.json
 apps/web/public/*
@@ -20,6 +22,8 @@ packages/*/package.json
 packages/db/migrations/*
 pnpm-lock.yaml
 pnpm-workspace.yaml
+tools/ci/apt-archives.sh
+tools/ci/browser-build.ts
 tools/screening-capacity/*
 apps/web/src/app/api/health/route.ts
 apps/web/src/app/api/screening/opened/route.ts
@@ -39,6 +43,7 @@ apps/web/src/components/brand/Mark.tsx
 apps/web/src/components/brand/Verified.tsx
 apps/web/src/components/brand/index.ts
 apps/web/src/components/field.tsx
+apps/web/src/components/form-issues.tsx
 apps/web/src/components/format.ts
 apps/web/src/components/public-header.tsx
 apps/web/src/components/screening/anomalies.tsx
@@ -209,6 +214,7 @@ apps/worker/src/reconcile/statements.ts
 apps/worker/src/report/brand-files.ts
 apps/worker/src/report/brand.ts
 apps/worker/src/report/content.ts
+apps/worker/src/report/csv-arena.ts
 apps/worker/src/report/csv.ts
 apps/worker/src/report/documents.ts
 apps/worker/src/report/escape.ts
@@ -528,6 +534,7 @@ packages/ui/src/index.ts
 packages/ui/src/lib/cn.ts
 packages/ui/src/states/empty-state.tsx
 packages/ui/src/states/error-state.tsx
+packages/ui/src/states/loading-announcement.tsx
 packages/ui/src/states/loading-state.tsx
 packages/ui/src/states/permission-state.tsx
 packages/ui/src/states/state-mark.tsx
