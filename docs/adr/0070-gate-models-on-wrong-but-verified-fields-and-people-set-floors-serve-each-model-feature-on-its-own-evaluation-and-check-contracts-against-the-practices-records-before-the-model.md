@@ -968,7 +968,9 @@ kind starts with none: its select is required and leads with a disabled, selecte
   listed by name under "Waiting to upload", and the kind select is marked `aria-invalid`, described first by "Choose
   the kind of document for these 3 files, then upload them." (`counted()`; "this file … upload it" for one), then by
   its help, and focused. The words sit under the select as an alert, re-inserted at each attempt, so a second drop of
-  the same files is announced too.
+  the same files is announced too. The mark, the words and the help are the ones every refused field shows (ADR 0077,
+  D3 and D9: `controlMarks`; `FieldError`, with "Error:" and its icon beside the words; `Hint`, at 14 px). The alert
+  around the words is the panel's own, since `FieldError` announces nothing itself.
 - Once the kind is chosen the words go (UX-5) and "Upload 3 files" appears beside "Clear". The files upload only on
   that button, never on the select's change: an arrow key on a closed select changes it once a press (proven in
   Chromium 1.56: three ArrowDowns gave contract, exhibit, payer letter), so starting on the change would file them

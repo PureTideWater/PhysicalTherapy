@@ -142,9 +142,9 @@ refused the "123 456" an authenticator app copies; and that several fields check
   the formats are read there. A rule a card says once for several fields is not repeated in each hint: the fields name
   it through `describedBy`, read after their own message and hint, which `form-hints.test.ts` follows as it follows
   `aria-describedby` (the support card's no-patient-information rule). A hint written beside a hand-written control
-  uses the shared `Hint` too (the uploader's system list, the pursuit cost's rule, the packet reference, a share link),
-  whose `className` adds layout only; the same test fails on any text a control's `aria-describedby` names that is
-  written at 12 px, except the screening upload's two, a #42 file, until it takes `Hint` after #42 merges.
+  uses the shared `Hint` too (the uploader's kind and system lists, the pursuit cost's rule, the packet reference, a
+  share link), whose `className` adds layout only; the same test fails on any text a control's `aria-describedby` names
+  that is written at 12 px, except the screening upload's two, a #42 file, until it takes `Hint` after #42 merges.
 - **D10. A page whose CSRF token or request key is out of date is read again in place, and a form whose page then
   shows another person is cleared.** `next.ts` maps `csrf_refused` and a refusal whose only issue is `requestKey` to
   `{ error, stale: true }`; the form calls `router.refresh()`, which renders a fresh token and key while the
