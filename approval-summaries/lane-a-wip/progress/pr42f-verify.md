@@ -15,3 +15,13 @@ Started 2026-10-28 (~07:45 UTC). Clone: scratchpad/pr42f-verify
 - added lines (10,571): no model name (2 'claude' hits = branch name claude/build-platform and path .claude/rules/brand.md, both from base); no 40/64-hex string. Commit trailers carry the session attribution (Co-Authored-By ...) as every earlier commit in history does.
 ## Step 3: local checks -- in progress
 - typecheck: exit 0, 22 projects passed
+- lint (eslint --max-warnings=0 on the 119 changed .ts/.tsx/.js files): exit 0, no problems
+- vitest unit tools/test/workflows.test.ts: exit 0, 1 file, 114 passed
+- vitest unit apps/web/src/app/tables.test.ts: exit 0, 7 passed
+- vitest unit apps/web (web unit project): exit 0, 80 files, 954 passed
+- created db tp_pr6b4fv_dm_1
+- db:migrate on tp_pr6b4fv_dm_1: exit 0, 45 migrations applied, last 20261107090000_mail_streams.sql
+- db:domain-model --check --strict (fresh db): exit 0; doc matches schema at 20261107090000_mail_streams.sql; functions match 375 names; 98 tables, 1 view, 47 registered, 226 divergence rows (23 to approve), 0 explanation problems
+- db:domain-model --check --strict --require-approval (local, read-only): exit 1 only for the approval ("names no person; date is not a date"); prints SHA-256 b23fed0e…; line 7334 'Approved by: ________  Date: ________  Document SHA-256: `b23fed0e...`' unchanged since 46974a25 (domain-model.md and packages/db/functions: empty diff)
+- dropped tp_pr6b4fv_dm_1; created tp_pr6b4fv_db_1
+- db:migrate on tp_pr6b4fv_db_1: exit 0 (45)
