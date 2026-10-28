@@ -72,6 +72,10 @@ describe('the builder on Docker Hub', () => {
     ]);
     // A floor under the minimum reads as three days.
     expect((await checkBuilder(releases(2), builder, { isNew: false, now: NOW, floor: 60 })).warnings).toEqual([]);
+    // A floor that is not a number reads as three days, as releaseAgeMinutes reads it: a release four days old is one to move to.
+    expect((await checkBuilder(releases(4), builder, { isNew: false, now: NOW, floor: Number.NaN })).warnings).toEqual([
+      `the builder moby/buildkit:v0.34.1: moby/buildkit v0.34.2 was pushed ${ago(4 * DAY)}, three days ago or more; Dependabot cannot update setup-buildx's driver-opts, so move every step to it by hand (docs/runbooks/dependency-upgrades.md)`,
+    ]);
   });
 
   it('fails a new builder whose tag is another digest, or that cannot be read, and only warns about an unchanged one', async () => {

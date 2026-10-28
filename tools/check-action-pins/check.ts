@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { MINIMUM_RELEASE_AGE_MINUTES } from '../check-toolchain/policy';
+import { releaseAgeMinutes } from '../check-toolchain/exclude-window';
 import { AGE_DEADLINE_MS, AGE_EXCEPTIONS, ageRule, exceptionProblems, webFlowKeys, type WebFlowKeys } from './age';
 import { baseState, selectPins, type BaseState } from './base';
 import { builderOf, checkBuilder } from './buildkit';
@@ -185,7 +185,8 @@ export async function checkActionPins(options: CheckOptions): Promise<CheckResul
   const ageDeadlineMs = options.ageDeadlineMs ?? AGE_DEADLINE_MS;
   const ageDeadline = deadline(ageDeadlineMs);
   const now = options.now ?? new Date();
-  const floor = Math.max(options.floor ?? MINIMUM_RELEASE_AGE_MINUTES, MINIMUM_RELEASE_AGE_MINUTES);
+  // The floor as check-toolchain reads it, so a floor under the minimum or not a number reads as three days, never NaN.
+  const floor = releaseAgeMinutes({ minimumReleaseAge: options.floor });
   try {
     // The BuildKit builder, on every networked run: Dependabot never updates it, so this read is what notices a release.
     // Its newness is read from the base's workflows, which a change that edits the checker leaves known (E4).

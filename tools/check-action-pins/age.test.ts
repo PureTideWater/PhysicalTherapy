@@ -273,6 +273,8 @@ describe('the times read', () => {
     expect(four.errors).toEqual([expect.stringContaining(': under 7200 minutes (5.00 days) old: the youngest time read is the committer date 2025-06-01T00:00:00Z, so it is old enough from 2025-06-06T00:00:00Z;')]);
     expect((await run(repo, network([{ commit }]), { now: new Date(SIGNED + 5 * DAY), floor: 7200 })).errors).toEqual([]);
     expect((await run(repo, network([{ commit }]), { now: new Date(SIGNED + 2 * DAY), floor: 60 })).errors).toEqual([expect.stringContaining(': under three days old:')]);
+    // A floor that is not a number reads as three days, as releaseAgeMinutes reads it, never as NaN, which no age is under.
+    expect((await run(repo, network([{ commit }]), { now: new Date(SIGNED + 2 * DAY), floor: Number.NaN })).errors).toEqual([expect.stringContaining(': under three days old:')]);
   });
 
   it('take the youngest: a tagger date or a release 1 day old makes the pin young, and a date in the future, which no exclude clears, says "choose another release"', async () => {

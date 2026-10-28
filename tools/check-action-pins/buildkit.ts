@@ -1,5 +1,5 @@
-import { ageWords } from '../check-toolchain/exclude-window';
-import { MINIMUM_RELEASE_AGE_MINUTES, MINUTE_MS } from '../check-toolchain/policy';
+import { ageWords, releaseAgeMinutes } from '../check-toolchain/exclude-window';
+import { MINUTE_MS } from '../check-toolchain/policy';
 import { withRetries, type Transport } from './network';
 import { actionUses, type WorkflowText } from './workflows';
 
@@ -82,7 +82,7 @@ export async function checkBuilder(
   const warnings: string[] = [];
   const notes: string[] = [];
   const name = `${BUILDKIT_REPOSITORY}:${builder.version}`;
-  const floor = Math.max(options.floor ?? MINIMUM_RELEASE_AGE_MINUTES, MINIMUM_RELEASE_AGE_MINUTES);
+  const floor = releaseAgeMinutes({ minimumReleaseAge: options.floor });
   const fault = (text: string) => (options.isNew && options.push !== true ? errors : warnings).push(text);
   try {
     const tagUrl = `https://${HOST}/v2/repositories/${BUILDKIT_REPOSITORY}/tags/${builder.version}`;
