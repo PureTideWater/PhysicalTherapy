@@ -15,7 +15,7 @@ session (Lane A or Lane B) continues from here.
   every check of 8cab9c9, the fresh-clone verification PASS (`lane-b-ux-forms-verification.md`), ready, and
   approval-of-record's re-run green. Unsubscribed. The main checkout is fast-forwarded and installed; the worktree
   /home/user/ux-forms and the local branch are removed (remote branches stay, the WIP refs included). The push runs on
-  165c599 (ci, mutation, screening-capacity) are being read.
+  165c599 all passed: ci 40624946717, mutation 40624946474, screening-capacity 40624946466.
 - **Records:** reviews `lane-b-ux-forms-reviews.md`; build `lane-b-ux-forms-build-2b.md`; progress files
   `lane-b-ux-forms-wip/`; design `designs/lane-b-ux-forms.md` (sections 12.1 to 12.4); verification
   `lane-b-ux-forms-verification.md`.
@@ -154,3 +154,4 @@ session (Lane A or Lane B) continues from here.
 | 2026-10-28 03:20 | Verified | CI on 8cab9c9: all 22 check runs green (all green, mutation, screening-capacity gate, approval-of-record). The fresh-clone verification: **PASS**, no blocker (`approval-summaries/lane-b-ux-forms-verification.md`); its two wording notes corrected in the description. Next: ready, approval-of-record's re-run, merge with expectedHeadSha 8cab9c9. |
 
 | 2026-10-28 03:30 | **Merged #74 (165c599)** | Ready 03:07, approval-of-record re-run green, merged with method merge and expectedHeadSha 8cab9c9. Unsubscribed; main checkout fast-forwarded and installed; worktree removed. Push runs being read. Next: PR 6. |
+| 2026-10-28 04:00 | Push runs green | On 165c599: ci, mutation and screening-capacity all success. |
