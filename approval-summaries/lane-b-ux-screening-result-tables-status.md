@@ -11,8 +11,8 @@ The UX review's PR 4 (UX-005, UX-040, UX-042, UX-043, UX-132, UX-206; clusters C
   - scope any `data-slot` locator to `[data-stacked-copy]` or `:visible` (ADR 0078's renders-twice note).
   - `action-form.tsx`'s refusal hand-off stays UX PR 34's.
 
-## Current state (2026-10-28 05:25 UTC)
-- **Branch:** `co-001/ux-screening-result-tables` pushed at **0c261ee**, on a6e754f. No PR yet.
+## Current state (2026-10-28 05:50 UTC)
+- **PR #83** (draft): https://github.com/PureTideWater/PhysicalTherapy/pull/83. Head **f4a9766**, the clean base merge of 165c599 (#74). Every check passed locally on it (unit 6,581; e2e 26 of 26 over 11 specs). The description is from the template, written with update_pull_request and read back byte for byte. This session is subscribed to the PR.
 - **Build:** done (wf_9184e225-f39, 03:05-04:05 UTC), 6 commits:
   - 995f568 and 8c23530, StackedRows' description and the 40% term column;
   - ed08391, the three tables on StackedRows and the words;
@@ -27,8 +27,8 @@ The UX review's PR 4 (UX-005, UX-040, UX-042, UX-043, UX-132, UX-206; clusters C
   - e2e 6 of 6: screening-phone, screening (no flake), tables-phone, layout-1280.
 - **The two copies differ in tone on purpose** (P4-DR-03): on a phone an anomaly shows in the unpriced tone; the table copy keeps Short until UX PR 4b (#42's pins).
 - **`watched-paths.txt`, by its generator:** +`components/screening/table-parts.tsx`, +`components/stacked-rows.tsx`; `lib/copy/words.ts` stays on the merged tree, because #74's sign-in imports it.
-- **Running:** the base merge of 165c599 (#74 ux-forms merged) with the generator re-run and checks (wf_a6c7f099-c90, from 05:20 UTC). Safety check-in 10:20 UTC (trig_014vh315v1NTqmgwpDQghedC).
-- **Next:** push the merge; the draft PR (template) and subscribe; the shots (design 7.1 with P4-DR-09) and the two reviews; the fix round with the full suite; the verification; the merge.
+- **Running:** wf_7237972d-adf (from 05:48 UTC): the correctness review of the two copies and the words, in a fresh clone; the before and after shots (165c599, f4a9766), then the UX and brand review. Safety check-in 10:20 UTC (trig_014vh315v1NTqmgwpDQghedC).
+- **Next:** the fix round (every finding, the full local suite once, one push); the fresh-clone verification reading CI; mark ready; merge. Then, the day #42 merges, UX PR 4b.
 
 ## Overlaps (checked 2026-10-28 01:45 UTC)
 - **#42** (`co-001/pr-06b-mail-streams` at 6f23c42, 212 files):
@@ -39,6 +39,7 @@ The UX review's PR 4 (UX-005, UX-040, UX-042, UX-043, UX-132, UX-206; clusters C
 - **ux-forms** (`co-001/ux-forms`): none of the planned files.
 
 ## Log
+- 2026-10-28 05:40 UTC: the base merge f4a9766 (#74) is clean, the generator re-run and all checks pass; pushed. 05:45: draft PR #83 opened, its description read back, subscribed. 05:48: the reviews workflow started.
 - 2026-10-28 05:15 UTC: resumed on the orchestrator's message (the 5-hour limit had stopped the session ~04:05-04:27; the build had already finished at 04:05, nothing to resume). Check-in moved to 10:20 UTC. Next: the base merge's result, then the draft PR.
 - 2026-10-28 04:05 UTC: build done at 0c261ee (all checks pass); 05:13: the machine had restarted (PostgreSQL down): setup re-run, OK; 0c261ee pushed; 05:20: base merge (#74) started.
 - 2026-10-28 03:20 UTC: Lane A agreed Q1 (re-pin under the same name, no migration), with three conditions for 4b, recorded in design 12.1.
