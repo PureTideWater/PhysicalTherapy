@@ -155,3 +155,71 @@ None. No command failed and no flake re-run was needed.
 ### Still open (carried, not this pass's)
 - The PR #78 description still needs updating. It lacks the fix round's lines, plus this pass: every return page forgets a refusal on `Forbidden`, and the reviewer checklist, packet history and console export download in place.
 - No end-to-end test clicks the packet page's export history links or the console's evidence export. Both are the same `DownloadLink`, held by its unit tests and the type check, as ADR 0079's Not verified here says.
+
+## Part 3: the UX re-check's three (UX-DLR-16 to UX-DLR-18), the merge of #80, and the full local suite
+
+Worktree /home/user/ux-download-refusals, branch co-001/ux-download-refusals. Nothing was pushed. There was no rebase, no migration, no new dependency, nothing under packages/pricing and no model identifier. No #42 file was edited except the shared docs' rows and the generated files as their generators write them; components/shell.tsx is untouched.
+
+### Commits after e36a68bc…
+- 4a5f8d88…: the fix, in one commit (7 files). It holds the builder's work and the re-read's changes.
+  - UX-DLR-16: `DownloadLinks` keeps a `role="status"` line in its place, mounted from the first render and empty and out of the layout's flow while idle (`empty:sr-only`). It reads "Downloading the file…" while any link inside is fetching. The link keeps `aria-busy` and takes `aria-busy:cursor-progress`.
+  - UX-DLR-17: the contract's mark names the payer as `also`, and a change of the payer clears it once the pair holds.
+  - UX-DLR-18: no code. ADR 0079's Revisit when gives `Forbidden` an optional link once #42 merges.
+- cadcdc22…: the merge of claude/build-platform at 0dd1ba7e… (#80) with --no-ff. test-matrix.md, matrix.ts and registry.ts merged without a conflict, and both sides' rows are kept (DLR-01 to DLR-04 and MOD-13, MOD-14). `pnpm install --frozen-lockfile --config.modules-cache-max-age=0`, `watched.ts --write` and `pnpm synth --all` wrote nothing on the merged tree.
+
+Final head: cadcdc22….
+
+### Re-read of the builder's diff (adversarial)
+- Focus holds. A refusal said in place still mounts under a new key and is focused through `focusNotice`. A fetch begun takes the earlier notice away at the click. In Chromium and Firefox the clicked link holds the focus then, so no focus is lost that was not lost before.
+- The status does not repeat the refusal. It is a sibling of the alert, never its container. Its outcome clears it in the same render as the alert mounts, so a screen reader hears the alert alone. With two links fetching, the status keeps its words beside the first refusal, unchanged, so it is not announced again.
+- The nested case holds. An inner `DownloadLinks` provides no context of its own, so its links tell the outer one and one status renders (the Uploads screen's, above its receipts).
+- The always-mounted `<p>` nests validly at every host: a div, a section or a CardContent, never inside a `<p>`, a list or a table. So the server render hydrates. No e2e `getByRole('status')` is ambiguous: packets.spec:228 reads the packet page's Export card, which holds no `DownloadLinks`.
+- The letter's ordering holds. `LetterContractCheck` listens on the payer itself (target phase) and `LetterMarks` on the form (bubble), so the validity read is the new pair's. The select is uncontrolled, so no React handler runs before it.
+- Changed in the re-read:
+  - `LetterMarks` reads `validity.valid` instead of `checkValidity()`. checkValidity() fires an `invalid` event at the contract on every payer change that leaves the pair refused. No listener exists today, but one would run on each change. The fakes in letter.test.tsx and ADR 0079 item 5 follow.
+  - Two comments in download-link.tsx said a notice is null "while a fetch runs". With two links, a refusal shows while another fetch runs, so they now say "from a fetch begun until a refusal comes back".
+  - The e2e reads the status in a browser. The Uploads step holds the receipts' refused Report fetch open and expects "Downloading the file…" visible and the link `aria-busy`. Then it releases the fetch and expects the refusal focused, the status text gone and `aria-busy` gone. ADR 0079's Not verified now says the status is read in a browser on that link alone.
+
+### Local suite on cadcdc22…
+Every command ran under `flock /tmp/laneb-heavy.lock`, one at a time, with Node 24 and PG18 on 5433. Logs are in scratchpad/dlrf3m/*.log. The tree was clean before and after each step, so the e2e ran the stamped build of the commit.
+
+| Command | Result |
+| --- | --- |
+| apps/web: vitest run download-link.test.tsx coverage/letter.test.tsx (before the commit) | Pass. 2 files, 35 tests. |
+| apps/web: tsc --noEmit -p . and eslint --max-warnings 0 over the 6 changed .ts/.tsx (before the commit) | Pass, both. |
+| git fetch origin claude/build-platform; git merge --no-ff --no-commit | 0dd1ba7e… (#80). Auto-merged test-matrix.md, matrix.ts and registry.ts with both sides' rows; no conflict. |
+| pnpm install --frozen-lockfile --config.modules-cache-max-age=0 | Pass. The lockfile was up to date and nothing changed. |
+| tsx tools/screening-capacity/watched.ts --write (merge) | Pass. 536 lines, unchanged. |
+| pnpm synth --all (merge) | Pass. 245 cases: 0 written, 637 unchanged. EMR: 8 formats, 16 unchanged. |
+| pnpm typecheck | Pass. 22 projects (31 s). |
+| pnpm lint | Pass. 1,638 files in 3 groups, 0 errors, 0 warnings (80 s). |
+| pnpm lint:copy | Pass. 530 files. |
+| pnpm lint:logs | Pass. 1,067 files. |
+| pnpm test (the whole unit project) | Pass. 389 files: 6,636 passed, 4 skipped (187 s), coverage thresholds met. |
+| pnpm synth --all, then git diff --exit-code | Pass. 245 cases: 0 written, 637 unchanged, 0 removed. EMR: 8 formats, 16 unchanged. |
+| tsx tools/screening-capacity/watched.ts --write, then git diff --exit-code | Pass. 536 lines, unchanged. |
+| tsx tools/stryker/affected.ts --event pull_request --base 0dd1ba7e… | Pass. Money, pricing, ledger and packets are not affected: any=false, no shards. |
+| tsx tools/stryker/gate.ts (empty reports, --expected '[]') | Pass: "No money path changed", "mutation gate: passed". |
+| db shards chosen | All six. Found by grep over the 127 *.db.test.ts and placed by tools/test/db-shards.ts 6. Direct importers of what #80 changed (@tp/model-gateway's redact and narrative; the worker's packets/identifiers.ts and services.ts; lib/models/narrative-drafts.ts through lib/routes/models.ts and packets.ts) are in shards 1, 3, 4, 5 and 6. Shard 2 holds route-tests.5, and the generated route tests load the whole route registry. This round's files are client components and an e2e spec, with no db test. |
+| pnpm test:db --shard=1/6 | Pass. 22 files, 2,432 passed (96 s). |
+| pnpm test:db --shard=2/6 | Pass. 21 files, 824 passed, 1 skipped (58 s). |
+| pnpm test:db --shard=3/6 | Pass. 21 files, 2,510 passed (101 s). |
+| pnpm test:db --shard=4/6 | Pass. 21 files, 1,836 passed (90 s). |
+| pnpm test:db --shard=5/6 | Pass. 21 files, 1,398 passed (193 s). |
+| pnpm test:db --shard=6/6 | Pass. 21 files, 222 passed (59 s). |
+| test:db total | 127 files: 9,222 passed, 1 skipped, 0 failed. |
+| pnpm build | Pass. Web and worker (49 s). The tree was clean afterwards. |
+| build-stamp.ts --write cadcdc22… | Stamped cadcdc22…. Both e2e web servers read "the build is cadcdc22…'s". |
+| E2E_ADMIN_URL=…5433/postgres E2E_PREBUILT=1 E2E_DATABASE=tp_e2e_pr78c E2E_PORT=3182 pnpm test:e2e --shard=1/2 --workers=2 | Pass. 28 passed (4.2 min). download-refusals (DLR-04) is included, with its new UX-DLR-16 and UX-DLR-17 assertions. |
+| same, --shard=2/2 | Pass. 27 passed (3.7 min). packets, reports, uploads and screening are included. |
+| e2e total | 55 passed, 0 failed: the whole suite (55 tests in 27 files, `playwright test --list`). |
+| Clean-up | tp_e2e_pr78c was dropped and its /tmp directories removed (0 left). Nothing is listening on 3182. |
+| Scope (git diff 0dd1ba7e… HEAD, 62 files) | The #42 files touched are test-matrix.md, matrix.ts and registry.ts (rows), and watched-paths.txt (generated). packages/pricing has 0 lines. No migration, package.json or lockfile. No model identifier in the added lines. |
+
+### Failures
+None. No command failed and no flake re-run was needed.
+
+### Still open (carried)
+- UX-DLR-18 waits for #42: `Forbidden`'s optional link, and the packet page's and the reviewer checklist's links (ADR 0079, Revisit when).
+- A refusal said in place takes the focus even when the person has moved on while the fetch ran, for example into the packet page's version form. This predates this pass; ADR 0079 D4 says the notice is focused as it mounts.
+- The PR #78 description still needs the fix rounds' lines, this pass's included.

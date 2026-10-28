@@ -1,0 +1,35 @@
+# UX and brand re-check (PR #74, fix round) — progress
+
+Started 2026-10-27 ~21:50. Head read: (see below). Shots: before e908c21, after 4f0b526, fixed a57fbf5.
+Findings to check: UX-1..5, UX-8..10, A11Y-1..3 (UX-6 deferred, UX-7 not a defect).
+
+## Findings (status: fixed / partly / not-fixed, evidence)
+
+## New problems (shot id, severity, file, fix)
+
+Sizes table (before/after/fixed): /tmp/claude-0/-home-user-PhysicalTherapy/d75bf211-7cd4-58d6-b13d-568cbdc1db2a/scratchpad/ux-recheck/sizes.txt
+- widths: p.submissions.error.390 390/613/390; p.coverage.checklist-review(-sent).390 390/408/390; console.status.error.390 390/391/390; console.status.error-row.390 476/391/390; settings.users.error.390 667/686/686 (pre-existing, #42 page); p.uploads.default.390 new 534 (receipts table per shots agent)
+- UX-1 FIXED. p.submissions.error.390 390/613/390; fixed shot: response form single column in card, Document select inside card with chosen-text line under it; Error line + hint wrap inside. styles.css:158 `form:not(.flex-col, .flex-col-reverse):has(...)`. 1280 unchanged, no chosen line at 1280.
+- UX-2 FIXED. p.coverage.checklist-review.390 390/408/390: letter form's Payer/Contract/Codes end inside the card (SelectField, grid-cols-1), hint 14 px. console.status.error.390 390/391/390 and .error-row.390 476/391/390: Set wraps under the select inside the card (status/page.tsx flex-wrap). styles.css:88-94 base select max-width + :where(:has(> select)) min-width 0. settings.users.error.390 still 686 (pre-existing #42 table, proposal). p.uploads.default.390 534: drop zone + select fit; overflow is receipts.tsx table (not in PR diff, pre-existing) -> proposal, not new.
+- UX-3 FIXED. sign-in.error-locked.390: before n/a, after "Emptied for your security: type it again." under Password, fixed "Emptied for your security." (form-issues.tsx:148 `secret==='password' && !final`). Dropped connection lead with secrets: form-issues.tsx:623-624 "…except passwords and codes: … type them again…" (no shot: support has no secret; judged from code). Also final flag for invitation_expired.
+- UX-4 FIXED (code only, no shot has the duplicate state): next.ts:239-241 duplicate -> {error 'This form was already sent, so nothing new was saved. Reload the page to see the result.', duplicate:true}; form-issues.tsx:493 'Already sent'; no refresh; key pinned. Note: fallback next.ts:245 'Reload the page and try again.' says no what-happened (unreachable today).
+- UX-5 FIXED. support.default.390 / support.error.390: card ends "…opens a ticket here too. Your mail takes no patient information either: no names, dates of birth, member IDs or claim numbers. Name the screen and the record’s ID." (page.tsx:24 MAIL_RULE, span#support-mail-rule, mailto aria-describedby).
+  NEW (polish): the rule now shows 3x in support.default.390 (card + Subject hint + Message hint; page 974->995->1123 px) and 5x in support.error.390 (card, summary item, Error line, two hints). "either" points back to hints that come after it in reading order (and on the link's description, where nothing precedes it).
+- A11Y-1 FIXED (visible). sign-in-new-password.default.390: policy hint 12 px (after) -> 14 px (fixed), wraps in 2 lines inside the card; support hints 14 px; coverage letter hint 14 px. field.tsx Hint text-sm; form-hints.test.ts guards it.
+- A11Y-2 FIXED (code; shots show no audible change). console.screening.error.390: list unchanged visually (red bullets), hints now 14 px. split-form.tsx:228-247 list div no role; sr-only p role=status, said after 1 s rest/blur/press; seq 0 never said.
+- UX-10 FIXED (hardware key part, the verified fix; split-form bullet list left by design 4.6 as the verdict said). sign-in-hardware-key.error-no-credential.390 and .error-locked.390 (+1280-dark): Problem now first, then Email, then button. hardware-key.tsx; also method=post.
+  (pre-existing, not fix-round: sign-in dark shots show near-white h1 on Paper — same in after.)
+- A11Y-3 FIXED (code; not seen: every sampled toggle is unpressed). button.tsx outline aria-pressed:border-foreground aria-pressed:bg-secondary; styles.css:122-128 forced-colors Highlight. Unpressed Show unchanged in sign-in.default.390.
+- UX-8 FIXED. p.cases.default.390: run select still cut at 16 px, line under it reads "2026-03-01 to 2026-03-31 (release 900001)"; p.contracts.error.390: "SYNTHETIC PAYER C AGREEMENT (SYNTHETIC PAYER C)" under Contract; console.compliance.error.390 (y~15700): "Policy approved by the security official" under What; p.submissions.error.390 Document line. No line at 1280 (p.submissions.error.1280). field.tsx:199-224 showChosen measured, aria-hidden, text-sm Ink.
+  candidate polish: chosen line carries a hash prefix in sans (p.submissions.error.390 "SHA-256 69ede2a2b201…") while the page shows hashes in mono.
+- UX-9 FIXED. support.error.390: error "…the record’s ID instead" and hint "…the record’s ID." (curly, no "opaque"); console.terms.error.390: Version hint "Letters, digits, dots, underscores and hyphens, such as 2026-11." matches the error; SHA-256 hints "document’s" (terms/page.tsx:68, compliance, organizations). Document reference hint+error spelled out too.
+## Sweep for new problems (in progress)
+- checked, no new problem: console.status.error-row.1280 (sub-pixel only), support.error-unconfirmed.390 (lead w/o secrets ok), console.organization.error.390 (14 px hints/notes, new upload note words ok; tables pre-existing overflow), request-audit.error.390, console.practice.error.390, sign-in-enroll.error.390, sign-in-mfa.error.390, sign-in-new-password.error-*.390, p.contracts.error.1280-dark, support.error.1280-dark, p.uploads.default.1280-dark, console.screening.error.1280-dark.
+- candidate polish (not seen, code): "Already sent"/"Form cleared" render in the destructive Alert (red title) though neither is a failure; design 3.5 records titles only.
+- more checked, no new problem: settings.users.error.390 (run data row only), p.case.error.1280 (timeline data), console.models.error.390, console.terms.default.1280 (hints spelled out, 14 px).
+## Final new problems
+1. polish support.default.390 / support.error.390: rule said 3x / 5x; "either" points at hints that come after it. Fix: one rule in the card for both routes, fields described by it (Field/TextAreaField extra describedBy id), drop the two hints. support/page.tsx, field.tsx; design 10.2 + ADR D9 amendment.
+2. polish p.submissions.error.390: chosen line prints hash prefix in sans (page shows hashes in mono). Fix: Choice gets optional rich `chosen` node; submissions passes the SHA-256 prefix in font-mono. field.tsx, submissions/page.tsx.
+3. polish, not seen: "Already sent" in destructive (red) title though the earlier press saved. Fix: default variant for kind 'duplicate' in form-issues.tsx Summary, export-status.tsx, action-form.tsx RefusalFallback; design 3.5.
+Pre-existing, not fix round: p.uploads.default.390 receipts table 534 px (receipts.tsx not in diff); settings.users 686; sign-in dark shots Paper bg with light text; next.ts:245 unreachable fallback lacks what-happened.
+STATUS: COMPLETE (all 11 findings judged)

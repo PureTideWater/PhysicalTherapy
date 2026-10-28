@@ -948,3 +948,8 @@ HANDOFF.md; LANES.md rule 10).
 - #75 merges second and resolves redact.ts (its identifierPattern widening has no function left); its session knows.
 - Proposals recorded in the status file: the packets verifier's identifierSpans has the same gaps (its own PR in packages/packets); local test:db and e2e need DATABASE_URL on 5433; a PRD 14 question for the founder (redact SSNs and phone numbers by pattern?).
 - The session continues with packet day counts (`co-001/packet-day-counts`).
+
+### 2026-10-28 01:45 UTC: UX PR 3 (table scroll) merged as #79 (a6e754f)
+- Every required check green on 7102b8b (unit 6,459 passed, 1 skipped; db 9,223; e2e 56 of 56); fresh-clone verification passed. ADR 0078 and TBL-01 to TBL-04 (synth module 17) used. The person approved its screenshot Artifact after the 00:15 resume.
+- For #42's next base merge (rule 6): #79 changed `components/screening/result.test.tsx`, which #42 also changes; `apps/web/src/app/tables.test.ts` exempts #42's bare tables by exact count (console/support 1, users 2, support-access 1). If #42's head changes those counts (its verify round stacks the users page below sm), #42 edits that exemption line in its merge. #42's `console/mail` table already sits in `ScrollTable`.
+- PR 4 (screening result on a phone, `co-001/ux-screening-result-tables`) started from a6e754f in the same session.

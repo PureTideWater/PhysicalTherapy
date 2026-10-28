@@ -672,8 +672,11 @@ async function downloadRefusal(page: Page): Promise<'json' | 'page'> {
   const deadline = Date.now() + 15_000;
   for (;;) {
     await page.waitForLoadState('load').catch(() => undefined);
-    // The page's notice takes ?refused= out of the address bar once shown (ForgetRefusal), so the notice counts too.
-    if (new URL(page.url()).searchParams.has('refused') || (await page.locator('[data-download-refusal]').count()) > 0) {
+    // A shown refusal leaves the address bar on a timer (ForgetRefusal), the notice's page and a permission state's
+    // alike, so the notice and the permission state count too; the JSON page of the base has neither.
+    const landed =
+      new URL(page.url()).searchParams.has('refused') || (await page.locator('[data-download-refusal], [data-state="permission"]').count()) > 0;
+    if (landed) {
       await expect(page.getByRole('heading', { level: 1 }).or(page.locator('[data-state="permission"]')).first()).toBeVisible();
       return 'page';
     }
