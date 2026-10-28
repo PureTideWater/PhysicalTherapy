@@ -99,6 +99,10 @@ td.pw-money,
   outline-offset: -2px;
   --tw-ring-inset: inset;
 }
+/* A refused field's ring goes inside its 2 px danger border (packages/ui styles.css), so both show (docs/adr/0077). */
+.pw-scroll-frame > [data-scroller] :is(input, select)[aria-invalid="true"]:not([type="checkbox"], [type="radio"]):focus-visible {
+  outline-offset: -4px;
+}
 /* A text box's fades are bands at its top and bottom, inside its border, from its own surface. */
 [data-axis="block"] > .pw-scroll-frame::before,
 [data-axis="block"] > .pw-scroll-frame::after { inset-inline: 0; width: auto; height: var(--pw-scroll-fade); }

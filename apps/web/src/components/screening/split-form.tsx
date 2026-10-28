@@ -1,10 +1,13 @@
 'use client';
 
 import { Input, Label } from '@tp/ui';
-import { type ReactNode, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 
 import type { ActionState } from '../../lib/http/next';
 import { ActionForm } from '../action-form';
+import { Hint } from '../field';
+import { usePersonChange } from '../form-issues';
 
 /**
  * The screening's place-of-service split, as a contract specialist approves it (reconciliation-001, D20 a: a
@@ -50,8 +53,62 @@ export function splitSettings(facility: string, nonFacility: string): { readonly
   return { settings: JSON.stringify(Object.fromEntries(entries)) };
 }
 
-/** A list of codes the form reads; it has no name, so only the built split is sent. */
-function CodesField({ id, label, value, onChange, hint }: { readonly id: string; readonly label: string; readonly value: string; readonly onChange: (value: string) => void; readonly hint: string }) {
+/**
+ * Which list each of splitSettings' problems concerns, so the form marks the field at fault: a malformed code, the
+ * list it is in; a code in both lists, both; no code at all, the facility list (the one a person fills first).
+ */
+export function splitFaults(facility: string, nonFacility: string): { readonly facility: boolean; readonly nonFacility: boolean } {
+  const a = splitCodes(facility);
+  const b = splitCodes(nonFacility);
+  const both = a.codes.some((code) => b.codes.includes(code));
+  const none = a.codes.length + b.codes.length === 0;
+  return { facility: a.invalid.length > 0 || both || none, nonFacility: b.invalid.length > 0 || both };
+}
+
+/**
+ * The split's problems as the person types: shown at once, and the description of each field at fault, so it is read
+ * when the focus lands there. It is not live: a list that changes with each key would speak over the typing.
+ */
+const PROBLEMS_ID = 'split-problems';
+
+/** How long the lists rest before the status line says their problems (WCAG 4.1.3: never while the person types). */
+const SETTLE_MS = 1000;
+
+/** What the status line says, and the saying it is (a press says the same words again as a new one). */
+interface Said {
+  readonly text: string;
+  readonly seq: number;
+}
+
+/** The status line's next state: unchanged when it already says `text`, unless `again` (a press) asks for it anew. */
+function saying(text: string, again: boolean): (previous: Said) => Said {
+  return (previous) => (previous.text === text && !again ? previous : { text, seq: previous.seq + 1 });
+}
+
+/**
+ * A list of codes the form reads; it has no name, so only the built split is sent. At fault, it is marked invalid
+ * and described by the problems first, then its hint. `issueFor` names the hidden field a server issue may be keyed
+ * by, so a refusal of the built split is placed on this field (docs/adr/0077). Leaving it says the problems at once.
+ */
+function CodesField({
+  id,
+  label,
+  value,
+  onChange,
+  onBlur,
+  hint,
+  fault,
+  issueFor,
+}: {
+  readonly id: string;
+  readonly label: string;
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+  readonly onBlur: () => void;
+  readonly hint: string;
+  readonly fault: boolean;
+  readonly issueFor?: string;
+}) {
   return (
     <div className="flex flex-col gap-1.5">
       <Label htmlFor={id}>{label}</Label>
@@ -61,13 +118,14 @@ function CodesField({ id, label, value, onChange, hint }: { readonly id: string;
         onChange={(event) => {
           onChange(event.target.value);
         }}
+        onBlur={onBlur}
         inputMode="numeric"
         autoComplete="off"
-        aria-describedby={`${id}-hint`}
+        aria-invalid={fault || undefined}
+        aria-describedby={fault ? `${PROBLEMS_ID} ${id}-hint` : `${id}-hint`}
+        data-issue-for={issueFor}
       />
-      <p id={`${id}-hint`} className="text-xs text-muted-foreground">
-        {hint}
-      </p>
+      <Hint id={id} hint={hint} />
     </div>
   );
 }
@@ -87,9 +145,65 @@ export function ScreeningSplitForm({
 }) {
   const [facility, setFacility] = useState(initialFacility);
   const [nonFacility, setNonFacility] = useState(initialNonFacility);
+  // Set by a press with problems, so even two empty lists say what is missing.
+  const [pressed, setPressed] = useState(false);
   const built = useMemo(() => splitSettings(facility, nonFacility), [facility, nonFacility]);
+  const problems = 'problems' in built ? built.problems : [];
+  const shown = problems.length > 0 && (pressed || facility !== '' || nonFacility !== '');
+  const faults = shown ? splitFaults(facility, nonFacility) : { facility: false, nonFacility: false };
+  // The status line says the problems shown once the lists rest, when a list is left, and on a press; never while the
+  // person types. What the page opened with (seq 0) is never said: it is read in place.
+  const heard = shown ? problems.join(' ') : '';
+  const [said, setSaid] = useState<Said>(() => ({ text: heard, seq: 0 }));
+  const pause = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => {
+    // Each change of either list starts the pause again; with nothing wrong, the line empties at once, which is silent.
+    const timer = setTimeout(
+      () => {
+        setSaid(saying(heard, false));
+      },
+      heard === '' ? 0 : SETTLE_MS,
+    );
+    pause.current = timer;
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [facility, nonFacility, heard]);
+  const settle = () => {
+    clearTimeout(pause.current);
+    setSaid(saying(heard, false));
+  };
+  // The lists are held here, outside the fields ActionForm mounts afresh when the page shows another person signed in
+  // (docs/adr/0077, D10), so they start again from the page as rendered now: nothing the first person typed is sent.
+  const formRef = useRef<HTMLFormElement | null>(null);
+  usePersonChange(formRef, () => {
+    clearTimeout(pause.current);
+    setFacility(initialFacility);
+    setNonFacility(initialNonFacility);
+    setPressed(false);
+    setSaid({ text: '', seq: 0 });
+  });
   return (
-    <ActionForm action={action} submit="Approve this split" className="grid gap-4">
+    <ActionForm
+      action={action}
+      submit="Approve this split"
+      className="grid gap-4"
+      beforeSubmit={(form) => {
+        if (problems.length === 0) {
+          return true;
+        }
+        // Nothing is sent while the lists have problems: they are shown and said, the first field at fault is marked,
+        // then focused. Said again on every press: Enter in the field at fault moves no focus, so nothing else reads them.
+        clearTimeout(pause.current);
+        flushSync(() => {
+          setPressed(true);
+          setSaid(saying(problems.join(' '), true));
+        });
+        const first = splitFaults(facility, nonFacility).facility ? 'split-facility' : 'split-non-facility';
+        form.querySelector<HTMLInputElement>(`#${first}`)?.focus();
+        return false;
+      }}
+    >
       {formKeys}
       <input type="hidden" name="settings" value={'settings' in built ? built.settings : ''} />
       <CodesField
@@ -97,22 +211,40 @@ export function ScreeningSplitForm({
         label="Facility places of service"
         value={facility}
         onChange={setFacility}
+        onBlur={settle}
         hint="Two-digit codes, separated by commas or spaces. Priced at the facility rate."
+        fault={faults.facility}
+        issueFor="settings"
       />
       <CodesField
         id="split-non-facility"
         label="Non-facility places of service"
         value={nonFacility}
         onChange={setNonFacility}
+        onBlur={settle}
         hint="Priced at the non-facility rate. A place in neither list is left unpriced."
+        fault={faults.nonFacility}
       />
-      {'problems' in built && (facility !== '' || nonFacility !== '') ? (
-        <ul className="list-disc pl-5 text-sm text-destructive" data-state="split-problems">
-          {built.problems.map((problem) => (
-            <li key={problem}>{problem}</li>
-          ))}
-        </ul>
-      ) : null}
+      <div id={PROBLEMS_ID}>
+        {shown ? (
+          <ul className="list-disc pl-5 text-sm text-destructive" data-state="split-problems">
+            {problems.map((problem) => (
+              <li key={problem}>{problem}</li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+      {/* On the page from the first render; each saying is a new node, so the same words said again are announced again. */}
+      <p
+        ref={(node) => {
+          formRef.current = node?.closest('form') ?? null;
+        }}
+        role="status"
+        className="sr-only"
+        data-slot="split-status"
+      >
+        {said.seq === 0 || said.text === '' ? null : <span key={said.seq}>{said.text}</span>}
+      </p>
     </ActionForm>
   );
 }

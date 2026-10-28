@@ -2,6 +2,7 @@ import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardDesc
 import type { Metadata } from 'next';
 
 import { ActionForm } from '../../../../../components/action-form';
+import { CheckboxField } from '../../../../../components/field';
 import { FormKeys } from '../../../../../components/form-keys';
 import { roleNames, utc, utcDate } from '../../../../../components/format';
 import { ScrollTable } from '../../../../../components/scroll-table';
@@ -69,9 +70,7 @@ export default async function AgreementsSettingsPage(props: { readonly params: P
               <ActionForm action={confirmAgreements} submit="Confirm the agreement chain">
                 <FormKeys />
                 <input type="hidden" name="practiceId" value={practiceId} />
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" name="confirm" required /> I have read these agreements and they are the ones our organization signed.
-                </label>
+                <CheckboxField name="confirm" errorName="Confirmation" label="I have read these agreements and they are the ones our organization signed." required />
               </ActionForm>
             )
           ) : (

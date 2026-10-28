@@ -8,7 +8,7 @@ import { ActionForm } from '../../../../../../components/action-form';
 import { QuestionList } from '../../../../../../components/contracts/display';
 import { documentLabel } from '../../../../../../components/contracts/forms';
 import { DisputeWindowRuleText, ReviewBody, VersionFacts, VersionStateNotice, reviewHref } from '../../../../../../components/contracts/review';
-import { Field, SelectField } from '../../../../../../components/field';
+import { CheckboxField, CheckboxGroup, Field, SelectField, TextAreaField } from '../../../../../../components/field';
 import { HandEntryNotice, ModelNoticeAlert, ProposalList } from '../../../../../../components/models/display';
 import { AppShell, Forbidden } from '../../../../../../components/shell';
 import { DISPUTE_WINDOW_START_OPTIONS, DISPUTE_WINDOW_UNIT_OPTIONS, TOPIC_NAMES } from '../../../../../../lib/contracts/display';
@@ -42,15 +42,6 @@ const METHODS = [
   { value: 'PER_VISIT', label: 'Per visit (once per claim and date)' },
   { value: 'UNSUPPORTED', label: 'Unsupported (capitation, undefined case rate)' },
 ];
-
-function Checkbox({ name, label }: { readonly name: string; readonly label: string }) {
-  return (
-    <label className="flex items-center gap-2 text-sm">
-      <input type="checkbox" name={name} value="on" />
-      {label}
-    </label>
-  );
-}
 
 /**
  * The contract specialist's Rate record review (PRD 7; PRD 5, J5: "in v0 the specialist abstracts it
@@ -119,10 +110,7 @@ export default async function AbstractionVersionPage(props: Props) {
                 {hidden()}
                 <input type="hidden" name="versionId" value={version.id} />
                 <SelectField label="Document to read" name="documentId" id="propose-document" options={proposable.map((document) => ({ value: document.id, label: documentLabel(document) }))} />
-                <label className="flex items-start gap-2 text-sm">
-                  <input type="checkbox" name="ambiguous" className="mt-1" />
-                  <span>This contract is ambiguous: have the larger model the prompt reserves for ambiguous contracts read it.</span>
-                </label>
+                <CheckboxField name="ambiguous" value="on" errorName="Ambiguous contract" label="This contract is ambiguous: have the larger model the prompt reserves for ambiguous contracts read it." />
               </ActionForm>
             ) : (
               <HandEntryNotice what="enter the rate records below" />
@@ -201,7 +189,7 @@ export default async function AbstractionVersionPage(props: Props) {
                       { value: 'LOCKED', label: 'A stated year' },
                     ]}
                   />
-                  <Field label="Stated year (when locked)" name="lockedYear" pattern="\d{4}" />
+                  <Field label="Stated year (when locked)" name="lockedYear" pattern="\d{4}" hint="Four digits, such as 2026." />
                   <SelectField
                     label="Locality"
                     name="localityBasis"
@@ -210,8 +198,8 @@ export default async function AbstractionVersionPage(props: Props) {
                       { value: 'NAMED', label: 'A carrier and locality the contract names' },
                     ]}
                   />
-                  <Field label="Carrier (when named)" name="carrier" pattern="\d{5}" />
-                  <Field label="Locality (when named)" name="locality" pattern="\d{2}" />
+                  <Field label="Carrier (when named)" name="carrier" pattern="\d{5}" hint="Five digits." />
+                  <Field label="Locality (when named)" name="locality" pattern="\d{2}" hint="Two digits." />
                   <SelectField
                     label="Conversion factor"
                     name="conversionFactor"
@@ -228,13 +216,17 @@ export default async function AbstractionVersionPage(props: Props) {
                       { value: 'PERCENT_OF_MEDICARE', label: 'A percentage of Medicare' },
                     ]}
                   />
-                  <fieldset className="flex flex-col gap-1">
-                    <legend className="text-sm font-medium">Medicare adjustments the contract incorporates</legend>
-                    <Checkbox name="applyMppr" label="Multiple procedure payment reduction" />
-                    <Checkbox name="applyAssistantReduction" label="Assistant modifier reduction (CQ, CO)" />
-                    <Checkbox name="applySequestration" label="Sequestration" />
-                    <Checkbox name="applyNcci" label="NCCI edits" />
-                  </fieldset>
+                  {/* Four independent booleans: a refusal of one box is named by its own label ("NCCI edits"), never the legend. */}
+                  <CheckboxGroup
+                    legend="Medicare adjustments the contract incorporates"
+                    issueKey="medicareAdjustments"
+                    options={[
+                      { name: 'applyMppr', value: 'on', label: 'Multiple procedure payment reduction' },
+                      { name: 'applyAssistantReduction', value: 'on', label: 'Assistant modifier reduction (CQ, CO)' },
+                      { name: 'applySequestration', value: 'on', label: 'Sequestration' },
+                      { name: 'applyNcci', value: 'on', label: 'NCCI edits' },
+                    ]}
+                  />
                   <SelectField
                     label="Timed units"
                     name="timedUnitsRule"
@@ -258,12 +250,8 @@ export default async function AbstractionVersionPage(props: Props) {
                   <Field label="Applies through (optional)" name="scopeLastDay" type="date" />
                   <SelectField label="Cited document" name="documentId" id="record-document" options={documents.map((document) => ({ value: document.id, label: documentLabel(document) }))} />
                   <Field label="Page" name="page" type="number" min={1} required />
-                  <div className="flex flex-col gap-1.5 md:col-span-2">
-                    <label htmlFor="field-quote" className="text-sm font-medium">
-                      Quote
-                    </label>
-                    <textarea id="field-quote" name="quote" required maxLength={2000} rows={3} className="rounded-md border bg-background p-2 text-sm" />
-                    <p className="text-xs text-muted-foreground">The exact words on the page the term comes from.</p>
+                  <div className="md:col-span-2">
+                    <TextAreaField label="Quote" name="quote" required maxLength={2000} rows={3} hint="The exact words on the page the term comes from." />
                   </div>
                 </ActionForm>
               )}
@@ -313,15 +301,19 @@ export default async function AbstractionVersionPage(props: Props) {
                   <input type="hidden" name="versionId" value={version.id} />
                   <SelectField label="Cited document" name="documentId" id="window-document" options={documents.map((document) => ({ value: document.id, label: documentLabel(document) }))} />
                   <Field label="Page" name="page" id="window-page" type="number" min={1} required defaultValue={version.disputeWindow?.page} />
-                  <div className="flex flex-col gap-1.5 md:col-span-2">
-                    <label htmlFor="window-quote" className="text-sm font-medium">
-                      Quote
-                    </label>
-                    <textarea id="window-quote" name="quote" required maxLength={2000} rows={2} className="rounded-md border bg-background p-2 text-sm" defaultValue={version.disputeWindow?.quote} />
-                    <p className="text-xs text-muted-foreground">
-                      The exact words on the page that state the dispute window of {String(version.disputeWindowDays)}
-                      {version.disputeWindow?.rule === null || version.disputeWindow?.rule === undefined ? ', in the unit the quote states' : ` (cited: it ${windowRuleText(version.disputeWindowDays, version.disputeWindow.rule)})`}.
-                    </p>
+                  <div className="md:col-span-2">
+                    <TextAreaField
+                      label="Quote"
+                      name="quote"
+                      id="window-quote"
+                      required
+                      maxLength={2000}
+                      rows={2}
+                      defaultValue={version.disputeWindow?.quote}
+                      hint={`The exact words on the page that state the dispute window of ${String(version.disputeWindowDays)}${
+                        version.disputeWindow?.rule === null || version.disputeWindow?.rule === undefined ? ', in the unit the quote states' : ` (cited: it ${windowRuleText(version.disputeWindowDays, version.disputeWindow.rule)})`
+                      }.`}
+                    />
                   </div>
                   <SelectField label="Unit" name="unit" id="window-unit" required options={DISPUTE_WINDOW_UNIT_OPTIONS} defaultValue={version.disputeWindow?.rule?.unit ?? ''} />
                   <SelectField label="Counted from" name="measuredFrom" id="window-measured-from" required options={DISPUTE_WINDOW_START_OPTIONS} defaultValue={version.disputeWindow?.rule?.measuredFrom ?? ''} />
@@ -457,13 +449,7 @@ export default async function AbstractionVersionPage(props: Props) {
             <input type="hidden" name="contractId" value={version.contractId} />
             <input type="hidden" name="versionId" value={version.id} />
             <SelectField label="Topic" name="topic" options={QUESTION_TOPICS.map((topic) => ({ value: topic, label: TOPIC_NAMES[topic] }))} />
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="field-question" className="text-sm font-medium">
-                Question
-              </label>
-              <textarea id="field-question" name="question" required maxLength={2000} rows={3} className="rounded-md border bg-background p-2 text-sm" />
-              <p className="text-xs text-muted-foreground">About the contract’s terms only; never a patient detail.</p>
-            </div>
+            <TextAreaField label="Question" name="question" required maxLength={2000} rows={3} hint="About the contract’s terms only; never a patient detail." />
           </ActionForm>
           {questions.length === 0 ? null : (
             <QuestionList

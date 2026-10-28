@@ -71,14 +71,13 @@ function RerunForm({
       submit={target === 'this' ? `Re-run under release ${String(release.releaseNo)}` : `Re-run the run in effect under release ${String(release.releaseNo)}`}
       variant="outline"
       className={className}
-      labels={{ runId: target === 'this' ? 'This run' : 'The run to re-run', releaseNo: 'Rule release' }}
       refreshOnError={takeover}
       wrapSubmit={target === 'in_effect'}
     >
       <FormKeys />
       <input type="hidden" name="practiceId" value={practiceId} />
-      <input type="hidden" name="runId" value={run.id} />
-      <input type="hidden" name="releaseNo" value={release.releaseNo} />
+      <input type="hidden" name="runId" value={run.id} data-error-name={target === 'this' ? 'This run' : 'The run to re-run'} />
+      <input type="hidden" name="releaseNo" value={release.releaseNo} data-error-name="Rule release" />
       <p className="text-sm text-muted-foreground">
         {target === 'this' ? (
           <>
@@ -273,15 +272,14 @@ export default async function PricingRunPage(props: Props) {
                   action={acceptPricingRunFormAction}
                   submit="Accept this run"
                   className="flex flex-col gap-2"
-                  labels={{ runId: 'This re-run', replacesId: 'The run it replaces', heldByIds: 'The runs of other service dates holding its lines' }}
                   refreshOnError={`accept:${run.id}`}
                 >
                   <FormKeys />
                   <input type="hidden" name="practiceId" value={practiceId} />
-                  <input type="hidden" name="runId" value={run.id} />
-                  <input type="hidden" name="replacesId" value={acceptance.replaces.id} />
+                  <input type="hidden" name="runId" value={run.id} data-error-name="This re-run" />
+                  <input type="hidden" name="replacesId" value={acceptance.replaces.id} data-error-name="The run it replaces" />
                   {(heldBy ?? []).map((held) => (
-                    <input key={held.id} type="hidden" name="heldByIds[]" value={held.id} />
+                    <input key={held.id} type="hidden" name="heldByIds[]" value={held.id} data-error-name="The runs of other service dates holding its lines" />
                   ))}
                   <p className="text-sm">Accepting makes this run the one in effect for its period: Claims and lines and Coverage read it from then on.</p>
                 </ActionForm>

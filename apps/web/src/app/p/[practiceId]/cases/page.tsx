@@ -5,10 +5,10 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../components/action-form';
+import { SelectField } from '../../../../components/field';
 import { MoneyField } from '../../../../components/money-field';
 import { Money, Pager } from '../../../../components/remittances/display';
 import { ScrollTable } from '../../../../components/scroll-table';
-import { MATERIALITY_LABELS } from '../../../../components/settings/defaults';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { CASE_STATE_TEXT, CaseStateBadge, Deadline, stageLabel } from '../../../../components/triage/display';
 import { loadPage } from '../../../../lib/http/next';
@@ -74,16 +74,7 @@ export default async function CasesPage(props: Props) {
               <ActionForm action={triageRunFormAction} submit="Triage the run" className="flex max-w-xl flex-col gap-3">
                 <FormKeys />
                 <input type="hidden" name="practiceId" value={practiceId} />
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="triage-run">Pricing run</Label>
-                  <select id="triage-run" name="runId" className="h-9 rounded-md border bg-background px-2 text-sm" required>
-                    {runs.map((run) => (
-                      <option key={run.id} value={run.id}>
-                        {run.periodFrom} to {run.periodTo} (release {run.releaseNo})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <SelectField id="triage-run" label="Pricing run" name="runId" options={runs.map((run) => ({ value: run.id, label: `${run.periodFrom} to ${run.periodTo} (release ${String(run.releaseNo)})` }))} required showChosen />
               </ActionForm>
             )}
           </CardContent>
@@ -141,17 +132,13 @@ export default async function CasesPage(props: Props) {
                         <input type="hidden" name="contractVersionId" value={pattern.key.contractVersionId ?? ''} />
                         <input type="hidden" name="rateRecordId" value={pattern.key.rateRecordId ?? ''} />
                         <input type="hidden" name="behavior" value={pattern.key.behavior} />
-                        <div className="flex flex-col gap-1.5">
-                          <Label htmlFor={`owner-${pattern.key.planId}-${pattern.key.behavior}`}>Owner</Label>
-                          <select id={`owner-${pattern.key.planId}-${pattern.key.behavior}`} name="ownerUserId" className="h-9 rounded-md border bg-background px-2 text-sm" defaultValue="">
-                            <option value="">Unassigned</option>
-                            {workers.map((person) => (
-                              <option key={person.userId} value={person.userId}>
-                                {person.email}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
+                        <SelectField
+                          id={`owner-${pattern.key.planId}-${pattern.key.behavior}`}
+                          label="Owner"
+                          name="ownerUserId"
+                          defaultValue=""
+                          options={[{ value: '', label: 'Unassigned' }, ...workers.map((person) => ({ value: person.userId, label: person.email }))]}
+                        />
                       </ActionForm>
                     ) : null}
                   </li>
@@ -171,7 +158,7 @@ export default async function CasesPage(props: Props) {
         </CardHeader>
         {canTriage ? (
           <CardContent>
-            <ActionForm action={setMaterialityFormAction} submit="Save the thresholds" className="flex max-w-xl flex-col gap-3" labels={MATERIALITY_LABELS}>
+            <ActionForm action={setMaterialityFormAction} submit="Save the thresholds" className="flex max-w-xl flex-col gap-3">
               <FormKeys />
               <input type="hidden" name="practiceId" value={practiceId} />
               <div className="flex flex-wrap gap-3">
