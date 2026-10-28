@@ -133,7 +133,7 @@ describe('the trees check-toolchain compares', () => {
     writeIn(dir, 'apps/web/nested/Dockerfile', `FROM ${image('4')}\n`);
     writeIn(dir, 'docker-compose.override.yml', 'services: {}\n');
     writeIn(dir, 'img/web.dockerfile', `FROM ${image('5')}\n`);
-    writeIn(dir, 'docs/dockerfile-notes.md', 'not an image file');
+    writeIn(dir, 'docs/docker-notes.md', 'not an image file');
     writeIn(dir, 'composer.json', '{}');
     commitAll(dir, 'the change');
     // Not tracked, so not part of the change.

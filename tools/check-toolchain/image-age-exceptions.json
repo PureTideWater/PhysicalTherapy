@@ -1,0 +1,4 @@
+{
+  "$comment": "Image digests the release age cannot pass yet (docs/adr/0066, Part 5; tools/check-toolchain/images.ts). Each entry names one image exactly (name:tag@sha256:<64 hex>) and waives one requirement for at most seven days: security-fix, the three-day floor for a Docker Hub digest, with its advisory (GHSA or CVE) and the package and version it fixes; age-unprovable, the need for a recorded push time, only on a registry other than Docker Hub, with no advisory. A Docker Hub digest found on no tag passes under no entry. docs/runbooks/dependency-upgrades.md, \"Base images and PostgreSQL\".",
+  "entries": []
+}
