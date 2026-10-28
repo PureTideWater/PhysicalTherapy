@@ -1309,6 +1309,41 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
   });
 });
 
+/** github.token as the runner reads it: its names in any case, spaces allowed around the dot (actions/runner, OrdinalIgnoreCase). */
+const GITHUB_TOKEN_NAMED = /\bgithub\s*\.\s*token\b/gi;
+/**
+ * The token by another name, in any case: secrets.GITHUB_TOKEN or secrets[…] (the same token), and the github context,
+ * which carries it, indexed, filtered (github.*), joined or as JSON, or toJSON(secrets).
+ */
+const TOKEN_ELSEWHERE = /\bsecrets\s*[.[]|\bgithub\s*\[|\bgithub\s*\.\s*\*|\bjoin\s*\(\s*github\b|\btojson\s*\(\s*(?:github|secrets)\b/gi;
+
+/**
+ * Where ci.yml hands a step the job's token (docs/adr/0066, Part 5; E8, S8): named once, as github.token in the Action
+ * pins step's env, and under no other name. GitHub reads an expression's context, property and function names ignoring
+ * case (actions/runner's ExpressionParser and DictionaryContextData), so every name is matched in any case and each
+ * step's text compared lower-cased (the reviews' CI-S1 and SEC-N2). Improve as you go: inside an expression, the github
+ * context is named only by a property (github.<name>), never whole, which would hand a step the token among the rest.
+ * The problems, or none.
+ */
+function tokenProblems(text: string): string[] {
+  const problems: string[] = [];
+  const named = text.match(GITHUB_TOKEN_NAMED) ?? [];
+  if (named.length !== 1) problems.push(`github.token is named ${String(named.length)} times, not once`);
+  const parsed = parse(text) as Workflow;
+  const holders = Object.entries(parsed.jobs).flatMap(([id, job]) =>
+    job.steps.flatMap((step, index) => (new RegExp(GITHUB_TOKEN_NAMED.source).test(JSON.stringify(step).toLowerCase()) ? [step.name ?? `${id} step ${String(index + 1)}`] : [])),
+  );
+  if (!isDeepStrictEqual(holders, ['Action pins'])) problems.push(`the steps naming github.token are ${JSON.stringify(holders)}, not the Action pins step alone`);
+  const pins = parsed.jobs.static?.steps.find((step) => step.name === 'Action pins');
+  if (pins?.env?.GITHUB_TOKEN !== '${{ github.token }}') problems.push(`the Action pins step's GITHUB_TOKEN is ${JSON.stringify(pins?.env?.GITHUB_TOKEN)}, not \${{ github.token }}`);
+  for (const match of text.matchAll(TOKEN_ELSEWHERE)) problems.push(`${match[0]}: reaches the token by another name`);
+  for (const [expression] of text.matchAll(/\$\{\{[\s\S]*?\}\}/g)) {
+    // String literals dropped first, so 'https://github.com' or 'github-x' in one is no name.
+    if (/\bgithub\b(?!\s*\.\s*[A-Za-z_])/i.test(expression.replace(/'(?:[^']|'')*'/g, "''"))) problems.push(`${expression}: names the whole github context, the token among it`);
+  }
+  return problems;
+}
+
 describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/adr/0066, Part 1)', () => {
   const ci = workflow('ci.yml');
   const JOBS = ['static', 'lint', 'unit', 'db', 'domain-model', 'build', 'e2e', 'images', 'all-green'];
@@ -1322,14 +1357,20 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
         expect(step.with?.['persist-credentials'], id).toBe(false);
       }
     }
-    // The token is named once, in that step's env, and under no other name: secrets.GITHUB_TOKEN is the same token, and
-    // the github context carries it, so no secrets., github[ or toJSON of either (docs/adr/0066, Part 5; E8, S8).
-    const text = readFileSync(path.join(WORKFLOWS, 'ci.yml'), 'utf8');
-    expect(text.match(/github\.token/g)).toHaveLength(1);
-    expect(Object.values(ci.jobs).flatMap((job) => job.steps.filter((step) => JSON.stringify(step).includes('github.token')).map((step) => step.name))).toEqual(['Action pins']);
-    expect(ci.jobs.static?.steps.find((step) => step.name === 'Action pins')?.env?.GITHUB_TOKEN).toBe('${{ github.token }}');
-    expect(text).not.toMatch(/secrets\.|github\[|toJSON\(\s*(?:github|secrets)\b/);
+    // The token is named once, in that step's env, and under no other name (tokenProblems).
+    expect(tokenProblems(readFileSync(path.join(WORKFLOWS, 'ci.yml'), 'utf8'))).toEqual([]);
     expect(ci.defaults).toEqual({ run: { shell: 'bash' } });
+  });
+
+  it('refuses the token handed to a second step under any spelling GitHub reads, its names in any case (the reviews’ CI-S1 and SEC-N2)', () => {
+    const text = readFileSync(path.join(WORKFLOWS, 'ci.yml'), 'utf8');
+    const toolchain = '        env: { BASE: "${{ steps.range.outputs.base }}" }\n        run: pnpm toolchain:check\n';
+    // The Toolchain step given the token as the reviewers wrote it: each reaches the same token, and the runner reads it.
+    const given = (value: string) => text.replace(toolchain, `        env: { BASE: "\${{ steps.range.outputs.base }}", T: "${value}" }\n        run: pnpm toolchain:check\n`);
+    const forms = ['${{ GITHUB.TOKEN }}', '${{ Secrets.GITHUB_TOKEN }}', '${{ ToJSON(GitHub) }}', "${{ join(github.*, ',') }}", '${{ github[\'token\'] }}', '${{ github . token }}', "${{ format('{0}', github) }}"];
+    expect(forms.map((form) => given(form) === text)).toEqual(forms.map(() => false));
+    expect(tokenProblems(given('${{ GITHUB.TOKEN }}'))).toEqual(['github.token is named 2 times, not once', 'the steps naming github.token are ["Action pins","Toolchain"], not the Action pins step alone']);
+    for (const form of forms) expect(tokenProblems(given(form)), form).not.toEqual([]);
   });
 
   it('groups a pull request’s runs by its number and a push’s by its commit, cancelling only a pull request’s older run', () => {
