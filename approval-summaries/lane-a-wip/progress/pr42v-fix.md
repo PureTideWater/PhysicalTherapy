@@ -39,3 +39,5 @@
 - suite started ~00:27 UTC on 8b60d74a in background (run-all.sh: suite.sh then suite2.sh; results scratchpad/pr42vf2/suite/results.tsv; ALLDONE in results.tsv.done)
 - suite run 1 ABORTED at 00:31 (lint: packages/db/src/mail-address.ts:32 no-control-regex \x00); fixed in ffb27b11 (regex [\u0080-\uffff], same semantics); suite restarted on the new head (logs of the aborted run in scratchpad/pr42vf2/suite-aborted)
 - body drafts: scratchpad/pr42vf2/body-{head,verification,legal,wording,actions,tail}.md, new-findings-table.md, body-s3-capacity-merge.md, dm-summary.md; checks table to fill after the suite
+- unit run 1 failed only tools/test/workflows.test.ts (2): orphan node_modules/.pnpm/playwright-core@1.56.1 from the pre-#77 install (environment, not code); pruned with pnpm install --frozen-lockfile --config.modules-cache-max-age=0 (553->504 entries, tree unchanged); unit rerun exit 0
+- suite so far on ffb27b11: typecheck 0, lint 0, lint-copy 0, lint-logs 0, check-fixtures 0, synth 0, engine-freeze 0, unit 1 (env orphan) -> unit-rerun 0 (394 files, 6603 passed, 1 skipped), golden 0, oracle 0, verify-content 0; db shards next
