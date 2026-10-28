@@ -451,4 +451,28 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
   { id: 'FRM-06', title: 'A refused form without JavaScript', assertion: "The post reaches the action once; the page shows the summary and each field's own message, and no key; a success redirects with its notice" },
   { id: 'FRM-07', title: 'Sign-in refusals', assertion: 'A wrong password keeps the email, empties the password and marks no field; a wrong code empties and marks the code field under "That did not match."; a code written "123 456" signs in; a weak password and two passwords that differ are issues on their own fields, the policy in the field\'s hint; Show password reveals and hides the text, is named by its words, looks pressed while it shows, turns off spell checking, autocorrect and autocapitalisation, which no caller can turn back on, and is hidden again, with aria-pressed false, before the form\'s data is read' },
   { id: 'FRM-08', title: "Phone-width controls and a refused form's accessibility", assertion: 'At 390 px an input, a select and a text area are at least 16 px; at 1280 px they are 14 px; a refused form passes axe (WCAG 2.1 A and AA) at both widths; at 390 px a page of forms does not scroll sideways, refused or not, and a select that cuts its chosen text short shows that text whole under it, a SHA-256 in it set in Plex Mono as the page sets it, as no select at 1280 px needs to' },
+  {
+    id: 'TBL-01',
+    title: "A wide table's scroller and a fixed-height text box",
+    assertion:
+      'Rendered on the server as a region named after its table with ", scrolls sideways" added (a text box: ", scrolls") with tabindex 0, the containing block of what its table positions, with a visible focus outline, so it is reachable before any script runs; in the browser it has no role, name or tab stop while its content fits and the scroller itself does not hold focus (a link inside it does not count), and is a region again when the content overflows; edge fades show only at an edge with content past it and the caption "Scroll sideways for more columns." only while it overflows, both from classes and data attributes alone (no style attribute); every table in apps/web/src is the direct and only child of the ScrollTable of components/scroll-table, under whatever name it is imported, and none is made by createElement or written in markup, but in the #42 pages listed with the pull requests that wrap them, and an exemption that no longer matches fails',
+  },
+  {
+    id: 'TBL-02',
+    title: 'No page scrolls sideways',
+    assertion:
+      "At 390 px no changed route is wider than the window, every table on it sits in a scroller, and each populated wide table overflows its scroller and shows the caption; at 1280 px, and at 1263 px (1280 less a classic scrollbar), each wide table the tour checks fits its card, every table's headers stand apart, no page scrolls sideways, and a table that fits has no tab stop and no caption, even while a link inside it holds focus",
+  },
+  {
+    id: 'TBL-03',
+    title: "Every changed route at a phone's width passes axe",
+    assertion:
+      "At 390 px every changed route, each with its wide table populated and overflowing, has no axe-core WCAG 2.1 A or AA violation, a scrollable region the keyboard cannot reach (scrollable-region-focusable) among them, and every scroller's state agrees with its measurement before axe runs; the screening result's is the review's fourth pull request's",
+  },
+  {
+    id: 'TBL-04',
+    title: 'One stacked-row layout',
+    assertion:
+      "Each stacked row is a list item headed by its naming cell at the level the caller gives (a link when the row has one), then a definition list of each column's label and value, then the row's actions; expected, paid and short are given together and in that order, and the stacked rows keep the table's column order, each figure in the mono face with tabular numerals; a status wraps inside the card; the rows carry their own hooks, never the table's, and no id or hook repeats between the two copies; with a table, the table shows from the table's own width up and the rows below it, by a container query on a full-width wrapper",
+  },
 ];

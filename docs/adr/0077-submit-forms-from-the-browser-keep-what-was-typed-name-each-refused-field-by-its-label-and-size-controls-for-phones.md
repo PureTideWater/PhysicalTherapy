@@ -251,6 +251,11 @@ refused the "123 456" an authenticator app copies; and that several fields check
   needs none: a drop there shows the error screen, which invites no press, and `requestExportOnce` makes a repeated
   request one; it does watch the person's mark (D10), as the split form, an `ActionForm`, does. #42's upload form
   neither pins its key nor watches the mark, until it adopts this pattern after #42.
+- **A row form in both copies of `StackedRows`** (docs/adr/0078, Decision 5) has a request key and a pin in each copy,
+  so after a press dropped in one copy and a resize across `stackBelow` (a phone turned), a press in the other would
+  send a fresh key and could save twice. No page renders a row form in both copies yet; the review's 34th pull request,
+  the first to, gives a row's two copies one request key and one pin (its `<FormKeys/>` rendered once for both, or one
+  held key shared by both `ActionForm`s), so a press in either after a dropped one is never a second save.
 
 ## Not verified here
 

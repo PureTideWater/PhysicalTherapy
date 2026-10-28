@@ -97,7 +97,7 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
     await expectAccessible(page, 'Packet builder, before its first version');
     await page.getByRole('button', { name: 'Write the first version' }).click();
     await expect(page.locator('[data-notice="written"]')).toBeVisible();
-    await expect(page.getByRole('region', { name: 'Version' })).toContainText('Version 1');
+    await expect(page.getByRole('region', { name: 'Version', exact: true })).toContainText('Version 1');
     await expect(page.locator('[data-verifier="passed"]')).toBeVisible();
     // Each line's deadline, verified from the contract's own window cited on its page (CO-05, D17), shown with its label.
     const deadline = page.getByRole('region', { name: 'Deadline' });
@@ -119,7 +119,7 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
     await expect(page.locator('#narrative')).toHaveCount(1);
     await expectAccessible(page, 'Packet builder, its first version');
     // At a phone's width the page does not scroll sideways, and each wide table scrolls in a region a keyboard reaches (item #61).
-    await atPhoneWidth(page, 'Packet builder, its first version');
+    await atPhoneWidth(page, 'Packet builder, its first version', { tables: ['Line schedule', 'Versions'] });
   });
 
   await test.step('a sentence with a figure in no input record is flagged as it is typed, and its version cannot be approved (CAS-08)', async () => {
@@ -131,7 +131,7 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
     await expect(page.getByRole('list', { name: 'Live mismatches' })).toContainText('1234.56');
     await page.getByRole('button', { name: 'Save as a new version' }).click();
     await expect(page.locator('[data-notice="written"]')).toBeVisible();
-    await expect(page.getByRole('region', { name: 'Version' })).toContainText('Version 2');
+    await expect(page.getByRole('region', { name: 'Version', exact: true })).toContainText('Version 2');
     await expect(page.locator('[data-verifier="failed"]')).toBeVisible();
     await expect(page.getByLabel('Stored narrative').locator('mark')).toHaveText(['1234.56']);
     const approval = page.getByRole('region', { name: 'Approval' });
@@ -143,7 +143,7 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
   await test.step('the drafter writes a passing version again and finds the Approve button disabled, with the reason, beside Request approval (CAS-09; item #61)', async () => {
     await page.getByRole('button', { name: 'Write a new version from the code-built draft' }).click();
     await expect(page.locator('[data-notice="written"]')).toBeVisible();
-    await expect(page.getByRole('region', { name: 'Version' })).toContainText('Version 3');
+    await expect(page.getByRole('region', { name: 'Version', exact: true })).toContainText('Version 3');
     await expect(page.locator('[data-verifier="passed"]')).toBeVisible();
     const approval = page.getByRole('region', { name: 'Approval' });
     await expect(approval.locator('[data-approval="drafter"]')).toBeVisible();
@@ -281,7 +281,7 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
     let reference = '';
     await test.step('the PDF downloads with that SHA-256, named by the packet’s reference, the payer’s copy with the identifiers the screen never showed, and the CSV with its own (E3)', async () => {
       const shownVersion = await currentVersionId(approver);
-      reference = (await approver.getByRole('region', { name: 'Version' }).locator('[data-reference]').getAttribute('data-reference')) ?? '';
+      reference = (await approver.getByRole('region', { name: 'Version', exact: true }).locator('[data-reference]').getAttribute('data-reference')) ?? '';
       expect(reference).toMatch(PACKET_REFERENCE_PATTERN);
       const response = await approver.request.get(`${casePath}/packet/${shownVersion}/pdf`);
       expect(response.status()).toBe(200);
@@ -333,6 +333,7 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
       try {
         await registerKeyAndSignIn(reviewer, 'packet-reviewer');
         await reviewer.goto(`/p/${practiceId}/packet-reviews`);
+        await atPhoneWidth(reviewer, 'Packet reviews, an export waiting', { tables: ['Exports waiting'] });
         await reviewer.getByRole('table', { name: 'Exports waiting' }).getByRole('link').first().click();
         await expect(reviewer).toHaveURL(new RegExp(`${casePath}/packet/[0-9a-f-]{36}/review$`));
         await expect(reviewer.getByRole('region', { name: 'Deadline' }).locator('[data-deadline-summary="verified"]')).toBeVisible();
@@ -354,7 +355,7 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
         await expect(reviewer.getByRole('region', { name: 'Payer’s copy' }).locator('[data-reference]')).toHaveAttribute('data-reference', reference);
         await expect(reviewer.getByRole('region', { name: 'Payer’s copy' }).locator('[data-contact="set"]')).toContainText(correspondenceText(SYNTHETIC_CORRESPONDENCE_CONTACT));
         await expectAccessible(reviewer, 'Packet review, internal record and payer’s copy');
-        await atPhoneWidth(reviewer, 'Packet review');
+        await atPhoneWidth(reviewer, 'Packet review', { tables: ['Line schedule'] });
         const exportFiles = reviewer.getByRole('region', { name: 'Export', exact: true });
         const attestation = reviewer.getByRole('region', { name: 'Attestation' });
         // The billing manager's downloads are not the reviewer's: the attest button is disabled and says why.
@@ -430,7 +431,7 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
       await atPhoneWidth(page, 'Packet by reference');
       await matches.getByRole('link', { name: /^Open the packet, version \d+$/ }).click();
       await expect(page).toHaveURL(new RegExp(`${casePath}/packet\\?version=[0-9a-f-]{36}$`));
-      await expect(page.getByRole('region', { name: 'Version' }).locator('[data-reference]')).toHaveAttribute('data-reference', reference);
+      await expect(page.getByRole('region', { name: 'Version', exact: true }).locator('[data-reference]')).toHaveAttribute('data-reference', reference);
     });
 
     await test.step('at 390 px a select that cuts its choice short shows it whole under it and follows a new choice, and neither Cases nor Coverage’s letter form scrolls sideways (FRM-08)', async () => {
@@ -568,13 +569,13 @@ test('an unverified deadline blocks the export with its reason; once the window�
     await page.getByLabel('Prompt-pay state (interest, its own line)').selectOption('');
     await page.getByRole('button', { name: 'Write a new version from the code-built draft' }).click();
     await expect(page.locator('[data-notice="written"]')).toBeVisible();
-    await expect(page.getByRole('region', { name: 'Version' })).toContainText('Version 2');
+    await expect(page.getByRole('region', { name: 'Version', exact: true })).toContainText('Version 2');
     await expect(interest).toContainText('No prompt-pay state named');
     // Chosen again in the same field, the same button writes it with the interest line: the field every button sends.
     await page.getByLabel('Prompt-pay state (interest, its own line)').selectOption(state);
     await page.getByRole('button', { name: 'Write a new version from the code-built draft' }).click();
     await expect(page.locator('[data-notice="written"]')).toBeVisible();
-    await expect(page.getByRole('region', { name: 'Version' })).toContainText('Version 3');
+    await expect(page.getByRole('region', { name: 'Version', exact: true })).toContainText('Version 3');
     await expect(interest).toContainText(`${state} prompt-pay rule`);
     await expect(page.getByLabel('Prompt-pay state (interest, its own line)')).toHaveValue(state);
   });

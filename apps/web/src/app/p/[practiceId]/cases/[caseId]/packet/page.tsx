@@ -4,6 +4,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../../../components/action-form';
+import { UtcTime } from '../../../../../../components/dates';
 import { TextAreaField } from '../../../../../../components/field';
 import { FormKeys } from '../../../../../../components/form-keys';
 import { utc } from '../../../../../../components/format';
@@ -15,6 +16,7 @@ import { ExportRequestForm, ExportStatus } from '../../../../../../components/pa
 import { PricingNowPanel } from '../../../../../../components/packets/pricing';
 import { type AttachableOption, VersionForm } from '../../../../../../components/packets/version-form';
 import { Money } from '../../../../../../components/remittances/display';
+import { ScrollTable } from '../../../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../../../components/shell';
 import { CaseStateBadge, stageLabel } from '../../../../../../components/triage/display';
 import { loadPage } from '../../../../../../lib/http/next';
@@ -567,8 +569,8 @@ export default async function PacketPage(props: Props) {
           {builder.versions.length === 0 ? (
             <EmptyState title="No version yet" nextStep="Write the first version above." />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm" aria-label="Versions">
+            <ScrollTable label="Versions">
+              <table className="w-full min-w-[54rem] text-sm" aria-label="Versions">
                 <thead>
                   <tr className="border-b text-left">
                     <th className="px-2 py-1 font-medium">Version</th>
@@ -591,26 +593,47 @@ export default async function PacketPage(props: Props) {
                         {draftOf(drafts, entry.id) === undefined ? '' : ', drafted by the model'}
                       </td>
                       <td className="px-2 py-1">
-                        {utc(entry.writtenAt)}, {entry.writtenBy ?? '—'}
+                        <span className="block min-w-40 wrap-anywhere">
+                          <UtcTime at={entry.writtenAt} />, {entry.writtenBy ?? '—'}
+                        </span>
                       </td>
                       <td className="px-2 py-1">{entry.verifierPassed ? 'Passed' : 'Failed'}</td>
                       <td className="px-2 py-1">
                         <DeadlineChip status={entry.deadlineStatus} />
                       </td>
-                      <td className="px-2 py-1">{entry.approvedAt === null ? '—' : `${utc(entry.approvedAt)}, ${entry.approvedBy ?? '—'}${entry.approvedAlone ? ' (alone, flagged)' : ''}`}</td>
+                      <td className="px-2 py-1">
+                        {entry.approvedAt === null ? (
+                          '—'
+                        ) : (
+                          <span className="block min-w-40 wrap-anywhere">
+                            <UtcTime at={entry.approvedAt} />, {entry.approvedBy ?? '—'}
+                            {entry.approvedAlone ? ' (alone, flagged)' : ''}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-2 py-1">
                         {entry.exportedAt === null ? (
                           '—'
                         ) : (
-                          <span className="flex flex-col">
-                            <span>{utc(entry.exportedAt)}</span>
+                          <span className="flex min-w-32 flex-col">
+                            <span>
+                              <UtcTime at={entry.exportedAt} />
+                            </span>
                             <span>
                               PDF <Hash value={entry.exportSha256} />
                             </span>
                             <span>
                               CSV <Hash value={entry.exportCsvSha256} />
                             </span>
-                            <span>{entry.attestedAt === null ? 'Not attested yet' : `Attested ${utc(entry.attestedAt)}`}</span>
+                            <span>
+                              {entry.attestedAt === null ? (
+                                'Not attested yet'
+                              ) : (
+                                <>
+                                  Attested <UtcTime at={entry.attestedAt} />
+                                </>
+                              )}
+                            </span>
                           </span>
                         )}
                       </td>
@@ -632,7 +655,7 @@ export default async function PacketPage(props: Props) {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollTable>
           )}
         </CardContent>
       </Card>

@@ -6,6 +6,7 @@ import { ActionForm } from '../../../components/action-form';
 import { Field, SelectField } from '../../../components/field';
 import { FormKeys } from '../../../components/form-keys';
 import { roleNames } from '../../../components/format';
+import { ScrollTable } from '../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
 import { compliancePage } from '../../../lib/routes/compliance';
@@ -156,20 +157,24 @@ export default async function CompliancePage(props: { readonly searchParams: Pro
           <CardDescription>Markdown in the repository, with versions. Each is in force once the security official’s approval of its version is recorded.</CardDescription>
         </CardHeader>
         <CardContent>
-          <table className="w-full text-left text-sm" aria-label="Policies">
-            <tbody>
-              {checklist.policies.map((item) => (
-                <tr key={item.policy.id} className="border-t first:border-t-0" data-policy-status={item.status}>
-                  <td className="py-1">{item.policy.title}</td>
-                  <td className="py-1 font-mono text-xs">{item.policy.file}</td>
-                  <td className="py-1">version {item.policy.version}</td>
-                  <td className="py-1">
-                    <Badge variant={item.status === 'approved' ? 'outline' : 'destructive'}>{item.status === 'approved' ? `Approved ${item.approvedOn ?? ''}` : item.status === 'stale' ? 'Review due' : 'Draft, awaiting approval'}</Badge>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ScrollTable label="Policies">
+            <table className="w-full min-w-[36rem] text-left text-sm" aria-label="Policies">
+              <tbody>
+                {checklist.policies.map((item) => (
+                  <tr key={item.policy.id} className="border-t first:border-t-0" data-policy-status={item.status}>
+                    <td className="py-1 pr-3">{item.policy.title}</td>
+                    <td className="py-1 pr-3 font-mono text-xs">
+                      <span className="block min-w-32 wrap-anywhere">{item.policy.file}</span>
+                    </td>
+                    <td className="py-1 pr-3">version {item.policy.version}</td>
+                    <td className="py-1">
+                      <Badge variant={item.status === 'approved' ? 'outline' : 'destructive'}>{item.status === 'approved' ? `Approved ${item.approvedOn ?? ''}` : item.status === 'stale' ? 'Review due' : 'Draft, awaiting approval'}</Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollTable>
         </CardContent>
       </Card>
       <Card>
@@ -197,28 +202,36 @@ export default async function CompliancePage(props: { readonly searchParams: Pro
         {records.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nothing recorded yet.</p>
         ) : (
-          <table className="w-full text-left text-sm" aria-label="Evidence records">
-            <thead className="text-muted-foreground">
-              <tr>
-                <th className="py-1 pr-3 font-medium">What</th>
-                <th className="py-1 pr-3 font-medium">Subject</th>
-                <th className="py-1 pr-3 font-medium">On</th>
-                <th className="py-1 font-medium">Reference</th>
-              </tr>
-            </thead>
-            <tbody>
-              {records.map((record) => (
-                <tr key={record.id} className="border-t">
-                  <td className="py-1 pr-3">{recordKinds.find((kind) => kind.value === record.kind)?.label ?? record.kind}</td>
-                  <td className="py-1 pr-3 font-mono text-xs">{workforce.find((member) => member.userId === record.subject)?.email ?? record.subject}</td>
-                  <td className="py-1 pr-3">{record.occurredOn}</td>
-                  <td className="py-1 font-mono text-xs" title={record.sha256}>
-                    {record.documentRef}
-                  </td>
+          <ScrollTable label="Evidence records">
+            <table className="w-full min-w-[48rem] text-left text-sm" aria-label="Evidence records">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="py-1 pr-3 font-medium">What</th>
+                  <th className="py-1 pr-3 font-medium">Subject</th>
+                  <th className="py-1 pr-3 font-medium">On</th>
+                  <th className="py-1 pr-3 font-medium">Reference</th>
+                  <th className="py-1 font-medium">SHA-256</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {records.map((record) => (
+                  <tr key={record.id} className="border-t">
+                    <td className="py-1 pr-3">{recordKinds.find((kind) => kind.value === record.kind)?.label ?? record.kind}</td>
+                    <td className="py-1 pr-3 font-mono text-xs">
+                      <span className="block min-w-40 wrap-anywhere">{workforce.find((member) => member.userId === record.subject)?.email ?? record.subject}</span>
+                    </td>
+                    <td className="py-1 pr-3 whitespace-nowrap">{record.occurredOn}</td>
+                    <td className="py-1 pr-3 font-mono text-xs">
+                      <span className="block min-w-32 wrap-anywhere">{record.documentRef}</span>
+                    </td>
+                    <td className="py-1 font-mono text-xs">
+                      <span className="block min-w-32 wrap-anywhere">{record.sha256}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollTable>
         )}
       </section>
     </AppShell>

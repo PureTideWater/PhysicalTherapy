@@ -4,6 +4,7 @@ import Link from 'next/link';
 
 import { utc } from '../../../components/format';
 import { Pager } from '../../../components/remittances/display';
+import { ScrollTable } from '../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
 import { specialistQueuePage } from '../../../lib/routes/console';
@@ -78,51 +79,53 @@ export default async function SpecialistQueuePage(props: Props) {
       {total === 0 ? (
         <EmptyState mark title="Nothing waiting" nextStep="Practices appear here when they upload contracts or exhibits, or when a version or question waits." />
       ) : (
-        <table className="w-full text-left text-sm" aria-label="Practices">
-          <thead className="text-muted-foreground">
-            <tr>
-              <th className="py-1 pr-3 font-medium">Practice</th>
-              <th className="py-1 pr-3 text-right font-medium">Awaiting abstraction</th>
-              <th className="py-1 pr-3 text-right font-medium">Drafts</th>
-              <th className="py-1 pr-3 text-right font-medium">Proposals</th>
-              <th className="py-1 pr-3 text-right font-medium">Awaiting sign-off</th>
-              <th className="py-1 pr-3 text-right font-medium">Open questions</th>
-              <th className="py-1 pr-3 text-right font-medium">Regulations to confirm</th>
-              <th className="py-1 font-medium">Access</th>
-            </tr>
-          </thead>
-          <tbody>
-            {practices.map((practice) => (
-              <tr key={practice.practiceId} className="border-t" data-practice={practice.practiceId}>
-                <td className="py-1 pr-3">{practice.name}</td>
-                <td className="py-1 pr-3 text-right font-mono tabular-nums">{practice.documentsAwaiting}</td>
-                <td className="py-1 pr-3 text-right font-mono tabular-nums">{practice.drafts}</td>
-                <td className="py-1 pr-3 text-right font-mono tabular-nums">{practice.proposalsAwaiting}</td>
-                <td className="py-1 pr-3 text-right font-mono tabular-nums">{practice.awaitingSignOff}</td>
-                <td className="py-1 pr-3 text-right font-mono tabular-nums">{practice.openQuestions}</td>
-                <td className="py-1 pr-3 text-right font-mono tabular-nums">{practice.regulationsAwaiting}</td>
-                <td className="py-1">
-                  {practice.grantEndsAt === null ? (
-                    <span className="text-muted-foreground">No support grant: ask a platform administrator for one from the ticket</span>
-                  ) : (
-                    <span className="flex flex-wrap items-center gap-2">
-                      <Link className="underline" href={`/p/${practice.practiceId}/abstraction`}>
-                        Open the practice’s abstraction
-                      </Link>
-                      <Link className="underline" href={`/p/${practice.practiceId}/abstraction/regulations`}>
-                        Regulations
-                      </Link>
-                      <Link className="underline" href={`/p/${practice.practiceId}/abstraction/ledger`}>
-                        Ledger corrections
-                      </Link>
-                      <Badge variant="secondary">Grant ends {utc(practice.grantEndsAt)}</Badge>
-                    </span>
-                  )}
-                </td>
+        <ScrollTable label="Practices">
+          <table className="w-full min-w-[54rem] text-left text-sm" aria-label="Practices">
+            <thead className="text-muted-foreground">
+              <tr>
+                <th className="py-1 pr-3 font-medium">Practice</th>
+                <th className="py-1 pr-3 text-right font-medium">Awaiting abstraction</th>
+                <th className="py-1 pr-3 text-right font-medium">Drafts</th>
+                <th className="py-1 pr-3 text-right font-medium">Proposals</th>
+                <th className="py-1 pr-3 text-right font-medium">Awaiting sign-off</th>
+                <th className="py-1 pr-3 text-right font-medium">Open questions</th>
+                <th className="py-1 pr-3 text-right font-medium">Regulations to confirm</th>
+                <th className="py-1 font-medium">Access</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {practices.map((practice) => (
+                <tr key={practice.practiceId} className="border-t" data-practice={practice.practiceId}>
+                  <td className="py-1 pr-3">{practice.name}</td>
+                  <td className="py-1 pr-3 text-right font-mono tabular-nums">{practice.documentsAwaiting}</td>
+                  <td className="py-1 pr-3 text-right font-mono tabular-nums">{practice.drafts}</td>
+                  <td className="py-1 pr-3 text-right font-mono tabular-nums">{practice.proposalsAwaiting}</td>
+                  <td className="py-1 pr-3 text-right font-mono tabular-nums">{practice.awaitingSignOff}</td>
+                  <td className="py-1 pr-3 text-right font-mono tabular-nums">{practice.openQuestions}</td>
+                  <td className="py-1 pr-3 text-right font-mono tabular-nums">{practice.regulationsAwaiting}</td>
+                  <td className="py-1">
+                    {practice.grantEndsAt === null ? (
+                      <span className="text-muted-foreground">No support grant: ask a platform administrator for one from the ticket</span>
+                    ) : (
+                      <span className="flex flex-wrap items-center gap-2">
+                        <Link className="underline" href={`/p/${practice.practiceId}/abstraction`}>
+                          Open the practice’s abstraction
+                        </Link>
+                        <Link className="underline" href={`/p/${practice.practiceId}/abstraction/regulations`}>
+                          Regulations
+                        </Link>
+                        <Link className="underline" href={`/p/${practice.practiceId}/abstraction/ledger`}>
+                          Ledger corrections
+                        </Link>
+                        <Badge variant="secondary">Grant ends {utc(practice.grantEndsAt)}</Badge>
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </ScrollTable>
       )}
       <Pager path="/console/specialist-queue" query={{ all: showAll ? '1' : undefined }} page={current} pages={pages} total={total} noun="practices" />
     </AppShell>

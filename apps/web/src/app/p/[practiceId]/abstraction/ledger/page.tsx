@@ -6,6 +6,7 @@ import { ActionForm } from '../../../../../components/action-form';
 import { CheckboxField, Field, TextAreaField } from '../../../../../components/field';
 import { EVIDENCE_WORDS, LedgerTotals, entryStage } from '../../../../../components/reconciliation/display';
 import { Money, Pager } from '../../../../../components/remittances/display';
+import { ScrollTable } from '../../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { loadPage } from '../../../../../lib/http/next';
 import type { EntryView } from '../../../../../lib/reconciliation/queries';
@@ -45,8 +46,8 @@ function AdjustForm({ practiceId, entry, idPrefix }: { readonly practiceId: stri
 
 function Entries({ entries, practiceId, canAdjust, label }: { readonly entries: readonly EntryView[]; readonly practiceId: string; readonly canAdjust: boolean; readonly label: string }) {
   return (
-    <div className="overflow-x-auto">
-      <table aria-label={label} className="w-full text-sm">
+    <ScrollTable label={label}>
+      <table aria-label={label} className="w-full min-w-[54rem] text-sm">
         <thead>
           <tr className="border-b text-left">
             <th className="py-1 pr-3">#</th>
@@ -62,7 +63,7 @@ function Entries({ entries, practiceId, canAdjust, label }: { readonly entries: 
           {entries.map((entry) => (
             <tr key={entry.id} data-entry={entry.id} data-stage={entry.stage} className="border-b align-top">
               <td className="py-1 pr-3 font-mono text-xs">{entry.seq}</td>
-              <td className="py-1 pr-3">{entry.effectiveOn}</td>
+              <td className="py-1 pr-3 whitespace-nowrap">{entry.effectiveOn}</td>
               <td className="py-1 pr-3">
                 {entryStage(entry.stage)}
                 {entry.allocated ? ' (allocated pro rata)' : ''}
@@ -71,13 +72,15 @@ function Entries({ entries, practiceId, canAdjust, label }: { readonly entries: 
                 <Money value={entry.amountCents} />
               </td>
               <td className="py-1 pr-3">{EVIDENCE_WORDS[entry.evidenceKind] ?? entry.evidenceKind}</td>
-              <td className="py-1 pr-3">{entry.byJob ? 'the reconcile job' : (entry.createdBy ?? '—')}</td>
+              <td className="py-1 pr-3">
+                <span className="block min-w-40 wrap-anywhere">{entry.byJob ? 'the reconcile job' : (entry.createdBy ?? '—')}</span>
+              </td>
               <td className="py-1">{canAdjust && entry.adjustable ? <AdjustForm practiceId={practiceId} entry={entry} idPrefix={label === 'Ledger entries' ? 'ledger' : 'shortfall'} /> : null}</td>
             </tr>
           ))}
         </tbody>
       </table>
-    </div>
+    </ScrollTable>
   );
 }
 
@@ -129,8 +132,10 @@ export default async function LedgerReviewPage(props: Props) {
           <EmptyState title="No shortfall on this page of case lines" nextStep="A shortfall appears when a payer's remittance pays part of what its response accepted." />
         ) : (
           <ul aria-label="Shortfalls" className="flex flex-col gap-3">
-            {shortfalls.map((line) => (
+            {shortfalls.map((line, index) => (
               <li key={line.serviceLineId} className="flex flex-col gap-2 rounded-md border p-3" data-shortfall={line.shortfallCents}>
+                {/* Numbered so that each entries table's name is its own: "Entries of shortfall 2". */}
+                <h3 className="text-sm font-medium">Shortfall {index + 1}</h3>
                 <p className="text-sm">
                   The payer accepted <Money value={line.shortfallCents} /> more than its remittance paid on this case line. Correct the approval, or leave it for the practice to dispute.
                   {(line.correction.billable?.billableCents ?? '0') === '0' ? null : (
@@ -141,7 +146,7 @@ export default async function LedgerReviewPage(props: Props) {
                     </>
                   )}
                 </p>
-                <Entries entries={line.entries} practiceId={practiceId} canAdjust={canAdjust} label="Entries of the line" />
+                <Entries entries={line.entries} practiceId={practiceId} canAdjust={canAdjust} label={`Entries of shortfall ${String(index + 1)}`} />
               </li>
             ))}
           </ul>
