@@ -24,6 +24,12 @@ export interface StackedRow {
   readonly key: string;
   /** The row's naming cell: a link when the row opens something, else text. */
   readonly heading: ReactNode;
+  /**
+   * A line under the heading that says what the item's figures are, where the table says it in the naming cell (a
+   * footer row's sum); none when it renders nothing. The heading stays the naming cell alone, so a list read by its
+   * headings stays short.
+   */
+  readonly description?: ReactNode;
   readonly fields: readonly StackedField[];
   /** The row's actions (links, ActionForms), under its facts; none when it renders nothing (`canAct && <Form />` that is false). */
   readonly actions?: ReactNode;
@@ -84,7 +90,8 @@ function Row({ row, level }: { readonly row: StackedRow; readonly level: 2 | 3 |
   return (
     <li {...row.hooks} data-stacked-row={row.key} className="rounded-md border p-4">
       <Heading className="text-base font-semibold wrap-anywhere">{row.heading}</Heading>
-      <dl className="mt-2 grid grid-cols-1 gap-y-1 text-sm @min-[24rem]:grid-cols-[max-content_1fr] @min-[24rem]:gap-x-4">
+      {rendersNothing(row.description) ? null : <p className="mt-1 text-sm text-muted-foreground">{row.description}</p>}
+      <dl className="mt-2 grid grid-cols-1 gap-y-1 text-sm @min-[24rem]:grid-cols-[fit-content(40%)_1fr] @min-[24rem]:gap-x-4">
         {row.fields.map((field, index) => (
           <Field key={`${String(index)}:${field.label}`} field={field} />
         ))}
@@ -107,13 +114,15 @@ function Field({ field }: { readonly field: StackedField }) {
 
 /**
  * One stacked-row layout for a phone (docs/adr/0078; UX-079 (c)): a list named by `label` or `labelledBy`, each item
- * its row's naming cell as a heading at the caller's level, then a definition list of each column's label and value
- * (terms over values until the list is 24rem wide), then the row's actions. The list says role="list": Safari and
- * VoiceOver drop the role of a list styled `list-style: none` (Tailwind's preflight), and with it the list's name and
- * count. The fields render in the order given: `brandOrderProblems` is the check, in the caller's test, that the three
- * figures are given together and in the brand's order, and the caller reads one constant of column labels in order for
- * the table's headers and the fields. The primitive never picks a status tone: the caller renders the StatusChip or
- * Badge, and its value lets it wrap.
+ * its row's naming cell as a heading at the caller's level, then, when given, a line that describes it, then a
+ * definition list of each column's label and value (terms over values until the list is 24rem wide, and beside them
+ * after in a term column of at most 40% of the list, `fit-content(40%)`, so a long term wraps between words rather than
+ * leave its value a sliver), then the row's actions. The list says role="list": Safari and VoiceOver drop the role of a
+ * list styled `list-style: none` (Tailwind's preflight), and with it the list's name and count. The fields render in
+ * the order given: `brandOrderProblems` is the check, in the caller's test, that the three figures are given together
+ * and in the brand's order, and the caller reads one constant of column labels in order for the table's headers and the
+ * fields. The primitive never picks a status tone: the caller renders the StatusChip or Badge, and its value lets it
+ * wrap.
  *
  * With `table` (the same rows as a `ScrollTable`), both copies render from the caller's one row array, and a container
  * query on the wrapper shows the table from `stackBelow`, the table's own min-w, up and the rows below it, so the band
