@@ -939,3 +939,12 @@ HANDOFF.md; LANES.md rule 10).
 - #42: the verification round's fix agent (wf_6faedfe4-8e0) resumed from its progress file at 00:15: failing-first, the migration edit (marker route), code and docs were done and uncommitted on 9664763b (#77 merged in); next: commit, the full suite once, one push, the body with the changed legal sentences listed for the founder's sign-off.
 - Seven sessions told to resume from their status files: #120/#32, ci-browser follow-ups, ux-forms, download-refusals, redaction, SUITE-CAP-1a, the schema chain. Table-scroll (#79) waits on the person to approve or deny its Artifact publish (its before-and-after screenshots).
 - Safety check-in: 2026-10-28 05:10 UTC (trig_016UjAWEaLDhLhqkoKEEWZNA).
+
+### 2026-10-28 00:25 UTC: redact-placeholders merged as #80 (0dd1ba7)
+- The letter reader's redaction now works in one pass over a folded view: no placeholder is corrupted. Eleven more leak classes the probe found are fixed: accents, ß, typographic apostrophes and dashes, hyphenated-surname halves, invisible characters, "Jo Ann", initials, and IDs written with `_` `.` `/` `:`. A crafted 100 kB letter took 97 s and now runs in linear time.
+- Before the merge: the full local suite, two adversarial reviews (security, correctness), a fresh-clone verification, and every required check green on 351262e.
+- ADR 0054 amended; ADR 0085 released (free again); MOD-13 and MOD-14 used.
+- The e2e screening timing flake hit once (screening.spec.ts:339; its fix is on #42's branch) and passed on its one re-run.
+- #75 merges second and resolves redact.ts (its identifierPattern widening has no function left); its session knows.
+- Proposals recorded in the status file: the packets verifier's identifierSpans has the same gaps (its own PR in packages/packets); local test:db and e2e need DATABASE_URL on 5433; a PRD 14 question for the founder (redact SSNs and phone numbers by pattern?).
+- The session continues with packet day counts (`co-001/packet-day-counts`).
