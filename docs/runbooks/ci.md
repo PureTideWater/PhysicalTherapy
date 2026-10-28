@@ -84,40 +84,43 @@ differential test, which prices the base's engine and this commit's.
    - **`static`:** every step reports; the red ones are the findings. A red "The commits this run checks" means the
      range's base is not in the clone (on a push, a previous head the branch no longer holds, which a force push
      leaves; the build branch's ruleset has blocked those since 2026-10-25).
-     - **"Action pins"** (`pnpm actions:check`) names the workflow, the step and the rule: a `uses:` not of the form
-       `owner/repo@<40 hex> # vX.Y.Z`, two pins of one action, a SHA that is not the tag's commit, a `with:` key the
-       action does not declare at that SHA, a composite nesting an action by tag, or a cache nested in an action
-       `release.yml` uses that its inputs do not turn off. Re-pin from the tag's peeled commit,
-       `git ls-remote https://github.com/<owner>/<repo> 'refs/tags/vX.Y.Z^{}'`. "… failed 3 times …; the check fails
-       closed" names the host that refused or rate-limited the read: re-run the job. On a push run an unchanged pin's
-       moved tag is a warning, never a failure, read at the weekly triage (docs/runbooks/dependency-upgrades.md).
-       The age rule (docs/adr/0066, Part 5), for each pin new against the base, prints one block per commit (what was
-       read: the default branch, the tag, every time with its source, and on CI `verified_at` with its `reason`, the
-       release's `published_at` and `immutable`, and the activity read), then fails on: "under three days old: the
-       youngest time read is … so it is old enough from <instant>" (wait, or a dated exclude); "age unprovable" (no time
-       GitHub recorded); "not on <branch>"; "tag moved" (both commits) or "no tag"; a time "in the future"; and a
-       `verified_at` "more than three days after every other time read", whose remedy is to re-run after the instant it
-       names. "the age reads stopped at their 180 s deadline" and a failed read of api.github.com are outages: re-run
-       the job. "GITHUB_TOKEN is not set" means the step lost its `env` entry. A pin the base already runs is never read
-       for its age ("age: no pin new against the base, nothing read"). On a push every age finding, the builder's faults,
-       and the verify reads' failures and moved tags of pins the base already ran are warnings; a push that aged a pin
-       also warns when GitHub's published web-flow keys differ from `tools/check-action-pins/github-web-flow.asc` (a key
+     - **"Action pins"** (`pnpm actions:check`) names the workflow, the step and the rule: a file in a subdirectory of
+       `.github/workflows`, a `uses:` not of the form `owner/repo@<40 hex> # vX.Y.Z`, two pins of one action, a SHA that
+       is not the tag's commit, a `with:` key the action does not declare at that SHA, a composite nesting an action by
+       tag, or a cache nested in an action `release.yml` uses that its inputs do not turn off. Re-pin from the tag's
+       peeled commit, `git ls-remote https://github.com/<owner>/<repo> 'refs/tags/vX.Y.Z^{}'`. "… failed 3 times …; the
+       check fails closed" names the host that refused or rate-limited the read: re-run the job. On a push run an
+       unchanged pin's moved tag is a warning, never a failure, read at the weekly triage
+       (docs/runbooks/dependency-upgrades.md). The age rule (docs/adr/0066, Part 5), for each pin new against the base,
+       prints one block per commit (what was read: the default branch, the tag, every time with its source, and on CI
+       `verified_at` with its `reason`, the release's `published_at` and `immutable`, and the activity read), then fails
+       on: "under three days old: the youngest time read is … so it is old enough from <instant>" (wait, or a dated
+       exclude); "age unprovable" (no time GitHub recorded); "not on <branch>"; "tag moved" (both commits) or "no tag";
+       a time "in the future"; and a `verified_at` "more than three days after every other time read", whose remedy is
+       to re-run after the instant it names. "the age reads stopped at their 180 s deadline" and a failed read of
+       api.github.com are outages: re-run the job. "GITHUB_TOKEN is not set" means the step lost its `env` entry. A pin
+       the base already runs is never read for its age ("age: no pin new against the base, nothing read"). On a push
+       every age finding, the builder's faults, and the verify reads' failures, moved tags and pins left unread at their
+       deadline, of every pin, are warnings; a problem in what was read stays an error; a push that aged a pin also
+       warns when GitHub's published web-flow keys differ from `tools/check-action-pins/github-web-flow.asc` (a key
        rotation: add the new key). The remedies are in docs/runbooks/dependency-upgrades.md, "Actions".
      - **"Toolchain"** (`pnpm toolchain:check`) names the rule and the version: an advisory against the pinned pnpm, a
        pnpm or a version the lockfile adds under three days old with no dated exclude, `packageManager` without the
        registry's sha512, a lockfile entry not resolved from registry.npmjs.org by its integrity or not equal to the
        registry's, an added version with weaker trust evidence than an earlier one, an exclude or exception list out of
        step with `pnpm-workspace.yaml`, an override without its entry or missing from the lockfile's own map. "…
-       check-toolchain fails closed" names the registry host it could not read: re-run the job. Each other remedy is
-       in docs/runbooks/dependency-upgrades.md. The `images` rule (docs/adr/0066, Part 5) names each image with where it
+       check-toolchain fails closed" names the registry host it could not read: re-run the job. Each other remedy is in
+       docs/runbooks/dependency-upgrades.md. The `images` rule (docs/adr/0066, Part 5) names each image with where it
        is: offline, a reference not `name:tag@sha256:<64 hex>`, or one the rule does not read (a `--from=` naming an
-       image, a `docker-image://` context, another tracked Dockerfile or compose file, a compose `build:`, `include:` or
-       `extends`, a setup-buildx step with no builder image, a `docker/bake-action` step); networked, for a digest new
-       against the base, "was pushed …, under three days ago; it is old enough from <instant>", "none of the … most
-       recently updated tags … carries" it (pin a tag's current digest), or "is not Docker Hub … its age is
-       unprovable". "no image is new against the base, so nothing is read" is the usual line. "hub.docker.com: the
-       image reads stopped at their deadline" and a Docker Hub read that failed three times are outages: re-run the
-       job. On a push the age findings are warnings.
+       image, a Dockerfile line BuildKit's reading cannot place, a build-push-action input that changes what the build
+       runs, another tracked Dockerfile or compose file, a compose `build:`, `include:` or `extends:`, a setup-buildx
+       step with no builder image, a setup-qemu step with no image, a `docker/bake-action` step); networked, for a
+       digest new against the base, "was named by <commit> on the build branch's first-parent history" (a revert, old
+       enough by that commit's time), "was pushed …, under three days ago; it is old enough from <instant>", "none of
+       the … most recently updated tags … carries" it (pin a tag's current digest), or "is not Docker Hub … its age is
+       unprovable". "no image is new against the base, so nothing is read" is the usual line. "hub.docker.com: the image
+       reads stopped at their deadline" and a Docker Hub read that failed three times are outages: re-run the job. On a
+       push the age findings, and an exceptions entry outside its window, are warnings.
    - **"Wait for the database" in `db`, `domain model` or `e2e`:** compose's own log follows the error. A pull refused
      or slow (Docker Hub) is an infrastructure failure: re-run the job. A healthcheck that never passes is the image's
      or `docker-compose.yml`'s; read the last step, "The database's log".
