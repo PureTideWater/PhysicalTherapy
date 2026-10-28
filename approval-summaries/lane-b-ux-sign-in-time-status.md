@@ -15,7 +15,10 @@ after #74 (UX PR 1) merged; then PR 7 (`co-001/ux-sign-in-recovery`) in the same
 - **Leaves out (recorded for Lane A):** the 15-minute Cognito session and the pending cookie's length
   (`infra/lib/constructs/identity.ts`, `infra/test/identity.test.ts`, #42 files) land in UX PR 66. Anything that needs
   Cognito configuration or a migration is Lane A's.
-- **Running:** the design workflow (scouts, author, one reviewer, revision).
+- **Running:** the design workflow wf_3c17f552-0ea (scouts flow, timer and security; the author; one adversarial
+  reviewer with security and UX lenses; the revision). Script `workflow-scripts/lane-b-ux-sign-in-time-design-wf_3c17f552-0ea.js`;
+  progress files `progress/sgn-*.md` in this session's scratchpad; the design will be `designs/lane-b-ux-sign-in-time.md`.
+  Check-in trig_01K7rHNZ7R1ntNDdusLkiDLC at 08:21 UTC.
 - **Next:** builders; the draft PR; two reviews (UX and brand with shots; security); fix round with the full suite; the
   fresh-clone verification; merge.
 
