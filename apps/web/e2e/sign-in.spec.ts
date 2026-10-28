@@ -58,6 +58,8 @@ test('locks the account after ten failed sign-ins, even against the right passwo
   }
   await enterPassword(page, 'lockout', personaPassword('lockout'));
   await expect(refusal(page)).toContainText('Account locked');
+  // The emptied password's note asks for nothing: no password opens a locked account (docs/adr/0077, D2).
+  await expect(page.getByLabel('Password', { exact: true })).toHaveAccessibleDescription('Emptied for your security.');
   await expect(page).toHaveURL(/\/sign-in$/);
 });
 

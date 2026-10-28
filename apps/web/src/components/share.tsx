@@ -3,6 +3,8 @@
 import { Button, Input, Label } from '@tp/ui';
 import { useId, useState } from 'react';
 
+import { Hint } from './field';
+
 /**
  * Sharing a report within the organization (PRD 7, Reports: "share within the organization";
  * Information architecture rules: "URLs carry opaque IDs ... so a filtered view can be shared within the
@@ -18,7 +20,7 @@ export function ShareLink({ href, label = 'Link to share within the organization
     <div className="flex flex-col gap-1.5" data-share={href}>
       <Label htmlFor={id}>{label}</Label>
       <div className="flex flex-wrap items-center gap-2">
-        <Input id={id} readOnly value={href} className="max-w-xl font-mono text-xs" aria-describedby={`${id}-who`} onFocus={(event) => event.currentTarget.select()} />
+        <Input id={id} readOnly value={href} className="max-w-xl font-mono text-xs" aria-describedby={`${id}-hint`} onFocus={(event) => event.currentTarget.select()} />
         <Button
           type="button"
           variant="outline"
@@ -32,13 +34,11 @@ export function ShareLink({ href, label = 'Link to share within the organization
         >
           Copy the link
         </Button>
-        <span role="status" className="text-xs text-muted-foreground">
+        <span role="status" className="text-sm text-muted-foreground">
           {copied === 'copied' ? 'Copied.' : copied === 'refused' ? 'The browser refused the clipboard: select the link and copy it.' : ''}
         </span>
       </div>
-      <p id={`${id}-who`} className="text-xs text-muted-foreground">
-        People of the organization who reach this practice open it under their own role; no one else can. It names no patient, claim or payer.
-      </p>
+      <Hint id={id} hint="People of the organization who reach this practice open it under their own role; no one else can. It names no patient, claim or payer." />
     </div>
   );
 }

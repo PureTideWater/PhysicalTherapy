@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ActionState } from '../../lib/http/next';
 import { DOLLARS_MESSAGE } from '../../lib/money-input';
-import { MATERIALITY_LABELS, MaterialityCard, PURSUIT_LABELS, PursuitCard } from './defaults';
+import { MaterialityCard, PursuitCard } from './defaults';
 
 /**
  * Settings → Defaults (test matrix CAS-38): the materiality thresholds and the pursuit cost's staff rate are stored
@@ -66,12 +66,16 @@ function controls(html: string): string[] {
   return [...html.matchAll(/<input(?![^>]*type="hidden")[^>]*name="([^"]+)"/g)].map((match) => match[1] ?? '');
 }
 
-/** The refusal the form shows when a save refuses every field it has, as the summary's words. */
+/**
+ * The refusal the form shows when a save refuses every field it has, from its summary to its last field, as its words,
+ * one space between elements. Rendered on the server, the summary's items are the messages alone: the browser names
+ * them from the labels on the page (docs/adr/0077), which each field shows above its "Error:" line.
+ */
 function refusedEvery(card: () => ReturnType<typeof rendered>): string {
   const names = controls(card().html);
-  shown.state = { error: 'Check the fields marked below.', issues: names.map((field) => ({ field, message: DOLLARS_MESSAGE })) };
+  shown.state = { error: 'Fix the fields listed here, then try again.', invalid: true, issues: names.map((field) => ({ field, message: DOLLARS_MESSAGE })) };
   const summary = /<div[^>]*role="alert"[\s\S]*<\/div>/.exec(card().html)?.[0] ?? '';
-  return words(summary);
+  return summary.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').replace(/&#x27;/g, '’');
 }
 
 /** The figures set in the mono face with tabular numerals. */
@@ -106,12 +110,12 @@ describe('the materiality card (CAS-38)', () => {
     expect([valueOf(most.html, 'lineMateriality'), valueOf(most.html, 'caseMateriality')]).toEqual(['0.99', '9999999999.99']);
   });
 
-  it('names each field of a refused save by its label, never its key', () => {
+  it('shows a refused save’s message under each field’s label, and never its key', () => {
     const summary = refusedEvery(() => materiality('500', '25000'));
-    expect(summary).toContain(`Per line (dollars): ${DOLLARS_MESSAGE}`);
-    expect(summary).toContain(`Per case (dollars): ${DOLLARS_MESSAGE}`);
+    expect(summary).toContain(`Per line (dollars) Error: ${DOLLARS_MESSAGE}`);
+    expect(summary).toContain(`Per case (dollars) Error: ${DOLLARS_MESSAGE}`);
     expect(summary).not.toMatch(/\b[a-z]+[A-Z]\w*:/);
-    expect(Object.keys(MATERIALITY_LABELS)).toEqual(controls(materiality('500', '25000').html));
+    expect(controls(materiality('500', '25000').html)).toEqual(['lineMateriality', 'caseMateriality']);
   });
 
   it('shows the thresholds without a form to a role that does not work cases', () => {
@@ -140,19 +144,21 @@ describe('the pursuit card (CAS-38)', () => {
     expect(monoFigures(html)).toEqual(['$45.00', '1', '1']);
   });
 
-  it('groups its three fields under a legend described by the rule that binds them', () => {
+  it('groups its three fields under a legend described by the rule that binds them, in the shared 14 px hint', () => {
     const { html } = pursuit(PURSUIT);
-    expect(html).toMatch(/<fieldset[^>]*aria-describedby="pursuit-rule"[^>]*><legend[^>]*>Staff rate and times<\/legend><p id="pursuit-rule"[^>]*>All three together, or all blank to clear.<\/p>/);
+    expect(html).toMatch(
+      /<fieldset[^>]*aria-describedby="pursuit-hint"[^>]*><legend[^>]*>Staff rate and times<\/legend><p id="pursuit-hint" class="text-sm text-muted-foreground">All three together, or all blank to clear.<\/p>/,
+    );
     expect(controls(/<fieldset[\s\S]*<\/fieldset>/.exec(html)?.[0] ?? '')).toEqual(['staffRatePerHour', 'minutesPerPacket', 'minutesPerFollowUp']);
   });
 
-  it('names each field of a refused save by its label, never its key', () => {
+  it('shows a refused save’s message under each field’s label, and never its key', () => {
     const summary = refusedEvery(() => pursuit(PURSUIT));
-    expect(summary).toContain(`Staff rate per hour (dollars): ${DOLLARS_MESSAGE}`);
-    expect(summary).toContain('Minutes per packet: ');
-    expect(summary).toContain('Minutes per follow-up: ');
+    expect(summary).toContain(`Staff rate per hour (dollars) Error: ${DOLLARS_MESSAGE}`);
+    expect(summary).toContain('Minutes per packet Error: ');
+    expect(summary).toContain('Minutes per follow-up Error: ');
     expect(summary).not.toMatch(/\b[a-z]+[A-Z]\w*:/);
-    expect(Object.keys(PURSUIT_LABELS)).toEqual(controls(pursuit(PURSUIT).html));
+    expect(controls(pursuit(PURSUIT).html)).toEqual(['staffRatePerHour', 'minutesPerPacket', 'minutesPerFollowUp']);
   });
 
   it('says when no pursuit cost is set and leaves its fields blank', () => {

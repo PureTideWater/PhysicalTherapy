@@ -3,7 +3,7 @@ import type { ContractOption, DocumentSummary } from '../../lib/contracts/contra
 import { KIND_NAMES, formatBytes } from '../../lib/uploads/receipt-labels';
 import type { PayerOption } from '../../lib/remittances/queries';
 import { ActionForm } from '../action-form';
-import { Field, SelectField } from '../field';
+import { Field, SelectField, TextAreaField } from '../field';
 import { utc } from '../format';
 import { FormKeys } from '../form-keys';
 
@@ -47,7 +47,7 @@ export function TagForm({
       <input type="hidden" name="documentId" value={document.id} />
       {fixedContract === undefined ? (
         <>
-          <SelectField label="Payer" name="payerId" id={id('payer')} required options={payers.map((payer) => ({ value: payer.id, label: payer.name }))} />
+          <SelectField label="Payer" name="payerId" id={id('payer')} required options={payers.map((payer) => ({ value: payer.id, label: payer.name }))} showChosen />
           <SelectField
             label="Contract"
             name="contractId"
@@ -56,6 +56,7 @@ export function TagForm({
               { value: '', label: 'A new contract with this payer' },
               ...contracts.map((contract) => ({ value: contract.id, label: `${contract.title} (${payers.find((payer) => payer.id === contract.payerId)?.name ?? 'its payer'})` })),
             ]}
+            showChosen
           />
           <Field label="Title of a new contract" name="title" id={id('title')} maxLength={200} hint="As the document names the agreement." />
         </>
@@ -78,10 +79,7 @@ export function AnswerForm({ action, practiceId, questionId }: { readonly action
       <FormKeys />
       <input type="hidden" name="practiceId" value={practiceId} />
       <input type="hidden" name="questionId" value={questionId} />
-      <label htmlFor={`answer-${questionId}`} className="text-sm font-medium">
-        Answer
-      </label>
-      <textarea id={`answer-${questionId}`} name="answer" required maxLength={2000} rows={2} className="rounded-md border bg-background p-2 text-sm" />
+      <TextAreaField label="Answer" name="answer" id={`answer-${questionId}`} required maxLength={2000} rows={2} />
     </ActionForm>
   );
 }
