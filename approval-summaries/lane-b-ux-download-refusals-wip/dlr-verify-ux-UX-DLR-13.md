@@ -1,0 +1,15 @@
+# UX-DLR-13 verify (skeptic) -- in progress
+- started; cloning to verify-ux13
+- clone: scratchpad/verify-ux13 at 63aaa7f4
+- mechanics confirmed: uploads/[documentId]/page.tsx:315 ReceiptList w/o reportFrom -> receipts.tsx:181 reportHref(...,undefined) -> uploads.ts:384 returnTo default '/p/[practiceId]/uploads/[documentId]' = the FILE's receipt, not the zip page.
+- but deliberate + documented: ADR 0079 table row practice.uploads.report "the file's receipt; with from=uploads, the Uploads screen"; receipt-labels.ts:229-233; receipts.tsx:70-73; page.tsx:247-248; ADR Revisit-when names "a page that depends on more than its own path parameters" (zip id is not a path param of the report route).
+- landing page: file receipt shows notice beside THAT file's report link (page.tsx:301-304), focused; "Zip <id>" link page.tsx:284-293; Back returns to zip page.
+- realistic refusals: rate_limited (export 60/10min/user), suspended, forbidden on role change; not_found unrealistic (app role cannot DELETE source_document, documents.db.test.ts:153).
+- proposed fix weaknesses: zip page's DownloadRefusal sits at page.tsx:301 beside the ZIP's own report link -> would misattribute; Location carries no file id; ReceiptList page is client useState(1) (receipts.tsx:77), 25/page (receipts.ts:28) -> lands on page 1 of list, not near the file.
+- next: screenshots, tests DLR-03
+- test download-refusal.test.ts:571-583 asserts the default explicitly: "else the file's own receipt (a zip's files too)".
+- only zip page renders report links w/o from (reconciliation/contracts showReceipts={false}).
+- screens: no zip / file-in-zip shot in screens-after; p.upload.default.1280.png shows single upload receipt only.
+- design doc has no zip mention; ADR 0079 table row :66 "the file's receipt", ADR never says "zip" (code comments do).
+- VERDICT: not a defect. Mechanics accurate, but deliberate/documented/tested; landing page is the exact file with notice beside its link + Zip link + Back. Proposed fix is worse (notice beside zip's own link at :301, no file named, list resets to page 1). Optional doc nit: name the zip list in ADR 0079 table row.
+- DONE

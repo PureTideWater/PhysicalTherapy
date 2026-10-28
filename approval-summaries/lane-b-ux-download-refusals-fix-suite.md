@@ -326,7 +326,7 @@ Final head: a0099fab….
 
 ### Adversarial check of the merge against both parents
 - **Every file is accounted for.** I compared each side's own change (from the merge base a6e754fc…) with what the merge adds to the other parent, as multisets of +/- lines.
-  - At the merge: the 62 files only this PR changed equal f47437eb…, and the 113 only #74 changed equal 165c5993….
+  - At the merge: the 62 files only this PR changed equal f47437eb…, except the three letter files of the planned Coverage resolution (letter.tsx, letter-contract-check.tsx, letter.test.tsx: the selects became #74's SelectField and the contract is held to its payer by ID), and the 113 only #74 changed equal 165c5993…. (Wording corrected after the fresh-clone verification wf_f6ddc946-253.)
   - The 16 both-changed files are exact unions except the planned resolutions: next.ts, uploader.tsx, the four pages, console/compliance/page.tsx, lib/routes/compliance.ts, test-matrix.md, matrix.ts, registry.ts and watched-paths.txt.
   - Re-run on the final head: 17 files differ from a plain union, and each difference is planned:
     - the personas' doc comment;
