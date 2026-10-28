@@ -23,7 +23,7 @@ docs/runbooks/github-governance.md, step 4A), has required them from GitHub Acti
 
 | Job (its check) | What it runs | Timeout |
 | --- | --- | --- |
-| `static` | the dependency audits (`pnpm audit --prod`, and `--audit-level=high` over every dependency); the action pins and the toolchain, against the run's base (`pnpm actions:check`, `pnpm toolchain:check`; networked); the secret scan of the commits the run checks; the fixture check; the content checker; published releases and prompt versions unchanged; the engine freeze (pull requests); `pnpm synth --all` and its clean diff; `pnpm typecheck`; `pnpm lint:logs`; `pnpm test:golden`; `pnpm synth --large` (the 10,000-claim remittance the oracle reads) and `pnpm test:oracle`; `pnpm licenses:check` | 15 min |
+| `static` | the dependency audits (`pnpm audit --prod`, and `--audit-level=high` over every dependency); the action pins and the toolchain, against the run's base, each new pin and image digest held to three days (`pnpm actions:check`, with the job's read-only token for GitHub's API, and `pnpm toolchain:check`; networked); the secret scan of the commits the run checks; the fixture check; the content checker; published releases and prompt versions unchanged; the engine freeze (pull requests); `pnpm synth --all` and its clean diff; `pnpm typecheck`; `pnpm lint:logs`; `pnpm test:golden`; `pnpm synth --large` (the 10,000-claim remittance the oracle reads) and `pnpm test:oracle`; `pnpm licenses:check` | 15 min |
 | `lint` | `pnpm lint`, ESLint in three memory-bounded groups | 15 min |
 | `unit` | Chromium (the cached system packages verified first) and its build check, the pinned gitleaks (the pre-push hook's tests run it), the engine freeze's base, `pnpm test` (with coverage) | 20 min |
 | `db (k/N)` | its own Postgres from `docker-compose.yml`, Chromium and its build check, `pnpm db:migrate && pnpm test:db --shard=k/N`, then "Files this shard ran" | 20 min |
@@ -91,13 +91,32 @@ differential test, which prices the base's engine and this commit's.
        `git ls-remote https://github.com/<owner>/<repo> 'refs/tags/vX.Y.Z^{}'`. "… failed 3 times …; the check fails
        closed" names the host that refused or rate-limited the read: re-run the job. On a push run an unchanged pin's
        moved tag is a warning, never a failure, read at the weekly triage (docs/runbooks/dependency-upgrades.md).
+       The age rule (docs/adr/0066, Part 5), for each pin new against the base, prints one block per commit (what was
+       read: the default branch, the tag, every time with its source, and on CI `verified_at` with its `reason`, the
+       release's `published_at` and `immutable`, and the activity read), then fails on: "under three days old: the
+       youngest time read is … so it is old enough from <instant>" (wait, or a dated exclude); "age unprovable" (no time
+       GitHub recorded); "not on <branch>"; "tag moved" (both commits) or "no tag"; a time "in the future"; and a
+       `verified_at` "more than three days after every other time read", whose remedy is to re-run after the instant it
+       names. "the age reads stopped at their 180 s deadline" and a failed read of api.github.com are outages: re-run
+       the job. "GITHUB_TOKEN is not set" means the step lost its `env` entry. A pin the base already runs is never read
+       for its age ("age: no pin new against the base, nothing read"). On a push every age finding, the builder's faults,
+       and the verify reads' failures and moved tags of pins the base already ran are warnings; a push that aged a pin
+       also warns when GitHub's published web-flow keys differ from `tools/check-action-pins/github-web-flow.asc` (a key
+       rotation: add the new key). The remedies are in docs/runbooks/dependency-upgrades.md, "Actions".
      - **"Toolchain"** (`pnpm toolchain:check`) names the rule and the version: an advisory against the pinned pnpm, a
        pnpm or a version the lockfile adds under three days old with no dated exclude, `packageManager` without the
        registry's sha512, a lockfile entry not resolved from registry.npmjs.org by its integrity or not equal to the
        registry's, an added version with weaker trust evidence than an earlier one, an exclude or exception list out of
        step with `pnpm-workspace.yaml`, an override without its entry or missing from the lockfile's own map. "…
        check-toolchain fails closed" names the registry host it could not read: re-run the job. Each other remedy is
-       in docs/runbooks/dependency-upgrades.md.
+       in docs/runbooks/dependency-upgrades.md. The `images` rule (docs/adr/0066, Part 5) names each image with where it
+       is: offline, a reference not `name:tag@sha256:<64 hex>`, or one the rule does not read (a `--from=` naming an
+       image, a `docker-image://` context, another tracked Dockerfile or compose file, a compose `build:`, `include:` or
+       `extends`, a setup-buildx step with no builder image); networked, for a digest new against the base, "was pushed
+       …, under three days ago; it is old enough from <instant>", "none of the … most recently updated tags … carries"
+       it (pin a tag's current digest), or "is not Docker Hub … its age is unprovable". "no image is new against the
+       base, so nothing is read" is the usual line. "hub.docker.com: the image reads stopped at their deadline" and
+       a Docker Hub read that failed three times are outages: re-run the job. On a push the age findings are warnings.
    - **"Wait for the database" in `db`, `domain model` or `e2e`:** compose's own log follows the error. A pull refused
      or slow (Docker Hub) is an infrastructure failure: re-run the job. A healthcheck that never passes is the image's
      or `docker-compose.yml`'s; read the last step, "The database's log".
@@ -371,7 +390,9 @@ user that cannot run the binary.
 
 ## Running the same checks locally
 
-- `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm test:golden`, `pnpm test:oracle` (pyx12 in a virtualenv).
+- `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm test:golden`, `pnpm test:oracle` (pyx12 in a virtualenv). `gpgv`
+  (GnuPG's) must be installed for `pnpm test` (the action age rule's tests verify synthetic signed objects with it) and
+  for `pnpm actions:check`; every runner has it, and a missing one fails closed with the install hint.
 - One database file: `docker compose up --detach --wait postgres` (the image CI runs), then
   `DATABASE_URL=postgres://postgres:test@localhost:5432/postgres pnpm vitest run --project db <file>` (each file makes
   and drops its own database). A shard as CI runs it: `pnpm test:db --shard=k/N`.
@@ -385,6 +406,8 @@ user that cannot run the binary.
   tools/test/dependabot-config.test.ts tools/test/no-duplicated-versions.test.ts tools/test/ci-gate.test.ts
   tools/test/required-checks.test.ts`; the pins and the toolchain against the build branch:
   `BASE=origin/claude/build-platform pnpm actions:check` and `BASE=origin/claude/build-platform pnpm toolchain:check`.
+  Locally the age rule reads git, `gpgv` and Docker Hub as CI does, but not GitHub's API (`verified_at`, the release,
+  the activity, an exclude's advisory), which it skips with a note: CI can only be stricter.
 
 ## Changing CI
 
@@ -395,8 +418,14 @@ user that cannot run the binary.
 - A new workflow's concurrency group starts with its own name (`${{ github.workflow }}-`), since groups are shared by
   every workflow of the repository.
 - A new action is pinned as `owner/repo@<40 hex> # vX.Y.Z` at its latest release, read with `git ls-remote`, and takes
-  the same SHA wherever it is used; `pnpm actions:check` reads it. Behaviour asserts in `workflows.test.ts` find a step
-  by the action's name (`usesAction`), never by a version, so Dependabot's pin bumps stay green.
+  the same SHA wherever it is used; `pnpm actions:check` reads it, and holds it to three days on its default branch
+  (docs/adr/0066, Part 5). A reusable workflow of another repository, and a Docker action not pinned by digest, are
+  refused. Behaviour asserts in `workflows.test.ts` find a step by the action's name (`usesAction`), never by a
+  version, so Dependabot's pin bumps stay green.
+- A new image (a job container, a service, a `docker://` step, a builder) is pinned `name:tag@sha256:<64 hex>` from
+  Docker Hub, and `pnpm toolchain:check` holds it to three days from its push.
+- Only the Action pins step is given the job's token: `workflows.test.ts` holds `ci.yml` to one `github.token`, in that
+  step's `env`, and to no `secrets.`, `github[` or `toJSON(` of either.
 - A job that needs PostgreSQL runs `tools/ci/postgres.sh up` right after its checkout and `tools/ci/postgres.sh wait`
   before its first database step, with "The database's log" last (`workflows.test.ts` holds the order); no workflow
   declares `services:`.

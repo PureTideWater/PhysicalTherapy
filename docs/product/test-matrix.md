@@ -257,8 +257,9 @@ preferred, cards still accepted, and the customer's default payment method the o
 The CI series of combined audit items #19, #54, #109 and #112 (docs/adr/0066): what the workflows, their gates and the
 test infrastructure must do, each asserted by a test that reads or runs them. CI-11 to CI-14 are the pins, the
 Dependabot configuration, the images and the toolchain (docs/adr/0066, Part 2); CI-15 to CI-17 are the mutation
-workflow's (Part 4); CI-18 to CI-20 are the browser and the runners (Part 3), which complete the series. The report's
-runner image and image store, and the launch check's refusal of another image or a non-archive binding, join CI-20 once
+workflow's (Part 4); CI-18 to CI-20 are the browser and the runners (Part 3); CI-21 to CI-23 hold pins and digests to
+the release age (Part 5), a dated exclude waiving one requirement only, and complete the series. The report's runner
+image and image store, and the launch check's refusal of another image or a non-archive binding, join CI-20 once
 #42 has merged (Part 3, "After #42").
 
 | ID | Case | Assertion |
@@ -283,6 +284,9 @@ runner image and image store, and the launch check's refusal of another image or
 | CI-18 | One browser build everywhere | The web tests, the worker, the tools and the lockfile name one Playwright version (playwright-core one catalog line), and the worker image installs the lockfile's playwright-core with no version of its own; every step that installs the browser, in every workflow, is followed by the check that holds every file of the headless shell's and Chromium's builds to `browser.json`'s tree SHA-256s before any test runs or any cache is saved, and the worker image's headless shell is held to it in `images` and in the release's build before it is saved and in screening-capacity's and release-capacity's measuring jobs before it is measured; CI regenerates the committed brand baselines from nothing, byte for byte, on every pull request and every push; a browser-tests pull request is red on the browser check by design until the baseline procedure runs, and its other steps still run |
 | CI-19 | Header controls named by their visible text | Each header control's accessible name starts with its visible text and contains every other piece of it (WCAG 2.5.3) at 1280 and 390 px; axe 4.14 with the WCAG 2.0/2.1 A and AA tags finds no violation on any page a journey scans |
 | CI-20 | Runner images | Every job on ubuntu-26.04 but the release's capacity chain, on the release runner; the probe's runner comes only from its dispatch input; the browser jobs' cached system packages are used only after each matches the signed index's SHA-256; the release binds images by the config digest hashed from the saved archive under either image store, carries each image's identities from the build as job outputs no later job can rewrite, proves the measured image, the loaded image before any push and the pushed image are that one, builds every checked image with no attestation manifest, and its push and report jobs run no repository code; the image scan reads the built archive |
+| CI-21 | An action pin held to three days | A pin new against the base passes on a pull request only when its commit is on the upstream default branch, its tag still names it, and it is at least three days old by the youngest time read with a time GitHub recorded; an unchanged pin is never read for its age, except on the change that adds the rule; on a push a finding warns |
+| CI-22 | An image digest held to three days | A digest new against the base's Dockerfiles, compose file and workflows passes on a pull request only when Docker Hub pushed it at least three days ago; a superseded or unreadable digest fails closed; an unchanged digest is never read; on a push a finding warns |
+| CI-23 | A pin or digest by dated exclude | An exact pin or digest enters young under a security-fix exclude with an advisory that covers its whole young window and lasts at most seven days, or unprovable or off the default branch under a reasoned exclude of at most seven days and still at least three days old by every time read; a Docker Hub digest found on no tag enters under no exclude; an image's advisory is held for form only, with the package and version it fixes; an expired one fails only where the list is edited |
 
 ## Database function diffs (DBF)
 
