@@ -21,6 +21,7 @@
           "packages/ledger/src/allocation.ts",
           "packages/ledger/src/csv.ts",
           "packages/ledger/src/index.ts",
+          "packages/ledger/src/interest.ts",
           "packages/ledger/src/matching.ts",
           "packages/ledger/src/pairing.ts",
           "packages/ledger/src/payment.ts",

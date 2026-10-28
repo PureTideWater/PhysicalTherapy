@@ -1,12 +1,31 @@
 /**
  * @tp/ledger: the recovery ledger's pure rules (milestone 9; PRD 13). Signed, append-only entries by
  * stage and the totals derived from them ("recovered" is never a typed number), the matching decisions
- * for remittances, posting exports and EFT exports, pro-rata allocation, the export templates, the
+ * for remittances, posting exports and EFT exports, interest credited once from each PLB L6, pro-rata allocation, the export templates, the
  * practice's ledger settings and the ROI statement. Nothing here reads a database, a clock or a model;
  * the worker's reconcile step (apps/worker/src/reconcile) reads and writes the rows.
  */
 export { allocateByWeight, cumulativeShare, partialShare, takeInOrder } from './allocation';
 export { parseCsv } from './csv';
+export {
+  type ChainInterestLines,
+  type HeldInterestLine,
+  type InterestAdjustment,
+  type InterestAttribution,
+  type InterestClaim,
+  type InterestDraw,
+  type InterestHolding,
+  type InterestPart,
+  type InterestRemittance,
+  type InterestWritten,
+  type MatchedLedgerEntry,
+  type PaidInterestLine,
+  type UnattributedInterest,
+  attributeInterest,
+  interestHeld,
+  interestWrites,
+  referenceCandidates,
+} from './interest';
 export { type PairableLine, pairLines, pairedLine } from './pairing';
 export {
   type CheckPosting,

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { allocateByWeight, cumulativeShare, partialShare, takeInOrder } from './allocation';
 import { parseCsv } from './csv';
+import { attributeInterest, interestWrites } from './interest';
 import { reprocessing } from './matching';
 import { quarterOf, quarterPeriod, roiStatement } from './roi';
 import { LedgerSettingsError, ledgerSettings } from './settings';
@@ -52,6 +53,10 @@ const statement: StoredStatement = {
   links: { recovered: ['missing'], interest: [], approvedUnposted: [], actionableOpen: [] },
 };
 
+const l6 = (id: string) => ({ id, remittanceId: 'r', position: 1, cashCents: cents(540n), namedChain: null, namedClaimIds: [] });
+const draw = (adjustmentId: string, chain: string) => ({ adjustmentId, chain, cents: cents(540n), shared: false, claimIds: ['claim'] });
+const paidLine = (serviceLineId: string) => ({ serviceLineId, claimId: 'claim', approved: true, weightCents: cents(2400n) });
+
 const period = { periodFrom: '2026-04-01', periodTo: '2026-06-30', proofLevel: 'posted' as const, entries: [], feesCents: cents(0n), pursuitHours: '0.00', openCases: [] };
 
 describe('the stage tables (PRD 13, Entries)', () => {
@@ -60,7 +65,7 @@ describe('the stage tables (PRD 13, Entries)', () => {
       approved: 'positive',
       posted: 'positive',
       deposited: 'positive',
-      interest: 'positive',
+      interest: 'signed',
       recouped: 'negative',
       reversed: 'offsetting',
       adjusted: 'signed',
@@ -109,6 +114,22 @@ describe('every ledger refusal is a LedgerError that names the rule broken', () 
     ['a day that is not one', () => quarterOf('2026-7-1'), 'a day is written YYYY-MM-DD'],
     ['a correction whose target is gone', () => correctedEntry(reversal, new Map()), 'a correction counts toward the stage of the entry it corrects, which the ledger must hold'],
     ['a statement linking an entry the ledger lacks', () => recomputeStatement(statement, new Map()), 'a statement links an entry the ledger does not hold'],
+    [
+      'a PLB L6 given twice',
+      () => attributeInterest({ remittances: [{ id: 'r', claims: [] }], adjustments: [l6('a'), l6('a')] }),
+      'interest is attributed from each PLB L6, claim and remittance once',
+    ],
+    ['the draws of two PLB L6s at once', () => interestWrites({ draws: [draw('a', 'c'), draw('b', 'd')], written: [], lines: new Map() }), "interest is written from one PLB L6's draws, each chain once"],
+    [
+      'one line twice in a chain’s list',
+      () => interestWrites({ draws: [draw('a', 'c')], written: [], lines: new Map([['c', { paid: [paidLine('l'), paidLine('l')], takenBack: [] }]]) }),
+      "interest reaches a line once in each chain's list",
+    ],
+    [
+      'a negative approval remaining',
+      () => interestWrites({ draws: [draw('a', 'c')], written: [], lines: new Map([['c', { paid: [{ ...paidLine('l'), weightCents: cents(-1n) }], takenBack: [] }]]) }),
+      'interest is split by approvals remaining of zero or more',
+    ],
   ])('refuses %s with its own message', (_name, run, message) => {
     const error = refusalOf(run);
     expect(error).toBeInstanceOf(LedgerError);

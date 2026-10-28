@@ -109,9 +109,12 @@ describe('entry rules, stage by stage (PRD 13, Entries)', () => {
     expect(entryProblems(entry({ stage: 'interest', evidenceKind: 'provider_adjustment', amountCents: cents(411n), allocated: true }))).toEqual([]);
   });
 
-  it('holds posted and interest entries above zero, and a recouped entry below it', () => {
+  it('holds a posted entry above zero, an interest entry off zero either way, and a recouped entry below zero', () => {
     expect(entryProblems(entry({ stage: 'posted', evidenceKind: 'posting_row', amountCents: cents(0n) }))).toEqual(['a posted entry is positive']);
-    expect(entryProblems(entry({ stage: 'interest', evidenceKind: 'provider_adjustment', amountCents: cents(0n) }))).toEqual(['a interest entry is positive']);
+    // Interest a PLB L6 takes back is a negative interest entry (docs/adr/0084); an interest entry of nothing moves nothing.
+    expect(entryProblems(entry({ stage: 'interest', evidenceKind: 'provider_adjustment', amountCents: cents(-240n) }))).toEqual([]);
+    expect(entryProblems(entry({ stage: 'interest', evidenceKind: 'provider_adjustment', amountCents: cents(-1n), allocated: true }))).toEqual([]);
+    expect(entryProblems(entry({ stage: 'interest', evidenceKind: 'provider_adjustment', amountCents: cents(0n) }))).toEqual(['an interest entry moves an amount']);
     expect(entryProblems(entry({ stage: 'recouped', evidenceKind: 'claim', amountCents: cents(0n) }))).toEqual(['a recouped entry is negative']);
   });
 
