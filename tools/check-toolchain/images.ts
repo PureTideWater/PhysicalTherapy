@@ -569,8 +569,9 @@ export async function imageRule(
 
 /**
  * The exceptions list's entries: an entry this change adds or rewrites inside its kind's window (exclude-window.ts; a
- * security-fix entry's known time is its digest's push time when this run read it), the expired rule, and an entry for
- * an image the tree no longer names, a warning.
+ * security-fix entry's known time is its digest's push time when this run read it), an error on a pull request and a
+ * warning on a push, as every image age finding is (CI-N3: a tag moved between the pull request and its merge gives
+ * the push another push time); the expired rule; and an entry for an image the tree no longer names, a warning.
  */
 function exceptionFindings(
   input: ImageInput,
@@ -580,13 +581,14 @@ function exceptionFindings(
   minutes: number,
 ): Finding[] {
   const findings: Finding[] = [];
+  const age: Level = input.event === 'push' ? 'warning' : 'error';
   const baseEntries = new Set(lists.base.map((entry) => JSON.stringify(entry)));
   const edited = JSON.stringify(lists.head.map((entry) => JSON.stringify(entry)).sort()) !== JSON.stringify([...baseEntries].sort());
   const images = new Set(uses.map((use) => use.image));
   for (const entry of lists.head) {
     if (!baseEntries.has(JSON.stringify(entry))) {
       const window: ExcludeWindow = entry.kind === 'security-fix' ? { kind: 'security-fix', known: known.get(entry.image) ?? null, minutes } : { kind: 'reasoned' };
-      findings.push(...excludeWindowProblems(entry.image, entry, window, input.now).map((message): Finding => ({ level: 'error', rule: RULE, message })));
+      findings.push(...excludeWindowProblems(entry.image, entry, window, input.now).map((message): Finding => ({ level: age, rule: RULE, message })));
     }
     const expired = expiredExclude(entry.image, entry.expires, input.now, { event: input.event, edited, list: IMAGE_AGE_EXCEPTIONS_FILE });
     if (expired !== null) {

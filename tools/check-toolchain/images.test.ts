@@ -365,6 +365,20 @@ describe('the image rule', () => {
     ]);
   });
 
+  it('warns, never fails, on an exceptions entry outside its window in a push run, as on every image age finding (CI-N3)', async () => {
+    const pinned = digest('node 2');
+    const young = `synthetic/node:24-slim@${pinned}`;
+    const registry = fakeRegistry({ tags: { 'synthetic/node:24-slim': tag('24-slim', pinned, YOUNG) } });
+    // Added a day ahead of now, and expiring before the digest is three days old by the push time read on this run.
+    const fix = { image: young, kind: 'security-fix', advisory: 'CVE-2026-12345', fixes: { package: 'openssl', version: '3.5.4-1' }, reason: 'synthetic: the fixed openssl of a high advisory', added: '2026-10-27T00:00:00.000Z', expires: '2026-10-27T23:59:59.000Z' };
+    const findings = await run(tree({ web: young, exceptions: [fix] }), tree(), { event: 'push', registry });
+    expect(problems(findings)).toEqual([]);
+    expect(problems(findings, 'warning')).toEqual([
+      `images: ${young}: added 2026-10-27T00:00:00.000Z, a time in the future`,
+      `images: ${young}: expires 2026-10-27T23:59:59.000Z, before the digest is three days old (${YOUNG_MATURE}; pushed ${YOUNG}), so it would lapse while still needed`,
+    ]);
+  });
+
   it('reads only new digests when the base has no image-age-exceptions.json (E2)', async () => {
     const pinned = digest('node 2');
     const added = `synthetic/node:24-slim@${pinned}`;
