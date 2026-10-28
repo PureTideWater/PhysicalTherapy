@@ -212,6 +212,8 @@ export async function checkActionPins(options: CheckOptions): Promise<CheckResul
   const ageDeadlineMs = options.ageDeadlineMs ?? AGE_DEADLINE_MS;
   const ageDeadline = deadline(ageDeadlineMs);
   const now = options.now ?? new Date();
+  // The time a rate limit's wait is measured from: the run's own clock, or the fixed time a test gives.
+  const clock = options.now === undefined ? Date.now : () => now.getTime();
   // The floor as check-toolchain reads it, so a floor under the minimum or not a number reads as three days, never NaN.
   const floor = releaseAgeMinutes({ minimumReleaseAge: options.floor });
   try {
@@ -220,7 +222,7 @@ export async function checkActionPins(options: CheckOptions): Promise<CheckResul
     if (builder.builder !== undefined) {
       const before = state === undefined ? undefined : builderOf(state.workflows).builder;
       const isNew = before === undefined || before.version !== builder.builder.version || before.digest !== builder.builder.digest;
-      const verdict = await checkBuilder(options.transport, builder.builder, { isNew, now, signal: ageDeadline.signal, floor, push });
+      const verdict = await checkBuilder(options.transport, builder.builder, { isNew, now, clock, signal: ageDeadline.signal, floor, push });
       errors.push(...verdict.errors);
       warnings.push(...verdict.warnings);
       notes.push(...verdict.notes);
@@ -232,7 +234,7 @@ export async function checkActionPins(options: CheckOptions): Promise<CheckResul
       state,
       push,
       now,
-      clock: options.now === undefined ? Date.now : () => now.getTime(),
+      clock,
       floor,
       ci: options.ci === true,
       token: options.token,

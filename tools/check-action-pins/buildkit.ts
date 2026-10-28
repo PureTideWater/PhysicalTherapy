@@ -1,6 +1,6 @@
 import { ageWords, releaseAgeMinutes } from '../check-toolchain/exclude-window';
 import { MINUTE_MS } from '../check-toolchain/policy';
-import { withRetries, type Transport } from './network';
+import { rateLimitWait, withRetries, type Answer, type Transport } from './network';
 import { actionUses, type WorkflowText } from './workflows';
 
 /**
@@ -13,9 +13,10 @@ import { actionUses, type WorkflowText } from './workflows';
  * - a newer release at least the release age old (pnpm-workspace.yaml's minimumReleaseAge, read through
  *   check-toolchain's releaseAgeMinutes, so the builder's two age questions read one floor), is a warning naming it, so
  *   the manual upgrade in docs/runbooks/dependency-upgrades.md is not forgotten.
- * A read that fails after three tries fails a new builder closed and only warns about an unchanged one. On a push every
- * fault is a warning: the pull request was the gate (docs/adr/0066, Part 5). The builder's own age is check-toolchain's
- * image rule's, with every other image's.
+ * A read that fails after three tries fails a new builder closed and only warns about an unchanged one; a rate-limited
+ * answer is tried again after the wait Hub names (Retry-After, else x-ratelimit-reset), capped at 60 s, as the age rule's
+ * API reads and check-toolchain's image reads wait. On a push every fault is a warning: the pull request was the gate
+ * (docs/adr/0066, Part 5). The builder's own age is check-toolchain's image rule's, with every other image's.
  */
 
 export const BUILDKIT_REPOSITORY = 'moby/buildkit';
@@ -76,6 +77,8 @@ export async function checkBuilder(
     readonly floor?: number;
     /** A push run: every fault is a warning. */
     readonly push?: boolean;
+    /** The time now in milliseconds, for a rate limit's wait to x-ratelimit-reset or an HTTP date; Date.now by default. */
+    readonly clock?: () => number;
   },
 ): Promise<{ errors: string[]; warnings: string[]; notes: string[] }> {
   const errors: string[] = [];
@@ -84,9 +87,11 @@ export async function checkBuilder(
   const name = `${BUILDKIT_REPOSITORY}:${builder.version}`;
   const floor = releaseAgeMinutes({ minimumReleaseAge: options.floor });
   const fault = (text: string) => (options.isNew && options.push !== true ? errors : warnings).push(text);
+  const clock = options.clock ?? Date.now;
+  const read = (url: string) => withRetries(transport, HOST, `GET ${url}`, () => transport.get(url, options.signal), refuse, options.signal, (answer: Answer) => rateLimitWait(answer, clock()));
   try {
     const tagUrl = `https://${HOST}/v2/repositories/${BUILDKIT_REPOSITORY}/tags/${builder.version}`;
-    const tag = await withRetries(transport, HOST, `GET ${tagUrl}`, () => transport.get(tagUrl, options.signal), refuse, options.signal);
+    const tag = await read(tagUrl);
     if (tag.status === 404) fault(`the builder ${name}: Docker Hub has no such tag`);
     else {
       const digest = (JSON.parse(tag.text) as HubTag).digest;
@@ -95,7 +100,7 @@ export async function checkBuilder(
     }
 
     const listUrl = `https://${HOST}/v2/repositories/${BUILDKIT_REPOSITORY}/tags?page_size=100&ordering=last_updated`;
-    const list = await withRetries(transport, HOST, `GET ${listUrl}`, () => transport.get(listUrl, options.signal), refuse, options.signal);
+    const list = await read(listUrl);
     const results = list.status === 200 ? ((JSON.parse(list.text) as { results?: HubTag[] }).results ?? []) : [];
     const releases = results.flatMap((entry) => {
       const match = typeof entry.name === 'string' ? RELEASE.exec(entry.name) : null;
