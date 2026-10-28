@@ -6,6 +6,7 @@ Source: product observation (b) in `approval-summaries/lane-b-test-flakes-status
 
 ## Log (UTC)
 - 2026-10-28 00:25: worktree `/home/user/packet-day-counts` cut from `claude/build-platform` 0dd1ba7, installed. First reading: the scanner (`scan.ts`) types a figure by its shape alone (five digits are a code), and the facts are sets by type, so a figure a quote holds passes in any role the narrative gives it. Analysis, design, design review and build running as one workflow.
+- 2026-10-28 00:20: resumed per the orchestrator's 00:15 notice (this session had already continued after the 00:00 reset: #80 merged 00:15). Design workflow wf_cd5cf1da-e8b running (`workflow-scripts/lane-b-packet-day-counts-design-build-wf_cd5cf1da-e8b.js`); safety check-in at 05:28 UTC; setup script re-run in the background (PostgreSQL for the later suite).
 
 ## Waiting on someone
 None.
