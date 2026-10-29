@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
-    "@aws-sdk/client-bedrock-runtime": "^3.1152.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.1156.0",
     "@tp/contracts": "workspace:*",
     "@tp/db": "workspace:*",
     "@tp/money": "workspace:*",
