@@ -14,7 +14,7 @@
     "db:domain-model": "tsx src/cli/domain-model.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-kms": "^3.1152.0",
+    "@aws-sdk/client-kms": "^3.1156.0",
     "@tp/observability": "workspace:*",
     "drizzle-orm": "catalog:",
     "pg": "catalog:"
