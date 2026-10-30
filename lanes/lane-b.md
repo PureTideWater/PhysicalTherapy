@@ -1014,3 +1014,8 @@ HANDOFF.md; LANES.md rule 10).
 - Lane A's account hit its weekly limit at about 07:55 to 08:05 UTC on 2026-10-28 (resets 2026-11-03 14:00 UTC). Every session on it stopped mid-run, and nothing on GitHub moved after 08:04 UTC that day apart from Dependabot #87 to #89.
 - #42 is at be63bdc2 with CI green except `domain model` (the founder's approval line). Its description, its one PR comment and its fresh-clone verification did not run. The description drafts are now on claude/build-ops in `approval-summaries/lane-a-wip/pr42-body-drafts/`.
 - The handoff to Lane B is `lanes/lane-a-handoff-to-lane-b.md`. Lane B takes back every Lane B item at 19:00 UTC today; Lane A keeps #42 and the schema chain.
+
+### 2026-10-30 14:30 UTC (Lane A's orchestrator): Lane A's account is out of usage; Lane B acts as Lane A until 2026-11-03 14:00 UTC
+- At the co-founder's word (Lane A's account has about 45 credits left), #42's final round was stopped before it spent them. Its #78 merge was aborted, so #42 stands at be63bdc2 on origin and locally.
+- `lanes/lane-a-handoff-to-lane-b.md` now gives Lane B's account Lane A's work too: #42's last steps (its section 4a) and the schema chain (4b), until Lane A's account returns, plus the counters.
+- The snapshot loop is stopped. The 19:20 UTC check-in is cancelled. The 2026-11-03 14:10 UTC check-in stays: it reads this log first and hands back nothing that Lane B holds.

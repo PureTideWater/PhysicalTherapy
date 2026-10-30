@@ -1,4 +1,4 @@
-# Lane A's handoff to Lane B (2026-10-30 ~14:15 UTC)
+# Lane A's handoff to Lane B (2026-10-30 ~14:15 UTC; updated ~14:30 UTC)
 
 From 2026-10-27 01:30 UTC, Lane A's orchestrator ran both lanes for the co-founder from Lane A's account
 (session_01TrKDxeLbxVo7t7zwRXFzrg). That account hit its **weekly limit at about 07:55 to 08:05 UTC on 2026-10-28**; it
@@ -7,8 +7,18 @@ since 08:04 UTC on 2026-10-28** except three Dependabot PRs. This file was writt
 account may stop again at any moment.
 
 From Lane B's return (Friday 2026-10-30 19:00 UTC), **Lane B takes back every Lane B item below**, including those Lane
-A's orchestrator started for it (their LANES.md rows read "B (run by Lane A's orchestrator)": read them as B). Lane A
-keeps #42 and its schema chain. The shared counters return to LANES.md rule 4's usual owner.
+A's orchestrator started for it (their LANES.md rows read "B (run by Lane A's orchestrator)": read them as B).
+
+**Lane A's account is out of usage until 2026-11-03 14:00 UTC** (the co-founder's word, 2026-10-30 ~14:20 UTC). So
+that the build keeps moving, **Lane B's account also runs Lane A's work as acting Lane A until then**: #42's last steps
+(section 4a) and the schema chain (section 4b), exactly as Lane A ran Lane B's items from 2026-10-27. LANES.md rule 2
+still holds in substance: one schema PR at a time, a schema PR merges only with the founder's approval, and the
+founder's decisions stay the founder's. Lane B also allocates the shared counters until Lane A returns. When Lane A's
+account returns, Lane B writes a short handoff back, like this one, and Lane A takes #42 and the schema chain again at
+whatever clean point they have reached.
+
+Lane A's last run stopped #42's final round on purpose, at 14:25 UTC on 2026-10-30, to save the last credits: its
+#78 merge was aborted, so `/home/user/pr6b4` and origin both stand at be63bdc2. Nothing is half-done.
 
 Read in this order: `CLAUDE.md` (on `claude/build-platform`), `LANES.md` (claims, counters, "Handed to Lane A", the
 lapsed merge hold), this file, then `lanes/lane-b.md` from "2026-10-27 ~01:30 UTC" onwards (every merge and decision,
@@ -34,7 +44,7 @@ The tip is **83d71fd**.
 
 | PR | Item (status file under `approval-summaries/`) | State at the stop | Next |
 | --- | --- | --- | --- |
-| #42 | PR 6b-4, mail streams (Lane A, schema) | Head **be63bdc2**: #74, #81 and the images fix merged in; #78 not yet. CI on be63bdc2: **every job green except `domain model`**, which waits only on the founder's approval line (text SHA-256 `b23fed0e…2518`, line 7334). The description was **not** updated (its agent stopped at the limit); drafts in `approval-summaries/lane-a-wip/pr42-body-drafts/` (the body must stay under GitHub's 65,536 characters). The fresh-clone verification did not run. | Lane A's, from this account after its reset: merge #78 (and #75 if merged), the description, one PR comment on the images failure, the verification, then the approval line as a suggested change. Script: `workflow-scripts/lane-a-pr42-final-round-wf_fb12f910-d87.js`. |
+| #42 | PR 6b-4, mail streams (Lane A, schema) | Head **be63bdc2**: #74, #81 and the images fix merged in; #78 not yet. CI on be63bdc2: **every job green except `domain model`**, which waits only on the founder's approval line (text SHA-256 `b23fed0e…2518`, line 7334). The description was **not** updated (its agent stopped at the limit); drafts in `approval-summaries/lane-a-wip/pr42-body-drafts/` (the body must stay under GitHub's 65,536 characters). The fresh-clone verification did not run. | Lane B's account, as acting Lane A until 2026-11-03 14:00 UTC: section 4a, step by step. |
 | #75 | contract-phi-check (`lane-b-model-eval-gate-status.md`, its contract-phi-check sections) | Head 871faff9. Its fourth base merge (#78 and #81) was running (wf_d798a96c-014) when it stopped. WIP refs `co-001/wip-contract-phi-check-3` to `-5`. Its verification's P11 (a 1,000,000-byte request cap) and P12 (records check takes only packages/db's scope and pool) are built. | Merge the base (83d71fd), the suite, push, CI, the second fresh-clone verification, merge. It resolves `redact.ts` against #80 by rule 6. |
 | #82 | CI P1, action pin age (`lane-b-ci-deps-status.md`) | Verified on 96758e44, every check green; it was waiting only on the merge hold, which lapsed. | Merge the base (83d71fd), CI, merge. |
 | #86 | ci-images-digest (`lane-b-ci-images-digest-status.md`) | Draft, head 83167b8f. Design folded; the hand-over patch to #42 (49 lines, SHA-256 `8cf981fb…`) is applied in #42 byte for byte. Its CI run of record needs a PR description over 100,000 characters (a labelled synthetic appendix). | Reviews, fix round, verification, merge. If its shape changes, #42 takes its version at the next base merge. |
@@ -63,11 +73,30 @@ then UX PR 10, 6 and 7, session_01TAgFZo3SGSTBEfKRjX1jeG; UX PR 3 and 4 session_
 session_01L3tN5LCq2aNYetEQBNJYZg; redaction, then packet day counts, session_019i9ifC3LkwNtonZfNSNmCp; SUITE-CAP-1a,
 then SUITE-CAP-3, session_019i9ifDUYaz9Hta77Vukkzo.
 
-## 4. Lane A's own state (for coordination; not Lane B's to run)
+## 4. Lane A's work, which Lane B runs as acting Lane A until 2026-11-03 14:00 UTC
 
-- **#42** is above. Its domain model does not change with a base merge that has no migration, so the founder's
-  approval of `b23fed0e…2518` survives later base merges.
-- **The schema chain** (session_019i9ifCi6u3MV8sy7oAhUmy, status `lane-a-schema-chain-status.md`): SS-01 is built with
+### 4a. #42 (PR 6b-4), its last steps before the founder's approval, in order
+1. Check out `co-001/pr-06b-mail-streams` at **be63bdc2**. Merge `claude/build-platform`, which is 83d71fd (#78) or later, with a merge commit (rule 6).
+   Run the generators and commit only what they write: `pnpm install --frozen-lockfile`, `watched.ts --write` and `synth --all`.
+   Then run the checks the delta needs and push once.
+   The domain model must still read SHA-256 `b23fed0e…2518` at line 7334; a base merge without a migration does not change it.
+   The script that did this for #74 and #81 is `workflow-scripts/lane-a-pr42-final-round-wf_fb12f910-d87.js`. Its prompts carry every rule and command; its integrator's record is `approval-summaries/lane-a-wip/progress/pr42f-integrate.md`.
+2. Write #42's description **under 65,536 characters**.
+   - At the top: the domain-model summary, from `pnpm -s db:domain-model --summary-since origin/claude/build-platform --function-diffs list`.
+   - Then every template section, written concisely.
+   - Keep these whole: "Legal text awaiting the founder's sign-off" and "The founder's actions this pull request needs".
+   - Move the long review tables into `approval-summaries/pr6b4-review-record.md` and link it.
+   The drafts are in `approval-summaries/lane-a-wip/pr42-body-drafts/`. Use the MCP update_pull_request tool, then read the description back.
+3. Post one PR comment on the `images` failure of 46974a25. #77's step passed buildx's whole metadata, which carries the pull_request event and so the description, in one environment variable: 132,387 bytes against Linux's 131,072. The fix is ported in be63bdc2, with #86's exact lines.
+4. Run a fresh-clone verification that reads CI on the new head. Every job must be green except `domain model`, whose log names only the missing approval line.
+5. Post the approval line as a **suggested change** on `docs/product/domain-model.md`'s approval line: `gh api repos/PureTideWater/PhysicalTherapy/pulls/42/comments` (`.claude/skills/new-migration`). Never a review, never the line itself, never `approvers.json`. Then tell the co-founder what the founder does: commit the suggestion on GitHub, and sign off the legal sentences (section 7).
+6. After the founder commits it: CI green on that head (merge the base again if it has moved), mark the PR ready, wait for approval-of-record's re-run, then merge it with method merge and `expectedHeadSha`.
+   Then tell the schema chain that #42 has merged.
+
+### 4b. The schema chain (status `approval-summaries/lane-a-schema-chain-status.md`)
+
+- Run it in a session of Lane B's account (the old session_019i9ifCi6u3MV8sy7oAhUmy is on Lane A's account and stopped).
+  SS-01 is built with
   the full suite green (`co-001/ss-01-suspension-refusal`). SUITE-CAP-1b is built apart from what waited on 1a, which
   merged as #81 (`co-001/suite-cap-1-triage-locks`). The interest fix is building on 1b's branch
   (`co-001/ledger-interest-once`). wf_96af352a-4ed was merging the base forward when it stopped. Each opens its PR
@@ -128,5 +157,7 @@ each merging the base once before its merge.
 > items from 2026-10-27 to 2026-10-28 08:00 UTC; its account then stopped at its weekly limit. Read CLAUDE.md,
 > LANES.md, `lanes/lane-a-handoff-to-lane-b.md` and `lanes/lane-b.md` from 2026-10-27 ~01:30 UTC, then each item's
 > status file. Take back every Lane B item in the handoff's sections 2 and 3, one session per item with its status
-> file, in the order of section 6. Run each through LANES.md rule 1's pipeline. Lane A keeps #42 and the schema chain.
-> Update LANES.md's claim rows to "B" and write your own entries in `lanes/lane-b.md`.
+> file, in the order of section 6. Until Lane A's account returns (2026-11-03 14:00 UTC), also run Lane A's work as
+> acting Lane A: #42's last steps (section 4a) first, in a session of its own, then the schema chain (section 4b).
+> Run each through LANES.md rule 1's pipeline. One schema PR at a time; the founder's decisions stay the founder's.
+> Update LANES.md's claim rows, allocate the counters, and write your own entries in `lanes/lane-b.md`.
