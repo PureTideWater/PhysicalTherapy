@@ -29,3 +29,5 @@ Started 2026-10-28. Work dir: /tmp/claude-0/-home-user-PhysicalTherapy/e99dbc78-
 - NEXT: finalize body-rest (@@CI@@), assemble body, send, read back, then comment.
 - 08:03 BODY READY: pr42fb/body-send.md, 61,993 chars (summary 59,516 + sections 2,477). Sending via update_pull_request next.
 - 08:05 body-send.md trailing newline stripped: 61,992 chars; sending now via update_pull_request.
+- 08:07 BODY SENT (update_pull_request, 61,992 chars) and READ BACK IDENTICAL twice: pull_request_read get (saved tool result) and gh api, both 61,992 chars, SHA-256 394426ea…, no CRLF; PR still draft, head be63bdc2, open.
+- NEXT: post the one comment (pr42fb/comment.md) with add_issue_comment.
