@@ -162,6 +162,8 @@ The shared documents (test-matrix, reconciliation-001, ADRs, the synth registry)
 
 ## Claims
 
+> **2026-10-30 14:15 UTC: Lane A's account stopped at its weekly limit at ~08:00 UTC on 2026-10-28 (resets 2026-11-03 14:00 UTC); every session on it stopped. Lane B takes back its items at its return (2026-10-30 19:00 UTC): `lanes/lane-a-handoff-to-lane-b.md`. Rows reading "B (run by Lane A's orchestrator)" are Lane B's again. The merge hold below lapsed at 11:00 UTC on 2026-10-28 with #75 unmerged.**
+
 > **Merge hold, 2026-10-28 07:20 UTC (Lane A's orchestrator, at #75's request):** until #75 (`co-001/contract-phi-check`) merges, or 11:00 UTC, whichever comes first, no PR touching `apps/web/src/components/uploads/uploader.tsx`, `docs/product/test-matrix.md` or `packages/synth/src/cases/{matrix,registry}.ts` merges into claude/build-platform. Why: #75 has merged the base four times since 22:00 UTC, each round about 1.5 h of conflict resolution and the full suite. Exempt: ci-images-digest and #42. Told: #84, #83, the CI session.
 
 | Item | Lane | Branch / PR | Started (UTC) | Reserved | State |

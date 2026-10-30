@@ -1,0 +1,470 @@
+## Changes since the last approved document
+
+- Last approved: `docs/product/domain-model.md` at `origin/claude/build-platform` (commit `a6e754fcebc7`), document SHA-256 `6d7a143d…`: approved by Tyler Williams on 2026-10-23
+- New: `docs/product/domain-model.md` in the working tree, document SHA-256 `b23fed0e…`: awaiting approval
+- 366 changes: 9 in row-level security, 13 in policies and rewrite rules, 9 in phi registry, 54 in grants and roles, 41 in tables and views, 78 in columns, 88 in constraints and indexes, 49 in functions, 12 in triggers, 9 in divergence rows, 2 in migrations, 1 in cross-checks, 1 in other lines
+- Each change is one line. A long changed value shows only the part that changed, between "…".
+
+**Row-level security** (9)
+
+- changed `row-level security (totals)`: `RLS: 82 tables ENABLE and FORCE row-level security; 0 enable without forcing; 8 have none (the global tables); 168 policies` → `RLS: 90 tables ENABLE and FORCE row-level security; 0 enable without forcing; 8 have none (the global tables); 180 policies`
+- added `support_grant_notice row-level security`: `enabled, forced; owner tp_owner`
+- added `support_grant_notice_recipient row-level security`: `enabled, forced; owner tp_owner`
+- added `dunning_notice_recipient row-level security`: `enabled, forced; owner tp_owner`
+- added `mail_stream row-level security`: `enabled, forced; owner tp_owner`
+- added `mail_send row-level security`: `enabled, forced; owner tp_owner`
+- added `mail_recipient_key row-level security`: `enabled, forced; owner tp_owner`
+- added `screening_mail_refusal row-level security`: `enabled, forced; owner tp_owner`
+- added `screening_bounce_mark row-level security`: `enabled, forced; owner tp_owner`
+
+**Policies and rewrite rules** (13)
+
+- added `support_grant_notice policy support_grant_notice_owner`: `PERMISSIVE FOR ALL TO tp_owner; USING true; WITH CHECK true`
+- added `support_grant_notice policy support_grant_notice_read_by_practice_and_platform`: `RESTRICTIVE FOR SELECT TO tp_app; USING ((practice_id = ANY (( SELECT app_actor_group_practice_ids() AS app_actor_group_practice_ids)::uuid[])) OR ( SELECT app_actor_is_platform_admin() AS app_actor_is_platform_admin))`
+- added `support_grant_notice policy support_grant_notice_tenant`: `PERMISSIVE FOR ALL TO public; USING (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])); WITH CHECK (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))`
+- added `support_grant_notice_recipient policy support_grant_notice_recipient_owner`: `PERMISSIVE FOR ALL TO tp_owner; USING true; WITH CHECK true`
+- added `support_grant_notice_recipient policy support_grant_notice_recipient_read_by_practice_and_platform`: `RESTRICTIVE FOR SELECT TO tp_app; USING ((practice_id = ANY (( SELECT app_actor_group_practice_ids() AS app_actor_group_practice_ids)::uuid[])) OR ( SELECT app_actor_is_platform_admin() AS app_actor_is_platform_admin))`
+- added `support_grant_notice_recipient policy support_grant_notice_recipient_tenant`: `PERMISSIVE FOR ALL TO public; USING (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])); WITH CHECK (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))`
+- added `dunning_notice_recipient policy dunning_notice_recipient_owner`: `PERMISSIVE FOR ALL TO tp_owner; USING true; WITH CHECK true`
+- changed `audit_event policy audit_event_record`: `PERMISSIVE FOR INSERT TO tp_app; WITH CHECK ((actor_id = app_actor_id()) AND (actor_kind = ANY (ARRAY['user'::text, 'service'::text])) AND (action <> ALL (ARRAY['notice_sent'::text, 'security_event'::text, 'sign_in_failed'::text, 'data_key_destroyed'::text])) AND ((practice_id IS NULL) OR (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))))` → `PERMISSIVE FOR INSERT TO tp_app; WITH CHECK ((actor_id = app_actor_id()) AND (actor_kind = ANY (ARRAY['user'::text, 'service'::text])) AND (action <> ALL (ARRAY['notice_sent'::text, 'security_event'::text, 'sign_in_failed'::text, 'data_key_destroyed'::text, 'notice_undelivered'::text, 'mail_stream_paused'::text, 'mail_stream_resumed'::text])) AND ((practice_id IS NULL) OR (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))))`
+- added `mail_stream policy mail_stream_owner`: `PERMISSIVE FOR ALL TO tp_owner; USING true; WITH CHECK true`
+- added `mail_send policy mail_send_owner`: `PERMISSIVE FOR ALL TO tp_owner; USING true; WITH CHECK true`
+- added `mail_recipient_key policy mail_recipient_key_owner`: `PERMISSIVE FOR ALL TO tp_owner; USING true; WITH CHECK true`
+- added `screening_mail_refusal policy screening_mail_refusal_owner`: `PERMISSIVE FOR ALL TO tp_owner; USING true; WITH CHECK true`
+- added `screening_bounce_mark policy screening_bounce_mark_owner`: `PERMISSIVE FOR ALL TO tp_owner; USING true; WITH CHECK true`
+
+**PHI registry** (9)
+
+- changed `PHI flag (totals)`: `PHI flag: 45 tables in phi_table_registry; 4 tenant tables with a nullable practice_id outside it; 33 organization- or user-scoped tables with RLS forced; 8 global tables` → `PHI flag: 47 tables in phi_table_registry; 4 tenant tables with a nullable practice_id outside it; 39 organization- or user-scoped tables with RLS forced; 8 global tables`
+- added `support_grant_notice class`: `PHI (registered); registry policy support_grant_notice_tenant, registered by 20261107090000_mail_streams, qualifies: yes`
+- added `support_grant_notice_recipient class`: `PHI (registered); registry policy support_grant_notice_recipient_tenant, registered by 20261107090000_mail_streams, qualifies: yes`
+- added `dunning_notice_recipient class`: `organization- or user-scoped (RLS, no practice_id)`
+- added `mail_stream class`: `organization- or user-scoped (RLS, no practice_id)`
+- added `mail_send class`: `organization- or user-scoped (RLS, no practice_id)`
+- added `mail_recipient_key class`: `organization- or user-scoped (RLS, no practice_id)`
+- added `screening_mail_refusal class`: `organization- or user-scoped (RLS, no practice_id)`
+- added `screening_bounce_mark class`: `organization- or user-scoped (RLS, no practice_id)`
+
+**Grants and roles** (54)
+
+- added `support_grant_notice privileges`: `tp_app SELECT`
+- added `support_grant_notice_recipient privileges`: `tp_app SELECT`
+- added `dunning_notice_recipient privileges`: `none for any group role`
+- added `mail_stream privileges`: `none for any group role`
+- added `mail_send privileges`: `none for any group role`
+- added `mail_recipient_key privileges`: `none for any group role`
+- added `screening_mail_refusal privileges`: `none for any group role`
+- added `screening_bounce_mark privileges`: `none for any group role`
+- added `EXECUTE on billing_dunning_notice_claim(uuid,text,uuid)`: `granted to tp_billing`
+- added `EXECUTE on billing_dunning_notice_failed(uuid,text,uuid,text,boolean,text)`: `granted to tp_billing`
+- added `EXECUTE on billing_dunning_notice_sent(uuid,text,uuid,text,text)`: `granted to tp_billing`
+- added `EXECUTE on billing_dunning_notices_pending(integer)`: `granted to tp_billing`
+- added `EXECUTE on billing_open_dunning_notice(uuid,text,text)`: `granted to tp_billing`
+- added `EXECUTE on console_mail_streams()`: `granted to tp_app`
+- added `EXECUTE on console_mail_undelivered(timestamp with time zone)`: `granted to tp_app`
+- added `EXECUTE on console_pause_mail_stream(text,text)`: `granted to tp_app`
+- added `EXECUTE on console_resume_mail_stream(text,text)`: `granted to tp_app`
+- added `EXECUTE on dunning_notice_report_undelivered(uuid,text,text)`: `granted to no group role`
+- added `EXECUTE on mail_recipient_canonical(text,boolean)`: `granted to no group role`
+- added `EXECUTE on mail_recipient_sha256(text,boolean)`: `granted to no group role`
+- added `EXECUTE on mail_send_expiry()`: `granted to no group role`
+- added `EXECUTE on mail_state_rank(text)`: `granted to no group role`
+- added `EXECUTE on mail_stream_cutoff(text)`: `granted to no group role`
+- added `EXECUTE on mail_stream_pause(text,uuid,text)`: `granted to no group role`
+- added `EXECUTE on mail_window_counts(text)`: `granted to no group role`
+- added `EXECUTE on operator_mail_account_signal(text,text)`: `granted to tp_operator`
+- added `EXECUTE on operator_mail_cutoff(text)`: `granted to tp_operator`
+- added `EXECUTE on operator_mail_expire(integer)`: `granted to tp_operator`
+- added `EXECUTE on operator_mail_probe_sent(text)`: `granted to tp_operator`
+- added `EXECUTE on operator_mail_stream_confirmed(text,boolean)`: `granted to tp_operator`
+- added `EXECUTE on operator_mail_streams()`: `granted to tp_operator`
+- added `EXECUTE on operator_open_support_notice(uuid,text,text)`: `granted to tp_operator`
+- added `EXECUTE on operator_record_mail_event(text,text,text,timestamp with time zone,timestamp with time zone,text,text,uuid,uuid,uuid,text,text,text,text)`: `granted to tp_operator`
+- added `EXECUTE on operator_support_notice_claim(uuid,uuid)`: `granted to tp_operator`
+- added `EXECUTE on operator_support_notice_failed(uuid,uuid,text,boolean,text)`: `granted to tp_operator`
+- added `EXECUTE on operator_support_notice_sent(uuid,uuid,text,text)`: `granted to tp_operator`
+- added `EXECUTE on operator_support_notices_pending(integer)`: `granted to tp_operator`
+- added `EXECUTE on screening_bounce_budget_spent(text,text)`: `granted to no group role`
+- added `EXECUTE on screening_contact_refused(text)`: `granted to no group role`
+- added `EXECUTE on screening_mail_gate()`: `granted to tp_screening`
+- added `EXECUTE on screening_mail_sending()`: `granted to no group role`
+- added `EXECUTE on screening_mail_status()`: `granted to tp_app`
+- added `EXECUTE on screening_run_mail_gate()`: `granted to no group role`
+- added `EXECUTE on screening_run_mail_refusal()`: `granted to no group role`
+- added `EXECUTE on screening_submit_mail_refusal(text,text)`: `granted to tp_app`
+- added `EXECUTE on screening_upload_mail_gate()`: `granted to no group role`
+- added `EXECUTE on submit_screening(text,text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],integer,integer,bigint,integer,bigint,bigint,text,text,text,text,text,text,text,text,timestamp with time zone,text,text,text)`: `granted to tp_app`
+- added `EXECUTE on support_notice_administrators(uuid)`: `granted to no group role`
+- added `EXECUTE on support_notice_counts(uuid,text)`: `granted to no group role`
+- added `EXECUTE on support_notice_report_undelivered(uuid,text)`: `granted to no group role`
+- removed `EXECUTE on billing_owner_emails(uuid)`: `granted to tp_billing`
+- removed `EXECUTE on operator_practice_administrator_emails(uuid)`: `granted to tp_operator`
+- removed `EXECUTE on operator_record_support_notice(uuid,text,text)`: `granted to tp_operator`
+- removed `EXECUTE on submit_screening(text,text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],integer,integer,bigint,integer,bigint,bigint,text,text,text,text,text,text,text,text,timestamp with time zone,text,text)`: `granted to tp_app`
+
+**Tables and views** (41)
+
+- changed `tables and views (totals)`: `PostgreSQL 18; schema public: 90 tables (including schema_migrations), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)` → `PostgreSQL 18; schema public: 98 tables (including schema_migrations), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)`
+- changed `area Tenancy and access`: `…izations, agreements, break-glass support grants, sign-in devices and sessions, the persona matr…` → `…izations, agreements, break-glass support grants and the outbox of their opening and closing notices (one row a notice, one a practice administrator, each with its message's delivery), sign-in devices and sessions, the persona matr…`
+- changed `area Billing and onboarding`: `…ubscriptions, invoices and webhook events, the one-subscription claim, nightly usage counts and the billing standing view; the public audit request, with its attribution and decline reason, user invitations, and terms of use with their acceptances; and t…` → `…ubscriptions, invoices and webhook events, the outbox of each invoice's dunning notices (one row a stage and billing owner, with its message's delivery), the one-subscription claim, nightly usage counts and the billing standing view; the public audit request, with its attribution and decline reason, user invitations (with the delivery…`
+- changed `area Operations`: `… tickets and the receipts of the support inbox, SOC 2 evidence records, and the migration ledger…` → `… tickets and the receipts of the support inbox, the mail streams and each message's delivery by SES's message ID (no address), the screening's refusal list (a keyed hash of an address that bounced or was reported, kept 12 months only to refuse it) and its bounce marks (keyed subjects, 7 days), SOC 2 evidence records, and the migration…`
+- added `dunning_notice_recipient area`: `Billing and onboarding`
+- added `mail_recipient_key area`: `Operations`
+- added `mail_send area`: `Operations`
+- added `mail_stream area`: `Operations`
+- added `screening_bounce_mark area`: `Operations`
+- added `screening_mail_refusal area`: `Operations`
+- added `support_grant_notice area`: `Tenancy and access`
+- added `support_grant_notice_recipient area`: `Tenancy and access`
+- added `table support_grant_notice`
+- added `support_grant_notice Data dictionary entry`: `not in the Data dictionary`
+- added `support_grant_notice created by`: `20261107090000_mail_streams (ADR 0065)`
+- added `table support_grant_notice_recipient`
+- added `support_grant_notice_recipient Data dictionary entry`: `not in the Data dictionary`
+- added `support_grant_notice_recipient created by`: `20261107090000_mail_streams (ADR 0065)`
+- added `table dunning_notice_recipient`
+- added `dunning_notice_recipient Data dictionary entry`: `not in the Data dictionary`
+- added `dunning_notice_recipient created by`: `20261107090000_mail_streams (ADR 0065)`
+- changed `invitation created by`: `20261030090000_customer_sign_in_and_readiness (ADR 0043, ADR 0053)` → `20261030090000_customer_sign_in_and_readiness (ADR 0043, ADR 0053); its DDL, policies or trigger functions changed by 20261107090000_mail_streams`
+- changed `screening_upload created by`: `20261104090000_free_screening (ADR 0062); its DDL, policies or trigger functions changed by 20261105090000_pricing_location_and_zip_plus_four` → `20261104090000_free_screening (ADR 0062); its DDL, policies or trigger functions changed by 20261105090000_pricing_location_and_zip_plus_four, 20261107090000_mail_streams`
+- changed `screening_run created by`: `20261104090000_free_screening (ADR 0062); its DDL, policies or trigger functions changed by 20261106090000_screening_consumer` → `20261104090000_free_screening (ADR 0062); its DDL, policies or trigger functions changed by 20261106090000_screening_consumer, 20261107090000_mail_streams`
+- changed `audit_event created by`: `20261015140500_audit_and_operations (ADR 0013, ADR 0014); its DDL, policies or trigger functions changed by 20261015180000_tenancy_hardening, 20261103090000_deadline_verification_and_export_attestation` → `20261015140500_audit_and_operations (ADR 0013, ADR 0014); its DDL, policies or trigger functions changed by 20261015180000_tenancy_hardening, 20261103090000_deadline_verification_and_export_attestation, 20261107090000_mail_streams`
+- changed `notification created by`: `20261020090000_monitoring_digests_notifications (ADR 0039); its DDL, policies or trigger functions changed by 20261023120000_recovery_ledger, 20261027090000_packet_and_ledger_review` → `20261020090000_monitoring_digests_notifications (ADR 0039); its DDL, policies or trigger functions changed by 20261023120000_recovery_ledger, 20261027090000_packet_and_ledger_review, 20261107090000_mail_streams`
+- added `table mail_stream`
+- added `mail_stream Data dictionary entry`: `not in the Data dictionary`
+- added `mail_stream created by`: `20261107090000_mail_streams (ADR 0065)`
+- added `table mail_send`
+- added `mail_send Data dictionary entry`: `not in the Data dictionary`
+- added `mail_send created by`: `20261107090000_mail_streams (ADR 0065)`
+- added `table mail_recipient_key`
+- added `mail_recipient_key Data dictionary entry`: `not in the Data dictionary`
+- added `mail_recipient_key created by`: `20261107090000_mail_streams (ADR 0065)`
+- added `table screening_mail_refusal`
+- added `screening_mail_refusal Data dictionary entry`: `not in the Data dictionary`
+- added `screening_mail_refusal created by`: `20261107090000_mail_streams (ADR 0065)`
+- added `table screening_bounce_mark`
+- added `screening_bounce_mark Data dictionary entry`: `not in the Data dictionary`
+- added `screening_bounce_mark created by`: `20261107090000_mail_streams (ADR 0065)`
+
+**Columns** (78)
+
+- added `support_grant_notice.id`: `uuid; NOT NULL; default gen_random_uuid(); since 20261107090000`
+- added `support_grant_notice.support_grant_id`: `uuid; NOT NULL; references support_grant(id); since 20261107090000`
+- added `support_grant_notice.practice_id`: `uuid; NOT NULL; references practice(id); since 20261107090000`
+- added `support_grant_notice.notice`: `text; NOT NULL; since 20261107090000; one of support_grant_opened, support_grant_closed`
+- added `support_grant_notice.recipients`: `smallint; NOT NULL; since 20261107090000`
+- added `support_grant_notice.created_at`: `timestamp with time zone; NOT NULL; default now(); since 20261107090000`
+- added `support_grant_notice.undelivered_reported_at`: `timestamp with time zone; null; since 20261107090000`
+- added `support_grant_notice.updated_at`: `timestamp with time zone; NOT NULL; default now(); since 20261107090000`
+- added `support_grant_notice_recipient.id`: `uuid; NOT NULL; default gen_random_uuid(); since 20261107090000`
+- added `support_grant_notice_recipient.notice_id`: `uuid; NOT NULL; since 20261107090000`
+- added `support_grant_notice_recipient.practice_id`: `uuid; NOT NULL; since 20261107090000`
+- added `support_grant_notice_recipient.user_id`: `uuid; NOT NULL; references user(id); since 20261107090000`
+- added `support_grant_notice_recipient.ses_message_id`: `text; null; since 20261107090000`
+- added `support_grant_notice_recipient.state`: `text; NOT NULL; default 'pending'::text; since 20261107090000; one of pending, sent, delayed, delivered, complained, bounced, suppressed, rejected, failed`
+- added `support_grant_notice_recipient.attempts`: `smallint; NOT NULL; default 0; since 20261107090000`
+- added `support_grant_notice_recipient.next_attempt_at`: `timestamp with time zone; NOT NULL; default now(); since 20261107090000`
+- added `support_grant_notice_recipient.failure_code`: `text; null; since 20261107090000`
+- added `support_grant_notice_recipient.sent_at`: `timestamp with time zone; null; since 20261107090000`
+- added `support_grant_notice_recipient.updated_at`: `timestamp with time zone; NOT NULL; default now(); since 20261107090000`
+- added `dunning_notice_recipient.invoice_id`: `uuid; NOT NULL; references invoice(id); since 20261107090000`
+- added `dunning_notice_recipient.stage`: `text; NOT NULL; since 20261107090000; one of payment_failed, second_notice, third_notice, final_notice, suspended, reinstated`
+- added `dunning_notice_recipient.organization_id`: `uuid; NOT NULL; references organization(id); since 20261107090000`
+- added `dunning_notice_recipient.user_id`: `uuid; NOT NULL; references user(id); since 20261107090000`
+- added `dunning_notice_recipient.ses_message_id`: `text; null; since 20261107090000`
+- added `dunning_notice_recipient.state`: `text; NOT NULL; default 'pending'::text; since 20261107090000; one of pending, sent, delayed, delivered, complained, bounced, suppressed, rejected, failed`
+- added `dunning_notice_recipient.attempts`: `smallint; NOT NULL; default 0; since 20261107090000`
+- added `dunning_notice_recipient.next_attempt_at`: `timestamp with time zone; NOT NULL; default now(); since 20261107090000`
+- added `dunning_notice_recipient.failure_code`: `text; null; since 20261107090000`
+- added `dunning_notice_recipient.sent_at`: `timestamp with time zone; null; since 20261107090000`
+- added `dunning_notice_recipient.created_at`: `timestamp with time zone; NOT NULL; default now(); since 20261107090000`
+- added `dunning_notice_recipient.updated_at`: `timestamp with time zone; NOT NULL; default now(); since 20261107090000`
+- added `invitation.undelivered_at`: `timestamp with time zone; null; since 20261107090000`
+- added `invitation.undelivered_reason`: `text; null; since 20261107090000; one of bounced, suppressed, rejected, complained`
+- added `screening_run.client_subject`: `text; null; since 20261107090000`
+- changed `notification.kind`: `text; NOT NULL; since 20261020090000; one of monitoring_run, digest, recoupment, follow_up` → `text; NOT NULL; since 20261020090000; one of monitoring_run, digest, recoupment, follow_up, support_notice_undelivered`
+- added `mail_stream.stream`: `text; NOT NULL; since 20261107090000; one of transactional, notices, screening`
+- added `mail_stream.paused_at`: `timestamp with time zone; null; since 20261107090000`
+- added `mail_stream.paused_reason`: `text; null; since 20261107090000; one of bounce_rate, complaint_rate, account_rate, account_review, operator`
+- added `mail_stream.paused_by`: `uuid; null; references user(id); since 20261107090000`
+- added `mail_stream.pause_sends`: `integer; null; since 20261107090000`
+- added `mail_stream.pause_bounces`: `integer; null; since 20261107090000`
+- added `mail_stream.pause_complaints`: `integer; null; since 20261107090000`
+- added `mail_stream.window_starts_at`: `timestamp with time zone; NOT NULL; default now(); since 20261107090000`
+- added `mail_stream.resumed_at`: `timestamp with time zone; null; since 20261107090000`
+- added `mail_stream.ses_enabled_confirmed_at`: `timestamp with time zone; null; since 20261107090000`
+- added `mail_stream.probe_sent_at`: `timestamp with time zone; null; since 20261107090000`
+- added `mail_stream.first_probe_sent_at`: `timestamp with time zone; null; since 20261107090000`
+- added `mail_stream.probe_delivered_at`: `timestamp with time zone; null; since 20261107090000`
+- added `mail_stream.probe_bounced_at`: `timestamp with time zone; null; since 20261107090000`
+- added `mail_stream.updated_at`: `timestamp with time zone; NOT NULL; default now(); since 20261107090000`
+- added `mail_send.ses_message_id`: `text; NOT NULL; since 20261107090000`
+- added `mail_send.stream`: `text; NOT NULL; references mail_stream(stream); since 20261107090000`
+- added `mail_send.kind`: `text; NOT NULL; since 20261107090000; one of cognito, digest, dunning, support_grant_opened, support_grant_closed, screening_result, screening_failed, screening_reminder, screening_withdrawal, probe`
+- added `mail_send.subject_id`: `uuid; null; since 20261107090000`
+- added `mail_send.recipient_user_id`: `uuid; null; references user(id); since 20261107090000`
+- added `mail_send.screening_prospect_id`: `uuid; null; references screening_prospect(id); since 20261107090000`
+- added `mail_send.state`: `text; NOT NULL; since 20261107090000; one of sent, delayed, delivered, bounced, suppressed, rejected, complained`
+- added `mail_send.bounce_kind`: `text; null; since 20261107090000; one of permanent, transient, undetermined`
+- added `mail_send.bounce_subtype`: `text; null; since 20261107090000; one of general, no_email, suppressed, on_account_suppression_list, on_configuration_set_suppression_list, mailbox_full, message_too_large, content_rejected, attachment_rejected, undetermined, other`
+- added `mail_send.complaint_type`: `text; null; since 20261107090000; one of abuse, auth_failure, fraud, not_spam, virus, other, unspecified`
+- added `mail_send.sent_at`: `timestamp with time zone; NOT NULL; since 20261107090000`
+- added `mail_send.delivered_at`: `timestamp with time zone; null; since 20261107090000`
+- added `mail_send.undelivered_at`: `timestamp with time zone; null; since 20261107090000`
+- added `mail_send.complained_at`: `timestamp with time zone; null; since 20261107090000`
+- added `mail_send.recorded_at`: `timestamp with time zone; NOT NULL; default now(); since 20261107090000`
+- added `mail_send.updated_at`: `timestamp with time zone; NOT NULL; default now(); since 20261107090000`
+- added `mail_send.expires_at`: `timestamp with time zone; NOT NULL; since 20261107090000`
+- added `mail_recipient_key.id`: `boolean; NOT NULL; default true; since 20261107090000`
+- added `mail_recipient_key.pepper`: `text; NOT NULL; since 20261107090000`
+- added `screening_mail_refusal.recipient_sha256`: `text; NOT NULL; since 20261107090000`
+- added `screening_mail_refusal.reason`: `text; NOT NULL; since 20261107090000; one of bounced, complained`
+- added `screening_mail_refusal.recorded_at`: `timestamp with time zone; NOT NULL; default now(); since 20261107090000`
+- added `screening_mail_refusal.expires_at`: `timestamp with time zone; NOT NULL; since 20261107090000`
+- added `screening_bounce_mark.subject`: `text; NOT NULL; since 20261107090000`
+- added `screening_bounce_mark.subject_kind`: `text; NOT NULL; since 20261107090000; one of client, account`
+- added `screening_bounce_mark.ses_message_id`: `text; NOT NULL; references mail_send(ses_message_id); since 20261107090000`
+- added `screening_bounce_mark.bounced_at`: `timestamp with time zone; NOT NULL; since 20261107090000`
+- added `screening_bounce_mark.expires_at`: `timestamp with time zone; NOT NULL; since 20261107090000`
+
+**Constraints and indexes** (88)
+
+- added `support_grant_notice primary key`: `(id)`
+- added `support_grant_notice unique support_grant_notice_once`: `UNIQUE (support_grant_id, notice)`
+- added `support_grant_notice unique support_grant_notice_practice`: `UNIQUE (id, practice_id)`
+- added `support_grant_notice foreign support_grant_notice_practice_id_fkey`: `(practice_id) -> practice(id), on delete no action`
+- added `support_grant_notice foreign support_grant_notice_support_grant_id_fkey`: `(support_grant_id) -> support_grant(id), on delete no action`
+- added `support_grant_notice index support_grant_notice_by_practice`: `USING btree (practice_id, support_grant_id)`
+- added `support_grant_notice check support_grant_notice_kind`: `CHECK (notice = ANY (ARRAY['support_grant_opened'::text, 'support_grant_closed'::text]))`
+- added `support_grant_notice check support_grant_notice_recipients`: `CHECK (recipients >= 0 AND recipients <= 500)`
+- added `support_grant_notice_recipient primary key`: `(id)`
+- added `support_grant_notice_recipient unique support_grant_notice_recipient_once`: `UNIQUE (notice_id, user_id)`
+- added `support_grant_notice_recipient unique support_grant_notice_recipient_ses_message_id_key`: `UNIQUE (ses_message_id)`
+- added `support_grant_notice_recipient foreign support_grant_notice_recipient_notice_id_practice_id_fkey`: `(notice_id, practice_id) -> support_grant_notice(id, practice_id), on delete no action`
+- added `support_grant_notice_recipient foreign support_grant_notice_recipient_user_id_fkey`: `(user_id) -> user(id), on delete no action`
+- added `support_grant_notice_recipient index support_grant_notice_recipient_by_practice`: `USING btree (practice_id, notice_id)`
+- added `support_grant_notice_recipient index support_grant_notice_recipient_pending`: `USING btree (next_attempt_at) WHERE (state = 'pending'::text)`
+- added `support_grant_notice_recipient check support_grant_notice_recipient_attempts`: `CHECK (attempts >= 0 AND attempts <= 5)`
+- added `support_grant_notice_recipient check support_grant_notice_recipient_failed`: `CHECK ((state = 'failed'::text) = (failure_code IS NOT NULL))`
+- added `support_grant_notice_recipient check support_grant_notice_recipient_failure_code`: `CHECK (failure_code ~ '^[A-Za-z]{1,64}$'::text)`
+- added `support_grant_notice_recipient check support_grant_notice_recipient_message_id`: `CHECK (ses_message_id ~ '^[A-Za-z0-9-]{20,100}$'::text)`
+- added `support_grant_notice_recipient check support_grant_notice_recipient_sent`: `CHECK ((ses_message_id IS NULL) = (state = ANY (ARRAY['pending'::text, 'failed'::text])) AND (ses_message_id IS NULL) = (sent_at IS NULL))`
+- added `support_grant_notice_recipient check support_grant_notice_recipient_state`: `CHECK (state = ANY (ARRAY['pending'::text, 'sent'::text, 'delayed'::text, 'delivered'::text, 'complained'::text, 'bounced'::text, 'suppressed'::text, 'rejected'::text, 'failed'::text]))`
+- added `dunning_notice_recipient primary key`: `(invoice_id, stage, user_id)`
+- added `dunning_notice_recipient unique dunning_notice_recipient_ses_message_id_key`: `UNIQUE (ses_message_id)`
+- added `dunning_notice_recipient foreign dunning_notice_recipient_invoice_id_fkey`: `(invoice_id) -> invoice(id), on delete no action`
+- added `dunning_notice_recipient foreign dunning_notice_recipient_organization_id_fkey`: `(organization_id) -> organization(id), on delete no action`
+- added `dunning_notice_recipient foreign dunning_notice_recipient_user_id_fkey`: `(user_id) -> user(id), on delete no action`
+- added `dunning_notice_recipient index dunning_notice_recipient_by_organization`: `USING btree (organization_id, invoice_id)`
+- added `dunning_notice_recipient index dunning_notice_recipient_pending`: `USING btree (next_attempt_at) WHERE (state = 'pending'::text)`
+- added `dunning_notice_recipient check dunning_notice_recipient_attempts`: `CHECK (attempts >= 0 AND attempts <= 5)`
+- added `dunning_notice_recipient check dunning_notice_recipient_failed`: `CHECK ((state = 'failed'::text) = (failure_code IS NOT NULL))`
+- added `dunning_notice_recipient check dunning_notice_recipient_failure_code`: `CHECK (failure_code ~ '^[A-Za-z]{1,64}$'::text)`
+- added `dunning_notice_recipient check dunning_notice_recipient_message_id`: `CHECK (ses_message_id ~ '^[A-Za-z0-9-]{20,100}$'::text)`
+- added `dunning_notice_recipient check dunning_notice_recipient_sent`: `CHECK ((ses_message_id IS NULL) = (state = ANY (ARRAY['pending'::text, 'failed'::text])) AND (ses_message_id IS NULL) = (sent_at IS NULL))`
+- added `dunning_notice_recipient check dunning_notice_recipient_stage`: `CHECK (stage = ANY (ARRAY['payment_failed'::text, 'second_notice'::text, 'third_notice'::text, 'final_notice'::text, 'suspended'::text, 'reinstated'::text]))`
+- added `dunning_notice_recipient check dunning_notice_recipient_state`: `CHECK (state = ANY (ARRAY['pending'::text, 'sent'::text, 'delayed'::text, 'delivered'::text, 'complained'::text, 'bounced'::text, 'suppressed'::text, 'rejected'::text, 'failed'::text]))`
+- added `invitation check invitation_undelivered`: `CHECK ((undelivered_at IS NULL) = (undelivered_reason IS NULL))`
+- added `invitation check invitation_undelivered_reason`: `CHECK (undelivered_reason = ANY (ARRAY['bounced'::text, 'suppressed'::text, 'rejected'::text, 'complained'::text]))`
+- added `screening_run check screening_run_client_subject`: `CHECK (client_subject ~ '^[0-9a-f]{64}$'::text)`
+- changed `notification check notification_kind_check`: `CHECK (kind = ANY (ARRAY['monitoring_run'::text, 'digest'::text, 'recoupment'::text, 'follow_up'::text]))` → `CHECK (kind = ANY (ARRAY['monitoring_run'::text, 'digest'::text, 'recoupment'::text, 'follow_up'::text, 'support_notice_undelivered'::text]))`
+- added `mail_stream primary key`: `(stream)`
+- added `mail_stream foreign mail_stream_paused_by_fkey`: `(paused_by) -> user(id), on delete no action`
+- added `mail_stream check mail_stream_name`: `CHECK (stream = ANY (ARRAY['transactional'::text, 'notices'::text, 'screening'::text]))`
+- added `mail_stream check mail_stream_only_screening_pauses`: `CHECK (stream = 'screening'::text OR paused_at IS NULL)`
+- added `mail_stream check mail_stream_pause_bounces`: `CHECK (pause_bounces >= 0)`
+- added `mail_stream check mail_stream_pause_by`: `CHECK ((paused_by IS NOT NULL) = (NOT paused_reason IS DISTINCT FROM 'operator'::text))`
+- added `mail_stream check mail_stream_pause_complaints`: `CHECK (pause_complaints >= 0)`
+- added `mail_stream check mail_stream_pause_counts`: `CHECK ((paused_at IS NULL) = (pause_sends IS NULL) AND (pause_sends IS NULL) = (pause_bounces IS NULL) AND (pause_sends IS NULL) = (pause_complaints IS NULL))`
+- added `mail_stream check mail_stream_pause_reason`: `CHECK ((paused_at IS NULL) = (paused_reason IS NULL))`
+- added `mail_stream check mail_stream_pause_sends`: `CHECK (pause_sends >= 0)`
+- added `mail_stream check mail_stream_paused_reason`: `CHECK (paused_reason = ANY (ARRAY['bounce_rate'::text, 'complaint_rate'::text, 'account_rate'::text, 'account_review'::text, 'operator'::text]))`
+- added `mail_stream check mail_stream_paused_unconfirmed`: `CHECK (paused_at IS NULL OR ses_enabled_confirmed_at IS NULL)`
+- added `mail_send primary key`: `(ses_message_id)`
+- added `mail_send foreign mail_send_recipient_user_id_fkey`: `(recipient_user_id) -> user(id), on delete no action`
+- added `mail_send foreign mail_send_screening_prospect_id_fkey`: `(screening_prospect_id) -> screening_prospect(id), on delete set null`
+- added `mail_send foreign mail_send_stream_fkey`: `(stream) -> mail_stream(stream), on delete no action`
+- added `mail_send index mail_send_by_expiry`: `USING btree (expires_at)`
+- added `mail_send index mail_send_by_prospect`: `USING btree (screening_prospect_id) WHERE (screening_prospect_id IS NOT NULL)`
+- added `mail_send index mail_send_by_stream`: `USING btree (stream, sent_at)`
+- added `mail_send index mail_send_by_subject`: `USING btree (kind, subject_id) WHERE (subject_id IS NOT NULL)`
+- added `mail_send index mail_send_undelivered`: `USING btree (stream, undelivered_at) WHERE (undelivered_at IS NOT NULL)`
+- added `mail_send check mail_send_bounce`: `CHECK ((state = ANY (ARRAY['bounced'::text, 'suppressed'::text])) = (bounce_kind IS NOT NULL) AND (bounce_kind IS NULL) = (bounce_subtype IS NULL))`
+- added `mail_send check mail_send_bounce_kind`: `CHECK (bounce_kind = ANY (ARRAY['permanent'::text, 'transient'::text, 'undetermined'::text]))`
+- added `mail_send check mail_send_bounce_subtype`: `CHECK (bounce_subtype = ANY (ARRAY['general'::text, 'no_email'::text, 'suppressed'::text, 'on_account_suppression_list'::text, 'on_configuration_set_suppression_list'::text, 'mailbox_full'::text, 'message_too_large'::text, 'content_rejected… (76 more characters)`
+- added `mail_send check mail_send_complaint`: `CHECK ((state = 'complained'::text) = (complaint_type IS NOT NULL))`
+- added `mail_send check mail_send_complaint_type`: `CHECK (complaint_type = ANY (ARRAY['abuse'::text, 'auth_failure'::text, 'fraud'::text, 'not_spam'::text, 'virus'::text, 'other'::text, 'unspecified'::text]))`
+- added `mail_send check mail_send_expiry_window`: `CHECK (expires_at > sent_at AND expires_at <= (sent_at + '91 days'::interval))`
+- added `mail_send check mail_send_kind`: `CHECK (kind = ANY (ARRAY['cognito'::text, 'digest'::text, 'dunning'::text, 'support_grant_opened'::text, 'support_grant_closed'::text, 'screening_result'::text, 'screening_failed'::text, 'screening_reminder'::text, 'screening_withdrawal'::t… (21 more characters)`
+- added `mail_send check mail_send_message_id`: `CHECK (ses_message_id ~ '^[A-Za-z0-9-]{20,100}$'::text)`
+- added `mail_send check mail_send_prospect_on_screening`: `CHECK (stream = 'screening'::text OR screening_prospect_id IS NULL)`
+- added `mail_send check mail_send_screening_names_no_user`: `CHECK (stream <> 'screening'::text OR recipient_user_id IS NULL)`
+- added `mail_send check mail_send_state`: `CHECK (state = ANY (ARRAY['sent'::text, 'delayed'::text, 'delivered'::text, 'bounced'::text, 'suppressed'::text, 'rejected'::text, 'complained'::text]))`
+- added `mail_send check mail_send_stream_kind`: `CHECK (stream = 'transactional'::text AND (kind = ANY (ARRAY['cognito'::text, 'digest'::text, 'probe'::text])) OR stream = 'notices'::text AND (kind = ANY (ARRAY['support_grant_opened'::text, 'support_grant_closed'::text, 'dunning'::text, '… (196 more characters)`
+- added `mail_send check mail_send_subject`: `CHECK ((kind = ANY (ARRAY['cognito'::text, 'probe'::text])) = (subject_id IS NULL))`
+- added `mail_recipient_key primary key`: `(id)`
+- added `mail_recipient_key check mail_recipient_key_one`: `CHECK (id)`
+- added `mail_recipient_key check mail_recipient_key_pepper`: `CHECK (pepper ~ '^[0-9a-f]{64}$'::text)`
+- added `screening_mail_refusal primary key`: `(recipient_sha256)`
+- added `screening_mail_refusal index screening_mail_refusal_by_expiry`: `USING btree (expires_at)`
+- added `screening_mail_refusal check screening_mail_refusal_expiry`: `CHECK (expires_at > recorded_at AND expires_at <= (recorded_at + '366 days'::interval))`
+- added `screening_mail_refusal check screening_mail_refusal_reason`: `CHECK (reason = ANY (ARRAY['bounced'::text, 'complained'::text]))`
+- added `screening_mail_refusal check screening_mail_refusal_recipient`: `CHECK (recipient_sha256 ~ '^[0-9a-f]{64}$'::text)`
+- added `screening_bounce_mark primary key`: `(subject_kind, subject, ses_message_id)`
+- added `screening_bounce_mark foreign screening_bounce_mark_ses_message_id_fkey`: `(ses_message_id) -> mail_send(ses_message_id), on delete cascade`
+- added `screening_bounce_mark index screening_bounce_mark_by_expiry`: `USING btree (expires_at)`
+- added `screening_bounce_mark index screening_bounce_mark_by_message`: `USING btree (ses_message_id)`
+- added `screening_bounce_mark check screening_bounce_mark_expiry`: `CHECK (expires_at = (bounced_at + '7 days'::interval))`
+- added `screening_bounce_mark check screening_bounce_mark_subject`: `CHECK (subject ~ '^[0-9a-f]{64}$'::text)`
+- added `screening_bounce_mark check screening_bounce_mark_subject_kind`: `CHECK (subject_kind = ANY (ARRAY['client'::text, 'account'::text]))`
+
+**Functions** (49)
+
+- changed `functions, triggers and rewrite rules (totals)`: `Functions in public: 338 (148 SECURITY DEFINER); triggers: 261, none disabled or replica-only; rewrite rules on tables: none` → `Functions in public: 376 (169 SECURITY DEFINER); triggers: 273, none disabled or replica-only; rewrite rules on tables: none`
+- added `billing_dunning_notice_claim(uuid,text,uuid)`: `returns TABLE(email text); plpgsql; SECURITY DEFINER; volatile; config search_path=pg_catalog, public, pg_temp; body 62e38d39b0766391`
+- added `billing_dunning_notice_failed(uuid,text,uuid,text,boolean,text)`: `returns boolean; plpgsql; SECURITY DEFINER; volatile; config search_path=pg_catalog, public, pg_temp; body 9a19a46006e25479`
+- added `billing_dunning_notice_sent(uuid,text,uuid,text,text)`: `returns boolean; plpgsql; SECURITY DEFINER; volatile; config search_path=pg_catalog, public, pg_temp; body 5c7d1fcbfd4f6e0a`
+- added `billing_dunning_notices_pending(integer)`: `returns TABLE(invoice_id uuid, stage text, organization_id uuid, user_id uuid); sql; SECURITY DEFINER; stable; config search_path=pg_catalog, public, pg_temp; body 36abc45aa224268c`
+- added `billing_open_dunning_notice(uuid,text,text)`: `returns TABLE(recipients integer, opened boolean); plpgsql; SECURITY DEFINER; volatile; config search_path=pg_catalog, public, pg_temp; body e5adee9b6a517801`
+- added `console_mail_streams()`: `returns TABLE(stream text, paused_at timestamp with time zone, paused_reason text, paused_by uuid, pause_sends integer, pause_bounces integer, pause_complaints integer, window_starts_at timestamp with time zone, window_sends integer, window… (431 more characters)`
+- added `console_mail_undelivered(timestamp with time zone)`: `returns TABLE(stream text, kind text, state text, recipient_user_id uuid, practice_id uuid, subject_id uuid, undelivered_at timestamp with time zone, messages integer); plpgsql; SECURITY DEFINER; stable; config search_path=pg_catalog, publi… (33 more characters)`
+- added `console_pause_mail_stream(text,text)`: `returns boolean; plpgsql; SECURITY DEFINER; volatile; config search_path=pg_catalog, public, pg_temp; body 23619fe754a7ceb1`
+- added `console_resume_mail_stream(text,text)`: `returns boolean; plpgsql; SECURITY DEFINER; volatile; config search_path=pg_catalog, public, pg_temp; body f2458e37f39a9b9d`
+- changed `console_support_grants()`: `…tified_at timestamp with time zone, reads bigint); sql; SECURITY DEFINER; stable; config search_path=pg_catalog, public, pg_temp; body b335e4849f0c246b` → `…tified_at timestamp with time zone, reads bigint, opened_recipients integer, opened_delivered integer, opened_undelivered integer, opened_pending integer, opened_sent_at timestamp with time zone, closed_recipients integer, closed_delivered integer, closed_undelivered integer, closed_pending integer, closed_sent_at timestamp with time …`
+- added `dunning_notice_report_undelivered(uuid,text,text)`: `returns boolean; plpgsql; security invoker; volatile; config search_path=pg_catalog, public, pg_temp; body 838433efa7b733e6`
+- added `mail_recipient_canonical(text,boolean)`: `returns text; plpgsql; security invoker; immutable; config search_path=pg_catalog, public, pg_temp; body 72aaa3efc513682c`
+- added `mail_recipient_sha256(text,boolean)`: `returns text; sql; security invoker; stable; config search_path=pg_catalog, public, pg_temp; body f0116bf504ae08aa`
+- added `mail_send_expiry()`: `returns trigger; plpgsql; security invoker; volatile; config search_path=pg_catalog, public, pg_temp; body 3cd6d13742c65cc1`
+- added `mail_state_rank(text)`: `returns integer; sql; security invoker; immutable; config search_path=pg_catalog, public, pg_temp; body 72f7fbe980da4163`
+- added `mail_stream_cutoff(text)`: `returns text; plpgsql; security invoker; volatile; config search_path=pg_catalog, public, pg_temp; body fe3e57d4187593b9`
+- added `mail_stream_pause(text,uuid,text)`: `returns boolean; plpgsql; security invoker; volatile; config search_path=pg_catalog, public, pg_temp; body 0e5bcfa22d6f3411`
+- added `mail_window_counts(text)`: `returns TABLE(starts_at timestamp with time zone, sends integer, bounces integer, complaints integer); sql; security invoker; stable; config search_path=pg_catalog, public, pg_temp; body 1207dd7886f86d3c`
+- changed `operator_due_support_notices(integer)`: `returns TABLE(support_grant_id uuid, practice_id uuid, notice text); sql; SECURITY DEFINER; stable; config search_path=pg_catalog, public, pg_temp; body 26a8da73c49fe312` → `returns TABLE(support_grant_id uuid, practice_id uuid, notice text); sql; SECURITY DEFINER; stable; config search_path=pg_catalog, public, pg_temp; body 80da21d02daeadaa`
+- added `operator_mail_account_signal(text,text)`: `returns boolean; plpgsql; SECURITY DEFINER; volatile; config search_path=pg_catalog, public, pg_temp; body 2684abb0a6c123b1`
+- added `operator_mail_cutoff(text)`: `returns text; sql; SECURITY DEFINER; volatile; config search_path=pg_catalog, public, pg_temp; body aec6c3e8b9262b47`
+- added `operator_mail_expire(integer)`: `returns integer; plpgsql; SECURITY DEFINER; volatile; config search_path=pg_catalog, public, pg_temp; body faa298581d4c5479`
+- added `operator_mail_probe_sent(text)`: `returns void; plpgsql; SECURITY DEFINER; volatile; config search_path=pg_catalog, public, pg_temp; body 1d712c911dfd58cf`
+- added `operator_mail_stream_confirmed(text,boolean)`: `returns boolean; plpgsql; SECURITY DEFINER; volatile; config search_path=pg_catalog, public, pg_temp; body 58a4b66cc84c84e4`
+- added `operator_mail_streams()`: `returns TABLE(stream text, paused boolean, confirmed boolean, probe_due boolean, probe_missed boolean); sql; SECURITY DEFINER; stable; config search_path=pg_catalog, public, pg_temp; body 2fcf2f8b70481744`
+- added `operator_open_support_notice(uuid,text,text)`: `returns TABLE(notice_id uuid, recipients integer, opened boolean); plpgsql; SECURITY DEFINER; volatile; config search_path=pg_catalog, public, pg_temp; body dbbd884fcd0805f7`
+- added `operator_record_mail_event(text,text,text,timestamp with time zone,timestamp with time zone,text,text,uuid,uuid,uuid,text,text,text,text)`: `returns TABLE(recorded boolean, state text, notice_undelivered uuid, invoice_undelivered uuid, invitation_undelivered uuid, stream_paused text); plpgsql; SECURITY DEFINER; volatile; config search_path=pg_catalog, public, pg_temp; body 3c175… (11 more characters)`
+- added `operator_support_notice_claim(uuid,uuid)`: `returns TABLE(email text, reads bigint); plpgsql; SECURITY DEFINER; volatile; config search_path=pg_catalog, public, pg_temp; body 051d1e85151cd3f6`
+- added `operator_support_notice_failed(uuid,uuid,text,boolean,text)`: `returns boolean; plpgsql; SECURITY DEFINER; volatile; config search_path=pg_catalog, public, pg_temp; body a4d9a671b6fcc581`
+- added `operator_support_notice_sent(uuid,uuid,text,text)`: `returns boolean; plpgsql; SECURITY DEFINER; volatile; config search_path=pg_catalog, public, pg_temp; body 1478080f10eb672a`
+- added `operator_support_notices_pending(integer)`: `returns TABLE(notice_id uuid, practice_id uuid, user_id uuid, support_grant_id uuid, notice text); sql; SECURITY DEFINER; stable; config search_path=pg_catalog, public, pg_temp; body 0c7b06513ec36f98`
+- added `screening_bounce_budget_spent(text,text)`: `returns boolean; sql; security invoker; stable; config search_path=pg_catalog, public, pg_temp; body 3de7fd3276da7f3f`
+- added `screening_contact_refused(text)`: `returns boolean; sql; security invoker; stable; config search_path=pg_catalog, public, pg_temp; body 656ff76ac5546175`
+- added `screening_mail_gate()`: `returns TABLE(sending boolean, resumed_at timestamp with time zone); sql; SECURITY DEFINER; stable; config search_path=pg_catalog, public, pg_temp; body f13944487e4f314a`
+- added `screening_mail_sending()`: `returns boolean; sql; security invoker; stable; config search_path=pg_catalog, public, pg_temp; body c64cb3f0f00a6d91`
+- added `screening_mail_status()`: `returns TABLE(paused boolean, ready boolean); sql; SECURITY DEFINER; stable; config search_path=pg_catalog, public, pg_temp; body ac5037be1bd34766`
+- added `screening_run_mail_gate()`: `returns trigger; plpgsql; security invoker; volatile; config search_path=pg_catalog, public, pg_temp; body d65ca371246a478f`
+- added `screening_run_mail_refusal()`: `returns trigger; plpgsql; security invoker; volatile; config search_path=pg_catalog, public, pg_temp; body 975f94b6061dd3a9`
+- added `screening_submit_mail_refusal(text,text)`: `returns text; sql; SECURITY DEFINER; stable; config search_path=pg_catalog, public, pg_temp; body 68638b412b4b2db0`
+- added `screening_upload_mail_gate()`: `returns trigger; plpgsql; security invoker; volatile; config search_path=pg_catalog, public, pg_temp; body 4bfa2e936ef0a8bb`
+- added `submit_screening(text,text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],integer,integer,bigint,integer,bigint,bigint,text,text,text,text,text,text,text,text,timestamp with time zone,text,text,text)`: `returns uuid; plpgsql; SECURITY DEFINER; volatile; config search_path=pg_catalog, public, pg_temp; body 2cfb8601ff15390c`
+- added `support_notice_administrators(uuid)`: `returns TABLE(user_id uuid); sql; security invoker; stable; config search_path=pg_catalog, public, pg_temp; body 332bb830b68cf65a`
+- added `support_notice_counts(uuid,text)`: `returns TABLE(recipients integer, delivered integer, undelivered integer, pending integer, sent_at timestamp with time zone); sql; security invoker; stable; config search_path=pg_catalog, public, pg_temp; body c59146a9b2523fa3`
+- added `support_notice_report_undelivered(uuid,text)`: `returns boolean; plpgsql; security invoker; volatile; config search_path=pg_catalog, public, pg_temp; body 0aaaf020f6dfac6b`
+- removed `billing_owner_emails(uuid)`: `returns TABLE(email text); sql; SECURITY DEFINER; stable; config search_path=pg_catalog, public, pg_temp; body 98dafc8c17d7f83b`
+- removed `operator_practice_administrator_emails(uuid)`: `returns TABLE(email text); plpgsql; SECURITY DEFINER; stable; config search_path=pg_catalog, public, pg_temp; body e66800658c20c850`
+- removed `operator_record_support_notice(uuid,text,text)`: `returns TABLE(recorded boolean, reads bigint); plpgsql; SECURITY DEFINER; volatile; config search_path=pg_catalog, public, pg_temp; body cd723eaf7325fa60`
+- removed `submit_screening(text,text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],integer,integer,bigint,integer,bigint,bigint,text,text,text,text,text,text,text,text,timestamp with time zone,text,text)`: `returns uuid; plpgsql; SECURITY DEFINER; volatile; config search_path=pg_catalog, public, pg_temp; body 8ea4e5450dbe8708`
+
+**Triggers** (12)
+
+- added `support_grant_notice triggers that maintain updated_at`: `support_grant_notice_updated_at`
+- added `support_grant_notice_recipient triggers that maintain updated_at`: `support_grant_notice_recipient_updated_at`
+- added `dunning_notice_recipient triggers that maintain updated_at`: `dunning_notice_recipient_updated_at`
+- added `screening_upload trigger screening_upload_mail_gate`: `BEFORE INSERT ON screening_upload FOR EACH ROW WHEN (new.status = 'accepted'::text) EXECUTE FUNCTION screening_upload_mail_gate(); "new screenings are paused while their result emails cannot be sent"`
+- added `screening_run trigger screening_run_client_subject_fixed`: `BEFORE UPDATE OF client_subject ON screening_run FOR EACH ROW WHEN (new.client_subject IS DISTINCT FROM old.client_subject) EXECUTE FUNCTION reject_change(); "% is append-only: % is refused"`
+- added `screening_run trigger screening_run_mail_gate`: `BEFORE UPDATE OF status ON screening_run FOR EACH ROW EXECUTE FUNCTION screening_run_mail_gate(); "the screening's mail is not sending: the run waits"`
+- added `screening_run trigger screening_run_mail_refusal`: `BEFORE INSERT ON screening_run FOR EACH ROW EXECUTE FUNCTION screening_run_mail_refusal(); "too many recent screening emails from this sender could not be delivered"; "a screening's result cannot be emailed to its contact address"`
+- added `mail_stream triggers that maintain updated_at`: `mail_stream_updated_at`
+- added `mail_send trigger mail_send_expiry`: `BEFORE INSERT OR UPDATE OF stream, sent_at, expires_at ON mail_send FOR EACH ROW EXECUTE FUNCTION mail_send_expiry()`
+- added `mail_send triggers that maintain updated_at`: `mail_send_updated_at`
+- added `mail_recipient_key trigger mail_recipient_key_fixed`: `BEFORE DELETE OR UPDATE ON mail_recipient_key FOR EACH ROW EXECUTE FUNCTION reject_change(); "% is append-only: % is refused"`
+- added `mail_recipient_key trigger mail_recipient_key_no_truncate`: `BEFORE TRUNCATE ON mail_recipient_key FOR EACH STATEMENT EXECUTE FUNCTION reject_change(); "% is append-only: % is refused"`
+
+**Divergence rows** (9)
+
+- changed `divergences (totals)`: `Divergences from the Data dictionary: 23 to approve, 42 tables and 148 columns not in it (informational); see Divergences from the Data dictionary` → `Divergences from the Data dictionary: 23 to approve, 50 tables and 148 columns not in it (informational); see Divergences from the Data dictionary`
+- added `D9 dunning_notice_recipient (table not in the Data dictionary)`: `area Billing and onboarding; organization- or user-scoped (RLS, no practice_id); created by 20261107090000_mail_streams; explained by ADR 0065`
+- added `D13 mail_recipient_key (table not in the Data dictionary)`: `area Operations; organization- or user-scoped (RLS, no practice_id); created by 20261107090000_mail_streams; explained by ADR 0065`
+- added `D14 mail_send (table not in the Data dictionary)`: `area Operations; organization- or user-scoped (RLS, no practice_id); created by 20261107090000_mail_streams; explained by ADR 0065`
+- added `D15 mail_stream (table not in the Data dictionary)`: `area Operations; organization- or user-scoped (RLS, no practice_id); created by 20261107090000_mail_streams; explained by ADR 0065`
+- added `D29 screening_bounce_mark (table not in the Data dictionary)`: `area Operations; organization- or user-scoped (RLS, no practice_id); created by 20261107090000_mail_streams; explained by ADR 0065`
+- added `D32 screening_mail_refusal (table not in the Data dictionary)`: `area Operations; organization- or user-scoped (RLS, no practice_id); created by 20261107090000_mail_streams; explained by ADR 0065`
+- added `D43 support_grant_notice (table not in the Data dictionary)`: `area Tenancy and access; PHI (registered); created by 20261107090000_mail_streams; explained by ADR 0065`
+- added `D44 support_grant_notice_recipient (table not in the Data dictionary)`: `area Tenancy and access; PHI (registered); created by 20261107090000_mail_streams; explained by ADR 0065`
+
+**Migrations** (2)
+
+- changed `migrations applied (totals)`: `Migrations applied: 44; head 20261106090000_screening_consumer.sql` → `Migrations applied: 45; head 20261107090000_mail_streams.sql`
+- added `20261107090000_mail_streams.sql`: `ADRs ADR 0065; SHA-256 74443789…`
+
+**Cross-checks** (1)
+
+- changed `Cross-checks`: `Drizzle tables: 89; migrated tables (excluding schema_migrations): 89` → `Drizzle tables: 97; migrated tables (excluding schema_migrations): 97`
+
+**Other lines** (1)
+
+- changed `Approval`: `…t describes the schema at migration head 20261106090000_screening_consumer.sql (44 migrations). Approving it approves the schema a…` → `…t describes the schema at migration head 20261107090000_mail_streams.sql (45 migrations). Approving it approves the schema a…`
+
+## Function definitions changed since origin/claude/build-platform
+
+- These are the files in `packages/db/functions` in the working tree, not regenerated by this run: `pnpm db:domain-model --check` on a freshly migrated database (a required step of the domain model job) proves they equal the functions of the migrated catalog.
+- Compared: `packages/db/functions` at `origin/claude/build-platform` (commit `a6e754fcebc7`) with the files in `packages/db/functions` in the working tree.
+- 51 files changed (41 added, 3 removed), 32 of them first (SECURITY DEFINER, tenant scope, privileges or PUBLIC), then by name; each with the lines it adds and removes:
+
+- `packages/db/functions/app_actor_group_practice_ids.sql` +2/-0 (SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/app_actor_is_platform_admin.sql` +2/-0 (SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/billing_dunning_notice_claim.sql` +27/-0 (added; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/billing_dunning_notice_failed.sql` +35/-0 (added; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/billing_dunning_notice_sent.sql` +36/-0 (added; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/billing_dunning_notices_pending.sql` +21/-0 (added; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/billing_open_dunning_notice.sql` +52/-0 (added; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/billing_owner_emails.sql` +0/-21 (removed; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/console_mail_streams.sql` +37/-0 (added; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/console_mail_undelivered.sql` +36/-0 (added; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/console_pause_mail_stream.sql` +30/-0 (added; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/console_resume_mail_stream.sql` +36/-0 (added; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/console_support_grants.sql` +7/-3 (SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/operator_due_support_notices.sql` +3/-2 (SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/operator_mail_account_signal.sql` +25/-0 (added; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/operator_mail_cutoff.sql` +18/-0 (added; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/operator_mail_expire.sql` +38/-0 (added; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/operator_mail_probe_sent.sql` +24/-0 (added; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/operator_mail_stream_confirmed.sql` +32/-0 (added; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/operator_mail_streams.sql` +31/-0 (added; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/operator_open_support_notice.sql` +74/-0 (added; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/operator_practice_administrator_emails.sql` +0/-26 (removed; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/operator_record_mail_event.sql` +172/-0 (added; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/operator_record_support_notice.sql` +0/-53 (removed; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/operator_support_notice_claim.sql` +35/-0 (added; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/operator_support_notice_failed.sql` +41/-0 (added; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/operator_support_notice_sent.sql` +50/-0 (added; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/operator_support_notices_pending.sql` +22/-0 (added; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/screening_mail_gate.sql` +18/-0 (added; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/screening_mail_status.sql` +22/-0 (added; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/screening_submit_mail_refusal.sql` +23/-0 (added; SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/submit_screening.sql` +8/-8 (SECURITY DEFINER, tenant scope, privileges or PUBLIC)
+- `packages/db/functions/dunning_notice_report_undelivered.sql` +27/-0 (added)
+- `packages/db/functions/mail_recipient_canonical.sql` +47/-0 (added)
+- `packages/db/functions/mail_recipient_sha256.sql` +17/-0 (added)
+- `packages/db/functions/mail_send_expiry.sql` +19/-0 (added)
+- `packages/db/functions/mail_state_rank.sql` +18/-0 (added)
+- `packages/db/functions/mail_stream_cutoff.sql` +26/-0 (added)
+- `packages/db/functions/mail_stream_pause.sql` +30/-0 (added)
+- `packages/db/functions/mail_window_counts.sql` +25/-0 (added)
+- `packages/db/functions/reject_change.sql` +3/-0
+- `packages/db/functions/screening_bounce_budget_spent.sql` +18/-0 (added)
+- `packages/db/functions/screening_contact_refused.sql` +19/-0 (added)
+- `packages/db/functions/screening_mail_sending.sql` +17/-0 (added)
+- `packages/db/functions/screening_run_mail_gate.sql` +24/-0 (added)
+- `packages/db/functions/screening_run_mail_refusal.sql` +24/-0 (added)
+- `packages/db/functions/screening_upload_mail_gate.sql` +21/-0 (added)
+- `packages/db/functions/set_updated_at.sql` +5/-0
+- `packages/db/functions/support_notice_administrators.sql` +20/-0 (added)
+- `packages/db/functions/support_notice_counts.sql` +24/-0 (added)
+- `packages/db/functions/support_notice_report_undelivered.sql` +31/-0 (added)
+

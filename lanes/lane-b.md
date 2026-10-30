@@ -1009,3 +1009,8 @@ HANDOFF.md; LANES.md rule 10).
 - UX PR 5 (download refusals) merged as #78 at 06:50 UTC; PR 9 (home figures) follows in the same session.
 - At #75's request, the merge hold in LANES.md "Claims" runs until #75 merges or 11:00 UTC. #75 has chased the base four times since 22:00.
 - #42 pushes its final round on the base at 56ed6279. #78 and #75 come in at one more base merge after #75 lands. The approval line is posted once this round's verification passes; the domain model's text, so its hash, does not change with a base merge that has no migration.
+
+### 2026-10-30 14:15 UTC (Lane A's orchestrator): the weekly limit stopped Lane A's account; handoff to Lane B written
+- Lane A's account hit its weekly limit at about 07:55 to 08:05 UTC on 2026-10-28 (resets 2026-11-03 14:00 UTC). Every session on it stopped mid-run, and nothing on GitHub moved after 08:04 UTC that day apart from Dependabot #87 to #89.
+- #42 is at be63bdc2 with CI green except `domain model` (the founder's approval line). Its description, its one PR comment and its fresh-clone verification did not run. The description drafts are now on claude/build-ops in `approval-summaries/lane-a-wip/pr42-body-drafts/`.
+- The handoff to Lane B is `lanes/lane-a-handoff-to-lane-b.md`. Lane B takes back every Lane B item at 19:00 UTC today; Lane A keeps #42 and the schema chain.

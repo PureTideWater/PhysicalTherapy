@@ -85,3 +85,7 @@ UTC (trigger trig_01XqKZsF9KvqAG7S6pBGUmoi). Read this file first, then LANES.md
 - The limit stopped everything at ~23:00 UTC; resumed 00:11-00:15 (setup OK, snapshot loop pid restarted, #42's verify round wf_6faedfe4-8e0 resumed with a RESUMED note in its fix agent's prompt, seven sessions messaged; table-scroll waits on the person's Artifact approval).
 - If the container is new: check out `co-001/wip-pr42-integrate` (9664763b or later) as `co-001/pr-06b-mail-streams` in `/home/user/pr6b4`, apply `approval-summaries/lane-a-wip/integrate.uncommitted.patch`, copy `approval-summaries/lane-a-wip/progress/pr42v-*.md` back to `<scratchpad>/progress/`, and run `workflow-scripts/lane-a-pr42-verify-round-wf_6faedfe4-8e0.js` again (its fix agent continues from pr42v-fix.md).
 - Safety check-in: 2026-10-28 05:10 UTC (trig_016UjAWEaLDhLhqkoKEEWZNA).
+
+## Update 2026-10-30 14:15 UTC
+- The weekly limit stopped this account at ~08:00 UTC on 2026-10-28 (resets 2026-11-03 14:00 UTC). Lane B's items go back to Lane B at 19:00 UTC today: `lanes/lane-a-handoff-to-lane-b.md`.
+- Lane A's own work to resume: #42 (head be63bdc2; next: merge 83d71fd and #75 if merged, the description from `approval-summaries/lane-a-wip/pr42-body-drafts/` under 65,536 characters, one comment on the images failure, the fresh-clone verification, the approval line as a suggested change; script `workflow-scripts/lane-a-pr42-final-round-wf_fb12f910-d87.js`), then the schema chain (session_019i9ifCi6u3MV8sy7oAhUmy, `lane-a-schema-chain-status.md`).
