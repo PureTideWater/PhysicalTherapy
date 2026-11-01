@@ -434,7 +434,8 @@ user that cannot run the binary.
   (a step by job and id, a job output, a matrix key, a needed job, tool code as `path#symbol` with the unit test that
   proves its bound), never by line. A row whose producer is a `run:` step holds its script's fingerprint: when the
   test prints a new one, re-read the bound against the changed script, then write the new fingerprint in the row. A
-  new `$GITHUB_ENV` variable joins its closed list. Every `docker/build-push-action` step sets `BUILDX_METADATA_PROVENANCE: disabled`
+  new `$GITHUB_ENV` write joins its closed map: its file, job, step and exact line, its bound, and the test that runs
+  the step. Every `docker/build-push-action` step sets `BUILDX_METADATA_PROVENANCE: disabled`
   (docs/adr/0066, Part 3, N32).
 - A new workflow's concurrency group starts with its own name (`${{ github.workflow }}-`), since groups are shared by
   every workflow of the repository.

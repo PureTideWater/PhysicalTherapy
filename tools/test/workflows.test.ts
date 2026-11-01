@@ -3048,10 +3048,21 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
   /** The one-level values of the runner and job contexts, each with its bound: a path or a name the runner sets, a word, an integer. */
   const RUNNER_BYTES = PATH_BYTES;
   const JOB_BYTES: Readonly<Record<string, number>> = { status: WORD_BYTES, check_run_id: INTEGER_BYTES };
-  /** The only variables a script may write to $GITHUB_ENV: ci.yml's engine freeze base, a commit SHA. */
-  const GITHUB_ENV_NAMES = new Set(['ENGINE_FREEZE_BASE']);
-  /** A $GITHUB_ENV write in the one form admitted, its name from GITHUB_ENV_NAMES. */
-  const GITHUB_ENV_WRITE = /^\s*echo "([A-Z_][A-Z0-9_]*)=[^"]*" >> "\$GITHUB_ENV"\s*$/;
+  /**
+   * The only writes a script may make to $GITHUB_ENV, by the variable each sets: its file, job and step, its line
+   * exactly (so its value's form too), and its bound, which the behavioural test named beside it holds by running the
+   * step. Each is written once, and every line of every workflow that names GITHUB_ENV is one of them.
+   */
+  const GITHUB_ENV_WRITES: Readonly<Record<string, { readonly file: string; readonly job: string; readonly step: string; readonly line: string; readonly bound: string; readonly test: string }>> = {
+    ENGINE_FREEZE_BASE: {
+      file: 'ci.yml',
+      job: 'unit',
+      step: "The engine freeze's base",
+      line: 'echo "ENGINE_FREEZE_BASE=$base" >> "$GITHUB_ENV"',
+      bound: "a commit SHA (the pull request's merge base, github.event.before or HEAD's parent), written only once git rev-parse --verify names it a commit, the step exiting 1 otherwise",
+      test: 'gives the differential test a pull request’s merge base, a push’s previous head or a new branch’s parent, through GITHUB_ENV',
+    },
+  };
   /** The one form a build's metadata output may take: its config digest, '' for an empty output (fromJSON('') fails a step). */
   const DIGEST_KEY = 'containerimage.config.digest';
 
@@ -3167,6 +3178,7 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
   function unboundedValueProblems(file: string, parsed: unknown): { problems: string[]; values: FoundValue[] } {
     const problems: string[] = [];
     const values: FoundValue[] = [];
+    const writes = new Map<string, number>();
     const root = isRecord(parsed) ? parsed : {};
     const inputs: Record<string, unknown> = {};
     for (const trigger of ['workflow_dispatch', 'workflow_call']) {
@@ -3217,10 +3229,13 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
         const named = `job ${id} step ${typeof step.name === 'string' ? JSON.stringify(step.name) : String(index)}`;
         for (const key of ['env', 'with', 'run', 'working-directory']) visit(step[key], `${named} ${key}`, id, index);
         for (const line of (typeof step.run === 'string' ? step.run : '').split('\n').filter((text) => text.includes('GITHUB_ENV'))) {
-          if (!GITHUB_ENV_NAMES.has(GITHUB_ENV_WRITE.exec(line)?.[1] ?? '')) problems.push(`${file} ${named} run: a $GITHUB_ENV write outside its closed list: ${line.trim()}`);
+          const write = Object.entries(GITHUB_ENV_WRITES).find(([, entry]) => entry.file === file && entry.job === id && entry.step === step.name && entry.line === line.trim());
+          if (write === undefined) problems.push(`${file} ${named} run: a $GITHUB_ENV write outside its closed map: ${line.trim()}`);
+          else writes.set(write[0], (writes.get(write[0]) ?? 0) + 1);
         }
       });
     }
+    for (const [name, count] of writes) if (count > 1) problems.push(`${file}: ${name} is written to $GITHUB_ENV ${String(count)} times, not once`);
     return { problems, values };
   }
 
@@ -3308,7 +3323,7 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       );
     };
     const env = (name: string, at: Reading): number => {
-      if (GITHUB_ENV_NAMES.has(name.toUpperCase())) {
+      if (Object.hasOwn(GITHUB_ENV_WRITES, name.toUpperCase())) {
         at.unbounded.push(`env.${name}, which a script writes to $GITHUB_ENV`);
         return Infinity;
       }
@@ -3408,6 +3423,13 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
 
   it('admits into a step’s environment, an input or a script only values GitHub, the workflow or the table bounds, read as the runner reads an expression, in every workflow', () => {
     expect(workflowFiles().flatMap((file) => unboundedValueProblems(file, workflow(file)).problems)).toEqual([]);
+    // Each $GITHUB_ENV write of the map is made where it says, exactly once, and the test that holds its bound runs it.
+    const titles = testTitles('tools/test/workflows.test.ts', repositorySource('tools/test/workflows.test.ts') ?? '');
+    for (const [name, write] of Object.entries(GITHUB_ENV_WRITES)) {
+      const lines = (workflow(write.file).jobs[write.job]?.steps ?? []).filter((step) => step.name === write.step).flatMap((step) => (step.run ?? '').split('\n'));
+      expect(lines.filter((line) => line.trim() === write.line), name).toHaveLength(1);
+      expect(titles.has(write.test), `${name}: ${write.test}`).toBe(true);
+    }
   });
 
   it('keeps every environment string a workflow sets under 131,072 bytes, NAME=value and its NUL, summed from its name, its literal bytes and each value’s bound', () => {
@@ -3538,11 +3560,21 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       expect(unboundedValueProblems('fixture.yml', parse(`name: fixture\non: push\n${jobs}\n`)).problems, where).toEqual([`fixture.yml ${where}: an expression in a key`]);
     }
 
-    // $GITHUB_ENV: one form, its variable from a closed list.
-    const write = (line: string) => unboundedValueProblems('fixture.yml', parse(`name: fixture\non: push\njobs:\n  images:\n    runs-on: ubuntu-26.04\n    steps:\n      - name: The step\n        run: |\n          ${line}\n`)).problems;
-    expect(write('echo "ENGINE_FREEZE_BASE=$base" >> "$GITHUB_ENV"')).toEqual([]);
-    expect(write('echo "BODY=$x" >> "$GITHUB_ENV"')).toEqual(['fixture.yml job images step "The step" run: a $GITHUB_ENV write outside its closed list: echo "BODY=$x" >> "$GITHUB_ENV"']);
-    expect(write('cat file >> $GITHUB_ENV')).toEqual(['fixture.yml job images step "The step" run: a $GITHUB_ENV write outside its closed list: cat file >> $GITHUB_ENV']);
+    // $GITHUB_ENV: each write one entry of a closed map, its file, job, step and line exactly, written once.
+    const write = (lines: readonly string[], file = 'ci.yml', job = 'unit', step = "The engine freeze's base") =>
+      unboundedValueProblems(file, parse(`name: fixture\non: push\njobs:\n  ${job}:\n    runs-on: ubuntu-26.04\n    steps:\n      - name: ${JSON.stringify(step)}\n        run: |\n${lines.map((line) => `          ${line}\n`).join('')}`)).problems;
+    const freeze = 'echo "ENGINE_FREEZE_BASE=$base" >> "$GITHUB_ENV"';
+    const outside = (line: string, where = 'ci.yml job unit step "The engine freeze\'s base"') => `${where} run: a $GITHUB_ENV write outside its closed map: ${line}`;
+    expect(write(['base="$(git rev-parse HEAD^1)"', freeze])).toEqual([]);
+    // A changed value form, a second write, and the write in another step, job or file.
+    expect(write(['echo "ENGINE_FREEZE_BASE=$(git log -1 --format=%B)" >> "$GITHUB_ENV"'])).toEqual([outside('echo "ENGINE_FREEZE_BASE=$(git log -1 --format=%B)" >> "$GITHUB_ENV"')]);
+    expect(write([freeze, freeze])).toEqual(['ci.yml: ENGINE_FREEZE_BASE is written to $GITHUB_ENV 2 times, not once']);
+    expect(write([freeze], 'ci.yml', 'unit', 'Another step')).toEqual([outside(freeze, 'ci.yml job unit step "Another step"')]);
+    expect(write([freeze], 'ci.yml', 'db')).toEqual([outside(freeze, 'ci.yml job db step "The engine freeze\'s base"')]);
+    expect(write([freeze], 'fixture.yml')).toEqual([outside(freeze, 'fixture.yml job unit step "The engine freeze\'s base"')]);
+    // Any other variable, or any other form.
+    expect(write(['echo "BODY=$x" >> "$GITHUB_ENV"'])).toEqual([outside('echo "BODY=$x" >> "$GITHUB_ENV"')]);
+    expect(write(['cat file >> $GITHUB_ENV'])).toEqual([outside('cat file >> $GITHUB_ENV')]);
   });
 
   /**

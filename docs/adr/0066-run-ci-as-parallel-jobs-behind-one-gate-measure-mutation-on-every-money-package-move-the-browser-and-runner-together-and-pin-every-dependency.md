@@ -1005,7 +1005,9 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
       over 131,072 bytes, or one holding a value with no bound, but for the one value named over the limit.
     - One listed value is over the limit and named so: the content calendar's findings (`FINDINGS_B64`). Their
       transport is an item of its own.
-    - A `$GITHUB_ENV` write names a variable from a closed list.
+    - A `$GITHUB_ENV` write is one entry of a closed map, its variable's only write: its file, job, step and exact
+      line (so its value's form too), with its bound, which the behavioural test named beside it holds by running the
+      step.
 
 ### Consequences
 
