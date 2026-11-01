@@ -11,46 +11,24 @@ The UX review's PR 4 (UX-005, UX-040, UX-042, UX-043, UX-132, UX-206; clusters C
   - scope any `data-slot` locator to `[data-stacked-copy]` or `:visible` (ADR 0078's renders-twice note).
   - `action-form.tsx`'s refusal hand-off stays UX PR 34's.
 
-**MERGE HOLD** (Lane A's orchestrator, 2026-10-28 07:20 UTC): #83 does not merge until #75 (contract-phi-check) merges, or until 11:00 UTC, whichever comes first, because both touch the test matrix, synth matrix and registry. Every stage up to the merge goes on. After the hold, merge the base into #83 once (rule 6), then merge as usual. The orchestrator messages when the hold lifts. (#78 merged at 06:50 UTC.)
+**Merge order** (handoff §6, from 2026-11-01): #82 (merged 17:19 UTC as bce57f16) → #86 → #75 → #84 → **#83** → #85. #83 merges only after #84 has merged. (The 2026-10-28 MERGE HOLD lapsed at 11:00 UTC that day with #75 unmerged; no message will come.)
 
-## Current state (2026-10-28 05:50 UTC)
-- **PR #83** (draft): https://github.com/PureTideWater/PhysicalTherapy/pull/83. Head **f4a9766**, the clean base merge of 165c599 (#74). Every check passed locally on it (unit 6,581; e2e 26 of 26 over 11 specs). The description is from the template, written with update_pull_request and read back byte for byte. This session is subscribed to the PR.
-- **Build:** done (wf_9184e225-f39, 03:05-04:05 UTC), 6 commits:
-  - 995f568 and 8c23530, StackedRows' description and the 40% term column;
-  - ed08391, the three tables on StackedRows and the words;
-  - cf36117, `screening-phone.spec.ts` and `atPhoneWidth`'s `lists` option;
-  - 5a4cbe5, the ADR 0078 amendment, TBL-05 to TBL-08, TBL-01, -03 and -04 reworded, synth and `watched-paths.txt` by its generator;
-  - 0c261ee, a cleanup.
-- **The checker's results on 0c261ee** (all pass):
-  - typecheck, lint, lint:copy, lint:logs, synth and verify-content clean;
-  - unit 6,475 passed, 4 skipped, with #42's `result.test.tsx` unedited and passing;
-  - `watched.test.ts` 6 of 6;
-  - the large result page test: page 1 is 387 KB, was 144 KB, under the 512 KiB cap;
-  - e2e 6 of 6: screening-phone, screening (no flake), tables-phone, layout-1280.
-- **The two copies differ in tone on purpose** (P4-DR-03): on a phone an anomaly shows in the unpriced tone; the table copy keeps Short until UX PR 4b (#42's pins).
-- **`watched-paths.txt`, by its generator:** +`components/screening/table-parts.tsx`, +`components/stacked-rows.tsx`; `lib/copy/words.ts` stays on the merged tree, because #74's sign-in imports it.
-- **CI on f4a9766:** every check green (all green, mutation, screening-capacity gate, approval-of-record). Since then #81 merged (56ed627), so the PR is "behind"; the fix round merges it first.
-- **Reviews:** done (wf_7237972d-adf). Both say "merge after fixes" (`approval-summaries/lane-b-ux-screening-result-tables-review-findings.json`).
-  - Correctness: P4-RC-01 should fix, -02 to -06 nits. No defect in what renders; 0 mismatches between the copies.
-  - UX and brand: UXR-01 should fix (the audit request at the foot of a longer page worsens UX-134: a link at the top is taken here), -02 to -08 nits.
-  - Shots: before at 165c599 and after at f4a9766.
-- **Running:** the fix round wf_4147d4ff-acd (from ~06:20 UTC):
-  1. the base merge of 56ed627 (#81), with the generator;
-  2. every finding;
-  3. the full local suite once;
-  4. the shots re-taken.
-  - Safety check-in 10:20 UTC (trig_014vh315v1NTqmgwpDQghedC).
-- **Next:** the fix round (every finding, the full local suite once, one push); the fresh-clone verification reading CI; mark ready; merge. Then, the day #42 merges, UX PR 4b.
+**Session:** https://claude.ai/code/session_01FcouKRDfoFAeXZK4Thp8M8 (Lane B item session, GitHub login PureTideWater), started 2026-11-01 by Lane B's orchestrator session_01FcouKNNHsdecRMzfTs7XwW. The earlier owner session_019VghcxKzP9LAj3WK8k6u1D (Lane A's account) is stopped and its PR subscription no longer holds.
 
-## Overlaps (checked 2026-10-28 01:45 UTC)
-- **#42** (`co-001/pr-06b-mail-streams` at 6f23c42, 212 files):
-  - `apps/web/src/components/screening/result.test.tsx` is now a #42 file, so this PR's unit tests go in a new file.
-  - `apps/web/src/lib/screening/labels.ts` is under LANES.md's "Not while #42 is open" (`lib/screening/*`), so it is not edited; a label change goes elsewhere or is recorded "after #42".
-  - `apps/web/e2e/screening.ts` is #42's: the new `screening-phone.spec.ts` calls it unchanged, and the PR merged second updates it.
-  - `anomalies.tsx`, `coverage.tsx` and `result-summary.tsx` are not #42's.
-- **ux-forms** (`co-001/ux-forms`): none of the planned files.
+## Current state (2026-11-01 17:35 UTC)
+- **PR #83** (draft): https://github.com/PureTideWater/PhysicalTherapy/pull/83. Head **f4a9766** (the clean base merge of 165c599, #74). CI on f4a9766: 20 success, 2 skipped (notify, the stryker matrix stub); every required check green. GitHub reads it mergeable false, `dirty`: it conflicts with the base in `docs/product/test-matrix.md` and `packages/synth/src/cases/registry.ts`.
+- **Fix-round code:** done for every finding, on the WIP ref `co-001/wip-ux-screening-result-tables` at **f5e0ceba** (descends from f4a9766; no CI): c0a8fe0b merges 56ed6279 (#81); d0152f43 UXR-01; e901e477 UXR-05; 857ca333 P4-RC-01, -04, -06, UXR-02, -03, -04; f5e0ceba P4-RC-02, -03, -05, UXR-06. UXR-07 and UXR-08 need no code (they go in the description). The WIP lacks the base 83d71fd6 (#78) and bce57f16 (#82).
+- **The old fix round wf_4147d4ff-acd did not finish:** it stopped after its Fix step (06:37Z 2026-10-28). Its fast checks, the full suite and the recheck shots never landed, and its scratchpad (p4-reviews.json, pr42-files.txt, p4-fix*.md, the shots and index, the capture spec and harness) went with the old container. The 2026-10-28 shots survive only as descriptions in the findings JSON (`.shots`). Its safety check-in (trig_014vh315v1NTqmgwpDQghedC, Lane A's account, 2026-10-28 10:20) is long past and not visible from this account.
+- **Next:** the base merge of claude/build-platform (bce57f16 or later) with the generators, the fast checks and the #42 cross-check (read-only); the full local suite once; after shots of only the states the fix round changed (the person's instruction 2026-11-01: no redundant UX check of what already passed one); one push; the description; the fresh-clone verification; merge after #84.
+
+## Overlaps (checked 2026-11-01 16:01 UTC)
+- **#42** (`co-001/pr-06b-mail-streams`, now at be63bdc2, 219 files against 83d71fd6): still changes `result.test.tsx`, `e2e/screening.ts`, `e2e/screening.spec.ts`, `lib/screening/*` and `pnpm-lock.yaml`. A trial merge of f5e0ceba with be63bdc2 is clean; the only shared files are the test matrix, synth matrix and registry, and `watched-paths.txt`. `result.test.tsx`, `labels.ts`, `e2e/screening.ts` stay untouched here.
+- **#85:** test-matrix, synth matrix and registry; #85 merges after #83 and resolves.
+- **#75, #84, #86, #82:** no conflict in trial with #83's own diff; those merging first are kept by #83's base merge (rule 6).
+- **ux-forms** merged as #74 (165c5993) and is in the branch.
 
 ## Log
+- 2026-11-01 17:35 UTC: taken back by Lane B (this session). Machine set up (OK); worktree fast-forwarded to the WIP f5e0ceba. Status file corrected (the merge hold, the session, the old fix round, the check-in, the base, the overlaps). Next: the base merge and fast checks.
 - 2026-10-28 07:25 UTC: the fix round's commits so far (c0a8fe0 the #81 merge, d0152f4, e901e47, 857ca33, f5e0ceb) saved on `co-001/wip-ux-screening-result-tables` (no CI). The full suite is next in the workflow; if this container is lost, continue from that branch.
 - 2026-10-28 07:20 UTC: merge hold on #83 until #75 merges or 11:00 UTC (the orchestrator).
 - 2026-10-28 05:52 UTC: CI green on f4a9766. 06:12: both reviews done (merge after fixes; 14 findings, all taken). 06:20: fix round started.
