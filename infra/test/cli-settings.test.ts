@@ -20,6 +20,11 @@ const directCdk = new RegExp(String.raw`^\s*(?:[A-Z_][A-Z0-9_]*=\S*\s+)*` + laun
 const runsCdkDirectly = (command: string): boolean =>
   command.split(/&&|\|\||;|\|/).some((part) => directCdk.test(part));
 
+// The env object cdk:diff spawns the CLI with, its comments removed: a commented-out setting is not a setting.
+const withoutComments = (source: string): string => source.replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
+const envObject = (source: string): string => /\benv:\s*\{([^}]*)\}/.exec(withoutComments(source))?.[1] ?? '';
+const cdkDiffEnv = envObject(readFileSync(path.join(infraDir, 'scripts/cdk-diff.ts'), 'utf8'));
+
 describe('the CDK CLI sends no telemetry, fetches no notices and skips its version check', () => {
   it('synthesizes with telemetry and the version check off and without notices', () => {
     const synth = manifest.scripts.synth ?? '';
@@ -38,8 +43,7 @@ describe('the CDK CLI sends no telemetry, fetches no notices and skips its versi
   });
 
   it('keeps cdk:diff running the CLI with telemetry off', () => {
-    const script = readFileSync(path.join(infraDir, 'scripts/cdk-diff.ts'), 'utf8');
-    expect(script).toMatch(/\benv:\s*\{[^}]*\bCDK_DISABLE_CLI_TELEMETRY:\s*'true'[^}]*\}/);
+    expect(cdkDiffEnv).toMatch(/\bCDK_DISABLE_CLI_TELEMETRY:\s*'true'/);
   });
 
   it('turns notices off in cdk.json for any cdk command run from infra/', () => {
@@ -65,5 +69,13 @@ describe('the CDK CLI sends no telemetry, fetches no notices and skips its versi
     expect(runsCdkDirectly('pnpm cdk:diff')).toBe(false);
     expect(runsCdkDirectly('pnpm exec tsx scripts/cdk-diff.ts')).toBe(false);
     expect(runsCdkDirectly('vitest run --root .. --project unit infra/')).toBe(false);
+  });
+
+  it("reads cdk:diff's env object without its comments", () => {
+    expect(envObject("spawnSync('cdk', [], { env: { ...process.env, A: 'true' } });")).toContain("A: 'true'");
+    expect(envObject("env: {\n  ...process.env,\n  B: 'true',\n}")).toContain("B: 'true'");
+    expect(envObject("env: {\n  ...process.env,\n  // A: 'true',\n}")).not.toContain("A: 'true'");
+    expect(envObject("env: { ...process.env /* A: 'true' */ }")).not.toContain("A: 'true'");
+    expect(envObject("// env: { A: 'true' }")).toBe('');
   });
 });
