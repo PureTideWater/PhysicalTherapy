@@ -1,0 +1,17 @@
+{
+  "case": "MOD-18",
+  "module": "MOD",
+  "title": "A request through that client while the process has a tracer provider and a trace-context propagator registered and the environment asks for debug logging and another host",
+  "assertion": "One request, to the API's own host; no span is started; no `traceparent`, `tracestate` or `baggage` header and no header outside the gateway's set is sent; nothing is written to the console; the request carries API version `2026-10-21` and the key as `Authorization: Bearer`, with no `X-Api-Key`; a client left at the SDK's default does trace and log (the control)",
+  "synthetic": true,
+  "completesIn": 10,
+  "assertedBy": ["packages/model-gateway/src/providers/anthropic-client.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "A fake fetch answers a synthetic message in memory; no request leaves the process; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

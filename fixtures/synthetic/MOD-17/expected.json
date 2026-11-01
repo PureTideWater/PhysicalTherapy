@@ -1,0 +1,20 @@
+{
+  "case": "MOD-17",
+  "module": "MOD",
+  "title": "The Anthropic client as configuration builds it, with the environment asking for the SDK's tracing and its content, debug logging and another host; and the configuration with extra headers asked for on the Anthropic path",
+  "assertion": "SDK retries off and the gateway's timeout; the SDK's OpenTelemetry tracing and propagation off, its logging off and the host the API's own, whatever `ANTHROPIC_OPEN_TELEMETRY`, its content mode, `ANTHROPIC_LOG` and `ANTHROPIC_BASE_URL` say; `ANTHROPIC_CUSTOM_HEADERS` is refused on the Anthropic path and ignored on the others",
+  "synthetic": true,
+  "completesIn": 10,
+  "assertedBy": [
+    "packages/model-gateway/src/providers/anthropic-client.test.ts",
+    "packages/model-gateway/src/config.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The client and the configuration are built in memory with a synthetic key; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

@@ -381,6 +381,18 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
       "The one-patient screen is offered it, in the redacted letter too; a placeholder's word, or a redacted letter's own placeholder, never. Digits alone with `/` or `.` between them are not offered (a date's or an amount's writing; recorded in docs/adr/0054)",
   },
   {
+    id: 'MOD-17',
+    title: "The Anthropic client as configuration builds it, with the environment asking for the SDK's tracing and its content, debug logging and another host; and the configuration with extra headers asked for on the Anthropic path",
+    assertion:
+      "SDK retries off and the gateway's timeout; the SDK's OpenTelemetry tracing and propagation off, its logging off and the host the API's own, whatever `ANTHROPIC_OPEN_TELEMETRY`, its content mode, `ANTHROPIC_LOG` and `ANTHROPIC_BASE_URL` say; `ANTHROPIC_CUSTOM_HEADERS` is refused on the Anthropic path and ignored on the others",
+  },
+  {
+    id: 'MOD-18',
+    title: "A request through that client while the process has a tracer provider and a trace-context propagator registered and the environment asks for debug logging and another host",
+    assertion:
+      "One request, to the API's own host; no span is started; no `traceparent`, `tracestate` or `baggage` header and no header outside the gateway's set is sent; nothing is written to the console; the request carries API version `2026-10-21` and the key as `Authorization: Bearer`, with no `X-Api-Key`; a client left at the SDK's default does trace and log (the control)",
+  },
+  {
     id: 'BIL-01',
     title: "Stripe's payment form opens on the bank account",
     assertion:
