@@ -7,7 +7,6 @@ import path from 'node:path';
 import { isDeepStrictEqual, stripVTControlCharacters } from 'node:util';
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import ts from 'typescript';
 import { parse } from 'yaml';
 
 import { consistencyProblems, formProblems, parsePin } from '../check-action-pins/workflows';
@@ -2735,43 +2734,45 @@ describe('mutation testing (docs/adr/0066, Part 4; CI-15 to CI-17)', () => {
     'vitest.mutation.config.ts': { literals: ['package.json', 'pnpm-workspace.yaml'], reads: 'comments naming where the aliases come from' },
   };
 
-  /** Each use of a child_process binding in a file, other than a call whose first argument is `program`. */
-  const spawnProblems = (file: string, text: string, program: string): string[] => {
-    const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
-    const at = (node: ts.Node) => `${file}:${String(source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1)}`;
-    const problems: string[] = [];
-    const bindings = new Set<string>();
-    const visit = (node: ts.Node): void => {
-      if (ts.isStringLiteralLike(node) && /^(?:node:)?child_process$/.test(node.text)) {
-        const declaration = node.parent;
-        const clause = ts.isImportDeclaration(declaration) ? declaration.importClause : undefined;
-        const named = clause?.namedBindings;
-        if (clause === undefined || clause.name !== undefined || named === undefined || !ts.isNamedImports(named)) problems.push(`${at(node)}: child_process reached other than by named imports, so its spawns cannot be read`);
-        else if (!clause.isTypeOnly) for (const element of named.elements) if (!element.isTypeOnly) bindings.add(element.name.text);
-      } else if (ts.isIdentifier(node) && bindings.has(node.text)) {
-        const parent = node.parent;
-        const declares = (ts.isImportSpecifier(parent) || ts.isParameter(parent)) && parent.name === node;
-        const member = (ts.isPropertyAccessExpression(parent) || ts.isPropertyAssignment(parent)) && parent.name === node;
-        if (declares || member || ts.isTypeQueryNode(parent)) {
-          // Its declaration, a property of the same name, or its type.
-        } else if (ts.isCallExpression(parent) && parent.expression === node) {
-          const first = parent.arguments[0]?.getText(source) ?? '(nothing)';
-          if (first !== program) problems.push(`${at(node)}: ${node.text} runs ${first}, not ${program}`);
-        } else if (ts.isParameter(parent) && parent.initializer === node && ts.isIdentifier(parent.name)) {
-          // The default of a parameter (the injected spawn): the parameter is held to the same program.
-          bindings.add(parent.name.text);
-        } else problems.push(`${at(node)}: ${node.text} is used other than to run ${program}`);
-      }
-      ts.forEachChild(node, visit);
-    };
-    visit(source);
-    return problems;
-  };
-
   // It reads the repository's tooling, never CI_TREE's copy, so the runs on a copy skip it (as both the simulated
   // Dependabot rewrite's runs do, each starting its own vitest with CI_TREE set).
   it.skipIf(process.env.CI_TREE !== undefined)('lets no file a mutation run loads run a process but git and Stryker by path, or name a manifest or this workflow but those listed with what they read', async () => {
     const { globalFiles, repositoryClosures, trackedFiles } = await import('../stryker/affected');
+    // TypeScript's parser, loaded here so collecting this file stays light.
+    const ts = (await import('typescript')).default;
+    type Node = Parameters<typeof ts.forEachChild>[0];
+    /** Each use of a child_process binding in a file, other than a call whose first argument is `program`. */
+    const spawnProblems = (file: string, text: string, program: string): string[] => {
+      const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+      const at = (node: Node) => `${file}:${String(source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1)}`;
+      const problems: string[] = [];
+      const bindings = new Set<string>();
+      const visit = (node: Node): void => {
+        if (ts.isStringLiteralLike(node) && /^(?:node:)?child_process$/.test(node.text)) {
+          const declaration = node.parent;
+          const clause = ts.isImportDeclaration(declaration) ? declaration.importClause : undefined;
+          const named = clause?.namedBindings;
+          if (clause === undefined || clause.name !== undefined || named === undefined || !ts.isNamedImports(named)) problems.push(`${at(node)}: child_process reached other than by named imports, so its spawns cannot be read`);
+          else if (!clause.isTypeOnly) for (const element of named.elements) if (!element.isTypeOnly) bindings.add(element.name.text);
+        } else if (ts.isIdentifier(node) && bindings.has(node.text)) {
+          const parent = node.parent;
+          const declares = (ts.isImportSpecifier(parent) || ts.isParameter(parent)) && parent.name === node;
+          const member = (ts.isPropertyAccessExpression(parent) || ts.isPropertyAssignment(parent)) && parent.name === node;
+          if (declares || member || ts.isTypeQueryNode(parent)) {
+            // Its declaration, a property of the same name, or its type.
+          } else if (ts.isCallExpression(parent) && parent.expression === node) {
+            const first = parent.arguments[0]?.getText(source) ?? '(nothing)';
+            if (first !== program) problems.push(`${at(node)}: ${node.text} runs ${first}, not ${program}`);
+          } else if (ts.isParameter(parent) && parent.initializer === node && ts.isIdentifier(parent.name)) {
+            // The default of a parameter (the injected spawn): the parameter is held to the same program.
+            bindings.add(parent.name.text);
+          } else problems.push(`${at(node)}: ${node.text} is used other than to run ${program}`);
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(source);
+      return problems;
+    };
     const files = trackedFiles(repositoryRoot);
     const scanned = [...new Set([...globalFiles(repositoryRoot, files).files, ...repositoryClosures(repositoryRoot, files).flatMap((closure) => closure.files)])].sort();
     expect(scanned).toContain('tools/stryker/gate.ts');
