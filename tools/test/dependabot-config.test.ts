@@ -161,7 +161,8 @@ describe('dependabot.yml (CI-12)', () => {
 
   it('excludes from minor-and-patch every pattern a specific group names, in their order, so no dependency is in two groups', () => {
     const groups = entry('npm').groups ?? {};
-    const specific = Object.keys(groups).filter((name) => name !== 'minor-and-patch' && groups[name]?.['applies-to'] === undefined);
+    // A version-update group is specific whether it leaves applies-to out or names its default.
+    const specific = Object.keys(groups).filter((name) => name !== 'minor-and-patch' && (groups[name]?.['applies-to'] ?? 'version-updates') === 'version-updates');
     // A new group fails here until minor-and-patch excludes its patterns.
     expect(specific).toEqual(SPECIFIC);
     expect(groups['minor-and-patch']?.patterns).toBeUndefined();
