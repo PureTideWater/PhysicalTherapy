@@ -10,7 +10,7 @@ import { draftNarrative } from './draft';
 import { heldRoles, narrativeFacts } from './facts';
 import type { PacketContent, PacketContentV2 } from './format';
 import { scanText } from './scan';
-import { HAND_WRITTEN, MISSTATED, STATED, assemblyInput, contractCitation, line, roleContents, roleOracle } from './test-support';
+import { HAND_WRITTEN, MISSTATED, REVIEWED, STATED, assemblyInput, contractCitation, line, roleContents, roleOracle } from './test-support';
 import { type VerifierReport, identifierForms, verifyNarrative } from './verifier';
 import { identifierSpans } from './verifier/mismatches';
 
@@ -101,8 +101,11 @@ describe('verifyNarrative', () => {
 
   it('accepts figures the quoted clause and the statute hold as they hold them', () => {
     const quoted = assemblePacket(assemblyInput({ citation: { ...content.citation, quote: 'Section 4.2: 97110 is paid 50.00 per unit within 90 days under G.S. 58-3-225' } as PacketContent['citation'] }));
-    expect(verify('Section 4.2 pays within 90 days under G.S. 58-3-225 [1].', quoted).passed).toBe(true);
-    expect(verify('Section 4.3 pays within 91 days [1].', quoted).passed).toBe(false);
+    expect(verify('Section 4.2 requires disputes within 90 days under G.S. 58-3-225 [1].', quoted).passed).toBe(true);
+    expect(verify('Section 4.3 requires disputes within 91 days [1].', quoted).passed).toBe(false);
+    // In a role the quote's own words do not give it ("pays within" is the days to pay; the clause's "within" the
+    // window's), the quoted day count is no repetition (docs/adr/0086, CORR-14).
+    expect(verify('Section 4.2 pays within 90 days under G.S. 58-3-225 [1].', quoted).passed).toBe(false);
   });
 
   it('accepts the contract window’s days only as days and its page only as a page, never as a count (tp-packet/2)', () => {
@@ -159,7 +162,7 @@ describe('figures in other characters', () => {
       [`It affected 1${cp(0x200b)}11 claims [3].`, 'hidden_character'],
       [`It affected 1${cp(0xad)}1 claims [3].`, 'hidden_character'],
       ['It affected a dozen claims [3].', 'figure_not_in_input'],
-      ['This is the fifth dispute [3].', 'figure_not_in_input'],
+      ['This line is the fifth [3].', 'figure_not_in_input'],
       ['It was billed on March ninth [3].', 'figure_not_in_input'],
       ['A score of claims were short [3].', 'figure_not_in_input'],
       ['It paid half the contract rate [1].', 'figure_not_in_input'],
@@ -599,7 +602,9 @@ describe('the check: the inputs each rule separates', () => {
   it('accepts a month and a day of a month that only a quoted clause names, repeated as the clause holds them', () => {
     const quoted = assemblePacket(assemblyInput({ citation: contractCitation({ quote: '97110 is paid 50.00 per unit from July 2026, billed by March 20' }) }));
     expect(verify('The rate applies from July 2026 [1].', quoted).passed).toBe(true);
-    expect(verify('Lines billed by March 20 [1].', quoted).passed).toBe(true);
+    expect(verify('Billed by March 20 [1].', quoted).passed).toBe(true);
+    // In a role, the narrative's clause must end where the quote's does: "Lines billed by" goes on before "billed by".
+    expect(verify('Lines billed by March 20 [1].', quoted).passed).toBe(false);
     // Neither is among the content's dates: the quote alone allows them, and only as it holds them, never as the
     // payment's month or a service date (docs/adr/0086).
     expect(verify('The rate applies from July 2026 [1].').passed).toBe(false);
@@ -643,6 +648,18 @@ describe('a figure stated in another role (CAS-43)', () => {
     const report = verify(narrative, contents[content]);
     expect(report.passed).toBe(false);
     expect(report.mismatches.map((item) => [item.code, item.kind, item.sentence, narrative.slice(item.start, item.end)])).toEqual([['figure_not_in_input', kind, 0, figure]]);
+  });
+});
+
+describe('the review of 2026-11-01: one role per figure, quotes in their own role, counts over years, per line apart from in total (CAS-43, CAS-44)', () => {
+  const contents = roleContents();
+  it.each(REVIEWED.filter((example) => example.fails.length > 0))('CAS-43 $id: fails at each misstated figure, with its kind', ({ content, narrative, fails }) => {
+    const report = verify(narrative, contents[content]);
+    expect(report.passed).toBe(false);
+    expect(report.mismatches.map((item) => [item.code, item.kind, narrative.slice(item.start, item.end)])).toEqual(fails);
+  });
+  it.each(REVIEWED.filter((example) => example.fails.length === 0))('CAS-44 $id: passes', ({ content, narrative }) => {
+    expect(verify(narrative, contents[content]).mismatches).toEqual([]);
   });
 });
 

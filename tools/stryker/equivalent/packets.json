@@ -58,7 +58,7 @@
     "file": "packages/packets/src/facts.ts",
     "mutator": "ArrayDeclaration",
     "original": "[]",
-    "occurrence": 6,
+    "occurrence": 13,
     "replacement": "[\"Stryker was here\"]",
     "reason": "Above the first level the loop then visits the string 'Stryker was here', whose kind is undefined, never 'contract_window', so it adds nothing, as the empty list does.",
     "proposedBy": "M4b",
@@ -68,13 +68,13 @@
   {
     "file": "packages/packets/src/facts.ts",
     "mutator": "BlockStatement",
-    "original": "{\n    for (const item of value) {\n      parameterFigures(item, facts);\n    }\n    return;\n  }",
+    "original": "{\n    for (const item of value) {\n      parameterFigures(item, facts, scopes);\n    }\n    return;\n  }",
     "occurrence": 1,
     "replacement": "{}",
-    "reason": "An array is an object, so it falls to the object branch, where Object.entries gives its items under the keys '0', '1', ...: no such key ends in _cents or is percent or percentage, so each item is read by the same recursive call the array branch makes.",
-    "proposedBy": "M4b",
-    "reviewedBy": "integrator (Lane B, ci-mutation)",
-    "reviewedOn": "2026-10-25"
+    "reason": "An array is an object, so it falls to the object branch, where Object.entries gives its items under the keys '0', '1', ...: no such key ends in _cents or is percent or percentage, so each item is read by the same recursive call the array branch makes, with the same scopes.",
+    "proposedBy": "fix round of 2026-11-01 (Lane B, packet-day-counts, part 1)",
+    "reviewedBy": "",
+    "reviewedOn": ""
   },
   {
     "file": "packages/packets/src/interest.ts",

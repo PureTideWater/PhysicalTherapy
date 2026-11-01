@@ -13,14 +13,21 @@ import { verifyNarrative } from './verifier';
  * the generated content's fields by role (./role-examples.ts roleOracle()) and the quoted texts the generator wrote
  * from typed templates, recording each quoted figure and its label: it never reads ./facts.ts or ./roles.ts, so no
  * property tests the reader against itself. Values no input holds are built (the largest held value and an offset),
- * never filtered for. Each property's seed and run count are pinned.
+ * never filtered for. Each property's run count is pinned; its seed is the repo's convention (docs/adr/0066): fast-check's
+ * own in a unit run, so each run tries new inputs, and MUTATION_SEED in a mutation run (tools/stryker/seed-setup.ts).
+ * A counterexample a run finds is pinned as a named example (./role-examples.ts REVIEWED).
  *
  * The oracle's prose and shape cases, spelled out: "one" and "zero" are prose, never a figure, so a template of value
  * 1 or 0 written in words passes; a five-digit value written in digits without a comma after a row's noun ("Line
  * 97110") is a procedure code, so it passes there exactly when it is one of the lines' codes.
+ *
+ * Beside the one-cue templates (a figure held in the role its one cue names), the review of 2026-11-01 (PE-7, CORR-18,
+ * CRIT-1) added: sentences with two cues, the figure held only in the farther one's role (each fails; one role per
+ * figure, never the union); a quoted clause whose figures fill a list between edges ("Payment terms: 30, 45, 60 days":
+ * each passes in a role only where the record holds it so); a year's lead before a count's noun ("the 2026 claims": a
+ * count, never a year); and every date role in the oracle, the deadline's among them.
  */
 
-const SEED = 20_261_028;
 const CODES = ['97110', '97112', '97140', '97530', 'G0283'] as const;
 
 /** The quoted texts' templates: each records its figure and the word before it, the figure's label. */
@@ -29,70 +36,107 @@ interface Quoted {
   readonly value: number;
 }
 
-const generated = fc
-  .record({
-    lines: fc.array(
-      fc.record({ code: fc.constantFrom(...CODES), units: fc.integer({ min: 1, max: 4 }), perUnit: fc.integer({ min: 1000, max: 20_000 }), short: fc.integer({ min: 1, max: 999 }), claim: fc.integer({ min: 1, max: 4 }) }),
-      { minLength: 1, maxLength: 5 },
-    ),
-    contract: fc.boolean(),
-    version: fc.integer({ min: 1, max: 20 }),
-    page: fc.integer({ min: 1, max: 99_999 }),
-    windowPage: fc.integer({ min: 1, max: 99_999 }),
-    windowDays: fc.integer({ min: 1, max: 99_999 }),
-    release: fc.integer({ min: 900_001, max: 949_999 }),
-    level: fc.constantFrom(1, 1, 1, 2),
-    daysToPay: fc.integer({ min: 1, max: 60 }),
-    section: fc.integer({ min: 2, max: 99 }),
-    group: fc.integer({ min: 2, max: 99 }),
-  })
-  .map((draw) => {
-    const quoted: Quoted[] = [
-      { label: 'section', value: draw.section },
-      { label: 'group', value: draw.group },
-    ];
-    const content = assemblePacket(
-      assemblyInput({
-        disputeLevel: draw.level,
-        nextLevelDeadline: draw.level === 1 ? null : { status: 'verified', source: 'contract', endsOn: '2027-01-15', cause: null },
-        practice: { practice_id: IDS.practice, name: `SYNTHETIC THERAPY GROUP ${String(draw.group)}`, npi: null, tax_id_last4: null },
-        citation: draw.contract
-          ? contractCitation({ version_no: draw.version, page: draw.page, quote: `Section ${String(draw.section)} of the SYNTHETIC agreement pays 97110 at 50.00 per unit` })
-          : { ...REGULATION, statement: `Section ${String(draw.section)} of the SYNTHETIC rule pays what Original Medicare pays.` },
-        releases: [{ release_no: draw.release, manifest_sha256: 'a'.repeat(64) }],
-        deadlineSources: [contractWindowSource({ days: draw.windowDays, page: draw.windowPage, quote: `Disputes are raised within ${String(draw.windowDays)} days of the payment date.` })],
-        interest: { state: 'ZZ', releaseNo: draw.release, record: promptPayRecord({ days_to_pay: draw.daysToPay }) },
-        lines: draw.lines.map((item, index) => {
-          const expected = BigInt(item.perUnit * item.units);
-          const observed = expected - BigInt(item.short * item.units);
-          const hex = (index + 1).toString(16).padStart(12, '0');
-          return {
-            ...line(index + 1, {
-              claimId: `20000000-0000-4000-8000-${item.claim.toString(16).padStart(12, '0')}`,
-              patientKey: `40000000-0000-4000-8000-${item.claim.toString(16).padStart(12, '0')}`,
-              procedureCode: item.code,
-              units: String(item.units),
-              expectedCents: cents(expected),
-              observedCents: cents(observed),
-              varianceCents: cents(expected - observed),
-              paidCents: cents((observed * 8n) / 10n),
-              receivedOn: '2026-02-10',
+const draws = fc.record({
+  lines: fc.array(
+    fc.record({ code: fc.constantFrom(...CODES), units: fc.integer({ min: 1, max: 4 }), perUnit: fc.integer({ min: 1000, max: 20_000 }), short: fc.integer({ min: 1, max: 999 }), claim: fc.integer({ min: 1, max: 4 }) }),
+    { minLength: 1, maxLength: 5 },
+  ),
+  citation: fc.constantFrom('fixed', 'percent', 'regulation'),
+  percent: fc.constantFrom('80', '112.5', '95.5', '9'),
+  locked: fc.integer({ min: 2019, max: 2026 }),
+  version: fc.integer({ min: 1, max: 20 }),
+  page: fc.integer({ min: 1, max: 99_999 }),
+  windowPage: fc.integer({ min: 1, max: 99_999 }),
+  windowDays: fc.integer({ min: 1, max: 99_999 }),
+  release: fc.integer({ min: 900_001, max: 949_999 }),
+  level: fc.constantFrom(1, 1, 1, 2),
+  daysToPay: fc.integer({ min: 1, max: 60 }),
+  section: fc.integer({ min: 2, max: 99 }),
+  group: fc.integer({ min: 2, max: 99 }),
+  // A list of day counts the clause's own words fill between edges ("Payment terms: 30, 45, 60 days").
+  terms: fc.array(fc.integer({ min: 2, max: 9_999 }), { minLength: 2, maxLength: 4 }),
+});
+type Draw = typeof draws extends fc.Arbitrary<infer T> ? T : never;
+
+/** A packet from a draw: its content, the quoted texts' labelled figures, and the day counts its clause lists. */
+function build(draw: Draw) {
+  const quoted: Quoted[] = [
+    { label: 'section', value: draw.section },
+    { label: 'group', value: draw.group },
+  ];
+  const clause = `Section ${String(draw.section)} of the SYNTHETIC agreement pays 97110 at 50.00 per unit. Payment terms: ${draw.terms.join(', ')} days`;
+  const content = assemblePacket(
+    assemblyInput({
+      disputeLevel: draw.level,
+      nextLevelDeadline: draw.level === 1 ? null : { status: 'verified', source: 'contract', endsOn: '2027-01-15', cause: null },
+      practice: { practice_id: IDS.practice, name: `SYNTHETIC THERAPY GROUP ${String(draw.group)}`, npi: null, tax_id_last4: null },
+      citation:
+        draw.citation === 'regulation'
+          ? { ...REGULATION, statement: `Section ${String(draw.section)} of the SYNTHETIC rule pays what Original Medicare pays.` }
+          : contractCitation({
+              version_no: draw.version,
+              page: draw.page,
+              quote: clause,
+              ...(draw.citation === 'percent' ? { method: 'PERCENT_OF_MEDICARE', parameters: { percent: draw.percent, year_basis: `LOCKED:${String(draw.locked)}` } } : {}),
             }),
-            serviceLineId: `10000000-0000-4000-8000-${hex}`,
-            pricedLineId: `30000000-0000-4000-8000-${hex}`,
-          };
-        }),
+      releases: [{ release_no: draw.release, manifest_sha256: 'a'.repeat(64) }],
+      deadlineSources: [contractWindowSource({ days: draw.windowDays, page: draw.windowPage, quote: `Disputes are raised within ${String(draw.windowDays)} days of the payment date.` })],
+      interest: { state: 'ZZ', releaseNo: draw.release, record: promptPayRecord({ days_to_pay: draw.daysToPay }) },
+      lines: draw.lines.map((item, index) => {
+        const expected = BigInt(item.perUnit * item.units);
+        const observed = expected - BigInt(item.short * item.units);
+        const hex = (index + 1).toString(16).padStart(12, '0');
+        return {
+          ...line(index + 1, {
+            claimId: `20000000-0000-4000-8000-${item.claim.toString(16).padStart(12, '0')}`,
+            patientKey: `40000000-0000-4000-8000-${item.claim.toString(16).padStart(12, '0')}`,
+            procedureCode: item.code,
+            units: String(item.units),
+            expectedCents: cents(expected),
+            observedCents: cents(observed),
+            varianceCents: cents(expected - observed),
+            paidCents: cents((observed * 8n) / 10n),
+            receivedOn: '2026-02-10',
+          }),
+          serviceLineId: `10000000-0000-4000-8000-${hex}`,
+          pricedLineId: `30000000-0000-4000-8000-${hex}`,
+        };
       }),
-    );
-    return { content, quoted };
-  });
+    }),
+  );
+  return { content, quoted, terms: draw.citation === 'regulation' ? [] : draw.terms };
+}
+
+const generated = draws.map(build);
+
+/**
+ * A packet at a percentage of Medicare, run first by the property that requires every role to be expected to pass
+ * somewhere: a draw is a percentage's one time in three, so twelve runs would miss it about once in 130 (the 40-seed
+ * run of 2026-11-01 found it).
+ */
+const AT_A_PERCENTAGE = build({
+  lines: [{ code: '97110', units: 2, perUnit: 5000, short: 100, claim: 1 }],
+  citation: 'percent',
+  percent: '112.5',
+  locked: 2025,
+  version: 3,
+  page: 4,
+  windowPage: 5,
+  windowDays: 3650,
+  release: 900_002,
+  level: 1,
+  daysToPay: 30,
+  section: 6,
+  group: 7,
+  terms: [30, 45],
+});
 
 /** Each role's sentence, the figure written where `{}` is, and the roles the sentence reads it in (any of them). */
 const NUMBER_TEMPLATES: Readonly<Record<string, string>> = {
   window_days: 'Disputes are raised within {} days [1].',
   days_to_pay: 'The payer has {} days to pay [4].',
   days_late: 'The payer paid {} days late [4].',
-  citation_page: 'The clause is on page {} [1].',
+  citation_page: 'The rate clause is on page {} [1].',
   window_page: 'The dispute window is on page {} [1].',
   version: 'The contract, version {}, applies [1].',
   release: 'Release {} priced the lines [2].',
@@ -118,10 +162,44 @@ const DATE_TEMPLATES: Readonly<Record<string, string>> = {
   service_date: 'The lines were billed on {} [3].',
   paid_date: 'The payer paid on {} [3].',
   received_date: 'The payer received the claims on {} [4].',
+  due_date: 'The prompt-pay due date was {} [4].',
   deadline: 'The window closes on {} [1].',
   effective_date: 'The contract took effect on {} [1].',
+  as_of_date: 'The packet is as of {} [1].',
+};
+const YEAR_TEMPLATES: Readonly<Record<string, string>> = {
+  schedule_year: 'The payer paid under the {} fee schedule [1].',
+  service_date: 'The lines were billed in {} [3].',
+  paid_date: 'The payer paid in {} [3].',
+  deadline: 'The window closes in {} [1].',
+};
+const PERCENT_TEMPLATES: Readonly<Record<string, string>> = {
+  contract_percent: 'The contract pays {}% of the Medicare fee schedule [1].',
+  interest_rate: 'Interest runs at {}% a year [4].',
 };
 const ROW_ROLES = new Set(['row', 'claim_row', 'patient_row']);
+
+/** Two cues of each amount role and of each date role, as the clause before a figure and as the figure's own clause. */
+const AMOUNT_CUES: Readonly<Record<string, readonly string[]>> = {
+  expected: ['the contract requires', 'the contract expected'],
+  allowed: ['the payer allowed'],
+  paid: ['the payer paid', 'the remittance paid'],
+  variance: ['the shortfall is', 'the payer underpaid'],
+  interest: ['interest is'],
+  patient_share: ['the patient owes'],
+};
+const DATE_CUES: Readonly<Record<string, string>> = {
+  service_date: 'the lines were billed',
+  paid_date: 'the payer paid',
+  received_date: 'the payer received the claims',
+  due_date: 'the prompt-pay due date was',
+  deadline: 'the window closes',
+  effective_date: 'the contract took effect',
+};
+/** Two clauses joined so that the second's cue is the figure's nearest and the first's the farther. */
+const TWO_CUES = ['Although {A}, {B} {v} [3].', '{A} less, so {B} {v} [3].', 'Since {A}: {B} {v} [3].', '{A} and {B} {v} [3].'] as const;
+const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+const twoCues = (template: string, farther: string, nearer: string, value: string) => capital(template.replace('{A}', farther).replace('{B}', nearer).replace('{v}', value));
 
 const UNITS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
 const TENS = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
@@ -142,6 +220,7 @@ function inWords(value: number): string {
 
 type Form = 'digits' | 'commas' | 'words';
 const written = (value: number, form: Form) => (form === 'digits' ? String(value) : form === 'commas' ? value.toLocaleString('en-US') : inWords(value));
+const dollars = (value: string) => `$${formatCents(cents(BigInt(value)))}`;
 
 /** The facts of each content, read once. */
 const factsOf = new WeakMap<PacketContentV2, ReturnType<typeof narrativeFacts>>();
@@ -162,6 +241,9 @@ function numberExpected(content: PacketContentV2, oracle: ReadonlyMap<string, Re
   return oracle.get(role)?.has(String(value)) === true;
 }
 
+/** The values the oracle holds in any of the roles. */
+const valuesIn = (oracle: ReadonlyMap<string, ReadonlySet<string>>, roles: Iterable<string>) => new Set([...roles].flatMap((role) => [...(oracle.get(role) ?? [])]));
+
 describe('properties of the role reader', () => {
   it('passes a number in a role’s words exactly when the inputs hold it in that role, for every role and every value held in any role', () => {
     const reached = new Set<string>();
@@ -181,32 +263,91 @@ describe('properties of the role reader', () => {
           }
         }
       }),
-      { seed: SEED, numRuns: 12 },
+      { numRuns: 12 },
     );
     // Every pair of roles was reached, a value held in one written in the other's words.
     const roles = Object.keys(NUMBER_TEMPLATES);
     expect([...reached].sort()).toEqual(roles.flatMap((held) => roles.map((role) => `${held}>${role}`)).sort());
   }, 120_000);
 
-  it('passes an amount or a date in a role’s words exactly when the inputs hold it in that role', () => {
+  it('passes an amount, a date, a year or a percentage in a role’s words exactly when the inputs hold it in that role, every date role among them', () => {
+    const reached = new Set<string>();
     fc.assert(
       fc.property(generated, ({ content }) => {
         const oracle = roleOracle(content);
         for (const [templates, write] of [
-          [AMOUNT_TEMPLATES, (value: string) => `$${formatCents(cents(BigInt(value)))}`],
+          [AMOUNT_TEMPLATES, dollars],
           [DATE_TEMPLATES, (value: string) => value],
+          [PERCENT_TEMPLATES, (value: string) => value],
         ] as const) {
-          const values = new Set(Object.keys(templates).flatMap((role) => [...(oracle.get(role) ?? [])]));
-          for (const value of [...values].filter((item) => !item.startsWith('-'))) {
+          for (const value of [...valuesIn(oracle, Object.keys(templates))].filter((item) => !item.startsWith('-'))) {
             for (const [role, template] of Object.entries(templates)) {
               const narrative = template.replace('{}', write(value));
-              expect(passes(narrative, content), narrative).toBe(oracle.get(role)?.has(value) === true);
+              const held = oracle.get(role)?.has(value) === true;
+              reached.add(`${role}:${String(held)}`);
+              expect(passes(narrative, content), narrative).toBe(held);
             }
           }
         }
+        // A year: every date's year and the fee schedule's.
+        const years = new Set([...valuesIn(oracle, Object.keys(DATE_TEMPLATES))].map((value) => value.slice(0, 4)));
+        for (const year of [...years, ...(oracle.get('schedule_year') ?? [])]) {
+          for (const [role, template] of Object.entries(YEAR_TEMPLATES)) {
+            const held = role === 'schedule_year' ? oracle.get(role)?.has(year) === true : [...(oracle.get(role) ?? [])].some((value) => value.startsWith(`${year}-`));
+            reached.add(`year ${role}:${String(held)}`);
+            expect(passes(template.replace('{}', year), content), `${template} ${year}`).toBe(held);
+          }
+        }
       }),
-      { seed: SEED, numRuns: 12 },
+      { numRuns: 12, examples: [[AT_A_PERCENTAGE]] },
     );
+    // Every date role was expected to pass somewhere: the deadline's, the due date's and the packet's among them.
+    for (const role of [...Object.keys(AMOUNT_TEMPLATES), ...Object.keys(DATE_TEMPLATES), ...Object.keys(PERCENT_TEMPLATES)]) {
+      expect(reached.has(`${role}:true`), role).toBe(true);
+    }
+    for (const role of Object.keys(YEAR_TEMPLATES)) {
+      expect(reached.has(`year ${role}:true`), role).toBe(true);
+    }
+  }, 120_000);
+
+  it('holds a figure after two cues to the nearer one’s role alone: one held only in the farther one’s fails (PE-7, CORR-18)', () => {
+    let farther = 0;
+    fc.assert(
+      fc.property(generated, fc.constantFrom(...TWO_CUES), ({ content }, template) => {
+        const oracle = roleOracle(content);
+        for (const [cues, write] of [
+          [AMOUNT_CUES, dollars],
+          [Object.fromEntries(Object.entries(DATE_CUES).map(([role, cue]) => [role, [cue]])), (value: string) => `on ${value}`],
+        ] as const) {
+          for (const value of [...valuesIn(oracle, Object.keys(cues))].filter((item) => !item.startsWith('-'))) {
+            for (const [far, farCues] of Object.entries(cues)) {
+              for (const [near, nearCues] of Object.entries(cues)) {
+                if (far === near) {
+                  continue;
+                }
+                for (const [a, b] of farCues.flatMap((one) => nearCues.map((other) => [one, other] as const))) {
+                  const held = oracle.get(near)?.has(value) === true;
+                  farther += !held && oracle.get(far)?.has(value) === true ? 1 : 0;
+                  const narrative = twoCues(template, a, b, write(value));
+                  expect(passes(narrative, content), narrative).toBe(held);
+                }
+              }
+            }
+          }
+        }
+        // Two day counts in one clause: each in its own role.
+        const late = [...(oracle.get('days_late') ?? [])][0];
+        const window = [...(oracle.get('window_days') ?? [])][0];
+        if (late !== undefined && window !== undefined) {
+          const each = (a: string, b: string) => `The payer paid ${a} days late and we dispute within ${b} days [1].`;
+          expect(passes(each(late, window), content), each(late, window)).toBe(true);
+          expect(passes(each(window, late), content), each(window, late)).toBe(late === window);
+        }
+      }),
+      { numRuns: 12 },
+    );
+    // Some value was held only in the farther cue's role, and so failed.
+    expect(farther).toBeGreaterThan(0);
   }, 120_000);
 
   it('fails a value no input holds in every role’s words', () => {
@@ -221,7 +362,7 @@ describe('properties of the role reader', () => {
           expect(passes(narrative, content), narrative).toBe(false);
         }
       }),
-      { seed: SEED, numRuns: 25 },
+      { numRuns: 25 },
     );
   }, 60_000);
 
@@ -237,7 +378,40 @@ describe('properties of the role reader', () => {
           expect(passes(`There were ${String(value)} claims [3].`, content), String(value)).toBe(oracle.get('claims')?.has(String(value)) === true);
         }
       }),
-      { seed: SEED, numRuns: 25 },
+      { numRuns: 25 },
+    );
+  }, 60_000);
+
+  it('passes a figure a quoted clause lists between edges in a role only where the record holds it so (CRIT-1, PE-3)', () => {
+    fc.assert(
+      fc.property(generated, ({ content, terms }) => {
+        const oracle = roleOracle(content);
+        for (const value of terms) {
+          for (const [role, template] of Object.entries(NUMBER_TEMPLATES)) {
+            const narrative = template.replace('{}', String(value));
+            expect(passes(narrative, content), `${narrative} (listed)`).toBe(numberExpected(content, oracle, role, value, 'digits'));
+          }
+          // Bare between edges, as the clause lists it, it repeats nothing.
+          expect(passes(`The terms are, in order, ${String(value)}, and more [1].`, content), String(value)).toBe(false);
+        }
+      }),
+      { numRuns: 25 },
+    );
+  }, 60_000);
+
+  it('reads a year’s lead before a count’s noun as the count, never the year (CRIT-1, PE-8)', () => {
+    fc.assert(
+      fc.property(generated, fc.constantFrom('the', 'these', 'for', 'its', 'this'), ({ content }, lead) => {
+        const oracle = roleOracle(content);
+        const years = new Set([...valuesIn(oracle, Object.keys(DATE_TEMPLATES))].map((value) => value.slice(0, 4)));
+        for (const year of years) {
+          for (const role of ['claims', 'lines', 'patients'] as const) {
+            const narrative = `The payer underpaid ${lead} ${year} ${role} [3].`;
+            expect(passes(narrative, content), narrative).toBe(oracle.get(role)?.has(year) === true);
+          }
+        }
+      }),
+      { numRuns: 25 },
     );
   }, 60_000);
 });

@@ -1199,3 +1199,10 @@ read only before "days" and a set of pages read only after "page". The window's 
 a figure it holds is repeated only beside them: "Disputes are raised within 10000 days" passes, "It affected 10000
 visits" fails (product observation (b), the reported defect). Above the first level the payer's copy states the
 level's own window alone, so the lines' first-level window, its days, its page and its clause are still no figure.
+Each of these figures takes one cue's role, never every role its clause names (the review of 2026-11-01, PE-4,
+CORR-4, CRIT-3, CRIT-4): the payment date stated as the deadline fails ("The payment dispute window ends on
+2026-04-08"), the window's days stated as days late fail, and the citation's page stated as the window's; a date after
+another figure or opening its sentence takes the cue before that figure or after it ("The payer paid $56.00 on
+<date>" is a payment date); and the deadline after the window's own words passes ("The window ends 3650 days after
+payment, on 2036-04-05"), since "days after payment" is the day count's phrase, not the date's. The window's quoted
+clause gives its figures no role of the record's: a code or section it lists is no day count or page.

@@ -13,7 +13,9 @@
  *   variation selectors, the combining grapheme joiner and the Hangul fillers; the line and paragraph
  *   separators; and a combining mark on anything but a letter). It is left out of the text that is
  *   scanned, so the digits around it are read as the one figure they show ("1", a zero-width space, "1"
- *   is the figure 11);
+ *   is the figure 11). A letter of another script inside a word of Latin letters (a Cyrillic "а" in
+ *   "allowed") prints as the Latin letter it looks like, so it is a hidden character too, though it stays
+ *   in the text: the word it is in is no word the role reader knows (docs/adr/0086, CORR-16);
  * - a figure in other digits: any number character that is not 0 to 9 once normalized (Arabic-Indic,
  *   Devanagari and every other script's digits, ideographic and other numerals), which the verifier does
  *   not read and so cannot check.
@@ -55,6 +57,10 @@ const MARKS = /\p{M}/gu;
 const LETTER = /^\p{L}/u;
 /** A number character that is not an ASCII digit. */
 const OTHER_NUMBER = /(?![0-9])\p{N}/u;
+/** A word's letters, and a letter of a script other than Latin (a confusable in a Latin word). */
+const WORD_LETTERS = /\p{L}+(?:['’]\p{L}+)*/gu;
+const LATIN = /\p{Script=Latin}/u;
+const NOT_LATIN = /(?!\p{Script=Latin})\p{L}/gu;
 
 const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
 
@@ -102,5 +108,15 @@ export function readableText(narrative: string): ReadableText {
     }
     return { start: starts[start] ?? narrative.length, end: ends[end - 1] ?? narrative.length };
   };
-  return { text, hidden, unreadable, original };
+  // A letter of another script in a word of Latin letters prints as the Latin letter it looks like.
+  const confusable: TextSpan[] = [];
+  for (const word of text.matchAll(WORD_LETTERS)) {
+    if (LATIN.test(word[0])) {
+      for (const letter of word[0].matchAll(NOT_LATIN)) {
+        mark(confusable, original(word.index + letter.index, word.index + letter.index + letter[0].length));
+      }
+    }
+  }
+  const shown = [...hidden, ...confusable].sort((a, b) => a.start - b.start);
+  return { text, hidden: shown, unreadable, original };
 }

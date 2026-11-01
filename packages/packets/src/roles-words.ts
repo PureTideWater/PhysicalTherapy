@@ -23,7 +23,6 @@ export function vocabulary() {
   /** A clause's edge: a sentence's end, a semicolon, a colon or a comma, and a blank line. */
   const EDGES = /[.!?;:,]|\n[ \t]*\n/g;
 
-
   /** Labels before a number, each with the role it gives. Pages take theirs from the words around (pageRoles). */
   const LABELS: ReadonlyMap<string, readonly FigureRole[] | 'page'> = new Map<string, readonly FigureRole[] | 'page'>([
     ['page', 'page'],
@@ -41,6 +40,10 @@ export function vocabulary() {
     ['x', ['line_units']],
     ['×', ['line_units']],
   ]);
+  /** Labels that are verbs too ("We appeal 3 claims"): a count's noun right after the number beats them. */
+  const VERB_LABELS = new Set(['appeal', 'appeals']);
+  /** Plural labels: a list after one keeps its role across a comma alone ("pages 1, 2", "rows 1, 2 and 3"). */
+  const PLURAL_LABELS = new Set(['pages', 'pp', 'releases', 'levels', 'versions', 'lines', 'rows', 'claims', 'patients']);
   /** Words between a label and its number: "release no. 900001", "page number 4". */
   const LABEL_FILLERS = new Set(['no', 'number', 'nos']);
   /** A row's noun before its number: "line 2", "claims 1 through 3". */
@@ -89,6 +92,8 @@ export function vocabulary() {
     ['patient', 'patient_row'],
     ['member', 'patient_row'],
   ]);
+  /** Determiners before an ordinal that make it prose before a noun that is no row's ("the sixth unit", "a second appeal"). */
+  const ORDINAL_DETERMINERS = new Set(['the', 'a', 'an', 'this', 'that', 'its', 'their', 'our', 'his', 'her', 'each', 'every']);
   /** Words between a count and its noun that make it some other count of the thing ("4 more lines", "6 per line"). */
   const NOT_THE_COUNT = new Set([
     'more',
@@ -122,10 +127,18 @@ export function vocabulary() {
   const CODE_MODIFIER_LEADS = new Set(['the', 'these', 'those', 'each', 'every', 'all', 'its', 'their', 'for', 'on', 'in', 'with', 'any', 'both', 'a', 'an', 'per', 'other', 'some', 'by', 'from', 'under', 'to', 'and', 'or']);
   /** Determiners in a partitive: "2 of the 3 claims". */
   const PARTITIVE_DETERMINERS = new Set(['the', 'these', 'those', 'its', 'their', 'all', 'our']);
-  /** Words that join a list: "pages 1 and 2", "lines 1 to 3". */
-  const LIST_JOINERS = new Set(['and', 'or', 'to', 'through', 'thru', 'plus', ',']);
+  /** Pronouns in a partitive with no noun, "2 of them": a part of the lines, the claims or the patients. */
+  const PARTITIVE_PRONOUNS = new Set(['them', 'these', 'those', 'which']);
+  /** Words that join a list: "pages 1 and 2", "lines 1 to 3", "lines 1–3" (a dash between two numbers is read as "–"). */
+  const LIST_JOINERS = new Set(['and', 'or', 'to', 'through', 'thru', 'plus', ',', '–']);
+  /** Conjunctions: the words after a figure stop at one, which opens the next figure's clause ("$300.00 and the remittances show $210.00"). */
+  const CONJUNCTIONS = new Set(['and', 'but', 'or', 'while', 'whereas', 'yet']);
+  /** Words that join a list across a comma: "rows 1, 2 and 3". */
+  const LIST_CONTINUERS = new Set([',', 'and', 'or', 'to', 'through', 'thru', '–']);
   /** Words before a year: "in 2026", "Medicare's 2026", "its 2026 contract", "CY 2026", "plan year 2026". */
   const YEAR_LEADS = new Set(['in', 'during', 'since', 'until', 'through', 'thru', 'for', 'from', 'before', 'after', 'between', 'year', 'years', 'cy', 'fy', 'its', 'this', 'that', 'these', 'those', 'their', 'our', 'each', 'every']);
+  /** A fee schedule's noun after a year: the year is the fee schedule's ("the 2025 Medicare fee schedule", "2026 rates"). */
+  const SCHEDULE_NOUNS = new Set(['medicare', 'mpfs', 'pfs', 'fee', 'fees', 'schedule', 'schedules', 'rate', 'rates', 'conversion', 'locality', 'rvu', 'rvus', 'gpci', 'gpcis']);
   /** A year's noun after it: "2026 rates", "the 2026 Medicare fee schedule", "the 2026 contract". */
   const YEAR_NOUNS = new Set([
     'medicare',
@@ -159,9 +172,34 @@ export function vocabulary() {
   /** Words that name each line: "each line", "per line", "a visit". */
   const EACH = new Set(['each', 'every', 'per', 'a']);
   const ONE_LINE = new Set(['line', 'visit', 'row', 'service']);
+  /** The lines after "each of": "on each of the 3 lines". */
+  const LINES = new Set(['line', 'lines', 'visit', 'visits', 'row', 'rows', 'service', 'services']);
+  /** A unit after "each", "per" or "a": an amount per unit ("$50.00 per unit", "at $50.00 a unit"). */
+  const ONE_UNIT = new Set(['unit']);
+  /** Words that state an amount or a count of units for the lines in total: "in all", "in total", "altogether", "across the 3 lines". */
+  const TOTAL_WORDS: Cues = [
+    ['in all', []],
+    ['in total', []],
+    ['all told', []],
+    ['total', []],
+    ['totals', []],
+    ['totaling', []],
+    ['totalling', []],
+    ['totaled', []],
+    ['totalled', []],
+    ['altogether', []],
+    ['combined', []],
+    ['overall', []],
+    ['aggregate', []],
+    ['across', []],
+  ];
+  /** Rows' nouns in the plural: a sentence about them that says nothing of each states totals ("the 3 lines billed 6 units"). */
+  const PLURAL_ROWS = new Set(['lines', 'claims', 'services', 'visits', 'rows', 'encounters', 'procedures']);
+  /** Words before a plural row's noun after a figure that make the figure the rows' total: "$300.00 for these 3 lines". */
+  const TOTAL_FOR = new Set(['for', 'across', 'over']);
 
 
-  /** The day counts' cues (any of them, between the figures and edges around the count). */
+  /** The day counts' cues: the one right after "days", else the nearest before the count since the figure before it. */
   const DAY_CUES: Cues = [
     ['within', ['window_days']],
     ['window', ['window_days']],
@@ -185,6 +223,13 @@ export function vocabulary() {
     ['redetermination', ['window_days']],
     ['to pay', ['days_to_pay']],
     ['pay within', ['days_to_pay']],
+    ['pays within', ['days_to_pay']],
+    ['paid within', ['days_to_pay']],
+    ['payment within', ['days_to_pay']],
+    ['must pay', ['days_to_pay']],
+    ['requires payment', ['days_to_pay']],
+    ['require payment', ['days_to_pay']],
+    ['required payment', ['days_to_pay']],
     ['prompt pay', ['days_to_pay']],
     ['clean', ['days_to_pay']],
     ['late', ['days_late']],
@@ -201,7 +246,10 @@ export function vocabulary() {
     ['delay', ['days_late']],
     ['delayed', ['days_late']],
   ];
-  /** The pages' cues: the dispute window's page or the contract clause's. */
+  /**
+   * The pages' cues: the dispute window's page or the contract clause's. A clause, a quote, a section or what is cited
+   * may be either, so those name both, and a word that names one of them says which ("the dispute window clause").
+   */
   const PAGE_CUES: Cues = [
     ['window', ['window_page']],
     ['dispute', ['window_page']],
@@ -210,21 +258,25 @@ export function vocabulary() {
     ['appeals', ['window_page']],
     ['deadline', ['window_page']],
     ['timely', ['window_page']],
-    ['clause', ['citation_page']],
+    ['clause', ['citation_page', 'window_page']],
+    ['cited', ['citation_page', 'window_page']],
+    ['quote', ['citation_page', 'window_page']],
+    ['quoted', ['citation_page', 'window_page']],
+    ['section', ['citation_page', 'window_page']],
     ['rate', ['citation_page']],
     ['rates', ['citation_page']],
     ['schedule', ['citation_page']],
-    ['cited', ['citation_page']],
     ['citation', ['citation_page']],
-    ['quote', ['citation_page']],
-    ['quoted', ['citation_page']],
-    ['section', ['citation_page']],
     ['amount', ['citation_page']],
     ['method', ['citation_page']],
     ['pays', ['citation_page']],
   ];
   /** The amounts' cues (the gateway's of docs/adr/0054, with allowed and paid apart). */
   const AMOUNT_CUES: Cues = [
+    ['expected payment', ['expected']],
+    ['expected reimbursement', ['expected']],
+    ['expected allowed', ['expected']],
+    ['expected allowable', ['expected']],
     ['expected', ['expected']],
     ['expects', ['expected']],
     ['expect', ['expected']],
@@ -266,6 +318,9 @@ export function vocabulary() {
     ['show', ['allowed', 'paid']],
     ['remittance', ['allowed', 'paid']],
     ['remittances', ['allowed', 'paid']],
+    ['request payment', ['variance']],
+    ['requests payment', ['variance']],
+    ['requested payment', ['variance']],
     ['shortfall', ['variance']],
     ['short', ['variance']],
     ['underpaid', ['variance']],
@@ -278,16 +333,78 @@ export function vocabulary() {
     ['owing', ['variance']],
     ['delta', ['variance']],
     ['variance', ['variance']],
+    ['balance', ['variance']],
+    ['due', ['expected', 'variance']],
     ['interest', ['interest']],
     ['patient share', ['patient_share']],
     ['patient owes', ['patient_share']],
     ['patient owed', ['patient_share']],
+    ['patient paid', ['patient_share']],
+    ['patient pays', ['patient_share']],
+    ['patients owe', ['patient_share']],
+    ['patients paid', ['patient_share']],
+    ['patients pay', ['patient_share']],
     ['patient responsibility', ['patient_share']],
     ['coinsurance', ['patient_share']],
     ['copay', ['patient_share']],
     ['copayment', ['patient_share']],
     ['deductible', ['patient_share']],
   ];
+  /** The amounts' cues that are verbs or a verb's participle; every other cue is a noun (or an adjective before one). */
+  const AMOUNT_VERBS = new Set([
+    'expected',
+    'expects',
+    'expect',
+    'requires',
+    'required',
+    'require',
+    'comes to',
+    'come to',
+    'came to',
+    'would have paid',
+    'should have paid',
+    'would have been paid',
+    'should have been paid',
+    'would pay',
+    'should pay',
+    'should have allowed',
+    'would have allowed',
+    'would have',
+    'should allow',
+    'allowed',
+    'allows',
+    'paid',
+    'remitted',
+    'reimbursed',
+    'received',
+    'shows',
+    'showed',
+    'show',
+    'short',
+    'underpaid',
+    'underpaying',
+    'owes',
+    'owed',
+    'owe',
+    'owing',
+    'due',
+    'request payment',
+    'requests payment',
+    'requested payment',
+    'patient owes',
+    'patient owed',
+    'patient paid',
+    'patient pays',
+    'patients owe',
+    'patients paid',
+    'patients pay',
+  ]);
+  /** The payer's acts: the amount is what the act moved, never the thing it was done to ("the payer paid the contract rate, $100.00"). */
+  const PAYER_ACTS = new Set(['allowed', 'allows', 'paid', 'remitted', 'reimbursed', 'received', 'shows', 'showed', 'show', 'underpaid', 'underpaying']);
+  /** Participles after a noun cue: the noun says what the amount is ("the interest owed is $5.76"). */
+  const PARTICIPLES = new Set(['owed', 'owing', 'due']);
+  /** Verbs that state what their subject comes to: the subject's cue says what the amount is ("the shortfall comes to $90.00"). */
+  const COPULAS = new Set(['comes to', 'come to', 'came to']);
   /** The percentages' cues: the contract's percentage or the interest rate. */
   const PERCENT_CUES: Cues = [
     ['contract', ['contract_percent']],
@@ -305,7 +422,11 @@ export function vocabulary() {
     ['a year', ['interest_rate']],
     ['per year', ['interest_rate']],
   ];
-  /** The dates' cues; "due" names a due date or a deadline. */
+  /** The acts of payment among the dates' cues: a service's cue after one is what the payment was for ("paid for these services on"). */
+  const PAYMENT_ACTS = new Set(['paid', 'pays', 'pay', 'remitted', 'processed', 'adjudicated', 'allowed', 'underpaid', 'denied']);
+  /** The services' cues among the dates' cues. */
+  const SERVICE_CUES = new Set(['service', 'services', 'serviced', 'rendered', 'treated', 'treatment', 'visit', 'visits', 'billed']);
+  /** The dates' cues; "due" names a due date or a deadline, and a word beside it says which ("the prompt-pay deadline"). */
   const DATE_CUES: Cues = [
     ['service', ['service_date']],
     ['services', ['service_date']],
@@ -326,8 +447,13 @@ export function vocabulary() {
     ['remittances', ['paid_date']],
     ['processed', ['paid_date']],
     ['adjudicated', ['paid_date']],
+    ['allowed', ['paid_date']],
+    ['underpaid', ['paid_date']],
+    ['denied', ['paid_date']],
     ['received', ['received_date']],
     ['receipt', ['received_date']],
+    ['prompt pay deadline', ['due_date']],
+    ['payment due', ['due_date']],
     ['due', ['due_date', 'deadline']],
     ['prompt pay', ['due_date']],
     ['deadline', ['deadline']],
@@ -340,7 +466,18 @@ export function vocabulary() {
     ['expires', ['deadline']],
     ['closes', ['deadline']],
     ['dispute', ['deadline']],
+    ['disputes', ['deadline']],
+    ['disputed', ['deadline']],
     ['appeal', ['deadline']],
+    ['appeals', ['deadline']],
+    ['appealed', ['deadline']],
+    ['raise', ['deadline']],
+    ['raised', ['deadline']],
+    ['file', ['deadline']],
+    ['filed', ['deadline']],
+    ['filing', ['deadline']],
+    ['submit', ['deadline']],
+    ['submitted', ['deadline']],
     ['respond', ['deadline']],
     ['effective', ['effective_date']],
     ['effect', ['effective_date']],
@@ -419,11 +556,70 @@ export function vocabulary() {
     'thousandth',
     'millionth',
   ]);
+  /** Words after a day count's "days" that tie it to an event ("3650 days after payment"): those words are the count's, not a date's after it. */
+  const DAY_ANCHORS = new Set(['after', 'of', 'from', 'following', 'since', 'before', 'past', 'beyond']);
   /** The kinds of day between a count and "days": "3650 calendar days", "10 business days". */
   const DAY_BASES = new Set(['calendar', 'business', 'working']);
   /** Words after a number that make it a dispute level: "a second-level appeal", "2 appeals". */
   const LEVEL_WORDS = new Set(['level', 'levels', 'appeal', 'appeals']);
-  return { DAY_BASES, LEVEL_WORDS, ABBREVIATED, WORD, EDGES, LABELS, LABEL_FILLERS, ROW_LABELS, COUNT_NOUNS, ORDINAL_NOUNS, NOT_THE_COUNT, CODE_MODIFIER_LEADS, PARTITIVE_DETERMINERS, LIST_JOINERS, YEAR_LEADS, YEAR_NOUNS, EACH, ONE_LINE, DAY_CUES, PAGE_CUES, AMOUNT_CUES, PERCENT_CUES, DATE_CUES, FUNCTION_WORDS, ORDINAL_WORDS } as const;
+  // By word family, so that each family can be read (and mutated) apart from the others.
+  return {
+    // The text: words, abbreviations and edges.
+    ABBREVIATED,
+    WORD,
+    EDGES,
+    // Labels before a number, and the lists that keep a label's role.
+    LABELS,
+    VERB_LABELS,
+    PLURAL_LABELS,
+    LABEL_FILLERS,
+    ROW_LABELS,
+    LIST_JOINERS,
+    LIST_CONTINUERS,
+    CONJUNCTIONS,
+    // Counts: the nouns after a number, ordinals, partitives and levels.
+    COUNT_NOUNS,
+    ORDINAL_NOUNS,
+    ORDINAL_DETERMINERS,
+    ORDINAL_WORDS,
+    NOT_THE_COUNT,
+    CODE_MODIFIER_LEADS,
+    PARTITIVE_DETERMINERS,
+    PARTITIVE_PRONOUNS,
+    LEVEL_WORDS,
+    // Years.
+    YEAR_LEADS,
+    YEAR_NOUNS,
+    SCHEDULE_NOUNS,
+    // What an amount or a count of units is stated per.
+    EACH,
+    ONE_LINE,
+    LINES,
+    ONE_UNIT,
+    TOTAL_WORDS,
+    PLURAL_ROWS,
+    TOTAL_FOR,
+    // Day counts.
+    DAY_CUES,
+    DAY_BASES,
+    DAY_ANCHORS,
+    // Pages.
+    PAGE_CUES,
+    // Amounts.
+    AMOUNT_CUES,
+    AMOUNT_VERBS,
+    PAYER_ACTS,
+    PARTICIPLES,
+    COPULAS,
+    // Percentages.
+    PERCENT_CUES,
+    // Dates.
+    DATE_CUES,
+    PAYMENT_ACTS,
+    SERVICE_CUES,
+    // Prose.
+    FUNCTION_WORDS,
+  } as const;
 }
 
 export type Vocabulary = ReturnType<typeof vocabulary>;

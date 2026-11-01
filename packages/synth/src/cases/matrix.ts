@@ -187,15 +187,15 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
   },
   {
     id: 'CAS-43',
-    title: 'A narrative states an input’s figure in another role (the window’s 10000 days as visits, a date’s year as claims, a page as a code, a release as units, a quoted clause’s or name’s number as the record’s, the allowed amount as the shortfall or as paid, a service date as the payment date, the days to pay as the window, calendar days as business days)',
+    title: 'A narrative states an input’s figure in another role (the window’s 10000 days as visits, a date’s year as claims, a page as a code, a release as units, a quoted clause’s or name’s number as the record’s, the allowed amount as the shortfall or as paid, a service date as the payment date, the days to pay as the window, calendar days as business days), including in a clause whose words name two roles (“Under the contract, the payer allowed $100.00”, two day counts swapped, the payment date as the deadline, the contract’s percentage as the interest rate), with “respectively” in the wrong order, a total as each line’s, a year before a count’s noun (“these 2026 claims”), or a quoted figure in a role its quote does not give it (a listed code as days, a page or a release)',
     assertion:
-      'The verifier fails each figure (`figure_not_in_input`, at the figure, with its kind); approval is blocked; the export refuses a version an older reading passed; the editor says what the figure was read as',
+      'The verifier fails each figure (`figure_not_in_input`, at the figure, with its kind), reading one cue’s role per figure and never the union of its clause’s cues; approval is blocked; the export refuses a version an older reading passed; the editor says what the figure was read as; the model gateway fails every swap its own reading at 83d71fd6 caught; each reproduction of the review of 2026-11-01 is a named example',
   },
   {
     id: 'CAS-44',
     title: 'A narrative states each figure in the role its input holds, or as a quoted text holds it',
     assertion:
-      'Passes: days, pages, versions, releases, levels, years, counts, units and rows each with their words, in digits, with commas or in words; a quoted figure beside its own words; at least 100 hand-written forms not drawn from the drafting templates; a number with no role fails',
+      'Passes: days, pages, versions, releases, levels, years, counts, units and rows each with their words, in digits, with commas or in words; a quoted figure beside its own words, in the role its quote gives it; at least 100 hand-written forms not drawn from the drafting templates; each figure in the role of the noun after it or its nearest cue (“the $30.00 difference”, “the payer paid the contract rate”, a deadline after “days after payment”), “respectively” in order, each line’s and the lines’ totals, ordinals and partitives as prose (“the first 3 claims”, “2 of the 3 claims”), “Lines 1–3”, a locked fee schedule’s year and business days to pay; a number with no role fails',
   },
   { id: 'LED-01', title: 'Packet submitted', assertion: 'No entry' },
   { id: 'LED-02', title: 'Adjusted remittance with higher allowed matching a case line', assertion: '`approved` entry for the difference' },

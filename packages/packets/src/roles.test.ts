@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { FIGURE_ROLES, functionWords, quotedHolds, quotedTokens, readFigures } from './roles';
+import { FIGURE_ROLES, SCOPES, functionWords, quotedHolds, quotedText, quotedTokens, readFigures } from './roles';
 
 /**
  * The role reader alone (./roles.ts; docs/adr/0086): each label, noun, cue and word it reads a figure's role from, the
@@ -26,6 +26,7 @@ describe('the roles', () => {
   it('are a closed list, each named once', () => {
     expect(new Set(FIGURE_ROLES).size).toBe(FIGURE_ROLES.length);
     expect(FIGURE_ROLES).toHaveLength(33);
+    expect(SCOPES).toEqual(['line', 'unit', 'total']);
   });
 });
 
@@ -62,14 +63,23 @@ describe('a label before a number', () => {
     expect(roles('See release zz 900001 here.', '900001')).toBe('none');
   });
 
-  it('reads which page from the words around it: the dispute window’s or the clause’s', () => {
+  it('reads which page from the words around it: the dispute window’s or the clause’s, one of them, never both', () => {
     for (const cue of ['window', 'dispute', 'disputes', 'appeal', 'appeals', 'deadline', 'timely']) {
       expect(roles(`The ${cue} is on page 7.`, '7'), cue).toBe('window_page');
     }
-    for (const cue of ['clause', 'rate', 'rates', 'schedule', 'cited', 'citation', 'quote', 'quoted', 'section', 'amount', 'method', 'pays']) {
+    for (const cue of ['rate', 'rates', 'schedule', 'citation', 'amount', 'method', 'pays']) {
       expect(roles(`The ${cue} is on page 7.`, '7'), cue).toBe('citation_page');
     }
-    expect(roles('The window and the clause are on page 7.', '7')).toBe('citation_page window_page');
+    // A clause, a quote, a section or what is cited may be either, and a word beside it says which (PE-4).
+    for (const cue of ['clause', 'cited', 'quote', 'quoted', 'section']) {
+      expect(roles(`The ${cue} is on page 7.`, '7'), cue).toBe('citation_page window_page');
+    }
+    expect(roles('The dispute window clause is on page 7.', '7')).toBe('window_page');
+    expect(roles('The rate clause is on page 7.', '7')).toBe('citation_page');
+    expect(roles('The window and the clause are on page 7.', '7')).toBe('window_page');
+    expect(roles('The dispute window is cited on page 7.', '7')).toBe('window_page');
+    // Words that name both: either one, not both at once.
+    expect(roles('The window and the rate are on page 7.', '7')).toBe('citation_page window_page');
     // After the page too, up to the next figure or edge.
     expect(roles('Page 7 holds the window.', '7')).toBe('window_page');
     expect(roles('The window is cited, see page 7.', '7')).toBe('citation_page window_page');
@@ -195,11 +205,13 @@ describe('words after a number', () => {
       ['Two levels up.', 'Two'],
       ['A second-level appeal.', 'second'],
       ['The 2 appeal.', '2'],
-      ['Its second appeals.', 'second'],
     ] as const) {
       expect(roles(text, written), text).toBe('level');
     }
     expect(roles('A first-level appeal.', 'first')).toBe('level');
+    // An ordinal before "appeal" is prose: "the second appeal" (CORR-8).
+    expect(reading('Its second appeals.', 'second')).toMatchObject({ roles: 'none', prose: true });
+    expect(reading('This is the second appeal.', 'second')).toMatchObject({ roles: 'none', prose: true });
   });
 
   it('read a count’s noun at once, after a code or digits, or after one word that keeps it the count', () => {
@@ -334,17 +346,32 @@ describe('words after a number', () => {
     expect(roles('It billed 2 units apiece.', '2')).toBe('line_units');
     expect(roles('Each line billed 2 units.', '2')).toBe('line_units');
     expect(roles('It billed 2 units in all.', '2')).toBe('units');
-    expect(roles('It billed 2 units on each of 3 lines.', '2')).toBe('units');
+    expect(reading('It billed 2 units in all.', '2').scope).toBe('total');
+    // "on each of the 3 lines" is each line's (CORR-7).
+    expect(roles('It billed 2 units on each of 3 lines.', '2')).toBe('line_units');
+    expect(roles('It billed 2 units on each of the 3 claims.', '2')).toBe('units');
   });
 
-  it('read a partitive’s noun for the count before it, past a determiner, a count and one word', () => {
+  it('read a partitive’s noun for the count before it, past a determiner, a count and one word, and the first number as a part of the second', () => {
     for (const determiner of ['the', 'these', 'those', 'its', 'their', 'all', 'our']) {
       expect(roles(`It paid 2 of ${determiner} denied claims.`, '2'), determiner).toBe('claims');
     }
     expect(roles('It paid 2 of 3 claims.', '2')).toBe('claims');
     expect(roles('It paid 2 of the 3 claims.', '2')).toBe('claims');
     expect(roles('It paid 2 of claims.', '2')).toBe('claims');
-    expect(roles('It paid 2 of them.', '2')).toBe('none');
+    // The first number is a part of the second, or of the count the noun names (CORR-9).
+    expect(reading('It paid 2 of the 3 claims.', '2').part).toEqual({ of: '3' });
+    expect(reading('It paid 2 of the 3 claims.', '3')).toMatchObject({ roles: ['claims'], part: null });
+    expect(reading('It paid 2 of claims.', '2').part).toEqual({ of: null });
+    // "of them", "of these", "of those" or "of which" with no noun: a part of the lines, claims or patients (CORR-13).
+    for (const pronoun of ['them', 'these', 'those', 'which']) {
+      expect(reading(`It paid 2 of ${pronoun}.`, '2'), pronoun).toMatchObject({ roles: ['lines', 'claims', 'patients'], part: { of: null } });
+    }
+    // A partitive the sentence opens with, for the number after its comma.
+    expect(reading('Of the 3 claims, 2 were paid.', '2')).toMatchObject({ roles: ['claims'], part: { of: '3' } });
+    expect(reading('Of these claims, 2 were paid.', '2')).toMatchObject({ roles: ['claims'], part: { of: null } });
+    expect(roles('Of these, 2 were paid.', '2')).toBe('none');
+    expect(roles('So of the 3 claims, 2 were paid.', '2')).toBe('none');
     expect(roles('It paid 2 of some denied claims.', '2')).toBe('none');
     expect(roles('Patient 2’s line was short.', '2')).toBe('patient_row');
     expect(roles('Patient 2’s 3 lines of claims.', '2')).toBe('patient_row');
@@ -425,9 +452,28 @@ describe('years', () => {
     ]) {
       expect(kind(`So 2026 ${noun} apply.`, '2026'), noun).toBe('year');
     }
-    expect(kind('The 2026 claims were short.', '2026')).toBe('year');
+    // A count's noun after it beats a year's lead, unless the noun dates the lines (PE-8, CORR-2).
+    for (const lead of ['the', 'these', 'its', 'for', 'this']) {
+      expect(roles(`So ${lead} 2026 claims were short.`, '2026'), lead).toBe('claims');
+      expect(roles(`So ${lead} 2026 services were short.`, '2026'), lead).toBe('service_date');
+    }
+    expect(roles('So the 2026 visits were short.', '2026')).toBe('service_date');
     expect(kind('There were 2026 claims.', '2026')).toBe('number');
     expect(roles('There were 2026 claims.', '2026')).toBe('claims');
+    expect(roles('There were 2026 services.', '2026')).toBe('lines');
+  });
+
+  it('reads a year before a fee schedule’s noun as the fee schedule’s year, whatever the cues around it (CORR-10)', () => {
+    for (const noun of ['medicare', 'mpfs', 'pfs', 'fee', 'fees', 'schedule', 'schedules', 'rate', 'rates', 'conversion', 'locality', 'rvu', 'rvus', 'gpci', 'gpcis']) {
+      expect(roles(`The payer paid under the 2025 ${noun} here.`, '2025'), noun).toBe('schedule_year');
+    }
+    for (const noun of ['contract', 'agreement', 'plan', 'calendar', 'fiscal', 'dates']) {
+      expect(kind(`So 2026 ${noun} apply.`, '2026'), noun).toBe('year');
+      expect(roles(`So 2026 ${noun} apply.`, '2026'), noun).toBe('any');
+    }
+    // A year's noun that is a date's cue names that date.
+    expect(roles('So 2026 payments apply.', '2026')).toBe('paid_date');
+    expect(roles('So 2026 disputes apply.', '2026')).toBe('deadline');
   });
 
   it('reads a year’s roles from the date cues around it', () => {
@@ -583,7 +629,9 @@ describe('amounts, percentages and dates', () => {
     }
     expect(roles('So $9.00 in interest.', '$9.00')).toBe('interest');
     expect(roles('So $9.00 of interest.', '$9.00')).toBe('interest');
-    expect(roles('So $9.00 for interest.', '$9.00')).toBe('any');
+    // Past "for", the nearest cue after it, up to the next figure, an edge or a conjunction.
+    expect(roles('So $9.00 for interest.', '$9.00')).toBe('interest');
+    expect(roles('So $9.00 and interest.', '$9.00')).toBe('any');
     expect(roles('The payer pays $9.00 here.', '$9.00')).toBe('any');
     expect(roles('It allowed $9.00 and paid $8.00.', '$8.00')).toBe('paid');
     expect(roles('It allowed $9.00 and paid $8.00.', '$9.00')).toBe('allowed');
@@ -592,6 +640,62 @@ describe('amounts, percentages and dates', () => {
     expect(roles('Allowed per line: $9.00.', '$9.00')).toBe('allowed');
     expect(roles('It allowed; $9.00.', '$9.00')).toBe('any');
     expect(roles('It allowed. $9.00.', '$9.00')).toBe('any');
+  });
+
+  it('read one cue’s role for an amount: the nearest, never every cue of its clause (PE-1, CORR-1, CORR-6, CRIT-2)', () => {
+    // The nearest in its own clause, past a comma or a colon.
+    expect(roles('Under the contract, the payer allowed $9.00.', '$9.00')).toBe('allowed');
+    expect(roles('Under the contract the payer allowed $9.00.', '$9.00')).toBe('allowed');
+    expect(roles('The contract expected and the payer allowed $9.00.', '$9.00')).toBe('allowed');
+    expect(roles('Although the payer paid, the contract requires $9.00.', '$9.00')).toBe('expected');
+    // The noun right after it, and the noun it completes with "of", first.
+    expect(roles('The payer paid toward the $9.00 difference.', '$9.00')).toBe('variance');
+    expect(roles('The remittance shows the contract rate of $9.00.', '$9.00')).toBe('expected');
+    expect(roles('The payer allowed less than the contract amount of $9.00.', '$9.00')).toBe('expected');
+    // A participle after a noun is the noun's; a noun after the payer's act is the act's object.
+    expect(roles('The interest owed is $9.00.', '$9.00')).toBe('interest');
+    expect(roles('The amount owed is $9.00.', '$9.00')).toBe('variance');
+    expect(roles('The payer underpaid the contract by $9.00.', '$9.00')).toBe('variance');
+    expect(roles('The payer paid the contract rate, $9.00.', '$9.00')).toBe('paid');
+    // A copula takes its subject's cue, past a figure in its clause.
+    expect(roles('The shortfall of $1.00 per line comes to $9.00.', '$9.00')).toBe('variance');
+    expect(roles('Altogether the shortfall comes to $9.00.', '$9.00')).toBe('variance');
+    expect(roles('Those lines come to $9.00.', '$9.00')).toBe('expected');
+    // A cue that names two roles, narrowed by one beside it.
+    expect(roles('The remittance paid $9.00.', '$9.00')).toBe('paid');
+    expect(roles('The remittances show $9.00.', '$9.00')).toBe('allowed paid');
+    // The cues of the clauses before it: one role, or every one of several.
+    expect(reading('The contract requires more than the payer paid: $9.00.', '$9.00')).toMatchObject({ roles: ['expected', 'paid'], every: true });
+    expect(reading('It allowed, in all, $9.00.', '$9.00')).toMatchObject({ roles: ['allowed'], every: false });
+    // After it, up to a conjunction.
+    expect(roles('It allowed $1.00 where $9.00 was due.', '$9.00')).toBe('expected variance');
+    // Past a figure of another family; after one of its own with no cue, that figure's roles.
+    expect(roles('The payer underpaid 3 claims by $9.00.', '$9.00')).toBe('variance');
+    expect(roles('The payer allowed $1.00 per line and $9.00 in total.', '$9.00')).toBe('allowed');
+    // "respectively": the cues in order, or every one when they do not match the list.
+    expect(roles('The contract expected and the payer allowed $1.00 and $9.00, respectively.', '$1.00')).toBe('expected');
+    expect(roles('The contract expected and the payer allowed $1.00 and $9.00, respectively.', '$9.00')).toBe('allowed');
+    expect(reading('The payer allowed $1.00, $2.00 and $9.00, respectively.', '$9.00')).toMatchObject({ roles: ['allowed'], every: true });
+  });
+
+  it('read what an amount or a count of units is stated per (CORR-7)', () => {
+    const scope = (text: string, written: string) => reading(text, written).scope;
+    for (const each of ['per line', 'a line', 'each line', 'per visit', 'apiece', 'on each of the 3 lines']) {
+      expect(scope(`It allowed $9.00 ${each}.`, '$9.00'), each).toBe('line');
+    }
+    for (const unit of ['per unit', 'a unit', 'each unit']) {
+      expect(scope(`It allowed $9.00 ${unit}.`, '$9.00'), unit).toBe('unit');
+    }
+    for (const total of ['in all', 'in total', 'all told', 'total', 'altogether', 'combined', 'overall', 'across the lines', 'for these 3 lines']) {
+      expect(scope(`It allowed $9.00 ${total}.`, '$9.00'), total).toBe('total');
+    }
+    expect(scope('Each line was expected at $9.00.', '$9.00')).toBe('line');
+    expect(scope('In total the remittances allowed $9.00.', '$9.00')).toBe('total');
+    expect(scope('The 3 lines were allowed $9.00.', '$9.00')).toBe('total');
+    expect(scope('The 3 lines were each allowed $9.00.', '$9.00')).toBe(null);
+    expect(scope('The lines were billed at $9.00 each.', '$9.00')).toBe(null);
+    expect(scope('The payer allowed $9.00.', '$9.00')).toBe(null);
+    expect(scope('The 3 lines billed 2 units.', '2')).toBe('total');
   });
 
   it('read a percentage’s roles from the cues before it and the words after it, past a year', () => {
@@ -617,6 +721,9 @@ describe('amounts, percentages and dates', () => {
     expect(roles('So 9% of the 2026 Medicare fee schedule.', '9%')).toBe('contract_percent');
     expect(roles('So 9% of what it is, not medicare.', '9%')).toBe('any');
     expect(roles('So 9% of what it is not, medicare.', '9%')).toBe('any');
+    // Both named: held in both (PE-4).
+    expect(reading('Interest runs at 9% of the Medicare fee schedule.', '9%')).toMatchObject({ roles: ['contract_percent', 'interest_rate'], every: true });
+    expect(reading('The contract pays interest at 9%.', '9%')).toMatchObject({ roles: ['contract_percent', 'interest_rate'], every: true });
   });
 
   it('read a date’s, a month’s and a day of a month’s roles from the cues before them and the noun after', () => {
@@ -669,6 +776,46 @@ describe('amounts, percentages and dates', () => {
     }
     expect(roles('So 2026-03-05 it was.', '2026-03-05')).toBe('any');
   });
+
+  it('read one cue’s role for a date: the nearest, past a figure of another family, and after it when it opens the sentence (PE-4, CRIT-3, CRIT-4)', () => {
+    for (const cue of ['disputes', 'disputed', 'appeals', 'appealed', 'raise', 'raised', 'file', 'filed', 'filing', 'submit', 'submitted']) {
+      expect(roles(`The ${cue} 2026-03-05 here.`, '2026-03-05'), cue).toBe('deadline');
+    }
+    for (const cue of ['allowed', 'underpaid', 'denied']) {
+      expect(roles(`The ${cue} 2026-03-05 here.`, '2026-03-05'), cue).toBe('paid_date');
+    }
+    expect(roles('The prompt-pay deadline was 2026-03-05.', '2026-03-05')).toBe('due_date');
+    expect(roles('The payment due 2026-03-05 here.', '2026-03-05')).toBe('due_date');
+    expect(roles('The payment dispute window ends on 2026-03-05.', '2026-03-05')).toBe('deadline');
+    expect(roles('The services were paid on 2026-03-05.', '2026-03-05')).toBe('paid_date');
+    // What a payment was for is no date of its own.
+    expect(roles('The payer paid for these services on 2026-03-05.', '2026-03-05')).toBe('paid_date');
+    expect(roles('The payer paid the billed lines on 2026-03-05.', '2026-03-05')).toBe('paid_date');
+    // The clauses before it: several roles, every one.
+    expect(reading('The payer paid the lines, with a deadline, on 2026-03-05.', '2026-03-05')).toMatchObject({ roles: ['paid_date', 'deadline'], every: true });
+    // Past a figure of another family, and past a day count's own words.
+    expect(roles('The payer paid $1.00 on 2026-03-05.', '2026-03-05')).toBe('paid_date');
+    expect(roles('The payer paid 3 lines on 2026-03-05.', '2026-03-05')).toBe('paid_date');
+    expect(roles('The window ends 9 days after payment, on 2026-03-05.', '2026-03-05')).toBe('deadline');
+    expect(roles('The window ends 9 days of the payment date, by 2026-03-05.', '2026-03-05')).toBe('deadline');
+    // Opening its sentence: the cue after it, past a comma.
+    expect(roles('On 2026-03-05 the payer paid.', '2026-03-05')).toBe('paid_date');
+    expect(roles('On 2026-03-05, the payer paid.', '2026-03-05')).toBe('paid_date');
+    // After a date of its own family with no cue: that date's roles.
+    expect(roles('Services ran from March 5 to March 7, 2026.', 'March 7, 2026')).toBe('service_date');
+  });
+
+  it('read one cue’s role for a day count: the cue right after "days", else the nearest before, else after (CORR-4, CORR-11)', () => {
+    expect(roles('The payer paid 9 days late and we dispute within 8 days.', '9')).toBe('days_late');
+    expect(roles('The payer paid 9 days late and we dispute within 8 days.', '8')).toBe('window_days');
+    expect(roles('Interest accrues on claims not paid within 9 days.', '9')).toBe('days_to_pay');
+    for (const cue of ['pays within', 'paid within', 'payment within', 'must pay', 'requires payment', 'require payment', 'required payment']) {
+      expect(roles(`The ${cue} 9 days.`, '9'), cue).toBe('days_to_pay');
+    }
+    expect(roles('The contract gives 9 days to dispute.', '9')).toBe('window_days');
+    // Business or working days count days to pay alone.
+    expect(roles('Disputes are raised within 9 business days.', '9')).toBe('days_to_pay');
+  });
 });
 
 describe('everything else', () => {
@@ -677,6 +824,13 @@ describe('everything else', () => {
     expect(reading('First, the payer paid short.', 'First').prose).toBe(true);
     expect(reading('The payer second paid short.', 'second').prose).toBe(false);
     expect(reading('The first line was short.', 'first').prose).toBe(false);
+    // An ordinal before another number, or after a determiner before a word that is no row's, is prose (PE-6, CORR-8).
+    expect(reading('The first 3 claims were short.', 'first')).toMatchObject({ roles: 'none', prose: true });
+    expect(roles('The first 3 claims were short.', '3')).toBe('claims');
+    for (const text of ['The sixth unit was short.', 'The fifth dispute.', 'A second appeal.']) {
+      expect(reading(text, text.split(' ')[1] ?? '').prose, text).toBe(true);
+    }
+    expect(reading('This line is the fifth.', 'fifth').prose).toBe(false);
   });
 
   it('reads modifiers, identifiers and codes that are not five digits in no role', () => {
@@ -735,6 +889,27 @@ describe('a text’s tokens', () => {
   });
 });
 
+describe('a quoted figure repeated in a role', () => {
+  const holds = (narrative: string, quote: string, which = 0) => {
+    const read = readFigures(narrative);
+    const figure = read.readings[which];
+    if (figure === undefined) {
+      throw new Error(`no figure in ${narrative}`);
+    }
+    return quotedHolds(read.tokens, figure, quotedText(quote), true, functionWords());
+  };
+
+  it('holds it only where the quote’s own words give it the role the narrative’s do (CORR-14)', () => {
+    const statute = 'Clean claims are paid within 33 days of receipt.';
+    expect(quotedText(statute).roles.get(5)).toEqual({ roles: ['days_to_pay'], every: false });
+    expect(holds('Claims are paid within 33 days of receipt [1].', statute)).toBe(true);
+    expect(holds('Disputes are raised within 33 days of receipt [1].', statute)).toBe(false);
+    // A quoted figure its words give no role is held in none.
+    expect(holds('The payer allowed $50.00 per unit.', '97110: $50.00 per unit.')).toBe(false);
+    expect(holds('The payer paid 24 days late.', 'Disputes are raised within 3650 days; see sections 4, 24, 90', 0)).toBe(false);
+  });
+});
+
 describe('a quoted figure repeated with its words', () => {
   const holds = (narrative: string, quote: string, inRole: boolean, which = 0) => {
     const read = readFigures(narrative);
@@ -742,7 +917,7 @@ describe('a quoted figure repeated with its words', () => {
     if (figure === undefined) {
       throw new Error(`no figure in ${narrative}`);
     }
-    return quotedHolds(read.tokens, figure.token, quotedTokens(quote), inRole, functionWords());
+    return quotedHolds(read.tokens, figure, quotedText(quote), inRole, functionWords());
   };
 
   it('holds a figure in no role beside the word before it, when that word means something', () => {
@@ -820,13 +995,16 @@ describe('a quoted figure repeated with its words', () => {
     expect(holds('So 4 of denied here', 'Zz 4 of denied there', false)).toBe(true);
     expect(holds('So 4 of them here', 'Zz 4 of them there', false)).toBe(false);
     expect(holds('So 4 here', 'Zz 4 there', false)).toBe(false);
-    // The quote's clause reached on one side and a word matched on the other.
-    expect(holds('The rate applies from July 2026 here', 'paid per unit from July 2026, billed', false)).toBe(true);
-    expect(holds('So 4 of here', '4 of there', false)).toBe(true);
+    // The quote's clause reached on one side, where the narrative's clause ends too, and a word matched on the other.
+    expect(holds('The rate applies from July 2026, here', 'paid per unit from July 2026, billed', false)).toBe(true);
+    expect(holds('The rate applies from July 2026 here', 'paid per unit from July 2026, billed', false)).toBe(false);
+    expect(holds('4 of here', '4 of there', false)).toBe(true);
+    expect(holds('So 4 of here', '4 of there', false)).toBe(false);
     expect(holds('So 4 there', 'Zz 4', false)).toBe(false);
     expect(holds('Zz 4 there', 'Zz 4', false)).toBe(true);
-    // The whole quoted clause repeated.
-    expect(holds('So 4 here', '4', false)).toBe(true);
+    // A bare figure that fills a quoted clause repeats nothing, the narrative's clause the same or not (PE-3).
+    expect(holds('So 4 here', '4', false)).toBe(false);
+    expect(holds('So, 4, here', 'See sections 2, 4, 6', false)).toBe(false);
   });
 
   it('holds a figure in a role only with four of its words, the word after it among them, or a whole quoted clause', () => {
@@ -836,7 +1014,9 @@ describe('a quoted figure repeated with its words', () => {
     expect(holds('This is a level 2 appeal [1].', quote, false)).toBe(true);
     expect(holds('So raised within 90 days on here', quote, true)).toBe(true);
     expect(holds('So is raised within 90 business days', quote, true)).toBe(false);
-    expect(holds('So 4 claims a year', quote, true)).toBe(true);
+    // The whole clause only where the narrative's clause is the quote's, edge to edge (PE-2, PE-3, CORR-3).
+    expect(holds('4 claims a year', quote, true)).toBe(true);
+    expect(holds('So 4 claims a year', quote, true)).toBe(false);
     expect(holds('So 4 claims a', quote, true)).toBe(false);
     expect(holds('There were 4 claims [3].', quote, true)).toBe(false);
   });
@@ -899,7 +1079,7 @@ describe('the reader’s boundaries', () => {
   });
 
   it('reads cues once each, in order, so a word after a cue is read as its own', () => {
-    expect(roles('The allowed paid $9.00.', '$9.00')).toBe('allowed paid');
+    expect(roles('The allowed paid $9.00.', '$9.00')).toBe('paid');
     expect(roles('The would have allowed $9.00.', '$9.00')).toBe('expected');
     expect(roles('The would have been paid $9.00.', '$9.00')).toBe('expected');
     expect(roles('So $9.00 would have allowed.', '$9.00')).toBe('expected');

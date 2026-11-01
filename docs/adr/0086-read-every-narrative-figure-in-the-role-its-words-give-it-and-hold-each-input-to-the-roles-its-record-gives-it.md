@@ -5,7 +5,8 @@
   (what the verifier holds a figure to), [0054](0054-match-model-figures-whole-and-in-role-read-letters-only-through-their-reader-hold-budgets-before-calls-and-serve-only-evaluated-prompts.md)
   (the role check moves into `@tp/packets`) and [0061](0061-verify-a-deadline-only-from-signed-off-evidence-refuse-an-unverified-export-in-sql-and-attest-the-export-over-its-hashes.md)
   (the tp-packet/2 facts); reverses none of their rulings.
-- **Date:** 2026-10-28
+- **Date:** 2026-10-28; one cue's role per figure, quoted figures in their own role and the gateway's proof against
+  the base, 2026-11-01 (the review of 2026-11-01's fix round)
 - **Deciders:** the build (Lane B), on product observation (b) of the test-flakes item; the founder, on the pull
   request's review
 - **PRD sections:** 12 (The packet: "any figure that is not in the input fails verification"), 14
@@ -49,36 +50,77 @@ a sentence's end). The roles are a closed list, `FIGURE_ROLES`:
   deadline, the contract's effective date, the packet's date, and the fee schedule's year.
 
 A number's role comes from a label before it ("page 2", "version 1", "release 900001", "level 2", "97110 x 2", "Units
-billed: 2", "line 2", "claims 1 through 3"), the words after it ("3650 days", "a second-level appeal", "3 claims", "3
-97110 lines", "2-unit line", the ordinal "the third claim", the partitive "2 of the 3 claims"), a list after a label
-("pages 1 and 2"), or the words that make it a year (a whole number from 1900 to 2199 after "in", "during", "for", a
-possessive, "its", CY, FY or "year", before a year's noun such as "fee schedule" or "rates", and after "the" before a
-count's noun). Which day count, which page and whether units are each line's comes from cue words in the clause
-around it; with none, any of them. A number with no role has none. An amount, percentage or date takes every role a
-cue names since the figure before it in its sentence and the role of the noun right after it ("the $30.00
-difference"); with no cue, any role of its kind. A five-digit figure is a code unless its words make it a number;
-before a count's noun after an article or a preposition ("the 97110 lines") it may be either. Two decimals without a
-dollar sign before a count's noun or "days" are a number ("1.25 units"). "first" with no role is prose, as "one" is.
+billed: 2", "line 2", "claims 1 through 3", "lines 1–3"), the words after it ("3650 days", "a second-level appeal", "3
+claims", "3 97110 lines", "2-unit line", the ordinal "the third claim", the partitive "2 of the 3 claims"), a list after
+a label ("pages 1 and 2"; across a comma alone only after a plural label or while the list goes on with "and", "or" or
+"to", never "version 1, 2 of them"), or the words that make it a year (a whole number from 1900 to 2199 after "in",
+"during", "for", a possessive, "its", CY, FY or "year", or before a year's noun such as "fee schedule" or "rates", which
+makes it the fee schedule's year). A count's noun right after a year-shaped figure beats a year's lead: "the 2026
+claims" and "these 2026 claims" are counts of claims, and "these 2026 services" a year, since "services" dates the
+lines. A count's noun also beats a label that is a verb too ("We appeal 3 claims"). An ordinal before any noun that is
+not a row's, or before another number, is prose ("the sixth unit", "the second appeal", "the first 3 claims"); before
+a row's singular noun it is that row ("the third claim"). A partitive's part is a part of its whole, at most the whole
+("2 of the 3 claims", "Of the 3 claims, 2 ...", "2 of them"). A number with no role has none. A five-digit figure is a
+code unless its words make it a number; before a count's noun after an article or a preposition ("the 97110 lines") it
+may be either. Two decimals without a dollar sign before a count's noun or "days" are a number ("1.25 units").
+
+**One cue's role per figure, never the union of its clause's cues** (the review of 2026-11-01, PE-1, PE-4, CORR-4).
+An amount, a percentage, a date (a month, a day of a month, a year), a day count and a page each take one cue's roles,
+found in this order (`roles.ts` names each step):
+
+1. "respectively" maps a list's figures to the cues before it, in order;
+2. the cue right after the figure ("the $30.00 difference", "$5.76 in interest", "9% a year", "3650 days late", "2025
+   rates"), or the noun it completes with "of" ("a shortfall of $90.00");
+3. the nearest cue before it in its own clause, the longer at the same end: a participle after a noun is the noun's
+   ("the interest owed is"); a verb for the payer's act beats a noun for its object ("the payer paid the contract rate,
+   $100.00" is what the payer paid); a copula takes its subject's cue ("the shortfall of $30.00 per line comes to
+   $90.00" is the shortfall's total, CRIT-2); a cue that names two roles is narrowed by one beside it that names one;
+4. for an amount, the nearest cue after it, up to the next figure or edge;
+5. the cues of the clauses before it, since the figure before it: one role when they name one, and when they name
+   several, every one of them, each of which must hold it ("The contract requires more than the payer paid: $56.00"
+   fails);
+6. past a figure of another family, the words before that figure ("the payer paid $56.00 on 2026-03-05" is a payment
+   date; "the window ends 3650 days after payment, on 2036-04-05" is the deadline, since "days after payment" is the day
+   count's own phrase, CRIT-3 and CRIT-4); after a figure of its own family with no cue of its own, that figure's role,
+   never "any" ("the payer allowed $70.00 per line and $100.00 in total" holds $100.00 to the allowed total, CORR-6);
+7. for a date or a percentage, the nearest cue after it, past a comma when it opens its sentence ("On 2036-04-05, the
+   payer paid" is a payment date, CRIT-3);
+8. with no cue at all, any role of its kind.
+
+"Business days" or "working days" are days to pay alone. A page takes the window's page or the citation's from the
+words around it; "clause", "quote", "section" and "cited" may be either. An amount and a count of units also say what
+they are stated per (`scope`): each line ("per line", "each line", "apiece"), each unit, or the lines in total ("in
+total", "in all", "across the 3 lines", or a sentence about the lines in the plural that says nothing of each), so a
+total stated per line, or a line's value stated as a total, fails (CORR-7). "first" with no role is prose, as "one" is.
 
 **Facts by role, `facts.ts`.** `NarrativeFacts` holds each value an input holds, by kind, with the roles its record
 gives it (`roles`), through one adder that names a role, so no value enters without one. A date's month, day of the
 month and year carry its role. The contract window's days are the window's days and its page the window's page; the
-interest's day counts are its own; the citation's page is the citation's.
+interest's day counts are its own; the citation's page is the citation's. Each amount and count of units also carries
+what it is stated per: each line's values per line, the pattern's and each code's in total, the contract's amount per
+unit (and per line, for a per-visit rate); what the lines paid and what the patients owe are held in total too (CORR-20). The fee schedule's year is the
+contract's locked year (`year_basis` `LOCKED:<year>`), or else the service dates' years (CORR-10).
 
 **A quoted text is never an input of a role** (the review's blocking finding B1). Every quoted text is kept as its
-tokens (`quotes`). A narrative figure that is not held in its role passes only as a repetition of a quoted figure with
-the words around it (`quotedHolds`): a figure in no role beside the word before it when that word means something
-("Section 4", "GROUP 77"), or with two of its words one of which means something, or with the quote's clause reached on
-one side and a word matched on the other; a figure in a role only with four of its words or more, the word after it
-among them unless the quote's clause ends there, or with a whole quoted clause. So "A level 2 appeal is raised within
-90 days" may be repeated, and "This is a level 2 appeal" fails when the dispute is at level 1. Procedure codes and
-modifiers the clause or the regulation's statement names are codes; identifiers any quoted text holds are compared
-whole, as before.
+tokens (`quotes`), with each of its figures read by the same reader. A narrative figure that is not held in its role
+passes only as a repetition of a quoted figure with the words around it (`quotedHolds`), and an edge counts as matched
+only where the narrative's clause and the quote's both end there: a figure in no role beside the word before it when
+that word means something ("Section 4", "GROUP 77"), or with two of its words one of which means something, or with
+both clauses ending on one side and a word matched on the other; a figure in a role only where the quote's own words
+give it that same role, and then with four of its words or more, the word after it among them unless both clauses end
+there. A figure that fills a whole quoted clause (a code list, a figure after a colon) passes in no role on that alone
+(the review of 2026-11-01, PE-3, CORR-3, CORR-14). So "A level 2 appeal is raised within 90 days" may be repeated;
+"This is a level 2 appeal" fails when the dispute is at level 1; a code of the clause "97014, 97545, 92508 - 12" is no
+day count, page, release or count of units; and the statute's "paid within 33 days of receipt" is no dispute window.
+Procedure codes and modifiers the clause or the regulation's statement names are codes; identifiers any quoted text
+holds are compared whole, as before.
 
 **The check asks one question** (`verifier/mismatches.ts`): does the input hold this value of this kind in a role its
-words give it? A day count in business or working days passes only where the record counts business days (a
-prompt-pay rule's `day_basis`). The `DAYS_AFTER` and `PAGE_BEFORE` patches and the five-digit rule are gone; the reader
-owns context.
+words give it, stated per what its words say? A figure whose words name several roles at once (step 5) must be held in
+every one; a partitive's part must be at most its whole. A day count in business or working days passes only where the
+record counts business days (a prompt-pay rule's `day_basis`). The `DAYS_AFTER` and `PAGE_BEFORE` patches and the
+five-digit rule are gone; the reader owns context. A letter of another script inside a Latin word ("аllowed" with a
+Cyrillic "а") is a `hidden_character`, since it would hide a cue from the reader (CORR-16).
 
 **The report does not change.** The format stays `tp-packet-verifier/2`, with its eight codes and kinds; a role
 failure is `figure_not_in_input` with the figure's kind (a five-digit figure that may be a code reports `code`). The
@@ -90,8 +132,12 @@ passed and this one fails is refused there (`verifier_failed`), and nothing wron
 browser-safe) return each figure with the roles it was read in, whether it passed and, when it failed, the roles its
 value is held in. The narrative editor says what a failing figure was read as ("read as a count of claims"), worded
 from `FIGURE_ROLES` (`apps/web/src/lib/packets/view.ts` `ROLE_TEXT`, which TypeScript holds complete). The gateway's
-`roleMismatches()` keeps its API and reads the same facts: a failed figure whose value is held in another role is
-`figure_in_wrong_role`, so a model's swap reads as misstated.
+`roleMismatches()` reads the same facts: a failed figure whose value is held in another role is `figure_in_wrong_role`,
+so a model's swap reads as misstated. Its `role` is the one its nearest cue names, and `roles` and `every` say all of
+them (CORR-21). The gateway's check before a model's draft is written is the verifier's, and it is at least as strict
+as the gateway's own reading was before the verifier read roles: `functions/narrative-roles.test.ts` runs that reading,
+vendored unchanged from the base 83d71fd6 as a fixture only (`narrative-roles.base.fixture.ts`), over 246 generated
+swaps and every misstated example of the review, and requires each one it caught to fail the gateway (PE-2).
 
 **The reader's words are their own module and built on each read** (`roles-words.ts` `vocabulary()`), not when the
 module loads, so each word is a mutant only the tests that read it run (a value built at load is a static mutant
@@ -106,8 +152,18 @@ every test reruns: 1,570 of the reader's first 1,988). The reading and its words
   clause's "level 2 appeal", "90 days", "page 9", "12 units" and "4 claims" then pass as the record's level, days late,
   citation page, units and claims, the reported defect again by another path.
 - **Nearest cue only** for amounts and dates (the gateway's rule of ADR 0054). Rejected in review (B2): "The payer paid
-  nothing toward the $30.00 difference" and "The payer paid for these services on April 8, 2026" fail. Every cue in
-  the window, and the noun after, keeps them.
+  nothing toward the $30.00 difference" and "The payer paid for these services on April 8, 2026" fail. The pull
+  request's first build therefore took every cue since the figure before it, and the noun after.
+- **Every cue in the clause, held in any of them** (that first build). Rejected in the review of 2026-11-01 (PE-1,
+  PE-4, CORR-4): when a clause names two roles, a value held in the farther one's passes in the nearer one's, so a
+  dispute stated backwards ("Under the contract, the payer allowed $100.00"), a swapped day count, the payment date as
+  the deadline and the contract's percentage as the interest rate passed the verifier, the export's re-check and the
+  gateway, which caught 246 of 246 such amount swaps before. One cue's role, in the order above, fails them and keeps
+  B2's sentences: "the $30.00 difference" takes the noun after it (step 2), and "paid for these services on April 8,
+  2026" the payer's act before it, since the services are its object (step 3).
+- **Keeping the gateway's own nearest-cue reading as a second gate** on a model's draft (PE-2's first option). Not
+  taken: one reading of roles stays the rule for every screen, and the proof (`narrative-roles.test.ts` with the base's
+  reading as a fixture) holds the gateway to every swap that reading caught.
 - **Slots** (ADR 0054, Alternatives) remain the stronger step for a model's draft. They do not replace this check: a
   person edits the text, and the payer reads text.
 - **Bumping the report format to `tp-packet-verifier/3` now.** It needs `packet_verifier_report_valid` to accept it and
@@ -117,17 +173,26 @@ every test reruns: 1,570 of the reader's first 1,988). The reading and its words
 ## Consequences
 
 - A narrative states each figure with the words of its role ("3 claims", "6 units", "page 2", "3650 days", "release
-  900001"). A bare number fails unless a quoted text holds it with the same words; "twice", "half" and every ordinal
-  but "first" with no noun fail. "The payer paid $70.00" fails where $70.00 is the allowed amount and $56.00 was paid.
-  "within 3650 business days" fails for a calendar-day window. "It is a 3650-day window" now passes.
-- The design's and the review's probes (168), the hand-written forms of CAS-44 (134, none drawn from the drafting
+  900001"). A bare number fails unless a quoted text holds it with the same words in the same role; "twice", "half" and
+  an ordinal with no noun after it ("This line is the fifth") fail. "The payer paid $70.00" fails where $70.00 is the
+  allowed amount and $56.00 was paid. "within 3650 business days" fails for a calendar-day window. "It is a 3650-day
+  window" now passes. A figure's words that name two roles hold it to both, so "The contract requires more than the
+  payer paid: $56.00" fails; the person says which it is.
+- The design's and the first review's probes, the hand-written forms of CAS-44 (134, none drawn from the drafting
   templates), the 300 MOD-03 reference narratives, the code-built draft of every generated pattern and the CAS-08
-  fixture are each as designed; CAS-43's 85 misstatements each fail at their figure.
+  fixture are each as designed; CAS-43's 87 misstatements each fail at their figure. Every reproduction of the review of
+  2026-11-01, and each verifier's variant, is a named example (`role-examples.ts` `REVIEWED`, 144: 87 fail at the
+  figures they misstate, CAS-43; 57 pass, CAS-44), asserted by the verifier, the gateway and the reader's tests. The
+  properties (`roles.property.test.ts`) add sentences with two cues, the figure held only in the farther one's role;
+  quoted figures that fill a list between edges; a year's lead before a count's noun; and every date role, the
+  deadline's among them; each ran over 40 seeds with no failure.
 - The gateway's swap faults (`eval/gate.golden.test.ts`) now fail the packets verifier too
   (`figure_not_in_input` beside `figure_in_wrong_role`).
 - What it does not do: amount, percentage and date roles rest on cue words, so a narrative can still place a cue the
   input does not contradict; a quoted figure is repeated only as its text writes it ("Section 422.214 of 42 CFR" does
-  not repeat "42 CFR 422.214"); a five-digit input code before a noun after an article reads as the code.
+  not repeat "42 CFR 422.214"); a five-digit input code before a noun after an article reads as the code. A difference
+  written with no role's word ("$14.00 less than the $70.00 it allowed", after "paid $56.00") takes the figure before
+  it's role and fails; "a $14.00 patient share" passes.
 - Lane A: one migration to accept `tp-packet-verifier/3` and make it current, then a one-line `VERIFIER_FORMAT`
   change, so a version the older reading passed reads `verifier_outdated` before export rather than at it.
 

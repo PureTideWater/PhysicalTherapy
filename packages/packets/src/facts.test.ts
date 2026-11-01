@@ -25,7 +25,7 @@ const sorted = (facts: NarrativeFacts) => ({
   codes: [...facts.codes].sort(),
   modifiers: [...facts.modifiers].sort(),
   identifiers: [...facts.identifiers].sort(),
-  quotes: facts.quotes.map((quote) => quote.join(' ')),
+  quotes: facts.quotes.map((quote) => quote.tokens.join(' ')),
   rows: facts.rows,
   markers: [...facts.markers].sort((a, b) => a - b),
 });
@@ -37,7 +37,7 @@ const values = (facts: NarrativeFacts, kind: string) =>
     .map((key) => key.slice(kind.length + 1))
     .sort();
 /** Whether a quoted text holds a token (a figure as `n:64`, a word as `w:plan`). */
-const quotes = (facts: NarrativeFacts, token: string) => facts.quotes.some((quote) => quote.includes(token));
+const quotes = (facts: NarrativeFacts, token: string) => facts.quotes.some((quote) => quote.tokens.includes(token));
 const roles = (facts: NarrativeFacts, kind: Parameters<typeof heldRoles>[1], value: string) => [...heldRoles(facts, kind, value)].sort();
 
 describe('narrativeFacts', () => {
@@ -119,6 +119,8 @@ describe('narrativeFacts', () => {
         'amount:5600': 'paid', // lines 1 and 3 paid
         'amount:6000': 'variance', // 97110 variance
         'amount:6400': 'paid', // line 2 paid
+        'amount:17600': 'paid', // the lines' paid in total (CORR-20)
+        'amount:4400': 'patient_share', // the patients' shares in total (CORR-20)
         'amount:7000': 'allowed', // lines 1 and 3 observed
         'amount:8000': 'allowed', // line 2 observed (and 97140's)
         'date:2025-07-01': 'effective_date',
@@ -269,7 +271,7 @@ describe('narrativeFacts', () => {
     expect(roles(narrativeFacts(first), 'date', '2036-04-05')).toEqual(['deadline']);
     expect(roles(narrativeFacts(first), 'number', '3650')).toEqual(['window_days']);
     expect(roles(narrativeFacts(first), 'number', '1')).toContain('window_page');
-    expect(narrativeFacts(first).quotes).toContainEqual(['w:disputes', 'w:are', 'w:raised', 'w:within', 'n:3650', 'w:days', 'w:of', 'w:the', 'w:payment', 'w:date', '|']);
+    expect(narrativeFacts(first).quotes.map((quote) => quote.tokens)).toContainEqual(['w:disputes', 'w:are', 'w:raised', 'w:within', 'n:3650', 'w:days', 'w:of', 'w:the', 'w:payment', 'w:date', '|']);
     // Above it, the level's own window alone; the line's first-level window and its clause are no figure.
     const above = narrativeFacts(second);
     expect(roles(above, 'date', '2026-12-01')).toEqual(['deadline']);
@@ -341,6 +343,8 @@ describe('narrativeFacts', () => {
         'amount:3000': 'variance',
         'amount:30000': 'expected',
         'amount:5600': 'paid',
+        'amount:16800': 'paid', // the lines' paid in total (CORR-20)
+        'amount:4200': 'patient_share', // the patients' shares in total (CORR-20)
         'amount:7000': 'allowed',
         'amount:9000': 'variance',
         'date:2026-03-05': 'service_date',
@@ -365,7 +369,7 @@ describe('narrativeFacts', () => {
         'number:33': 'days_to_pay',
         'number:6': 'units',
         'number:900001': 'release',
-        'year:2026': 'as_of_date paid_date service_date',
+        'year:2026': 'as_of_date paid_date schedule_year service_date', // no locked year: the fee schedule in effect for the service dates (CORR-10)
         'year:2036': 'deadline',
         // No rate, so no interest is computed: no percentage, due date, day late or interest amount.
       },
@@ -477,6 +481,23 @@ describe('narrativeFacts', () => {
     expect([...release.roles.values()].some((held) => held.has('window_days') || held.has('window_page'))).toBe(false);
   });
 
+  it('holds each amount and count of units also by what it is stated per: a line’s, in total, or the contract’s rate per unit (CORR-7, CORR-20)', () => {
+    const facts = narrativeFacts(assemblePacket(assemblyInput()));
+    const per = (scope: 'line' | 'unit' | 'total', kind: 'amount' | 'number', value: string) => [...heldRoles(facts, kind, value, scope)].sort();
+    // A line's amounts and units are a line's; the pattern's and the code's are totals.
+    expect([per('line', 'amount', '10000'), per('total', 'amount', '10000')]).toEqual([['calculation', 'expected'], []]);
+    expect([per('line', 'amount', '30000'), per('total', 'amount', '30000')]).toEqual([[], ['expected']]);
+    expect([per('line', 'amount', '5600'), per('total', 'amount', '16800')]).toEqual([['paid'], ['paid']]);
+    expect([per('line', 'amount', '1400'), per('total', 'amount', '4200')]).toEqual([['patient_share'], ['patient_share']]);
+    expect([per('line', 'number', '2'), per('total', 'number', '2'), per('total', 'number', '6')]).toEqual([['line_units', 'units'], [], ['units']]);
+    // The contract's rate is per unit, and per visit (a line) for a per-visit rate.
+    expect([per('unit', 'amount', '5000'), per('line', 'amount', '5000'), per('total', 'amount', '5000')]).toEqual([['expected'], [], []]);
+    const visit = narrativeFacts(assemblePacket(assemblyInput({ citation: contractCitation({ method: 'PER_VISIT', parameters: { amount_cents: '4500' } }) })));
+    expect([[...heldRoles(visit, 'amount', '4500', 'unit')], [...heldRoles(visit, 'amount', '4500', 'line')]]).toEqual([['expected'], ['expected']]);
+    // Unscoped, every value is held whatever it is stated per.
+    expect(roles(facts, 'amount', '30000')).toEqual(['expected']);
+  });
+
   it('holds only whole cents of a calculation, and nothing for a rounding, a patient share or a rule the version does not state', () => {
     const content = assemblePacket(assemblyInput({ interest: { state: 'QQ', releaseNo: 900001, record: null } }));
     const [first, ...rest] = content.lines;
@@ -492,9 +513,10 @@ describe('narrativeFacts', () => {
     // A whole unrounded amount, a negative one included, is a figure.
     const whole = amounts({ ...content, lines: [{ ...first, calculation: { ...first.calculation, rounding: { rule: 'HALF_UP_CENT', unrounded_cents: '-250', rounded_cents: '-250' } } }, ...rest] });
     expect(whole).toStrictEqual([...before, '-250'].sort());
-    // No rounding and no patient share: no figure for either, and nothing else changes.
+    // No rounding and no patient share: no figure for either, nor a total of the patients' shares (one is not known),
+    // and nothing else changes.
     const without = narrativeFacts({ ...content, lines: [{ ...first, calculation: { ...first.calculation, rounding: null, patient_share_cents: null } }, ...rest] });
-    expect(values(without, 'amount')).toStrictEqual(before);
+    expect(values(without, 'amount')).toStrictEqual(before.filter((value) => value !== '4200'));
     // The release has no prompt-pay record for the state: the section states no rule's days, rate or statute.
     expect(content.interest).toMatchObject({ days_to_pay: null, annual_rate_percent: null, statute: null, total_cents: null });
     const facts = narrativeFacts(content);

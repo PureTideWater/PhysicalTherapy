@@ -387,4 +387,10 @@ that role, on a person's narrative, in the editor, when a version is written and
 draft. `roleMismatches()` (`functions/narrative-roles.ts`) keeps its API and reads the same facts: of the figures the
 packets verifier failed, those whose value the inputs hold in another role are `figure_in_wrong_role`, so the person
 sees a figure misstated rather than missing. Its roles are `@tp/packets`' `FIGURE_ROLES`, which split what the
-remittances show into what the payer allowed and what it paid. The harness's swap faults now fail with both codes.
+remittances show into what the payer allowed and what it paid; a mismatch names the role its nearest cue gives the
+figure (`role`) and every role its words give it (`roles`, `every`). The harness's swap faults now fail with both codes.
+The reader takes one cue's role per figure, the nearest by the order ADR 0086 sets, as this check's reading did, never
+the union of every cue in its clause; so the check before a model's draft is written is at least as strict as this
+check was. `functions/narrative-roles.test.ts` proves it on every build: the check as it stood at 83d71fd6, vendored
+unchanged as a fixture only (`narrative-roles.base.fixture.ts`), runs over 246 generated amount swaps and every
+misstated example of the review of 2026-11-01, and each one it caught must fail the gateway (PE-2).
