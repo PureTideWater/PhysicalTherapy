@@ -2779,7 +2779,9 @@ test('practice workflow', async ({ browser }) => {
       if ((await letter.count()) > 0) await letter.selectOption({ index: 1 });
       await form.getByLabel('Response', { exact: true }).selectOption({ index: await optionIndex(page, /^Response$/, /Partial/i) });
       const received = form.getByLabel('Received on');
-      if ((await received.inputValue()) === '') await received.fill('2026-10-01');
+      // From PR #85's fix round Received on starts empty, required and bounded by the submission's date (min) and today
+      // (max): a fixed date before the submission's would stop the press in the browser, so the field's own min is used.
+      if ((await received.inputValue()) === '') await received.fill((await received.getAttribute('min')) || '2026-10-01');
       // Every required select the press submits is chosen, or the browser's bubble stops it and the shot would wait in vain.
       const unchosen = await form.locator('select[required]').evaluateAll((selects) => selects.filter((select) => (select as HTMLSelectElement).value === '').map((select) => select.getAttribute('name') ?? '?'));
       if (unchosen.length > 0) throw new Error(`a required select is still unchosen: ${unchosen.join(', ')}`);
