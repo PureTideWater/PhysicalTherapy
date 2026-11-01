@@ -183,6 +183,15 @@ guard 2026-11-04 12:00 UTC).
 - 2026-11-01T20:52:00Z: reviews of B (#94) and C (#91) launched together: wf_91a35eba-252 (a wrapper that runs the reviews
   script once per PR; heavy commands share the lock). A's reviews (wf_48c765bd-7af) in round 2.
 
+- 2026-11-01T21:25:00Z: **A's reviews done** (wf_48c765bd-7af, 3 rounds, 16 agents): 26 raw findings, 18 distinct (0 B, 5 S,
+  13 N), none refuted; records `approval-summaries/lane-b-dependabot-batch-A-review-{ci-infra,security-supply}.md` committed.
+  S: MOD-18 depends on the runner's ANTHROPIC_CUSTOM_HEADERS; no automatic check of the SDK's environment reads at minors;
+  the ADR 0048 amendment silent on an API-version change under ADR 0070's gate; D2's "fails closed at startup" false for the
+  web (first model request); the description's merge order stale against the 20:36Z rule. #94's CI green on 484e9f06 (all
+  four required checks; the six packets/pricing Stryker shards). **A's fix round launched**: wf_416e36ca-397 (fixer, adversarial
+  checker, the full local suite once, one push with the description rewritten and read back; record
+  `approval-summaries/lane-b-dependabot-batch-A-fix-round.md`); script archived (args select the PR).
+
 ## Waiting on someone
 - 1 moderate Dependabot alert on the default branch (GitHub's push message, 2026-11-01 18:2xZ): a person reads it (the API answers 403 to the build). Does not block.
 - The API version of Stripe's webhook endpoint (design §5.4): a person checks it in Stripe's dashboard. Does not block.
