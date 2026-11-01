@@ -12,7 +12,9 @@ import {
   afterChoosing,
   batchProblems,
   heldWith,
+  leaveAsks,
   startingKind,
+  stillSending,
   waitingFor,
   waitingText,
 } from './uploader';
@@ -258,5 +260,35 @@ describe('a batch’s own problems', () => {
   it('never include a choice still to make, which the panel waits for instead of refusing', () => {
     expect(batchProblems([pdf], null, LIMITS)).toEqual([]);
     expect(batchProblems([csv], ERA, LIMITS)).toEqual([]);
+  });
+});
+
+/**
+ * When leaving the Uploads screen asks first (test matrix DLR-04; UX review of PR #78, UX-DLR-02): while a file of the
+ * batch is still asked for, uploading or being reported complete, a reload would cut it off; once each is sent or
+ * failed, nothing is lost by leaving. The browser's question itself is the browser's. Written by hand.
+ */
+
+describe('leaving the Uploads screen', () => {
+  it('asks while any file of the batch is still being sent', () => {
+    for (const phase of ['waiting', 'uploading', 'completing'] as const) {
+      expect(stillSending([{ phase: 'sent' }, { phase }, { phase: 'failed' }])).toBe(true);
+    }
+  });
+
+  it('never asks with no batch, or once every file is sent or failed', () => {
+    expect(stillSending([])).toBe(false);
+    expect(stillSending([{ phase: 'sent' }, { phase: 'failed' }, { phase: 'sent' }])).toBe(false);
+  });
+
+  it('asks while any file waits to upload, chosen and kept here with nothing sent, with no batch or beside a settled one (the merge of #78)', () => {
+    expect(leaveAsks([], 1)).toBe(true);
+    expect(leaveAsks([{ phase: 'sent' }, { phase: 'failed' }], 3)).toBe(true);
+    expect(leaveAsks([{ phase: 'uploading' }], 0)).toBe(true);
+  });
+
+  it('never asks once nothing waits and every file of the batch is sent or failed (the merge of #78)', () => {
+    expect(leaveAsks([], 0)).toBe(false);
+    expect(leaveAsks([{ phase: 'sent' }, { phase: 'failed' }], 0)).toBe(false);
   });
 });

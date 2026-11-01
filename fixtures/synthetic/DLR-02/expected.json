@@ -1,0 +1,17 @@
+{
+  "case": "DLR-02",
+  "module": "DLR",
+  "title": "A script's refused download",
+  "assertion": "Without a navigation (a `fetch()` in mode `cors` or `same-origin`, navigate with Dest empty as a download link and \"Save link as\" send it, a frame, no Fetch Metadata with `Accept: */*`, JSON or the wildcard first, HTML ranked lower or refused, or no `Accept` at all) every refusal is today's JSON outcome, its status, headers and body byte for byte; a success is the same attachment to a navigation and a script; a navigation's HEAD or POST is still refused with 405 before the route runs",
+  "synthetic": true,
+  "completesIn": 11,
+  "assertedBy": ["apps/web/src/lib/http/download-refusal.test.ts","apps/web/e2e/download-refusals.spec.ts"],
+  "codeListRelease": null,
+  "noFileReason": "The requests are built in memory with each client’s headers, against fake routes, and one is sent by the journey’s request API; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

@@ -30,11 +30,18 @@ const CHROMIUM_ON_CI = ['tools/test/ci-chromium.ts'];
 
 /**
  * Database files whose run is long and whose source is short, root-relative: the generated route tests (two lines
- * each) and SCR-19's lease wait (about 190 s on CI). Each shard starts its slowest files first, by the durations in
- * the results cache (node_modules/.vite/vitest, which CI restores per shard); a file with no recorded duration
- * falls back to its size, which would start these last. So, without a recorded duration, these start first.
+ * each), SCR-19's lease wait (about 190 s on CI) and CAS-41's bounded readers (triage's and the report's, each building
+ * months of 10,000 and 20,000 generated lines and measuring their readers on both: 5.5 and 8 minutes locally;
+ * SUITE-CAP-1a, docs/adr/0083). Each shard starts its slowest files first, by the durations in the results cache
+ * (node_modules/.vite/vitest, which CI restores per shard); a file with no recorded duration falls back to its size,
+ * which would start these last. So, without a recorded duration, these start first.
  */
-export const SLOW_FIRST: readonly RegExp[] = [/^apps\/web\/src\/lib\/routes\/route-tests\/route-tests\.\d+\.db\.test\.ts$/, /^apps\/worker\/src\/screening\/consumer-lease\.db\.test\.ts$/];
+export const SLOW_FIRST: readonly RegExp[] = [
+  /^apps\/web\/src\/lib\/routes\/route-tests\/route-tests\.\d+\.db\.test\.ts$/,
+  /^apps\/worker\/src\/screening\/consumer-lease\.db\.test\.ts$/,
+  /^apps\/worker\/src\/triage\/batched\.db\.test\.ts$/,
+  /^apps\/worker\/src\/report\/streamed\.db\.test\.ts$/,
+];
 
 /**
  * Vitest's own order (a project's files failed first, then longest first by the results cache, then largest first),

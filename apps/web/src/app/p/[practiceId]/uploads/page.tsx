@@ -1,8 +1,11 @@
 import type { Metadata } from 'next';
 
+import { DownloadRefusal } from '../../../../components/download-refusal';
+import { ForgetRefusal } from '../../../../components/forget-refusal';
 import { roleNames } from '../../../../components/format';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { Uploader } from '../../../../components/uploads/uploader';
+import { downloadRefusal } from '../../../../lib/http/download-refusal';
 import { loadPage } from '../../../../lib/http/next';
 import { uploadsPage } from '../../../../lib/routes/uploads';
 import { KIND_NAMES } from '../../../../lib/uploads/receipt-labels';
@@ -18,14 +21,22 @@ export const metadata: Metadata = { title: 'Uploads' };
  * system it came from chosen first (CO-03; docs/adr/0060): each file of the batch is read with that
  * system's layout, and an unconfirmed layout says so before the upload. The kinds are offered by the
  * names the receipts give them (KIND_NAMES), which show whole in the drop zone at a phone's width; the
- * system's select and its help say where an ERA export comes from.
+ * system's select and its help say where an ERA export comes from. A receipt's refused report download comes back
+ * here, said above the receipts (docs/adr/0079).
  */
-export default async function UploadsPage(props: { readonly params: Promise<{ practiceId: string }> }) {
+export default async function UploadsPage(props: { readonly params: Promise<{ practiceId: string }>; readonly searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const page = await loadPage(uploadsPage, props);
   if (page.kind === 'forbidden') {
-    return <Forbidden shell={page.shell} section="uploads" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
+    // A refused download comes back here to a role this page refuses too: the refusal leaves the address bar.
+    return (
+      <>
+        <Forbidden shell={page.shell} section="uploads" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />
+        {downloadRefusal(await props.searchParams) === null ? null : <ForgetRefusal />}
+      </>
+    );
   }
   const data = page.data;
+  const refusal = downloadRefusal(await props.searchParams);
   return (
     <AppShell shell={page.shell} section="uploads">
       <div className="flex flex-col gap-1">
@@ -41,6 +52,8 @@ export default async function UploadsPage(props: { readonly params: Promise<{ pr
         limits={data.limits}
         heading="Drop 835 files or ERA exports here"
         initialKind="x12_835"
+        reportFrom="uploads"
+        receiptsNotice={<DownloadRefusal refusal={refusal} />}
         kinds={[
           { kind: 'x12_835', label: KIND_NAMES.x12_835, contentTypes: data.limits.contentTypes },
           {

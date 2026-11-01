@@ -2,11 +2,12 @@
 
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PermissionState } from '@tp/ui';
 import { useRouter } from 'next/navigation';
-import { type DragEvent, type RefObject, useCallback, useEffect, useRef, useState } from 'react';
+import { type DragEvent, type ReactNode, type RefObject, useCallback, useEffect, useRef, useState } from 'react';
 
 import { counted } from '../../lib/copy/words';
 import { spreadsheetExportProblem } from '../../lib/uploads/csv-exports';
-import { type Receipt, formatBytes, receiptState } from '../../lib/uploads/receipt-labels';
+import { type Receipt, type ReportFrom, formatBytes, receiptState } from '../../lib/uploads/receipt-labels';
+import { DownloadLinks } from '../download-link';
 import { Hint, controlMarks } from '../field';
 import { FieldError } from '../form-issues';
 import { FormatUnconfirmedBadge } from './format-flag';
@@ -16,7 +17,10 @@ import { ReceiptList, type ReceiptPage, ReceiptStatus } from './receipts';
  * The Uploads screen's drop zone and batch progress (PRD 5, J4; PRD 7, Uploads). The browser asks the
  * server for one upload URL per file, PUTs each file straight to it (S3, or the local receiver), and
  * reports each PUT complete; the server's receipts then take over. File names stay in this browser:
- * they are shown here while the batch uploads and never sent anywhere.
+ * they are shown here while the batch uploads and never sent anywhere. Until every file of the batch is sent, and
+ * while any file waits to upload, leaving the page (a reload, a typed address, closing the tab) asks first, since it
+ * would cut the uploads off or drop the files chosen; a receipt's report downloads in place, so it never does
+ * (docs/adr/0079; leaveAsks).
  *
  * Files dropped or chosen before the panel can file them (no kind chosen, or an ERA export with no system chosen) are
  * kept here and wait, listed by name, with nothing sent: the select that waits is marked invalid, described by what to
@@ -87,6 +91,13 @@ export interface UploaderProps {
   readonly uploaders?: string;
   /** Whether the practice's receipts are listed below the drop zone. */
   readonly showReceipts?: boolean;
+  /** The page the receipts are listed on, as their report links name it (?from=), so a refused report comes back there. */
+  readonly reportFrom?: ReportFrom;
+  /**
+   * Said above the receipts: a refused report download the page arrived with (DownloadRefusal; docs/adr/0079), until a
+   * report downloaded in place says its own outcome there instead (DownloadLinks).
+   */
+  readonly receiptsNotice?: ReactNode;
 }
 
 /** The kind a panel without `kinds` takes: an 835, with the limits' types. */
@@ -285,6 +296,44 @@ async function post<T>(path: string, csrfToken: string, body: Record<string, unk
     throw new Error(issue ?? (response.status === 403 ? 'Your role cannot upload files here.' : 'The server refused the request. Reload the page and try again.'));
   }
   return answer;
+}
+
+/** Whether a file of the batch is still being sent: asked for, uploading or being reported complete. */
+export function stillSending(batch: readonly { readonly phase: Phase }[]): boolean {
+  return batch.some((item) => item.phase === 'waiting' || item.phase === 'uploading' || item.phase === 'completing');
+}
+
+/**
+ * Whether leaving the page asks first: while a file of the batch is still being sent (stillSending), or while any file
+ * waits to upload (`held`, the files dropped or chosen and kept here for a kind, a system or Upload). A file that waits
+ * is work a reload would lose as surely as one in flight: the person chose it, maybe chose its kind and system too, and
+ * nothing of it has reached the server, so no receipt would show it after the reload (docs/adr/0079, 4, which guards a
+ * page that holds what a reload would lose). Once nothing waits and each file is sent or failed, leaving asks nothing.
+ */
+export function leaveAsks(batch: readonly { readonly phase: Phase }[], held: number): boolean {
+  return held > 0 || stillSending(batch);
+}
+
+/**
+ * While active, leaving the page asks first (the browser's own question, before it unloads): an upload in flight ends
+ * with its page, and so do the files waiting to upload (leaveAsks). A move inside the app keeps the page's script
+ * running, and the batch with it, so it never asks.
+ */
+function useLeaveGuard(active: boolean): void {
+  useEffect(() => {
+    if (!active) {
+      return undefined;
+    }
+    const ask = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      // Chrome before 119 asks only when returnValue is set.
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', ask);
+    return () => {
+      window.removeEventListener('beforeunload', ask);
+    };
+  }, [active]);
 }
 
 /** PUTs the file, reporting progress; a 409 or 412 means its bytes were already stored. */
@@ -614,6 +663,8 @@ export function Uploader(props: UploaderProps) {
     focusNext.current = 'choose';
   };
 
+  useLeaveGuard(leaveAsks(batch, held.length));
+
   const onDrop = (event: DragEvent<HTMLElement>) => {
     event.preventDefault();
     setDragging(false);
@@ -793,7 +844,9 @@ export function Uploader(props: UploaderProps) {
       {props.showReceipts === false ? null : (
         <div className="flex flex-col gap-2">
           <h2 className="text-xl font-bold tracking-display">Receipts</h2>
-          <ReceiptList practiceId={practiceId} canUpload={canUpload} csrfToken={csrfToken} refreshKey={refreshKey} title="Receipts" />
+          <DownloadLinks arrived={props.receiptsNotice}>
+            <ReceiptList practiceId={practiceId} canUpload={canUpload} csrfToken={csrfToken} refreshKey={refreshKey} title="Receipts" reportFrom={props.reportFrom} />
+          </DownloadLinks>
         </div>
       )}
     </div>
