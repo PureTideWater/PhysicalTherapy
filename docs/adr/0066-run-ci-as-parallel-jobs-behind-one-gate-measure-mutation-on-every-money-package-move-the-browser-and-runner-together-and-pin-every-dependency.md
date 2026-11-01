@@ -981,7 +981,7 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
 - **N32** (`co-001/ci-images-digest`, 2026-10-28). The images job's two identity steps take only the config digest
   they compare, `fromJSON(steps.<id>.outputs.metadata || '{}')['containerimage.config.digest']`, never the whole
   metadata output. The branch's commit messages call it N29, the number it held until the merge of #82, whose Part 5
-  took N29 to N31.
+  notices, N23 to N31, include an N29 of their own.
   - **Why.** buildx v0.38.1 copies the whole event into every build record's provenance and, by default, into the
     metadata output. On #42's description of 95,324 characters, that output reached 132,377 bytes, 132,387 as one
     environment string (`NAME=value` and its NUL), over Linux's 131,072 (`MAX_ARG_STRLEN`; the whole environment and
