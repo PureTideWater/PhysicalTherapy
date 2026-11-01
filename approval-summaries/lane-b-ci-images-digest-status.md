@@ -10,8 +10,22 @@ safer), recorded here and in the PR description.
 Open questions: none.
 
 <!-- RESUME-BLOCK -->
-## Current state (2026-11-01 17:33 UTC): records corrected; base merge and two reviews running (workflow wf_d3f0da30-f5f)
-- **Running since 17:31 UTC:** workflow `wf_d3f0da30-f5f` (script `workflow-scripts/lane-b-ci-images-digest-merge-review-wf_d3f0da30-f5f.js`): the merge of bce57f16 with the N32 renumber, pushed to the WIP ref `co-001/wip-ci-images-digest` (not the PR); an adversarial merge check (fix loop up to 3); the two reviews (CI and test infrastructure; security and supply chain) on the WIP head, written to `approval-summaries/lane-b-ci-images-digest-review-{ci-infra,security-supply}.md`; three skeptics per B/S finding, one per nit; a completeness critic. Progress files: `approval-summaries/lane-b-ci-images-digest-wip/progress/`. A check-in is scheduled for 22:40 UTC (`trig_01QUE7hkfxkLyv4kzZCS4tcp`); resume a stopped run with resumeFromRunId in this session, or start the stage again from the WIP ref and the progress files.
+## Current state (2026-11-01 20:00 UTC): merged with #82 and renumbered on the WIP ref; reviews done; skeptics resuming
+- **WIP head `b2a41a00`** on `co-001/wip-ci-images-digest` (the PR branch is still 83167b8f): 60a92a70 merge of bce57f16
+  (three conflicts, both sides kept, #82 first), 5143563f T6's citations remapped to #82's lines (27 ranges in 47 rows;
+  #82 adds no value T3 does not admit), b2a41a00 N29 to N32 (ADR :31 :45 :981 with the "commit messages call it N29"
+  sentence, five workflows' comments, ci.md, reconciliation-001, workflows.test.ts). Regeneration changed nothing
+  (`pnpm exec tsx tools/screening-capacity/watched.ts --write`, not plain `node`). Checks green: tools tests 32 files /
+  456, typecheck, lint, lint:logs, actions:check (offline and BASE), toolchain:check (1 base warning). The merge check
+  (fresh clone, adversarial) passed in round 1. #42 be63bdc2 merges with b2a41a00 cleanly.
+- **Reviews written:** `approval-summaries/lane-b-ci-images-digest-review-{ci-infra,security-supply}.md`. Confirmed by
+  three skeptics each: CI S1 (T6's line citations go stale silently; take P6, structural refs), security S1 (an
+  expression in a mapping key is never checked). Confirmed nits: CI N1 (T5 count of 7), N2 (UTF-16 job-output wording),
+  N3 (reconciliation-001's C labels), N4 (per-scalar sum, ci.md wording). Refuted: CI N5 (P2 retention; already a
+  recorded proposal). Security S2, S3, N1–N3 and the critic were cut off by the 5-hour window at 19:10 UTC and resumed
+  at 19:58 UTC (same run, `wf_d3f0da30-f5f`, cached agents replayed).
+- **Next:** the fix round (one workflow): every confirmed finding fixed as its skeptics refined it (security the safer),
+  the full local suite once, the #42 merge-tree and CI_TREE run, §6.3's read, one push of the merged head to #86 (R3).
 - **Started** 2026-11-01 16:57 UTC; a person said "go" in this session at about 17:25 UTC ("Don't be redundant and do
   things that have already passed an ux review"; this change has no screen, so no UX review applies).
 - **Machine:** setup OK at 17:26 UTC (Node v24.22.0 after moving the base image's v24.22.1 aside; worktree
