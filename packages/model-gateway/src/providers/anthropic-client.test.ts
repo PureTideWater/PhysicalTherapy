@@ -259,6 +259,8 @@ describe('MOD-18: a request through that client with a tracer provider and a pro
     expect(headers.has('traceparent')).toBe(false);
     expect(headers.has('tracestate')).toBe(false);
     expect(headers.has('baggage')).toBe(false);
+    // Moving this pin is a model change once the Anthropic path has a real entry: re-record it first (docs/adr/0048,
+    // amendment of 2026-11-01, API version).
     expect(headers.get('anthropic-version')).toBe('2026-10-21');
     expect(headers.get('authorization')).toBe(`Bearer ${KEY}`);
     expect(headers.has('x-api-key')).toBe(false);
