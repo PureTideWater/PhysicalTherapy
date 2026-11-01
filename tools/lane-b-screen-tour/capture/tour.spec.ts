@@ -599,6 +599,69 @@ async function refused(page: Page, text: RegExp = /Not done|Check the fields|Not
 }
 
 /**
+ * Moves a sign-in step's page clock (installed before its navigation) forward ten seconds at a time until the step's
+ * timer shows the phase, for at most 1,000 seconds (key registration's 15 minutes). Before co-001/ux-sign-in-time a step
+ * has no timer, so the shot is skipped with that reason.
+ */
+async function toStepPhase(page: Page, phase: 'warning' | 'closed'): Promise<void> {
+  const timer = page.locator('[data-slot="step-timer"]');
+  await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
+  if ((await timer.count()) === 0) throw new Error(`${shown(page)} states no time limit (before co-001/ux-sign-in-time, ADR 0081)`);
+  await expect(timer).toHaveAttribute('data-phase', /^(open|warning|closed)$/);
+  for (let moved = 0; moved < 1_000 && (await timer.getAttribute('data-phase')) !== phase; moved += 10) {
+    await page.clock.fastForward(10_000);
+    // A real pause for React to commit the phase the jump's check set (its scheduler is not on the fake clock), so the
+    // loop reads it before the next jump and never carries a 'warning' wait past the warning into 'closed'.
+    await page.waitForTimeout(100);
+  }
+  await expect(timer).toHaveAttribute('data-phase', phase);
+}
+
+/**
+ * The sign-in page's Email field holds the persona's address, kept from a step that closed or was started again. Before
+ * co-001/ux-sign-in-time nothing is kept, so the shot is skipped saying so (the error never prints the field's value).
+ */
+async function emailKept(page: Page, persona: string): Promise<void> {
+  const field = page.getByLabel('Email');
+  await expect(field).toBeVisible();
+  try {
+    await expect(field).toHaveValue(personaEmail(persona), { timeout: 5_000 });
+  } catch {
+    const empty = (await field.inputValue()) === '';
+    throw new Error(`${shown(page)} keeps no email: the Email field is ${empty ? 'empty' : 'not the persona’s'} (before co-001/ux-sign-in-time, ADR 0081)`);
+  }
+}
+
+/**
+ * Enters the persona's password and waits for its next step. A persona the ref does not seed (time-mfa and time-staff
+ * come with co-001/ux-sign-in-time) is refused on /sign-in, and the shot is skipped saying so rather than with a URL
+ * mismatch.
+ */
+async function passwordTo(page: Page, persona: string, step: RegExp): Promise<void> {
+  await enterPassword(page, persona);
+  // The next step's URL, or a refusal on /sign-in (so an unseeded persona does not wait out the 20 s).
+  await Promise.race([
+    page.waitForURL((url) => url.pathname !== '/sign-in', { timeout: 20_000 }),
+    page.locator('[data-slot="alert"], [role="alert"]').filter({ hasText: /did not match|Not done|Account locked|Too many/ }).first().waitFor({ timeout: 20_000 }),
+  ]).catch(() => undefined);
+  if (new URL(page.url()).pathname === '/sign-in') {
+    const refusedHere = await page.getByText(/did not match/).first().isVisible().catch(() => false);
+    throw new Error(refusedHere ? `${persona} is not seeded on this ref: its password did not match (a persona of co-001/ux-sign-in-time)` : `${persona} stayed on /sign-in after its password`);
+  }
+  await expect(page).toHaveURL(step);
+}
+
+/** A reason notice opened by its URL; a reason the ref does not know is a 404, and the shot is skipped saying so. */
+function reasonShown(reason: string): (page: Page) => Promise<void> {
+  return async (page) => {
+    if (await page.getByText('Not found', { exact: true }).first().isVisible().catch(() => false)) {
+      throw new Error(`${shown(page)} is a 404 on this ref (${reason} is not one of its sign-in reasons)`);
+    }
+    await expect(page.locator(`[data-reason="${reason}"]`).first()).toBeVisible();
+  };
+}
+
+/**
  * A guard for an upload step that must send nothing (files chosen before their kind or system, PR #75): every request
  * for upload targets is aborted and counted, and `sent()` throws when one was made, so the shot is skipped with the
  * reason, never taken over a write.
@@ -722,6 +785,12 @@ interface Cap {
   readonly dark?: boolean;
   readonly ready?: (page: Page) => Promise<void>;
   readonly act?: (page: Page, width: Width) => Promise<void>;
+  /**
+   * Installs Playwright's fake clock in the page (page.clock.install()) before its first navigation, so `act` can move
+   * the page's own timers forward (a sign-in step's warning and closed state, UX PR 6; ADR 0081). Installed, it runs on
+   * from real time until moved; the server's clock and the cookies stay real.
+   */
+  readonly clock?: boolean;
   readonly note?: string;
 }
 
@@ -746,6 +815,7 @@ async function cap(browser: Browser, c: Cap): Promise<void> {
       }
       const { page, dispose } = await open(browser, c.persona, width);
       try {
+        if (c.clock === true) await page.clock.install();
         await go(page, c.persona, typeof c.path === 'function' ? await c.path() : c.path);
         await (c.ready ?? h1)(page);
         await c.act?.(page, width);
@@ -1110,14 +1180,15 @@ test('public pages and sign-in', async ({ browser }) => {
 
   // /sign-in
   await cap(browser, { key: 'sign-in', route: R.signIn, persona: null, path: '/sign-in', ready: async (page) => expect(page.getByLabel('Email')).toBeVisible(), note: 'Legacy tour shot 01-sign-in (1280).' });
-  for (const reason of ['idle', 'step_expired']) {
+  // restarted: UX PR 6 (co-001/ux-sign-in-time; ADR 0081); a 404 before it.
+  for (const reason of ['idle', 'step_expired', 'restarted']) {
     await cap(browser, {
       key: 'sign-in',
       route: R.signIn,
       persona: null,
       path: `/sign-in?reason=${reason}`,
       state: `interaction:reason-${reason.replace('_', '-')}`,
-      ready: async (page) => expect(page.locator(`[data-reason="${reason}"]`).first()).toBeVisible(),
+      ready: reasonShown(reason),
       note: 'A notice the product redirects to, opened by its URL.',
     });
   }
@@ -1154,20 +1225,84 @@ test('public pages and sign-in', async ({ browser }) => {
 
   // /sign-in/mfa (billing-manager): the step before the code, in throwaway contexts (no code is consumed).
   await mfaShots(browser);
+  // UX PR 6 (co-001/ux-sign-in-time; ADR 0081): the code step's warning and closed state on the page's own clock, and the
+  // sign-in page after Start again and after a step closed, the email kept. time-mfa is this PR's persona: no code is
+  // consumed, and nothing else signs it in on the tour's database. Before it the persona is not seeded, and each shot is
+  // skipped saying so.
+  for (const phase of ['warning', 'closed'] as const) {
+    await cap(browser, {
+      key: 'sign-in-mfa',
+      route: R.mfa,
+      persona: null,
+      path: R.signIn,
+      clock: true,
+      state: `interaction:${phase}`,
+      note: phase === 'warning' ? 'A minute before the code step closes; the page’s clock moved forward, the server’s real.' : 'The code step closed; the page’s clock moved forward, the server’s real.',
+      act: async (page) => {
+        await passwordTo(page, 'time-mfa', /\/sign-in\/mfa$/);
+        await toStepPhase(page, phase);
+      },
+    });
+  }
+  await cap(browser, {
+    key: 'sign-in',
+    route: R.signIn,
+    persona: null,
+    path: R.signIn,
+    clock: true,
+    state: 'interaction:restarted-kept',
+    note: 'Start again pressed during the code step’s warning: the notice focused, the email kept, the password empty.',
+    act: async (page) => {
+      await passwordTo(page, 'time-mfa', /\/sign-in\/mfa$/);
+      await toStepPhase(page, 'warning');
+      await page.locator('[data-slot="step-timer"]').getByRole('link', { name: 'Start again' }).click();
+      await expect(page).toHaveURL(/\/sign-in\?reason=restarted$/);
+      await emailKept(page, 'time-mfa');
+    },
+  });
+  await cap(browser, {
+    key: 'sign-in',
+    route: R.signIn,
+    persona: null,
+    path: R.signIn,
+    state: 'interaction:step-expired-kept',
+    note: 'A code step past its limit, reloaded once its step cookie is gone (deleted here, as the browser does at its Max-Age): the email kept.',
+    act: async (page) => {
+      await passwordTo(page, 'time-mfa', /\/sign-in\/mfa$/);
+      await page.context().clearCookies({ name: 'tp_sign_in' });
+      await page.reload();
+      await expect(page).toHaveURL(/\/sign-in\?reason=step_expired$/);
+      await emailKept(page, 'time-mfa');
+    },
+  });
   // /sign-in/new-password and /sign-in/enroll (invited): before and after choosing a password.
   await invitedShots(browser);
+  // UX PR 6: an invited staff member's first setup step of three (time-staff, this PR's persona; it never saves).
+  await cap(browser, {
+    key: 'sign-in-new-password',
+    route: R.newPassword,
+    persona: null,
+    path: R.signIn,
+    state: 'interaction:invited-staff',
+    note: 'An invited staff member’s first setup step of three (the password is not saved).',
+    act: async (page) => {
+      await passwordTo(page, 'time-staff', /\/sign-in\/new-password$/);
+      await expect(page.getByRole('heading', { level: 1, name: 'Step 1 of 3: Choose a password' })).toBeVisible();
+    },
+  });
   // /sign-in/register-key (reviewer's first sign-in) and its no-authenticator refusal (support-expiry).
   await registerKeyShots(browser);
   // /sign-in/hardware-key
   await cap(browser, { key: 'sign-in-hardware-key', route: R.key, persona: null, path: R.key, ready: async (page) => expect(page.getByLabel('Email')).toBeVisible() });
-  for (const reason of ['key_registered', 'hardware_key_required']) {
+  // step_expired: the key surface's words from UX PR 6 (co-001/ux-sign-in-time, review R-04); before it, the password words.
+  for (const reason of ['key_registered', 'hardware_key_required', 'step_expired']) {
     await cap(browser, {
       key: 'sign-in-hardware-key',
       route: R.key,
       persona: null,
       path: `${R.key}?reason=${reason}`,
       state: `interaction:reason-${reason.replace(/_/g, '-')}`,
-      ready: async (page) => expect(page.locator(`[data-reason="${reason}"]`).first()).toBeVisible(),
+      ready: reasonShown(reason),
       note: 'A notice the product redirects to, opened by its URL.',
     });
   }
@@ -1319,10 +1454,14 @@ async function invitedShots(browser: Browser): Promise<void> {
     'sign-in-new-password.default.1280-dark',
     ...['default', 'error', 'loading'].flatMap((variant) => WIDTHS.map((width) => `sign-in-enroll.${variant}.${String(width)}`)),
     'sign-in-enroll.default.1280-dark',
+    // UX PR 6 (co-001/ux-sign-in-time; ADR 0081): the kept-email notices and enrolment's warning and closed state.
+    ...['step-expired-temporary', 'step-expired-chosen'].flatMap((variant) => WIDTHS.map((width) => `sign-in.${variant}.${String(width)}`)),
+    ...['warning', 'closed'].flatMap((variant) => WIDTHS.map((width) => `sign-in-enroll.${variant}.${String(width)}`)),
   ];
   if (!all.some(wanted)) return;
   const npMeta = (variant: string, state: string, note = ''): Meta => ({ key: 'sign-in-new-password', variant, state, route: np, role: 'invited', note });
   const enMeta = (variant: string, state: string, note = ''): Meta => ({ key: 'sign-in-enroll', variant, state, route: en, role: 'invited', note });
+  const signInMeta = (variant: string, note: string): Meta => ({ key: 'sign-in', variant, state: `interaction:${variant}`, route: '/sign-in', role: 'invited', note });
   const context = await browser.newContext(DESKTOP_CONTEXT);
   const phonesOpen: BrowserContext[] = [];
   const phoneNow = async (): Promise<Page> => {
@@ -1359,6 +1498,19 @@ async function invitedShots(browser: Browser): Promise<void> {
           await snap(view, npMeta('error-policy', 'error', 'Twelve characters or more that miss the policy’s classes.'));
         });
       }
+      // UX PR 6: a closed new-password step, from copies of the browser, so the live step stays for the shots after it.
+      for (const width of WIDTHS) {
+        await attempt([`sign-in.step-expired-temporary.${String(width)}`], '/sign-in', async () => {
+          const copy = await browser.newContext({ ...(width === 1280 ? DESKTOP_CONTEXT : PHONE_CONTEXT), storageState: await context.storageState() });
+          phonesOpen.push(copy);
+          await copy.clearCookies({ name: 'tp_sign_in' });
+          const view = await copy.newPage();
+          await view.goto(np);
+          await expect(view).toHaveURL(/\/sign-in\?reason=step_expired$/);
+          await emailKept(view, 'invited');
+          await snap(view, signInMeta('step-expired-temporary', 'A new-password step that closed (a copy of the browser with its step cookie gone): the email kept, and the temporary password named.'));
+        });
+      }
       // Pending: the phone's submit is aborted; the desktop's goes through and moves the account to enrollment.
       await attempt(['sign-in-new-password.loading.390'], np, async () => {
         await small.goto(np);
@@ -1380,6 +1532,26 @@ async function invitedShots(browser: Browser): Promise<void> {
       await enrollPhone.goto(en);
       await expect(enrollPhone.getByLabel('Six-digit code')).toBeVisible();
       await snap(enrollPhone, enMeta('default', 'default'));
+      // UX PR 6: enrolment's warning and closed state on the page's own clock, well inside the step's 3 minutes, which
+      // count from the saved password. Before it the step states no limit, and both are skipped saying so. Taken from
+      // copies of the browser (as key registration's warning is), so the fake clock, moved minutes ahead (Date and
+      // performance.now both), never reaches the live pages the pending and refusal shots below use.
+      for (const width of WIDTHS) {
+        await attempt([`sign-in-enroll.warning.${String(width)}`, `sign-in-enroll.closed.${String(width)}`], en, async () => {
+          const copy = await browser.newContext({ ...(width === 1280 ? DESKTOP_CONTEXT : PHONE_CONTEXT), storageState: await context.storageState() });
+          try {
+            const view = await copy.newPage();
+            await view.clock.install();
+            await view.goto(en);
+            await toStepPhase(view, 'warning');
+            await snap(view, enMeta('warning', 'interaction:warning', 'A minute before enrolment closes; the page’s clock moved forward, the server’s real.'));
+            await toStepPhase(view, 'closed');
+            await snap(view, enMeta('closed', 'interaction:closed', 'Enrolment closed: the setup key no longer works.'));
+          } finally {
+            await copy.close();
+          }
+        });
+      }
       for (const view of [page, enrollPhone]) {
         const width = String(view.viewportSize()?.width);
         await attempt([`sign-in-enroll.loading.${width}`], en, async () => {
@@ -1392,6 +1564,17 @@ async function invitedShots(browser: Browser): Promise<void> {
           await view.getByRole('button', { name: /Verify/ }).click();
           await refused(view, /did not match/);
           await snap(view, enMeta('error', 'error', 'A wrong code (000000).'));
+        });
+      }
+      // UX PR 6: enrolment closed after the new password was saved: the kept email names the chosen password.
+      for (const view of [page, enrollPhone]) {
+        const width = String(view.viewportSize()?.width);
+        await attempt([`sign-in.step-expired-chosen.${width}`], '/sign-in', async () => {
+          await view.context().clearCookies({ name: 'tp_sign_in' });
+          await view.goto(en);
+          await expect(view).toHaveURL(/\/sign-in\?reason=step_expired$/);
+          await emailKept(view, 'invited');
+          await snap(view, signInMeta('step-expired-chosen', 'Enrolment closed after the new password was saved: the email kept, and the chosen password named.'));
         });
       }
     });
@@ -1448,14 +1631,30 @@ async function registerKeyShots(browser: Browser): Promise<void> {
   }
   // The refusal when no authenticator answers: support-expiry (used by no populate spec) in a context with no virtual key.
   const errorIds = ['sign-in-register-key.error.1280', 'sign-in-register-key.error.390'];
-  if (!errorIds.some(wanted)) return;
+  // UX PR 6 (co-001/ux-sign-in-time; ADR 0081): the warning two minutes before the 15, from copies of support-expiry's browser.
+  const warnIds = ['sign-in-register-key.warning.1280', 'sign-in-register-key.warning.390'];
+  if (![...errorIds, ...warnIds].some(wanted)) return;
   const bare = await browser.newContext(DESKTOP_CONTEXT);
   let barePhone: BrowserContext | undefined;
   try {
-    await attempt(errorIds, route, async () => {
+    await attempt([...errorIds, ...warnIds], route, async () => {
       const page = await bare.newPage();
       await signInWithTotp(page, 'support-expiry');
       if (!/\/sign-in\/register-key$/.test(page.url())) throw new Error(`support-expiry did not reach ${route} (its key was registered earlier on this database)`);
+      for (const width of WIDTHS) {
+        await attempt([`sign-in-register-key.warning.${String(width)}`], route, async () => {
+          const copy = await browser.newContext({ ...(width === 1280 ? DESKTOP_CONTEXT : PHONE_CONTEXT), storageState: await bare.storageState() });
+          try {
+            const view = await copy.newPage();
+            await view.clock.install();
+            await view.goto(route);
+            await toStepPhase(view, 'warning');
+            await snap(view, meta('warning', 'interaction:warning', 'support-expiry', 'Two minutes before key registration’s 15 minutes end; the page’s clock moved forward, the server’s real. The copy registers nothing.'));
+          } finally {
+            await copy.close();
+          }
+        });
+      }
       barePhone = await browser.newContext({ ...PHONE_CONTEXT, storageState: await bare.storageState() });
       const small = await barePhone.newPage();
       for (const view of [page, small]) {

@@ -2808,7 +2808,8 @@
    "viewer",
    "lockout",
    "invited",
-   "platform-admin"
+   "platform-admin",
+   "time-mfa"
   ],
   "permission": "None: public. signInPage is a publicRoute (apps/web/src/lib/routes/sign-in.ts:121-128; publicRoute apps/web/src/lib/http/invoke.ts:373) loaded through loadPublicPage (apps/web/src/lib/http/next.ts:112-121). The only parameter is ?reason=, a closed enum (sign-in.ts:22-37); any other value fails the params parse -> not_found -> the 404 page. Shoot it in a fresh browser context with no session (it renders the same with one).",
   "segments": [],
@@ -2825,7 +2826,8 @@
    "Reason notice: open /sign-in?reason=idle (or any code in SIGN_IN_REASONS) for the Alert above the card.",
    "Wrong-password refusal: as above with persona 'lockout' and a wrong synthetic password; one attempt is enough for the 'Not done' alert.",
    "Locked refusal: ten wrong attempts for 'lockout' (sign-in.spec.ts:54-62); the alert title becomes 'Account locked'. Do this last for 'lockout' in a run; it cannot be undone on screen except by a platform administrator.",
-   "Pending submit: page.route delay on the action POST, button shows 'Working...'."
+   "Pending submit: page.route delay on the action POST, button shows 'Working...'.",
+   "Reason restarted by URL; Start again during a code step's warning (restarted-kept); a closed code step, new-password step and enrolment with the email kept (step-expired-kept, -temporary, -chosen). [co-001/ux-sign-in-time, PR sample]"
   ],
   "notes": "Already in the tour as 01-sign-in.png at 1280 only; add 390 px. The layout is shared by every /sign-in/* step. Do the locked state after any other use of 'lockout' (sign-in.spec.ts is not a populate spec, so on a fresh prepare 'lockout' is unused). The sign_in account limit counts each email separately, so a burst on 'lockout' never blocks other personas."
  },
@@ -2841,14 +2843,15 @@
   "reachable": "seed",
   "notReachableReason": "",
   "states": {
-   "empty": "Base state: H1 'Set up two-step verification', card 'Add this account to your authenticator app', the setup key in a mono box grouped by four (data-slot='totp-secret'), the otpauth link 'Open in an authenticator app on this device', and the 'Six-digit code' field. Reach it: after the new-password shots, on /sign-in/new-password fill both fields with 'Chosen-Synthetic-Pass-2026!' and click 'Save password' -> URL /sign-in/enroll (sign-in.spec.ts:44-47). The setup key shown is a freshly generated synthetic TOTP secret for a synthetic account. For 390 px: copy the desktop context's storageState into a phone context within 5 minutes, or sign in again as 'invited' with 'Chosen-Synthetic-Pass-2026!' from the phone context (each sign-in may issue a new secret; fine for a screenshot).",
+   "empty": "Base state: H1 'Set up two-step verification', card 'Add this account to your authenticator app', the setup key in a mono box grouped by four (data-slot='totp-secret'), the otpauth link 'Open in an authenticator app on this device', and the 'Six-digit code' field. Reach it: after the new-password shots, on /sign-in/new-password fill both fields with 'Chosen-Synthetic-Pass-2026!' and click 'Save password' -> URL /sign-in/enroll (sign-in.spec.ts:44-47). The setup key shown is a freshly generated synthetic TOTP secret for a synthetic account. For 390 px: copy the desktop context's storageState into a phone context within the step's 3 minutes (ADR 0081), or sign in again as 'invited' with 'Chosen-Synthetic-Pass-2026!' from the phone context (each sign-in may issue a new secret; fine for a screenshot). [co-001/ux-sign-in-time, PR sample]",
    "loading": "ActionForm pending: 'Working...' (action-form.tsx:86-88); hold with page.route on the POST to /sign-in/enroll with a 'next-action' header.",
    "error": "Wrong code: fill 'Six-digit code' with 000000 and click 'Verify and continue' -> Alert 'Not done', 'That did not match. Check the email, the password or the code, and try again.' (sign-in.ts:44). Non-numeric input is blocked by the field's pattern [0-9]{6} in the browser. Wrong codes count against the mfa account limit (10 per 5 minutes, rate-limit.ts:40), so one or two attempts only.",
    "notFound": "none. No pending cookie -> /sign-in?reason=step_expired."
   },
   "interactions": [
    "Wrong-code refusal (above).",
-   "Do not complete enrollment unless the run wants the terms screen next: entering the right code (totpCode(secret) from the data-secret attribute, as onboarding.spec.ts:176-178 does) signs 'invited' in; it then lands on its practice, since the seed already recorded its terms acceptance (apps/web/scripts/seed.ts:74-88)."
+   "Do not complete enrollment unless the run wants the terms screen next: entering the right code (totpCode(secret) from the data-secret attribute, as onboarding.spec.ts:176-178 does) signs 'invited' in; it then lands on its practice, since the seed already recorded its terms acceptance (apps/web/scripts/seed.ts:74-88).",
+   "Warning and closed on the page's own clock: cap's clock, toStepPhase. [co-001/ux-sign-in-time, PR sample]"
   ],
   "notes": "Choosing the password is a person's own step on screen; it changes only the synthetic 'invited' account. Afterwards the new-password page is no longer reachable for 'invited' in that database (a fresh prepare restores it)."
  },
@@ -2878,7 +2881,8 @@
    "Reason notice ?reason=key_registered and ?reason=hardware_key_required (above).",
    "Busy state 'Waiting for the key...' held by delaying the options request.",
    "'Not signed in' alert from a virtual authenticator with no registered credential (above).",
-   "'Account locked' alert with the locked 'lockout' email (after the /sign-in locked shot)."
+   "'Account locked' alert with the locked 'lockout' email (after the /sign-in locked shot).",
+   "Reason step_expired by URL: the key surface's words (review R-04). [co-001/ux-sign-in-time, PR sample]"
   ],
   "notes": "Every internal capture passes here (registerKeyAndSignIn -> signInWithKey, helpers.ts:76-91). Add 1280 and 390 shots in a fresh, unsigned context. The page is identical for every persona until the email is typed."
  },
@@ -2893,7 +2897,8 @@
    "other-admin",
    "firm-principal",
    "firm-analyst",
-   "platform-admin"
+   "platform-admin",
+   "time-mfa"
   ],
   "permission": "Public route gated by the pending cookie at step 'mfa' (mfaPage, apps/web/src/lib/routes/sign-in.ts:198-208); otherwise redirect to /sign-in?reason=step_expired. Written when any enrolled persona enters the right email and password on /sign-in (settle(), sign-in.ts:69-79). Every seeded persona but 'invited' has a TOTP secret (apps/web/scripts/seed.ts:60), internal ones included (they pass here before the key steps).",
   "segments": [],
@@ -2901,14 +2906,15 @@
   "reachable": "seed",
   "notReachableReason": "",
   "states": {
-   "empty": "Base state: H1 'Verification code', card titled with the email (e.g. billing-manager@synthetic.test), the 'Six-digit code' field and 'Sign in'. Reach it: enterPassword(page, 'billing-manager') (apps/web/e2e/helpers.ts:29-34), expect URL /sign-in/mfa (helpers.ts:43), shoot before entering a code. For 390 px: a phone context with the desktop context's storageState within 5 minutes (the step is not consumed until a right code), or enterPassword again from the phone context.",
+   "empty": "Base state: H1 'Verification code', card titled with the email (e.g. billing-manager@synthetic.test), the 'Six-digit code' field and 'Sign in'. Reach it: enterPassword(page, 'billing-manager') (apps/web/e2e/helpers.ts:29-34), expect URL /sign-in/mfa (helpers.ts:43), shoot before entering a code. For 390 px: a phone context with the desktop context's storageState within the step's 3 minutes (ADR 0081) (the step is not consumed until a right code), or enterPassword again from the phone context. [co-001/ux-sign-in-time, PR sample]",
    "loading": "ActionForm pending: 'Working...' (action-form.tsx:86-88); hold with page.route on the POST to /sign-in/mfa with a 'next-action' header.",
-   "error": "Wrong code: fill 'Six-digit code' with 000000, click 'Sign in' -> Alert 'Not done', 'That did not match. Check the email, the password or the code, and try again.' (sign-in.ts:44). Use a persona the run signs in with afterwards (one wrong code is far below the ten-failure lockout and the mfa limit of 10 per account per 5 minutes, rate-limit.ts:40). Expired: wait out the 5 minutes or open the page in a fresh context -> /sign-in?reason=step_expired.",
+   "error": "Wrong code: fill 'Six-digit code' with 000000, click 'Sign in' -> Alert 'Not done', 'That did not match. Check the email, the password or the code, and try again.' (sign-in.ts:44). Use a persona the run signs in with afterwards (one wrong code is far below the ten-failure lockout and the mfa limit of 10 per account per 5 minutes, rate-limit.ts:40). Expired: wait out the step's 3 minutes (ADR 0081) or open the page in a fresh context -> /sign-in?reason=step_expired. [co-001/ux-sign-in-time, PR sample]",
    "notFound": "none. No pending cookie -> /sign-in?reason=step_expired."
   },
   "interactions": [
    "Wrong-code refusal (above).",
-   "Pending submit 'Working...' (above)."
+   "Pending submit 'Working...' (above).",
+   "Warning and closed on the page's own clock: cap's clock, toStepPhase. [co-001/ux-sign-in-time, PR sample]"
   ],
   "notes": "Every capture already passes through this page via signInWithTotp (helpers.ts:41-60); only the shot is new. A TOTP code is accepted once per 30-second step per persona, so shoot the page before entering the code and do not reuse a persona another parallel test is signing in at the same moment. Use a desktop and a phone context of the same persona sequentially."
  },
@@ -2916,7 +2922,8 @@
   "file": "apps/web/src/app/sign-in/new-password/page.tsx",
   "route": "/sign-in/new-password",
   "personas": [
-   "invited"
+   "invited",
+   "time-staff"
   ],
   "permission": "Public route gated by the sealed pending sign-in cookie tp_sign_in at step 'new_password' (newPasswordPage, apps/web/src/lib/routes/sign-in.ts:142-152; pendingOf :111-114). Without that cookie the page redirects to /sign-in?reason=step_expired (sign-in.ts:116,150; next.ts:117-119). The step is written only when an invited user (temporary password, no MFA) enters email and temporary password on /sign-in (settle() sign-in.ts:69-79, STEP_PAGES :51-57). The only seeded invited persona is 'invited' (apps/web/scripts/synthetic-personas.ts:63; seed gives it no TOTP secret, apps/web/scripts/seed.ts:60). The pending step lasts 5 minutes (apps/web/src/lib/auth/pending.ts:15-17).",
   "segments": [],
@@ -2924,7 +2931,7 @@
   "reachable": "seed",
   "notReachableReason": "",
   "states": {
-   "empty": "Base state only: H1 'Choose a password', card titled with the persona's email (invited@synthetic.test), the policy sentence (12 characters, lower, upper, digit, symbol; apps/web/src/lib/auth/password.ts:10) and two password fields. Reach it: enterPassword(page, 'invited') from apps/web/e2e/helpers.ts:29 (personaPassword('invited') is its temporary password), then expect URL /sign-in/new-password, as sign-in.spec.ts:39-40 does. For the 390 px shot, open a phone context with the desktop context's storageState (the pending cookie) and goto /sign-in/new-password within 5 minutes, or sign in again from the phone context; nothing is consumed until 'Save password'.",
+   "empty": "Base state only: H1 'Choose a password', card titled with the persona's email (invited@synthetic.test), the policy sentence (12 characters, lower, upper, digit, symbol; apps/web/src/lib/auth/password.ts:10) and two password fields. Reach it: enterPassword(page, 'invited') from apps/web/e2e/helpers.ts:29 (personaPassword('invited') is its temporary password), then expect URL /sign-in/new-password, as sign-in.spec.ts:39-40 does. For the 390 px shot, open a phone context with the desktop context's storageState (the pending cookie) and goto /sign-in/new-password within the step's 3 minutes (ADR 0081), or sign in again from the phone context; nothing is consumed until 'Save password'. [co-001/ux-sign-in-time, PR sample]",
    "loading": "ActionForm pending: button 'Working...' disabled (apps/web/src/components/action-form.tsx:86-88). Hold with page.route on the POST to /sign-in/new-password carrying a 'next-action' header.",
    "error": "Two reachable refusals, neither consumes the step: (1) passwords differ: fill 'New password' and 'New password again' with two different policy-meeting synthetic values, click 'Save password' -> Alert 'Not done', 'Check the fields marked below.', item 'confirm: the two passwords differ' (sign-in.ts:162-164). (2) policy not met: 12+ characters but missing a class, e.g. 'syntheticpassword' in both fields -> 'Choose a password that meets the policy.' plus 'It needs ...' with the unmet rules (sign-in.ts:84-86; action-form.tsx:81). Under 12 characters the browser's own minLength blocks the submit (no product state).",
    "notFound": "none (no dynamic segment). Without the pending cookie: redirect to /sign-in?reason=step_expired ('Start again' notice), the step-expired state, reachable by opening /sign-in/new-password in a fresh context."
@@ -2932,7 +2939,8 @@
   "interactions": [
    "Mismatch refusal (above), with field marked aria-invalid and focus moved to it.",
    "Policy refusal with the 'It needs ...' list (above).",
-   "Step expired: goto /sign-in/new-password in a context with no tp_sign_in cookie -> /sign-in?reason=step_expired."
+   "Step expired: goto /sign-in/new-password in a context with no tp_sign_in cookie -> /sign-in?reason=step_expired.",
+   "An invited staff member's Step 1 of 3 (time-staff). [co-001/ux-sign-in-time, PR sample]"
   ],
   "notes": "Order matters for 'invited': shoot this page (both widths, both refusals) BEFORE choosing a password, because 'Save password' replaces the temporary password and moves the account to the enroll step for good (sign-in.spec.ts:44-47 uses 'Chosen-Synthetic-Pass-2026!'). sign-in.spec.ts is not a populate spec, so 'invited' is untouched on a fresh prepare. The enroll entry continues from here."
  },
@@ -2961,7 +2969,8 @@
   "interactions": [
    "Busy state 'Waiting for the key...' (above).",
    "No-authenticator refusal in a context without a virtual authenticator (above).",
-   "Completing registration redirects to /sign-in/hardware-key?reason=key_registered: shoot that notice there."
+   "Completing registration redirects to /sign-in/hardware-key?reason=key_registered: shoot that notice there.",
+   "The warning two minutes before 15, from a copy of support-expiry's browser. [co-001/ux-sign-in-time, PR sample]"
   ],
   "notes": "The tour already registers platform-admin's key via registerKeyAndSignIn (tour.spec.ts:94-96), so take the register-key shots as 'reviewer' (unused by every populate spec and by the tour). Each internal persona registers once per database; a re-run of the capture needs a fresh prepare, as the brief says. Every internal persona the capture signs in for the first time passes this page, so any of them gives the shot; 'reviewer' and 'support' are the natural ones."
  },
