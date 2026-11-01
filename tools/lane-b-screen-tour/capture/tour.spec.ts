@@ -3602,7 +3602,14 @@ test('an unmapped plan on LAYOUT, last', async ({ browser }) => {
           await page.waitForURL(/\/reports\/documents\/[0-9a-f-]{36}$/, { timeout: 30_000 });
           documentPath = new URL(page.url()).pathname;
           log(`WRITE coverage report generated on LAYOUT: ${documentPath}`);
-          await expect(page.locator('[data-document-status="ready"]')).toBeVisible({ timeout: 90_000 }).catch(() => log('RECORDS the coverage report did not print within 90 s; its web view is shot as it stands'));
+          // The page is not live: reload until the e2e worker has printed it (as reports.spec.ts's printed() does). The
+          // before run of PR #32 (83d71fd6) waited 90 s here without a reload although the PDF had printed.
+          await expect(async () => {
+            await page.reload();
+            await expect(page.locator('[data-document-status="ready"]').first()).toBeVisible({ timeout: 1_000 });
+          })
+            .toPass({ timeout: 90_000 })
+            .catch(() => log('RECORDS the coverage report did not print within 90 s; its web view is shot as it stands'));
         } finally {
           await page.close();
         }
