@@ -191,16 +191,21 @@ Nothing in the gateway's design changes; five things about the Anthropic path ar
   provider registered in the process, and sends `traceparent`, `tracestate` and `baggage` to the provider; environment
   variables alone (`ANTHROPIC_OPEN_TELEMETRY_TRACES_CONTENT_MODE=content`) put prompts and outputs into those spans.
   `anthropicClient` builds the client with tracing and propagation off, which no environment variable overrides: the
-  gateway logs references only (above), PRD 14 keeps model calls out of any model-observability service, trace ids
-  would reach the provider, and the traces PRD's observability row asks for would otherwise switch the SDK's on
-  silently. Propagation is set off as well, so no trace context reaches the provider even from a span the SDK did
-  not start. MOD-17 and MOD-18 hold it, with a default client as the control.
-- **Nothing else is taken from the environment.** The SDK also reads `ANTHROPIC_LOG` (at `debug` it logs each
-  request's body, the prompt, to the console and so to the log group), `ANTHROPIC_BASE_URL` (the host the key and
-  prompts go to) and `ANTHROPIC_CUSTOM_HEADERS` (extra request headers). Client options fix the host
+  gateway logs references only (above), PRD 14 keeps model calls out of any model-observability service, trace ids would
+  reach the provider, and the traces PRD's observability row asks for would otherwise switch the SDK's on silently.
+  Propagation is set off as well, so the SDK sends no trace context, even for a span it did not start; an HTTP or fetch
+  instrumentation of the application's own would (Revisit when). MOD-17 and MOD-18 hold it, with a default client as the
+  control.
+- **Nothing else is taken from the environment.** The SDK also reads `ANTHROPIC_LOG` (at `debug` it logs each request's
+  body, the prompt, and each response's body, the output, to the console and so to the log group), `ANTHROPIC_BASE_URL`
+  (the host the key and prompts go to) and `ANTHROPIC_CUSTOM_HEADERS` (headers added to every request, `Authorization`
+  included, so it can replace the key and send the prompts under another account). Client options fix the host
   (`https://api.anthropic.com`), logging off and tracing off; `webhookKey: null` leaves the webhook key unread; and
-  configuration refuses `ANTHROPIC_CUSTOM_HEADERS` on the Anthropic path, since no client option overrides it. These
-  reads were already in 0.x; the amendment closes them with the major.
+  configuration refuses `ANTHROPIC_CUSTOM_HEADERS` on the Anthropic path, since no client option overrides it. With
+  logging off the SDK still writes its own deprecation warnings straight to `console.warn`, for a request that names a
+  model on its deprecated list or sends `thinking.type: 'enabled'` (which the gateway never sends) to a listed model:
+  the model id and, for a deprecated one, its end-of-life date, never request content. No prompt pins a listed model at
+  1.3.0. These reads were already in 0.x; the amendment closes them with the major.
 - **API version.** The Anthropic path now sends `anthropic-version: 2026-10-21`; the Bedrock path still sends
   `bedrock-2023-05-31` in its body. Nothing the gateway sends or reads differs between them (the migration guide's
   Messages changes touch no field the gateway uses). The first real-model record on the Anthropic path will be made on
@@ -220,7 +225,7 @@ Nothing in the gateway's design changes; five things about the Anthropic path ar
 
 Alternatives: leaving the SDK's tracing and logging to environment variables (one forgotten variable undoes it; a
 client option cannot be overridden from outside); recording `ANTHROPIC_CUSTOM_HEADERS` instead of refusing it (it
-would send headers no one sees).
+would send headers no one sees, the credential among them).
 
 Revisit when: the product registers a tracer provider or HTTP/fetch instrumentation (keep the SDK's spans and
 propagation off, or record why not); the SDK reads a new environment variable, touches the environment in a new place

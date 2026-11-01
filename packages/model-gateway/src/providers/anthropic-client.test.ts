@@ -349,9 +349,9 @@ describe('MOD-18: a request through that client with a tracer provider and a pro
     }
   });
 
-  it('control: a client left at the SDK’s defaults does trace, propagate, log, take another host and send extra headers from the environment', async () => {
+  it('control: a client left at the SDK’s defaults does trace, propagate, log, take another host and send extra headers from the environment, its key replaced among them', async () => {
     stubEnvironment();
-    vi.stubEnv('ANTHROPIC_CUSTOM_HEADERS', 'x-synthetic-extra: 1');
+    vi.stubEnv('ANTHROPIC_CUSTOM_HEADERS', 'x-synthetic-extra: 1\nauthorization: Bearer sk-synthetic-other');
     registerTelemetry();
     const spies = spyConsole();
     const { url, headers } = await send(() => new Anthropic({ apiKey: KEY, maxRetries: 0 }));
@@ -360,6 +360,8 @@ describe('MOD-18: a request through that client with a tracer provider and a pro
     expect(headers.get('traceparent')).toBe('00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01');
     expect(headers.get('baggage')).toBe('synthetic=1');
     expect(headers.get('x-synthetic-extra')).toBe('1');
+    // Why configuration refuses the variable: it can replace the gateway's key (docs/adr/0048, amendment of 2026-11-01).
+    expect(headers.get('authorization')).toBe('Bearer sk-synthetic-other');
     expect(spies[CONSOLE_METHODS.indexOf('debug')]).toHaveBeenCalled();
   });
 });

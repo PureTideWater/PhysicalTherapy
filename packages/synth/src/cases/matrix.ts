@@ -390,7 +390,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'MOD-18',
     title: "A request through that client while the process has a tracer provider and a trace-context propagator registered and the environment asks for debug logging and another host",
     assertion:
-      "One request, to the API's own host; no span is started; no `traceparent`, `tracestate` or `baggage` header and no header outside the gateway's set is sent; nothing is written to the console; the request carries API version `2026-10-21` and the key as `Authorization: Bearer`, with no `X-Api-Key`; a client left at the SDK's default does trace and log (the control)",
+      "One request, to the API's own host; no span is started; no `traceparent`, `tracestate` or `baggage` header and no header outside the gateway's set is sent; nothing is written to the console (but the SDK's own deprecation warning, for a model on its lists, which carries the model id and never request content); the request carries API version `2026-10-21` and the key as `Authorization: Bearer`, with no `X-Api-Key`; a client left at the SDK's default does trace and log, and lets `ANTHROPIC_CUSTOM_HEADERS` replace its key (the control)",
   },
   {
     id: 'BIL-01',
