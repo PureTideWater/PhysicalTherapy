@@ -7,7 +7,7 @@ import {
   SYNTHETIC_SUSPENDED_FIRM,
   SYNTHETIC_SUSPENDED_GROUP,
 } from '../scripts/synthetic-personas';
-import { expectAccessible } from './a11y';
+import { atPhoneWidth, expectAccessible } from './a11y';
 import { refusal, registerKeyAndSignIn, signInWithTotp, withDatabase } from './helpers';
 
 /**
@@ -209,15 +209,34 @@ test('the client practice’s own administrator sees no hold, and reads the held
 });
 
 test('a platform administrator suspends a firm with a reason, a note and the tick, reads who and why on its card and in its history, and reinstates it in one click (BIL-09)', async ({ page }) => {
+  test.setTimeout(120_000);
   const firmId = await organizationNamed(SYNTHETIC_CONSOLE_SUSPENSION_FIRM);
   await registerKeyAndSignIn(page, 'suspension-admin');
   await page.goto(`/console/organizations/${firmId}`);
   const card = page.locator('[data-suspension]');
   await expect(card).toHaveAttribute('data-suspension', 'active');
   await expectAccessible(page, 'Console organization, an active firm');
+  // The card's forms at a phone's width (FRM-08, TBL-02; docs/adr/0077, 0078): no sideways scroll, controls at 16 px.
+  await atPhoneWidth(page, 'Console organization, an active firm');
   await page.locator('#suspend-reason').selectOption('customer_request');
   await page.locator('#suspend-note').fill('SYNTHETIC NOTE: the customer asked by ticket SYN-1');
-  await page.locator('#suspend-confirm').check();
+  // Refused for the tick the browser would ask for (its required attribute taken off, as a post without the browser's
+  // check would arrive): the form keeps the reason and the note, names the box "Confirmation" by its label, marks it,
+  // and focuses it, the one field refused (FRM-01, FRM-04, FRM-05; docs/adr/0077). Nothing is written.
+  const confirm = page.locator('#suspend-confirm');
+  await confirm.evaluate((box) => {
+    box.removeAttribute('required');
+  });
+  await page.getByRole('button', { name: 'Suspend the organization' }).click();
+  const suspendForm = page.locator('form').filter({ has: page.getByRole('button', { name: 'Suspend the organization', exact: true }) });
+  await expect(suspendForm.locator('[data-slot="refusal-summary"]')).toContainText('Confirmation: tick to confirm what the suspension stops');
+  await expect(confirm).toHaveAttribute('aria-invalid', 'true');
+  await expect(confirm).toBeFocused();
+  await expect(page.locator('#suspend-reason')).toHaveValue('customer_request');
+  await expect(page.locator('#suspend-note')).toHaveValue('SYNTHETIC NOTE: the customer asked by ticket SYN-1');
+  await expect(card).toHaveAttribute('data-suspension', 'active');
+  await expectAccessible(page, 'Console organization, the suspension refused for its tick');
+  await confirm.check();
   await page.getByRole('button', { name: 'Suspend the organization' }).click();
   await expect(card).toHaveAttribute('data-suspension', 'suspended');
   await expect(card.locator('[data-suspended-lines]')).toContainText(/Suspended by suspension-admin@synthetic\.test on \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC\./);
@@ -227,6 +246,8 @@ test('a platform administrator suspends a firm with a reason, a note and the tic
   await page.getByRole('button', { name: 'Reinstate: the cause is resolved' }).click();
   await expect(card).toHaveAttribute('data-suspension', 'active');
   await expect(page.locator('tr[data-change="reinstated"]')).toContainText('The cause is resolved');
+  // The history at a phone's width scrolls sideways in its own region and says so (TBL-02, TBL-03; docs/adr/0078).
+  await atPhoneWidth(page, 'Console organization, a reinstated firm with its history', { tables: ['History'] });
   const stored = await withDatabase(async (client) => (await client.query<{ status: string; status_reason: string | null }>('SELECT status, status_reason FROM organization WHERE id = $1', [firmId])).rows);
   expect(stored).toEqual([{ status: 'active', status_reason: null }]);
 });

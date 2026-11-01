@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { Money, Pager } from '../../../../components/remittances/display';
+import { ScrollTable } from '../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { loadPage } from '../../../../lib/http/next';
 import { remittancesPage } from '../../../../lib/routes/remittances';
@@ -68,47 +69,51 @@ export default async function RemittancesPage(props: Props) {
       ) : (
         <Card>
           <CardContent>
-            <table className="w-full text-left text-sm" aria-label="Remittances">
-              <thead className="text-muted-foreground">
-                <tr>
-                  <th className="py-1 pr-3 font-medium">Payer</th>
-                  <th className="py-1 pr-3 font-medium">Payment date</th>
-                  <th className="py-1 pr-3 font-medium">Trace</th>
-                  <th className="py-1 pr-3 text-right font-medium">Amount</th>
-                  <th className="py-1 pr-3 text-right font-medium">Claims</th>
-                  <th className="py-1 pr-3 font-medium">Balanced</th>
-                  <th className="py-1 font-medium">Source file</th>
-                </tr>
-              </thead>
-              <tbody>
-                {list.remittances.map((remittance) => (
-                  <tr key={remittance.id} className="border-t align-top" data-remittance={remittance.id}>
-                    <td className="py-2 pr-3">
-                      <Link className="underline" href={`${path}/${remittance.id}`}>
-                        {remittance.payerName}
-                      </Link>
-                      <div className="flex flex-wrap gap-1 pt-1">
-                        {remittance.reversals > 0 ? <Badge variant="secondary">{remittance.reversals === 1 ? '1 reversal' : `${String(remittance.reversals)} reversals`}</Badge> : null}
-                        {remittance.reviewReason === null ? null : <Badge variant="destructive">Review: trace reused</Badge>}
-                      </div>
-                    </td>
-                    <td className="py-2 pr-3 whitespace-nowrap">{remittance.paymentDate}</td>
-                    <td className="py-2 pr-3 font-mono text-xs">{remittance.trace}</td>
-                    <td className="py-2 pr-3 text-right">
-                      <Money value={remittance.amountCents} />
-                      <div className="text-xs text-muted-foreground">{remittance.method}</div>
-                    </td>
-                    <td className="py-2 pr-3 text-right font-mono tabular-nums">{remittance.claimCount}</td>
-                    <td className="py-2 pr-3">{remittance.balanced ? <Badge>Balanced</Badge> : <Badge variant="destructive">Not balanced</Badge>}</td>
-                    <td className="py-2 font-mono text-xs">
-                      <Link className="underline" href={`/p/${practiceId}/uploads/${remittance.sourceDocumentId}`}>
-                        {remittance.sourceDocumentId.slice(0, 8)}
-                      </Link>
-                    </td>
+            <ScrollTable label="Remittances">
+              <table className="w-full min-w-[48rem] text-left text-sm" aria-label="Remittances">
+                <thead className="text-muted-foreground">
+                  <tr>
+                    <th className="py-1 pr-3 font-medium">Payer</th>
+                    <th className="py-1 pr-3 font-medium">Payment date</th>
+                    <th className="py-1 pr-3 font-medium">Trace</th>
+                    <th className="py-1 pr-3 text-right font-medium">Amount</th>
+                    <th className="py-1 pr-3 text-right font-medium">Claims</th>
+                    <th className="py-1 pr-3 font-medium">Balanced</th>
+                    <th className="py-1 font-medium">Source file</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {list.remittances.map((remittance) => (
+                    <tr key={remittance.id} className="border-t align-top" data-remittance={remittance.id}>
+                      <td className="py-2 pr-3">
+                        <Link className="underline" href={`${path}/${remittance.id}`}>
+                          {remittance.payerName}
+                        </Link>
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {remittance.reversals > 0 ? <Badge variant="secondary">{remittance.reversals === 1 ? '1 reversal' : `${String(remittance.reversals)} reversals`}</Badge> : null}
+                          {remittance.reviewReason === null ? null : <Badge variant="destructive">Review: trace reused</Badge>}
+                        </div>
+                      </td>
+                      <td className="py-2 pr-3 whitespace-nowrap">{remittance.paymentDate}</td>
+                      <td className="py-2 pr-3 font-mono text-xs">
+                        <span className="block min-w-32 wrap-anywhere">{remittance.trace}</span>
+                      </td>
+                      <td className="py-2 pr-3 text-right">
+                        <Money value={remittance.amountCents} />
+                        <div className="text-xs text-muted-foreground">{remittance.method}</div>
+                      </td>
+                      <td className="py-2 pr-3 text-right font-mono tabular-nums">{remittance.claimCount}</td>
+                      <td className="py-2 pr-3">{remittance.balanced ? <Badge>Balanced</Badge> : <Badge variant="destructive">Not balanced</Badge>}</td>
+                      <td className="py-2 font-mono text-xs">
+                        <Link className="underline" href={`/p/${practiceId}/uploads/${remittance.sourceDocumentId}`}>
+                          {remittance.sourceDocumentId.slice(0, 8)}
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollTable>
           </CardContent>
         </Card>
       )}

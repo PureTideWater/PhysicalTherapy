@@ -74,7 +74,7 @@ export function WorksheetView({ sheet, level }: { readonly sheet: Worksheet; rea
         ))}
       </ul>
       <ScrollTable label={`Fee schedule worksheet ${String(sheet.number)}`}>
-        <table className="w-full text-sm" aria-label={`Fee schedule worksheet ${String(sheet.number)}`}>
+        <table className="w-full min-w-[32rem] text-sm" aria-label={`Fee schedule worksheet ${String(sheet.number)}`}>
           <thead>
             <tr className="border-b text-left align-bottom">
               <th className="py-1 pr-3 font-medium">

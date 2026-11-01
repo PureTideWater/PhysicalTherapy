@@ -4,6 +4,7 @@ import Link from 'next/link';
 
 import { ActionForm } from '../../components/action-form';
 import { Field } from '../../components/field';
+import { PasswordField } from '../../components/password-field';
 import { loadPublicPage } from '../../lib/http/next';
 import { signInPage } from '../../lib/routes/sign-in';
 import { signInStep } from './actions';
@@ -25,7 +26,7 @@ export default async function SignInPage(props: { readonly searchParams: Promise
         <CardContent>
           <ActionForm action={signInStep} submit="Continue">
             <Field label="Email" name="email" type="email" autoComplete="username" required />
-            <Field label="Password" name="password" type="password" autoComplete="current-password" required />
+            <PasswordField label="Password" name="password" showName=" password" autoComplete="current-password" required />
           </ActionForm>
         </CardContent>
       </Card>

@@ -1,11 +1,19 @@
 # 0066. Run CI as parallel jobs behind one gate, measure mutation on every money package, move the browser and runner together, and pin every dependency
 
 - **Status:** accepted, Part 1 (`co-001/ci-speed`, combined audit #109), Part 2 (`co-001/ci-deps`, #112, with #19's
-  assert loosening, Dependabot groups and licence fix) and Part 4 (`co-001/ci-mutation`, #54). Part 3 is appended by
-  the series' later pull request, `co-001/ci-browser` (#19's upgrade part). Part 1 amends
+  assert loosening, Dependabot groups and licence fix), Part 3 (`co-001/ci-browser`, #19's upgrade part), Part 4
+  (`co-001/ci-mutation`, #54) and Part 5 (`co-001/ci-pin-age`, the series' follow-up P1). Part 1 amends
   [0010](0010-supply-chain-gates-beside-ci.md) (the image and licence gates run as ci.yml jobs under `all green`) and
   [0063](0063-protect-main-and-the-build-branch-make-the-founders-github-review-the-approval-of-record-open-each-approval-with-what-changed-and-switch-on-the-edit-hooks.md)
   (the required checks, the job that writes the domain model's summary, the per-job timeouts).
+  - **Part 3** (`co-001/ci-browser`) amends
+    [0058](0058-serve-email-art-from-the-static-host-hold-the-brands-colors-fonts-and-words-with-checks-and-compare-the-header-and-cover-with-baselines.md) (Chrome for Testing 156.0.8078.4, revision 1248, recorded in `browser.json` and
+    proved on ubuntu-26.04 by CI's baseline step),
+    [0062](0062-screen-prospects-from-aggregate-rows-without-phi-price-each-row-with-the-unchanged-engine-and-send-the-result-by-emailed-link.md)
+    (F5: the release's capacity chain on ubuntu-24.04 with a dispatched 26.04 probe; the images bound by content under
+    either image store) and
+    [0063](0063-protect-main-and-the-build-branch-make-the-founders-github-review-the-approval-of-record-open-each-approval-with-what-changed-and-switch-on-the-edit-hooks.md)
+    (item 15: approval-of-record on ubuntu-26.04).
   - **Part 4** (`co-001/ci-mutation`, combined audit #54) amends
     [0064](0064-resolve-a-split-zips-locality-from-the-zip-plus-four-files-ranges-the-one-engine-change-the-freeze-allows.md)
     (mutation by path, not by label; Stryker 10.1.1 in place of 10.0.0 and its patch) and
@@ -17,12 +25,23 @@
     [0063](0063-protect-main-and-the-build-branch-make-the-founders-github-review-the-approval-of-record-open-each-approval-with-what-changed-and-switch-on-the-edit-hooks.md)
     (the build branch is the default branch until launch, the build branch's ruleset applied, every action pinned by
     SHA at its release).
-- **Date:** 2026-10-25; Part 2 2026-10-26
+  - **Part 5** (`co-001/ci-pin-age`) amends Part 1 (History: one step, Action pins, reads GitHub's API with the job's
+    read-only token) and Part 2 (the BuildKit builder: its newer-release warning takes the workspace's floor, its
+    newness is read from the base's workflows, and its digest is aged with every other image).
+- **Date:** 2026-10-25; Parts 2 and 3 2026-10-26; Part 5 2026-10-28
 - **Deciders:** the founder, Tyler Williams, who adopted the combined best-option audit in full on 2026-10-20 (items
   #19, #54, #109 and #112 among it, each placed "CI PR before PR 7"), under the standing rule of 2026-10-18; the build
   (Lane B), for the notices below, decided under that rule and each reversible by the founder
+  - **Part 5:** the founder's F2 (b) (the three-day release age, with a dated, exact exclude of at most seven days),
+    relayed by the co-founder on 2026-10-25 at about 01:10 UTC; the co-founder's CQ1 (a) (actions and images keep
+    Dependabot's seven days); and the co-founder's ruling of 2026-10-26, about 00:20 UTC (every choice its recommended
+    option, for security the safer one), under which the follow-up itself (P1) is taken and each notice below is made.
   - **Part 4:** item #54 of that audit, placed "CI PR before PR 7"; and the founder's ruling of 2026-10-25, relayed by
     the co-founder, that his adoption covers #54's 85% exit for milestone 6 and Gate 1 (the series' question F6).
+  - **Part 3:** item #19 of that audit (its upgrade part); the founder's F4 and F5 (F5 as recommended), relayed by the
+    co-founder on 2026-10-25 at about 01:10 UTC; the co-founder's Q2 (2026-10-25, about 21:05 UTC) and ruling of
+    2026-10-26, about 00:20 UTC (every choice its recommended option, for security the safer one; the baselines'
+    inspection by an adversarial visual-inspection agent's private gallery, not blocking the merge).
   - **Part 2:** items #112 and #19 of that audit; the founder's rulings on the series' questions F1 (a), F2 (a) and
     (b), F4 and F7, relayed by the co-founder on 2026-10-25 at about 01:10 UTC, F7 applied that day at 21:14 UTC; and
     the co-founder's answers to CQ1, CQ2 and CQ3, each its recommended and safer option (2026-10-26, about 00:20 UTC),
@@ -30,11 +49,15 @@
 - **PRD sections:** 16 (dependency and image hygiene), 17 (milestone 0: "CI with every gate from section 18"), 18
   (continuous integration: "one workflow on every pull request"); Change Order 001, CO-02; reconciliation-001's checks;
   test matrix CI-01 to CI-10; ADRs 0010, 0058, 0062, 0063 and 0064
+  - **Part 5:** 16 (dependency and image hygiene), 18; reconciliation-001's record of the co-founder's ruling of
+    2026-10-26; test matrix CI-21 to CI-23; ADR 0063 (a token on one step, as approval-of-record's).
   - **Part 4:** 17 (milestone 6's check), 18 (the mutation layer and continuous integration); reconciliation-001's
     checks (the engine freeze, the ledger's additions-only rule, the milestones); test matrix CI-15 to CI-17; ADRs
     0047 and 0064.
   - **Part 2:** 15 (the dev environment), 16 (dependency and image hygiene), 18; reconciliation-001's content-pipeline
     check (F4's standing exception); test matrix CI-11 to CI-14; ADRs 0058, 0062 and 0063.
+  - **Part 3:** 16, 18, and the cross-cutting accessibility requirement (labels on every screen; WCAG 2.5.3, Label in
+    Name, as axe 4.14 checks it); test matrix CI-18 to CI-20; ADRs 0058, 0062 and 0063.
 
 ## Part 1 (`co-001/ci-speed`)
 
@@ -104,7 +127,9 @@ filter, as these jobs (`docs/runbooks/ci.md` reads them):
   a merge's push follows the pull request's gated run; the build branch's ruleset (step 4A, applied 2026-10-25 21:14
   UTC) refuses a direct push, and the differential test still checks every push (`docs/runbooks/ci.md`).
 - **History.** `static`, `unit` and `domain model` check out the whole history (the scan, the differential test's
-  `git archive` of the base, the summary's base document); no checkout keeps the token, since no step calls GitHub.
+  `git archive` of the base, the summary's base document); no checkout keeps the token, since no step calls GitHub
+  (amended by Part 5: one step, Action pins, is given the job's read-only token for the age rule's reads of GitHub's
+  API, and no checkout keeps it still).
 - **Artifacts.** Upload-artifact names (v4 and later; v7 since Part 2) are unique per run and immutable, so every per-run name (`web-build`,
   `playwright-<k>`) sets `overwrite: true`, and a re-run of failed jobs replaces rather than fails.
 - **Logs.** Every verdict written to a job's summary is written to its log too (`tee -a`), because the verifier reads
@@ -251,7 +276,8 @@ offer of 2026-10-22 ("check, mutation, capacity, approval-of-record") maps one f
 ### Revisit when
 
 The repository goes private (read the six- and three-shard runs against the 10-minute target), the founder rules on the capacity run's
-length, Part 2's pins land, Playwright moves (Part 3), or a db file passes 240 s on CI or a route-test file 90 s.
+length, a db file passes 240 s on CI or a route-test file 90 s. (Part 2's pins have landed and Part 3 moved Playwright
+and the runners; their runs are read against the 10-minute target.)
 
 ## Part 2 (`co-001/ci-deps`)
 
@@ -390,17 +416,20 @@ later default cannot turn the cache back on.
 
 **`.github/workflows/release-dry-run.yml`** (new, advisory, outside the ruleset) runs on every pull request and push
 that changes release.yml, itself, `tools/screening-capacity/image-id.ts`, either Dockerfile or the images' pnpm
-installer (`tools/check-toolchain/install-pnpm.sh`). Its `build` job
-(`contents: read`) builds the web image as release.yml does, saves it with its identity and uploads it (v7,
-`overwrite: true`, kept a day); its `push` job (`contents: read`, `packages: read`) downloads it with
-`merge-multiple` (v8), runs release.yml's identity check, loads it and logs in to ghcr.io with the job's own token. It
-names its image `ghcr.io/<repository>/web:dry-run-<run id>`, since a pull request's ref name (`<n>/merge`) is no image
-tag, and never tags, pushes or attests. Its build job also writes the image's bill of materials with release.yml's
-Trivy step and reads the file as SPDX, and its `capacity` job (`contents: read`) runs release.yml's capacity job up to
-its frozen install: the checkout, a download by name, action-setup with `cache: false`, setup-node with
-`package-manager-cache: false` and `pnpm install --frozen-lockfile`, so those inputs run on every change to the
-release, not first on a tag (the ci-infra review's N4). A test holds every step it shares with release.yml to the same action and the same
-`with:` keys, with `overwrite` and the cache inputs equal in value, so the dry run cannot drift from what a tag runs.
+installer (`tools/check-toolchain/install-pnpm.sh`), and from Part 3 on the worker's browser check and its record
+(`tools/ci/browser-build.ts`, `apps/web/e2e/browser.json`, `apps/web/e2e/browser-builds/*`). Its `build` job
+(`contents: read`) builds the images as release.yml does, saves each with its identity and uploads it (v7,
+`overwrite: true`, kept a day): the web image here, and from Part 3 on release.yml's `web` and `worker` legs as a
+matrix (N16). Its `push` job (`contents: read`,
+`packages: read`) downloads them with `merge-multiple` (v8), runs release.yml's identity check, loads them and logs in
+to ghcr.io with the job's own token. It names its images `ghcr.io/<repository>/<image>:dry-run-<run id>`, since a pull
+request's ref name (`<n>/merge`) is no image tag, and never tags, pushes or attests. Its build job also writes each
+image's bill of materials with release.yml's Trivy step and reads the file as SPDX, and its `capacity` job
+(`contents: read`) runs release.yml's capacity job up to its frozen install: the checkout, the downloads by name,
+action-setup with `cache: false`, setup-node with `package-manager-cache: false` and `pnpm install --frozen-lockfile`,
+so those inputs run on every change to the release, not first on a tag (the ci-infra review's N4). A test holds every
+step it shares with release.yml to the same action and the same `with:` keys, with `overwrite` and the cache inputs
+equal in value, so the dry run cannot drift from what a tag runs.
 The new majors of upload, download, login, build-push and setup-buildx therefore run on a pull request, not first on
 the founder's tag.
 
@@ -433,7 +462,9 @@ the founder's tag.
   builds sets up buildx first, and that no container or `docker://` step runs by tag. Dependabot cannot update a
   `driver-opts` string, so `check-action-pins` reads Docker Hub for it on every networked run: the version's tag must
   be the pinned digest, and a newer release three days old is a warning naming it, for the manual step in
-  `docs/runbooks/dependency-upgrades.md`.
+  `docs/runbooks/dependency-upgrades.md` (amended by Part 5: the newer-release warning takes the workspace's floor
+  through `releaseAgeMinutes`, the builder's newness is read from the base's workflows, a push only warns, and the
+  builder's own digest is aged with every other image by check-toolchain's image rule).
 - **Postgres comes from the compose file everywhere.** `services:` cannot read an image from a file, four digest copies
   in workflows would drift (Dependabot's actions ecosystem rewrites only `uses:`), and a job output feeding `services:`
   would add a job to the critical path. So ci.yml's db, domain-model and e2e jobs and large-zip.yml declare no
@@ -699,7 +730,274 @@ branch back to `main`.
 
 ## Part 3 (`co-001/ci-browser`)
 
-Appended by that pull request.
+### Context
+
+Combined audit #19's upgrade part: Playwright 1.56.1 predates Ubuntu 26.04 (its `nativeDeps` tables stop at 24.04),
+so every job stayed pinned to `ubuntu-24.04` while `ubuntu-latest` moves to 26.04 in November 2026 (runner-images
+#14748), and axe-core 4.14.0 enables WCAG 2.5.3's `label-content-name-mismatch` by default, which two of the shell's
+header controls fail. Moving the browser moves the brand baselines (ADR 0058), the worker's PDF printer and every
+browser job's system packages; moving the runner moves Docker to 29, whose containerd image store changes what
+`docker image inspect -f {{.Id}}` names, which the release's capacity binding read (ADR 0062). The founder ruled F4 (this
+pull request moves `publish-content.yml`'s runner once, with its frozen copy) and F5 (below); the co-founder ruled Q2
+(`shell.tsx` and the capacity harness are #42 files this pull request may change under LANES rule 6) and, on
+2026-10-26 at about 00:20 UTC, that every choice takes its recommended option, for security the safer one, and that
+the baselines' inspection is an adversarial visual-inspection agent's, published as a private gallery that does not
+block the merge.
+
+Measured before the change ([SF] §6, the 14 ci.yml runs before 6ddd587): 10 of 92 `playwright install --with-deps`
+steps took over 60 s (86 to 612 s), all on pull-request runs; #45's run 40226881568 spent 609 s of `db (4/4)`'s 13:02
+fetching 25.9 MB from a throttled mirror. apt takes a file in its archive directory by its size alone (apt-pkg
+`acquire-item.cc`, "Make sure the size matches"), so a cached `.deb` must be checked before apt sees it.
+
+### Decision
+
+**The browser.** `@playwright/test`, `playwright-core` (one catalog line) and `playwright` move to 1.64.1 and
+`@axe-core/playwright` to 4.14.0, each over three days old and published with provenance, so ci-deps' gates pass them
+with no exclude. Playwright 1.64.1 pins chromium and the headless shell at revision 1248, Chrome for Testing
+156.0.8078.4. The worker image copies the lockfile's playwright-core from its build stage's frozen install, with no
+version of its own. `apps/web/e2e/browser.json` records both builds (per build its directory, its binary's path, the
+SHA-256 of every file of the build as `find <dir> -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum`
+gives it, the binary's SHA-256, and the Chrome for Testing zip and its SHA-256 for the local layout), and the lines that
+hash to each tree's SHA-256 are committed beside it as `apps/web/e2e/browser-builds/<dir>.sha256`, so a difference names
+the files that differ. `tools/ci/browser-build.ts` holds the installed builds to it, and its `--image <ref>` form holds a worker image's headless
+shell to it. The shell's two header controls are named from their content in UX-094's words, "<practice>, switch
+practice" and "<email>, account and sign out" (the purpose visually hidden, no `aria-label` and no `title`, the initial
+drawn as generated content), and the brand journey checks every header control's name starts with its visible text and
+contains every other piece of it at 1280 and 390 px.
+
+**Runners (the founder's F5, as recommended, relayed by the co-founder on 2026-10-25 at about 01:10 UTC).** The
+release's capacity chain stays on `RELEASE_RUNNER.label`, `ubuntu-24.04`: `release.yml`'s four jobs,
+`release-dry-run.yml`'s three, which mirror them, and `screening-capacity.yml`'s `capacity`. The other twenty-two jobs
+move to `ubuntu-26.04`, `publish-content.yml`'s with its frozen copy (F4), and the four of the base's
+`content-calendar.yml` and `release-capacity.yml` among them under F5's letter: release-capacity's report is advisory
+and never attested, and no launch check reads it, so it is not one of the chain's binding measurements.
+`screening-capacity.yml`'s `workflow_dispatch` takes one choice input, `runner` (`ubuntu-24.04` by default, or
+`ubuntu-26.04`), and its `capacity` job runs on `${{ inputs.runner || 'ubuntu-24.04' }}`, so every event but a dispatch
+naming 26.04 measures on the release's runner. The 26.04 run is an advisory probe: `notify` opens no issue for it, the
+launch check refuses its report (not `release.yml`'s run), and its numbers, image store and `docker info` go to issue
+#41 for the chain's later move. `workflows.test.ts` holds the exact chain (`RELEASE_CHAIN`), every other job on 26.04,
+and resolves the `${{ inputs.<name> || '<label>' }}` form against its choice input only, refusing every other
+expression. On 26.04 the database jobs' `pg_dump` is 18, so the restore drill runs on CI and the db suite loses its one
+skip.
+
+**actionlint** (1.7.7 to 1.7.12 and main) does not know `ubuntu-26.04`. The workflows' test runs it with `-ignore
+'label "ubuntu-26\.04" is unknown'`: one exact message, no configuration file (an `actionlint.yaml` naming the label
+self-hosted would reverse the configuration ban and misname a hosted label). It goes when actionlint lists the label.
+
+**The browser jobs' system packages (V3).** `unit`, every `db` and `e2e` shard, `large-zip` and
+`screening-capacity.yml`'s `capacity` (under its own runner image's key) restore `$RUNNER_TEMP/apt-archives` under
+`apt-v1-<ImageOS>-<ImageVersion>-<hash of playwright-core's browsers.json>`, falling back to the image version's and the
+image's earlier keys. `<ImageOS>` and `<ImageVersion>` are the runner's `ImageOS` and `ImageVersion` environment
+variables, read through a step, since the `env` context holds only what a workflow sets; that version can differ from
+the one "Set up job" prints (in run 40534270846, the pull request's first, the `db` and `e2e` jobs' "Set up job"
+printed 20261012.163.1 and their `ImageVersion`, so their key, was 20261023.163.3), so a key is matched against
+`ImageVersion`, never against "Set up job". `tools/ci/apt-archives.sh verify` fetches the signed indexes and copies into
+apt's archive directory only a file whose SHA-256 is the index's for exactly its name, version and architecture,
+deleting every other, and sets `APT::Keep-Downloaded-Packages`; `collect` gathers what apt kept. `unit` and the capacity
+job save on a miss, on the build branch's own runs only (push, schedule, dispatch), after the browser check passed.
+`release.yml` restores no cache (Part 2), so its one install stays uncached.
+
+**The browser check.** Every step that installs Playwright's browsers, in every workflow, carries `id: browser-install`
+and is followed at once by `node tools/ci/browser-build.ts`, before any test runs or any cache is saved. In ci.yml's
+jobs and large-zip every later step runs while the install succeeded, `${{ !cancelled() && steps.browser-install.outcome
+== 'success' }}`, so a red check still shows what the new browser does to the suite; the capacity jobs stop at a red
+check instead, because a measurement made with another browser must never be attested as passing. Every Playwright bump
+is red here by construction until a person runs ADR 0058's procedure (`docs/runbooks/ci.md`, "Upgrading the browser"):
+the one exception to A4 (c). A build that fails the check has every file's line printed, as `--list` prints it, and
+every path that differs from the committed list named, so one run gives all a new record needs. The `--image <tag>` form
+holds the worker image's headless shell in every job that builds that image into a local tag, before the tag is
+measured, saved, tagged or pushed: ci.yml's `images`, the release's `build` and its dry run's (N16), and both measuring
+jobs, `release-capacity.yml`'s and `screening-capacity.yml`'s `capacity` (N17). It reads the image as root, offline and from
+the local tag only, and a file it cannot hash fails it by name (N21, N22). Once a build's every file equals the record,
+and only then, the check runs the binary's `--version` and fails unless it prints `Google Chrome for Testing
+<browserVersion>`, on the runner as the job's user and in the image as the image's own user, so a build that cannot
+start fails the check rather than the first test or the first report (N22).
+
+**The brand baselines, from nothing, on every run.** The first `e2e` shard of every pull request and push regenerates
+the brand baselines with `--update-snapshots=all --retries=0` into an empty directory outside the repository
+(`E2E_BASELINES_DIR`, the config's snapshot path), so the tracked tree stays clean for the build stamp, and fails
+on a failed run, on any set of pictures written (those present after the run) other than the committed set, or on any
+byte, printing the SHA-256s and each changed picture's SHA-256, then the picture as lines `<path> <i>/<n> <8,000 base64
+characters>` (N19). There is no path condition: the pictures are drawn by application code (the header, the worker's
+report covers) as well as by the browser and the runner image, and the journey's comparisons pass a change under their
+tolerance.
+
+**The release's images, bound by content under either image store.** `tools/screening-capacity/image-id.ts` (`node:`
+modules only) reads a `docker save` or buildx `type=docker` archive, plain or gzipped, as one stream, hashes the config
+blob and every manifest it follows and fails unless each equals the digest that names it, and returns the config digest,
+the linux/amd64 manifest's and the archive's top-level descriptor (`target`, what the containerd store's `.Id` names).
+It takes an entry's path and size from its pax header, as GNU tar and Go's archive/tar do (Go writes the size there for
+an entry over 8 GiB), and its memory is bounded: it keeps the bytes of JSON documents only (a small layer is hashed and
+dropped), and refuses a pax header or long name over 1 MiB before reading it and an archive whose kept bytes pass 64 MiB,
+naming the limit. Every build whose identity is checked passes `provenance: false` and `sbom: false`, so each store holds one manifest.
+`release.yml`'s `build` saves each image, reads its identity, proves the tag is that image on its store (the config
+digest on the classic store, the top-level descriptor on containerd's, from `docker info`'s `DriverStatus`), checks the
+worker's headless shell with `browser-build.ts --image` before the save, and sets `sha256_<image>`, `config_<image>` and
+`target_<image>` as job outputs, distinct per matrix leg. `capacity` and `push` check each archive's SHA-256 against
+those outputs (`sha256sum --check`) before `docker load` and prove each loaded tag the same way before anything is
+installed or pushed; `push` reads every pushed manifest back from the registry afterwards and fails unless its config
+digest is the build's. `push` and `report` run no repository code. The artifact's `.tar.sha256` and `.id` stay for a
+person and no check reads them: `capacity` runs repository code and every installed package beside `push`, and a step
+there that reached the run's artifact token could replace an archive and its files together, while no job can rewrite
+another's outputs. ci.yml's `images` job (26.04) builds archives, scans them with Trivy's `input`, holds image-id.ts's
+config digest to buildx's `containerimage.config.digest`, loads the worker as the archive's top-level descriptor and
+checks its headless shell, so every pull request proves the reader and the containerd rule on the store the probe will
+use. `screening-capacity.yml`'s builds write archives and load them the same way. `release-dry-run.yml` carries the same
+steps on release.yml's `web` and `worker` legs, the worker's `--image` check included, without the push and the registry
+check (N16). The watched list gains `tools/ci/apt-archives.sh`,
+`tools/ci/browser-build.ts`, `browser.json` and the file lists under `browser-builds/`, which the capacity job runs or
+reads.
+
+### After #42
+
+#42 (open, 143 files) changes `tools/screening-capacity/run.ts`, `report.ts`, `report.test.ts` and
+`test-support/measurements.ts`. While it is open this part changes none of them (the safer reading of the series'
+brief; it touches only `shell.tsx`, the manifests and lockfile, the regenerated `watched-paths.txt`, ADR 0062, the test
+matrix, reconciliation-001 and the synthetic matrix and registry among #42's files, each under rule 6). So the harness
+still reads each image's `.Id` itself, and the report is still `tp-screening-capacity/8`. It is safe meanwhile: under
+F5 the release's capacity chain runs on ubuntu-24.04, whose Docker 28 keeps images in the classic store, where `.Id` is
+the config digest, and the release's capacity job proves each loaded tag is the config digest its build read from the
+archive's bytes before the harness runs. The trigger to finish it is #42's merge, or GitHub moving ubuntu-24.04's
+docker-ce past 28, whichever comes first. The follow-up pull request, cut from the build branch after #42 merges:
+1. `run.ts`: options `imageArchives` and `expectImages` (`--image-archive <name>=<path>`, `--expect-image <name>=<config
+   digest>`, the usage line), parsed beside `webImage` and `workerImage`; `run.ts:825-826`'s `.Id` read replaced by
+   `containers.ts`'s `proveLoadedImage(tag, { archive, expectedConfig })` (built and tested in this part, with
+   `measure.test.ts`'s store, attested-index and `--expect-image` cases), the run stopping before it measures when the
+   loaded tag is not the archive's image.
+2. `report.ts`: `REPORT_FORMAT` `tp-screening-capacity/9`; `WorkflowRun` gains `imageOS` and `imageVersion` from the
+   runner's environment; the measurements gain `imageStore` (driver and snapshotter) and `imageSource` (`archive` with
+   each archive's SHA-256, or `save`), beside `workflow` and `images`; `report.test.ts` and
+   `test-support/measurements.ts` with them.
+3. `launch-check.ts`: `RELEASE_RUNNER` gains `imageOS: 'ubuntu24'`; `launchCheck()` refuses a binding report whose
+   `imageOS` is not it or whose `imageSource` is not `archive`, and format 8; `launch-check.test.ts` holds each refusal.
+4. `release.yml`'s `capacity` passes `--image-archive web=… --image-archive worker=…` and `--expect-image` from
+   `needs.build.outputs`, and `screening-capacity.yml`'s `capacity` passes `--image-archive`; `workflows.test.ts` holds
+   both, and the in-workflow proof of the release's capacity job stays as the step before the install.
+5. Failing first by §3.3.3's worktree run at the merge base (each refusal on an assertion, not a missing export), and
+   the probe dispatched once more to record the report's `imageStore` on #41.
+
+### Alternatives considered
+
+- **The worker image's playwright-core:** a version derived from the manifest into `npm install` (keeps an unpinned
+  registry fetch, and reads `catalog:` once the manifest names the catalog), or a literal held equal by a test (the
+  duplication A4 (b) forbids). Copying the build stage's frozen install is integrity-checked and names no version.
+- **The browser record:** a binary hash alone (a changed `libGLESv2.so`, `libvk_swiftshader.so`, `icudtl.dat` or
+  `.pak` beside an equal binary changes the pictures, and Playwright verifies no download); the tree hash binds every
+  file of both builds.
+- **The baselines:** a diff-gated regeneration (an application change under the comparators' tolerance would merge
+  green and turn the next push red with no pull request open to fix it); Playwright's container image for the jobs
+  (changes the rendering host the baselines depend on, which ADR 0058 rejected).
+- **The system packages:** a hand-kept `.deb` set installed with `dpkg -i` (loses the index check and goes stale with
+  every security update); dropping `--with-deps` (CI-05 requires it, and its fonts are part of the rendering host);
+  another mirror (moves the throttle, does not remove it); `APT_CONFIG` (sudo drops it, so the cache goes through apt's
+  own directory and a conf file).
+- **actionlint:** a configuration file naming `ubuntu-26.04` as a self-hosted label (reverses a ruled ban).
+- **The release binding:** the artifact's own `.id` and `.tar.sha256` (replaceable with the archive by a job that runs
+  repository code); moving the pre-push compare after the push (a mismatch would then be public); keeping `.Id` alone
+  (store-dependent).
+- **Runners:** the chain to 26.04 now (F5 (a)) or every job kept on 24.04 (F5 (b)): the founder ruled for the
+  recommendation, with the probe deciding the chain's move by numbers.
+
+### Notices (decided by the build under the standing rule; the founder can reverse any)
+
+- **N12.** `release-dry-run.yml`'s `capacity` job stays on the release's runner with the rest of the chain it mirrors,
+  so the chain is eight jobs, not the design's seven; twenty-two move, the four jobs of the base's
+  `content-calendar.yml` and `release-capacity.yml` among them (F5's letter: release-capacity's report is advisory and
+  never attested).
+- **N13.** The apt cache key hashes playwright-core's installed `browsers.json` (the browser cache's own file, which
+  moves with every Playwright build) rather than `browser.json`, and is saved by the build branch's own runs only.
+- **N14.** The baseline step compares the set of pictures written with the committed set (seven today) rather than
+  counting seven lines, so a baseline added or removed with its spec is held without an edit of the workflow.
+- **N15.** The capacity jobs stop at a red browser check, unlike ci.yml's jobs, so a measurement is never made, or
+  attested, with another browser than the record's.
+- **N16.** The release's `build` and `capacity` jobs also prove each tag on their own store. `release-dry-run.yml`'s
+  `build` is release.yml's on two of its four legs, `web` and `worker`, as a matrix: the worker's
+  `browser-build.ts --image` step before its save, and each leg's `sha256_<image>`, `config_<image>` and
+  `target_<image>` outputs merged from the two legs as the release's four are; its `push` and `capacity` run
+  release.yml's archive checks on both archives. `workflows.test.ts` holds each of its three jobs, step for step, to
+  release.yml's with only the image list, the tag and the archive's retention cut. The tag-only steps no pull request
+  runs are: the build's scan (ci.yml's `images` job scans both images on every pull request with the same Trivy pin,
+  through `input`) and its upload of the bill of materials; the `web-staging` and `web-production` legs, which differ
+  from `web` only by the static host their repository variables name; everything in `capacity` after the frozen install
+  (the browser install and check, the scale release, the binding measurement and its upload; `screening-capacity.yml`
+  runs the same harness on a pull request that changes a watched path); `push`'s tag, push and registry read-back; and
+  the whole `report` job (the attestation and the release's assets); the founder's first tag runs them first. Every
+  other step of a tag's run runs on each pull request that changes one of the dry run's paths (release.yml, the dry run,
+  `image-id.ts`, either Dockerfile, the pnpm installer, and the worker's browser check and its record, as the dry run
+  now runs that check the way the tag does), and ci.yml's `images` job runs the worker's browser check on every pull
+  request.
+- **N17.** Both measuring jobs that build the worker image, `release-capacity.yml`'s and `screening-capacity.yml`'s
+  `capacity`, check its headless shell with `browser-build.ts --image` before anything is installed or measured, beside
+  `images` and the release's `build`: the weekly runs measure the image whose headless shell prints customers' reports,
+  read a layer cache, and the check takes seconds. `workflows.test.ts` holds that every job building
+  `apps/worker/Dockerfile` into a local tag checks that tag before it is measured, saved, tagged or pushed, and that
+  `actions/setup-node` with Node 24 comes before every such check, each job keeping its own cache inputs (the check
+  imports only Node's own modules); release-capacity's Node for its check restores no cache.
+- **N18.** The baselines are regenerated on a local Chrome for Testing 156.0.8078.4 laid out from Google's two zips,
+  each checked against `browser.json`'s `zipSha256` and the browser check passing on it (`--update-snapshots=all`, then
+  again as the no-op), and CI's baseline step proves the committed bytes on ubuntu-26.04 on every run. Where the two
+  disagree, CI's bytes are committed, since CI is where the comparisons run, and the disagreement is recorded against
+  ADR 0058's claim that the local host renders as CI does. Should the browser check fail on CI, CI's values are not
+  adopted on its word: a one-off step downloads Google's two zips on CI, requires their `zipSha256` and lists their
+  builds; the record changes only where Google's bytes agree with CI's, and a mirror that serves other bytes than
+  Google's is replaced on CI by Google's verified build. Locally, on 2026-10-27, the check passed on both builds and the
+  second run wrote nothing; all seven files changed, six of them in bytes only (the PNG encoder of Chrome for Testing 156, the browser 1.64.1 pins; ADR 0058).
+- **N19.** The baseline step takes the pictures written as those present after the run in its own empty directory (N20),
+  so no message text of Playwright's is read, and prints each changed picture's SHA-256 and then the picture
+  as lines `<path> <i>/<n> <8,000 base64 characters>`: a log reader that cuts long lines still gets every chunk, and the
+  SHA-256 proves each decode (where the series is built, CI's logs are read through an API that may cut a
+  66,000-character line, and the artifact and raw-log hosts are out of reach). The failed comparisons' step prints its
+  diff and actual pictures through the same script, `tools/ci/print-pictures.sh`, where it had printed each as one line
+  of up to 400,000 characters; the script has its own test, and both steps' tests run it.
+- **N20.** The baseline step writes into an empty directory outside the repository, not over the committed files. Its
+  first form removed the committed pictures and regenerated them in place; on the pull request's first run the prebuilt
+  build's stamp (`scripts/build-stamp.ts --expect`, CI-06) then refused the dirty tree, so the journey never ran.
+  `E2E_BASELINES_DIR`, an absolute directory, becomes the config's snapshot path; laid out as the repository is, the
+  step compares the set written and each file's bytes with the committed ones and prints a differing picture under its
+  repository path. Each picture is still written from nothing, and the tracked tree stays as committed.
+- **N21.** `browser-build.ts --image` reads the image as root and offline (`docker run --rm --user 0:0 --network none`).
+  As the worker image's own user (`node`) it could not read the headless shell's `deb.deps` and `rpm.deps`, which
+  Chrome for Testing's zips carry as mode 0600 and the image installs as root, so the pull request's first run hashed
+  285 of 287 files and failed closed. The in-image script also names any file it cannot read, so such a failure says
+  why rather than showing as a tree difference. On the same run the browser check passed on CI's own download from
+  Playwright's mirror: its bytes for revision 1248 are Google's, file for file.
+- **N22.** The browser check proves the build starts, and its hash run in an image hides no failure (the reviews of
+  367a659f: CI-1, CI-4, CI-5, SEC-3, SEC-4, SEC-7). Both docker reads also take `--pull never`, so a tag missing on the
+  runner fails rather than a registry's image of that name being checked in its place. Inside the image each stage of
+  the hash run writes a file and reports its own exit status: `sh` has no pipefail, and on the first run `sed` hid
+  `sha256sum`'s failure, so the two files it could not read were named as removed. A file found but not hashed now
+  fails the check as "could not be hashed whole", naming the tool and the file, never as a file the image lacks. The
+  hashes cover bytes, not modes nor the libraries the system provides, so once every file of a build equals the
+  record, and only then (a binary is never run before its bytes are proven), the check runs its `--version` and fails
+  unless it exits 0 printing `Google Chrome for Testing <browserVersion>`, naming what it printed: on the runner as the
+  job's user, and in the image as the image's own user (`docker run --rm --pull never --network none`, no `--user`), so
+  the user that prints customers' PDFs must be able to start the shell while the hashes stay root's. Before, a shell
+  that could not start passed, and no pull-request job ever started the worker image's. `browser-build.test.ts` holds
+  each with a stand-in docker that accepts those two forms only, a stand-in `sha256sum` that fails on one file, and
+  stand-in binaries whose bytes stay equal to the record while they print another version, fail to start or lose their
+  execute bit.
+
+### Consequences
+
+- A Playwright bump is red on the browser check until a person runs ADR 0058's procedure, and every later step of
+  ci.yml's jobs still runs, so its other effects show in the same run; Dependabot's `browser-tests` group stays.
+- Every pull request and push regenerates the seven baselines in one more run of one spec on the first e2e shard; its
+  duration is measured on this pull request's runs and kept in `docs/runbooks/ci.md`.
+- The ubuntu-24.04 and 26.04 images each keep about 26 MB of system packages in the Actions cache.
+- The release's capacity chain is the only work left on ubuntu-24.04 until the founder rules on the probe's numbers;
+  `ubuntu-latest`'s November move changes nothing here, since the runner rule refuses `-latest`.
+- What cannot be verified where the series is built (no Docker daemon, no GitHub runner): the containerd `.Id` rule,
+  image-id.ts on real archives, Trivy's `input`, the registry check, the apt verify against a real index, the mirror's
+  bytes against `browser.json`, the worker image's headless shell starting as the image's own user, and the baseline
+  step. The pull request's own runs prove them (the `images` job every run, the dry run where its paths run it), and
+  the first tag proves the push job's registry check.
+
+### Revisit when
+
+actionlint lists `ubuntu-26.04` (the `-ignore` goes); the probe's numbers are in and the founder rules on the chain's
+move (`RELEASE_RUNNER`, the release workflows' `runs-on` and `RELEASE_CHAIN` together); #42 merges (the follow-up
+above); GitHub moves ubuntu-24.04's Docker past 28 before then; or the baseline step's measured cost passes a minute,
+when its inputs are derived from the brand spec's import closure by `watched.ts`' mechanism, never a hand list.
 
 ## Part 4 (`co-001/ci-mutation`)
 
@@ -971,3 +1269,413 @@ reconciliation-001's milestone check names the exception. Lane A's PR 7 writes t
 - The repository goes private: two vCPUs double shard times, and runner minutes are billed.
 - Stryker ships an ignorer that matches a single mutant.
 - fast-check, Stryker or Vitest fails a canary case on an upgrade.
+
+## Part 5 (`co-001/ci-pin-age`)
+
+### Context
+
+Part 2 holds every npm version the lockfile adds to the founder's F2 (b) release age: three days from its publish
+time, or a dated, exact exclude that expires within seven days. Nothing held what the workflows run, or the images the
+product is built on, to the same floor. Part 2 pins every action to its release's commit and every image to a digest,
+and `check-action-pins` checks that a new pin's tag names its commit. But a hand bump, to an action or to the BuildKit
+builder that Dependabot never updates, could take a release pushed minutes ago, inside the window the floor exists for.
+A hijacked tag is usually found within hours: tj-actions/changed-files in March 2025, and trivy-action's tags in March
+2026 (CVE-2026-33634). Dependabot's own cooldown (`default-days: 7`, CQ1 (a)) does not cover a hand bump, and it fails
+open: with no date it reads a version as outside the cooldown, and it prefers the one date a moved tag keeps old (a
+release's `published_at`, else the tag's creator date).
+
+### Decision
+
+**One floor and one exclude window for three lists** (`tools/check-toolchain/exclude-window.ts`). The floor is
+`pnpm-workspace.yaml`'s `minimumReleaseAge`, never under 4,320 minutes, read by `releaseAgeMinutes`; a setting that is
+not a finite number reads as the minimum. The npm rule, the action rule, the image rule and the BuildKit builder's
+newer-release warning read it there, so they cannot drift. The window checks moved out of the npm rule unchanged, and
+its own cases prove that:
+- `security-fix` (waives the floor): `added` no later than now; an expiry no earlier than the known time plus the floor,
+  and no later than `added` plus seven days;
+- the reasoned kinds (waive no age): `added` no later than now, and an expiry within seven days of `added`;
+- an expired entry fails only a pull request that edits its list, and warns elsewhere until the weekly triage removes
+  it.
+
+**Actions** (`tools/check-action-pins/age.ts`, the "Action pins" step of `static`; CI-21, CI-23). An action pin new
+against the base's workflows enters only when all three hold:
+- its commit is an ancestor of its repository's default branch;
+- its release tag still names it;
+- it is at least the floor old by the youngest of every time read, one of them a time GitHub recorded.
+
+Each commit is aged once, whatever refs use it (`actions/cache/restore` and `actions/cache/save` share one). The reads,
+from the pinned commit itself and never from whatever the tag names now:
+- **git, on every run.** One `git ls-remote --symref` names the default branch and the tag, so a tag the upstream lacks
+  is the answer "no tag" rather than a host failure. Then a blobless fetch of the default branch alone and the tag, into
+  a bare repository of its own that `close()` removes. That fetch gives the committer and author dates, an annotated
+  tag's tagger date (counted only while the tag names the pin), and the web-flow signature.
+- **The web-flow signature.** It is checked with `gpgv` against `github-web-flow.asc`: the current key
+  `968479A1AFF927E37D1A566BB5690EEEBB952194`, and the 2017 key `5DE3E0509C47EA3CF04A42D34AEE18F83AFDEB23`, which
+  counts only for a signature made before it expired at 2024-01-16T20:00:00Z. Fingerprints are computed in TypeScript
+  (`keys.ts`), so `gpgv` is the only binary.
+- **GitHub's API, on CI only.** The job's read-only token, `X-GitHub-Api-Version: 2026-03-10` and the base from
+  `GITHUB_API_URL` give `verification.verified_at` with its `reason` (`GET /repos/{o}/{r}/git/commits/{sha}`) and the
+  release's `published_at` and `immutable` (`GET /repos/{o}/{r}/releases/tags/{tag}`, a 404 meaning "no release").
+  `immutable` absent reads as false, and a null `published_at` gives no signal. A `reason` of `gpgverify_error` or
+  `gpgverify_unavailable` is a failed read that ends in "re-run", never "age unprovable". An authenticated read never
+  follows a redirect: a 3xx is an answer naming the move, and no message carries a request header.
+- **The arrival read, on CI only.** `GET /repos/{o}/{r}/activity?ref=refs/heads/<default>`, newest first, at most three
+  pages, back to now less the floor. The newest push or merge inside that window that brought the pin onto the default
+  branch joins the youngest-of: an entry whose `after` holds the pin and whose `before` the fetch holds without it. A
+  `before` the branch's fetch lacks (a force push's) is fetched by its SHA, and one that cannot be fetched or read
+  still counts, the safe direction. The read is best effort: one try a page and no rate-limit wait, and any other
+  outcome, a failed object read included, is a note, never a finding or a crash. It can make a pin young, and never
+  proves one old.
+
+GitHub-recorded means, on CI, a non-null `verified_at` or an immutable release's `published_at`. A signed commit whose
+`verified_at` is null or absent fails closed as "age unprovable" rather than falling back to the signature's time,
+which is the committer's (the assumption below). Locally, where the API is not read, a web-flow signature stands in,
+and the result is a local reading that CI re-checks. A `verified_at` more than the floor after every other time read
+(GitHub records it late for a commit signed before persistent verification) names the instant to re-run after. A
+time in the future makes the pin young until that instant plus the floor, which no exclude clears ("choose another
+release"). A committer, author or tagger time past the range of a date is a finding naming the epoch as written, and
+an annotated tag the fetch brought but cannot read fails closed with "re-run"; neither is a crash.
+
+Further rules of the age set and the verify loop:
+- **Bootstrapping.** When the merge base has no `tools/check-action-pins/age.ts`, every pin is aged, so this part's own
+  pull request proves the rule on CI. A later change to the checker does not age every pin: an unchanged pin is never
+  read for its age and never fails on it ("age: no pin new against the base, nothing read").
+- **One deadline.** The age reads run four at a time under one 180 s deadline, which the builder's Docker Hub reads
+  share: `READ_DEADLINE_MS` in `exclude-window.ts`, the one constant check-toolchain's image reads take too. Pins left
+  unread are one warning on a push and one error naming them and the host on a pull request. The builder's two Docker
+  Hub reads wait out a rate limit as the API reads do (`Retry-After`, else `x-ratelimit-reset`, capped at 60 s).
+- **A push warns.** On a push every age finding is a warning; the pull request was the gate. So, on a push, are the
+  verify loop's failed reads, moved tags and the refs its deadline left unread, for every ref, new against the previous
+  head or not: the pull request that added a new pin was its gate as well, and a red build branch blocks every lane. A
+  problem found in what was read (an input, a nested pin, a cache, an `action.yml` that does not parse) stays an error,
+  since no outage or upstream move makes one. That loop runs under its own 120 s deadline, which a change to the
+  checker reaches, since such a change re-verifies every ref. (The fix round of 2026-10-28, from the ci-infra review's
+  S4: the design's E16 had kept a new ref's faults as errors, the one red path a push run had left.)
+- **The builder's newness** is read from the base's workflows whatever the change edits, and on a push its faults warn
+  (Part 2's builder bullet, amended).
+- **What the rule cannot read is refused.** A `jobs.*.uses` that calls a reusable workflow of another repository is
+  refused by rule (a), and so is a Docker action, at any depth, whose `runs.image` is not `docker://…@sha256:<64 hex>`.
+  `runs.using` is read in any case, as the runner reads it, so a `Docker` or `Composite` action is refused or walked as
+  one (the security review's S4). None is used today. Offline, a file in a subdirectory of `.github/workflows` is
+  refused: GitHub never runs it and the checker never reads it, and the base's workflows are read at the top level
+  only, as the head's are, so a pin parked there cannot vouch for itself when it enters a workflow (the security
+  review's S3).
+- **A key rotation.** A push that aged a commit compares the fingerprints of `https://github.com/web-flow.gpg` with
+  the committed file's, and warns when they differ.
+
+**Images** (`tools/check-toolchain/images.ts`, the "Toolchain" step; CI-22, CI-23). Every image the tree names is held
+to the floor by the push time Docker Hub recorded:
+- each Dockerfile's `FROM` lines and frontend, read as BuildKit v0.34.1, the pinned builder, reads the file (below);
+- `docker-compose.yml`'s `services.*.image`, merge keys (`<<: *anchor`) honoured as Compose resolves them;
+- every setup-buildx step's builder (`driver-opts` `image=`);
+- every workflow's job container, service container, `docker://` step and setup-qemu image.
+
+**The Dockerfile reader** (`readDockerfile`, exported from `images.ts`; the security review's S1 and S2) is a port of
+BuildKit v0.34.1's parser: a byte-order mark stripped; the `syntax`, `escape` and `check` directives read with
+BuildKit's expression and keys, a value with a space accepted; its continuation rule for the escape token, so an
+escaped trailing escape continues nothing; a heredoc only from an unquoted word matching `^(\d*)<<(-?)\s*([^<]*)$`,
+its terminator that word unquoted, ONBUILD's included. The frontend is read as BuildKit's `DetectSyntax` reads it:
+after a byte-order mark and a `#!` line, a `#` or a `//` syntax directive, and, stricter, every other line that reads
+as one. It fails closed, so the next divergence refuses an image rather than hiding it: a JSON Dockerfile (handed
+whole to its frontend), a parse BuildKit refuses, a raw line matching `^\s*FROM` that it did not read as a FROM
+instruction (a heredoc's body, or a continuation), and a `from=` outside every COPY and RUN are refused. CI-13
+(`tools/test/workflows.test.ts`) reads each Dockerfile through the same export, so the two cannot read a file
+differently. Against BuildKit's own parser, built from v0.34.1, on its 37 test Dockerfiles and 23,000 generated ones,
+the instructions, flags, arguments, parse failures and frontend agreed; the one difference is BuildKit's error for a
+file with no instruction, which names no image (the fix round's differential run, 2026-10-28).
+
+Offline (the `images` rule, after `Dockerfiles`), each is `name:tag@sha256:<64 hex>`, with a tag, since a tagless
+digest has nothing to ask Docker Hub. Every image reference the rule does not read is refused, so "every image" holds
+on its own:
+- a `COPY --from=` or `RUN --mount=…,from=` naming anything but an earlier stage, an ONBUILD trigger's included, a
+  mount's fields read as BuildKit's CSV;
+- a line of a Dockerfile the reader cannot place (above);
+- on a `docker/build-push-action` step: any `build-contexts` (a named context takes the place of the stage or image of
+  its name); a `BUILDKIT_SYNTAX` build-arg, or an argument named by an expression; a `context:` outside the checkout; a
+  literal `file:` other than `apps/<name>/Dockerfile`; a `cache-from` or `cache-to` other than `type=gha` (an
+  expression only as `${{ '<a>' }}` or `${{ <condition> && '<a>' || '<b>' }}`); and an SBOM scan (`sbom:`,
+  `attests:`), whose scanner image it does not read (the security review's S2);
+- a tracked image file other than the three read, by Docker's own names, in any case: `Dockerfile` or `Containerfile`
+  alone, with a suffix or as one (`web.Dockerfile`), and `compose.y(a)ml` or `docker-compose.y(a)ml` with a `.<x>`
+  part or, for docker-compose, a `-<x>` one. A source or document file (`dockerfile.ts`, `dockerfiles.md`,
+  `compose-email.yml`) and `Dockerfile.dockerignore` are not image files (the ci-infra review's S2);
+- a compose `build:`, `include:` or `extends:` in any form (the security review's N1);
+- a setup-buildx step that names no builder image (unless its driver is `docker`, which runs none), or whose driver is
+  other than `docker-container` or `docker`;
+- a setup-qemu step that names no image, whose default `tonistiigi/binfmt:latest` is by tag;
+- a `docker/bake-action` step, whose bake files name images of their own.
+
+Networked, only a digest the base names nowhere is read (images are not bootstrapped):
+- **Its age.** Docker Hub's tag record gives the youngest of `tag_last_pushed`, `last_updated` and each
+  `images[].last_pushed` when the tag's digest, or one of its platform manifests' digests, is the pin. Otherwise the
+  repository's most recently updated tags are searched, five pages of 100, and the youngest time of the tags that
+  carry the pin is taken. A digest found on no tag fails, naming the tag's current digest and when that digest turns
+  old enough, and no exclude kind clears it.
+- **Another registry.** An image from a registry other than Docker Hub is "age unprovable".
+- **The revert path** (the ci-infra review's S3). A digest that a commit on the build branch's first-parent history
+  (`origin/claude/build-platform`, at or behind the merge base) named in an `apps/*/Dockerfile`, `docker-compose.yml`
+  or a top-level workflow counts as old enough when that commit's committer time is at least the floor old, with no
+  Docker Hub read and on any registry, and the finding names the commit. A digest is pushed before any commit can name
+  it, and first-parent commits there are the merge commits GitHub made, at GitHub's time; a merged side branch's own
+  commits, whose dates their author set, are never taken: the merge that brought the digest in is, at its own time. So
+  the exact revert of an images bump passes after Docker Hub has rebuilt every tag that carried the old digest. No
+  exclude kind is added.
+- **How Docker Hub is read.** The reads go through `registry.ts`'s `readJson`, four at a time under one 180 s deadline
+  (`READ_DEADLINE_MS`), whose message names the deadline the caller set.
+  A Hub 404 is an answer ("no such tag"); each Hub try has 30 s and each npm try 60 s. A rate-limit answer (429, or 403
+  with `Retry-After` or `x-ratelimit-remaining: 0`) waits for `Retry-After` or the reset, capped at 60 s.
+- **The registries' times are instants.** A registry document whose publish or push time does not parse as an instant
+  is refused, never read as NaN.
+
+On a push every image age finding, and every exceptions entry outside its window, is a warning (the ci-infra
+review's N3); the list's own form problems stay errors.
+
+**The excludes.** Each kind waives one requirement and nothing else, so a reason never admits a pin a signal shows
+young:
+- **`security-fix`:** the floor, inside F2 (b)'s window.
+  - For an action, a GHSA id, checked on CI against GitHub's advisory database (`GET /advisories/{ghsa_id}`): not
+    withdrawn; a vulnerability in ecosystem `actions` for that repository whose range covers the version the base
+    pins and not the pin's; and an action the base does not pin is refused.
+  - For an image, a GHSA or CVE id and `fixes: { package, version }`, checked for form only.
+- **`age-unprovable`:** only the need for a GitHub-recorded time. For an image, it applies only to a registry other
+  than Docker Hub.
+- **`off-default-branch`:** only the ancestry rule.
+
+Under either reasoned kind the pin or digest is still held to the floor by every time read. A pin that needs two
+waivers carries two entries. The lists are `tools/check-action-pins/age-exceptions.json` and
+`tools/check-toolchain/image-age-exceptions.json`, both empty. An entry for a pin or image no longer used is a warning.
+An entry this change adds for a pin the base already runs is an error, since that pin is never aged and the entry would
+admit nothing.
+
+**The token.** `ci.yml`'s "Action pins" step alone gets `GITHUB_TOKEN: ${{ github.token }}` in its `env`, and
+`ci.yml` names `github.token` exactly once (asserted). The asserts read every name as the runner reads an expression,
+in any case and with spaces around the dot: no `secrets.` or `secrets[`, no `github[`, `github.*`, `join(github` or
+`toJSON(` of either anywhere, and inside an expression the github context only by a property, never whole (the
+reviews' CI-S1 and SEC-N2). The permissions stay `contents: read`. "Toolchain" keeps `{ BASE }`: it reads npm and
+Docker Hub only. Within the step the token goes into the age rule's API request headers alone: git and `gpgv` run with
+`GITHUB_TOKEN` and `GH_TOKEN` dropped from their environment (the security review's N4).
+
+The token reads nothing an anonymous reader cannot, beyond a higher rate limit:
+- it is `contents: read` with GitHub's `metadata: read`;
+- the repository is public;
+- the full-history checkout already used the same token;
+- a same-repository pull request can already edit `ci.yml` to hand the token to any step, so the step gives a change's
+  author no new reach, and a fork's or Dependabot's run gets a read-only token.
+
+What it adds is exposure to the packages that step loads (`tsx` and the checker's imports, from the frozen lockfile
+under the release age): the caution ADR 0063 states for approval-of-record, which sets its token on one step the same
+way. Two facts temper it:
+- every earlier step of the job can already reach the token step's environment through `$GITHUB_ENV` (`NODE_OPTIONS`,
+  for one), the unpinned `pip install pyx12` among them;
+- the token already reaches third-party code in the same job: setup-node and checkout default their `token` input to
+  `github.token`.
+
+A repository gone private is the revisit trigger, since the token could then read what an anonymous reader cannot.
+
+**The assumption.** A web-flow signature's time is not taken as GitHub's clock on CI. In all 12 pinned commits it
+equals the committer time to the second, and GitHub's documentation refuses committer data only for bots with custom
+committer data (`about-commit-signature-verification.md:150`), saying nothing of user tokens. So on CI `verified_at`,
+or an immutable release, is required.
+
+### Measured (2026-10-27 and 2026-10-28)
+
+**The pins, locally.** `BASE=origin/claude/build-platform pnpm actions:check` from P1's head, base 0dd1ba7e, git
+2.43.0 and gpgv 2.4.4, 2026-10-28T02:24:40Z to 02:25:01Z. It printed the bootstrapping note, since the merge base has no
+`age.ts`. The API reads were skipped locally with a note: api.github.com answers 403 from where the series is built.
+For all 12 commits (13 refs):
+- the commit is on its default branch, and its tag names the pin;
+- gpgv reports `VALIDSIG 968479A1AFF927E37D1A566BB5690EEEBB952194`, at the committer time to the second;
+- no commit is signed with SSH, X.509 or the 2017 key.
+
+Every old-enough instant equals the design's reading of 2026-10-27T22:20Z. All 12 pass:
+
+| Pin | Version | Uses | Default branch | Youngest local time | Age (days) | Old enough from |
+| --- | --- | --- | --- | --- | --- | --- |
+| `actions/checkout@3d3c42e5` | v7.0.1 | 22 | main | committer 2026-07-17T18:45:11Z | 102.32 | 2026-07-20T18:45:11Z |
+| `actions/setup-node@949feb24` | v7.1.0 | 22 | main | committer 2026-10-08T02:43:26Z | 19.99 | 2026-10-11T02:43:26Z |
+| `pnpm/action-setup@ea17c68d` | v6.1.0 | 17 | master | tagger 2026-09-05T07:26:11Z | 52.79 | 2026-09-08T07:26:11Z |
+| `actions/setup-python@6d4fd22b` | v7.1.0 | 1 | main | committer 2026-10-22T02:33:06Z | 5.99 | 2026-10-25T02:33:06Z |
+| `actions/upload-artifact@cf430e03` | v7.0.2 | 9 | main | committer 2026-10-07T10:00:52Z | 20.68 | 2026-10-10T10:00:52Z |
+| `actions/download-artifact@9000827c` | v8.0.2 | 9 | main | committer 2026-10-07T10:00:57Z | 20.68 | 2026-10-10T10:00:57Z |
+| `actions/cache/{restore,save}@55cc8345` | v6.1.0 | 11 + 6 | main | committer 2026-06-23T20:30:28Z | 126.25 | 2026-06-26T20:30:28Z |
+| `docker/setup-buildx-action@f87e5991` | v4.4.1 | 5 | master | committer 2026-09-16T07:47:45Z | 41.78 | 2026-09-19T07:47:45Z |
+| `docker/build-push-action@c3c9e263` | v7.4.0 | 7 | master | committer 2026-09-15T07:29:04Z | 42.79 | 2026-09-18T07:29:04Z |
+| `docker/login-action@81c6f93d` | v4.7.0 | 2 | master | committer 2026-10-23T15:11:41Z | 4.47 | 2026-10-26T15:11:41Z |
+| `aquasecurity/trivy-action@ed142fd0` | v0.36.0 | 5 | master | tagger 2026-04-22T09:29:59Z | 188.70 | 2026-04-25T09:29:59Z |
+| `actions/attest-build-provenance@4d101475` | v4.2.2 | 1 | main | committer 2026-08-06T19:54:05Z | 82.27 | 2026-08-09T19:54:05Z |
+
+The two annotated tags (pnpm/action-setup's, PGP-signed, and trivy-action's, SSH-signed) give the youngest time for
+those two. The same run read the builder: its tag is the index `99368f3e…`, and no newer BuildKit release is three days
+old. The integrator's run of the same command from the merged head, 2026-10-28T02:59:19Z to 02:59:38Z, read the same
+12 blocks, the same youngest times and the same old-enough instants.
+
+**The pins, on CI** (filled from P1's CI run). This part's own pull request (#82, head b574d4e8… merged with
+165c5993…) aged all 12 on GitHub's runners with the token: `static` job 122611334491, "Action pins" from 03:20:58Z to
+03:21:17.7Z on 2026-10-28 (19.7 s), git 2.55.0. The step printed the bootstrapping note (the merge base 165c5993… has
+no `age.ts`), "every pin is read: this change edits tools/check-action-pins" with 13 refs verified, the builder (its
+tag is the index `99368f3e…`, and no newer release is three days old), and one block per commit. In each block the
+commit is on its default branch, its tag names it, and its web-flow signature is `VALIDSIG` by `968479A1…`. All 12
+pass:
+
+| Pin | Version | `verified_at` (`reason`) | Release `published_at` | `immutable` | Age (days) | Old enough from |
+| --- | --- | --- | --- | --- | --- | --- |
+| `actions/attest-build-provenance@4d101475…` | v4.2.2 | 2026-08-06T19:54:09Z (valid) | 2026-08-06T19:59:04Z | true | 82.31 | 2026-08-09T19:59:04Z |
+| `actions/cache/{restore,save}@55cc8345…` | v6.1.0 | 2026-06-23T20:30:29Z (valid) | 2026-06-26T19:17:06Z | false | 123.34 | 2026-06-29T19:17:06Z |
+| `actions/checkout@3d3c42e5…` | v7.0.1 | 2026-07-17T18:45:11Z (valid) | 2026-07-20T15:10:05Z | false | 99.51 | 2026-07-23T15:10:05Z |
+| `actions/download-artifact@9000827c…` | v8.0.2 | 2026-10-07T10:00:58Z (valid) | 2026-10-07T10:09:51Z | false | 20.72 | 2026-10-10T10:09:51Z |
+| `actions/setup-node@949feb24…` | v7.1.0 | 2026-10-08T02:43:27Z (valid) | 2026-10-08T02:52:34Z | true | 20.02 | 2026-10-11T02:52:34Z |
+| `actions/setup-python@6d4fd22b…` | v7.1.0 | 2026-10-22T02:33:06Z (valid) | 2026-10-22T02:56:04Z | true | 6.02 | 2026-10-25T02:56:04Z |
+| `actions/upload-artifact@cf430e03…` | v7.0.2 | 2026-10-07T10:00:52Z (valid) | 2026-10-07T10:08:14Z | false | 20.72 | 2026-10-10T10:08:14Z |
+| `aquasecurity/trivy-action@ed142fd0…` | v0.36.0 | 2026-04-22T09:20:49Z (valid) | 2026-04-22T09:39:33Z | true | 188.74 | 2026-04-25T09:39:33Z |
+| `docker/build-push-action@c3c9e263…` | v7.4.0 | 2026-09-15T07:29:04Z (valid) | 2026-09-15T08:22:01Z | true | 42.79 | 2026-09-18T08:22:01Z |
+| `docker/login-action@81c6f93d…` | v4.7.0 | 2026-10-23T15:11:41Z (valid) | 2026-10-23T15:22:45Z | true | 4.50 | 2026-10-26T15:22:45Z |
+| `docker/setup-buildx-action@f87e5991…` | v4.4.1 | 2026-09-16T07:47:46Z (valid) | 2026-09-16T07:50:21Z | true | 41.81 | 2026-09-19T07:50:21Z |
+| `pnpm/action-setup@ea17c68d…` | v6.1.0 | 2026-09-04T23:42:41Z (valid) | 2026-09-05T07:31:28Z | true | 52.83 | 2026-09-08T07:31:28Z |
+
+What the run shows:
+- **The youngest signal** in every block is the release's `published_at`, which comes after its commit: minutes to
+  hours for most, about three days for actions/cache and checkout. So on CI each old-enough instant is that much later than
+  the local reading above. The youngest pin is docker/login-action, 4.50 days old.
+- **`verified_at`** has `reason` valid for all 12 and lies 0 to 4 s after the committer time, so none is late, and
+  every one is at least three days before the run, as expected.
+- **Immutable releases.** 8 of the 12 publish them; actions/cache, checkout, download-artifact and upload-artifact do
+  not.
+- **The arrival read** answered 200 for all 12: "activity: no push brought the pin onto <branch> since
+  2026-10-25T03:21:12.792Z (1 entries read)". So the job's token does read another owner's `/activity`. The read lists
+  branch activity only, so it says nothing of a tag's push.
+- **"Toolchain"** printed "images: no image is new against the base, so nothing is read (3 digests named, each one in
+  the base)", then passed with 0 errors and 0 warnings.
+
+The log was read from GitHub (`get_job_logs`, read only) on 2026-10-28 and matches both reviewers' extraction field
+for field.
+
+**The images, locally.** `BASE=afe339b9^ pnpm toolchain:check` from P1's head, 2026-10-28T02:04:21Z to 02:04:31Z.
+That base, 6eae41a3, predates all three digests, so the image rule read Docker Hub for each through `images.ts` and
+`readJson`, each from its own tag, with no search needed. All three pass:
+
+| Image | Where | Youngest Hub time (`tag_last_pushed`) | Old enough from |
+| --- | --- | --- | --- |
+| `node:24-trixie-slim@sha256:43b9ba11…` | `apps/web/Dockerfile:7, :24`; `apps/worker/Dockerfile:5, :23` | 2026-10-21T17:39:11.31083Z | 2026-10-24T17:39:11Z |
+| `postgres:18-trixie@sha256:edb0c08d…` | `docker-compose.yml` `services.postgres` | 2026-10-21T19:08:32.855608Z | 2026-10-24T19:08:32Z |
+| `moby/buildkit:v0.34.1@sha256:99368f3e…` | the setup-buildx step of ci.yml's images job, release.yml, release-dry-run.yml, release-capacity.yml and screening-capacity.yml | 2026-10-20T21:37:36.856866Z | 2026-10-23T21:37:36Z |
+
+The integrator ran the same command again from the merged head, 2026-10-28T02:59:40Z to 02:59:46Z. Between the two
+runs Docker Hub rebuilt `node`: `24-trixie-slim` named `f2fb6134…` by then. So the rule searched the most recently
+updated tags for `43b9ba11…`, found it on `lts-trixie-slim`, and took that tag's `tag_last_pushed`,
+2026-10-21T17:41:02.078086Z, so it was old enough from 2026-10-24T17:41:02Z. It passed, as postgres and the builder did
+again from their own tags. That run proved the search path live as well as the direct read. It is also why images are
+not bootstrapped: the base's unchanged digest is never read on a pull request, so the tag's move turns nothing red.
+
+Docker Hub then rebuilt both again. The fix round's run of the same command, 2026-10-28T05:57Z, found `24-trixie-slim`
+re-pushed at 05:40:04Z and `18-trixie` at 04:13:41Z, and `43b9ba11…` and `edb0c08d…` on none of the 500 most recently
+updated tags of `library/node` and `library/postgres`, so both failed there as "nowhere": the ci-infra review's S3
+case, live (the builder passed from its own tag). A pull request is unaffected, since its base names both digests.
+From 2026-10-29T21:06:13Z the revert path vouches for all three by e908c214…, the merge of #48, the first commit on
+the build branch's first-parent history to name them, committed 2026-10-26T21:06:13Z.
+
+A read-only probe through the same reader, 2026-10-28T02:05:00Z, also checked two answers:
+- a missing tag of `library/node` reads as "no such tag";
+- the first page of `moby/buildkit`'s tags holds 100 tags and a next page, the builder's digest on `latest` and
+  `v0.34.1`.
+
+On CI this part's pull request reads no digest, since all three are in its base, and the image rule says so. From
+GitHub's runners the builder check's own read reaches Docker Hub on every networked run.
+
+**Bounded time.** On a push, at their limits:
+- the verify loop, 120 s;
+- the age reads with the builder check, 180 s;
+- the re-reads of unchanged tags, 120 s;
+- check-toolchain's Hub reads, 180 s.
+
+That is 600 s, inside the 900 s of `static`'s `timeout-minutes: 15`, whose other steps took about 183 s on
+run 40593100176. Unbounded, as before: the verify loop on a pull request, and check-toolchain's npm reads.
+
+### Alternatives considered
+
+| Option | Why not |
+| --- | --- |
+| A priority order of dates, as Dependabot's cooldown takes | It fails open with no date, and prefers the one date a moved tag keeps old; the youngest of every time read can only lose to a forged date, never gain from one |
+| The web-flow signature's time as GitHub's clock on CI (no token) | It equals the committer time in all 12 commits, so it is not proven to be GitHub's clock; `verified_at` is |
+| Trusting the commit's `committer GitHub` text, or the `openpgp` package | Anyone can write the text; the package is a new dependency under the release age, with more surface than `gpgv`, which every runner has |
+| The compare API for the default-branch rule | It needs the token and cannot run locally; `git merge-base --is-ancestor` runs the same everywhere in about a second |
+| The image config's `created`, or registry GETs | The builder sets `created`; registry GETs are rate-limited (a 429 seen from where the series is built). Docker Hub's push time is Dependabot's own source |
+| Aging the builder inside `buildkit.ts` | It splits image ages and their exceptions across two checkers, and a later job container would be in neither |
+| Bootstrapping images on this part's pull request | It would turn red whenever Docker Hub rebuilds `node`, since every tag naming that digest moves together, which proves nothing about this change; the local Hub reading above proves the path |
+| A separate job holding the token for the age reads | A new job under `all green` that loads the same code, with more to keep |
+| `redirect: 'error'` on authenticated reads | A renamed repository would become three failed reads and a host failure; a 3xx answer names the move |
+| A fixed backoff on a rate limit | It ends before Docker Hub's 60 s window does; the wait for the reset, capped at 60 s, still fails closed after three tries |
+
+### Notices (decided by the build under the standing rule; the founder can reverse any)
+
+- **N23.** The image rule ages every image the tree names, the BuildKit builder and any workflow container, service
+  or `docker://` image included, in check-toolchain, and refuses offline every image reference it does not read.
+- **N24.** Images are not bootstrapped. This part's own pull request ages every action pin, because three of the
+  action signals exist only on CI, but no digest already in its base; the local Docker Hub reading above is the record.
+- **N25.** The "Action pins" step is given the job's read-only token, on that step alone (above).
+- **N26.** On a push, the verify loop's upstream faults (a failed read, a moved tag, a ref its deadline left unread)
+  warn for every ref, new against the previous head or not, under their own deadline; the builder's newness comes from
+  the base's workflows. (The fix round: the ci-infra review's S4 supersedes the design's E16, which kept a new ref's
+  faults errors.)
+- **N27.** A Docker Hub digest found on no tag passes under no exclude kind, `security-fix` included, because an
+  image's advisory is checked for form only; a fix names a digest a tag carries.
+- **N28.** A reusable workflow of another repository, and a Docker action not pinned by digest, are refused.
+- **N29.** A digest the build branch's first-parent history named at least the floor ago is old enough by that merge
+  commit's time (the revert path), with no new exclude kind (the ci-infra review's S3).
+- **N30.** Each Dockerfile is read by a port of BuildKit v0.34.1's parser, which CI-13 shares and which refuses every
+  line it cannot place; the build-push-action inputs that change what a build runs unread are refused (the security
+  review's S1 and S2).
+- **N31.** An image file is one of Docker's own names; compose merge keys are honoured and `extends:` in any form is
+  refused; a file in a subdirectory of `.github/workflows` is refused (the ci-infra review's S2, the security review's
+  N1 and S3).
+
+### Consequences
+
+- **A hand bump under three days fails `static`.** An action pin or digest under the floor fails "Action pins" or
+  "Toolchain" on its pull request, naming every time read, its source and the instant it is old enough. At or over the
+  floor it passes.
+- **Dependabot's updates do not trip it on honest dates.** Its version updates are at least seven days old for an
+  action. For an image, Dependabot gates the tag's push time and writes the tag's current digest, so an images pull
+  request can be younger than its cooldown (#33's was 5.14 days old when written), and is still held to three days. A
+  young security update is red until a person adds its dated `security-fix` exclude, as for npm.
+- **A new action needs a fitting release.** One from an unsigned, non-immutable release needs an `age-unprovable`
+  exclude with its reason, and one released from a maintenance branch an `off-default-branch` exclude. Under either it
+  still waits three days by every time read (`docs/runbooks/dependency-upgrades.md`).
+- **Push runs warn.** A rate limit, an outage or a tag moved upstream cannot turn the build branch red, for a pin new
+  against the previous head as for any other. A late `verified_at` is a false red in the safe direction, cleared by a
+  re-run after the printed instant.
+- **A revert passes.** The exact revert of an images bump passes once the build-branch commit that first named the old
+  digest is three days old, whatever Docker Hub's tags carry by then.
+- **`gpgv` is a prerequisite** of `pnpm test` and `pnpm actions:check` locally (`docs/runbooks/ci.md`); every runner
+  has it.
+- **The API's rate.** On CI each new commit costs two API calls and one to three activity pages, one more per
+  `security-fix` exclude, against 1,000 an hour.
+- **The advisory read's live path is not yet proven.** No `security-fix` exclude exists, so this part's run does not
+  read an advisory; the runbook marks that path unproven until a run makes it.
+- **The weekly triage** removes expired entries from the two new lists as from the npm ones.
+- **Rollback** is a revert. Nothing holds state, there is no migration, and the excludes are files.
+
+**What it does not bound (the residuals).**
+- **Commit age, not tag age.** No interface exposes when a mutable tag came to name its commit, except an immutable
+  release's `published_at`. An attacker who can push to the upstream default branch can land a commit, wait three
+  days, then move a mutable tag to it, and the rule passes that pin.
+- **A staged commit.** The attacker need not wait on the default branch: a commit signed in a fork or on a deleted
+  branch three days ahead keeps its verification record across the repository network, so it can be fast-forwarded
+  onto the default branch and tagged in one minute with every time three days old. The ancestry rule holds at read
+  time only. A GitHub-recorded arrival inside the window makes such a pin young when the activity read answers; when
+  it does not, the pin passes.
+- **What runs at run time.** Node from setup-node's manifest, Python, Trivy and its database, pip packages (`pyx12`,
+  unpinned), and anything a `run:` step pulls with `docker run` or `docker pull`. Images nested in an action's
+  `docker://…@sha256` are the action author's, and are not aged. A custom frontend, even by digest, can pull images of
+  its own, and setup-buildx-action's `version:` input would download buildx unpinned (no step sets it).
+- **An image `security-fix` advisory** is checked for form only.
+- **The token's reach.** The token step's environment can be reached from every earlier step through `$GITHUB_ENV`.
+- **Who writes an exclude.** Until runbook 3i an exclude is self-approved, as F2 (b)'s npm excludes are.
+
+### Revisit when
+
+- **Immutable releases.** Most pinned publishers use them: then require them for new actions.
+- **A tag's creation time.** GitHub exposes it, or P1's CI log shows that the activity read records the pinned
+  repositories' tag pushes or proves an arrival older than the window.
+- **A web-flow key rotates.** The push run's warning names it; add the new key to `github-web-flow.asc`.
+- **The advisory read.** Its first live run of an action `security-fix` exclude.
+- **The repository goes private.** The token could then read what an anonymous reader cannot.

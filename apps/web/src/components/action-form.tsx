@@ -2,27 +2,51 @@
 
 import { Alert, AlertDescription, AlertTitle, Button } from '@tp/ui';
 import { useRouter } from 'next/navigation';
-import { type ReactNode, useActionState, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type { ActionState } from '../lib/http/next';
+import {
+  FormIssues,
+  PendingStatus,
+  RefusalSummary,
+  SUMMARY_TITLES,
+  SUMMARY_VARIANTS,
+  type SummaryKind,
+  summaryKind,
+  useClearedForAnotherPerson,
+  useGuardedSubmit,
+} from './form-issues';
+
+export { summaryLead } from './form-issues';
 
 /**
- * A form posting to a server action, showing what the action refused: the error, each field's
- * problem, and the password policy's unmet rules. On success the action redirects, so a fresh page
- * (with a fresh request key) replaces the form. A field's problem is named by the field's label (`labels`; its key
- * where none is given), and the control it names is marked invalid and described by it; the focus, which the
- * disabled button dropped while the request was pending, moves to the first such control, or to the summary.
+ * A form posting to a server action that keeps what the person typed when the action refuses (docs/adr/0077). The
+ * form is sent from `onSubmit` (useGuardedSubmit), so React never resets it on a refusal; one press sends one request;
+ * a dropped connection keeps every value but the secrets and says the save is not confirmed. The refusal shows first
+ * in the form (RefusalSummary): each issue named by the label the person sees and linked to its field, which shows
+ * "Error:" and the rule's words under it (FormIssues); the focus goes to the one field refused, or to the summary.
+ * Passwords and codes are emptied, and say so. While the request is out the button keeps its words and its focus
+ * (aria-disabled, never disabled) and a status beside it says "Working…". On success the action redirects, and Next
+ * remounts the page, so a saved form starts fresh with a fresh request key. That holds on two conditions, which no
+ * change may break:
  *
- * The refusal's first line is the action's error. The generic one of an invalid form ("Check the fields marked
- * below.", `invalid`) shows only when an issue marked a control the person can see: when every issue names a hidden
- * field (the run an Accept button carries) there is nothing marked below, so the issues stand alone under "Not done".
+ * 1. The hook whose dispatcher goes on `<form action>` takes the server action itself, never a client wrapper: a
+ *    wrapper drops the $ACTION_* fields the post without JavaScript (and React's replay of a press made before the
+ *    page hydrated) needs. useGuardedSubmit's browser hook may wrap it, since only onSubmit dispatches it, and it
+ *    rethrows Next's redirect, so a success through it remounts the form as before.
+ * 2. `<FormKeys/>` is rendered by pages, never by a layout: a layout does not render again after the redirect, so a
+ *    second submit would replay the old request key.
  *
  * A form whose refusal can mean the page itself is out of date (an Accept or Re-run button another person's
  * change has overtaken: combined audit #10, docs/adr/0037) sets `refreshOnError` to a key of its own: after a
  * refusal the page is read again (router.refresh, as the export status does). Still rendered, the form keeps its
  * state, its refusal and the focus. Replaced by an explanation that names the same key (RefusalTakeover), the
  * focus, which the form took with it, moves to that explanation, so a keyboard or screen-reader user lands on why
- * and on its next step. Forms without the prop are unchanged.
+ * and on its next step. Any form whose CSRF token or request key was out of date (`stale`) reads the page again the
+ * same way, with no takeover: the fresh token and key render in place and what was typed stays. A press whose
+ * connection dropped keeps its request key for the next press, whatever a refresh renders (useGuardedSubmit); and when
+ * a refresh shows another person signed in, the fields mount afresh and the summary says the form was cleared
+ * (useClearedForAnotherPerson), so nothing typed is sent under another person's name.
  */
 export function ActionForm({
   action,
@@ -30,9 +54,9 @@ export function ActionForm({
   children,
   variant = 'default',
   className,
-  labels = {},
   refreshOnError,
   wrapSubmit = false,
+  beforeSubmit,
 }: {
   readonly action: (state: ActionState, form: FormData) => Promise<ActionState>;
   /** The button's words; may hold a figure in the mono face (<Money/>). */
@@ -40,8 +64,6 @@ export function ActionForm({
   readonly children?: ReactNode;
   readonly variant?: 'default' | 'outline' | 'destructive';
   readonly className?: string;
-  /** The label of each field a refusal may name, by its key, as the form shows it. */
-  readonly labels?: Readonly<Record<string, string>>;
   /** Read the page again after a refusal, for a form a change elsewhere can overtake: the key an explanation that may take its place names. */
   readonly refreshOnError?: string;
   /**
@@ -49,96 +71,45 @@ export function ActionForm({
    * at 320 px): the Button is one line by default (UX recheck of PR #50, N1).
    */
   readonly wrapSubmit?: boolean;
+  /** Called on a press, before anything is sent, with JavaScript only: false sends nothing (the split form shows its own problems). */
+  readonly beforeSubmit?: (form: HTMLFormElement) => boolean;
 }) {
-  const [state, formAction, pending] = useActionState(action, {});
   const formRef = useRef<HTMLFormElement>(null);
-  const summaryRef = useRef<HTMLDivElement>(null);
-  const issueId = useId();
-  // The refusal whose issues marked a visible control, so the generic first line points at something.
-  const [markedFor, setMarkedFor] = useState<ActionState | null>(null);
-  useLayoutEffect(() => {
-    const form = formRef.current;
-    if (form === null || state.error === undefined) {
-      return undefined;
-    }
-    const marked: { readonly control: HTMLElement; readonly describedBy: string | null }[] = [];
-    (state.issues ?? []).forEach((issue, index) => {
-      const control = form.elements.namedItem(issue.field);
-      if (!(control instanceof HTMLInputElement || control instanceof HTMLSelectElement || control instanceof HTMLTextAreaElement) || control.type === 'hidden') {
-        return;
-      }
-      const describedBy = control.getAttribute('aria-describedby');
-      marked.push({ control, describedBy });
-      control.setAttribute('aria-invalid', 'true');
-      control.setAttribute('aria-describedby', [`${issueId}-${String(index)}`, describedBy].filter((part) => part !== null && part !== '').join(' '));
-    });
-    setMarkedFor(marked.length > 0 ? state : null);
-    (marked[0]?.control ?? summaryRef.current)?.focus();
-    return () => {
-      for (const { control, describedBy } of marked) {
-        control.removeAttribute('aria-invalid');
-        if (describedBy === null) {
-          control.removeAttribute('aria-describedby');
-        } else {
-          control.setAttribute('aria-describedby', describedBy);
-        }
-      }
-    };
-  }, [state, issueId]);
+  const heldKey = useRef<string | null>(null);
+  const { state, fromBrowser, pending, formAction, onSubmit } = useGuardedSubmit(action, beforeSubmit === undefined ? { heldKey } : { beforeSubmit, heldKey });
+  const { shown, generation } = useClearedForAnotherPerson(formRef, state, heldKey);
+  const stale = state.stale === true;
   return (
-    <form ref={formRef} action={formAction} className={className ?? 'flex flex-col gap-4'}>
-      {refreshOnError === undefined ? null : <RefreshAfterRefusal state={state} takeover={refreshOnError} labels={labels} />}
-      {children}
-      {state.error === undefined ? null : (
-        <Alert variant="destructive" data-state={state.locked === true ? 'locked' : 'error'} ref={summaryRef} tabIndex={-1}>
-          <AlertTitle>{state.locked === true ? 'Account locked' : 'Not done'}</AlertTitle>
-          <AlertDescription>
-            {summaryLead(state, markedFor === state) === null ? null : <p>{state.error}</p>}
-            {state.issues === undefined || state.issues.length === 0 ? null : (
-              <ul className="mt-1 list-disc pl-5">
-                {state.issues.map((issue, index) => (
-                  <li key={`${issue.field}:${issue.message}`} id={`${issueId}-${String(index)}`}>
-                    {labels[issue.field] ?? issue.field}: {issue.message}
-                  </li>
-                ))}
-              </ul>
-            )}
-            {state.problems === undefined ? null : <p className="mt-1">It needs {state.problems.join(', ')}.</p>}
-          </AlertDescription>
-        </Alert>
-      )}
-      <div>
-        <Button type="submit" variant={variant} disabled={pending} className={wrapSubmit ? 'h-auto min-h-9 whitespace-normal text-left' : undefined}>
-          {pending ? 'Working…' : submit}
-        </Button>
-      </div>
-    </form>
+    <FormIssues state={shown}>
+      <form ref={formRef} action={formAction} onSubmit={onSubmit} className={className ?? 'flex flex-col gap-4'}>
+        <RefusalSummary state={shown} fromBrowser={fromBrowser} submit={submit} formRef={formRef} />
+        <Fragment key={generation}>{children}</Fragment>
+        {/* The status goes inside the button's wrapper, never as a child of the form, which would take a cell of a grid or a slot of a row. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="submit" variant={variant} aria-disabled={pending || undefined} className={wrapSubmit ? 'h-auto min-h-9 whitespace-normal text-left' : undefined}>
+            {submit}
+          </Button>
+          <PendingStatus pending={pending} />
+        </div>
+        {refreshOnError === undefined && !stale ? null : <RefreshAfterRefusal state={state} takeover={stale ? undefined : refreshOnError} formRef={formRef} />}
+      </form>
+    </FormIssues>
   );
-}
-
-/**
- * The refusal's first line: the action's error, except the generic line of an invalid form when no issue marked a
- * visible control (`marked`), which would point at nothing (null: the issues stand alone).
- */
-export function summaryLead(state: ActionState, marked: boolean): string | null {
-  if (state.error === undefined) {
-    return null;
-  }
-  return state.invalid === true && !marked && (state.issues?.length ?? 0) > 0 ? null : state.error;
 }
 
 /** How long after a refusal's refresh an explanation may still take the focus: the refresh's round trip, with room. */
 const TAKEOVER_MS = 15_000;
 
 /**
- * The form refused last that asked for a refresh, by its key, when, and its refusal as the form showed it (each issue
- * after its field's label): one per page, in this browser tab's memory.
+ * The form refused last that asked for a refresh, by its key, when, its refusal as the form showed it (each issue
+ * after its field's name, read when it is taken) and its kind (a key used before is "Already sent", never "Not done"):
+ * one per page, in this browser tab's memory.
  */
-let refused: { readonly key: string; readonly at: number; readonly lines: readonly string[] } | null = null;
+let refused: { readonly key: string; readonly at: number; readonly lines: () => readonly string[]; readonly kind: SummaryKind } | null = null;
 
-/** Records a refusal of the form with this key, before its refresh (RefreshAfterRefusal), with its lines. */
-export function noteRefusal(key: string, at: number, lines: readonly string[] = []): void {
-  refused = { key, at, lines };
+/** Records a refusal of the form with this key, before its refresh (RefreshAfterRefusal), with its lines and its kind. */
+export function noteRefusal(key: string, at: number, lines: readonly string[] = [], kind: SummaryKind = 'error'): void {
+  refused = { key, at, lines: () => lines, kind };
 }
 
 /**
@@ -154,18 +125,24 @@ export function takesFocus(keys: readonly string[], at: number, focusLost: boole
   return true;
 }
 
+/** A refusal handed to the note after a list (RefusalFallback): its lines, and its kind, which titles it. */
+export interface OrphanedRefusal {
+  readonly lines: readonly string[];
+  readonly kind: SummaryKind;
+}
+
 /**
  * The refusal of a form whose key starts with `prefix` but names none of `present` (its row left the list on the
- * refresh, so no explanation takes its place), within TAKEOVER_MS, when the focus fell to the page: its lines, which
- * ends the hand-off. Null otherwise (an explanation of its own took it, or none is due).
+ * refresh, so no explanation takes its place), within TAKEOVER_MS, when the focus fell to the page: its lines and its
+ * kind, which ends the hand-off. Null otherwise (an explanation of its own took it, or none is due).
  */
-export function takesOrphanedRefusal(prefix: string, present: readonly string[], at: number, focusLost: boolean): readonly string[] | null {
+export function takesOrphanedRefusal(prefix: string, present: readonly string[], at: number, focusLost: boolean): OrphanedRefusal | null {
   if (refused === null || !focusLost || !refused.key.startsWith(prefix) || present.includes(refused.key) || at - refused.at > TAKEOVER_MS) {
     return null;
   }
-  const { lines } = refused;
+  const { lines, kind } = refused;
   refused = null;
-  return lines;
+  return { lines: lines(), kind };
 }
 
 /**
@@ -198,7 +175,7 @@ export function RefusalTakeover({ keys, children, className }: { readonly keys: 
  */
 export function RefusalFallback({ prefix, present, lead }: { readonly prefix: string; readonly present: readonly string[]; readonly lead: string }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [lines, setLines] = useState<readonly string[] | null>(null);
+  const [taken, setTaken] = useState<OrphanedRefusal | null>(null);
   const presentList = present.join(' ');
   // Read from the page the wrapper is in (its document's focus), after the list's own explanations had their turn.
   useLayoutEffect(() => {
@@ -207,31 +184,32 @@ export function RefusalFallback({ prefix, present, lead }: { readonly prefix: st
       return;
     }
     const active = page.activeElement;
-    const taken = takesOrphanedRefusal(prefix, presentList.split(' '), Date.now(), active === null || active === page.body);
-    if (taken !== null) {
-      setLines(taken);
+    const orphaned = takesOrphanedRefusal(prefix, presentList.split(' '), Date.now(), active === null || active === page.body);
+    if (orphaned !== null) {
+      setTaken(orphaned);
     }
   }, [prefix, presentList]);
   useEffect(() => {
-    if (lines !== null) {
+    if (taken !== null) {
       ref.current?.focus();
     }
-  }, [lines]);
+  }, [taken]);
   return (
     <div
       ref={ref}
-      tabIndex={lines === null ? undefined : -1}
-      data-takes-over={lines === null ? undefined : `${prefix}*`}
+      tabIndex={taken === null ? undefined : -1}
+      data-takes-over={taken === null ? undefined : `${prefix}*`}
       className="rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      {lines === null ? null : (
-        <Alert variant="destructive" data-state="refused-row-gone">
-          <AlertTitle>Not done</AlertTitle>
+      {taken === null ? null : (
+        <Alert variant={SUMMARY_VARIANTS[taken.kind]} data-state="refused-row-gone">
+          {/* Titled and drawn as the form's summary was: a key used before is "Already sent", its row gone or not. */}
+          <AlertTitle>{SUMMARY_TITLES[taken.kind]}</AlertTitle>
           <AlertDescription>
             <p>{lead}</p>
-            {lines.length === 0 ? null : (
+            {taken.lines.length === 0 ? null : (
               <ul className="mt-1 list-disc pl-5">
-                {lines.map((line) => (
+                {taken.lines.map((line) => (
                   <li key={line}>{line}</li>
                 ))}
               </ul>
@@ -244,26 +222,34 @@ export function RefusalFallback({ prefix, present, lead }: { readonly prefix: st
 }
 
 /**
- * Reads the page again after each refusal (ActionForm's `refreshOnError`). A component of its own, rendered only for
- * a form that asks, so the router is read only there: every other form renders, as before, outside the app router
- * too (a component test's renderToString).
+ * The items of the summary a form shows now, read when they are asked for: the summary names each field from the page
+ * after its first render, so the lines are read as the person last saw them, the form gone or not.
  */
-function RefreshAfterRefusal({ state, takeover, labels }: { readonly state: ActionState; readonly takeover: string; readonly labels: Readonly<Record<string, string>> }) {
+function summaryLines(form: HTMLFormElement | null): () => readonly string[] {
+  const summary = form?.querySelector(':scope > [data-slot="refusal-summary"]') ?? null;
+  return () => (summary === null ? [] : [...summary.querySelectorAll('li')].map((item) => (item.textContent ?? '').replace(/\s+/g, ' ').trim()));
+}
+
+/**
+ * Reads the page again after each refusal of a form with `refreshOnError` (noting its `takeover` key first), or of any
+ * form whose page was out of date (`stale`, no takeover: the fresh token and key render in place). A component of its
+ * own, rendered only for such a form or state, so the router is read only there: every other form renders, as before,
+ * outside the app router too (a component test's renderToString). Once per state: the effect runs twice when React's
+ * strict mode mounts it, and a second refresh would only cost a round trip. The forms that submit as ActionForm does
+ * without being one (the version form, the export form) render it for a stale state too.
+ */
+export function RefreshAfterRefusal({ state, takeover, formRef }: { readonly state: ActionState; readonly takeover: string | undefined; readonly formRef: RefObject<HTMLFormElement | null> }) {
   const router = useRouter();
-  // The labels as rendered last, read when a refusal arrives: a new object each render, so never a reason to refresh again.
-  const labelsRef = useRef(labels);
-  useLayoutEffect(() => {
-    labelsRef.current = labels;
-  });
+  const done = useRef<ActionState | null>(null);
   useEffect(() => {
-    if (state.error !== undefined) {
-      noteRefusal(
-        takeover,
-        Date.now(),
-        (state.issues ?? []).map((issue) => `${labelsRef.current[issue.field] ?? issue.field}: ${issue.message}`),
-      );
-      router.refresh();
+    if (state.error === undefined || done.current === state) {
+      return;
     }
-  }, [state, router, takeover]);
+    done.current = state;
+    if (takeover !== undefined) {
+      refused = { key: takeover, at: Date.now(), lines: summaryLines(formRef.current), kind: summaryKind(state) };
+    }
+    router.refresh();
+  }, [state, router, takeover, formRef]);
   return null;
 }

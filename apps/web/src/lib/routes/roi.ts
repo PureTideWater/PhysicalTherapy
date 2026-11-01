@@ -3,9 +3,10 @@ import { previousQuarter, quarterPeriod } from '@tp/ledger';
 import { generateRoiStatement } from '@tp/worker/ledger';
 import { z } from 'zod';
 
+import { returnPage } from '../http/download-refusal';
 import { practiceRoute } from '../http/invoke';
 import { type ListPage, pageParam } from '../http/paging';
-import { type Download, InputError, type MutationResult, NotFoundError } from '../http/route';
+import { type Download, InputError, type MutationResult, NotFoundError, type ReturnTo } from '../http/route';
 import { type StatementDetail, type StatementSummary, listStatements, statementCsv, statementOf, statementPdf } from '../reconciliation/queries';
 import { opaqueId } from './schemas';
 
@@ -96,6 +97,9 @@ export const roiStatementPage = practiceRoute({
   sample: { params: (refs) => ({ practiceId: refs.practiceId, statementId: refs.roiStatementId }) },
 });
 
+/** Where a browser's refused statement file goes back to: the statement's page, beside its files (docs/adr/0079). */
+const statementFilesPage: ReturnTo = (params) => returnPage(roiStatementPage.path, params);
+
 /** The statement's PDF, checked against its SHA-256; the download is audited. */
 export const roiStatementPdf = practiceRoute({
   id: 'practice.reports.roi.pdf',
@@ -106,6 +110,7 @@ export const roiStatementPdf = practiceRoute({
   phi: true,
   permission: 'report.read',
   params: z.object({ practiceId: opaqueId, statementId: opaqueId }),
+  returnTo: statementFilesPage,
   handle: async ({ scope, practiceId, params, request, services }): Promise<Download<Uint8Array<ArrayBuffer>>> => {
     const body = await statementPdf(scope, services, practiceId, params.statementId, request.requestId);
     if (body === undefined) {
@@ -127,6 +132,7 @@ export const roiStatementCsv = practiceRoute({
   phi: true,
   permission: 'report.read',
   params: z.object({ practiceId: opaqueId, statementId: opaqueId }),
+  returnTo: statementFilesPage,
   handle: async ({ scope, practiceId, params, request }): Promise<Download> => {
     const body = await statementCsv(scope, practiceId, params.statementId, request.requestId);
     if (body === undefined) {

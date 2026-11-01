@@ -7,6 +7,7 @@ import { asOwner, createPracticeWithLocation } from '@tp/db/testing';
 import { assertNoPhi } from '@tp/observability';
 
 import { personaEmail } from '../scripts/synthetic-personas';
+import { atPhoneWidth } from './a11y';
 import { practiceId, signInWithTotp, withDatabase } from './helpers';
 import { startLocalWorker } from './worker';
 
@@ -16,7 +17,8 @@ import { startLocalWorker } from './worker';
  * the worker (run here beside the server, on the same database and document directory) takes them
  * in, parses and loads them, and the receipts show them loaded, the zip's bad file held with its
  * segment and position; a viewer sees the permission state; a practice without its BAA shows uploads
- * disabled with the reason. Synthetic data only.
+ * disabled with the reason. At 390 px the drop zone does not scroll sideways (test matrix FRM-08).
+ * Synthetic data only.
  */
 
 const FIXTURES = path.resolve(import.meta.dirname, '../../../fixtures/synthetic');
@@ -32,6 +34,14 @@ test('a billing manager uploads an 835 and a zip; the worker takes them in and l
   }).not.toThrow();
   await expect(page.getByRole('heading', { level: 1, name: 'Uploads' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Drop zone' })).toBeVisible();
+  // At a phone's width the drop zone's selects shrink to it, though the zone sizes to its content: the kind's long
+  // option, then the ERA export's system list and its hint (FRM-08; docs/adr/0077, D6).
+  await atPhoneWidth(page, 'Uploads');
+  const kind = page.getByLabel('Kind of document');
+  await kind.selectOption('era_export');
+  await expect(page.getByLabel('Which system’s export')).toHaveAccessibleDescription(/^The practice-management system the ERA export came from\./);
+  await atPhoneWidth(page, 'Uploads, an ERA export chosen');
+  await kind.selectOption('x12_835');
   const local = await startLocalWorker();
   try {
     await page.getByLabel('Choose files to upload').setInputFiles([
@@ -50,7 +60,7 @@ test('a billing manager uploads an 835 and a zip; the worker takes them in and l
   }
   // The receipts come from the server: they survive a reload, and no file name was ever sent.
   await page.reload();
-  const receipts = page.getByRole('region', { name: 'Receipts' });
+  const receipts = page.getByRole('region', { name: 'Receipts', exact: true });
   await expect(receipts.getByText('Expanded')).toBeVisible();
   await expect(page.getByText('remit.835')).toHaveCount(0);
   const stored = await withDatabase(async (client) =>

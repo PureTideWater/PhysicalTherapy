@@ -41,6 +41,9 @@ const FILES = [
   ...testsIn('tools/check-action-pins'),
   ...testsIn('tools/check-toolchain'),
   ...testsIn('tools/ci'),
+  // ci-browser (docs/adr/0066, Part 3).
+  'tools/screening-capacity/image-id.test.ts',
+  'tools/test/browser-version.test.ts',
 ];
 
 /** What Node itself keeps in the temporary directory (module.enableCompileCache), not a test's. */

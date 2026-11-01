@@ -3,8 +3,9 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../components/action-form';
+import { UtcTime } from '../../../components/dates';
 import { FormKeys } from '../../../components/form-keys';
-import { utc } from '../../../components/format';
+import { ScrollTable } from '../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
 import { CATEGORY_LABELS, ticketsPage } from '../../../lib/routes/support';
@@ -43,54 +44,63 @@ export default async function TicketsPage(props: { readonly searchParams: Promis
       {tickets.length === 0 ? (
         <EmptyState mark title="No tickets here" nextStep="Tickets opened from any screen's help appear here." />
       ) : (
-        <table className="w-full text-left text-sm" aria-label="Tickets">
-          <thead className="text-muted-foreground">
-            <tr>
-              <th className="py-1 pr-3 font-medium">Number</th>
-              <th className="py-1 pr-3 font-medium">From</th>
-              <th className="py-1 pr-3 font-medium">About</th>
-              <th className="py-1 pr-3 font-medium">Message</th>
-              <th className="py-1 pr-3 font-medium">Opened</th>
-              <th className="py-1 font-medium">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tickets.map((ticket) => (
-              <tr key={ticket.id} className="border-t align-top" data-ticket-status={ticket.status}>
-                <td className="py-1 pr-3 font-mono tabular-nums">{ticket.number}</td>
-                <td className="py-1 pr-3">
-                  {ticket.requesterEmail}
-                  <br />
-                  <span className="text-xs text-muted-foreground">{ticket.organizations.join(', ')}</span>
-                </td>
-                <td className="py-1 pr-3">
-                  {CATEGORY_LABELS[ticket.category]}
-                  <br />
-                  <span className="text-xs text-muted-foreground">screen: {ticket.screen}</span>
-                </td>
-                <td className="py-1 pr-3">
-                  <p className="font-medium">{ticket.subject}</p>
-                  <p className="whitespace-pre-wrap">{ticket.message}</p>
-                </td>
-                <td className="py-1 pr-3">{utc(ticket.createdAt)}</td>
-                <td className="py-1">
-                  <Badge variant="outline">{ticket.status}</Badge>
-                  <div className="mt-2 flex flex-col gap-1">
-                    {(['answered', 'closed', 'open'] as const)
-                      .filter((next) => next !== ticket.status)
-                      .map((next) => (
-                        <ActionForm key={next} action={setTicketStatusAction} submit={next === 'open' ? 'Reopen' : `Mark ${next}`} variant="outline" className="flex flex-col gap-1">
-                          <FormKeys />
-                          <input type="hidden" name="ticketId" value={ticket.id} />
-                          <input type="hidden" name="status" value={next} />
-                        </ActionForm>
-                      ))}
-                  </div>
-                </td>
+        <ScrollTable label="Tickets">
+          <table className="w-full min-w-[54rem] text-left text-sm" aria-label="Tickets">
+            <thead className="text-muted-foreground">
+              <tr>
+                <th className="py-1 pr-3 font-medium">Number</th>
+                <th className="py-1 pr-3 font-medium">From</th>
+                <th className="py-1 pr-3 font-medium">About</th>
+                <th className="py-1 pr-3 font-medium">Message</th>
+                <th className="py-1 pr-3 font-medium">Opened</th>
+                <th className="py-1 font-medium">Status</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {tickets.map((ticket) => (
+                <tr key={ticket.id} className="border-t align-top" data-ticket-status={ticket.status}>
+                  <td className="py-1 pr-3 font-mono tabular-nums">{ticket.number}</td>
+                  <td className="py-1 pr-3">
+                    <span className="block min-w-40 wrap-anywhere">
+                      {ticket.requesterEmail}
+                      <br />
+                      <span className="text-xs text-muted-foreground">{ticket.organizations.join(', ')}</span>
+                    </span>
+                  </td>
+                  <td className="py-1 pr-3">
+                    {CATEGORY_LABELS[ticket.category]}
+                    <br />
+                    <span className="text-xs text-muted-foreground">screen: {ticket.screen}</span>
+                  </td>
+                  <td className="py-1 pr-3">
+                    {/* What a customer typed: words wrap whole, and only a pasted token wider than the column breaks. */}
+                    <div className="min-w-40 wrap-anywhere">
+                      <p className="font-medium">{ticket.subject}</p>
+                      <p className="whitespace-pre-wrap">{ticket.message}</p>
+                    </div>
+                  </td>
+                  <td className="py-1 pr-3">
+                    <UtcTime at={ticket.createdAt} />
+                  </td>
+                  <td className="py-1">
+                    <Badge variant="outline">{ticket.status}</Badge>
+                    <div className="mt-2 flex flex-col gap-1">
+                      {(['answered', 'closed', 'open'] as const)
+                        .filter((next) => next !== ticket.status)
+                        .map((next) => (
+                          <ActionForm key={next} action={setTicketStatusAction} submit={next === 'open' ? 'Reopen' : `Mark ${next}`} variant="outline" className="flex flex-col gap-1">
+                            <FormKeys />
+                            <input type="hidden" name="ticketId" value={ticket.id} />
+                            <input type="hidden" name="status" value={next} />
+                          </ActionForm>
+                        ))}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </ScrollTable>
       )}
     </AppShell>
   );

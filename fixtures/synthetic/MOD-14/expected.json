@@ -1,0 +1,20 @@
+{
+  "case": "MOD-14",
+  "module": "MOD",
+  "title": "A letter that writes another patient's member ID or claim number, with a letter prefix or digits alone, with a dash, spaces or an invisible character, `_`, `.`, `/`, `:`, `#` or `(` next to a letter, after `ID:`, in brackets or as a claim placeholder's digits (`[CLAIM_7654321]`)",
+  "assertion": "The one-patient screen is offered it, in the redacted letter too; a placeholder's word, or a redacted letter's own placeholder, never. Digits alone with `/` or `.` between them are not offered (a date's or an amount's writing; recorded in docs/adr/0054)",
+  "synthetic": true,
+  "completesIn": 10,
+  "assertedBy": [
+    "packages/model-gateway/src/redact.property.test.ts",
+    "packages/model-gateway/src/functions/denial-letter.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Letters are generated in memory by the property test; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

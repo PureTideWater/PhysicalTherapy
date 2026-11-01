@@ -502,7 +502,7 @@ export function UnpricedReasons({ coverage }: { readonly coverage: RunCoverage }
   return (
     <>
       <ScrollTable label="Unpriced reasons">
-        <table className="w-full text-left text-sm" aria-label="Unpriced reasons">
+        <table className="w-full min-w-[32rem] text-left text-sm" aria-label="Unpriced reasons">
           <thead className="text-muted-foreground">
             <tr>
               <th className="py-1 pr-3 font-medium">Reason</th>
@@ -547,7 +547,7 @@ export function PatternTable({ practiceId, coverage, names, limit }: { readonly 
   }
   return (
     <ScrollTable label="Variance by payer pattern">
-      <table className="w-full text-left text-sm" aria-label="Variance by payer pattern">
+      <table className="w-full min-w-[48rem] text-left text-sm" aria-label="Variance by payer pattern">
         <thead className="text-muted-foreground">
           <tr>
             <th className="py-1 pr-3 font-medium">Payer and plan</th>
@@ -564,11 +564,13 @@ export function PatternTable({ practiceId, coverage, names, limit }: { readonly 
             return (
               <tr key={`${pattern.plan_id}:${pattern.mapping_kind}:${pattern.contract_version_id ?? ''}:${pattern.rate_record_id ?? ''}`} className="border-t align-top" data-plan={pattern.plan_id}>
                 <td className="py-1 pr-3">
-                  {names.payers[pattern.payer_id] ?? 'Payer'}
-                  <div className="font-mono text-xs">
-                    <Link className="underline" href={`/p/${practiceId}/mapping/${pattern.plan_id}`}>
-                      {names.plans[pattern.plan_id] ?? pattern.plan_id}
-                    </Link>
+                  <div className="min-w-32 wrap-anywhere">
+                    {names.payers[pattern.payer_id] ?? 'Payer'}
+                    <div className="font-mono text-xs">
+                      <Link className="underline" href={`/p/${practiceId}/mapping/${pattern.plan_id}`}>
+                        {names.plans[pattern.plan_id] ?? pattern.plan_id}
+                      </Link>
+                    </div>
                   </div>
                 </td>
                 <td className="py-1 pr-3">
@@ -579,7 +581,7 @@ export function PatternTable({ practiceId, coverage, names, limit }: { readonly 
                       {version.title}, version {version.versionNo}
                     </Link>
                   )}
-                  {pattern.rate_record_id === null ? null : <div className="font-mono text-xs text-muted-foreground">rate record {pattern.rate_record_id}</div>}
+                  {pattern.rate_record_id === null ? null : <div className="min-w-32 font-mono text-xs text-muted-foreground wrap-anywhere">rate record {pattern.rate_record_id}</div>}
                 </td>
                 <td className="py-1 pr-3 text-right font-mono tabular-nums">{pattern.lines}</td>
                 <td className="py-1 pr-3 text-right font-mono tabular-nums">{pattern.underpaid_lines}</td>

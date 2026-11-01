@@ -62,6 +62,10 @@ export const SCREENING_ENTRY_POINTS = [
 export const WATCHED_FIXED = [
   '.github/workflows/screening-capacity.yml',
   'apps/web/Dockerfile',
+  // The browser builds the capacity job's check holds Chromium to (tools/ci/browser-build.ts reads the record and the
+  // file lists beside it).
+  'apps/web/e2e/browser-builds/*',
+  'apps/web/e2e/browser.json',
   'apps/web/next.config.ts',
   'apps/web/package.json',
   'apps/web/public/*',
@@ -80,6 +84,9 @@ export const WATCHED_FIXED = [
   'packages/db/migrations/*',
   'pnpm-lock.yaml',
   'pnpm-workspace.yaml',
+  // The capacity job's own setup: its cached system packages' check and its browser check, which run on its runner image.
+  'tools/ci/apt-archives.sh',
+  'tools/ci/browser-build.ts',
   'tools/screening-capacity/*',
 ] as const;
 

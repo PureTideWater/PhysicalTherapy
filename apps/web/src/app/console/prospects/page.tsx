@@ -3,9 +3,10 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../components/action-form';
+import { UtcTime } from '../../../components/dates';
 import { SelectField } from '../../../components/field';
 import { FormKeys } from '../../../components/form-keys';
-import { utc } from '../../../components/format';
+import { ScrollTable } from '../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
 import { DECLINED_REASON_LABELS, prospectsPage } from '../../../lib/routes/console-onboarding';
@@ -47,77 +48,87 @@ export default async function ProspectsPage(props: { readonly searchParams: Prom
       {prospects.length === 0 ? (
         <EmptyState mark title="No requests here" nextStep="Requests from the public form at /request-audit appear here." />
       ) : (
-        <table className="w-full text-left text-sm" aria-label="Audit requests">
-          <thead className="text-muted-foreground">
-            <tr>
-              <th className="py-1 pr-3 font-medium">Organization</th>
-              <th className="py-1 pr-3 font-medium">Contact</th>
-              <th className="py-1 pr-3 font-medium">Locations</th>
-              <th className="py-1 pr-3 font-medium">Payers</th>
-              <th className="py-1 pr-3 font-medium">Billing</th>
-              <th className="py-1 pr-3 font-medium">Received</th>
-              <th className="py-1 pr-3 font-medium">Status</th>
-              <th className="py-1 font-medium">Next</th>
-            </tr>
-          </thead>
-          <tbody>
-            {prospects.map((prospect) => (
-              <tr key={prospect.id} className="border-t align-top" data-prospect-status={prospect.status}>
-                <td className="py-1 pr-3">{prospect.organizationName}</td>
-                <td className="py-1 pr-3">
-                  {prospect.contactName}
-                  <br />
-                  <span className="text-xs text-muted-foreground">{prospect.contactEmail}</span>
-                </td>
-                <td className="py-1 pr-3 font-mono tabular-nums">{prospect.locations}</td>
-                <td className="py-1 pr-3">{prospect.payers.join(', ')}</td>
-                <td className="py-1 pr-3">{BILLING_ARRANGEMENT_LABELS[prospect.billingArrangement]}</td>
-                <td className="py-1 pr-3">{utc(prospect.createdAt)}</td>
-                <td className="py-1 pr-3">
-                  <Badge variant="outline">{prospect.status}</Badge>
-                  {prospect.declinedReason === null ? null : (
-                    <span className="mt-1 block text-xs text-muted-foreground" data-declined-reason={prospect.declinedReason}>
-                      {DECLINED_REASON_LABELS[prospect.declinedReason]}
+        <ScrollTable label="Audit requests">
+          <table className="w-full min-w-[54rem] text-left text-sm" aria-label="Audit requests">
+            <thead className="text-muted-foreground">
+              <tr>
+                <th className="py-1 pr-3 font-medium">Organization</th>
+                <th className="py-1 pr-3 font-medium">Contact</th>
+                <th className="py-1 pr-3 font-medium">Locations</th>
+                <th className="py-1 pr-3 font-medium">Payers</th>
+                <th className="py-1 pr-3 font-medium">Billing</th>
+                <th className="py-1 pr-3 font-medium">Received</th>
+                <th className="py-1 pr-3 font-medium">Status</th>
+                <th className="py-1 font-medium">Next</th>
+              </tr>
+            </thead>
+            <tbody>
+              {prospects.map((prospect) => (
+                <tr key={prospect.id} className="border-t align-top" data-prospect-status={prospect.status}>
+                  <td className="py-1 pr-3">{prospect.organizationName}</td>
+                  <td className="py-1 pr-3">
+                    {/* The email is text-xs, so 8rem holds as many of its characters as 10rem of a text-sm one. */}
+                    <span className="block min-w-32 wrap-anywhere">
+                      {prospect.contactName}
+                      <br />
+                      <span className="text-xs text-muted-foreground">{prospect.contactEmail}</span>
                     </span>
-                  )}
-                </td>
-                <td className="py-1">
-                  {prospect.status === 'converted' && prospect.organizationId !== null ? (
-                    <Link className="underline" href={`/console/organizations/${prospect.organizationId}`}>
-                      Open organization
-                    </Link>
-                  ) : prospect.status === 'declined' ? null : (
-                    <div className="flex flex-col gap-2">
-                      <ActionForm action={convertProspectAction} submit="Create practice group" className="flex flex-col gap-1">
-                        <FormKeys />
-                        <input type="hidden" name="prospectId" value={prospect.id} />
-                      </ActionForm>
-                      {prospect.status === 'new' ? (
-                        <ActionForm action={reviewProspectAction} submit="Mark contacted" variant="outline" className="flex flex-col gap-1">
+                  </td>
+                  <td className="py-1 pr-3 font-mono tabular-nums">{prospect.locations}</td>
+                  <td className="py-1 pr-3">{prospect.payers.join(', ')}</td>
+                  <td className="py-1 pr-3">{BILLING_ARRANGEMENT_LABELS[prospect.billingArrangement]}</td>
+                  <td className="py-1 pr-3">
+                    <UtcTime at={prospect.createdAt} />
+                  </td>
+                  <td className="py-1 pr-3">
+                    <Badge variant="outline">{prospect.status}</Badge>
+                    {prospect.declinedReason === null ? null : (
+                      <span className="mt-1 block text-xs text-muted-foreground" data-declined-reason={prospect.declinedReason}>
+                        {DECLINED_REASON_LABELS[prospect.declinedReason]}
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-1">
+                    {prospect.status === 'converted' && prospect.organizationId !== null ? (
+                      <Link className="underline" href={`/console/organizations/${prospect.organizationId}`}>
+                        Open organization
+                      </Link>
+                    ) : prospect.status === 'declined' ? null : (
+                      <div className="flex flex-col gap-2">
+                        <ActionForm action={convertProspectAction} submit="Create practice group" className="flex flex-col gap-1">
                           <FormKeys />
                           <input type="hidden" name="prospectId" value={prospect.id} />
-                          <input type="hidden" name="status" value="contacted" />
                         </ActionForm>
-                      ) : null}
-                      <ActionForm action={reviewProspectAction} submit="Decline" variant="outline" className="flex flex-col gap-1">
-                        <FormKeys />
-                        <input type="hidden" name="prospectId" value={prospect.id} />
-                        <input type="hidden" name="status" value="declined" />
-                        <SelectField
-                          label="Why declined"
-                          name="declinedReason"
-                          id={`declined-reason-${prospect.id}`}
-                          required
-                          options={[{ value: '', label: 'Choose a reason' }, ...declinedReasons]}
-                        />
-                      </ActionForm>
-                    </div>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                        {prospect.status === 'new' ? (
+                          <ActionForm action={reviewProspectAction} submit="Mark contacted" variant="outline" className="flex flex-col gap-1">
+                            <FormKeys />
+                            <input type="hidden" name="prospectId" value={prospect.id} />
+                            <input type="hidden" name="status" value="contacted" />
+                          </ActionForm>
+                        ) : null}
+                        <ActionForm action={reviewProspectAction} submit="Decline" variant="outline" className="flex flex-col gap-1">
+                          <FormKeys />
+                          <input type="hidden" name="prospectId" value={prospect.id} />
+                          <input type="hidden" name="status" value="declined" />
+                          {/* Contained, the select takes the column's width instead of setting it to its longest reason, so the table still fits its card at 1280 px. */}
+                          <div className="contain-inline-size">
+                            <SelectField
+                              label="Why declined"
+                              name="declinedReason"
+                              id={`declined-reason-${prospect.id}`}
+                              required
+                              options={[{ value: '', label: 'Choose a reason' }, ...declinedReasons]}
+                            />
+                          </div>
+                        </ActionForm>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </ScrollTable>
       )}
       <p className="text-sm text-muted-foreground">
         {total} request{total === 1 ? '' : 's'}; page {current} of {pages}.

@@ -1,0 +1,21 @@
+{
+  "case": "DLR-01",
+  "module": "DLR",
+  "title": "A navigation's refused download",
+  "assertion": "`downloadHandler` answers a refusal to `Sec-Fetch-Mode: navigate` with `Sec-Fetch-Dest: document` or none (and, without Fetch Metadata, to an `Accept` that ranks `text/html` above JSON and the wildcard) with 303 to the route's `returnTo` page, with no fragment: `refused=<status>` for each of the seven statuses, `fields` for invalid (parameter names only, each once, at most 8), `retry` for a rate limit in whole minutes from 1 to 1440, and the page's kept values, each validated with that page's schema; a relative Location, the cookies the request wrote and `private, no-store`; the signed-out statuses go where a page's refusal goes, with or without `returnTo`; the wrapper's own refusals (the codes, an ID that is not opaque) come back the same way; a link's closed `from` picks its page and any other value takes the route's own; the letter's bad codes, another payer's contract and a payer not the practice's each return to Coverage",
+  "synthetic": true,
+  "completesIn": 11,
+  "assertedBy": [
+    "apps/web/src/lib/http/download-refusal.test.ts",
+    "apps/web/src/components/download-refusal.test.tsx",
+    "apps/web/e2e/download-refusals.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The download routes are fake routes the test builds, and Coverage’s letter is refused on a synthetic practice the journey creates; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

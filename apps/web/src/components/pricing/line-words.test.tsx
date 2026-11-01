@@ -88,7 +88,7 @@ describe('the Pricing card’s words', () => {
 });
 
 describe('the trace section in words', () => {
-  it('puts each step’s sentences under its title, the worksheet under the fee schedule, and what the engine recorded in a closed disclosure (PHI roles)', () => {
+  it('puts each step’s sentences under its title, the worksheet under the fee schedule, and what PaidWhole recorded in a closed disclosure (PHI roles)', () => {
     const { words, worksheets, steps, markup } = page(trace, REGULATION, 'internal');
     expect(worksheets).toHaveLength(1);
     expect([...markup.matchAll(/<li class="[^"]*" data-step="([a-z_]+)">/g)].map((match) => match[1])).toEqual(steps.map((step) => step.key));
@@ -104,13 +104,15 @@ describe('the trace section in words', () => {
     expect([...markup.matchAll(/<h3 class="text-sm font-semibold">/g)]).toHaveLength(steps.length);
     expect(fee).toContain('aria-label="Fee schedule worksheet 1"');
     expect(text(fee)).toContain(plainText((worksheets[0] as { check: Parameters<typeof plainText>[0] }).check));
-    // The record sits under the words, closed, its JSON in a named scroller a keyboard reaches (m7).
+    // The record sits under the words, closed, its JSON in a named box a keyboard reaches and scrolls, wrapped so it never
+    // scrolls sideways (m7; docs/adr/0078, DR-10).
     // Its summary names the step for a screen reader and is at least 24 px tall (UX review: fourteen identical summaries).
     expect(fee).toMatch(
-      /<details class="pt-1" data-recorded="fee_schedule"><summary class="min-h-6 cursor-pointer py-1 text-sm text-muted-foreground">As the engine recorded it<span class="sr-only">: Step 2, continued: the fee schedule<\/span><\/summary><ul class="pt-1 text-xs" aria-label="Rule records of Step 2, continued: the fee schedule">/,
+      /<details class="pt-1" data-recorded="fee_schedule"><summary class="min-h-6 cursor-pointer py-1 text-sm text-muted-foreground">As PaidWhole recorded it<span class="sr-only">: Step 2, continued: the fee schedule<\/span><\/summary><ul class="pt-1 text-xs" aria-label="Rule records of Step 2, continued: the fee schedule">/,
     );
     expect(fee).toContain('pfs_rvu');
-    expect(fee).toMatch(/<div role="region" aria-label="Step 2, continued: the fee schedule, as the engine recorded it, scrolls sideways" tabindex="0"[^>]*><pre/);
+    expect(fee).toMatch(/<div data-slot="scroll-box" data-axis="block" data-scroll="unmeasured"[^>]*><div class="pw-scroll-frame [^"]*"><pre role="region" aria-label="Step 2, continued: the fee schedule, as PaidWhole recorded it, scrolls" tabindex="0" data-scroller="" class="[^"]*\bwhitespace-pre-wrap wrap-anywhere\b[^"]*">/);
+    expect(fee).not.toContain('recorded it, scrolls sideways');
     expect(markup).not.toMatch(/<details[^>]* open/);
     // The claim facts have no words; their record stays, so the step shows its record only.
     expect(markup).toMatch(/data-step="claim"><h3 class="text-sm font-semibold">Claim facts<\/h3><details/);

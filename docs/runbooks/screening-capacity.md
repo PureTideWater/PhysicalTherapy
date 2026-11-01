@@ -15,7 +15,10 @@ no credential is used.
    only when one is watched (see "What the gate watches"). The `screening-capacity gate` job then passes at once when
    nothing watched changed, and otherwise only when the measurement passed every check but time, which is advisory here
    (see "Time advisory and binding").
-1. On GitHub's free 4-CPU runner (`runs-on: ubuntu-24.04`), builds both production images from their Dockerfiles and
+1. On GitHub's free 4-CPU runner (`runs-on: ${{ inputs.runner || 'ubuntu-24.04' }}`: ubuntu-24.04, the release's
+   runner, on every event but a dispatch that names ubuntu-26.04, the founder's F5 probe, "The ubuntu-26.04 probe"
+   below), builds both production images from their Dockerfiles into archives, loads each once its identity is read
+   from its bytes and the loaded tag proved that image ("Running it elsewhere" and docs/adr/0066, Part 3, say how), and
    runs `pnpm screening:capacity --time-mode advisory` (`tools/screening-capacity/run.ts`) with the harness, its child
    processes and Chromium on Postgres's CPUs, as `pnpm -s screening:capacity --print-harness-cpus` gives them (0-1).
    The release's capacity job (`release.yml`) runs the same harness on the same runner with `--time-mode binding`, and
@@ -238,8 +241,9 @@ and this repository's owner, `PureTideWater`, is a personal account (GitHub's AP
 Every other check on the pull request was green. The founder, Tyler Williams, ruled on 2026-10-23, the third ruling
 that day, replacing the 8-core runner: "Free: time advisory", no organization and no cost.
 
-- **Where it runs:** both capacity jobs on GitHub's free 4-CPU runner (`runs-on: ubuntu-24.04`), in the layout every
-  run had before the 8-core ruling (Postgres, the harness and Chromium on 0-1, the consumer on 2-3, the web and the
+- **Where it runs:** both capacity jobs on GitHub's free 4-CPU runner (`runs-on: ubuntu-24.04`, which the release's
+  capacity chain keeps while every other job runs on ubuntu-26.04: the founder's F5), in the layout every run had
+  before the 8-core ruling (Postgres, the harness and Chromium on 0-1, the consumer on 2-3, the web and the
   platform on 3). `tools/test/workflows.test.ts` holds both jobs' runner and mode, and that no runner label is named
   for actionlint (`.github/actionlint.yaml` is gone).
 - **Advisory** (`--time-mode advisory`: `screening-capacity.yml`, so every pull request, push, weekly and requested
@@ -286,7 +290,7 @@ with Settings → General → Transfer ownership). Confirm on GitHub's documenta
 1. GitHub → the organization that owns this repository → Settings → Actions → Runners → New runner → New GitHub-hosted
    runner.
 2. Name: `paidwhole-8core`, exactly. Platform: Linux x64. Image: Ubuntu 24.04, the versioned image, not "latest", so
-   the image stays pinned as `ubuntu-24.04` pins every other job's (audit #19). Size: 8 cores, 32 GB RAM. Runner group:
+   the image stays pinned, as every job's runner is pinned to a versioned image (audit #19). Size: 8 cores, 32 GB RAM. Runner group:
    the one chosen in the next step. Create it.
 3. Settings → Actions → Runner groups → that runner group: tick "Allow public repositories" (while this repository is
    public), and under repository access allow this repository. Save.
@@ -302,6 +306,23 @@ with Settings → General → Transfer ownership). Confirm on GitHub's documenta
 **Cost:** GitHub bills a larger runner by the minute, public repository or not: about $0.032 a minute for 8-core Linux,
 about $44 a month by the design's estimate (about 1,375 runner minutes), and the organization's plan apart from it.
 Read the prices again on GitHub's pricing page before relying on them (O12).
+
+## The ubuntu-26.04 probe (the founder's F5)
+
+Every job of every workflow runs on ubuntu-26.04 but the release's capacity chain (`release.yml`'s four jobs,
+`release-dry-run.yml`'s three and this workflow's `capacity`), which stays on `RELEASE_RUNNER`'s ubuntu-24.04, so a
+binding measurement is never made on another runner image than the launch check accepts. The move of the chain is
+decided by numbers: dispatch the workflow once on 26.04,
+
+```
+gh workflow run screening-capacity.yml -f runner=ubuntu-26.04
+```
+
+and record on issue #41 the report, the measuring job's `docker info` (its image store: 26.04's Docker 29 keeps images
+in the containerd store) and the times against the 24.04 runs. The probe is advisory: its failure opens no
+screening-capacity issue (the `notify` job skips it), and the launch check refuses its report, which is not
+`release.yml`'s run. Moving the chain is the founder's ruling; the pull request that does it changes `RELEASE_RUNNER`,
+the release workflows' `runs-on` and `RELEASE_CHAIN` in `tools/test/workflows.test.ts` together.
 
 ## Making it required (the founder's Q8)
 
@@ -341,7 +362,9 @@ no measurement. It is the import closure of the entry points (the worker bundle'
 migration and login tasks, the web's screening pages, actions and routes with the proxy, the root layout and error
 pages, and the harness), each relative import and each workspace package's export followed to its file, and the files
 no import reaches that still change what is measured: the Dockerfiles, the web's Next config, the packages' manifests,
-the lockfile, the migrations, the settings the harness reads, the fixture release and the workflow. After a change
+the lockfile, the migrations, the settings the harness reads, the fixture release, the workflow, and the capacity
+job's own setup (`tools/ci/apt-archives.sh`, `tools/ci/browser-build.ts` and the `apps/web/e2e/browser.json` and
+`apps/web/e2e/browser-builds/*.sha256` it reads), which runs there on the release's runner image and nowhere else. After a change
 that adds an import on that path, regenerate it (`pnpm exec tsx tools/screening-capacity/watched.ts --write`) and commit
 it: a unit test fails while the committed list differs from what the code derives. The `changes` job reads the list
 from the pull request's base and its head as data (it runs no repository code) and measures when a changed file
@@ -460,15 +483,22 @@ edit a report, and open production with it. Now only the release's report opens 
 - With Docker: build the images as tagged in the workflow, then
   `taskset -c "$(pnpm -s screening:capacity --print-harness-cpus)" pnpm screening:capacity --out <dir> --release-dir <dir> --web-image tp-web:capacity --worker-image tp-worker:capacity --time-mode advisory`
   (add `--static-asset-origin https://<host>` for a web image built with `STATIC_ASSET_ORIGIN`). The report's image IDs
-  are the images' config digests only on Docker's classic image store (overlay2, as on the workflows' runners); under
-  the containerd image store (the default for new Docker Desktop and Docker Engine 29 installs) they are the manifests'
-  digests, which the launch check refuses, so such a report can never open production's screening.
+  are the images' config digests only on Docker's classic image store (overlay2, as on the release's ubuntu-24.04
+  runner); under the containerd image store (the default for new Docker Desktop and Docker Engine 29 installs, and on
+  the ubuntu-26.04 runner) they are the manifests' or indexes' digests, which the launch check refuses, so such a report
+  can never open production's screening. The release does not take the store on trust: its build reads each saved
+  archive's config digest from the archive's bytes (`node tools/screening-capacity/image-id.ts <archive>`, which also
+  gives the top-level descriptor the containerd store's `.Id` names) and leaves it, with the archive's SHA-256, as a job
+  output; its capacity and push jobs check each archive against those outputs before `docker load`, and prove the
+  loaded tag is that image on their store (the config digest on the classic store, the top-level descriptor on
+  containerd's) before anything is installed or pushed. Once #42 has merged, the harness reads the archives itself
+  (`--image-archive`, `--expect-image`) and the report names its runner image and image store (docs/adr/0066, Part 3).
 - Without Docker (a developer machine, cgroups under root): build the worker (`pnpm --filter @tp/worker build`) and the
   web app (`pnpm --filter @tp/web build`, then the static files and `public` beside the standalone server as
   `apps/web/scripts/start-standalone.sh` does), lay them out as the images do (a directory with `worker`, holding
-  `dist`, `migrations` and `node_modules/playwright-core` at the version `apps/worker/package.json` pins, which the
-  worker image installs beside its bundle: `npm install --no-save playwright-core@1.56.1` in `worker`; and `web`, the
-  standalone server), and run
+  `dist`, `migrations` and `node_modules/playwright-core`, the one the lockfile installs for the worker, which the
+  worker image copies beside its bundle from its build stage: `cp -RL apps/worker/node_modules/playwright-core
+  <images>/worker/node_modules/`; and `web`, the standalone server), and run
   `pnpm screening:capacity --runtime process --images <dir> --admin-url <superuser URL> --database tp_capacity --out <dir> --time-mode advisory`.
   Pin the harness as the workflow does (`taskset -c "$(pnpm -s screening:capacity --print-harness-cpus)"`). The web,
   platform and consumer processes run in cgroups at production's limits, each exec'd under `taskset -c` with its own
@@ -479,6 +509,6 @@ edit a report, and open production with it. Now only the release's report opens 
   screening consumer's) carry a suffix of its own and are dropped with its database (kept, and named, with
   `--keep-database`); while it runs, a test on the same server that lists a role's members (the billing test does)
   sees them, so run it on a server no test suite is using. A layout that lacks what the images hold (the worker's
-  bundles, its migrations, `playwright-core` at the pinned version, the web's server) stops the run before anything
+  bundles, its migrations, `playwright-core` at the lockfile's version, the web's server) stops the run before anything
   starts, as `PROCESS_IMAGES_INCOMPLETE`, each missing path named; without `playwright-core` every worker process would
   stop as it loads its bundle and the run as `PLATFORM_NOT_READY`, which says nothing of why.

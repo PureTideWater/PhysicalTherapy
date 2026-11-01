@@ -74,8 +74,21 @@ function buildStep(prebuilt: string | undefined): string {
   throw new Error('E2E_PREBUILT is 1 (run the stamped build that is there) or unset (build here)');
 }
 
+/**
+ * Where the snapshot assertions read and write their baselines. Unset: beside each spec, as committed. CI's baseline
+ * step (ci.yml's e2e job) sets E2E_BASELINES_DIR to an empty directory outside the repository and regenerates every
+ * brand baseline there with --update-snapshots=all, so each is written from nothing while the working tree stays as
+ * committed, which E2E_PREBUILT's build stamp requires (docs/adr/0058; docs/adr/0066, Part 3).
+ */
+function snapshotPathTemplate(dir: string | undefined): { snapshotPathTemplate?: string } {
+  if (dir === undefined || dir === '') return {};
+  if (!path.isAbsolute(dir)) throw new Error(`E2E_BASELINES_DIR is an absolute directory, not ${JSON.stringify(dir)}`);
+  return { snapshotPathTemplate: `${dir}/{testFileDir}/{testFileName}-snapshots/{arg}{-projectName}{-snapshotSuffix}{ext}` };
+}
+
 export default defineConfig({
   testDir: './e2e',
+  ...snapshotPathTemplate(process.env.E2E_BASELINES_DIR),
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   // One retry on CI, so a test that fails and then passes is reported as flaky, with its first attempt's trace; and

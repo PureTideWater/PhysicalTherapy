@@ -233,7 +233,7 @@ describe('the Cases workbench (CAS-03, CAS-04, CAS-06)', () => {
       status: 'invalid',
       issues: [{ field: REFUSED_FIELD, message: 'its actionable lines total $60.00, below the case materiality of $250.00, so it keeps accumulating; lower the case materiality to open it' }],
     });
-    expect(refusalState({ error: 'Check the fields marked below.', issues: below.status === 'invalid' ? below.issues : [] })).toEqual({
+    expect(refusalState({ error: 'Fix the fields listed here, then try again.', invalid: true, issues: below.status === 'invalid' ? below.issues : [] })).toEqual({
       error: 'Refused: its actionable lines total $60.00, below the case materiality of $250.00, so it keeps accumulating; lower the case materiality to open it.',
     });
     // A viewer reads the list, without the waiting patterns or the forms that change them.

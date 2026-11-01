@@ -1,0 +1,23 @@
+{
+  "case": "FRM-08",
+  "module": "FRM",
+  "title": "Phone-width controls and a refused form's accessibility",
+  "assertion": "At 390 px an input, a select and a text area are at least 16 px; at 1280 px they are 14 px; a refused form passes axe (WCAG 2.1 A and AA) at both widths; at 390 px a page of forms does not scroll sideways, refused or not, and a select that cuts its chosen text short shows that text whole under it, a SHA-256 in it set in Plex Mono as the page sets it, as no select at 1280 px needs to",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": [
+    "apps/web/src/components/action-form.browser.test.tsx",
+    "apps/web/src/components/form-hints.test.ts",
+    "apps/web/e2e/forms-keep-input.spec.ts",
+    "apps/web/e2e/packets.spec.ts",
+    "apps/web/e2e/uploads.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The public request form, synthetic practices’ forms, the uploads drop zone and the console’s status page are measured and scanned in the browser; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

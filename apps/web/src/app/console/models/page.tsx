@@ -5,6 +5,7 @@ import type { Metadata } from 'next';
 import { ActionForm } from '../../../components/action-form';
 import { Field, SelectField } from '../../../components/field';
 import { FormKeys } from '../../../components/form-keys';
+import { ScrollTable } from '../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
 import { MODEL_VALUE_HINT, MODEL_VALUE_LENGTH, consoleModelsPage } from '../../../lib/routes/console-models';
@@ -74,7 +75,7 @@ export default async function ConsoleModelsPage(props: { readonly searchParams: 
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <ActionForm action={setModelFlagAction} submit="Set the flag" className="grid max-w-2xl gap-4" labels={{ key: 'Flag', target: 'Applies to', value: 'Value' }}>
+          <ActionForm action={setModelFlagAction} submit="Set the flag" className="grid max-w-2xl gap-4">
             <FormKeys />
             <SelectField label="Flag" name="key" options={keys} />
             <SelectField label="Applies to" name="target" options={targets} />
@@ -90,24 +91,28 @@ export default async function ConsoleModelsPage(props: { readonly searchParams: 
           {flags.length === 0 ? (
             <p className="text-sm text-muted-foreground">No model flag is set: every feature is on (but the letter reader), with the default budget.</p>
           ) : (
-            <table className="w-full text-left text-sm" aria-label="Model flags">
-              <thead className="text-muted-foreground">
-                <tr>
-                  <th className="py-1 pr-3 font-medium">Flag</th>
-                  <th className="py-1 pr-3 font-medium">Applies to</th>
-                  <th className="py-1 font-medium">Value</th>
-                </tr>
-              </thead>
-              <tbody>
-                {flags.map((flag) => (
-                  <tr key={`${flag.key}-${flag.scope}-${flag.scopeId ?? 'global'}`} className="border-t">
-                    <td className="py-1 pr-3">{keys.find((key) => key.value === flag.key)?.label ?? flag.key}</td>
-                    <td className="py-1 pr-3">{flag.appliesTo}</td>
-                    <td className={flag.key === 'model.daily_budget_cents' ? 'py-1 font-mono tabular-nums' : 'py-1'}>{flag.key === 'model.daily_budget_cents' ? usd(flag.value) : flag.value}</td>
+            <ScrollTable label="Model flags">
+              <table className="w-full text-left text-sm" aria-label="Model flags">
+                <thead className="text-muted-foreground">
+                  <tr>
+                    <th className="py-1 pr-3 font-medium">Flag</th>
+                    <th className="py-1 pr-3 font-medium">Applies to</th>
+                    <th className="py-1 font-medium">Value</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {flags.map((flag) => (
+                    <tr key={`${flag.key}-${flag.scope}-${flag.scopeId ?? 'global'}`} className="border-t">
+                      <td className="py-1 pr-3">{keys.find((key) => key.value === flag.key)?.label ?? flag.key}</td>
+                      <td className="py-1 pr-3">
+                        <span className="block min-w-32 wrap-anywhere">{flag.appliesTo}</span>
+                      </td>
+                      <td className={flag.key === 'model.daily_budget_cents' ? 'py-1 font-mono tabular-nums' : 'py-1'}>{flag.key === 'model.daily_budget_cents' ? usd(flag.value) : flag.value}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollTable>
           )}
         </CardContent>
       </Card>
@@ -117,36 +122,42 @@ export default async function ConsoleModelsPage(props: { readonly searchParams: 
           <CardDescription>{day} (UTC): each active practice&apos;s model calls and their cost, against its daily budget. The operator is alerted when a practice reaches its budget.</CardDescription>
         </CardHeader>
         <CardContent>
-          <table className="w-full text-left text-sm" aria-label="Model spend by practice">
-            <thead className="text-muted-foreground">
-              <tr>
-                <th className="py-1 pr-3 font-medium">Practice</th>
-                <th className="py-1 pr-3 text-right font-medium">Calls</th>
-                <th className="py-1 pr-3 text-right font-medium">Spent</th>
-                <th className="py-1 pr-3 text-right font-medium">Budget</th>
-                <th className="py-1 font-medium">State</th>
-              </tr>
-            </thead>
-            <tbody>
-              {spend.map((row) => (
-                <tr key={row.practiceId} className="border-t" data-practice-spend={row.practiceId}>
-                  <td className="py-1 pr-3">{row.name}</td>
-                  <td className="py-1 pr-3 text-right font-mono tabular-nums">{row.calls}</td>
-                  <td className="py-1 pr-3 text-right font-mono tabular-nums">{usd(row.spentCents)}</td>
-                  <td className="py-1 pr-3 text-right font-mono tabular-nums">{usd(row.budgetCents)}</td>
-                  <td className="py-1">
-                    {row.killSwitch ? (
-                      <Badge variant="destructive">Switched off</Badge>
-                    ) : row.percent !== null && row.percent >= 100 ? (
-                      <Badge variant="destructive">Budget spent</Badge>
-                    ) : (
-                      <Badge variant="outline">{row.percent === null ? 'No budget' : `${String(row.percent)}% spent`}</Badge>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {spend.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No practice is active.</p>
+          ) : (
+            <ScrollTable label="Model spend by practice">
+              <table className="w-full min-w-[36rem] text-left text-sm" aria-label="Model spend by practice">
+                <thead className="text-muted-foreground">
+                  <tr>
+                    <th className="py-1 pr-3 font-medium">Practice</th>
+                    <th className="py-1 pr-3 text-right font-medium">Calls</th>
+                    <th className="py-1 pr-3 text-right font-medium">Spent</th>
+                    <th className="py-1 pr-3 text-right font-medium">Budget</th>
+                    <th className="py-1 font-medium">State</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {spend.map((row) => (
+                    <tr key={row.practiceId} className="border-t" data-practice-spend={row.practiceId}>
+                      <td className="py-1 pr-3">{row.name}</td>
+                      <td className="py-1 pr-3 text-right font-mono tabular-nums">{row.calls}</td>
+                      <td className="py-1 pr-3 text-right font-mono tabular-nums">{usd(row.spentCents)}</td>
+                      <td className="py-1 pr-3 text-right font-mono tabular-nums">{usd(row.budgetCents)}</td>
+                      <td className="py-1">
+                        {row.killSwitch ? (
+                          <Badge variant="destructive">Switched off</Badge>
+                        ) : row.percent !== null && row.percent >= 100 ? (
+                          <Badge variant="destructive">Budget spent</Badge>
+                        ) : (
+                          <Badge variant="outline">{row.percent === null ? 'No budget' : `${String(row.percent)}% spent`}</Badge>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollTable>
+          )}
         </CardContent>
       </Card>
     </AppShell>

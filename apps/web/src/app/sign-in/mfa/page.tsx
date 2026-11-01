@@ -21,7 +21,7 @@ export default async function MfaPage() {
         </CardHeader>
         <CardContent>
           <ActionForm action={mfaStep} submit="Sign in">
-            <Field label="Six-digit code" name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" required />
+            <Field label="Six-digit code" name="code" inputMode="numeric" autoComplete="one-time-code" maxLength={12} hint="Six digits. Spaces are fine." required />
           </ActionForm>
         </CardContent>
       </Card>

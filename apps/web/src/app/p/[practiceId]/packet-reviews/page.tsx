@@ -3,9 +3,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState }
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
-import { utc } from '../../../../components/format';
+import { UtcTime } from '../../../../components/dates';
 import { Hash } from '../../../../components/packets/display';
 import { Money } from '../../../../components/remittances/display';
+import { ScrollTable } from '../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { StatusChip } from '../../../../components/status';
 import { loadPage } from '../../../../lib/http/next';
@@ -31,13 +32,18 @@ function ExportRow({ practiceId, entry }: { readonly practiceId: string; readonl
           </span>
         ) : null}
       </td>
-      <td className="px-2 py-1">{utc(entry.exportedAt.toISOString())}</td>
+      <td className="px-2 py-1">
+        <UtcTime at={entry.exportedAt} />
+      </td>
       <td className="px-2 py-1">
         <span className="font-mono tabular-nums">{entry.lines}</span>, <Money value={entry.varianceCents.toString()} />
       </td>
-      <td className="px-2 py-1 font-mono tabular-nums">{entry.deadlineEndsOn ?? '—'}</td>
+      <td className="px-2 py-1 font-mono tabular-nums whitespace-nowrap">{entry.deadlineEndsOn ?? '—'}</td>
       <td className="px-2 py-1">
-        <Hash value={entry.exportSha256} />
+        {/* Whole, in lines of at least 8rem: the column is never squeezed to a sliver. */}
+        <span className="block min-w-32">
+          <Hash value={entry.exportSha256} />
+        </span>
       </td>
     </tr>
   );
@@ -45,8 +51,8 @@ function ExportRow({ practiceId, entry }: { readonly practiceId: string; readonl
 
 function ExportTable({ label, practiceId, entries }: { readonly label: string; readonly practiceId: string; readonly entries: readonly ExportAwaitingAttestation[] }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm" aria-label={label}>
+    <ScrollTable label={label}>
+      <table className="w-full min-w-[48rem] text-sm" aria-label={label}>
         <thead>
           <tr className="border-b text-left">
             <th className="px-2 py-1 font-medium">Packet</th>
@@ -62,7 +68,7 @@ function ExportTable({ label, practiceId, entries }: { readonly label: string; r
           ))}
         </tbody>
       </table>
-    </div>
+    </ScrollTable>
   );
 }
 

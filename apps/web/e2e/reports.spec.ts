@@ -4,7 +4,7 @@ import path from 'node:path';
 import { type Page, expect, test } from '@playwright/test';
 import { assertNoPhi } from '@tp/observability';
 
-import { expectAccessible } from './a11y';
+import { atPhoneWidth, expectAccessible } from './a11y';
 import { practiceId, registerKeyAndSignIn, signInWithTotp } from './helpers';
 import { journeyPractice, pricedAndTriaged, signedOffSchedule } from './journeys';
 import { startLocalWorker } from './worker';
@@ -20,7 +20,8 @@ import { startLocalWorker } from './worker';
  * 9): in a practice of its own, a billing manager uploads the SYNTHETIC CAS-08 remittance, whose payer's
  * schedule is signed off beside the browser and whose March the worker prices and triages
  * (e2e/journeys.ts). The manager generates the audit report, which cannot be released until a
- * reimbursement reviewer (under a support grant) signs its checklist over the files' SHA-256; once
+ * reimbursement reviewer (under a support grant) signs its checklist over the files' SHA-256 (its line CSV downloaded
+ * from the checklist in place, a refusal said there and the items already ticked kept); once
  * signed, the manager releases it and downloads its PDF and line CSV. The monthly summary and the
  * coverage report are generated as PDFs printed by the worker, each with its CSV; the ROI statements
  * open from the screen; every download is in the export history, the line-level ones marked; and every
@@ -112,6 +113,8 @@ test('an audit report is released only once the reviewer signs; the monthly summ
       await expect(page.locator('[data-state="release-refused"]')).toContainText('Release waits for the reviewer’s attestation.');
       await expect(page.getByRole('button', { name: 'Release the report' })).toHaveCount(0);
       await expectAccessible(page, 'An audit report');
+      // At a phone's width each of the report's wide tables scrolls in its own region, named by its caption (TBL-03).
+      await atPhoneWidth(page, 'An audit report', { tables: ['Cases'] });
       return new URL(page.url()).pathname;
     });
 
@@ -121,15 +124,37 @@ test('an audit report is released only once the reviewer signs; the monthly summ
       try {
         await registerKeyAndSignIn(reviewer, 'reports-reviewer');
         await reviewer.goto(`${reportPath}/review`);
-        const csv = await reviewer.request.get(`${reportPath}/review/csv`);
-        expect(csv.status()).toBe(200);
-        expect(await csv.text()).toContain('SYNCCNCAS080001');
         const checklist = reviewer.getByRole('region', { name: 'Checklist' });
         await expect(checklist.getByRole('checkbox')).toHaveCount(6);
         for (const box of await checklist.getByRole('checkbox').all()) {
           await box.check();
         }
+        // The line CSV downloads in place (DownloadLink; docs/adr/0079): its refusal is said below the header without
+        // loading the page again, so the items stay ticked, and the file saved next takes the notice away. The refusal is
+        // the route's answer to a script once the export limit is spent (outcomeResponse), stood in for here.
+        const ticked = async () => {
+          await expect(reviewer).toHaveURL(new RegExp(`${reportPath}/review$`));
+          for (const box of await checklist.getByRole('checkbox').all()) {
+            await expect(box).toBeChecked();
+          }
+        };
+        const lineCsv = reviewer.getByRole('link', { name: 'line CSV', exact: true });
+        const csv429 = (url: URL) => url.pathname === `${reportPath}/review/csv`;
+        await reviewer.route(csv429, (route) =>
+          route.fulfill({ status: 429, headers: { 'retry-after': '125' }, contentType: 'application/json', body: JSON.stringify({ status: 'rate_limited', retryAfterSeconds: 125 }) }),
+        );
+        await lineCsv.click();
+        const notice = reviewer.locator('[data-download-refusal="rate_limited"]');
+        await expect(notice).toBeFocused();
+        await expect(notice).toContainText('Too many downloads in a short time. Wait 3 minutes and try again.');
+        await ticked();
+        await reviewer.unroute(csv429);
+        const [saved] = await Promise.all([reviewer.waitForEvent('download'), lineCsv.click()]);
+        expect(readFileSync(await saved.path(), 'utf8')).toContain('SYNCCNCAS080001');
+        await expect(reviewer.locator('[data-download-refusal]')).toHaveCount(0);
+        await ticked();
         await expectAccessible(reviewer, 'The reviewer checklist');
+        await atPhoneWidth(reviewer, 'The reviewer checklist', { tables: ['Cases'] });
         await checklist.getByRole('button', { name: 'Sign the attestation' }).click();
         await expect(reviewer).toHaveURL(new RegExp(`${reportPath}$`));
         await expect(reviewer.locator('[data-release="attested"]')).toBeVisible();
@@ -159,6 +184,7 @@ test('an audit report is released only once the reviewer signs; the monthly summ
       await page.goto(`${reports}/monthly?month=2026-03`);
       await expect(page.locator('[data-stage="actionable"]')).toContainText('$90.00');
       await expectAccessible(page, 'The monthly summary');
+      await atPhoneWidth(page, 'The monthly summary', { tables: ['Stages by payer'] });
       await page.getByRole('button', { name: 'Generate the month’s PDF' }).click();
       await expect(page).toHaveURL(new RegExp(`${reports}/documents/[0-9a-f-]{36}$`));
       await expect(page.getByRole('heading', { level: 1 })).toContainText('Monthly variance summary, 2026-03');
@@ -206,6 +232,7 @@ test('an audit report is released only once the reviewer signs; the monthly summ
       await expect(page.locator(`[data-headline]`).getByRole('link').first()).toHaveAttribute('href', `${reportPath}#stage-actionable`);
       await expect(page.getByRole('region', { name: 'Share' }).getByLabel('Link to share within the organization')).toHaveValue(new RegExp(`${reports}$`));
       await expectAccessible(page, 'Reports');
+      await atPhoneWidth(page, 'Reports', { tables: ['Generated reports'] });
       await page.getByRole('link', { name: 'Open the ROI statements' }).click();
       await expect(page.getByRole('heading', { level: 1, name: 'ROI statements' })).toBeVisible();
     });

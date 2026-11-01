@@ -4,7 +4,9 @@ import path from 'node:path';
 import { type Page, expect, test } from '@playwright/test';
 import { assertNoPhi } from '@tp/observability';
 
+import { atPhoneWidth } from './a11y';
 import { signInWithTotp } from './helpers';
+import { registerKeyAndSignInAgain, supportGrant } from './journeys';
 import { chainFrom, chainPricedMonths, ledgerPractice, newestDocument, openLedgerCase } from './ledger';
 import { startLocalWorker } from './worker';
 
@@ -18,7 +20,9 @@ import { startLocalWorker } from './worker';
  * reduces recovered by its amount; an ROI statement generated on demand recomputes from its entries, its
  * PDF printed by the worker and its CSV listing them; a posting match reversed with its reason nets the
  * posted figure to zero and changes nothing recovered (the practice proves by deposit). A viewer reads
- * the ledger without the controls or the PHI columns. Every 835 reaches the ledger through the
+ * the ledger without the controls or the PHI columns, and a contract specialist reads its entries where
+ * corrections are made. At a phone's width each of the journey's wide tables scrolls in a region of its own
+ * (TBL-03). Every 835 reaches the ledger through the
  * monitoring chain, as in production: the e2e worker runs its monitor step for this practice
  * (e2e/worker.ts), which plans the month, price and triage follow, and triage queues the reconcile (the
  * original payment, whose plan waits on its mapping, is reconciled after its parse with nothing
@@ -102,10 +106,11 @@ test('an adjusted remittance, a posting export, an EFT export and a recoupment m
     await page.getByLabel('Check or EFT trace number (required)').selectOption('Check/EFT #');
     await page.getByLabel('Amount posted (required)').selectOption('Paid Amount');
     await page.getByLabel('Batch', { exact: true }).selectOption('Batch');
-    const preview = page.getByRole('region', { name: 'Preview' });
+    const preview = page.getByRole('region', { name: 'Preview', exact: true });
     await expect(preview.locator('[data-state="preview"]')).toContainText('1 row reads; 0 rows are left out');
     await expect(preview.getByRole('table', { name: 'Preview rows' })).toContainText('SYNEFTLED06002');
     await expect(preview.getByRole('table', { name: 'Preview rows' })).toContainText('$30.00');
+    await atPhoneWidth(page, 'The posting template, its sample previewed', { tables: ['Preview rows'] });
     await page.getByRole('button', { name: 'Save the template' }).click();
     await expect(page.locator('[data-notice="saved"]')).toBeVisible();
     await expect(page.getByRole('region', { name: 'Current template' })).toContainText('SYNTHETIC PM SYSTEM');
@@ -164,6 +169,7 @@ test('an adjusted remittance, a posting export, an EFT export and a recoupment m
     for (const value of KNOWN) {
       await expect(page.locator('main')).not.toContainText(value);
     }
+    await atPhoneWidth(page, 'Reconciliation, its exports and ledger entries', { tables: ['Exports', 'Ledger entries'] });
   });
 
   await test.step('the ROI statement recomputes from its entries, its PDF printed by the worker and its CSV listing them', async () => {
@@ -187,6 +193,7 @@ test('an adjusted remittance, a posting export, an EFT export and a recoupment m
     await expect(recovered.locator('[data-recomputed="recovered"]')).toHaveText('Recomputed from its 2 linked entries: $12.00, the figure stored.');
     await expect(recovered.getByRole('table')).toContainText('Deposited');
     await expect(recovered.getByRole('table')).toContainText('-$18.00');
+    await atPhoneWidth(page, 'An ROI statement', { tables: ['Entries of recovered principal, net (deposited)'] });
     await expect(page.locator('[data-proof-level="deposited"]')).toBeVisible();
     // Recovered is labelled by the cash that proves it, everywhere on the statement (CO-11).
     await expect(page.getByText('Recovered (deposited) is cash deposited, proved by the bank export.')).toBeVisible();
@@ -205,6 +212,8 @@ test('an adjusted remittance, a posting export, an EFT export and a recoupment m
     expect(() => {
       assertNoPhi('url', page.url(), { known: KNOWN });
     }).not.toThrow();
+    await page.goto(`/p/${practiceId}/reports/roi`);
+    await atPhoneWidth(page, 'ROI statements', { tables: ['ROI statements'] });
   });
 
   await test.step('a posting match reversed with its reason, once confirmed, nets posted to zero and leaves recovered as the deposits prove it', async () => {
@@ -234,6 +243,21 @@ test('an adjusted remittance, a posting export, an EFT export and a recoupment m
       await expect(viewer.getByRole('table', { name: 'Ledger entries' })).not.toContainText('SYNTHETIC posted to the wrong account');
       await viewer.goto(`/p/${practiceId}/reports/roi`);
       await expect(viewer.getByRole('region', { name: 'Generate a statement' })).toHaveCount(0);
+    } finally {
+      await context.close();
+    }
+  });
+
+  await test.step('a contract specialist, under a support grant, reads the ledger’s entries where corrections are made, at a phone’s width too', async () => {
+    await supportGrant(practiceId, 'tables-ledger-specialist');
+    const context = await browser.newContext();
+    const specialist = await context.newPage();
+    try {
+      await registerKeyAndSignInAgain(specialist, 'tables-ledger-specialist');
+      await specialist.goto(`/p/${practiceId}/abstraction/ledger`);
+      await expect(specialist.getByRole('heading', { level: 1, name: 'Ledger corrections' })).toBeVisible();
+      await expect(specialist.getByRole('table', { name: 'Ledger entries', exact: true })).toContainText('Deposited');
+      await atPhoneWidth(specialist, 'Ledger corrections', { tables: ['Ledger entries'] });
     } finally {
       await context.close();
     }

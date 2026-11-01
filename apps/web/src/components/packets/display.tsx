@@ -108,14 +108,15 @@ export function Citation({ content }: { readonly content: PacketContent }) {
 }
 
 /**
- * A placeholder as the schedule shows it, with a place to wrap after each underscore and colon
- * ({{claim_<wbr>control_<wbr>number:<wbr>1}}), so a narrow column breaks it between its words; its text is the
+ * A placeholder as the schedule shows it, with a place to wrap after its opening braces and each underscore and colon
+ * ({{<wbr>claim_<wbr>control_<wbr>number:<wbr>1}}), so a narrow column breaks it between its words and never inside
+ * one (the twelve columns of the line schedule then fit their card at 1280 px less a scrollbar); its text is the
  * placeholder exactly.
  */
 function Placeholder({ value }: { readonly value: string }) {
   return (
     <>
-      {value.split(/(?<=[_:])/).map((part, index) => (
+      {value.split(/(?<=\{\{|[_:])/).map((part, index) => (
         <Fragment key={index}>
           {index === 0 ? null : <wbr />}
           {part}
@@ -136,7 +137,7 @@ function Placeholder({ value }: { readonly value: string }) {
 export function LineSchedule({ content, practiceId, canOpenLines }: { readonly content: PacketContent; readonly practiceId: string; readonly canOpenLines: boolean }) {
   return (
     <ScrollTable label="Line schedule">
-      <table className="w-full text-sm" aria-label="Line schedule">
+      <table className="w-full min-w-[54rem] text-sm" aria-label="Line schedule">
         <thead>
           <tr className="border-b text-left align-bottom">
             <th className="py-1 pr-3 font-medium">Row</th>

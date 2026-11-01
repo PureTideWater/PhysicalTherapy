@@ -61,13 +61,17 @@ describe('Content due on the console', () => {
     expect(html).toContain('href="https://www.cms.gov/medicare/coding-billing/national-correct-coding-initiative-ncci-edits/medicare-ncci-medically-unlikely-edits"');
     expect(text(html)).toContain('Download every period the commands name from CMS, Medicare NCCI Medically Unlikely Edits (MUEs) and run them now: lines after 2026-12-31 are not priced until a release in force loads it.');
     expect(html).toContain('<span class="whitespace-nowrap font-mono tabular-nums">2026-12-31</span>');
-    expect(html).toContain(`role="region" aria-label="Commands: ${item?.title ?? ''}" tabindex="0"`);
-    expect(html).toContain('role="region" aria-label="Drafts and prepared releases that cannot be read" tabindex="0" data-state="due-problems"');
-    expect(html.match(/focus-visible:ring-2/g)).toHaveLength(2);
+    // Each block scrolls in a ScrollBox: on the server a region named "<label>, scrolls" with a tab stop (docs/adr/0078).
+    expect(html).toContain(`<pre role="region" aria-label="Commands: ${item?.title ?? ''}, scrolls" tabindex="0" data-scroller=""`);
+    expect(html).toContain('<pre role="region" aria-label="Drafts and prepared releases that cannot be read, scrolls" tabindex="0" data-scroller="" data-state="due-problems"');
+    expect(html.match(/data-slot="scroll-box"/g)).toHaveLength(2);
+    // The table scrolls sideways in its own region, the table its direct child.
+    expect(html).toMatch(/<div role="region" aria-label="Content due by family, scrolls sideways" tabindex="0" data-scroller="" class="[^"]*"><table class="w-full text-left text-sm" aria-label="Content due by family">/);
     expect(text(html)).toContain('Run the commands from the root of the content checkout');
     // The family's cell is its row's header (UX-12).
     expect(html).toContain('<th scope="row" class="py-1 pr-3 font-normal">Medicare unit limits (MUE)</th>');
-    expect(html).toContain('<td class="py-1">ended 2026-12-31</td>');
+    // The date stays whole in the status's words (docs/adr/0078 Decision 1).
+    expect(html).toContain('<td class="py-1">ended <span class="whitespace-nowrap">2026-12-31</span></td>');
   });
 
   it('says "partly loaded" for a family some of whose contents are loaded, as the Releases page does (UX-7)', () => {

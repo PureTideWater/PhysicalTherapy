@@ -4,6 +4,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../../components/action-form';
+import { CheckboxField } from '../../../../../components/field';
 import { utc } from '../../../../../components/format';
 import { Money } from '../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../components/shell';
@@ -89,10 +90,7 @@ export default async function RegulationsPage(props: Props) {
                     <FormKeys />
                     <input type="hidden" name="practiceId" value={practiceId} />
                     <input type="hidden" name="versionId" value={item.versionId} />
-                    <label className="flex items-start gap-2 text-sm">
-                      <input type="checkbox" name="confirm" required className="mt-1" />
-                      <span>{CONFIRMATION_CONSEQUENCE} Confirm it.</span>
-                    </label>
+                    <CheckboxField id={`confirm-${item.versionId}`} name="confirm" errorName="Confirmation" label={`${CONFIRMATION_CONSEQUENCE} Confirm it.`} required />
                   </ActionForm>
                 </CardContent>
               </Card>

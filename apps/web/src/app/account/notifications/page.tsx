@@ -2,11 +2,12 @@ import { Alert, AlertDescription, Card, CardContent, CardDescription, CardHeader
 import type { Metadata } from 'next';
 
 import { ActionForm } from '../../../components/action-form';
+import { CheckboxField } from '../../../components/field';
+import { FormKeys } from '../../../components/form-keys';
 import { AppShell } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
 import { notificationPreferencesPage } from '../../../lib/routes/monitoring';
 import { saveNotificationPreferences } from './actions';
-import { FormKeys } from '../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Notification preferences' };
 
@@ -41,14 +42,13 @@ export default async function NotificationPreferencesPage(props: { readonly sear
         <CardContent>
           <ActionForm action={saveNotificationPreferences} submit="Save preferences">
             <FormKeys />
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" name="digestEmail" defaultChecked={preferences.digestEmail} />
-              The monthly digest by email
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" name="inApp" defaultChecked={preferences.inApp} />
-              Notifications in the application (a run priced and triaged, a month&apos;s digest)
-            </label>
+            <CheckboxField name="digestEmail" label="The monthly digest by email" errorName="Monthly digest by email" defaultChecked={preferences.digestEmail} />
+            <CheckboxField
+              name="inApp"
+              label="Notifications in the application (a run priced and triaged, a month’s digest)"
+              errorName="Notifications in the application"
+              defaultChecked={preferences.inApp}
+            />
           </ActionForm>
         </CardContent>
       </Card>

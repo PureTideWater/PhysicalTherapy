@@ -9,6 +9,7 @@ import { parse as parseYaml } from 'yaml';
 import { SCREENING_MAIN_HEAP_FLAG } from '../../apps/worker/src/screening/threads';
 import { repositoryRoot } from '../content-files';
 import { type ContainerLimit, MIB, NETWORK_DELAY_MS, type PostgresLimit } from './limits';
+import { type ImageIdentity, imageIdentity, tarStreamIdentity } from './image-id';
 import { type CgroupVersion, ioMax, median, psqlTimings } from './measure';
 import type { AppliedContainer, AppliedLimits } from './report';
 
@@ -311,6 +312,79 @@ async function docker(...args: string[]): Promise<string> {
   return run('docker', args);
 }
 
+/**
+ * The image store a Docker daemon keeps images in: containerd's, whose snapshotter `docker info` names as DriverStatus's
+ * driver-type (Docker 29's default on a fresh install, as on the ubuntu-26.04 runner), or the classic graph driver's
+ * (overlay2, the ubuntu-24.04 runner's Docker 28).
+ */
+export type ImageStore = 'classic' | 'containerd';
+
+/** The store from `docker info --format '{{json .DriverStatus}}'`. */
+export function imageStoreOf(driverStatus: string): ImageStore {
+  const parsed = JSON.parse(driverStatus) as unknown;
+  const pairs: unknown[] = Array.isArray(parsed) ? parsed : [];
+  return pairs.some((pair) => Array.isArray(pair) && pair[0] === 'driver-type' && pair[1] === 'io.containerd.snapshotter.v1') ? 'containerd' : 'classic';
+}
+
+/** How an image was proved: the archive the build saved, or (a local run) the tag's own `docker save`. */
+export interface ImageProof {
+  readonly tag: string;
+  readonly identity: ImageIdentity;
+  readonly store: ImageStore;
+  readonly source: 'archive' | 'save';
+}
+
+/**
+ * Why a loaded tag is not the image an archive holds (docs/adr/0066, Part 3), or nothing: its `.Id` is the config
+ * digest on the classic store and the archive's top-level descriptor (`target`) on the containerd store, never the
+ * manifest's digest of an attested index; and with an expected config digest (the release build's job output), the
+ * archive must hold that config, so an archive replaced after the build is refused.
+ */
+export function loadedImageProblems(tag: string, loadedId: string, identity: ImageIdentity, store: ImageStore, expectedConfig?: string): string[] {
+  const problems: string[] = [];
+  if (expectedConfig !== undefined && identity.config !== expectedConfig) {
+    problems.push(`the archive for ${tag} holds the config ${identity.config}, not the ${expectedConfig} the build recorded`);
+  }
+  const named = store === 'containerd' ? identity.target : identity.config;
+  if (named === undefined) {
+    problems.push(`the archive for ${tag} has no index.json, so it names no digest the containerd store's .Id could equal`);
+  } else if (loadedId !== named) {
+    problems.push(`${tag} is ${loadedId === '' ? 'not loaded' : loadedId} on the ${store} image store, not the archive's ${store === 'containerd' ? 'top-level descriptor' : 'config'} ${named}`);
+  }
+  return problems;
+}
+
+/** The identity of `docker save <tag>`, streamed into the archive reader with nothing written to disk. */
+async function savedIdentity(tag: string): Promise<ImageIdentity> {
+  const child = spawn('docker', ['save', tag], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let stderr = '';
+  child.stderr.setEncoding('utf8').on('data', (text: string) => {
+    stderr += text;
+  });
+  const exited = new Promise<number | null>((resolve, reject) => {
+    child.on('error', reject);
+    child.on('close', resolve);
+  });
+  const identity = tarStreamIdentity(child.stdout);
+  const [code] = await Promise.all([exited, identity.catch(() => undefined)]);
+  if (code !== 0) throw new CommandError(`docker save ${tag}`, stderr);
+  return identity;
+}
+
+/**
+ * Proves a loaded tag is the image an archive holds, before anything is measured: reads the archive (or, with none, the
+ * tag's own `docker save`), the daemon's image store and the tag's `.Id`, and throws naming both digests when they
+ * differ (loadedImageProblems).
+ */
+export async function proveLoadedImage(tag: string, options: { readonly archive?: string; readonly expectedConfig?: string } = {}): Promise<ImageProof> {
+  const identity = options.archive === undefined ? await savedIdentity(tag) : await imageIdentity(options.archive);
+  const store = imageStoreOf(await docker('info', '--format', '{{json .DriverStatus}}'));
+  const loadedId = (await docker('image', 'inspect', '-f', '{{.Id}}', tag)).trim();
+  const problems = loadedImageProblems(tag, loadedId, identity, store, options.expectedConfig);
+  if (problems.length > 0) throw new Error(`the image to measure is not the one built: ${problems.join('; ')}`);
+  return { tag, identity, store, source: options.archive === undefined ? 'save' : 'archive' };
+}
+
 async function waitFor(what: string, check: () => Promise<boolean>, timeoutMs: number): Promise<void> {
   const until = Date.now() + timeoutMs;
   for (;;) {
@@ -570,19 +644,23 @@ function cgroupVersion(): CgroupVersion {
 
 /**
  * The images' layout of the build outputs, under a directory, as the Dockerfiles lay them out: worker/dist,
- * worker/migrations and worker/node_modules/playwright-core (apps/worker/Dockerfile installs it beside the bundle, which
- * imports it at its top, at the version apps/worker/package.json pins: `npm install --no-save playwright-core@<version>`
- * in worker/), and web/ the standalone server with its static files and public.
+ * worker/migrations and worker/node_modules/playwright-core (apps/worker/Dockerfile copies it beside the bundle, which
+ * imports it at its top, from its build stage's frozen install of the lockfile: `cp -RL
+ * apps/worker/node_modules/playwright-core <images>/worker/node_modules/` lays it out the same way), and web/ the
+ * standalone server with its static files and public.
  */
 export interface ProcessImages {
   readonly worker: string;
   readonly web: string;
 }
 
-/** The playwright-core version the worker image installs beside its bundle (apps/worker/package.json, as the Dockerfile pins it). */
+/**
+ * The playwright-core version the worker image holds beside its bundle: the one the lockfile installs for the worker,
+ * read from the installed package, since the manifest names the catalog's entry (`catalog:`) and no version.
+ */
 export function workerPlaywrightVersion(root: string = path.resolve(import.meta.dirname, '../..')): string {
-  const manifest = JSON.parse(readFileSync(path.join(root, 'apps/worker/package.json'), 'utf8')) as { dependencies?: Record<string, string> };
-  return manifest.dependencies?.['playwright-core'] ?? '';
+  const installed = path.join(root, 'apps/worker/node_modules/playwright-core/package.json');
+  return existsSync(installed) ? ((JSON.parse(readFileSync(installed, 'utf8')) as { version?: string }).version ?? '') : '';
 }
 
 /**
@@ -601,7 +679,7 @@ export function processImagesProblems(images: ProcessImages, playwrightVersion: 
   const installed = existsSync(playwright) ? (JSON.parse(readFileSync(playwright, 'utf8')) as { version?: string }).version : undefined;
   if (installed !== playwrightVersion) {
     problems.push(
-      `${path.join(images.worker, 'node_modules/playwright-core')} is ${installed === undefined ? 'missing' : `at ${installed}`}, not ${playwrightVersion}, which the worker image installs beside its bundle (npm install --no-save playwright-core@${playwrightVersion} in ${images.worker})`,
+      `${path.join(images.worker, 'node_modules/playwright-core')} is ${installed === undefined ? 'missing' : `at ${installed}`}, not ${playwrightVersion}, the one the worker image copies beside its bundle from the lockfile's install (cp -RL apps/worker/node_modules/playwright-core ${path.join(images.worker, 'node_modules/')})`,
     );
   }
   if (!existsSync(path.join(images.web, 'apps/web/server.js'))) {

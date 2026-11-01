@@ -16,8 +16,14 @@ export function blankOptional<T extends z.ZodType>(schema: T) {
   return z.preprocess((value) => (typeof value === 'string' && value.trim() === '' ? undefined : value), schema.optional());
 }
 
-export const requiredText = (max: number) => z.string().trim().min(1, 'required').max(max, `at most ${String(max)} characters`);
+/** A form's required text field. Its two messages are instructions, read after the field's name ("Your name: fill this in"). */
+export const requiredText = (max: number) => z.string().trim().min(1, 'fill this in').max(max, `enter at most ${String(max)} characters`);
 
 export const emailAddress = z.string().trim().toLowerCase().pipe(z.email('an email address'));
 
-export const sixDigitCode = z.string().trim().regex(/^\d{6}$/, 'the six-digit code from your authenticator app');
+/** A code as an authenticator app shows or copies it ("123 456", "123-456"): spaces and hyphens are dropped. */
+export const sixDigitCode = z
+  .string()
+  .max(32)
+  .transform((value) => value.replace(/[\s-]/g, ''))
+  .pipe(z.string().regex(/^\d{6}$/, 'enter the six digits your authenticator app shows'));

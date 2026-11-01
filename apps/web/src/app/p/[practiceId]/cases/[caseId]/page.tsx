@@ -1,9 +1,10 @@
 import { WRITE_OFF_REASONS } from '@tp/triage';
-import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label } from '@tp/ui';
+import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../../components/action-form';
+import { CheckboxField, Field, SelectField, TextAreaField } from '../../../../../components/field';
 import { CaseTimeline } from '../../../../../components/cases/timeline';
 import { utc } from '../../../../../components/format';
 import { Fact, Money, Pager } from '../../../../../components/remittances/display';
@@ -123,17 +124,13 @@ export default async function CasePage(props: Props) {
               <FormKeys />
               <input type="hidden" name="practiceId" value={practiceId} />
               <input type="hidden" name="caseId" value={item.id} />
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="case-owner">Owner</Label>
-                <select id="case-owner" name="ownerUserId" defaultValue={item.ownerUserId ?? ''} className="h-9 rounded-md border bg-background px-2 text-sm">
-                  <option value="">Unassigned</option>
-                  {workers.map((person) => (
-                    <option key={person.userId} value={person.userId}>
-                      {person.email}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <SelectField
+                id="case-owner"
+                label="Owner"
+                name="ownerUserId"
+                defaultValue={item.ownerUserId ?? ''}
+                options={[{ value: '', label: 'Unassigned' }, ...workers.map((person) => ({ value: person.userId, label: person.email }))]}
+              />
             </ActionForm>
           ) : null}
         </CardContent>
@@ -222,24 +219,9 @@ export default async function CasePage(props: Props) {
                     <FormKeys />
                     <input type="hidden" name="practiceId" value={practiceId} />
                     <input type="hidden" name="caseLineId" value={line.id} />
-                    <div className="flex flex-col gap-1.5">
-                      <Label htmlFor={`reason-${line.id}`}>Reason</Label>
-                      <select id={`reason-${line.id}`} name="reason" className="h-9 rounded-md border bg-background px-2 text-sm" required>
-                        {WRITE_OFF_REASONS.map((reason) => (
-                          <option key={reason} value={reason}>
-                            {writeOffText(reason)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <Label htmlFor={`text-${line.id}`}>Why (for “Other” only)</Label>
-                      <Input id={`text-${line.id}`} name="text" maxLength={500} />
-                    </div>
-                    <label className="flex items-start gap-2 text-sm">
-                      <input type="checkbox" name="confirm" required className="mt-1" />
-                      <span>{WRITE_OFF_CONSEQUENCE} Write it off.</span>
-                    </label>
+                    <SelectField id={`reason-${line.id}`} label="Reason" name="reason" required options={WRITE_OFF_REASONS.map((reason) => ({ value: reason, label: writeOffText(reason) }))} />
+                    <Field id={`text-${line.id}`} label="Why (for “Other” only)" name="text" maxLength={500} />
+                    <CheckboxField id={`confirm-${line.id}`} name="confirm" errorName="Confirmation" required label={`${WRITE_OFF_CONSEQUENCE} Write it off.`} />
                   </ActionForm>
                 </details>
               ) : line.windowPassed || line.windowEndsOn === null ? null : (
@@ -249,10 +231,7 @@ export default async function CasePage(props: Props) {
                     <FormKeys />
                     <input type="hidden" name="practiceId" value={practiceId} />
                     <input type="hidden" name="caseLineId" value={line.id} />
-                    <div className="flex flex-col gap-1.5">
-                      <Label htmlFor={`reopen-${line.id}`}>Reason</Label>
-                      <Input id={`reopen-${line.id}`} name="reason" maxLength={500} required />
-                    </div>
+                    <Field id={`reopen-${line.id}`} label="Reason" name="reason" maxLength={500} required />
                   </ActionForm>
                 </details>
               )}
@@ -286,8 +265,7 @@ export default async function CasePage(props: Props) {
               <FormKeys />
               <input type="hidden" name="practiceId" value={practiceId} />
               <input type="hidden" name="caseId" value={item.id} />
-              <Label htmlFor="case-note">A note</Label>
-              <textarea id="case-note" name="text" required maxLength={NOTE_MAX_LENGTH} rows={3} className="w-full rounded-md border bg-background p-2 text-sm" />
+              <TextAreaField id="case-note" label="A note" name="text" required maxLength={NOTE_MAX_LENGTH} rows={3} />
             </ActionForm>
           ) : null}
         </CardContent>

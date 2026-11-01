@@ -1,0 +1,20 @@
+{
+  "case": "MOD-13",
+  "module": "MOD",
+  "title": "A payer letter whose patient's names, member IDs, claim numbers and date of birth are written any way a letter writes them (placeholder words or months as names, marks, `ß`, typographic apostrophes and dashes, invisible characters, spacing, a hyphen at a line break, initials, `_`, `.`, `/`, `:`, `#` or `(` in a number next to a letter, digits alone with dashes or invisible characters, a date's digits as a number, a dotted chain of initials after the name, a labeled date of birth with any dash, a backslash, `_`, `|`, spaces alone or a typographic apostrophe), and placeholder-shaped text of its own, or crafted to make redaction slow",
+  "assertion": "No letter or digit written as an identifier is sent, a digits-only number included unless its written text is a calendar date with its separators that is not the date of birth; every placeholder is exact and each place a claim's number was written is that claim's placeholder (the lowest of equal claims); the letter's own square brackets are sent as parentheses; nothing today's redaction replaced is sent, but a deadline (read as a calendar date by the test itself) or a claim's amount (after a currency sign, with cents) it took for an identifier; text without the patient's forms, common phrases, amounts and deadlines included, is sent unchanged; the self-check finds nothing; a crafted letter of 100 kB is redacted and checked within its time budget",
+  "synthetic": true,
+  "completesIn": 10,
+  "assertedBy": [
+    "packages/model-gateway/src/redact.property.test.ts",
+    "packages/model-gateway/src/functions/denial-letter.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Letters are generated in memory by the property test, which records where it wrote each identifier; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

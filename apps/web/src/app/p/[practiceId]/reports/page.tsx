@@ -1,18 +1,25 @@
 import { STAGE_LABELS } from '@tp/triage';
-import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Label, PermissionState } from '@tp/ui';
+import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, PermissionState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../components/action-form';
+import { UtcTime } from '../../../../components/dates';
+import { DownloadRefusal } from '../../../../components/download-refusal';
+import { Field, SelectField } from '../../../../components/field';
+import { ForgetRefusal } from '../../../../components/forget-refusal';
 import { roleNames, utc } from '../../../../components/format';
 import { ReleaseState, ReportStatusBadge } from '../../../../components/reports/display';
 import { DocumentStatusBadge } from '../../../../components/reports/documents';
 import { Money, Pager } from '../../../../components/remittances/display';
+import { ScrollTable } from '../../../../components/scroll-table';
 import { ShareLink } from '../../../../components/share';
 import { AppShell, Forbidden } from '../../../../components/shell';
+import { downloadRefusal } from '../../../../lib/http/download-refusal';
 import { loadPage } from '../../../../lib/http/next';
 import type { ExportRecord } from '../../../../lib/reports/documents';
 import { exportWhat } from '../../../../lib/reports/export-words';
+import { DOCUMENTS_LIST } from '../../../../lib/routes/report-documents';
 import { reportsPage } from '../../../../lib/routes/reports';
 import { generateReportFormAction } from './actions';
 import { generateReportDocumentFormAction } from './documents/actions';
@@ -21,6 +28,9 @@ import { FormKeys } from '../../../../components/form-keys';
 export const metadata: Metadata = { title: 'Reports' };
 
 type Props = { readonly params: Promise<{ practiceId: string }>; readonly searchParams: Promise<Record<string, string | string[] | undefined>> };
+
+/** The screen's key that says which list a refused file was in (list=documents): it leaves the address bar with the refusal's. */
+const RETURN_ONLY = ['list'] as const;
 
 /** Where an export history entry's record is. */
 function exportHref(practiceId: string, entry: ExportRecord): string | null {
@@ -49,16 +59,27 @@ function exportHref(practiceId: string, entry: ExportRecord): string | null {
  * triage and released once a reimbursement reviewer signs; the monthly summary and the coverage report
  * are generated with their figures as they stand and printed by the worker; ROI statements come from
  * the recovery ledger. Line-level exports (an audit report's line CSV, a packet's export) are for the
- * roles that export PHI, and every download of every report file is listed here.
+ * roles that export PHI, and every download of every report file is listed here. A refused download from either list
+ * comes back here (its link says ?from=list), said beside the list it was in (docs/adr/0079).
  */
 export default async function ReportsPage(props: Props) {
   const page = await loadPage(reportsPage, props);
   if (page.kind === 'forbidden') {
-    return <Forbidden shell={page.shell} section="reports" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
+    // A refused download comes back here to a role this page refuses too: the refusal and the list it was in leave the
+    // address bar.
+    return (
+      <>
+        <Forbidden shell={page.shell} section="reports" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />
+        {downloadRefusal(await props.searchParams) === null ? null : <ForgetRefusal also={RETURN_ONLY} />}
+      </>
+    );
   }
   const { practiceId, reports, documents, history, runs, canGenerate, canExport, canReview, lastMonth, origin, roles } = page.data;
   const path = `/p/${practiceId}/reports`;
   const pageQuery = { page: String(reports.page), documents: String(documents.page), history: String(history.page) };
+  const searchParams = await props.searchParams;
+  const refusal = downloadRefusal(searchParams);
+  const refusedInDocuments = searchParams.list === DOCUMENTS_LIST;
   return (
     <AppShell shell={page.shell} section="reports">
       <div className="flex flex-col gap-1">
@@ -93,21 +114,13 @@ export default async function ReportsPage(props: Props) {
                 <ActionForm action={generateReportFormAction} submit="Generate the report" className="flex max-w-xl flex-col gap-3">
                   <FormKeys />
                   <input type="hidden" name="practiceId" value={practiceId} />
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="report-run">Pricing run</Label>
-                    <select id="report-run" name="runId" className="h-9 rounded-md border bg-background px-2 text-sm" required>
-                      {runs.map((run) => (
-                        <option key={run.id} value={run.id}>
-                          {run.periodFrom} to {run.periodTo} (release {run.releaseNo})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  <SelectField id="report-run" label="Pricing run" name="runId" options={runs.map((run) => ({ value: run.id, label: `${run.periodFrom} to ${run.periodTo} (release ${String(run.releaseNo)})` }))} required showChosen />
                 </ActionForm>
               )}
             </CardContent>
           </Card>
         ) : null}
+        <DownloadRefusal refusal={refusedInDocuments ? null : refusal} forget={RETURN_ONLY} />
         {reports.total === 0 ? (
           <EmptyState title="No audit report yet" nextStep="A billing manager or analyst generates one from the pricing run in effect for its period." />
         ) : (
@@ -154,11 +167,11 @@ export default async function ReportsPage(props: Props) {
                   )}
                   {report.status !== 'ready' ? null : (
                     <p className="flex flex-wrap gap-3 pt-2 text-sm">
-                      <a className="underline" href={`${base}/pdf`}>
+                      <a className="underline" href={`${base}/pdf?from=list`}>
                         Download the PDF
                       </a>
                       {canExport ? (
-                        <a className="underline" href={`${base}/csv`}>
+                        <a className="underline" href={`${base}/csv?from=list`}>
                           Download the line CSV
                         </a>
                       ) : (
@@ -193,10 +206,7 @@ export default async function ReportsPage(props: Props) {
                 <FormKeys />
                 <input type="hidden" name="practiceId" value={practiceId} />
                 <input type="hidden" name="kind" value="monthly_summary" />
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="document-month">Month of service</Label>
-                  <Input id="document-month" name="month" type="month" defaultValue={lastMonth} required className="w-44" />
-                </div>
+                <Field id="document-month" label="Month of service" name="month" type="month" defaultValue={lastMonth} required className="w-44" />
               </ActionForm>
             ) : null}
           </CardContent>
@@ -233,48 +243,54 @@ export default async function ReportsPage(props: Props) {
       </div>
       <section aria-label="Generated reports" className="flex flex-col gap-2">
         <h2 className="text-xl font-bold tracking-display">Coverage reports and monthly summaries</h2>
+        <DownloadRefusal refusal={refusedInDocuments ? refusal : null} forget={RETURN_ONLY} />
         {documents.total === 0 ? (
           <p className="text-sm text-muted-foreground">None generated yet{canGenerate ? ': generate one above.' : '; a billing manager or analyst generates them.'}</p>
         ) : (
-          <table className="w-full text-left text-sm" aria-label="Generated reports">
-            <thead className="text-muted-foreground">
-              <tr>
-                <th className="py-1 pr-3 font-medium">Report</th>
-                <th className="py-1 pr-3 font-medium">Figures fixed</th>
-                <th className="py-1 pr-3 font-medium">PDF</th>
-                <th className="py-1 font-medium">Files</th>
-              </tr>
-            </thead>
-            <tbody>
-              {documents.items.map((document) => (
-                <tr key={document.id} className="border-t" data-document={document.id}>
-                  <td className="py-1 pr-3">
-                    <Link className="underline" href={`${path}/documents/${document.id}`}>
-                      {document.kind === 'coverage' ? 'Coverage report' : `Monthly summary, ${document.period ?? ''}`}
-                    </Link>
-                  </td>
-                  <td className="py-1 pr-3">
-                    {utc(document.generatedAt)} by {document.requestedBy ?? 'a member of the practice'}
-                  </td>
-                  <td className="py-1 pr-3">
-                    <DocumentStatusBadge status={document.status} />
-                  </td>
-                  <td className="py-1">
-                    <span className="flex flex-wrap gap-3">
-                      {document.status === 'ready' ? (
-                        <a className="underline" href={`${path}/documents/${document.id}/pdf`}>
-                          PDF
-                        </a>
-                      ) : null}
-                      <a className="underline" href={`${path}/documents/${document.id}/csv`}>
-                        CSV
-                      </a>
-                    </span>
-                  </td>
+          <ScrollTable label="Generated reports">
+            <table className="w-full min-w-[36rem] text-left text-sm" aria-label="Generated reports">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="py-1 pr-3 font-medium">Report</th>
+                  <th className="py-1 pr-3 font-medium">Figures fixed</th>
+                  <th className="py-1 pr-3 font-medium">PDF</th>
+                  <th className="py-1 font-medium">Files</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {documents.items.map((document) => (
+                  <tr key={document.id} className="border-t" data-document={document.id}>
+                    <td className="py-1 pr-3">
+                      <Link className="underline" href={`${path}/documents/${document.id}`}>
+                        {document.kind === 'coverage' ? 'Coverage report' : `Monthly summary, ${document.period ?? ''}`}
+                      </Link>
+                    </td>
+                    <td className="py-1 pr-3">
+                      {/* The date and the time stay whole; only an email wider than the column breaks. */}
+                      <span className="block min-w-40 wrap-anywhere">
+                        <UtcTime at={document.generatedAt} /> by {document.requestedBy ?? 'a member of the practice'}
+                      </span>
+                    </td>
+                    <td className="py-1 pr-3">
+                      <DocumentStatusBadge status={document.status} />
+                    </td>
+                    <td className="py-1">
+                      <span className="flex flex-wrap gap-3">
+                        {document.status === 'ready' ? (
+                          <a className="underline" href={`${path}/documents/${document.id}/pdf?from=list`}>
+                            PDF
+                          </a>
+                        ) : null}
+                        <a className="underline" href={`${path}/documents/${document.id}/csv?from=list`}>
+                          CSV
+                        </a>
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollTable>
         )}
         <Pager path={path} query={{ page: pageQuery.page, history: pageQuery.history }} page={documents.page} pages={documents.pages} total={documents.total} noun="Generated reports" param="documents" />
       </section>
@@ -284,37 +300,43 @@ export default async function ReportsPage(props: Props) {
         {history.total === 0 ? (
           <p className="text-sm text-muted-foreground">No report file has been downloaded.</p>
         ) : (
-          <table className="w-full text-left text-sm" aria-label="Exports">
-            <thead className="text-muted-foreground">
-              <tr>
-                <th className="py-1 pr-3 font-medium">When</th>
-                <th className="py-1 pr-3 font-medium">What</th>
-                <th className="py-1 font-medium">By</th>
-              </tr>
-            </thead>
-            <tbody>
-              {history.items.map((entry) => {
-                const href = exportHref(practiceId, entry);
-                const what = exportWhat(entry);
-                return (
-                  <tr key={entry.eventId} className="border-t" data-export={entry.kind} data-line-level={entry.lineLevel ? 'yes' : 'no'}>
-                    <td className="py-1 pr-3">{utc(entry.downloadedAt)}</td>
-                    <td className="py-1 pr-3">
-                      {href === null ? (
-                        what
-                      ) : (
-                        <Link className="underline" href={href}>
-                          {what}
-                        </Link>
-                      )}{' '}
-                      {entry.lineLevel ? <Badge variant="outline">Line-level PHI</Badge> : null}
-                    </td>
-                    <td className="py-1">{entry.downloadedBy ?? 'a member of the practice'}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <ScrollTable label="Exports">
+            <table className="w-full text-left text-sm" aria-label="Exports">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="py-1 pr-3 font-medium">When</th>
+                  <th className="py-1 pr-3 font-medium">What</th>
+                  <th className="py-1 font-medium">By</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.items.map((entry) => {
+                  const href = exportHref(practiceId, entry);
+                  const what = exportWhat(entry);
+                  return (
+                    <tr key={entry.eventId} className="border-t" data-export={entry.kind} data-line-level={entry.lineLevel ? 'yes' : 'no'}>
+                      <td className="py-1 pr-3">
+                        <UtcTime at={entry.downloadedAt} />
+                      </td>
+                      <td className="py-1 pr-3">
+                        {href === null ? (
+                          what
+                        ) : (
+                          <Link className="underline" href={href}>
+                            {what}
+                          </Link>
+                        )}{' '}
+                        {entry.lineLevel ? <Badge variant="outline">Line-level PHI</Badge> : null}
+                      </td>
+                      <td className="py-1">
+                        <span className="block min-w-40 wrap-anywhere">{entry.downloadedBy ?? 'a member of the practice'}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </ScrollTable>
         )}
         <Pager path={path} query={{ page: pageQuery.page, documents: pageQuery.documents }} page={history.page} pages={history.pages} total={history.total} noun="Downloads" param="history" />
       </section>
