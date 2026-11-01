@@ -73,7 +73,7 @@ export async function uploadLedger835(page: Page, practiceId: string, caseId: st
 /** An export of the ledger case uploaded through the Reconciliation screen's own uploader, once intake has taken it in (the worker running). */
 export async function uploadLedgerExport(page: Page, practiceId: string, caseId: string, kind: 'posting_export' | 'eft_export', file: string): Promise<void> {
   await page.goto(`/p/${practiceId}/reconciliation`);
-  const uploads = page.getByRole('region', { name: 'Upload exports' });
+  const uploads = page.getByRole('region', { name: 'Upload posting and EFT exports' });
   await uploads.getByLabel('Kind of document').selectOption(kind);
   await uploads.getByLabel('Choose files to upload').setInputFiles([{ name: file, mimeType: 'text/csv', buffer: ledgerFixture(caseId, file) }]);
   await expect(uploads.getByRole('region', { name: 'This batch' }).getByRole('status')).toContainText('1 of 1 sent; 1 of 1 taken in', { timeout: 90_000 });
