@@ -625,12 +625,15 @@ export const screeningSubmit = publicRoute({
     if (hint.message !== null && !kept) {
       throw new InputError([{ field: 'contactEmail', message: hint.message }]);
     }
-    // What the database would refuse for the mail, in its order (closed, paused, the submitter's bounce budget, then the
-    // address on the refusal list), before any check that is asked or paid for (review S4): the day's validations are
-    // never spent on an upload the database refuses for its mail, and a client or an account past its budget gets the
-    // budget's sentence whatever the address (S1). submit_screening()'s triggers stay the backstop.
+    // What the database would refuse for the submitter, in its order (closed, paused, the submitter's bounce budget),
+    // before any check that is asked or paid for (review S4): the day's validations are never spent on an upload the
+    // database refuses for its mail, and a client or an account past its budget gets the budget's sentence whatever the
+    // address (S1). The address's refusal list is not asked here: submit_screening()'s run trigger answers for it after
+    // the address checks and the ZIP, row and band checks, so a ZIP the release cannot price or a mailbox SES cannot
+    // confirm is answered alike for a listed and an unlisted address, and nothing tells the list to a client that sends
+    // no screening (the review of 2026-10-27). The triggers stay the backstop.
     const refusal = await withClient(services.pool, async (client) =>
-      (await client.query<{ refusal: string | null }>('SELECT screening_submit_mail_refusal($1, $2, $3) AS refusal', [prospect.contactEmail, rateAccountSubject, clientSubject])).rows[0]?.refusal ?? null,
+      (await client.query<{ refusal: string | null }>('SELECT screening_submit_mail_refusal($1, $2) AS refusal', [rateAccountSubject, clientSubject])).rows[0]?.refusal ?? null,
     );
     if (refusal !== null) {
       throw new InputError([submitIssue(refusal)]);

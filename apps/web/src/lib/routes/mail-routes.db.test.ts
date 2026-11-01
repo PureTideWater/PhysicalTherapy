@@ -17,7 +17,7 @@ import { inviteMember, supportPage } from './console';
 import { consoleMailPage, pauseMailStream, resumeMailStream } from './console-mail';
 import { notificationsPage } from './monitoring';
 import { type NoticeDelivery, noticeStatus, practiceHome, supportAccessPage } from './practice';
-import { usersSettingsPage } from './settings';
+import { INVITATION_RESEND_HELD, resendInvitationAction, usersSettingsPage } from './settings';
 
 /**
  * What the pages read of the mail path (audit #76; docs/adr/0065, D6 to D10; the founder's Q9 and Q12 of 2026-10-21;
@@ -262,9 +262,31 @@ describe('an invitation whose email was not delivered (SEC-19)', () => {
     // Reported as spam: it reached the person, so the page says so rather than "Not delivered" (the review of 2026-10-23).
     await owner.query("UPDATE invitation SET undelivered_reason = 'complained' WHERE id = $1", [invitationId]);
     expect((await view())?.undeliveredReason).toBe('complained');
-    for (const reason of ['suppressed', 'rejected']) {
-      await owner.query('UPDATE invitation SET undelivered_reason = $2 WHERE id = $1', [invitationId, reason]);
-      expect((await view())?.undeliveredReason, reason).toBe('undelivered');
+    // Held back by SES's suppression list (an earlier bounce or spam report, M1): its own reason, since checking the
+    // address and inviting again would be held back the same way (the review of 2026-10-27); rejected reads undelivered.
+    await owner.query("UPDATE invitation SET undelivered_reason = 'suppressed' WHERE id = $1", [invitationId]);
+    expect((await view())?.undeliveredReason).toBe('suppressed');
+    await owner.query("UPDATE invitation SET undelivered_reason = 'rejected' WHERE id = $1", [invitationId]);
+    expect((await view())?.undeliveredReason).toBe('undelivered');
+    // The administrator is not offered to send again an email SES would hold back, and a resend posted anyway is refused
+    // and sends nothing: Cognito's resend would void the temporary password of the one reported as spam. Bounced and
+    // rejected ones may be sent again.
+    const resend = () => run(resendInvitationAction, token, { invitationId }, { organizationId: world.organizationId });
+    for (const [reason, refused] of [
+      ['complained', true],
+      ['suppressed', true],
+      ['bounced', false],
+      ['rejected', false],
+    ] as const) {
+      await owner.query('UPDATE invitation SET undelivered_at = sent_at, undelivered_reason = $2 WHERE id = $1', [invitationId, reason]);
+      const before = (await owner.query<{ sends: number }>('SELECT sends FROM invitation WHERE id = $1', [invitationId])).rows[0]?.sends;
+      const outcome = await resend();
+      if (refused) {
+        expect(outcome, reason).toMatchObject({ status: 'invalid', issues: [{ field: 'invitationId', message: INVITATION_RESEND_HELD }] });
+        expect((await owner.query<{ sends: number }>('SELECT sends FROM invitation WHERE id = $1', [invitationId])).rows[0]?.sends, reason).toBe(before);
+      } else {
+        expect(outcome.status, reason).toBe('ok');
+      }
     }
     // A late report of an email a resend replaced flags nothing.
     await owner.query("UPDATE invitation SET undelivered_at = sent_at - interval '10 minutes' WHERE id = $1", [invitationId]);
