@@ -14,6 +14,8 @@ import { ExportRequestForm } from '../packets/export-status';
 import { VersionForm } from '../packets/version-form';
 import { PasswordField } from '../password-field';
 import { ScreeningSplitForm } from '../screening/split-form';
+import { ArrivalFocus } from '../arrival-focus';
+import { StepTimer } from '../step-timer';
 
 /**
  * The page the forms' browser harness serves (test-support/browser.ts; design section 8.2): one page, named by
@@ -28,6 +30,11 @@ type Step = { readonly refuse: RefusalState } | { readonly hold: RefusalState } 
 interface PageKeys {
   readonly requestKey: string;
   readonly person: string | null;
+  /** A sign-in step's time as its page renders it (docs/adr/0081): the milliseconds left, and the server's deadline, a key. */
+  readonly closesIn?: number;
+  readonly closesAt?: number;
+  /** Where the step's Start again goes, when the test gives the timer a path of its own. */
+  readonly restartHref?: string;
 }
 
 /** The test's handle on the page. */
@@ -270,6 +277,37 @@ const forms: Record<string, (page: PageKeys) => ReactNode> = {
   screening: (page) => <ScreeningSplitForm action={action} facility="" nonFacility="" formKeys={<Keys page={page} />} />,
   /** The hardware-key sign-in, whose ceremony calls the test answers with page.route (its own form, not ActionForm). */
   hardwareKey: () => <HardwareKeySignIn />,
+  /**
+   * The code step as its page renders it (docs/adr/0081): the step's timer around an ActionForm, three minutes from
+   * closing unless the page's keys give its time, so a render in place gives a staler closesIn or a new step's closesAt
+   * (or another Start again path).
+   */
+  stepTimer: (page) => (
+    <StepTimer
+      limitSeconds={180}
+      warningSeconds={60}
+      closesIn={page.closesIn ?? 180_000}
+      closesAt={page.closesAt ?? 1_800_000_000_000}
+      restartHref={page.restartHref ?? '/sign-in?reason=restarted'}
+    >
+      <HarnessForm submit="Sign in">
+        <Keys page={page} />
+        <Field label="Six-digit code" name="code" inputMode="numeric" autoComplete="one-time-code" maxLength={12} hint="Six digits. Spaces are fine." required />
+      </HarnessForm>
+    </StepTimer>
+  ),
+  /**
+   * The sign-in page's notice after a step closed (ArrivalFocus), above a field: mounted again for each closesAt the
+   * page's keys give, as a new arrival.
+   */
+  arrival: (page) => (
+    <>
+      <ArrivalFocus key={page.closesAt ?? 0}>
+        <p>SYNTHETIC notice: that sign-in step closed.</p>
+      </ArrivalFocus>
+      <Field label="Email" name="email" />
+    </>
+  ),
   /**
    * A form a change elsewhere can overtake (#50's Re-run): it reads the page again after a refusal, and its hidden run
    * names an issue by its own data-error-name, as the route words it ("This run: …").
