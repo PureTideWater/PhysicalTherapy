@@ -3118,8 +3118,9 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
    * Every expression of a workflow that reaches a process, read as the runner reads it: the workflow's env; each job's
    * env, outputs, strategy, container, services, with, secrets and defaults (its run's shell is the command the runner
    * starts); each step's env, with, run and working-directory (`if:` and `name:` reach none). GitHub's contexts table
-   * names every key that takes a context. What it refuses, each naming its file, job, step and key, and the values it
-   * found for BOUNDED_VALUES.
+   * names every key that takes a context. A mapping's keys are read too, anywhere in the file: GitHub evaluates an
+   * expression in an env name or an input's name (INPUT_<key>), so none may hold one. What it refuses, each naming its
+   * file, job, step and key, and the values it found for BOUNDED_VALUES.
    */
   function unboundedValueProblems(file: string, parsed: unknown): { problems: string[]; values: FoundValue[] } {
     const problems: string[] = [];
@@ -3151,6 +3152,20 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
         for (const [key, item] of Object.entries(value)) visit(item, `${where}.${key}`, job, step);
       }
     };
+    // Every key of the whole file, apart from the places visit reads: an expression in a key is refused wherever it
+    // stands (the security review's S1).
+    const keys = (value: unknown, where: string): void => {
+      if (isList(value)) {
+        value.forEach((item, index) => keys(item, `${where}[${String(index)}]`));
+      } else if (isRecord(value)) {
+        for (const [key, item] of Object.entries(value)) {
+          const at = where === '' ? key : `${where}.${key}`;
+          if (key.includes('${{')) problems.push(`${file} ${at}: an expression in a key`);
+          keys(item, at);
+        }
+      }
+    };
+    keys(root, '');
     visit(root.env, 'env', '-');
     for (const [id, job] of Object.entries(isRecord(root.jobs) ? root.jobs : {})) {
       if (!isRecord(job)) continue;
@@ -3242,6 +3257,26 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     ];
     for (const [jobs, where] of places) {
       expect(unboundedValueProblems('fixture.yml', parse(`name: fixture\non: push\n${jobs}\n`)).problems, where).toEqual([`fixture.yml ${where}: steps.web.outputs.metadata whole, in \${{ steps.web.outputs.metadata }}`]);
+    }
+
+    // An expression in a key, wherever GitHub evaluates one: an env name (the workflow's, a job's, a step's, a job
+    // container's or a service's) or a step input's name (INPUT_<key>), so the description would be an environment
+    // string's name. GitHub refuses one in a job's outputs or a reusable workflow's with: and secrets: when it parses
+    // the file, and the rule refuses those too.
+    const body = '${{ github.event.pull_request.body }}';
+    const keyed: (readonly [string, string])[] = [
+      [`env: { "${body}": '1' }\njobs: { images: { runs-on: ubuntu-26.04, steps: [] } }`, `env.${body}`],
+      [`jobs: { images: { runs-on: ubuntu-26.04, env: { "${body}": '1' }, steps: [] } }`, `jobs.images.env.${body}`],
+      [`jobs: { images: { runs-on: ubuntu-26.04, steps: [{ name: The step, env: { "${body}": '1' }, run: echo }] } }`, `jobs.images.steps[0].env.${body}`],
+      [`jobs: { images: { runs-on: ubuntu-26.04, container: { image: 'node:24', env: { "${body}": '1' } }, steps: [] } }`, `jobs.images.container.env.${body}`],
+      [`jobs: { images: { runs-on: ubuntu-26.04, services: { db: { image: 'postgres:18', env: { "${body}": '1' } } }, steps: [] } }`, `jobs.images.services.db.env.${body}`],
+      [`jobs: { images: { runs-on: ubuntu-26.04, steps: [{ name: The step, uses: actions/fixture@v1, with: { "${body}": '1' } }] } }`, `jobs.images.steps[0].with.${body}`],
+      [`jobs: { images: { runs-on: ubuntu-26.04, outputs: { "${body}": '1' }, steps: [] } }`, `jobs.images.outputs.${body}`],
+      [`jobs: { images: { uses: ./.github/workflows/fixture.yml, with: { "${body}": '1' } } }`, `jobs.images.with.${body}`],
+      [`jobs: { images: { uses: ./.github/workflows/fixture.yml, secrets: { "${body}": '1' } } }`, `jobs.images.secrets.${body}`],
+    ];
+    for (const [jobs, where] of keyed) {
+      expect(unboundedValueProblems('fixture.yml', parse(`name: fixture\non: push\n${jobs}\n`)).problems, where).toEqual([`fixture.yml ${where}: an expression in a key`]);
     }
 
     // $GITHUB_ENV: one form, its variable from a closed list.

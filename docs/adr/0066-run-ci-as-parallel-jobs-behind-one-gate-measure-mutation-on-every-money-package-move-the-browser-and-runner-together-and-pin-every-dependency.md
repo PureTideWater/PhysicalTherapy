@@ -991,8 +991,8 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
     reads the provenance, and the event stops being printed in each build's log. The build record, which
     build-push-action uploads as an artifact, keeps BuildKit's copy.
   - **What holds it.** `workflows.test.ts` reads every expression that reaches a step's environment, an input or a
-    script as the runner reads it, and admits only a closed list. That list holds values GitHub or the workflow
-    bounds, and every step output and value one job hands another, each listed with its bound.
+    script, or a key, as the runner reads it, and admits only a closed list; it refuses any expression in a key, which
+    GitHub would evaluate as a variable's or an input's name. That list holds values GitHub or the workflow bounds, and every step output and value one job hands another, each listed with its bound.
     - Each row names its producers by what they are, never by a line, and the test resolves each on the tree: a step
       by its job and id, a job's output, a matrix key, a job the reader needs, and tool code by the name it declares
       (`path#symbol`). A row whose producer is a workflow's `run:` step holds the fingerprint of its script as parsed,

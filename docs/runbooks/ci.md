@@ -425,8 +425,8 @@ user that cannot run the binary.
 - A new required check changes `tools/required-checks.ts`, every marked listing (the test names each file) and the
   ruleset, which only the founder sets.
 - A step takes only the value it uses (one environment string stops at 131,072 bytes). `workflows.test.ts` reads every
-  expression in an env, an input, a script, a job's outputs or a matrix as the runner does, and admits only bounded
-  values. Never use a build's whole metadata, an event object, a description or title, or `toJSON` of anything but
+  expression in an env, an input, a script, a job's outputs, a matrix or a key as the runner does, and admits only
+  bounded values, none in a key (GitHub would evaluate it as a variable's or an input's name). Never use a build's whole metadata, an event object, a description or title, or `toJSON` of anything but
   `needs`. A new step output or value one job hands another joins its list with its bound and its producers by name
   (a step by job and id, a job output, a matrix key, a needed job, tool code as `path#symbol` with the unit test that
   proves its bound), never by line. A row whose producer is a `run:` step holds its script's fingerprint: when the
