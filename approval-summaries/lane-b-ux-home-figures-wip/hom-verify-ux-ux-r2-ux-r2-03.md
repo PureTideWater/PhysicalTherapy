@@ -1,0 +1,4 @@
+# verify ux-r2-03 (nested parentheses, case Recovered fact)
+Checked at 87691be4 (rev-ux clone, read-only): cases/[caseId]/page.tsx:94-99, display.tsx:55-73, base diff, p.case.default.390.png.
+Verdict: real, nit. Nesting shows in the 390 shot. It is not new: the base line was "(stage five: cash posted, proved ... (no deposit data is supplied), ...)", already nested. The PR rewrote the line and kept the nesting.
+Fix: the colon after Money breaks the page's own pattern (every Fact reads "$X (...)") and is not what the home tile does (there the colon follows the period words). Better: remove the inner parentheses at the source, display.tsx:56, posted -> 'posted, proved by the posting export, as no deposit data is supplied'; update display.test.tsx:364 and headline.test.tsx:83. reconciliation.spec.ts:243 (deposited) is unchanged.

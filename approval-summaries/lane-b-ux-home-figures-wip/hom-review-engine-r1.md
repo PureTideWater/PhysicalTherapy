@@ -1,0 +1,12 @@
+# hom-review-engine-r1 progress
+- clone at scratchpad/rev-engine @87691be4
+- checked: empty diff pricing/ledger/db, no migration; predicate vs base; partition; CASE guard; pricing_check SECURITY INVOKER (RLS); statements.ts; digest; HOME_CASES; headline; triage display; ADR 0082 read
+- candidate findings: (pending) recoveredPeriods test tautology vs practiceLedgerTotals drift; statement lists $0 cases
+- freeze: reconciliation-001 "Ledger semantics" read: no roi_statement DDL, packages/ledger empty, LED-01..11 unchanged -> no exception needed (draft)
+- findings drafted: F-a property test near-tautological (should-fix); F-b reconciliation-001 lacks a record line (nit); F-c net expected value negative on resolved cases (nit); F-d PR body 10k timing ambiguous (nit)
+- install running (bydenyihc), tests next
+- waiting on install behind screen tour lock (monitor bpy8fdiq1)
+- finding: home-figures counted() world has every case line at actionable -> CASE guard untested (should-fix)
+- tests: unit 84 pass; db actionable-now+home-figures pass; mutants: CASE-guard survives (finding), OFFSET fence killed, firstOn-approval killed
+- route db tests (pricing-current, reconciliation) pass 17/17
+- FINAL: findings = E1 CASE-guard untested (should-fix, home-figures.db.test.ts:180); E2 property test compares to a copy of the composition (nit, recovered-periods.test.ts:61); E3 negative net expected value on resolved cases (nit, queries.ts:377); E4 reconciliation-001 no record line (nit, :464); E5 PR body 10k timing ambiguous (nit). freezeException: none needed. Returning.
