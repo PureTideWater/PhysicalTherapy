@@ -65,3 +65,6 @@ Status file `approval-summaries/lane-a-schema-chain-status.md`: correct it first
 ## 9. Records, and Lane A's return
 - Record acting-Lane-A work in your status file at every stage (brief section 7, with "acting Lane A" in each entry) and archive scripts as `workflow-scripts/lane-a-<item>-<stage>-<runId>.js`. The orchestrator logs it in lanes/lane-b.md tagged "acting Lane A". Nobody edits Lane A's own log (HANDOFF.md, the tracker) or creates or edits a lanes/lane-a.md (rule 10).
 - Start no heavy run that cannot finish before 2026-11-03 14:00 UTC. When Lane A returns (or the orchestrator says so), stop at a clean point: finish the step in progress (never cut a run off mid-way), push every branch, WIP ref and progress file, remove any marker, and write a "Handed back to Lane A, <UTC>" block at the top of your status file (heads, CI state, open PR and suggestion links, the exact next step, what waits on the founder). Report "stopped: handed back to Lane A" and take no further step; the orchestrator writes the handoff back.
+
+## Ultracode
+The item-session brief's ultracode rule (section 4) holds here in full: every substantive stage of #42 and the schema chain runs as a Workflow with adversarial verification; nothing substantive runs solo.
