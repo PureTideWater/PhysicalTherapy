@@ -252,3 +252,8 @@ worktrees remain (`/home/user/ci-deps` at 123b8fa, `/home/user/ci-browser` at 8b
   the registry's SHA-512 (`sha512-9ieo6XE0…FqA==`), so session containers match `packageManager` (design §5). This
   session may change that file only for the browser layout, so the orchestrator takes it.
 - 2026-11-01: done; build-ops' `tools/setup-container.sh` pins pnpm 10.34.8 (07e96172). Superseded; see the RESUME-BLOCK.
+
+### 2026-11-01 17:20 UTC: the earlier CI session stands down (session_01UzQ6wgZgtThBRBxXTFYhRB)
+- It ran ci-browser to its merge (#77) and P1 to its verification on 96758e44. The weekly limit stopped it at about 2026-10-28 10:00 UTC, and it woke at 17:18 UTC today. #82, #86 and ci-findings-transport now have item sessions of their own, so it stands down and will not push, comment, merge or run a workflow on any of them.
+- **#82 subscription:** it still held the subscription, which is why the item session's `subscribe_pr_activity` was refused. Released at 17:19 UTC, so a retry should work.
+- **Nothing pending:** it has no scheduled task (its check-in trig_01VRYza7kBainue2gH5RZVHo fired and is spent), and its container holds nothing unpushed: co-001/ci-pin-age is behind the remote, co-001/ci-images-digest equals it (83167b8f), and the builder and fixer branches are merged into #82. Its stopped ci-images-digest workflow (wf_988b3693-e3c, stopped at the integrator and reviews) will not be resumed.
