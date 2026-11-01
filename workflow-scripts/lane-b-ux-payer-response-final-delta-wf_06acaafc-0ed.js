@@ -1,0 +1,34 @@
+export const meta = {
+  name: 'lane-b-ux-payer-response-final-delta',
+  description: '#85: adversarial review of the last fix commit (cf6d0f42..13e4e2fe, two lenses, verified), retake the screens it changed at 13e4e2fe and a UX check, before the one push',
+  phases: [{ title: 'Review' }, { title: 'Shots' }, { title: 'UX' }, { title: 'Fix' }],
+}
+const WIP = '/home/user/ops/approval-summaries/lane-b-ux-payer-response-wip'
+const WT = '/home/user/ux-payer-response'
+const RULES = `Rules: export PATH=/opt/node24/bin:/opt/pnpm-bin:/opt/py312-ci/bin:$PATH; every heavy command (build, tests, e2e, the tour) under "flock /tmp/laneb-heavy.lock <cmd>", never across commands; long ones run_in_background; never a foreground sleep; never pkill -f a pattern your own shell matches. PostgreSQL 18 on 5433. Synthetic data only; no model identifier in any file; no migration; nothing under packages/pricing. Never push; never commit in /home/user/ops except where told; never put a PNG on a branch.`
+const CTX = `PR #85 (co-001/ux-payer-response; worktree ${WT}; pushed head 90ec40ab, local HEAD 13e4e2fe, base 83d71fd6): the payer's answer and the write-off reason start unchosen; the payer's letter uploads in its response (ADR 0085, CAS-45..48). The fix round (progress ${WIP}/pay-fix*.md, pay-rerev-*.md, pay-ux-delta.md, pay-fix-ux.md, pay-suite.md; the review findings /home/user/ops/approval-summaries/lane-b-ux-payer-response-review-findings.json) made commits 2865db68, cf6d0f42 and 13e4e2fe; the full suite passed on 13e4e2fe. The last commit 13e4e2fe (git -C ${WT} show 13e4e2fe) carries fix round 3 (whose fixer did not commit, so the round-3 re-review may not have seen it) and the UX delta fix, and its visible changes were not shot.`
+const R = { type: 'object', required: ['findings'], properties: { findings: { type: 'array', items: { type: 'object', required: ['severity', 'title', 'detail', 'fix'], properties: { severity: { type: 'string', enum: ['blocking', 'should-fix', 'polish'] }, title: { type: 'string' }, detail: { type: 'string' }, fix: { type: 'string' } } } }, notes: { type: 'string' } } }
+const V = { type: 'object', required: ['real', 'reasoning'], properties: { real: { type: 'boolean' }, reasoning: { type: 'string' } } }
+const verify = (fs, tag) => parallel(fs.map((f, i) => () => parallel([0, 1].map((k) => () => agent(`${CTX}\nAdversarially verify (try to REFUTE; ${k ? 'is it a real defect with a consequence, not a recorded design decision?' : 'reproduce it in the code at 13e4e2fe'}; default real=false): ${JSON.stringify(f)}\n${RULES}`, { label: `${tag}-v${k}:${i}`, phase: 'Review', schema: V }))).then((vs) => (vs.filter(Boolean).every((v) => v.real) && vs.filter(Boolean).length === 2 ? f : null)))).then((a) => a.filter(Boolean))
+
+phase('Review')
+const lenses = [['code', 'correctness, security and money: tenancy, authorization, the letter check and lock, no stage/approval/ledger a person did not choose, the words under Response true to packages/db/functions/case_rules.sql; tests that prove each change'], ['words', 'UX and brand on the code (read .claude/agents/ux-brand-reviewer.md and follow it): every changed string against .claude/rules/brand.md and CO-11, headings and landmarks, aria, focus, 390 px']]
+const [found, shots] = await Promise.all([
+  parallel(lenses.map(([k, l]) => () => agent(`${CTX}\nAdversarial review of git -C ${WT} diff cf6d0f42 13e4e2fe (read-only; temporary probe files deleted after). Lens: ${l}. Also confirm the fix round 3 items its fixer listed (${WIP}/pay-fix3.md or the newest pay-fix*.md) are really in 13e4e2fe. Report only real defects; none is a fine answer. Keep ${WIP}/pay-final-${k}.md as your progress file.\n${RULES}`, { label: `review:${k}`, phase: 'Review', schema: R }))),
+  agent(`${CTX}\nRetake the screens 13e4e2fe changed against cf6d0f42 (Contracts panel title and h3 drop zone, the "Uploads are stopped"/paused/closed panels, the Reconciliation Exports empty state, the words under Response, and any other screen its diff touches): tools/lane-b-screen-tour as /home/user/ops/tools/lane-b-screen-tour/README.md says, TOUR_REF=13e4e2fe (a local commit: make it reachable as ${WIP}/shots85-after2.md records), TOUR_DIR=/home/user/screens85-after3, TOUR_ONLY those ids (see /home/user/screens85-after2/shots.json) at 1280 and 390 light and 1280 dark. If a spec step must change for a changed label, change tools/lane-b-screen-tour/capture/tour.spec.ts so it runs on both refs, commit (lines "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" and "Claude-Session: https://claude.ai/code/session_01FcouKNxBLBBy2FVM7bfSvj"), pull --no-rebase, and push with GITLEAKS=/root/.cache/paidwhole/gitleaks/8.24.3/gitleaks git -C /home/user/PhysicalTherapy push origin claude/build-ops. Clean up the server and database after. /usr/bin/python3 -I tile.py; Read the tiles; build galleries /home/user/gallery85/after3-{1280,390,1280-dark} as before (not published). Keep ${WIP}/shots85-after3.md. Return the tiles folder, ids, gallery folders and anything not captured.\n${RULES}`, { label: 'shots-after3', phase: 'Shots' }),
+])
+const codeReal = await verify(found.filter(Boolean).flatMap((r) => r.findings), 'final')
+
+phase('UX')
+const ux = await agent(`Read .claude/agents/ux-brand-reviewer.md (in ${WT}) and follow it. ${CTX}\nUX and brand check of the retaken shots: ${String(shots).slice(0, 5000)}. Compare each tile with its counterpart in /home/user/screens85-after2/tiles and /home/user/screens85-before/tiles. Report only real defects, by shot id in backticks. Keep ${WIP}/pay-final-ux.md.\n${RULES}`, { label: 'ux-after3', phase: 'UX', schema: R })
+const uxReal = ux ? await verify(ux.findings, 'final-ux') : []
+
+let fix = null
+const all = [...codeReal, ...uxReal]
+log(`final delta: ${all.length} verified findings`)
+if (all.length) {
+  phase('Fix')
+  fix = agent(`${CTX}\nApply these verified findings (recommended fix; safer for security), each proven by a test: ${JSON.stringify(all)}. Then run: typecheck; eslint on touched files; lint:copy; lint:logs; the touched unit/browser tests; the route db tests of touched routes; the e2e specs that cover touched pages (build first, E2E_PREBUILT=1, fresh database dropped after); synth --all and watched.ts --write with no diff. Commit locally (git add -A; message; blank line; "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" and "Claude-Session: https://claude.ai/code/session_01FcouKNxBLBBy2FVM7bfSvj"). Keep ${WIP}/pay-final-fix.md. Return the commit and every command's result.\n${RULES}`, { label: 'final-fix', phase: 'Fix' })
+  fix = await fix
+}
+return { found, codeReal, shots, ux, uxReal, fix }
