@@ -1,0 +1,52 @@
+export const meta = {
+  name: 'lane-b-ux-sign-in-time-fix',
+  description: 'PR #92 fix round: apply the verified review findings, an adversarial check of the fixes, then the full local suite once',
+  phases: [
+    { title: 'Fix', detail: 'SEC-01, SEC-02, UXS-02..05 with tests, design and ADR updated' },
+    { title: 'Check', detail: 'two skeptics read the fix diff; the fixer answers what survives' },
+    { title: 'Suite', detail: 'the full local suite once' },
+  ],
+}
+const SP = '/tmp/claude-0/-home-user-PhysicalTherapy/4a9d4438-0635-51b1-98ea-4663abfca5c5/scratchpad'
+const WT = '/home/user/ux-sign-in-time'
+const HEAD = 'e4e05a0d'
+const BASE = 'bce57f16'
+const COMMON = `You work on PR #92 of the PaidWhole build, branch co-001/ux-sign-in-time at ${HEAD} (base claude/build-platform ${BASE}): UX PR 6, each sign-in step states its limit, warns before it closes, and starts again with the email kept (ADR 0081; SGN-01..04). Worktree ${WT}: edit there; do NOT commit or push (the session does, once, after the suite). Design: /home/user/ops/designs/lane-b-ux-sign-in-time.md (section 9 wins). The reviews' raw results: the journal ${'/root/.claude/projects/-home-user-PhysicalTherapy/4a9d4438-0635-51b1-98ea-4663abfca5c5/subagents/workflows/wf_b4cf4f54-7c4/journal.jsonl'} (one result line per agent: the security and UX findings and each skeptic's verdict).
+Rules: no migration, no new dependency, no infra or Cognito change, no #42 file except the three shared documents and the generated watched-paths.txt; no email address, name or document text in a log, URL, error message or job payload; words within .claude/rules/brand.md, matching design 6.1's voice. Code reads like the surrounding code. export PATH=/opt/node24/bin:/opt/pnpm-bin:/opt/py312-ci/bin:$PATH in every command; every heavy command under flock /tmp/laneb-heavy.lock (another workflow, the screen tour, shares it); long commands with run_in_background and waited on by notification. If PostgreSQL 18 on 5433 is down: runuser -u postgres -- /opt/pg18/bin/pg_ctl -D /root/pgdata18 -o "-p 5433 -k /tmp" -l /tmp/pg18.log -w start. No model name or identifier in any file. Improve as you go. Report honestly: every command and its result.`
+const SAVE = (file, what) => `Save as you go: keep ${SP}/progress/${file} up to date (${what}). If it already exists when you start, an earlier run of yours was interrupted: read it, trust what it holds unless the code says otherwise, and continue from where it stopped.`
+const RESULT = { type: 'object', properties: { done: { type: 'array', items: { type: 'string' } }, filesChanged: { type: 'array', items: { type: 'string' } }, commands: { type: 'array', items: { type: 'object', properties: { command: { type: 'string' }, result: { type: 'string' } }, required: ['command', 'result'] } }, notDone: { type: 'array', items: { type: 'string' } }, notes: { type: 'array', items: { type: 'string' } } }, required: ['done', 'filesChanged', 'commands', 'notDone', 'notes'] }
+
+phase('Fix')
+const fix = await agent(`${COMMON}
+${SAVE('sgn-fix.md', 'each finding, the fix, the tests, commands and results')}
+Apply these verified findings (read each finding and its skeptic's verdict in the journal; the verdict's fix wins where it is better):
+- SEC-01 (should-fix after verification): Start again leaves the live pending step (TOTP secret on enrolment, the register-key grant) usable after the person chose to leave, because it is a GET link to /sign-in?reason=restarted that clears nothing. Take the safer option: Start again must end the pending step server-side (clear tp_sign_in; keep tp_sign_in_email) before /sign-in?reason=restarted renders. Choose the best mechanism and record why: e.g. a small POST form (a server action through the repo's mutation conventions: Zod schema, the CSRF and rate-limit handling the sign-in actions already use, no audit row needed only if the other sign-in step actions write none) rendered as a link-styled button in the SAME JSX position in both phases (R-02: the focused node must survive zero); or a route handler. A GET that changes state is weaker (cross-site top-level GET under SameSite=Lax can end someone's step). Keep restartHref's role for the destination, keep the no-script path working, and update StepTimer's props, the four pages, the harness (forms-harness.tsx stepTimer entry; keep #85's hunks apart), the browser and unit tests, the e2e spec (Start again during the warning, then Back and /sign-in/register-key or /sign-in/enroll must not reopen the step), ADR 0081 (its rejected alternative "Start again as a POST" is now the decision: rewrite D-text, alternatives and consequences honestly) and the design (section 9: a row SEC-01 with its disposition).
+- SEC-02 (nit): a no_account refusal after the password (account disabled mid-attempt) leaves both cookies: call clearSignIn there (lib/routes/sign-in.ts settle) and add a db test.
+- UXS-02 (should-fix): the arrival notice is both role=status and the focus target (notice.tsx ~:74 with ArrivalFocus), so it can be read twice on a client navigation: when ArrivalFocus wraps it, the notice must not also be a live region (focus announces it); keep role=status elsewhere. Update notice.test.tsx.
+- UXS-03 (should-fix): after a reload or a return mid-step, the server-rendered sentence still says "stays open for 3 minutes" with less left. Make the first render state the truth from closesIn (computed on the server per request), in words consistent with design 6.1 (e.g. the open sentence only while closesIn is within a few seconds of the full limit; otherwise a remaining-time sentence in whole minutes rounded down, never overstating, using lib/copy/words.ts counted()); keep no ticking clock and no announcement at load; tests in step-timer.test.tsx and the harness.
+- UXS-04 (nit): key registration's warning and closed words omit that starting again also asks for the authenticator code: give register-key/page.tsx its notes, in design 6.1's voice, and add them to section 6.1.
+- UXS-05 (nit): add the 390x500 cue-in-view assertion on /sign-in/new-password in the e2e spec (the confirm field focused).
+Not applied (record in design section 9 with the skeptic's reasons): SEC-03 (not reachable), UXS-01 (pre-existing; the key surface's redirects are UX PR 7's, design 3.5).
+Run the targeted checks as you go: tsc, eslint on changed files, the affected unit, browser-harness and db tests, lint:logs, lint:copy, and the e2e spec sign-in-time.spec.ts once at the end (its own database and port: E2E_DATABASE=tp_e2e_sgnfix E2E_PORT=3191; drop the database after).`, { label: 'fix', phase: 'Fix', schema: RESULT })
+
+phase('Check')
+const VERDICT = { type: 'object', properties: { findings: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, severity: { type: 'string', enum: ['blocking', 'should-fix', 'nit'] }, title: { type: 'string' }, evidence: { type: 'string' }, fix: { type: 'string' } }, required: ['id', 'severity', 'title', 'evidence', 'fix'] } } }, required: ['findings'] }
+const lenses = ['security (the restart mechanism: CSRF, rate limits, the kept email surviving, the pending step truly ended on every path incl. no script, nothing new leaked in a URL or log; SEC-02 clears on no_account)', 'UX and accessibility (focus kept on the Start again control across zero as one node, no double announcement, the first-render sentence never overstating, words within brand.md, the tests really assert each fix)']
+const checks = await parallel(lenses.map((lens, i) => () => agent(`${COMMON}
+${SAVE('sgn-fix-check-' + i + '.md', 'each finding')}
+You are an adversarial checker, read only (edit nothing). Read the fix diff: git -C ${WT} diff ${HEAD} (and untracked files), against the findings in the journal and the fixer's report below, through one lens: ${lens}. Report only what is wrong, missing or regressed, with file:line and the fix; an empty list if nothing is.
+The fixer reported: ${JSON.stringify(fix).slice(0, 6000)}`, { label: 'fix-check-' + i, phase: 'Check', schema: VERDICT })))
+const found = checks.filter(Boolean).flatMap((c) => c.findings)
+log(`fix check: ${found.length} findings`)
+let refix = null
+if (found.length) refix = await agent(`${COMMON}
+${SAVE('sgn-refix.md', 'each finding, real or not, and the fix')}
+Two adversarial checkers read your fix round's diff. For each finding: verify it (refute with reasons if wrong) and fix the real ones; rerun the targeted checks they touch.
+${found.map((f) => `${f.id} [${f.severity}] ${f.title}\n  evidence: ${f.evidence}\n  fix: ${f.fix}`).join('\n')}`, { label: 'refix', phase: 'Check', schema: RESULT })
+
+phase('Suite')
+const suite = await agent(`${COMMON}
+${SAVE('sgn-suite.md', 'each command, its result, each failure root cause and fix')}
+Run the full local suite ONCE on the worktree as it now stands, each command under the lock, Node 24, the way approval-summaries/lane-b-ux-suspended-standing-fix-suite.md (on /home/user/ops) ran it: pnpm install --frozen-lockfile; pnpm check:fixtures; pnpm typecheck; pnpm lint; pnpm lint:copy; pnpm lint:logs; pnpm verify-content; the engine-freeze check against the merge base (tsx tools/engine-freeze/check.ts ${BASE}); pnpm exec tsx tools/screening-capacity/watched.ts --write then git diff --exit-code on watched-paths.txt against the worktree's prior state (keep the regenerated file if it changes and say so); pnpm synth --all then confirm nothing changed; pnpm test; pnpm test:golden; pnpm test:oracle (TP_ORACLE_PYTHON=/opt/py312-ci/bin/python3); pnpm test:db in 4 shards one after another, each on a fresh PostgreSQL 18 database on port 5433; pnpm build, the build stamp, then pnpm test:e2e with E2E_PREBUILT=1 in two shards (--workers=2), its own database and port (drop it after), the real 3-minute test included; tsx tools/stryker/affected.ts --event pull_request --base ${BASE} and the shards it names, then the gate. Find the exact command forms in package.json, docs/runbooks/ci.md and the record. A failure is root-caused and fixed, then that command re-run; a flake gets one re-run and is reported as such. Take counts from the runs' own totals.
+Earlier stages: fix ${JSON.stringify(fix).slice(0, 2500)} refix ${JSON.stringify(refix).slice(0, 2000)}`, { label: 'suite', phase: 'Suite', schema: RESULT })
+return { fix, found, refix, suite }

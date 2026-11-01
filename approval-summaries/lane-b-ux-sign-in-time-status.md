@@ -7,9 +7,17 @@ session_01FcouKNxVRK8x6iV52PfxXz, a Lane B item session started 2026-11-01 by La
 (`co-001/ux-sign-in-recovery`) and UX PR 8 get their own sessions later; this one leaves design 3.5's hooks for PR 7.
 GitHub login: PureTideWater.
 
-## Now (2026-11-01 20:10 UTC): PR #92 open (draft) at e4e05a0d; reviews running
-- **PR #92** (draft, `co-001/ux-sign-in-time` -> `claude/build-platform`), head e4e05a0d (one commit on bce57f16). Subscribed
-  to its activity. WIP ref `co-001/wip-ux-sign-in-time` (92984990, the build before its nit fixes) can be deleted after merge.
+## Now (2026-11-01 20:35 UTC): reviews done (code); fix round and before re-run running
+- **PR #92** (draft) head e4e05a0d; CI fully green on it (all green, mutation, screening-capacity gate, approval-of-record,
+  e2e 4/4 with the real 3-minute test). Description written from the template and checked (wf_b4cf4f54-7c4).
+- **Reviews** (wf_b4cf4f54-7c4): security SEC-01..03, UX UXS-01..05, each with a skeptic. Verified for the fix round:
+  SEC-01 (Start again left the live pending step usable; blocking, skeptic should-fix), SEC-02 (nit), UXS-02, UXS-03
+  (should-fix), UXS-04, UXS-05 (nits). Refuted: SEC-03 (unreachable), UXS-01 (pre-existing; UX PR 7's, design 3.5).
+  **The capture was cut off** after its tour fix (a2d62189), so the UX review ran from code only: a shots-based UX review
+  runs after the fix round, on the new head.
+- **Running:** fix round wf_aabddb31-b59 (fixes, two skeptics, then the full local suite once) and the before re-run
+  wf_12938616-543 (screens-before-2 at bce57f16). Then: commit + one push; after shots at the new head and the UX and
+  brand review with shots (+ skeptics); any of its findings in a second short fix round; the fresh-clone verification.
 - **Built** (wf_01926a3e-1b8; resumed once after the 5-hour limit stopped its last agent ~18:35 UTC): slices A-D;
   integration: typecheck, lint, lint:logs, lint:copy, verify-content, unit (apps/web, synth, screening-capacity), the
   touched db tests, synth (SGN-01..04 expected.json; second run 0 written) all pass; the new e2e spec 4/4 (the real
@@ -52,3 +60,4 @@ None blocks this PR. UX PR 66 (Cognito/infra, Lane A); the "three days" comment 
 | 2026-11-01 17:00 | Taken over | session_01FcouKNxVRK8x6iV52PfxXz (Lane B's orchestrator, 2026-11-01). Hold lifted by the co-founder's go-wide answer. Status corrected against live state; branch fast-forwarded locally to 83d71fd6. Next: design sections 5-8, review, revision. |
 | 2026-11-01 17:55 | Design done | wf_72aee928-c8b: sections 5-8, review R-01..R-15 (all disposed), critic C-01..C-09. C-02 decision: commit the regenerated watched-paths.txt. Next: build slices A-D. |
 | 2026-11-01 20:10 | Built; PR #92 opened | Build wf_01926a3e-1b8 (all checks and the new e2e spec pass); before shots wf_67f26406-d45; commit e4e05a0d pushed; draft PR #92; reviews wf_b4cf4f54-7c4 started. |
+\n| 2026-11-01 20:35 | Reviews done; fix round | Reviews wf_b4cf4f54-7c4 (description, security, UX from code; capture cut off). Fix round wf_aabddb31-b59 and before re-run wf_12938616-543 started. |\n
