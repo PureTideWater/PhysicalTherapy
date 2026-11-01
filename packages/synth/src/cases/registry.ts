@@ -720,6 +720,21 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/e2e/pricing.spec.ts',
   ]),
   'TBL-04': none(1, 'The stacked rows are rendered from synthetic rows the test passes in memory; no file.', ['apps/web/src/components/stacked-rows.test.tsx']),
+  // The screening result's tables, the UX baseline review's fourth pull request (docs/adr/0078).
+  'TBL-05': none(1, 'The result is rendered from synthetic groups, rows and coverage the test writes by hand, and the browser opens a result the screening consumer prices from a synthetic upload built in memory (CLEAN_ROWS, e2e/screening.ts); no file.', [
+    'apps/web/src/components/screening/result-tables.test.tsx',
+    'apps/web/e2e/screening-phone.spec.ts',
+  ]),
+  'TBL-06': none(1, 'The result is rendered from synthetic groups, rows and coverage the test writes by hand, and the browser opens a result the screening consumer prices from a synthetic upload built in memory (CLEAN_ROWS, e2e/screening.ts); no file.', [
+    'apps/web/src/components/screening/result-tables.test.tsx',
+    'apps/web/e2e/screening-phone.spec.ts',
+  ]),
+  'TBL-07': none(1, 'The browser opens a result the screening consumer prices from a synthetic upload built in memory (CLEAN_ROWS, e2e/screening.ts); no file.', ['apps/web/e2e/screening-phone.spec.ts']),
+  'TBL-08': none(1, 'The words and tones are rendered from synthetic groups, rows and coverage the test writes by hand, the browser opens a result the screening consumer prices from a synthetic upload built in memory (CLEAN_ROWS, e2e/screening.ts), and the copy lint reads the screening files; no file.', [
+    'apps/web/src/components/screening/result-tables.test.tsx',
+    'apps/web/e2e/screening-phone.spec.ts',
+    'tools/brand-copy/scan.test.ts',
+  ]),
   // Milestone 11's error states with a next step (PRD 6, 7), as the UX baseline review's fifth pull request brings a
   // refused download back to the page it was opened from (docs/adr/0079).
   'DLR-01': none(11, 'The download routes are fake routes the test builds, and Coverage’s letter is refused on a synthetic practice the journey creates; no file.', [

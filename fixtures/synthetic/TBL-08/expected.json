@@ -1,0 +1,21 @@
+{
+  "case": "TBL-08",
+  "module": "TBL",
+  "title": "The screening result's words and tones",
+  "assertion": "The top rows head their claim-line count Claim lines; one sentence above each table of differences says that each difference is its Medicare figure less the allowed amount in the file and which way its sign runs; the coverage shows an unpriced reason in words alone, its code kept in its row's data attribute; the could-not-price card and the top rows say what PaidWhole prices, never the engine; every count on the result groups its digits and takes a noun that agrees with it (the one other group, its rows summed); an empty value is said as none; on a phone an anomaly shows in the unpriced tone and every other standing neutral, never Short or Whole; never owed, underpaid or recovered",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": [
+    "apps/web/src/components/screening/result-tables.test.tsx",
+    "apps/web/e2e/screening-phone.spec.ts",
+    "tools/brand-copy/scan.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The words and tones are rendered from synthetic groups, rows and coverage the test writes by hand, the browser opens a result the screening consumer prices from a synthetic upload built in memory (CLEAN_ROWS, e2e/screening.ts), and the copy lint reads the screening files; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
