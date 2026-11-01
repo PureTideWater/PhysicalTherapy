@@ -28,6 +28,7 @@ The UX review's PR 4 (UX-005, UX-040, UX-042, UX-043, UX-132, UX-206; clusters C
 - **ux-forms** merged as #74 (165c5993) and is in the branch.
 
 ## Log
+- 2026-11-01 17:30 UTC: the finish workflow wf_2f124449-b78 started (script archived): base merge of bce57f16 (#78, #82) with the generators and quick checks; then, side by side, the full suite once, the #42 cross-check (read-only, be63bdc2), a review of only the unreviewed fix-round delta (two lenses, each finding put to three skeptics), and after-only shots of only the states the fixes changed with one targeted UX verdict (UXR-01..04, P4-RC-01, -04). Why after-only: the person ruled 2026-11-01 "no need to do the ux check on things that have already passed a ux check"; the before state is in the findings JSON. Safety check-in trig_01HAXoFU1JAbMJTUAEzWQ5a6 at 22:36 UTC. subscribe_pr_activity on #83 failed ("Could not subscribe"): polling with pull_request_read instead.
 - 2026-11-01 17:35 UTC: taken back by Lane B (this session). Machine set up (OK); worktree fast-forwarded to the WIP f5e0ceba. Status file corrected (the merge hold, the session, the old fix round, the check-in, the base, the overlaps). Next: the base merge and fast checks.
 - 2026-10-28 07:25 UTC: the fix round's commits so far (c0a8fe0 the #81 merge, d0152f4, e901e47, 857ca33, f5e0ceb) saved on `co-001/wip-ux-screening-result-tables` (no CI). The full suite is next in the workflow; if this container is lost, continue from that branch.
 - 2026-10-28 07:20 UTC: merge hold on #83 until #75 merges or 11:00 UTC (the orchestrator).
