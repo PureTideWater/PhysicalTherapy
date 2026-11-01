@@ -116,8 +116,31 @@ Follow-on: none. Briefs: `lanes/lane-b-session-brief.md`, then `lanes/acting-lan
   if any -> full checks on the final tree -> completeness critic -> one push (+ WIP ref `co-001/wip-pr42-integrate-2`).
   Progress files in the scratchpad: `progress/pr42g-{merge,review-*,fix,checks}.md`. Check-in trig_01JWSCKP2wzwnsq6pVSnXVB7
   at 22:09Z (cancelled when the run finishes).
+- 2026-11-01T18:14Z (acting Lane A): integrate round done and pushed: **c65f9cf2** (merge ed032539 of 83d71fd6 #78, clean;
+  no generator wrote anything; tables.test 7/7, AFTER_42 1/2/1 unchanged; docs commit 10db232c records the founder's
+  2026-11-01 sign-off in ADR 0065 :56 and :246-248, ADR 0062 :1551 (+ a record paragraph) and reconciliation-001 :647 in place,
+  O4 unchanged, no legal sentence changed; review: 2 minor findings (ADR 0062 scope pointer; a 123-column line), each split
+  1-1 by two refuters, fixed in c65f9cf2). Checks on c65f9cf2, all green: typecheck 22; lint 1,703 files 0/0; lint:copy 547;
+  lint:logs 1,099; check:fixtures; synth 263 cases 0 written; engine-freeze none; unit 6,985 passed 1 skipped; golden 376;
+  oracle 687 fixtures agree; verify-content; test:db 4 shards 3,269+2,163+3,094+973 (1 skip); build + stamp; e2e 33+32 0
+  flaky; stryker affected: no shard; capacity S1,S4 binding green (S4 middle run worst 37.4 s); db:domain-model --check
+  b23fed0e…2518, approval line 7334. Completeness critic ok. Pushed through the hook (gitleaks clean); WIP ref
+  `co-001/wip-pr42-integrate-2` = c65f9cf2. Progress records in `approval-summaries/lane-a-wip/progress/pr42g-*.md`.
+  Improvement noted (not this PR's files): the capacity harness records commit 'unknown' when the images directory is not a
+  git checkout; it could read the build stamp.
+- 2026-11-01T18:16Z (acting Lane A): the base moved during the run: bce57f16 (#82, ci-pin-age; 55 files, workflows and tools,
+  no migration; merges cleanly with c65f9cf2). Decision: merge it now, before the description, the verification and the
+  suggested line, so the founder's line lands on the tree that merges (the ruleset requires up to date) and nothing heavy
+  remains after the approval. One more round: merge, the checks a workflow change needs (actions:check, toolchain:check,
+  workflows test, typecheck, lint, unit, the domain model hash), one push; then the description, the comment and the
+  fresh-clone verification on that head.
+- 2026-11-01T18:25Z (acting Lane A): workflow wf_a2590f4b-2bb started (archived as
+  `workflow-scripts/lane-a-pr42-merge82-describe-verify-wf_a2590f4b-2bb.js`): merge #82 + generators + the checks a workflow
+  change needs + one push (WIP `co-001/wip-pr42-integrate-3`); then, in parallel, the description + record update + the one
+  `images` comment, and the fresh-clone verification reading CI; then an adversarial check of each. Progress files
+  `progress/pr42h-{merge,body,verify}.md`. Check-in scheduled ~23:35Z.
 
 ## Next
-Next (17:02Z): step 1-2, the integrate workflow (merge 83d71fd6 or later, generators, the legal sign-off docs commit, an
-adversarial review of the merge and the docs commit, the full checks, one push). Its progress files: the session scratchpad
-`progress/pr42g-merge.md`, copied to `approval-summaries/lane-a-wip/progress/` at the stage's end.
+Next: when wf_a2590f4b-2bb returns a pass: post the suggested approval line (acting-lane-a brief section 6) on the new head,
+report its link to the orchestrator, and wait for the founder's commit. If the base moves again before then, record it and
+take it only after the founder's commit (item step 7), when its delta has no migration and the hash stays the same.

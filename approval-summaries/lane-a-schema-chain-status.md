@@ -37,6 +37,13 @@ returns (2026-11-03 14:00 UTC, possibly 15:00). Briefs: `lanes/lane-b-session-br
   parallel branches after the 1b merge: the interest branch starts the moment stage 2 pushes (as the item file requires)
   with no idle wait for a session turn, both share the heavy lock and their own e2e port ranges, and every step gains an
   adversarial verifier (ultracode). If stopped: setup, leftover markers, resumeFromRunId.
+- **18:20 UTC (acting Lane A): stage 1 green.** SS-01 9777ddc0 (base 83d71fd6 merged; synthetic-personas.ts both sides):
+  typecheck, lint 1,712, lint:copy 550, lint:logs 1,102, unit 7,032 + 4 skipped, test:db 4 shards 9,561 + 1 skipped,
+  build, stamp, e2e 68 passed, verify-content, synth 0 written, fixtures, domain model --check (6559c5b9…c2fadc, line
+  7413; provenance only). Pushed. The base then moved to bce57f16 (#82): merged as efb20704 (no conflict), re-checking.
+- **#42's step-1 head c65f9cf2 pushed (orchestrator, 18:15 UTC); a #82-merged head follows.** Decision: wait for that
+  head (one regeneration; no merge into a worktree a workflow is writing) and merge it down SS-01 -> 1b -> interest in a
+  follow-on workflow once wf_5566bd1c-8eb's merges have pushed.
 - **Next:** when #42's S0 pushes its step-1 head (be63bdc2 moves): merge it into SS-01 -> 1b -> interest (never into a
   worktree a workflow is writing). SS-01's PR opens only after #42 merges.
 

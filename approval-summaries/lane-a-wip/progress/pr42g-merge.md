@@ -1,0 +1,11 @@
+# pr42g merge progress
+- HEAD was be63bdc2, clean. Fetched origin/claude/build-platform = 83d71fd6 (#78), merge base 56ed6279. Delta 66 files, no workflow/manifest/lockfile/migration.
+- `git merge --no-ff --no-commit origin/claude/build-platform`: clean auto-merge; overlap files: docs/product/test-matrix.md, packages/synth/src/cases/{matrix,registry}.ts, tools/screening-capacity/watched-paths.txt (all additive, both sides kept).
+- Merge message drafted at /tmp/pr42g-mergemsg.txt; NOT committed yet (verifying generators/tables first).
+- Generators on merged tree: pnpm install --frozen-lockfile (lockfile up to date, no change); watched.ts --write (547 lines, no diff vs merge); synth --all (0 written, 655+16 unchanged). Nothing untracked/modified. No "Generated" commit needed.
+- tables.test.ts (unit project): 7/7 passed, AFTER_42 exemptions 1,2,1 unchanged. Also apps/web/src/lib/http + routes/registry.test.ts: 9 files, 477 tests passed.
+- Merge committed: ed032539...
+- Docs commit 10db232c: ADR 0065 lines 54-56 (Q12) and 246-247; ADR 0062 line 1551 + new 3-line paragraph after the list; reconciliation-001 line 647 in place. ADR 0065 O4 (now 356-357) unchanged.
+- Grep: only those 4 lines added by #42 described the sign-off as pending (git diff 56ed6279 be63bdc2 grep). Left: ADR 0062:968/993 (6b-3), ADR 0064:357,399 (ZIP+4 wording), reconciliation 591/598/611 (6b-3), code comments sent.ts:3, message.ts:71, content-span.test.ts:7 (earlier PRs, not #42), legal-surfaces.md rows (legal text), policies "awaiting security official" (other).
+- Next: quick checks lint:copy, verify-content, stat.
+- Quick checks: lint:copy pass (547 files), verify-content pass; delta stat 69 files (5094+/352-) written to pr42g-delta.stat; domain-model/approvers/migrations/lockfile/workflows/manifests untouched vs be63bdc2. DONE.

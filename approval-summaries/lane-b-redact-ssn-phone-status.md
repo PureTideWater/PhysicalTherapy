@@ -10,9 +10,13 @@ number). No migration timestamps. Gateway-only Lane B work, never a schema PR. I
 released: record it here and tell the orchestrator.
 Follow-on: none.
 
-## Now (2026-11-01T17:20Z)
-- **Stage 1 (design) running** as workflow `lane-b-redact-ssn-phone-design` (probe, draft, one reviewer plus a completeness critic, two-lens verification, apply). Before that: Done: the claim and the reservations (18bbe0e9, 15725ba2). All seven pipeline stages
-  remain: design and review, build, draft PR, two reviews, fix round, verification, merge.
+## Now (2026-11-01T17:58Z)
+- **Stage 1 (design) done; waiting on #75's merge to build.** Design `designs/lane-b-redact-ssn-phone.md` (reviewed: one reviewer,
+  a completeness critic, two-lens verification; F1-F12 and C1-C10 all applied; section 17 R1-R13 is the rule set the build follows).
+  Workflow wf_8670bbfd-b5d, archived as `workflow-scripts/lane-b-redact-ssn-phone-design-wf_8670bbfd-b5d.js`.
+- **ADR 0088 released:** the change is an amendment of ADR 0054 (plus a dated sentence in ADR 0070 N6). Told the orchestrator.
+- **#75** (checked 17:55Z): open, draft, `dirty`, head 871faff9, not merged. Build step 0 (design §13) diffs #75's merged gateway files
+  against 871faff9 and re-runs the probe and the prototype if any changed, before anything is built.
 - **The ruling:** the founder (Tyler Williams), 2026-11-01: a payer letter has its Social Security numbers and phone numbers
   redacted by pattern before the model reads it (`readDenialLetter`), as a PRD §14 "PHI minimization" requirement. The
   co-founder relayed it to Lane A (session_01TrKDxeLbxVo7t7zwRXFzrg, 18bbe0e9, 14:04 UTC) and confirmed it in
@@ -58,10 +62,28 @@ Follow-on: none.
   Node v24.22.1 aside itself and installed v24.22.0; every line ok, playwright included; pre-push hook and gitleaks 8.24.3 in place.
   Live state re-checked: claude/build-platform 83d71fd6, #75 still at 871faff9, no `co-001/redact-ssn-phone` branch. The read-only
   probe worktree `/home/user/redact-ssn-phone-probe` (detached at 871faff9) is installed.
-- 2026-11-01T17:20Z: stage 1 started: the design workflow (script archived as
+- 2026-11-01T17:01Z: stage 1 started: the design workflow wf_8670bbfd-b5d (script archived as
   `workflow-scripts/lane-b-redact-ssn-phone-design-<runId>.js` when it ends).
+- 2026-11-01T17:55Z: stage 1 done (wf_8670bbfd-b5d, 7 agents: probe, designer, design reviewer, completeness critic, two verifiers,
+  applier). The probe: all 36 SSN and phone forms pass through #75's redactor today and nothing on the must-not-redact list is
+  altered; baseline 56-307 ms per crafted 100 kB letter. Review: 12 reviewer findings (F1-F4 blocking: amounts/dates over-redacted
+  across a period and a space gap; a line break inside a number leaks; the self-check shared the matcher so it could not catch a
+  miss; label/keep-noun precedence) and 10 critic findings; neither verifier refuted any; all applied, the self-check now has an
+  independent survivor scan (R7). Prototype after review: 66 named rows as the rules say; 17-381 ms per 100 kB letter. ADR 0088
+  released. Design and script committed on build-ops.
+- 2026-11-01T18:30Z: the orchestrator relayed a #75 finding (years()/iso() accept a four-digit year below 100, so `0023-04-26`
+  is kept as a date; MOD-13 seed 1162287068 at bce57f16; #75's session fixes it inside #75). Added to the design as §17 R14: step 0
+  re-reads the fix, a named regression test for date-shaped identifiers, and the survivor scan treats an implausible-year date as
+  digits.
 
 ## Waiting on someone
+- **#75's merge** (its own session, S4): the build waits for it (cut only from a base containing its merge commit).
+- **For the co-founder (decided here as the safer option; none blocks):** design §15 items 15.1-15.17. The main ones: unlabeled
+  bare nine- and ten-digit numbers are redacted unless a keep-noun (claim, ICN, reference, NPI, TIN, check, trace...) names them
+  (15.1, 15.15); the payer's own phone numbers are redacted (15.2); a reference written in an SSN or phone shape is redacted (15.3);
+  an SSN or phone label beats a keep-noun, except NPI and TIN/EIN numbers they name (15.11); an independent survivor scan in the
+  self-check may send unusual letters to hand handling (15.12); a bare ZIP+4 with no ZIP word becomes [SSN] (15.14); a payer letter
+  misfiled as a contract is not redacted here (15.16, proposal 16.8). Refusals reuse `identifier_left` with no number (15.9).
 - Nothing blocks. The ruling is decided (the founder, 2026-11-01) and confirmed by the co-founder.
 - New trade-offs the design raises go to the co-founder through the orchestrator (the founder's delegation of 2026-10-25 covers
   security trade-offs on Lane B's work), for example an unlabeled bare 9-digit number that may be a claim number or member ID,
@@ -70,13 +92,17 @@ Follow-on: none.
   stay the founder's and do not block. #75's F1 floors and F2 (legal) are the founder's and do not block.
 
 ## Proposals (outside this PR)
-None yet.
+Design §16 items 1-10, among them: fold every digit to ASCII across the redactor (other-script digits in names, member IDs and dates);
+fix #80/#75's general gaps the probe found (the call's own claim written `(555) 012-3456` or `555.012.3456` is sent today when it is
+not SSN/phone-shaped by the new patterns' reach; `)` and `.` between digits and the 3-token cap in identifierCandidates); widen
+`readDate` (figures.ts) to every `datesIn` form; MBIs as a pattern; 16.8 the contract screen refuses a page holding an SSN; 16.9
+align packages/observability phi-guard's SSN and phone shapes; 16.10 log prepare refusals (IDs only) once the letter reader has a
+caller.
 
 ## Next step
-Next: run setup with no branch argument in the background until it prints OK (after `FAIL node - /opt/node24/bin/node
-reports 'v24.22.1', not v24.22.0`, run `mv /opt/node24 /opt/node24.base-image` and run it again); add the read-only probe
-worktree at 871faff9 (`/home/user/redact-ssn-phone-probe`, `pnpm install --frozen-lockfile` under the lock); write this
-session's id here, pull and push build-ops; then the design (stage 1): probe `redactLetter`, `holdsIdentifier` and
-`identifierCandidates` on the SSN and phone forms and the must-not-redact cases with synthetic twins, then write the design and
-run one design reviewer (adapt the "Design review" phase of
-`workflow-scripts/lane-b-redact-placeholders-design-build-wf_0f7e6d06-e5b.js`). The build waits for #75 to merge.
+Wait for #75 to merge: check `gh api repos/PureTideWater/PhysicalTherapy/pulls/75 --jq '.merged, .merge_commit_sha'` on a
+send_later (no polling; do not subscribe to #75). Then: design §13 step 0 (diff #75's merged gateway files, PRD §14, ADR 0054,
+test-matrix and synth against 871faff9; re-run the probe and the prototype in the scratchpad if any gateway file changed; record);
+cut `co-001/redact-ssn-phone` from a base containing #75's merge (item prompt step 6); setup with
+`co-001/redact-ssn-phone:/home/user/redact-ssn-phone`; remove the probe worktree; then the build workflow (stage 2) on design §13
+and §17, and the draft PR (stage 3).

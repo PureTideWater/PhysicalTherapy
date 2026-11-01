@@ -1,0 +1,12 @@
+# rev85-ux-2 progress (UX/brand reviewer 2)
+- started; clone at 90ec40ab
+- read code: response-letter.tsx, submissions page diff, write-off, routes; letter-scanning.390 tiles 1-4
+- shots seen: error-unchosen-response.390 (1-4), letter-scanning.1280-dark/02
+- shots seen: case.error-unchosen.390 (3,4), letter-list.390 (2,3), letter-list.1280/02, uploads-paused.390 (2,3)
+- NEW n1 (should-fix): card description "Start with the payer's letter: upload it here ... while it is scanned" unconditional; false when uploads paused or role cannot upload (p.submissions.uploads-paused.390/02); submissions page.tsx card description
+- NEW n2 (should-fix): uploaders text "a letter already on file can still be chosen above" static; false when no letter on file (response-letter.tsx:280); not seen by sample
+- NEW n3 (polish): option words lead with "Payer letter, uploaded" identical; "(uploaded here)" mark last, cut first at 390 (letter-list.390/02)
+- checked uploader diff (single mode words: 'File 1 is larger than ...; split it or zip it' contradicts zip refusal) -> n4 polish
+- n2 dropped: canLog && !canUpload unreachable (submission.log only in BILLING_MANAGER_DOES, which has file.upload)
+- candidates: n4 single-mode size/empty words; n5 Response hint unquoted names; n6 Drop zone landmark name; n7 native progress colour (pre-existing); n8 error stays after auto-choose (checking); n9 Contracts sentence not a link
+- n8 confirmed (issues persist until next response). DONE: returning 8 findings (n1,n3..n9)

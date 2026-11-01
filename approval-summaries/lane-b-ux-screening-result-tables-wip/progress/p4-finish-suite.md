@@ -1,0 +1,53 @@
+# p4-finish-suite progress (PR #83 full local suite)
+
+- Start 2026-11-01: HEAD a4efd583af1464da390cfcb3a21cf1468981a421 (merge of bce57f16 into f5e0ceba), clean tree.
+- Merge base with origin/claude/build-platform: bce57f167bc2217dc25ebbc1cabceb10a195a0a0 (local ref, not fetched).
+- PG18 on 5433 up (postgres:test), only postgres/template0/template1 databases at start.
+- No apps/web/.next at start (cold build expected).
+- Logs: scratchpad/suite83/<step>.log; step lines: scratchpad/suite83/results.tsv (step, exit, seconds, command).
+- Runner: scratchpad/suite83/run.sh <step> <command...> (each under flock /tmp/laneb-heavy.lock).
+
+## Steps
+- Scope (git diff bce57f16 HEAD, 27 files): of pr42-files.txt only docs/product/test-matrix.md (+11/-7, rows: TBL-01/03/04 reworded, TBL-05..08 added), matrix.ts (+27/-3), registry.ts (+15/-0), watched-paths.txt (+2, generated). Nothing under apps/web/src/lib/screening/, the 4 protected files, packages/db|pricing|ledger|money, or migrations. No model identifier in the diff; commit messages: only the attribution lines (plus branch name claude/build-platform in merge subjects).
+- Phase 1 runner started 17:31Z (scratchpad/suite83/phase1.sh: steps 01..13).
+- 01 pnpm install --frozen-lockfile: PASS, exit 0, 3 s, "Already up to date".
+- 02 pnpm check:fixtures: PASS, exit 0, 1 s, 333 files read, 3,894 searched.
+- 03 pnpm typecheck: PASS, exit 0, 20 s, 22 projects (22 of 22 warm).
+- Runners written (not yet run): phase2.sh (14 migrate on fresh tp_pr83_migrate + drop, 15 vitest list --project db --filesOnly, 16 test:db shards 1..4 /4), phase3.sh (20 build, 21 stamp --write + --expect, 22 e2e shards 1..2 with E2E_DATABASE=tp_e2e_pr83 E2E_PORT=3183 E2E_PREBUILT=1), phase4.sh (30 stryker affected --base bce57f16, 31 gate on empty dir with --expected from affected's shards).
+- 04 pnpm lint: PASS, exit 0, 96 s, 1,680 files in 3 groups (packages 501, apps/web 630, root 549), 0 errors, 0 warnings.
+- 05 pnpm lint:copy: PASS, 2 s, 538 files read, brand words kept.
+- 06 pnpm lint:logs: PASS, 2 s, 1,087 files scanned.
+- 07 pnpm verify-content: PASS, 1 s, every content set passes (content/drafts 10 records).
+- 08 engine-freeze check.ts bce57f16: PASS, 1 s, no non-test pricing change, nothing let through, problems none.
+- 09 pnpm synth --all: PASS, 2 s, 265 cases: 0 written, 657 unchanged, 0 removed; EMR 8 formats, 16 unchanged.
+- 10 git diff --exit-code && empty porcelain: PASS, tree clean.
+- 11 pnpm test: running (started ~17:34Z).
+- 11 pnpm test: FAIL, exit 1, 241 s: 406 files (1 failed, 405 passed); 6,919 tests: 1 failed, 6,914 passed, 4 skipped.
+  - The one failure: packages/model-gateway/src/redact.property.test.ts:325 MOD-13 property, seed 1162287068, after 186 runs; counterexample: patient name "CLAIM CLAIM", claim number 00000101 written as "0000-01-01" after the template's word "Claim": the word is redacted as [PATIENT_NAME] and the claim number is left, so the claim's placeholder is missing at 6.
+  - Not caused by the diff: git diff bce57f16 HEAD -- packages/model-gateway packages/packets is empty; no lockfile change; fast-check draws a fresh seed each run. Pre-existing latent defect (redaction or the test's generator) in base code.
+  - Next: seeded reproduction (scratchpad/suite83/seed-repro, config outside the repo) to show it is deterministic for that seed, then a second full pnpm test.
+- 11a seeded repro (FC_SEED=1162287068, vitest --config scratchpad/suite83/seed-repro/vitest.seed.config.mjs, only redact.property.test.ts): FAIL as expected, same counterexample (deterministic); 2 of 5 tests fail with that seed (MOD-13 and the "still replaces every letter or digit today's code replaced" property).
+- 11b unseeded rerun of the same file: FAIL again, another seed (-1919993884): name "CLAIM AA", claim 110000 written "1–1-0000" after "Claim ". Shrinking runs to PARTS[0]='CLAIM' and zeros, so the shrunk case is a minimum, not the original draw. Base code identical, so base fails the same seeds.
+- 12 pnpm test:golden: PASS, 22 s, 5 files, 376 tests.
+- 13 pnpm test:oracle (TP_ORACLE_PYTHON=/opt/py312-ci/bin/python3): PASS, 50 s, pyx12 4.0.0 agrees on all 687 (676 valid, 11 malformed); edi835 agrees.
+- PHASE 1 DONE 17:41Z. Next: 11c failure-rate sample (10 unseeded runs of the file), then phase2.
+- 11c failure-rate sample: 10 unseeded runs of redact.property.test.ts alone: 10 pass, 0 fail (100 s). So far 2 failing seeds in 13 runs of the file.
+- 11d verbose seeded repro (FC_VERBOSE=2): the ORIGINAL draw (before shrinking) for seed 1162287068: claim number "00230426" written "0023-04-26" (and "00−23−0426"), name "PATIENT INA". Root cause: a four-digit year below 100. redact.ts iso()/years() accept year 0023 as a calendar date (iso() never checks the year; Date.UTC's 0..99 -> 1900s mapping only feeds the month-length check), so "0023-04-26" is an "other date" and the dashed digits-only claim number in it is kept (matchesIn: inOtherDate && DASHED) and reaches the model; the test oracle separatedDateReadings() validates with Date.UTC, whose year 23 becomes 1923, so it reads no date and expects the claim redacted. Pre-existing in base (packages/model-gateway unchanged by #83); not fixed here (outside the diff and lane).
+- 14 db:migrate on fresh tp_pr83_migrate: PASS, 1 s, applied 44, 0 before; schema_migrations 44; database dropped.
+- 15 vitest list --project db --filesOnly: 129 files.
+- 16 test:db --shard=1/4 (DATABASE_URL=…5433/postgres): PASS, 506 s, 33 files, 3,190 passed, 1 skipped (3,191).
+- 16 test:db --shard=2/4: PASS, 139 s, 32 files, 2,615 passed.
+- 16 test:db --shard=3/4: PASS, 323 s, 32 files, 2,552 passed.
+- 16 test:db --shard=4/4: PASS, 111 s, 32 files, 926 passed.
+- test:db total: PASS, 129 files (33+32+32+32) = vitest list --project db (129); 9,283 passed, 1 skipped, 0 failed; 1,079 s.
+- PHASE 2 DONE. Starting phase 3 (build, stamp, e2e).
+- 20 pnpm build: PASS, 62 s (cold: no .next at start).
+- 21 build-stamp --write a4efd583…: PASS, stamped; --expect: "the build is a4efd583…'s".
+- 22 e2e shard 1/2 running (E2E_DATABASE=tp_e2e_pr83, E2E_PORT=3183, E2E_PREBUILT=1, --workers=2).
+- 22 e2e shard 1/2: PASS, 303 s (5.0 min), 32 passed, 0 failed; web server 'build-stamp: the build is a4efd583…'s'.
+- 22 e2e shard 2/2: PASS, 296 s (4.9 min), 32 passed, 0 failed; stamp a4efd583…'s. screening-phone.spec.ts:135 (this PR's) passed; screening.spec.ts:147 (SCR-01 to SCR-07, SCR-18) passed, so no flake re-run; tables-phone.spec.ts:171 and :293 passed.
+- e2e total: PASS, 64 passed, 0 failed, 599 s. tp_e2e_pr83 dropped (WITH FORCE) and its /tmp/tp-e2e-tp_e2e_pr83-* dirs removed. Databases now: postgres, template0, template1.
+- PHASE 3 DONE. Starting phase 4 (stryker affected + gate).
+- 30 stryker affected.ts --event pull_request --base bce57f16: PASS, 14 s, money/pricing/ledger/packets not affected, any=false, shards=[].
+- 31 stryker gate.ts (empty reports dir, --expected '[]'): PASS, 1 s, "No money path changed", mutation gate passed.
+- PHASE 4 DONE. No fix commit (the only failure is pre-existing and outside the diff). HEAD a4efd583, tree clean. Final file written: scratchpad/p4-finish-suite.md. DONE.

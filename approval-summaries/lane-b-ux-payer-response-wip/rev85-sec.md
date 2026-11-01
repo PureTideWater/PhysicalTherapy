@@ -1,0 +1,14 @@
+# PR #85 adversarial review 2 of 2: SECURITY + MONEY (in progress)
+Clone /home/user/rev85-sec at 90ec40ab. Diff 83d71fd6..90ec40ab: 30 files, no migration, no packages/db/functions change, no engine/ledger package change.
+## Files reviewed
+## Findings
+- [x] lib/cases/write-off.ts, routes/triage.ts, cases/[caseId]/page.tsx: check is inside the FOR UPDATE row read; only app writer of written_off_reason besides worker triage (window_passed, pre-existing). Reopen unchanged. No finding.
+- [x] lib/packets/submissions.ts, routes/submissions.ts: lock then RESPONSE_DOCUMENT check; mutations run READ COMMITTED (invoke.ts:468 refuses oneSnapshot for mutations) so the lock-then-check sees the other's commit. Audited reads OK.
+- [x] lib/contracts/tagging.ts, contract-queries.ts, routes/abstraction.ts (amend, supersede), routes/contracts.ts, reconciliation.ts, uploads.ts (uploadGate): all app writers of contract_version.source_document_ids traced (createDraftVersion/attachDocument via tagDocument; amend/supersede; updateVersionAction passes no docs). IDs lowercased on all paths.
+- [x] (run 2) response-letter.tsx, uploader.tsx, routes/uploads.ts: uploader controls unnamed, type=button, CSRF token page's; `single` is client-only but server RESPONSE_DOCUMENT (top-level, clean, stored, no contract source) is the gate. No finding.
+- FINDING F1 (should-fix, introduced): write-off "Window passed" judged only by priced_line.window_ends_on; a case reopened for the next dispute level (payer_response.next_window_ends_on in the future, case_next_dispute_window) still accepts "Window passed" while the next-level window is open. lib/cases/write-off.ts:47, triage/queries.ts:681.
+- F1 re-judged: polish, predates. Triage's own strike (apps/worker/src/triage/execute.ts closeWindows) and case_line_rules' reopen judge by priced_line.window_ends_on too, so the PR's rule matches the product's one meaning of "Window passed"; the gap (a case reopened for the next level keeps an open next_window_ends_on) is the product's, not this PR's.
+- [x] submissions/page.tsx, cases/[caseId]/page.tsx: RESPONSE_HINT checked against apps/worker/src/reconcile/responses.ts (approves up to the amount, per line capped at variance, written-off lines excluded, at reconcile) and case_rules: true. Receipt link same practice, no ?from=; uploader showReceipts=false so #78's returnTo untouched; leave guard is the uploader's beforeunload only while sending.
+- [x] contract-queries.ts, routes/contracts.ts, abstraction.ts, reconciliation.ts: refuseResponseLetter on tag, amend, supersede; opaqueId lowercases; uploadGate same semantics as before plus suspension on Contracts/Reconciliation.
+- [x] PHI: refusals generic (no IDs/dates), lock key is document UUID only, audited reads per row. Zip/held/scanning/duplicate excluded server-side by RESPONSE_DOCUMENT.
+- No engine/ledger/migration change (confirmed by stat). DONE: no blocking or should-fix finding.

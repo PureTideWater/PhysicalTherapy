@@ -1,0 +1,24 @@
+# p4-finish-merge progress (PR #83 base merge)
+
+- Start: HEAD f5e0ceba2a5213ef8f206bcfef0e142da3a61a3e, clean tree.
+- Fetched origin/claude/build-platform = bce57f167bc2217dc25ebbc1cabceb10a195a0a0; merge base 56ed6279.
+- Merges brought in (first-parent): #78 (83d71fd6), #82 (bce57f16).
+- Step 1: merge -- in progress
+- Step 1 merge started (git merge --no-ff origin/claude/build-platform). Conflicts:
+  - docs/product/test-matrix.md: kept HEAD's TBL-03..08 (PR rewording + TBL-05..08), then base's new "## Download refusals (DLR)" section (DLR-01..04); base's CI-21..23 rows auto-merged. Resolved + staged.
+  - packages/synth/src/cases/registry.ts: kept HEAD's TBL-05..08 entries, closed with "  ]),", then base's DLR-01..04 entries. Resolved + staged.
+  - matrix.ts auto-merged (TBL-05..08 then DLR-01..04, CI-21..23); not generated.
+  - tools/screening-capacity/watched-paths.txt auto-merged but is generated: took base's version (git checkout origin/claude/build-platform --), to regenerate.
+  - No lockfile/package.json change in the merge.
+- Step 2 conflicts resolved; still merging (MERGE_HEAD set). Next: step 3 generators under the lock.
+- Step 3 done (under lock): pnpm install --frozen-lockfile exit 0; watched.ts --write: 541 lines, output identical to the auto-merge (base + this PR's table-parts.tsx, stacked-rows.tsx); pnpm synth --all: 265 cases, 0 written, 657 unchanged, 0 removed; 8 EMR formats, 16 unchanged.
+- Merge committed: a4efd583af1464da390cfcb3a21cf1468981a421 (parents f5e0ceba, bce57f16). git status --porcelain empty.
+  - PROBLEM: `git commit --no-edit` kept git's "# Conflicts:" comment block after the trailer lines (whitespace cleanup), so the message does not end with the two trailer lines. Not amended (amend forbidden); reported for the orchestrator.
+- Step 4 quick checks: starting.
+- Step 4 done (under lock), all green, no fix commit needed:
+  - pnpm typecheck: passed, 22 projects (exit 0)
+  - pnpm lint:copy: 538 files read, brand words kept (exit 0)
+  - vitest --project unit: result.test.tsx (blob a03a0e26 identical to base), result-tables.test.tsx, stacked-rows.test.tsx, words.test.ts, app/tables.test.ts, tools/screening-capacity/watched.test.ts: 6 files, 81 tests passed (exit 0)
+  - pnpm verify-content: every content set passes (exit 0)
+- matrix.ts vs test-matrix.md: 230 rows each, same ids in order, TBL/DLR/CI-21..23 title and assertion strings present verbatim.
+- Final HEAD a4efd583af1464da390cfcb3a21cf1468981a421; git status --porcelain empty. DONE.

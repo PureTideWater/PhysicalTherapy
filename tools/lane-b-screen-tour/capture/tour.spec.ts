@@ -102,6 +102,13 @@ function wantedPrefix(prefix: string): boolean {
 function darkAsked(darkId: string): boolean {
   return ONLY.includes(darkId);
 }
+/**
+ * A step's shot ids with the 1280 dark id of each that TOUR_ONLY names in full, for `attempt`: a step that fails then
+ * records its dark shots with its own reason, not as "no step of this run took it" (UX PR 6's before run, 2026-11-01).
+ */
+function andDark(shotIds: readonly string[]): string[] {
+  return shotIds.flatMap((id) => (id.endsWith('.1280') && darkAsked(`${id}-dark`) ? [id, `${id}-dark`] : [id]));
+}
 
 const shots: ShotEntry[] = [];
 const skipped: Skip[] = [];
@@ -158,6 +165,29 @@ function skip(shot: string, route: string, reason: string): void {
 /** A state the map names that cannot be shown on synthetic data in this run: recorded for both widths, with the reason. */
 function notReached(key: string, variant: string, route: string, reason: string): void {
   for (const width of WIDTHS) skip(`${key}.${variant}.${String(width)}`, route, reason);
+}
+
+/** notReached, and the 1280 dark id too (a pull request's sample names every changed state at 1280 dark). */
+function notReachedAll(key: string, variant: string, route: string, reason: string): void {
+  notReached(key, variant, route, reason);
+  skip(`${key}.${variant}.1280-dark`, route, reason);
+}
+
+/**
+ * Lets a form send its empty choices to the route (PR #85's sample): noValidate on every form inside the locator, and on
+ * the form around it, so the browser's own bubble does not stop the press and the route's refusal shows. Returns the
+ * names of the required selects still on their empty choice: a step presses only when one is, since then the route
+ * refuses before any write. A ref whose selects start on a choice (before PR #85) would write, so the step shoots the
+ * form as it starts and presses nothing.
+ */
+async function sendEmptyChoices(scope: ReturnType<Page['locator']>): Promise<string[]> {
+  return scope.evaluate((root) => {
+    const forms = new Set<HTMLFormElement>(root.querySelectorAll('form'));
+    const around = root.closest('form');
+    if (around !== null) forms.add(around);
+    for (const form of forms) form.noValidate = true;
+    return [...root.querySelectorAll('select[required]')].filter((select) => (select as HTMLSelectElement).value === '').map((select) => select.getAttribute('name') ?? '?');
+  });
 }
 
 function reasonOf(error: unknown): string {
@@ -599,6 +629,69 @@ async function refused(page: Page, text: RegExp = /Not done|Check the fields|Not
 }
 
 /**
+ * Moves a sign-in step's page clock (installed before its navigation) forward ten seconds at a time until the step's
+ * timer shows the phase, for at most 1,000 seconds (key registration's 15 minutes). Before co-001/ux-sign-in-time a step
+ * has no timer, so the shot is skipped with that reason.
+ */
+async function toStepPhase(page: Page, phase: 'warning' | 'closed'): Promise<void> {
+  const timer = page.locator('[data-slot="step-timer"]');
+  await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
+  if ((await timer.count()) === 0) throw new Error(`${shown(page)} states no time limit (before co-001/ux-sign-in-time, ADR 0081)`);
+  await expect(timer).toHaveAttribute('data-phase', /^(open|warning|closed)$/);
+  for (let moved = 0; moved < 1_000 && (await timer.getAttribute('data-phase')) !== phase; moved += 10) {
+    await page.clock.fastForward(10_000);
+    // A real pause for React to commit the phase the jump's check set (its scheduler is not on the fake clock), so the
+    // loop reads it before the next jump and never carries a 'warning' wait past the warning into 'closed'.
+    await page.waitForTimeout(100);
+  }
+  await expect(timer).toHaveAttribute('data-phase', phase);
+}
+
+/**
+ * The sign-in page's Email field holds the persona's address, kept from a step that closed or was started again. Before
+ * co-001/ux-sign-in-time nothing is kept, so the shot is skipped saying so (the error never prints the field's value).
+ */
+async function emailKept(page: Page, persona: string): Promise<void> {
+  const field = page.getByLabel('Email');
+  await expect(field).toBeVisible();
+  try {
+    await expect(field).toHaveValue(personaEmail(persona), { timeout: 5_000 });
+  } catch {
+    const empty = (await field.inputValue()) === '';
+    throw new Error(`${shown(page)} keeps no email: the Email field is ${empty ? 'empty' : 'not the persona’s'} (before co-001/ux-sign-in-time, ADR 0081)`);
+  }
+}
+
+/**
+ * Enters the persona's password and waits for its next step. A persona the ref does not seed (time-mfa and time-staff
+ * come with co-001/ux-sign-in-time) is refused on /sign-in, and the shot is skipped saying so rather than with a URL
+ * mismatch.
+ */
+async function passwordTo(page: Page, persona: string, step: RegExp): Promise<void> {
+  await enterPassword(page, persona);
+  // The next step's URL, or a refusal on /sign-in (so an unseeded persona does not wait out the 20 s).
+  await Promise.race([
+    page.waitForURL((url) => url.pathname !== '/sign-in', { timeout: 20_000 }),
+    page.locator('[data-slot="alert"], [role="alert"]').filter({ hasText: /did not match|Not done|Account locked|Too many/ }).first().waitFor({ timeout: 20_000 }),
+  ]).catch(() => undefined);
+  if (new URL(page.url()).pathname === '/sign-in') {
+    const refusedHere = await page.getByText(/did not match/).first().isVisible().catch(() => false);
+    throw new Error(refusedHere ? `${persona} is not seeded on this ref: its password did not match (a persona of co-001/ux-sign-in-time)` : `${persona} stayed on /sign-in after its password`);
+  }
+  await expect(page).toHaveURL(step);
+}
+
+/** A reason notice opened by its URL; a reason the ref does not know is a 404, and the shot is skipped saying so. */
+function reasonShown(reason: string): (page: Page) => Promise<void> {
+  return async (page) => {
+    if (await page.getByText('Not found', { exact: true }).first().isVisible().catch(() => false)) {
+      throw new Error(`${shown(page)} is a 404 on this ref (${reason} is not one of its sign-in reasons)`);
+    }
+    await expect(page.locator(`[data-reason="${reason}"]`).first()).toBeVisible();
+  };
+}
+
+/**
  * A guard for an upload step that must send nothing (files chosen before their kind or system, PR #75): every request
  * for upload targets is aborted and counted, and `sent()` throws when one was made, so the shot is skipped with the
  * reason, never taken over a write.
@@ -722,6 +815,12 @@ interface Cap {
   readonly dark?: boolean;
   readonly ready?: (page: Page) => Promise<void>;
   readonly act?: (page: Page, width: Width) => Promise<void>;
+  /**
+   * Installs Playwright's fake clock in the page (page.clock.install()) before its first navigation, so `act` can move
+   * the page's own timers forward (a sign-in step's warning and closed state, UX PR 6; ADR 0081). Installed, it runs on
+   * from real time until moved; the server's clock and the cookies stay real.
+   */
+  readonly clock?: boolean;
   readonly note?: string;
 }
 
@@ -746,6 +845,7 @@ async function cap(browser: Browser, c: Cap): Promise<void> {
       }
       const { page, dispose } = await open(browser, c.persona, width);
       try {
+        if (c.clock === true) await page.clock.install();
         await go(page, c.persona, typeof c.path === 'function' ? await c.path() : c.path);
         await (c.ready ?? h1)(page);
         await c.act?.(page, width);
@@ -1110,14 +1210,15 @@ test('public pages and sign-in', async ({ browser }) => {
 
   // /sign-in
   await cap(browser, { key: 'sign-in', route: R.signIn, persona: null, path: '/sign-in', ready: async (page) => expect(page.getByLabel('Email')).toBeVisible(), note: 'Legacy tour shot 01-sign-in (1280).' });
-  for (const reason of ['idle', 'step_expired']) {
+  // restarted: UX PR 6 (co-001/ux-sign-in-time; ADR 0081); a 404 before it.
+  for (const reason of ['idle', 'step_expired', 'restarted']) {
     await cap(browser, {
       key: 'sign-in',
       route: R.signIn,
       persona: null,
       path: `/sign-in?reason=${reason}`,
       state: `interaction:reason-${reason.replace('_', '-')}`,
-      ready: async (page) => expect(page.locator(`[data-reason="${reason}"]`).first()).toBeVisible(),
+      ready: reasonShown(reason),
       note: 'A notice the product redirects to, opened by its URL.',
     });
   }
@@ -1154,20 +1255,84 @@ test('public pages and sign-in', async ({ browser }) => {
 
   // /sign-in/mfa (billing-manager): the step before the code, in throwaway contexts (no code is consumed).
   await mfaShots(browser);
+  // UX PR 6 (co-001/ux-sign-in-time; ADR 0081): the code step's warning and closed state on the page's own clock, and the
+  // sign-in page after Start again and after a step closed, the email kept. time-mfa is this PR's persona: no code is
+  // consumed, and nothing else signs it in on the tour's database. Before it the persona is not seeded, and each shot is
+  // skipped saying so.
+  for (const phase of ['warning', 'closed'] as const) {
+    await cap(browser, {
+      key: 'sign-in-mfa',
+      route: R.mfa,
+      persona: null,
+      path: R.signIn,
+      clock: true,
+      state: `interaction:${phase}`,
+      note: phase === 'warning' ? 'A minute before the code step closes; the page’s clock moved forward, the server’s real.' : 'The code step closed; the page’s clock moved forward, the server’s real.',
+      act: async (page) => {
+        await passwordTo(page, 'time-mfa', /\/sign-in\/mfa$/);
+        await toStepPhase(page, phase);
+      },
+    });
+  }
+  await cap(browser, {
+    key: 'sign-in',
+    route: R.signIn,
+    persona: null,
+    path: R.signIn,
+    clock: true,
+    state: 'interaction:restarted-kept',
+    note: 'Start again pressed during the code step’s warning: the notice focused, the email kept, the password empty.',
+    act: async (page) => {
+      await passwordTo(page, 'time-mfa', /\/sign-in\/mfa$/);
+      await toStepPhase(page, 'warning');
+      await page.locator('[data-slot="step-timer"]').getByRole('link', { name: 'Start again' }).click();
+      await expect(page).toHaveURL(/\/sign-in\?reason=restarted$/);
+      await emailKept(page, 'time-mfa');
+    },
+  });
+  await cap(browser, {
+    key: 'sign-in',
+    route: R.signIn,
+    persona: null,
+    path: R.signIn,
+    state: 'interaction:step-expired-kept',
+    note: 'A code step past its limit, reloaded once its step cookie is gone (deleted here, as the browser does at its Max-Age): the email kept.',
+    act: async (page) => {
+      await passwordTo(page, 'time-mfa', /\/sign-in\/mfa$/);
+      await page.context().clearCookies({ name: 'tp_sign_in' });
+      await page.reload();
+      await expect(page).toHaveURL(/\/sign-in\?reason=step_expired$/);
+      await emailKept(page, 'time-mfa');
+    },
+  });
   // /sign-in/new-password and /sign-in/enroll (invited): before and after choosing a password.
   await invitedShots(browser);
+  // UX PR 6: an invited staff member's first setup step of three (time-staff, this PR's persona; it never saves).
+  await cap(browser, {
+    key: 'sign-in-new-password',
+    route: R.newPassword,
+    persona: null,
+    path: R.signIn,
+    state: 'interaction:invited-staff',
+    note: 'An invited staff member’s first setup step of three (the password is not saved).',
+    act: async (page) => {
+      await passwordTo(page, 'time-staff', /\/sign-in\/new-password$/);
+      await expect(page.getByRole('heading', { level: 1, name: 'Step 1 of 3: Choose a password' })).toBeVisible();
+    },
+  });
   // /sign-in/register-key (reviewer's first sign-in) and its no-authenticator refusal (support-expiry).
   await registerKeyShots(browser);
   // /sign-in/hardware-key
   await cap(browser, { key: 'sign-in-hardware-key', route: R.key, persona: null, path: R.key, ready: async (page) => expect(page.getByLabel('Email')).toBeVisible() });
-  for (const reason of ['key_registered', 'hardware_key_required']) {
+  // step_expired: the key surface's words from UX PR 6 (co-001/ux-sign-in-time, review R-04); before it, the password words.
+  for (const reason of ['key_registered', 'hardware_key_required', 'step_expired']) {
     await cap(browser, {
       key: 'sign-in-hardware-key',
       route: R.key,
       persona: null,
       path: `${R.key}?reason=${reason}`,
       state: `interaction:reason-${reason.replace(/_/g, '-')}`,
-      ready: async (page) => expect(page.locator(`[data-reason="${reason}"]`).first()).toBeVisible(),
+      ready: reasonShown(reason),
       note: 'A notice the product redirects to, opened by its URL.',
     });
   }
@@ -1319,10 +1484,14 @@ async function invitedShots(browser: Browser): Promise<void> {
     'sign-in-new-password.default.1280-dark',
     ...['default', 'error', 'loading'].flatMap((variant) => WIDTHS.map((width) => `sign-in-enroll.${variant}.${String(width)}`)),
     'sign-in-enroll.default.1280-dark',
+    // UX PR 6 (co-001/ux-sign-in-time; ADR 0081): the kept-email notices and enrolment's warning and closed state.
+    ...['step-expired-temporary', 'step-expired-chosen'].flatMap((variant) => WIDTHS.map((width) => `sign-in.${variant}.${String(width)}`)),
+    ...['warning', 'closed'].flatMap((variant) => WIDTHS.map((width) => `sign-in-enroll.${variant}.${String(width)}`)),
   ];
   if (!all.some(wanted)) return;
   const npMeta = (variant: string, state: string, note = ''): Meta => ({ key: 'sign-in-new-password', variant, state, route: np, role: 'invited', note });
   const enMeta = (variant: string, state: string, note = ''): Meta => ({ key: 'sign-in-enroll', variant, state, route: en, role: 'invited', note });
+  const signInMeta = (variant: string, note: string): Meta => ({ key: 'sign-in', variant, state: `interaction:${variant}`, route: '/sign-in', role: 'invited', note });
   const context = await browser.newContext(DESKTOP_CONTEXT);
   const phonesOpen: BrowserContext[] = [];
   const phoneNow = async (): Promise<Page> => {
@@ -1359,6 +1528,19 @@ async function invitedShots(browser: Browser): Promise<void> {
           await snap(view, npMeta('error-policy', 'error', 'Twelve characters or more that miss the policy’s classes.'));
         });
       }
+      // UX PR 6: a closed new-password step, from copies of the browser, so the live step stays for the shots after it.
+      for (const width of WIDTHS) {
+        await attempt(andDark([`sign-in.step-expired-temporary.${String(width)}`]), '/sign-in', async () => {
+          const copy = await browser.newContext({ ...(width === 1280 ? DESKTOP_CONTEXT : PHONE_CONTEXT), storageState: await context.storageState() });
+          phonesOpen.push(copy);
+          await copy.clearCookies({ name: 'tp_sign_in' });
+          const view = await copy.newPage();
+          await view.goto(np);
+          await expect(view).toHaveURL(/\/sign-in\?reason=step_expired$/);
+          await emailKept(view, 'invited');
+          await snap(view, signInMeta('step-expired-temporary', 'A new-password step that closed (a copy of the browser with its step cookie gone): the email kept, and the temporary password named.'));
+        });
+      }
       // Pending: the phone's submit is aborted; the desktop's goes through and moves the account to enrollment.
       await attempt(['sign-in-new-password.loading.390'], np, async () => {
         await small.goto(np);
@@ -1380,6 +1562,26 @@ async function invitedShots(browser: Browser): Promise<void> {
       await enrollPhone.goto(en);
       await expect(enrollPhone.getByLabel('Six-digit code')).toBeVisible();
       await snap(enrollPhone, enMeta('default', 'default'));
+      // UX PR 6: enrolment's warning and closed state on the page's own clock, well inside the step's 3 minutes, which
+      // count from the saved password. Before it the step states no limit, and both are skipped saying so. Taken from
+      // copies of the browser (as key registration's warning is), so the fake clock, moved minutes ahead (Date and
+      // performance.now both), never reaches the live pages the pending and refusal shots below use.
+      for (const width of WIDTHS) {
+        await attempt(andDark([`sign-in-enroll.warning.${String(width)}`, `sign-in-enroll.closed.${String(width)}`]), en, async () => {
+          const copy = await browser.newContext({ ...(width === 1280 ? DESKTOP_CONTEXT : PHONE_CONTEXT), storageState: await context.storageState() });
+          try {
+            const view = await copy.newPage();
+            await view.clock.install();
+            await view.goto(en);
+            await toStepPhase(view, 'warning');
+            await snap(view, enMeta('warning', 'interaction:warning', 'A minute before enrolment closes; the page’s clock moved forward, the server’s real.'));
+            await toStepPhase(view, 'closed');
+            await snap(view, enMeta('closed', 'interaction:closed', 'Enrolment closed: the setup key no longer works.'));
+          } finally {
+            await copy.close();
+          }
+        });
+      }
       for (const view of [page, enrollPhone]) {
         const width = String(view.viewportSize()?.width);
         await attempt([`sign-in-enroll.loading.${width}`], en, async () => {
@@ -1392,6 +1594,17 @@ async function invitedShots(browser: Browser): Promise<void> {
           await view.getByRole('button', { name: /Verify/ }).click();
           await refused(view, /did not match/);
           await snap(view, enMeta('error', 'error', 'A wrong code (000000).'));
+        });
+      }
+      // UX PR 6: enrolment closed after the new password was saved: the kept email names the chosen password.
+      for (const view of [page, enrollPhone]) {
+        const width = String(view.viewportSize()?.width);
+        await attempt(andDark([`sign-in.step-expired-chosen.${width}`]), '/sign-in', async () => {
+          await view.context().clearCookies({ name: 'tp_sign_in' });
+          await view.goto(en);
+          await expect(view).toHaveURL(/\/sign-in\?reason=step_expired$/);
+          await emailKept(view, 'invited');
+          await snap(view, signInMeta('step-expired-chosen', 'Enrolment closed after the new password was saved: the email kept, and the chosen password named.'));
         });
       }
     });
@@ -1448,14 +1661,30 @@ async function registerKeyShots(browser: Browser): Promise<void> {
   }
   // The refusal when no authenticator answers: support-expiry (used by no populate spec) in a context with no virtual key.
   const errorIds = ['sign-in-register-key.error.1280', 'sign-in-register-key.error.390'];
-  if (!errorIds.some(wanted)) return;
+  // UX PR 6 (co-001/ux-sign-in-time; ADR 0081): the warning two minutes before the 15, from copies of support-expiry's browser.
+  const warnIds = ['sign-in-register-key.warning.1280', 'sign-in-register-key.warning.390'];
+  if (![...errorIds, ...warnIds].some(wanted)) return;
   const bare = await browser.newContext(DESKTOP_CONTEXT);
   let barePhone: BrowserContext | undefined;
   try {
-    await attempt(errorIds, route, async () => {
+    await attempt([...errorIds, ...warnIds], route, async () => {
       const page = await bare.newPage();
       await signInWithTotp(page, 'support-expiry');
       if (!/\/sign-in\/register-key$/.test(page.url())) throw new Error(`support-expiry did not reach ${route} (its key was registered earlier on this database)`);
+      for (const width of WIDTHS) {
+        await attempt(andDark([`sign-in-register-key.warning.${String(width)}`]), route, async () => {
+          const copy = await browser.newContext({ ...(width === 1280 ? DESKTOP_CONTEXT : PHONE_CONTEXT), storageState: await bare.storageState() });
+          try {
+            const view = await copy.newPage();
+            await view.clock.install();
+            await view.goto(route);
+            await toStepPhase(view, 'warning');
+            await snap(view, meta('warning', 'interaction:warning', 'support-expiry', 'Two minutes before key registration’s 15 minutes end; the page’s clock moved forward, the server’s real. The copy registers nothing.'));
+          } finally {
+            await copy.close();
+          }
+        });
+      }
       barePhone = await browser.newContext({ ...PHONE_CONTEXT, storageState: await bare.storageState() });
       const small = await barePhone.newPage();
       for (const view of [page, small]) {
@@ -2336,6 +2565,52 @@ test('practice workflow', async ({ browser }) => {
       await refused(page);
     },
   });
+  // The write-off pressed with Reason on its empty first option (PR #85's sample, gap 1): the browser's check off
+  // (noValidate) and the consequence ticked, so the route refuses on Reason alone ("Reason: choose the reason") before any
+  // write. Before PR #85 Reason starts on a reason and a press with the box ticked would write the line off, so there the
+  // step ticks and presses nothing and the shot shows the form opened as it starts.
+  await cap(browser, {
+    key: 'p.case',
+    route: cz,
+    persona: 'packet-approver',
+    path: casePath,
+    state: 'error',
+    variant: 'error-unchosen',
+    note: LETTER_IN_RESPONSE
+      ? 'Write off pressed with the browser’s check off (noValidate), the consequence ticked and Reason on “Choose the reason”: refused by the route on Reason, nothing written.'
+      : 'Before PR #85 Reason starts on a reason, so no empty choice can be sent: Write this line off opened as it starts, not pressed (a press would write the line off).',
+    act: async (page) => {
+      await openWriteOff(page);
+      const form = page.locator('details[open]').filter({ has: page.getByRole('button', { name: 'Write off' }) }).first();
+      const empty = await sendEmptyChoices(form);
+      if (!empty.includes('reason')) {
+        log('NOTE write-off: Reason starts on a reason at this ref, so nothing is ticked or pressed (it would write)');
+        return;
+      }
+      await form.getByRole('checkbox').first().check();
+      await press(form.getByRole('button', { name: 'Write off' }));
+      await refused(page);
+    },
+  });
+  // "Window passed" refused (gap 2): from PR #85 the page withholds the option while a line's window is open or unknown,
+  // so no person can send it; only an altered request could, and the route's refusals are asserted by
+  // workbench-routes.db.test.ts (CAS-46). Before it the option is offered and a press would write the line off.
+  notReachedAll('p.case', 'error-window-passed', cz, 'the “Window passed” option is withheld on every line whose window is open (PACKETS’ lines), so the route’s refusal cannot be reached on screen; workbench-routes.db.test.ts asserts it (before PR #85 a press would write the line off)');
+  // The hint for a line with no known window (gap 2): triage adds a line only with a known window (design 2.2), so it is
+  // shot only if the database holds such a line on PACKETS' case.
+  if (['p.case.write-off-unknown-window.1280', 'p.case.write-off-unknown-window.390', 'p.case.write-off-unknown-window.1280-dark'].some(wanted)) {
+    const unknown = await one(
+      'SELECT cl.case_id AS id FROM case_line cl JOIN priced_line p ON p.id = cl.priced_line_id WHERE cl.practice_id = $1 AND cl.written_off_reason IS NULL AND p.window_ends_on IS NULL ORDER BY cl.created_at LIMIT 1',
+      [ids.packets ?? ''],
+    );
+    const anywhere = await one('SELECT count(*)::text AS id FROM case_line cl JOIN priced_line p ON p.id = cl.priced_line_id WHERE cl.written_off_reason IS NULL AND p.window_ends_on IS NULL');
+    log(`RECORDS case lines with no known window: ${anywhere === '' ? '?' : anywhere} in all; PACKETS ${unknown === '' ? 'none' : unknown}`);
+    if (unknown === '') {
+      notReachedAll('p.case', 'write-off-unknown-window', cz, `no case line open to a write-off has an unknown dispute window (${anywhere === '' ? '?' : anywhere} on the database): triage adds a line only with a known window (design 2.2), so the hint is defensive; write-off.test.ts asserts its words`);
+    } else {
+      await cap(browser, { key: 'p.case', route: cz, persona: 'packet-approver', path: () => PK(`/cases/${unknown}`), state: 'interaction:write-off-unknown-window', dark: true, act: openWriteOff, note: 'A PACKETS line with no known dispute window: Write this line off opened, the hint under Reason.' });
+    }
+  }
   notReached('p.case', 'struck-lines', cz, 'struck-through WINDOW_PASSED lines need triage.spec.ts (not in the populate set)');
 
   // The packet
@@ -2512,11 +2787,90 @@ test('practice workflow', async ({ browser }) => {
       await refused(page);
     },
   });
-  await notice(browser, { key: 'p.submissions', route: sb, persona: 'packet-approver', path: () => `${subPath()}?notice=logged`, name: 'notice' });
+  // The refused empty choices (PR #85's sample, gap 1): the form's browser check switched off (noValidate), then pressed
+  // with Response and the Payer’s letter, or Channel, on their first, empty option, so the route's refusal names each on
+  // its field ("Response: choose the payer’s answer", "Payer’s letter: choose the payer’s letter", "Channel: choose the
+  // channel") under the Not done summary. Before PR #85 those selects start on a choice and the press would write, so the
+  // step presses nothing there and the shot shows the form as it starts (the before of the same state).
+  const emptyChoices = (region: string, button: string) => async (page: Page): Promise<void> => {
+    const form = page.getByRole('region', { name: region });
+    const empty = await sendEmptyChoices(form);
+    if (empty.length === 0) {
+      log(`NOTE ${region}: every required select starts on a choice at this ref, so nothing is pressed (it would write)`);
+      return;
+    }
+    await press(form.getByRole('button', { name: button }));
+    await refused(page);
+  };
+  await cap(browser, {
+    key: 'p.submissions',
+    route: sb,
+    persona: 'packet-approver',
+    path: subPath,
+    state: 'error',
+    variant: 'error-unchosen-response',
+    note: LETTER_IN_RESPONSE
+      ? 'Log a payer response pressed with the browser’s check off (noValidate) and Response and the Payer’s letter on their empty first options: refused by the route on each field, nothing written.'
+      : 'Before PR #85 Response starts on Accepted and Document on a letter, so no empty choice can be sent: the form as it starts, not pressed (a press would record a response).',
+    act: emptyChoices('Log a payer response', 'Record the response'),
+  });
+  await cap(browser, {
+    key: 'p.submissions',
+    route: sb,
+    persona: 'packet-approver',
+    path: subPath,
+    state: 'error',
+    variant: 'error-unchosen-channel',
+    note: LETTER_IN_RESPONSE
+      ? 'Log a submission pressed with the browser’s check off (noValidate) and Channel on its empty first option: refused by the route on Channel, nothing written.'
+      : 'Before PR #85 Channel starts on a channel, so no empty choice can be sent: the form as it starts, not pressed (a press would log a submission).',
+    act: emptyChoices('Log a submission', 'Log the submission'),
+  });
+  // The letter list with its groups drawn open (gap 5): the select's size set, as a list box shows its optgroups. Before
+  // PR #85 the same act shows the Document select's flat list.
+  await cap(browser, {
+    key: 'p.submissions',
+    route: sb,
+    persona: 'packet-approver',
+    path: subPath,
+    state: 'interaction:letter-list',
+    note: 'The letter select drawn as a list box (its size attribute set by the tour, and its fixed one-row height lifted) so its groups show; nothing chosen or sent.',
+    act: async (page) => {
+      const select = page.getByRole('region', { name: 'Log a payer response' }).locator('select[name="documentId"]').first();
+      await select.evaluate((element) => {
+        const list = element as HTMLSelectElement;
+        list.size = Math.max(2, list.querySelectorAll('option, optgroup').length);
+        // The field's classes fix its height to one row; a list box takes the height of its rows.
+        list.style.height = 'auto';
+        list.style.maxHeight = 'none';
+      });
+    },
+  });
+  await notice(browser, { key: 'p.submissions', route: sb, persona: 'packet-approver', path: () => `${subPath()}?notice=recorded`, name: 'notice' });
   // The payer's letter uploaded inside the form (PR #85; design 6.2): last among PACKETS' submissions shots, since the letter
   // stays in intake (no worker runs in the tour), and no later shot lists PACKETS' uploads. Each width uploads its own
   // bytes (a comment after %%EOF), so the second is not a duplicate of the first.
   if (LETTER_IN_RESPONSE) {
+    // A zip chosen in the letter's uploader (gap 4): refused in the browser in its single mode; any upload request is
+    // aborted and the shot then skipped (the input takes one file, so two PDFs cannot be set; a zip is the other refusal).
+    await cap(browser, {
+      key: 'p.submissions',
+      route: sb,
+      persona: 'packet-approver',
+      path: subPath,
+      state: 'interaction:letter-refused',
+      note: 'A SYNTHETIC zip chosen as the payer’s letter: refused in the browser under Nothing was uploaded (one PDF only); nothing uploaded.',
+      act: async (page) => {
+        const form = page.getByRole('region', { name: 'Log a payer response' });
+        const guard = await noUploadRequest(page);
+        // An empty zip archive (its end-of-central-directory record alone): 22 bytes, no entry.
+        const zip = Buffer.concat([Buffer.from([0x50, 0x4b, 0x05, 0x06]), Buffer.alloc(18)]);
+        await form.locator('input[type="file"]').first().setInputFiles({ name: 'SYNTHETIC-letters.zip', mimeType: 'application/zip', buffer: zip });
+        await expect(form.locator('[data-state="error"]').filter({ hasText: 'Nothing was uploaded' }).filter({ hasText: 'Choose one PDF' }).first()).toBeVisible({ timeout: 15_000 });
+        await page.waitForTimeout(500);
+        guard.sent();
+      },
+    });
     await cap(browser, {
       key: 'p.submissions',
       route: sb,
@@ -2529,15 +2883,64 @@ test('practice workflow', async ({ browser }) => {
         await form.getByLabel('Response', { exact: true }).selectOption({ index: await optionIndex(page, /^Response$/, /Partial/i) });
         await form.getByLabel('Notes (kept encrypted)').fill('SYNTHETIC: the payer accepts part of the amount disputed.');
         const pdf = Buffer.concat([readFileSync(`${SCREENS}/fixtures/synthetic/CON-01/version-1.pdf`), Buffer.from(`\n% SYNTHETIC tour letter ${String(width)}\n`)]);
-        await form.getByLabel('Choose a file to upload').setInputFiles({ name: 'SYNTHETIC-letter.pdf', mimeType: 'application/pdf', buffer: pdf });
+        // The input is aria-hidden (its button opens the picker), so it is found by its type, not its label.
+        await form.locator('input[type="file"]').first().setInputFiles({ name: 'SYNTHETIC-letter.pdf', mimeType: 'application/pdf', buffer: pdf });
         await expect(form.locator('[data-letter-status="scanning"]')).toBeVisible({ timeout: 30_000 });
       },
     });
-    notReached('p.submissions', 'letter-chosen', sb, 'a letter scanned clean needs the worker, which the tour does not run; e2e/packets.spec.ts asserts it');
-    notReached('p.submissions', 'no-letter', sb, 'a submission with no letter on file is e2e/packets.spec.ts’s journey, before its upload (not in the populate set)');
+    // The letter's states after intake (gap 3): each needs the intake worker's receipt (stored, duplicate or held), and the
+    // tour runs no worker during the practice shots; the browser harness (response-letter.browser.test.tsx) and
+    // e2e/packets.spec.ts assert them.
+    const afterIntake = 'needs the intake worker to settle the upload’s receipt, and no worker runs during the tour’s practice shots (one would also take PACKETS’ letter-scanning upload out of intake); response-letter.browser.test.tsx and e2e/packets.spec.ts assert it';
+    notReachedAll('p.submissions', 'letter-chosen', sb, `the letter stored and chosen ${afterIntake}`);
+    notReachedAll('p.submissions', 'letter-uploaded-here', sb, `the “(uploaded here)” option is the stored letter this form uploaded: it ${afterIntake}`);
+    notReachedAll('p.submissions', 'letter-duplicate-chosen', sb, `a duplicate of a letter no response names, chosen, ${afterIntake}`);
+    notReachedAll('p.submissions', 'letter-duplicate-other-case', sb, `a duplicate of another case’s response letter, chosen, ${afterIntake}; the populated data also has one case with a response`);
+    notReachedAll('p.submissions', 'letter-duplicate-unusable', sb, `a duplicate of a contract’s document ${afterIntake}`);
+    notReachedAll('p.submissions', 'letter-held', sb, `a letter held at intake ${afterIntake}`);
   } else {
-    for (const id of ['p.submissions.letter-scanning.1280', 'p.submissions.letter-scanning.390', 'p.submissions.letter-scanning.1280-dark']) {
-      skip(id, sb, 'not at this ref: Log a payer response takes no upload before PR #85 (co-001/ux-payer-response); the letter is uploaded on Uploads or Contracts');
+    const before = 'not at this ref: Log a payer response takes no upload before PR #85 (co-001/ux-payer-response); the letter is uploaded on Uploads or Contracts';
+    for (const variant of ['letter-scanning', 'letter-refused', 'letter-chosen', 'letter-uploaded-here', 'letter-duplicate-chosen', 'letter-duplicate-other-case', 'letter-duplicate-unusable', 'letter-held']) {
+      notReachedAll('p.submissions', variant, sb, before);
+    }
+  }
+  // The letter field's hint with no letter on file (gap 6): a case with a logged submission in a practice with no letter a
+  // response may carry, found on the database (PACKETS has its letter). Before PR #85 the same case shows the form's
+  // "No response document yet" state.
+  if (['p.submissions.no-letter.1280', 'p.submissions.no-letter.390', 'p.submissions.no-letter.1280-dark'].some(wanted)) {
+    const candidates: readonly (readonly [string, string])[] = [
+      ['deadlines', 'packet-deadline-approver'],
+      ['ledger', 'ledger-manager'],
+      ['layout', 'pricing-manager'],
+      ['monitoring', 'monitoring-manager'],
+      ['reports', 'reports-manager'],
+    ];
+    let found: { practice: string; persona: string; caseId: string } | null = null;
+    const seen: string[] = [];
+    for (const [practice, persona] of candidates) {
+      const practiceId = ids[practice] ?? '';
+      const caseId = await one('SELECT s.case_id AS id FROM submission s WHERE s.practice_id = $1 ORDER BY s.created_at DESC LIMIT 1', [practiceId]);
+      const letters = await one(
+        "SELECT count(*)::text AS id FROM source_document d WHERE d.practice_id = $1 AND d.parent_document_id IS NULL AND d.kind IN ('payer_letter', 'other') AND d.status = 'stored'",
+        [practiceId],
+      );
+      seen.push(`${practice}: case with a submission ${caseId === '' ? 'none' : 'yes'}, letters ${letters === '' ? '?' : letters}`);
+      if (found === null && caseId !== '' && letters === '0') found = { practice, persona, caseId };
+    }
+    log(`RECORDS no-letter candidates: ${seen.join('; ')}`);
+    if (found === null) {
+      notReachedAll('p.submissions', 'no-letter', sb, `no populated practice but PACKETS has a case with a logged submission and no letter on file (${seen.join('; ')}); PACKETS has its letter`);
+    } else {
+      const target = found;
+      await cap(browser, {
+        key: 'p.submissions',
+        route: sb,
+        persona: target.persona,
+        path: () => `/p/${need(target.practice)}/cases/${target.caseId}/submissions`,
+        state: 'interaction:no-letter',
+        dark: true,
+        note: `A case of ${target.practice.toUpperCase()} with a logged submission and no payer’s letter on file: the letter field’s hint (before PR #85, the form’s empty state).`,
+      });
     }
   }
   await cap(browser, { key: 'p.submissions', route: sb, persona: 'packet-deadline-approver', path: () => DL(`/cases/${need('deadlinesExportedCase')}/submissions`), state: 'interaction:attestation-waiting', note: 'PACKET DEADLINES: waiting for the reviewer’s attestation of the export.' });
@@ -2674,6 +3077,25 @@ test('practice workflow', async ({ browser }) => {
       guard.sent();
     },
   });
+  // The payer letter kind chosen with no file (PR #85's sample, gap 7): the select reads "Payer’s terms or policy letter"
+  // from PR #85 ("Payer letter" before it). Choosing a kind sends nothing; any upload request is aborted and the shot skipped.
+  await cap(browser, {
+    key: 'p.contracts',
+    route: ct,
+    persona: 'era-manager',
+    path: () => O('/contracts'),
+    state: 'interaction:kind-letter',
+    note: 'The upload panel’s Kind of document set to the payer letter kind, no file chosen; nothing uploaded.',
+    act: async (page) => {
+      const guard = await noUploadRequest(page);
+      await page.getByRole('region', { name: CONTRACT_UPLOAD }).getByLabel('Kind of document').selectOption('payer_letter');
+      await page.waitForTimeout(500);
+      guard.sent();
+    },
+  });
+  // PACKETS' contracts (gap 8): its Documents to tag listed the acceptance letter before PR #85; from it the letter a
+  // response names is not a contract's document and is not listed.
+  await cap(browser, { key: 'p.contracts', route: ct, persona: 'packet-approver', path: () => PK('/contracts'), state: 'interaction:packets', note: 'SYNTHETIC OTHER PRACTICE PACKETS after packets.spec.ts: its acceptance letter, which its partial response names, listed among the documents to tag before PR #85 and not from it.' });
   await cap(browser, { key: 'p.contracts', route: ct, persona: CS, path: () => L('/contracts'), state: 'error', variant: 'error-forbidden', ready: denied });
   await cap(browser, { key: 'p.contracts', route: ct, persona: 'ledger-viewer', path: () => O('/contracts'), state: 'interaction:viewer' });
   await shellControls(browser, { key: 'p.contracts', route: ct, persona: 'era-manager', path: () => O('/contracts') });
@@ -3456,6 +3878,41 @@ test('writes last, each undone', async ({ browser }) => {
       await page.close();
     }
   });
+
+  // PACKETS' own organization suspended, shot, reinstated (PR #85's sample, gaps 6 and 9): uploadGate reads the practice's
+  // own organization, so the firm's suspension above gates nothing. While it lasts, the letter field's hint for a person
+  // who cannot upload here and the uploader's "Uploads are paused" note show on PACKETS' submissions, and the same note on
+  // its Contracts and Reconciliation panels (from PR #85; before it those two panels stay open). Reinstated in finally,
+  // after the last practice shot of the run; the unmapped plan test after this one needs the organization active.
+  const pausedIds = ['p.submissions', 'p.contracts', 'p.reconciliation'].flatMap((key) => [`${key}.uploads-paused.1280`, `${key}.uploads-paused.390`, `${key}.uploads-paused.1280-dark`]);
+  if (pausedIds.some(wanted)) {
+    const packetsOrganization = await one('SELECT organization_id AS id FROM practice WHERE id = $1', [ids.packets ?? '']);
+    const pausedNote = (where: string): string => `${where} while SYNTHETIC OTHER PRACTICE PACKETS’ own organization is suspended (then reinstated at once).`;
+    await attempt(pausedIds, org, async () => {
+      if (packetsOrganization === '') throw new Error('no organization found for SYNTHETIC OTHER PRACTICE PACKETS');
+      const page = await (await desktopOf(browser, A)).newPage();
+      const orgPath = `/console/organizations/${packetsOrganization}`;
+      try {
+        await go(page, A, orgPath);
+        await page.getByRole('button', { name: 'Suspend the organization' }).click();
+        await expect(page.getByRole('button', { name: 'Reinstate the organization' })).toBeVisible();
+        log("WRITE PACKETS' organization suspended");
+        try {
+          const P = (rest: string): string => `/p/${need('packets')}${rest}`;
+          await cap(browser, { key: 'p.submissions', route: '/p/[practiceId]/cases/[caseId]/submissions', persona: 'packet-approver', path: () => P(`/cases/${need('packetsCase')}/submissions`), state: 'interaction:uploads-paused', dark: true, note: pausedNote('PACKETS’ submissions') });
+          await cap(browser, { key: 'p.contracts', route: '/p/[practiceId]/contracts', persona: 'packet-approver', path: () => P('/contracts'), state: 'interaction:uploads-paused', dark: true, note: pausedNote('PACKETS’ contracts') });
+          await cap(browser, { key: 'p.reconciliation', route: '/p/[practiceId]/reconciliation', persona: 'packet-approver', path: () => P('/reconciliation'), state: 'interaction:uploads-paused', dark: true, note: pausedNote('PACKETS’ reconciliation') });
+        } finally {
+          await go(page, A, orgPath);
+          await page.getByRole('button', { name: 'Reinstate the organization' }).click();
+          await expect(page.getByRole('button', { name: 'Suspend the organization' })).toBeVisible();
+          log("WRITE PACKETS' organization reinstated");
+        }
+      } finally {
+        await page.close();
+      }
+    }, 480_000);
+  }
 
   // A new, empty practice group (the console's own create): No practices yet, No members yet.
   await attempt(['console.organization.empty-new-group.1280', 'console.organization.empty-new-group.390'], org, async () => {

@@ -19,13 +19,18 @@ Before 2026-11-01 it was run by session_01TAgFZo3SGSTBEfKRjX1jeG on Lane A's orc
   `pay-build-result.json` were in the old session's scratchpad; no findings file; the tour spec has none of #85's
   `cap(...)` steps). The reviews start again (step 3). The old check-in trig_01VmPUaCgFFjDLZev4GuKyfh (Lane A's account,
   2026-10-28) is gone; no task exists for this item.
+- **Galleries (published privately by this session at the orchestrator's request, 2026-11-01 18:31-18:38 UTC; before 83d71fd6, after 90ec40ab):**
+  before 1280 https://claude.ai/artifact/P3JBtVwbWhpuDMXdwLxsSJ · after 1280 https://claude.ai/artifact/Af9wPUdrWCySD3QpYGmbWC ·
+  before 390 https://claude.ai/artifact/W3BeEkHZBD3jDHZbqEHj4F · after 390 https://claude.ai/artifact/DgTGAdMWr1qEX1oMVRnqog ·
+  before 1280 dark https://claude.ai/artifact/7g5ME7bzUPa3f6Z4rF37uM · after 1280 dark https://claude.ai/artifact/DYrg8YoYSwcPXQxhJuFQXQ
 - **Synth:** no new module; **module 21 is unused** (reported to the orchestrator for release under rule 4). CAS-45 to
   CAS-48 are no-file registry entries in module 5, and synth's no-file output `fixtures/synthetic/CAS-4{5..8}/expected.json`
   is on the branch (critic nit n5).
 - **Machine:** setup-container OK (2026-11-01 16:59); GitHub login PureTideWater.
 - **Done:** before-shots wf_174c3c87-c25 (39 shots at 83d71fd6 in /home/user/screens85-before, tiles there; tour steps committed 545fe984); its critic found 10 sample gaps (refused empty choice, letter states, grouped list, contracts kind label, notice=recorded, upload gate), closed in the reviews' shots stage.
 - **Was running (2026-11-01 17:00):** base merge wf_f0e6c606-13a (merge, adversarial review, checks; progress `pay-merge-83d71fd6*.md`) and before-shots wf_174c3c87-c25 (tour steps, base shots in /home/user/screens85-before; progress `pay-shots-before.md`). Check-in trig_0143j37zDG7i2N3ZksY4Zy8p at 22:10 UTC.
-- **Next:** the two reviews (workflow), then the two reviews, fix round, description, verification, merge
+- **Running (2026-11-01 17:31):** reviews wf_ce1bb1c0-265 on 90ec40ab (security+money in /home/user/rev85-sec; shots closing the 10 sample gaps, after shots in /home/user/screens85-after, gallery files in /home/user/gallery85 for the orchestrator to publish; UX+brand; second-pass finders; 3 verifiers per finding). Progress `rev85-*.md`, `shots85.md`. Check-in trig_015cgf5ocT25RCMnnrGytFxN at 22:41 UTC.
+- **Next:** findings to `approval-summaries/lane-b-ux-payer-response-review-findings.json`, then then the two reviews, fix round, description, verification, merge
   (last of #82, #86, #75, #84, #83, #85).
 - **For Lane A** (design 7.2; reported to the orchestrator 2026-11-01 16:59 for the handoff to Lane A before 2026-11-03 14:00 UTC):
   1. `case_line_rules()` refuses a person's "Window passed" while the window is open or unknown;
@@ -90,3 +95,8 @@ Before 2026-11-01 it was run by session_01TAgFZo3SGSTBEfKRjX1jeG on Lane A's orc
 | 2026-11-01 16:59 | Taken back | Lane B's orchestrator's item session took the item; status corrected; old reviews run lost; PR dirty, no CI; subscription refused, polling. Base merge next. |
 | 2026-11-01 17:00 | Base merge; before shots | wf_f0e6c606-13a and wf_174c3c87-c25 started; scripts archived. |
 | 2026-11-01 17:30 | Base merged | 90ec40ab pushed (merge of 83d71fd6); checks green locally; before shots done. Reviews next. |
+| 2026-11-01 17:31 | Reviews | wf_ce1bb1c0-265 started; script archived. |
+| 2026-11-01 18:02 | Reviews resumed | First pass: shots done (before 66 shots /home/user/screens85-before, after 72 /home/user/screens85-after, 10 gaps closed, spec ed3e2f7d; galleries /home/user/gallery85/{before,after}-{1280,390,1280-dark} for the orchestrator to publish); both reviewers ran as custom agent types without the structured-output tool and returned nothing. Script edited (default agents that read the reviewer files) and resumed as wf_ce1bb1c0-265. |
+| 2026-11-01 18:27 | Reviews done | wf_ce1bb1c0-265 (65 agents): 20 findings, each verified by 3 skeptics; 13 real (5 should-fix: S2-N1 Response hint silent on Denied-without-reopen resolving the case; S2-N2 Received on defaults to today; ux85-1 suspended org's panel words; ux85-2 390 px kind select clips; U2-ux85-r2-1 card says upload while uploads paused; 8 polish), 7 refuted. Security+money: nothing blocking. Findings: `approval-summaries/lane-b-ux-payer-response-review-findings.json`. Fix round next (trig_01EQhUDMa2G5dTxF7pi54GKf at 23:38). |
+| 2026-11-01 18:28 | Fix round | wf_747662b4-90f started (fix 13 findings + nits n1-n8; re-review until dry, each finding verified by 2; after2 retake; UX delta review; full suite once). Progress `pay-fix*.md`, `pay-rerev-*.md`, `shots85-after2.md`, `pay-ux-delta.md`, `pay-suite.md`. Then one push. |
+| 2026-11-01 19:18 | Fix round resumed | The 5-hour limit (reset 19:10) stopped wf_747662b4-90f at its fixer (~18:35; partial uncommitted edits in 11 files, `pay-fix1.md`); the worker restart took PostgreSQL down: setup re-run OK; script RESUMED-noted and resumed (same run id). Check-in trig_017xSYL4y1Fp3kuRnMqBHDWT at 00:28 UTC. Galleries published (links above). |

@@ -1135,3 +1135,45 @@ HANDOFF.md; LANES.md rule 10).
   real-size runs; #42's launch actions 2–7; runbook 3i.
 - **Next:** each session reports its stage changes here by message; the orchestrator keeps LANES.md and this log current
   and writes the handoff back to Lane A before 2026-11-03 14:00 UTC.
+
+### 2026-11-01 18:00 UTC (Lane A's orchestrator): the old sessions on Lane A's account archived
+- Lane B's account has started: UX PR 10 (#85) and UX PR 6 run in its new sessions.
+- The old sessions on Lane A's account still held PR subscriptions. Each push by Lane B woke them on Lane A's credits, and they blocked Lane B's sessions from subscribing. Archived: session_017SNqG4nQbbt6xqEG1ZDKe6, 01UzQ6wgZgtThBRBxXTFYhRB, 019i9ifC3LkwNtonZfNSNmCp, 019VghcxKzP9LAj3WK8k6u1D, 01L3tN5LCq2aNYetEQBNJYZg, 019i9ifDUYaz9Hta77Vukkzo, 01TAgFZo3SGSTBEfKRjX1jeG and the schema chain's 019i9ifCi6u3MV8sy7oAhUmy. Each can be unarchived; nothing on origin is lost. Lane A's orchestrator unsubscribed from #42, so Lane B's acting-Lane-A session can subscribe to it.
+- Still scheduled on Lane A's account: only the 2026-11-03 14:10 UTC check-in. It reads this log and takes nothing back that Lane B holds.
+
+### 2026-11-01 18:00 UTC (Lane B's orchestrator): first check-in
+- **Merged:** #82 (ci-pin-age P1) as bce57f16, 2026-11-01 17:19 UTC (from 9db52a2b).
+- **The co-founder's go:** #86 and #83 waited for the co-founder's go typed in-session (given ~17:25 UTC); both now
+  running: #86 wf_d3f0da30-f5f, #83 wf_2f124449-b78.
+- **PR subscriptions:** every session's `subscribe_pr_activity` on its PR was refused, so sessions poll with
+  `pull_request_read` and `send_later`; no effect on the pipeline.
+- **Stage per item:**
+  - pr42: integrate round wf_57cb0124-835;
+  - ci-pin-age: P2 and P4 design re-reads;
+  - ci-images-digest: reviews;
+  - contract-phi-check: base merge 4 wf_4ca98146-d24;
+  - packet-day-counts: reviews regenerated (28 distinct, 9 blocking), fix round;
+  - ux-screening-result-tables: finishing, wf_2f124449-b78;
+  - ux-payer-response: 90ec40ab pushed, reviews;
+  - ux-home-figures: builders;
+  - suite-cap-3: design;
+  - ux-sign-in-time: design §§5-8;
+  - ci-findings-transport: design done (run artifact transport), waits for #86;
+  - unmapped-plan: design re-read, rev 3;
+  - redact-ssn-phone: design done (22 findings applied; safer choices in §15), build after #75;
+  - dependabot-batch: design done (33 findings), builders;
+  - schema-chain: wf_5566bd1c-8eb.
+- **Counters released** (LANES.md rule 4): ADR 0088 (redact-ssn-phone: an ADR 0054 amendment and an ADR 0070 N6
+  sentence were enough) and ADR 0089 (Dependabot batch: unused); synth module 21 (#85 adds no module); CI-30 and CI-31
+  (ci-findings-transport needs no row). MOD-17 and MOD-18 are used by the Dependabot batch. Next free: ADR 0088, synth
+  module 21, fixture release 900008.
+- **Dependabot rulings:** PR C, `co-001/dependabot-group-routing` (the group-routing fix; amends CI-12, no new number),
+  claimed 2026-11-01 18:00 UTC. Order: after #86, never ahead of a PR already green and waiting; deadline guard
+  2026-11-04 12:00 UTC (before Dependabot's 2026-11-05T04:31Z run). A, B and C may merge while #42 waits on the founder.
+- **#85's Lane A items** (design §7.2 items 1-5, added under LANES.md "Handed to Lane A"): `case_line_rules` window
+  refusal; `console_contract_queue` excludes response letters, with an index; `payer_response_belongs` letter check;
+  `contract_version_documents_ok` refuses a named letter; security: an upload-time link column.
+- **The co-founder's completion estimate** (asked 17:25 UTC): the software build is about 17% done now, about 21% after
+  the in-flight wave (range 17-29%); the tracker's 66% counts only the original plan. Launch-ready is lower: the
+  people-only launch work stands at about 0 of 28 items.
+- **Next:** merges #86, #75, #84, #83, #85; #42's step-1 push, then the founder's approval line.
