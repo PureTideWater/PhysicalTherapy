@@ -60,4 +60,5 @@ None blocks this PR. UX PR 66 (Cognito/infra, Lane A); the "three days" comment 
 | 2026-11-01 17:00 | Taken over | session_01FcouKNxVRK8x6iV52PfxXz (Lane B's orchestrator, 2026-11-01). Hold lifted by the co-founder's go-wide answer. Status corrected against live state; branch fast-forwarded locally to 83d71fd6. Next: design sections 5-8, review, revision. |
 | 2026-11-01 17:55 | Design done | wf_72aee928-c8b: sections 5-8, review R-01..R-15 (all disposed), critic C-01..C-09. C-02 decision: commit the regenerated watched-paths.txt. Next: build slices A-D. |
 | 2026-11-01 20:10 | Built; PR #92 opened | Build wf_01926a3e-1b8 (all checks and the new e2e spec pass); before shots wf_67f26406-d45; commit e4e05a0d pushed; draft PR #92; reviews wf_b4cf4f54-7c4 started. |
-\n| 2026-11-01 20:35 | Reviews done; fix round | Reviews wf_b4cf4f54-7c4 (description, security, UX from code; capture cut off). Fix round wf_aabddb31-b59 and before re-run wf_12938616-543 started. |\n
+
+| 2026-11-01 20:35 | Reviews done; fix round | Reviews wf_b4cf4f54-7c4 (description, security, UX from code; capture cut off). Fix round wf_aabddb31-b59 and before re-run wf_12938616-543 started. |
