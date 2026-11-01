@@ -27,7 +27,9 @@ Open questions: none (the co-founder's standing ruling of 2026-10-26 ~00:20 UTC:
 
 | 2026-11-01 17:03 | Design re-read and before shots running | Design re-read workflow wf_9d369139-577 (re-read against 83d71fd6, one adversarial reviewer, each finding verified, revision 3, completeness critic; review in `designs/lane-b-unmapped-plan/review-r3.md`). Before shots wf_d53014bd-859 at 83d71fd6 (TOUR_DIR in this session's scratchpad; shots never on a branch). Check-in scheduled 22:13 UTC (trig_019n5JW3K4LPqbJKwGPzczSD). |
 
-**State: design re-read (wf_9d369139-577) and before shots (wf_d53014bd-859) running.**
+| 2026-11-01 17:22 | Before shots done | wf_d53014bd-859: 39 shots (7 screens and states x 1280 light, 1280 dark, 390 light; 93 tiles), 0 failed; the critic needs no retake. The tour's seed had no unmapped plan, so the tour grew a last test "an unmapped plan on LAYOUT, last" (claude/build-ops 6bb04d38, fix 5623995d): pricing-manager uploads fixtures/synthetic/MAP-01/remit.835 into LAYOUT (CE:SYNPLAN-UNMAPPED-01, 4 lines, $448.00, March, already priced). TOUR_DIR is this session's scratchpad `screens-before`. The after run uses a fresh TOUR_DIR, TOUR_REF = the head, and the same TOUR_ONLY: `p.home.unmapped-plan*,p.coverage.unmapped-plan*,p.pricing-runs.unmapped-plan*,p.pricing-run.unmapped-plan*,p.mapping.unmapped-plan*,p.plan.unmapped-plan*,p.report-document.unmapped-plan*`. Not shot by design: report PDFs (the web view carries the same sentence). Script archived. |
+
+**State: design re-read (wf_9d369139-577) running; before shots done.**
 - **Design:** `designs/lane-b-unmapped-plan.md` (revision 2, ca0f6438; read at ed85bcf3), review `designs/lane-b-unmapped-plan/review.md`, script `workflow-scripts/lane-b-unmapped-plan-design-wf_98ca48d8-64c.js`.
 - **Reserved, used by this PR:** ADR 0075; MAP-06 to MAP-09, PRC-29 to PRC-31. MAP-10 kept for the notice follow-up. No new synth module (MAP = 2) and no new fixture release (900001). No migration.
 - **Branch:** `co-001/unmapped-plan` at 83d71fd6 on origin; worktree `/home/user/unmapped-plan`. No PR yet.
