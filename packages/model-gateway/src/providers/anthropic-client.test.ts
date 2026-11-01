@@ -95,14 +95,19 @@ const SDK_ENV_READS = [
 ] as const;
 
 /**
- * Every other place the SDK touches the environment object, by file without its extension: an alias, an enumeration or a
- * name the name pattern cannot read. A new one fails MOD-17 even where no name can be read from it.
+ * Every other touch of the environment object in the SDK's code, counted per file without its extension (the CommonJS
+ * and ES module twins together): an alias, an enumeration, or a name the name pattern cannot read. A new touch fails
+ * MOD-17 wherever it is, in a file listed here as in any other, even where no name can be read from it.
  */
-const SDK_ENV_SITES = [
-  'internal/utils/env', // readEnv itself, which every read above goes through
-  'lib/environments/poller', // an alias of process.env, read for HOSTNAME by an entry point the gateway never calls
-  'tools/agent-toolset/node', // Object.entries(process.env), scrubbing a child shell's environment in the agent toolset
-] as const;
+const SDK_ENV_SITES: Readonly<Record<string, number>> = {
+  // readEnv itself, which every read above goes through: process.env and Deno.env, in each twin.
+  'internal/utils/env': 4,
+  // An alias of process.env, read for HOSTNAME by an entry point the gateway never calls, in each twin.
+  'lib/environments/poller': 2,
+  // Object.entries(process.env), scrubbing a child shell's environment in the agent toolset, and the comment above it
+  // that names process.env, in each twin.
+  'tools/agent-toolset/node': 4,
+};
 
 /** The SDK's runtime dependencies at the locked version, none of which touches the environment; a new one is read first. */
 const SDK_DEPENDENCIES = ['@opentelemetry/api', 'json-schema-to-ts', 'standardwebhooks'] as const;
@@ -240,17 +245,19 @@ describe('MOD-17: the Anthropic client as configuration builds it, whatever the 
   it('is built by an SDK that reads no environment variable, touches the environment nowhere and depends on nothing but what this file lists, each closed', () => {
     const directory = sdkDirectory();
     const names = new Set<string>();
-    const sites = new Set<string>();
+    const sites: Record<string, number> = {};
     for (const { file, text } of sdkCode(directory)) {
       for (const match of text.matchAll(ENV_NAME)) {
         names.add(match[2] ?? match[3] ?? '');
       }
-      if (text.search(ENV_SITE) !== -1) {
-        sites.add(file.replace(/\.(?:c?js|mjs)$/, ''));
+      const touches = [...text.matchAll(ENV_SITE)].length;
+      if (touches > 0) {
+        const key = file.replace(/\.(?:c?js|mjs)$/, '');
+        sites[key] = (sites[key] ?? 0) + touches;
       }
     }
     expect([...names].sort()).toEqual([...SDK_ENV_READS].sort());
-    expect([...sites].sort()).toEqual([...SDK_ENV_SITES].sort());
+    expect(sites).toEqual(SDK_ENV_SITES);
     const manifest = JSON.parse(readFileSync(path.join(directory, 'package.json'), 'utf8')) as { dependencies?: Record<string, string> };
     expect(Object.keys(manifest.dependencies ?? {}).sort()).toEqual([...SDK_DEPENDENCIES]);
   });
