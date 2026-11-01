@@ -71,6 +71,10 @@ Follow-on: none.
   miss; label/keep-noun precedence) and 10 critic findings; neither verifier refuted any; all applied, the self-check now has an
   independent survivor scan (R7). Prototype after review: 66 named rows as the rules say; 17-381 ms per 100 kB letter. ADR 0088
   released. Design and script committed on build-ops.
+- 2026-11-01T18:30Z: the orchestrator relayed a #75 finding (years()/iso() accept a four-digit year below 100, so `0023-04-26`
+  is kept as a date; MOD-13 seed 1162287068 at bce57f16; #75's session fixes it inside #75). Added to the design as §17 R14: step 0
+  re-reads the fix, a named regression test for date-shaped identifiers, and the survivor scan treats an implausible-year date as
+  digits.
 
 ## Waiting on someone
 - **#75's merge** (its own session, S4): the build waits for it (cut only from a base containing its merge commit).

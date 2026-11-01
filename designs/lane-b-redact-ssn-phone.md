@@ -928,6 +928,13 @@ a 100 k digit run, `5-`, `5<ZWSP>`, `5⏎    ` and `5--⏎  ` repeated, nine-dig
 window, chains read once), so section 8's bound and the 3 s budget's headroom stand. The named time tests gain the
 `5⏎    `, `5--⏎  ` and amount-before-date letters.
 
+
+**R14 (added 2026-11-01T18:30Z, from the orchestrator):** #75's `years()`/`iso()` accept a four-digit year below 100, so a
+date-shaped identifier such as `0023-04-26` (a claim number) is read as a date and kept; MOD-13 failed on seed 1162287068 at
+bce57f16, and #75's session is fixing it inside #75. The build (a) re-reads #75's merged `years()`/`iso()` in step 0, (b) keeps a
+named regression test for date-shaped identifiers (implausible years, the call's own and another patient's) beside the SSN and
+phone cases, and (c) makes the survivor scan (R7) treat a "date" with an implausible year as digits, never as a date barrier.
+
 ## 18. Design review (one reviewer, a completeness critic, two-lens verification)
 
 Run 2026-11-01 on this design and the read-only worktree at 871faff9, synthetic data only. The reviewer reproduced
