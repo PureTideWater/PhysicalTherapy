@@ -11,7 +11,7 @@ GitHub merged_at 2026-10-28T06:50:22Z).
 - **Machine:** setup OK (2026-11-01 ~16:59 UTC; every line ok). GitHub login: PureTideWater.
 - **Base:** claude/build-platform = 83d71fd6 (unchanged since #78); the design's line references hold.
 - **Stage 1 done:** the design `designs/lane-b-ux-home-figures.md` (D1 to D11; the predicate in `apps/worker/src/triage/actionable-now.ts`, exported through `@tp/worker/triage`) and its adversarial review (`wf_132e0b59-2b4`: build with changes; no migration; no frozen code; 13 findings, all taken, dispositions at the design's end, which win). ADR 0082 is taken.
-- **Stage 2, builders: starting** (re-run from the base). The first run (`wf_5fc0815b-69d`) and the before shots (`wf_0f9ac53c-daf`) were lost when Lane A's account hit its weekly limit (~07:55-08:05 UTC 2026-10-28); the builders did not commit and the old scratchpad is gone, so nothing reached origin and neither can be resumed (resumeFromRunId is same-session only). The new build run pushes a WIP snapshot to `co-001/wip-ux-home-figures` after each phase and copies `hom-*.md` progress files to `approval-summaries/lane-b-ux-home-figures-wip/`.
+- **Stage 2, builders: running** `wf_21e8bd67-64f` (Core, then Screens and Docs, then Integrate with the CAS-41 gate; a WIP push after each phase), and the before shots `wf_c880ba51-8cf` beside it (started 2026-11-01 17:01 UTC; scripts archived as `workflow-scripts/lane-b-ux-home-figures-{build-wf_21e8bd67-64f,capture-before-wf_c880ba51-8cf}.js`). Safety check-in: send_later `trig_01GGB88QX78UcvhMAH5a2Dnx` at 2026-11-01T22:11Z (cancel when the runs end). #42's file list regenerated: 219 files. The first run (`wf_5fc0815b-69d`) and the before shots (`wf_0f9ac53c-daf`) were lost when Lane A's account hit its weekly limit (~07:55-08:05 UTC 2026-10-28); the builders did not commit and the old scratchpad is gone, so nothing reached origin and neither can be resumed (resumeFromRunId is same-session only). The new build run pushes a WIP snapshot to `co-001/wip-ux-home-figures` after each phase and copies `hom-*.md` progress files to `approval-summaries/lane-b-ux-home-figures-wip/`.
 - **Branch:** `co-001/ux-home-figures` = 83d71fd6 (no commits of its own), worktree `/home/user/ux-home-figures` (recreated by setup). No PR. No WIP ref yet.
 - **Reserved:** ADR 0082 if needed; test-matrix HOM-01 to HOM-04, a new series; `packages/synth` module 20 (HOM) if needed.
 - **Reviews (the brief):** the UX and brand review, and the payment-engine review (`.claude/agents/payment-engine-reviewer.md`,
@@ -28,6 +28,7 @@ GitHub merged_at 2026-10-28T06:50:22Z).
 
 - 2026-10-28 ~07:55-08:05 UTC: Lane A's account hit its weekly limit; wf_5fc0815b-69d and wf_0f9ac53c-daf lost, nothing on origin.
 - 2026-11-01 17:00 UTC: taken back by Lane B (session_01FcouKPLmdYyBmbVaUjag2c, started by Lane B's orchestrator); setup OK; base still 83d71fd6; stages 2 onward re-run.
+- 2026-11-01 17:01 UTC: builders wf_21e8bd67-64f and before shots wf_c880ba51-8cf started.
 
 ## Waiting on someone
 - Nothing.

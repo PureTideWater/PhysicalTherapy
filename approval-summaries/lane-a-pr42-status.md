@@ -110,6 +110,12 @@ Follow-on: none. Briefs: `lanes/lane-b-session-brief.md`, then `lanes/acting-lan
   (.git/hooks/pre-push), gitleaks 8.24.3 present. `/home/user/pr6b4` at be63bdc2 = origin; base still 83d71fd6.
   `subscribe_pr_activity` for #42 returned "Could not subscribe to this PR" with no reason: recorded; this session relies on
   send_later check-ins and reads the PR's state at each stage instead of events.
+- 2026-11-01T17:05Z (acting Lane A): integrate workflow wf_57cb0124-835 started (script archived as
+  `workflow-scripts/lane-a-pr42-integrate-wf_57cb0124-835.js`): merge agent (base + generators + tables.test + the sign-off
+  docs commit, no push) -> two review lenses (legal records; merge integrity), each finding verified by two refuters -> fix
+  if any -> full checks on the final tree -> completeness critic -> one push (+ WIP ref `co-001/wip-pr42-integrate-2`).
+  Progress files in the scratchpad: `progress/pr42g-{merge,review-*,fix,checks}.md`. Check-in trig_01JWSCKP2wzwnsq6pVSnXVB7
+  at 22:09Z (cancelled when the run finishes).
 
 ## Next
 Next (17:02Z): step 1-2, the integrate workflow (merge 83d71fd6 or later, generators, the legal sign-off docs commit, an
