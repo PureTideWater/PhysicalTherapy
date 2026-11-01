@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { sha } from './fixtures';
-import { actionUses, consistencyProblems, formProblems, parsePin, usesLines, versionsByRef } from './workflows';
+import { actionUses, consistencyProblems, formProblems, parsePin, reusableWorkflowProblems, usesLines, versionsByRef } from './workflows';
 
 /** The offline rules of the pin policy, (a) the form and (b) one commit and version per action (CI-11). */
 
@@ -38,6 +38,18 @@ describe('the pin form, rule (a)', () => {
       expect(problems, ref).toHaveLength(1);
       expect(problems[0], ref).toMatch(new RegExp(`^ci\\.yml:7: .*${problem.source}`));
     }
+  });
+
+  it('refuses a job that calls a reusable workflow of another repository, whose own pins and images nothing here reads (S7)', () => {
+    const text = `${flow(`      - uses: octo/checkout@${A} # v7.0.1\n`)}  call:\n    uses: octo/flows/.github/workflows/build.yml@${A} # v7.0.1\n`;
+    expect(reusableWorkflowProblems([{ file: 'ci.yml', text }])).toEqual([
+      `ci.yml: the job call calls the reusable workflow octo/flows/.github/workflows/build.yml@${A}, whose own pins and images this check does not read; move its steps into a workflow here`,
+    ]);
+    // Steps that use actions are not reusable workflows; one of this repository is the form rule's, as a local reference.
+    expect(reusableWorkflowProblems([{ file: 'ci.yml', text: flow(`      - uses: octo/checkout@${A} # v7.0.1\n`) }])).toEqual([]);
+    const local = `${flow(`      - uses: octo/checkout@${A} # v7.0.1\n`)}  call:\n    uses: ./.github/workflows/build.yml\n`;
+    expect(reusableWorkflowProblems([{ file: 'ci.yml', text: local }])).toEqual([]);
+    expect(formProblems([{ file: 'ci.yml', text: local }])).toEqual(['ci.yml:9: ./.github/workflows/build.yml is a local action or workflow; the pin policy names every action by repository and commit']);
   });
 
   it('refuses an action the YAML names off its own uses: line, whose comment it cannot read', () => {

@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 
 import { consistencyProblems, formProblems, parsePin } from '../check-action-pins/workflows';
+import { readDockerfile } from '../check-toolchain/images';
 import { MAX_OPENED_PER_RUN } from '../content-calendar/render';
 import { repositoryRoot } from '../content-files';
 import { REQUIRED_CHECKS } from '../required-checks';
@@ -1309,20 +1310,68 @@ describe('the content calendar and the weekly real-size test (docs/adr/0071; tes
   });
 });
 
+/** github.token as the runner reads it: its names in any case, spaces allowed around the dot (actions/runner, OrdinalIgnoreCase). */
+const GITHUB_TOKEN_NAMED = /\bgithub\s*\.\s*token\b/gi;
+/**
+ * The token by another name, in any case: secrets.GITHUB_TOKEN or secrets[…] (the same token), and the github context,
+ * which carries it, indexed, filtered (github.*), joined or as JSON, or toJSON(secrets).
+ */
+const TOKEN_ELSEWHERE = /\bsecrets\s*[.[]|\bgithub\s*\[|\bgithub\s*\.\s*\*|\bjoin\s*\(\s*github\b|\btojson\s*\(\s*(?:github|secrets)\b/gi;
+
+/**
+ * Where ci.yml hands a step the job's token (docs/adr/0066, Part 5; E8, S8): named once, as github.token in the Action
+ * pins step's env, and under no other name. GitHub reads an expression's context, property and function names ignoring
+ * case (actions/runner's ExpressionParser and DictionaryContextData), so every name is matched in any case and each
+ * step's text compared lower-cased (the reviews' CI-S1 and SEC-N2). Improve as you go: inside an expression, the github
+ * context is named only by a property (github.<name>), never whole, which would hand a step the token among the rest.
+ * The problems, or none.
+ */
+function tokenProblems(text: string): string[] {
+  const problems: string[] = [];
+  const named = text.match(GITHUB_TOKEN_NAMED) ?? [];
+  if (named.length !== 1) problems.push(`github.token is named ${String(named.length)} times, not once`);
+  const parsed = parse(text) as Workflow;
+  const holders = Object.entries(parsed.jobs).flatMap(([id, job]) =>
+    job.steps.flatMap((step, index) => (new RegExp(GITHUB_TOKEN_NAMED.source).test(JSON.stringify(step).toLowerCase()) ? [step.name ?? `${id} step ${String(index + 1)}`] : [])),
+  );
+  if (!isDeepStrictEqual(holders, ['Action pins'])) problems.push(`the steps naming github.token are ${JSON.stringify(holders)}, not the Action pins step alone`);
+  const pins = parsed.jobs.static?.steps.find((step) => step.name === 'Action pins');
+  if (pins?.env?.GITHUB_TOKEN !== '${{ github.token }}') problems.push(`the Action pins step's GITHUB_TOKEN is ${JSON.stringify(pins?.env?.GITHUB_TOKEN)}, not \${{ github.token }}`);
+  for (const match of text.matchAll(TOKEN_ELSEWHERE)) problems.push(`${match[0]}: reaches the token by another name`);
+  for (const [expression] of text.matchAll(/\$\{\{[\s\S]*?\}\}/g)) {
+    // String literals dropped first, so 'https://github.com' or 'github-x' in one is no name.
+    if (/\bgithub\b(?!\s*\.\s*[A-Za-z_])/i.test(expression.replace(/'(?:[^']|'')*'/g, "''"))) problems.push(`${expression}: names the whole github context, the token among it`);
+  }
+  return problems;
+}
+
 describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/adr/0066, Part 1)', () => {
   const ci = workflow('ci.yml');
   const JOBS = ['static', 'lint', 'unit', 'db', 'domain-model', 'build', 'e2e', 'images', 'all-green'];
 
   it('runs on every pull request and every push to the build branch, with no path filter, a read-only token and bash with pipefail', () => {
     expect(ci.on).toEqual({ pull_request: null, push: { branches: ['claude/build-platform'] } });
-    // The whole workflow reads the repository and nothing more, and no checkout keeps the token.
+    // The whole workflow reads the repository and nothing more, no checkout keeps the token, and only the Action pins step is given it.
     expect(ci.permissions).toEqual({ contents: 'read' });
     for (const [id, job] of Object.entries(ci.jobs)) {
       for (const step of job.steps.filter((candidate) => usesAction(candidate, 'actions/checkout'))) {
         expect(step.with?.['persist-credentials'], id).toBe(false);
       }
     }
+    // The token is named once, in that step's env, and under no other name (tokenProblems).
+    expect(tokenProblems(readFileSync(path.join(WORKFLOWS, 'ci.yml'), 'utf8'))).toEqual([]);
     expect(ci.defaults).toEqual({ run: { shell: 'bash' } });
+  });
+
+  it('refuses the token handed to a second step under any spelling GitHub reads, its names in any case (the reviews’ CI-S1 and SEC-N2)', () => {
+    const text = readFileSync(path.join(WORKFLOWS, 'ci.yml'), 'utf8');
+    const toolchain = '        env: { BASE: "${{ steps.range.outputs.base }}" }\n        run: pnpm toolchain:check\n';
+    // The Toolchain step given the token as the reviewers wrote it: each reaches the same token, and the runner reads it.
+    const given = (value: string) => text.replace(toolchain, `        env: { BASE: "\${{ steps.range.outputs.base }}", T: "${value}" }\n        run: pnpm toolchain:check\n`);
+    const forms = ['${{ GITHUB.TOKEN }}', '${{ Secrets.GITHUB_TOKEN }}', '${{ ToJSON(GitHub) }}', "${{ join(github.*, ',') }}", '${{ github[\'token\'] }}', '${{ github . token }}', "${{ format('{0}', github) }}"];
+    expect(forms.map((form) => given(form) === text)).toEqual(forms.map(() => false));
+    expect(tokenProblems(given('${{ GITHUB.TOKEN }}'))).toEqual(['github.token is named 2 times, not once', 'the steps naming github.token are ["Action pins","Toolchain"], not the Action pins step alone']);
+    for (const form of forms) expect(tokenProblems(given(form)), form).not.toEqual([]);
   });
 
   it('groups a pull request’s runs by its number and a push’s by its commit, cancelling only a pull request’s older run', () => {
@@ -1393,12 +1442,17 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
       // The action pins and the toolchain, each once, after the install and the range step, against the range's base:
       // on every run, with no condition beyond the two steps they need (docs/adr/0066, Part 2).
       const range = stepIndex(steps(), (step) => step.id === 'range');
-      for (const run of ['pnpm actions:check', 'pnpm toolchain:check']) {
+      // The action pins step alone also gets the job's read-only token, for the age rule's API reads (Part 5); the
+      // toolchain reads npm and Docker Hub only.
+      for (const [run, env] of [
+        ['pnpm actions:check', { BASE: '${{ steps.range.outputs.base }}', GITHUB_TOKEN: '${{ github.token }}' }],
+        ['pnpm toolchain:check', { BASE: '${{ steps.range.outputs.base }}' }],
+      ] as const) {
         const at = stepIndex(steps(), (step) => step.run === run);
         expect(steps().filter((step) => step.run === run), run).toHaveLength(1);
         expect([at > install, at > range], run).toEqual([true, true]);
         expect(steps()[at]?.if, run).toBe("${{ !cancelled() && steps.install.outcome == 'success' && steps.range.outcome == 'success' }}");
-        expect(steps()[at]?.env, run).toEqual({ BASE: '${{ steps.range.outputs.base }}' });
+        expect(steps()[at]?.env, run).toEqual(env);
       }
       // Every step after the install runs on its own condition, so a red one leaves the others' verdicts.
       for (const step of steps().slice(install + 1)) expect(step.if, step.name ?? step.run ?? step.uses).toMatch(/^\$\{\{ (?:github\.event_name == 'pull_request' && )?!cancelled\(\)/);
@@ -2774,29 +2828,55 @@ describe('Postgres from docker-compose.yml (CI-13; docs/adr/0066, Part 2)', () =
 
 describe('images by digest (CI-13)', () => {
   const DIGEST_PIN = /@sha256:[0-9a-f]{64}$/;
-  it('name every base and service image with its digest, in both Dockerfiles and the compose file', () => {
-    const DIGEST = /@sha256:[0-9a-f]{64}$/;
-    for (const app of ['web', 'worker']) {
-      const from = readFileSync(path.join(CI_ROOT, 'apps', app, 'Dockerfile'), 'utf8')
-        .split('\n')
-        .filter((line) => /^FROM\s/i.test(line))
-        .map((line) => line.split(/\s+/)[1] ?? '');
-      expect(from.length, app).toBeGreaterThan(0);
-      for (const image of from) expect(image, `${app}: ${image}`).toMatch(DIGEST);
+
+  /** The one frontend a build may be handed: docker/dockerfile by version and digest. */
+  const FRONTEND = /^docker\/dockerfile:\d+\.\d+(?:\.\d+)?@sha256:[0-9a-f]{64}$/;
+
+  /**
+   * A Dockerfile read through check-toolchain's readDockerfile, the image rule's own port of BuildKit v0.34.1's parser,
+   * so CI-13 and the rule cannot read a file differently (the security review's S1 and S2, and its proposal of one
+   * reader): every line placed (no JSON Dockerfile, no parse BuildKit refuses, no FROM or from= line it does not read as
+   * one), a FROM at least, each FROM that is not an earlier stage by digest, and each frontend (a `# syntax=` or
+   * `//syntax=` line, after a byte-order mark or a `#!` line) docker/dockerfile by version and digest: a frontend pulls
+   * its image by tag on every build otherwise. The problems, or none.
+   */
+  function dockerfileDigestProblems(text: string): string[] {
+    const read = readDockerfile(text);
+    const problems = read.problems.map(({ line, message }) => `line ${String(line)}: ${message}`);
+    if (read.stages.length === 0) problems.push('no FROM');
+    const stages: string[] = [];
+    for (const { line, image, name } of read.stages) {
+      if (!stages.includes(image.toLowerCase()) && !DIGEST_PIN.test(image)) problems.push(`line ${String(line)}: FROM ${image} names no digest`);
+      if (name !== null) stages.push(name.toLowerCase());
     }
+    for (const { line, image } of read.frontends) if (!FRONTEND.test(image)) problems.push(`line ${String(line)}: the frontend ${image} is not docker/dockerfile:<version>@sha256:<64 hex>`);
+    return problems;
+  }
+
+  it('name every base and service image with its digest, in both Dockerfiles and the compose file', () => {
+    for (const app of ['web', 'worker']) expect(dockerfileDigestProblems(readFileSync(path.join(CI_ROOT, 'apps', app, 'Dockerfile'), 'utf8')), app).toEqual([]);
     const compose = parse(readFileSync(path.join(CI_ROOT, 'docker-compose.yml'), 'utf8')) as { services: Record<string, { image?: string }> };
-    for (const [name, service] of Object.entries(compose.services)) expect(service.image, name).toMatch(DIGEST);
+    for (const [name, service] of Object.entries(compose.services)) expect(service.image, name).toMatch(DIGEST_PIN);
   });
 
-  it('name every image a build runs by digest: the Dockerfile frontend and the BuildKit builder, one version on every setup-buildx step (the security review\'s S4)', () => {
-    // The frontend: a `# syntax=` line pulls its image from Docker Hub by tag on every build, so either none (the
-    // frontend built into the pinned BuildKit) or one by digest.
-    for (const app of ['web', 'worker']) {
-      const syntax = readFileSync(path.join(CI_ROOT, 'apps', app, 'Dockerfile'), 'utf8')
-        .split('\n')
-        .filter((line) => /^#\s*syntax\s*=/i.test(line));
-      for (const line of syntax) expect(line, app).toMatch(/^# syntax=docker\/dockerfile:\d+\.\d+(?:\.\d+)?@sha256:[0-9a-f]{64}$/);
-    }
+  it('read a Dockerfile as BuildKit does, so a FROM or frontend that a line-by-line read misses is held to its digest, and a FROM line BuildKit does not read as one is refused (the security review’s S1, S2)', () => {
+    const node = `node:24-trixie-slim@sha256:${'a'.repeat(64)}`;
+    const bom = String.fromCharCode(0xfeff);
+    const frontend = 'line 1: the frontend docker/dockerfile:1 is not docker/dockerfile:<version>@sha256:<64 hex>';
+    const cases: readonly (readonly [string, string, readonly unknown[]])[] = [
+      ['a byte-order mark before # syntax=', `${bom}# syntax=docker/dockerfile:1\nFROM ${node}\n`, [frontend]],
+      ['a // syntax line', `//syntax=docker/dockerfile:1\nFROM ${node}\n`, [frontend]],
+      ['an indented FROM', `FROM ${node} AS build\n  FROM synthetic/hidden:latest\n`, ['line 2: FROM synthetic/hidden:latest names no digest']],
+      ['a FROM split by a continuation', `FROM ${node} AS build\nFR\\\nOM synthetic/hidden:latest\n`, ['line 2: FROM synthetic/hidden:latest names no digest']],
+      ['a FROM line in a heredoc body', `FROM ${node} AS build\nRUN <<EOF\nFROM synthetic/hidden:1@sha256:${'b'.repeat(64)}\nEOF\n`, [expect.stringMatching(/^line 3: a FROM line BuildKit does not read as a FROM instruction \(a heredoc's body/)]],
+    ];
+    // Each of these passed the line-by-line read CI-13 had before (no problem), and each is a real FROM or frontend to BuildKit, or a line it cannot vouch for.
+    for (const [what, text, problems] of cases) expect(dockerfileDigestProblems(text), what).toEqual(problems);
+    // A FROM of an earlier stage names no image of its own.
+    expect(dockerfileDigestProblems(`FROM ${node} AS build\nFROM build AS test\n`)).toEqual([]);
+  });
+
+  it('name every image a build runs by digest: the Dockerfile frontend (dockerfileDigestProblems, above) and the BuildKit builder, one version on every setup-buildx step (the security review\'s S4)', () => {
     // The builder: setup-buildx's docker-container driver runs moby/buildkit, by default by the mutable buildx-stable-1.
     const steps = workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => (job.steps ?? []).map((step, index) => ({ where: `${file} ${id} step ${String(index + 1)}`, file, id, index, step }))));
     const buildx = steps.filter(({ step }) => usesAction(step, 'docker/setup-buildx-action'));
