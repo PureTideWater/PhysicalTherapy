@@ -1,0 +1,17 @@
+{
+  "case": "TBL-07",
+  "module": "TBL",
+  "title": "The screening result passes axe at 1280 and 390 px",
+  "assertion": "A result the screening consumer prices from a synthetic upload, opened from its emailed link once its run is complete, has no axe-core WCAG 2.1 A or AA violation at 1280 px, and at 390 px, loaded at that width, none and no two landmarks of a role sharing a name, every scroller's state agreeing with its measurement before axe runs",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": ["apps/web/e2e/screening-phone.spec.ts"],
+  "codeListRelease": null,
+  "noFileReason": "The browser opens a result the screening consumer prices from a synthetic upload built in memory (CLEAN_ROWS, e2e/screening.ts); no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
