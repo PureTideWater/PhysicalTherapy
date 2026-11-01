@@ -47,6 +47,12 @@ const PROGRESS = `${OUT}/progress.log`;
 const SHOTS_JSON = `${OUT}/shots.json`;
 const ROUTE_MAP = process.env.TOUR_ROUTE_MAP ?? '/home/user/ops/designs/lane-b-ux-review/route-map.json';
 const SCREENS = '/home/user/screens';
+/**
+ * Whether the ref under capture takes the payer's letter inside "Log a payer response" (PR #85, co-001/ux-payer-response;
+ * designs/lane-b-ux-payer-response.md 6.2). One spec runs on a PR's base and its head: the steps whose page differs read
+ * this (the new letter-scanning state, and the abstraction default's note), or what the page shows.
+ */
+const LETTER_IN_RESPONSE = existsSync(`${SCREENS}/apps/web/src/components/packets/response-letter.tsx`);
 mkdirSync(PNG, { recursive: true });
 mkdirSync(AUTH, { recursive: true });
 
@@ -2143,7 +2149,7 @@ test('practice workflow', async ({ browser }) => {
   // Abstraction (the contract specialist's, under the journeys' grants)
   const CS = 'contract-specialist';
   const ab = '/p/[practiceId]/abstraction';
-  await cap(browser, { key: 'p.abstraction', route: ab, persona: CS, path: () => PK('/abstraction'), note: 'PACKETS: the payer letter awaiting abstraction.' });
+  await cap(browser, { key: 'p.abstraction', route: ab, persona: CS, path: () => PK('/abstraction'), note: LETTER_IN_RESPONSE ? 'PACKETS: its acceptance letter, which a response names, is not awaiting abstraction.' : 'PACKETS: the payer letter awaiting abstraction.' });
   await cap(browser, { key: 'p.abstraction', route: ab, persona: CS, path: () => L('/abstraction'), state: 'empty' });
   await capLoading(browser, { key: 'p.abstraction', route: ab, persona: CS, from: () => PK('/abstraction/regulations'), link: rail(() => PK('/abstraction')) });
   await cap(browser, { key: 'p.abstraction', route: ab, persona: 'pricing-manager', path: () => L('/abstraction'), state: 'error', variant: 'error-forbidden', ready: denied });
@@ -2488,16 +2494,52 @@ test('practice workflow', async ({ browser }) => {
     persona: 'packet-approver',
     path: subPath,
     state: 'error',
-    note: 'A partial response with no amount (refused before any write).',
+    note: 'A partial response with no amount (refused before any write); the first letter listed is chosen first where the form asks for it (PR #85).',
     act: async (page) => {
-      await page.getByLabel('Response', { exact: true }).selectOption({ index: await optionIndex(page, /^Response$/, /Partial/i) });
-      const received = page.getByLabel('Received on');
+      const form = page.getByRole('region', { name: 'Log a payer response' });
+      // From PR #85 the Payer’s letter select comes first, required and on its empty choice, so the browser would stop the
+      // press before the route's refusal on the amount: choose the first letter listed (design 4.8). Before it the form has
+      // a Document select already on a letter, and no such field.
+      const letter = form.getByLabel('Payer’s letter', { exact: true });
+      if ((await letter.count()) > 0) await letter.selectOption({ index: 1 });
+      await form.getByLabel('Response', { exact: true }).selectOption({ index: await optionIndex(page, /^Response$/, /Partial/i) });
+      const received = form.getByLabel('Received on');
       if ((await received.inputValue()) === '') await received.fill('2026-10-01');
-      await press(page.getByRole('button', { name: 'Record the response' }));
+      // Every required select the press submits is chosen, or the browser's bubble stops it and the shot would wait in vain.
+      const unchosen = await form.locator('select[required]').evaluateAll((selects) => selects.filter((select) => (select as HTMLSelectElement).value === '').map((select) => select.getAttribute('name') ?? '?'));
+      if (unchosen.length > 0) throw new Error(`a required select is still unchosen: ${unchosen.join(', ')}`);
+      await press(form.getByRole('button', { name: 'Record the response' }));
       await refused(page);
     },
   });
   await notice(browser, { key: 'p.submissions', route: sb, persona: 'packet-approver', path: () => `${subPath()}?notice=logged`, name: 'notice' });
+  // The payer's letter uploaded inside the form (PR #85; design 6.2): last among PACKETS' submissions shots, since the letter
+  // stays in intake (no worker runs in the tour), and no later shot lists PACKETS' uploads. Each width uploads its own
+  // bytes (a comment after %%EOF), so the second is not a duplicate of the first.
+  if (LETTER_IN_RESPONSE) {
+    await cap(browser, {
+      key: 'p.submissions',
+      route: sb,
+      persona: 'packet-approver',
+      path: subPath,
+      state: 'interaction:letter-scanning',
+      note: 'A SYNTHETIC payer letter uploaded inside Log a payer response after Partially accepted was chosen and a note typed; no worker runs in the tour, so it stays in intake and the form says it is being scanned.',
+      act: async (page, width) => {
+        const form = page.getByRole('region', { name: 'Log a payer response' });
+        await form.getByLabel('Response', { exact: true }).selectOption({ index: await optionIndex(page, /^Response$/, /Partial/i) });
+        await form.getByLabel('Notes (kept encrypted)').fill('SYNTHETIC: the payer accepts part of the amount disputed.');
+        const pdf = Buffer.concat([readFileSync(`${SCREENS}/fixtures/synthetic/CON-01/version-1.pdf`), Buffer.from(`\n% SYNTHETIC tour letter ${String(width)}\n`)]);
+        await form.getByLabel('Choose a file to upload').setInputFiles({ name: 'SYNTHETIC-letter.pdf', mimeType: 'application/pdf', buffer: pdf });
+        await expect(form.locator('[data-letter-status="scanning"]')).toBeVisible({ timeout: 30_000 });
+      },
+    });
+    notReached('p.submissions', 'letter-chosen', sb, 'a letter scanned clean needs the worker, which the tour does not run; e2e/packets.spec.ts asserts it');
+    notReached('p.submissions', 'no-letter', sb, 'a submission with no letter on file is e2e/packets.spec.ts’s journey, before its upload (not in the populate set)');
+  } else {
+    for (const id of ['p.submissions.letter-scanning.1280', 'p.submissions.letter-scanning.390', 'p.submissions.letter-scanning.1280-dark']) {
+      skip(id, sb, 'not at this ref: Log a payer response takes no upload before PR #85 (co-001/ux-payer-response); the letter is uploaded on Uploads or Contracts');
+    }
+  }
   await cap(browser, { key: 'p.submissions', route: sb, persona: 'packet-deadline-approver', path: () => DL(`/cases/${need('deadlinesExportedCase')}/submissions`), state: 'interaction:attestation-waiting', note: 'PACKET DEADLINES: waiting for the reviewer’s attestation of the export.' });
 
   // Packet by reference
