@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 
 import type { ResponseDocument, ResponseLetters } from '../../lib/packets/submissions';
+import type { UploadGate } from '../../lib/routes/uploads';
 import { type Receipt, formatBytes } from '../../lib/uploads/receipt-labels';
 import { SelectField } from '../field';
 import { utc } from '../format';
@@ -24,7 +25,7 @@ import { type BatchReport, Uploader } from '../uploads/uploader';
  * uploader's controls carry no name, so nothing of the upload is posted with the response.
  */
 
-/** The letters a response may carry (responseDocuments()), in three groups, each newest first: the server's type. */
+/** The letters a response may carry (responseDocuments()), in four groups, each newest first: the server's type. */
 export type { ResponseLetters };
 
 export interface ResponseLetterFieldProps {
@@ -32,7 +33,7 @@ export interface ResponseLetterFieldProps {
   /** The page's CSRF token (pageCsrfToken()), never the form's request key. */
   readonly csrfToken: string;
   readonly roleNames: string;
-  readonly upload: { readonly canUpload: boolean; readonly gate: { readonly open: boolean; readonly reason: string | null }; readonly maxBytes: number };
+  readonly upload: { readonly canUpload: boolean; readonly gate: UploadGate; readonly maxBytes: number };
   readonly letters: ResponseLetters;
 }
 
@@ -46,6 +47,7 @@ type LetterStatus =
   | 'stored-not-chosen'
   | 'duplicate-chosen'
   | 'duplicate-chosen-other-case'
+  | 'duplicate-not-chosen'
   | 'duplicate-unusable'
   | 'held';
 
@@ -55,12 +57,13 @@ const LETTER_STATUS_TEXT: Readonly<Record<Exclude<LetterStatus, 'none'>, string>
   'stored-not-listed': 'The letter is stored, but the list could not show it. Reload the page, then choose it in the list; a reload clears what you typed.',
   chosen: 'The letter you uploaded is chosen.',
   'stored-not-chosen':
-    'The letter you uploaded is stored and marked “uploaded here” in the list. Choose it if it is this response’s letter; until a response names it, it is listed among the contract documents to tag.',
+    'The letter you uploaded is stored and starts “Uploaded here” in the list. Choose it if it is this response’s letter; until a response names it, it is listed among the contract documents to tag.',
   'duplicate-chosen': 'That file was already on file, so the copy on file is chosen.',
   'duplicate-chosen-other-case':
     'That file was already on file as the letter of another case’s response, so that copy is chosen. Check that it answers this case too, or choose another letter.',
+  'duplicate-not-chosen': 'That file was already on file, and the copy on file is in the list. Choose it if it is this response’s letter.',
   'duplicate-unusable':
-    'This file was uploaded before, as another kind of document or as a contract’s document, so it cannot be this response’s letter. Upload the letter saved another way, such as the payer’s portal page saved as a PDF.',
+    'This file was already on file, and that copy cannot be chosen here: it was filed as another kind of document or as a contract’s document, or it is older than the letters listed. Upload the letter saved another way, such as the payer’s portal page saved as a PDF.',
   held: 'The letter was held at intake, so it is not chosen; its line under This batch says why.',
 };
 
@@ -80,10 +83,17 @@ function letterHint(onFile: boolean, canUploadHere: boolean): string {
     : 'No payer’s letter is on file yet, and it cannot be uploaded here now; the note below says why.';
 }
 
-const KIND_TEXT: Readonly<Record<string, string>> = { payer_letter: 'Payer letter', other: 'Other document' };
+/** A letter's kind inside its option, after the time it was uploaded. */
+const KIND_TEXT: Readonly<Record<string, string>> = { payer_letter: 'payer letter', other: 'other document' };
 
+/**
+ * The groups, in order. A letter no response names is listed first if this person uploaded it, apart from one another
+ * person uploaded, which may be another case's letter, about another patient, not recorded yet (Lane A's upload-time
+ * link would tell which case it belongs to).
+ */
 const GROUPS = [
-  ['unused', 'Letters no response names yet'],
+  ['unused', 'Letters you uploaded that no response names yet'],
+  ['unusedByOthers', 'Letters others uploaded that no response names yet'],
   ['thisCase', 'Letters of this case’s earlier responses'],
   ['otherCases', 'Letters of other cases’ responses'],
 ] as const;
@@ -94,19 +104,22 @@ const NO_BATCH: BatchReport = { size: 0, inFlight: false, settled: [] };
 /** The one kind the form uploads: a payer letter, whose bytes intake takes as a PDF only. */
 const LETTER_TYPES = ['application/pdf'];
 const LETTER_KINDS = [{ kind: 'payer_letter', label: 'Payer letter', contentTypes: LETTER_TYPES }];
-const ONE_LETTER = { refusal: 'Choose one PDF: the payer’s letter itself, not a zip or another kind of file.' };
+const ONE_LETTER = {
+  refusal: 'Choose one PDF: the payer’s letter itself, not a zip or another kind of file.',
+  tooLarge: (limit: string) => `The file is larger than ${limit}; save the letter as a smaller PDF.`,
+};
 
 /**
- * One letter's option: its kind, when it was uploaded and its SHA-256's prefix, a run of its own so the line under the
- * select sets it in Plex Mono, as the page sets every SHA-256; the letter this form uploaded ends "(uploaded here)".
+ * One letter's option, what tells it apart first, so a list or a phone's picker that cuts a line keeps it: "Uploaded
+ * here" for the letter this form uploaded, then when it was uploaded, its kind and its SHA-256's prefix, a run of its
+ * own so the line under the select sets it in Plex Mono, as the page sets every SHA-256.
  */
 function letterOption(document: ResponseDocument, uploadedHere: boolean) {
   return {
     value: document.id,
     label: [
-      { text: `${KIND_TEXT[document.kind] ?? document.kind}, uploaded ${utc(document.uploadedAt)}${document.sha256 === null ? '' : ', SHA-256 '}` },
+      { text: `${uploadedHere ? 'Uploaded here, ' : ''}${utc(document.uploadedAt)}: ${KIND_TEXT[document.kind] ?? document.kind}${document.sha256 === null ? '' : ', SHA-256 '}` },
       ...(document.sha256 === null ? [] : [{ text: `${document.sha256.slice(0, 12)}…`, mono: true }]),
-      ...(uploadedHere ? [{ text: ' (uploaded here)' }] : []),
     ],
   };
 }
@@ -154,9 +167,9 @@ function letterStatus(parts: {
     if (group === null) {
       return 'duplicate-unusable';
     }
-    // The person chose another letter while it was scanned: the field chose nothing, and the batch row says it is a duplicate.
+    // The person chose another letter while it was scanned: the field chose nothing, and says where the copy on file is.
     if (chosen !== letter) {
-      return 'none';
+      return 'duplicate-not-chosen';
     }
     return group === 'otherCases' ? 'duplicate-chosen-other-case' : 'duplicate-chosen';
   }
@@ -173,7 +186,7 @@ export function ResponseLetterField({ practiceId, csrfToken, roleNames, upload, 
   const [auto, setAuto] = useState<string | null>(null);
   /** The receipt whose letter the field has already offered to choose, so a person who chooses otherwise is not overruled. */
   const [handled, setHandled] = useState<string | null>(null);
-  /** The letters this form uploaded and the list shows, marked "(uploaded here)". */
+  /** The letters this form uploaded and the list shows, marked "Uploaded here". */
   const [uploadedHere, setUploadedHere] = useState<ReadonlySet<string>>(new Set());
   /** The stored letter the field's own refresh asked the list for: set when that refresh commits. */
   const [refreshedFor, setRefreshedFor] = useState<string | null>(null);

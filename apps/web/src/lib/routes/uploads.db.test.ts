@@ -193,10 +193,10 @@ async function receipt(documentId: string): Promise<Receipt> {
 
 describe('the Uploads page', () => {
   it('opens uploads to the roles that may upload once the BAA is on file, and says why it is closed otherwise (J1)', async () => {
-    expect(ok(await call(uploadsPage, manager, practice()))).toMatchObject({ canUpload: true, gate: { open: true, reason: null }, limits: { maxFiles: 100, maxBytes: 2 * 1024 ** 3 } });
+    expect(ok(await call(uploadsPage, manager, practice()))).toMatchObject({ canUpload: true, gate: { open: true, title: null, reason: null }, limits: { maxFiles: 100, maxBytes: 2 * 1024 ** 3 } });
     expect(ok(await call(uploadsPage, viewer, practice()))).toMatchObject({ canUpload: false, roles: ['viewer'] });
     const closed = ok(await call(uploadsPage, manager, { practiceId: unsigned }));
-    expect(closed.gate).toEqual({ open: false, reason: expect.stringContaining('business associate agreement') });
+    expect(closed.gate).toEqual({ open: false, title: 'Uploads are not open yet', reason: expect.stringContaining('business associate agreement') as string });
   });
 
   it('offers the ERA export formats to choose from, each flagged while its layout is unconfirmed (docs/adr/0060)', async () => {

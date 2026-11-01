@@ -505,7 +505,14 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
         await expect(status).toHaveText('');
         await expect(response).toHaveValue('');
         await expect(response.locator('option:checked')).toHaveText('Choose the payer’s answer');
-        await expect(response).toHaveAccessibleDescription(/Every response is recorded for good\..*Nothing is recovered until it is posted or deposited\./);
+        await expect(response).toHaveAccessibleDescription(
+          /^Every response is recorded for good\. “Accepted”, or “Denied” without reopening the case, marks the case “Resolved”;.*“More information requested”, or a denial that reopens it, marks it “Awaiting response”\..*Nothing is recovered until it is posted or deposited\.$/,
+        );
+        // The date received starts empty too, never today's (S2-N2): the next level's window counts from it, so the person
+        // enters the letter's own date; its words say so.
+        await expect(receivedOn).toHaveValue('');
+        await expect(receivedOn).toHaveAttribute('required', '');
+        await expect(receivedOn).toHaveAccessibleDescription('The date the payer’s letter reached the practice. A denial that reopens the case counts the next dispute level’s window from it.');
         // The letter's part sits under the uploader's level-3 heading, below the card's level 2, and the rest of the form
         // under its own, which Response follows.
         await expect(form.getByRole('heading', { level: 2 })).toHaveText(['Log a payer response']);
@@ -519,7 +526,10 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
         // What the letter says is typed first; the letter, uploaded after, is scanned while it stays.
         await response.selectOption('partial');
         await notes.fill('SYNTHETIC: the payer accepts part');
-        const received = await receivedOn.inputValue();
+        // The letter's date: the submission's own, the earliest the field takes, so a date nobody would default to.
+        const received = (await receivedOn.getAttribute('min')) ?? '';
+        expect(received).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        await receivedOn.fill(received);
         await formKey();
         const pdf = Buffer.from(syntheticPdf([['SYNTHETIC PAYER LETTER - INVENTED TEXT', 'On reconsideration the payer accepts 60.00 of the amount disputed.']]));
         await withWorker(async () => {
@@ -533,8 +543,11 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
         await expect(receivedOn).toHaveValue(received);
         const letterId = await letter.inputValue();
         expect(letterId).toMatch(/^[0-9a-f-]{36}$/);
-        // The letter the form uploaded is listed among the letters no response names yet, and marked.
-        await expect(letter.locator(`optgroup[label="Letters no response names yet"] > option[value="${letterId}"]`)).toHaveText(/, SHA-256 [0-9a-f]{12}… \(uploaded here\)$/);
+        // The letter the form uploaded is listed first among the letters this person uploaded that no response names yet,
+        // and its option starts with what tells it apart, so a phone's picker that cuts the line keeps it (U2-ux85-r2-2).
+        await expect(letter.locator(`optgroup[label="Letters you uploaded that no response names yet"] > option[value="${letterId}"]`)).toHaveText(
+          /^Uploaded here, \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC: payer letter, SHA-256 [0-9a-f]{12}…$/,
+        );
         await formKey();
         await expectAccessible(approver, 'Submissions, the payer’s letter uploaded in the response form');
         await form.getByRole('button', { name: 'Record the response' }).click();
@@ -561,7 +574,7 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
           const chosen = form.locator('[data-slot="chosen-text"]');
           const prefix = chosen.locator('span');
           const choice = (await letter.locator('option:checked').textContent()) ?? '';
-          expect(choice).toMatch(/, SHA-256 [0-9a-f]{12}… \(uploaded here\)$/);
+          expect(choice).toMatch(/^Uploaded here, .+, SHA-256 [0-9a-f]{12}…$/);
           await expect(chosen).toHaveText(choice);
           await expect(prefix).toHaveText(/^[0-9a-f]{12}…$/);
           const face = (element: Locator) => element.evaluate((node) => getComputedStyle(node).fontFamily);
@@ -586,6 +599,8 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
         await expect(approver.locator('[data-notice="recorded"]')).toBeVisible();
         const recorded = approver.getByRole('region', { name: 'Submission log' }).locator('[data-response="partial"]');
         await expect(recorded).toContainText('$60.00 the payer will pay');
+        // Recorded on the date the person entered, never the day it was typed.
+        await expect(recorded).toContainText(`${received}: `);
         // The log names the response's letter: a link whose words say it opens the letter's receipt, and its SHA-256.
         const receipt = recorded.locator(`[data-response-letter="${letterId}"]`);
         await expect(receipt).toHaveText(/^the receipt of the payer letter uploaded \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/);

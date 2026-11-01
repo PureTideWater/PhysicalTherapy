@@ -75,20 +75,52 @@ export const NO_BAA = 'Uploads open once the practice’s business associate agr
 
 export interface UploadGate {
   readonly open: boolean;
+  /** The closed gate's title, true to its state: not open yet (no BAA), paused (suspended) or closed. */
+  readonly title: string | null;
   readonly reason: string | null;
+}
+
+/**
+ * The organization's refusal (organization_run_refusal(), docs/adr/0050), said for an upload: a run's words ("new
+ * runs start again") read wrong on a drop zone. Keyed by the database's exact text; a text not here (the function
+ * changed) is still shown, under "Uploads are paused", so the panel never says less than the database. billing-routes'
+ * db test holds each state to its words here.
+ */
+const SUSPENSION_FOR_UPLOADS: Readonly<Record<string, { readonly title: string; readonly reason: string }>> = {
+  'the organization is suspended: its data stays readable, and new runs start again once a platform administrator reinstates it': {
+    title: 'Uploads are paused',
+    reason: 'The organization is suspended. What is on file stays readable, and uploads open again once a platform administrator reinstates it.',
+  },
+  'the organization is suspended for nonpayment: an invoice has stayed unpaid for 30 days since its payment failed; its data stays readable, and new runs start again once the invoice is paid':
+    {
+      title: 'Uploads are paused',
+      reason:
+        'The organization is suspended for nonpayment: an invoice has stayed unpaid for 30 days since its payment failed. What is on file stays readable, and uploads open again once the invoice is paid.',
+    },
+  'the organization is closed: its data stays readable, and no new run starts': {
+    title: 'Uploads are closed',
+    reason: 'The organization is closed. What is on file stays readable, and nothing new is uploaded.',
+  },
+};
+
+/** The closed gate for an organization's refusal, in an upload's words. */
+export function suspendedGate(refusal: string): UploadGate {
+  const words = SUSPENSION_FOR_UPLOADS[refusal];
+  return words === undefined ? { open: false, title: 'Uploads are paused', reason: `Uploads are paused: ${refusal}.` } : { open: false, ...words };
 }
 
 /**
  * Whether the practice may upload now, and why not: its BAA on file (J1) and its organization not suspended, whose
  * uploads pause with the reason (docs/adr/0050). One gate for every page that offers an upload (Uploads, Contracts,
- * Reconciliation, and the payer's letter on Submissions), so each says so before a file is chosen rather than after.
+ * Reconciliation, and the payer's letter on Submissions), so each says so before a file is chosen rather than after,
+ * under a title true to the state.
  */
 export async function uploadGate(scope: PracticeScope<ScopeClient>, practiceId: string): Promise<UploadGate> {
   if (!(await baaOnFile(scope, practiceId))) {
-    return { open: false, reason: NO_BAA };
+    return { open: false, title: 'Uploads are not open yet', reason: NO_BAA };
   }
   const suspension = await practiceRunRefusal(scope.client, practiceId);
-  return suspension === null ? { open: true, reason: null } : { open: false, reason: `Uploads are paused: ${suspension}.` };
+  return suspension === null ? { open: true, title: null, reason: null } : suspendedGate(suspension);
 }
 
 /** A vendor ERA export format a person may choose for an upload, and whether its layout is still a placeholder. */

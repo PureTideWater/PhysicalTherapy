@@ -12,7 +12,7 @@ import { templateForm, templateOf } from '../reconciliation/template';
 import type { Services } from '../server/services';
 import { CONTENT_TYPES, MAX_FILES_PER_BATCH, MAX_UPLOAD_BYTES } from '../uploads/limits';
 import { opaqueId } from './schemas';
-import { uploadGate } from './uploads';
+import { type UploadGate, uploadGate } from './uploads';
 
 /**
  * The Reconciliation screen and the posting-template mapping (PRD 7, Reconciliation: "ERA to posting
@@ -40,7 +40,7 @@ type Scope = PracticeScope<ScopeClient>;
 
 export interface UploadPanel {
   readonly canUpload: boolean;
-  readonly gate: { readonly open: boolean; readonly reason: string | null };
+  readonly gate: UploadGate;
   readonly limits: { readonly maxFiles: number; readonly maxBytes: number };
   readonly kinds: readonly { readonly kind: 'posting_export' | 'eft_export'; readonly contentTypes: readonly string[] }[];
 }

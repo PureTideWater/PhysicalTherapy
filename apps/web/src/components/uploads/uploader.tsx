@@ -2,7 +2,7 @@
 
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PermissionState } from '@tp/ui';
 import { useRouter } from 'next/navigation';
-import { type DragEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { type DragEvent, type ReactNode, useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import { spreadsheetExportProblem } from '../../lib/uploads/csv-exports';
 import { type Receipt, type ReportFrom, formatBytes, receiptState } from '../../lib/uploads/receipt-labels';
@@ -82,7 +82,8 @@ export interface UploaderProps {
   /** The session's CSRF token, sent with every request this form makes (docs/adr/0053). */
   readonly csrfToken: string;
   readonly roleNames: string;
-  readonly gate: { readonly open: boolean; readonly reason: string | null };
+  /** Whether uploads are open, and when not, a title true to the state and the reason (uploadGate()). */
+  readonly gate: { readonly open: boolean; readonly title: string | null; readonly reason: string | null };
   readonly limits: { readonly maxFiles: number; readonly maxBytes: number; readonly contentTypes: readonly string[] };
   /** The kinds a person chooses between (contracts, exhibits, payer letters); 835s when absent. */
   readonly kinds?: readonly UploadKind[];
@@ -96,9 +97,10 @@ export interface UploaderProps {
   readonly onBatchChange?: BatchReportListener;
   /**
    * One file of the one kind offered, never several, a zip or another type: anything else is refused here with
-   * `refusal`, before any request.
+   * `refusal`, before any request. An empty or oversized file is refused in one file's words, never the batch's "File
+   * 1" or "split it or zip it", which this mode refuses; `tooLarge` names the next step for the caller's kind.
    */
-  readonly single?: { readonly refusal: string };
+  readonly single?: { readonly refusal: string; readonly tooLarge: (limit: string) => string };
   /** The level of the drop zone's heading and the batch's title: 3 inside a form under a card's title (2 by default). */
   readonly headingLevel?: 2 | 3;
   /** The page the receipts are listed on, as their report links name it (?from=), so a refused report comes back there. */
@@ -112,6 +114,12 @@ export interface UploaderProps {
 
 const ZIP_TYPES = new Set(['application/zip', 'application/x-zip-compressed']);
 const CONCURRENT_PUTS = 3;
+/**
+ * The upload's bar, in the brand's tokens (the primary ink on the muted track), never the browser's own green, which
+ * reads as a status colour (done, clean) while the file is still scanned.
+ */
+const PROGRESS_CLASSES =
+  'h-2 w-40 appearance-none overflow-hidden rounded-full bg-muted accent-primary [&::-webkit-progress-bar]:bg-muted [&::-webkit-progress-value]:bg-primary [&::-moz-progress-bar]:bg-primary';
 /** CardTitle's classes, for the batch's title at level 3 (CardTitle renders an <h2> only). */
 const CARD_TITLE_CLASSES = 'text-lg font-bold leading-snug tracking-display';
 
@@ -206,6 +214,8 @@ function put(file: File, target: UploadTarget, csrfToken: string, onProgress: (s
 export function Uploader(props: UploaderProps) {
   const { practiceId, canUpload, gate, limits, kinds, csrfToken, onBatchChange, single } = props;
   const Heading = props.headingLevel === 3 ? 'h3' : 'h2';
+  /** The drop zone's heading, which names its region: what it is for on that page, never "Drop zone". */
+  const headingId = useId();
   const router = useRouter();
   const [kind, setKind] = useState<UploadKind>(kinds?.[0] ?? { kind: 'x12_835', label: '835 remittance', contentTypes: limits.contentTypes });
   /** The format chosen for a kind that has formats (an ERA export); none until the person chooses. */
@@ -261,9 +271,9 @@ export function Uploader(props: UploaderProps) {
         // A spreadsheet chosen as a posting, EFT or ERA export: those are read as CSV only (docs/adr/0059 and 0060).
         const spreadsheet = spreadsheetExportProblem(kind.kind, file, index + 1);
         if (file.size === 0) {
-          found.push(`File ${String(index + 1)} is empty.`);
+          found.push(single === undefined ? `File ${String(index + 1)} is empty.` : 'The file is empty.');
         } else if (file.size > limits.maxBytes) {
-          found.push(`File ${String(index + 1)} is larger than ${formatBytes(limits.maxBytes)}; split it or zip it.`);
+          found.push(single === undefined ? `File ${String(index + 1)} is larger than ${formatBytes(limits.maxBytes)}; split it or zip it.` : single.tooLarge(formatBytes(limits.maxBytes)));
         } else if (spreadsheet !== null) {
           found.push(spreadsheet);
         }
@@ -386,12 +396,12 @@ export function Uploader(props: UploaderProps) {
         <PermissionState role={props.roleNames} cannot="upload files" nextStep={props.uploaders ?? 'Billing managers, analysts and firm principals upload; you can read the receipts below.'} />
       ) : !gate.open ? (
         <Alert data-state="disabled" role="note">
-          <AlertTitle>Uploads are not open yet</AlertTitle>
+          <AlertTitle>{gate.title ?? 'Uploads are not open yet'}</AlertTitle>
           <AlertDescription>{gate.reason}</AlertDescription>
         </Alert>
       ) : (
         <section
-          aria-label="Drop zone"
+          aria-labelledby={headingId}
           onDragOver={(event) => {
             event.preventDefault();
             setDragging(true);
@@ -400,9 +410,9 @@ export function Uploader(props: UploaderProps) {
             setDragging(false);
           }}
           onDrop={onDrop}
-          className={`flex flex-col items-start gap-3 rounded-xl border-2 border-dashed p-8 ${dragging ? 'border-primary bg-accent' : ''}`}
+          className={`flex flex-col items-start gap-3 rounded-xl border-2 border-dashed p-4 sm:p-8 ${dragging ? 'border-primary bg-accent' : ''}`}
         >
-          <Heading className="text-base font-semibold">{props.heading ?? 'Drop 835 files here'}</Heading>
+          <Heading id={headingId} className="text-base font-semibold">{props.heading ?? 'Drop 835 files here'}</Heading>
           <p className="max-w-prose text-sm text-muted-foreground">
             {props.description ?? `Single files, a batch of up to ${String(limits.maxFiles)}, or a zip of them, up to ${formatBytes(limits.maxBytes)} each.`}{' '}
             {single === undefined ? 'Each file is' : 'The file is'} scanned for malware before anything reads it.
@@ -540,7 +550,7 @@ export function Uploader(props: UploaderProps) {
                     ) : (
                       <>
                         <Badge variant="secondary">{item.phase === 'uploading' ? `Uploading ${String(Math.round(item.progress * 100))}%` : item.phase === 'waiting' ? 'Waiting' : 'Received'}</Badge>
-                        <progress className="h-2 w-40" max={1} value={item.progress} aria-label="Upload progress" />
+                        <progress className={PROGRESS_CLASSES} max={1} value={item.progress} aria-label="Upload progress" />
                       </>
                     )}
                   </li>

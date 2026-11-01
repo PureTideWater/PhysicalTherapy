@@ -92,8 +92,8 @@ const control: HarnessControl = {
   refreshes: 0,
   refreshRenders: [],
   render: renderKeys,
-  letters: { unused: [], thisCase: [], otherCases: [] },
-  upload: { canUpload: true, gate: { open: true, reason: null }, maxBytes: 2 * 1024 ** 3 },
+  letters: { unused: [], unusedByOthers: [], thisCase: [], otherCases: [] },
+  upload: { canUpload: true, gate: { open: true, title: null, reason: null }, maxBytes: 2 * 1024 ** 3 },
   holdRefreshes: false,
   failRefreshes: false,
   releaseRefreshes: () => {

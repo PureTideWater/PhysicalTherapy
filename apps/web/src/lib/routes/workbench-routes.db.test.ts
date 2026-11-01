@@ -45,7 +45,8 @@ import { listContractDocuments } from '../contracts/contract-queries';
 import { EXPORT_REFUSAL_TEXT } from '../packets/export-attempts';
 import { PACKET_CHECKLIST } from '../packets/review';
 import { practiceHome } from './practice';
-import { logSubmissionAction, recordResponseAction, submissionsPage } from './submissions';
+import { RECEIVED_ON_EMPTY, logSubmissionAction, recordResponseAction, submissionsPage } from './submissions';
+import { RESPONSE_LETTERS_LISTED } from '../packets/submissions';
 import { casePage, casesPage, writeOffLineAction } from './triage';
 import { addNoteAction, assignCaseAction, openCaseAction, setMaterialityAction } from './workbench';
 import { csrfTokenFor } from '../http/csrf';
@@ -70,6 +71,8 @@ let queue: MemoryQueue;
 const documentsDir = mkdtempSync(path.join(tmpdir(), 'tp-workbench-routes-'));
 const documents = new DocumentStore(new LocalSealedBytes(documentsDir));
 const today = () => new Date().toISOString().slice(0, 10);
+/** The calendar date (UTC) this many days from today. */
+const daysFromToday = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 const addDays = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 const CAS08_NARRATIVE = readFileSync(fileURLToPath(new URL('../../../../../fixtures/synthetic/CAS-08/narrative-draft.txt', import.meta.url)), 'utf8').trim();
 const FIXED = { schedule: [{ code: '97110', amountCents: '5000' }], effectiveFrom: '2026-01-01', disputeWindowDays: 3650 } as const;
@@ -230,30 +233,39 @@ async function specialistOf(target: Practice): Promise<string> {
 }
 
 /**
- * A document row of the practice as intake leaves it, uploaded by its manager: a clean, stored, top-level payer letter
+ * A document row of the practice as intake leaves it, uploaded by its manager unless told otherwise: a clean, stored, top-level payer letter
  * unless told otherwise. Only the row: nothing here reads a document's bytes.
  */
 async function documentOf(
   target: Practice,
-  fields: { readonly kind?: string; readonly scan?: 'pending' | 'clean'; readonly status?: string; readonly contentType?: string; readonly parentId?: string } = {},
+  fields: {
+    readonly kind?: string;
+    readonly scan?: 'pending' | 'clean';
+    readonly status?: string;
+    readonly contentType?: string;
+    readonly parentId?: string;
+    readonly uploadedBy?: string;
+    readonly createdAt?: Date;
+  } = {},
 ): Promise<string> {
   const id = randomUUID();
   const scan = fields.scan ?? 'clean';
   await asOwner(w.owner, [target.practiceId], () =>
     w.owner.query(
-      `INSERT INTO source_document (id, practice_id, kind, sha256, size_bytes, content_type, uploaded_by, scan_status, scan_at, status, parent_document_id)
-       VALUES ($1, $2, $3, $4, 100, $5, $6, $7, $8, $9, $10)`,
+      `INSERT INTO source_document (id, practice_id, kind, sha256, size_bytes, content_type, uploaded_by, scan_status, scan_at, status, parent_document_id, created_at)
+       VALUES ($1, $2, $3, $4, 100, $5, $6, $7, $8, $9, $10, coalesce($11::timestamptz, now()))`,
       [
         id,
         target.practiceId,
         fields.kind ?? 'payer_letter',
         createHash('sha256').update(`document ${id}`).digest('hex'),
         fields.contentType ?? 'application/pdf',
-        target.manager,
+        fields.uploadedBy ?? target.manager,
         scan,
         scan === 'pending' ? null : new Date(),
         fields.status ?? 'stored',
         fields.parentId ?? null,
+        fields.createdAt ?? null,
       ],
     ),
   );
@@ -856,6 +868,67 @@ describe('submissions and responses (CAS-14, J10)', () => {
     expect(page.submissions.map((item) => [item.submissionId, item.channel, item.responses])).toEqual([[submissionId, 'fax', []]]);
     expect(page.letters).toMatchObject({ unused: [{ id: letterId }], thisCase: [], otherCases: [] });
     expect(ok(await call(casePage, practice.manager, { ...P, caseId })).case.state).toBe('submitted');
+  });
+
+  it('refuses a response with no date received on that field, records the date entered, and counts the next window from it (CAS-46, S2-N2)', async () => {
+    const { practice, caseId, submissionId, letterId } = await submittedCase('SUBMISSIONS RECEIVED ON');
+    const P = { practiceId: practice.practiceId };
+    const response = (input: Record<string, unknown>) => call(recordResponseAction, practice.manager, P, { caseId, submissionId, documentId: letterId, kind: 'denied', denialCategory: 'bundling', ...input });
+    // The field starts empty on the form, so no date nobody chose is recorded: empty or absent, it is refused on its
+    // field with what to enter, as the other choices are.
+    const EMPTY = { status: 'invalid', issues: [{ field: 'receivedOn', message: RECEIVED_ON_EMPTY }] };
+    expect(await response({ receivedOn: '' })).toEqual(EMPTY);
+    expect(await response({ receivedOn: '  ' })).toEqual(EMPTY);
+    expect(await response({})).toEqual(EMPTY);
+    expect(await response({ receivedOn: '2026-13' })).toEqual({ status: 'invalid', issues: [{ field: 'receivedOn', message: 'a date, YYYY-MM-DD' }] });
+    expect(ok(await call(submissionsPage, practice.manager, { ...P, caseId })).submissions[0]?.responses).toEqual([]);
+
+    // The contract's first appeal takes 60 days, and the submission went out ten days ago (both set as only a superuser
+    // with triggers off can): a letter received six days ago reopens the case until 60 days after that date, not today.
+    const { rows } = await asOwner(w.owner, [practice.practiceId], () =>
+      w.owner.query<{ version: string }>(`SELECT pattern_key ->> 'contract_version_id' AS version FROM "case" WHERE id = $1`, [caseId]),
+    );
+    await superuser(`UPDATE contract_version SET appeal_levels = '[{"level": 1, "days": 60}]' WHERE id = $1`, [rows[0]?.version]);
+    await superuser('UPDATE submission SET submitted_on = $2::date WHERE id = $1', [submissionId, daysFromToday(-10)]);
+    const received = daysFromToday(-6);
+    ok(await response({ receivedOn: received, reopensCase: 'on' }));
+    const page = ok(await call(submissionsPage, practice.manager, { ...P, caseId }));
+    expect(page.submissions[0]?.responses.map((answer) => [answer.kind, answer.receivedOn, answer.reopensCase, answer.nextWindowEndsOn])).toEqual([['denied', received, true, daysFromToday(54)]]);
+    // A denial that reopens the case keeps it awaiting a response, as the words under Response say (S2-N1).
+    expect(page.case.state).toBe('awaiting_response');
+  });
+
+  it('resolves the case on a denial that does not reopen it, as the words under Response say (S2-N1)', async () => {
+    const { practice, caseId, submissionId, letterId } = await submittedCase('SUBMISSIONS DENIED RESOLVES');
+    const P = { practiceId: practice.practiceId };
+    ok(await call(recordResponseAction, practice.manager, P, { caseId, submissionId, documentId: letterId, receivedOn: today(), kind: 'denied', denialCategory: 'bundling' }));
+    expect(ok(await call(casePage, practice.manager, { ...P, caseId })).case.state).toBe('resolved');
+  });
+
+  it('lists a letter no response names under this person’s uploads or another person’s, and this case’s letters whole (S2-N3)', async () => {
+    const { practice, caseId, submissionId, letterId } = await submittedCase('SUBMISSIONS LETTERS BY UPLOADER');
+    const P = { practiceId: practice.practiceId };
+    const other = await person(practice, 'billing_manager');
+    // A letter another person uploaded, in another case's form or on Contracts, may be another case's answer about
+    // another patient: it is offered apart from this person's own, and never first.
+    const theirs = await documentOf(practice, { uploadedBy: other });
+    const ids = (documents: readonly { readonly id: string }[]) => documents.map((document) => document.id);
+    const mine = ok(await call(submissionsPage, practice.manager, { ...P, caseId })).letters;
+    expect([ids(mine.unused), ids(mine.unusedByOthers), ids(mine.thisCase), ids(mine.otherCases)]).toEqual([[letterId], [theirs], [], []]);
+    // Read by the other person, the groups swap: "you" is whoever reads the page.
+    const seen = ok(await call(submissionsPage, other, { ...P, caseId })).letters;
+    expect([ids(seen.unused), ids(seen.unusedByOthers)]).toEqual([[theirs], [letterId]]);
+
+    // This case's own letters are listed whole, however many letters no response names (n6): the limit holds the rest.
+    ok(await call(recordResponseAction, practice.manager, P, { caseId, submissionId, documentId: letterId, receivedOn: today(), kind: 'info_requested' }));
+    const later = new Date(Date.now() + 60_000);
+    for (let index = 0; index < RESPONSE_LETTERS_LISTED; index += 1) {
+      await documentOf(practice, { createdAt: later });
+    }
+    const full = ok(await call(submissionsPage, practice.manager, { ...P, caseId })).letters;
+    expect(ids(full.thisCase)).toEqual([letterId]);
+    expect(full.unused.length + full.unusedByOthers.length + full.otherCases.length).toBe(RESPONSE_LETTERS_LISTED);
+    expect(ids(full.unusedByOthers)).toEqual([]);
   });
 
   it('records a response only with a stored letter a response may carry, and keeps that letter apart from the contract documents (CAS-48)', async () => {

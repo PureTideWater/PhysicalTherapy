@@ -98,7 +98,7 @@ export interface ResponseLetterUpload {
   readonly maxBytes: number;
 }
 
-const NO_LETTERS: ResponseLetters = { unused: [], thisCase: [], otherCases: [] };
+const NO_LETTERS: ResponseLetters = { unused: [], unusedByOthers: [], thisCase: [], otherCases: [] };
 
 export const SUBMISSION_NOTICES = ['logged', 'logged_flagged', 'logged_unattested', 'recorded'] as const;
 export type SubmissionNotice = (typeof SUBMISSION_NOTICES)[number];
@@ -231,6 +231,9 @@ const optionalDollars = z.preprocess(
     .optional(),
 );
 
+/** The refusal of a response with no date received: the next level's window counts from it, so none is assumed. */
+export const RECEIVED_ON_EMPTY = 'enter the date the payer’s letter was received';
+
 /**
  * The refusal of a letter a response may not carry: one sentence for every case (another practice's document, one
  * still in intake, a duplicate, held or expanded, a zip's entry, another kind, a contract's source), since the form
@@ -262,7 +265,12 @@ export const recordResponseAction = practiceRoute({
     kind: z.enum(PERSON_RESPONSE_KINDS, 'choose the payer’s answer'),
     amount: optionalDollars,
     documentId: z.uuid('choose the payer’s letter').transform((value) => value.toLowerCase()),
-    receivedOn: isoDate,
+    // Starts empty on the form (docs/adr/0085, D1): an empty date is refused on its field, by what to enter.
+    receivedOn: z
+      .string(RECEIVED_ON_EMPTY)
+      .trim()
+      .regex(/^(\d{4}-\d{2}-\d{2})?$/, 'a date, YYYY-MM-DD')
+      .refine((value) => value !== '', RECEIVED_ON_EMPTY),
     denialCategory: optionalText(z.enum(DENIAL_CATEGORIES)),
     reopensCase: optionalText(z.literal('on')),
     notes: optionalText(z.string().max(2000, 'at most 2000 characters')),

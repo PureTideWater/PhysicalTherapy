@@ -31,7 +31,7 @@ import {
 } from './billing';
 import { practiceHome } from './practice';
 import { pricingRunsPage } from './pricing';
-import { requestUploads, uploadsPage } from './uploads';
+import { requestUploads, suspendedGate, uploadsPage } from './uploads';
 import { csrfTokenFor } from '../http/csrf';
 
 /**
@@ -412,7 +412,16 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
 
     const home = ok(await call(practiceHome, admin, P));
     expect(home.suspension).toMatch(/suspended for nonpayment.*data stays readable/);
-    expect(ok(await call(uploadsPage, admin, P)).gate).toEqual({ open: false, reason: expect.stringMatching(/^Uploads are paused: the organization is suspended for nonpayment/) as string });
+    // Every page that offers an upload says so in an upload's words, under a title true to the state (ux85-1): never
+    // "Uploads are not open yet", and never a run's "new runs start again".
+    const nonpayment = {
+      open: false,
+      title: 'Uploads are paused',
+      reason:
+        'The organization is suspended for nonpayment: an invoice has stayed unpaid for 30 days since its payment failed. What is on file stays readable, and uploads open again once the invoice is paid.',
+    };
+    // (Contracts and Reconciliation read the same uploadGate(); their own suites hold their panels to it.)
+    expect(ok(await call(uploadsPage, admin, P)).gate).toEqual(nonpayment);
     expect((await call(pricingRunsPage, admin, P)).status).toBe('ok');
     // The billing page dates the suspension from billing and names the invoice holding it (BIL-05).
     const billingPage = ok(await call(organizationBillingPage, admin, { organizationId: world.organizationId }));
@@ -504,6 +513,13 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
       reason: expect.stringMatching(/^the organization is suspended: its data stays readable/) as string,
     });
     expect((await call(pricingRunsPage, world.adminUserId, P)).status).toBe('ok');
+    // Its upload panels say uploads are paused, in an upload's words (ux85-1).
+    const heldGate = {
+      open: false,
+      title: 'Uploads are paused',
+      reason: 'The organization is suspended. What is on file stays readable, and uploads open again once a platform administrator reinstates it.',
+    };
+    expect(ok(await call(uploadsPage, world.adminUserId, P)).gate).toEqual(heldGate);
 
     // Its billing page never reads "In good standing": "Suspended by PaidWhole", the notice, the ticket's link and the
     // note that a plan or payment method does not reinstate it (BIL-05, BIL-06).
@@ -557,6 +573,14 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
     const organizationId = world.organizationId;
     ok(await call(simulatedPaymentMethodAction, world.adminUserId, { organizationId }, GOOD_CARD));
     await owner.query("UPDATE organization SET status = 'closed' WHERE id = $1", [organizationId]);
+    // A closed organization's upload panel says uploads are closed, not paused (ux85-1).
+    expect(ok(await call(uploadsPage, world.adminUserId, { practiceId: world.practiceId })).gate).toEqual({
+      open: false,
+      title: 'Uploads are closed',
+      reason: 'The organization is closed. What is on file stays readable, and nothing new is uploaded.',
+    });
+    // A refusal the upload words do not know yet (the database's function changed) is still shown whole, under "paused".
+    expect(suspendedGate('SYNTHETIC a reason not known here')).toEqual({ open: false, title: 'Uploads are paused', reason: 'Uploads are paused: SYNTHETIC a reason not known here.' });
     expect(await call(choosePlanAction, world.adminUserId, { organizationId }, { plan: 'monthly' })).toMatchObject({
       status: 'invalid',
       issues: [{ field: 'plan', message: 'a closed organization takes no new plan' }],

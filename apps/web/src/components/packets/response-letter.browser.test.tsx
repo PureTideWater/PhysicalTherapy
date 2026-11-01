@@ -53,12 +53,13 @@ const STATUS_TEXT = {
   'stored-not-listed': 'The letter is stored, but the list could not show it. Reload the page, then choose it in the list; a reload clears what you typed.',
   chosen: 'The letter you uploaded is chosen.',
   'stored-not-chosen':
-    'The letter you uploaded is stored and marked “uploaded here” in the list. Choose it if it is this response’s letter; until a response names it, it is listed among the contract documents to tag.',
+    'The letter you uploaded is stored and starts “Uploaded here” in the list. Choose it if it is this response’s letter; until a response names it, it is listed among the contract documents to tag.',
   'duplicate-chosen': 'That file was already on file, so the copy on file is chosen.',
   'duplicate-chosen-other-case':
     'That file was already on file as the letter of another case’s response, so that copy is chosen. Check that it answers this case too, or choose another letter.',
+  'duplicate-not-chosen': 'That file was already on file, and the copy on file is in the list. Choose it if it is this response’s letter.',
   'duplicate-unusable':
-    'This file was uploaded before, as another kind of document or as a contract’s document, so it cannot be this response’s letter. Upload the letter saved another way, such as the payer’s portal page saved as a PDF.',
+    'This file was already on file, and that copy cannot be chosen here: it was filed as another kind of document or as a contract’s document, or it is older than the letters listed. Upload the letter saved another way, such as the payer’s portal page saved as a PDF.',
   held: 'The letter was held at intake, so it is not chosen; its line under This batch says why.',
 } as const;
 type Status = keyof typeof STATUS_TEXT;
@@ -72,7 +73,10 @@ function letter(id: string, uploadedAt = '2026-10-27T09:15:00.000Z'): ResponseDo
   return { id, kind: 'payer_letter', uploadedAt, sha256: `${id.slice(-2)}${'0'.repeat(62)}` };
 }
 
-const NONE: ResponseLetters = { unused: [], thisCase: [], otherCases: [] };
+const NONE: ResponseLetters = { unused: [], unusedByOthers: [], thisCase: [], otherCases: [] };
+
+/** The drop zone's region, named by its heading on this form (U2-ux85-r2-6), never "Drop zone". */
+const DROP_ZONE = 'Upload the payer’s letter';
 
 /** The receipt the stand-in receipts route answers for the upload. */
 function receipt(status: string, duplicateOf?: string): Receipt {
@@ -228,7 +232,7 @@ async function drop(page: Page, files: readonly { readonly name: string; readonl
     }
     return transfer;
   }, files);
-  await page.getByRole('region', { name: 'Drop zone' }).dispatchEvent('drop', { dataTransfer });
+  await page.getByRole('region', { name: DROP_ZONE, exact: true }).dispatchEvent('drop', { dataTransfer });
 }
 
 /** The option texts of the select, under each group's label. */
@@ -296,9 +300,9 @@ describe.skipIf(!chromiumInstalled())('the payer’s letter inside “Log a paye
     expect(await statusText(page)).toBe(STATUS_TEXT.chosen);
     expect((await validity(page)).custom).toBe(false);
     expect(await page.$eval(SELECT, (select) => (select as HTMLSelectElement).selectedOptions[0]?.text)).toBe(
-      `Payer letter, uploaded 2026-10-28 14:02 UTC, SHA-256 a10000000000… (uploaded here)`,
+      `Uploaded here, 2026-10-28 14:02 UTC: payer letter, SHA-256 a10000000000…`,
     );
-    expect((await groups(page))[0]?.label).toBe('Letters no response names yet');
+    expect((await groups(page))[0]?.label).toBe('Letters you uploaded that no response names yet');
     expect(await page.inputValue('#response-kind')).toBe('partial');
     expect(await page.inputValue('#response-notes')).toBe('SYNTHETIC: the payer accepts part');
     expect(await page.evaluate(() => document.activeElement?.id)).toBe('response-notes');
@@ -316,8 +320,8 @@ describe.skipIf(!chromiumInstalled())('the payer’s letter inside “Log a paye
     expect(await statusText(page)).toBe(STATUS_TEXT['stored-not-chosen']);
     expect(await page.inputValue(SELECT)).toBe(ON_FILE);
     expect((await groups(page))[0]?.options).toEqual([
-      'Payer letter, uploaded 2026-10-28 14:02 UTC, SHA-256 a10000000000… (uploaded here)',
-      'Payer letter, uploaded 2026-10-27 09:15 UTC, SHA-256 b10000000000…',
+      'Uploaded here, 2026-10-28 14:02 UTC: payer letter, SHA-256 a10000000000…',
+      '2026-10-27 09:15 UTC: payer letter, SHA-256 b10000000000…',
     ]);
     await page.close();
   });
@@ -327,6 +331,8 @@ describe.skipIf(!chromiumInstalled())('the payer’s letter inside “Log a paye
       { letters: { ...NONE, unused: [letter(ON_FILE)] }, status: 'duplicate-chosen', value: ON_FILE },
       { letters: { ...NONE, unused: [letter(THIS_CASE)], otherCases: [letter(ON_FILE)] }, status: 'duplicate-chosen-other-case', value: ON_FILE },
       { letters: { ...NONE, unused: [letter(THIS_CASE)] }, status: 'duplicate-unusable', value: '' },
+      // An original another person uploaded is listed too, apart, and chosen as any other (S2-N3).
+      { letters: { ...NONE, unusedByOthers: [letter(ON_FILE)] }, status: 'duplicate-chosen', value: ON_FILE },
     ];
     for (const { letters, status, value } of cases) {
       const { page, server } = await openForm(letters);
@@ -338,6 +344,38 @@ describe.skipIf(!chromiumInstalled())('the payer’s letter inside “Log a paye
       expect((await validity(page)).custom).toBe(false);
       await page.close();
     }
+  });
+
+  it('CAS-47: a duplicate whose copy is listed, while the person chose another letter, keeps their choice and says where the copy is (n1)', async () => {
+    const { page, server } = await openForm({ ...NONE, unused: [letter(ON_FILE), letter(THIS_CASE)] });
+    await chooseFile(page);
+    await waitForStatus(page, 'scanning');
+    await page.selectOption(SELECT, THIS_CASE);
+    server.receipt = { status: 'duplicate', duplicateOf: ON_FILE };
+    await waitForStatus(page, 'duplicate-not-chosen');
+    expect(await statusText(page)).toBe(STATUS_TEXT['duplicate-not-chosen']);
+    expect(await page.inputValue(SELECT)).toBe(THIS_CASE);
+    await page.close();
+  });
+
+  it('CAS-47: an empty or too large letter is refused in one file’s words, never told to zip what single mode refuses (U2-ux85-r2-3)', async () => {
+    const empty = await openForm();
+    await empty.page.getByLabel('Choose a file to upload').setInputFiles({ name: `${SENTINEL}-empty.pdf`, mimeType: 'application/pdf', buffer: Buffer.alloc(0) });
+    const emptyRefusal = empty.page.getByRole('alert').filter({ hasText: 'Nothing was uploaded' });
+    await emptyRefusal.waitFor();
+    expect(await emptyRefusal.textContent()).toContain('The file is empty.');
+    expect(await emptyRefusal.textContent()).not.toContain('File 1');
+    expect(empty.server.sent.filter((request) => request.url.includes('/uploads/'))).toEqual([]);
+    await empty.page.close();
+
+    const large = await openForm(NONE, { maxBytes: 10 });
+    await chooseFile(large.page);
+    const largeRefusal = large.page.getByRole('alert').filter({ hasText: 'Nothing was uploaded' });
+    await largeRefusal.waitFor();
+    expect(await largeRefusal.textContent()).toContain('The file is larger than 10 bytes; save the letter as a smaller PDF.');
+    expect(await largeRefusal.textContent()).not.toMatch(/zip|File 1/);
+    expect(large.server.sent.filter((request) => request.url.includes('/uploads/'))).toEqual([]);
+    await large.page.close();
   });
 
   it('CAS-47: a letter held at intake is not chosen, and its line under This batch says why', async () => {
@@ -527,7 +565,8 @@ describe.skipIf(!chromiumInstalled())('the payer’s letter inside “Log a paye
     expect(await input.getAttribute('multiple')).toBeNull();
     expect(await input.getAttribute('accept')).toBe('application/pdf');
     expect(await page.getByRole('button', { name: 'Choose a file', exact: true }).count()).toBe(1);
-    expect(await page.getByRole('region', { name: 'Drop zone' }).locator('p').first().textContent()).toBe('One PDF, up to 2.0 GiB. The file is scanned for malware before anything reads it.');
+    expect(await page.getByRole('region', { name: DROP_ZONE, exact: true }).locator('p').first().textContent()).toBe('One PDF, up to 2.0 GiB. The file is scanned for malware before anything reads it.');
+    expect(await page.getByRole('region', { name: 'Drop zone' }).count()).toBe(0);
     expect(await headings(page)).toEqual(['h3 Upload the payer’s letter', 'h3 What the letter says']);
     server.put = 'hold';
     await chooseFile(page);
@@ -582,14 +621,16 @@ describe.skipIf(!chromiumInstalled())('the payer’s letter inside “Log a paye
     await page.close();
   });
 
-  it('CAS-48: the letters are grouped, those no response names first, then this case’s, then other cases’; an empty group is left out', async () => {
-    const { page } = await openForm({ unused: [letter(ON_FILE)], thisCase: [letter(THIS_CASE)], otherCases: [letter(OTHER_CASE)] });
+  it('CAS-48: the letters are grouped, those no response names first (this person’s, then another’s), then this case’s, then other cases’; an empty group is left out', async () => {
+    const { page } = await openForm({ unused: [letter(ON_FILE)], unusedByOthers: [letter(NOT_LISTED)], thisCase: [letter(THIS_CASE)], otherCases: [letter(OTHER_CASE)] });
+    // Each option starts with what tells it apart (the time it was uploaded), so a phone's picker that cuts it keeps that.
     expect(await groups(page)).toEqual([
-      { label: 'Letters no response names yet', options: ['Payer letter, uploaded 2026-10-27 09:15 UTC, SHA-256 b10000000000…'] },
-      { label: 'Letters of this case’s earlier responses', options: ['Payer letter, uploaded 2026-10-27 09:15 UTC, SHA-256 b20000000000…'] },
-      { label: 'Letters of other cases’ responses', options: ['Payer letter, uploaded 2026-10-27 09:15 UTC, SHA-256 b30000000000…'] },
+      { label: 'Letters you uploaded that no response names yet', options: ['2026-10-27 09:15 UTC: payer letter, SHA-256 b10000000000…'] },
+      { label: 'Letters others uploaded that no response names yet', options: ['2026-10-27 09:15 UTC: payer letter, SHA-256 b40000000000…'] },
+      { label: 'Letters of this case’s earlier responses', options: ['2026-10-27 09:15 UTC: payer letter, SHA-256 b20000000000…'] },
+      { label: 'Letters of other cases’ responses', options: ['2026-10-27 09:15 UTC: payer letter, SHA-256 b30000000000…'] },
     ]);
-    await serve(page, { unused: [], thisCase: [letter(THIS_CASE)], otherCases: [letter(NOT_LISTED)] });
+    await serve(page, { unused: [], unusedByOthers: [], thisCase: [letter(THIS_CASE)], otherCases: [letter(NOT_LISTED)] });
     expect((await groups(page)).map((group) => group.label)).toEqual(['Letters of this case’s earlier responses', 'Letters of other cases’ responses']);
     await page.close();
   });
@@ -600,14 +641,16 @@ describe.skipIf(!chromiumInstalled())('the payer’s letter inside “Log a paye
     await viewer.page.getByText('Not available to your role').waitFor();
     expect(await viewer.page.getByText('As Viewer, you cannot upload files.').count()).toBe(1);
     expect(await viewer.page.getByText('Billing managers, analysts and firm principals upload files; a letter already on file can still be chosen above.').count()).toBe(1);
-    expect(await viewer.page.getByRole('region', { name: 'Drop zone' }).count()).toBe(0);
+    expect(await viewer.page.getByRole('region', { name: DROP_ZONE, exact: true }).count()).toBe(0);
     await viewer.page.close();
 
-    const paused = await openForm(NONE, { gate: { open: false, reason: 'Uploads are paused: SYNTHETIC reason.' } });
+    // A suspended organization's panel is titled for its state, never "Uploads are not open yet" (ux85-1).
+    const paused = await openForm(NONE, { gate: { open: false, title: 'Uploads are paused', reason: 'SYNTHETIC: the organization is suspended.' } });
     expect(await paused.page.textContent('#response-document-hint')).toBe('No payer’s letter is on file yet, and it cannot be uploaded here now; the note below says why.');
-    await paused.page.getByText('Uploads are not open yet').waitFor();
-    expect(await paused.page.getByText('Uploads are paused: SYNTHETIC reason.').count()).toBe(1);
-    expect(await paused.page.getByRole('region', { name: 'Drop zone' }).count()).toBe(0);
+    await paused.page.getByText('Uploads are paused', { exact: true }).waitFor();
+    expect(await paused.page.getByText('Uploads are not open yet').count()).toBe(0);
+    expect(await paused.page.getByText('SYNTHETIC: the organization is suspended.').count()).toBe(1);
+    expect(await paused.page.getByRole('region', { name: DROP_ZONE, exact: true }).count()).toBe(0);
     await paused.page.close();
 
     const empty = await openForm();

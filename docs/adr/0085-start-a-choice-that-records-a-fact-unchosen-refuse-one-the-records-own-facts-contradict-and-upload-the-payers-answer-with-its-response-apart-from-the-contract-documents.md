@@ -56,8 +56,13 @@ sniffs a document, so a clean document could still be mid-intake, a duplicate, a
   selection, a form's reset, the render before hydration and the post without JavaScript all fall past a disabled
   option to the first real one. A controlled select outside any form, which no reset or post reaches and which holds
   its own action until it is chosen, may lead with a disabled placeholder, as #75's uploader kind select does ("Choose
-  the kind of document"). Either way it starts unchosen. "Received on" stays prefilled with today: a date the person
-  sees and can change, bounded by the submission and today.
+  the kind of document"). Either way it starts unchosen. "Received on" starts empty too, with `required`, bounded by
+  the submission and today: a reopening denial counts the next dispute level's window and the case's deadline from it,
+  so today's date is never recorded for a letter that came earlier. The words under it say so, and the route refuses
+  an empty date on its field ("enter the date the payer’s letter was received").
+  The words under Response say what each answer does to the case, as `case_rules()` derives it: "Accepted", or
+  "Denied" without reopening the case, marks it "Resolved"; "Partially accepted", "Partially resolved"; "More
+  information requested", or a denial that reopens it, "Awaiting response"; unless its lines already decide it.
 - **D2. Offer only what the record's facts allow; refuse what they contradict, on its field.** Where stored facts
   decide whether a choice can be true, one function decides it for the page (which leaves the choice out, and says
   why under the field) and for the handler (which refuses it on that field, in the same transaction that writes,
@@ -73,9 +78,17 @@ sniffs a document, so a clean document could still be mid-intake, a duplicate, a
   payer letter (kind `payer_letter`, PDF), first in the form, and the form shows whether or not a letter is on file.
   The form chooses only the letter it uploaded itself, once stored, never the newest and never over the person's own
   choice, and never moves focus to do it. A press while the letter uploads or is scanned sends nothing. The letters
-  offered are grouped, so that another case's letter is a deliberate choice: those no response names yet, then those
-  of this case's earlier responses, then those of other cases' responses (a payer may answer two cases in one letter,
-  so the route still records one). An uploader inside a form:
+  offered are grouped, so that another case's letter is a deliberate choice: those no response names yet that this
+  person uploaded, then those another person uploaded (which may be another case's answer, uploaded in its form and
+  not recorded yet), then those of this case's earlier responses, listed whole, then those of other cases' responses
+  (a payer may answer two cases in one letter, so the route still records one). Each option starts with what tells it
+  apart, so a phone's picker that cuts the line keeps it: "Uploaded here" for the letter the form uploaded, then the
+  time it was uploaded, its kind and its SHA-256's prefix. Where this person cannot upload, or the practice's uploads
+  are closed, the card says to choose a letter on file and the uploader's panel says why, under a title true to the
+  state ("Uploads are not open yet" before the BAA, "Uploads are paused" while the organization is suspended,
+  "Uploads are closed" once it is closed), in an upload's words, on every page that offers an upload. One letter's
+  refusals are in its own words ("The file is empty."; "save the letter as a smaller PDF"), never a batch's "split it
+  or zip it". An uploader inside a form:
   - renders only `type="button"` buttons and unnamed controls, so the server action never receives the file or its
     name;
   - uses its own request keys and the page's CSRF token, never the form's key;
@@ -87,7 +100,7 @@ sniffs a document, so a clean document could still be mid-intake, a duplicate, a
   letter or other document, scanned clean and stored, that no contract version names (`RESPONSE_DOCUMENT`,
   `apps/web/src/lib/packets/submissions.ts`); every other document is refused on the letter with one sentence, which
   tells a crafted post nothing about a document it cannot see. A letter a response names leaves the contract lists
-  ("Documents to tag", "Documents awaiting abstraction", the console's count; `NOT_A_RESPONSE_LETTER`,
+  ("Documents to tag", "Documents awaiting abstraction"; `NOT_A_RESPONSE_LETTER`,
   `apps/web/src/lib/contracts/contract-queries.ts`) and is refused as a contract's source by every handler that takes
   one (the two tag routes, the amendment and the correction; `refuseResponseLetter`,
   `apps/web/src/lib/contracts/tagging.ts`); a payer's terms letter, which no response names, stays abstractable. Each
@@ -149,8 +162,12 @@ sniffs a document, so a clean document could still be mid-intake, a duplicate, a
   it is listed in "Documents to tag" and "Documents awaiting abstraction", can be tagged, and its pages can then be read
   by those roles, as any payer letter uploaded on Contracts can today. This residual stays open until Lane A's
   upload-time link, a column on `source_document` written at upload (a security item).
-- Costs: one more choice in each form; up to 50 audited reads of the letters per view of the submissions page by a
-  person who logs responses; until Lane A's migration the console's count of documents awaiting abstraction includes
+- For the same reason, a letter uploaded in one case's form and not yet recorded is offered on every other case's
+  form, among the letters no response names. Until the upload-time link says which case it belongs to, the form lists
+  it apart when another person uploaded it ("Letters others uploaded that no response names yet", after the person's
+  own), so another patient's letter is never the first choice; the same link closes this.
+- Costs: one more choice and one more date in each form; up to 50 audited reads of the letters per view of the
+  submissions page by a person who logs responses, plus this case's own letters, listed whole; until Lane A's migration the console's count of documents awaiting abstraction includes
   response letters; a letter already a contract's document cannot be a response's.
 - Lane A's half, each a migration: `case_line_rules()` refuses a person's "Window passed" while the window is open or
   unknown; `console_contract_queue()` leaves out the letters a response names, with an index on `payer_response

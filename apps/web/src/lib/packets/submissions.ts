@@ -14,6 +14,7 @@ import {
 } from '@tp/worker/packets';
 
 import { peopleEmails } from '../cases/people';
+import { DOCUMENT_USE_LOCK } from '../contracts/tagging';
 import { type PricingNowView, pricingNow } from './pricing';
 import { type FollowUpState, followUpState } from './view';
 
@@ -344,19 +345,23 @@ export interface ResponseDocument {
 }
 
 /**
- * The letters a response may carry, in three groups, each newest first (docs/adr/0085, D3): another case's letter,
- * about another patient, is offered only in its own last group, so choosing it is deliberate.
+ * The letters a response may carry, in four groups, each newest first (docs/adr/0085, D3): a letter another case's
+ * response names is offered only in its own last group, so choosing it is deliberate. A letter no response names yet
+ * may still be another case's, uploaded in that case's form and not recorded yet: nothing records which case it
+ * belongs to until Lane A's upload-time link, so one another person uploaded is offered apart from this person's own.
  */
 export interface ResponseLetters {
-  /** No payer response names them yet. */
+  /** No payer response names them yet, and this person uploaded them. */
   readonly unused: readonly ResponseDocument[];
+  /** No payer response names them yet, and another person uploaded them (on Contracts, or in another case's form). */
+  readonly unusedByOthers: readonly ResponseDocument[];
   /** A response to a submission of this case names them. */
   readonly thisCase: readonly ResponseDocument[];
   /** Only responses of other cases name them. */
   readonly otherCases: readonly ResponseDocument[];
 }
 
-/** How many letters the response form lists at most, over its three groups. */
+/** How many letters the response form lists at most, over its groups other than this case's (listed whole). */
 export const RESPONSE_LETTERS_LISTED = 50;
 
 /**
@@ -368,14 +373,7 @@ export const RESPONSE_LETTERS_LISTED = 50;
 const RESPONSE_DOCUMENT = `d.parent_document_id IS NULL AND d.kind IN ('payer_letter', 'other') AND d.scan_status = 'clean' AND d.status = 'stored'
   AND NOT EXISTS (SELECT 1 FROM contract_version v WHERE v.practice_id = d.practice_id AND d.id = ANY (v.source_document_ids))`;
 
-/**
- * The document's transaction lock, taken first by every handler that makes a document a response's evidence or a
- * contract's source (this one and lib/contracts/tagging.ts's), before its check: the check after it sees the other's
- * commit, so a tag and a response of the same letter cannot both pass.
- */
-const DOCUMENT_USE_LOCK = "SELECT pg_advisory_xact_lock(hashtextextended('document_use:' || $1::text, 0))";
-
-type LetterGroup = 'unused' | 'this_case' | 'other_cases';
+type LetterGroup = 'unused' | 'unused_by_others' | 'this_case' | 'other_cases';
 
 interface LetterRow {
   readonly id: string;
@@ -388,10 +386,10 @@ interface LetterRow {
 const letterOf = (row: LetterRow): ResponseDocument => ({ id: row.id, kind: row.kind, uploadedAt: row.created_at.toISOString(), sha256: row.sha256 });
 
 /**
- * The letters a response to this case may carry (RESPONSE_DOCUMENT), grouped: those no response names first, then
- * those this case's responses name, then those only other cases' responses name (a payer answering two cases in one
- * letter); newest first in each, one limit over all three, so other cases' letters only fill the room left. An
- * audited read.
+ * The letters a response to this case may carry (RESPONSE_DOCUMENT), grouped: those no response names, this person's
+ * uploads first, then another person's; then those this case's responses name; then those only other cases' responses
+ * name (a payer answering two cases in one letter). Newest first in each. This case's own are listed whole (a case has
+ * few responses), and one limit holds the rest, so other cases' letters only fill the room left. An audited read.
  */
 export async function responseDocuments(scope: Scope, input: { readonly practiceId: string; readonly caseId: string; readonly requestId: string }): Promise<ResponseLetters> {
   const rows = await readWithAudit(
@@ -400,26 +398,35 @@ export async function responseDocuments(scope: Scope, input: { readonly practice
     async (client) =>
       (
         await client.query<LetterRow & { letter_group: LetterGroup }>(
-          `SELECT d.id, d.practice_id, d.kind, d.created_at, d.sha256, g.letter_group
-             FROM source_document d
-             CROSS JOIN LATERAL (
-               SELECT CASE
-                        WHEN EXISTS (SELECT 1 FROM payer_response r JOIN submission s ON s.id = r.submission_id AND s.practice_id = r.practice_id
-                                      WHERE r.practice_id = d.practice_id AND r.document_id = d.id AND s.case_id = $2) THEN 'this_case'
-                        WHEN EXISTS (SELECT 1 FROM payer_response r WHERE r.practice_id = d.practice_id AND r.document_id = d.id) THEN 'other_cases'
-                        ELSE 'unused'
-                      END AS letter_group
-             ) g
-            WHERE d.practice_id = $1 AND ${RESPONSE_DOCUMENT}
-            ORDER BY array_position(ARRAY['unused', 'this_case', 'other_cases'], g.letter_group), d.created_at DESC, d.id
-            LIMIT ${String(RESPONSE_LETTERS_LISTED)}`,
+          `WITH letter AS (
+             SELECT d.id, d.practice_id, d.kind, d.created_at, d.sha256, g.letter_group,
+                    array_position(ARRAY['unused', 'unused_by_others', 'this_case', 'other_cases'], g.letter_group) AS group_order
+               FROM source_document d
+               CROSS JOIN LATERAL (
+                 SELECT CASE
+                          WHEN EXISTS (SELECT 1 FROM payer_response r JOIN submission s ON s.id = r.submission_id AND s.practice_id = r.practice_id
+                                        WHERE r.practice_id = d.practice_id AND r.document_id = d.id AND s.case_id = $2) THEN 'this_case'
+                          WHEN EXISTS (SELECT 1 FROM payer_response r WHERE r.practice_id = d.practice_id AND r.document_id = d.id) THEN 'other_cases'
+                          WHEN d.uploaded_by = app_actor_id() THEN 'unused'
+                          ELSE 'unused_by_others'
+                        END AS letter_group
+               ) g
+              WHERE d.practice_id = $1 AND ${RESPONSE_DOCUMENT}
+           ), ranked AS (
+             SELECT letter.*, row_number() OVER (PARTITION BY letter.letter_group = 'this_case' ORDER BY letter.group_order, letter.created_at DESC, letter.id) AS n
+               FROM letter
+           )
+           SELECT id, practice_id, kind, created_at, sha256, letter_group
+             FROM ranked
+            WHERE letter_group = 'this_case' OR n <= ${String(RESPONSE_LETTERS_LISTED)}
+            ORDER BY group_order, created_at DESC, id`,
           [input.practiceId, input.caseId],
         )
       ).rows,
     (row) => ({ objectId: row.id, practiceId: row.practice_id }),
   );
   const of = (group: LetterGroup) => rows.filter((row) => row.letter_group === group).map(letterOf);
-  return { unused: of('unused'), thisCase: of('this_case'), otherCases: of('other_cases') };
+  return { unused: of('unused'), unusedByOthers: of('unused_by_others'), thisCase: of('this_case'), otherCases: of('other_cases') };
 }
 
 /**

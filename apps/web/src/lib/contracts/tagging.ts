@@ -45,7 +45,7 @@ export type TagInput = z.output<typeof tagInput>;
  * its check: the check after it sees the other's commit, so a tag and a response of the same letter cannot both pass.
  * The contracts service's own lock comes after it, and the response takes no other, so the order is the same on both.
  */
-const DOCUMENT_USE_LOCK = "SELECT pg_advisory_xact_lock(hashtextextended('document_use:' || $1::text, 0))";
+export const DOCUMENT_USE_LOCK = "SELECT pg_advisory_xact_lock(hashtextextended('document_use:' || $1::text, 0))";
 
 /** Why a payer's answer is not taken as a contract's document, and what to choose instead. */
 export const RESPONSE_LETTER_NOT_A_SOURCE = 'a payer’s answer to a dispute stays with its case’s response and is not a contract’s document; choose the contract, exhibit or payer’s terms letter instead';

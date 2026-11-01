@@ -13,6 +13,7 @@ import { AppShell, Forbidden } from '../../../../components/shell';
 import { Uploader } from '../../../../components/uploads/uploader';
 import { METHOD_NAMES, VERSION_STATUS_NAMES, windowText } from '../../../../lib/contracts/display';
 import { loadPage } from '../../../../lib/http/next';
+import { formatBytes } from '../../../../lib/uploads/receipt-labels';
 import { RESPONSE_LETTER_ELSEWHERE, contractsPage } from '../../../../lib/routes/contracts';
 import { answerQuestionFormAction, tagDocumentFormAction } from './actions';
 import { pageCsrfToken } from '../../../../lib/http/csrf-page';
@@ -202,7 +203,7 @@ export default async function ContractsPage(props: Props) {
 
       <Card role="region" aria-label="Upload a contract or exhibit">
         <CardHeader>
-          <CardTitle>Upload a contract, exhibit or payer letter</CardTitle>
+          <CardTitle>Upload a contract, exhibit or payer’s terms letter</CardTitle>
           <CardDescription>
             Each file goes through the same scanned intake as an 835. Once it is stored, tag it to its payer below; it then enters the contract specialist’s queue.{' '}
             {RESPONSE_LETTER_ELSEWHERE}
@@ -217,8 +218,8 @@ export default async function ContractsPage(props: Props) {
             gate={upload.gate}
             limits={{ ...upload.limits, contentTypes: upload.kinds[0]?.contentTypes ?? [] }}
             kinds={upload.kinds}
-            heading="Drop contracts, exhibits or payer letters here"
-            description="PDFs (a fee-schedule exhibit may also be a spreadsheet), one at a time or a batch, up to 2 GiB each."
+            heading="Choose contracts, exhibits or payer’s terms letters to upload"
+            description={`PDFs (a fee-schedule exhibit may also be a spreadsheet), one at a time or a batch, up to ${formatBytes(upload.limits.maxBytes)} each.`}
             uploaders="Billing managers, analysts and firm principals upload contracts."
             showReceipts={false}
           />

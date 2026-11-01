@@ -40,12 +40,24 @@ const DENIAL_TEXT: Readonly<Record<string, string>> = {
 const LETTER_KIND_TEXT: Readonly<Record<string, string>> = { payer_letter: 'payer letter', other: 'other document' };
 
 /**
- * What a response records, under the choice of it (docs/adr/0085): every response for good; the case's state from an
- * acceptance unless its lines decide it first; the approval only at the next reconcile; recovery only once posted or
- * deposited.
+ * What a response records, under the choice of it (docs/adr/0085): every response for good; the state each answer gives
+ * the case, as case_rules() derives it (a denial not reopening the case resolves it), unless its lines decide it first;
+ * the approval only at the next reconcile; recovery only once posted or deposited. Options and states are quoted, as
+ * the write-off hint quotes its reason.
  */
 const RESPONSE_HINT =
-  'Every response is recorded for good. Accepted marks the case Resolved and Partially accepted marks it Partially resolved, unless a line has already reached Payer approved. At the next reconcile, the recovery ledger approves up to the amount below on the lines this submission asked for (Payer approved). Nothing is recovered until it is posted or deposited.';
+  'Every response is recorded for good. “Accepted”, or “Denied” without reopening the case, marks the case “Resolved”; “Partially accepted” marks it “Partially resolved”; “More information requested”, or a denial that reopens it, marks it “Awaiting response”. A case its lines already decide keeps their state: a line at “Payer approved” or later, or every line written off. At the next reconcile, the recovery ledger approves up to the amount below on the lines this submission asked for (“Payer approved”). Nothing is recovered until it is posted or deposited.';
+
+/** Under Received on: the date is the letter's, never today's by default, since the next level's window counts from it. */
+const RECEIVED_ON_HINT = 'The date the payer’s letter reached the practice. A denial that reopens the case counts the next dispute level’s window from it.';
+
+/** The response card's words: upload the letter here, or, where this person cannot upload now, choose one on file. */
+function responseCardText(submittedOn: string, canUploadHere: boolean): string {
+  const start = canUploadHere
+    ? 'Start with the payer’s letter: upload it here, or choose one already on file, and fill in what it says while it is scanned.'
+    : 'Choose the payer’s letter already on file, then fill in what it says; the note under Payer’s letter says why nothing can be uploaded here now.';
+  return `To the submission of ${submittedOn}. ${start} A denial with a reason can reopen the case for the next dispute level, within its window.`;
+}
 
 const FOLLOW_UP_TEXT = { due: 'Follow-up due', waiting: 'Awaiting the payer', answered: 'Answered' } as const;
 
@@ -120,7 +132,8 @@ function SubmissionForm({
  * grouped so another case's letter is a deliberate choice. The form shows whether or not a letter is on file, so the
  * page read again after the upload keeps what was typed. The letter's part sits under the uploader's level-3 headings,
  * and "What the letter says" heads the rest. The answer, the channel and the letter start unchosen (D1); the words
- * under the answer say what it records. The log names each response's letter and links its receipt.
+ * under the answer say what it records. "Received on" starts empty too: the next dispute level's window counts from
+ * it, so today's date is never recorded for a letter that came earlier. The log names each response's letter and links its receipt.
  */
 export default async function SubmissionsPage(props: Props) {
   const page = await loadPage(submissionsPage, props);
@@ -290,10 +303,7 @@ export default async function SubmissionsPage(props: Props) {
         <Card role="region" aria-label="Log a payer response">
           <CardHeader>
             <CardTitle>Log a payer response</CardTitle>
-            <CardDescription>
-              To the submission of {latest.submittedOn}. Start with the payer’s letter: upload it here, or choose one already on file, and fill in what it says while it is scanned. A denial with
-              a reason can reopen the case for the next dispute level, within its window.
-            </CardDescription>
+            <CardDescription data-can-upload-here={String(upload.canUpload && upload.gate.open)}>{responseCardText(latest.submittedOn, upload.canUpload && upload.gate.open)}</CardDescription>
           </CardHeader>
           <CardContent>
             {/* Rendered with or without a letter on file, so the page read again after an upload keeps what was typed. */}
@@ -315,7 +325,7 @@ export default async function SubmissionsPage(props: Props) {
                 hint={RESPONSE_HINT}
               />
               <div className="flex flex-wrap gap-3">
-                <Field id="received-on" label="Received on" name="receivedOn" type="date" defaultValue={asOf} min={latest.submittedOn} max={asOf} required />
+                <Field id="received-on" label="Received on" name="receivedOn" type="date" min={latest.submittedOn} max={asOf} required hint={RECEIVED_ON_HINT} />
                 <Field
                   id="amount"
                   label="Additional amount the payer will pay (accepted or partial only, dollars)"
