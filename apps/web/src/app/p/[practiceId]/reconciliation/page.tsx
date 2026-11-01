@@ -7,7 +7,7 @@ import { ActionForm } from '../../../../components/action-form';
 import { UtcTime } from '../../../../components/dates';
 import { CheckboxField, TextAreaField } from '../../../../components/field';
 import { roleNames, utc } from '../../../../components/format';
-import { EVIDENCE_WORDS, KindBadge, LedgerTotals, LineCorrectionWords, correctionWords, entryStage, exportStatusText, levelWords, lineEntriesEmptyText } from '../../../../components/reconciliation/display';
+import { EVIDENCE_WORDS, KindBadge, LedgerTotals, LineCorrectionWords, correctionWords, entryStage, exportStatusText, exportsEmptyNextStep, levelWords, lineEntriesEmptyText } from '../../../../components/reconciliation/display';
 import { UnattestedSubmissions } from '../../../../components/packets/unattested';
 import { Money, Pager } from '../../../../components/remittances/display';
 import { ScrollTable } from '../../../../components/scroll-table';
@@ -311,7 +311,7 @@ export default async function ReconciliationPage(props: Props) {
           <section aria-label="Exports" className="flex flex-col gap-2">
             <h2 className="text-xl font-bold tracking-display">Exports</h2>
             {data.exports.total === 0 ? (
-              <EmptyState title="No export uploaded yet" nextStep="Upload the practice-management system’s payment-posting export and the bank’s EFT export above." />
+              <EmptyState title="No export uploaded yet" nextStep={exportsEmptyNextStep(data.upload)} />
             ) : (
               <ScrollTable label="Exports">
                 <table aria-label="Exports" className="w-full min-w-[36rem] text-sm">

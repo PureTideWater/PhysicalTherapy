@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { type DatabaseClient, databaseClient, readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
+import { type DatabaseClient, databaseClient, loadPracticeCipher, readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
 import { addMembership, asOwner, createOrganization, createUser } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
@@ -903,6 +903,27 @@ describe('submissions and responses (CAS-14, J10)', () => {
     const P = { practiceId: practice.practiceId };
     ok(await call(recordResponseAction, practice.manager, P, { caseId, submissionId, documentId: letterId, receivedOn: today(), kind: 'denied', denialCategory: 'bundling' }));
     expect(ok(await call(casePage, practice.manager, { ...P, caseId })).case.state).toBe('resolved');
+  });
+
+  it('keeps a case awaiting a response on “Accepted” once the ledger moved a line back from Payer approved, as the words under Response say', async () => {
+    const { practice, caseId, submissionId, letterId } = await submittedCase('SUBMISSIONS LEDGER REOPEN');
+    const P = { practiceId: practice.practiceId };
+    // The case's line reached Payer approved and a reversal moved it back to Actionable, as the ledger does with no
+    // person (set_by null); both events are written as only a superuser with triggers off can, standing in for the
+    // reconcile's entries. A move back carries its note, sealed with the practice's key as the reconcile seals it.
+    const note = await withPracticeScope(w.app, { actorId: practice.manager, practiceIds: [practice.practiceId] }, async (scope) =>
+      (await loadPracticeCipher(scope, services.keys, practice.practiceId)).encrypt('line_status.reason', 'SYNTHETIC reversal'),
+    );
+    const { rows } = await asOwner(w.owner, [practice.practiceId], () =>
+      w.owner.query<{ line: string }>('SELECT service_line_id AS line FROM case_line WHERE case_id = $1', [caseId]),
+    );
+    expect(rows.length).toBeGreaterThan(0);
+    for (const { line } of rows) {
+      await superuser("INSERT INTO line_status (practice_id, service_line_id, stage) VALUES ($1, $2, 'payer_approved')", [practice.practiceId, line]);
+      await superuser("INSERT INTO line_status (practice_id, service_line_id, stage, reopened_from, reason) VALUES ($1, $2, 'actionable', 'payer_approved', $3)", [practice.practiceId, line, note]);
+    }
+    ok(await call(recordResponseAction, practice.manager, P, { caseId, submissionId, documentId: letterId, receivedOn: today(), kind: 'accepted', amount: '90.00' }));
+    expect(ok(await call(casePage, practice.manager, { ...P, caseId })).case.state).toBe('awaiting_response');
   });
 
   it('lists a letter no response names under this person’s uploads or another person’s, and this case’s letters whole (S2-N3)', async () => {

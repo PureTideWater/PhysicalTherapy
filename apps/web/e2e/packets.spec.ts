@@ -514,7 +514,7 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
         await expect(response).toHaveValue('');
         await expect(response.locator('option:checked')).toHaveText('Choose the payer’s answer');
         await expect(response).toHaveAccessibleDescription(
-          /^Every response is recorded for good\. “Accepted”, or “Denied” without reopening the case, marks the case “Resolved”;.*“More information requested”, or a denial that reopens it, marks it “Awaiting response”\..*Nothing is recovered until it is posted or deposited\.$/,
+          /^Every response is recorded for good\. “Accepted”, or “Denied” without reopening the case, marks the case “Resolved”;.*“More information requested”, or a denial that reopens it, marks it “Awaiting response”\. If the case’s lines already decide its state, a response leaves it as it is: a line at “Payer approved” or later, a line moved back from it \(the case stays “Awaiting response”\), or every line written off\..*Nothing is recovered until it is posted or deposited\.$/,
         );
         // The date received starts empty too, never today's (S2-N2): the next level's window counts from it, so the person
         // enters the letter's own date; its words say so.
@@ -621,7 +621,15 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
         await approver.goto(`/p/${practiceId}/contracts`);
         await expect(approver.getByRole('region', { name: 'Documents to tag' })).toBeVisible();
         await expect(approver.getByRole('region', { name: 'Documents to tag' }).locator(`[data-document="${letterId}"]`)).toHaveCount(0);
-        const panel = approver.getByRole('region', { name: 'Upload a contract or exhibit' });
+        // The panel takes its name from its title, which names the payer's terms letter it also takes (ux85-5); its drop
+        // zone takes its name from its own heading, one level below, and says the size limit as a size (ux85-7).
+        const panel = approver.getByRole('region', { name: 'Upload a contract, exhibit or payer’s terms letter' });
+        await expect(panel.getByRole('heading', { level: 2 })).toHaveText('Upload a contract, exhibit or payer’s terms letter');
+        const dropZone = panel.getByRole('region', { name: 'Choose contracts, exhibits or payer’s terms letters to upload' });
+        await expect(dropZone.getByRole('heading', { level: 3 })).toHaveText('Choose contracts, exhibits or payer’s terms letters to upload');
+        await expect(dropZone.locator('p').first()).toHaveText(
+          /^PDFs \(a fee-schedule exhibit may also be a spreadsheet\), one at a time or a batch, up to 2\.0 GiB each\. Each file is scanned for malware before anything reads it\.$/,
+        );
         const kind = panel.getByLabel('Kind of document');
         await expect(kind.locator('option[value="payer_letter"]')).toHaveText('Payer’s terms or policy letter');
         // At a phone's width the kind select, holding its longest choice, says it whole, never cut short (ux85-2): the

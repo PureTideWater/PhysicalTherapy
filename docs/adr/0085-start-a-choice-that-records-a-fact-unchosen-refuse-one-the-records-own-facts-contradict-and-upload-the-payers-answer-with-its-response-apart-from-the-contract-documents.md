@@ -62,7 +62,10 @@ sniffs a document, so a clean document could still be mid-intake, a duplicate, a
   an empty date on its field ("enter the date the payer’s letter was received").
   The words under Response say what each answer does to the case, as `case_rules()` derives it: "Accepted", or
   "Denied" without reopening the case, marks it "Resolved"; "Partially accepted", "Partially resolved"; "More
-  information requested", or a denial that reopens it, "Awaiting response"; unless its lines already decide it.
+  information requested", or a denial that reopens it, "Awaiting response". If the case's lines already decide its
+  state, a response leaves it as it is: a line at "Payer approved" or later, a line moved back from it (the case stays
+  "Awaiting response", as `case_rules()` counts a line the ledger or a person reopened from "Payer approved" or
+  "Recovered" before any answer), or every line written off.
 - **D2. Offer only what the record's facts allow; refuse what they contradict, on its field.** Where stored facts
   decide whether a choice can be true, one function decides it for the page (which leaves the choice out, and says
   why under the field) and for the handler (which refuses it on that field, in the same transaction that writes,

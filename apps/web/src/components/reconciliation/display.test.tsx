@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import type { CorrectionView, MatchView } from '../../lib/reconciliation/queries';
-import { LEDGER_TOTALS_HELP, LedgerTotals, LineCorrectionWords, PATIENT_BALANCE_NEXT_STEP, correctionWords, lineEntriesEmptyText, outcomeWords, showsBillableFact } from './display';
+import { LEDGER_TOTALS_HELP, LedgerTotals, LineCorrectionWords, PATIENT_BALANCE_NEXT_STEP, correctionWords, exportsEmptyNextStep, lineEntriesEmptyText, outcomeWords, showsBillableFact } from './display';
 
 /**
  * The Reconciliation screen's words in payment terms (PRD 13, Matching step 1; docs/adr/0067; design review S5): a
@@ -340,5 +340,26 @@ describe('the ledger’s totals', () => {
     );
     expect(shown).toContain(`By stage. ${LEDGER_TOTALS_HELP}`);
     expect(LEDGER_TOTALS_HELP).toBe('Payer approved is net of reversals and of what was taken back before it posted.');
+  });
+});
+
+describe('the Exports empty state’s next step (an empty state’s next step is one the person can take)', () => {
+  const open = { open: true };
+  const closed = { open: false };
+  it('asks for the exports above only while this person can upload and uploads are open', () => {
+    expect(exportsEmptyNextStep({ canUpload: true, gate: open })).toBe('Upload the practice-management system’s payment-posting export and the bank’s EFT export above.');
+  });
+  it('points to the upload panel’s note, never to an upload, while uploads are not open, paused or closed', () => {
+    const step = exportsEmptyNextStep({ canUpload: true, gate: closed });
+    expect(step).toBe('No export can be uploaded now; the note above says why.');
+    // True of a gate that never opened and of a closed organization alike: it promises no reopening.
+    expect(step).not.toMatch(/again|upload the/i);
+  });
+  it('names who uploads to a person who cannot, as the panel above does, whatever the gate', () => {
+    for (const gate of [open, closed]) {
+      const step = exportsEmptyNextStep({ canUpload: false, gate });
+      expect(step).toBe('Billing managers, analysts and firm principals upload the practice-management system’s payment-posting export and the bank’s EFT export.');
+      expect(step).not.toMatch(/above/);
+    }
   });
 });

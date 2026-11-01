@@ -579,8 +579,14 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
       title: 'Uploads are closed',
       reason: 'The organization is closed. What is on file stays readable, and nothing new is uploaded.',
     });
-    // A refusal the upload words do not know yet (the database's function changed) is still shown whole, under "paused".
-    expect(suspendedGate('SYNTHETIC a reason not known here')).toEqual({ open: false, title: 'Uploads are paused', reason: 'Uploads are paused: SYNTHETIC a reason not known here.' });
+    // A refusal the upload words do not know yet (the database's function changed) is still shown whole as the body, as
+    // a sentence, under a title that neither repeats it nor calls it a pause.
+    expect(suspendedGate('the organization is SYNTHETIC: a reason not known here')).toEqual({
+      open: false,
+      title: 'Uploads are stopped',
+      reason: 'The organization is SYNTHETIC: a reason not known here.',
+    });
+    expect(suspendedGate('the organization is SYNTHETIC.').reason).toBe('The organization is SYNTHETIC.');
     expect(await call(choosePlanAction, world.adminUserId, { organizationId }, { plan: 'monthly' })).toMatchObject({
       status: 'invalid',
       issues: [{ field: 'plan', message: 'a closed organization takes no new plan' }],

@@ -83,7 +83,7 @@ export interface UploadGate {
 /**
  * The organization's refusal (organization_run_refusal(), docs/adr/0050), said for an upload: a run's words ("new
  * runs start again") read wrong on a drop zone. Keyed by the database's exact text; a text not here (the function
- * changed) is still shown, under "Uploads are paused", so the panel never says less than the database. billing-routes'
+ * changed) is still shown whole as the body, under "Uploads are stopped", so the panel never says less than the database. billing-routes'
  * db test holds each state to its words here.
  */
 const SUSPENSION_FOR_UPLOADS: Readonly<Record<string, { readonly title: string; readonly reason: string }>> = {
@@ -106,7 +106,13 @@ const SUSPENSION_FOR_UPLOADS: Readonly<Record<string, { readonly title: string; 
 /** The closed gate for an organization's refusal, in an upload's words. */
 export function suspendedGate(refusal: string): UploadGate {
   const words = SUSPENSION_FOR_UPLOADS[refusal];
-  return words === undefined ? { open: false, title: 'Uploads are paused', reason: `Uploads are paused: ${refusal}.` } : { open: false, ...words };
+  if (words !== undefined) {
+    return { open: false, ...words };
+  }
+  // The database's own sentence, whole, under a title true of a pause and a closure alike: the panel never repeats its
+  // title as the body's first words, and never calls a stop it does not know a pause.
+  const sentence = refusal.trim().replace(/[.\s]+$/, '');
+  return { open: false, title: 'Uploads are stopped', reason: `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.` };
 }
 
 /**

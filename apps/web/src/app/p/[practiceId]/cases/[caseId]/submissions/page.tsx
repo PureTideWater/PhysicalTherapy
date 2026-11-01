@@ -47,7 +47,7 @@ const LETTER_KIND_TEXT: Readonly<Record<string, string>> = { payer_letter: 'paye
  * the write-off hint quotes its reason.
  */
 const RESPONSE_HINT =
-  'Every response is recorded for good. “Accepted”, or “Denied” without reopening the case, marks the case “Resolved”; “Partially accepted” marks it “Partially resolved”; “More information requested”, or a denial that reopens it, marks it “Awaiting response”. A case its lines already decide keeps their state: a line at “Payer approved” or later, or every line written off. At the next reconcile, the recovery ledger approves up to the amount below on the lines this submission asked for (“Payer approved”). Nothing is recovered until it is posted or deposited.';
+  'Every response is recorded for good. “Accepted”, or “Denied” without reopening the case, marks the case “Resolved”; “Partially accepted” marks it “Partially resolved”; “More information requested”, or a denial that reopens it, marks it “Awaiting response”. If the case’s lines already decide its state, a response leaves it as it is: a line at “Payer approved” or later, a line moved back from it (the case stays “Awaiting response”), or every line written off. At the next reconcile, the recovery ledger approves up to the amount below on the lines this submission asked for (“Payer approved”). Nothing is recovered until it is posted or deposited.';
 
 /** Under Received on: the date is the letter's, never today's by default, since the next level's window counts from it. */
 const RECEIVED_ON_HINT = 'The date the payer’s letter reached the practice. A denial that reopens the case counts the next dispute level’s window from it.';
