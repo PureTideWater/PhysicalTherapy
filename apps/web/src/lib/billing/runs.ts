@@ -17,6 +17,8 @@ export const RUN_STARTING_ROUTES: ReadonlySet<string> = new Set([
   'practice.cases.packet.export',
   'practice.uploads.request',
   'practice.uploads.retry',
+  'practice.mapping.price_again',
+  'practice.mapping.price_waiting',
 ]);
 
 /** The route was refused: the practice's organization may not start new work now. The reason is the database's. */

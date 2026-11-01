@@ -4,6 +4,7 @@ import Link from 'next/link';
 
 import { ActionForm } from '../../../../components/action-form';
 import { utc, utcSeconds } from '../../../../components/format';
+import { MappedNotPricedAlert, UnmappedPlansAlert } from '../../../../components/mapping/months';
 import { CoverageShares, RERUN_TEXT, RunFailureText, RunStateBadges, RunStatusBadge, runName } from '../../../../components/pricing/display';
 import { Money, Pager } from '../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../components/shell';
@@ -31,7 +32,7 @@ export default async function PricingRunsPage(props: Props) {
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="pricing_runs" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, list, release, readiness, canCreate, options, pinnedElsewhere } = page.data;
+  const { practiceId, list, release, unmappedPlans, mappedNotPriced, canCreate, options, pinnedElsewhere } = page.data;
   const path = `/p/${practiceId}/pricing-runs`;
   const optionLabel = (option: (typeof options)[number]) =>
     `${option.periodFrom} to ${option.periodTo}, release ${String(option.releaseNo)}${option.rerunOfId === null ? '' : ', re-run'}${option.inEffect ? ', in effect' : ''} (complete ${utcSeconds(option.completedAt)})`;
@@ -55,6 +56,8 @@ export default async function PricingRunsPage(props: Props) {
           </AlertDescription>
         </Alert>
       )}
+      <UnmappedPlansAlert practiceId={practiceId} totals={unmappedPlans} canMap={canCreate} place="pricing_runs" />
+      <MappedNotPricedAlert practiceId={practiceId} totals={mappedNotPriced} canMap={canCreate} />
       <Card role="region" aria-label="Create a run">
         <CardHeader>
           <CardTitle>Create a run</CardTitle>
@@ -65,18 +68,6 @@ export default async function PricingRunsPage(props: Props) {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          {readiness.allowed ? null : (
-            <Alert variant="destructive" data-state="refused">
-              <AlertTitle>Pricing is refused until every plan is mapped</AlertTitle>
-              <AlertDescription>
-                {readiness.unmappedPlans} {readiness.unmappedPlans === 1 ? 'plan has' : 'plans have'} no mapping at all; a run over a period with their lines is refused.{' '}
-                <Link className="underline" href={`/p/${practiceId}/mapping`}>
-                  Map them
-                </Link>{' '}
-                first.
-              </AlertDescription>
-            </Alert>
-          )}
           {release === null ? null : canCreate ? (
             <ActionForm action={createPricingRunFormAction} submit="Create the run" className="grid max-w-xl gap-3">
               <FormKeys />

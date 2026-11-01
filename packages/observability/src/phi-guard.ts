@@ -6,7 +6,8 @@
  * - Structure. A URL path segment is an opaque UUID or a lowercase route word; an S3 key segment is a
  *   UUID, a lowercase word, a version (v1) or a short number (a year, month or day folder), with an
  *   optional extension on the last one; a job payload is a flat object whose keys end in _id and hold
- *   UUIDs, plus `period` (YYYY-MM) and `day` (YYYY-MM-DD) for the jobs that name a month or a day.
+ *   UUIDs, plus `period` (YYYY-MM) and `day` (YYYY-MM-DD) for the jobs that name a month or a day, and
+ *   `months` (1 to 240 first days of months, YYYY-MM-01) for a mapping's monitoring job (D20).
  * - Shapes and known values. Anything left after the UUIDs is scanned for a run of nine or more
  *   digits, an SSN, a calendar date, an email address and a phone number, and, when a test hands it
  *   the synthetic record it used, for any of that record's values.
@@ -133,6 +134,16 @@ const PAYLOAD_FIELDS: Readonly<Record<string, RegExp>> = {
   words_version: /^[0-9a-f]{64}$/,
 };
 
+/**
+ * Fixed list formats beside PAYLOAD_FIELDS: an array of a bounded length whose every entry is in one format.
+ * `months` is the service months a mapping's monitoring job may plan (combined audit #32, D20; docs/adr/0075): their
+ * first days, calendar months and never a person's date, so any other day (a date of birth's shape) is refused. Its
+ * bound is the job registry's MONITOR_MONTHS_LIMIT.
+ */
+const PAYLOAD_LISTS: Readonly<Record<string, { readonly entry: RegExp; readonly min: number; readonly max: number }>> = {
+  months: { entry: /^\d{4}-(0[1-9]|1[0-2])-01$/, min: 1, max: 240 },
+};
+
 /** Findings for a job payload. */
 export function jobPayloadPhiFindings(payload: unknown, options: PhiGuardOptions = {}): string[] {
   if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
@@ -141,6 +152,13 @@ export function jobPayloadPhiFindings(payload: unknown, options: PhiGuardOptions
   const findings: string[] = [];
   for (const [key, value] of Object.entries(payload)) {
     const where = `job payload field ${key}`;
+    const list = PAYLOAD_LISTS[key];
+    if (list !== undefined) {
+      if (!Array.isArray(value) || value.length < list.min || value.length > list.max || !value.every((entry) => typeof entry === 'string' && list.entry.test(entry))) {
+        findings.push(`${where} is not in its fixed format`);
+      }
+      continue;
+    }
     const format = PAYLOAD_FIELDS[key];
     if (format !== undefined) {
       if (typeof value !== 'string' || !format.test(value)) {
@@ -149,7 +167,7 @@ export function jobPayloadPhiFindings(payload: unknown, options: PhiGuardOptions
       continue;
     }
     if (!/^[a-z][a-z0-9_]*_id$/.test(key)) {
-      findings.push(`${where} is not an ID field (only *_id, period and day)`);
+      findings.push(`${where} is not an ID field (only *_id, period, day, words_version and months)`);
     }
     if (typeof value !== 'string' || !UUID_ONLY.test(value)) {
       findings.push(`${where} does not hold an opaque UUID`);

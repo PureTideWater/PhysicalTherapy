@@ -63,7 +63,7 @@ describe('s3KeyPhiFindings (SEC-08)', () => {
 });
 
 describe('jobPayloadPhiFindings (SEC-08)', () => {
-  it.each([{ practice_id: PRACTICE, document_id: CLAIM }, { practice_id: PRACTICE, period: '2026-10' }, { day: '2026-10-14' }, { practice_id: PRACTICE, words_version: 'a'.repeat(64) }, {}])('accepts %j', (payload) => {
+  it.each([{ practice_id: PRACTICE, document_id: CLAIM }, { practice_id: PRACTICE, period: '2026-10' }, { day: '2026-10-14' }, { practice_id: PRACTICE, words_version: 'a'.repeat(64) }, { practice_id: PRACTICE, request_id: CLAIM, months: ['2026-02-01', '2026-03-01'] }, {}])('accepts %j', (payload) => {
     expect(jobPayloadPhiFindings(payload, { known: SYNTHETIC })).toEqual([]);
   });
 
@@ -76,6 +76,14 @@ describe('jobPayloadPhiFindings (SEC-08)', () => {
     [{ day: 20261014 }, /day is not in its fixed format/],
     [{ words_version: 'SYNTHETIC TWIN' }, /words_version is not in its fixed format/],
     [{ day: '1950-01-01' }, /synthetic record/],
+    // A mapping's monitoring job names months by their first days only (combined audit #32, D20).
+    [{ months: '2026-02-01' }, /months is not in its fixed format/],
+    [{ months: [] }, /months is not in its fixed format/],
+    [{ months: Array.from({ length: 241 }, () => '2026-02-01') }, /months is not in its fixed format/],
+    [{ months: ['2026-02-01', '2026-02-14'] }, /months is not in its fixed format/],
+    [{ months: ['2026-02'] }, /months is not in its fixed format/],
+    [{ months: [20260201] }, /months is not in its fixed format/],
+    [{ months: ['1950-01-01'] }, /synthetic record/],
     [[PRACTICE], /an object of opaque IDs/],
     ['practice', /an object of opaque IDs/],
     [null, /an object of opaque IDs/],

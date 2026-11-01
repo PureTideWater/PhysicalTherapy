@@ -1,14 +1,17 @@
-import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Label } from '@tp/ui';
+import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Label } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { MappingText, TotalsText } from '../../../../components/contracts/display';
+import { FormKeys } from '../../../../components/form-keys';
+import { MONTHS_NOTICES, MonthsToPriceAgainRegion, MonthsWaitingRegion, unmappedPlansTitle } from '../../../../components/mapping/months';
 import { Money, Pager } from '../../../../components/remittances/display';
 import { ScrollTable } from '../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import type { PlanStatus } from '../../../../lib/contracts/mapping-queries';
 import { loadPage } from '../../../../lib/http/next';
 import { mappingPage } from '../../../../lib/routes/mapping';
+import { priceAgainFormAction, priceWaitingFormAction } from './actions';
 
 export const metadata: Metadata = { title: 'Payer and plan mapping' };
 
@@ -29,22 +32,25 @@ const VIEWS = [
 /**
  * The Payer and plan mapping screen (PRD 7; PRD 5, J6): the dollars waiting on mapping at the top;
  * unmapped payer and plan combinations with their claim counts and dollars; mapped ones with their
- * contract version. Each plan opens to its mappings and the form that maps it. Filters in the URL.
+ * contract version. Each plan opens to its mappings and the form that maps it. Filters in the URL. A plan with no
+ * mapping is never priced while every other plan's lines price (combined audit #32; docs/adr/0075): below the dollars
+ * waiting, the months that wait for other plans' mappings ("Price them now") and the priced months whose lines of
+ * mapped plans are still NO_MAPPING ("Price these months again"), for the whole practice (MAP-07, MAP-08, PRC-31).
  */
 export default async function MappingPage(props: Props) {
   const page = await loadPage(mappingPage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="mapping" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, filters, payers, waiting, list, canMap } = page.data;
+  const { practiceId, filters, payers, waiting, list, unmappedPlans, mappedNotPriced, months, notice, canMap, canWorkCases } = page.data;
   const path = `/p/${practiceId}/mapping`;
   return (
     <AppShell shell={page.shell} section="mapping">
       <div className="flex flex-col gap-1">
         <h1 className="text-[2rem] font-bold leading-display tracking-display">Payer and plan mapping</h1>
         <p className="text-base text-muted-foreground">
-          Every payer and plan the 835s name, and the agreement each is paid under. Pricing never runs on a plan with no mapping; lines whose service date no mapping covers
-          wait here.
+          Every payer and plan the 835s and exports name, and the agreement each is paid under. A plan with no mapping is never priced: its lines are left unpriced while lines of
+          every other plan price as usual, and they wait here with lines whose service date no mapping covers.
         </p>
       </div>
       <Card role="region" aria-label="Dollars waiting on mapping">
@@ -54,9 +60,33 @@ export default async function MappingPage(props: Props) {
           </CardTitle>
           <CardDescription>
             <TotalsText totals={waiting} />. {waiting.lines === 0 ? 'Every line has a mapping on its service date.' : 'Map each plan below to price these lines.'}
+            {unmappedPlans.plans === 0 ? null : (
+              <span data-state="unmapped">
+                {' '}
+                <span className="font-mono tabular-nums">{unmappedPlans.plans}</span>
+                {unmappedPlansTitle(unmappedPlans.plans).slice(String(unmappedPlans.plans).length)}.
+              </span>
+            )}
           </CardDescription>
         </CardHeader>
       </Card>
+      {notice === null ? null : (
+        <Alert data-notice={notice}>
+          <AlertTitle>{MONTHS_NOTICES[notice].title}</AlertTitle>
+          <AlertDescription>{MONTHS_NOTICES[notice].text}</AlertDescription>
+        </Alert>
+      )}
+      <MonthsWaitingRegion practiceId={practiceId} planId={null} waiting={months.waiting} canMap={canMap} action={priceWaitingFormAction} formKeys={() => <FormKeys />} />
+      <MonthsToPriceAgainRegion
+        practiceId={practiceId}
+        planId={null}
+        months={months}
+        mappedNotPriced={mappedNotPriced}
+        canMap={canMap}
+        canWorkCases={canWorkCases}
+        action={priceAgainFormAction}
+        formKeys={() => <FormKeys />}
+      />
       <form method="get" action={path} className="flex flex-wrap items-end gap-3" aria-label="Filter plans">
         <div className="flex flex-col gap-1">
           <Label htmlFor="view">Show</Label>

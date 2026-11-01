@@ -36,7 +36,8 @@ import { MemoryQueue } from './test-support/memory-queue';
  * release 900001. Months that wait on Medicare content PaidWhole has not loaded (test matrix RCC-05; audit #7;
  * docs/adr/0071) are planned under release 900007, which their last test withdraws again; months that wait on the
  * practice's pricing location (test matrix PRC-23; audit #33; docs/adr/0064) are planned last, since the last of them
- * publishes another release.
+ * publishes another release. A month holding a plan with no mapping is priced around it, and the months a mapping's
+ * request names are planned alone (test matrix MAP-06, MAP-07; combined audit #32; docs/adr/0075).
  */
 
 const ORIGIN = 'http://localhost:3000';
@@ -157,8 +158,8 @@ describe('the monitoring chain on an upload batch (J11)', () => {
       expect(c.logs.filter((line) => line.msg === 'monitoring waits for the rest of the upload batch')).toHaveLength(1);
       expect((await effects(practice.practiceId)).runs).toBe(0);
 
-      // The last file of the batch: now the month is planned, and refused while its plans are unmapped
-      // (MAP-01); with nothing to price, the ledger reconciles the document at once (docs/adr/0043).
+      // The last file of the batch: now the month is planned, and waits while none of its plans is mapped
+      // (MAP-07: a run would price nothing); with nothing to price, the ledger reconciles the document at once (docs/adr/0043).
       await parse(practice, second)(c.queue);
       expect((await c.queue.drain()).map((job) => [job.name, job.outcome])).toEqual([
         ['parse_835', 'succeeded'],
@@ -166,7 +167,7 @@ describe('the monitoring chain on an upload batch (J11)', () => {
         ['reconcile', 'succeeded'],
       ]);
       expect(c.queue.sent.filter((job) => job.name === 'reconcile').map((job) => job.data)).toEqual([{ practice_id: practice.practiceId, document_id: second }]);
-      expect(c.logs.find((line) => line.error_code === 'UNMAPPED_PLAN')).toMatchObject({ msg: 'monitoring left months waiting on a plan mapping', release_no: RELEASE });
+      expect(c.logs.find((line) => line.error_code === 'UNMAPPED_PLAN')).toMatchObject({ msg: 'monitoring left months waiting on a plan mapping', release_no: RELEASE, record_count: 1 });
       expect((await effects(practice.practiceId)).runs).toBe(0);
 
       // Mapped and signed off, the month is priced on the next trigger: the operator's daily schedule.
@@ -584,6 +585,152 @@ describe('notification preferences in the user’s own settings', () => {
   });
 });
 
+describe('MAP-06 and MAP-07: months holding a plan with no mapping (combined audit #32; docs/adr/0075)', () => {
+  const FEBRUARY = { periodFrom: '2026-02-01', periodTo: '2026-02-28' };
+  const MARCH = { periodFrom: '2026-03-01', periodTo: '2026-03-31' };
+  /** SYNPLAN-COMM-06's schedule (MAP-06's scenario): $50.00 a unit, every code, every Medicare flag off. */
+  const FIXED_FEE = { scope: {}, method: 'FIXED_SCHEDULE', parameters: { amount_cents: '5000' }, flags: { timed_units_rule: 'PER_CODE' } };
+  const daily = (c: Chain, practice: Practice) => enqueue(c.queue.client, 'monitor', { practice_id: practice.practiceId, day: todayUtc() });
+  /** The request-keyed job a mapping queues (apps/web mapPlanAction): the months it may plan, or none for "Price them now". */
+  const requested = (c: Chain, practice: Practice, months?: readonly string[]) =>
+    enqueue(c.queue.client, 'monitor', { practice_id: practice.practiceId, request_id: `test-${randomUUID()}`, ...(months === undefined ? {} : { months: [...months] }) });
+  const ran = async (c: Chain) => (await c.queue.drain()).map((job) => [job.name, job.outcome]);
+  const runsOf = (practiceId: string) =>
+    rows<{ period_from: string; status: string; job: boolean; rerun: boolean; coverage: { unmapped_plans?: { plan_id: string; lines: number; charge_cents: string }[] } | null }>(
+      `SELECT r.period_from::text AS period_from, r.status, r.created_by_job_id IS NOT NULL AS job, r.rerun_of_id IS NOT NULL AS rerun, r.coverage
+         FROM pricing_run r WHERE r.practice_id = $1 ORDER BY r.period_from, r.created_at, r.id`,
+      [practiceId],
+    );
+  const pricedThrough = [
+    ['monitor', 'succeeded'],
+    ['price', 'succeeded'],
+    ['triage', 'succeeded'],
+    ['reconcile', 'succeeded'],
+  ];
+
+  /** MAP-06's February: plan A (SYNPLAN-COMM-06) and plan B (SYNPLAN-UNMAPPED-06); with `march`, March holds A and C (SYNPLAN-OTHER-06). */
+  async function months(label: string, march = false): Promise<{ practice: Practice; a: string; b: string; c: string | null }> {
+    const practice = await w.practice(label);
+    await w.pricing.load(practice, 'MAP-06/remit.835');
+    if (march) {
+      await w.pricing.loadVariant(practice, 'MAP-06/remit.835', [
+        ['020060001', '020069001'],
+        ['MAP06', 'MAQ06'],
+        ['20260221', '20260321'],
+        ['SYNPLAN-UNMAPPED-06', 'SYNPLAN-OTHER-06'],
+      ]);
+    }
+    return {
+      practice,
+      a: await w.pricing.planOf(practice, 'CE:SYNPLAN-COMM-06'),
+      b: await w.pricing.planOf(practice, 'CE:SYNPLAN-UNMAPPED-06'),
+      c: march ? await w.pricing.planOf(practice, 'CE:SYNPLAN-OTHER-06') : null,
+    };
+  }
+  async function mapFixed(practice: Practice, planId: string): Promise<void> {
+    const fixed = await w.pricing.signedContract(practice, '2026-01-01', { terms: FIXED_FEE });
+    await w.pricing.mapped(practice, planId, 'contract', '2026-01-01', fixed.versionId);
+  }
+
+  it('MAP-06: prices a month holding a plan with no mapping as a first run, every line of that plan NO_MAPPING and named in the run’s coverage', async () => {
+    const { practice, a, b } = await months('MIXED-MONTH');
+    await mapFixed(practice, a);
+    const c = await chain();
+    try {
+      await daily(c, practice);
+      expect(await ran(c)).toEqual(pricedThrough);
+      expect(c.logs.filter((line) => line.error_code === 'UNMAPPED_PLAN')).toEqual([]);
+    } finally {
+      await c.worker.stop();
+    }
+    const runs = await runsOf(practice.practiceId);
+    expect(runs.map((run) => [run.period_from, run.status, run.job, run.rerun])).toEqual([[FEBRUARY.periodFrom, 'complete', true, false]]);
+    expect(runs[0]?.coverage?.unmapped_plans).toEqual([{ plan_id: b, lines: 3, charge_cents: '30000' }]);
+    expect(await rows("SELECT p.unpriced_reason, p.mapping_id FROM priced_line p JOIN service_line l ON l.id = p.service_line_id WHERE p.practice_id = $1 AND l.payer_plan_key = $2", [practice.practiceId, b])).toEqual(
+      Array.from({ length: 3 }, () => ({ unpriced_reason: 'NO_MAPPING', mapping_id: null })),
+    );
+  });
+
+  it('MAP-07: leaves a month none of whose plans is mapped waiting, by count, and prices it once the mapping that completes it queues its month', async () => {
+    const { practice, a, b } = await months('NOTHING-MAPPED');
+    const c = await chain();
+    try {
+      await daily(c, practice);
+      expect(await ran(c)).toEqual([['monitor', 'succeeded']]);
+      expect(c.logs.filter((line) => line.error_code === 'UNMAPPED_PLAN')).toEqual([
+        expect.objectContaining({ level: 'info', msg: 'monitoring left months waiting on a plan mapping', release_no: RELEASE, record_count: 1 }),
+      ]);
+      expect(await runsOf(practice.practiceId)).toEqual([]);
+      // Every plan mapped: the mapping's request names February, which the job plans as a first run, accepted by no one.
+      await mapFixed(practice, a);
+      await mapFixed(practice, b);
+      await requested(c, practice, [FEBRUARY.periodFrom]);
+      expect(await ran(c)).toEqual(pricedThrough);
+    } finally {
+      await c.worker.stop();
+    }
+    const runs = await runsOf(practice.practiceId);
+    expect(runs.map((run) => [run.period_from, run.status, run.job, run.rerun, run.coverage?.unmapped_plans])).toEqual([[FEBRUARY.periodFrom, 'complete', true, false, []]]);
+  });
+
+  it('MAP-07: plans only the months a mapping’s request names, never a month still waiting on another plan’s mapping (D20, review R3-1)', async () => {
+    // February holds A and B, March holds A and C. Mapping A, then B, then C gives each month one first run and no re-run.
+    const { practice, a, b, c: other } = await months('NAMED-MONTHS', true);
+    await mapFixed(practice, a);
+    await mapFixed(practice, b);
+    const plan = () => withJobScope(w.app, { jobId: randomUUID(), practiceId: practice.practiceId }, (scope) => planMonitoring(scope, practice.practiceId, randomUUID(), [MARCH.periodFrom]));
+    const c = await chain();
+    try {
+      // B's mapping completes February alone: its job names February, and March (A and C, C unmapped) stays uncovered.
+      await requested(c, practice, [FEBRUARY.periodFrom]);
+      expect(await ran(c)).toEqual(pricedThrough);
+      expect((await runsOf(practice.practiceId)).map((run) => run.period_from)).toEqual([FEBRUARY.periodFrom]);
+      // A job naming a month another run already covers creates nothing.
+      await requested(c, practice, [FEBRUARY.periodFrom]);
+      expect(await ran(c)).toEqual([['monitor', 'succeeded']]);
+      expect((await runsOf(practice.practiceId)).map((run) => run.period_from)).toEqual([FEBRUARY.periodFrom]);
+      // C's mapping completes March: its job names March (February is covered) and prices it, a first run again.
+      await mapFixed(practice, other ?? '');
+      await requested(c, practice, [MARCH.periodFrom]);
+      expect(await ran(c)).toEqual(pricedThrough);
+    } finally {
+      await c.worker.stop();
+    }
+    const runs = await runsOf(practice.practiceId);
+    expect(runs.map((run) => [run.period_from, run.status, run.job, run.rerun, run.coverage?.unmapped_plans])).toEqual([
+      [FEBRUARY.periodFrom, 'complete', true, false, []],
+      [MARCH.periodFrom, 'complete', true, false, []],
+    ]);
+    expect(await plan()).toMatchObject({ outcome: 'planned', created: [], waitingOnMapping: [] });
+  });
+
+  it('MAP-07: plans every uncovered month for a request that names none ("Price them now"), a mixed month as a first run priced around its unmapped plan', async () => {
+    const { practice, a, b, c: other } = await months('PRICE-THEM-NOW', true);
+    await mapFixed(practice, a);
+    await mapFixed(practice, b);
+    const c = await chain();
+    try {
+      await requested(c, practice);
+      expect(await ran(c)).toEqual([
+        ['monitor', 'succeeded'],
+        ['price', 'succeeded'],
+        ['price', 'succeeded'],
+        ['triage', 'succeeded'],
+        ['triage', 'succeeded'],
+        ['reconcile', 'succeeded'],
+        ['reconcile', 'succeeded'],
+      ]);
+    } finally {
+      await c.worker.stop();
+    }
+    const runs = await runsOf(practice.practiceId);
+    expect(runs.map((run) => [run.period_from, run.status, run.job, run.rerun, run.coverage?.unmapped_plans?.map((plan) => plan.plan_id)])).toEqual([
+      [FEBRUARY.periodFrom, 'complete', true, false, []],
+      [MARCH.periodFrom, 'complete', true, false, [other]],
+    ]);
+  });
+});
+
 describe('RCC-05: months that wait on Medicare content PaidWhole has not loaded (audit #7; docs/adr/0071)', () => {
   const OCTOBER = { periodFrom: '2026-10-01', periodTo: '2026-10-31' };
   /** A scratch release number for 900007's records again: a newer release that loads no more of October (as price.db.test.ts publishes 900099). */
@@ -687,6 +834,35 @@ describe('RCC-05: months that wait on Medicare content PaidWhole has not loaded 
       await c.worker.stop();
     }
     expect(await runsOf(practice.practiceId)).toEqual([waited, waited]);
+  });
+
+  it('MAP-06: fails a month whose mapped lines read content not loaded and waits, a plan with no mapping beside them changing nothing', async () => {
+    const practice = await maOctober('CONTENT-MIXED');
+    // Other claims of October, of a plan with no mapping: they stop at the resolver and read no Medicare content.
+    await w.pricing.loadVariant(practice, 'MAP-05/remit.835', [
+      ['020050001', '020059101'],
+      ['SYNEFTMAP05001', 'SYNEFTMAP95101'],
+      ['SYNPCNMAP05', 'SYNPCNMAP96'],
+      ['SYNCCNMAP05', 'SYNCCNMAP96'],
+      ['SYNPLAN-MA-05', 'SYNPLAN-UNM-96'],
+      ['20260216', '20261014'],
+      ['20260310', '20261110'],
+      ['260311', '261111'],
+    ]);
+    const c = await chain();
+    try {
+      await daily(c, practice);
+      expect(await ran(c)).toEqual(priced);
+      expect(await runsOf(practice.practiceId)).toEqual([waited]);
+      await daily(c, practice);
+      expect(await ran(c)).toEqual([['monitor', 'succeeded']]);
+      expect(await runsOf(practice.practiceId)).toEqual([waited]);
+      expect(waitingLines(c)).toEqual([expect.objectContaining({ record_count: 1 })]);
+      expect(c.logs.filter((line) => line.error_code === 'UNMAPPED_PLAN')).toEqual([]);
+    } finally {
+      await c.worker.stop();
+    }
+    expect(await plan(practice)).toMatchObject({ outcome: 'planned', created: [], waitingOnMapping: [], waitingOnContent: [{ ...OCTOBER, failureCode: 'waiting_on_content_mppr_mue' }] });
   });
 
   it('plans the month again once a contract version is signed off since its run, and once its plan is remapped to a fixed fee with the flags off, which prices (review m2)', async () => {
@@ -818,6 +994,23 @@ describe('PRC-23: months that wait on the practice’s pricing location (audit #
     const plan = await withJobScope(w.app, { jobId: randomUUID(), practiceId: practice.practiceId }, (scope) => planMonitoring(scope, practice.practiceId, randomUUID()));
     expect(plan).toMatchObject({ outcome: 'planned', created: [], waitingOnLocation: [{ ...MONTH, status: 'zip_plus_four_needed' }], queued: [] });
     expect(await failedRun(practice.practiceId)).toBeUndefined();
+  });
+
+  it('MAP-07: keeps a month a mapping’s request names waiting on the location when nothing changed since its run failed (D20)', async () => {
+    const practice = await medicareMonth('LOC-NAMED');
+    expect(await w.pricing.setLocation(practice, '00012')).toBe('zip_plus_four_needed');
+    const c = await chain();
+    try {
+      await daily(c, practice);
+      await c.queue.drain();
+      expect(await runsOf(practice.practiceId)).toEqual([failedWait]);
+      await enqueue(c.queue.client, 'monitor', { practice_id: practice.practiceId, request_id: `test-${randomUUID()}`, months: [MONTH.periodFrom] });
+      expect(await ran(c)).toEqual([['monitor', 'succeeded']]);
+      expect(waitingLines(c)).toEqual([expect.objectContaining({ record_count: 1 })]);
+    } finally {
+      await c.worker.stop();
+    }
+    expect(await runsOf(practice.practiceId)).toEqual([failedWait]);
   });
 
   it('prices the month after a save of the location, planned by the save’s request with no hand re-run, a daily job queued beside it', async () => {

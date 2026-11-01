@@ -38,11 +38,40 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
   { id: 'PAR-28', title: 'Renamed executable in a zip', assertion: 'Quarantined; nothing parsed' },
   { id: 'PAR-29', title: '10,000-claim file', assertion: 'Parses within target; memory bounded' },
   { id: 'PAR-30', title: 'Same file uploaded concurrently twice', assertion: 'Exactly one remittance row' },
-  { id: 'MAP-01', title: 'Unmapped payer and plan', assertion: 'Pricing refused; coverage shows dollars waiting' },
+  {
+    id: 'MAP-01',
+    title: 'Unmapped payer and plan',
+    assertion:
+      'No line of the plan is ever priced; a line the resolver reaches is left unpriced as `NO_MAPPING`, one by one; the run prices every other line of its period. Coverage shows dollars waiting',
+  },
   { id: 'MAP-02', title: 'Mapping with an effective date after some lines', assertion: 'Earlier lines `NO_MAPPING`; later priced' },
   { id: 'MAP-03', title: 'Mapping corrected', assertion: 'New mapping; old run unchanged; re-run offered' },
   { id: 'MAP-04', title: 'Mapped as no agreement', assertion: 'Lines go to anomaly screening only' },
   { id: 'MAP-05', title: 'Mapped as MA non-contracted', assertion: 'Priced from the fee schedule with all flags on' },
+  {
+    id: 'MAP-06',
+    title: 'A month holding lines of a mapped plan and of a plan with no mapping',
+    assertion:
+      "Priced by the monitor and by a person's run, in the worker and with nothing refused in Postgres: the mapped plan's lines price under their mapping, and no line of the other plan is priced (`NO_MAPPING` one by one where the resolver reaches it; `ENGINE_ERROR` for a line that fails the engine's fact checks first). The run's coverage records the plan with no mapping, all its lines and billed cents, equal to what Coverage counts for that month. Coverage, Pricing runs, the home page, the run's page and both printed reports say the plan has no mapping and its lines are not priced, in counts and cents only. The engine is unchanged",
+  },
+  {
+    id: 'MAP-07',
+    title: 'A period none of whose plans has a mapping, and the mapping that completes it',
+    assertion:
+      'No run is created: the monitor leaves the month waiting, logged as `UNMAPPED_PLAN` with the count of months, and a person\'s run is refused as pricing nothing. A mapping queues monitoring only when, with a release in force, it leaves a month no run covers with every plan of its lines mapped and no wait on the billing ZIP or on Medicare content holding it; that job names every such month, by its first day only, and prices those months alone as first runs in effect with no hand re-run, never a month still waiting on another plan\'s mapping (with month 1 holding plans A and B and month 2 holding A and C, mapping A, then B, then C gives each month one first run and no re-run). A mapping that leaves the month mixed, or held on the billing ZIP, queues nothing and says only "Mapped", and the page says how many months wait and offers "Price them now", which queues monitoring of every uncovered month and is refused while the practice is suspended. Two people mapping a month\'s last two plans at the same moment queue monitoring exactly once. A month whose last run waited on Medicare content is planned again once a mapping completes it',
+  },
+  {
+    id: 'MAP-08',
+    title: 'Plans mapped after their months were priced',
+    assertion:
+      'The mapping list and each plan\'s page list, oldest first, each run in effect holding `NO_MAPPING` lines that a mapping now covers, with their lines and billed dollars. "Price these months again" creates one re-run of each in that person\'s name, queued and not accepted, with one audit event per re-run; two plans mapped and pressed in turn give one counting re-run per month, and a second press of the same page, by anyone, at any moment, including two presses at once, creates no second re-run. A month whose first run of overlapping dates is queued or being priced is not re-run (`newer_run_pending`) and says it waits. A month whose re-run since the mapping is pending links to it; one whose re-run is superseded or pinned to a withdrawn release is ready again. A month whose re-run since the mapping failed on the billing ZIP or on Medicare content says so, links to it and is not offered again until the location is saved, the terms change or a release loads more of that content; after any other failure it is ready again and says the last re-run failed. Once accepted, the month says to triage it on Cases until triage has validated its short lines that were `NO_MAPPING` before; a re-run accepted after a sign-off or a release alone is not listed. A job never creates the re-runs',
+  },
+  {
+    id: 'MAP-09',
+    title: 'Pricing months again from a page that is out of date, or without the right',
+    assertion:
+      "When a month became ready that the form did not send, or the form sent a month that is neither ready nor already being priced again, the request is refused as `months_changed` with nothing created, the refused field is named in the form's summary, and the page shows the months as they are now. A refusal of one month names it by its dates and creates nothing. A run of another practice, a plan of another practice, a release not in force, a practice that is suspended, and a person without `mapping.edit` are refused, with nothing created",
+  },
   { id: 'CON-01', title: 'Two versions with overlapping windows', assertion: 'Refused' },
   { id: 'CON-02', title: 'Amendment closes the prior window', assertion: 'Prior `effective_to` set; prior unchanged otherwise' },
   { id: 'CON-03', title: 'Edit attempt on a signed-off version', assertion: 'Refused; supersession required' },
@@ -117,6 +146,24 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     title: 'Re-running a run that is not in effect',
     assertion:
       'A run that a later run or an accepted re-run replaced, and a re-run nobody accepted, are not re-run (`not_in_effect`). Their pages offer the run in effect for those service dates instead. A run in effect is re-run as before. A re-run of a re-run nobody accepted, left from before this rule, is not accepted (`superseded`)',
+  },
+  {
+    id: 'PRC-29',
+    title: 'A re-run of a month priced around a plan with no mapping, after the plan is mapped',
+    assertion:
+      "The re-run prices the same lines (the original's cut-off), the plan's lines under the mapping and every other line as the original did, unless something else changed since. Its page lists exactly the lines whose pricing in effect changes. Accepted, it is the run in effect and the plan's lines leave `NO_MAPPING`; `recompute(trace)` holds on every priced line; triaged from Cases, the plan's short lines reach validated",
+  },
+  {
+    id: 'PRC-30',
+    title: 'The coverage a run records of plans with no mapping',
+    assertion:
+      '`tp-pricing-coverage/2` lists each plan of the run\'s lines with no mapping when it was priced, with all its lines (whatever their unpriced reason) and billed cents, together at most the run\'s unpriced count. A `tp-pricing-coverage/1` run reads as having none. The printed audit report says "N plans had no mapping when this run was priced; their lines are not priced", and the coverage report "N plans have no mapping; their lines are not priced"; a coverage report stored before keeps both of its own sentences',
+  },
+  {
+    id: 'PRC-31',
+    title: 'Lines of mapped plans still unpriced as `NO_MAPPING` in the pricing in effect',
+    assertion:
+      'Coverage, Pricing runs, the home page and the mapping list count the lines whose pricing in effect is `NO_MAPPING` while a mapping is now in force on their date, in lines, billed cents and priced months only; the count falls to zero once the re-runs pricing them are accepted, and never counts a line of a plan with no mapping',
   },
   { id: 'CAS-01', title: 'Cohort below minimum size', assertion: 'No anomaly' },
   { id: 'CAS-02', title: 'Anomaly never enters a case or report total', assertion: 'Holds' },

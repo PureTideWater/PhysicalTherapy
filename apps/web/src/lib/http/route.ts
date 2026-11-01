@@ -188,6 +188,8 @@ export interface SampleRefs {
   readonly pricingRunId: string;
   /** A complete re-run of that run, not yet accepted (docs/adr/0037). */
   readonly rerunId: string;
+  /** A complete run in effect of another month, priced while a plan of its lines had no mapping, the plan mapped since: ready to price again (combined audit #32; MAP-08). */
+  readonly mappedNotPricedRunId: string;
   /** Triage of the run (docs/adr/0038): an anomaly, a case with one actionable line, and two ready audit reports, one unsigned (with its files' SHA-256) and one attested. */
   readonly anomalyId: string;
   readonly caseId: string;

@@ -23,6 +23,18 @@ export { escapeHtml };
 const usd = (value: string | null) => (value === null ? 'not estimated' : formatUsd(parseCents(value)));
 const count = (value: number, noun: string) => `${String(value)} ${noun}${value === 1 ? '' : 's'}`;
 
+/**
+ * The plans of the run that had no mapping when it was priced, in one sentence (combined audit #32,
+ * docs/adr/0075; PRC-30): past tense, since the report is of one run as priced (decision D8). Null when
+ * the run had none, or the report was stored before it recorded them.
+ */
+export function unmappedPlansText(unmapped: AuditReportContent['coverage']['unmapped_plans']): string | null {
+  if (unmapped === undefined || unmapped.plans === 0) {
+    return null;
+  }
+  return `${count(unmapped.plans, 'plan')} had no mapping when this run was priced; ${unmapped.plans === 1 ? 'its' : 'their'} lines are not priced (${count(unmapped.lines, 'line')}, ${usd(unmapped.charge_cents)} billed).`;
+}
+
 /** A case's state in words, as the Cases screen says it. */
 const CASE_STATE_WORDS: Readonly<Record<string, string>> = {
   open: 'open',
@@ -175,8 +187,9 @@ export function auditHtml(content: AuditReportContent, reconciliation: ReportRec
     .join('')}</div><div class="below"><div><strong>${escapeWithFigures(labels.flagged)}:</strong> ${escapeWithFigures(count(headline.flagged_lines, 'line'))} short of their cohort's mode, a range of ${escapeWithFigures(usd(headline.flagged_range_low_cents))} to ${escapeWithFigures(usd(headline.flagged_range_high_cents))}; investigatory, never a claim and in no total.</div><div><strong>${escapeWithFigures(labels.validated)}:</strong> ${escapeWithFigures(usd(headline.validated_cents))} across ${escapeWithFigures(count(headline.validated_lines, 'line'))} priced under signed-off terms with a trace and paid below them; the actionable amount is the part of it in cases.</div></div></section>`);
 
   const coverageRows = content.coverage.reasons.map((entry) => [entry.reason, String(entry.lines), usd(entry.charge_cents), entry.remedy]);
+  const unmapped = unmappedPlansText(content.coverage.unmapped_plans);
   sections.push(
-    `<section aria-label="Coverage"><h2>Coverage</h2><p>${escapeWithFigures(`${String(content.coverage.priced_lines)} of ${count(content.coverage.lines, 'line')} priced, ${usd(content.coverage.priced_charge_cents)} of ${usd(content.coverage.charge_cents)} billed.`)}</p>${table('Lines left unpriced, by reason', ['Reason', 'Lines', 'Billed', 'Remedy'], coverageRows, 'Every line priced.', { code: [1], amount: [2, 3] })}</section>`,
+    `<section aria-label="Coverage"><h2>Coverage</h2><p>${escapeWithFigures(`${String(content.coverage.priced_lines)} of ${count(content.coverage.lines, 'line')} priced, ${usd(content.coverage.priced_charge_cents)} of ${usd(content.coverage.charge_cents)} billed.`)}</p>${unmapped === null ? '' : `<p>${escapeWithFigures(unmapped)}</p>`}${table('Lines left unpriced, by reason', ['Reason', 'Lines', 'Billed', 'Remedy'], coverageRows, 'Every line priced.', { code: [1], amount: [2, 3] })}</section>`,
   );
 
   const anomalyRows = content.anomalies.map((item) => [

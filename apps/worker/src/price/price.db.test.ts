@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { PricingRefusedError, correctMapping, dollarsWaitingOnMapping } from '@tp/contracts';
+import { correctMapping, dollarsWaitingOnMapping } from '@tp/contracts';
 import { readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
 import { addMembership, asOwner, createUser } from '@tp/db/testing';
 import { ENGINE_VERSION, parseTrace, recompute } from '@tp/pricing';
@@ -10,9 +10,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { JobContext } from '../jobs/handlers';
 import { parseCoverage } from './coverage';
-import { PricingLocationWaiting, PricingRunInputError } from './create';
+import { PricingLocationWaiting, PricingRunInputError, PricingRunNothingMapped } from './create';
 import { ENGINE_ERRORS_MESSAGE } from './execute';
 import { priceHandler } from './job';
+import { PRICEABLE_LINE } from './lines';
 import { RuleReleaseMismatchError } from './release';
 import { createRerun, rerunReasons } from './rerun';
 import { FIXTURES, type Practice, PricingWorld, RELEASE, errorOf } from './test-support/pricing-world';
@@ -20,7 +21,7 @@ import { FIXTURES, type Practice, PricingWorld, RELEASE, errorOf } from './test-
 /**
  * Pricing runs against PostgreSQL, through the run's own code as it runs in production (PRD 5, J6 and
  * J7; PRD 8, pricing_run and priced_line and Invariants; PRD 11, Inputs and step 9; test matrix MAP-01
- * to MAP-05, PRC-12, PRC-14, PRC-15, JOB-01). Each case is a practice of its own: its SYNTHETIC 835s
+ * to MAP-07, PRC-12, PRC-14, PRC-15, JOB-01). Each case is a practice of its own: its SYNTHETIC 835s
  * are parsed and loaded by the parse_835 job, its plans mapped and its contracts signed off through
  * @tp/contracts' services by the people the plan names, a run created in the billing manager's scope
  * and executed by the price job in the practice's job scope, under SYNTHETIC release 900001. The
@@ -119,17 +120,125 @@ function expectTracesRecompute(lines: readonly LineRow[]): void {
   }
 }
 
-describe('MAP-01: an unmapped payer and plan', () => {
-  it('refuses the run through the guard, and coverage shows the dollars waiting', async () => {
+describe('MAP-01 and MAP-07: a period none of whose plans has a mapping', () => {
+  it('gets no run, since it would price nothing, and coverage shows the dollars waiting', async () => {
     const target = await practice('map-01');
     await load(target, 'MAP-01/remit.835');
     const refused = await errorOf(createRun(target, '2026-03-01', '2026-03-31'));
-    expect(refused).toBeInstanceOf(PricingRefusedError);
-    expect(refused).toMatchObject({ unmappedPlanIds: [await planOf(target, 'CE:SYNPLAN-UNMAPPED-01')] });
+    expect(refused).toBeInstanceOf(PricingRunNothingMapped);
+    // Counts only: no plan is named.
+    expect(refused).toMatchObject({ plans: 1, message: "none of the period's 1 plan(s) has a mapping: a run would price nothing" });
+    expect(JSON.stringify(refused)).not.toContain(await planOf(target, 'CE:SYNPLAN-UNMAPPED-01'));
     expect(await one<{ n: number }>('SELECT count(*)::int AS n FROM pricing_run WHERE practice_id = $1', [target.practiceId])).toEqual({ n: 0 });
     const expected = (JSON.parse(readFileSync(path.join(FIXTURES, 'MAP-01/expected.json'), 'utf8')) as { outcome: { coverageWaiting: { lines: number; chargeCents: string; paidCents: string } } }).outcome.coverageWaiting;
     const waiting = await withPracticeScope(w.app, { actorId: target.manager, practiceIds: [target.practiceId] }, (scope) => dollarsWaitingOnMapping(scope, target.practiceId));
     expect(waiting.map((plan) => ({ lines: plan.lines, chargeCents: plan.chargeCents.toString(), paidCents: plan.paidCents.toString() }))).toEqual([expected]);
+  });
+});
+
+describe('MAP-06 and PRC-30: a month holding lines of a mapped plan and of a plan with no mapping (combined audit #32)', () => {
+  /** SYNPLAN-COMM-06's schedule, as MAP-06's scenario gives it: $50.00 a unit, every code, every Medicare flag off. */
+  const FIXED = { scope: {}, method: 'FIXED_SCHEDULE', parameters: { amount_cents: '5000' }, flags: { timed_units_rule: 'PER_CODE' } };
+  interface Map06 {
+    readonly outcome: {
+      readonly priced: readonly { readonly code: string; readonly expectedAllowedCents: string }[];
+      readonly unmapped: { readonly plans: number; readonly lines: number; readonly chargeCents: string };
+    };
+  }
+  const map06 = () => JSON.parse(readFileSync(path.join(FIXTURES, 'MAP-06/expected.json'), 'utf8')) as Map06;
+
+  /** The plans with no mapping over the month, as the screens count them (PRICEABLE_LINE, no mapping row at all; §3.2's unmappedPlanTotals). */
+  const unmappedTotals = (target: Practice, periodFrom: string, periodTo: string) =>
+    one<{ plans: number; lines: number; charge_cents: string }>(
+      `SELECT count(DISTINCT l.payer_plan_key)::int AS plans, count(*)::int AS lines, coalesce(sum(l.charge_cents), 0)::text AS charge_cents
+         FROM claim c JOIN service_line l ON l.claim_id = c.id
+        WHERE c.practice_id = $1 AND ${PRICEABLE_LINE} AND coalesce(l.service_date, c.service_from) BETWEEN $2::date AND $3::date
+          AND NOT EXISTS (SELECT 1 FROM payer_plan_mapping m WHERE m.plan_id = l.payer_plan_key)`,
+      [target.practiceId, periodFrom, periodTo],
+    );
+
+  async function mixedMonth(label: string) {
+    const target = await practice(label);
+    await load(target, 'MAP-06/remit.835');
+    const signed = await signedContract(target, '2026-01-01', { terms: FIXED });
+    const mappingId = await mapped(target, await planOf(target, 'CE:SYNPLAN-COMM-06'), 'contract', '2026-01-01', signed.versionId);
+    return { target, signed, mappingId, unmappedPlan: await planOf(target, 'CE:SYNPLAN-UNMAPPED-06') };
+  }
+
+  it('prices the mapped plan’s lines, leaves every line of the other NO_MAPPING, and records the plan in the coverage, equal to what the screens count', async () => {
+    const { target, signed, mappingId, unmappedPlan } = await mixedMonth('map-06');
+    const expected = map06().outcome;
+    const runId = await createRun(target, '2026-02-01', '2026-02-28');
+    await execute(target, runId);
+    const run = await runRow(runId);
+    expect(run).toMatchObject({ status: 'complete', failure_code: null, created_by: target.manager });
+    const lines = await pricedLines(runId);
+    const planOfLine = new Map(
+      (
+        await w.owner.query<{ id: string; plan_id: string }>('SELECT l.id, l.payer_plan_key AS plan_id FROM service_line l WHERE l.practice_id = $1', [target.practiceId])
+      ).rows.map((row) => [row.id, row.plan_id]),
+    );
+    const ofUnmapped = lines.filter((line) => planOfLine.get(line.service_line_id) === unmappedPlan);
+    const ofMapped = lines.filter((line) => planOfLine.get(line.service_line_id) !== unmappedPlan);
+    // No line of the plan with no mapping is priced: NO_MAPPING one by one, with no mapping and no amount.
+    expect(ofUnmapped.map((line) => [line.unpriced_reason, line.mapping_id, line.expected_allowed_cents])).toEqual(Array.from({ length: expected.unmapped.lines }, () => ['NO_MAPPING', null, null]));
+    // The mapped plan's lines price under their mapping, as MAP-06's outcome says.
+    expect(ofMapped.map((line) => [line.procedure_code, line.unpriced_reason, line.mapping_id, line.contract_version_id]).sort()).toEqual(
+      expected.priced.map((line) => [line.code, null, mappingId, signed.versionId]).sort(),
+    );
+    expect(ofMapped.map((line) => line.expected_allowed_cents).sort()).toEqual(expected.priced.map((line) => line.expectedAllowedCents).sort());
+    expectTracesRecompute(lines);
+    const coverage = parseCoverage(run.coverage);
+    expect(coverage.format).toBe('tp-pricing-coverage/2');
+    expect(coverage.unmapped_plans).toEqual([{ plan_id: unmappedPlan, lines: expected.unmapped.lines, charge_cents: expected.unmapped.chargeCents }]);
+    // The invariant of the design's §2.3: equal to the screens' count of the month, and within the run's unpriced lines.
+    expect(await unmappedTotals(target, '2026-02-01', '2026-02-28')).toEqual({ plans: 1, lines: expected.unmapped.lines, charge_cents: expected.unmapped.chargeCents });
+    expect(coverage.unmapped_plans.reduce((sum, plan) => sum + plan.lines, 0)).toBeLessThanOrEqual(coverage.lines - coverage.priced.lines);
+    expect(coverage.priced.lines).toBe(expected.priced.length);
+  });
+
+  it('counts a line of the plan that stops before the resolver (ENGINE_ERROR invalid_line_facts) among the plan’s lines (review R3-5)', async () => {
+    const { target, unmappedPlan } = await mixedMonth('map-06-engine-error');
+    // A four-character code: SQL checks only that it is not blank, the engine requires five ([0-9A-Z]{5}).
+    await w.owner.query(
+      `INSERT INTO service_line (practice_id, claim_id, line_no, procedure_qualifier, procedure_code, modifiers, charge_cents, paid_cents, units, service_date, place_of_service,
+         observed_allowed_cents, observed_allowed_basis, patient_share_cents, payer_plan_key)
+       SELECT l.practice_id, l.claim_id, (SELECT max(x.line_no) + 1 FROM service_line x WHERE x.claim_id = l.claim_id), l.procedure_qualifier, '9711', l.modifiers, 1234, 0, 1,
+              l.service_date, l.place_of_service, 0, 'paid_plus_pr', 0, l.payer_plan_key
+         FROM service_line l WHERE l.practice_id = $1 AND l.payer_plan_key = $2 ORDER BY l.line_no LIMIT 1`,
+      [target.practiceId, unmappedPlan],
+    );
+    const expected = map06().outcome.unmapped;
+    const runId = await createRun(target, '2026-02-01', '2026-02-28');
+    await execute(target, runId);
+    const run = await runRow(runId);
+    expect(run).toMatchObject({ status: 'complete', failure_code: null });
+    const lines = await pricedLines(runId);
+    const stopped = lines.find((line) => line.procedure_code === '9711');
+    expect(stopped).toMatchObject({ unpriced_reason: 'ENGINE_ERROR', mapping_id: null });
+    expect(parseTrace(stopped?.trace).outcome).toMatchObject({ detail: 'invalid_line_facts' });
+    const coverage = parseCoverage(run.coverage);
+    const chargeCents = (BigInt(expected.chargeCents) + 1234n).toString();
+    expect(coverage.unmapped_plans).toEqual([{ plan_id: unmappedPlan, lines: expected.lines + 1, charge_cents: chargeCents }]);
+    expect(await unmappedTotals(target, '2026-02-01', '2026-02-28')).toEqual({ plans: 1, lines: expected.lines + 1, charge_cents: chargeCents });
+    const unpriced = coverage.lines - coverage.priced.lines;
+    const noMapping = lines.filter((line) => line.unpriced_reason === 'NO_MAPPING').length;
+    expect(expected.lines + 1).toBeLessThanOrEqual(unpriced);
+    expect(expected.lines + 1).toBeGreaterThan(noMapping);
+  });
+
+  it('completes a run queued while every plan was mapped and executed after a plan lost its mapping, rather than failing it', async () => {
+    const { target, mappingId } = await mixedMonth('map-06-queued');
+    const runId = await createRun(target, '2026-02-01', '2026-02-28');
+    // As if the run was created before this change and its plan had no mapping when the job ran: removed test-side, as the owner.
+    await w.owner.query('DELETE FROM payer_plan_mapping WHERE id = $1', [mappingId]);
+    await execute(target, runId);
+    const run = await runRow(runId);
+    expect(run).toMatchObject({ status: 'complete', failure_code: null });
+    const coverage = parseCoverage(run.coverage);
+    expect(coverage.priced.lines).toBe(0);
+    expect(coverage.unmapped_plans.map((plan) => plan.lines).reduce((sum, n) => sum + n, 0)).toBe(coverage.lines);
+    expect(coverage.unmapped_plans).toHaveLength(2);
   });
 });
 

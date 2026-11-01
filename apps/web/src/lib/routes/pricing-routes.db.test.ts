@@ -220,25 +220,41 @@ let firstRun = '';
 let oonMapping = '';
 
 describe('creating a run through the Pricing runs screen', () => {
-  it('is refused while a plan of the period is unmapped (MAP-01), and for a release that is not the current one', async () => {
+  it('is refused while no plan of the period is mapped (MAP-07), and for a release that is not the current one', async () => {
+    // Every plan of each period is unmapped (February MAP-05's, March MAP-01's, April MAP-04's): a run would price nothing.
+    expect(refusedWith(await call(createPricingRunAction, manager, P(), { fromMonth: '2026-02', toMonth: '2026-04', releaseNo: '900001' }))).toMatch(
+      /^fromMonth: none of the period’s plans has a mapping yet, so a run would price nothing: map them on Payer and plan mapping/,
+    );
+    expect(refusedWith(await call(createPricingRunAction, manager, P(), { fromMonth: '2026-03', releaseNo: '900001' }))).toMatch(/^fromMonth: none of the period’s plans has a mapping yet/);
+    // The MA plan's mapping completes February, whose lines are that plan's alone (D2b): the request queues monitoring of
+    // February only (D20), once it commits.
     const ma = await planOf('CE:SYNPLAN-MA-05');
-    ok(await call(mapPlanAction, manager, P(), { planId: ma, kind: 'ma_noncontracted', effectiveFrom: '2026-01-01' }));
-    expect(refusedWith(await call(createPricingRunAction, manager, P(), { fromMonth: '2026-02', toMonth: '2026-04', releaseNo: '900001' }))).toMatch(/^fromMonth: pricing is refused until every plan is mapped/);
-    expect(refusedWith(await call(createPricingRunAction, manager, P(), { fromMonth: '2026-03', releaseNo: '900001' }))).toMatch(/^fromMonth: pricing is refused until every plan is mapped: 1 plan/);
+    expect(ok(await call(mapPlanAction, manager, P(), { planId: ma, kind: 'ma_noncontracted', effectiveFrom: '2026-01-01' })).redirect).toBe(`/p/${practiceId}/mapping/${ma}?notice=mapped_pricing`);
+    const monitorFebruary = { type: 'monitor', payload: { practice_id: practiceId, request_id: expect.any(String) as unknown, months: ['2026-02-01'] } };
+    expect(queue.jobs).toEqual([monitorFebruary]);
     expect(refusedWith(await call(createPricingRunAction, manager, P(), { fromMonth: '2026-02', releaseNo: '900002' }))).toMatch(/^releaseNo: rule-release mismatch: release 900002 was asked for and release 900001 is the one loaded/);
     expect(refusedWith(await call(createPricingRunAction, manager, P(), { fromMonth: '2026-04', toMonth: '2026-02', releaseNo: '900001' }))).toMatch(/^toMonth:/);
     expect(refusedWith(await call(createPricingRunAction, manager, P(), { fromMonth: '2025-01', releaseNo: '900001' }))).toMatch(/^fromMonth: a period that holds at least one service line/);
     expect((await call(createPricingRunAction, viewer, P(), { fromMonth: '2026-02', releaseNo: '900001' })).status).toBe('forbidden');
-    expect(queue.jobs).toEqual([]);
+    expect(queue.jobs).toEqual([monitorFebruary]);
     expect((await owner.query('SELECT 1 FROM pricing_run')).rowCount).toBe(0);
+    // This file's worker drops monitor jobs, so the next test starts from an empty queue.
+    await runQueue();
   });
 
   it('records the run queued, pinned to the current release, queues its price job, and the job completes it', async () => {
     // MAP-01's plan mapped only from after its March lines (MAP-02): the plan is mapped, its lines are not.
+    // Any mapping row makes the plan mapped, so March is complete; February is still uncovered: monitoring of both. The
+    // OON mapping completes April: monitoring of all three (D20).
     ok(await call(mapPlanAction, manager, P(), { planId: await planOf('CE:SYNPLAN-UNMAPPED-01'), kind: 'no_agreement', effectiveFrom: '2026-04-01' }));
     oonMapping = ok(await call(mapPlanAction, manager, P(), { planId: await planOf('CE:SYNPLAN-OON-04'), kind: 'no_agreement', effectiveFrom: '2026-01-01' })).objectId ?? '';
     firstRun = runFrom(await call(createPricingRunAction, manager, P(), { fromMonth: '2026-02', toMonth: '2026-04', releaseNo: '900001' }));
-    expect(queue.jobs).toEqual([{ type: 'price', payload: { practice_id: practiceId, pricing_run_id: firstRun } }]);
+    const monitor = (months: string[]) => ({ type: 'monitor', payload: { practice_id: practiceId, request_id: expect.any(String) as unknown, months } });
+    expect(queue.jobs).toEqual([
+      monitor(['2026-02-01', '2026-03-01']),
+      monitor(['2026-02-01', '2026-03-01', '2026-04-01']),
+      { type: 'price', payload: { practice_id: practiceId, pricing_run_id: firstRun } },
+    ]);
     const queued = ok(await call(pricingRunPage, manager, { ...P(), runId: firstRun }));
     expect(queued.run).toMatchObject({ status: 'queued', periodFrom: '2026-02-01', periodTo: '2026-04-30', releaseNo: 900001, coverage: null });
     await runQueue();

@@ -1,7 +1,7 @@
 import { type PracticeScope, type ScopeClient, readWithAudit } from '@tp/db/runtime';
 import { type Cents, parseCents } from '@tp/money';
 
-import { type MappedLine, assertPricingAllowed } from './coverage';
+import { type MappedLine, unmappedPlanIds } from './coverage';
 import type { AgreementRecords, ContractVersionRecord, DisputeWindowRecord, PlanMappingRecord, RateRecord } from './records';
 import { citationSchema, evidenceSchema, parseRateTerms } from './terms';
 import { type DisputeWindowRule, disputeWindowRuleSchema } from './window-rule';
@@ -251,10 +251,15 @@ export async function loadAgreementRecords(scope: PracticeScope<ScopeClient>, re
   return { mappings, versions, rateRecords };
 }
 
-/** The guard a pricing run's creator calls with the run's lines (MAP-01): refuses a run over an unmapped plan. */
-export async function assertPracticePricingAllowed(scope: PracticeScope<ScopeClient>, request: ReadRequest, lines: readonly MappedLine[]): Promise<void> {
+/**
+ * The plans of the lines that have no mapping at all, sorted, read under the practice's scope (RLS):
+ * what a pricing run's creator checks before it records a run (MAP-07: a period none of whose plans
+ * has a mapping gets no run, since it would price nothing). It never refuses: a plan with no mapping
+ * leaves its own lines NO_MAPPING while every other line prices (MAP-01, combined audit #32).
+ */
+export async function practiceUnmappedPlanIds(scope: PracticeScope<ScopeClient>, request: ReadRequest, lines: readonly MappedLine[]): Promise<string[]> {
   const planIds = [...new Set(lines.flatMap((line) => (line.planId === null ? [] : [line.planId])))];
-  assertPricingAllowed(lines, await loadMappings(scope, request, planIds));
+  return unmappedPlanIds(lines, await loadMappings(scope, request, planIds));
 }
 
 /** One plan's lines with no mapping covering their service date (Coverage: dollars waiting on mappings). */

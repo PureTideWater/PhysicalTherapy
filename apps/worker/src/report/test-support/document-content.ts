@@ -26,6 +26,15 @@ export function coverage(overrides: Partial<CoverageReportContent> = {}): Covera
   };
 }
 
+/**
+ * A coverage report generated since combined audit #32 (docs/adr/0075; PRC-30): its readiness also
+ * records the unmapped plan's lines and billed cents, here the one waiting plan's. `coverage()` stays a
+ * report stored before, without them.
+ */
+export function coverageWithUnmappedLines(overrides: Partial<CoverageReportContent> = {}): CoverageReportContent {
+  return coverage({ readiness: { allowed: false, unmapped_plans: 1, unmapped_lines: 1, unmapped_charge_cents: '10000' }, ...overrides });
+}
+
 const figure = (lines: number, billed: string, variance: string | null) => ({ lines, billed_cents: billed, variance_cents: variance });
 
 function row(payerId: string | null, payerName: string | null): MonthlySummaryRow {

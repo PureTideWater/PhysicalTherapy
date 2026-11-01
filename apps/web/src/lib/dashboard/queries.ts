@@ -5,8 +5,10 @@ import { centsToString } from '@tp/money';
 import { practiceLedgerTotals, unmatchedItems } from '@tp/worker/ledger';
 import { followUpsDue } from '@tp/worker/packets';
 
+import { type UnmappedPlanTotals, unmappedPlanTotals } from '../contracts/mapping-queries';
 import { coverageInEffect } from '../coverage/in-effect';
 import { practiceStageSummary } from '../monitoring/queries';
+import { type MappedNotPricedTotals, mappedNotPricedTotals } from '../pricing/mapped-plan';
 import { RUN_IN_EFFECT } from '../pricing/queries';
 import { ACTIONABLE_NOW, practiceTriageSettings } from '../triage/queries';
 
@@ -27,7 +29,10 @@ import { ACTIONABLE_NOW, practiceTriageSettings } from '../triage/queries';
  *   with its shortfall under the pricing in effect), Claims and lines filtered to the stage;
  * - coverage: each line's result in its pricing in effect, across every run in effect (the digest's
  *   statement, as Coverage reads it), never the latest run's lines alone;
- * - the queues: what waits for a person on each screen.
+ * - the queues: what waits for a person on each screen;
+ * - the plans with no mapping, whose lines no run prices, and the lines of mapped plans still NO_MAPPING in
+ *   the pricing in effect, as Coverage and Payer and plan mapping count them (combined audit #32; MAP-06,
+ *   PRC-31; the Alerts above the queues).
  *
  * Counts, integer cents as text and opaque IDs only; no patient, claim or line identifier.
  */
@@ -85,6 +90,10 @@ export interface Dashboard {
   /** Recovered this quarter: the ledger's, for entries dated in the quarter (the practice's proof level, net), never an estimate and never approved. */
   readonly recoveredQuarter: { readonly quarter: string; readonly from: string; readonly to: string; readonly cents: string };
   readonly queues: Queues;
+  /** The plans with no mapping at all, whose lines no run prices, with their lines and billed cents (Coverage's figure). */
+  readonly unmappedPlans: UnmappedPlanTotals;
+  /** The lines of mapped plans still NO_MAPPING in the pricing in effect, their billed cents and the runs holding them (PRC-31). */
+  readonly mappedNotPriced: MappedNotPricedTotals;
 }
 
 const WORKED = "state NOT IN ('resolved', 'closed_written_off')";
@@ -166,5 +175,7 @@ export async function dashboard(scope: Scope, practiceId: string, today: string)
     followUps: { due: due.length, earliest: due[0]?.followUpOn ?? null, first: due.slice(0, 5).map((item) => ({ caseId: item.caseId, followUpOn: item.followUpOn })) },
     recoveredQuarter: { quarter, from: period.from, to: period.to, cents: centsToString((await practiceLedgerTotals(scope, practiceId, period)).recoveredCents) },
     queues: await queuesOf(scope, practiceId),
+    unmappedPlans: await unmappedPlanTotals(scope, practiceId),
+    mappedNotPriced: await mappedNotPricedTotals(scope.client, practiceId),
   };
 }

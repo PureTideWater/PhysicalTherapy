@@ -16,6 +16,7 @@ import {
   RunFailureText,
   RunStateBadges,
   RunStatusBadge,
+  UnmappedPlansPriced,
   UnpricedReasons,
   nothingMoreToAccept,
   rerunBlockedTitle,
@@ -41,6 +42,7 @@ function coverage(unpriced: Partial<Record<(typeof UNPRICED_REASONS)[number], nu
     engine_errors: [],
     versions: [],
     patterns: [],
+    unmapped_plans: [],
   };
 }
 
@@ -110,6 +112,39 @@ describe('a failed run’s words', () => {
     expect(FAILURE_TEXT.waiting_on_content_mppr).toContain('Medicare’s multiple-procedure reduction list (MPPR) for dates PaidWhole has not loaded it for yet');
     expect(FAILURE_TEXT.waiting_on_content_mue).toContain('Medicare’s unit limits (MUE) for dates PaidWhole has not loaded them for yet');
     expect(FAILURE_TEXT.waiting_on_content_mppr_mue).toContain('(MPPR) and unit limits (MUE) for dates PaidWhole has not loaded them for yet');
+  });
+});
+
+describe('the plans a run held with no mapping (combined audit #32; MAP-06, PRC-30)', () => {
+  const PLAN_A = '00000000-0000-4000-8000-0000000000e1';
+  const PLAN_B = '00000000-0000-4000-8000-0000000000e2';
+  const names = { payers: {}, plans: { [PLAN_A]: 'CE:SYNPLAN-UNMAPPED-06', [PLAN_B]: 'PLAN:SYNPLAN-EXPORT-06' }, versions: {} };
+  const words = (html: string) => html.replace(/<[^>]+>/g, '');
+
+  it('say nothing for a run that had none (a /1 run reads as none)', () => {
+    expect(renderToStaticMarkup(<UnmappedPlansPriced practiceId="p" coverage={coverage({ NO_MAPPING: 2 })} names={names} />)).toBe('');
+  });
+
+  it('say how many plans had no mapping when the run was priced, their lines and billed dollars, and link each plan by its key', () => {
+    const held = { ...coverage({ NO_MAPPING: 13, ENGINE_ERROR: 1 }), unmapped_plans: [{ plan_id: PLAN_A, lines: 10, charge_cents: '100000' }, { plan_id: PLAN_B, lines: 4, charge_cents: '23400' }] };
+    const html = renderToStaticMarkup(<UnmappedPlansPriced practiceId="p" coverage={held} names={names} />);
+    expect(words(html)).toContain('When this run was priced, 2 plans had no mapping; their lines are not priced (14 lines, $1,234.00 billed).');
+    expect(html).toContain(`href="/p/p/mapping/${PLAN_A}"`);
+    expect(words(html)).toContain('CE:SYNPLAN-UNMAPPED-06');
+    expect(words(html)).toContain('PLAN:SYNPLAN-EXPORT-06');
+  });
+
+  it('use the singular for one plan and one line, and keep a signed sum', () => {
+    const held = { ...coverage({ NO_MAPPING: 1 }), unmapped_plans: [{ plan_id: PLAN_A, lines: 1, charge_cents: '-500' }] };
+    expect(words(renderToStaticMarkup(<UnmappedPlansPriced practiceId="p" coverage={held} names={names} />))).toContain(
+      'When this run was priced, 1 plan had no mapping; its lines are not priced (1 line, -$5.00 billed).',
+    );
+  });
+
+  it('say a run that stopped for an unmapped plan before combined audit #32 did so then, in the danger colour, and what a new run does now', () => {
+    expect(FAILURE_TEXT.unmapped_plan).toBe('A plan of the period’s lines had no mapping, and runs then stopped for it (before combined audit #32); create a new run: it prices every mapped plan.');
+    expect(waitingLabel('unmapped_plan')).toBeNull();
+    expect(renderToStaticMarkup(<RunFailureText code="unmapped_plan" />)).toContain('text-destructive');
   });
 });
 

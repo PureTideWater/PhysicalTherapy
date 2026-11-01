@@ -1,15 +1,7 @@
-import {
-  AgreementInvariantError,
-  type AgreementResolution,
-  ContractDataError,
-  PricingRefusedError,
-  agreementResolver,
-  assertPracticePricingAllowed,
-  dollarsWaitingOnMapping,
-  loadAgreementRecords,
-} from '@tp/contracts';
+import { AgreementInvariantError, type AgreementResolution, ContractDataError, agreementResolver, dollarsWaitingOnMapping, loadAgreementRecords } from '@tp/contracts';
 import { type MappingKind, type PracticeScope, type ScopeClient, type VersionStatus, readWithAudit } from '@tp/db/runtime';
 import { centsToString } from '@tp/money';
+import { PRICEABLE_LINE } from '@tp/worker/pricing';
 
 /**
  * The Payer and plan mapping and Coverage screens' reads (PRD 5, J6; PRD 6, Payer and plan mapping;
@@ -544,29 +536,32 @@ async function namedPlans(scope: Scope, practiceId: string, shown: Awaited<Retur
   }));
 }
 
-/** Whether a pricing run over every line of the practice would start now (MAP-01), by the run's own guard. */
-export interface PricingReadiness {
-  readonly allowed: boolean;
-  readonly unmappedPlans: number;
-  readonly linesWithoutPlan: number;
+/**
+ * The plans of the practice's lines with no mapping at all, whose lines no run prices (combined audit #32; docs/adr/0075;
+ * MAP-01, MAP-06): how many plans, and their lines and billed cents. The line set is a run's own (PRICEABLE_LINE: not a
+ * reversal claim, not a superseded claim, with a service date of its own or its claim's), so this agrees with what a run
+ * of the same dates records of the same plans in its coverage (tp-pricing-coverage/2's unmapped_plans), whatever each
+ * line's unpriced reason (finding 10, review R3-5). `period` limits the service dates (both days included). One aggregate
+ * statement: no line, plan or payer is returned, so it is not an audited read, as waitingTotals is not.
+ */
+export interface UnmappedPlanTotals {
+  readonly plans: number;
+  readonly lines: number;
+  /** Billed cents, summed in SQL as bigint; integer text, signed (a charge has no sign check). */
+  readonly chargeCents: string;
 }
 
-export async function pricingReadiness(scope: Scope, practiceId: string, requestId: string): Promise<PricingReadiness> {
-  const { rows } = await scope.client.query<{ plan_id: string; service_date: string }>(
-    'SELECT l.payer_plan_key AS plan_id, min(l.service_date)::text AS service_date FROM service_line l WHERE l.practice_id = $1 AND l.service_date IS NOT NULL GROUP BY l.payer_plan_key',
-    [practiceId],
+export async function unmappedPlanTotals(scope: Scope, practiceId: string, period?: { readonly periodFrom: string; readonly periodTo: string }): Promise<UnmappedPlanTotals> {
+  const { rows } = await scope.client.query<{ plans: number; lines: number; charge_cents: string }>(
+    `SELECT count(DISTINCT l.payer_plan_key)::int AS plans, count(*)::int AS lines, coalesce(sum(l.charge_cents), 0)::text AS charge_cents
+       FROM claim c JOIN service_line l ON l.claim_id = c.id
+      WHERE c.practice_id = $1 AND ${PRICEABLE_LINE}
+        AND NOT EXISTS (SELECT 1 FROM payer_plan_mapping m WHERE m.practice_id = $1 AND m.plan_id = l.payer_plan_key)${
+          period === undefined ? '' : `
+        AND coalesce(l.service_date, c.service_from) BETWEEN $2::date AND $3::date`
+        }`,
+    period === undefined ? [practiceId] : [practiceId, period.periodFrom, period.periodTo],
   );
-  try {
-    await assertPracticePricingAllowed(
-      scope,
-      { practiceId, requestId, purpose: 'coverage' },
-      rows.map((row) => ({ planId: row.plan_id, serviceDate: row.service_date })),
-    );
-    return { allowed: true, unmappedPlans: 0, linesWithoutPlan: 0 };
-  } catch (error) {
-    if (error instanceof PricingRefusedError) {
-      return { allowed: false, unmappedPlans: error.unmappedPlanIds.length, linesWithoutPlan: error.linesWithoutPlan };
-    }
-    throw error;
-  }
+  const row = rows[0];
+  return { plans: row?.plans ?? 0, lines: row?.lines ?? 0, chargeCents: row?.charge_cents ?? '0' };
 }

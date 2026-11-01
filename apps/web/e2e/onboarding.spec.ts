@@ -471,7 +471,10 @@ test('a practice created with no seeded settings reaches a priced month from its
         await manager.getByLabel('Agreement', { exact: true }).selectOption({ label: 'Medicare Advantage, non-contracted' });
         await manager.getByLabel('Effective from', { exact: true }).fill('2026-01-01');
         await manager.getByRole('button', { name: 'Save the mapping' }).click();
-        await expect(manager.locator('[data-notice="mapped"]')).toBeVisible();
+        // The practice's one plan, mapped with its location set and no run yet: the mapping completes March and queues its
+        // monitoring (combined audit #32, D2b; MAP-07). The chain below then finds March covered by that job's run, or
+        // waiting on the location, as the parse's own monitor would have left it; both take the practice's monitor lock.
+        await expect(manager.locator('[data-notice="mapped_pricing"]')).toBeVisible();
         const documentId = await withDatabase(
           async (client) => (await client.query<{ id: string }>("SELECT id FROM source_document WHERE practice_id = $1 AND kind = 'x12_835' ORDER BY created_at DESC LIMIT 1", [practiceId])).rows[0]?.id ?? '',
         );
