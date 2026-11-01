@@ -13,7 +13,7 @@ import { anthropicClient } from './anthropic';
  * of 2026-11-01): nothing the SDK would take from the environment (its OpenTelemetry tracing and their content, its
  * debug logging, another host) reaches a request. A fake fetch answers a synthetic message in memory, so no request
  * leaves the process; the key is synthetic. Its own file, so the global OpenTelemetry state it registers stays in one
- * Vitest file; every test leaves that state, the environment and the console as it found them.
+ * Vitest file; every test leaves that state, the environment, the global fetch and the console as it found them.
  */
 
 const KEY = 'sk-synthetic-not-a-key';
@@ -174,10 +174,14 @@ interface Sent {
   readonly headers: Headers;
 }
 
-/** One Messages request through `client` with a fake fetch; the request the fake fetch received. */
-async function send(client: Anthropic): Promise<Sent> {
+/**
+ * One Messages request through the client `build` returns, itself and not a clone: the fake fetch stands in for the
+ * global one before the client is built, since the SDK takes it at construction. The request the fake fetch received.
+ */
+async function send(build: () => Anthropic): Promise<Sent> {
   const fetch = vi.fn((_url: string | URL | Request, _init?: RequestInit) => Promise.resolve(new Response(JSON.stringify(MESSAGE), { status: 200, headers: { 'content-type': 'application/json' } })));
-  await client.withOptions({ fetch }).messages.create({ model: 'synthetic-model-id', max_tokens: 10, messages: [{ role: 'user', content: 'SYNTHETIC' }] });
+  vi.stubGlobal('fetch', fetch);
+  await build().messages.create({ model: 'synthetic-model-id', max_tokens: 10, messages: [{ role: 'user', content: 'SYNTHETIC' }] });
   expect(fetch).toHaveBeenCalledTimes(1);
   const [url, init] = fetch.mock.calls[0] as [string | URL, RequestInit];
   return { url: new URL(String(url)), headers: new Headers(init.headers) };
@@ -207,6 +211,7 @@ afterEach(() => {
   trace.disable();
   propagation.disable();
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
   started.length = 0;
 });
@@ -253,7 +258,7 @@ describe('MOD-18: a request through that client with a tracer provider and a pro
     stubEnvironment();
     registerTelemetry();
     const spies = spyConsole();
-    const { url, headers } = await send(built());
+    const { url, headers } = await send(built);
     expect(url.host).toBe('api.anthropic.com');
     expect(started).toEqual([]);
     expect(headers.has('traceparent')).toBe(false);
@@ -275,7 +280,7 @@ describe('MOD-18: a request through that client with a tracer provider and a pro
     vi.stubEnv('ANTHROPIC_CUSTOM_HEADERS', 'x-synthetic-extra: 1');
     registerTelemetry();
     const spies = spyConsole();
-    const { url, headers } = await send(new Anthropic({ apiKey: KEY, maxRetries: 0 }));
+    const { url, headers } = await send(() => new Anthropic({ apiKey: KEY, maxRetries: 0 }));
     expect(url.host).toBe('example.invalid');
     expect(started).toEqual(['anthropic.messages.create']);
     expect(headers.get('traceparent')).toBe('00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01');
