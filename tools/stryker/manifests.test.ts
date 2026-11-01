@@ -85,7 +85,7 @@ function syntheticWorld(): World {
   world.write('packages/money/src/index.test.ts', "import { it } from 'vitest';\nimport { cents } from './index';\nit('a', () => cents(1n));\n");
   world.write('packages/pricing/src/index.ts', "import { cents } from '@tp/money';\nimport { a } from '@tp/db/a';\nexport const price = [cents, a];\n");
   world.write('packages/pricing/src/only.test.ts', "import { it } from 'vitest';\nimport beta from 'beta';\nimport { price } from './index';\nit('b', () => [beta, price]);\n");
-  world.write('packages/ledger/src/index.ts', "import { cents } from '@tp/money';\nimport { b } from '@tp/db/b';\nexport const total = [cents, b];\n");
+  world.write('packages/ledger/src/index.ts', "import { cents } from '@tp/money';\nimport { b } from '@tp/db/b';\nimport manifest from '../package.json';\nexport const total = [cents, b, manifest];\n");
   world.write('packages/packets/src/index.ts', "import { price } from '@tp/pricing';\nexport const packet = price;\n");
   world.write('packages/db/package.json', json({ name: '@tp/db', exports: { './a': './src/a.ts', './b': './src/b.ts' }, dependencies: { alpha: '^1.0.0' } }));
   world.write('packages/db/src/a.ts', "import alpha from 'alpha';\nexport const a = alpha;\n").write('packages/db/src/b.ts', 'export const b = 1;\n');
@@ -461,6 +461,9 @@ describe('on a synthetic world: the mirror rule’s closures and the files a sha
     const owners = closures.filter((closure) => closure.manifests.includes('packages/db/package.json')).map((closure) => closure.pkg);
     expect(owners).toEqual(['pricing', 'ledger', 'packets']);
     expect(packages(changed('packages/db/package.json', before, edit(before, (manifest) => void (manifest.dependencies = { alpha: '^1.1.0' }))))).toEqual(['pricing', 'packets']);
+    // A manifest a closure file imports is read whole, so even a script of the ledger's own manifest affects the ledger.
+    const ledger = text('packages/ledger/package.json');
+    expect(packages(changed('packages/ledger/package.json', ledger, edit(ledger, (manifest) => void (manifest.scripts = { dev: 'tsx x.ts' }))))).toEqual(['ledger']);
   });
 
   it('affects all four for the name or exports of a manifest whose name a by-path-loaded test imports, and for another manifest taking that name', () => {
