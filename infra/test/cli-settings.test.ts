@@ -42,8 +42,9 @@ describe('the CDK CLI sends no telemetry, fetches no notices and skips its versi
     }
   });
 
-  it('keeps cdk:diff running the CLI with telemetry off', () => {
+  it('keeps cdk:diff running the CLI with telemetry and the version check off', () => {
     expect(cdkDiffEnv).toMatch(/\bCDK_DISABLE_CLI_TELEMETRY:\s*'true'/);
+    expect(cdkDiffEnv).toMatch(/\bCDK_DISABLE_VERSION_CHECK:\s*'true'/);
   });
 
   it('turns notices off in cdk.json for any cdk command run from infra/', () => {
