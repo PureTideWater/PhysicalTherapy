@@ -117,6 +117,12 @@ or C merge at all (item :178)?
   a skeptic; 28 Fixed, 4 Fixed by another means, 1 Not taken (C-N10, refuted). Design, review and scouts committed. CLAIM
   REQUEST and ORDER ASK sent to the orchestrator. Next: builders for A and B (C after the claim).
 
+- 2026-11-01T18:08:00Z: build workflow wf_1a99b187-bb6 launched for A and B (per branch: builder, adversarial checker,
+  integrator that merges the base, pushes and opens the draft PR with its body read back). B waits for stripe 23.1.0's
+  3-day age (19:58:14Z) before its @aws-sdk/stripe commit. Script archived as
+  `workflow-scripts/lane-b-dependabot-batch-build-wf_1a99b187-bb6.js`; progress under the scratchpad's `build/progress/`.
+  If stopped: resume with resumeFromRunId; a new session reads the branches' commits and continues the integrators' steps.
+
 ## Waiting on someone
 - The orchestrator: the CLAIM REQUEST for `co-001/dependabot-group-routing` and the ORDER ASK (top of this file).
 - The API version of Stripe's webhook endpoint (design §5.4): a person checks it in Stripe's dashboard. Does not block.
@@ -134,4 +140,4 @@ or C merge at all (item :178)?
 None yet.
 
 ## Next step
-Next: the build workflow for A and B (design §8.1-8.2), then draft PRs at once (§8.3); C once the claim row names its branch.
+Next: when the build workflow returns, subscribe to both draft PRs, then two adversarial reviews per PR (design §8.4); C once the claim row names its branch.
