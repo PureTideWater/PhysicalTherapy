@@ -806,6 +806,14 @@ describe('the result’s one action, at its top (UX-134)', () => {
     expect(html.indexOf('data-legal-surface="screening-kept-convert"')).toBeGreaterThan(html.indexOf('id="screening-convert"'));
   });
 
+  it('puts the withdrawn release’s notice before the link, so the warning that the figures may be wrong comes first, and the link still before every card', () => {
+    const html = renderToStaticMarkup(<ScreeningResultView data={{ ...DATA, summary: { ...DATA.summary, releaseWithdrawn: true } }} convert={convert} />);
+    const notice = html.indexOf('data-state="release-withdrawn"');
+    expect(notice).toBeGreaterThan(html.indexOf('data-legal-surface="screening-kept-result"'));
+    expect(html.indexOf('data-link="convert"')).toBeGreaterThan(notice);
+    expect(html.indexOf('data-slot="card"')).toBeGreaterThan(html.indexOf('data-link="convert"'));
+  });
+
   it('shows no link once an audit is requested, since the form it goes to is gone', () => {
     for (const state of [{ requested: true, converted: true }, { converted: true }]) {
       const html = view(state);
