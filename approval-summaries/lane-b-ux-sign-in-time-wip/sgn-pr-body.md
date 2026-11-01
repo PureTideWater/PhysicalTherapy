@@ -1,0 +1,21 @@
+# sgn-pr-body progress
+- started fresh; clone at /tmp/claude-0/-home-user-PhysicalTherapy/4a9d4438-0635-51b1-98ea-4663abfca5c5/scratchpad/body-clone (e4e05a0d)
+- diff: 42 files, +2632 -125
+- read: template (bce57f16), design 1, 2.1-2.3, 2.9-2.11, 3.5, 3.6, 6.1, 6.2, 7, 8, 9
+- note: design 6.1 says sr-only ": " -> code uses opacity-0 (integrator fix); e2e runs: integrate notes say 4/4 in 3.9m total (task: real 3-min test 3.1 min)
+- checks script: /tmp/claude-0/-home-user-PhysicalTherapy/4a9d4438-0635-51b1-98ea-4663abfca5c5/scratchpad/runs/checks.sh -> /tmp/claude-0/-home-user-PhysicalTherapy/4a9d4438-0635-51b1-98ea-4663abfca5c5/scratchpad/runs/checks.log (bg, flock)
+- #42 now: open, head c65f9cf2, 219 files; intersection (comm -12) = test-matrix.md, matrix.ts, registry.ts, watched-paths.txt (same as design)
+- #85 open head 90ec40ab; #92 open head e4e05a0d base bce57f16
+- CI at e4e05a0d (read ~now): approval-of-record, build, changes, domain model, lint, mutation, static success; capacity, db 1-4, e2e 1-2, images, unit in progress
+- strings in notice.tsx/step-timer.tsx match design 6.1 exactly
+- verified in head: pendingOf/stepPage take now; clearKeptEmail doc comment; harness restartHref optional (conform findings fixed). single commit e4e05a0d. LANES.md rule 6 read (/home/user/ops/LANES.md:31-35)
+- NEXT: draft pr-body.md while checks run
+- DRAFT written to /tmp/claude-0/-home-user-PhysicalTherapy/4a9d4438-0635-51b1-98ea-4663abfca5c5/scratchpad/pr-body.md with CHECKS_TABLE/TESTS_TABLE placeholders; sections: What changes, Why (+Decisions), What it does not change (+What is left), Checks (+Tests), Reviewer agents' findings, Freeze exception, Domain model, Merge order, The founder's approval, footer
+- run: install/typecheck/lint/lint:logs/lint:copy/verify-content exit 0
+- run: unit SGN 6 files 52 passed; unit related 11 files 265; db 3 files 29; synth 0 written 657 unchanged; git clean
+- per-file (json reporter run): step-timer.browser 13, step-timer.test 8, notice.test 7, dev-provider 15 (1 SGN), pending 6, step-limits 3, fixtures 23; db: sign-in-routes 16 (9 SGN), sign-in.db 10 (1 SGN), seed.db 3 -> 75/75 unit, 29/29 db
+- NEXT: fill placeholders, publish
+- placeholders filled; test descriptions matched to run titles
+- verified e2e axe (expectAccessible) + #75/#83/#84 overlap = 3 shared docs + watched-paths; final body 31744 chars; NEXT: update_pull_request + byte compare
+- 1st send: link mangled by the tool ([..](path) -> backticks); replaced with plain backticked path; jq adds a trailing newline on read-back (compare via JSON)
+- DONE: sent 2x via update_pull_request; final: raw JSON body == file bytes (exact); jq read-back differs only by jq's trailing newline

@@ -1502,7 +1502,7 @@ async function invitedShots(browser: Browser): Promise<void> {
   const CHOSEN = 'Chosen-Synthetic-Pass-2026!';
   try {
     const page = await context.newPage();
-    await attempt(all, np, async () => {
+    await attempt(andDark(all), np, async () => {
       await enterPassword(page, 'invited');
       await page.waitForURL((url) => url.pathname !== '/sign-in', { timeout: 20_000 }).catch(() => undefined);
       if (!/\/sign-in\/new-password$/.test(page.url())) throw new Error(`the invited persona did not reach ${np} (it chose its password in an earlier run on this database): prepare afresh`);
@@ -1667,7 +1667,7 @@ async function registerKeyShots(browser: Browser): Promise<void> {
   const bare = await browser.newContext(DESKTOP_CONTEXT);
   let barePhone: BrowserContext | undefined;
   try {
-    await attempt([...errorIds, ...warnIds], route, async () => {
+    await attempt(andDark([...errorIds, ...warnIds]), route, async () => {
       const page = await bare.newPage();
       await signInWithTotp(page, 'support-expiry');
       if (!/\/sign-in\/register-key$/.test(page.url())) throw new Error(`support-expiry did not reach ${route} (its key was registered earlier on this database)`);
@@ -2779,7 +2779,9 @@ test('practice workflow', async ({ browser }) => {
       if ((await letter.count()) > 0) await letter.selectOption({ index: 1 });
       await form.getByLabel('Response', { exact: true }).selectOption({ index: await optionIndex(page, /^Response$/, /Partial/i) });
       const received = form.getByLabel('Received on');
-      if ((await received.inputValue()) === '') await received.fill('2026-10-01');
+      // From PR #85's fix round Received on starts empty, required and bounded by the submission's date (min) and today
+      // (max): a fixed date before the submission's would stop the press in the browser, so the field's own min is used.
+      if ((await received.inputValue()) === '') await received.fill((await received.getAttribute('min')) || '2026-10-01');
       // Every required select the press submits is chosen, or the browser's bubble stops it and the shot would wait in vain.
       const unchosen = await form.locator('select[required]').evaluateAll((selects) => selects.filter((select) => (select as HTMLSelectElement).value === '').map((select) => select.getAttribute('name') ?? '?'));
       if (unchosen.length > 0) throw new Error(`a required select is still unchosen: ${unchosen.join(', ')}`);

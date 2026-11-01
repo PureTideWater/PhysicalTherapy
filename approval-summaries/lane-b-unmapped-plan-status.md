@@ -33,7 +33,9 @@ Open questions: none (the co-founder's standing ruling of 2026-10-26 ~00:20 UTC:
 
 | 2026-11-01 18:05 | Build running | wf_ffe27481-f78 in /home/user/unmapped-plan: core (contracts, worker pricing, monitor, job registry, phi-guard) and docs/synth in parallel; then reports and the web library/routes; then the screens; then an integration check (synth --all, watched.ts --write, typecheck, lint, lint:copy, lint:logs, verify-content, unit, targeted test:db) and a completeness critic. Builders do not commit; the session commits and pushes after it. Check-in scheduled 23:14 UTC (trig_01QXDCskF632fPWg79zmgzq6). |
 
-**State: build running (wf_ffe27481-f78).**
+| 2026-11-01 20:00 | Build stopped by the 5-hour limit; resumed | The account's 5-hour limit (reset 19:10 UTC) stopped build-reports and build-weblib mid-run; core (contracts, worker pricing, monitor, job registry, phi-guard) and docs/synth had finished. The container's worker restarted and PostgreSQL was down: setup-container.sh re-run (OK). Work so far (54 files changed, uncommitted in the worktree) pushed as WIP ref `co-001/wip-unmapped-plan` (ae465bf9, a commit built from a temporary index; the branch itself is untouched at 83d71fd6). wf_ffe27481-f78 resumed with resumeFromRunId at ~20:00 UTC (RESUMED note in the script); the stopped agents continue from their progress files. |
+
+**State: build running again (wf_ffe27481-f78, resumed); WIP on `co-001/wip-unmapped-plan` ae465bf9.**
 - **Design:** `designs/lane-b-unmapped-plan.md` (revision 2, ca0f6438; read at ed85bcf3), review `designs/lane-b-unmapped-plan/review.md`, script `workflow-scripts/lane-b-unmapped-plan-design-wf_98ca48d8-64c.js`.
 - **Reserved, used by this PR:** ADR 0075; MAP-06 to MAP-09, PRC-29 to PRC-31. MAP-10 kept for the notice follow-up. No new synth module (MAP = 2) and no new fixture release (900001). No migration.
 - **Branch:** `co-001/unmapped-plan` at 83d71fd6 on origin; worktree `/home/user/unmapped-plan`. No PR yet.

@@ -1,0 +1,18 @@
+# sgn-pr-body-check progress
+- start: live body == pr-body.md (31738 chars); PR open head e4e05a0d base bce57f16
+- own clone: check-clone at e4e05a0d; diff 42 files +2632/-125 OK; single commit
+- template sections all present; footer matches given attribution
+- OK: step-limits.ts claims, pending.ts claims, routes sign-in.ts claims (advance/settle/pendingOf/stepPage/restarted), ADR 0016/0077 notes, CASE_MODULES/MODULE_NUMBER, watched-paths +1 line
+- OK: notice.tsx/step-timer.tsx/enroll notes strings; ADR 0081 D1-D8; test-matrix SGN rows; design 3.5/7.2/9 (R-01..R-15, C-01..C-09); next.ts:238, hardware-key.tsx:23, sent.ts:28
+- FIX 1: Merge order omits open #90 (shares test-matrix, matrix.ts, registry.ts) and #91 (test-matrix, matrix.ts), both opened 18:28/18:34 before the PR
+- FIX 2: harness adds two imports (ArrivalFocus, StepTimer) and two entries (stepTimer, arrival); body names one of each
+- FIX 3 (precision): warning title on key registration is "within 2 minutes", body bullet implies "within a minute" on all
+- overlap #42 (c65f9cf2, 219), #75, #83, #84 = 3 docs + watched-paths; #85 = docs(3) + forms-harness: OK
+- NEXT: verify test counts/titles, e2e personas, seed test, CI state, then edit + send
+- backup runs/pr-body.before-check.md; CI now: all green, db 1-4, e2e 1-2 (sign-in-time 4/4, real test 3.0m) success; capacity in progress
+- FIX 4: e2e row: local run predates conformance fixes; CI e2e on e4e05a0d ran 4/4 (3.0m) -> cite
+- FIX 5: CI paragraph stale (db1, e2e finished 20:09-20:10)
+- FIX 6: screenshots: after set not taken, before-2 retake interrupted; paragraph implies both exist
+- reviews rows 'pending' left (true; reviews in progress)
+- edits done (6 fixes) in pr-body.md; NEXT send via update_pull_request
+- SENT once via update_pull_request; read-back body == pr-body.md byte for byte (32,441 chars, 32,448 bytes). DONE

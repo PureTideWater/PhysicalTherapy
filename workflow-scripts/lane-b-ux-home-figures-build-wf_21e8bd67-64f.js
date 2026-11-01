@@ -44,6 +44,7 @@ const wip2 = await WIP(2)
 phase('Integrate')
 const check = await agent(`${COMMON}
 ${SAVE('hom-build-integrate.md', 'each check and result, each fix')}
+RESUMED 2026-11-01 ~20:00 UTC: your first run stopped at the account's 5-hour limit and the machine restarted (PostgreSQL was restarted by the setup script; scratch DBs and /tmp/hom-measure may be gone). Your progress file holds what is done (step 1, the CAS-41 gate measured and passing, lint, lint:copy, lint:logs, stryker affected, watched.ts, typecheck, synth); trust it, do not re-measure, and continue with what remains (pnpm test, the db shards with the changed tests, build, e2e). Every heavy command under flock /tmp/laneb-heavy.lock.
 You are the integration check after the builders. Their results: ${JSON.stringify({ core, parts }).slice(0, 12000)}
 1. git status and diff --stat: every changed file is one the design names or a builder justified; no #42 file changed beyond rows; nothing under packages/pricing or packages/ledger; no migration.
 2. The CAS-41 gate (F1, F13): measure with the repo's CAS-41 100,000-line month (find how #81's tests or tools build it: apps/worker/src/triage/test-support/generated-month.ts, CAS-41's db test) the new home statement's EXPLAIN ANALYZE time against the sum of today's three statements (the base's lib/dashboard/queries.ts:93-97 and :138-146 at 83d71fd), and the whole dashboard() call's time; record both with the numbers. If the new statement is slower, say so plainly: that part stops (the design says it goes to Lane A's PR 11).

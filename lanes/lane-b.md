@@ -1177,3 +1177,49 @@ HANDOFF.md; LANES.md rule 10).
   the in-flight wave (range 17-29%); the tracker's 66% counts only the original plan. Launch-ready is lower: the
   people-only launch work stands at about 0 of 28 items.
 - **Next:** merges #86, #75, #84, #83, #85; #42's step-1 push, then the founder's approval line.
+
+### 2026-11-01 20:05 UTC (Lane B's orchestrator): the 5-hour stop and the resume
+- **The stop:** the account's 5-hour window stopped every session ~18:35-19:10 UTC; 7 of the 15 were left FAILED.
+- **The co-founder, 19:20 UTC:** hourly limits should no longer apply on the Ultra plan; he asked to kick everything back
+  off.
+- **The resume:** the orchestrator sent every session a resume message at 19:56 UTC. By 19:59 UTC all 15 confirmed
+  running or waiting by design. Sessions still report a 5-hour window resetting 00:10 UTC: if the plan change has not
+  applied, another stop is possible.
+- **The subscription refusals, explained:** the old sessions on Lane A's account held each PR's subscription (see Lane A's
+  18:00 UTC entry); 01UzQ6wgZgtThBRBxXTFYhRB stood down and released #82's at 17:20 UTC.
+- **#82's push runs on bce57f16, all green:** ci 41330911483, mutation 41330911489, screening-capacity 41330911481, dry
+  run 41330911485. #82's description v5 is pending.
+- **The base's redaction gap, routed to #75:** `packages/model-gateway/src/redact.ts` `years()` and `iso()` accept a
+  four-digit year below 100, so a claim number shaped like `0023-04-26` reads as a date and reaches the model
+  unredacted; MOD-13 fails on seed 1162287068 (found by #83's suite). #75 owns `redact.ts` changes and took it as fix 4
+  (a plausible year only), after its base merge 4, in one push; redact-ssn-phone has the FYI. Recorded under LANES.md
+  "Handed to Lane A" (2026-11-01 20:05 UTC (a)), with the flaky `tools/release/load.db.test.ts` (b) and SUITE-CAP-3's
+  early profile for 1b (c).
+- **#85's galleries** (before / after):
+  - 1280 px: https://claude.ai/artifact/P3JBtVwbWhpuDMXdwLxsSJ / https://claude.ai/artifact/Af9wPUdrWCySD3QpYGmbWC
+  - 390 px: https://claude.ai/artifact/W3BeEkHZBD3jDHZbqEHj4F / https://claude.ai/artifact/DgTGAdMWr1qEX1oMVRnqog
+  - 1280 px dark: https://claude.ai/artifact/7g5ME7bzUPa3f6Z4rF37uM / https://claude.ai/artifact/DYrg8YoYSwcPXQxhJuFQXQ
+- **The Dependabot alert:** one moderate alert on the default branch; the build gets 403 on alerts, so the co-founder was
+  asked to read it (https://github.com/PureTideWater/PhysicalTherapy/security/dependabot). Non-blocking.
+- **Stage per item:**
+  - pr42: step 1 pushed c65f9cf2; #82 merged locally as 6c28d6a2 (`co-001/wip-pr42-integrate-3`), db shards 2-4,
+    build, e2e and capacity left (wf_a2590f4b-2bb), then the push;
+  - ci-pin-age: P4 building on bce57f16; P2 after #86 (on the base if #86 is still open when P4 reaches its draft);
+  - ci-images-digest (#86): reviews done (S1 CI, S1 security, 4 nits); bce57f16 in on WIP b2a41a00 (N32); fix round next;
+  - contract-phi-check (#75): base merge 4 local (584f5218, 7cd60740; WIP -6), suite green so far; fix 4 (redact.ts
+    plausible year) running; then one push;
+  - packet-day-counts (#84): fix round (28 distinct, 9 blocking), resumed; WIP snapshot -3 9554cdc7;
+  - ux-screening-result-tables (#83): CI all green on 71536c60, mergeable; description and verification
+    (wf_a898fcc2-e82), then ready and waiting after #86, #75, #84;
+  - ux-payer-response (#85): reviews done (13 real findings, none blocking); fix round wf_747662b4-90f;
+  - ux-home-figures: build integrating (WIP f22eeffc); CAS-41 gate passes (100k lines: 7,775 ms against 18,312 ms);
+  - suite-cap-3: design; early profile superlinear (6,000 lines with 1b's sections: 1,486 s);
+  - ux-sign-in-time (UX PR 6): built (slices A-D, WIP 92984990 before its nit fixes); draft #92 at e4e05a0d (20:10 UTC),
+    reviews running (wf_b4cf4f54-7c4);
+  - ci-findings-transport: design done, waits for #86 (idle by design);
+  - unmapped-plan (#32): building (wf_ffe27481-f78), WIP ae465bf9 (core, docs, synth done; reports and web partial);
+  - redact-ssn-phone: design done, waits for #75 (idle by design);
+  - dependabot-batch: A draft #90 (06f79c07, CI green, reviews); C draft #91 (651f8b80); B finishing (WIP 7d153446);
+  - schema-chain: SS-01 pushed 9777ddc0 (all green); now efb20704 (bce57f16 in), checks green through test:db; build
+    and e2e next; waits for #42's #82-merged head.
+- **Next:** #86 merges first, then #75, #84, #83, #85; #42's push, then its suggested approval line for the founder.

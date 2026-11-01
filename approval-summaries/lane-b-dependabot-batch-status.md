@@ -135,7 +135,29 @@ rule applies to A and B.
   Plan: B's integrator pushes and opens the draft now; a B-completion workflow after 19:59Z adds B(4), runs the final-head
   checks with an adversarial check, pushes once and updates the description; B's reviews start after it.
 
+- 2026-11-01T18:35:00Z: **PR A opened: draft #90** (`co-001/deps-anthropic-sdk-1`, head 06f79c07; 8 commits on bce57f16;
+  description from the template, read back byte-identical; subscribed). Local: gateway unit 466 pass, test:golden 376 pass,
+  typecheck, lint, lint:logs, licenses, toolchain (1 warning: pnpm 10.34.9), verify-content, synth --all (0 written),
+  watched.ts (no change); red-first A2 (4 failed) -> A3 green; Stryker selection: none. Checker: 3 nits (N1 fixed; N2 a
+  proposal: a separate log code for the refused ANTHROPIC_CUSTOM_HEADERS in apps/web/src/lib/models/path.ts; N3 no change).
+  The push's remote message reported 1 moderate Dependabot alert on the default branch (the build cannot read alerts:
+  403): for the founder or co-founder. B's integrator waited for 19:59Z without pushing; B's local head 7d153446 (CDK
+  part + ADR 0012 amendment, version-check off too) saved as WIP ref `co-001/wip-dependabot-batch-b`. A's reviews
+  launched: wf_48c765bd-7af (two lenses in fresh clones, skeptic per B/S finding, completeness critic, loop until dry),
+  script `workflow-scripts/lane-b-dependabot-batch-reviews-wf_48c765bd-7af.js` (args select the PR).
+
+- 2026-11-01T18:46:00Z (recorded 19:58Z): the account's 5-hour window stopped A's reviews (wf_48c765bd-7af, before any
+  agent finished) and C's integrator after its push. **PR C opened: draft #91** (`co-001/dependabot-group-routing`, head
+  651f8b80; 7 commits on bce57f16: CI-12 red-first cd79ad7f, dependabot.yml db59f5b8, CI-12 row cea54fb2, runbook and ADR
+  0066 Part 2 amendment ae63d8c2, checker fixes fe3158db, 7353f88e, 651f8b80; local checks green). Its description matches
+  the source apart from one trailing newline GitHub keeps (checked 19:57Z). Trial merge with #86 (83167b8f): the same single
+  ADR 0066 hunk conflicts as with the base; C adds none. #90's CI on 06f79c07: 20 success, 2 skipped (green).
+- 2026-11-01T19:58:00Z: window reset (19:10Z). Setup re-run (PostgreSQL restarted; three worktrees OK). Subscribed to #91.
+  A's reviews resumed (wf_48c765bd-7af, same args). B-completion workflow wf_1dedd31c-ddb launched (B(4) after 19:59Z,
+  final-head checks, checker, push, draft PR B); script archived. The 20:02Z check-in deleted (superseded).
+
 ## Waiting on someone
+- 1 moderate Dependabot alert on the default branch (GitHub's push message, 2026-11-01 18:2xZ): a person reads it (the API answers 403 to the build). Does not block.
 - The API version of Stripe's webhook endpoint (design §5.4): a person checks it in Stripe's dashboard. Does not block.
 - Dependabot alerts (triage step 3): the founder or the co-founder reads the alerts page (the API gives the build 403). Does
   not block the merge.
@@ -151,4 +173,4 @@ rule applies to A and B.
 None yet.
 
 ## Next step
-Next: when the build workflow returns, subscribe to both draft PRs, then two adversarial reviews per PR (design §8.4); C once the claim row names its branch.
+Next: A's reviews -> A's fix round; B's draft (wf_1dedd31c-ddb) -> B's reviews; C's reviews when a heavy slot frees (reviews script with C's args). C merges after #86 (deadline guard 2026-11-04 12:00Z).
