@@ -664,7 +664,7 @@ jobs:
   # held to apps/web/e2e/browser.json.
   # Each identity step takes only the config digest it compares, never the whole metadata output: buildx puts the whole
   # event there, a pull request's description with it, and one environment string over 131,072 bytes stops bash from
-  # starting (docs/adr/0066, Part 3, N29).
+  # starting (docs/adr/0066, Part 3, N32).
   images:
     runs-on: ubuntu-26.04
     # About 4 minutes.
@@ -684,7 +684,7 @@ jobs:
       # Each image as an archive (buildx's type=docker export), with no attestation manifest, so either image store
       # holds one manifest for it and the scan reads the bytes the checks read.
       # Its metadata output carries no build provenance (BUILDX_METADATA_PROVENANCE: disabled): buildx would put the
-      # whole event in it, and in the log (docs/adr/0066, Part 3, N29).
+      # whole event in it, and in the log (docs/adr/0066, Part 3, N32).
       - name: Build the web image
         id: web
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0

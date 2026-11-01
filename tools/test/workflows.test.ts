@@ -1924,7 +1924,7 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
   /**
    * A step's env as the runner evaluates it from the builds' metadata outputs, in the two forms an identity step has
    * had: the whole output, or `fromJSON(output || '{}')[key]`, whose missing key (or a non-object) is null and so ''
-   * (docs/adr/0066, Part 3, N29). Any other form fails the test.
+   * (docs/adr/0066, Part 3, N32). Any other form fails the test.
    */
   function identityEnv(step: Step, metadata: Readonly<Record<string, string>>): Record<string, string> {
     return Object.fromEntries(
@@ -2839,9 +2839,9 @@ describe('concurrency groups', () => {
  * environment, an action's input (an INPUT_* variable) or a script. Every expression there is read as the runner reads
  * it (actions/runner's LexicalAnalyzer: whitespace skipped before every token, a name before "(" a function, names and
  * keys without case) and admitted only from a closed list: values GitHub or the workflow bounds, and each step output or
- * value one job hands another, listed with its bound (docs/adr/0066, Part 3, N29).
+ * value one job hands another, listed with its bound (docs/adr/0066, Part 3, N32).
  */
-describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, Part 3, N29)', () => {
+describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, Part 3, N32)', () => {
   type Token = { readonly kind: 'string' | 'number' | 'keyword' | 'name' | 'function' | 'punctuation' | 'operator' | 'star'; readonly text: string };
   type Expression =
     | { readonly t: 'literal'; readonly kind: 'string' | 'number' | 'keyword'; readonly value: string }
@@ -3262,7 +3262,7 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
 
   /**
    * Every step output and every value one job hands another that reaches a process, each with its bound: a new one fails
-   * the test below until a reviewed row names its bound (docs/adr/0066, Part 3, N29).
+   * the test below until a reviewed row names its bound (docs/adr/0066, Part 3, N32).
    */
   const BOUNDED_VALUES: readonly BoundedValue[] = [
     { file: 'ci.yml', job: 'all-green', value: 'tojson(needs)', bound: 'the eight jobs it needs (ci.yml:791), each a result word, and their outputs, of which there are none: no ci.yml job declares outputs (asserted below)' },

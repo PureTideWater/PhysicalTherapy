@@ -149,7 +149,7 @@ differential test, which prices the base's engine and this commit's.
      or package bump), or record why not in docs/adr/0010's way. An identity step's `::error` names the archive's config
      digest and the one buildx reported ("nothing it reported" when the metadata lacked it); "Argument list too long" on
      any step means a value over 131,072 bytes reached its environment, which `workflows.test.ts` refuses for every
-     value it does not list with its bound (docs/adr/0066, Part 3, N29).
+     value it does not list with its bound (docs/adr/0066, Part 3, N32).
 3. **Re-running.** Re-run failed jobs only for an infrastructure failure (a runner lost, a download refused, a service
    that did not start), never for a test that failed: a test that passes on a re-run is a flaky test, and is fixed.
    A re-run replaces the artifacts the first attempt left (`overwrite: true`).
@@ -429,7 +429,7 @@ user that cannot run the binary.
   values. Never use a build's whole metadata, an event object, a description or title, or `toJSON` of anything but
   `needs`. A new step output or value one job hands another joins its list with its bound, and a new `$GITHUB_ENV`
   variable joins its closed list. Every `docker/build-push-action` step sets `BUILDX_METADATA_PROVENANCE: disabled`
-  (docs/adr/0066, Part 3, N29).
+  (docs/adr/0066, Part 3, N32).
 - A new workflow's concurrency group starts with its own name (`${{ github.workflow }}-`), since groups are shared by
   every workflow of the repository.
 - A new action is pinned as `owner/repo@<40 hex> # vX.Y.Z` at its latest release, read with `git ls-remote`, and takes
