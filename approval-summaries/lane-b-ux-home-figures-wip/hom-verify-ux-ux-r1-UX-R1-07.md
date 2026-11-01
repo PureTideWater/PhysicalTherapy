@@ -1,0 +1,3 @@
+# hom-verify ux-r1-UX-R1-07 (ROI note "Not recomputed from its links.")
+- Checked: recovered-words.ts:35 (not 34) ACTIONABLE_OPEN_NOTE; rendered at roi page.tsx:134 (links labelled "Case"), PDF statement-html.ts:117; roi.tsx:41 sibling cards say "Recomputed from its N linked entries"; shot hom-screens-after tiles p.roi-statement.default.1280/03.png shows the text.
+- Verdict: real, nit. Better fix: one shared constant for web and PDF that also reads right with zero cases, e.g. "... pricing in effect. The figure is not recomputed later from the cases it counted." Update any test asserting the string; pnpm lint:copy.

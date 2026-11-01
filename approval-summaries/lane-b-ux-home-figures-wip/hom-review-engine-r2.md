@@ -1,0 +1,12 @@
+# hom-review-engine-r2 progress
+- reuse r1 clone rev-engine @87691be4; r1 findings E1-E5 excluded
+- empty diff pricing/ledger/db confirmed; no migration
+- finding candidate: firstOn includes reversed entries and reversals (statements.ts:69-70) -> since-date predates standing recovery (should-fix)
+- probe confirmed firstOn=2026-01-10 for wrong deposit reversed next day + real 2026-08-01 (recovered 1200). probe removed
+- digest JOB-03 text check reviewed (monitor.db.test.ts:542-551); running monitor.db.test
+- checked sound: CASES derived-table paging (where refs c only); case_line_once => one line per service line; variance>0 at triage => CHECK holds; reopen only back to actionable (null/early stage moot); digest case set already acknowledged in ADR 0082; recovered words per proof level match payerApproved(); synth registry/fixtures synthetic
+- #42 overlap re-check (merge base bce57f16): test-matrix, synth matrix/registry, AND tools/screening-capacity/watched-paths.txt (not in PR body overlap list) -> nit
+- freeze: agree none needed (no ledger/pricing/db diff, no roi_statement DDL, recovered total untouched)
+- monitor.db.test full file running (b8xge674b)
+- monitor.db.test.ts full: 20/20 pass (digest + JOB-03 PHI text check)
+- FINAL r2: R2-1 firstOn from reversed entries (should-fix, statements.ts:71); R2-2 PR body overlap omits watched-paths.txt (nit, pr93-body.md:84). freeze: none. Returning.
