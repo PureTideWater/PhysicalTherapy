@@ -22,6 +22,14 @@ by 2026-11-04 12:00 UTC, C merges without waiting (resolve ADR 0066 keeping both
 (2c) A, B and C may merge while #42 waits on the founder; only the schema chain is serial. The same "don't jump a ready PR"
 rule applies to A and B.
 
+ORCHESTRATOR RULING (2026-11-01 20:36 UTC), new standing merge rule: a verified, green PR merges as soon as it is ready
+(rule 6: base merged in first, CI green on that head, ready, approval-of-record re-run, merge with expectedHeadSha). The
+section-6 order applies only between PRs that conflict; the one merged second resolves. Known pairs include #86/#91 (ADR
+0066). Never jump a PR already green and waiting with a conflicting file. For this item: A merges when ready (the design's
+trial merges show no conflict with #42, #75, #83, #84, #85 or #86; re-checked by merge-tree before the merge); B merges when
+ready (18:00 ruling 2c: not waiting for #42; whichever merges second regenerates the lockfile); C waits for #86 (deadline
+guard 2026-11-04 12:00 UTC).
+
 ## Now (2026-11-01T14:50:00Z)
 - **Stage: not started; session starting.** No pipeline stage is done: design, build, draft PRs, reviews, fix round,
   verification, merge, then closing the bot PRs.
@@ -155,6 +163,11 @@ rule applies to A and B.
 - 2026-11-01T19:58:00Z: window reset (19:10Z). Setup re-run (PostgreSQL restarted; three worktrees OK). Subscribed to #91.
   A's reviews resumed (wf_48c765bd-7af, same args). B-completion workflow wf_1dedd31c-ddb launched (B(4) after 19:59Z,
   final-head checks, checker, push, draft PR B); script archived. The 20:02Z check-in deleted (superseded).
+
+- 2026-11-01T20:37:00Z: B(4) built (a487f133: @aws-sdk ^3.1160.0, every one of the nine at least 73.1 h old at 19:59:12Z;
+  3.1161.0 too new until 2026-11-02T18:52Z; stripe ^23.1.0 at 72.0 h); lockfile +249/-261, `@smithy/core` 3.38.0 deprecated
+  (3.38.1 comes with the merge-time regeneration). B's checker: 3 nits, no B/S. A's reviews in round 2 (the critic's gaps).
+  #91 CI green on 651f8b80 incl. the four required checks, mergeable clean. 20:36Z merge rule recorded above.
 
 ## Waiting on someone
 - 1 moderate Dependabot alert on the default branch (GitHub's push message, 2026-11-01 18:2xZ): a person reads it (the API answers 403 to the build). Does not block.
