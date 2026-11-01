@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { repositoryRoot } from '../../content-files';
 import { type KeyedMutant, MUTANT_STATUSES, type MutantStatus, type MutationReport, describeMutant, keyOf, keyedMutants } from '../mutants';
+import { pnpmOfUserAgent } from '../runtime';
 
 /**
  * The mutation canary's verdict (tools/stryker/canary/stryker.config.mjs; docs/adr/0066, Part 4): each of its five
@@ -54,16 +55,22 @@ export interface CaseVerdict {
   readonly problems: readonly string[];
 }
 
-/** The Node a shard ran on, and the Unicode and ICU data its engine holds (process.versions). */
+/** The Node a shard ran on, the Unicode and ICU data its engine holds (process.versions), and the pnpm that ran it. */
 export interface Runtime {
   readonly node: string;
   readonly unicode: string;
   readonly icu: string;
+  readonly pnpm: string;
 }
 
 /** This process's runtime: the shard's, since its canary step and its Stryker run use the same Node. */
 export function currentRuntime(): Runtime {
-  return { node: process.version, unicode: process.versions.unicode ?? '', icu: process.versions.icu ?? '' };
+  return { node: process.version, unicode: process.versions.unicode ?? '', icu: process.versions.icu ?? '', pnpm: pnpmOfUserAgent(process.env.npm_config_user_agent) };
+}
+
+/** The commit checked out at `root`, read from .git without running git; '' when it cannot be read. Not yet built. */
+export function headCommit(_root: string = repositoryRoot): string {
+  return '';
 }
 
 export interface CanaryVerdict {
@@ -71,6 +78,8 @@ export interface CanaryVerdict {
   readonly shard: string | null;
   /** The Node the shard ran on: the gate holds the equivalents that rest on Unicode data to it (tools/stryker/unicode.json). */
   readonly runtime: Runtime;
+  /** The commit the shard ran on. */
+  readonly commit: string;
   readonly total: number;
   readonly asExpected: number;
   readonly cases: readonly CaseVerdict[];
@@ -103,8 +112,8 @@ export function parseExpected(value: unknown): Expected {
   };
 }
 
-/** Judges the canary's report case by case, on the runtime given (this process's by default). */
-export function judgeCanary(report: MutationReport, expected: Expected, shard: string | null = null, runtime: Runtime = currentRuntime()): CanaryVerdict {
+/** Judges the canary's report case by case, on the runtime and commit given (this process's and checkout's by default). */
+export function judgeCanary(report: MutationReport, expected: Expected, shard: string | null = null, runtime: Runtime = currentRuntime(), commit: string = headCommit()): CanaryVerdict {
   const mutants = keyedMutants(report);
   const caseFiles = new Set(expected.cases.map((item) => item.file));
   const problems = [...new Set(mutants.filter((mutant) => !caseFiles.has(mutant.file)).map((mutant) => mutant.file))].map((file) => `${file} is mutated, but no case names it`);
@@ -132,7 +141,7 @@ export function judgeCanary(report: MutationReport, expected: Expected, shard: s
     return { case: item.case, proves: item.proves, file: item.file, mutants: reported.size, asExpected: caseProblems.length === 0, problems: caseProblems };
   });
   const asExpected = problems.length === 0 ? cases.filter((item) => item.asExpected).length : 0;
-  return { format: CANARY_FORMAT, shard, runtime, total: CANARY_CASES, asExpected, cases, problems };
+  return { format: CANARY_FORMAT, shard, runtime, commit, total: CANARY_CASES, asExpected, cases, problems };
 }
 
 /** Whether a verdict lets its shard score: all five cases as expected and nothing else wrong. */

@@ -5,6 +5,7 @@ import { MUTATION_PACKAGES, type MutationPackage, type Shard, readNoMutants, rea
 import { repositoryRoot } from '../content-files';
 import { CANARY_CASES, CANARY_FORMAT, type CanaryVerdict, type Runtime, canaryPassed } from './canary/verdict';
 import { DETECTED, type KeyedMutant, type MutantKey, type MutationReport, UNDETECTED, describeMutant, keyOf, keyedMutants, repositoryPath } from './mutants';
+import { type Pins, readPins } from './runtime';
 import { packagesOf, shardsOf } from './shards';
 
 /**
@@ -93,6 +94,10 @@ export interface GateInput {
   readonly unicode?: unknown;
   /** The run's UTC date (YYYY-MM-DD); today's when not given. */
   readonly today?: string;
+  /** The Node, Unicode, ICU and pnpm every shard must have run on (tools/stryker/runtime.ts, readPins). */
+  readonly pins: Pins;
+  /** The commit every shard must have run on: GITHUB_SHA on Actions; undefined off Actions. */
+  readonly commit?: string;
 }
 
 /** tools/stryker/unicode.json, read: the runtime its entries were checked on, and the entries. */
@@ -560,6 +565,8 @@ if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.reso
       noMutants: readNoMutants(),
       unicode: readUnicodeFile(),
       today: new Date().toISOString().slice(0, 10),
+      pins: readPins(),
+      commit: process.env.GITHUB_ACTIONS === 'true' ? (process.env.GITHUB_SHA ?? '') : undefined,
     });
     process.stdout.write(`${result.lines.join('\n')}\n`);
     if (summary !== undefined && summary !== '') appendFileSync(summary, summaryMarkdown(result));

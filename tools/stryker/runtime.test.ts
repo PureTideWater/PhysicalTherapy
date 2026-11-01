@@ -1,0 +1,43 @@
+import { describe, expect, it } from 'vitest';
+
+import type { Runtime } from './canary/verdict';
+import { checkRuntime } from './runtime';
+import { TEST_PINS } from './test-support';
+
+/**
+ * The changes job's own runtime check (tools/stryker/runtime.ts; docs/adr/0066, Part 7; test matrix CI-29): before it
+ * decides anything, the job fails unless its Node, Unicode, ICU and pnpm are the pinned ones, so a `node` bin a
+ * dependency links, or another pnpm, fails the pull request's own mutation check. Each case gives the runtime and the
+ * pins, never this process's: CI's unit job runs a floating Node 24.
+ */
+
+describe('the changes job’s runtime check', () => {
+  it('names each of a Node, Unicode, ICU and pnpm that differs from the pins, passes the pinned runtime with Node’s v either way, and exits 1 on any difference', () => {
+    const pinned: Runtime = { node: `v${TEST_PINS.node}`, unicode: TEST_PINS.unicode, icu: TEST_PINS.icu, pnpm: TEST_PINS.pnpm };
+    const described = 'runtime: Node v24.22.0 (Unicode 17.0, ICU 78.3) and pnpm 10.34.8';
+    const passed = "runtime: the pinned one (Node, Unicode and ICU as tools/stryker/unicode.json's checkedOn, pnpm as the root package.json's packageManager)";
+    expect(checkRuntime(pinned, TEST_PINS)).toEqual({ lines: [described, passed], status: 0 });
+    expect(checkRuntime({ ...pinned, node: TEST_PINS.node }, TEST_PINS)).toEqual({ lines: [described, passed], status: 0 });
+    expect(checkRuntime(pinned, { ...TEST_PINS, node: `v${TEST_PINS.node}` }).status).toBe(0);
+
+    const node = "::error::The runtime is not the pinned one: Node v24.21.0, not the pinned v24.22.0 (tools/stryker/unicode.json's checkedOn.node)";
+    const unicode = "::error::The runtime is not the pinned one: Unicode 16.0, not the pinned 17.0 (tools/stryker/unicode.json's checkedOn.unicode)";
+    const icu = "::error::The runtime is not the pinned one: ICU 77.1, not the pinned 78.3 (tools/stryker/unicode.json's checkedOn.icu)";
+    const pnpm = "::error::The runtime is not the pinned one: pnpm 10.34.9, not the pinned 10.34.8 (the root package.json's packageManager)";
+    for (const [overrides, line] of [
+      [{ node: 'v24.21.0' }, node],
+      [{ unicode: '16.0' }, unicode],
+      [{ icu: '77.1' }, icu],
+      [{ pnpm: '10.34.9' }, pnpm],
+    ] as const) {
+      const runtime = { ...pinned, ...overrides };
+      expect(checkRuntime(runtime, TEST_PINS), line).toEqual({ lines: [`runtime: Node ${runtime.node} (Unicode ${runtime.unicode}, ICU ${runtime.icu}) and pnpm ${runtime.pnpm}`, line], status: 1 });
+    }
+    // Every leg at once, each named; a pnpm the user agent does not name (a step not run by pnpm) is no pnpm.
+    expect(checkRuntime({ node: 'v24.21.0', unicode: '16.0', icu: '77.1', pnpm: '10.34.9' }, TEST_PINS).lines.slice(1)).toEqual([node, unicode, icu, pnpm]);
+    expect(checkRuntime({ ...pinned, pnpm: '' }, TEST_PINS)).toEqual({
+      lines: ['runtime: Node v24.22.0 (Unicode 17.0, ICU 78.3) and pnpm (none)', "::error::The runtime is not the pinned one: pnpm (none), not the pinned 10.34.8 (the root package.json's packageManager)"],
+      status: 1,
+    });
+  });
+});
