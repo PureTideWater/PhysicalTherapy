@@ -125,6 +125,10 @@ rule applies to A and B.
 - 2026-11-01T18:12:00Z: orchestrator rulings received (top of file). `co-001/dependabot-group-routing` created on origin at
   bce57f16 through the hook; worktree `/home/user/dependabot-group-routing` (setup OK). Next: C's build workflow.
 
+- 2026-11-01T18:15:00Z: C's build workflow wf_7c837166-d80 launched (builder, adversarial checker, integrator with push and
+  draft PR). Script archived as `workflow-scripts/lane-b-dependabot-batch-build-c-wf_7c837166-d80.js`. Two heavy workflows
+  now run (A/B build and C build).
+
 ## Waiting on someone
 - The API version of Stripe's webhook endpoint (design §5.4): a person checks it in Stripe's dashboard. Does not block.
 - Dependabot alerts (triage step 3): the founder or the co-founder reads the alerts page (the API gives the build 403). Does
