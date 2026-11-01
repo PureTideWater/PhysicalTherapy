@@ -150,7 +150,8 @@ differential test, which prices the base's engine and this commit's.
      digest and the one buildx reported ("nothing it reported" when the metadata lacked it); "Argument list too long" on
      any step means an environment string (`NAME=value` and its NUL) over 131,072 bytes, or the whole environment and
      arguments over `ARG_MAX`; `workflows.test.ts` sums each environment string a workflow sets and refuses one over
-     131,072 bytes, or one holding a value it does not list with its bound (docs/adr/0066, Part 3, N32).
+     131,072 bytes, or one holding a value it does not list with its bound (docs/adr/0066, Part 3, N32). A pull
+     request's run uploads no build record (`.dockerbuild`) by design; a push's run on the build branch does.
 3. **Re-running.** Re-run failed jobs only for an infrastructure failure (a runner lost, a download refused, a service
    that did not start), never for a test that failed: a test that passes on a re-run is a flaky test, and is fixed.
    A re-run replaces the artifacts the first attempt left (`overwrite: true`).
@@ -436,7 +437,10 @@ user that cannot run the binary.
   test prints a new one, re-read the bound against the changed script, then write the new fingerprint in the row. A
   new `$GITHUB_ENV` write joins its closed map: its file, job, step and exact line, its bound, and the test that runs
   the step. Every `docker/build-push-action` step sets `BUILDX_METADATA_PROVENANCE: disabled`
-  (docs/adr/0066, Part 3, N32).
+  and `DOCKER_BUILD_RECORD_UPLOAD: ${{ github.event_name != 'pull_request' }}`: its build record (a `.dockerbuild`
+  artifact whose provenance holds the whole event, a description and title or commit messages and e-mails) can be
+  downloaded by any signed-in account for 90 days in this public repository, so a pull request's run uploads none,
+  while a push's and the release's keep the default (docs/adr/0066, Part 3, N32).
 - A new workflow's concurrency group starts with its own name (`${{ github.workflow }}-`), since groups are shared by
   every workflow of the repository.
 - A new action is pinned as `owner/repo@<40 hex> # vX.Y.Z` at its latest release, read with `git ls-remote`, and takes

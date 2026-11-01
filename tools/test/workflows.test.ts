@@ -4080,7 +4080,7 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     expect(json([needs('build')])).toEqual(['fixture.yml use tojson(needs.build.outputs): toJSON reads every output of job build (digest_web), and the row names none']);
   });
 
-  it('sets BUILDX_METADATA_PROVENANCE: disabled on every docker/build-push-action step of every workflow, and nothing else writes or reads buildx’s metadata provenance', () => {
+  it('sets BUILDX_METADATA_PROVENANCE: disabled on every docker/build-push-action step of every workflow, and uploads its build record only off a pull request, and nothing else writes or reads buildx’s metadata provenance', () => {
     // buildx v0.38.1 copies the whole event into every build record's provenance and, in its default mode (min), into
     // the metadata file build-push-action prints and outputs; disabled leaves the key out, and buildx reads the word
     // exactly (Disabled would be min). Matched in lower case: usesAction's prefix is case-sensitive.
@@ -4089,6 +4089,12 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     // Each build that does not set it is named; a new build that does passes, with no fixed count of them. The parsed
     // builds are as many as the files' own lines name, so a build the parse missed (or one an alias repeats) fails.
     expect(builds.filter(({ step }) => step.env?.BUILDX_METADATA_PROVENANCE !== 'disabled').map(({ where }) => where)).toEqual([]);
+    // Each build's record (BuildKit's history, its provenance holding the whole event: a pull request's description,
+    // title and labels, a push's commit messages and authors' e-mails) is an artifact any signed-in account can read in
+    // this public repository for 90 days, so a pull request's run uploads none; a push's and the release's keep the
+    // default, the release's record being the only full provenance of a released image. build-push-action v7.4.0 reads
+    // the variable in its post step with actions-toolkit's parseBool (true or false; anything else is a warning).
+    expect(builds.filter(({ step }) => step.env?.DOCKER_BUILD_RECORD_UPLOAD !== "${{ github.event_name != 'pull_request' }}").map(({ where }) => where)).toEqual([]);
     expect(builds.length).toBeGreaterThan(0);
     const lines = workflowFiles().flatMap((file) => readFileSync(path.join(WORKFLOWS, file), 'utf8').split('\n').filter((line) => /^\s*(?:-\s+)?uses:\s*["']?docker\/build-push-action@/i.test(line)));
     expect(builds).toHaveLength(lines.length);

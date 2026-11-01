@@ -989,8 +989,20 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
   - **The guard.** The `|| '{}'` keeps an empty output on the step's own message: the runner evaluates a step's
     `env` before its `if:`, so no condition could guard it.
   - **The builds.** Every `docker/build-push-action` step also sets `BUILDX_METADATA_PROVENANCE: disabled`. No step
-    reads the provenance, and the event stops being printed in each build's log. The build record, which
-    build-push-action uploads as an artifact, keeps BuildKit's copy.
+    reads the provenance, and the event stops being printed in each build's log.
+    - **The build record.** build-push-action's post step exports each build's record (a `.dockerbuild` file:
+      BuildKit's history, whose provenance carries buildx's `github_actions_context.json`, the whole event: a pull
+      request's description, title and labels, a push's commit messages and its authors' names and e-mails) and
+      uploads it as an artifact. The repository is public, so any signed-in GitHub account can download it, for 90
+      days (no retention is set), after the description is edited. So every build step also sets
+      `DOCKER_BUILD_RECORD_UPLOAD: ${{ github.event_name != 'pull_request' }}`: a pull request's run uploads no record
+      (it is still written on the runner, and the build summary without its link), while a push's and the release's
+      keep the default upload, the release's record being the only full provenance of a released image (its images
+      build with `provenance: false`). build-push-action v7.4.0 reads the variable in its post step with
+      actions-toolkit's `parseBool`. The security review's S3, decided for the safer option under the same ruling.
+    - **P2, a proposal:** taking the event out of the record altogether, `provenance-add-gha=false` on the builder,
+      needs #82's builder rule changed (`tools/check-action-pins/buildkit.ts` holds `driver-opts` to exactly
+      `image=…@sha256:…`), so it stays with the founder.
   - **What holds it.** `workflows.test.ts` reads every expression that reaches a step's environment, an input or a
     script, or a key, as the runner reads it, and admits only a closed list; it refuses any expression in a key, which
     GitHub would evaluate as a variable's or an input's name. That list holds values GitHub or the workflow bounds, and every step output and value one job hands another, each listed with its bound.
