@@ -70,10 +70,12 @@ describe('the audit report’s count of submissions sent without sign-off', () =
     );
     expect(logged.sent).toEqual({ kind: 'unattested', reason: 'pricing_stale_after_export' });
 
-    // The run's report, gathered as the report job gathers it.
-    const { content } = await withJobScope(w.app, { jobId: randomUUID(), practiceId: practice.practiceId }, async (scope) =>
-      gatherReport(scope, { practiceId: practice.practiceId, auditReportId: randomUUID(), pricingRunId: runId, asOf: w.today(), requestId: 'test-gather', cipher: await loadPracticeCipher(scope, w.keys, practice.practiceId) }),
-    );
+    // The run's report, gathered as the report job gathers it (its line CSV's arena released unread).
+    const content = await withJobScope(w.app, { jobId: randomUUID(), practiceId: practice.practiceId }, async (scope) => {
+      const gathered = await gatherReport(scope, { practiceId: practice.practiceId, auditReportId: randomUUID(), pricingRunId: runId, asOf: w.today(), requestId: 'test-gather', cipher: await loadPracticeCipher(scope, w.keys, practice.practiceId) });
+      gathered.arena.release();
+      return gathered.content;
+    });
     const byCase = new Map(content.cases.map((item) => [item.case_id, item]));
     expect(byCase.size).toBe(2);
     expect(byCase.get(sent)?.unattested_submissions).toBe(1);

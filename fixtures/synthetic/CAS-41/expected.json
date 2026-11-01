@@ -1,0 +1,22 @@
+{
+  "case": "CAS-41",
+  "module": "CAS",
+  "title": "A month's triage and report read in bounded memory",
+  "assertion": "Triage's candidates and the audit report are read in batches; the judged candidates, the report's content, its CSV's bytes and its PDF's HTML equal the whole read's; what the report holds grows by at most 400 bytes per line, its CSV rows kept outside the heap",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": [
+    "apps/worker/src/triage/batched.db.test.ts",
+    "apps/worker/src/report/streamed.db.test.ts",
+    "apps/worker/src/report/csv-arena.test.ts",
+    "apps/worker/src/reconcile/patient-share.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Generated at size by the test: no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

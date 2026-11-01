@@ -3,6 +3,7 @@ import { STAGE_LABELS } from '@tp/triage';
 import { monthlySummaryCsv as summaryCsv } from '@tp/worker/reports';
 import { z } from 'zod';
 
+import { keptMonth, returnPage } from '../http/download-refusal';
 import { practiceRoute, selfRoute } from '../http/invoke';
 import { pageParam, pageWindow } from '../http/paging';
 import { type Download, type MutationResult, NotFoundError } from '../http/route';
@@ -119,13 +120,19 @@ export interface MonthlySummaryPageData {
   readonly origin: string;
 }
 
+/**
+ * The monthly summary's parameters, its page's and its CSV's alike: the month of service, blank for last month. A
+ * browser's refused CSV keeps the month only when these take it, so the page it returns to always opens (docs/adr/0079).
+ */
+export const monthlyParams = z.object({ practiceId: opaqueId, month: optionalText(month) });
+
 export const monthlySummaryPage = practiceRoute({
   id: 'practice.reports.monthly',
   kind: 'page',
   path: '/p/[practiceId]/reports/monthly',
   phi: true,
   permission: 'report.read',
-  params: z.object({ practiceId: opaqueId, month: optionalText(month) }),
+  params: monthlyParams,
   handle: async ({ scope, practiceId, params, access, services }): Promise<MonthlySummaryPageData> => ({
     practiceId,
     summary: await monthlySummary(scope, practiceId, params.month ?? lastMonth()),
@@ -164,7 +171,9 @@ export const monthlySummaryCsvRoute = practiceRoute({
   rateLimit: 'export',
   phi: true,
   permission: 'report.read',
-  params: z.object({ practiceId: opaqueId, month: optionalText(month) }),
+  params: monthlyParams,
+  // A browser's refused CSV comes back to the summary, on the month it was asked for when that month is one (docs/adr/0079).
+  returnTo: (params) => returnPage(monthlySummaryPage.path, params, { month: keptMonth(params.month) }),
   handle: async ({ scope, practiceId, params, request }): Promise<Download> => {
     const summary = await monthlySummary(scope, practiceId, params.month ?? lastMonth());
     // Every report file's download is in the export history (counts and totals: no line-level PHI).

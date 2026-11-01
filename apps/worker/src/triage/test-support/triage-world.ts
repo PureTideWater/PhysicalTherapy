@@ -213,7 +213,7 @@ export class TriageWorld {
    */
   async perVisitContract(
     target: Practice,
-    options: { readonly codes: readonly string[]; readonly amountCents: string; readonly effectiveFrom: string; readonly disputeWindowDays: number; readonly windowCited?: boolean },
+    options: { readonly codes: readonly string[]; readonly amountCents: string; readonly effectiveFrom: string; readonly disputeWindowDays: number; readonly windowCited?: boolean; readonly payerId?: string },
   ): Promise<FixedContract> {
     const quote = `A visit of ${options.codes.join(', ')} is paid ${formatCents(parseCents(options.amountCents))} per visit`;
     return this.contractWith(target, options, [quote], [{ terms: { scope: { codes: options.codes }, method: 'PER_VISIT', parameters: { amount_cents: options.amountCents }, flags: { timed_units_rule: 'PER_CODE' } }, quote }]);

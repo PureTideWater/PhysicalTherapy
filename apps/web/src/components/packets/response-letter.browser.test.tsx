@@ -375,6 +375,54 @@ describe.skipIf(!chromiumInstalled())('the payer’s letter inside “Log a paye
     await page.close();
   });
 
+  it('CAS-47: inside the form, leaving asks only while the letter is being sent; a Retry that sends it again asks again, and the press after the upload meets no question', async () => {
+    const { page, server } = await openForm({ ...NONE, unused: [letter(ON_FILE)] });
+    // Whether the uploader's leave guard (docs/adr/0079) would have the browser ask before the page unloads.
+    const asks = (): Promise<boolean> =>
+      page.evaluate(() => {
+        const leaving = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(leaving);
+        return leaving.defaultPrevented;
+      });
+    expect(await asks()).toBe(false);
+    server.put = 'hold';
+    await chooseFile(page);
+    await page.waitForSelector('li[data-phase="uploading"]', { state: 'attached' });
+    expect(await asks()).toBe(true);
+    // The PUT fails: nothing is in flight, so nothing is lost by leaving.
+    server.put = 'fail';
+    server.releasePut();
+    const batch = page.getByRole('region', { name: 'This batch' });
+    await batch.getByText('Not sent').waitFor();
+    expect(await asks()).toBe(false);
+    // Retry answers with a new upload URL: the letter is sent again, and leaving asks again while it is.
+    await page.route('**/p/practice-1/uploads/retry', (route) => {
+      server.retries += 1;
+      return route.fulfill({ json: { upload: { method: 'PUT', url: `/synthetic-put/${UPLOADED}`, headers: {} } } });
+    });
+    server.put = 'hold';
+    await batch.getByRole('button', { name: 'Retry', exact: true }).click();
+    await page.waitForSelector('li[data-phase="uploading"]', { state: 'attached' });
+    expect(await asks()).toBe(true);
+    expect(server.retries).toBe(1);
+    expect(await calls(page)).toHaveLength(0);
+    server.put = 'ok';
+    server.releasePut();
+    await page.waitForSelector('li[data-phase="sent"]', { state: 'attached' });
+    expect(await asks()).toBe(false);
+    // The scan ends and the letter is chosen; the response posts once, and no question stands in the way.
+    await serve(page, { ...NONE, unused: [letter(UPLOADED, '2026-10-28T14:02:00.000Z'), letter(ON_FILE)] }, { now: false });
+    server.receipt = { status: 'stored' };
+    await waitForStatus(page, 'chosen');
+    await page.selectOption('#response-kind', 'denied');
+    await page.getByRole('button', { name: 'Record the response', exact: true }).click();
+    await page.waitForSelector(SUMMARY);
+    expect(await calls(page)).toHaveLength(1);
+    expect((await calls(page))[0]?.entries).toContainEqual(['documentId', UPLOADED]);
+    expect(await asks()).toBe(false);
+    await page.close();
+  });
+
   it('CAS-47: one PDF only: two files or a zip dropped are refused here, with no request', async () => {
     for (const files of [
       [

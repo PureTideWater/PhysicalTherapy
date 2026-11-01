@@ -180,6 +180,12 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
       'Submitting the materiality and pursuit forms with the values the page pre-fills keeps lineMaterialityCents 500, caseMaterialityCents 25000 and staffRateCentsPerHour 4500; for every amount, the helper’s output read back through the save’s dollars field gives the same cents; a model budget entered as 5.00 or 5 is stored as 500 cents',
   },
   {
+    id: 'CAS-41',
+    title: "A month's triage and report read in bounded memory",
+    assertion:
+      "Triage's candidates and the audit report are read in batches; the judged candidates, the report's content, its CSV's bytes and its PDF's HTML equal the whole read's; what the report holds grows by at most 400 bytes per line, its CSV rows kept outside the heap",
+  },
+  {
     id: 'CAS-45',
     title: 'A write-off reason the line’s own records contradict',
     assertion:
@@ -195,7 +201,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'CAS-47',
     title: 'The payer’s letter uploaded in “Log a payer response”',
     assertion:
-      'The form shows with no letter on file; the letter goes through the same scanned intake; what was typed before the upload keeps its value through the scan and the page read again; the letter is chosen only once it is stored, and only the letter that form uploaded or, for a duplicate, the copy on file a response may carry, never over the person’s own choice, and the choice never moves focus; the letter that form uploaded is marked in the list; a press while it uploads or is scanned sends nothing; a stored letter the list does not show yet is said to be on its way, and if it never arrives the form says to reload; no button of the uploader submits the form; a file dropped on the form, with nothing typed, is cleared with the form for another person signed in on the same browser; the letter’s field and its upload sit under headings one level below the form’s, and the rest of the form under a heading of its own; no request carries the file’s name, and no upload request carries the form’s request key; the submission log names each response’s letter and links its receipt',
+      'The form shows with no letter on file; the letter goes through the same scanned intake; what was typed before the upload keeps its value through the scan and the page read again; the letter is chosen only once it is stored, and only the letter that form uploaded or, for a duplicate, the copy on file a response may carry, never over the person’s own choice, and the choice never moves focus; the letter that form uploaded is marked in the list; a press while it uploads or is scanned sends nothing; a stored letter the list does not show yet is said to be on its way, and if it never arrives the form says to reload; no button of the uploader submits the form; leaving the page asks only while the letter is being sent, a Retry that sends it again included, and never at the press that records the response; a file dropped on the form, with nothing typed, is cleared with the form for another person signed in on the same browser; the letter’s field and its upload sit under headings one level below the form’s, and the rest of the form under a heading of its own; no request carries the file’s name, and no upload request carries the form’s request key; the submission log names each response’s letter and links its receipt',
   },
   {
     id: 'CAS-48',
@@ -498,5 +504,29 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     title: 'One stacked-row layout',
     assertion:
       "Each stacked row is a list item headed by its naming cell at the level the caller gives (a link when the row has one), then a definition list of each column's label and value, then the row's actions; expected, paid and short are given together and in that order, and the stacked rows keep the table's column order, each figure in the mono face with tabular numerals; a status wraps inside the card; the rows carry their own hooks, never the table's, and no id or hook repeats between the two copies; with a table, the table shows from the table's own width up and the rows below it, by a container query on a full-width wrapper",
+  },
+  {
+    id: 'DLR-01',
+    title: "A navigation's refused download",
+    assertion:
+      "`downloadHandler` answers a refusal to `Sec-Fetch-Mode: navigate` with `Sec-Fetch-Dest: document` or none (and, without Fetch Metadata, to an `Accept` that ranks `text/html` above JSON and the wildcard) with 303 to the route's `returnTo` page, with no fragment: `refused=<status>` for each of the seven statuses, `fields` for invalid (parameter names only, each once, at most 8), `retry` for a rate limit in whole minutes from 1 to 1440, and the page's kept values, each validated with that page's schema; a relative Location, the cookies the request wrote and `private, no-store`; the signed-out statuses go where a page's refusal goes, with or without `returnTo`; the wrapper's own refusals (the codes, an ID that is not opaque) come back the same way; a link's closed `from` picks its page and any other value takes the route's own; the letter's bad codes, another payer's contract and a payer not the practice's each return to Coverage",
+  },
+  {
+    id: 'DLR-02',
+    title: "A script's refused download",
+    assertion:
+      'Without a navigation (a `fetch()` in mode `cors` or `same-origin`, navigate with Dest empty as a download link and "Save link as" send it, a frame, no Fetch Metadata with `Accept: */*`, JSON or the wildcard first, HTML ranked lower or refused, or no `Accept` at all) every refusal is today\'s JSON outcome, its status, headers and body byte for byte; a success is the same attachment to a navigation and a script; a navigation\'s HEAD or POST is still refused with 405 before the route runs',
+  },
+  {
+    id: 'DLR-03',
+    title: 'Every download route has a safe page',
+    assertion:
+      "The registry test finds every `downloadHandler` route under `src/app` and refuses one without `returnTo`, one not registered at its file's path, and one whose page for synthetic IDs is not under its practice (the evidence export's under `/console/`); a page path of `//evil.example`, `/\\evil.example`, `javascript:`, an absolute URL, encoded slashes, a control character, dot segments, a query, a fragment or an ID that is not opaque sends the navigation to `/`, as does a route with no page or a `returnTo` that throws; a kept value is dropped when its page's schema refuses it (a bad month returns to the monthly summary without it, and the page opens), when its name is not a lowercase code or is a refusal's own, or when it holds an identifier's shape, and no Location has a finding of the PHI guard; the page reads back only the closed codes and field names and ignores everything else; the codes field's pattern accepts exactly what the route accepts, letters with non-ASCII case mappings and Unicode separators included",
+  },
+  {
+    id: 'DLR-04',
+    title: 'The person sees it in the frame (e2e and axe)',
+    assertion:
+      "In a practice of its own, a letter with \"ABC\" sent past the pattern returns to Coverage with the entries kept, the codes field `aria-invalid`, its message first in its description and the focus on it, and axe (WCAG 2.1 A and AA) passing at 1280 px and at 390 px with no sideways scroll; a contract that is not the payer's is stopped in the browser in the words its refusal would be marked with, and sent past that comes back marked on its control; once corrected, the letter downloads with its marks cleared and the refusal out of the URL, and a reload shows the plain form; a payer that is not the practice's comes back marked and unanswered, and choosing one clears the mark; a refusal the form cannot mark is said as a notice and takes the letter's entries out of the URL; the pattern stops \"ABC\" before the round trip and takes good codes; a good letter downloads and the page stays; a refused file of the Reports list comes back beside that list, and the list leaves the URL with the refusal; a viewer who opens the audit report's line CSV as a page lands on the report with the forbidden notice focused, still there after a router refresh that never asks for the refusal and gone after a reload, while a script's request keeps the JSON refusal; on Uploads a receipt's report downloads in place and its refusal is said above the receipts, focused, while the page stays; and a viewer who opens a packet's PDF lands on the packet's permission state, told who downloads its files, with the refusal out of the URL",
   },
 ];
