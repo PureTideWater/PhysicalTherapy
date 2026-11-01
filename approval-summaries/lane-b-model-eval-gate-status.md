@@ -86,6 +86,8 @@ None. The co-founder's standing ruling of 2026-10-26 ~00:20 UTC (relayed by the 
 - 2026-11-01 20:00 UTC: the merge 4 commits saved as `co-001/wip-contract-phi-check-6` = 7cd60740 (through the pre-push hook).
 - 2026-11-01 19:58 UTC: setup re-run (PostgreSQL up); **wf_4ca98146-d24 resumed** with a new **Fix4** stage (the redact.ts plausible-year rule, seed 1162287068 regression, a two-lens adversarial check and a follow-up fix if needed) before the shots and the critic. Check-in 01:09 UTC 2026-11-02 (trig_0172NgA5XWPFbD8YiJuWn89u); the 22:10 one (trig_01JRBMQQxYPWCMLnoRBUUqe2) also stands.
 
+- 2026-11-01 20:36 UTC: **The orchestrator's merge rule** (standing): a verified, green PR merges as soon as it is ready (rule 6 base merge first); the section-6 order holds only between PRs that conflict. #75 conflicts only with #84 (ADR 0054) and #85 (contracts page, uploader.tsx), both behind it; it does not conflict with #86, so **#75 no longer waits on #86**.
+
 ## Handoff: `co-001/contract-phi-check` (#120), for whoever takes it
 Done: design, build, integrate, draft PR #75; reviews wf_85f2ff34-1ed and wf_fe838a07-52a; fix round wf_aa0fc3e3-0ae; verification 1 wf_425beb65-3b9 (FAIL); fix 2 wf_8a6ef988-e60; base merges f5292c6c (by hand), 871faff9 (wf_435f3768-f95) and 26388626 (wf_31aff985-e31); fix 3 wf_7cf8f8c4-5e8 and its shots5. The builders' notes are in `approval-summaries/lane-b-model-eval-gate-phi-build.md`; the design is `designs/lane-b-model-eval-gate.md` (section 5, Appendix A.3, rulings 1, 3, 4, 8; M7, M8, M9, M12, m3, m9, m14, m15); departures are in ADR 0070 Part 3 on the branch.
 
@@ -94,7 +96,7 @@ Remaining, in order (`lanes/lane-b-item-prompts-2026-11-01/contract-phi-check.md
 2. Push once (fast-forward from 871faff9); read CI.
 3. Refresh the description from the template (P11 and P12 built, the order wording, the twin line, four base merges, fix 3's wording, counts, CI, freeze and affected.ts, shots and the new gallery, this session's footer); read it back.
 4. Verification 2 (fresh clone, reads CI, mutation included); summary `approval-summaries/lane-b-model-eval-gate-phi-verify-2-summary.md`.
-5. Merge after #86: base in again, regenerate, CI green on the four required checks, ready, approval-of-record re-run, `merge_pull_request` (merge, expectedHeadSha); unsubscribe; tell the orchestrator.
+5. Merge as soon as verified and green (orchestrator, 2026-11-01 20:36 UTC; no longer after #86): base in again, regenerate, CI green on the four required checks, ready, approval-of-record re-run, `merge_pull_request` (merge, expectedHeadSha); unsubscribe; tell the orchestrator.
 
 Not part of it: F3 (lookup hashes and a SECURITY DEFINER screen function) and F4 (correcting a document's kind) are Lane A's migrations.
 
