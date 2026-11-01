@@ -1,12 +1,15 @@
 # Lane B: model-eval-gate (#84, #120; LANES queue item 12): status
 
-Session: the parallel Lane B session started by the orchestrator (session_01CntuGR3wkXMF6kK3at6bGh) on the co-founder's direction of 2026-10-25 ~23:40 UTC. Reserved: ADR 0070; test-matrix MOD-7 to MOD-12; `packages/synth` cases MOD-7 to MOD-12.
+Sessions: the original item session was session_01FmreSD8rXTREwwBkY2B4wh (Lane B's account; idle, BLOCKED since 2026-10-26 10:26 UTC), started by Lane B's old orchestrator session_01CntuGR3wkXMF6kK3at6bGh (the Plan B build chat, completed). The continuation was session_017SNqG4nQbbt6xqEG1ZDKe6 (Lane A's account; stopped ~2026-10-28 08:00 UTC, not visible from this account). **From 2026-11-01 ~16:45 UTC: this session, session_01FcouKPAcRv6FTuHCMKAre2 (https://claude.ai/code/session_01FcouKPAcRv6FTuHCMKAre2)**, started by Lane B's orchestrator session_01FcouKNNHsdecRMzfTs7XwW. Reserved: ADR 0070 (Parts 1-3); test-matrix MOD-07 to MOD-12; `packages/synth` cases MOD-07 to MOD-12 (this PR uses ADR 0070 Part 3 and MOD-12; #53 used MOD-07 to MOD-11).
 
-## Current state (2026-10-28 07:10 UTC)
-- **PR #75** (draft), head on origin **871faff9** (no CI: it conflicts with the base). Local, not yet pushed, every state saved on origin: base merge 3 (#74) at a8bf75ca (`co-001/wip-contract-phi-check-4`); **fix 3** at **7f77cb19** (`co-001/wip-contract-phi-check-5`): the kind and ERA system selects keep one width (FIELD_BOX, up to 28rem) whatever is written under them, the placeholder is "Choose a kind", and the uploads page's options take the kind names ("ERA export"); unit 6,698, build, e2e 62; its shots (`lane-b-model-eval-gate-wip/fix/shots5.md`) resolve M4-1 to M4-3 with no regression.
-- **The base moved again:** 83d71fd6 (#81 SUITE-CAP-1a; #78, a refused download comes back to its page, UX-010, ADR 0079), conflicting in uploader.tsx, uploader.test.tsx, the uploads page, test-matrix and the synth matrix and registry. **Base merge 4 running:** wf_d798a96c-014 (script `workflow-scripts/lane-b-model-eval-gate-phi-merge-4-wf_d798a96c-014.js`): resolve keeping both, the full checks (4 db shards, e2e), commit (no push), the uploader shots. Asked the orchestrator at 07:15 UTC to hold merges into the base that touch those files until #75 merges.
-- **Then:** push once; the description refreshed from the template (P11 in bytes, P12, the order wording, the twin line, the four base merges and their resolutions, fix 3's wording, the counts, CI on the pushed head, the shot findings); verification 2 (fresh clone, reading CI including the 6 mutation shards) in parallel with CI; ready; merge with expectedHeadSha; then #32. Check-in 10:25 UTC (trig_01FQaHehjSSfphdhoEoqqMJU).
-- **Gallery** (private): https://claude.ai/artifact/V2B2bKoNPjYivH9h7WV5wK.
+## Current state (2026-11-01 17:00 UTC)
+- **PR #75** (draft, `dirty` against base 83d71fd6), head on origin **871faff9** (no CI: it conflicts). Continue from **`co-001/wip-contract-phi-check-5` = 7f77cb19** (fix 3, on a8bf75ca docs and 26388626, the #74 base merge); 871faff9 and a8bf75ca are its ancestors, so the branch fast-forwards.
+- **Base merge 4** (base 83d71fd6: #81 SUITE-CAP-1a at 56ed6279, then #78): the earlier run wf_d798a96c-014 was **lost** with Lane A's account (nothing past 7f77cb19 on origin; no merge4, check5 or shots6 file; its scratchpad gone; its run ID cannot be resumed from a new session). It is re-run in this session from an adapted script.
+- **Expected conflicts** (live merge-tree of 7f77cb19 with 83d71fd6): only `apps/web/src/app/p/[practiceId]/uploads/page.tsx`, `apps/web/src/components/uploads/uploader.tsx` and `uploader.test.tsx` (add/add). `test-matrix.md`, synth `matrix.ts` and `registry.ts` auto-merge (checked by hand, both kept); `watched-paths.txt` auto-merges but is regenerated.
+- **Merge hold:** the hold requested 2026-10-28 07:20 UTC lapsed at 11:00 UTC that day with #75 unmerged (LANES).
+- **Merge order** (handoff section 6): #82, then #86, then **#75**, then #84, #83, #85. redact-ssn-phone builds after #75 merges.
+- **Check-ins:** the old 10:25 UTC check-in (trig_01FQaHehjSSfphdhoEoqqMJU) was on Lane A's account; none was scheduled on this account. This session schedules its own (logged below).
+- **Gallery:** the old one (V2B2bKoNPjYivH9h7WV5wK) was made from Lane A's account and is not found from this one; new shots go to a new private gallery. The worktree `/home/user/contract-phi-check` was re-created by the setup; the old scratchpad (with screens-fix3) is gone.
 
 ## Open questions
 None. The co-founder's standing ruling of 2026-10-26 ~00:20 UTC (relayed by the orchestrator): "Don't ask for approvals anymore just build and optimize." Every choice takes the recommended option (security: the safer one), recorded with its reasons here and in the design and PR description. Founder-kept matters stay out of scope; Lane B still opens no migration PR (LANES rule 2).
@@ -64,59 +67,42 @@ None. The co-founder's standing ruling of 2026-10-26 ~00:20 UTC (relayed by the 
 - 2026-10-27 14:36 UTC: **The orchestrator's ruling** on #75's CI: the three flaky tests (workflows.test.ts:880, rerun-rule.property.test.ts:233-253, verifier.test.ts:384) are Lane B's `co-001/test-flakes` (session_019i9ifAWsQ6zhLLegnMqSdK); #75 keeps its scope; a head whose only red is one of them gets one re-run of the failed job, never a merge on red; once test-flakes merges, merge the base in as usual.
 - 2026-10-27 ~15:50 UTC: **Reviews done**; gallery published. 16:33 UTC: **fix round** running (wf_aa0fc3e3-0ae).
 
-## Handoff: `co-001/contract-phi-check` (#120), for whoever takes it
-- **Branch:** `co-001/contract-phi-check` at **d7447adb**, from `claude/build-platform` at 88a0e4e9 (#53 merged). Commits:
-  - 5196f92a: the screen;
-  - fc74ee16: the call paths;
-  - d7447adb: the upload panel.
+- 2026-10-27 21:38 UTC: **fix round done** (wf_aa0fc3e3-0ae): e552399f, 527f2c58, bac083ac, 4450750f, 53076d28 (the tokenizer, the records check's bounds, the screen last of the gateway's refusals, files held before their kind, the docs).
+- 2026-10-27 22:26 UTC: **base merge** f5292c6c (ecebdc90: #76 test-flakes, #77 ci-browser and the rest; by hand).
+- 2026-10-27 ~23:00 UTC: **verification 1** (wf_425beb65-3b9): **FAIL** at f5292c6c (P11, a stale description, the order and twin wording, still a draft); `lane-b-model-eval-gate-phi-verify-1-summary.md`.
+- 2026-10-28 01:57 UTC: **fix 2** (wf_8a6ef988-e60): 4a099795 (P11: the request cap in bytes, 1,000,000; P12: the records check on packages/db's scope and pool only) and 4b886fcc (docs).
+- 2026-10-28 03:23 UTC: **base merge** 871faff9 (a6e754fc: #80 redact-placeholders, #79 table scrolling; wf_435f3768-f95): six conflicts, `redact.ts` and ADR 0054 against #80 among them (#75's `identifierPattern` widening dropped with the function, with ADR 0054, test-matrix, matrix and registry). Pushed: PR head 871faff9.
+- 2026-10-28 05:46 UTC: **base merge** 26388626 (165c5993: #74 forms keep input; wf_31aff985-e31) and docs a8bf75ca (ADR 0070 Part 3, ADR 0077).
+- 2026-10-28 06:39 UTC: **fix 3** 7f77cb19 (wf_7cf8f8c4-5e8): the kind and ERA system selects keep one width (FIELD_BOX), "Choose a kind", the uploads page's options take the kind names ("ERA export"); shots5 resolve M4-1 to M4-3. Saved as `co-001/wip-contract-phi-check-5`.
+- 2026-10-28 ~07:00 UTC: base merge 4 (wf_d798a96c-014) started; **lost** when Lane A's account stopped (~08:00 UTC).
+- 2026-11-01 16:58 UTC: **Resumed** in this session (started by Lane B's orchestrator session_01FcouKNNHsdecRMzfTs7XwW from `lanes/lane-b-session-brief.md` and `lanes/lane-b-item-prompts-2026-11-01/contract-phi-check.md`). `setup-container.sh` OK (every line ok, playwright included); `gh api user` is PureTideWater; pre-push hook installed; gitleaks 8.24.3. This status file corrected against live state.
 
-  The local worktree is removed; the branch lives on origin.
-- **Design:** `designs/lane-b-model-eval-gate.md`: section 5 (PR C), Appendix A.3, the review dispositions M7, M8, M9, M12, m3, m9, m14 and m15, and the "Session rulings" 1, 3, 4 and 8. Part 3 of ADR 0070 is reserved for it, and test-matrix row **MOD-12** with synth case MOD-12. The builders' notes, file by file, are in `approval-summaries/lane-b-model-eval-gate-phi-build.md`.
-- **Built** (each part narrowly tested by its builder; see the notes):
-  - **The screen** (`packages/model-gateway`, `packages/synth`):
-    - `src/patient-records.ts`: `PatientRecordsCheck`, `practiceRecordsCheck` (bound to the caller's scope, read through its own job scope as the screen actor, bounded by `SCREEN_MAX_IDENTIFIERS` = 50,000), `syntheticRecordsCheck`, and the issued-check WeakSet;
-    - `redact.ts`: `identifierRuns` and `SCREEN_FLOORS` (6, 6 and 8 characters, a digit required, calendar dates dropped);
-    - `contractTermsSpec.screen`, with `ContractPagesInput.patientRecords` required;
-    - `spec.ts`'s screen context, and `gateway.ts` logging a refusal with the code only (#53's serving order kept);
-    - the harness on the synthetic check;
-    - `packages/synth/src/screen/patient-twins.ts`: a large synthetic practice and the collision classes;
-    - MOD-12's case and fixtures;
-    - tests: redact, patient-records (unit and db), contract-terms, gateway (unit and db), lint, golden.
-  - **The call paths:**
-    - `contract-proposals.ts` builds the check after the role check and records the person's `contract_screen_requested` event;
-    - `path.ts` and `notices.ts` add `names_patient` and `screen_unavailable` (which also covers `screen_failed`), with wording to report in the PR: "This document names a patient of the practice, so it was not sent to the model. Enter its terms by hand. If it is a payer letter or an EOB, it was filed as the wrong kind." and "This document could not be checked for patient details, so it was not sent to the model. Enter its terms by hand.";
-    - the worker's permitted run builds one check per practice per run;
-    - tests: models-routes db, permitted db, and `path.test.ts`.
-  - **The upload panel:**
-    - `uploader.tsx` starts with no kind when it offers more than one, with a disabled placeholder "Choose the kind of document" and the refusal "Choose the kind of document first, then choose the files again.";
-    - the contracts and reconciliation pages take the union of the offered kinds' types, and the uploads page keeps its 835 default;
-    - tests: `uploader.test.tsx`, uploads db, and the contracts e2e.
-- **What remains, in order** (LANES rule 1's pipeline):
-  1. **The integration:** settle anything left between the parts (each builder's notes list its open items). Write the docs: ADR 0070 Part 3; the ADR 0054 amendment for the screen step; PRD 14 and 16; reconciliation-001 item 16 (PR 16's red team); test-matrix MOD-12, matched in synth `matrix.ts` and `registry.ts`. Run `pnpm synth --all` twice, check that the eval gate still passes, and regenerate `watched-paths.txt`.
-  2. **The full local suite once**, in lane-b.md's order.
-  3. **The draft PR** into `claude/build-platform`, its description from the template, reporting the wording above.
-  4. **Two adversarial reviews:** the security-reviewer (PHI, the gateway boundary, tenant isolation, logs) and an AI-safety and PHI-screen correctness review (false positives and negatives by collision class, the bound, the skip-proof enforcement).
-  5. **The fix round**, then **the fresh-clone verification that reads CI**.
-  6. **The merge** (rule 6: merge the latest base in first; #42's shared docs are kept on both sides; the #42 e2e helpers are left alone).
-- **Not part of it:** F3 (lookup-hash columns, the scalable form of this check) and F4 (correcting a document's kind) are Lane A's migrations ("Handed to Lane A").
+## Handoff: `co-001/contract-phi-check` (#120), for whoever takes it
+Done: design, build, integrate, draft PR #75; reviews wf_85f2ff34-1ed and wf_fe838a07-52a; fix round wf_aa0fc3e3-0ae; verification 1 wf_425beb65-3b9 (FAIL); fix 2 wf_8a6ef988-e60; base merges f5292c6c (by hand), 871faff9 (wf_435f3768-f95) and 26388626 (wf_31aff985-e31); fix 3 wf_7cf8f8c4-5e8 and its shots5. The builders' notes are in `approval-summaries/lane-b-model-eval-gate-phi-build.md`; the design is `designs/lane-b-model-eval-gate.md` (section 5, Appendix A.3, rulings 1, 3, 4, 8; M7, M8, M9, M12, m3, m9, m14, m15); departures are in ADR 0070 Part 3 on the branch.
+
+Remaining, in order (`lanes/lane-b-item-prompts-2026-11-01/contract-phi-check.md`, "Exact next step"):
+1. Base merge 4 (83d71fd6) with the full suite and shots (reference shots on 7f77cb19 first), commit, no push.
+2. Push once (fast-forward from 871faff9); read CI.
+3. Refresh the description from the template (P11 and P12 built, the order wording, the twin line, four base merges, fix 3's wording, counts, CI, freeze and affected.ts, shots and the new gallery, this session's footer); read it back.
+4. Verification 2 (fresh clone, reads CI, mutation included); summary `approval-summaries/lane-b-model-eval-gate-phi-verify-2-summary.md`.
+5. Merge after #86: base in again, regenerate, CI green on the four required checks, ready, approval-of-record re-run, `merge_pull_request` (merge, expectedHeadSha); unsubscribe; tell the orchestrator.
+
+Not part of it: F3 (lookup hashes and a SECURITY DEFINER screen function) and F4 (correcting a document's kind) are Lane A's migrations.
 
 ## Proposals outside this PR
-- `apps/worker/src/price/rerun-rule.property.test.ts:233-253` (#50's PRC-25 to PRC-28 property): its after-run coverage check (every outcome reached at least once) depends on fast-check's unseeded random sequences; on #75's re-run (job 122247109398) `accept:changed_meanwhile` was reached 0 times in 3,000 runs and `unit` failed. Fix: `examples:` with one fixed sequence that reaches each listed outcome (the `:539` unit case builds one), or a pinned seed. Commented on #75.
-- `tools/test/workflows.test.ts:880` (and the other notify tests that run the step's script against a fake `gh`): an explicit timeout (e.g. 30 s). On #75's first CI run (ci 40519277562, job 122241596089) the content-calendar notify test timed out at vitest's default 5 s inside the simulated-Dependabot nested run, failing `unit`; the file is not this PR's, and the base was green. Commented on #75; one re-run of the failed job.
-- `packages/packets/src/verifier.test.ts:384`: the property's `fc.pre` should leave out the pattern's procedure codes (any code-shaped number), so a random count equal to a code cannot fail it (seen at seed 2019154346).
+- The three flaky tests once listed here (workflows.test.ts:880, rerun-rule.property.test.ts:233-253, verifier.test.ts:384) are fixed by #76 (085299b), which is in the base.
 - A CLI option to run the twins twice and compare them, in place of the runbook's manual comparison.
 
 ## For the founder (founder-kept; nothing waits on them)
-- **F1:** the per-field recall and precision floors (`eval/floors.json` ships unset; production refuses a real provider until set). Before the first real-model baseline run.
-- **F2:** whether the data-rights addendum covers keeping an accepted, uncorrected proposal as an evaluation example (legal text). Not built until ruled.
+- **F1:** the per-field recall and precision floors (`eval/floors.json` ships unset; production refuses a real provider until set). Does not block the merge.
+- **F2:** whether the data-rights addendum covers keeping an accepted, uncorrected proposal as an evaluation example (legal text). Not built until ruled. Does not block.
 
 ## Proposals for Lane A (migrations; the orchestrator writes LANES.md)
-- **F3:** compact keyed lookup hashes on `patient_ref.member_id`, `claim.patient_control_number` and `claim.payer_claim_control_number`, a backfill, and a SECURITY DEFINER boolean screen function that audits one screen event and only matched rows. #120's best option; PR C is the bounded fail-closed interim (refuses above 50,000 identifiers).
-- **F4:** a reviewed, audited correction of a document's kind (today `source_document.kind` is immutable and a re-upload is a held duplicate).
-- LANES.md's claim row: "MOD-7 to MOD-12" reads MOD-07 to MOD-12.
+- **F3:** keyed lookup hashes on `patient_ref.member_id`, `claim.patient_control_number` and `claim.payer_claim_control_number`, a backfill, and a SECURITY DEFINER boolean screen function; removes the 50,000-identifier bound. Does not block.
+- **F4:** a reviewed, audited correction of a document's kind. Does not block.
 
 ## Waiting on someone
-- **The person: storage.googleapis.com** (the network policy refuses Playwright's pinned Chromium). Local e2e and the UX review's screenshots wait on it; CI's e2e is the record for tests. Everything else proceeds.
+- Nothing blocks. (storage.googleapis.com has been allowed since 2026-10-27; playwright ok.) Wording table: the co-founder may reverse any line. Approval of record: before runbook 3i the merge goes on green checks plus a passed fresh-clone verification (LANES rule 7).
 
 ## Next step
-See "Resume at 14:05 UTC" at the top. (Earlier:) The integrator (workflow) in `/home/user/contract-phi-check` on 862c9dc8: settle the parts, write the docs (ADR 0070 Part 3, the ADR 0054 amendment, PRD 14 and 16, reconciliation-001 item 16, MOD-12), synth twice, the eval gate, the full local suite once (e2e left to CI while the browser is missing), commits; then push and the draft PR.
+Base merge 4 (workflow), then push once.
