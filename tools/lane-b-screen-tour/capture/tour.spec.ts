@@ -102,6 +102,13 @@ function wantedPrefix(prefix: string): boolean {
 function darkAsked(darkId: string): boolean {
   return ONLY.includes(darkId);
 }
+/**
+ * A step's shot ids with the 1280 dark id of each that TOUR_ONLY names in full, for `attempt`: a step that fails then
+ * records its dark shots with its own reason, not as "no step of this run took it" (UX PR 6's before run, 2026-11-01).
+ */
+function andDark(shotIds: readonly string[]): string[] {
+  return shotIds.flatMap((id) => (id.endsWith('.1280') && darkAsked(`${id}-dark`) ? [id, `${id}-dark`] : [id]));
+}
 
 const shots: ShotEntry[] = [];
 const skipped: Skip[] = [];
@@ -1523,7 +1530,7 @@ async function invitedShots(browser: Browser): Promise<void> {
       }
       // UX PR 6: a closed new-password step, from copies of the browser, so the live step stays for the shots after it.
       for (const width of WIDTHS) {
-        await attempt([`sign-in.step-expired-temporary.${String(width)}`], '/sign-in', async () => {
+        await attempt(andDark([`sign-in.step-expired-temporary.${String(width)}`]), '/sign-in', async () => {
           const copy = await browser.newContext({ ...(width === 1280 ? DESKTOP_CONTEXT : PHONE_CONTEXT), storageState: await context.storageState() });
           phonesOpen.push(copy);
           await copy.clearCookies({ name: 'tp_sign_in' });
@@ -1560,7 +1567,7 @@ async function invitedShots(browser: Browser): Promise<void> {
       // copies of the browser (as key registration's warning is), so the fake clock, moved minutes ahead (Date and
       // performance.now both), never reaches the live pages the pending and refusal shots below use.
       for (const width of WIDTHS) {
-        await attempt([`sign-in-enroll.warning.${String(width)}`, `sign-in-enroll.closed.${String(width)}`], en, async () => {
+        await attempt(andDark([`sign-in-enroll.warning.${String(width)}`, `sign-in-enroll.closed.${String(width)}`]), en, async () => {
           const copy = await browser.newContext({ ...(width === 1280 ? DESKTOP_CONTEXT : PHONE_CONTEXT), storageState: await context.storageState() });
           try {
             const view = await copy.newPage();
@@ -1592,7 +1599,7 @@ async function invitedShots(browser: Browser): Promise<void> {
       // UX PR 6: enrolment closed after the new password was saved: the kept email names the chosen password.
       for (const view of [page, enrollPhone]) {
         const width = String(view.viewportSize()?.width);
-        await attempt([`sign-in.step-expired-chosen.${width}`], '/sign-in', async () => {
+        await attempt(andDark([`sign-in.step-expired-chosen.${width}`]), '/sign-in', async () => {
           await view.context().clearCookies({ name: 'tp_sign_in' });
           await view.goto(en);
           await expect(view).toHaveURL(/\/sign-in\?reason=step_expired$/);
@@ -1665,7 +1672,7 @@ async function registerKeyShots(browser: Browser): Promise<void> {
       await signInWithTotp(page, 'support-expiry');
       if (!/\/sign-in\/register-key$/.test(page.url())) throw new Error(`support-expiry did not reach ${route} (its key was registered earlier on this database)`);
       for (const width of WIDTHS) {
-        await attempt([`sign-in-register-key.warning.${String(width)}`], route, async () => {
+        await attempt(andDark([`sign-in-register-key.warning.${String(width)}`]), route, async () => {
           const copy = await browser.newContext({ ...(width === 1280 ? DESKTOP_CONTEXT : PHONE_CONTEXT), storageState: await bare.storageState() });
           try {
             const view = await copy.newPage();
