@@ -77,14 +77,16 @@ sniffs a document, so a clean document could still be mid-intake, a duplicate, a
 - **D3. The payer's answer is uploaded where it is used.** "Log a payer response" holds the shared uploader for one
   payer letter (kind `payer_letter`, PDF), first in the form, and the form shows whether or not a letter is on file.
   The form chooses only the letter it uploaded itself, once stored, never the newest and never over the person's own
-  choice, and never moves focus to do it. A press while the letter uploads or is scanned sends nothing. The letters
+  choice, and never moves focus to do it; a duplicate it does not choose is named in the status by when its copy was
+  uploaded, as its option starts. A press while the letter uploads or is scanned sends nothing. The letters
   offered are grouped, so that another case's letter is a deliberate choice: those no response names yet that this
   person uploaded, then those another person uploaded (which may be another case's answer, uploaded in its form and
   not recorded yet), then those of this case's earlier responses, listed whole, then those of other cases' responses
   (a payer may answer two cases in one letter, so the route still records one). Each option starts with what tells it
   apart, so a phone's picker that cuts the line keeps it: "Uploaded here" for the letter the form uploaded, then the
   time it was uploaded, its kind and its SHA-256's prefix. Where this person cannot upload, or the practice's uploads
-  are closed, the card says to choose a letter on file and the uploader's panel says why, under a title true to the
+  are closed, the card says to choose a letter on file, or, with none on file, that no response can be recorded yet,
+  and the uploader's panel says why, under a title true to the
   state ("Uploads are not open yet" before the BAA, "Uploads are paused" while the organization is suspended,
   "Uploads are closed" once it is closed), in an upload's words, on every page that offers an upload. One letter's
   refusals are in its own words ("The file is empty."; "save the letter as a smaller PDF"), never a batch's "split it

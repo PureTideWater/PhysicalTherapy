@@ -11,6 +11,7 @@ import { CheckboxField, CheckboxGroup, Field, SelectField, TextAreaField } from 
 import type { RefusalState } from '../form-issues';
 import { HardwareKeySignIn } from '../hardware-key';
 import { ExportRequestForm } from '../packets/export-status';
+import { ResponseCardDescription } from '../packets/response-card';
 import { type ResponseLetterFieldProps, type ResponseLetters, ResponseLetterField } from '../packets/response-letter';
 import { VersionForm } from '../packets/version-form';
 import { PasswordField } from '../password-field';
@@ -205,14 +206,18 @@ function ResponseLetterForm({ page }: { readonly page: PageKeys }) {
   }, []);
   const server = use(answer);
   return (
-    <HarnessForm submit="Record the response" className="flex max-w-xl flex-col gap-3">
-      <Keys page={page} />
-      <ResponseLetterField practiceId="practice-1" csrfToken={PAGE_TOKEN} roleNames="Viewer" upload={server.upload} letters={server.letters} />
-      <h3 className="text-base font-semibold">What the letter says</h3>
-      <SelectField id="response-kind" label="Response" name="kind" required defaultValue="" options={RESPONSES} />
-      <Field id="amount" label="Additional amount the payer will pay (accepted or partial only, dollars)" name="amount" inputMode="decimal" />
-      <TextAreaField id="response-notes" label="Notes (kept encrypted)" name="notes" maxLength={2000} rows={2} />
-    </HarnessForm>
+    <>
+      {/* The card's description, as the page renders it above the form. */}
+      <ResponseCardDescription submittedOn="2026-10-20" upload={server.upload} letters={server.letters} />
+      <HarnessForm submit="Record the response" className="flex max-w-xl flex-col gap-3">
+        <Keys page={page} />
+        <ResponseLetterField practiceId="practice-1" csrfToken={PAGE_TOKEN} roleNames="Viewer" upload={server.upload} letters={server.letters} />
+        <h3 className="text-base font-semibold">What the letter says</h3>
+        <SelectField id="response-kind" label="Response" name="kind" required defaultValue="" options={RESPONSES} />
+        <Field id="amount" label="Additional amount the payer will pay (accepted or partial only, dollars)" name="amount" inputMode="decimal" />
+        <TextAreaField id="response-notes" label="Notes (kept encrypted)" name="notes" maxLength={2000} rows={2} />
+      </HarnessForm>
+    </>
   );
 }
 

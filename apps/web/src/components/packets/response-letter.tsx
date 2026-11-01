@@ -9,6 +9,7 @@ import { type Receipt, formatBytes } from '../../lib/uploads/receipt-labels';
 import { SelectField } from '../field';
 import { utc } from '../format';
 import { type BatchReport, Uploader } from '../uploads/uploader';
+import { letterOnFile } from './response-card';
 
 /**
  * The payer's letter in "Log a payer response" (UX-007; docs/adr/0085, D3): the Payer’s letter select, a status line
@@ -48,6 +49,7 @@ type LetterStatus =
   | 'duplicate-chosen'
   | 'duplicate-chosen-other-case'
   | 'duplicate-not-chosen'
+  | 'duplicate-not-chosen-other-case'
   | 'duplicate-unusable'
   | 'held';
 
@@ -61,7 +63,10 @@ const LETTER_STATUS_TEXT: Readonly<Record<Exclude<LetterStatus, 'none'>, string>
   'duplicate-chosen': 'That file was already on file, so the copy on file is chosen.',
   'duplicate-chosen-other-case':
     'That file was already on file as the letter of another case’s response, so that copy is chosen. Check that it answers this case too, or choose another letter.',
-  'duplicate-not-chosen': 'That file was already on file, and the copy on file is in the list. Choose it if it is this response’s letter.',
+  // Said with the copy's upload time, as its option starts (statusText()).
+  'duplicate-not-chosen': 'That file was already on file: the copy {uploaded} is in the list. Choose it if it is this response’s letter.',
+  'duplicate-not-chosen-other-case':
+    'That file was already on file as the letter of another case’s response: the copy {uploaded} is in the list, under Letters of other cases’ responses. Choose it if it is this response’s letter, after checking that it answers this case too.',
   'duplicate-unusable':
     'This file was already on file, and that copy cannot be chosen here: it was filed as another kind of document or as a contract’s document, or it is older than the letters listed. Upload the letter saved another way, such as the payer’s portal page saved as a PDF.',
   held: 'The letter was held at intake, so it is not chosen; its line under This batch says why.',
@@ -97,6 +102,18 @@ const GROUPS = [
   ['thisCase', 'Letters of this case’s earlier responses'],
   ['otherCases', 'Letters of other cases’ responses'],
 ] as const;
+
+/**
+ * The status line's words. A duplicate the field did not choose is named by when its copy was uploaded, the words its
+ * option starts with, since the batch's row names it by its document ID, which no option shows.
+ */
+function statusText(status: LetterStatus, letters: ResponseLetters, offered: string | null): string {
+  if (status === 'none') {
+    return '';
+  }
+  const copy = offered === null ? undefined : GROUPS.flatMap(([group]) => letters[group]).find((document) => document.id === offered);
+  return LETTER_STATUS_TEXT[status].replace('{uploaded}', copy === undefined ? 'on file' : `uploaded ${utc(copy.uploadedAt)}`);
+}
 
 const STATUS_ID = 'response-letter-status';
 const NO_BATCH: BatchReport = { size: 0, inFlight: false, settled: [] };
@@ -167,9 +184,9 @@ function letterStatus(parts: {
     if (group === null) {
       return 'duplicate-unusable';
     }
-    // The person chose another letter while it was scanned: the field chose nothing, and says where the copy on file is.
+    // The person chose another letter while it was scanned: the field chose nothing, and says which option is the copy.
     if (chosen !== letter) {
-      return 'duplicate-not-chosen';
+      return group === 'otherCases' ? 'duplicate-not-chosen-other-case' : 'duplicate-not-chosen';
     }
     return group === 'otherCases' ? 'duplicate-chosen-other-case' : 'duplicate-chosen';
   }
@@ -249,7 +266,7 @@ export function ResponseLetterField({ practiceId, csrfToken, roleNames, upload, 
   }, [value, status]);
 
   const canUploadHere = upload.canUpload && upload.gate.open;
-  const onFile = GROUPS.some(([group]) => letters[group].length > 0);
+  const onFile = letterOnFile(letters);
   const groups = GROUPS.filter(([group]) => letters[group].length > 0).map(([group, words]) => ({
     group: words,
     options: letters[group].map((document) => letterOption(document, uploadedHere.has(document.id))),
@@ -275,7 +292,7 @@ export function ResponseLetterField({ practiceId, csrfToken, roleNames, upload, 
       />
       {/* A polite live region present from the first render, so each change is announced once. */}
       <p id={STATUS_ID} role="status" data-letter-status={status} className="text-sm">
-        {status === 'none' ? '' : LETTER_STATUS_TEXT[status]}
+        {statusText(status, letters, offered)}
       </p>
       <Uploader
         practiceId={practiceId}

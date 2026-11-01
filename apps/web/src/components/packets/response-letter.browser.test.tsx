@@ -57,12 +57,26 @@ const STATUS_TEXT = {
   'duplicate-chosen': 'That file was already on file, so the copy on file is chosen.',
   'duplicate-chosen-other-case':
     'That file was already on file as the letter of another case’s response, so that copy is chosen. Check that it answers this case too, or choose another letter.',
-  'duplicate-not-chosen': 'That file was already on file, and the copy on file is in the list. Choose it if it is this response’s letter.',
+  'duplicate-not-chosen': 'That file was already on file: the copy uploaded 2026-10-27 09:15 UTC is in the list. Choose it if it is this response’s letter.',
+  'duplicate-not-chosen-other-case':
+    'That file was already on file as the letter of another case’s response: the copy uploaded 2026-10-27 09:15 UTC is in the list, under Letters of other cases’ responses. Choose it if it is this response’s letter, after checking that it answers this case too.',
   'duplicate-unusable':
     'This file was already on file, and that copy cannot be chosen here: it was filed as another kind of document or as a contract’s document, or it is older than the letters listed. Upload the letter saved another way, such as the payer’s portal page saved as a PDF.',
   held: 'The letter was held at intake, so it is not chosen; its line under This batch says why.',
 } as const;
 type Status = keyof typeof STATUS_TEXT;
+
+/** The card's description over the form (response-card.tsx), as the page renders it, for the harness's submission of 2026-10-20. */
+const CARD_TEXT = {
+  open: 'To the submission of 2026-10-20. Start with the payer’s letter: upload it here, or choose one already on file, and fill in what it says while it is scanned. A denial with a reason can reopen the case for the next dispute level, within its window.',
+  openNoneOnFile:
+    'To the submission of 2026-10-20. Start with the payer’s letter: upload it here, and fill in what it says while it is scanned. A denial with a reason can reopen the case for the next dispute level, within its window.',
+  closed:
+    'To the submission of 2026-10-20. Choose the payer’s letter already on file, then fill in what it says; the note under Payer’s letter says why nothing can be uploaded here now. A denial with a reason can reopen the case for the next dispute level, within its window.',
+  closedNoneOnFile:
+    'To the submission of 2026-10-20. No payer’s letter is on file, and none can be uploaded here now, so no response can be recorded yet; the note under Payer’s letter says why.',
+} as const;
+const CARD = '[data-response-card]';
 
 const SCANNING_BUBBLE = 'The payer’s letter is still being uploaded and scanned; it is chosen here once it is scanned clean.';
 const LISTING_BUBBLE = 'The payer’s letter is being added to the list; it is chosen here in a moment.';
@@ -266,6 +280,8 @@ describe.skipIf(!chromiumInstalled())('the payer’s letter inside “Log a paye
     expect(await page.textContent('#response-document-hint')).toBe(
       'Upload the payer’s letter here, or choose one already on file; a letter uploaded here is chosen once it is scanned clean.',
     );
+    expect(await page.textContent(CARD)).toBe(CARD_TEXT.open);
+    expect(await page.getAttribute(CARD, 'data-can-upload-here')).toBe('true');
     await page.selectOption('#response-kind', 'partial');
     await pressSendsNothing(page);
     expect((await validity(page)).missing).toBe(true);
@@ -282,6 +298,11 @@ describe.skipIf(!chromiumInstalled())('the payer’s letter inside “Log a paye
     await waitForStatus(page, 'scanning');
     expect(await statusText(page)).toBe(STATUS_TEXT.scanning);
     expect((await validity(page)).message).toBe(SCANNING_BUBBLE);
+    // The progress bar is drawn in the brand's tokens, track and value, not the browser's own blue (U2-r2-7). The harness
+    // compiles no Tailwind, so its classes are read, not their computed colours.
+    const bar = page.getByRole('progressbar', { name: 'Upload progress' });
+    const barClasses = ((await bar.getAttribute('class')) ?? '').split(/\s+/);
+    expect(barClasses).toEqual(expect.arrayContaining(['appearance-none', 'bg-muted', 'accent-primary', '[&::-webkit-progress-bar]:bg-muted', '[&::-webkit-progress-value]:bg-primary', '[&::-moz-progress-bar]:bg-primary']));
     await pressSendsNothing(page);
     // Sent, its receipt Received: scanning still.
     server.releasePut();
@@ -353,9 +374,22 @@ describe.skipIf(!chromiumInstalled())('the payer’s letter inside “Log a paye
     await page.selectOption(SELECT, THIS_CASE);
     server.receipt = { status: 'duplicate', duplicateOf: ON_FILE };
     await waitForStatus(page, 'duplicate-not-chosen');
+    // The copy is named by its upload time, the words its option starts with, so it can be told from the other letters.
     expect(await statusText(page)).toBe(STATUS_TEXT['duplicate-not-chosen']);
+    expect((await groups(page))[0]?.options).toContain('2026-10-27 09:15 UTC: payer letter, SHA-256 b10000000000…');
     expect(await page.inputValue(SELECT)).toBe(THIS_CASE);
     await page.close();
+
+    // A copy that is another case's letter says where it is listed, and to check that it answers this case too.
+    const other = await openForm({ ...NONE, unused: [letter(THIS_CASE, '2026-10-26T08:00:00.000Z')], otherCases: [letter(ON_FILE)] });
+    await chooseFile(other.page);
+    await waitForStatus(other.page, 'scanning');
+    await other.page.selectOption(SELECT, THIS_CASE);
+    other.server.receipt = { status: 'duplicate', duplicateOf: ON_FILE };
+    await waitForStatus(other.page, 'duplicate-not-chosen-other-case');
+    expect(await statusText(other.page)).toBe(STATUS_TEXT['duplicate-not-chosen-other-case']);
+    expect(await other.page.inputValue(SELECT)).toBe(THIS_CASE);
+    await other.page.close();
   });
 
   it('CAS-47: an empty or too large letter is refused in one file’s words, never told to zip what single mode refuses (U2-ux85-r2-3)', async () => {
@@ -635,9 +669,12 @@ describe.skipIf(!chromiumInstalled())('the payer’s letter inside “Log a paye
     await page.close();
   });
 
-  it('CAS-47: a person who cannot upload here, or a practice whose uploads are paused, is told to choose a letter on file, and the uploader says why', async () => {
+  it('CAS-47: a person who cannot upload here, or a practice whose uploads are paused, is told by the card and the hint to choose a letter on file, or, with none, that no response can be recorded yet, and the uploader says why', async () => {
     const viewer = await openForm({ ...NONE, unused: [letter(ON_FILE)] }, { canUpload: false });
     expect(await viewer.page.textContent('#response-document-hint')).toBe('Choose the payer’s letter already on file; the note below says why nothing can be uploaded here.');
+    // The card says the same: choose the letter on file (U2-ux85-r2-1).
+    expect(await viewer.page.textContent(CARD)).toBe(CARD_TEXT.closed);
+    expect(await viewer.page.getAttribute(CARD, 'data-can-upload-here')).toBe('false');
     await viewer.page.getByText('Not available to your role').waitFor();
     expect(await viewer.page.getByText('As Viewer, you cannot upload files.').count()).toBe(1);
     expect(await viewer.page.getByText('Billing managers, analysts and firm principals upload files; a letter already on file can still be chosen above.').count()).toBe(1);
@@ -647,14 +684,26 @@ describe.skipIf(!chromiumInstalled())('the payer’s letter inside “Log a paye
     // A suspended organization's panel is titled for its state, never "Uploads are not open yet" (ux85-1).
     const paused = await openForm(NONE, { gate: { open: false, title: 'Uploads are paused', reason: 'SYNTHETIC: the organization is suspended.' } });
     expect(await paused.page.textContent('#response-document-hint')).toBe('No payer’s letter is on file yet, and it cannot be uploaded here now; the note below says why.');
+    // With no letter on file and none to upload, the card never sends the person to a letter on file: it says no response
+    // can be recorded yet, as the hint does.
+    expect(await paused.page.textContent(CARD)).toBe(CARD_TEXT.closedNoneOnFile);
+    expect(await paused.page.getAttribute(CARD, 'data-can-upload-here')).toBe('false');
+    expect(await paused.page.getAttribute(CARD, 'data-letter-on-file')).toBe('false');
     await paused.page.getByText('Uploads are paused', { exact: true }).waitFor();
     expect(await paused.page.getByText('Uploads are not open yet').count()).toBe(0);
     expect(await paused.page.getByText('SYNTHETIC: the organization is suspended.').count()).toBe(1);
     expect(await paused.page.getByRole('region', { name: DROP_ZONE, exact: true }).count()).toBe(0);
     await paused.page.close();
 
+    // Uploads closed with a letter on file: the card says to choose it.
+    const closed = await openForm({ ...NONE, thisCase: [letter(ON_FILE)] }, { gate: { open: false, title: 'Uploads are paused', reason: 'SYNTHETIC: the organization is suspended.' } });
+    expect(await closed.page.textContent(CARD)).toBe(CARD_TEXT.closed);
+    expect(await closed.page.getAttribute(CARD, 'data-can-upload-here')).toBe('false');
+    await closed.page.close();
+
     const empty = await openForm();
     expect(await empty.page.textContent('#response-document-hint')).toBe('Upload the payer’s letter here; it is chosen once it is scanned clean.');
+    expect(await empty.page.textContent(CARD)).toBe(CARD_TEXT.openNoneOnFile);
     expect(await empty.page.$$eval(`${SELECT} option`, (options) => options.map((option) => option.textContent))).toEqual(['Choose the payer’s letter']);
     await empty.page.close();
   });

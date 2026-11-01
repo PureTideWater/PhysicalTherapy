@@ -502,6 +502,14 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
         await expect(letter).toHaveValue('');
         await expect(letter.locator('option')).toHaveText(['Choose the payer’s letter']);
         await expect(letter).toHaveAccessibleDescription(/^Upload the payer’s letter here; it is chosen once it is scanned clean\./);
+        // The card says the same: upload the letter here, never "choose one already on file" with none on file
+        // (U2-ux85-r2-1; response-card.tsx, whose closed texts the forms harness proves).
+        const card = approver.getByRole('region', { name: 'Log a payer response' }).locator('[data-response-card]');
+        await expect(card).toHaveAttribute('data-can-upload-here', 'true');
+        await expect(card).toHaveAttribute('data-letter-on-file', 'false');
+        await expect(card).toHaveText(
+          /^To the submission of \d{4}-\d{2}-\d{2}\. Start with the payer’s letter: upload it here, and fill in what it says while it is scanned\. A denial with a reason can reopen the case for the next dispute level, within its window\.$/,
+        );
         await expect(status).toHaveText('');
         await expect(response).toHaveValue('');
         await expect(response.locator('option:checked')).toHaveText('Choose the payer’s answer');
@@ -614,7 +622,36 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
         await expect(approver.getByRole('region', { name: 'Documents to tag' })).toBeVisible();
         await expect(approver.getByRole('region', { name: 'Documents to tag' }).locator(`[data-document="${letterId}"]`)).toHaveCount(0);
         const panel = approver.getByRole('region', { name: 'Upload a contract or exhibit' });
-        await expect(panel.getByLabel('Kind of document').locator('option[value="payer_letter"]')).toHaveText('Payer’s terms or policy letter');
+        const kind = panel.getByLabel('Kind of document');
+        await expect(kind.locator('option[value="payer_letter"]')).toHaveText('Payer’s terms or policy letter');
+        // At a phone's width the kind select, holding its longest choice, says it whole, never cut short (ux85-2): the
+        // width a select of the same classes takes for that text alone, its own arrow and padding counted, fits it.
+        await kind.selectOption('payer_letter');
+        await atPhoneWidth(approver, 'Contracts, the upload panel with the payer’s terms letter chosen');
+        const desktop = approver.viewportSize();
+        await approver.setViewportSize({ width: 390, height: 844 });
+        try {
+          await expect
+            .poll(() =>
+              kind.evaluate((element) => {
+                const select = element as HTMLSelectElement;
+                const copy = document.createElement('select');
+                copy.className = select.className;
+                copy.style.cssText = 'position: absolute; visibility: hidden; width: auto; max-width: none';
+                copy.append(new Option(select.selectedOptions[0]?.text ?? ''));
+                select.after(copy);
+                const needed = copy.clientWidth;
+                copy.remove();
+                return { text: select.selectedOptions[0]?.text, fits: needed <= select.clientWidth, needed, room: select.clientWidth };
+              }),
+            )
+            .toMatchObject({ text: 'Payer’s terms or policy letter', fits: true });
+        } finally {
+          if (desktop !== null) {
+            await approver.setViewportSize(desktop);
+          }
+        }
+        await kind.selectOption({ index: 0 });
         await expect(panel).toContainText('A payer’s answer to a dispute goes with its response instead, on the case’s Submissions and responses page.');
       } finally {
         approver.off('request', collect);

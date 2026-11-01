@@ -8,6 +8,7 @@ import { CheckboxField, Field, SelectField, TextAreaField } from '../../../../..
 import { roleNames, utc } from '../../../../../../components/format';
 import { Hash } from '../../../../../../components/packets/display';
 import { PricingNowPanel } from '../../../../../../components/packets/pricing';
+import { ResponseCardDescription } from '../../../../../../components/packets/response-card';
 import { ResponseLetterField } from '../../../../../../components/packets/response-letter';
 import { StatusChip } from '../../../../../../components/status';
 import { Money } from '../../../../../../components/remittances/display';
@@ -50,14 +51,6 @@ const RESPONSE_HINT =
 
 /** Under Received on: the date is the letter's, never today's by default, since the next level's window counts from it. */
 const RECEIVED_ON_HINT = 'The date the payer’s letter reached the practice. A denial that reopens the case counts the next dispute level’s window from it.';
-
-/** The response card's words: upload the letter here, or, where this person cannot upload now, choose one on file. */
-function responseCardText(submittedOn: string, canUploadHere: boolean): string {
-  const start = canUploadHere
-    ? 'Start with the payer’s letter: upload it here, or choose one already on file, and fill in what it says while it is scanned.'
-    : 'Choose the payer’s letter already on file, then fill in what it says; the note under Payer’s letter says why nothing can be uploaded here now.';
-  return `To the submission of ${submittedOn}. ${start} A denial with a reason can reopen the case for the next dispute level, within its window.`;
-}
 
 const FOLLOW_UP_TEXT = { due: 'Follow-up due', waiting: 'Awaiting the payer', answered: 'Answered' } as const;
 
@@ -303,7 +296,7 @@ export default async function SubmissionsPage(props: Props) {
         <Card role="region" aria-label="Log a payer response">
           <CardHeader>
             <CardTitle>Log a payer response</CardTitle>
-            <CardDescription data-can-upload-here={String(upload.canUpload && upload.gate.open)}>{responseCardText(latest.submittedOn, upload.canUpload && upload.gate.open)}</CardDescription>
+            <ResponseCardDescription submittedOn={latest.submittedOn} upload={upload} letters={letters} />
           </CardHeader>
           <CardContent>
             {/* Rendered with or without a letter on file, so the page read again after an upload keeps what was typed. */}
