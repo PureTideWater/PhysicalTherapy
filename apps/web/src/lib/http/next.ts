@@ -7,10 +7,12 @@ import { cache } from 'react';
 import type { Sealer } from '../auth/seal';
 import type { StepResult } from '../routes/sign-in';
 import { services } from '../server/services';
+import { minutesWords } from './download-refusal-words';
 import { formInput } from './form';
 import { clientAddress, retryMinutes } from './rate-limit';
 import { RECEIVED_AT_HEADER, receivedAtFrom } from './received';
 import type { CookieJar, Issue, MutationResult, Outcome, Route, RouteRequest, Shell, UploadBody } from './route';
+import { signInFor } from './sign-in-for';
 
 /**
  * The Next.js adapters for pages (server components) and server actions; route handlers use
@@ -52,31 +54,10 @@ async function nextRequest(params: unknown, input?: unknown, upload?: UploadBody
   };
 }
 
-/** Where a refused request goes to sign in again; the reason is a code, never an identifier. */
-function signInFor(outcome: Outcome<unknown>): string | undefined {
-  if (outcome.status === 'unauthenticated') {
-    return outcome.reason === 'none' ? '/sign-in' : `/sign-in?reason=${outcome.reason}`;
-  }
-  if (outcome.status === 'mfa_required') {
-    return '/sign-in?reason=mfa_required';
-  }
-  if (outcome.status === 'hardware_key_required') {
-    return '/sign-in/hardware-key?reason=hardware_key_required';
-  }
-  // A customer who has not accepted the terms of use in force accepts them first; maintenance shows its page.
-  if (outcome.status === 'terms_required') {
-    return '/terms';
-  }
-  if (outcome.status === 'maintenance') {
-    return '/maintenance';
-  }
-  return undefined;
-}
-
 /** What a refused form says when the wrapper's rate limits refused it (a refused CSRF token is a page out of date, STALE). */
 function guardMessage(outcome: Outcome<unknown>): string | undefined {
   if (outcome.status === 'rate_limited') {
-    return `Too many attempts in a short time. Wait ${String(retryMinutes(outcome.retryAfterSeconds))} minute${retryMinutes(outcome.retryAfterSeconds) === 1 ? '' : 's'} and try again.`;
+    return `Too many attempts in a short time. Wait ${minutesWords(retryMinutes(outcome.retryAfterSeconds))} and try again.`;
   }
   return undefined;
 }

@@ -28,7 +28,8 @@ import { totpCode, totpSecretFromBytes } from '../src/lib/auth/totp';
  * administrator and a support engineer, each in one test only; and, for the forms journey, a viewer who signs in with a wrong password and code, an
  * invited viewer who chooses a password, a billing manager of the other group, a viewer who signs in from another tab
  * while that billing manager's form is open, and a platform administrator, each alone, because a refusal counts toward
- * the ten-failure lock and the specs run in parallel).
+ * the ten-failure lock and the specs run in parallel; and a billing manager and a viewer of the other group for the
+ * journey of refused downloads, in a practice of its own).
  * Their passwords and TOTP secrets are derived from their keys here rather than written down, and
  * exist only in the local identity provider's store.
  * Synthetic accounts on a development machine; never a real person.
@@ -138,6 +139,10 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   { key: 'tables-admin', organization: 'internal', role: 'platform_admin' },
   { key: 'tables-support', organization: 'internal', role: 'support' },
   { key: 'tables-ledger-specialist', organization: 'internal', role: 'contract_specialist' },
+  // Refused downloads back on their pages (docs/adr/0079; test matrix DLR-04): a billing manager of the other group who
+  // asks for the letter and generates the report, and a viewer refused the report's line CSV, in a practice of its own.
+  { key: 'refusals-manager', organization: 'other_group', role: 'billing_manager' },
+  { key: 'refusals-viewer', organization: 'other_group', role: 'viewer' },
   // The forms journey (docs/adr/0077): a viewer refused at sign-in, an invited viewer refused a new password (neither ever
   // saved, so each run starts from the seed), a billing manager of the other group refused on ROI and on a support ticket,
   // a viewer who signs in from another tab of that billing manager's browser while the ticket form is open, and a
