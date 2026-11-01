@@ -2,14 +2,17 @@ import { randomUUID } from 'node:crypto';
 
 import type { Services } from '../server/services';
 import { CSRF_HEADER } from './csrf';
+import { refusalLocation } from './download-refusal';
 import { clientAddress } from './rate-limit';
-import type { CookieJar, Download, Outcome, Route, RouteRequest, TextDocument, UploadBody } from './route';
+import type { CookieJar, Download, Outcome, ReturnPage, Route, RouteRequest, TextDocument, UploadBody } from './route';
 
 /**
  * The route-handler adapter (route.ts files): a Web Request in, a Web Response out, through the same
  * invoke() as pages and server actions. Built on the Fetch API only, so it is tested without a Next
- * server. Every response is JSON with Cache-Control: private, no-store; cookies are written with
- * HttpOnly, Secure, SameSite=Lax and path / (docs/product/sessions.md).
+ * server. Every response is sent with Cache-Control: private, no-store, and is JSON but a download's
+ * file, a text document and a browser navigation's refusal of a download (a 303 to the page it was
+ * opened from; docs/adr/0079); cookies are written with HttpOnly, Secure, SameSite=Lax and path /
+ * (docs/product/sessions.md).
  */
 
 export const PRIVATE_NO_STORE = 'private, no-store';
@@ -250,12 +253,97 @@ function downloadsAreGets(cookies: ResponseCookies): Response {
   return new Response(response.body, { status: 405, headers: response.headers });
 }
 
+interface AcceptRange {
+  readonly type: string;
+  readonly q: number;
+  readonly at: number;
+}
+
+const QVALUE = /^(?:0(?:\.\d{0,3})?|1(?:\.0{0,3})?)$/;
+
+/** An Accept header's media ranges, lowercased, with their weights (1 when unstated, 0 when malformed) and places. */
+function acceptRanges(accept: string): AcceptRange[] {
+  return accept.split(',').map((part, at) => {
+    const [type = '', ...parameters] = part.split(';').map((piece) => piece.trim().toLowerCase());
+    const q = parameters.find((parameter) => parameter.startsWith('q='))?.slice(2);
+    return { type, q: q === undefined ? 1 : QVALUE.test(q) ? Number(q) : 0, at };
+  });
+}
+
+/** Whether an Accept header ranks text/html (with a weight above zero) above application/json and the wildcard range. */
+function prefersHtml(accept: string | null): boolean {
+  if (accept === null) {
+    return false;
+  }
+  const ranges = acceptRanges(accept);
+  const html = ranges.find((range) => range.type === 'text/html' && range.q > 0);
+  if (html === undefined) {
+    return false;
+  }
+  return ranges.every((range) => (range.type !== 'application/json' && range.type !== '*/*') || range.q < html.q || (range.q === html.q && range.at > html.at));
+}
+
+/**
+ * Whether a request is a browser opening a page (docs/adr/0079): Fetch Metadata's navigate mode for a document, or with
+ * no destination named (a link, a GET form, a new tab). A download link and "Save link as" navigate with an empty
+ * destination, so they are not, and never save a page under the file's name. Without Fetch Metadata (an old browser, a
+ * proxy that strips it), an Accept that ranks text/html above application/json and the wildcard; no Accept is a script.
+ * Never the User-Agent.
+ */
+export function isNavigation(request: Request): boolean {
+  const mode = request.headers.get('sec-fetch-mode');
+  if (mode !== null) {
+    const dest = request.headers.get('sec-fetch-dest');
+    return mode === 'navigate' && (dest === null || dest === 'document');
+  }
+  return prefersHtml(request.headers.get('accept'));
+}
+
+/**
+ * The request's parameters as a returnTo reads them: the strings of the same params the route's schema parsed (a
+ * repeated query key is its last value, as routeRequest's Object.fromEntries keeps it; a path parameter wins over a
+ * query key of its name; a catch-all's array is dropped).
+ */
+function returnParams(params: unknown): Record<string, string> {
+  const entries = typeof params === 'object' && params !== null ? Object.entries(params) : [];
+  return Object.fromEntries(entries.filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
+}
+
+/** The route's page for a refusal, or null: no returnTo, one that names no page, or one that throws. */
+function returnPageOf(route: Route, params: unknown): ReturnPage | null {
+  if (route.returnTo === null) {
+    return null;
+  }
+  try {
+    return route.returnTo(returnParams(params));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 303 to where a browser navigation's refusal of a download goes (refusalLocation: sign-in's steps for a signed-out
+ * status, else the route's page with the refusal in closed codes, else /), as a relative Location, with the cookies the
+ * request wrote, private and never cached.
+ */
+function refusedNavigation(route: Route, params: unknown, outcome: Exclude<Outcome<unknown>, { readonly status: 'ok' }>, origin: string, cookies: ResponseCookies): Response {
+  const headers = new Headers({ location: refusalLocation(outcome, returnPageOf(route, params), origin), 'cache-control': PRIVATE_NO_STORE });
+  for (const cookie of cookies.written) {
+    headers.append('set-cookie', cookie);
+  }
+  return new Response(null, { status: 303, headers });
+}
+
 /**
  * A Next route handler for a registered download route (GET): the file as an attachment, private and
- * never cached, with the opaque file name the route chose; any refusal as the JSON outcome. Any other
- * method is refused before the route runs. Next answers a HEAD with a route's GET handler when the route
- * exports none, and a download route records the download as it reads the file (a packet export's
- * download is the reviewer's evidence; docs/adr/0061), so a HEAD that sends no bytes must record nothing.
+ * never cached, with the opaque file name the route chose. A refusal is the JSON outcome for a script (a
+ * fetch(), curl), byte for byte as before; for a browser navigation (isNavigation: a link or a GET form
+ * the person used) it is a 303 back to the page the route names (its returnTo, in closed codes; docs/adr/0079),
+ * or where a page's refusal goes when the session ended, so the person never lands on a JSON page. A route
+ * without returnTo sends a navigation to /. Any other method is refused before the route runs. Next answers a
+ * HEAD with a route's GET handler when the route exports none, and a download route records the download as it
+ * reads the file (a packet export's download is the reviewer's evidence; docs/adr/0061), so a HEAD that sends no
+ * bytes must record nothing.
  */
 export function downloadHandler(route: Route<Download<string | Uint8Array<ArrayBuffer>>>, servicesOf: () => Services) {
   return async (request: Request, context?: { readonly params?: Params }): Promise<Response> => {
@@ -269,7 +357,10 @@ export function downloadHandler(route: Route<Download<string | Uint8Array<ArrayB
       return built;
     }
     const outcome = await route.invoke(built, services);
-    if (outcome.status !== 'ok' || !isDownload(outcome.data)) {
+    if (outcome.status !== 'ok') {
+      return isNavigation(request) ? refusedNavigation(route, built.params, outcome, services.origin, cookies) : outcomeResponse(outcome, cookies);
+    }
+    if (!isDownload(outcome.data)) {
       return outcomeResponse(outcome, cookies);
     }
     const { filename, contentType, body } = outcome.data.download;

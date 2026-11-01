@@ -17,11 +17,18 @@ import { EmptiedNote, FieldError, type SecretKind, describedBy, useEmptied, useF
  * past a phone's width. A page with several forms gives each field its own id.
  */
 
+/**
+ * Words a field shows: plain text, or text in runs when some are set as the page sets a figure, a code or a hash (Plex
+ * Mono with tabular numerals; BRAND.md 5): an option's label (the submissions page's SHA-256) or a hint (the example
+ * procedure codes of Coverage's letter). Nothing is guessed from the words.
+ */
+export type FieldWords = string | readonly ChoiceText[];
+
 /** The props every labelled field takes, beside its control's own. */
 interface FieldProps {
   readonly label: string;
   readonly name: string;
-  readonly hint?: string;
+  readonly hint?: FieldWords;
   /** The message to show, in place of the one the form's refusal gives this field. */
   readonly error?: string;
   /** The field's name in the form's summary, when its label is a sentence. */
@@ -37,7 +44,7 @@ export function controlMarks(
   id: string,
   parts: {
     readonly error: string | undefined;
-    readonly hint: string | undefined;
+    readonly hint: FieldWords | undefined;
     readonly emptied?: boolean;
     readonly errorName?: string | undefined;
     readonly issueFor?: readonly string[] | undefined;
@@ -47,7 +54,7 @@ export function controlMarks(
 ) {
   return {
     'aria-invalid': parts.error === undefined ? undefined : true,
-    'aria-describedby': describedBy(id, parts),
+    'aria-describedby': describedBy(id, { ...parts, hint: parts.hint === undefined ? undefined : labelText(parts.hint) }),
     'data-error-name': parts.errorName,
     'data-issue-for': parts.issueFor === undefined || parts.issueFor.length === 0 ? undefined : parts.issueFor.join(' '),
   } as const;
@@ -56,12 +63,12 @@ export function controlMarks(
 /**
  * A field's hint, under its control and any message: 14 px, as the message beside it (ADR 0056's type scale). Every
  * hand-written hint uses it too (D9, held by form-hints.test.ts); `className` adds layout only, such as a measure for a
- * hint whose box is as wide as its column.
+ * hint whose box is as wide as its column. A hint given in runs sets each `mono` run as the page sets a code.
  */
-export function Hint({ id, hint, className }: { readonly id: string; readonly hint: string | undefined; readonly className?: string }) {
+export function Hint({ id, hint, className }: { readonly id: string; readonly hint: FieldWords | undefined; readonly className?: string }) {
   return hint === undefined ? null : (
     <p id={`${id}-hint`} className={className === undefined ? 'text-sm text-muted-foreground' : `${className} text-sm text-muted-foreground`}>
-      {hint}
+      {setWords(hint)}
     </p>
   );
 }
@@ -167,9 +174,9 @@ function useCutChoice(id: string, enabled: boolean, shape: string): CutChoice | 
 }
 
 /**
- * A run of an option's words. `mono` sets it as the page sets a figure, a code or a hash (Plex Mono with tabular
- * numerals; BRAND.md 5): the native list draws every option in the system's face, but the line `showChosen` writes
- * under the select is page text.
+ * A run of an option's or a hint's words. `mono` sets it as the page sets a figure, a code or a hash (Plex Mono with
+ * tabular numerals; BRAND.md 5): the native list draws every option in the system's face, but the line `showChosen`
+ * writes under the select, like a hint, is page text.
  */
 interface ChoiceText {
   readonly text: string;
@@ -182,7 +189,7 @@ interface ChoiceText {
  */
 interface Choice {
   readonly value: string;
-  readonly label: string | readonly ChoiceText[];
+  readonly label: FieldWords;
 }
 
 /** Options under a heading the list shows and no one chooses (an optgroup: a payer's contracts under its name). */
@@ -191,9 +198,24 @@ interface ChoiceGroup {
   readonly options: readonly Choice[];
 }
 
-/** An option's words, its runs joined. */
-function labelText(label: Choice['label']): string {
+/** Words as plain text, their runs joined: an option's as the list holds it, a hint's for its control's description. */
+function labelText(label: FieldWords): string {
   return typeof label === 'string' ? label : label.map((run) => run.text).join('');
+}
+
+/** Words as the page sets them: each `mono` run in Plex Mono with tabular numerals, the others as plain text. */
+function setWords(words: FieldWords): ReactNode {
+  return typeof words === 'string'
+    ? words
+    : words.map((run, index) =>
+        run.mono === true ? (
+          <span key={String(index)} className="font-mono tabular-nums">
+            {run.text}
+          </span>
+        ) : (
+          run.text
+        ),
+      );
 }
 
 function choiceText(choice: Choice): string {
@@ -218,15 +240,7 @@ function ChosenWords({ cut, options }: { readonly cut: CutChoice; readonly optio
   if (choice === undefined || typeof choice.label === 'string' || labelText(choice.label).replace(/\s+/g, ' ').trim() !== cut.text) {
     return cut.text;
   }
-  return choice.label.map((run, index) =>
-    run.mono === true ? (
-      <span key={String(index)} className="font-mono tabular-nums">
-        {run.text}
-      </span>
-    ) : (
-      run.text
-    ),
-  );
+  return setWords(choice.label);
 }
 
 /**
