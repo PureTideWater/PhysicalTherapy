@@ -382,9 +382,9 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
   },
   {
     id: 'MOD-17',
-    title: "The Anthropic client as configuration builds it, with the environment asking for the SDK's tracing and its content, debug logging and another host; the configuration with extra headers asked for on the Anthropic path; and the installed SDK's own code",
+    title: "The Anthropic client as configuration builds it, with the environment asking for the SDK's tracing and its content, debug logging and another host; the configuration with extra headers asked for on the Anthropic path; the installed SDK's own code; and the failures a request through that client meets",
     assertion:
-      "SDK retries off and the gateway's timeout; the SDK's OpenTelemetry tracing and propagation off, its logging off and the host the API's own, whatever `ANTHROPIC_OPEN_TELEMETRY`, its content mode, `ANTHROPIC_LOG` and `ANTHROPIC_BASE_URL` say; no webhook key, whatever `ANTHROPIC_WEBHOOK_SIGNING_KEY` says; `ANTHROPIC_CUSTOM_HEADERS` is refused on the Anthropic path and ignored on the others; the environment variables the installed SDK reads, the other places its code touches the environment and its runtime dependencies are the reviewed lists, each closed",
+      "SDK retries off and the gateway's timeout; the SDK's OpenTelemetry tracing and propagation off, its logging off and the host the API's own, whatever `ANTHROPIC_OPEN_TELEMETRY`, its content mode, `ANTHROPIC_LOG` and `ANTHROPIC_BASE_URL` say; no webhook key, whatever `ANTHROPIC_WEBHOOK_SIGNING_KEY` says; `ANTHROPIC_CUSTOM_HEADERS` is refused on the Anthropic path and ignored on the others; the environment variables the installed SDK reads, the other places its code touches the environment and its runtime dependencies are the reviewed lists, each closed; through that client, a 429 reaches the gateway as `throttled`, a 529, a 500, a 503 that is not JSON and a refused connection as `unavailable`, a connect timeout, the SDK's own timeout and the gateway's abort as `timeout`, and a 400 or 401 as `rejected`, each after one request",
   },
   {
     id: 'MOD-18',

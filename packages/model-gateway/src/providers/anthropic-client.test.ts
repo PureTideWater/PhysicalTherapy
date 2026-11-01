@@ -6,7 +6,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import { type Span, type TextMapPropagator, type Tracer, type TracerProvider, propagation, trace } from '@opentelemetry/api';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { anthropicClient } from './anthropic';
+import type { ModelRequest } from '../provider';
+import { AnthropicProvider, anthropicClient } from './anthropic';
 
 /**
  * The Anthropic client as configuration builds it, with SDK 1.x (test matrix MOD-17, MOD-18; docs/adr/0048, amendment
@@ -250,6 +251,79 @@ describe('MOD-17: the Anthropic client as configuration builds it, whatever the 
     expect([...sites].sort()).toEqual([...SDK_ENV_SITES].sort());
     const manifest = JSON.parse(readFileSync(path.join(directory, 'package.json'), 'utf8')) as { dependencies?: Record<string, string> };
     expect(Object.keys(manifest.dependencies ?? {}).sort()).toEqual([...SDK_DEPENDENCIES]);
+  });
+});
+
+/** A request as the gateway hands it to the provider; synthetic. */
+const REQUEST: ModelRequest = {
+  modelId: 'synthetic-model-id',
+  promptVersion: 'propose-contract-terms/1',
+  system: 'SYNTHETIC SYSTEM PROMPT',
+  user: 'SYNTHETIC',
+  outputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false },
+  maxTokens: 10,
+  effort: 'high',
+};
+
+/** The API's error answer with `status`, as the API writes one. */
+function answer(status: number, type: string): () => Promise<Response> {
+  return () => Promise.resolve(new Response(JSON.stringify({ type: 'error', error: { type, message: 'synthetic' } }), { status, headers: { 'content-type': 'application/json' } }));
+}
+
+/** A fetch that never answers, and rejects as fetch does once its signal aborts. */
+function hanging(_url: string | URL | Request, init?: RequestInit): Promise<Response> {
+  return new Promise((_resolve, reject) => {
+    init?.signal?.addEventListener('abort', () => reject(new DOMException('This operation was aborted', 'AbortError')), { once: true });
+  });
+}
+
+/** One call through the provider over the client as configuration builds it, the fake fetch stubbed before it is built. */
+async function failing(fetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response>, options: { readonly timeoutMs?: number; readonly signal?: AbortSignal } = {}) {
+  vi.stubGlobal('fetch', fetch);
+  const timeoutMs = options.timeoutMs ?? TIMEOUT_MS;
+  const provider = new AnthropicProvider({ client: anthropicClient(KEY, timeoutMs), timeoutMs });
+  return provider.complete(REQUEST, { signal: options.signal ?? new AbortController().signal });
+}
+
+/**
+ * The gateway retries once only what anthropicFailure maps to a retryable code (throttled, unavailable, timeout), so the
+ * mapping is held here against what the installed SDK's client throws, not only against errors built by hand
+ * (providers.test.ts): a later SDK that surfaced a failure another way would fail this.
+ */
+describe('MOD-17: the failures a request through that client meets, as the gateway reads them', () => {
+  it.each([
+    ['a rate limit (429)', 'throttled', answer(429, 'rate_limit_error')],
+    ['an overload (529)', 'unavailable', answer(529, 'overloaded_error')],
+    ['a server error (500)', 'unavailable', answer(500, 'api_error')],
+    ['a 503 that is not JSON', 'unavailable', () => Promise.resolve(new Response('synthetic upstream text', { status: 503 }))],
+    ['a refused connection', 'unavailable', () => Promise.reject(new TypeError('fetch failed', { cause: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }) }))],
+    ['a connect timeout', 'timeout', () => Promise.reject(new TypeError('fetch failed', { cause: new Error('Connect Timeout Error') }))],
+    ['a bad request (400)', 'rejected', answer(400, 'invalid_request_error')],
+    ['an authentication failure (401)', 'rejected', answer(401, 'authentication_error')],
+  ] as const)('maps %s to %s, after one request and with nothing written to the console', async (_name, code, answering) => {
+    const fetch = vi.fn(answering);
+    const spies = spyConsole();
+    await expect(failing(fetch)).rejects.toMatchObject({ name: 'ProviderFailure', code, message: `the model provider failed: ${code}` });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    for (const spy of spies) {
+      expect(spy).not.toHaveBeenCalled();
+    }
+  });
+
+  it('maps the SDK’s own timeout to timeout, after one request', async () => {
+    const fetch = vi.fn(hanging);
+    await expect(failing(fetch, { timeoutMs: 50 })).rejects.toMatchObject({ code: 'timeout' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('maps the gateway’s abort during the request to timeout, after one request', async () => {
+    const attempt = new AbortController();
+    const fetch = vi.fn((url: string | URL | Request, init?: RequestInit) => {
+      setTimeout(() => attempt.abort(), 0);
+      return hanging(url, init);
+    });
+    await expect(failing(fetch, { signal: attempt.signal })).rejects.toMatchObject({ code: 'timeout' });
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });
 
