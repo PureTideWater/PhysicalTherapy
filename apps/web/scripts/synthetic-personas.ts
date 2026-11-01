@@ -32,7 +32,8 @@ import { totpCode, totpSecretFromBytes } from '../src/lib/auth/totp';
  * docs/adr/0080), the principal of SYNTHETIC SUSPENDED FIRM, which the seed holds suspended with a grant in force on
  * SYNTHETIC FIRM CLIENT PRACTICE, and the practice administrator of that practice's own group, SYNTHETIC FIRM CLIENT
  * GROUP; and the platform administrator who suspends and reinstates SYNTHETIC CONSOLE SUSPENSION FIRM in the console, a
- * firm with no one who signs in).
+ * firm with no one who signs in; and a billing manager and a viewer of the other group for the journey of refused
+ * downloads, in a practice of its own).
  * Their passwords and TOTP secrets are derived from their keys here rather than written down, and
  * exist only in the local identity provider's store.
  * Synthetic accounts on a development machine; never a real person.
@@ -148,6 +149,10 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   { key: 'tables-admin', organization: 'internal', role: 'platform_admin' },
   { key: 'tables-support', organization: 'internal', role: 'support' },
   { key: 'tables-ledger-specialist', organization: 'internal', role: 'contract_specialist' },
+  // Refused downloads back on their pages (docs/adr/0079; test matrix DLR-04): a billing manager of the other group who
+  // asks for the letter and generates the report, and a viewer refused the report's line CSV, in a practice of its own.
+  { key: 'refusals-manager', organization: 'other_group', role: 'billing_manager' },
+  { key: 'refusals-viewer', organization: 'other_group', role: 'viewer' },
   // The forms journey (docs/adr/0077): a viewer refused at sign-in, an invited viewer refused a new password (neither ever
   // saved, so each run starts from the seed), a billing manager of the other group refused on ROI and on a support ticket,
   // a viewer who signs in from another tab of that billing manager's browser while the ticket form is open, and a
