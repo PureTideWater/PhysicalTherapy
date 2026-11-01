@@ -41,6 +41,13 @@ returns (2026-11-03 14:00 UTC, possibly 15:00). Briefs: `lanes/lane-b-session-br
   typecheck, lint 1,712, lint:copy 550, lint:logs 1,102, unit 7,032 + 4 skipped, test:db 4 shards 9,561 + 1 skipped,
   build, stamp, e2e 68 passed, verify-content, synth 0 written, fixtures, domain model --check (6559c5b9…c2fadc, line
   7413; provenance only). Pushed. The base then moved to bce57f16 (#82): merged as efb20704 (no conflict), re-checking.
+- **~19:00 UTC: the account's 5-hour limit stopped wf_5566bd1c-8eb in stage 1** (round 2 on efb20704: typecheck, lint
+  1,719, lint:copy, lint:logs 1,106, verify-content, dm check, fixtures, actions:check, toolchain:check, unit 7,125 + 4
+  skipped, test:db 4 shards green after one flake in tools/release/load.db.test.ts shard 1 (relallvisible 0 vs 7 after
+  VACUUM FREEZE; untouched by SS-01 and #82; passed on re-run and alone 3/3: an open item); build and e2e not yet run).
+  Worker restarted; setup re-run 19:58 UTC (PostgreSQL back; no marker); efb20704 kept as WIP ref
+  `co-001/wip-ss01-chain`; **resumed 19:59 UTC** with resumeFromRunId (the stage-1 agent continues from its progress file,
+  copied to `approval-summaries/lane-a-wip/progress/sc-m1-ss01.md`).
 - **#42's step-1 head c65f9cf2 pushed (orchestrator, 18:15 UTC); a #82-merged head follows.** Decision: wait for that
   head (one regeneration; no merge into a worktree a workflow is writing) and merge it down SS-01 -> 1b -> interest in a
   follow-on workflow once wf_5566bd1c-8eb's merges have pushed.
