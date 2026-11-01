@@ -2,7 +2,7 @@
 
 Created 2026-11-01T14:50:00Z by Lane B's orchestrator (session_01FcouKNNHsdecRMzfTs7XwW) from the item prompt
 `lanes/lane-b-item-prompts-2026-11-01/redact-ssn-phone.md`.
-Session: session starting 2026-11-01 (the item session writes its own id here first). GitHub login: PureTideWater.
+Session: session_01FcouKP1U2GGDFhhZT9CaUV (https://claude.ai/code/session_01FcouKP1U2GGDFhhZT9CaUV), from 2026-11-01T16:57Z. GitHub login: PureTideWater (checked 2026-11-01).
 Reserved (LANES.md claim row 198): ADR 0088 if the design needs more than an ADR 0054 amendment; test-matrix MOD-15 to MOD-16;
 `packages/synth` the same as MOD-13 if needed: `matrix.ts` entries plus `registry.ts` entries `none(10, '<why no file>', [test
 paths])` with no fixture file, in the existing MOD module (module 9; the `10` is `completesIn`, the milestone, not a module
@@ -10,8 +10,8 @@ number). No migration timestamps. Gateway-only Lane B work, never a schema PR. I
 released: record it here and tell the orchestrator.
 Follow-on: none.
 
-## Now (2026-11-01T14:50:00Z)
-- **Stage: not started; session starting.** Done: the claim and the reservations (18bbe0e9, 15725ba2). All seven pipeline stages
+## Now (2026-11-01T17:20Z)
+- **Stage 1 (design) running** as workflow `lane-b-redact-ssn-phone-design` (probe, draft, one reviewer plus a completeness critic, two-lens verification, apply). Before that: Done: the claim and the reservations (18bbe0e9, 15725ba2). All seven pipeline stages
   remain: design and review, build, draft PR, two reviews, fix round, verification, merge.
 - **The ruling:** the founder (Tyler Williams), 2026-11-01: a payer letter has its Social Security numbers and phone numbers
   redacted by pattern before the model reads it (`readDenialLetter`), as a PRD §14 "PHI minimization" requirement. The
@@ -54,6 +54,12 @@ Follow-on: none.
 ## Log (UTC)
 - 2026-11-01T14:50:00Z: created by Lane B's orchestrator. The item session starts now: design first; the build waits for #75's
   merge.
+- 2026-11-01T16:58Z: session_01FcouKP1U2GGDFhhZT9CaUV started. Setup (build-ops e92795ee) printed OK: it moved the base image's
+  Node v24.22.1 aside itself and installed v24.22.0; every line ok, playwright included; pre-push hook and gitleaks 8.24.3 in place.
+  Live state re-checked: claude/build-platform 83d71fd6, #75 still at 871faff9, no `co-001/redact-ssn-phone` branch. The read-only
+  probe worktree `/home/user/redact-ssn-phone-probe` (detached at 871faff9) is installed.
+- 2026-11-01T17:20Z: stage 1 started: the design workflow (script archived as
+  `workflow-scripts/lane-b-redact-ssn-phone-design-<runId>.js` when it ends).
 
 ## Waiting on someone
 - Nothing blocks. The ruling is decided (the founder, 2026-11-01) and confirmed by the co-founder.
