@@ -58,9 +58,9 @@ Once a week, after Thursday's npm batch:
    Open each `failure` and read its log; fix the cause in a pull request (run 40223237798 of 2026-10-25 is the
    example: every npm update failed with `ERR_PNPM_NO_MATURE_MATCHING_VERSION`, because a locked version was under
    three days old). A successful run whose log says "release-age block detected" dropped a version without a pull
-   request; under CQ1 (a) it should not occur, so record it and find which locked version caused it. In the npm run's
-   log, `belongs to more specific group` naming any group but a specific one means the routing broke: fix
-   `.github/dependabot.yml` (CI-12).
+   request; under CQ1 (a) it should not occur, so record it and find which locked version caused it. Any
+   `belongs to more specific group` line in the npm run's log means the routing broke: fix `.github/dependabot.yml`
+   (CI-12).
 2. **Each open Dependabot pull request.** Read its checks, then its changes:
    - all green: read the release notes of every major or minor in it for a change in behaviour our code relies on,
      then take it as a pull request of the build's own: merge the build branch in, add what the notes call for, and
