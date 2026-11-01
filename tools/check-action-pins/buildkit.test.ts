@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { BUILDKIT_AGE_MS, builderOf, checkBuilder } from './buildkit';
+import { builderOf, checkBuilder } from './buildkit';
 import { recordedTransport, sha } from './fixtures';
 
 /**
@@ -14,6 +14,8 @@ const OTHER = `sha256:${'2'.repeat(64)}`;
 const NOW = new Date('2030-01-10T00:00:00Z');
 const ago = (ms: number) => new Date(NOW.getTime() - ms).toISOString();
 const DAY = 24 * 60 * 60 * 1000;
+/** The release age at its minimum, three days (pnpm-workspace.yaml's minimumReleaseAge, MINIMUM_RELEASE_AGE_MINUTES). */
+const FLOOR_MS = 3 * DAY;
 
 const steps = (...opts: (string | undefined)[]) =>
   `name: w\non: push\njobs:\n  build:\n    runs-on: ubuntu-24.04\n    steps:\n${opts
@@ -47,7 +49,7 @@ describe('the builder on Docker Hub', () => {
   it('warns when a newer release is three days old, naming it, and not while it is younger', async () => {
     const old = hub([
       { name: 'v0.35.0', pushed: ago(1 * DAY) },
-      { name: 'v0.34.2', pushed: ago(BUILDKIT_AGE_MS + 60_000) },
+      { name: 'v0.34.2', pushed: ago(FLOOR_MS + 60_000) },
       { name: 'v0.34.2-rootless', pushed: ago(5 * DAY) },
       { name: 'v0.34.1', pushed: ago(20 * DAY), digest: DIGEST },
       { name: 'latest', pushed: ago(1 * DAY) },
@@ -55,10 +57,25 @@ describe('the builder on Docker Hub', () => {
     const result = await checkBuilder(old, builder, { isNew: false, now: NOW });
     expect(result.errors).toEqual([]);
     expect(result.warnings).toEqual([
-      `the builder moby/buildkit:v0.34.1: moby/buildkit v0.34.2 was pushed ${ago(BUILDKIT_AGE_MS + 60_000)}, three days ago or more; Dependabot cannot update setup-buildx's driver-opts, so move every step to it by hand (docs/runbooks/dependency-upgrades.md)`,
+      `the builder moby/buildkit:v0.34.1: moby/buildkit v0.34.2 was pushed ${ago(FLOOR_MS + 60_000)}, three days ago or more; Dependabot cannot update setup-buildx's driver-opts, so move every step to it by hand (docs/runbooks/dependency-upgrades.md)`,
     ]);
     const young = hub([{ name: 'v0.35.0', pushed: ago(2 * DAY) }]);
     expect(await checkBuilder(young, builder, { isNew: false, now: NOW })).toMatchObject({ errors: [], warnings: [], notes: [`the builder moby/buildkit:v0.34.1: its tag is the index ${DIGEST}`, 'the builder moby/buildkit:v0.34.1: no newer release is three days old'] });
+  });
+
+  it('holds the newer-release warning to minimumReleaseAge, the floor every age rule reads, never under three days', async () => {
+    const releases = (days: number) => hub([{ name: 'v0.34.2', pushed: ago(days * DAY) }]);
+    // Five days (7200 minutes): a release four days old is not yet one to move to, and one six days old is.
+    expect(await checkBuilder(releases(4), builder, { isNew: false, now: NOW, floor: 7200 })).toMatchObject({ warnings: [], notes: expect.arrayContaining(['the builder moby/buildkit:v0.34.1: no newer release is 7200 minutes (5.00 days) old']) as unknown });
+    expect((await checkBuilder(releases(6), builder, { isNew: false, now: NOW, floor: 7200 })).warnings).toEqual([
+      `the builder moby/buildkit:v0.34.1: moby/buildkit v0.34.2 was pushed ${ago(6 * DAY)}, 7200 minutes (5.00 days) ago or more; Dependabot cannot update setup-buildx's driver-opts, so move every step to it by hand (docs/runbooks/dependency-upgrades.md)`,
+    ]);
+    // A floor under the minimum reads as three days.
+    expect((await checkBuilder(releases(2), builder, { isNew: false, now: NOW, floor: 60 })).warnings).toEqual([]);
+    // A floor that is not a number reads as three days, as releaseAgeMinutes reads it: a release four days old is one to move to.
+    expect((await checkBuilder(releases(4), builder, { isNew: false, now: NOW, floor: Number.NaN })).warnings).toEqual([
+      `the builder moby/buildkit:v0.34.1: moby/buildkit v0.34.2 was pushed ${ago(4 * DAY)}, three days ago or more; Dependabot cannot update setup-buildx's driver-opts, so move every step to it by hand (docs/runbooks/dependency-upgrades.md)`,
+    ]);
   });
 
   it('fails a new builder whose tag is another digest, or that cannot be read, and only warns about an unchanged one', async () => {
@@ -73,5 +90,20 @@ describe('the builder on Docker Hub', () => {
     expect(limited.pauses).toEqual([2_000, 5_000]);
     expect(await checkBuilder(hub([], 429), builder, { isNew: false, now: NOW })).toMatchObject({ errors: [], warnings: [expect.stringContaining('failed 3 times')] });
     expect((await checkBuilder(hub([], 404), builder, { isNew: true, now: NOW })).errors).toEqual(['the builder moby/buildkit:v0.34.1: Docker Hub has no such tag']);
+  });
+
+  it('waits out a rate limit on either Hub read for the time Hub names, as the age rule and the image rule do, capped at 60 s (integrator)', async () => {
+    const limited = (headers: Record<string, string>) => ({ status: 429, body: '{"message":"rate limited"}', headers });
+    const reset = String(Math.floor(NOW.getTime() / 1000) + 45);
+    const transport = recordedTransport({
+      urls: {
+        [TAG]: [limited({ 'Retry-After': '30' }), { status: 200, body: JSON.stringify({ name: 'v0.34.1', digest: DIGEST }) }],
+        [LIST]: [limited({ 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': reset }), limited({ 'Retry-After': '600' }), { status: 200, body: '{"results":[]}' }],
+      },
+    });
+    const result = await checkBuilder(transport, builder, { isNew: true, now: NOW, clock: () => NOW.getTime() });
+    expect(result).toMatchObject({ errors: [], warnings: [], notes: [`the builder moby/buildkit:v0.34.1: its tag is the index ${DIGEST}`, 'the builder moby/buildkit:v0.34.1: no newer release is three days old'] });
+    // Retry-After's 30 s; x-ratelimit-reset's 45 s; a Retry-After of ten minutes held to the 60 s cap.
+    expect(transport.pauses).toEqual([30_000, 45_000, 60_000]);
   });
 });
