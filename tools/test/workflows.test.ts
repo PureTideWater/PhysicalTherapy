@@ -4054,8 +4054,12 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     // exactly (Disabled would be min). Matched in lower case: usesAction's prefix is case-sensitive.
     const steps = workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => job.steps.map((step) => ({ where: `${file} ${id} ${step.name ?? step.id ?? ''}`, step }))));
     const builds = steps.filter(({ step }) => step.uses?.toLowerCase().startsWith('docker/build-push-action@') === true);
-    expect(builds).toHaveLength(7);
+    // Each build that does not set it is named; a new build that does passes, with no fixed count of them. The parsed
+    // builds are as many as the files' own lines name, so a build the parse missed (or one an alias repeats) fails.
     expect(builds.filter(({ step }) => step.env?.BUILDX_METADATA_PROVENANCE !== 'disabled').map(({ where }) => where)).toEqual([]);
+    expect(builds.length).toBeGreaterThan(0);
+    const lines = workflowFiles().flatMap((file) => readFileSync(path.join(WORKFLOWS, file), 'utf8').split('\n').filter((line) => /^\s*(?:-\s+)?uses:\s*["']?docker\/build-push-action@/i.test(line)));
+    expect(builds).toHaveLength(lines.length);
     // Nothing writes buildx's metadata another way, and nothing reads its provenance.
     expect(steps.filter(({ step }) => step.uses?.toLowerCase().startsWith('docker/bake-action@') === true).map(({ where }) => where)).toEqual([]);
     expect(steps.filter(({ step }) => step.run?.includes('--metadata-file') === true).map(({ where }) => where)).toEqual([]);
