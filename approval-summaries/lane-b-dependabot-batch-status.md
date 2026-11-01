@@ -169,6 +169,20 @@ guard 2026-11-04 12:00 UTC).
   (3.38.1 comes with the merge-time regeneration). B's checker: 3 nits, no B/S. A's reviews in round 2 (the critic's gaps).
   #91 CI green on 651f8b80 incl. the four required checks, mergeable clean. 20:36Z merge rule recorded above.
 
+- 2026-11-01T20:50:00Z: **PR B opened: draft #94** (`co-001/deps-aws-cdk-minor-patch`, head 484e9f06; 15 commits; base merged
+  to 43565235 (#83 merged); description 34,058 characters, template sections, read back identical after restoring the footer
+  the connector replaced; subscribed). New since the checker: `cdk-diff.ts` also sets CDK_DISABLE_VERSION_CHECK (red-first
+  407ec5a3 -> 31396ceb; outside design §8.1's list, named in the description), the test ignores commented-out variables
+  (bf3a5083), ADR 0012 amendment re-wrapped (93fa7dbb). Local on 484e9f06: typecheck, infra 609 pass, lockfile regeneration
+  no change, watched no change, synth 0 written, toolchain (0 errors, 1 warning pnpm 10.34.9; 35 added versions), licenses
+  185, verify-content; lint and lint:logs on 93fa7dbb; CDK synth byte-identical; Stryker selection: 6 shards (packets x3,
+  pricing x3). New conflicts: **B and C in `docs/runbooks/dependency-upgrades.md`** (both edit the AWS paragraph; the second
+  merged keeps both); #42 (now 6c28d6a2, still open) conflicts with B in the web and worker manifests and the lockfile; B and
+  A in `packages/model-gateway/package.json` (known). Merge-time regeneration windows: @aws-sdk 3.1161.0 from
+  2026-11-02T18:52:27Z, CDK CLI 2.1147.0 from 18:57:11Z, @smithy/core 3.38.1 from 23:11:40Z.
+- 2026-11-01T20:52:00Z: reviews of B (#94) and C (#91) launched together: wf_91a35eba-252 (a wrapper that runs the reviews
+  script once per PR; heavy commands share the lock). A's reviews (wf_48c765bd-7af) in round 2.
+
 ## Waiting on someone
 - 1 moderate Dependabot alert on the default branch (GitHub's push message, 2026-11-01 18:2xZ): a person reads it (the API answers 403 to the build). Does not block.
 - The API version of Stripe's webhook endpoint (design §5.4): a person checks it in Stripe's dashboard. Does not block.
@@ -186,4 +200,4 @@ guard 2026-11-04 12:00 UTC).
 None yet.
 
 ## Next step
-Next: A's reviews -> A's fix round; B's draft (wf_1dedd31c-ddb) -> B's reviews; C's reviews when a heavy slot frees (reviews script with C's args). C merges after #86 (deadline guard 2026-11-04 12:00Z).
+Next: A's fix round when its reviews return; B's and C's fix rounds when wf_91a35eba-252 returns; then fresh-clone verifications; A and B merge when ready (20:36Z rule), C after #86.

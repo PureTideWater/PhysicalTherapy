@@ -75,6 +75,10 @@ Follow-on: none.
   is kept as a date; MOD-13 seed 1162287068 at bce57f16; #75's session fixes it inside #75). Added to the design as §17 R14: step 0
   re-reads the fix, a named regression test for date-shaped identifiers, and the survivor scan treats an implausible-year date as
   digits.
+- 2026-11-01T19:56Z: #75 still unmerged (871faff9, dirty); hourly send_later check continues. Reported to the orchestrator.
+- 2026-11-01T20:37Z: the orchestrator's merge rule of 20:36 UTC (merge when verified and green; the section-6 order only between
+  PRs that conflict) does not change this item: it builds on #75's code (`redact.ts`, its tests, PRD §14, ADR 0054), so it still
+  waits for #75's merge before the branch is cut.
 
 ## Waiting on someone
 - **#75's merge** (its own session, S4): the build waits for it (cut only from a base containing its merge commit).
