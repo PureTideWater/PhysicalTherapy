@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { type Browser, type Page, expect, test } from '@playwright/test';
 
-import { expectAccessible } from './a11y';
+import { atPhoneWidth, expectAccessible } from './a11y';
 import { registerKeyAndSignIn, signInWithTotp, withDatabase } from './helpers';
 import { journeyPractice, pricedAndTriaged, signedOffSchedule, until } from './journeys';
 import { MODELS_PRACTICE, Q97110, Q97140, draftContract, expectModelOutput, expectNarrative, fixedCandidate, modelCalls } from './models';
@@ -80,7 +80,7 @@ async function killSwitchFromConsole(browser: Browser, practiceId: string): Prom
 
 async function approveAsSecondPerson(approver: Page, packetPath: string, versionNo: number): Promise<void> {
   await approver.goto(packetPath);
-  await expect(approver.getByRole('region', { name: 'Version' })).toContainText(`Version ${String(versionNo)}`);
+  await expect(approver.getByRole('region', { name: 'Version', exact: true })).toContainText(`Version ${String(versionNo)}`);
   const approval = approver.getByRole('region', { name: 'Approval' });
   await expect(approval.locator('[data-approval="ready"]')).toBeVisible();
   await approval.getByRole('button', { name: 'Approve this version' }).click();
@@ -130,10 +130,12 @@ test('the specialist verifies and approves the model’s proposal, a second pers
       await expect(proposal.locator('[data-check="passed"]')).toHaveCount(3);
       await expect(proposal.locator('[data-check="failed"]')).toHaveCount(0);
       // The proposed record waits for the specialist: nothing is verified, and the version cannot be approved yet.
-      const record = specialist.getByRole('region', { name: 'Rate record 1' });
+      const record = specialist.getByRole('region', { name: 'Rate record 1', exact: true });
       await expect(record).toContainText('Proposed by the model');
       await expect(record).toContainText('Not checked');
       await expectAccessible(specialist, 'Rate record review with a model proposal');
+      // At a phone's width the proposed fields scroll in a region of their own, the record's two columns (each field's terms with their approval under them) fit, and the cited page scrolls in its box (TBL-03).
+      await atPhoneWidth(specialist, 'Rate record review with a model proposal', { tables: ['Proposed fields of proposal 1, candidate 1'] });
       await verifyAndApprove(specialist);
       await expect(specialist.locator('[data-page-text] mark')).toHaveText(Q97110);
       await expect(specialist.getByRole('region', { name: 'Model proposal', exact: true })).toHaveAttribute('data-decision', 'accepted');
@@ -145,7 +147,7 @@ test('the specialist verifies and approves the model’s proposal, a second pers
       await expect(page.getByRole('region', { name: 'First version' })).toBeVisible();
       await page.getByRole('button', { name: 'Draft the first version with the model' }).click();
       await expect(page.locator('[data-model-notice="drafted"]')).toBeVisible();
-      await expect(page.getByRole('region', { name: 'Version' })).toContainText('Version 1');
+      await expect(page.getByRole('region', { name: 'Version', exact: true })).toContainText('Version 1');
       await expect(page.locator('[data-model-draft="passed"]')).toBeVisible();
       await expect(page.locator('[data-verifier="passed"]')).toBeVisible();
       await expect(page.getByRole('textbox', { name: 'Narrative', exact: true })).toHaveValue(narrative);
@@ -178,7 +180,7 @@ test('the specialist verifies and approves the model’s proposal, a second pers
       await form.getByLabel('Quote').fill(Q97140);
       await form.getByRole('button', { name: 'Add the rate record' }).click();
       await expect(specialist.locator('[data-page-text] mark')).toHaveText(Q97140);
-      await expect(specialist.getByRole('region', { name: 'Rate record 1' })).not.toContainText('Proposed by the model');
+      await expect(specialist.getByRole('region', { name: 'Rate record 1', exact: true })).not.toContainText('Proposed by the model');
       await verifyAndApprove(specialist);
     });
 
@@ -191,7 +193,7 @@ test('the specialist verifies and approves the model’s proposal, a second pers
       await editor.fill(`${await editor.inputValue()} This version was written by hand [1].`);
       await page.getByRole('button', { name: 'Save as a new version' }).click();
       await expect(page.locator('[data-notice="written"]')).toBeVisible();
-      await expect(page.getByRole('region', { name: 'Version' })).toContainText('Version 2');
+      await expect(page.getByRole('region', { name: 'Version', exact: true })).toContainText('Version 2');
       await expect(page.locator('[data-verifier="passed"]')).toBeVisible();
       await expect(page.locator('[data-model-draft]')).toHaveCount(0);
       await page.getByRole('button', { name: 'Request approval' }).click();

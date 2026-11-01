@@ -352,6 +352,21 @@ const contentArbitrary = fc.array(lineArbitrary, { minLength: 1, maxLength: 8 })
   ),
 );
 
+/**
+ * Counts for the properties below: any from 2 to 100,000, and a quarter of the time one beside a figure the inputs hold
+ * (each numeric code and its neighbours, the service year and the next), where in and not in the input meet. A
+ * five-digit count reads as a procedure code, so one equal to an input's code is that code (97140 at seed 2019154346).
+ */
+const countArbitrary = fc.oneof(
+  { weight: 3, arbitrary: fc.integer({ min: 2, max: 100_000 }) },
+  { weight: 1, arbitrary: fc.constantFrom(...CODES.filter((code) => /^\d+$/.test(code)).flatMap((code) => [-1, 0, 1].map((step) => Number.parseInt(code, 10) + step)), 2026, 2027) },
+);
+/** Whether the verifier finds a count, written in ASCII digits, in the inputs: among their numbers, or their codes. */
+const inInput = (generated: PacketContent, count: number) => {
+  const facts = narrativeFacts(generated);
+  return facts.numbers.has(String(count)) || facts.codes.has(String(count));
+};
+
 const FILLER = ['the', 'payer', 'paid', 'these', 'lines', 'under', 'its', 'contract', 'short', 'of', 'what', 'it', 'requires', 'and'] as const;
 
 describe('properties of the verifier', () => {
@@ -378,12 +393,11 @@ describe('properties of the verifier', () => {
     );
   });
 
-  it('fails a draft into which any count not in the input is written', () => {
+  it('fails a draft into which any count not in the input is written, and passes one that is', () => {
     fc.assert(
-      fc.property(contentArbitrary, fc.integer({ min: 2, max: 100_000 }), (generated, count) => {
-        fc.pre(!narrativeFacts(generated).numbers.has(String(count)));
+      fc.property(contentArbitrary, countArbitrary, (generated, count) => {
         const narrative = `${draftNarrative(generated)} It affected ${String(count)} visits [3].`;
-        expect(flagged(narrative, verify(narrative, generated))).toEqual([String(count)]);
+        expect(flagged(narrative, verify(narrative, generated))).toEqual(inInput(generated, count) ? [] : [String(count)]);
       }),
     );
   });
@@ -422,13 +436,21 @@ describe('properties of the verifier', () => {
     );
   });
 
-  it('fails a draft into which a count not in the input is written in any other digits', () => {
+  it('fails a draft into which a count not in the input is written in any other digits, and any count in digits it does not read', () => {
     fc.assert(
-      fc.property(contentArbitrary, fc.integer({ min: 2, max: 100_000 }), fc.constantFrom(...READ_ALPHABETS, ...OTHER_ALPHABETS), (generated, count, alphabet) => {
-        fc.pre(!narrativeFacts(generated).numbers.has(String(count)));
+      fc.property(contentArbitrary, countArbitrary, fc.constantFrom(...READ_ALPHABETS, ...OTHER_ALPHABETS), (generated, count, alphabet) => {
         const report = verify(`${draftNarrative(generated)} It affected ${inDigits(alphabet, String(count))} visits [3].`, generated);
-        expect(report.passed).toBe(false);
-        expect(codes(report)).toContain((OTHER_ALPHABETS as readonly (number | string)[]).includes(alphabet) ? 'unreadable_figure' : 'figure_not_in_input');
+        if ((OTHER_ALPHABETS as readonly (number | string)[]).includes(alphabet)) {
+          // Digits it does not read fail whatever their value.
+          expect(report.passed).toBe(false);
+          expect(codes(report)).toContain('unreadable_figure');
+        } else if (inInput(generated, count)) {
+          // Read as ASCII digits, a count in the input is that figure, as in the property above.
+          expect(codes(report)).not.toContain('figure_not_in_input');
+        } else {
+          expect(report.passed).toBe(false);
+          expect(codes(report)).toContain('figure_not_in_input');
+        }
       }),
     );
   });

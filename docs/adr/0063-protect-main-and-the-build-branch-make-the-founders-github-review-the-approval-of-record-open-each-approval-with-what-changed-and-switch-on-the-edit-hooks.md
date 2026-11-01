@@ -482,7 +482,9 @@ founder confirms the others by doing their runbook steps, or rules otherwise.
     branch's copy instead (the runbook's section "The default branch until launch").
 14. **`typecheck.sh`'s time, stated both ways** (Consequences): 8 to 11 s in `apps/web` after an edit of a file few
     others import, 27 to 33 s after an edit of a widely imported module such as `apps/web/src/lib/server/config.ts`.
-15. **approval-of-record's runner.** It runs on `ubuntu-24.04`, as every job has since #24.
+15. **approval-of-record's runner.** It runs on `ubuntu-26.04` since ci-browser, as every job does but the release's
+    capacity chain, which stays on `ubuntu-24.04` (the founder's F5; ADR 0066, Part 3). Before it, on `ubuntu-24.04`, as
+    every job had been since #24.
 
 Dates to record here: the day of runbook 3i, from which the build merges no pull request without the founder's approval
 and from which the first quarterly review samples (not yet); the day step 5 is set, from which GitHub requires it (not

@@ -236,19 +236,20 @@ export const supportRequestPage = selfRoute({
  * A ticket names no patient (PRD 19: "Support staff never see PHI without a break-glass grant"; docs/adr/0055): the
  * desk reads it with no support grant, so its text is refused when it holds an identifier's shape, a date in words or
  * a birth date, an identifier of letters and digits, or a name after a word that introduces a person. A name written
- * with no such word cannot be told from other words; the form asks for screens and opaque IDs only.
+ * with no such word cannot be told from other words; the form asks for screens and opaque IDs only. Each field that
+ * holds one is named at once, so a person who wrote a patient into both fixes both before the next press.
  */
-function screened(field: string, text: string): string {
-  if (writtenPhiFindings(text).length > 0) {
-    throw new InputError([
-      {
+function screened(fields: Readonly<Record<'subject' | 'message', string>>): void {
+  const refused = Object.entries(fields).filter(([, text]) => writtenPhiFindings(text).length > 0);
+  if (refused.length > 0) {
+    throw new InputError(
+      refused.map(([field]) => ({
         field,
         message:
-          'a ticket takes no patient information: remove names, dates of birth, member IDs, claim numbers, other identifiers and phone numbers, and name the screen and the record’s opaque ID instead',
-      },
-    ]);
+          'a ticket takes no patient information: remove names, dates of birth, member IDs, claim numbers, other identifiers and phone numbers, and name the screen and the record’s ID instead',
+      })),
+    );
   }
-  return text;
 }
 
 export const createTicket = selfRoute({
@@ -266,11 +267,10 @@ export const createTicket = selfRoute({
   }),
   audit: { action: 'support_ticket_opened', objectType: 'support_ticket' },
   handle: async ({ scope, input }): Promise<MutationResult> => {
-    const subject = screened('subject', input.subject);
-    const message = screened('message', input.message);
+    screened({ subject: input.subject, message: input.message });
     const { rows } = await scope.client.query<{ id: string; number: string }>(
       'INSERT INTO support_ticket (requester_id, screen, category, subject, message) VALUES (app_actor_id(), $1, $2, $3, $4) RETURNING id, number',
-      [input.screen, input.category, subject, message],
+      [input.screen, input.category, input.subject, input.message],
     );
     const ticket = rows[0];
     if (ticket === undefined) {
@@ -369,12 +369,16 @@ export const consoleStatusPage = platformRoute({
   sample: { params: () => ({}) },
 });
 
-/** What staff write on the public page is screened like a ticket: the page is public. */
-function publicText(field: string, text: string): string {
-  if (writtenPhiFindings(text).length > 0) {
-    throw new InputError([{ field, message: 'the status page is public: write no identifier, date of birth or phone number' }]);
+/**
+ * What staff write on the public page is screened like a ticket: the page is public. Every field that holds an
+ * identifier is named at once, so all are fixed before the next press.
+ */
+function publicText<K extends string>(fields: Readonly<Record<K, string>>): Readonly<Record<K, string>> {
+  const refused = Object.entries<string>(fields).filter(([, text]) => writtenPhiFindings(text).length > 0);
+  if (refused.length > 0) {
+    throw new InputError(refused.map(([field]) => ({ field, message: 'the status page is public: write no identifier, date of birth or phone number' })));
   }
-  return text;
+  return fields;
 }
 
 export const setComponentStatus = platformRoute({
@@ -393,8 +397,9 @@ export const setComponentStatus = platformRoute({
   sample: { params: () => ({}), input: () => ({ component: 'uploads', status: 'degraded' }) },
 });
 
+/** The components a form ticks: none ticked posts no field at all, which reads as an empty list, so the list's own message names it. */
 const componentList = z.preprocess(
-  (value) => (Array.isArray(value) ? value : typeof value === 'string' ? value.split(',').filter((part) => part !== '') : value),
+  (value) => (Array.isArray(value) ? value : typeof value === 'string' ? value.split(',').filter((part) => part !== '') : value === undefined || value === null ? [] : value),
   z.array(z.enum(STATUS_COMPONENT_KEYS)).min(1, 'choose at least one component').max(STATUS_COMPONENT_KEYS.length),
 );
 
@@ -408,8 +413,7 @@ export const openIncident = platformRoute({
   input: z.object({ title: requiredText(120), impact: z.enum(STATUS_INCIDENT_IMPACTS), components: componentList, message: requiredText(1000) }),
   audit: { action: 'status_incident_opened', objectType: 'status_incident' },
   handle: async ({ scope, input }): Promise<MutationResult> => {
-    const title = publicText('title', input.title);
-    const message = publicText('message', input.message);
+    const { title, message } = publicText({ title: input.title, message: input.message });
     const { rows } = await scope.client.query<{ id: string }>('INSERT INTO status_incident (title, impact, components, created_by) VALUES ($1, $2, $3, app_actor_id()) RETURNING id', [
       title,
       input.impact,
@@ -435,7 +439,7 @@ export const updateIncident = platformRoute({
   input: z.object({ incidentId: opaqueId, status: z.enum(STATUS_INCIDENT_STATUSES), message: requiredText(1000) }),
   audit: { action: 'status_incident_updated', objectType: 'status_incident' },
   handle: async ({ scope, input }): Promise<MutationResult> => {
-    const message = publicText('message', input.message);
+    const { message } = publicText({ message: input.message });
     const found = await scope.client.query('SELECT 1 FROM status_incident WHERE id = $1', [input.incidentId]);
     if (found.rows.length === 0) {
       throw new NotFoundError();

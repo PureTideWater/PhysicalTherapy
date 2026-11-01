@@ -1,8 +1,9 @@
 import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 
+import { UtcTime } from '../../../components/dates';
 import { FormKeys } from '../../../components/form-keys';
-import { utc } from '../../../components/format';
+import { ScrollTable } from '../../../components/scroll-table';
 import { ScreeningSplitForm } from '../../../components/screening/split-form';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
@@ -79,8 +80,8 @@ export default async function ScreeningSplitPage(props: Props) {
           {history.length === 0 ? (
             <EmptyState title="No split approved yet" nextStep="Approve the first split above to open screening." />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm" aria-labelledby="screening-splits">
+            <ScrollTable label="Approved splits">
+              <table className="w-full min-w-[40rem] text-left text-sm" aria-labelledby="screening-splits">
                 <thead className="text-muted-foreground">
                   <tr>
                     <th className="py-1 pr-3 font-medium">Approved</th>
@@ -93,8 +94,12 @@ export default async function ScreeningSplitPage(props: Props) {
                 <tbody>
                   {history.map((split) => (
                     <tr key={split.id} className="border-t align-top" data-split={split.inForce ? 'in-force' : 'earlier'}>
-                      <td className="py-1 pr-3 whitespace-nowrap">{utc(split.approvedAt)}</td>
-                      <td className="py-1 pr-3">{split.approvedByEmail ?? 'A contract specialist'}</td>
+                      <td className="py-1 pr-3">
+                        <UtcTime at={split.approvedAt} />
+                      </td>
+                      <td className="py-1 pr-3">
+                        <span className="block min-w-40 wrap-anywhere">{split.approvedByEmail ?? 'A contract specialist'}</span>
+                      </td>
                       <td className="py-1 pr-3 font-mono tabular-nums">{codesOf(split, 'facility') || '—'}</td>
                       <td className="py-1 pr-3 font-mono tabular-nums">{codesOf(split, 'non_facility') || '—'}</td>
                       <td className="py-1">{split.inForce ? 'In force' : 'Earlier'}</td>
@@ -102,7 +107,7 @@ export default async function ScreeningSplitPage(props: Props) {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollTable>
           )}
         </CardContent>
       </Card>

@@ -31,7 +31,7 @@ import { emailAddress, opaqueId, optionalText, requiredText } from './schemas';
 /** The fields a request names, screened for what looks like a patient's identifier. */
 function screened(field: string, text: string): string {
   if (textPhiFindings(text).length > 0) {
-    throw new InputError([{ field, message: 'this form takes no patient information: remove anything that looks like an identifier, a date or a phone number' }]);
+    throw new InputError([{ field, message: 'this form takes no patient information: remove anything that looks like an identifier, a date or a phone number, then send it again' }]);
   }
   return text;
 }
@@ -115,7 +115,7 @@ export const requestAudit = publicRoute({
     billingArrangement: z.enum(PROSPECT_BILLING_ARRANGEMENTS, { message: 'choose how you bill' }),
     // Optional: blank is no answer.
     heardFrom: z.preprocess((value) => (value === '' ? undefined : value), z.enum(PROSPECT_SOURCES, { message: 'choose one of the listed answers, or leave it blank' }).optional()),
-    referringFirm: z.string().max(400, 'at most 200 characters').optional(),
+    referringFirm: z.string().max(400, 'enter at most 200 characters').optional(),
   }),
   handle: async ({ input, services, request }): Promise<MutationResult> => {
     const contact = screened('contactName', input.contactName);

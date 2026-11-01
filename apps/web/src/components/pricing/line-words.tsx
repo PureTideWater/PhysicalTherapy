@@ -6,7 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from '@tp/ui';
 import { unpricedReasonText } from '../../lib/contracts/remedies';
 import type { LineTraceStep, PricingWords } from '../../lib/pricing/view';
 import { SentenceText, WorksheetView } from '../packets/calculation-words';
-import { ScrollTable } from '../scroll-table';
+import { ScrollBox } from '../scroll-table';
 
 /**
  * A line's calculation in words on the line trace page (combined audit #38; design 3.9; docs/adr/0072): the summary
@@ -14,7 +14,7 @@ import { ScrollTable } from '../scroll-table';
  * worksheet under the fee-schedule step. The words are @tp/packets/explain's, built on the server from the stored
  * trace: the internal words (dates shown) for the roles that read PHI, the viewer's (no date of any kind) for the
  * others. This renders segments and computes nothing: a figure and a code are set in the mono face with tabular
- * numerals (the brand rule). What the engine recorded, its rule records and JSON, sits in a closed disclosure under
+ * numerals (the brand rule). What PaidWhole recorded, its rule records and JSON, sits in a closed disclosure under
  * the words, for the roles that read PHI only. A calculation the words cannot put shows why, never a code. Each step's
  * title is a heading under the page's Trace heading (h3), and a worksheet's title one below it (h4), so heading
  * navigation reaches every step.
@@ -92,7 +92,10 @@ export function AdjustmentWords({ adjustments }: { readonly adjustments: Pricing
   );
 }
 
-/** What the engine recorded for one step: its rule records, and its JSON in a scroller a keyboard reaches (finding m7). */
+/**
+ * What PaidWhole recorded for one step: its rule records, and its JSON in a box a keyboard reaches and scrolls (finding
+ * m7), wrapped so it scrolls down only, never sideways (docs/adr/0078, DR-10).
+ */
 function Recorded({ step }: { readonly step: LineTraceStep }) {
   const view = step.recorded;
   if (view === null || view.recorded === null) {
@@ -102,7 +105,7 @@ function Recorded({ step }: { readonly step: LineTraceStep }) {
     <details className="pt-1" data-recorded={step.key}>
       {/* Named by its step, since each step has one (a screen reader tabbing through hears which), and at least 24 px tall to tap. */}
       <summary className="min-h-6 cursor-pointer py-1 text-sm text-muted-foreground">
-        As the engine recorded it<span className="sr-only">: {step.title}</span>
+        As PaidWhole recorded it<span className="sr-only">: {step.title}</span>
       </summary>
       {view.records.length === 0 ? null : (
         <ul className="pt-1 text-xs" aria-label={`Rule records of ${step.title}`}>
@@ -114,9 +117,7 @@ function Recorded({ step }: { readonly step: LineTraceStep }) {
         </ul>
       )}
       <div className="mt-1">
-        <ScrollTable label={`${step.title}, as the engine recorded it`}>
-          <pre className="rounded bg-muted p-2 text-xs">{view.recorded}</pre>
-        </ScrollTable>
+        <ScrollBox label={`${step.title}, as PaidWhole recorded it`}>{view.recorded}</ScrollBox>
       </div>
       {view.note === null ? null : (
         <p className="pt-1 text-xs text-muted-foreground" data-trace-note={step.key}>
@@ -128,7 +129,7 @@ function Recorded({ step }: { readonly step: LineTraceStep }) {
 }
 
 /**
- * The trace's steps in words, in the engine's order, each under its title as a heading, with what the engine recorded
+ * The trace's steps in words, in the engine's order, each under its title as a heading, with what PaidWhole recorded
  * beneath (roles that read PHI). A step with no words and no record (a viewer has no record of any step) reads "Does
  * not apply to this line." on a priced line whose words are put (it never used the step), else "Not reached.", for
  * every role alike, so the viewer's steps are numbered as the practice's are.

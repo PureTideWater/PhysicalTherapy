@@ -88,7 +88,7 @@ describe('CalculationWords', () => {
     expect(review).toContain('<h4 class="text-sm font-semibold">Fee schedule worksheets</h4>');
     expect([...review.matchAll(/<h5 class="text-sm font-semibold">Fee schedule worksheet (\d+): /g)].map((match) => match[1])).toEqual(['1', '2']);
     for (const sheet of calculation.words.worksheets) {
-      expect(markup).toContain(`<table class="w-full text-sm" aria-label="Fee schedule worksheet ${String(sheet.number)}">`);
+      expect(markup).toContain(`<table class="w-full min-w-[32rem] text-sm" aria-label="Fee schedule worksheet ${String(sheet.number)}">`);
       expect(text(markup)).toContain(plainText(sheet.title));
       expect(text(markup)).toContain(plainText(sheet.check));
     }

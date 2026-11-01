@@ -1,7 +1,7 @@
 import { CODES } from '@tp/packets/explain';
 import { describe, expect, it } from 'vitest';
 
-import { INITIALISMS, counted, labelOf } from './words';
+import { INITIALISMS, counted, labelOf, listed } from './words';
 
 /** Words built around a number or a code (the screen tour's C1). */
 
@@ -12,6 +12,15 @@ describe('a count with its noun', () => {
     expect(counted(0, 'linked entry', 'linked entries')).toBe('0 linked entries');
     expect(counted(1, 'line')).toBe('1 line');
     expect(counted(32, 'line')).toBe('32 lines');
+  });
+});
+
+describe('a list in words', () => {
+  it('puts "and" before the last item and commas between the others', () => {
+    expect(listed([])).toBe('');
+    expect(listed(['a digit'])).toBe('a digit');
+    expect(listed(['a digit', 'a symbol'])).toBe('a digit and a symbol');
+    expect(listed(['an uppercase letter', 'a digit', 'a symbol'])).toBe('an uppercase letter, a digit and a symbol');
   });
 });
 

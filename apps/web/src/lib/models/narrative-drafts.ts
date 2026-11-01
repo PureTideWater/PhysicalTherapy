@@ -61,7 +61,7 @@ export async function draftNarrativeWithModel(scope: PracticeScope<ScopeClient>,
   });
   let result;
   try {
-    result = await gateway.draftPacketNarrative({ practiceId: input.practiceId, requestKey: input.requestKey }, { content: draft.content, identifiers: draft.identifiers });
+    result = await gateway.draftPacketNarrative({ practiceId: input.practiceId, requestKey: input.requestKey }, { content: draft.content, identifiers: draft.identifiers, names: draft.names });
   } catch (error) {
     const problem = modelProblem(error);
     if (problem === null) {

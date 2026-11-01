@@ -5,6 +5,7 @@ import { counted } from '../../lib/copy/words';
 import type { FigureView } from '../../lib/reconciliation/queries';
 import { entryStage } from '../reconciliation/display';
 import { Money } from '../remittances/display';
+import { ScrollTable } from '../scroll-table';
 
 /**
  * One figure of an ROI statement (PRD 13, ROI statement: "every figure links to its entries"; test matrix LED-11):
@@ -27,6 +28,7 @@ export function RoiFigure({
   readonly practiceId: string;
   readonly empty: string;
 }) {
+  const entriesLabel = `Entries of ${label.toLowerCase()}`;
   return (
     <Card role="region" aria-label={label} id={id}>
       <CardHeader>
@@ -46,35 +48,37 @@ export function RoiFigure({
         {figure.entries.length === 0 ? (
           <p className="text-sm text-muted-foreground">{empty}</p>
         ) : (
-          <table aria-label={`Entries of ${label.toLowerCase()}`} className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-left">
-                <th className="py-1 pr-3">Money moved</th>
-                <th className="py-1 pr-3">Stage</th>
-                <th className="py-1 pr-3 text-right">Amount</th>
-                <th className="py-1">Entry</th>
-              </tr>
-            </thead>
-            <tbody>
-              {figure.entries.map((entry) => (
-                <tr key={entry.id} className="border-b" data-entry={entry.id}>
-                  <td className="py-1 pr-3">{entry.effectiveOn}</td>
-                  <td className="py-1 pr-3">
-                    {entryStage(entry.stage)}
-                    {entry.allocated ? ' (allocated pro rata)' : ''}
-                  </td>
-                  <td className="py-1 pr-3 text-right">
-                    <Money value={entry.amountCents} />
-                  </td>
-                  <td className="py-1">
-                    <Link className="underline" href={`/p/${practiceId}/reconciliation?case=${entry.caseId}#entry-${entry.id}`}>
-                      In its case’s ledger
-                    </Link>
-                  </td>
+          <ScrollTable label={entriesLabel}>
+            <table aria-label={entriesLabel} className="w-full min-w-[32rem] text-sm">
+              <thead>
+                <tr className="border-b text-left">
+                  <th className="py-1 pr-3">Money moved</th>
+                  <th className="py-1 pr-3">Stage</th>
+                  <th className="py-1 pr-3 text-right">Amount</th>
+                  <th className="py-1">Entry</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {figure.entries.map((entry) => (
+                  <tr key={entry.id} className="border-b" data-entry={entry.id}>
+                    <td className="py-1 pr-3 whitespace-nowrap">{entry.effectiveOn}</td>
+                    <td className="py-1 pr-3">
+                      {entryStage(entry.stage)}
+                      {entry.allocated ? ' (allocated pro rata)' : ''}
+                    </td>
+                    <td className="py-1 pr-3 text-right">
+                      <Money value={entry.amountCents} />
+                    </td>
+                    <td className="py-1">
+                      <Link className="underline" href={`/p/${practiceId}/reconciliation?case=${entry.caseId}#entry-${entry.id}`}>
+                        In its case’s ledger
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollTable>
         )}
       </CardContent>
     </Card>

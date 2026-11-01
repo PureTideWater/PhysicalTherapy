@@ -15,17 +15,28 @@ export interface LetterInput {
   readonly codes: readonly string[];
 }
 
-const PROCEDURE_CODE = /^[0-9A-Z]{5}$/;
+const PROCEDURE_CODE = /^[0-9A-Za-z]{5}$/;
 
-/** The codes as the letter lists them: upper case, each once, sorted; anything else is refused. */
+/**
+ * The codes as the letter lists them: upper case, each once, sorted; anything else is refused. Each is tested as
+ * typed, before it is upper-cased, so a character whose upper case is ASCII ('ſ' to 'S', 'ß' to 'SS', 'ı' to 'I', 'ﬀ' to
+ * 'FF') is refused, as LETTER_CODES_PATTERN refuses it in the browser.
+ */
 export function letterCodes(codes: readonly string[]): string[] {
-  const normalized = codes.map((code) => code.trim().toUpperCase()).filter((code) => code !== '');
-  const bad = normalized.find((code) => !PROCEDURE_CODE.test(code));
-  if (bad !== undefined) {
+  const typed = codes.map((code) => code.trim()).filter((code) => code !== '');
+  if (typed.some((code) => !PROCEDURE_CODE.test(code))) {
     throw new RangeError('a procedure code is five letters or digits');
   }
-  return [...new Set(normalized)].sort();
+  return [...new Set(typed.map((code) => code.toUpperCase()))].sort();
 }
+
+/**
+ * The codes field's HTML pattern (the browser anchors it and reads it with the v flag): five-letter-or-digit codes
+ * separated by spaces, commas or semicolons, or nothing, so the browser refuses what the route refuses before the form
+ * is sent. It accepts exactly what the letter route accepts within the field's 400 characters (letterCodes on the
+ * value split at the separators; test matrix DLR-03), and the route's check stays the rule.
+ */
+export const LETTER_CODES_PATTERN = '[\\s,;]*(?:[A-Za-z0-9]{5}(?:[\\s,;]+[A-Za-z0-9]{5})*)?[\\s,;]*';
 
 /** The letter's text. */
 export function requestToPayerLetter(input: LetterInput): string {

@@ -137,15 +137,14 @@ export default async function ComparePricingRunsPage(props: Props) {
             <ActionForm
               action={acceptPricingRunFormAction}
               submit="Accept the second run"
-              labels={{ runId: 'This re-run', replacesId: 'The run it replaces', heldByIds: 'The runs of other service dates holding its lines' }}
               refreshOnError={`accept:${after.id}`}
             >
               <FormKeys />
               <input type="hidden" name="practiceId" value={practiceId} />
-              <input type="hidden" name="runId" value={after.id} />
-              <input type="hidden" name="replacesId" value={before.id} />
+              <input type="hidden" name="runId" value={after.id} data-error-name="This re-run" />
+              <input type="hidden" name="replacesId" value={before.id} data-error-name="The run it replaces" />
               {(heldBy ?? []).map((held) => (
-                <input key={held.id} type="hidden" name="heldByIds[]" value={held.id} />
+                <input key={held.id} type="hidden" name="heldByIds[]" value={held.id} data-error-name="The runs of other service dates holding its lines" />
               ))}
             </ActionForm>
           </CardContent>

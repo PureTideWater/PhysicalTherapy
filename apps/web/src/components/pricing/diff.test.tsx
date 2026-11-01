@@ -67,7 +67,7 @@ describe('the months waiting on the billing ZIP', () => {
         ]}
       />,
     );
-    expect(html).toMatch(/^<div role="region" aria-label="Months waiting on the billing ZIP, scrolls sideways" tabindex="0"/);
+    expect(html).toMatch(/^<div data-slot="scroll-table" data-scroll="unmeasured" class="min-w-0 max-w-full"><div class="pw-scroll-frame"><div role="region" aria-label="Months waiting on the billing ZIP, scrolls sideways" tabindex="0" data-scroller=""/);
     expect(html).toContain('<table class="w-full min-w-[36rem] text-left text-sm" aria-label="Months waiting on the billing ZIP">');
   });
 });
@@ -231,7 +231,7 @@ describe('what accepting a re-run changes (payment-engine review of PR #50, F4)'
 
   it('scrolls sideways inside a named region the keyboard reaches at a phone’s width (UX recheck N3)', () => {
     const html = renderToStaticMarkup(<DiffTable practiceId={PRACTICE} lines={[line]} beforeRunId={quarter.id} afterRunId={rerun.id} heldBy={[february]} />);
-    expect(html).toMatch(/^<div role="region" aria-label="Changed lines, scrolls sideways" tabindex="0"/);
+    expect(html).toMatch(/^<div data-slot="scroll-table" data-scroll="unmeasured" class="min-w-0 max-w-full"><div class="pw-scroll-frame"><div role="region" aria-label="Changed lines, scrolls sideways" tabindex="0" data-scroller=""/);
     expect(html).toContain('<table class="w-full min-w-[40rem] text-left text-sm" aria-label="Changed lines">');
   });
 });

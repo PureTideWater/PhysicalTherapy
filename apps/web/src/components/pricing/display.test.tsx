@@ -63,9 +63,11 @@ describe('a run’s unpriced reasons', () => {
   });
 
   it('scroll sideways inside their own named region, so neither widens a phone-width page (UX confirm of PR #50, NEW-A)', () => {
-    expect(renderToStaticMarkup(<UnpricedReasons coverage={coverage({ NO_AGREEMENT: 1 })} />)).toMatch(/^<div role="region" aria-label="Unpriced reasons, scrolls sideways" tabindex="0" class="relative /);
+    expect(renderToStaticMarkup(<UnpricedReasons coverage={coverage({ NO_AGREEMENT: 1 })} />)).toMatch(
+      /^<div data-slot="scroll-table" data-scroll="unmeasured" class="min-w-0 max-w-full"><div class="pw-scroll-frame"><div role="region" aria-label="Unpriced reasons, scrolls sideways" tabindex="0" data-scroller="" class="relative /,
+    );
     expect(renderToStaticMarkup(<PatternTable practiceId="p" coverage={{ ...coverage(), patterns: [pattern()] }} names={{ payers: {}, plans: {}, versions: {} }} />)).toMatch(
-      /^<div role="region" aria-label="Variance by payer pattern, scrolls sideways" tabindex="0" class="relative /,
+      /^<div data-slot="scroll-table" data-scroll="unmeasured" class="min-w-0 max-w-full"><div class="pw-scroll-frame"><div role="region" aria-label="Variance by payer pattern, scrolls sideways" tabindex="0" data-scroller="" class="relative /,
     );
   });
 

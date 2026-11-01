@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 
 import type { ReportStatus, ReportSummary } from '../../lib/reports/queries';
 import { Money } from '../remittances/display';
+import { ScrollTable } from '../scroll-table';
 import { CASE_STATE_TEXT, Investigatory } from '../triage/display';
 
 /**
@@ -115,14 +116,41 @@ export function Headline({ headline, practiceId, base }: { readonly headline: Au
   );
 }
 
-/** A stored report's table; `figures` names its columns (0-based) of codes, counts and amounts, set in the mono face with tabular numerals. */
-function Table({ caption, headers, rows, empty, figures = [] }: { readonly caption: string; readonly headers: readonly string[]; readonly rows: readonly (readonly ReactNode[])[]; readonly empty: string; readonly figures?: readonly number[] }) {
+/**
+ * A stored report table's width at a phone's (docs/adr/0078), from its column count: three columns or fewer fit, and
+ * wider tables scroll in their region from the width at which no header breaks into more than two lines. Literal
+ * classes, so Tailwind generates each.
+ */
+function minWidthOf(columns: number): string | null {
+  return columns <= 3 ? null : columns === 4 ? 'min-w-[32rem]' : columns <= 6 ? 'min-w-[40rem]' : columns <= 8 ? 'min-w-[48rem]' : 'min-w-[54rem]';
+}
+
+/**
+ * A stored report's table, scrolling sideways in its own region (ScrollTable) named by its caption; `figures` names
+ * its columns (0-based) of codes, counts, dates and amounts, set in the mono face with tabular numerals and never
+ * broken. Its words (a pattern's sentence among them) wrap between words.
+ */
+function Table({
+  caption,
+  headers,
+  rows,
+  empty,
+  figures = [],
+}: {
+  readonly caption: string;
+  readonly headers: readonly string[];
+  readonly rows: readonly (readonly ReactNode[])[];
+  readonly empty: string;
+  readonly figures?: readonly number[];
+}) {
   if (rows.length === 0) {
     return <p className="text-sm text-muted-foreground">{empty}</p>;
   }
+  const width = minWidthOf(headers.length);
+  const cellClass = (column: number) => (figures.includes(column) ? 'px-2 py-1 align-top font-mono tabular-nums whitespace-nowrap' : 'px-2 py-1 align-top');
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+    <ScrollTable label={caption}>
+      <table className={width === null ? 'w-full text-sm' : `w-full ${width} text-sm`} aria-label={caption}>
         <caption className="sr-only">{caption}</caption>
         <thead>
           <tr className="border-b text-left">
@@ -138,7 +166,7 @@ function Table({ caption, headers, rows, empty, figures = [] }: { readonly capti
             // The rows are a stored report's, in its order; nothing reorders them, so the index is their key.
             <tr key={index} className="border-b last:border-0">
               {row.map((cell, column) => (
-                <td key={column} className={figures.includes(column) ? 'px-2 py-1 align-top font-mono tabular-nums' : 'px-2 py-1 align-top'}>
+                <td key={column} className={cellClass(column)}>
                   {cell}
                 </td>
               ))}
@@ -146,7 +174,7 @@ function Table({ caption, headers, rows, empty, figures = [] }: { readonly capti
           ))}
         </tbody>
       </table>
-    </div>
+    </ScrollTable>
   );
 }
 

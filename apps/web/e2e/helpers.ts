@@ -62,9 +62,9 @@ export async function signInWithTotp(page: Page, key: string, ahead = false): Pr
   await signedIn;
 }
 
-/** The form's refusal (the alert component; Next's route announcer is an alert too). */
+/** The form's refusal: ActionForm's summary, or another form's alert component (Next's route announcer is an alert too). */
 export function refusal(page: Page) {
-  return page.locator('[data-slot="alert"]');
+  return page.locator('[data-slot="alert"], [data-slot="refusal-summary"]');
 }
 
 /** A virtual hardware key in a page's browser: the DevTools session that holds it, and its authenticator's ID. */

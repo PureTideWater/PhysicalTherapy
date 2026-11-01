@@ -31,7 +31,7 @@ export default async function EnrollPage() {
             </a>
           </p>
           <ActionForm action={enrollStep} submit="Verify and continue">
-            <Field label="Six-digit code" name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" required />
+            <Field label="Six-digit code" name="code" inputMode="numeric" autoComplete="one-time-code" maxLength={12} hint="Six digits. Spaces are fine." required />
           </ActionForm>
         </CardContent>
       </Card>

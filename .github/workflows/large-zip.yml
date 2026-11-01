@@ -20,7 +20,7 @@ defaults:
 
 jobs:
   large-zip:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -32,12 +32,43 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with: { node-version: 24, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      # The runner image's name and version, from the runner's own environment (the env context holds only what a
+      # workflow sets): the system packages' cache key.
+      - name: The runner image
+        id: runner-image
+        run: |
+          if [ -z "${ImageOS:-}" ] || [ -z "${ImageVersion:-}" ]; then
+            echo "::error title=The runner image::the runner names no ImageOS or ImageVersion, so the system packages' cache has no key"
+            exit 1
+          fi
+          echo "key=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+          echo "os=$ImageOS" >> "$GITHUB_OUTPUT"
+      # The .deb files Playwright's --with-deps fetched on an earlier run, each used only once its SHA-256 is the signed
+      # index's for its exact version (tools/ci/apt-archives.sh; docs/adr/0066, Part 3).
+      - name: Restore the browsers' system packages
+        id: apt
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-v1-${{ steps.runner-image.outputs.key }}-${{ hashFiles('node_modules/.pnpm/playwright-core@*/node_modules/playwright-core/browsers.json') }}
+          restore-keys: |
+            apt-v1-${{ steps.runner-image.outputs.key }}-
+            apt-v1-${{ steps.runner-image.outputs.os }}-
+      - name: Check the restored system packages against the signed index
+        run: tools/ci/apt-archives.sh verify "$RUNNER_TEMP/apt-archives"
       # Playwright's Chromium before any vitest run of the db project, which fails on CI without it rather than skip a
       # printing test (tools/test/ci-chromium.ts; docs/adr/0066, Part 1).
-      - run: pnpm --filter @tp/web exec playwright install --with-deps chromium
+      - id: browser-install
+        run: pnpm --filter @tp/web exec playwright install --with-deps chromium
+      # Every file of the headless shell's and Chromium's builds against apps/web/e2e/browser.json, before anything uses
+      # them (docs/runbooks/ci.md, "Upgrading the browser").
+      - name: Check the browser builds against browser.json
+        run: node tools/ci/browser-build.ts
       - name: Wait for the database
+        if: ${{ !cancelled() && steps.browser-install.outcome == 'success' }}
         run: tools/ci/postgres.sh wait
       - run: pnpm vitest run --project db apps/worker/src/intake/intake.large.db.test.ts
+        if: ${{ !cancelled() && steps.browser-install.outcome == 'success' }}
         env:
           DATABASE_URL: postgres://postgres:test@localhost:5432/postgres
           TP_LARGE_ZIP_MB: "2048"

@@ -5,7 +5,7 @@ import type { ComponentProps } from 'react';
 import { cn } from '../lib/cn';
 
 export const buttonVariants = cva(
-  'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-semibold transition-colors disabled:pointer-events-none disabled:opacity-50',
+  'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-semibold transition-colors disabled:pointer-events-none disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
   {
     variants: {
       variant: {
@@ -13,7 +13,9 @@ export const buttonVariants = cva(
         // A quiet action in the danger color: its text on its tint with a rule, never white text on the Short fill
         // (docs/brand/BRAND.md, section 4). Ink fills are the primary button's alone.
         destructive: 'border border-danger bg-danger-bg text-danger hover:bg-background',
-        outline: 'border bg-background hover:bg-accent hover:text-accent-foreground',
+        // A pressed toggle (aria-pressed, such as a password's Show) looks pressed: a rule in the text's colour on the
+        // inset surface, its words and name unchanged; in forced colours, the system's highlight (styles.css).
+        outline: 'border bg-background hover:bg-accent hover:text-accent-foreground aria-pressed:border-foreground aria-pressed:bg-secondary',
         secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
         ghost: 'hover:bg-accent hover:text-accent-foreground',
         link: 'text-primary underline-offset-4 hover:underline',

@@ -6,6 +6,7 @@ import type { ChecklistView } from '../../lib/models/evidence-checklist';
 import type { DraftView } from '../../lib/models/narrative-drafts';
 import { type ModelNotice, isModelProblem, modelNoticeText } from '../../lib/models/notices';
 import { utc } from '../format';
+import { ScrollTable } from '../scroll-table';
 
 /**
  * What the screens show of the model features (PRD 14; docs/adr/0052): the notice after a model step,
@@ -85,7 +86,9 @@ const UNSTATED_SCOPE: readonly (readonly [field: string, reads: string])[] = [
 
 const writtenText = (written: StoredCandidate['fields'][number]['written']) => (written === null ? '' : Array.isArray(written) ? written.join(', ') : String(written));
 
-function CandidateCard({ candidate, index }: { readonly candidate: StoredCandidate; readonly index: number }) {
+/** A candidate's card; its table of fields is named by the proposal's place in the list (its card's title shows it) and its own, so no two on a page share a name. */
+function CandidateCard({ candidate, index, proposalNo }: { readonly candidate: StoredCandidate; readonly index: number; readonly proposalNo: number }) {
+  const fieldsLabel = `Proposed fields of proposal ${String(proposalNo)}, candidate ${String(index + 1)}`;
   return (
     <Card role="region" aria-label={`Candidate ${String(index + 1)}`} data-candidate={index} data-verified={candidate.rateRecordId === null ? 'no' : 'yes'}>
       <CardHeader>
@@ -97,47 +100,51 @@ function CandidateCard({ candidate, index }: { readonly candidate: StoredCandida
         {candidate.conflictsWith.length === 0 ? null : <CardDescription>Its codes overlap candidate {candidate.conflictsWith.map((other) => String(other + 1)).join(', ')}: never merged; decide which applies.</CardDescription>}
       </CardHeader>
       <CardContent>
-        <table className="w-full text-left text-sm" aria-label="Proposed fields">
-          <thead>
-            <tr>
-              <th scope="col" className="pr-3">
-                Field
-              </th>
-              <th scope="col" className="pr-3">
-                As written
-              </th>
-              <th scope="col" className="pr-3">
-                Page and quote
-              </th>
-              <th scope="col">Check against the page</th>
-            </tr>
-          </thead>
-          <tbody>
-            {candidate.fields.map((field) => (
-              <tr key={field.field} className="border-t align-top" data-field={field.field} data-check={field.verified ? 'passed' : 'failed'}>
-                <th scope="row" className="py-1 pr-3 font-medium whitespace-nowrap">
-                  {FIELD_NAMES[field.field] ?? field.field}
+        <ScrollTable label={fieldsLabel}>
+          <table className="w-full min-w-[48rem] text-left text-sm" aria-label={fieldsLabel}>
+            <thead>
+              <tr>
+                <th scope="col" className="pr-3">
+                  Field
                 </th>
-                <td className="py-1 pr-3">{writtenText(field.written)}</td>
-                <td className="py-1 pr-3">
-                  Page {field.page}: “{field.quote}”
-                </td>
-                <td className="py-1">{field.verified ? 'Found on the page' : field.problems.map((problem) => PROBLEM_NAMES[problem] ?? problem).join('; ')}</td>
-              </tr>
-            ))}
-            {UNSTATED_SCOPE.filter(([name]) => !candidate.fields.some((field) => field.field === name)).map(([name, reads]) => (
-              <tr key={name} className="border-t align-top" data-field={name} data-check="unstated">
-                <th scope="row" className="py-1 pr-3 font-medium whitespace-nowrap">
-                  {FIELD_NAMES[name] ?? name}
+                <th scope="col" className="pr-3">
+                  As written
                 </th>
-                <td className="py-1 pr-3" colSpan={2}>
-                  Not stated: {reads}
-                </td>
-                <td className="py-1">Nothing to check; confirm the record should apply this widely</td>
+                <th scope="col" className="pr-3">
+                  Page and quote
+                </th>
+                <th scope="col">Check against the page</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {candidate.fields.map((field) => (
+                <tr key={field.field} className="border-t align-top" data-field={field.field} data-check={field.verified ? 'passed' : 'failed'}>
+                  <th scope="row" className="py-1 pr-3 font-medium whitespace-nowrap">
+                    {FIELD_NAMES[field.field] ?? field.field}
+                  </th>
+                  <td className="py-1 pr-3">
+                    <span className="block min-w-32 wrap-anywhere">{writtenText(field.written)}</span>
+                  </td>
+                  <td className="py-1 pr-3">
+                    Page {field.page}: “{field.quote}”
+                  </td>
+                  <td className="py-1">{field.verified ? 'Found on the page' : field.problems.map((problem) => PROBLEM_NAMES[problem] ?? problem).join('; ')}</td>
+                </tr>
+              ))}
+              {UNSTATED_SCOPE.filter(([name]) => !candidate.fields.some((field) => field.field === name)).map(([name, reads]) => (
+                <tr key={name} className="border-t align-top" data-field={name} data-check="unstated">
+                  <th scope="row" className="py-1 pr-3 font-medium whitespace-nowrap">
+                    {FIELD_NAMES[name] ?? name}
+                  </th>
+                  <td className="py-1 pr-3" colSpan={2}>
+                    Not stated: {reads}
+                  </td>
+                  <td className="py-1">Nothing to check; confirm the record should apply this widely</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </ScrollTable>
       </CardContent>
     </Card>
   );
@@ -154,11 +161,11 @@ export function ProposalList({ proposals, reject }: { readonly proposals: readon
       <p className="text-sm text-muted-foreground">
         Code checked every field against its cited page. A candidate whose fields all checked is a rate record above, still to be approved field by field; a held candidate is entered by hand.
       </p>
-      {proposals.map((proposal) => (
+      {proposals.map((proposal, position) => (
         <Card key={proposal.id} role="region" aria-label="Model proposal" data-proposal={proposal.id} data-decision={proposal.decision?.decision ?? 'awaiting'}>
           <CardHeader>
             <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-              Proposed {utc(proposal.createdAt)}
+              Proposal {position + 1}, proposed {utc(proposal.createdAt)}
               <Badge variant={proposal.passed ? 'outline' : 'secondary'}>{proposal.passed ? 'Every field checked' : 'Some fields did not check'}</Badge>
               <Badge variant="secondary">{decisionText(proposal.decision?.decision ?? null)}</Badge>
               <Badge variant="outline" data-variant={proposal.ambiguous ? 'ambiguous' : 'default'}>
@@ -171,7 +178,7 @@ export function ProposalList({ proposals, reject }: { readonly proposals: readon
           <CardContent className="flex flex-col gap-3">
             {proposal.candidates.length === 0 ? <p className="text-sm text-muted-foreground">The model proposed no terms.</p> : null}
             {proposal.candidates.map((candidate, index) => (
-              <CandidateCard key={`${proposal.id}:${String(index)}`} candidate={candidate} index={index} />
+              <CandidateCard key={`${proposal.id}:${String(index)}`} candidate={candidate} index={index} proposalNo={position + 1} />
             ))}
             {proposal.reviewedAt === null && reject !== undefined ? reject(proposal) : null}
           </CardContent>

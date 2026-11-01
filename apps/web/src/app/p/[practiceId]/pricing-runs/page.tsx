@@ -1,4 +1,4 @@
-import { Alert, AlertDescription, AlertTitle, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Label } from '@tp/ui';
+import { Alert, AlertDescription, AlertTitle, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Label } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
@@ -11,6 +11,7 @@ import { loadPage } from '../../../../lib/http/next';
 import { pricingRunsPage } from '../../../../lib/routes/pricing';
 import { createPricingRunFormAction } from './actions';
 import { FormKeys } from '../../../../components/form-keys';
+import { Field } from '../../../../components/field';
 
 export const metadata: Metadata = { title: 'Pricing runs' };
 
@@ -82,14 +83,8 @@ export default async function PricingRunsPage(props: Props) {
               <input type="hidden" name="practiceId" value={practiceId} />
               <input type="hidden" name="releaseNo" value={release.releaseNo} />
               <div className="grid grid-cols-2 gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="run-from">First month of service</Label>
-                  <Input id="run-from" name="fromMonth" type="month" required />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="run-to">Last month (blank for one month)</Label>
-                  <Input id="run-to" name="toMonth" type="month" />
-                </div>
+                <Field id="run-from" label="First month of service" name="fromMonth" type="month" required />
+                <Field id="run-to" label="Last month (blank for one month)" name="toMonth" type="month" />
               </div>
             </ActionForm>
           ) : (

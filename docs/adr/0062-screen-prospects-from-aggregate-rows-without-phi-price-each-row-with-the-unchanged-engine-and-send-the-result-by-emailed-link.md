@@ -1065,7 +1065,8 @@ a larger consumer, the founder, Tyler Williams, ruled on 2026-10-23: "8-core run
   32 GB, created by the founder in the organization's Actions runner settings, its runner group allowing public
   repositories; GitHub offers larger runners to organizations on its Team or Enterprise Cloud plan, and this
   repository's owner is a personal account today, so an organization on such a plan owns it first); every other job, the
-  gate included (it only reads the result), stays on `ubuntu-24.04`. The harness
+  gate included (it only reads the result), stays on `ubuntu-24.04` (since ADR 0066's Part 3 every job but the
+  release's capacity chain runs on `ubuntu-26.04`: the amendment at the end). The harness
   measures production's layout, every service on CPUs of its own: Postgres on 0-1 (db.t4g.medium's 2 vCPU), the
   consumer on 2-3 (`compute.screening`'s 2 vCPU), the web on 4 and the platform on 5 (each its quota within its own
   CPU), and the harness, its child processes and Chromium on 6-7, derived from `environments.ts`'s sizes
@@ -1109,7 +1110,8 @@ ruled on 2026-10-23 (the third ruling that day, replacing the 8-core runner): "F
   it, as every check does.
 - **Where the time still binds:** at production's launch (decision 13). The launch check accepts only a binding report
   that passes with time enforced, read again from its measurements in binding mode whatever mode the report records
-  (S4's middle run of three included), on the tag's commit and both images' config digests; it refuses an advisory
+  (S4's middle run of three included), on the tag's commit and both images' config digests (read from each saved
+  archive's bytes and carried as the build's job outputs since ADR 0066's Part 3); it refuses an advisory
   report whatever its verdict, naming the mode, and accepts the free runner's layout, where the release now measures. As
   this ruling was first built it also accepted CPUs of their own (an 8-CPU runner's) and any report recording
   `binding`; since the verification of PR 6b-3's capacity changes (below) it accepts only the layout the release's
@@ -1179,7 +1181,8 @@ release's capacity job replaced the release's report and recorded no attempt. Fi
   A re-run is named as one; every attempt's attestation stays on record.
 - **The release runner's layout only:** the check accepts the layout the release's runner gives (`RELEASE_RUNNER`,
   `ubuntu-24.04` and 4 CPUs: the shared one) and refuses CPUs of their own until a release measures on 8 CPUs;
-  `tools/test/workflows.test.ts` holds release.yml's runner to `RELEASE_RUNNER`.
+  `tools/test/workflows.test.ts` holds release.yml's runner to `RELEASE_RUNNER`, which the founder's F5 keeps on
+  `ubuntu-24.04` for the whole capacity chain while every other job moves to `ubuntu-26.04` (ADR 0066, Part 3).
 - **Every declared size:** the check holds every expected size production declares to what the harness derives from
   production's settings (`productionLimits()`): the web and the platform, each consumer task's vCPUs and memory and
   their number, Postgres's vCPUs and memory on the release layout's CPUs, the storage's baseline, and the consumer's
@@ -1338,7 +1341,9 @@ being the one its measurements give), on
 both images by config digest (the report's IDs, `docker image inspect -f {{.Id}}` on the release runner's
 classic overlay2 image store, where an image's ID is its config's SHA-256, against the `config.digest` of each image's
 manifest in ECR, an index resolved to its linux/amd64 manifest; nothing is pulled, so the deployer's image store does
-not matter, and the containerd store's `{{.Id}}`, a manifest's digest, is never read: the verification of PR 6b-3), with
+not matter, and the containerd store's `{{.Id}}`, a manifest's digest, is never read: the verification of PR 6b-3;
+since ADR 0066's Part 3 the release's capacity job also proves each loaded tag is the config digest its build read
+from the saved archive's bytes, before anything is installed), with
 every size production declares as the harness derives it (the web, the platform, each consumer task and their number,
 Postgres and the storage) and the consumer production declares, on the layout the release's runner gives, the free
 runner's shared CPUs (the founder's third ruling of 2026-10-23; CPUs of their own refused until a release measures on
@@ -1395,6 +1400,57 @@ is unchanged, since only the report job attests, and it attests the report its o
 `.github/workflows/release-dry-run.yml` runs the release's build and hand-over steps on every pull request that changes
 release.yml, `tools/screening-capacity/image-id.ts` or either Dockerfile, so its actions run on a pull request before a
 tag ever runs them. The attested report then depends only on its own run, at about 22 s a tag.
+
+## Amendment (ADR 0066, Part 3): the release's capacity chain stays on ubuntu-24.04, and the images are bound by content under either image store
+
+**The founder's F5** (as recommended, relayed by the co-founder on 2026-10-25 ~01:10 UTC): the release's capacity
+chain stays on `RELEASE_RUNNER.label`, `ubuntu-24.04` (`release.yml`'s `build`, `capacity`, `push` and `report`,
+`release-dry-run.yml`'s three jobs, which mirror them, and `screening-capacity.yml`'s `capacity`); every other job of
+every workflow moves to `ubuntu-26.04` with Playwright 1.64.1, the first to support it. `screening-capacity.yml`'s
+`workflow_dispatch` takes one input, `runner` (a choice of `ubuntu-24.04`, the default, or `ubuntu-26.04`), and its
+`capacity` job runs on `${{ inputs.runner || 'ubuntu-24.04' }}`: every event but a dispatch that names 26.04 measures
+on the release's runner. A dispatched 26.04 run is an advisory probe: `notify` opens no issue for it, its report is not
+`release.yml`'s run and the launch check refuses it, and its numbers, its image store and `docker info` go to issue #41
+for the chain's later move, which is the founder's to rule. `tools/test/workflows.test.ts` holds the exact chain
+(`RELEASE_CHAIN`) on `RELEASE_RUNNER.label` and every other job on `ubuntu-26.04`.
+
+**Why the binding had to become store-independent.** The release recorded `docker image inspect -f '{{.Id}}'`, which is
+the config digest only on Docker's classic image store. Docker 29 defaults to the containerd image store on a fresh
+install, and the ubuntu-26.04 image installs Docker 29 with no `daemon.json`, so there `.Id` is the manifest's or the
+index's digest. The 24.04 chain stays on overlay2 until GitHub changes that image's pinned docker-ce 28, so the
+recorded IDs are config digests today; the binding no longer depends on it:
+- **The identity is read from content.** `tools/screening-capacity/image-id.ts` (`node:` modules only) reads a
+  `docker save` or buildx `type=docker` archive, plain or gzipped, as a stream, hashes the config blob's bytes and
+  fails unless they equal the digest that names them, and returns the config digest, the linux/amd64 manifest's and
+  the archive's top-level descriptor (`target`, what the containerd store's `.Id` names).
+- **One manifest per image.** Every build whose identity is checked (`release.yml`, `release-dry-run.yml`, ci.yml's
+  `images`, `screening-capacity.yml`) passes `provenance: false` and `sbom: false`, so buildx writes no attestation
+  manifest and both stores hold one manifest. Nothing is lost: the release's attestation is the report job's, its bill
+  of materials Trivy's.
+- **The build's identities are job outputs.** `build` saves each image, reads its identity with image-id.ts, proves the
+  tag is that image on its store, and sets `sha256_<image>`, `config_<image>` and `target_<image>` per matrix leg.
+  The artifact's `.tar.sha256` and `.id` (now the config digest) stay for a person reading it; no check reads them,
+  because `capacity` runs repository code and every installed package beside `push`, and a step there that reached the
+  run's artifact token could replace the tarball and both files together, while no job can rewrite another's outputs.
+- **Each loading job checks before it loads.** `capacity` and `push` check each archive's SHA-256 against the outputs
+  (`sha256sum --check`) before `docker load`, then prove the loaded tag's `.Id` is the config digest on the classic
+  store or the top-level descriptor on the containerd store (read from `docker info`'s `DriverStatus`), before
+  anything is installed (`capacity`) or pushed (`push`). After its pushes, `push` reads each pushed manifest back
+  (`docker buildx imagetools inspect --raw`, an index followed to its linux/amd64 manifest) and fails unless its config
+  digest is the build's, the form the launch check reads. `push` and `report` run no repository code.
+- **The worker's browser is the record's.** `build` runs `node tools/ci/browser-build.ts --image <ref>` on the worker
+  image before saving it: every file of the headless shell the worker prints reports with, against
+  `apps/web/e2e/browser.json`.
+- **Each pull request proves the rules on 26.04's store.** ci.yml's `images` job builds archives, scans them with
+  Trivy's `input`, holds image-id.ts's config digest to buildx's own `containerimage.config.digest`, and loads the
+  worker as the archive's top-level descriptor on the containerd store, before its browser check.
+
+**After #42** (which changes `run.ts`, `report.ts`, its test and `test-support/measurements.ts`, and stays open): the
+harness takes `--image-archive <name>=<path>` and `--expect-image <name>=<config digest>` and proves the loaded tag with
+`containers.ts`'s `proveLoadedImage` (built and tested now); the report moves to `tp-screening-capacity/9` with
+`imageOS`, `imageVersion`, `imageStore` and `imageSource`; `RELEASE_RUNNER` gains `imageOS: 'ubuntu24'`; and the launch
+check refuses a binding report from another runner image or with `imageSource: save` (docs/adr/0066, Part 3, gives the
+plan). Until then the release's capacity job makes the same proof in its workflow step, before the harness runs.
 
 ## Amendment (PR 6b-4): the screening's mail stream
 

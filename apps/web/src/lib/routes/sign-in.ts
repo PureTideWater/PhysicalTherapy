@@ -5,8 +5,9 @@ import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON
 import { DEVICE_COOKIE, SIGN_IN_COOKIE } from '../auth/sessions';
 import type { FlowResult, Pending, SignInContext } from '../auth/sign-in';
 import { cookieToken } from '../auth/tokens';
+import { listed } from '../copy/words';
 import { publicRoute } from '../http/invoke';
-import type { PublicContext, RouteRequest } from '../http/route';
+import type { Issue, PublicContext, RouteRequest } from '../http/route';
 import { emailAddress, sixDigitCode } from './schemas';
 
 /**
@@ -37,8 +38,14 @@ export type SignInReason = (typeof SIGN_IN_REASONS)[number];
 const reasonParams = z.object({ reason: z.enum(SIGN_IN_REASONS).optional() });
 const noParams = z.object({});
 
-/** What a sign-in step returns to the browser: where to go next, or what went wrong. */
-export type StepResult = { readonly redirect: string } | { readonly error: string; readonly locked?: boolean; readonly problems?: readonly string[] };
+/**
+ * What a sign-in step returns to the browser: where to go next, or what went wrong, with the field at fault when
+ * naming it leaks nothing (the form shows it as an issue on that field). `final`: no press of this form can succeed,
+ * whatever is typed (an expired invitation, refused before any password is checked), so the emptied password's note
+ * asks for nothing (docs/adr/0077, D2); a lock says so by `locked`. Never on a refusal whose words are a wrong
+ * password's, which would tell which addresses have accounts.
+ */
+export type StepResult = { readonly redirect: string } | { readonly error: string; readonly locked?: boolean; readonly final?: boolean; readonly issues?: readonly Issue[] };
 
 const MESSAGES = {
   credentials: 'That did not match. Check the email, the password or the code, and try again.',
@@ -60,8 +67,23 @@ function contextOf(context: PublicContext<unknown, unknown>): SignInContext {
   return { deviceToken: cookieToken(context.request.cookies.get(DEVICE_COOKIE)), userAgent: context.request.userAgent, requestId: context.request.requestId };
 }
 
-/** Applies a flow result: writes or clears the cookies and says where the browser goes. */
-async function settle(context: PublicContext<unknown, unknown>, result: FlowResult): Promise<StepResult> {
+/**
+ * The code steps' refusal of a wrong code. They run only with the sealed pending cookie, which proves the email and
+ * password, so naming the code as the wrong part leaks nothing; the first step never names a field (account
+ * enumeration).
+ */
+const WRONG_CODE: Issue = { field: 'code', message: 'enter the code your authenticator app shows now' };
+
+/** The new-password step's refusal by the policy: what the password still lacks, or the user pool's own refusal. */
+function passwordIssue(problems: readonly string[]): Issue {
+  return { field: 'password', message: problems.length === 0 ? 'the sign-in service refused it: choose a different password' : `it still needs ${listed(problems)}` };
+}
+
+/**
+ * Applies a flow result: writes or clears the cookies and says where the browser goes. A step that proved the
+ * credentials passes `credentials`, the issue a `credentials` refusal names in place of the first step's vague words.
+ */
+async function settle(context: PublicContext<unknown, unknown>, result: FlowResult, options: { readonly credentials?: Issue } = {}): Promise<StepResult> {
   const { cookies } = context.request;
   const { sealer, signIn } = context.services;
   const now = context.services.now();
@@ -71,7 +93,7 @@ async function settle(context: PublicContext<unknown, unknown>, result: FlowResu
       if (pending.step === 'mfa_setup' && pending.totp === undefined) {
         const setup = await signIn.beginTotpSetup(pending);
         if (setup.kind !== 'pending') {
-          return settle(context, setup);
+          return settle(context, setup, options);
         }
         pending = setup.pending;
       }
@@ -83,7 +105,7 @@ async function settle(context: PublicContext<unknown, unknown>, result: FlowResu
       return { redirect: '/' };
     case 'invalid_password':
       writePending(cookies, sealer, result.pending, now);
-      return { error: 'Choose a password that meets the policy.', problems: result.problems };
+      return { error: 'Choose a stronger password.', issues: [passwordIssue(result.problems)] };
     case 'key_registered':
       clearPending(cookies);
       return { redirect: '/sign-in/hardware-key?reason=key_registered' };
@@ -99,9 +121,11 @@ async function settle(context: PublicContext<unknown, unknown>, result: FlowResu
           clearPending(cookies);
           return { error: MESSAGES.locked, locked: true };
         case 'credentials':
+          return options.credentials === undefined ? { error: MESSAGES.credentials } : { error: 'That did not match.', issues: [options.credentials] };
+        case 'invitation_expired':
+          return { error: MESSAGES.invitation_expired, final: true };
         case 'no_account':
         case 'key_not_registered':
-        case 'invitation_expired':
           return { error: MESSAGES[result.reason] };
       }
   }
@@ -135,7 +159,7 @@ export const signInWithPassword = publicRoute({
   rateAccount: (input) => input.email,
   phi: false,
   params: noParams,
-  input: z.object({ email: emailAddress, password: z.string().min(1, 'required').max(256) }),
+  input: z.object({ email: emailAddress, password: z.string().min(1, 'fill this in').max(256) }),
   handle: async (context) => settle(context, await context.services.signIn.start(context.input.email, context.input.password, contextOf(context))),
 });
 
@@ -160,8 +184,8 @@ export const chooseNewPassword = publicRoute({
   phi: false,
   params: noParams,
   input: z
-    .object({ password: z.string().min(1, 'required').max(256), confirm: z.string().max(256) })
-    .refine((value) => value.password === value.confirm, { path: ['confirm'], message: 'the two passwords differ' }),
+    .object({ password: z.string().min(1, 'fill this in').max(256), confirm: z.string().max(256) })
+    .refine((value) => value.password === value.confirm, { path: ['confirm'], message: 'the two passwords do not match: type the same password in both fields' }),
   handle: async (context) => {
     const pending = pendingOf(context, 'new_password');
     return pending === undefined ? RESTART : settle(context, await context.services.signIn.newPassword(pending, context.input.password, contextOf(context)));
@@ -191,7 +215,7 @@ export const enrollTotp = publicRoute({
   input: z.object({ code: sixDigitCode }),
   handle: async (context) => {
     const pending = pendingOf(context, 'mfa_setup');
-    return pending === undefined ? RESTART : settle(context, await context.services.signIn.completeTotpSetup(pending, context.input.code, contextOf(context)));
+    return pending === undefined ? RESTART : settle(context, await context.services.signIn.completeTotpSetup(pending, context.input.code, contextOf(context)), { credentials: WRONG_CODE });
   },
 });
 
@@ -218,7 +242,7 @@ export const answerMfa = publicRoute({
   input: z.object({ code: sixDigitCode }),
   handle: async (context) => {
     const pending = pendingOf(context, 'mfa');
-    return pending === undefined ? RESTART : settle(context, await context.services.signIn.answerTotp(pending, context.input.code, contextOf(context)));
+    return pending === undefined ? RESTART : settle(context, await context.services.signIn.answerTotp(pending, context.input.code, contextOf(context)), { credentials: WRONG_CODE });
   },
 });
 

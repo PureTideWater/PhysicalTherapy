@@ -39,7 +39,7 @@ jobs:
   # Which packages to measure, and so which shards (every shard of each affected package: a package's shards run all
   # or none). A pull request is diffed from its merge base with the base branch.
   changes:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       any: ${{ steps.affected.outputs.any }}
@@ -69,7 +69,7 @@ jobs:
     name: stryker (${{ matrix.shard }})
     needs: changes
     if: needs.changes.outputs.any == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -113,7 +113,7 @@ jobs:
     name: mutation
     needs: [changes, stryker]
     if: ${{ always() }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - name: The jobs it needs

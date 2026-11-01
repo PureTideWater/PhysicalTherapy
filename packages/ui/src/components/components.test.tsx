@@ -15,6 +15,18 @@ describe('Button', () => {
     expect(html).toMatch(/^<button data-slot="button" class="[^"]*bg-primary[^"]*" type="button">Save<\/button>$/);
   });
 
+  it('looks inactive when aria-disabled, as when disabled, and stays focusable (a pending form’s button)', () => {
+    const html = renderToStaticMarkup(
+      <Button type="submit" aria-disabled>
+        Save
+      </Button>,
+    );
+    expect(html).toContain('aria-disabled:cursor-not-allowed');
+    expect(html).toContain('aria-disabled:opacity-50');
+    expect(html).toContain('aria-disabled="true"');
+    expect(html).not.toMatch(/ disabled=""/);
+  });
+
   it('applies the outline variant and small size', () => {
     const html = renderToStaticMarkup(
       <Button variant="outline" size="sm">
@@ -23,6 +35,18 @@ describe('Button', () => {
     );
     expect(html).toContain('border bg-background');
     expect(html).toContain('h-8');
+  });
+
+  it('looks pressed while an outline toggle is pressed, with the same words (a password’s Show)', () => {
+    const html = renderToStaticMarkup(
+      <Button type="button" variant="outline" size="sm" aria-pressed>
+        Show
+      </Button>,
+    );
+    expect(html).toContain('aria-pressed:border-foreground');
+    expect(html).toContain('aria-pressed:bg-secondary');
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toMatch(/>Show<\/button>$/);
   });
 
   it('renders its child element when asChild is set', () => {
