@@ -14,9 +14,25 @@ file. No migration.
 Follow-on: the next weekly triage if this session is still running (actions 2026-11-03 04:37 UTC, images 2026-11-04 04:43 UTC,
 npm 2026-11-05 04:31 UTC); the routing fix as its own PR if it is kept out of the #88/#89 PR.
 
+CLAIM REQUEST: add `co-001/dependabot-group-routing` (design D10, PR C: the Dependabot group-routing fix; amends CI-12, no
+new number) to the claim row "Dependabot's batch of 2026-10-29" (LANES.md:202); it must merge before 2026-11-05T04:31Z, when
+Dependabot's npm run reads the default branch. Fallback if not granted by 2026-11-02T17:00Z: C's commits go on
+`co-001/deps-aws-cdk-minor-patch` as separate commits (design §8.0).
+ORDER ASK: (a) PR C merges first, before #83 and #85, which the item orders ahead of any CI-12 change (item :187), because of
+the 2026-11-05T04:31Z run; C's trial merges with every open head add no conflict (design §8.7). (b) C does not wait for #86
+although both amend ADR 0066 (separate subsections; trial merge clean). (c) While #42 waits on the founder's line, may A, B
+or C merge at all (item :178)?
+
 ## Now (2026-11-01T14:50:00Z)
 - **Stage: not started; session starting.** No pipeline stage is done: design, build, draft PRs, reviews, fix round,
   verification, merge, then closing the bot PRs.
+- **2026-11-01T18:00Z: design done** (`designs/lane-b-dependabot-batch.md`, review `designs/lane-b-dependabot-batch-review.md`,
+  scouts in `designs/lane-b-dependabot-batch/`). Base moved to bce57f16 (#82 merged 2026-11-01T17:19:46Z). Three PRs:
+  A `co-001/deps-anthropic-sdk-1` (#87: SDK ^1.3.0; client with tracing, propagation and SDK logging off, fixed baseURL;
+  config refuses ANTHROPIC_CUSTOM_HEADERS; MOD-17/MOD-18; ADR 0048 amendment), B `co-001/deps-aws-cdk-minor-patch` (#88+#89:
+  aws-cdk-lib ^2.275.0 with CLI ^2.1146.1 (^2.1147.0 from 2026-11-02T18:57Z); CLI telemetry and notices off; nine @aws-sdk
+  at the newest 3-day-old version; stripe ^23.1.0 from 19:58:14Z; ADR 0012 amendment), C `co-001/dependabot-group-routing`
+  (routing fix; awaiting the claim). **ADR 0089 is released, unused.** MOD-17 and MOD-18 used; CI-12 amended, no new ID.
 - **The batch** (open since 2026-10-29, into `claude/build-platform`, untouched until now):
   - #87 `@anthropic-ai/sdk` 0.131.0 -> 1.3.0, a major of the SDK behind `packages/model-gateway/src/providers/anthropic.ts`;
   - #88 the aws-cdk group: `aws-cdk-lib` 2.273.0 -> 2.274.0 and the `aws-cdk` CLI 2.1145.0 -> 2.1146.1;
@@ -76,6 +92,12 @@ npm 2026-11-05 04:31 UTC); the routing fix as its own PR if it is kept out of th
     public repositories, raw.githubusercontent.com, `npm pack` and the platform.claude.com migration guide (`.md?sdk_languages=
     typescript`) work. Every download goes in its own empty directory, treated as untrusted.
 
+11. **Correction 4 is wrong for the replacement:** PR A keeps `@opentelemetry/api` at 1.9.1 (only the bot's lockfile moved it),
+    so `affected.ts` selects no Stryker shard for A (scratch run 17:25Z, `shards=[]`). Correction 7: `@aws-sdk` 3.1160.0's last
+    package is 18:55:06Z (with #42's client-sqs); stripe 23.1.0 (19:58:14Z) bounds a build "about 20:00". #85's head is 90ec40ab.
+    `@smithy/core` 3.38.1 (the logger-redaction fix) comes only with `^3.1161.0` resolved after 2026-11-02T23:12Z; nothing of
+    ours passes a logger, so B's lockfile is regenerated at merge (after #42) and takes it then.
+
 ## Log (UTC)
 - 2026-11-01T14:50:00Z: created by Lane B's orchestrator; claim row added and ADR 0089 (if needed) and MOD-17 to MOD-18
   reserved. The item session starts now.
@@ -91,7 +113,13 @@ npm 2026-11-05 04:31 UTC); the routing fix as its own PR if it is kept out of th
   `design/progress/`. Check-in scheduled 22:11 UTC (trig_01LL33NXY4LFhHW27nNJrgFh). If stopped: resume with resumeFromRunId
   (same session only); a new session restarts the design from the scouts.
 
+- 2026-11-01T18:00:00Z: design workflow wf_59fda205-87b done (23 agents): 33 findings (3 B, 12 S, 18 N), each B/S confirmed by
+  a skeptic; 28 Fixed, 4 Fixed by another means, 1 Not taken (C-N10, refuted). Design, review and scouts committed. CLAIM
+  REQUEST and ORDER ASK sent to the orchestrator. Next: builders for A and B (C after the claim).
+
 ## Waiting on someone
+- The orchestrator: the CLAIM REQUEST for `co-001/dependabot-group-routing` and the ORDER ASK (top of this file).
+- The API version of Stripe's webhook endpoint (design §5.4): a person checks it in Stripe's dashboard. Does not block.
 - Dependabot alerts (triage step 3): the founder or the co-founder reads the alerts page (the API gives the build 403). Does
   not block the merge.
 - A real-model evaluation on the Anthropic path: the founder's, people only. Does not block (no real provider is served while
@@ -106,5 +134,4 @@ npm 2026-11-05 04:31 UTC); the routing fix as its own PR if it is kept out of th
 None yet.
 
 ## Next step
-Next: the design workflow (stage 1) writing `designs/lane-b-dependabot-batch.md`; when it returns, archive its script as
-`workflow-scripts/lane-b-dependabot-batch-design-<runId>.js`, then the builders (one per branch).
+Next: the build workflow for A and B (design §8.1-8.2), then draft PRs at once (§8.3); C once the claim row names its branch.
