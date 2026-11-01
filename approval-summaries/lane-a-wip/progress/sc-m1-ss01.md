@@ -1,0 +1,18 @@
+# SS-01 base merge (sc-m1-ss01)
+- start head f897a282; origin/claude/build-platform = 83d71fd6 (#78), unmoved.
+- Step 1: merge --no-ff --no-commit done (uncommitted in /home/user/ss01). Conflict: apps/web/scripts/synthetic-personas.ts header comment only -> kept both sentences (BIL-09 firms + refused-downloads personas); arrays auto-merged with both sides.
+- Next: regenerate generated files, commit merge, then checks.
+- Merge committed 9777ddc0. Regeneration: install frozen ok, domain model provenance only, functions 0 written, watched 547 lines unchanged, synth 0 written (659+16 unchanged), check:fixtures ok. DB tp_ss01_1 used. Next: checks.
+- typecheck pass (22 projects); lint pass (1,712 files, 0/0); lint:copy pass (550); lint:logs pass (1102)
+- unit: 415 files passed; 7032 passed, 4 skipped (7036)
+- verify-content pass; db:domain-model --check pass (381 functions); approval line 7413 hash 6559c5b90af3d1249e80d9369da18885971e118fbd4411c4a6a5bb8775c2fadc (file sha256 898f536b...); test:db shards running
+- test:db shard1: 34 files, 3292 passed 1 skipped; shard2: 34 files, 2697 passed
+- test:db shard3: 34 files 2590 passed; shard4: 33 files 982 passed. Total 135 files, 9561 passed, 1 skipped. Next: build+stamp+e2e
+- build pass; stamped 9777ddc0. e2e running (tp_ss01_e2e, port 4971)
+- e2e: 68 passed (10.4m), 2 workers, port 4971. synth --all 0 written; check:fixtures pass. Next: push.
+- pushed 9777ddc0 (hook: fixture guard + gitleaks clean). DONE.
+- base MOVED to bce57f16 (#82 ci-pin-age) after push; merging it next
+- second merge committed efb20704 (no conflict; domain model provenance only; rest unchanged). Next: full check list again.
+- r2 (efb20704): typecheck/lint(1,719)/lint:copy/lint:logs(1106)/verify-content/dm check/fixtures/actions:check/toolchain:check(0 err,1 warn) pass; unit 418 files 7125 passed 4 skipped. db shards running.
+- r2 db: shard1 1 FAIL tools/release/load.db.test.ts (relallvisible 0 vs 7, VACUUM FREEZE) 3291 passed 1 skipped; shard2 2697; shard3 2590; shard4 982 pass. Investigating shard1 failure (file untouched by SS-01 and #82; passed round 1).
+- r2 db shard1 rerun on fresh DB: 34 files 3292 passed 1 skipped; load.db.test.ts alone 3/3 pass (13 tests each). Flake recorded as open item. Next: build+e2e r2
