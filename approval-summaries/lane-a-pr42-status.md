@@ -3,7 +3,7 @@
 Created 2026-11-01T14:50:00Z by Lane B's orchestrator (session_01FcouKNNHsdecRMzfTs7XwW) from the item prompt
 `lanes/lane-b-item-prompts-2026-11-01/pr42.md` and the records it names. Run as acting Lane A on Lane B's account (GitHub
 login PureTideWater) until Lane A's account returns: 2026-11-03 14:00 UTC (HANDOFF.md line 256 warns 15:00 UTC).
-Session: session starting 2026-11-01 (the item session writes its own id here first).
+Session: session_01FcouKMmYaqDNXbqJyagW8u (https://claude.ai/code/session_01FcouKMmYaqDNXbqJyagW8u), acting Lane A, from 2026-11-01 ~16:55 UTC.
 Reserved (LANES.md claim row): ADR 0065; SCR-21, SCR-22, SEC-18, SEC-19, JOB-05, all already used on the branch (test-matrix,
 synth registry, fixtures). Migration `20261107090000_mail_streams.sql` is on the branch (named in `designs/pr6b-plan.md`, not in
 the claim row; do not touch it). No synth module, no fixture release; nothing new expected (a need goes in a
@@ -104,11 +104,14 @@ Follow-on: none. Briefs: `lanes/lane-b-session-brief.md`, then `lanes/acting-lan
 ## Log (UTC)
 - 2026-11-01T14:50:00Z: created by Lane B's orchestrator from the records above and the live state (ls-remote, the PR, its
   check runs). The item session starts now; no step of the last round has run.
+- 2026-11-01T17:02Z (acting Lane A, session_01FcouKMmYaqDNXbqJyagW8u): step 0 done. Setup with
+  `co-001/pr-06b-mail-streams:/home/user/pr6b4` printed OK on every line (Node v24.22.1 moved aside by the script itself;
+  PostgreSQL 18 on 5433, 16 on 5432; playwright chromium-1248). GitHub login PureTideWater. Pre-push hook installed
+  (.git/hooks/pre-push), gitleaks 8.24.3 present. `/home/user/pr6b4` at be63bdc2 = origin; base still 83d71fd6.
+  `subscribe_pr_activity` for #42 returned "Could not subscribe to this PR" with no reason: recorded; this session relies on
+  send_later check-ins and reads the PR's state at each stage instead of events.
 
 ## Next
-Next: step 0 of the item prompt. Run setup in the background with `co-001/pr-06b-mail-streams:/home/user/pr6b4` until it prints
-OK (after "node: /opt/node24/bin/node reports 'v24.22.1', not v24.22.0", run `mv /opt/node24 /opt/node24.base-image` and run it
-again); record `gh api user --jq .login` (PureTideWater); confirm the pre-push hook and gitleaks 8.24.3 before any push; call
-`subscribe_pr_activity` for #42; write this session's id at the top of this file and push claude/build-ops. Then step 1 (adapt
-`workflow-scripts/lane-a-pr42-final-round-wf_fb12f910-d87.js`) and step 2 (the integrate round: merge 83d71fd6 or later,
-the generators, the legal sign-off docs commit, the checks, one push).
+Next (17:02Z): step 1-2, the integrate workflow (merge 83d71fd6 or later, generators, the legal sign-off docs commit, an
+adversarial review of the merge and the docs commit, the full checks, one push). Its progress files: the session scratchpad
+`progress/pr42g-merge.md`, copied to `approval-summaries/lane-a-wip/progress/` at the stage's end.
