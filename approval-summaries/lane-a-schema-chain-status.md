@@ -1,12 +1,46 @@
 # Lane A schema chain: build status (SS-01, SUITE-CAP-1b, the interest fix)
 
-Session: https://claude.ai/code/session_019i9ifCi6u3MV8sy7oAhUmy (started 2026-10-27 ~20:35 UTC by Lane A's orchestrator,
-session_01TrKDxeLbxVo7t7zwRXFzrg, for the co-founder). Brief: `lanes/lane-b-session-brief.md`, with the schema-chain
-differences in the session's prompt (this session adds migrations through the new-migration marker route; never the
-approval line or approvers.json; one schema PR open at a time; no schema PR merges without the founder's approval).
-GitHub login: PureTideWater.
+Session: https://claude.ai/code/session_01FcouKQthXdmDnPmwhFepxW, **acting Lane A on Lane B's account** (GitHub login
+PureTideWater), started 2026-11-01 ~16:58 UTC by Lane B's orchestrator session_01FcouKNNHsdecRMzfTs7XwW, until Lane A
+returns (2026-11-03 14:00 UTC, possibly 15:00). Briefs: `lanes/lane-b-session-brief.md`, `lanes/acting-lane-a-brief.md`
+(wins where they differ), item `lanes/lane-b-item-prompts-2026-11-01/schema-chain.md`. The earlier session
+(session_019i9ifCi6u3MV8sy7oAhUmy, Lane A's account) is stopped; its record is kept below under "History".
 
-## Now
+## Now (acting Lane A, 2026-11-01)
+- **17:00 UTC (acting Lane A).** Machine OK (tools/setup-container.sh, every line ok, Playwright included; Node 24.22.0;
+  worktrees /home/user/ss01, /home/user/sc1b, /home/user/interest, /home/user/ops). Login PureTideWater.
+  Live heads (`git ls-remote`, 16:58 UTC): SS-01 `co-001/ss-01-suspension-refusal` **f897a282** (not f5bd6201: 2ff5c631
+  merged base 56ed6279 = #76, #77, #80, #79, #74, #81; f897a282 puts the suspension card on #74's fields and #79's table
+  floor; domain model still 6559c5b9…c2fadc at line 7413); 1b `co-001/suite-cap-1-triage-locks` **358dc53f** (lacks
+  f897a282 and 56ed6279); interest `co-001/ledger-interest-once` **e0646746** (358dc53f + b5949dc1 schema, a3c9d068 ledger
+  core, 1b5036e3 synth, 39e5caa0 reconcile, e0646746 records; **slice 4, the screens, not on origin**; its integrator and
+  full suite never ran; domain model 3083defa…0d09 at line 7468, unchecked). #42 `co-001/pr-06b-mail-streams` be63bdc2
+  (open, draft; its own session S0 runs its last steps). Base `claude/build-platform` 83d71fd6 (adds #78 over 56ed6279).
+  No PR and no CI run exists on any chain branch; no WIP refs for the chain.
+- **Corrections to the record below (acting Lane A, 17:00 UTC):** wf_96af352a-4ed did not finish: it stopped in or after
+  stage 1 (pushed 2ff5c631 05:47 and f897a282 05:56; the account stopped ~08:00); stage 1's checks have no surviving
+  record, so **f897a282 is unchecked**; stages 2 to 4 never pushed (no b1b-*.md progress files survive). wf_4860596d-bb1
+  did not finish: slices 1, 2, 3 and 5 pushed, slice 4 (builder W) not, Integrate never ran, the re-read's deltas and the
+  builders' reports are lost. 1a has merged (#81, 56ed6279) but 1b does not contain it yet. The old check-ins
+  (trig_015zUyNTQAE48NHK4vYz3Sw6, trig_011P79pdAThs6U9K5f147QAX) are gone. "#42 moved to 6f23c42b" and "fix round on
+  co-001/wip-pr42-*" are stale: #42 is at be63bdc2. The base delta for SS-01 is now #78 (83d71fd6) only; the trial merge
+  conflicts in `apps/web/scripts/synthetic-personas.ts` only (#80, #79, #74 are already in SS-01). SUITE-CAP-3 is Lane B's
+  own item (`lane-b-suite-cap-3-status.md`), not this session's.
+- **Running: wf_5566bd1c-8eb (acting Lane A; script `workflow-scripts/lane-a-schema-chain-merge-build-wf_5566bd1c-8eb.js`),
+  from 17:10 UTC.** (1) base 83d71fd6 (#78) into SS-01, verifying #79/#74 patterns, the whole check list (f897a282 was
+  unchecked), push; adversarial verifier + fixer. (2) SS-01 into 1b, push; verifier + fixer. (3) In parallel: 1b's
+  deferred parts (gate, CAS-42.1/.2, SLOW_FIRST, ADR 0083 1b section) + read-only real-size route scout + 1b's integrator
+  (full suite less CAS-42.5/.6, one push); and the interest chain (1b's new head merged in, builder W slice 4, integrator
+  with the full suite, one push). (4) Fresh-clone adversarial verifiers on both heads. Progress files in the session
+  scratchpad `progress/sc-*.md`. Check-in scheduled (send_later, ~22:20 UTC).
+  **Decision (acting Lane A):** the item file's two workflows run as one, with 1b's deferred parts and the interest chain as
+  parallel branches after the 1b merge: the interest branch starts the moment stage 2 pushes (as the item file requires)
+  with no idle wait for a session turn, both share the heavy lock and their own e2e port ranges, and every step gains an
+  adversarial verifier (ultracode). If stopped: setup, leftover markers, resumeFromRunId.
+- **Next:** when #42's S0 pushes its step-1 head (be63bdc2 moves): merge it into SS-01 -> 1b -> interest (never into a
+  worktree a workflow is writing). SS-01's PR opens only after #42 merges.
+
+## History (session_019i9ifCi6u3MV8sy7oAhUmy, Lane A's account, 2026-10-27/28; corrected above)
 - **2026-10-27 20:45 UTC.** Machine OK (tools/setup-container.sh, every line ok, Playwright's Chromium included).
   Worktree `/home/user/ss01` on `co-001/ss-01-suspension-refusal`, cut from #42's head 098636e3 and pushed.
   #42's fix round is on `co-001/wip-pr42-*`; its new head is merged into SS-01 with a merge commit as it moves.
@@ -113,16 +147,26 @@ GitHub login: PureTideWater.
 ## Items
 | # | Item | Branch | State |
 | --- | --- | --- | --- |
-| 1 | SS-01 (`designs/ss-01-suspension.md`; ADR 0080; BIL-07 to BIL-10; synth module 15) | `co-001/ss-01-suspension-refusal` (on #42's branch) | Built; full local suite passed; #42's 6f23c42b merged (f5bd6201); PR waits on #42's merge |
-| 2 | SUITE-CAP-1b (`designs/suite-cap-1-triage-locks.md` part 1b; ADR 0083; CAS-40, CAS-42) | `co-001/suite-cap-1-triage-locks` (on SS-01's); the ledger part (section 4.5) goes in the PR: Q1 granted | Built but the 1a-dependent parts (358dc53f); waits on 1a and SS-01 |
-| 3 | The interest fix (`designs/ledger-interest-once.md`; ADR 0084; LED-23 to LED-25; synth module 6) | `co-001/ledger-interest-once` (on SUITE-CAP-1b's) | Building (wf_4860596d-bb1); exception granted; PR opens after SS-01 and SUITE-CAP-1b merge |
+| 1 | SS-01 (`designs/ss-01-suspension.md`; ADR 0080; BIL-07 to BIL-10; synth module 15) | `co-001/ss-01-suspension-refusal` (on #42's branch) | Built; full suite passed at d763ba78; head f897a282 (base 56ed6279 merged; unchecked); needs base 83d71fd6 and #42's step-1 head; PR waits on #42's merge |
+| 2 | SUITE-CAP-1b (`designs/suite-cap-1-triage-locks.md` part 1b; ADR 0083; CAS-40, CAS-42) | `co-001/suite-cap-1-triage-locks` (on SS-01's); the ledger part (section 4.5) goes in the PR: Q1 granted | Built but the 1a-dependent parts (358dc53f); 1a merged (#81); needs SS-01 f897a282+ merged in, deferred parts, full suite; real-size runs wait on an 8-CPU runner |
+| 3 | The interest fix (`designs/ledger-interest-once.md`; ADR 0084; LED-23 to LED-25; synth module 6) | `co-001/ledger-interest-once` (on SUITE-CAP-1b's) | Partial at e0646746: slices 1, 2, 3, 5 pushed; slice 4 (screens) and the integrator not done; exception granted; PR opens after 1b merges |
 
 ## Decisions taken (recommended option; security: the safer), with reasons
-- None yet.
+- **line_status_head grants SELECT to tp_app** (1b; 2026-10-28 03:55 UTC): the access and cross-tenant suites read every
+  tenant table as tp_app and must not be loosened; RLS forced, practice policy, no write grant; CAS-40.8 asserts the ACL.
+- **CAS-42.3 runs 2,000 lines by default** (TP_LARGE_RECONCILE_LINES sets any size): a reconcile pass grows faster than its
+  lines for reasons other than locks; its lock bound is the point under test.
+- **CAS-42.3's 835s come from LED-06's synthetic segments** (no new @tp/synth dependency in the worker).
 
 ## Waiting on someone
-- #42's merge (SS-01's PR opens after it).
-- The founder: each schema PR's domain-model approval.
+- #42's merge (SS-01's PR opens after it); #42's own domain-model approval is the founder's.
+- The founder: each schema PR's domain-model approval (the founder commits the suggested line, as on #39, 54ec890).
+- **Waiting on the founder: an 8-CPU runner for 1b's real-size runs (CAS-42.5 and .6).** This container's 4 CPUs stop
+  them as RUNNER_TOO_SMALL; GitHub's larger runners exist only for organizations on Team or Enterprise Cloud and the owner
+  PureTideWater is a User account; the 2026-10-23 "Free: time advisory" ruling does not decide this case. A cost and
+  owner-admin decision; it does not block 1b's PR or reviews, but as designed it blocks 1b's merge.
+- For the founder's information only: SS-01's REFUSAL_SUMMARY.organization_suspended reads "new work had stopped for the
+  practice's organization".
 
 ## SUITE-CAP-1a merged as #81 (56ed6279; the orchestrator, 05:55 UTC)
 - **Running: wf_96af352a-4ed** (script `workflow-scripts/lane-a-base-into-ss01-sc1b-deferred-wf_96af352a-4ed.js`), from

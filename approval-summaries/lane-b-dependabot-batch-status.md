@@ -85,6 +85,12 @@ npm 2026-11-05 04:31 UTC); the routing fix as its own PR if it is kept out of th
   `/home/user/deps-anthropic-sdk-1` and `/home/user/deps-aws-cdk-minor-patch`. Next: the design workflow (scouts, writer,
   one adversarial reviewer with verified findings, completeness critic, fold).
 
+- 2026-11-01T17:06:00Z: design workflow wf_59fda205-87b launched (4 scouts: sdk, cdk, awssdk, routing; writer; adversarial
+  reviewer + completeness critic; one skeptic per B/S finding; fold). Script archived as
+  `workflow-scripts/lane-b-dependabot-batch-design-wf_59fda205-87b.js`. Progress files under this session's scratchpad
+  `design/progress/`. Check-in scheduled 22:11 UTC (trig_01LL33NXY4LFhHW27nNJrgFh). If stopped: resume with resumeFromRunId
+  (same session only); a new session restarts the design from the scouts.
+
 ## Waiting on someone
 - Dependabot alerts (triage step 3): the founder or the co-founder reads the alerts page (the API gives the build 403). Does
   not block the merge.

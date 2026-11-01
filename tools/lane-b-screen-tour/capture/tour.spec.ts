@@ -7,6 +7,7 @@ import { type Browser, type BrowserContext, type Locator, type Page, type Route,
 import { shownVersionId } from '/home/user/screens/apps/web/e2e/export-attempts';
 import { addVirtualKey, enterPassword, registerKeyAndSignIn, signInWithKey, signInWithTotp, withDatabase } from '/home/user/screens/apps/web/e2e/helpers';
 import { outboxFor } from '/home/user/screens/apps/web/e2e/outbox';
+import { startLocalWorker } from '/home/user/screens/apps/web/e2e/worker';
 import {
   CLEAN_ROWS,
   OUTSIDE_ROWS,
@@ -3547,6 +3548,216 @@ test('writes last, each undone', async ({ browser }) => {
     }
   });
   notReached('status', 'degraded', '/status', 'a degraded component and an incident are optional operator writes; not taken');
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+/**
+ * An unmapped plan beside mapped ones (combined audit #32, co-001/unmapped-plan; designs/lane-b-unmapped-plan.md §9).
+ * No populate spec leaves a plan with lines and no mapping in a practice whose other plans are mapped and priced, so this
+ * test makes one, last, because it adds a payer and a plan to LAYOUT: as pricing-manager it uploads the SYNTHETIC MAP-01
+ * remittance (CE:SYNPLAN-UNMAPPED-01, SYNTHETIC PAYER M, two claims of 2026-03-12, in the March LAYOUT has priced) with
+ * the e2e worker running (e2e/worker.ts, as e2e/mapping.spec.ts does; the monitor is a placeholder for LAYOUT, so nothing
+ * prices on its own). Then, with the plan unmapped: Home, Coverage, Pricing runs, the mapping list's default view and the
+ * plan's page; a coverage report generated from Coverage (its web view); a run created for March on screen (refused while
+ * an unmapped plan blocks pricing, before #32; from it, the run is created and priced, and the shot is the page it lands
+ * on); the latest complete March run's page. Then the plan mapped on screen as no agreement from 2026-01-01 (the page it
+ * lands on), and Home, Coverage, Pricing runs and the mapping list again. Every step accepts either version's words: it
+ * waits on headings, the URL and the refusal, never on the new regions. The upload, the run and the mapping are writes on
+ * the tour database that are not undone, so the unmapped states retake only on a fresh prepare (the step says so).
+ */
+test('an unmapped plan on LAYOUT, last', async ({ browser }) => {
+  test.setTimeout(30 * 60_000);
+  const PM = 'pricing-manager';
+  const UNMAPPED_PLAN = 'CE:SYNPLAN-UNMAPPED-01';
+  const prefixes = ['p.home.unmapped-plan', 'p.coverage.unmapped-plan', 'p.pricing-runs.unmapped-plan', 'p.pricing-run.unmapped-plan', 'p.mapping.unmapped-plan', 'p.plan.unmapped-plan', 'p.report-document.unmapped-plan'];
+  if (!prefixes.some(wantedPrefix)) return;
+  const layout = await one('SELECT id FROM practice WHERE name = $1', ['SYNTHETIC OTHER PRACTICE LAYOUT']);
+  const L = (rest = ''): string => `/p/${layout}${rest}`;
+  const planRow = async (): Promise<{ id: string; mapped: boolean }> =>
+    withDatabase(async (client) => {
+      const row = (
+        await client.query<{ id: string; mapped: boolean }>(
+          'SELECT p.id, EXISTS (SELECT 1 FROM payer_plan_mapping m WHERE m.plan_id = p.id) AS mapped FROM plan p WHERE p.practice_id = $1 AND p.plan_key = $2',
+          [layout, UNMAPPED_PLAN],
+        )
+      ).rows[0];
+      return { id: row?.id ?? '', mapped: row?.mapped ?? false };
+    });
+  const allIds = (variant: string, key: string): string[] => [`${key}.${variant}.1280`, `${key}.${variant}.1280-dark`, `${key}.${variant}.390`];
+  const unmappedIds = [
+    ...['p.home', 'p.coverage', 'p.pricing-runs', 'p.mapping', 'p.plan', 'p.pricing-run', 'p.report-document'].flatMap((key) => allIds('unmapped-plan', key)),
+    ...allIds('unmapped-plan-create', 'p.pricing-runs'),
+  ];
+  const mappedIds = ['p.home', 'p.coverage', 'p.pricing-runs', 'p.mapping', 'p.plan'].flatMap((key) => allIds('unmapped-plan-mapped', key));
+  const giveUp = (shotIds: readonly string[], route: string, reason: string): void => {
+    for (const id of shotIds) skip(id, route, reason);
+  };
+  if (layout === '') {
+    giveUp([...unmappedIds, ...mappedIds], '/p/[practiceId]', 'no SYNTHETIC OTHER PRACTICE LAYOUT on this database (layout-1280.spec.ts)');
+    return;
+  }
+
+  const local = await startLocalWorker();
+  try {
+    // The upload, once per database.
+    let plan = await planRow();
+    if (plan.id === '') {
+      const page = await (await desktopOf(browser, PM)).newPage();
+      try {
+        await go(page, PM, L('/uploads'));
+        await page.getByLabel('Choose files to upload').setInputFiles([{ name: 'unmapped-plan.835', mimeType: 'application/octet-stream', buffer: readFileSync(`${SCREENS}/fixtures/synthetic/MAP-01/remit.835`) }]);
+        await expect(page.getByRole('region', { name: 'This batch' }).getByRole('listitem').filter({ hasText: 'unmapped-plan.835' })).toContainText('Loaded 1 remittance', { timeout: 120_000 });
+        log('WRITE MAP-01 loaded on LAYOUT (an unmapped plan beside the mapped ones)');
+      } catch (error) {
+        log(`RECORDS MAP-01 not loaded on LAYOUT: ${reasonOf(error)}`);
+      } finally {
+        await page.close();
+      }
+      plan = await planRow();
+    }
+    if (plan.id === '') {
+      giveUp([...unmappedIds, ...mappedIds], '/p/[practiceId]/mapping/[planId]', `${UNMAPPED_PLAN} is not on LAYOUT: the MAP-01 upload did not load (see progress.log)`);
+      return;
+    }
+    ids.planUnmapped = plan.id;
+    log(`RECORDS planUnmapped ${plan.id}${plan.mapped ? ' (already mapped on this database)' : ''}`);
+    const note = (what: string): string => `LAYOUT with ${UNMAPPED_PLAN} (SYNTHETIC MAP-01, payer M, March 2026) loaded and not mapped, beside its mapped plans: ${what}`;
+    const mappedNote = (what: string): string => `LAYOUT after ${UNMAPPED_PLAN} was mapped on screen as no agreement from 2026-01-01: ${what}`;
+
+    if (plan.mapped) {
+      giveUp(unmappedIds, '/p/[practiceId]/mapping/[planId]', `${UNMAPPED_PLAN} is already mapped on this database (an earlier run mapped it): retake the unmapped states on a fresh prepare`);
+    } else {
+      await cap(browser, { key: 'p.home', route: '/p/[practiceId]', persona: PM, path: () => L(), state: 'interaction:unmapped-plan', dark: true, note: note('the practice home.') });
+      await cap(browser, { key: 'p.coverage', route: '/p/[practiceId]/coverage', persona: PM, path: () => L('/coverage'), state: 'interaction:unmapped-plan', dark: true, note: note('Coverage.') });
+      await cap(browser, { key: 'p.pricing-runs', route: '/p/[practiceId]/pricing-runs', persona: PM, path: () => L('/pricing-runs'), state: 'interaction:unmapped-plan', dark: true, note: note('Pricing runs.') });
+      await cap(browser, { key: 'p.mapping', route: '/p/[practiceId]/mapping', persona: PM, path: () => L('/mapping'), state: 'interaction:unmapped-plan', dark: true, note: note('the default view (waiting on mapping).') });
+      await cap(browser, { key: 'p.plan', route: '/p/[practiceId]/mapping/[planId]', persona: PM, path: () => L(`/mapping/${plan.id}`), state: 'interaction:unmapped-plan', dark: true, note: note('the unmapped plan’s page.') });
+
+      // A coverage report generated now (a write: one report document), its web view at both widths.
+      const rd = '/p/[practiceId]/reports/documents/[documentId]';
+      let documentPath = '';
+      await attempt(allIds('unmapped-plan', 'p.report-document'), rd, async () => {
+        const page = await (await desktopOf(browser, PM)).newPage();
+        try {
+          await go(page, PM, L('/coverage'));
+          await press(page.getByRole('region', { name: 'Coverage report' }).getByRole('button', { name: 'Generate the coverage report' }));
+          await page.waitForURL(/\/reports\/documents\/[0-9a-f-]{36}$/, { timeout: 30_000 });
+          documentPath = new URL(page.url()).pathname;
+          log(`WRITE coverage report generated on LAYOUT: ${documentPath}`);
+          await expect(page.locator('[data-document-status="ready"]')).toBeVisible({ timeout: 90_000 }).catch(() => log('RECORDS the coverage report did not print within 90 s; its web view is shot as it stands'));
+        } finally {
+          await page.close();
+        }
+      });
+      if (documentPath !== '') {
+        await cap(browser, { key: 'p.report-document', route: rd, persona: PM, path: documentPath, state: 'interaction:unmapped-plan', dark: true, note: note('a coverage report generated from Coverage, its web view (the printed PDF carries the same sentence; not shot).') });
+      }
+
+      // A run created for March on screen: refused before #32; from it, created and priced. At 390 px after a run was
+      // created at 1280, the page it landed on is opened instead of creating a second run.
+      const rn = '/p/[practiceId]/pricing-runs';
+      const createMeta: Meta = { key: 'p.pricing-runs', variant: 'unmapped-plan-create', state: 'interaction:unmapped-plan-create', route: rn, role: PM, note: note('Create the run pressed for March 2026 (blank last month): before #32 the refusal on Pricing runs; from it, the page the new run lands on.') };
+      let landed = '';
+      for (const width of WIDTHS) {
+        await attempt([idOf(createMeta, width), ...(width === 1280 ? [idOf(createMeta, width, true)] : [])], rn, async () => {
+          const { page, dispose } = await open(browser, PM, width);
+          try {
+            if (landed !== '') {
+              await go(page, PM, landed);
+              await h1(page);
+              await snap(page, { ...createMeta, note: `${createMeta.note ?? ''} At 390 px the page the 1280 px press landed on (no second run).` }, { dark: true });
+              return;
+            }
+            await go(page, PM, L('/pricing-runs'));
+            await h1(page);
+            await page.getByLabel('First month of service').fill('2026-03');
+            await press(page.getByRole('button', { name: 'Create the run' }));
+            const outcome = await Promise.any([
+              refused(page).then(() => 'refused' as const),
+              page.waitForURL(/\/pricing-runs\/[0-9a-f-]{36}/, { timeout: 30_000 }).then(() => 'created' as const),
+            ]).catch(() => {
+              throw new Error(`Create the run neither refused nor landed on a run within 30 s (${shown(page)})`);
+            });
+            if (outcome === 'created') {
+              landed = shown(page);
+              log(`WRITE a March run created on LAYOUT: ${landed}`);
+              // Priced by the e2e worker: wait (bounded) for the run to leave queued and running, then reload.
+              const runId = /\/pricing-runs\/([0-9a-f-]{36})/.exec(landed)?.[1] ?? '';
+              for (let tries = 0; tries < 60; tries += 1) {
+                const status = await one('SELECT status AS id FROM pricing_run WHERE id = $1', [runId]);
+                if (status !== 'queued' && status !== 'running') break;
+                await page.waitForTimeout(2_000);
+              }
+              await go(page, PM, landed);
+              await h1(page);
+            } else {
+              log('RECORDS the March run was refused (nothing written)');
+            }
+            await snap(page, createMeta, { dark: true });
+          } finally {
+            await dispose();
+          }
+        });
+      }
+
+      // The latest complete March run's page (before #32 the run priced before the upload; from it, the new run).
+      await cap(browser, {
+        key: 'p.pricing-run',
+        route: '/p/[practiceId]/pricing-runs/[runId]',
+        persona: PM,
+        path: async () => {
+          const runId = await one("SELECT id FROM pricing_run WHERE practice_id = $1 AND period_from = '2026-03-01' AND status = 'complete' ORDER BY created_at DESC LIMIT 1", [layout]);
+          if (runId === '') throw new Error('no complete March run on LAYOUT');
+          return L(`/pricing-runs/${runId}`);
+        },
+        state: 'interaction:unmapped-plan',
+        dark: true,
+        note: note('the latest complete March run (before #32 the run priced before the upload, as nothing could run since; from it, the run created on screen above).'),
+      });
+    }
+
+    // The plan mapped on screen at 1280 (as e2e/mapping.spec.ts does); at 390 the page it landed on.
+    const pl = '/p/[practiceId]/mapping/[planId]';
+    const mappedMeta: Meta = { key: 'p.plan', variant: 'unmapped-plan-mapped', state: 'interaction:unmapped-plan-mapped', route: pl, role: PM, note: mappedNote('Save the mapping pressed; the page it lands on.') };
+    let mappedAt = '';
+    for (const width of WIDTHS) {
+      await attempt([idOf(mappedMeta, width), ...(width === 1280 ? [idOf(mappedMeta, width, true)] : [])], pl, async () => {
+        const { page, dispose } = await open(browser, PM, width);
+        try {
+          if (mappedAt === '') {
+            if ((await planRow()).mapped) throw new Error(`${UNMAPPED_PLAN} was mapped by an earlier run on this database: retake on a fresh prepare`);
+            await go(page, PM, L(`/mapping/${plan.id}`));
+            await h1(page);
+            await page.getByLabel('Agreement', { exact: true }).selectOption({ label: 'No agreement (out of network)' });
+            await page.getByLabel('Effective from', { exact: true }).fill('2026-01-01');
+            await press(page.getByRole('button', { name: 'Save the mapping' }));
+            await expect(page.locator('[data-notice]').first()).toBeVisible({ timeout: 20_000 });
+            mappedAt = shown(page);
+            log(`WRITE ${UNMAPPED_PLAN} mapped on LAYOUT as no agreement: ${mappedAt}`);
+            await snap(page, mappedMeta, { dark: true });
+          } else {
+            await go(page, PM, mappedAt);
+            await h1(page);
+            await snap(page, { ...mappedMeta, note: `${mappedMeta.note ?? ''} At 390 px the URL the 1280 px save landed on.` }, { dark: true });
+          }
+        } finally {
+          await dispose();
+        }
+      });
+    }
+    if ((await planRow()).mapped) {
+      // Let a job the mapping queued (from #32 on) finish before the shots; the monitor is a placeholder for LAYOUT.
+      await new Promise((resolve) => setTimeout(resolve, 5_000));
+      await cap(browser, { key: 'p.home', route: '/p/[practiceId]', persona: PM, path: () => L(), state: 'interaction:unmapped-plan-mapped', dark: true, note: mappedNote('the practice home.') });
+      await cap(browser, { key: 'p.coverage', route: '/p/[practiceId]/coverage', persona: PM, path: () => L('/coverage'), state: 'interaction:unmapped-plan-mapped', dark: true, note: mappedNote('Coverage.') });
+      await cap(browser, { key: 'p.pricing-runs', route: '/p/[practiceId]/pricing-runs', persona: PM, path: () => L('/pricing-runs'), state: 'interaction:unmapped-plan-mapped', dark: true, note: mappedNote('Pricing runs.') });
+      await cap(browser, { key: 'p.mapping', route: '/p/[practiceId]/mapping', persona: PM, path: () => L('/mapping'), state: 'interaction:unmapped-plan-mapped', dark: true, note: mappedNote('the default view (waiting on mapping).') });
+    } else {
+      giveUp(mappedIds.filter((id) => !id.startsWith('p.plan.')), '/p/[practiceId]', `${UNMAPPED_PLAN} could not be mapped in this run (see its skip)`);
+    }
+  } finally {
+    await local.close();
+  }
 });
 
 /**

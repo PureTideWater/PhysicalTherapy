@@ -29,6 +29,7 @@ GitHub merged_at 2026-10-28T06:50:22Z).
 - 2026-10-28 ~07:55-08:05 UTC: Lane A's account hit its weekly limit; wf_5fc0815b-69d and wf_0f9ac53c-daf lost, nothing on origin.
 - 2026-11-01 17:00 UTC: taken back by Lane B (session_01FcouKPLmdYyBmbVaUjag2c, started by Lane B's orchestrator); setup OK; base still 83d71fd6; stages 2 onward re-run.
 - 2026-11-01 17:01 UTC: builders wf_21e8bd67-64f and before shots wf_c880ba51-8cf started.
+- 2026-11-01 17:10 UTC: before shots done (wf_c880ba51-8cf): 35 shots at 83d71fd, 0 failed, 115 tiles in the scratchpad `hom-screens-before` (notes: `approval-summaries/lane-b-ux-home-figures-wip/hom-capture-before.md`). No spec change. The no-BAA empty home cannot be shot on synthetic data (every seeded practice has a BAA); HOM-03's render covers it. The after run uses the same TOUR_ONLY.
 
 ## Waiting on someone
 - Nothing.
