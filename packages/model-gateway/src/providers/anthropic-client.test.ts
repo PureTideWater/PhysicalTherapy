@@ -55,9 +55,9 @@ function recordingProvider(): TracerProvider {
       const span = trace.wrapSpanContext({ traceId: '0af7651916cd43dd8448eb211c80319c', spanId: 'b7ad6b7169203331', traceFlags: 1 });
       return Object.assign(Object.create(span) as Span, { isRecording: () => true, end: () => undefined, setAttribute: () => span, setAttributes: () => span, setStatus: () => span, recordException: () => undefined });
     },
-    startActiveSpan: (() => {
+    startActiveSpan: () => {
       throw new Error('not used by the SDK');
-    }) as Tracer['startActiveSpan'],
+    },
   };
   return { getTracer: () => tracer };
 }
