@@ -1,0 +1,21 @@
+{
+  "case": "HOM-02",
+  "module": "HOM",
+  "title": "The home's figures in words",
+  "assertion": "The tile counts its lines with counted() and names each cause of the lines out of the figure (0, 1 and 2 of each) only when there are any, as the case page and the packet builder do through outOfFigureWords(); the Recovered tile reads to date since its first counted entry, or nothing yet at the proof level, and this quarter from quarter(); quarter() writes a quarter key and refuses any other; the Payer approved notes, the ledger totals' help and the statement's empty line follow the proof level; no read text of the home, Reconciliation, the case page or the statement says stage five; pnpm lint:copy passes",
+  "synthetic": true,
+  "completesIn": 9,
+  "assertedBy": [
+    "apps/web/src/components/dashboard/headline.test.tsx",
+    "apps/web/src/components/format.test.ts",
+    "tools/brand-copy/scan.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The tiles and the words are rendered from synthetic figures the tests pass in memory, and the copy lint reads the app’s own files; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

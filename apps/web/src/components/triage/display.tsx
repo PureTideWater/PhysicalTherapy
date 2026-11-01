@@ -1,13 +1,15 @@
 import { type DeadlineState, STAGE_LABELS, WRITE_OFF_TEXT, type WriteOffReason } from '@tp/triage';
 import { Badge } from '@tp/ui';
 
+import { counted } from '../../lib/copy/words';
 import type { CaseState } from '../../lib/triage/queries';
 import { StatusChip, type StatusTone } from '../status';
 
 /**
  * Display pieces of the Anomalies and Cases screens (PRD 7; PRD 12): a case's state and deadline
  * colours (passed, within 14 days, later), the stage labels (flagged is investigatory, never a dollar
- * claim; recovered only beside stage five) and the write-off reasons in words.
+ * claim; recovered only beside the cash posted or deposited at the proof level), the write-off reasons in words,
+ * and the words that count an actionable figure's lines (docs/adr/0082).
  */
 
 /** A case's state in words. */
@@ -73,6 +75,41 @@ export function stageLabel(stage: keyof typeof STAGE_LABELS): string {
 
 export function writeOffText(reason: WriteOffReason): string {
   return WRITE_OFF_TEXT[reason];
+}
+
+/**
+ * The lines not written off that the actionable figure leaves out, each counted by its cause (ACTIONABLE_NOW_OF's
+ * moved_on and stale): "out of the figure: 1 line whose pricing is no longer current, 2 lines moved on past
+ * actionable", each part only when it counts one or more; empty when the figure holds every such line. The home's
+ * tile, the case page and the packet builder say it in these words.
+ */
+export function outOfFigureWords(movedOn: number, stale: number): string {
+  const parts = [
+    ...(stale > 0 ? [`${counted(stale, 'line')} whose pricing is no longer current`] : []),
+    ...(movedOn > 0 ? [`${counted(movedOn, 'line')} moved on past actionable`] : []),
+  ];
+  return parts.length === 0 ? '' : `out of the figure: ${parts.join(', ')}`;
+}
+
+/** A case's actionable figure's lines, as CaseSummary counts them (the figure's lines, those not written off, and the two causes between). */
+export interface ActionableLines {
+  readonly actionableNowLines: number;
+  readonly openLines: number;
+  readonly actionableNowMovedOn: number;
+  readonly actionableNowStale: number;
+}
+
+/**
+ * The lines a case's actionable figure is on, after "on": "3 lines" when it holds every line not written off,
+ * otherwise "0 of the 3 lines not written off; out of the figure: 3 lines moved on past actionable". The case page
+ * and the packet builder pair their dollars with it, so neither reads $0.00 beside "3 of 3 lines".
+ */
+export function actionableLinesWords(item: ActionableLines): string {
+  if (item.actionableNowLines === item.openLines) {
+    return counted(item.actionableNowLines, 'line');
+  }
+  const out = outOfFigureWords(item.actionableNowMovedOn, item.actionableNowStale);
+  return `${String(item.actionableNowLines)} of the ${counted(item.openLines, 'line')} not written off${out === '' ? '' : `; ${out}`}`;
 }
 
 /** The investigatory label every anomaly carries (PRD 12: "the UI label says 'investigatory'"). */

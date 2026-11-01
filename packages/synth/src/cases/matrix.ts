@@ -505,4 +505,28 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     assertion:
       "In a practice of its own, a letter with \"ABC\" sent past the pattern returns to Coverage with the entries kept, the codes field `aria-invalid`, its message first in its description and the focus on it, and axe (WCAG 2.1 A and AA) passing at 1280 px and at 390 px with no sideways scroll; a contract that is not the payer's is stopped in the browser in the words its refusal would be marked with, and sent past that comes back marked on its control; once corrected, the letter downloads with its marks cleared and the refusal out of the URL, and a reload shows the plain form; a payer that is not the practice's comes back marked and unanswered, and choosing one clears the mark; a refusal the form cannot mark is said as a notice and takes the letter's entries out of the URL; the pattern stops \"ABC\" before the round trip and takes good codes; a good letter downloads and the page stays; a refused file of the Reports list comes back beside that list, and the list leaves the URL with the refusal; a viewer who opens the audit report's line CSV as a page lands on the report with the forbidden notice focused, still there after a router refresh that never asks for the refusal and gone after a reload, while a script's request keeps the JSON refusal; on Uploads a receipt's report downloads in place and its refusal is said above the receipts, focused, while the page stays; and a viewer who opens a packet's PDF lands on the packet's permission state, told who downloads its files, with the refusal out of the URL",
   },
+  {
+    id: 'HOM-01',
+    title: 'One actionable figure everywhere',
+    assertion:
+      "On one synthetic case before and after its re-run is accepted (its lines priced again), on a case whose rule release is withdrawn, and on a case with a line moved on to payer approved, the home's headline dollars and lines, its cases by state and deadlines, the Cases header and each row's figure and count, the case page's figure and counted lines, an ROI statement generated on demand and the digest's nearing-deadline figure agree, each read through the one predicate; every line not written off is in the figure, moved past actionable or on pricing no longer current, and is counted under that one cause; the case's stored total is untouched and shown nowhere as actionable; the statement recomputes from its entries and the database accepts it; the home reads its cases in one statement that runs the pricing check at one plan node, once per case line at actionable; the recovered figures to date and for the quarter, from one ledger read, equal practiceLedgerTotals for all time and for the quarter, on random ledgers whose reversals cross the quarter's boundary",
+  },
+  {
+    id: 'HOM-02',
+    title: "The home's figures in words",
+    assertion:
+      "The tile counts its lines with counted() and names each cause of the lines out of the figure (0, 1 and 2 of each) only when there are any, as the case page and the packet builder do through outOfFigureWords(); the Recovered tile reads to date since its first counted entry, or nothing yet at the proof level, and this quarter from quarter(); quarter() writes a quarter key and refuses any other; the Payer approved notes, the ledger totals' help and the statement's empty line follow the proof level; no read text of the home, Reconciliation, the case page or the statement says stage five; pnpm lint:copy passes",
+  },
+  {
+    id: 'HOM-03',
+    title: 'The empty home names the upload gate',
+    assertion:
+      "The home's gate equals the Uploads page's: a practice BAA and an organization-wide BAA open it, a BAA signed in the future and none close it, a suspension pauses it; open shows the upload sentence with Go to Uploads, closed the BAA sentence with See the agreement chain for a role that may open Settings and no link for a viewer, paused the suspension sentence with no link",
+  },
+  {
+    id: 'HOM-04',
+    title: 'The home and the statement agree in the browser',
+    assertion:
+      "In the LED-06 journey after the recoupment, the home's actionable tile, the Cases header and an ROI statement generated then (Actionable in cases still being worked) show the same amount, the tile naming the line out of the figure; the Recovered tile's to-date figure reads since 2026-06-09 with this quarter's line; Reconciliation's and the case's recovered notes carry no stage number; the statement's empty approval line names deposited",
+  },
 ];
