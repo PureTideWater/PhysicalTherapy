@@ -3,8 +3,9 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-// The CDK CLI posts usage telemetry and fetches notices on every command by default (docs/adr/0012, amendment
-// of 2026-11-01). Both are turned off by CLI settings, never by app context: cdk.json's context stays empty.
+// The CDK CLI posts usage telemetry and fetches notices on every command by default, and on a terminal it also
+// asks the npm registry for its latest version once a day (docs/adr/0012, amendment of 2026-11-01). All three are
+// turned off by CLI settings, never by app context: cdk.json's context stays empty.
 
 const infraDir = path.resolve(import.meta.dirname, '..');
 const readJson = <T>(file: string): T => JSON.parse(readFileSync(path.join(infraDir, file), 'utf8')) as T;
@@ -19,18 +20,19 @@ const directCdk = new RegExp(String.raw`^\s*(?:[A-Z_][A-Z0-9_]*=\S*\s+)*` + laun
 const runsCdkDirectly = (command: string): boolean =>
   command.split(/&&|\|\||;|\|/).some((part) => directCdk.test(part));
 
-describe('the CDK CLI sends no telemetry and fetches no notices', () => {
-  it('synthesizes with telemetry off and without notices', () => {
+describe('the CDK CLI sends no telemetry, fetches no notices and skips its version check', () => {
+  it('synthesizes with telemetry and the version check off and without notices', () => {
     const synth = manifest.scripts.synth ?? '';
-    expect(synth).toMatch(/^CDK_DISABLE_CLI_TELEMETRY=true cdk synth\b/);
+    expect(synth).toMatch(/^CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true cdk synth\b/);
     expect(synth.split(/\s+/)).toContain('--no-notices');
   });
 
-  it('sets the same two on every infra script that runs the CLI directly', () => {
+  it('sets the same three on every infra script that runs the CLI directly', () => {
     const direct = Object.entries(manifest.scripts).filter(([, command]) => runsCdkDirectly(command));
     expect(direct.map(([name]) => name)).toContain('synth');
     for (const [name, command] of direct) {
       expect(command, name).toMatch(/(?:^|\s)CDK_DISABLE_CLI_TELEMETRY=true\s/);
+      expect(command, name).toMatch(/(?:^|\s)CDK_DISABLE_VERSION_CHECK=true\s/);
       expect(command.split(/\s+/), name).toContain('--no-notices');
     }
   });
