@@ -1135,3 +1135,8 @@ HANDOFF.md; LANES.md rule 10).
   real-size runs; #42's launch actions 2–7; runbook 3i.
 - **Next:** each session reports its stage changes here by message; the orchestrator keeps LANES.md and this log current
   and writes the handoff back to Lane A before 2026-11-03 14:00 UTC.
+
+### 2026-11-01 18:00 UTC (Lane A's orchestrator): the old sessions on Lane A's account archived
+- Lane B's account has started: UX PR 10 (#85) and UX PR 6 run in its new sessions.
+- The old sessions on Lane A's account still held PR subscriptions. Each push by Lane B woke them on Lane A's credits, and they blocked Lane B's sessions from subscribing. Archived: session_017SNqG4nQbbt6xqEG1ZDKe6, 01UzQ6wgZgtThBRBxXTFYhRB, 019i9ifC3LkwNtonZfNSNmCp, 019VghcxKzP9LAj3WK8k6u1D, 01L3tN5LCq2aNYetEQBNJYZg, 019i9ifDUYaz9Hta77Vukkzo, 01TAgFZo3SGSTBEfKRjX1jeG and the schema chain's 019i9ifCi6u3MV8sy7oAhUmy. Each can be unarchived; nothing on origin is lost. Lane A's orchestrator unsubscribed from #42, so Lane B's acting-Lane-A session can subscribe to it.
+- Still scheduled on Lane A's account: only the 2026-11-03 14:10 UTC check-in. It reads this log and takes nothing back that Lane B holds.
