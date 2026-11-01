@@ -93,6 +93,9 @@ function stubEnvironment(): void {
   for (const [name, setting] of Object.entries(ENVIRONMENT)) {
     vi.stubEnv(name, setting);
   }
+  // Configuration refuses ANTHROPIC_CUSTOM_HEADERS (config.test.ts), and these tests build the client without it, so the
+  // runner's own value must not reach them: the SDK reads a blank value as unset. The control sets it again.
+  vi.stubEnv('ANTHROPIC_CUSTOM_HEADERS', '');
 }
 
 function registerTelemetry(): void {
