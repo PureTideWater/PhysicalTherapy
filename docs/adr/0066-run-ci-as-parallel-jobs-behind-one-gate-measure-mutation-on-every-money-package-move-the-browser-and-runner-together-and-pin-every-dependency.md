@@ -1005,7 +1005,11 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
       `image=…@sha256:…`), so it stays with the founder.
   - **What holds it.** `workflows.test.ts` reads every expression that reaches a step's environment, an input or a
     script, or a key, as the runner reads it, and admits only a closed list; it refuses any expression in a key, which
-    GitHub would evaluate as a variable's or an input's name. That list holds values GitHub or the workflow bounds, and every step output and value one job hands another, each listed with its bound.
+    GitHub would evaluate as a variable's or an input's name. That list holds values GitHub or the workflow bounds,
+    and every step output and value one job hands another, each listed with its bound. It reads this repository's
+    workflows: a pinned action's own `action.yml` (its inputs' defaults, a composite's steps) and code are not read.
+    The defect this notice fixes came from action code, buildx copying the event into its metadata, which no
+    expression rule can read, so every step output is bounded where a workflow reads it, by the rule and its list.
     - Each row names its producers by what they are, never by a line, and the test resolves each on the tree: a step
       by its job and id, a job's output, a matrix key, a job the reader needs, and tool code by the name it declares
       (`path#symbol`). A row whose producer is a workflow's `run:` step holds the fingerprint of its script as parsed,

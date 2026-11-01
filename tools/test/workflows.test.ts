@@ -2840,7 +2840,11 @@ describe('concurrency groups', () => {
  * environment, an action's input (an INPUT_* variable) or a script. Every expression there is read as the runner reads
  * it (actions/runner's LexicalAnalyzer: whitespace skipped before every token, a name before "(" a function, names and
  * keys without case) and admitted only from a closed list: values GitHub or the workflow bounds, and each step output or
- * value one job hands another, listed with its bound (docs/adr/0066, Part 3, N32).
+ * value one job hands another, listed with its bound (docs/adr/0066, Part 3, N32). No key holds an expression, and each
+ * environment string a workflow sets is summed from its name, its literal bytes and each value's bound in bytes. These
+ * read this repository's workflows: a pinned action's own action.yml and code are not read, and the defect itself came
+ * from action code (buildx copying the event into its metadata), which no expression rule can read, so every step
+ * output is bounded where a workflow reads it.
  */
 describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, Part 3, N32)', () => {
   type Token = { readonly kind: 'string' | 'number' | 'keyword' | 'name' | 'function' | 'punctuation' | 'operator' | 'star'; readonly text: string };
