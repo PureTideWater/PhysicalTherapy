@@ -10,7 +10,8 @@ safer), recorded here and in the PR description.
 Open questions: none.
 
 <!-- RESUME-BLOCK -->
-## Current state (2026-11-01 17:28 UTC): records corrected; base merge (#82, bce57f16) and the two reviews next
+## Current state (2026-11-01 17:33 UTC): records corrected; base merge and two reviews running (workflow wf_d3f0da30-f5f)
+- **Running since 17:31 UTC:** workflow `wf_d3f0da30-f5f` (script `workflow-scripts/lane-b-ci-images-digest-merge-review-wf_d3f0da30-f5f.js`): the merge of bce57f16 with the N32 renumber, pushed to the WIP ref `co-001/wip-ci-images-digest` (not the PR); an adversarial merge check (fix loop up to 3); the two reviews (CI and test infrastructure; security and supply chain) on the WIP head, written to `approval-summaries/lane-b-ci-images-digest-review-{ci-infra,security-supply}.md`; three skeptics per B/S finding, one per nit; a completeness critic. Progress files: `approval-summaries/lane-b-ci-images-digest-wip/progress/`. A check-in is scheduled for 22:40 UTC (`trig_01QUE7hkfxkLyv4kzZCS4tcp`); resume a stopped run with resumeFromRunId in this session, or start the stage again from the WIP ref and the progress files.
 - **Started** 2026-11-01 16:57 UTC; a person said "go" in this session at about 17:25 UTC ("Don't be redundant and do
   things that have already passed an ux review"; this change has no screen, so no UX review applies).
 - **Machine:** setup OK at 17:26 UTC (Node v24.22.0 after moving the base image's v24.22.1 aside; worktree
