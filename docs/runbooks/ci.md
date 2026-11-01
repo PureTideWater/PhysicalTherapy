@@ -148,8 +148,9 @@ differential test, which prices the base's engine and this commit's.
    - **`images`:** the Trivy table names each HIGH or CRITICAL finding with a fixed version: take the fix (a base-image
      or package bump), or record why not in docs/adr/0010's way. An identity step's `::error` names the archive's config
      digest and the one buildx reported ("nothing it reported" when the metadata lacked it); "Argument list too long" on
-     any step means a value over 131,072 bytes reached its environment, which `workflows.test.ts` refuses for every
-     value it does not list with its bound (docs/adr/0066, Part 3, N32).
+     any step means an environment string (`NAME=value` and its NUL) over 131,072 bytes, or the whole environment and
+     arguments over `ARG_MAX`; `workflows.test.ts` sums each environment string a workflow sets and refuses one over
+     131,072 bytes, or one holding a value it does not list with its bound (docs/adr/0066, Part 3, N32).
 3. **Re-running.** Re-run failed jobs only for an infrastructure failure (a runner lost, a download refused, a service
    that did not start), never for a test that failed: a test that passes on a re-run is a flaky test, and is fixed.
    A re-run replaces the artifacts the first attempt left (`overwrite: true`).
@@ -424,7 +425,9 @@ user that cannot run the binary.
   (CI-10), and installs Chromium before any vitest step of the unit or db project (CI-05).
 - A new required check changes `tools/required-checks.ts`, every marked listing (the test names each file) and the
   ruleset, which only the founder sets.
-- A step takes only the value it uses (one environment string stops at 131,072 bytes). `workflows.test.ts` reads every
+- A step takes only the value it uses (one environment string, `NAME=value` and its NUL, stops at 131,072 bytes; the
+  test sums each one a workflow sets, a step input as `INPUT_<NAME>`, from its name, its literal bytes and each value's
+  bound in bytes). `workflows.test.ts` reads every
   expression in an env, an input, a script, a job's outputs, a matrix or a key as the runner does, and admits only
   bounded values, none in a key (GitHub would evaluate it as a variable's or an input's name). Never use a build's whole metadata, an event object, a description or title, or `toJSON` of anything but
   `needs`. A new step output or value one job hands another joins its list with its bound and its producers by name

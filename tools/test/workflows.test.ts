@@ -2999,8 +2999,43 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     return names;
   }
 
-  /** The github context's paths admitted whole: scalars GitHub bounds, the ones in use. */
-  const BOUNDED_GITHUB = new Set(['actor', 'base_ref', 'event_name', 'ref', 'ref_name', 'repository', 'run_id', 'server_url', 'sha', 'token', 'event.before', 'event.pull_request.number', 'event.pull_request.base.sha', 'event.pull_request.head.sha', 'event.repository.private']);
+  /** Linux's limit on one environment string, NAME=value and its NUL (MAX_ARG_STRLEN, 32 pages of 4 KiB). */
+  const MAX_ARG_STRLEN = 131_072;
+  /** A repository variable's or a secret's bound, 48 KB (GitHub's documentation). */
+  const VARIABLE_BYTES = 49_152;
+  /** A path the runner or git keeps (Linux's PATH_MAX). */
+  const PATH_BYTES = 4_096;
+  /** A 64-bit integer's decimal digits. */
+  const INTEGER_BYTES = 20;
+  /** A commit SHA: 40 hexadecimal digits, or 64 in a SHA-256 repository. */
+  const SHA_BYTES = 64;
+  /** A result, an outcome or a conclusion, of which cancelled is the longest; and true or false. */
+  const WORD_BYTES = 9;
+  const BOOLEAN_BYTES = 5;
+  /**
+   * The github context's paths admitted whole, each with its bound in bytes: scalars GitHub bounds, the ones in use. A
+   * login is at most 39 characters (a bot's is its app's name, at most 34, and [bot]); a branch or a ref is a path git
+   * keeps; a trigger's name is a word (the longest, pull_request_review_comment, has 27 characters); a repository is an
+   * owner of at most 39 characters, a slash and a name of at most 100; the server's URL is https:// and a host name of
+   * at most 253 bytes, with a port; the token is held as a secret is.
+   */
+  const BOUNDED_GITHUB: ReadonlyMap<string, number> = new Map([
+    ['actor', 64],
+    ['base_ref', PATH_BYTES],
+    ['event_name', 64],
+    ['ref', PATH_BYTES],
+    ['ref_name', PATH_BYTES],
+    ['repository', 140],
+    ['run_id', INTEGER_BYTES],
+    ['server_url', 'https://'.length + 253 + ':65535'.length],
+    ['sha', SHA_BYTES],
+    ['token', VARIABLE_BYTES],
+    ['event.before', SHA_BYTES],
+    ['event.pull_request.number', INTEGER_BYTES],
+    ['event.pull_request.base.sha', SHA_BYTES],
+    ['event.pull_request.head.sha', SHA_BYTES],
+    ['event.repository.private', BOOLEAN_BYTES],
+  ]);
   /**
    * Contexts admitted one level down: a runner, strategy, matrix or job value, a variable the workflow sets (each held
    * here where it is set), and a repository variable or a secret, each at most 48 KB (GitHub's documentation).
@@ -3008,6 +3043,11 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
   const ONE_LEVEL = new Set(['runner', 'strategy', 'matrix', 'job', 'env', 'vars', 'secrets']);
   /** The input types that bound an input; a string input has no bound GitHub documents. */
   const BOUNDED_INPUT_TYPES = new Set(['choice', 'boolean', 'number']);
+  /** A number as the runner writes one (a double's shortest form, its exponent included), or a number input's value. */
+  const NUMBER_BYTES = 24;
+  /** The one-level values of the runner and job contexts, each with its bound: a path or a name the runner sets, a word, an integer. */
+  const RUNNER_BYTES = PATH_BYTES;
+  const JOB_BYTES: Readonly<Record<string, number>> = { status: WORD_BYTES, check_run_id: INTEGER_BYTES };
   /** The only variables a script may write to $GITHUB_ENV: ci.yml's engine freeze base, a commit SHA. */
   const GITHUB_ENV_NAMES = new Set(['ENGINE_FREEZE_BASE']);
   /** A $GITHUB_ENV write in the one form admitted, its name from GITHUB_ENV_NAMES. */
@@ -3182,8 +3222,225 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     return { problems, values };
   }
 
+  /** Where an expression is read, for its bound: its job, the env mappings env.X reads (innermost first), and what the sum found. */
+  interface Reading {
+    readonly job: string | undefined;
+    readonly scopes: readonly Readonly<Record<string, unknown>>[];
+    /** What has no bound, each in words. */
+    readonly unbounded: string[];
+    /** Whether it holds the one value known to be over the limit (its sites are the table's to hold). */
+    over: boolean;
+  }
+
+  /**
+   * Every environment string a workflow sets, NAME=value and its NUL as Linux counts it against MAX_ARG_STRLEN: the
+   * workflow's, each job's, each job container's and service's, and each step's env, and each step input as
+   * INPUT_<NAME>. Its bytes are the name's, '=' and the NUL, the value's literal bytes outside ${{ }}, and each
+   * expression's bound: a github value BOUNDED_GITHUB's, a variable or a secret 48 KB, a bounded input its type's, a
+   * matrix key its longest value's, env.X the bound of X where it is set (the step's env, the job's, the workflow's),
+   * and a table row its bytes. What refuses one: a sum over 131,072, or a value with no bound, each naming its file,
+   * place and name. A string that holds the one value marked over is the table's (its sites, below).
+   */
+  function environmentProblems(file: string, parsed: unknown, rows: readonly BoundedValue[] = BOUNDED_VALUES): string[] {
+    const problems: string[] = [];
+    const record = (value: unknown): Readonly<Record<string, unknown>> => (isRecord(value) ? value : {});
+    const root = record(parsed);
+    const jobs = record(root.jobs);
+    const inputs = new Map<string, number>();
+    for (const trigger of ['workflow_dispatch', 'workflow_call']) {
+      for (const [name, declaration] of Object.entries(record(record(record(root.on)[trigger]).inputs))) {
+        const { type, options } = record(declaration);
+        const bytes = type === 'boolean' ? BOOLEAN_BYTES : type === 'number' ? NUMBER_BYTES : type === 'choice' && isList(options) ? Math.max(0, ...options.map((option) => Buffer.byteLength(String(option)))) : Infinity;
+        inputs.set(name.toLowerCase(), Math.max(inputs.get(name.toLowerCase()) ?? 0, bytes));
+      }
+    }
+    const row = (job: string | undefined, value: string, at: Reading): number => {
+      const found = rows.find((entry) => entry.file === file && entry.job === job && entry.value === value);
+      if (found === undefined) {
+        at.unbounded.push(`${value}, which no row of the table bounds`);
+        return Infinity;
+      }
+      if (found.over !== undefined) at.over = true;
+      return found.bytes;
+    };
+    /** The value an admitted expression reads, as the table keys it, when it reads exactly one. */
+    const readValue = (node: Expression): string | undefined => {
+      const values: string[] = [];
+      return expressionProblems(node, {}, values).length === 0 && values.length === 1 ? values[0]?.toLowerCase() : undefined;
+    };
+    const scalar = (value: unknown, at: Reading): number => {
+      if (typeof value === 'number' || typeof value === 'boolean') return Buffer.byteLength(String(value));
+      if (typeof value !== 'string') {
+        if (value !== null && value !== undefined) at.unbounded.push('a list or a mapping');
+        return value === null || value === undefined ? 0 : Infinity;
+      }
+      let bytes = Buffer.byteLength(value.replace(/\$\{\{[\s\S]*?\}\}/g, ''));
+      for (const match of value.matchAll(/\$\{\{([\s\S]*?)\}\}/g)) {
+        try {
+          bytes += expression(parseExpression(lexExpression(match[1] ?? '')), at);
+        } catch {
+          at.unbounded.push(`\${{${match[1] ?? ''}}}, which does not parse`);
+          bytes = Infinity;
+        }
+      }
+      return bytes;
+    };
+    const matrix = (key: string, at: Reading): number => {
+      const strategy = record(record(jobs[at.job ?? '']).strategy);
+      const given = strategy.matrix;
+      // A matrix from an expression, or a key's list from one: each value is part of what it gives.
+      const values = typeof given === 'string' ? [given] : (matrixValues(given, key) ?? (isRecord(given) && typeof given[key] === 'string' ? [given[key]] : undefined));
+      if (values === undefined) {
+        at.unbounded.push(`matrix.${key}, which job ${at.job ?? '-'}'s matrix does not give`);
+        return Infinity;
+      }
+      // A matrix is read with no env context, and only a value read directly is the one marked over.
+      const job = { ...at, scopes: [] };
+      return Math.max(
+        0,
+        ...values.map((value) => {
+          if (!isRecord(value) && !isList(value)) return scalar(value, job);
+          at.unbounded.push(`matrix.${key}, a list or a mapping`);
+          return Infinity;
+        }),
+      );
+    };
+    const env = (name: string, at: Reading): number => {
+      if (GITHUB_ENV_NAMES.has(name.toUpperCase())) {
+        at.unbounded.push(`env.${name}, which a script writes to $GITHUB_ENV`);
+        return Infinity;
+      }
+      // Each place it is set, read as GitHub reads it there: a step's env sees the job's and the workflow's, a job's the workflow's.
+      const set = at.scopes.flatMap((scope, index) =>
+        Object.entries(scope)
+          .filter(([key]) => key.toLowerCase() === name)
+          .map(([, value]) => scalar(value, { ...at, scopes: at.scopes.slice(index + 1) })),
+      );
+      if (set.length === 0) {
+        at.unbounded.push(`env.${name}, which no env in scope sets`);
+        return Infinity;
+      }
+      return Math.max(...set);
+    };
+    const reference = (names: readonly string[] | undefined, at: Reading): number => {
+      const [base = '', ...rest] = names ?? [];
+      const [first = '', second] = rest;
+      const dotted = (names ?? []).join('.');
+      let bytes: number | undefined;
+      if (base === 'github') bytes = BOUNDED_GITHUB.get(rest.join('.'));
+      else if (base === 'vars' || base === 'secrets') bytes = rest.length === 1 ? VARIABLE_BYTES : undefined;
+      else if (base === 'runner') bytes = rest.length === 1 ? RUNNER_BYTES : undefined;
+      else if (base === 'strategy') bytes = rest.length === 1 ? INTEGER_BYTES : undefined;
+      else if (base === 'job') bytes = rest.length === 1 ? JOB_BYTES[first] : undefined;
+      else if (base === 'inputs') bytes = rest.length === 1 ? inputs.get(first) : undefined;
+      else if (base === 'matrix' && rest.length === 1) return matrix(first, at);
+      else if (base === 'env' && rest.length === 1) return env(first, at);
+      else if ((base === 'needs' && rest.length === 2 && second === 'result') || (base === 'steps' && rest.length === 2 && (second === 'outcome' || second === 'conclusion'))) bytes = WORD_BYTES;
+      else if ((base === 'steps' || base === 'needs') && rest.length === 3 && second === 'outputs') return row(at.job, dotted.toLowerCase(), at);
+      if (bytes === undefined || bytes === Infinity) {
+        at.unbounded.push(names === undefined ? 'a wildcard or a computed index' : dotted);
+        return Infinity;
+      }
+      return bytes;
+    };
+    const expression = (node: Expression, at: Reading): number => {
+      switch (node.t) {
+        case 'literal':
+          return node.kind === 'string' ? Buffer.byteLength(node.value) : node.kind === 'number' ? NUMBER_BYTES : node.value === 'null' ? 0 : node.value.length;
+        case 'not':
+          return BOOLEAN_BYTES;
+        case 'binary':
+          // && and || give one of their operands, a comparison true or false; but parseExpression folds operators left to
+          // right, not by precedence, so an operand this tree puts under a comparison may be what an || gives: each counts.
+          return Math.max(BOOLEAN_BYTES, expression(node.left, at), expression(node.right, at));
+        case 'reference':
+          return reference([node.name], at);
+        case 'access': {
+          if (node.target.t !== 'call') return reference(namesOf(node), at);
+          const value = readValue(node);
+          if (value?.startsWith('fromjson(') === true) return row(at.job, value, at);
+          // fromJSON of an admitted value, then literal keys: no longer than the value's text, or than a number written out.
+          if (node.target.name === 'fromjson' && node.path.every((access) => 'name' in access)) return Math.max(expression(node.target, at), NUMBER_BYTES);
+          at.unbounded.push(`an index on ${node.target.name}()`);
+          return Infinity;
+        }
+        case 'call': {
+          if (['success', 'failure', 'always', 'cancelled', 'contains', 'startswith', 'endswith'].includes(node.name)) return BOOLEAN_BYTES;
+          if (node.name === 'hashfiles') return 64;
+          if (node.name === 'tojson') {
+            const value = readValue(node);
+            if (value !== undefined) return row(at.job, value, at);
+          }
+          if (node.name === 'fromjson' && node.args.length === 1 && node.args[0] !== undefined) return Math.max(expression(node.args[0], at), NUMBER_BYTES);
+          at.unbounded.push(`${node.name}()`);
+          return Infinity;
+        }
+      }
+    };
+    const strings = (mapping: unknown, where: string, at: Omit<Reading, 'unbounded' | 'over'>, input = false): void => {
+      for (const [name, value] of Object.entries(record(mapping))) {
+        const reading: Reading = { ...at, unbounded: [], over: false };
+        const variable = input ? `INPUT_${name.replace(/ /g, '_').toUpperCase()}` : name;
+        const bytes = Buffer.byteLength(`${variable}=`) + scalar(value, reading) + 1;
+        if (reading.over) continue;
+        if (reading.unbounded.length > 0) problems.push(`${file} ${where}.${name}: no bound for ${reading.unbounded.join('; ')}`);
+        else if (bytes > MAX_ARG_STRLEN) problems.push(`${file} ${where}.${name}: ${variable}=… is up to ${String(bytes)} bytes with its NUL, over ${String(MAX_ARG_STRLEN)}`);
+      }
+    };
+    strings(root.env, 'env', { job: undefined, scopes: [] });
+    for (const [id, job] of Object.entries(jobs)) {
+      if (!isRecord(job)) continue;
+      strings(job.env, `job ${id} env`, { job: id, scopes: [record(root.env)] });
+      strings(record(job.container).env, `job ${id} container.env`, { job: id, scopes: [] });
+      for (const [service, definition] of Object.entries(record(job.services))) strings(record(definition).env, `job ${id} services.${service}.env`, { job: id, scopes: [] });
+      (isList(job.steps) ? job.steps : []).forEach((step, index) => {
+        if (!isRecord(step)) return;
+        const named = `job ${id} step ${typeof step.name === 'string' ? JSON.stringify(step.name) : String(index)}`;
+        const scopes = [record(step.env), record(job.env), record(root.env)];
+        strings(step.env, `${named} env`, { job: id, scopes });
+        strings(step.with, `${named} with`, { job: id, scopes }, true);
+      });
+    }
+    return problems;
+  }
+
   it('admits into a step’s environment, an input or a script only values GitHub, the workflow or the table bounds, read as the runner reads an expression, in every workflow', () => {
     expect(workflowFiles().flatMap((file) => unboundedValueProblems(file, workflow(file)).problems)).toEqual([]);
+  });
+
+  it('keeps every environment string a workflow sets under 131,072 bytes, NAME=value and its NUL, summed from its name, its literal bytes and each value’s bound', () => {
+    expect(workflowFiles().flatMap((file) => environmentProblems(file, workflow(file)))).toEqual([]);
+    const huge: BoundedValue = { file: 'fixture.yml', job: 'images', value: 'steps.web.outputs.size', bytes: 100_000, refs: [], bound: 'a fixture' };
+    const sum = (jobs: string, rows: readonly BoundedValue[] = [huge]) =>
+      environmentProblems('fixture.yml', parse(`name: fixture\non:\n  workflow_dispatch:\n    inputs:\n      runner: { type: choice, options: [ubuntu-24.04, ubuntu-26.04] }\n      note: { type: string }\n${jobs}\n`), rows);
+    const step = (env: string, more = '') => `jobs:\n  images:\n    runs-on: ubuntu-26.04\n${more}    steps:\n      - name: The step\n        ${env}\n        run: echo`;
+    const over = (where: string, variable: string, bytes: number) => `fixture.yml job images step "The step" ${where}: ${variable}=… is up to ${String(bytes)} bytes with its NUL, over 131072`;
+    // Three repository variables, or secrets, in one value: each admitted, together up to 147,456 bytes. Two fit.
+    expect(sum(step('env: { NOTES: "${{ vars.A }}${{ vars.B }}${{ vars.C }}" }'))).toEqual([over('env.NOTES', 'NOTES', 6 + 3 * 49_152 + 1)]);
+    expect(sum(step('env: { NOTES: "${{ secrets.A }}-${{ secrets.B }}-${{ vars.C }}" }'))).toEqual([over('env.NOTES', 'NOTES', 6 + 3 * 49_152 + 2 + 1)]);
+    expect(sum(step('env: { NOTES: "${{ vars.A }}${{ vars.B }}" }'))).toEqual([]);
+    // An input is INPUT_ and its name in capitals; a table row adds its bytes.
+    expect(sum(step('uses: actions/fixture@v1\n        with: { notes: "${{ steps.web.outputs.size }}${{ vars.A }}" }'))).toEqual([over('with.notes', 'INPUT_NOTES', 12 + 100_000 + 49_152 + 1)]);
+    // env.X is the bound of X where it is set, the step's env, the job's or the workflow's, each read as GitHub reads it.
+    expect(sum(step('env: { B: "${{ env.A }}${{ vars.C }}" }', '    env: { A: "${{ vars.A }}${{ vars.B }}" }\n'))).toEqual([over('env.B', 'B', 2 + 3 * 49_152 + 1)]);
+    expect(sum(`env: { X: "\${{ vars.X }}" }\n${step('env: { Z: "${{ env.Y }}${{ vars.Z }}" }', '    env: { Y: "${{ env.X }}${{ env.X }}" }\n')}`)).toEqual([over('env.Z', 'Z', 2 + 3 * 49_152 + 1)]);
+    expect(sum(step('uses: actions/fixture@v1\n        env: { A: "${{ vars.A }}${{ vars.B }}" }\n        with: { notes: "${{ env.A }}${{ vars.C }}" }'))).toEqual([over('with.notes', 'INPUT_NOTES', 12 + 3 * 49_152 + 1)]);
+    expect(sum(step('env: { B: "${{ env.MISSING }}" }'))).toEqual(['fixture.yml job images step "The step" env.B: no bound for env.missing, which no env in scope sets']);
+    expect(sum(step('env: { B: "${{ env.ENGINE_FREEZE_BASE }}" }', '    env: { ENGINE_FREEZE_BASE: x }\n'))).toEqual(['fixture.yml job images step "The step" env.B: no bound for env.engine_freeze_base, which a script writes to $GITHUB_ENV']);
+    // The limit's own count: the name, = and the NUL with the value make 131,072 bytes at most.
+    const fits = 'x'.repeat(131_072 - 'VALUE='.length - 1);
+    expect(sum(step(`env: { VALUE: "${fits}" }`))).toEqual([]);
+    expect(sum(step(`env: { VALUE: "${fits}x" }`))).toEqual([over('env.VALUE', 'VALUE', 131_073)]);
+    // A matrix key is its longest value; a value no row bounds, a string input and an unknown function have no bound.
+    expect(sum(step('env: { M: "${{ matrix.note }}${{ vars.A }}${{ vars.B }}" }', `    strategy: { matrix: { note: [a, ${'y'.repeat(40_000)}] } }\n`))).toEqual([over('env.M', 'M', 2 + 40_000 + 2 * 49_152 + 1)]);
+    expect(sum(step('env: { S: "${{ steps.web.outputs.size }}" }'), [])).toEqual(['fixture.yml job images step "The step" env.S: no bound for steps.web.outputs.size, which no row of the table bounds']);
+    expect(sum(step('env: { S: "${{ inputs.note }}" }'))).toEqual(['fixture.yml job images step "The step" env.S: no bound for inputs.note']);
+    expect(sum(step("env: { S: \"${{ format('{0}', vars.A) }}\" }"))).toEqual(['fixture.yml job images step "The step" env.S: no bound for format()']);
+    // A comparison's operand counts too (the parser does not read precedence), and a choice input is its longest option.
+    expect(sum(step('env: { S: "${{ vars.A || vars.B == vars.C }}${{ vars.D }}${{ vars.E }}" }'))).toEqual([over('env.S', 'S', 2 + 3 * 49_152 + 1)]);
+    expect(sum(step('env: { S: "${{ inputs.runner }}" }'))).toEqual([]);
+    // The one value marked over is the table's to hold, by its sites.
+    expect(sum(step('env: { S: "${{ steps.web.outputs.size }}${{ vars.A }}" }'), [{ ...huge, over: 'ci-findings-transport' }])).toEqual([]);
   });
 
   it('refuses each route a value could take whole', () => {
@@ -3310,6 +3567,8 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     readonly refs: readonly Ref[];
     /** Its bound, in words: what the producers write, and why no more. */
     readonly bound: string;
+    /** Its bound in bytes, which every environment string that holds it adds (the sum, below). */
+    readonly bytes: number;
     /** The one value known to be over the limit, and the item that owns its transport. */
     readonly over?: 'ci-findings-transport';
   }
@@ -3324,6 +3583,21 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
   };
   const unitTest = (file: string, name: string): Ref => ({ kind: 'test', path: file, name });
 
+  /** The runner image's two names, which the image sets (ubuntu26-20261019.27.1 is 22 bytes). */
+  const RUNNER_IMAGE_BYTES = 256;
+  /** A cache key: actions/cache refuses one over 512 characters, each at most 4 bytes. */
+  const CACHE_KEY_BYTES = 4 * 512;
+  /** A digest: sha256: and 64 hexadecimal digits. */
+  const DIGEST_BYTES = 'sha256:'.length + 64;
+  /** The findings' base64: four characters for each three bytes of MAX_FILE_BYTES. */
+  const FINDINGS_BYTES = 4 * Math.ceil(MAX_FILE_BYTES / 3);
+  /** affected.ts's lists as JSON: the four mutation packages' names (38 bytes) and their seven shards' (under 120). */
+  const PACKAGES_BYTES = 256;
+  const SHARDS_BYTES = 1_024;
+  /** toJSON indents what it writes: each job it is given (its result and empty outputs) or output takes under 128 bytes. */
+  const toJsonBytes = (entries: number) => 128 * entries + '{\n}'.length;
+  /** An image's name in a release matrix, the longest being web-production. */
+  const IMAGE_NAME_BYTES = 'web-production'.length;
   const RUNNER_IMAGE = "the runner image step writes the runner image's name and version, $ImageOS-$ImageVersion and $ImageOS";
   const runnerImage = (job: string): Ref[] => [script(job, 'runner-image', '84e0b642')];
   const cacheKey = (parts: string) => `actions/cache/restore echoes the key it was given, made of ${parts}`;
@@ -3357,18 +3631,20 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       file: 'ci.yml',
       job: 'all-green',
       value: 'tojson(needs)',
+      bytes: toJsonBytes(8),
       refs: ['static', 'lint', 'unit', 'db', 'domain-model', 'build', 'e2e', 'images'].map(needs),
       bound: 'the eight jobs it needs, each a result word, and their outputs, of which there are none: no ci.yml job declares outputs (asserted below)',
     },
-    { file: 'ci.yml', job: 'db', value: 'steps.runner-image.outputs.key', refs: runnerImage('db'), bound: RUNNER_IMAGE },
-    { file: 'ci.yml', job: 'db', value: 'steps.runner-image.outputs.os', refs: runnerImage('db'), bound: RUNNER_IMAGE },
-    { file: 'ci.yml', job: 'db', value: 'steps.vitest-cache.outputs.cache-primary-key', refs: [action('db', 'vitest-cache', 'actions/cache/restore')], bound: cacheKey('runner.os, strategy.job-total, matrix.shard and github.sha') },
-    { file: 'ci.yml', job: 'e2e', value: 'steps.runner-image.outputs.key', refs: runnerImage('e2e'), bound: RUNNER_IMAGE },
-    { file: 'ci.yml', job: 'e2e', value: 'steps.runner-image.outputs.os', refs: runnerImage('e2e'), bound: RUNNER_IMAGE },
+    { file: 'ci.yml', job: 'db', value: 'steps.runner-image.outputs.key', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('db'), bound: RUNNER_IMAGE },
+    { file: 'ci.yml', job: 'db', value: 'steps.runner-image.outputs.os', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('db'), bound: RUNNER_IMAGE },
+    { file: 'ci.yml', job: 'db', value: 'steps.vitest-cache.outputs.cache-primary-key', bytes: CACHE_KEY_BYTES, refs: [action('db', 'vitest-cache', 'actions/cache/restore')], bound: cacheKey('runner.os, strategy.job-total, matrix.shard and github.sha') },
+    { file: 'ci.yml', job: 'e2e', value: 'steps.runner-image.outputs.key', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('e2e'), bound: RUNNER_IMAGE },
+    { file: 'ci.yml', job: 'e2e', value: 'steps.runner-image.outputs.os', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('e2e'), bound: RUNNER_IMAGE },
     {
       file: 'ci.yml',
       job: 'images',
       value: "fromjson(steps.web.outputs.metadata || '{}')['containerimage.config.digest']",
+      bytes: DIGEST_BYTES,
       refs: [action('images', 'web', 'docker/build-push-action')],
       bound: "buildx's config digest of the web build, sha256: and 64 hexadecimal digits, or '' when the metadata lacks it",
     },
@@ -3376,19 +3652,21 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       file: 'ci.yml',
       job: 'images',
       value: "fromjson(steps.worker.outputs.metadata || '{}')['containerimage.config.digest']",
+      bytes: DIGEST_BYTES,
       refs: [action('images', 'worker', 'docker/build-push-action')],
       bound: "buildx's config digest of the worker build, sha256: and 64 hexadecimal digits, or '' when the metadata lacks it",
     },
-    { file: 'ci.yml', job: 'static', value: 'steps.range.outputs.base', refs: [script('static', 'range', '4dccf1d2')], bound: 'the commits step writes origin/ and the base branch, github.event.before or a commit SHA, each checked to name a commit' },
-    { file: 'ci.yml', job: 'static', value: 'steps.tsc-cache.outputs.cache-primary-key', refs: [action('static', 'tsc-cache', 'actions/cache/restore')], bound: cacheKey(`${RUNNER_HASH} and github.sha`) },
-    { file: 'ci.yml', job: 'unit', value: 'steps.apt.outputs.cache-primary-key', refs: [action('unit', 'apt', 'actions/cache/restore')], bound: cacheKey(APT_KEY) },
-    { file: 'ci.yml', job: 'unit', value: 'steps.browsers.outputs.cache-primary-key', refs: [action('unit', 'browsers', 'actions/cache/restore')], bound: cacheKey(RUNNER_HASH) },
-    { file: 'ci.yml', job: 'unit', value: 'steps.runner-image.outputs.key', refs: runnerImage('unit'), bound: RUNNER_IMAGE },
-    { file: 'ci.yml', job: 'unit', value: 'steps.runner-image.outputs.os', refs: runnerImage('unit'), bound: RUNNER_IMAGE },
+    { file: 'ci.yml', job: 'static', value: 'steps.range.outputs.base', bytes: 'origin/'.length + PATH_BYTES, refs: [script('static', 'range', '4dccf1d2')], bound: 'the commits step writes origin/ and the base branch, github.event.before or a commit SHA, each checked to name a commit' },
+    { file: 'ci.yml', job: 'static', value: 'steps.tsc-cache.outputs.cache-primary-key', bytes: CACHE_KEY_BYTES, refs: [action('static', 'tsc-cache', 'actions/cache/restore')], bound: cacheKey(`${RUNNER_HASH} and github.sha`) },
+    { file: 'ci.yml', job: 'unit', value: 'steps.apt.outputs.cache-primary-key', bytes: CACHE_KEY_BYTES, refs: [action('unit', 'apt', 'actions/cache/restore')], bound: cacheKey(APT_KEY) },
+    { file: 'ci.yml', job: 'unit', value: 'steps.browsers.outputs.cache-primary-key', bytes: CACHE_KEY_BYTES, refs: [action('unit', 'browsers', 'actions/cache/restore')], bound: cacheKey(RUNNER_HASH) },
+    { file: 'ci.yml', job: 'unit', value: 'steps.runner-image.outputs.key', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('unit'), bound: RUNNER_IMAGE },
+    { file: 'ci.yml', job: 'unit', value: 'steps.runner-image.outputs.os', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('unit'), bound: RUNNER_IMAGE },
     {
       file: 'content-calendar.yml',
       job: 'check',
       value: 'steps.calendar.outputs.findings',
+      bytes: FINDINGS_BYTES,
       refs: [script('check', 'calendar', '837c4152'), ...FINDINGS],
       bound: 'base64 of findings.json (content-calendar.yml), at most 700,000 bytes (MAX_FILE_BYTES, tools/content-calendar/render.ts), so 933,336 characters: a job output, under GitHub’s 1 MB, which reaches no process in this job',
     },
@@ -3396,22 +3674,24 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       file: 'content-calendar.yml',
       job: 'notify',
       value: 'needs.check.outputs.findings',
+      bytes: FINDINGS_BYTES,
       refs: [needs('check'), output('check', 'findings'), ...FINDINGS],
       bound: 'FINDINGS_B64, the same base64 of up to 933,336 characters: over 131,072 bytes as one environment string, the open defect whose transport is its own item',
       over: 'ci-findings-transport',
     },
-    { file: 'large-zip.yml', job: 'large-zip', value: 'steps.runner-image.outputs.key', refs: runnerImage('large-zip'), bound: RUNNER_IMAGE },
-    { file: 'large-zip.yml', job: 'large-zip', value: 'steps.runner-image.outputs.os', refs: runnerImage('large-zip'), bound: RUNNER_IMAGE },
-    { file: 'mutation.yml', job: 'changes', value: 'steps.affected.outputs.any', refs: [AFFECTED_STEP, ...AFFECTED_CODE], bound: AFFECTED },
-    { file: 'mutation.yml', job: 'changes', value: 'steps.affected.outputs.packages', refs: [AFFECTED_STEP, ...AFFECTED_CODE], bound: AFFECTED },
-    { file: 'mutation.yml', job: 'changes', value: 'steps.affected.outputs.shards', refs: [AFFECTED_STEP, ...AFFECTED_CODE], bound: AFFECTED },
-    { file: 'mutation.yml', job: 'mutation', value: 'needs.changes.outputs.any', refs: [needs('changes'), output('changes', 'any'), ...AFFECTED_CODE], bound: `the changes job's outputs: ${AFFECTED}` },
-    { file: 'mutation.yml', job: 'mutation', value: 'needs.changes.outputs.packages', refs: [needs('changes'), output('changes', 'packages'), ...AFFECTED_CODE], bound: `the changes job's outputs: ${AFFECTED}` },
-    { file: 'mutation.yml', job: 'mutation', value: 'needs.changes.outputs.shards', refs: [needs('changes'), output('changes', 'shards'), ...AFFECTED_CODE], bound: `the changes job's outputs: ${AFFECTED}` },
+    { file: 'large-zip.yml', job: 'large-zip', value: 'steps.runner-image.outputs.key', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('large-zip'), bound: RUNNER_IMAGE },
+    { file: 'large-zip.yml', job: 'large-zip', value: 'steps.runner-image.outputs.os', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('large-zip'), bound: RUNNER_IMAGE },
+    { file: 'mutation.yml', job: 'changes', value: 'steps.affected.outputs.any', bytes: BOOLEAN_BYTES, refs: [AFFECTED_STEP, ...AFFECTED_CODE], bound: AFFECTED },
+    { file: 'mutation.yml', job: 'changes', value: 'steps.affected.outputs.packages', bytes: PACKAGES_BYTES, refs: [AFFECTED_STEP, ...AFFECTED_CODE], bound: AFFECTED },
+    { file: 'mutation.yml', job: 'changes', value: 'steps.affected.outputs.shards', bytes: SHARDS_BYTES, refs: [AFFECTED_STEP, ...AFFECTED_CODE], bound: AFFECTED },
+    { file: 'mutation.yml', job: 'mutation', value: 'needs.changes.outputs.any', bytes: BOOLEAN_BYTES, refs: [needs('changes'), output('changes', 'any'), ...AFFECTED_CODE], bound: `the changes job's outputs: ${AFFECTED}` },
+    { file: 'mutation.yml', job: 'mutation', value: 'needs.changes.outputs.packages', bytes: PACKAGES_BYTES, refs: [needs('changes'), output('changes', 'packages'), ...AFFECTED_CODE], bound: `the changes job's outputs: ${AFFECTED}` },
+    { file: 'mutation.yml', job: 'mutation', value: 'needs.changes.outputs.shards', bytes: SHARDS_BYTES, refs: [needs('changes'), output('changes', 'shards'), ...AFFECTED_CODE], bound: `the changes job's outputs: ${AFFECTED}` },
     {
       file: 'mutation.yml',
       job: 'stryker',
       value: 'needs.changes.outputs.shards',
+      bytes: SHARDS_BYTES,
       refs: [needs('changes'), output('changes', 'shards'), { kind: 'matrix', job: 'stryker', key: 'shard' }, ...AFFECTED_CODE],
       bound: `the shards' matrix: ${AFFECTED}`,
     },
@@ -3419,6 +3699,7 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       file: 'publish-content.yml',
       job: 'publish',
       value: 'steps.publish.outputs.releases',
+      bytes: 899_999 * 7,
       refs: [script('publish', 'publish', '847745ef'), unitTest('tools/test/publish-content.test.ts', 'refuses a directory that is not a release number'), unitTest('tools/test/publish-content.test.ts', 'refuses a number reserved for SYNTHETIC fixture releases')],
       bound: 'the release numbers tools/publish-content.sh publishes, each a number below 900,000, separated by spaces, and read in a script, which the runner writes to a file (the file is frozen to its copy)',
     },
@@ -3426,61 +3707,64 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       file: 'release-capacity.yml',
       job: 'capacity',
       value: 'steps.measure.outputs.advisories',
+      bytes: 256,
       refs: [script('capacity', 'measure', '03100cc3'), symbol('tools/release-capacity/run.ts#main'), ...ADVISORIES],
       bound: 'base64 of at most one advisory line (verdict, tools/release-capacity/checks.ts), written by tools/release-capacity/run.ts',
     },
-    { file: 'release-capacity.yml', job: 'notify', value: 'needs.capacity.outputs.advisories', refs: [needs('capacity'), output('capacity', 'advisories'), ...ADVISORIES], bound: 'ADVISORIES_B64: base64 of at most one advisory line (verdict, tools/release-capacity/checks.ts)' },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.config_web', refs: identity('cb290c31'), bound: IDENTITY },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.config_worker', refs: identity('cb290c31'), bound: IDENTITY },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.sha256_web', refs: identity('cb290c31'), bound: IDENTITY },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.sha256_worker', refs: identity('cb290c31'), bound: IDENTITY },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.target_web', refs: identity('cb290c31'), bound: IDENTITY },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.target_worker', refs: identity('cb290c31'), bound: IDENTITY },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.dockerfile', refs: [script('build', 'image', 'fff96722')], bound: 'one of two Dockerfile paths' },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.origin', refs: [script('build', 'image', 'fff96722')], bound: "'' or a repository variable, at most 48 KB" },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.ref', refs: [script('build', 'image', 'fff96722')], bound: "ghcr.io, the repository, the matrix's image and dry-run- with the run's ID" },
-    { file: 'release-dry-run.yml', job: 'capacity', value: 'tojson(needs.build.outputs)', refs: releaseBuild(['web', 'worker']), bound: RELEASE_BUILD('six') },
-    { file: 'release-dry-run.yml', job: 'push', value: 'tojson(needs.build.outputs)', refs: releaseBuild(['web', 'worker']), bound: RELEASE_BUILD('six') },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web', refs: identity('cb290c31'), bound: IDENTITY },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web-production', refs: identity('cb290c31'), bound: IDENTITY },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web-staging', refs: identity('cb290c31'), bound: IDENTITY },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_worker', refs: identity('cb290c31'), bound: IDENTITY },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_web', refs: identity('cb290c31'), bound: IDENTITY },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_web-production', refs: identity('cb290c31'), bound: IDENTITY },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_web-staging', refs: identity('cb290c31'), bound: IDENTITY },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_worker', refs: identity('cb290c31'), bound: IDENTITY },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_web', refs: identity('cb290c31'), bound: IDENTITY },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_web-production', refs: identity('cb290c31'), bound: IDENTITY },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_web-staging', refs: identity('cb290c31'), bound: IDENTITY },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_worker', refs: identity('cb290c31'), bound: IDENTITY },
-    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.dockerfile', refs: [script('build', 'image', 'ab81eb8f')], bound: 'one of two Dockerfile paths' },
-    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.origin', refs: [script('build', 'image', 'ab81eb8f')], bound: "'' or a repository variable, at most 48 KB" },
-    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.ref', refs: [script('build', 'image', 'ab81eb8f')], bound: "ghcr.io, the repository, the matrix's image and the tag's name" },
-    { file: 'release.yml', job: 'capacity', value: 'tojson(needs.build.outputs)', refs: releaseBuild(['web', 'web-staging', 'web-production', 'worker']), bound: RELEASE_BUILD('twelve') },
-    { file: 'release.yml', job: 'push', value: 'tojson(needs.build.outputs)', refs: releaseBuild(['web', 'web-staging', 'web-production', 'worker']), bound: RELEASE_BUILD('twelve') },
-    { file: 'release.yml', job: 'report', value: 'steps.attest.outputs.bundle-path', refs: [action('report', 'attest', 'actions/attest-build-provenance')], bound: 'the path of the bundle actions/attest-build-provenance writes' },
-    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.apt.outputs.cache-primary-key', refs: [action('capacity', 'apt', 'actions/cache/restore')], bound: cacheKey(APT_KEY) },
-    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.measure.outputs.sizing', refs: [...MEASURE_OUTPUTS, ...SIZING], bound: "one sentence of numbers and an upload's label (sizingQuestion, tools/screening-capacity/report.ts), written by run.ts" },
+    { file: 'release-capacity.yml', job: 'notify', value: 'needs.capacity.outputs.advisories', bytes: 256, refs: [needs('capacity'), output('capacity', 'advisories'), ...ADVISORIES], bound: 'ADVISORIES_B64: base64 of at most one advisory line (verdict, tools/release-capacity/checks.ts)' },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.config_web', bytes: DIGEST_BYTES, refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.config_worker', bytes: DIGEST_BYTES, refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.sha256_web', bytes: 64, refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.sha256_worker', bytes: 64, refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.target_web', bytes: DIGEST_BYTES, refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.target_worker', bytes: DIGEST_BYTES, refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.dockerfile', bytes: 'apps/worker/Dockerfile'.length, refs: [script('build', 'image', 'fff96722')], bound: 'one of two Dockerfile paths' },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.origin', bytes: VARIABLE_BYTES, refs: [script('build', 'image', 'fff96722')], bound: "'' or a repository variable, at most 48 KB" },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.ref', bytes: 'ghcr.io/'.length + 140 + '/'.length + IMAGE_NAME_BYTES + ':dry-run-'.length + INTEGER_BYTES, refs: [script('build', 'image', 'fff96722')], bound: "ghcr.io, the repository, the matrix's image and dry-run- with the run's ID" },
+    { file: 'release-dry-run.yml', job: 'capacity', value: 'tojson(needs.build.outputs)', bytes: toJsonBytes(6), refs: releaseBuild(['web', 'worker']), bound: RELEASE_BUILD('six') },
+    { file: 'release-dry-run.yml', job: 'push', value: 'tojson(needs.build.outputs)', bytes: toJsonBytes(6), refs: releaseBuild(['web', 'worker']), bound: RELEASE_BUILD('six') },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web', bytes: DIGEST_BYTES, refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web-production', bytes: DIGEST_BYTES, refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web-staging', bytes: DIGEST_BYTES, refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_worker', bytes: DIGEST_BYTES, refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_web', bytes: 64, refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_web-production', bytes: 64, refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_web-staging', bytes: 64, refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_worker', bytes: 64, refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_web', bytes: DIGEST_BYTES, refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_web-production', bytes: DIGEST_BYTES, refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_web-staging', bytes: DIGEST_BYTES, refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_worker', bytes: DIGEST_BYTES, refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.dockerfile', bytes: 'apps/worker/Dockerfile'.length, refs: [script('build', 'image', 'ab81eb8f')], bound: 'one of two Dockerfile paths' },
+    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.origin', bytes: VARIABLE_BYTES, refs: [script('build', 'image', 'ab81eb8f')], bound: "'' or a repository variable, at most 48 KB" },
+    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.ref', bytes: 'ghcr.io/'.length + 140 + '/'.length + IMAGE_NAME_BYTES + ':'.length + PATH_BYTES, refs: [script('build', 'image', 'ab81eb8f')], bound: "ghcr.io, the repository, the matrix's image and the tag's name" },
+    { file: 'release.yml', job: 'capacity', value: 'tojson(needs.build.outputs)', bytes: toJsonBytes(12), refs: releaseBuild(['web', 'web-staging', 'web-production', 'worker']), bound: RELEASE_BUILD('twelve') },
+    { file: 'release.yml', job: 'push', value: 'tojson(needs.build.outputs)', bytes: toJsonBytes(12), refs: releaseBuild(['web', 'web-staging', 'web-production', 'worker']), bound: RELEASE_BUILD('twelve') },
+    { file: 'release.yml', job: 'report', value: 'steps.attest.outputs.bundle-path', bytes: PATH_BYTES, refs: [action('report', 'attest', 'actions/attest-build-provenance')], bound: 'the path of the bundle actions/attest-build-provenance writes' },
+    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.apt.outputs.cache-primary-key', bytes: CACHE_KEY_BYTES, refs: [action('capacity', 'apt', 'actions/cache/restore')], bound: cacheKey(APT_KEY) },
+    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.measure.outputs.sizing', bytes: 512, refs: [...MEASURE_OUTPUTS, ...SIZING], bound: "one sentence of numbers and an upload's label (sizingQuestion, tools/screening-capacity/report.ts), written by run.ts" },
     {
       file: 'screening-capacity.yml',
       job: 'capacity',
       value: 'steps.measure.outputs.time-warnings',
+      bytes: 16_384,
       refs: [...MEASURE_OUTPUTS, ...TIME_WARNINGS],
       bound: 'one line per judged scenario upload of a fixed list (verdict, tools/screening-capacity/report.ts), joined (jobResult)',
     },
-    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.runner-image.outputs.key', refs: runnerImage('capacity'), bound: RUNNER_IMAGE },
-    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.runner-image.outputs.os', refs: runnerImage('capacity'), bound: RUNNER_IMAGE },
-    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.scale-release.outputs.cache-primary-key', refs: [action('capacity', 'scale-release', 'actions/cache/restore')], bound: cacheKey('one hashFiles digest') },
-    { file: 'screening-capacity.yml', job: 'changes', value: 'steps.watched.outputs.measure', refs: [script('changes', 'watched', '37daa562')], bound: 'true or false' },
-    { file: 'screening-capacity.yml', job: 'gate', value: 'needs.capacity.outputs.sizing', refs: [needs('capacity'), output('capacity', 'sizing'), ...SIZING], bound: "SIZING: one sentence of numbers and an upload's label (sizingQuestion, tools/screening-capacity/report.ts)" },
+    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.runner-image.outputs.key', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('capacity'), bound: RUNNER_IMAGE },
+    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.runner-image.outputs.os', bytes: RUNNER_IMAGE_BYTES, refs: runnerImage('capacity'), bound: RUNNER_IMAGE },
+    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.scale-release.outputs.cache-primary-key', bytes: CACHE_KEY_BYTES, refs: [action('capacity', 'scale-release', 'actions/cache/restore')], bound: cacheKey('one hashFiles digest') },
+    { file: 'screening-capacity.yml', job: 'changes', value: 'steps.watched.outputs.measure', bytes: BOOLEAN_BYTES, refs: [script('changes', 'watched', '37daa562')], bound: 'true or false' },
+    { file: 'screening-capacity.yml', job: 'gate', value: 'needs.capacity.outputs.sizing', bytes: 512, refs: [needs('capacity'), output('capacity', 'sizing'), ...SIZING], bound: "SIZING: one sentence of numbers and an upload's label (sizingQuestion, tools/screening-capacity/report.ts)" },
     {
       file: 'screening-capacity.yml',
       job: 'gate',
       value: 'needs.capacity.outputs.time-warnings',
+      bytes: 16_384,
       refs: [needs('capacity'), output('capacity', 'time-warnings'), ...TIME_WARNINGS],
       bound: 'TIME_WARNINGS: one line per judged scenario upload of a fixed list (verdict, tools/screening-capacity/report.ts)',
     },
-    { file: 'screening-capacity.yml', job: 'gate', value: 'needs.changes.outputs.measure', refs: [needs('changes'), output('changes', 'measure')], bound: 'MEASURE: true or false, by the changed paths step' },
+    { file: 'screening-capacity.yml', job: 'gate', value: 'needs.changes.outputs.measure', bytes: BOOLEAN_BYTES, refs: [needs('changes'), output('changes', 'measure')], bound: 'MEASURE: true or false, by the changed paths step' },
   ];
 
   /** A repository file's text, for a symbol or a test a row names (tool code is read from the repository, never CI_TREE's copy of the CI files), or undefined. */
@@ -3655,6 +3939,8 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     // Each row names its producers by what they are, never by a line (a line goes stale with any edit above it), and
     // each resolves on this tree.
     for (const row of BOUNDED_VALUES) expect(row.bound, key(row)).not.toMatch(/\.(?:ya?ml|ts|mjs|sh):\d+/);
+    // Each with its bound in bytes, which the environment strings that hold it add.
+    expect(BOUNDED_VALUES.filter((row) => !Number.isSafeInteger(row.bytes) || row.bytes <= 0).map(key)).toEqual([]);
     expect(refProblems(BOUNDED_VALUES, values, (file) => readFileSync(path.join(WORKFLOWS, file), 'utf8'))).toEqual([]);
     // ci.yml's gate reads toJSON(needs): results alone, since no ci.yml job declares outputs.
     expect(Object.entries(workflow('ci.yml').jobs).filter(([, job]) => 'outputs' in job).map(([id]) => id)).toEqual([]);
@@ -3701,8 +3987,9 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
         value: 'steps.identity.outputs.digest_web',
         refs: [script('build', 'identity', fingerprint(run)), { kind: 'matrix', job: 'build', key: 'image' }, symbol('tools/fixture.ts#digest'), unitTest('tools/fixture.test.ts', 'proves the digest')],
         bound: 'a digest',
+        bytes: 71,
       },
-      { file: 'fixture.yml', job: 'use', value: 'needs.build.outputs.digest_web', refs: [needs('build'), output('build', 'digest_web')], bound: 'a digest' },
+      { file: 'fixture.yml', job: 'use', value: 'needs.build.outputs.digest_web', refs: [needs('build'), output('build', 'digest_web')], bound: 'a digest', bytes: 71 },
     ];
     const problems = (text: string, files: Readonly<Record<string, string>> = { 'tools/fixture.ts': tool, 'tools/fixture.test.ts': tests }, table: readonly BoundedValue[] = rows) =>
       refProblems(table, unboundedValueProblems('fixture.yml', parse(text)).values, () => text, (file) => files[file]);
@@ -3729,7 +4016,7 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     expect(problems(workflowText, undefined, [{ ...produced, refs: produced.refs.filter((ref) => ref.kind !== 'test') }])).toEqual(['fixture.yml build steps.identity.outputs.digest_web: names tool code but no test that proves its bound']);
     // toJSON of a job's outputs names every output, and no other.
     const whole = workflowText.replace('{ DIGEST: "${{ needs.build.outputs.digest_web }}" }', '{ BUILD: "${{ toJSON(needs.build.outputs) }}" }');
-    const json = (refs: readonly Ref[]) => problems(whole, undefined, [produced, { file: 'fixture.yml', job: 'use', value: 'tojson(needs.build.outputs)', refs, bound: 'a digest' }]);
+    const json = (refs: readonly Ref[]) => problems(whole, undefined, [produced, { file: 'fixture.yml', job: 'use', value: 'tojson(needs.build.outputs)', refs, bound: 'a digest', bytes: 256 }]);
     expect(json([needs('build'), output('build', 'digest_web')])).toEqual([]);
     expect(json([needs('build')])).toEqual(['fixture.yml use tojson(needs.build.outputs): toJSON reads every output of job build (digest_web), and the row names none']);
   });

@@ -984,7 +984,8 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
   took N29 to N31.
   - **Why.** buildx v0.38.1 copies the whole event into every build record's provenance and, by default, into the
     metadata output. On #42's description of 95,324 characters, that output reached 132,377 bytes, 132,387 as one
-    environment string, over Linux's 131,072 (`MAX_ARG_STRLEN`), so bash never started (job 122624309161).
+    environment string (`NAME=value` and its NUL), over Linux's 131,072 (`MAX_ARG_STRLEN`; the whole environment and
+    arguments are held to `ARG_MAX` besides), so bash never started (job 122624309161).
   - **The guard.** The `|| '{}'` keeps an empty output on the step's own message: the runner evaluates a step's
     `env` before its `if:`, so no condition could guard it.
   - **The builds.** Every `docker/build-push-action` step also sets `BUILDX_METADATA_PROVENANCE: disabled`. No step
@@ -998,6 +999,10 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
       (`path#symbol`). A row whose producer is a workflow's `run:` step holds the fingerprint of its script as parsed,
       so a changed script fails until a person re-reads the bound and updates it; a row whose bound is tool code's
       names the unit test that proves it instead, since other lanes change that code for their own reasons.
+    - It sums each environment string a workflow sets as Linux counts it, `NAME=value` and its NUL (a step input as
+      `INPUT_<NAME>`): the name, the literal bytes and each value's bound (a repository variable or a secret 48 KB, a
+      github value its own, `env.X` the bound of X where it is set, each row of the list its bytes), and refuses one
+      over 131,072 bytes, or one holding a value with no bound, but for the one value named over the limit.
     - One listed value is over the limit and named so: the content calendar's findings (`FINDINGS_B64`). Their
       transport is an item of its own.
     - A `$GITHUB_ENV` write names a variable from a closed list.
