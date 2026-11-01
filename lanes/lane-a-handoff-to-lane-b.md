@@ -64,6 +64,7 @@ The tip is **83d71fd**.
 | ci-findings-transport (claimed in LANES.md) | Not started: `content-calendar.yml:78` `FINDINGS_B64` can exceed one environment string (latent). After #86. |
 | ux-forms-after-42 (`lane-b-ux-forms-status.md`, design 7.8) | After #42 merges. |
 | #32, the unmapped plan (`lane-b-unmapped-plan-status.md`) | After #75, in the same session as before. |
+| Redact Social Security and phone numbers by pattern (`co-001/redact-ssn-phone`; the founder's ruling of 2026-11-01) | Not started. ADR 0088 and MOD-15, MOD-16 reserved; it builds on #80's matcher. |
 | The UX review's later queue (`designs/lane-b-ux-review.md`) | Unclaimed PRs from 11 on; LANES.md "Queues". |
 
 Every session on Lane A's account is stopped (FAILED or idle) and its container has probably been reclaimed: work that
