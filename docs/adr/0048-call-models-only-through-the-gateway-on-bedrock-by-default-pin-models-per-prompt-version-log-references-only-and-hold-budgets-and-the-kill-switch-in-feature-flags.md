@@ -8,7 +8,7 @@
   (model-call cost per practice against budget), 20 (Model path: Bedrock or Anthropic's HIPAA-ready API); CLAUDE.md
   rules 1 and 4 and "Never: call a model outside packages/model-gateway; give a model tools when it reads a
   document"; data dictionary `model_call`, `eval_example`, `feature_flag`; test matrix MOD-01, MOD-02, MOD-04, MOD-05,
-  MOD-06; ADRs 0013, 0019, 0041, 0047
+  MOD-06, MOD-17, MOD-18; ADRs 0013, 0019, 0041, 0047
 
 ## Context
 
@@ -35,8 +35,8 @@ dynamically, as if it lived in each app and package: it fails everywhere but ins
   https URL, credentials from the task role, and the SDK's own retries off (`maxAttempts: 1`) so the gateway's one
   retry is the only one.
 - `AnthropicProvider` (`MODEL_PROVIDER=anthropic`, `ANTHROPIC_API_KEY` from the environment's secret): Messages only,
-  with structured outputs; the SDK's retries off and its timeout at the gateway's. It uses nothing PRD 14 lists as
-  ineligible (no Batch API, Files API, code execution, Skills or MCP connector).
+  with structured outputs; the SDK's retries off and its timeout at the gateway's, its OpenTelemetry tracing and logging
+  off and its host fixed. It uses nothing PRD 14 lists as ineligible (no Batch API, Files API, code execution, Skills or MCP connector).
 - `LocalDeterministicProvider` (the default everywhere else): not a model. It answers only a request whose key (the
   SHA-256 of the prompt version and the user message the gateway frames) has a fixed output registered in code or in
   a directory of `tp-local-model-output/1` files, refuses everything else (`no_fixed_output`), and costs nothing.
@@ -152,6 +152,9 @@ crosses it logs a warning (`MODEL_BUDGET_REACHED`) (MOD-05).
   input produced which output without holding either.
 - **Provider-side retries.** They would retry under no key of ours and stack with the gateway's; both SDKs' retries
   are off.
+- **The SDK's own tracing.** It would send trace context to the provider and, by one environment variable, prompts and
+  outputs to whatever records spans; it is off on the client, as are the SDK's logging and its host's environment
+  variable (amendment of 2026-11-01).
 - **Budgets in an environment variable, or a separate settings table.** A flag reaches one practice, one
   organization or everyone, is set by an audited function, and is read in the same transaction as the call's log.
 - **A mocked model for tests.** The local provider answers only registered requests by exact key, so a test proves
@@ -175,3 +178,38 @@ crosses it logs a warning (`MODEL_BUDGET_REACHED`) (MOD-05).
 - Counsel has read both agreements (PRD 20, milestone 10): record the chosen path here and set `MODEL_PROVIDER`.
 - The provider's price list changes, or the measured cost per practice approaches the default budget.
 - A prompt changes: a new version directory, a changelog entry, and the evaluation gate.
+
+## Amendment (`co-001/deps-anthropic-sdk-1`, 2026-11-01): SDK 1.x on the Anthropic path, nothing taken from the environment
+
+Dependabot's #87 moved `@anthropic-ai/sdk` from 0.131.0 to the 1.x line; the build took 1.3.0 in its own pull request.
+Nothing in the gateway's design changes; five things about the Anthropic path are recorded.
+
+- **The SDK's OpenTelemetry tracing is off.** Since 0.134.0 the SDK starts a span for each request through any tracer
+  provider registered in the process, and sends `traceparent`, `tracestate` and `baggage` to the provider; environment
+  variables alone (`ANTHROPIC_OPEN_TELEMETRY_TRACES_CONTENT_MODE=content`) put prompts and outputs into those spans.
+  `anthropicClient` builds the client with tracing and propagation off, which no environment variable overrides: the
+  gateway logs references only (above), PRD 14 keeps model calls out of any model-observability service, trace ids
+  would reach the provider, and the traces PRD's observability row asks for would otherwise switch the SDK's on
+  silently. Propagation is set off as well, so no trace context reaches the provider even from a span the SDK did
+  not start. MOD-17 and MOD-18 hold it, with a default client as the control.
+- **Nothing else is taken from the environment.** The SDK also reads `ANTHROPIC_LOG` (at `debug` it logs each
+  request's body, the prompt, to the console and so to the log group), `ANTHROPIC_BASE_URL` (the host the key and
+  prompts go to) and `ANTHROPIC_CUSTOM_HEADERS` (extra request headers). Client options fix the host
+  (`https://api.anthropic.com`), logging off and tracing off; `webhookKey: null` leaves the webhook key unread; and
+  configuration refuses `ANTHROPIC_CUSTOM_HEADERS` on the Anthropic path, since no client option overrides it. These
+  reads were already in 0.x; the amendment closes them with the major.
+- **API version.** The Anthropic path now sends `anthropic-version: 2026-10-21`; the Bedrock path still sends
+  `bedrock-2023-05-31` in its body. Nothing the gateway sends or reads differs between them (the migration guide's
+  Messages changes touch no field the gateway uses). The first real-model record on the Anthropic path will be made on
+  SDK 1.x and this version.
+- **Credential.** The key goes as `Authorization: Bearer`, not `X-Api-Key`, and is the client's only credential: a
+  credential passed in code means the SDK reads none from the environment or disk.
+- **Licence.** The SDK is Apache-2.0 from 1.0.0 (was MIT); the licence allowlist already allows it.
+
+Alternatives: leaving the SDK's tracing and logging to environment variables (one forgotten variable undoes it; a
+client option cannot be overridden from outside); recording `ANTHROPIC_CUSTOM_HEADERS` instead of refusing it (it
+would send headers no one sees).
+
+Revisit when: the product registers a tracer provider or HTTP/fetch instrumentation (keep the SDK's spans and
+propagation off, or record why not); the SDK reads a new environment variable (read its `readEnv` calls at each
+major); the SDK's next major or API version.
