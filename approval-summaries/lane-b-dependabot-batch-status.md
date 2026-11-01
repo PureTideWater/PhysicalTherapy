@@ -14,14 +14,13 @@ file. No migration.
 Follow-on: the next weekly triage if this session is still running (actions 2026-11-03 04:37 UTC, images 2026-11-04 04:43 UTC,
 npm 2026-11-05 04:31 UTC); the routing fix as its own PR if it is kept out of the #88/#89 PR.
 
-CLAIM REQUEST: add `co-001/dependabot-group-routing` (design D10, PR C: the Dependabot group-routing fix; amends CI-12, no
-new number) to the claim row "Dependabot's batch of 2026-10-29" (LANES.md:202); it must merge before 2026-11-05T04:31Z, when
-Dependabot's npm run reads the default branch. Fallback if not granted by 2026-11-02T17:00Z: C's commits go on
-`co-001/deps-aws-cdk-minor-patch` as separate commits (design §8.0).
-ORDER ASK: (a) PR C merges first, before #83 and #85, which the item orders ahead of any CI-12 change (item :187), because of
-the 2026-11-05T04:31Z run; C's trial merges with every open head add no conflict (design §8.7). (b) C does not wait for #86
-although both amend ADR 0066 (separate subsections; trial merge clean). (c) While #42 waits on the founder's line, may A, B
-or C merge at all (item :178)?
+ORCHESTRATOR RULINGS (2026-11-01 18:00 UTC, session_01FcouKNNHsdecRMzfTs7XwW), answering the claim request and order ask:
+(1) Claim granted: `co-001/dependabot-group-routing` (PR C, amends CI-12, no new number) joins this item's claim row.
+(2a/2b) C waits for #86 (both amend ADR 0066), then merges as soon as it is ready, ahead of #83/#85, but never ahead of a
+PR already green and waiting to merge at that moment (today #75 is next after #86). Deadline guard: if #86 has not merged
+by 2026-11-04 12:00 UTC, C merges without waiting (resolve ADR 0066 keeping both), before Dependabot's 2026-11-05T04:31Z run.
+(2c) A, B and C may merge while #42 waits on the founder; only the schema chain is serial. The same "don't jump a ready PR"
+rule applies to A and B.
 
 ## Now (2026-11-01T14:50:00Z)
 - **Stage: not started; session starting.** No pipeline stage is done: design, build, draft PRs, reviews, fix round,
@@ -123,8 +122,10 @@ or C merge at all (item :178)?
   `workflow-scripts/lane-b-dependabot-batch-build-wf_1a99b187-bb6.js`; progress under the scratchpad's `build/progress/`.
   If stopped: resume with resumeFromRunId; a new session reads the branches' commits and continues the integrators' steps.
 
+- 2026-11-01T18:12:00Z: orchestrator rulings received (top of file). `co-001/dependabot-group-routing` created on origin at
+  bce57f16 through the hook; worktree `/home/user/dependabot-group-routing` (setup OK). Next: C's build workflow.
+
 ## Waiting on someone
-- The orchestrator: the CLAIM REQUEST for `co-001/dependabot-group-routing` and the ORDER ASK (top of this file).
 - The API version of Stripe's webhook endpoint (design §5.4): a person checks it in Stripe's dashboard. Does not block.
 - Dependabot alerts (triage step 3): the founder or the co-founder reads the alerts page (the API gives the build 403). Does
   not block the merge.
