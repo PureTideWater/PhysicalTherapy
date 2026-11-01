@@ -22,7 +22,8 @@ Before 2026-11-01 it was run by session_01TAgFZo3SGSTBEfKRjX1jeG on Lane A's orc
   CAS-48 are no-file registry entries in module 5, and synth's no-file output `fixtures/synthetic/CAS-4{5..8}/expected.json`
   is on the branch (critic nit n5).
 - **Machine:** setup-container OK (2026-11-01 16:59); GitHub login PureTideWater.
-- **Next:** step 2, the base merge (workflow), then the two reviews, fix round, description, verification, merge
+- **Running (2026-11-01 17:00):** base merge wf_f0e6c606-13a (merge, adversarial review, checks; progress `pay-merge-83d71fd6*.md`) and before-shots wf_174c3c87-c25 (tour steps, base shots in /home/user/screens85-before; progress `pay-shots-before.md`). Check-in trig_0143j37zDG7i2N3ZksY4Zy8p at 22:10 UTC.
+- **Next:** push the merge, then the two reviews, fix round, description, verification, merge
   (last of #82, #86, #75, #84, #83, #85).
 - **For Lane A** (design 7.2; reported to the orchestrator 2026-11-01 16:59 for the handoff to Lane A before 2026-11-03 14:00 UTC):
   1. `case_line_rules()` refuses a person's "Window passed" while the window is open or unknown;
@@ -85,3 +86,4 @@ Before 2026-11-01 it was run by session_01TAgFZo3SGSTBEfKRjX1jeG on Lane A's orc
 
 | 2026-10-28 07:45 | Built; PR #85; reviews | Build 29dded5 pushed; draft PR #85; reviews workflow wf_be925c9b-c8d started. |
 | 2026-11-01 16:59 | Taken back | Lane B's orchestrator's item session took the item; status corrected; old reviews run lost; PR dirty, no CI; subscription refused, polling. Base merge next. |
+| 2026-11-01 17:00 | Base merge; before shots | wf_f0e6c606-13a and wf_174c3c87-c25 started; scripts archived. |
