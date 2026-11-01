@@ -735,6 +735,25 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/components/download-refusal.test.tsx',
     'apps/web/src/components/uploads/uploader.test.tsx',
   ]),
+  // The practice home's figures of the UX baseline review's ninth pull request: one actionable figure through one
+  // predicate, the Recovered tile's two periods and the empty home's upload gate (docs/adr/0082).
+  'HOM-01': none(9, 'The tests load SYNTHETIC CAS-08 and the LED worlds, whose files belong to those cases, and the property test generates its ledgers in memory; no file.', [
+    'apps/web/src/lib/routes/pricing-current-routes.db.test.ts',
+    'apps/web/src/lib/routes/reconciliation-routes.db.test.ts',
+    'apps/web/src/lib/dashboard/home-figures.db.test.ts',
+    'apps/worker/src/triage/actionable-now.db.test.ts',
+    'apps/worker/src/reconcile/recovered-periods.test.ts',
+  ]),
+  'HOM-02': none(9, 'The tiles and the words are rendered from synthetic figures the tests pass in memory, and the copy lint reads the app’s own files; no file.', [
+    'apps/web/src/components/dashboard/headline.test.tsx',
+    'apps/web/src/components/format.test.ts',
+    'tools/brand-copy/scan.test.ts',
+  ]),
+  'HOM-03': none(9, 'The agreements are recorded on synthetic practices by the test, and the empty states rendered in memory; no file.', [
+    'apps/web/src/lib/dashboard/home-figures.db.test.ts',
+    'apps/web/src/components/dashboard/headline.test.tsx',
+  ]),
+  'HOM-04': none(9, 'The LED-06 journey uploads SYNTHETIC LED-06’s remittances and exports, whose files belong to that case, in a practice of its own; no file.', ['apps/web/e2e/reconciliation.spec.ts']),
 };
 
 export interface CaseDefinition {

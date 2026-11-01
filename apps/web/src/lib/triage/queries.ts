@@ -2,6 +2,7 @@ import { type EncryptedColumn, PRICING_CHECK_RESULTS, type PracticeCipher, type 
 import { parseCents } from '@tp/money';
 import { type AdjustmentBehavior, BEHAVIOR_TEXT, type DeadlineState, type LineStage, type WriteOffReason, deadlineState, netExpectedValue, triageSettings } from '@tp/triage';
 import { IN_EFFECT_SINCE, RUN_IN_EFFECT } from '@tp/worker/pricing';
+import { ACTIONABLE_NOW, ACTIONABLE_NOW_OF } from '@tp/worker/triage';
 
 import { peopleEmails } from '../cases/people';
 import { type ListPage, pageWindow } from '../http/paging';
@@ -304,12 +305,19 @@ export interface CaseSummary {
   readonly behaviorText: string;
   readonly lines: number;
   readonly openLines: number;
-  /** What the case asks for: the variance of its lines not written off (the case's own total, derived in SQL). */
+  /**
+   * What the case asks for: the variance of its lines not written off, at any stage and on the pricing they joined
+   * with (the case's stored total, case_rules()). Shown on no screen as actionable; kept for Lane A's PR 11.
+   */
   readonly actionableCents: string;
-  /** Stage three now: the part of it whose lines are still actionable (none moved on to payer approved or recovered). */
+  /** Stage three now (@tp/worker/triage's ACTIONABLE_NOW_OF, docs/adr/0082): the variance of its lines not written off, still actionable, on current pricing. */
   readonly actionableNowCents: string;
-  /** How many lines that figure is over (ACTIONABLE_NOW_LINES): the lines not written off, still actionable, on current pricing. */
+  /** How many lines that figure is over: the same predicate, counted. */
   readonly actionableNowLines: number;
+  /** Lines not written off out of the figure because they moved on past actionable (to payer approved or recovered). */
+  readonly actionableNowMovedOn: number;
+  /** Lines not written off out of the figure because their pricing is no longer current (at actionable, the check not current). */
+  readonly actionableNowStale: number;
   readonly writtenOffCents: string;
   readonly deadlineOn: string | null;
   readonly deadline: DeadlineState;
@@ -335,6 +343,8 @@ interface CaseRow {
   readonly actionable_cents: string;
   readonly actionable_now_cents: string;
   readonly actionable_now_lines: string;
+  readonly actionable_now_moved_on: string;
+  readonly actionable_now_stale: string;
   readonly written_off_cents: string;
   readonly deadline_on: string | null;
   readonly materiality_cents: string;
@@ -345,36 +355,26 @@ interface CaseRow {
 }
 
 /**
- * A case's stage-three figure: the variance of its lines not written off whose stage is still actionable and whose
- * pricing is still current (the Cases screen's, the case page's and the dashboard's). A line priced again since it
- * joined, priced under a rule release withdrawn since, or priced under a contract version no longer signed off or
- * no longer covering its service date (the database's priced_line_pricing_check(); audit item #4) drops out at once,
- * though the case keeps it and its stored actionable_cents until PR 11 refreshes the case.
+ * The cases `where` admits (a condition on case `c`), in `order`, the page `window` of them (LIMIT and OFFSET),
+ * each with its figure and counts (ACTIONABLE_NOW_OF): the cases are chosen and paged first, so the figure is
+ * computed for the page's cases alone.
  */
-export const ACTIONABLE_NOW = (alias: string) => `(SELECT coalesce(sum(p.variance_cents), 0) FROM case_line x JOIN priced_line p ON p.id = x.priced_line_id
-    WHERE x.case_id = ${alias}.id AND x.written_off_reason IS NULL
-      AND (SELECT s.stage FROM line_status s WHERE s.service_line_id = x.service_line_id ORDER BY s.seq DESC LIMIT 1) = 'actionable'
-      AND priced_line_pricing_check(x.priced_line_id) = 'current')`;
-
-/** How many lines ACTIONABLE_NOW sums: the same predicate, counted (the packet builder's "on N of M lines"). */
-export const ACTIONABLE_NOW_LINES = (alias: string) => `(SELECT count(*) FROM case_line x
-    WHERE x.case_id = ${alias}.id AND x.written_off_reason IS NULL
-      AND (SELECT s.stage FROM line_status s WHERE s.service_line_id = x.service_line_id ORDER BY s.seq DESC LIMIT 1) = 'actionable'
-      AND priced_line_pricing_check(x.priced_line_id) = 'current')`;
-
-const CASES = `
+const CASES = (where: string, order = '', window = '') => `
   SELECT c.id, c.practice_id, c.state, py.name_raw AS payer, coalesce(pl.name, pl.plan_key) AS plan, c.pattern_key,
          (SELECT count(*) FROM case_line x WHERE x.case_id = c.id)::text AS lines,
-         (SELECT count(*) FROM case_line x WHERE x.case_id = c.id AND x.written_off_reason IS NULL)::text AS open_lines,
-         c.actionable_cents::text, ${ACTIONABLE_NOW('c')}::text AS actionable_now_cents, ${ACTIONABLE_NOW_LINES('c')}::text AS actionable_now_lines,
+         a.open_lines::text, c.actionable_cents::text, a.cents::text AS actionable_now_cents, a.lines::text AS actionable_now_lines,
+         a.moved_on::text AS actionable_now_moved_on, a.stale::text AS actionable_now_stale,
          (SELECT coalesce(sum(p.variance_cents), 0) FROM case_line x JOIN priced_line p ON p.id = x.priced_line_id WHERE x.case_id = c.id AND x.written_off_reason IS NOT NULL)::text AS written_off_cents,
          c.deadline_on::text, c.materiality_cents::text, c.pursuit_cost_cents::text, c.owner_user_id, c.opened_at, c.closed_at
-    FROM "case" c
+    FROM (SELECT c.* FROM "case" c WHERE ${where} ${order} ${window}) c
     JOIN payer py ON py.id = c.payer_id
-    JOIN plan pl ON pl.id = c.plan_id`;
+    JOIN plan pl ON pl.id = c.plan_id
+    CROSS JOIN LATERAL ${ACTIONABLE_NOW_OF('c')} a
+   ${order}`;
 
 function caseSummary(row: CaseRow, asOf: string, emails: ReadonlyMap<string, string>): CaseSummary {
-  const net = netExpectedValue(parseCents(row.actionable_cents), row.pursuit_cost_cents === null ? null : parseCents(row.pursuit_cost_cents));
+  // What pursuing the case is worth now: its live figure less the cost (the audit report's rule), never the stored ask.
+  const net = netExpectedValue(parseCents(row.actionable_now_cents), row.pursuit_cost_cents === null ? null : parseCents(row.pursuit_cost_cents));
   return {
     id: row.id,
     state: row.state,
@@ -388,6 +388,8 @@ function caseSummary(row: CaseRow, asOf: string, emails: ReadonlyMap<string, str
     actionableCents: row.actionable_cents,
     actionableNowCents: row.actionable_now_cents,
     actionableNowLines: Number.parseInt(row.actionable_now_lines, 10),
+    actionableNowMovedOn: Number.parseInt(row.actionable_now_moved_on, 10),
+    actionableNowStale: Number.parseInt(row.actionable_now_stale, 10),
     writtenOffCents: row.written_off_cents,
     deadlineOn: row.deadline_on,
     deadline: deadlineState(row.deadline_on, asOf),
@@ -448,7 +450,11 @@ export async function listCases(scope: Scope, practiceId: string, asOf: string, 
     async (client) =>
       (
         await client.query<CaseRow>(
-          `${CASES} WHERE ${where} ORDER BY (c.state NOT IN ('resolved', 'closed_written_off')) DESC, c.deadline_on ASC NULLS LAST, c.opened_at, c.id LIMIT ${String(CASES_PER_PAGE)} OFFSET ${String(at.offset)}`,
+          CASES(
+            where,
+            "ORDER BY (c.state NOT IN ('resolved', 'closed_written_off')) DESC, c.deadline_on ASC NULLS LAST, c.opened_at, c.id",
+            `LIMIT ${String(CASES_PER_PAGE)} OFFSET ${String(at.offset)}`,
+          ),
           values,
         )
       ).rows,
@@ -462,7 +468,7 @@ export async function caseOf(scope: Scope, practiceId: string, caseId: string, a
   const [row] = await readWithAudit(
     scope,
     { objectType: 'case', purpose: 'case_review', requestId },
-    async (client) => (await client.query<CaseRow>(`${CASES} WHERE c.id = $1 AND c.practice_id = $2`, [caseId, practiceId])).rows,
+    async (client) => (await client.query<CaseRow>(CASES('c.id = $1 AND c.practice_id = $2'), [caseId, practiceId])).rows,
     (found) => ({ objectId: found.id, practiceId: found.practice_id }),
   );
   return row === undefined ? undefined : caseSummary(row, asOf, await peopleEmails(scope, practiceId, [row.owner_user_id]));

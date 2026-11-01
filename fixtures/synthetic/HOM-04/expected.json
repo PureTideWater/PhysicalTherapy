@@ -1,0 +1,17 @@
+{
+  "case": "HOM-04",
+  "module": "HOM",
+  "title": "The home and the statement agree in the browser",
+  "assertion": "In the LED-06 journey after the recoupment, the home's actionable tile, the Cases header and an ROI statement generated then (Actionable in cases still being worked) show the same amount, the tile naming the line out of the figure; the Recovered tile's to-date figure reads since 2026-06-09 with this quarter's line; Reconciliation's and the case's recovered notes carry no stage number; the statement's empty approval line names deposited",
+  "synthetic": true,
+  "completesIn": 9,
+  "assertedBy": ["apps/web/e2e/reconciliation.spec.ts"],
+  "codeListRelease": null,
+  "noFileReason": "The LED-06 journey uploads SYNTHETIC LED-06’s remittances and exports, whose files belong to that case, in a practice of its own; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
