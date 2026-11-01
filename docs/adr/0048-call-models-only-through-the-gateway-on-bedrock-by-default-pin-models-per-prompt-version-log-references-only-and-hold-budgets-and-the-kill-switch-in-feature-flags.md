@@ -205,7 +205,13 @@ Nothing in the gateway's design changes; five things about the Anthropic path ar
   logging off the SDK still writes its own deprecation warnings straight to `console.warn`, for a request that names a
   model on its deprecated list or sends `thinking.type: 'enabled'` (which the gateway never sends) to a listed model:
   the model id and, for a deprecated one, its end-of-life date, never request content. No prompt pins a listed model at
-  1.3.0. These reads were already in 0.x; the amendment closes them with the major.
+  1.3.0. These reads were already in 0.x; the amendment closes them with the major. The SDK still sends its own headers:
+  `X-Stainless-OS`, `-Arch`, `-Runtime` and `-Runtime-Version`, read from the process rather than from its environment
+  variables, and `-Package-Version`, `-Lang`, `-Retry-Count`, `-Timeout` and its `User-Agent`. They carry no practice
+  material and go over TLS only to the provider that receives the prompts, and the Bedrock path's AWS user agent carries
+  the same and more (the operating system and its release, the Node version, the execution environment), so they are
+  kept: stripping them would gain no privacy over Bedrock and would lose the provider's diagnostics. MOD-18 pins the
+  set, so a header a later SDK adds fails it and is decided then.
 - **API version.** The Anthropic path now sends `anthropic-version: 2026-10-21`; the Bedrock path still sends
   `bedrock-2023-05-31` in its body. Nothing the gateway sends or reads differs between them (the migration guide's
   Messages changes touch no field the gateway uses). The first real-model record on the Anthropic path will be made on
@@ -228,8 +234,8 @@ client option cannot be overridden from outside); recording `ANTHROPIC_CUSTOM_HE
 would send headers no one sees, the credential among them).
 
 Revisit when: the product registers a tracer provider or HTTP/fetch instrumentation (keep the SDK's spans and
-propagation off, or record why not); the SDK reads a new environment variable, touches the environment in a new place
-or gains a runtime dependency (MOD-17 pins all three from the installed SDK's code, so any version taken that changes
-one fails until the new read is closed by a client option, refused in readGatewayConfig, or recorded as unreachable
-from the gateway); its default-on telemetry or default headers change (read at each version taken); the SDK's next
-major or API version.
+propagation off, or record why not); the SDK reads a new environment variable, touches the environment in a new place or
+gains a runtime dependency (MOD-17 pins all three from the installed SDK's code, so any version taken that changes one
+fails until the new read is closed by a client option, refused in readGatewayConfig, or recorded as unreachable from the
+gateway); its default-on telemetry or default headers change, a new platform header among them (read at each version
+taken; MOD-18 pins the header set); the SDK's next major or API version.

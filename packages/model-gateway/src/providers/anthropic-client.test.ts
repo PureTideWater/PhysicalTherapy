@@ -31,7 +31,9 @@ const ENVIRONMENT = {
 
 /**
  * Every header a request through the gateway's client may carry: what the SDK sets for a Messages call (its
- * platform headers, the retry and timeout headers) and the gateway's key. Pinned from the first green run.
+ * platform headers, read from the process and kept on purpose, docs/adr/0048, amendment of 2026-11-01; the retry and
+ * timeout headers) and the gateway's key. Pinned from the first green run: a header a later SDK adds fails MOD-18 and
+ * is decided then, never let through here unread.
  */
 const GATEWAY_HEADERS = [
   'accept',
