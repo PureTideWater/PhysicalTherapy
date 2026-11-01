@@ -135,7 +135,19 @@ rule applies to A and B.
   Plan: B's integrator pushes and opens the draft now; a B-completion workflow after 19:59Z adds B(4), runs the final-head
   checks with an adversarial check, pushes once and updates the description; B's reviews start after it.
 
+- 2026-11-01T18:35:00Z: **PR A opened: draft #90** (`co-001/deps-anthropic-sdk-1`, head 06f79c07; 8 commits on bce57f16;
+  description from the template, read back byte-identical; subscribed). Local: gateway unit 466 pass, test:golden 376 pass,
+  typecheck, lint, lint:logs, licenses, toolchain (1 warning: pnpm 10.34.9), verify-content, synth --all (0 written),
+  watched.ts (no change); red-first A2 (4 failed) -> A3 green; Stryker selection: none. Checker: 3 nits (N1 fixed; N2 a
+  proposal: a separate log code for the refused ANTHROPIC_CUSTOM_HEADERS in apps/web/src/lib/models/path.ts; N3 no change).
+  The push's remote message reported 1 moderate Dependabot alert on the default branch (the build cannot read alerts:
+  403): for the founder or co-founder. B's integrator waited for 19:59Z without pushing; B's local head 7d153446 (CDK
+  part + ADR 0012 amendment, version-check off too) saved as WIP ref `co-001/wip-dependabot-batch-b`. A's reviews
+  launched: wf_48c765bd-7af (two lenses in fresh clones, skeptic per B/S finding, completeness critic, loop until dry),
+  script `workflow-scripts/lane-b-dependabot-batch-reviews-wf_48c765bd-7af.js` (args select the PR).
+
 ## Waiting on someone
+- 1 moderate Dependabot alert on the default branch (GitHub's push message, 2026-11-01 18:2xZ): a person reads it (the API answers 403 to the build). Does not block.
 - The API version of Stripe's webhook endpoint (design §5.4): a person checks it in Stripe's dashboard. Does not block.
 - Dependabot alerts (triage step 3): the founder or the co-founder reads the alerts page (the API gives the build 403). Does
   not block the merge.
@@ -151,4 +163,4 @@ rule applies to A and B.
 None yet.
 
 ## Next step
-Next: when the build workflow returns, subscribe to both draft PRs, then two adversarial reviews per PR (design §8.4); C once the claim row names its branch.
+Next: A's reviews (wf_48c765bd-7af) -> A's fix round; at 20:02Z the B-completion workflow (B(4), final checks, push, draft PR B); C's build (wf_7c837166-d80) -> draft PR C; then reviews for B and C with the same script.
