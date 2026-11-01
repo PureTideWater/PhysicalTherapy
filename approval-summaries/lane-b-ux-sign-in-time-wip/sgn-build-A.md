@@ -1,0 +1,14 @@
+# sgn-build-A progress
+- 17:5x started fresh; reading design
+- BUILT (code): lib/auth/step-limits.ts (new), pending.ts, sessions.ts (KEPT_EMAIL_COOKIE), sign-in.ts (keyRequired), dev-provider.ts (constants), lib/routes/sign-in.ts (advance, settle meta/kept email, pendingOf limit, stepPage, signInPage kept email, restarted)
+- sgn-api.md written
+- tsc -p apps/web: only error is app/sign-in/notice.tsx missing 'restarted' (slice C's file) -> expected
+- NEXT: tests (step-limits.test, pending.test, dev-provider.test edit, sign-in.db.test, sign-in-routes.db.test), watched.ts --write
+- unit tests step-limits/pending/dev-provider: 3 files 24 passed
+- tests written: step-limits.test.ts, pending.test.ts (new), dev-provider.test.ts (SGN-01 edit), sign-in.db.test.ts (+1 SGN-04 case), sign-in-routes.db.test.ts (3 existing page-data assertions + 9 SGN cases; Browser records maxAge/written/deleted; servicesWith(ExpiringSetup))
+- watched.ts --write: OK, exactly +1 line apps/web/src/lib/auth/step-limits.ts
+- heavy lock held by another agent's 60-min tour build (17:54); tsc queued (bg)
+- db env: DATABASE_URL=postgres://postgres:test@localhost:5433/postgres
+- 17:59 queued combined run (tsc, unit, db, eslint) -> /tmp/sgnA/run1.log, waiting on lock
+- run1 (18:01): tsc -> only notice.tsx (slice C) + step-timer.tsx:132 (slice B) errors; unit 11 files/226 passed (incl. tools/screening-capacity watched.test); db 2 files/26 passed; eslint 1 error (pending.ts unnecessary assertion) -> FIXED, eslint re-run OK; lint:logs OK
+- DONE slice A. Only report remains.

@@ -1,0 +1,16 @@
+# sgn-build-D progress
+- started; reading design
+- DONE: SGN section appended to docs/product/test-matrix.md; SGN-01..04 in matrix.ts and registry.ts (from design 4.5, extracted by script); 'SGN' in CASE_MODULES; SGN: 19 in MODULE_NUMBER
+- TODO: personas+seed, ADR 0081, 0016, 0077 notes, e2e spec, pnpm synth, fixtures.test, verify-content
+- DONE: personas (4 time-* appended + header clause); seed.ts/seed.db.test.ts need NO change (both derive from the list)
+- DONE: ADR 0081 written (date 2026-11-01); ADR 0016 status+note; ADR 0077 status + two notes
+- NEXT: e2e spec apps/web/e2e/sign-in-time.spec.ts
+- e2e notes: assertNoPhi('url') flags /_next/ paths and the _rsc query, so it runs on navigation requests + page.url(); every recorded URL is string-checked for the email, its encoding, its local part
+- WRITING apps/web/e2e/sign-in-time.spec.ts now
+- DONE: e2e spec written (4 tests). Not run (integrator runs e2e).
+- RAN: pnpm synth --all -> wrote SGN-01..04 expected.json, 653 unchanged, 0 removed
+- NEXT: fixtures.test, verify-content, tsc, eslint
+- RAN: vitest fixtures.test.ts 23/23 pass; whole synth package 13 files 185 tests pass; pnpm verify-content passes
+- RAN: tsc -p apps/web --noEmit exit 0; synth tsc exit 0; eslint on 6 changed TS files exit 0
+- RAN: seed.db.test.ts (PG18 :5433) 1/1 pass with the 4 new personas
+- SLICE D COMPLETE; reporting
