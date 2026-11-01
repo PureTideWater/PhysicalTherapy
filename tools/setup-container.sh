@@ -565,8 +565,18 @@ step_pg16_server() {
 # SHA-256 and SHA-512. nodejs.org is not used: the proxy refuses it, and its SHASUMS256.txt would come from the same
 # host, unpinned.
 step_node() {
-  local dir="$NODE_DIR" dl="$P/opt/node24-dl" ex="$P/opt/node24-extract" tgz v how="present"
+  local dir="$NODE_DIR" dl="$P/opt/node24-dl" ex="$P/opt/node24-extract" tgz v how="present" moved=""
   tgz="$dl/$NODE_TGZ"
+  # A newer base image may ship its own Node at this path (2026-11-01: v24.22.1). Move it aside, never over it, and
+  # install the pinned build beside it; the base image's copy stays at $dir.base-image-<version>.
+  if [ -x "$dir/bin/node" ] && ! checking; then
+    v="$("$dir/bin/node" --version 2>&1)"
+    if [ "$v" != "v$NODE_VERSION" ] && [ ! -e "$dir.base-image-$v" ]; then
+      mv -T "$dir" "$dir.base-image-$v" || { line FAIL node - "could not move the base image's $dir ($v) aside"; return 1; }
+      log "moved the base image's Node $v aside to $dir.base-image-$v"
+      moved="; the base image's $v moved aside to $dir.base-image-$v"
+    fi
+  fi
   if [ ! -x "$dir/bin/node" ]; then
     if checking; then line FAIL node - "missing: no $dir/bin/node"; return 1; fi
     if [ -e "$dir" ]; then line FAIL node - "$dir exists without bin/node; move it aside and run again"; return 1; fi
@@ -579,7 +589,7 @@ step_node() {
     tar -xzf "$tgz" -C "$ex" && [ -x "$ex/package/bin/node" ] || { line FAIL node - "$tgz did not unpack to package/bin/node"; return 1; }
     cp -a "$ex/package" "$dir.tmp.$$" || { line FAIL node - "could not copy Node to $dir.tmp.$$"; return 1; }
     mv -T "$dir.tmp.$$" "$dir" || { line FAIL node - "could not move Node to $dir"; return 1; }
-    how="installed from registry.npmjs.org $NODE_NPM@$NODE_VERSION"
+    how="installed from registry.npmjs.org $NODE_NPM@$NODE_VERSION$moved"
   fi
   v="$("$dir/bin/node" --version 2>&1)"
   if [ "$v" != "v$NODE_VERSION" ]; then line FAIL node - "$dir/bin/node reports '$v', not v$NODE_VERSION; move $dir aside and run again"; return 1; fi
