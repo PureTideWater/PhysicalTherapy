@@ -20,3 +20,9 @@ Started 2026-11-01 fresh (no earlier file). Worktree /home/user/ux-home-figures,
 - typecheck: 22 projects pass. lint: 1 error recovered-periods.test.ts:52 no-unsafe-unary-minus -> FIX negateCents; eslint+tsc worker+vitest file 3 passed. synth --all: 0 written, 654 unchanged.
 ## RESUMED 2026-11-01 ~20:00 (after restart)
 - confirmed negateCents fix present; PG 5432/5433 up. Remaining: pnpm test, db shards, build, e2e.
+- pnpm test (unit, coverage): exit 0, 404 files, 6818 passed | 4 skipped. Coverage thresholds ok.
+- 6-shard plan (tools/test/db-shards.ts 6): every shard holds a changed/related db test -> run whole db project.
+- pnpm test:db (whole, DATABASE_URL default = 5432 which is PG 16.15 after restart): 126 passed, 5 failed (rule-tables catalog, release load, domain-model, domain-model-drift, function-files): PG16 lacks catalogued NOT NULL constraints/MAINTAIN -> env. Re-run those 5 on PG18 (5433): 5 files 34 tests passed.
+- PG18: 13 changed/related db files incl catalog+cross-tenant: 1265 tests passed.
+- pnpm build: exit 0. e2e started (8 specs incl triage, PG18 5433, tp_e2e_hom, port 3191, workers 2).
+- e2e: 19 passed (5.8m), exit 0. tp_e2e_hom dropped. scratch measure file confirmed absent.
