@@ -7,8 +7,9 @@ orchestrator (session_01FcouKNNHsdecRMzfTs7XwW) and run by its item session
 session_01FcouKNxBLBBy2FVM7bfSvj (https://claude.ai/code/session_01FcouKNxBLBBy2FVM7bfSvj)** (prompt: `lanes/lane-b-item-prompts-2026-11-01/ux-payer-response.md`).
 Before 2026-11-01 it was run by session_01TAgFZo3SGSTBEfKRjX1jeG on Lane A's orchestrator's order (history below).
 
-## Now (2026-11-01 16:59 UTC)
-- **PR #85: open, draft, head 29dded52, base claude/build-platform 83d71fd6; `mergeable_state` dirty, 0 check runs.**
+## Now (2026-11-01 17:30 UTC)
+- **2026-11-01 17:30: base merged and pushed: head 90ec40ab** (merge of 29dded52 and 83d71fd6, wf_f0e6c606-13a: 4 conflicts kept both sides; uploader inFlight reuses #78's stillSending; new CAS-47 browser test of the leave guard with the form; CAS-47 assertion + expected.json extended; adversarial review: no defect; checks: typecheck, lint, lint:copy, lint:logs, check:fixtures, unit 6,818 passed / 4 skipped, synth and watched.ts write nothing, test:db uploads/route shards 4,660 passed). First CI run on 90ec40ab. The base has since moved to bce57f16 (#82, no conflict with #85; merged again at step 7).
+- *Before the merge:* PR #85 open, draft, head 29dded52, base 83d71fd6; `mergeable_state` dirty, 0 check runs.
   Its branch sits on 165c599 (#74) and lacks 56ed6279 (#81) and 83d71fd6 (#78). Conflicts with the base: `uploader.tsx`
   (3 hunks), `docs/product/test-matrix.md`, synth `matrix.ts` and `registry.ts`. `lib/routes/uploads.ts` now merges cleanly
   (#78 merged as 83d71fd6); `uploader.tsx` conflicts with it.
@@ -22,8 +23,9 @@ Before 2026-11-01 it was run by session_01TAgFZo3SGSTBEfKRjX1jeG on Lane A's orc
   CAS-48 are no-file registry entries in module 5, and synth's no-file output `fixtures/synthetic/CAS-4{5..8}/expected.json`
   is on the branch (critic nit n5).
 - **Machine:** setup-container OK (2026-11-01 16:59); GitHub login PureTideWater.
-- **Running (2026-11-01 17:00):** base merge wf_f0e6c606-13a (merge, adversarial review, checks; progress `pay-merge-83d71fd6*.md`) and before-shots wf_174c3c87-c25 (tour steps, base shots in /home/user/screens85-before; progress `pay-shots-before.md`). Check-in trig_0143j37zDG7i2N3ZksY4Zy8p at 22:10 UTC.
-- **Next:** push the merge, then the two reviews, fix round, description, verification, merge
+- **Done:** before-shots wf_174c3c87-c25 (39 shots at 83d71fd6 in /home/user/screens85-before, tiles there; tour steps committed 545fe984); its critic found 10 sample gaps (refused empty choice, letter states, grouped list, contracts kind label, notice=recorded, upload gate), closed in the reviews' shots stage.
+- **Was running (2026-11-01 17:00):** base merge wf_f0e6c606-13a (merge, adversarial review, checks; progress `pay-merge-83d71fd6*.md`) and before-shots wf_174c3c87-c25 (tour steps, base shots in /home/user/screens85-before; progress `pay-shots-before.md`). Check-in trig_0143j37zDG7i2N3ZksY4Zy8p at 22:10 UTC.
+- **Next:** the two reviews (workflow), then the two reviews, fix round, description, verification, merge
   (last of #82, #86, #75, #84, #83, #85).
 - **For Lane A** (design 7.2; reported to the orchestrator 2026-11-01 16:59 for the handoff to Lane A before 2026-11-03 14:00 UTC):
   1. `case_line_rules()` refuses a person's "Window passed" while the window is open or unknown;
@@ -87,3 +89,4 @@ Before 2026-11-01 it was run by session_01TAgFZo3SGSTBEfKRjX1jeG on Lane A's orc
 | 2026-10-28 07:45 | Built; PR #85; reviews | Build 29dded5 pushed; draft PR #85; reviews workflow wf_be925c9b-c8d started. |
 | 2026-11-01 16:59 | Taken back | Lane B's orchestrator's item session took the item; status corrected; old reviews run lost; PR dirty, no CI; subscription refused, polling. Base merge next. |
 | 2026-11-01 17:00 | Base merge; before shots | wf_f0e6c606-13a and wf_174c3c87-c25 started; scripts archived. |
+| 2026-11-01 17:30 | Base merged | 90ec40ab pushed (merge of 83d71fd6); checks green locally; before shots done. Reviews next. |
