@@ -1,6 +1,6 @@
 # 0012. Build every environment's AWS foundation from the same CDK constructs, tested by template assertions
 
-- **Status:** accepted; amended by [0018](0018-seal-stored-objects-with-the-practice-data-key-in-the-application.md), [0019](0019-close-the-standing-access-paths-and-run-platform-jobs-as-an-operator-role.md) and [0049](0049-run-the-compute-on-fargate-behind-an-https-only-load-balancer-and-waf-migrate-before-traffic-moves-and-egress-through-nat-for-what-has-no-endpoint.md); amended 2026-11-01 (CDK CLI telemetry and notices)
+- **Status:** accepted; amended by [0018](0018-seal-stored-objects-with-the-practice-data-key-in-the-application.md), [0019](0019-close-the-standing-access-paths-and-run-platform-jobs-as-an-operator-role.md) and [0049](0049-run-the-compute-on-fargate-behind-an-https-only-load-balancer-and-waf-migrate-before-traffic-moves-and-egress-through-nat-for-what-has-no-endpoint.md); amended 2026-11-01 (CDK CLI telemetry, notices and version check)
 - **Date:** 2026-10-15
 - **Deciders:** founder (engineering)
 - **PRD sections:** 14 (provider and data path), 15 (stack, environments, cost), 16 (encryption, network, backups and
@@ -145,13 +145,16 @@ ADR 0006.
 
 The compute lands (milestone 11), the first deploy to staging runs, or the identity decision of PRD 20 is reopened.
 
-## Amendment (`co-001/deps-aws-cdk-minor-patch`, 2026-11-01): the CDK CLI's telemetry and notices off
+## Amendment (`co-001/deps-aws-cdk-minor-patch`, 2026-11-01): the CDK CLI's telemetry, notices and version check off
 
 The CDK CLI posts usage telemetry to an AWS endpoint and fetches notices on every command by default. `pnpm cdk:diff`
 already ran with `CDK_DISABLE_CLI_TELEMETRY=true` and `--no-notices`; now `pnpm --filter @tp/infra synth` does too,
 and `cdk.json`'s top-level `notices: false` turns notices off for any `cdk` command run from `infra/`. Both are CLI
 settings, not context: `context` stays empty, as the Decision above requires, and `infra/test/cli-settings.test.ts`
-holds all three. `versionReporting` stays on: turning it off would remove `AWS::CDK::Metadata` from every template,
+holds all three. On a terminal the CLI also asks the npm registry for its latest version once a day; the synth script
+sets `CDK_DISABLE_VERSION_CHECK=true` too, and the test requires it on every infra script that runs `cdk` directly.
+`pnpm cdk:diff` sets only the telemetry variable; it runs the check only when a person runs it on a terminal. `versionReporting` stays on: turning it off would remove `AWS::CDK::Metadata` from every template,
 a stack change. Alternatives: the `cli-telemetry: false` context key (context the app reads, against this ADR's
 empty `cdk.json`). Revisit when: a deploy is run through a repository script (set the variable there), or the CLI
-changes how it reads either setting (read `canCollectTelemetry` and the notices setting at each CLI bump).
+changes how it reads any of these settings (read `canCollectTelemetry`, the notices setting and
+`shouldDisplayVersionMessage` at each CLI bump).
