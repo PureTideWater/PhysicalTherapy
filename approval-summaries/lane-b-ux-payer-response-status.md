@@ -92,3 +92,4 @@ Before 2026-11-01 it was run by session_01TAgFZo3SGSTBEfKRjX1jeG on Lane A's orc
 | 2026-11-01 17:00 | Base merge; before shots | wf_f0e6c606-13a and wf_174c3c87-c25 started; scripts archived. |
 | 2026-11-01 17:30 | Base merged | 90ec40ab pushed (merge of 83d71fd6); checks green locally; before shots done. Reviews next. |
 | 2026-11-01 17:31 | Reviews | wf_ce1bb1c0-265 started; script archived. |
+| 2026-11-01 18:02 | Reviews resumed | First pass: shots done (before 66 shots /home/user/screens85-before, after 72 /home/user/screens85-after, 10 gaps closed, spec ed3e2f7d; galleries /home/user/gallery85/{before,after}-{1280,390,1280-dark} for the orchestrator to publish); both reviewers ran as custom agent types without the structured-output tool and returned nothing. Script edited (default agents that read the reviewer files) and resumed as wf_ce1bb1c0-265. |
