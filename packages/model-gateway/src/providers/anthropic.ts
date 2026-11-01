@@ -6,9 +6,10 @@ import { messagesResponse } from './messages';
 /**
  * Anthropic's API under its standard business associate agreement with HIPAA readiness enabled: the
  * alternative path behind the same interface (PRD 14, Provider and data path; docs/adr/0048). Only the
- * Messages API with structured outputs is used, both eligible there; the Batch API, Files API, code
- * execution, Skills and the MCP connector are never called. The client is built with no retries of
- * its own (the gateway makes the one retry) and is mocked in tests.
+ * Messages API with structured outputs and effort is used, each listed as eligible there (the provider's
+ * feature eligibility table, read 2026-11-01); the Batch API, Files API, code execution, Skills and the
+ * MCP connector are never called. The client is built with no retries of its own (the gateway makes the
+ * one retry) and is mocked in tests.
  */
 
 /** The part of the SDK's client the provider calls. */
