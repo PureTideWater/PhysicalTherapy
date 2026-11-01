@@ -1,0 +1,21 @@
+# p4-finish-cross42 progress (#42 cross-check for PR #83, read-only)
+
+- Start 2026-11-01. Worktree /home/user/ux-screening-result-tables at a4efd583 (merge of build-platform bce57f16 onto f5e0ceba), clean.
+- Step 1: worktree add + merge co-001/pr-06b-mail-streams -- starting
+- Step 1 done: worktree $P/cross42 (detached) at a4efd583; fetched co-001/pr-06b-mail-streams = be63bdc2ab933532785dd3058c423db04ff6b25e; merge base 56ed6279.
+  - git merge --no-edit FETCH_HEAD: clean, no conflict. Merged sha 448501452c899956c5b33180a2662d1e83690b1a (parents a4efd583, be63bdc2). status clean.
+  - Files both sides changed (auto-merged): .github/workflows/ci.yml, docs/product/reconciliation-001.md, docs/product/test-matrix.md, packages/synth/src/cases/{matrix,registry}.ts, tools/screening-capacity/watched-paths.txt (generated; auto-merge not regenerated), tools/test/workflows.test.ts.
+- Step 2: pnpm install --frozen-lockfile + web unit project -- starting
+- Step 2a: pnpm install --frozen-lockfile under lock: exit 0, 2.3 s (log scratchpad/cross42-logs/install.log). Tree clean after.
+- Step 2b done: flock; pnpm exec vitest run --project unit apps/web/ (vitest.config.ts has no "web" project; apps/web's unit files are the unit project's apps/web/ files): 89 files passed (89), 1206 tests passed (1206), 0 failed, 37 s, exit 0. Includes result.test.tsx (#42 pins), result-tables.test.tsx, copy/words.test.ts, remittances/display.test.tsx, stacked-rows.test.tsx, lib/screening/*.test.ts, upload-form, invitations, monitoring/display, http, releases, routes/registry. Log scratchpad/cross42-logs/web-unit.log.
+  - Static: #42's diff adds no counted()/<Counted> use in apps/web (infra's own counted() is a different function); no #42 e2e selector names "Ask for a PaidWhole audit" (UXR-01's new link has the title's words).
+- Step 2c (extra, light): tools/screening-capacity unit tests on the merged tree (watched-paths.txt auto-merged) -- starting
+- Step 2c done: vitest --project unit tools/screening-capacity/: 8 files, 214 tests passed (incl. #42's measure.test.ts, report.test.ts and watched.test.ts on the auto-merged watched-paths.txt).
+- Step 3a: pnpm build (web + worker) under lock -- starting
+  - (waiting on the shared lock; another agent's step holds it)
+  - e2e chained (background): once build_exit=0, flock + scratchpad/cross42-logs/e2e.sh run1 (build-stamp --write HEAD, then E2E_ADMIN_URL=postgres://postgres:test@localhost:5433/postgres E2E_PREBUILT=1 E2E_DATABASE=tp_e2e_cross42 E2E_PORT=3283 playwright test e2e/screening.spec.ts e2e/screening-phone.spec.ts --workers=2; 3 tests) -> cross42-logs/e2e-run1.log
+- Step 3a done: pnpm build under lock: exit 0, 66 s (web: Next compiled cold; worker built). Log cross42-logs/build.log.
+- Step 3b done: e2e run1 on 44850145 (build-stamp: stamped and "the build is 448501452c89...'s"): 3 passed (57.9 s), 0 failed, exit 0. screening.spec.ts:170 (SCR-01..07, SCR-18) 23.7 s, screening.spec.ts:740 (SCR-15) 1.5 s, screening-phone.spec.ts:135 (TBL-05..07) 8.5 s. No flake re-run needed. Tree clean after. Log cross42-logs/e2e-run1.log.
+- Step 4: drop tp_e2e_cross42, remove worktree -- starting
+- Step 4 done: DROP DATABASE tp_e2e_cross42 WITH (FORCE) (gone: count 0); the run's /tmp/tp-e2e-tp_e2e_cross42-* scratch dirs removed; git worktree remove --force scratchpad/cross42: removed. /home/user/ux-screening-result-tables still at a4efd583, status clean; nothing committed there, nothing pushed (the merge 44850145 lived only in the detached worktree, on no branch).
+- RESULT: head 448501452c899956c5b33180a2662d1e83690b1a; no #42 pin broken by #83. DONE.
