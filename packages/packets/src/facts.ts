@@ -1,8 +1,10 @@
+import { centsToString, parseCents, sumCents } from '@tp/money';
+
 import { IDENTIFIER_KINDS, type PacketContent } from './format';
 import { interestStated, lineInterestStated } from './interest';
 import { planText } from './payer';
 import { readableText } from './readable';
-import { type FigureRole, type ReadKind, quotedTokens } from './roles';
+import { type FigureRole, type QuotedText, type ReadKind, type Scope, quotedText } from './roles';
 import { canonicalNumber, scanText } from './scan';
 
 /**
@@ -19,10 +21,18 @@ import { canonicalNumber, scanText } from './scan';
  * what it dates (a date's month, day of the month and year carry its role). A narrative's figure passes only in a
  * role its input holds (./verifier/mismatches.ts), so "3650 days" passes as the window's days and "3650 units" fails.
  *
+ * An amount and a count of units are held also by what they are stated per (`scoped`; docs/adr/0086, the fix round of
+ * 2026-11-01): a line's amounts and units per line; the pattern's and each code's totals, the sum of what the lines
+ * paid and of the patients' shares, and interest's total in total; the contract's rate per unit (per line for a
+ * per-visit rate). A narrative's "per line" figure passes only as a line's, and its "in total" figure only as a total.
+ * A fee schedule's year is the contract's locked year, or, with none, the years of the service dates (the schedule in
+ * effect for them).
+ *
  * Quoted texts are never an input of a role (the contract's quoted clause and title, the regulation's reference and
  * statement, the practice, payer and plan as the payer's copy prints them, the window's quoted clause and the
- * statute): each is kept as its words (`quotes`), so a figure it holds may be repeated with the words around it, as
- * it holds it, and in no other role ("Section 4", "42 CFR 422.214", "SYNTHETIC PT 12345 GROUP 77"). The procedure
+ * statute): each is kept as its words and the roles its own words give its figures (`quotes`), so a figure it holds
+ * may be repeated with the words around it, as it holds it, and in no role its own words do not give it ("Section 4",
+ * "42 CFR 422.214", "SYNTHETIC PT 12345 GROUP 77"). The procedure
  * codes and modifiers the contract's clause or the regulation's statement names are codes and modifiers; the
  * identifiers any quoted text holds (a statute section, a plan identifier) are compared whole as written. No
  * remittance key is among them: the payer's ID and the plan's key are the record's, and the scanner reads a key as an
@@ -42,6 +52,8 @@ import { canonicalNumber, scanText } from './scan';
 export interface NarrativeFacts {
   /** Each value an input holds, by kind (`<kind>:<value>`), with the roles its records give it. */
   readonly roles: ReadonlyMap<string, ReadonlySet<FigureRole>>;
+  /** Each amount and count of units, by what it is stated per (`<scope>|<kind>:<value>`), with the roles its records give it so. */
+  readonly scoped: ReadonlyMap<string, ReadonlySet<FigureRole>>;
   /**
    * Whether the prompt-pay rule counts its days to pay in business days: "business days" passes only for those (a
    * business-day rule computes no interest, so no day late is stated beside it, and the dispute window is calendar
@@ -52,40 +64,55 @@ export interface NarrativeFacts {
   readonly modifiers: ReadonlySet<string>;
   /** Figures written as identifiers in the texts the version quotes (a statute section), compared whole. */
   readonly identifiers: ReadonlySet<string>;
-  /** Each quoted text, as its words (./roles.ts quotedTokens()). */
-  readonly quotes: readonly (readonly string[])[];
+  /** Each quoted text, as its words and the roles its own words give its figures (./roles.ts quotedText()). */
+  readonly quotes: readonly QuotedText[];
   /** The schedule's rows: a placeholder names one of 1 to rows. */
   readonly rows: number;
   /** The citation markers a sentence may use. */
   readonly markers: ReadonlySet<number>;
 }
 
-/** The roles the inputs give a value of a kind (none when no input holds it). */
-export function heldRoles(facts: NarrativeFacts, kind: ReadKind, value: string): ReadonlySet<FigureRole> {
-  return facts.roles.get(`${kind}:${value}`) ?? new Set();
+/** The roles the inputs give a value of a kind (none when no input holds it), or, with a scope, give it as stated per that. */
+export function heldRoles(facts: NarrativeFacts, kind: ReadKind, value: string, scope: Scope | null = null): ReadonlySet<FigureRole> {
+  return (scope === null ? facts.roles.get(`${kind}:${value}`) : facts.scoped.get(`${scope}|${kind}:${value}`)) ?? new Set();
+}
+
+/** The largest value of a kind the inputs hold in any of the roles (a partitive's part is at most it), or null for none. */
+export function largestHeld(facts: NarrativeFacts, kind: ReadKind, roles: readonly FigureRole[]): number | null {
+  let largest: number | null = null;
+  for (const [key, held] of facts.roles) {
+    if (key.startsWith(`${kind}:`) && roles.some((role) => held.has(role))) {
+      const value = Number(key.slice(kind.length + 1));
+      largest = largest === null || value > largest ? value : largest;
+    }
+  }
+  return largest;
 }
 
 type Fact = string | number | null | undefined;
 
 class Facts {
   readonly roles = new Map<string, Set<FigureRole>>();
+  readonly scoped = new Map<string, Set<FigureRole>>();
   businessDays = false;
   readonly codes = new Set<string>();
   readonly modifiers = new Set<string>();
   readonly identifiers = new Set<string>();
-  readonly quotes: (readonly string[])[] = [];
+  readonly quotes: QuotedText[] = [];
 
-  private add(kind: ReadKind, value: string, role: FigureRole): void {
-    const key = `${kind}:${value}`;
-    const roles = this.roles.get(key) ?? new Set<FigureRole>();
-    roles.add(role);
-    this.roles.set(key, roles);
+  private add(kind: ReadKind, value: string, role: FigureRole, scopes: readonly Scope[] = []): void {
+    for (const key of [`${kind}:${value}`, ...scopes.map((scope) => `${scope}|${kind}:${value}`)]) {
+      const map = key.includes('|') ? this.scoped : this.roles;
+      const roles = map.get(key) ?? new Set<FigureRole>();
+      roles.add(role);
+      map.set(key, roles);
+    }
   }
 
-  /** A count, a page, a version, a release, a level, a day count or a row. */
-  number(role: FigureRole, value: Fact): void {
+  /** A count, a page, a version, a release, a level, a day count or a row (a count of units stated per its scopes). */
+  number(role: FigureRole, value: Fact, scopes: readonly Scope[] = []): void {
     if (value !== null && value !== undefined) {
-      this.add('number', canonicalNumber(String(value)), role);
+      this.add('number', canonicalNumber(String(value)), role, scopes);
     }
   }
 
@@ -101,11 +128,11 @@ class Facts {
     }
   }
 
-  /** An amount in cents, when it is whole cents (the trace writes unrounded amounts with their fraction; null is none). */
-  amount(role: FigureRole, value: string | null | undefined): void {
+  /** An amount in cents, stated per its scopes, when it is whole cents (the trace writes unrounded amounts with their fraction; null is none). */
+  amount(role: FigureRole, value: string | null | undefined, scopes: readonly Scope[]): void {
     const text = String(value);
     if (/^-?\d+$/.test(text)) {
-      this.add('amount', text, role);
+      this.add('amount', text, role, scopes);
     }
   }
 
@@ -137,7 +164,7 @@ class Facts {
     }
     // Read as the narrative is read (./readable.ts), so a figure is the same figure in both.
     const readable = readableText(text).text;
-    this.quotes.push(quotedTokens(readable));
+    this.quotes.push(quotedText(readable));
     for (const figure of scanText(readable).figures) {
       if (figure.kind === 'identifier') {
         this.identifiers.add(figure.value);
@@ -150,11 +177,11 @@ class Facts {
   }
 }
 
-/** Every amount a parameters object holds under a key ending in _cents, and every percentage under percent or percentage. */
-function parameterFigures(value: unknown, facts: Facts): void {
+/** Every amount a parameters object holds under a key ending in _cents (a rate, stated per `scopes`), and every percentage under percent or percentage. */
+function parameterFigures(value: unknown, facts: Facts, scopes: readonly Scope[]): void {
   if (Array.isArray(value)) {
     for (const item of value) {
-      parameterFigures(item, facts);
+      parameterFigures(item, facts, scopes);
     }
     return;
   }
@@ -164,13 +191,19 @@ function parameterFigures(value: unknown, facts: Facts): void {
   for (const [key, item] of Object.entries(value)) {
     if (typeof item === 'string' && key.endsWith('_cents')) {
       // An amount only when it is whole cents (amount()); any other text under the key is no input.
-      facts.amount('expected', item);
+      facts.amount('expected', item, scopes);
     } else if (typeof item === 'string' && (key === 'percent' || key === 'percentage') && /^\d+(\.\d+)?$/.test(item)) {
       facts.percent('contract_percent', item);
     } else {
-      parameterFigures(item, facts);
+      parameterFigures(item, facts, scopes);
     }
   }
+}
+
+/** The sum of amounts in cents, or null when any is not whole cents or none is given. */
+function sum(amounts: readonly (string | null | undefined)[]): string | null {
+  const whole = amounts.filter((amount): amount is string => typeof amount === 'string' && /^(?:0|-?[1-9]\d*)$/.test(amount));
+  return whole.length === 0 || whole.length !== amounts.length ? null : centsToString(sumCents(whole.map(parseCents)));
 }
 
 export function narrativeFacts(content: PacketContent): NarrativeFacts {
@@ -187,12 +220,14 @@ export function narrativeFacts(content: PacketContent): NarrativeFacts {
     facts.number('release', release.release_no);
   }
 
+  // A contract's rate is per unit, or per visit (a line) for a per-visit rate.
+  const rate: readonly Scope[] = citation.kind === 'contract' && citation.method === 'PER_VISIT' ? ['unit', 'line'] : ['unit'];
   if (citation.kind === 'contract') {
     facts.number('version', citation.version_no);
     facts.page('citation_page', citation.page);
     facts.date('effective_date', citation.effective_from);
     facts.date('effective_date', citation.effective_to);
-    parameterFigures(citation.parameters, facts);
+    parameterFigures(citation.parameters, facts, rate);
     facts.quoted(citation.quote, true);
     facts.quoted(citation.contract_title);
   } else {
@@ -214,28 +249,31 @@ export function narrativeFacts(content: PacketContent): NarrativeFacts {
   for (const percent of pattern.contract_percentages) {
     facts.percent('contract_percent', percent);
   }
-  for (const year of pattern.contract_years) {
+  // The fee schedule's year: the contract's locked year, or the service dates' (the schedule in effect for them).
+  const scheduleYears = pattern.contract_years.length > 0 ? pattern.contract_years : content.lines.map((line) => Number.parseInt(line.service_date.slice(0, 4), 10));
+  for (const year of scheduleYears) {
     facts.year('schedule_year', year);
   }
   facts.number('lines', pattern.lines);
   facts.number('claims', pattern.claims);
   facts.number('patients', pattern.patients);
-  facts.number('units', pattern.units);
+  facts.number('units', pattern.units, ['total']);
   facts.rows('claim_row', pattern.claims);
   facts.rows('patient_row', pattern.patients);
-  facts.amount('expected', pattern.expected_cents);
-  facts.amount('allowed', pattern.observed_cents);
-  facts.amount('variance', pattern.variance_cents);
+  facts.amount('expected', pattern.expected_cents, ['total']);
+  facts.amount('allowed', pattern.observed_cents, ['total']);
+  facts.amount('variance', pattern.variance_cents, ['total']);
+  facts.amount('paid', sum(content.lines.map((line) => line.paid_cents)), ['total']);
   facts.date('service_date', pattern.first_service_date);
   facts.date('service_date', pattern.last_service_date);
   for (const code of pattern.codes) {
     facts.codes.add(code.procedure_code);
     facts.number('lines', code.lines);
-    facts.number('units', code.units);
-    facts.amount('expected', code.expected_cents);
-    facts.amount('expected', code.contract_amount_cents);
-    facts.amount('allowed', code.observed_cents);
-    facts.amount('variance', code.variance_cents);
+    facts.number('units', code.units, ['total']);
+    facts.amount('expected', code.expected_cents, ['total']);
+    facts.amount('expected', code.contract_amount_cents, rate);
+    facts.amount('allowed', code.observed_cents, ['total']);
+    facts.amount('variance', code.variance_cents, ['total']);
   }
 
   for (const line of content.lines) {
@@ -243,12 +281,12 @@ export function narrativeFacts(content: PacketContent): NarrativeFacts {
     for (const modifier of line.modifiers) {
       facts.modifiers.add(modifier);
     }
-    facts.number('units', line.units);
-    facts.number('line_units', line.units);
-    facts.amount('expected', line.expected_cents);
-    facts.amount('allowed', line.observed_cents);
-    facts.amount('variance', line.variance_cents);
-    facts.amount('paid', line.paid_cents);
+    facts.number('units', line.units, ['line']);
+    facts.number('line_units', line.units, ['line']);
+    facts.amount('expected', line.expected_cents, ['line']);
+    facts.amount('allowed', line.observed_cents, ['line']);
+    facts.amount('variance', line.variance_cents, ['line']);
+    facts.amount('paid', line.paid_cents, ['line']);
     facts.date('service_date', line.service_date);
     facts.date('paid_date', line.paid_on);
     facts.date('received_date', line.received_on);
@@ -265,12 +303,14 @@ export function narrativeFacts(content: PacketContent): NarrativeFacts {
       }
       const { calculation } = line;
       for (const step of calculation.steps) {
-        facts.amount('calculation', step.amount_cents);
+        facts.amount('calculation', step.amount_cents, ['line']);
       }
-      facts.amount('calculation', calculation.rounding?.unrounded_cents);
-      facts.amount('calculation', calculation.rounding?.rounded_cents);
-      facts.amount('patient_share', calculation.patient_share_cents);
+      facts.amount('calculation', calculation.rounding?.unrounded_cents, ['line']);
+      facts.amount('calculation', calculation.rounding?.rounded_cents, ['line']);
+      facts.amount('patient_share', calculation.patient_share_cents, ['line']);
     }
+    // What the patients owe across the lines.
+    facts.amount('patient_share', sum(content.lines.map((line) => line.calculation.patient_share_cents)), ['total']);
     facts.date('deadline', content.deadline.ends_on);
     // Above the first level the payer's copy states the level's own window alone: the lines' first-level windows and
     // the clauses behind them are not this level's deadline, are not printed, and so are no figure a narrative states.
@@ -294,7 +334,7 @@ export function narrativeFacts(content: PacketContent): NarrativeFacts {
     // Interest is stated only where code computed an amount above zero (Q4 (a); interestStated()): the payer's copy
     // lists and totals those lines alone, so a narrative states no other line's interest, due date or days.
     if (interestStated(interest)) {
-      facts.amount('interest', interest.total_cents);
+      facts.amount('interest', interest.total_cents, ['total']);
     }
     for (const line of interest.lines) {
       facts.date('received_date', line.received_on);
@@ -303,13 +343,14 @@ export function narrativeFacts(content: PacketContent): NarrativeFacts {
         facts.date('due_date', line.due_on);
         facts.number('days_late', line.days_late);
         facts.number('days_late', line.days_unpaid);
-        facts.amount('interest', line.interest_cents);
+        facts.amount('interest', line.interest_cents, ['line']);
       }
     }
   }
 
   return {
     roles: facts.roles,
+    scoped: facts.scoped,
     businessDays: facts.businessDays,
     codes: facts.codes,
     modifiers: facts.modifiers,

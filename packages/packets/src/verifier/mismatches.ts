@@ -1,4 +1,4 @@
-import { type NarrativeFacts, PLACEHOLDER_KINDS, heldRoles } from '../facts';
+import { type NarrativeFacts, PLACEHOLDER_KINDS, heldRoles, largestHeld } from '../facts';
 import { type ReadableText, type TextSpan, readableText } from '../readable';
 import { FIGURE_ROLES, type FigureReading, type FigureRole, functionWords, quotedHolds, readFigures } from '../roles';
 import { type FigureKind, scanText, sentenceSpans } from '../scan';
@@ -16,9 +16,11 @@ import { type FigureKind, scanText, sentenceSpans } from '../scan';
  * - every figure (date, code, modifier, unit, amount, percentage, count, number or identifier) the inputs
  *   do not hold in the role its own words give it (../roles.ts; docs/adr/0086): "3650 days" is the window's
  *   days, "page 2" a page, "3 claims" the claim count, "the payer allowed $70.00" the allowed amount, and a
- *   value the inputs hold in another role fails ("10000 visits" when 10000 is the window's days). A figure
- *   whose words name no role passes in any role of its kind (an amount, a percentage, a date), or, for a
- *   number, in none: only as a quoted text holds it, with the words around it ("Section 4");
+ *   value the inputs hold in another role fails ("10000 visits" when 10000 is the window's days); one cue's
+ *   role, never the union of every cue in the clause, and "per line" or "in total" beside an amount holds it
+ *   to a line's or a total. A figure whose words name no role passes in any role of its kind (an amount, a
+ *   percentage, a date), or, for a number, in none: only as a quoted text holds it, with the words around it
+ *   ("Section 4");
  * - every hidden character (one that prints as nothing or as something else), and every figure written
  *   in digits other than 0 to 9, which the verifier does not read;
  * - every occurrence of one of the case's own identifiers (a patient's name, a member ID, a claim
@@ -70,8 +72,10 @@ export interface NarrativeCheck {
 export interface CheckedFigure {
   /** The figure's kind as read (a year, or a five-digit figure read as a number, is a number). */
   readonly kind: FigureKind;
-  /** The roles its words give it (any of them), or null when they name none. */
+  /** The roles its words give it (any of them, or each of them when `every`), or null when they name none. */
   readonly roles: readonly FigureRole[] | null;
+  /** Its words name several roles and none is its own: it must be held in every one (../roles.ts, step 5). */
+  readonly every: boolean;
   readonly passed: boolean;
   /** For a figure that failed, the roles the inputs hold its value in (a figure stated in the wrong role). */
   readonly heldAs: readonly FigureRole[];
@@ -84,11 +88,13 @@ export interface CheckedFigure {
 
 /**
  * Whether the inputs hold a figure as it is read (../roles.ts): a code, modifier or identifier among the inputs of its
- * kind; any other figure in a role its words give it, or, when they give it none, in any role of its kind (a number
- * with no role in none); or repeated with the words around it from a quoted text (quotedHolds()).
+ * kind; any other figure in a role its words give it (in each of them when its words name several and none is its
+ * own), as stated per what its words say (each line, each unit, in total), or, when they give it none, in any role of
+ * its kind (a number with no role in none); a partitive's part at most its whole; or repeated with the words around
+ * it from a quoted text, in a role only where the quote's own words give it that role (quotedHolds()).
  */
 function inInputs(reading: FigureReading, facts: NarrativeFacts, tokens: readonly string[], words: ReadonlySet<string>): boolean {
-  const quoted = (inRole: boolean) => facts.quotes.some((quote) => quotedHolds(tokens, reading.token, quote, inRole, words));
+  const quoted = (inRole: boolean) => facts.quotes.some((quote) => quotedHolds(tokens, reading, quote, inRole, words));
   switch (reading.kind) {
     case 'code':
       return facts.codes.has(reading.value) || quoted(false);
@@ -106,7 +112,7 @@ function inInputs(reading: FigureReading, facts: NarrativeFacts, tokens: readonl
       if (reading.prose || facts.codes.has(reading.code)) {
         return true;
       }
-      const held = heldRoles(facts, reading.kind, reading.value);
+      const held = heldRoles(facts, reading.kind, reading.value, reading.scope);
       const { roles } = reading;
       if (roles === 'any') {
         return held.size > 0 || quoted(false);
@@ -114,8 +120,14 @@ function inInputs(reading: FigureReading, facts: NarrativeFacts, tokens: readonl
       if (roles === 'none') {
         return quoted(false);
       }
+      // A partitive's part ("2 of the 3 claims"): at most its whole, the number after it or the count its roles hold.
+      if (reading.part !== null) {
+        const whole = reading.part.of === null ? largestHeld(facts, reading.kind, roles) : Number(reading.part.of);
+        return whole !== null && Number(reading.value) <= whole;
+      }
       // Business or working days are only the days to pay of a rule that counts business days.
-      const inRole = roles.some((role) => held.has(role) && (!reading.business || (role === 'days_to_pay' && facts.businessDays)));
+      const holds = (role: FigureRole) => held.has(role) && (!reading.business || (role === 'days_to_pay' && facts.businessDays));
+      const inRole = reading.every ? roles.every(holds) : roles.some(holds);
       return inRole || quoted(true);
     }
   }
@@ -134,6 +146,7 @@ function checkFigures(readable: ReadableText, facts: NarrativeFacts, sentenceOf:
     return {
       kind,
       roles: Array.isArray(reading.roles) ? reading.roles : null,
+      every: reading.every,
       passed,
       heldAs: passed ? [] : FIGURE_ROLES.filter((role) => held.has(role)),
       sentence: sentenceOf(span.start),
