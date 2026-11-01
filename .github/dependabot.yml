@@ -45,7 +45,10 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: pg-boss
         update-types: ["version-update:semver-major"]
-    # A dependency joins the first group that matches it, so the specific groups come before minor-and-patch.
+    # Each dependency belongs to one group: minor-and-patch excludes every pattern the groups above it name. Without the
+    # exclusions, Dependabot ranks a group with no patterns above a wildcard pattern, so "@aws-sdk/*" and "@next/*" lost
+    # their packages to minor-and-patch (run 40818560725), and only the file's order kept an exact name in its group.
+    # dependabot-config.test.ts holds the list equal to those patterns and routes every direct dependency.
     groups:
       # Red on the browser.json check by design until ADR 0058's baseline procedure runs.
       browser-tests:
@@ -65,7 +68,22 @@ updates:
       aws-cdk:
         patterns: ["aws-cdk", "aws-cdk-lib", "constructs"]
         update-types: [minor, patch]
+      # Everything no group above takes, minor and patch.
       minor-and-patch:
+        exclude-patterns:
+          - "@playwright/test"
+          - playwright
+          - playwright-core
+          - "@axe-core/playwright"
+          - axe-core
+          - "@anthropic-ai/sdk"
+          - pg-boss
+          - next
+          - "@next/*"
+          - "@aws-sdk/*"
+          - aws-cdk
+          - aws-cdk-lib
+          - constructs
         update-types: [minor, patch]
       security:
         applies-to: security-updates
