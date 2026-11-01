@@ -36,7 +36,8 @@ dynamically, as if it lived in each app and package: it fails everywhere but ins
   retry is the only one.
 - `AnthropicProvider` (`MODEL_PROVIDER=anthropic`, `ANTHROPIC_API_KEY` from the environment's secret): Messages only,
   with structured outputs; the SDK's retries off and its timeout at the gateway's, its OpenTelemetry tracing and logging
-  off and its host fixed. It uses nothing PRD 14 lists as ineligible (no Batch API, Files API, code execution, Skills or MCP connector).
+  off and its host fixed. It uses nothing PRD 14 lists as ineligible (no Batch API, Files API, code execution, Skills or
+  MCP connector).
 - `LocalDeterministicProvider` (the default everywhere else): not a model. It answers only a request whose key (the
   SHA-256 of the prompt version and the user message the gateway frames) has a fixed output registered in code or in
   a directory of `tp-local-model-output/1` files, refuses everything else (`no_fixed_output`), and costs nothing.
