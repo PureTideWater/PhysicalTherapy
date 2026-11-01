@@ -334,7 +334,7 @@ export async function runCount(scope: Scope, practiceId: string): Promise<number
   return rows[0]?.n ?? 0;
 }
 
-/** Names for a run's opaque IDs: its payers, plans and the contract versions it priced under. */
+/** Names for a run's opaque IDs: its payers, its plans (those it priced and those it held with no mapping) and the contract versions it priced under. */
 export interface RunNames {
   readonly payers: Readonly<Record<string, string>>;
   readonly plans: Readonly<Record<string, string>>;
@@ -346,7 +346,9 @@ export async function runNames(scope: Scope, practiceId: string, coverage: RunCo
     return { payers: {}, plans: {}, versions: {} };
   }
   const payerIds = [...new Set(coverage.patterns.map((pattern) => pattern.payer_id))];
-  const planIds = [...new Set(coverage.patterns.map((pattern) => pattern.plan_id))];
+  // The patterns' plans (priced lines only) and the plans that had no mapping when the run priced (coverage /2), which
+  // the run page names by key (combined audit #32; MAP-06, PRC-30).
+  const planIds = [...new Set([...coverage.patterns.map((pattern) => pattern.plan_id), ...coverage.unmapped_plans.map((plan) => plan.plan_id)])];
   const versionIds = [...new Set(coverage.versions.map((version) => version.contract_version_id))];
   const payers = await scope.client.query<{ id: string; name: string }>('SELECT id, name_raw AS name FROM payer WHERE practice_id = $1 AND id = ANY ($2::uuid[])', [practiceId, payerIds]);
   const plans = await scope.client.query<{ id: string; key: string }>('SELECT id, plan_key AS key FROM plan WHERE practice_id = $1 AND id = ANY ($2::uuid[])', [practiceId, planIds]);

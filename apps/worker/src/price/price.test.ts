@@ -1,13 +1,14 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { type AgreementRecords, LOCATION_STATUSES } from '@tp/contracts';
+import { type AgreementRecords, LOCATION_STATUSES, unmappedPlanIds } from '@tp/contracts';
 import type { Cents } from '@tp/money';
 import { ENGINE_ERROR_DETAILS, UNPRICED_REASONS, price, recompute } from '@tp/pricing';
 import { practiceSettings, syntheticRelease } from '@tp/pricing/testing';
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { COVERAGE_FORMAT, coverageOf, operatorAlerts, parseCoverage } from './coverage';
+import { COVERAGE_FORMAT, COVERAGE_FORMAT_1, type CoverageParts, coverageOf, operatorAlerts, parseCoverage } from './coverage';
 import { ENGINE_ERRORS_MESSAGE, READ_OUTSIDE_FETCH_MESSAGE, claimInput, lineResolver, locationStops, priceClaims, runAsOf } from './execute';
 import type { StoredClaim, StoredLine } from './lines';
 import { RuleReleaseMismatchError } from './release';
@@ -169,6 +170,7 @@ describe('the coverage summary', () => {
         overpaid_cents: '-300',
       },
     ],
+    unmappedPlans: [],
   };
 
   it('lists every reason of the closed list in its order, the engine errors by detail, and parses back', () => {
@@ -189,6 +191,120 @@ describe('the coverage summary', () => {
 
   it('counts no alert when no engine error pages the operator', () => {
     expect(operatorAlerts(coverageOf({ ...parts, details: [{ detail: 'claim_status_not_priced', lines: 4 }] }))).toBe(0);
+  });
+});
+
+describe('PRC-30: the coverage a run records of plans with no mapping (tp-pricing-coverage/2)', () => {
+  const UNMAPPED = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+  const parts: CoverageParts = {
+    totals: { lines: 3, charge_cents: '30000', priced_lines: 1, priced_charge_cents: '10000' },
+    reasons: [
+      { reason: 'NO_MAPPING', lines: 1, charge_cents: '10000' },
+      { reason: 'ENGINE_ERROR', lines: 1, charge_cents: '10000' },
+    ],
+    details: [{ detail: 'invalid_line_facts', lines: 1 }],
+    versions: [],
+    patterns: [],
+    unmappedPlans: [{ plan_id: UNMAPPED, lines: 2, charge_cents: '-250' }],
+  };
+
+  it('stores format 2 with the unmapped plans, which round-trips, with strict keys and signed cents', () => {
+    const coverage = coverageOf(parts);
+    expect(COVERAGE_FORMAT).toBe('tp-pricing-coverage/2');
+    expect(coverage.format).toBe(COVERAGE_FORMAT);
+    // coverageOf carries the plans as given: the query orders them by plan.
+    expect(coverage.unmapped_plans).toEqual([{ plan_id: UNMAPPED, lines: 2, charge_cents: '-250' }]);
+    expect(parseCoverage(JSON.parse(JSON.stringify(coverage)))).toEqual(coverage);
+    const stored = JSON.parse(JSON.stringify(coverage)) as Record<string, unknown>;
+    expect(() => parseCoverage({ ...stored, unmapped_plans: [{ plan_id: UNMAPPED, lines: 2, charge_cents: '-250', payer: 'SYNTHETIC PAYER' }] })).toThrow();
+    expect(() => parseCoverage({ ...stored, unmapped_plans: [{ plan_id: 'SYNPLAN-UNMAPPED-06', lines: 2, charge_cents: '0' }] })).toThrow();
+    expect(() => parseCoverage({ ...stored, unmapped_plans: [{ plan_id: UNMAPPED, lines: -1, charge_cents: '0' }] })).toThrow();
+    expect(() => parseCoverage({ ...stored, unmapped_plans: [{ plan_id: UNMAPPED, lines: 1, charge_cents: '1.50' }] })).toThrow();
+    // Format 2 requires the list; a format 2 summary without it is not one.
+    const { unmapped_plans: _omitted, ...withoutPlans } = stored;
+    expect(() => parseCoverage(withoutPlans)).toThrow();
+    expect(() => parseCoverage({ ...stored, format: 'tp-pricing-coverage/3' })).toThrow();
+  });
+
+  it('reads a format 1 summary as having no unmapped plan (no complete format 1 run had one), keeping its format', () => {
+    const { unmapped_plans: _omitted, ...rest } = JSON.parse(JSON.stringify(coverageOf(parts))) as Record<string, unknown>;
+    const first = { ...rest, format: COVERAGE_FORMAT_1 };
+    expect(parseCoverage(first)).toEqual({ ...first, unmapped_plans: [] });
+    // A format 1 summary never held the list, so one that does is not format 1.
+    expect(() => parseCoverage({ ...first, unmapped_plans: [] })).toThrow();
+    expect(() => parseCoverage({ ...first, lines: -1 })).toThrow();
+  });
+
+  it('never prices a line of an unmapped plan, and counts all of its lines, ENGINE_ERROR included, within the run’s unpriced lines (property)', () => {
+    const plans = [PLAN, UNMAPPED, 'ffffffff-ffff-4fff-8fff-ffffffffffff'];
+    const release = syntheticRelease(900001);
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            plan: fc.constantFrom(...plans),
+            // '9711' fails the engine's fact checks before the resolver (invalid_line_facts: ENGINE_ERROR).
+            code: fc.constantFrom('97110', '97140', '9711'),
+            charge: fc.bigInt({ min: -5000n, max: 50_000n }),
+          }),
+          { minLength: 1, maxLength: 12 },
+        ),
+        (facts) => {
+          const lines = facts.map((fact, index) =>
+            storedLine({
+              serviceLineId: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+              lineNo: 1,
+              planId: fact.plan,
+              procedureCode: fact.code,
+              chargeCents: fact.charge as Cents,
+            }),
+          );
+          // One claim per line, so the engine prices each on its own facts.
+          const claims = lines.map((line, index) => storedClaim([line], { claimId: `11111111-0000-4000-8000-${String(index).padStart(12, '0')}` }));
+          const rows = priceClaims(claims, lineResolver(MA), release, practiceSettings(), '2026-10-15');
+          const unmapped = unmappedPlanIds(lines, MA.mappings);
+          const planOf = new Map(lines.map((line) => [line.serviceLineId, line]));
+          // The parts as computeCoverage's queries total them: every line of an unmapped plan, whatever its reason.
+          const byPlan = new Map<string, { lines: number; cents: bigint }>();
+          for (const row of rows) {
+            const line = planOf.get(row.serviceLineId);
+            if (line !== undefined && unmapped.includes(line.planId)) {
+              expect(row.unpricedReason === 'NO_MAPPING' || row.unpricedReason === 'ENGINE_ERROR').toBe(true);
+              expect(row.mappingId).toBeNull();
+              const total = byPlan.get(line.planId) ?? { lines: 0, cents: 0n };
+              byPlan.set(line.planId, { lines: total.lines + 1, cents: total.cents + line.chargeCents });
+            }
+          }
+          const unpriced = rows.filter((row) => row.unpricedReason !== null);
+          const reasons = [...new Set(unpriced.map((row) => row.unpricedReason as (typeof UNPRICED_REASONS)[number]))].map((reason) => ({
+            reason,
+            lines: unpriced.filter((row) => row.unpricedReason === reason).length,
+            charge_cents: unpriced
+              .filter((row) => row.unpricedReason === reason)
+              .reduce((sum, row) => sum + (planOf.get(row.serviceLineId)?.chargeCents ?? 0n), 0n)
+              .toString(),
+          }));
+          const coverage = coverageOf({
+            totals: { lines: rows.length, charge_cents: '0', priced_lines: rows.length - unpriced.length, priced_charge_cents: '0' },
+            reasons,
+            details: [],
+            versions: [],
+            patterns: [],
+            unmappedPlans: [...byPlan]
+              .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+              .map(([plan_id, total]) => ({ plan_id, lines: total.lines, charge_cents: total.cents.toString() })),
+          });
+          const unmappedLines = coverage.unmapped_plans.reduce((sum, plan) => sum + plan.lines, 0);
+          const unpricedLines = coverage.reasons.reduce((sum, entry) => sum + entry.lines, 0);
+          expect(unmappedLines).toBe(lines.filter((line) => unmapped.includes(line.planId)).length);
+          expect(unmappedLines).toBeLessThanOrEqual(unpricedLines);
+          expect(unpricedLines).toBe(coverage.lines - coverage.priced.lines);
+          expect(coverage.unmapped_plans.map((plan) => plan.plan_id)).toEqual(unmapped.filter((plan) => byPlan.has(plan)));
+          expect(parseCoverage(JSON.parse(JSON.stringify(coverage)))).toEqual(coverage);
+        },
+      ),
+      { numRuns: 60 },
+    );
   });
 });
 

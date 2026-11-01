@@ -14,7 +14,7 @@ import {
 
 import { UNPRICED_REASON_TEXT } from '../contracts/remedies';
 import { coverageInEffect } from '../coverage/in-effect';
-import { allWaitingPlans, lineTotals, pricingReadiness, waitingTotals } from '../contracts/mapping-queries';
+import { allWaitingPlans, lineTotals, unmappedPlanTotals, waitingTotals } from '../contracts/mapping-queries';
 import { peopleEmails } from '../cases/people';
 import { type ListPage, pageWindow } from '../http/paging';
 import { type MonthlySummary, type SummaryFigure, type SummaryRow, monthlySummary } from '../monitoring/queries';
@@ -40,7 +40,8 @@ type Scope = PracticeScope<ScopeClient>;
 /**
  * The Coverage screen's figures, as a coverage report stores them: the shares and reasons of each line at its
  * pricing in effect across the runs in effect (lib/coverage/in-effect.ts), the run that took effect last, and
- * every plan waiting on a mapping.
+ * every plan waiting on a mapping, and the plans with no mapping at all, whose lines no run prices, with their lines and
+ * billed cents (combined audit #32; PRC-30: a report stored before carries the plan count alone, and keeps its sentence).
  */
 export async function coverageContent(scope: Scope, practiceId: string, today: string, requestId: string): Promise<CoverageReportContent> {
   const latest = await latestRunInEffect(scope, practiceId, requestId);
@@ -50,7 +51,7 @@ export async function coverageContent(scope: Scope, practiceId: string, today: s
   const waiting = await waitingTotals(scope, practiceId);
   const counts = new Map(inEffect.reasons.map((entry) => [entry.reason, entry.lines]));
   const priced = inEffect.runs > 0 && inEffect.periodFrom !== null && inEffect.periodTo !== null ? { runs: inEffect.runs, from: inEffect.periodFrom, to: inEffect.periodTo } : null;
-  const readiness = await pricingReadiness(scope, practiceId, requestId);
+  const unmapped = await unmappedPlanTotals(scope, practiceId);
   return {
     format: COVERAGE_REPORT_FORMAT,
     generated_on: today,
@@ -71,7 +72,7 @@ export async function coverageContent(scope: Scope, practiceId: string, today: s
       charge_cents: plan.waiting.chargeCents,
       paid_cents: plan.waiting.paidCents,
     })),
-    readiness: { allowed: readiness.allowed, unmapped_plans: readiness.unmappedPlans },
+    readiness: { allowed: unmapped.plans === 0, unmapped_plans: unmapped.plans, unmapped_lines: unmapped.lines, unmapped_charge_cents: unmapped.chargeCents },
     pricing_runs: await runCount(scope, practiceId),
   };
 }

@@ -226,8 +226,9 @@ timed-units rule is `UNKNOWN` leaves its lines `UNITS_RULE_UNKNOWN` (ADR 0033).
 
 Pricing runs (ADR 0035): a billing manager or firm principal creates a run for whole months of service dates on the
 Pricing runs screen (`/p/<practice>/pricing-runs`); `createPricingRun` (`@tp/worker/pricing`) refuses a release other
-than the newest published one, a period with no lines and a plan with no mapping at all (MAP-01), and records the run
-queued with the release and `ENGINE_VERSION`. The worker's `price` job (`apps/worker/src/price`, one practice per job,
+than the newest published one, a period with no lines and a period none of whose plans has a mapping (MAP-07); in any
+other run a plan with no mapping leaves its own lines unpriced as `NO_MAPPING` (MAP-01). It records the run queued
+with the release and `ENGINE_VERSION`. The worker's `price` job (`apps/worker/src/price`, one practice per job,
 one run of a practice at a time, idempotent by run, three attempts) resolves every line through `agreementResolver`,
 prices it with `price()` under the run's release (read back from `rule_record`) and stores `priced_line` with its
 amounts or reason, its adjustments, its window's end and its trace, then completes the run with its coverage summary in
@@ -262,8 +263,9 @@ Monitoring, digests and notifications (ADR 0039): once an 835 is done, its parse
 a job of one practice keyed by type, practice and subject, three attempts and the operator's alert on the third. `monitor`
 (after the rest of the upload batch has landed: it waits while an 835 is still on its way) creates a run for each month
 of service dates whose newest line no run covers, under the release in force and in the job's own name
-(`pricing_run.created_by_job_id`; a month with an unmapped plan waits); `price` prices it and, for a run the chain created,
-queues `triage`, which tells the practice's people in the app and queues `reconcile`, the recovery ledger's step
+(`pricing_run.created_by_job_id`; a month none of whose plans is mapped waits, and in any other month a plan with no
+mapping leaves its own lines unpriced as `NO_MAPPING`); `price` prices it and, for a run the chain created, queues
+`triage`, which tells the practice's people in the app and queues `reconcile`, the recovery ledger's step
 (ADR 0042, below). The operator's daily `monitoring_schedule` (05:10 UTC, where
 `OPERATOR_DATABASE_URL` is set) queues each active practice's `monitor` for the day (which first writes off, window
 passed, every open case's line whose window has closed), `reconcile` for the day and `digest` for the month before:

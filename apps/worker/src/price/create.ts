@@ -1,4 +1,4 @@
-import { type LocationStatus, assertPracticePricingAllowed } from '@tp/contracts';
+import { type LocationStatus, practiceUnmappedPlanIds } from '@tp/contracts';
 import type { PracticeScope, ScopeClient } from '@tp/db/runtime';
 import { ENGINE_VERSION, isIsoDate } from '@tp/pricing';
 
@@ -8,10 +8,12 @@ import { RuleReleaseMismatchError, currentReleaseNo } from './release';
 /**
  * Creating a pricing run (PRD 5, J7: "A run is created for a practice and a period, pinned to the
  * current rule release and the contract versions in force on each service date ... a run with a
- * rule-release mismatch is refused"; PRD 5, J6 and test matrix MAP-01: "pricing never runs on an
- * unmapped combination"). In the creator's own scope (a person's request): the period is checked, the
- * release asked for must be the newest published one, the period must hold lines, and the guard of
- * @tp/contracts refuses a run while any of its plans has no mapping at all. The run is recorded queued,
+ * rule-release mismatch is refused"; PRD 5, J6 and test matrix MAP-01: a line of an unmapped
+ * combination is never priced). In the creator's own scope (a person's request): the period is checked,
+ * the release asked for must be the newest published one, the period must hold lines, and some plan of
+ * those lines must have a mapping (PricingRunNothingMapped, MAP-07). A plan with no mapping no longer
+ * refuses the run (combined audit #32, docs/adr/0075): its lines are left NO_MAPPING one by one and every
+ * other line of the period prices (MAP-06). The run is recorded queued,
  * pinned to that release and to this engine's version; the caller queues the price job for it. The
  * database refuses the same mismatch itself, and a run in another person's name. A re-run of a complete
  * run (rerun.ts) is recorded the same way. The monitoring chain (../monitor) creates a month's run the
@@ -19,7 +21,7 @@ import { RuleReleaseMismatchError, currentReleaseNo } from './release';
  *
  * No run is created for a practice that has no pricing location (audit #33; docs/adr/0064): every line
  * would stop as ENGINE_ERROR invalid_settings, fixed fees included. The location is checked here
- * (PricingLocationWaiting), after the mapping guard, and Postgres refuses the same run itself
+ * (PricingLocationWaiting), after the check that some plan is mapped, and Postgres refuses the same run itself
  * (pricing_run_location_missing, re-runs included), which recordRun reports the same way. A location a
  * line cannot be priced at (a ZIP Medicare's list lacks, or one that needs its ZIP+4) still gets its run:
  * the run fails as location_not_ready only when a line stops on it (execute.ts).
@@ -46,6 +48,24 @@ export class PricingLocationWaiting extends Error {
 
   constructor(readonly status: Extract<LocationStatus, 'zip_missing'> = 'zip_missing') {
     super('the practice has no pricing location (its billing ZIP): the period waits for it');
+  }
+}
+
+/**
+ * No plan of the period's lines has any mapping (MAP-07), so a run would price nothing: every line
+ * would stop as NO_MAPPING, and pricing it later would need a re-run and a hand acceptance per month.
+ * No run is recorded. The month is priced once a mapping completes it (the mapping queues monitoring
+ * of the months it leaves complete, D2b), or by the daily monitoring once any of its plans is mapped.
+ * Counts only: no plan is named.
+ */
+export class PricingRunNothingMapped extends Error {
+  override readonly name = 'PricingRunNothingMapped';
+
+  constructor(
+    /** The plans of the period's lines, none of which has a mapping. */
+    readonly plans: number,
+  ) {
+    super(`none of the period's ${String(plans)} plan(s) has a mapping: a run would price nothing`);
   }
 }
 
@@ -102,8 +122,13 @@ export async function createPricingRun(scope: PracticeScope<ScopeClient>, input:
   if (plans.length === 0) {
     throw new PricingRunInputError('period', 'a period that holds at least one service line');
   }
-  // MAP-01: refused while any plan of the run's lines has no mapping (PricingRefusedError).
-  await assertPracticePricingAllowed(scope, { practiceId: input.practiceId, requestId: input.requestId, purpose: 'pricing' }, plans);
+  // MAP-07: refused when no plan of the run's lines has a mapping (it would price nothing). Any other plan
+  // with no mapping leaves its own lines NO_MAPPING while the rest price (MAP-01, MAP-06; combined audit #32).
+  const unmapped = await practiceUnmappedPlanIds(scope, { practiceId: input.practiceId, requestId: input.requestId, purpose: 'pricing' }, plans);
+  if (unmapped.length === plans.length) {
+    throw new PricingRunNothingMapped(plans.length);
+  }
+  // After the mapping check, so a month both all-unmapped and missing its ZIP is reported as waiting on a mapping.
   // Audit #33: no run while the practice has no location (PricingLocationWaiting); Postgres refuses it too.
   await assertLocation(scope.client, input.practiceId, input.releaseNo, input.periodFrom, input.periodTo);
   return recordRun(scope, { practiceId: input.practiceId, periodFrom: input.periodFrom, periodTo: input.periodTo, releaseNo: input.releaseNo, rerunOf: null });

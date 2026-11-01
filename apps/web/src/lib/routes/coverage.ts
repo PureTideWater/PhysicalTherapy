@@ -7,7 +7,8 @@ import { type UnconfirmedFormatSource, unconfirmedFormatSources } from '../contr
 import { letterCodes, requestToPayerLetter } from '../contracts/letter';
 import { type ContentHeadline, type ContentWaitMonth, contentHeadline, monthsWaitingOnContent } from '../pricing/content';
 import { type MonthWaitingOnLocation, monthsWaitingOnLocation } from '../pricing/location';
-import { type PricingReadiness, type Totals, type WaitingPage, lineTotals, pricingReadiness, waitingPlans, waitingTotals } from '../contracts/mapping-queries';
+import { type Totals, type UnmappedPlanTotals, type WaitingPage, lineTotals, unmappedPlanTotals, waitingPlans, waitingTotals } from '../contracts/mapping-queries';
+import { type MappedNotPricedTotals, mappedNotPricedTotals } from '../pricing/mapped-plan';
 import { UNPRICED_REASON_TEXT, type UnpricedReasonText } from '../contracts/remedies';
 import { type FeeSchedulePeriod, coverageInEffect, feeSchedulePeriodsNotLoaded } from '../coverage/in-effect';
 import { keptCodes, keptId, returnPage } from '../http/download-refusal';
@@ -30,8 +31,8 @@ import { opaqueId, optionalText } from './schemas';
  * (lib/coverage/in-effect.ts, the digest's coverage), so a month priced under a "no agreement" mapping
  * never hides the months priced under contracts; the run that took effect last is named beside them.
  * Before the first run takes effect, they are zero and the screen says why. Beside them: the dollars waiting on mappings (per
- * plan), whether a pricing run over every line would be refused for an unmapped plan (the run's own
- * guard), and the specialist's open questions that ask the practice to obtain a document. The letter is
+ * plan), the plans with no mapping, whose lines no run prices, and the lines of mapped plans still unpriced as
+ * NO_MAPPING in the pricing in effect (combined audit #32; MAP-06, PRC-31), and the specialist's open questions that ask the practice to obtain a document. The letter is
  * plain text from a fixed template (no model), downloaded as a file. Lines read from an ERA export whose
  * format is unconfirmed are flagged with the format's name and why (CO-03; docs/adr/0060). The months waiting on
  * Medicare content PaidWhole has not loaded, and each fee-schedule quarter or locked year the release in force does not
@@ -77,7 +78,10 @@ export interface CoveragePageData {
   readonly contentHeadline: ContentHeadline;
   /** The fee-schedule periods the release in force does not load, with the lines in effect unpriced for them (audit #7 and #59). */
   readonly feeScheduleNotLoaded: readonly { readonly period: FeeSchedulePeriod; readonly lines: number; readonly chargeCents: string }[];
-  readonly readiness: PricingReadiness;
+  /** The plans with no mapping at all, whose lines no run prices, with their lines and billed cents (MAP-06). */
+  readonly unmappedPlans: UnmappedPlanTotals;
+  /** The lines of mapped plans still NO_MAPPING in the pricing in effect, their billed cents and the runs holding them (PRC-31). */
+  readonly mappedNotPriced: MappedNotPricedTotals;
   /** For each unconfirmed ERA export format the practice has loaded remittances from: its counts, billed dollars and payers (CO-03). */
   readonly unconfirmedFormats: readonly UnconfirmedFormatSource[];
   /** Open questions whose answer is a document to obtain (J5). */
@@ -125,7 +129,8 @@ export const coveragePage = practiceRoute({
       waitingOnContent,
       contentHeadline: contentHeadline(waitingOnContent),
       feeScheduleNotLoaded: inForce === null ? [] : await feeSchedulePeriodsNotLoaded(scope, practiceId, multirangeLiteral(inForce.windows.get('pfs_rvu')?.loaded ?? [])),
-      readiness: await pricingReadiness(scope, practiceId, request.requestId),
+      unmappedPlans: await unmappedPlanTotals(scope, practiceId),
+      mappedNotPriced: await mappedNotPricedTotals(scope.client, practiceId),
       unconfirmedFormats: await unconfirmedFormatSources(scope, practiceId),
       obtain: await listQuestions(scope, practiceId, cipher, request.requestId, { openOnly: true, topics: OBTAIN_TOPICS }),
       payers: await payerOptions(scope, practiceId),

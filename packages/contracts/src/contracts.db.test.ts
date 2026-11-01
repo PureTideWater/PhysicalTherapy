@@ -7,8 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { documentPages } from './evidence/pages';
 import { EvidenceResolver } from './evidence/resolve';
-import { assertPracticePricingAllowed, dollarsWaitingOnMapping, loadAgreementRecords, loadMappings } from './load';
-import { PricingRefusedError } from './coverage';
+import { dollarsWaitingOnMapping, loadAgreementRecords, loadMappings, practiceUnmappedPlanIds } from './load';
 import { type AgreementLine, VersionNotSignedOffError, assertSignedOff, resolveAgreement } from './resolver';
 import {
   ContractWorkflowError,
@@ -1015,7 +1014,7 @@ describe('CON-07: a draft version used in pricing is refused; only signed off pr
 });
 
 describe('payer and plan mapping', () => {
-  it('MAP-01: an unmapped plan resolves NO_MAPPING on every line, and pricing over it is refused', async () => {
+  it('MAP-01, MAP-07: an unmapped plan resolves NO_MAPPING on every line, and the practice-scoped check names it without refusing', async () => {
     const signed = await signedContract('2041-01-01');
     const unmapped = await plan('SYNTH-PLAN-UNMAPPED');
     const mappedPlan = await plan('SYNTH-PLAN-MAPPED');
@@ -1023,12 +1022,16 @@ describe('payer and plan mapping', () => {
     for (const serviceDate of ['2041-01-02', '2041-06-01']) {
       expect(await resolveLine({ planId: unmapped, serviceDate })).toEqual({ outcome: 'NO_MAPPING' });
     }
+    const unmappedOf = (lines: readonly { planId: string | null; serviceDate: string }[]) =>
+      as(manager, (context) => practiceUnmappedPlanIds(context.scope, { practiceId: north.practiceId, requestId: context.requestId, purpose: 'pricing' }, lines));
     const mappedLine = { planId: mappedPlan, serviceDate: '2041-06-01' };
-    const lines = [{ planId: unmapped, serviceDate: '2041-06-01' }, mappedLine];
-    const refused = await errorOf(as(manager, (context) => assertPracticePricingAllowed(context.scope, { practiceId: north.practiceId, requestId: context.requestId, purpose: 'pricing' }, lines)));
-    expect(refused).toBeInstanceOf(PricingRefusedError);
-    expect(refused).toMatchObject({ unmappedPlanIds: [unmapped] });
-    await as(manager, (context) => assertPracticePricingAllowed(context.scope, { practiceId: north.practiceId, requestId: context.requestId, purpose: 'pricing' }, [mappedLine]));
+    // A run over both plans prices (combined audit #32): only the unmapped plan is named, for its coverage.
+    expect(await unmappedOf([{ planId: unmapped, serviceDate: '2041-06-01' }, mappedLine])).toEqual([unmapped]);
+    // A plan mapped from a later date has a mapping: its earlier lines are NO_MAPPING one by one (MAP-02), never the plan.
+    expect(await unmappedOf([{ planId: mappedPlan, serviceDate: '2041-01-02' }])).toEqual([]);
+    // Every plan unmapped: the creator's "nothing mapped" case (MAP-07), every plan named.
+    expect(await unmappedOf([{ planId: unmapped, serviceDate: '2041-06-01' }])).toEqual([unmapped]);
+    expect(await unmappedOf([])).toEqual([]);
   });
 
   it('MAP-01: the Coverage query totals the dollars waiting on mappings', async ({ skip }) => {
