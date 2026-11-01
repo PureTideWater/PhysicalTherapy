@@ -1,0 +1,13 @@
+# sgn-build-B progress (slice B: timer + harness)
+- [x] read design whole
+- [x] components/step-timer.tsx written (stepPhase, timeLeft, limitPhrases, spokenWords, StepTimer; R-09 correction only for the first timer of the document: improvement over design, a client nav back to the first-loaded URL would otherwise subtract minutes)
+- [x] components/arrival-focus.tsx written
+- note: typecheck hook errors in lib/routes/sign-in.ts / pending.ts are slice A's in-progress work, not mine
+- [x] browser.ts clock option; forms-harness.html utilities; forms-harness.tsx stepTimer + arrival entries, PageKeys closesIn/closesAt
+- [x] step-timer.test.tsx: 8 passed
+- [x] step-timer.browser.test.tsx: 13 passed (25 s); mutation checks: visibility guard removed -> hidden-tab test fails; key on link -> 2b fails (checking)
+- [x] key-on-link mutation -> 2b fails (confirmed); file restored
+- [x] eslint on 6 files: exit 0; tsc -p apps/web: only slice C's notice.tsx 'restarted' error, none in slice B files
+- [x] pnpm lint:copy: pass
+- [x] action-form.browser + step-timer unit + browser: 58 passed; split-form.browser + client-boundary: 7 passed
+- DONE: slice B complete

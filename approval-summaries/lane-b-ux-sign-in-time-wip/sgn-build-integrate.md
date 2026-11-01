@@ -1,0 +1,12 @@
+# sgn-build-integrate progress
+- started fresh (no earlier file); slices A-D present in worktree
+- registry: added notice.test.tsx to SGN-04 assertedBy (slice C note) and step-timer.browser.test.tsx to SGN-03 (its SGN-03 test)
+- run1 (typecheck, lint, lint:logs, lint:copy, verify-content) -> /tmp/sgnI/run1.log; run2 (unit, db, synth) -> /tmp/sgnI/run2.log; #42 intersection = 3 shared docs + watched-paths.txt only (gh api, 219 files)
+- pnpm typecheck: PASS (22 projects)
+- unit (apps/web+synth+screening-capacity): 1569 pass, 1 FAIL fixtures.test SGN-03/04 expected.json drift = caused by my registry assertedBy edit; run2's pnpm synth --all will regenerate; re-run fixtures.test after
+- typecheck/lint/lint:logs/lint:copy/verify-content: all PASS. db 3 files 27 PASS. synth --all wrote SGN-03/04 (registry edit). NEXT: synth 2nd run, fixtures.test, watched.test, browser tests, then e2e
+- synth 2nd run: 0 written, unchanged. fixtures.test+watched.test+step-timer.browser+action-form.browser: 4 files 79 PASS. NEXT: e2e (E2E_DATABASE=tp_e2e_sgn port 3190, log /tmp/sgnI/e2e1.log)
+- e2e run 1: tests 1 (time-mfa) and 2 (real 3-min) PASS; 3 and 4 FAIL at 'Step 1 of N: Choose a password' heading not found; investigating
+- FIX: StepHeading colon was sr-only (absolute) -> Chromium accname 'Step 1 of 2 : Choose a password' (probed: sr-only and inline-block both add space; opacity-0 inline gives exact name). Changed to <span className="opacity-0">: </span>, notice.test regex updated. Re-running notice.test, eslint, then e2e run 2
+- e2e run 2 (after fix): 4/4 PASS in 3.9m incl. real 3-min test
+- final: #42 intersection = 3 shared docs + watched-paths.txt; no model id; INTEGRATION DONE, reporting
