@@ -113,6 +113,9 @@ export function readGatewayConfig(env: Env = process.env, options: ServingOption
   }
   const serving = production ? productionServingConfig(provider as ProviderKind, options) : EVERY_KEY;
   if (provider === 'anthropic') {
+    if (value(env, 'ANTHROPIC_CUSTOM_HEADERS') !== undefined) {
+      throw new GatewayConfigError('ANTHROPIC_CUSTOM_HEADERS is refused: the Anthropic path sends only the headers the gateway sets (docs/adr/0048)');
+    }
     return { production, provider, apiKey: required(env, 'ANTHROPIC_API_KEY', 'when MODEL_PROVIDER is anthropic'), ...serving };
   }
   const endpoint = value(env, 'BEDROCK_ENDPOINT');
