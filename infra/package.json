@@ -5,7 +5,7 @@
   "type": "module",
   "description": "AWS CDK (TypeScript): one stack per environment from shared constructs. Network, database, files, keys, secrets, identity, monitoring, image repositories, Fargate compute, the load balancer with its web ACL, CloudFront for static assets and uptime checks.",
   "scripts": {
-    "synth": "CDK_DISABLE_CLI_TELEMETRY=true cdk synth --quiet --no-notices",
+    "synth": "CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true cdk synth --quiet --no-notices",
     "test": "vitest run --root .. --project unit infra/",
     "cdk:diff": "tsx scripts/cdk-diff.ts",
     "typecheck": "tsc --noEmit"
