@@ -48,6 +48,18 @@ returns (2026-11-03 14:00 UTC, possibly 15:00). Briefs: `lanes/lane-b-session-br
   Worker restarted; setup re-run 19:58 UTC (PostgreSQL back; no marker); efb20704 kept as WIP ref
   `co-001/wip-ss01-chain`; **resumed 19:59 UTC** with resumeFromRunId (the stage-1 agent continues from its progress file,
   copied to `approval-summaries/lane-a-wip/progress/sc-m1-ss01.md`).
+- **21:15 UTC (acting Lane A): wf_5566bd1c-8eb's stages 1 and 2 done.** SS-01 **efb20704** pushed (bce57f16 merged;
+  round 2: build, e2e 68 passed, synth 0 written; verifier: ok, one pre-existing nit). 1b **ce408d2f** pushed (SS-01
+  merged; test:db 9,600 + 1 skipped; dm 81d0ac76…, line 7458; verifier's open items: CAS-42.1/.2 not yet in-repo (being
+  built now), CAS-42's assertedBy lacks reconcile.large). Now running in parallel: 1b's gate builder + route scout, and
+  the interest merge of ce408d2f (typecheck, lint green so far).
+- **#42's head for the chain: 6c28d6a2** (orchestrator, 21:14 UTC; #78 and #82 merged; suggested line posted for the
+  founder: https://github.com/PureTideWater/PhysicalTherapy/pull/42#discussion_r4437376734). Base now 43565235 (#83).
+  **Running: wf_a12c973a-c12** (script `workflow-scripts/lane-a-schema-chain-pr42-into-ss01-wf_a12c973a-c12.js`), from
+  21:20 UTC, in /home/user/ss01 only (idle since stage 1): #42 6c28d6a2 then base 43565235 merged into SS-01, SS-01's
+  recreated objects re-read on #42's bodies (marker route only if a body moved), the whole check list (e2e ports
+  4991-4999), push; adversarial fresh-clone verifier + fixer. Then, after wf_5566bd1c-8eb finishes: the new SS-01 head
+  into 1b and 1b into interest (a follow-on workflow).
 - **#42's step-1 head c65f9cf2 pushed (orchestrator, 18:15 UTC); a #82-merged head follows.** Decision: wait for that
   head (one regeneration; no merge into a worktree a workflow is writing) and merge it down SS-01 -> 1b -> interest in a
   follow-on workflow once wf_5566bd1c-8eb's merges have pushed.

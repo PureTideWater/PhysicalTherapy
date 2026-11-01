@@ -1,0 +1,18 @@
+# verify-1b-merge progress
+- started Sun Nov  1 20:52:11 UTC 2026
+- clone at scratchpad/verify-1b-merge, branch v = ce408d2f; parents 358dc53f, efb20704 OK; MB f5bd6201
+- re-merge: conflicts only domain-model, test-matrix, ci.md, synth matrix, registry; merge differs from auto-merge only in those 5 files (no hand edits elsewhere)
+- test-matrix/matrix.ts/registry: CAS-39,41,40,42 order, both sides kept OK; ci.md row: headless shell + reconcile phase both kept OK
+- tables.test.ts == efb20704 (new from SS-01 side); approvers.json unchanged; no marker in tree; approval line blank
+- FINDING: ADR 0083 has no 1b side: 1b never edited it (file new in 1a); status still says 1b decisions "reserved, not yet decided as built" though 1b code cites D19/D20/D22/D23 via ADR 0083; design 7 requires 1b to write status + lock section. Merge msg says "stays as 1a wrote it". should-fix open item.
+- domain-model --check --strict on fresh tp_v1b-merge_1: rc 0 (381 fn names, 100 tables); --out to temp byte-equal except provenance line; function files equal
+- watched.ts --write: no diff; pnpm install --lockfile-only: no diff
+- synth --all: 0 written, 664+16 unchanged, 0 removed; ci/test-matrix/matrix/registry/recon-001/ADR0038/runbooks: every added line of both sides present (only the combined ci row differs, as intended)
+- semantics: 1a reads line_status by seq DESC via line_status_by_line (still valid: 1b draws seq under head-row lock); 1a's superseded_by_claim_id reads served by 1b's claim_by_superseded; no textual overlap in worker/db code
+- nit: merge commit has no body (sibling merges explain conflicts and regeneration in body); subject 400+ chars
+- open (1b, pre-existing): design lists apps/worker/src/triage/triage.large.db.test.ts + vitest SLOW_FIRST, absent on 1b and merge
+- running typecheck + targeted unit (bp0fgh19z), then targeted db tests
+- open (1b): CAS-42.1/.2 (100k triage+report under heap) have no in-repo test; registry CAS-42 assertedBy omits reconcile.large.db.test.ts (CAS-42.3)
+- typecheck rc0 (22 projects); unit targeted 31 files/565 tests pass
+- targeted db tests on tp_v1b-merge_2: 26 files/1499 tests pass; dbs dropped
+- cross-tenant.db.test.ts included in the db run; DONE, reporting
