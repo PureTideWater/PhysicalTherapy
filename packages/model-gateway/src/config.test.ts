@@ -84,7 +84,9 @@ describe('readGatewayConfig', () => {
   it('refuses ANTHROPIC_CUSTOM_HEADERS on the Anthropic path, which no client option overrides, and ignores it on the others (MOD-17)', () => {
     const anthropic = { MODEL_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-synthetic', ANTHROPIC_CUSTOM_HEADERS: 'x-synthetic-extra: 1' };
     expect(() => readGatewayConfig(anthropic)).toThrow(GatewayConfigError);
-    expect(() => readGatewayConfig(anthropic)).toThrow(/ANTHROPIC_CUSTOM_HEADERS/);
+    // The message names the variable and the remedy, never the value.
+    expect(() => readGatewayConfig(anthropic)).toThrow(/^ANTHROPIC_CUSTOM_HEADERS is refused: .*; unset it \(docs\/adr\/0048\)$/);
+    expect(() => readGatewayConfig(anthropic)).not.toThrow(/x-synthetic-extra/);
     // Blank, as the SDK reads it (trimmed, then ignored when empty), it adds no header and is not refused.
     expect(readGatewayConfig({ ...anthropic, ANTHROPIC_CUSTOM_HEADERS: '  ' })).toMatchObject({ provider: 'anthropic' });
     expect(readGatewayConfig({ MODEL_PROVIDER: 'bedrock', AWS_REGION: 'us-east-1', ANTHROPIC_CUSTOM_HEADERS: 'x-synthetic-extra: 1' })).toMatchObject({ provider: 'bedrock' });
