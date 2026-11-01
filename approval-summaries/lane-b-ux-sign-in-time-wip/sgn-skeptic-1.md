@@ -1,0 +1,17 @@
+# sgn-skeptic-1 progress (started)
+R-01 real=true: Cognito RespondToAuthChallenge gives fresh session so expiry on Associate right after is near-impossible (dev provider too: fresh challenge), but a thrown non-stale error in beginTotpSetup leaves pending new_password -> retry -> expired with use temporary after password saved. Fix (write chosen before beginTotpSetup) right.
+R-02 real=true (design fixes no DOM identity for link across phases; test cheap)
+R-03 real=true (enrolment at 390 w/ keyboard: region below button off view; but min-height reservation does not fix visibility; prefer test + record gap)
+R-04 real=true (hardware-key page shares reasonParams+SignInNotice, unlisted; PR 7 hook routes there)
+R-05 real=true (enroll CardContent flex gap-4; alertVariants box on empty div)
+R-06 real=false (house copy uses 'within a minute' (lib/screening/sent.ts:28); brand has no digits rule; deliberate)
+R-07 real=true (house style 0056/0059/0062 name amenders in Status)
+R-08 real=true (nit: risk row)
+R-09 real=true (nit: claim inaccurate; prefer stating bound; perf-timing only covers full loads)
+R-10 real=false (legal-surfaces lists text and non-essential attribution cookie; tp_sign_in already holds email sealed, unlisted; strictly necessary)
+R-11 real=true (verbatimModuleSyntax: import type erased)
+R-12 real=true (dev-provider.test.ts:83 tests 181 s; keep boundary)
+R-13 real=true (Email has no autoFocus; guard prevents stealing focus placed before hydration)
+R-14 real=true (keyRequired from hardware_key_required, any internal; authenticated() sends key holders to key sign-in)
+R-15 real=true (table row inaccurate vs 6.1)
+DONE
