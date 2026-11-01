@@ -2,7 +2,7 @@
 
 Created 2026-11-01T14:50:00Z by Lane B's orchestrator (session_01FcouKNNHsdecRMzfTs7XwW), which took the item back on
 2026-11-01; it runs in its own item session (prompt `lanes/lane-b-item-prompts-2026-11-01/ci-findings-transport.md`).
-Session: session starting 2026-11-01 (the item session writes its own id here first). Claimed in LANES.md on 2026-10-28 at
+Session: session_01FcouKQ3BjYKaME5uBLn8Lz (https://claude.ai/code/session_01FcouKQ3BjYKaME5uBLn8Lz), started 2026-11-01 16:57 UTC. Claimed in LANES.md on 2026-10-28 at
 06:55 UTC; branch `co-001/ci-findings-transport` (not on origin; cut after #86 merges). Reserved: test-matrix CI-30 to CI-31,
 only if a row is needed, with their `packages/synth` registry cases (allocated 2026-11-01 14:50 UTC in the claim row); no new
 ADR expected (ADR 0071 amended; ADR 0066's Part 3 sentence at `:982-983` on #86 edited). Any other number goes in a
@@ -12,8 +12,8 @@ ADR expected (ADR 0071 amended; ADR 0066's Part 3 sentence at `:982-983` on #86 
 Open questions: none.
 
 <!-- RESUME-BLOCK -->
-## Current state (2026-11-01T14:50:00Z): not started; session starting
-- **Stage: not started; session starting.** Done: only the claim (`LANES.md:197`, 2026-10-28 06:55). Remaining: design with
+## Current state (2026-11-01T16:59:14Z): design workflow starting
+- **Stage: design (one author, one adversarial reviewer with skeptics, the fold, a completeness critic) starting.** Setup printed OK at about 17:20 UTC (node v24.22.1 moved aside by the script itself); GitHub login `PureTideWater`. Done: only the claim (`LANES.md:197`, 2026-10-28 06:55). Remaining: design with
   its reviewer, build, draft PR, two reviews, fix round, verification, merge.
 - **The defect (latent).** At `.github/workflows/content-calendar.yml:78`, notify's one step puts
   `FINDINGS_B64: ${{ needs.check.outputs.findings }}` into one environment variable: the base64 of `findings.json`, capped at
@@ -57,3 +57,4 @@ Open questions: none.
 ## Log (UTC)
 - 2026-11-01T14:50:00Z: created by Lane B's orchestrator; CI-30 to CI-31 reserved in the claim row (only if a row is needed).
   The item session starts now.
+- 2026-11-01T16:59:14Z: session session_01FcouKQ3BjYKaME5uBLn8Lz started; setup OK (GitHub login PureTideWater); the design workflow starts.
