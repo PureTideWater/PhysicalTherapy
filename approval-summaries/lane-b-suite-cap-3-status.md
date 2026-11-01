@@ -21,6 +21,11 @@ written by this session's design workflow): `designs/lane-b-suite-cap-3-reconcil
   6c15628c-0d1e-52dc-840b-36ff1c157316/scratchpad). Check-in 22:11 UTC (trig_01557eo6ZaxAEGmh24yU9EGk). If stopped in this
   session: resumeFromRunId wf_4bc31523-700; if the session is lost, rerun the archived script from scratch.
   Next: commit the design; then builders, draft PR.
+- 2026-11-01 19:58 UTC: the account's 5-hour limit (reset 19:10 UTC) stopped wf_4bc31523-700 after the code map (complete;
+  progress/cap3-map.md); the profile had reached 2,000 lines in all states and 6,000 state (c) step 7b (1,486.4 s) when it
+  stopped, and the machine restarted. Setup re-run (OK); the run resumed from wf_4bc31523-700 with a RESUMED note in the
+  profile prompt (the map replays from cache). Check-in moved to 2026-11-02 01:08 UTC (trig_018BPysB9zh2e2rDx18q614x).
+  Early figures (2,000 lines, realistic spread): step 7b shape a 262.5 s, b 224.2 s, c 208.4 s; postings only ~65 s in each state.
 
 ## Corrections of the 2026-10-28 record (stale facts; the 2026-10-28 session and its scratchpad are lost)
 1. Session and orchestrator: now this session, under Lane B's orchestrator, from 2026-11-01 (was session_019i9ifDUYaz9Hta77Vukkzo
@@ -56,6 +61,7 @@ written by this session's design workflow): `designs/lane-b-suite-cap-3-reconcil
 - Founder: runbook 3i and `APPROVAL_REVIEW_REQUIRED` (until then merge on green CI after the verification; does not block).
 
 ## Log
+- 2026-11-01 19:58 UTC: design workflow stopped by the 5-hour limit after the map; resumed.
 - 2026-11-01 17:03 UTC: design workflow wf_4bc31523-700 launched.
 - 2026-11-01 17:00 UTC: new session; setup OK; branch re-cut at 83d71fd6 and pushed; status file corrected.
 - 2026-10-28 05:58 UTC: design workflow wf_860fa29e-3e1 launched (lost with the old container).
