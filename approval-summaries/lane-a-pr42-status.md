@@ -139,6 +139,14 @@ Follow-on: none. Briefs: `lanes/lane-b-session-brief.md`, then `lanes/acting-lan
   change needs + one push (WIP `co-001/wip-pr42-integrate-3`); then, in parallel, the description + record update + the one
   `images` comment, and the fresh-clone verification reading CI; then an adversarial check of each. Progress files
   `progress/pr42h-{merge,body,verify}.md`. Check-in scheduled ~23:35Z.
+- 2026-11-01T20:05Z (acting Lane A): the account's 5-hour limit stopped wf_a2590f4b-2bb's merge agent at ~18:42Z, and
+  the container restarted (setup re-run: OK on every line). Local, not pushed: merge 6c28d6a2 of bce57f16 (#82; six files
+  auto-merged, rule 6 kept both: ci.yml, workflows.test.ts, test-matrix, synth matrix and registry, reconciliation-001;
+  generators wrote nothing). Green on 6c28d6a2 before the stop: typecheck, lint 1,710 files, actions:check, toolchain:check,
+  tools tests 517, synth, check:fixtures, lint:copy, lint:logs, engine-freeze, affected (no shard), unit 7,078 passed 1 skip,
+  golden 376, oracle 687, verify-content, domain-model --check b23fed0e…2518, test:db shard 1. Resumed the same run with a
+  RESUMED note (db shards 2-4, build, e2e, capacity S1,S4 (4 watched hits), push). Progress copied to
+  `approval-summaries/lane-a-wip/progress/pr42h-merge.md`.
 
 ## Next
 Next: when wf_a2590f4b-2bb returns a pass: post the suggested approval line (acting-lane-a brief section 6) on the new head,
