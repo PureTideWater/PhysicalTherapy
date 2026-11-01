@@ -54,3 +54,11 @@ after dir /home/user/screens85-after. Gallery /home/user/gallery85 (not publishe
 - After letter-list retake: lock 17:51:09-17:54:17 (re-serve of the head build, fresh prepare, populate), 3 shots taken; tile shows the group 'Letters of this case’s earlier responses' and its letter. Cleanup done.
 - After tiles re-cut whole (72 shots, 211 tiles). Also read: p.case.write-off-open.1280-dark (Choose the reason + withheld hint), p.submissions.notice.390/.1280 (recorded notice; log line links the letter's receipt), p.submissions.error.1280 (letter chosen, refused on the amount). Fine.
 - Before letter-list retake: rebuild of 83d71fd6 (lock 17:54:42-17:58:18, build done 17:55:09), fresh prepare, populate; 3 shots; tile shows the base's flat Document list box (one letter). Cleanup done. Before tiles re-cut whole: 66 shots, 195 tiles. Next: commit + push, galleries.
+- Committed ab0f4fd4 (spec, route map, this file) on claude/build-ops; merged upstream (d429abca, ed3e2f7d; no conflict, spec syntax ok); pushed 22aa8a93..ed3e2f7d through the pre-push hook (gitleaks clean). Next: galleries.
+- Galleries built (not published) with /tmp/gallery85.py (filters each run's shots.json into light 1280, light 390 and
+  dark 1280; convert.py + build.py, title "PR #85 payer response", the lede leads with the width label and names the
+  commit): /home/user/gallery85/{before,after}-{1280,390,1280-dark}/gallery/pub{1280|390}/index.html with s/*.webp.
+  Before 22 shots each, after 24 each. None scaled.
+- DONE. Before: /home/user/screens85-before (66 shots, 33 skips; tiles/ 195). After: /home/user/screens85-after
+  (72 shots, 27 skips; tiles/ 211).
+- 2026-11-01T18:02:39Z resumed: verified ab0f4fd4 on origin/claude/build-ops, both tile folders, six gallery index.html, port 3297 free, no tp_e2e_screens DB or tmp dirs. Nothing left to do.
