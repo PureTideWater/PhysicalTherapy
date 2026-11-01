@@ -7,8 +7,18 @@ Only Lane B's sessions write this file. Add entries at the end, each with:
 
 Lane A reads it to keep the build tracker current. The rules are in `../LANES.md`; the person's set-up is in `../COFOUNDER-START.md`.
 
-## Start here (Lane B): the state at 2026-10-26 ~21:10 UTC, the handoff to Lane A
-**Lane A: read `lane-b-handoff-to-lane-a.md` (beside this file) first.** It orders what is due now. A session that continues Lane B's work reads this section first, after `../LANES.md`. From 2026-10-27 that is a Lane A
+## Start here (Lane B): Lane B is back from 2026-11-01 14:50 UTC
+**From 2026-11-01 14:50 UTC Lane B's orchestrator (session_01FcouKNNHsdecRMzfTs7XwW) holds every Lane B item and, until Lane A's
+account returns (2026-11-03 14:00 UTC, possibly 15:00 UTC), acts as Lane A for #42's last steps and the schema chain.** Start at
+the log's last entry, "2026-11-01 14:50 UTC (Lane B's orchestrator)", then `../LANES.md` "Claims" (each row names its PR, head,
+status file and session), `lane-b-session-brief.md`, `acting-lane-a-brief.md`, and the item prompts in
+`lane-b-item-prompts-2026-11-01/` (one file per item session; a lost session is restarted from its file). Each item's status file
+(`approval-summaries/lane-b-*-status.md`; `lane-a-pr42-status.md` and `lane-a-schema-chain-status.md` for the acting-Lane-A work) is
+its handoff. The shared counters are in LANES.md rule 4.
+
+The rest of this section is the state at 2026-10-26 ~21:10 UTC, Lane B's handoff to Lane A, kept as history: where it differs from
+the log's last entry, the claim rows, the status files or GitHub, those are current. Its "How Lane B runs" and "Where things are"
+still hold. Then, Lane A read `lane-b-handoff-to-lane-a.md` (beside this file) first. A session that continues Lane B's work reads this section first, after `../LANES.md`. From 2026-10-27 that is a Lane A
 session: the co-founder works Lane A from then on. Lane A runs on another Claude account against the same GitHub
 repository, so everything it needs is here, in LANES.md, in the status files (`approval-summaries/lane-b-*-status.md`)
 and on GitHub. This section says:
@@ -193,10 +203,16 @@ HANDOFF.md; LANES.md rule 10).
   - the dark-mode choice goes to the founder (it reverses D9 item 3); meanwhile, dark stays off.
 
 ### How Lane B runs: conventions and pitfalls (each one cost time once)
-- **Shared counters, allocated only by this session** (parallel sessions ask; each claim row names its numbers). Next free at 2026-10-26 ~09:27 UTC:
-  - ADR **0078** (0065 is #42's, 0066 the CI series', and 0067 to 0077 are claimed; 0077 by ux-forms at ~04:35). Used so far: 0067 (15b, open), 0068 (#46), 0070 (#53), 0071 (#49, open), 0072 (#52, open), 0073 (#47). Reserved, not yet written: 0069 (#10 amended ADR 0037 instead, so 0069 is free to reuse), 0074 (#46, the seal), 0075 (#32), 0076 (the narrative draft), 0077 (ux-forms);
-  - `packages/synth` MODULE_NUMBER **17** (`packages/synth/src/cases/common.ts:18` ends at CI 12; DBF 13, RCC 14, BIL 15 and FRM 16 are claimed; FRM at 09:27);
-  - fixture release **900008** (900001 to 900006 exist, 900007 is the release content checks', 900100 is the screening's scale release, and 900110 the release content checks' scale release, generated outside the repository);
+- **Shared counters: LANES.md rule 4 is the record.** From 2026-11-01 14:50 UTC Lane B's orchestrator
+  (session_01FcouKNNHsdecRMzfTs7XwW) allocates them for both lanes until Lane A's account returns; an item session writes
+  "COUNTER REQUEST: <what>" at the top of its status file, and each claim row names its numbers. Next free at 2026-11-01 14:50 UTC:
+  - ADR **0091** (0089 is the Dependabot batch's and 0090 UX PR 8's, each only if needed; 0069 was never used and is free to reuse);
+  - `packages/synth` MODULE_NUMBER **22** (`packages/synth/src/cases/common.ts:18` ends at DLR 18 on the base; 19 SGN, 20 HOM and 21
+    (UX PR 10, if needed) are reserved);
+  - fixture release **900008** (900007 is the release content checks'; 900100 and 900110 are scale releases generated outside the
+    repository; SUITE-CAP-1b and the interest fix name 900008 only if needed);
+  - test-matrix, next free per series: CAS-52, MOD-19, LED-26, BIL-11, CI-32, MAP-11, PRC-32, SGN-13, HOM-05, TBL-09, DLR-05,
+    SEC-20, SCR-23, JOB-06, FRM-09, RCC-09, DBF-06;
   - test-matrix IDs: two digits, `[A-Z]{2,3}-\d{2}` (`packages/synth/src/fixtures.test.ts:36`), so MOD-07, not MOD-7.
 - **Improve as you go** (the co-founder's standing direction, 2026-10-25 ~21:27 UTC). Every improvement or optimization found while building gets done, by whoever finds it (the session or any workflow agent; every workflow prompt says so). Where it lands:
   - **Inside the current PR** when it sits in files the PR already changes, or is small and of the same kind. It goes through the same reviews, tests and verification, and the PR description names it.
@@ -1023,3 +1039,58 @@ HANDOFF.md; LANES.md rule 10).
 ### 2026-11-01 (Lane A's orchestrator): the founder's decisions; #33 closed
 - The founder signed off #42's legal text as written. Social Security and phone numbers are to be redacted by pattern before the model reads a letter: new item `co-001/redact-ssn-phone`, with ADR 0088 and MOD-15 and MOD-16 reserved. Dependabot #33 is closed, not merged, at the co-founder's word.
 - Lane B had not started by 2026-11-01. Nothing was pushed after the handoff, and every PR stands as on 2026-10-28.
+
+### 2026-11-01 14:50 UTC (Lane B's orchestrator): Lane B back; every Lane B item taken back; acting Lane A until 2026-11-03
+- **The co-founder's answers** (in session_01FcouKNNHsdecRMzfTs7XwW, about 14:40 UTC): weekly usage is under 20%, so go wide:
+  every item that can run now starts now. The three founder decisions of 2026-11-01 that Lane A's session recorded (18bbe0e9,
+  15725ba2) are confirmed as genuine in this session and stand: #42's legal text is signed off as written; Social Security and
+  phone numbers are redacted by pattern (redact-ssn-phone); Dependabot #33 is closed (unmerged, 14:03:52 UTC).
+- **Taken back:** every Lane B item (handoff sections 2 and 3) and, as acting Lane A until Lane A's account returns
+  (2026-11-03 14:00 UTC, possibly 15:00 UTC), #42's last steps and the schema chain. In LANES.md "Claims": the dated blockquote;
+  every row that read "B (run by Lane A's orchestrator)" reads "B"; #42's and the schema chain's rows say "acting Lane A: Lane B's
+  account until 2026-11-03 14:00 UTC"; each row's PR, head and state corrected (also SUITE-CAP-3's freeze is LED-01 to LED-18,
+  the redact-ssn-phone row no longer says PRD 14 records the ruling, and the redact-placeholders row's "synth module 10" was
+  `completesIn`).
+- **What the records had wrong** (checked against git, GitHub and the session tools):
+  - #42's description was updated (2026-10-28 08:04:16Z, 61,992 characters, read back identical, SHA-256 394426ea…); handoff §2
+    and the 2026-10-30 14:15 entry above said it was not.
+  - Handoff §4a step 2 cannot be met as written: the summary (59,308 bytes), the legal text (11,476) and the actions (2,000) pass
+    65,536. The 10-28 structure stays (the summary whole at the top, the legal text whole in the record's §1, a pointer in the
+    body), with the legal section marked signed off.
+  - UX PR 6's design is partial: §§1-4 and the SGN rows only; §§5-8, its review and its revision never ran, and
+    `co-001/ux-sign-in-time` is at 165c5993 with no commits.
+  - #84: `co-001/wip-packet-day-counts` (acfd8980) is neither an ancestor nor a descendant of the PR head e3299ea2; the fix round
+    wf_c661e0c2-b5e is wholly lost.
+  - #86's status file is stale ("build starting", 06:41): #86 is built at 83167b8f, contains 83d71fd6, has CI green (23 success,
+    2 skipped), merges clean and has no reviews yet; its build scripts were never archived.
+  - #85 is `dirty` and has no CI: its base 165c5993 lacks 56ed6279 and 83d71fd6.
+  - The schema chain moved past its status file: SS-01 is at f897a282 (it holds 56ed6279 and 6f23c42b, not be63bdc2 or 83d71fd6),
+    not f5bd6201; the interest fix is at e0646746 (5 commits on 358dc53f) with no integrator or full-suite result; 1b is
+    unchanged at 358dc53f.
+- **Sessions, one per item, started in this order.** Each prompt is the rewritten `lane-b-session-brief.md` (plus
+  `acting-lane-a-brief.md` for acting Lane A) and the item's file in `lane-b-item-prompts-2026-11-01/`:
+  1. `pr42`: #42's last steps (acting Lane A; status `lane-a-pr42-status.md`, new);
+  2. `schema-chain`: SS-01, SUITE-CAP-1b and the interest fix (acting Lane A);
+  3. `ci-pin-age`: #82 (CI P1), then P2 and P4;
+  4. `ci-images-digest`: #86;
+  5. `contract-phi-check`: #75;
+  6. `packet-day-counts`: #84;
+  7. `ux-screening-result-tables`: #83 (UX PR 4), then 4b after #42 merges;
+  8. `ux-payer-response`: #85 (UX PR 10);
+  9. `ux-home-figures`: UX PR 9;
+  10. `suite-cap-3`: SUITE-CAP-3;
+  11. `ux-sign-in-time`: UX PR 6;
+  12. `ci-findings-transport`: the design now, the build after #86 merges (status `lane-b-ci-findings-transport-status.md`, new);
+  13. `unmapped-plan`: #32, then #48 (narrative draft);
+  14. `redact-ssn-phone`: the design now, the build after #75 merges (status `lane-b-redact-ssn-phone-status.md`, new);
+  15. `dependabot-batch`: #87, #88 and #89 as the build's own PRs (status `lane-b-dependabot-batch-status.md`, new).
+
+  Merge order (handoff §6): #82, #86, #75, #84, #83, #85; the schema chain one PR at a time after #42 (#42, SS-01, 1b, interest).
+- **Counters allocated** (LANES.md rule 4; each checked free on the base, on every origin branch and in every claim): the
+  Dependabot batch ADR 0089 (only if the SDK major needs a decision record) and MOD-17 to MOD-18; UX PR 8
+  (`co-001/ux-account-security`, claimed today, after UX PR 7) ADR 0090 if needed and SGN-09 to SGN-12; ci-findings-transport
+  CI-30 to CI-31 if it needs a row. Next free: ADR 0091, synth module 22, fixture release 900008.
+- **Container:** `tools/setup-container.sh` fails "node: /opt/node24/bin/node reports 'v24.22.1', not v24.22.0" on the current
+  base image; the fix is `mv /opt/node24 /opt/node24.base-image`, then run it again (every item prompt says so).
+  storage.googleapis.com has been allowed since 2026-10-27, so the playwright line reads ok.
+- **Next:** the item sessions start.
