@@ -31,7 +31,7 @@
  * Every match is found on the letter before anything is replaced, and overlapping matches become one
  * placeholder, so no placeholder is ever rewritten. What the task reads stays: in a date that is not a
  * date of birth, written with a separator (DATE_SEPARATOR) or a month word and with a calendar reading, a
- * month word is not a name and digits written with its dashes are not a number; a claim's digits
+ * month word is not a name, and digits whose own written form is that date are not a number; a claim's digits
  * written as an amount, after a currency sign and with cents, are not its number. The letter's own
  * square brackets become parentheses, so the only bracketed text sent is a placeholder. Nothing else of
  * the letter changes.
@@ -334,8 +334,8 @@ const writtenAt = (view: View, normal: string, index: number) => codePointAt(nor
 
 /** Dashes (with the minus sign and hyphen bullet PDF text writes for a hyphen), apostrophes, the underscore and VANISHED: they join a name anywhere. */
 const NAME_JOINERS = "\\p{Pd}\\u2212\\u2043'\\u2018\\u2019\\u02BC`\\u00B4_\\u00AD";
-/** White space, dashes and VANISHED: they join a member ID or claim number anywhere ("." "_" "/" ":" "#" and "(" only next to a letter). */
-const NUMBER_JOINERS = '\\s\\p{Pd}\\u2212\\u2043\\u00AD';
+/** White space, dashes, "_", "|", "\\" and VANISHED: they join a member ID or claim number anywhere ("." "/" ":" "#" and "(" only next to a letter). */
+const NUMBER_JOINERS = '\\s\\p{Pd}\\u2212\\u2043_|\\\\\\u00AD';
 /** A line break, and a dash (or VANISHED) before one: a word hyphenated at the end of a line ("Van-⏎tree"). */
 const LINE_BREAK = '(?:\\r\\n|[\\n\\r\\u0085\\u2028\\u2029])';
 const HYPHENATION = `[\\p{Pd}\\u2212\\u2043\\u00AD]${SPACES.replace('+', '*')}${LINE_BREAK}${SPACES.replace('+', '*')}`;
@@ -349,7 +349,7 @@ const GAP = {
   part: `[${NAME_JOINERS}\\s.,]*`,
   number: `[${NUMBER_JOINERS}]*`,
   /** Between two characters of a number of which one is a letter: "SYN.555001", "ZZ_1234567", "ZZ#1234567", "ZZ(1234567)" (never "150.00"). */
-  numberNearLetter: `[${NUMBER_JOINERS}._/:#(]*`,
+  numberNearLetter: `[${NUMBER_JOINERS}./:#(]*`,
 } as const;
 
 /** A gap that is a word hyphenated at a line break, which joins inside a part whatever the pieces' case ("Jo-⏎ann"). */
@@ -516,8 +516,17 @@ function spacedPiecesPass(form: Form, view: View, normal: string, start: number,
  */
 const isAmount = (normal: string, range: Range) => /\p{Sc}\s*$/u.test(normal.slice(Math.max(0, range.start - 8), range.start)) && /^[.,]\d{2}(?!\d)/u.test(normal.slice(range.end, range.end + 4));
 
-/** A dash in a number's match: the only date separator a number may hold (an invisible character or a space is none). */
-const DASHED = /[\p{Pd}−⁃]/u;
+/**
+ * Whether a digits-only number's own written form (its NFKC range alone, read with its invisible
+ * characters dropped or as spaces) is a whole calendar date written with a separator: only then may its
+ * digits stay as that date. A number inside a date read with a month word, or across an invisible
+ * character, is not that date ("Jan 31-2026" for claim 312026, "1999-1<ZWSP>2-31" for claim 19991).
+ */
+const writtenAsDate = (normal: string, range: Range) =>
+  (['drop', 'space'] as const).some((invisible) => {
+    const written = viewOf(normal.slice(range.start, range.end), invisible).text;
+    return datesIn(written).some((span) => span.separated && span.dates.length > 0 && span.start === 0 && span.end === written.length);
+  });
 
 interface Found extends Range {
   readonly kind: Kind;
@@ -531,7 +540,7 @@ interface Found extends Range {
  */
 function matchesIn(normal: string, subject: Subject): Found[] {
   const found: Found[] = [];
-  // Dates on both readings of invisible characters. A separated date with a calendar reading that is not a date of birth stays, and holds no name, nor a number written with its dashes.
+  // Dates on both readings of invisible characters. A separated date with a calendar reading that is not a date of birth stays, and holds no name, nor a number whose own written form is that date.
   const otherDates: Range[] = [];
   const births = new Set(subject.datesOfBirth ?? []);
   for (const invisible of ['drop', 'space'] as const) {
@@ -567,7 +576,7 @@ function matchesIn(normal: string, subject: Subject): Found[] {
           continue;
         }
         names.push({ start, end });
-      } else if (form.digitsOnly && ((form.kind === 'claim' && isAmount(normal, range)) || (inOtherDate(range) && DASHED.test(match[0])))) {
+      } else if (form.digitsOnly && ((form.kind === 'claim' && isAmount(normal, range)) || (inOtherDate(range) && writtenAsDate(normal, range)))) {
         continue;
       }
       found.push({ ...range, kind: form.kind, claim: form.claim });
@@ -809,9 +818,9 @@ export function identifierTokenRuns(text: string, options: { readonly joins: (be
   return [...runs];
 }
 
-/** What joins two tokens of one identifier in a letter: white space, dashes and invisible characters, and ".", "_", "/", ":", "#" or "(" next to a letter. */
+/** What joins two tokens of one identifier in a letter: white space, dashes, "_", "|", "\\" and invisible characters, and ".", "/", ":", "#" or "(" next to a letter. */
 function letterJoins(between: string, left: string, right: string): boolean {
-  return /^[\s\p{Pd}−⁃\u00AD._/:#(]+$/u.test(between) && (!/[._/:#(]/u.test(between) || /\p{L}\p{M}*$/u.test(left) || /^\p{L}/u.test(right));
+  return /^[\s\p{Pd}−⁃\u00AD_|\\./:#(]+$/u.test(between) && (!/[./:#(]/u.test(between) || /\p{L}\p{M}*$/u.test(left) || /^\p{L}/u.test(right));
 }
 
 /**

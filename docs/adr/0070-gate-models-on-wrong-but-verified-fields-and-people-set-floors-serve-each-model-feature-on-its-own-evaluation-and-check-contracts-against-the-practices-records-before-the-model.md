@@ -1325,16 +1325,18 @@ The fix round of the pull request's review (2026-10-27) adds these:
   it is. The contract screen keeps its own streamed tokenizer (`someIdentifierRun`), and the two paths now join
   differently, each for its own task:
   - Both join an identifier's tokens over nothing, one space, a dash or minus sign with at most one space beside it,
-    invisible characters, and a dot, slash or underscore next to a letter.
-  - Only the contract screen joins over a dot, slash or underscore between two digits, an asterisk anywhere
+    invisible characters, an underscore anywhere (the letter path between two digits too since review finding F4-1,
+    2026-11-01), and a dot or slash next to a letter.
+  - Only the contract screen joins over a dot or slash between two digits, an asterisk anywhere
     ("1234.567890", "20261234/01", "SYN*PCN*44551"), any separator the practice's own kept values hold, and more than
     three tokens, where the letter's candidates stop at three. The letter redaction rewrites the text the model reads,
     so it must leave "150.00" an amount and "03/15/2027" a deadline. The screen rewrites nothing; it refuses. Joining
     digits over a dot or a slash costs it at most a false refusal ("Refused that names no patient", counted under
     "Measured: the false refusals"), where not joining would send an identifier written in groups.
   - Only the letter path joins over any run of white space and dashes (two spaces, a tab, a line break, two dashes, a
-    dash with two spaces beside it), U+2043 HYPHEN BULLET, and, next to a letter, any such run with a dot, slash,
-    underscore, colon, "#" or "(" in it ("ZZ:1234567", "ZZ(1234567", "ZZ. 1234567", "ZZ / 1234567", "ZZ-.1234567");
+    dash with two spaces beside it), U+2043 HYPHEN BULLET, a bar or a backslash anywhere ("ZZ|1234567",
+    "1234\\567890", since F4-1), and, next to a letter, any such run with a dot, slash, underscore, colon, "#" or "("
+    in it ("ZZ:1234567", "ZZ(1234567", "ZZ. 1234567", "ZZ / 1234567", "ZZ-.1234567");
     neither path joins over a comma, a plus sign or a closing parenthesis. The letter path also reads a Hangul filler
     as a space and a lone combining mark as invisible, and its matcher (`holdsIdentifier`, not `identifierCandidates`)
     folds an accented letter to its plain one ("ZŽ1234567" is ZZ1234567). The screen ends a run at each of these unless
@@ -1344,11 +1346,11 @@ The fix round of the pull request's review (2026-10-27) adds these:
     runs that equal one of up to 50,000 kept identifiers by chance, while the letter's matcher looks only for the one
     patient's own values. Each is in "Not caught".
   - `src/redact.test.ts` holds the difference: a property (2,000 runs) that, over every gap the screen's own join rule
-    takes (`JOIN`), the screen finds each writing and the letter path reads exactly those with no asterisk and no dot,
-    slash or underscore between two digits (`holdsIdentifier`, and `identifierCandidates` when the writing spans at most
+    takes (`JOIN`), the screen finds each writing and the letter path reads exactly those with no asterisk and no dot
+    or slash between two digits (`holdsIdentifier`, and `identifierCandidates` when the writing spans at most
     three tokens and holds a digit), leaving out a writing of digits alone that a letter reads as a separated calendar
     date, which the letter's deadline rule keeps; and a table of each writing only the letter path reads, which the
-    screen finds only when the practice's own value holds its separator, of the five only the screen reads, and of
+    screen finds only when the practice's own value holds its separator, of the four only the screen reads, and of
     the comma, plus sign and closing parenthesis neither reads. A letter is therefore no longer redacted of everything
     the screen would find (P14).
 

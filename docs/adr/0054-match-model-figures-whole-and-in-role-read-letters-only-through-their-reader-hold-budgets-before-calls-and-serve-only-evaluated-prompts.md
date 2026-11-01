@@ -292,14 +292,17 @@ this amendment holds.
   characters dropped and read as spaces, and the readings united. Every form (names, member IDs, claim numbers) is
   compacted from the same fold of its stored value.
 - **Numbers** (member IDs, claim numbers; two letters or digits or more) match with any white space, dash (with U+2212
-  MINUS SIGN and U+2043 HYPHEN BULLET) or invisible character between their characters, and `_`, `.`, `/`, `:`, `#` or
+  MINUS SIGN and U+2043 HYPHEN BULLET), `_`, `|`, `\` or invisible character between their characters (`_`, `|` and
+  `\` between two digits since review finding F4-1, 2026-11-01: `1234_5678`, `0023|04|26`), and `.`, `/`, `:`, `#` or
   `(` only next to a letter (`SYN.555001`, `ZZ/1234567`, `ZZ#1234567`, never `150.00`). Digits alone are kept in two
   cases only. A claim's digits written as an amount, after a currency sign and with cents (`$15000.00` for claim
   15000), are kept: with their cents they are never the claim's own written form; `$555001`, `555001.01` and
   `555001,12` are the claim's. A member ID is never read as an amount (`$12345678` for member 12345678 is replaced).
-  And digits inside a date that is not a date of birth are kept only when the match itself holds a dash and the date
-  is separated (written with a slash, a backslash, a period, a dash, `_`, `|` or a month word) and has a calendar
-  reading ("Appeal by 2027-03-15" keeps its deadline). An invisible character or a space is no date separator, and
+  And digits inside a date that is not a date of birth are kept only when the date is separated (written with a slash,
+  a backslash, a period, a dash, `_`, `|` or a month word) and has a calendar reading, and the match's own written form,
+  read alone, is a whole such date ("Appeal by 2027-03-15" keeps its deadline). Since review finding F4-2 (2026-11-01) a
+  match that is only part of the date is replaced: claim 312026 in `Jan 31-2026`, claim 19991 in `1999-1<ZWSP>2-31`.
+  An invisible character or a space is no date separator, and
   numbers shaped like a date no calendar holds are no date, so `1234<ZWSP>5678`, `12-34-56`, `1234-56-78`, `03 15 61`
   and "Claim 20270315" are replaced. A calendar reading needs a plausible year (2026-11-01, MOD-13 seed 1162287068):
   a four-digit year from 1900 to 2099 (`EARLIEST_WRITTEN_YEAR`, `LATEST_WRITTEN_YEAR`, what a date of birth, a date of
@@ -376,7 +379,8 @@ not limited to three); another patient's identifier the screen sees only with a 
 while the stored side keeps values from two; another patient's name, which the screen does not look for; and addresses,
 phone numbers and Social Security numbers, which PRD 14 does not list for redaction. Recorded with the review round
 (each the cost of keeping what the task reads, or not new): a digits-only member ID or claim number that is itself a
-real calendar date written with dashes (a year from 1900 to 2099) reads as that date and is sent (member 031561 written
+real calendar date written with dashes, `_`, `|` or `\` (a year from 1900 to 2099) reads as that date and is sent
+(member 031561 written
 `03-15-61`); a claim's
 digits written after a currency sign and with cents are sent as an amount (`$555001.00`); digits alone with a slash
 or a period between them (`12/34/5678`, `1234.5678`) are not a number, being how dates and amounts are written; and a

@@ -164,7 +164,7 @@ describe('identifierRuns: the page runs the contract screen compares', () => {
     expect(identifierRuns('ABCDEF', { minLength: 6, maxLength: 5 })).toEqual([]);
   });
 
-  it('finds every single-line writing the letter path reads over the separators the screen joins, and the letter path reads exactly those with no "*" and no ".", "/" or "_" between two digits (property; docs/adr/0070 Part 3, N6)', () => {
+  it('finds every single-line writing the letter path reads over the separators the screen joins, and the letter path reads exactly those with no "*" and no "." or "/" between two digits (property; docs/adr/0070 Part 3, N6)', () => {
     const group = fc.string({ unit: fc.constantFrom(...'ABCDEFGHJKLMNPQRSTUVWXYZ0123456789abcz'), minLength: 1, maxLength: 6 });
     // Every gap the screen's JOIN takes: none, one space, a dash or minus sign with at most one space on either side,
     // one dot, slash, underscore or asterisk, and invisible characters anywhere in a gap.
@@ -181,8 +181,8 @@ describe('identifierRuns: the page runs the contract screen compares', () => {
         // Digits alone written as a separated calendar date stay that date in a letter (docs/adr/0054, amendment of
         // 2026-10-27): the letter's deadline rule, not this property's case.
         fc.pre(!(/^\d+$/u.test(compact) && datesIn(text).some((span) => span.separated && span.dates.length > 0)));
-        // What the letter path joins over these gaps: all but "*", and ".", "/" or "_" only next to a letter.
-        const letterReads = groups.slice(1).every(([next, sep], index) => !sep.includes('*') && (!/[./_]/u.test(sep) || letter.test(groups[index]?.[0].at(-1) ?? '') || letter.test(next[0] ?? '')));
+        // What the letter path joins over these gaps: all but "*", and "." or "/" only next to a letter ("_" anywhere, review finding F4-1).
+        const letterReads = groups.slice(1).every(([next, sep], index) => !sep.includes('*') && (!/[./]/u.test(sep) || letter.test(groups[index]?.[0].at(-1) ?? '') || letter.test(next[0] ?? '')));
         const tokens = 1 + groups.slice(1).filter(([, sep]) => sep !== '').length;
         const screen = runs(text).includes(compact);
         const matcher = holdsIdentifier(text, { pseudonym: 'synthetic', names: [], datesOfBirth: [], memberIds: [written] }, []);
@@ -212,6 +212,10 @@ describe('identifierRuns: the page runs the contract screen compares', () => {
       ['a combining mark on a digit', '1234\u0301567890', '1234567890', true],
       ['a Hangul filler', 'ZZ\u31641234567', 'ZZ1234567', true],
       ['an accented letter for its plain one', 'Z\u017D1234567', 'ZZ1234567', true],
+      // A bar or a backslash joins a letter's number anywhere (review finding F4-1), and the screen only as the practice's own separator.
+      ['a bar next to a letter', 'ZZ|1234567', 'ZZ1234567', true],
+      ['a bar between two digits', '1234|567890', '1234567890', true],
+      ['a backslash between two digits', '1234\\567890', '1234567890', true],
     ];
     for (const [what, written, stored, asStored] of cases) {
       const text = `Member ${written} on file`;
@@ -219,8 +223,8 @@ describe('identifierRuns: the page runs the contract screen compares', () => {
       expect(screens(text, [stored]), what).toBe(false);
       expect(screens(text, [written]), what).toBe(asStored);
     }
-    // And the other way: digits alone joined by ".", "/" or "_", and "*" anywhere, which the screen reads and the letter path does not.
-    for (const written of ['1234.567890', '20261234/01', '1234_567890', 'SYN*PCN*44551', '123*4567890']) {
+    // And the other way: digits alone joined by "." or "/", and "*" anywhere, which the screen reads and the letter path does not.
+    for (const written of ['1234.567890', '20261234/01', 'SYN*PCN*44551', '123*4567890']) {
       const text = `Member ${written} on file`;
       expect(screens(text, [compactIdentifier(written)]), written).toBe(true);
       expect(holdsIdentifier(text, { pseudonym: 'synthetic', names: [], datesOfBirth: [], memberIds: [compactIdentifier(written)] }, []), written).toBe(false);

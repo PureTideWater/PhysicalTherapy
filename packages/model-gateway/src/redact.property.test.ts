@@ -72,13 +72,13 @@ function writePart(value: string, style: Style, variant: Variant, pick: number):
   }
 }
 
-const NUMBER_JOINERS = [' ', '-', '–', '−', '\u200B', '\u00AD', '\u2060'];
+const NUMBER_JOINERS = [' ', '-', '–', '−', '_', '|', '\\', '\u200B', '\u00AD', '\u2060'];
 const NEAR_LETTER_JOINERS = ['_', '.', '/', ':'];
 const DATE_DASHES = ['-', '–', '−', '‐'];
 
 /**
- * A member ID or claim number as a letter writes it: its case, and up to two joiners (a period, underscore,
- * slash or colon only next to a letter), digits alone too. Dated, six or eight digits are cut where a date's
+ * A member ID or claim number as a letter writes it: its case, and up to two joiners (a period, slash or
+ * colon only next to a letter; an underscore, a bar or a backslash anywhere), digits alone too. Dated, six or eight digits are cut where a date's
  * numbers end (2027-03-15, 03–15–2027, 03-15-61), with one dash.
  */
 function writeNumber(value: string, lower: boolean, picks: readonly number[], dated = false): string {
@@ -119,7 +119,7 @@ const MONTH_NAMES = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'se
 
 /**
  * The calendar dates written text is, read here on its own and not by the code under test: three numbers
- * with a slash, a period or a dash between each two (year first, or month and day in either order before
+ * with a slash, a backslash, a period, a dash, an underscore or a bar between each two (year first, or month and day in either order before
  * the year), or a month word with a day and a year. Numbers with spaces alone, compact digits, an invisible
  * character, a date no calendar holds and a four-digit year outside 1900 to 2099 read as none.
  */
@@ -138,7 +138,7 @@ function separatedDateReadings(written: string): string[] {
     const [day = '', year = ''] = numbers;
     return month === 0 || numbers.length !== 2 || day.length > 2 ? [] : read([[year, String(month), day]]);
   }
-  const parts = written.trim().split(/\s*[/.\p{Pd}\u2212\u2043]\s*/u);
+  const parts = written.trim().split(/\s*[/\\.\p{Pd}\u2212\u2043_|]\s*/u);
   if (parts.length !== 3 || !parts.every((part) => /^\d{1,4}$/.test(part))) return [];
   const [a = '', b = '', c = ''] = parts;
   return a.length === 4 ? read([[a, b, c]]) : read([[c, a, b], [c, b, a]]);
@@ -393,6 +393,37 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
       expect(redactLetter(`Seen ${written}.`, patient, claims).text, written).toBe('Seen [DATE_OF_BIRTH].');
     }
     expect(redactLetter('DOB 0023-04-26.', patient, []).text).toBe('DOB [DATE_OF_BIRTH].');
+  });
+
+  it('joins a digits-only number over an underscore, a bar or a backslash as over a dash, and keeps it only as the date its own written form is (review findings F4-1, F4-2)', () => {
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: ['1955-07-14'], memberIds: ['00230426'] };
+    const claimsOf = (...numbers: string[]): LetterClaim[] => numbers.map((value, i) => ({ claimId: `synthetic-claim-${String(i + 1)}`, patientPseudonym: 'synthetic-patient-13', claimNumbers: [value] }));
+    // F4-1: digits with "_", "|" or "\\" between them are the number, whether or not they look like a date.
+    for (const [written, numbers] of [
+      ['Claim 0023_04_26 denied', ['00230426']],
+      ['Claim 0023|04|26 denied', ['00230426']],
+      ['Claim 0023\\04\\26 denied', ['00230426']],
+      ['Claim 1234_5678 denied', ['12345678']],
+      ['Claim 1234|5678 denied', ['12345678']],
+      ['Claim 1234\\5678 denied', ['12345678']],
+    ] as const) {
+      expect(redactLetter(written, patient, claimsOf(...numbers)).text, written).toBe('Claim [CLAIM_1] denied');
+      expect(holdsIdentifier(written, patient, claimsOf(...numbers)), written).toBe(true);
+    }
+    for (const written of ['Member 0023_04_26 on file', 'Member 0023|04|26 on file', 'Member 0023\\04\\26 on file', 'Member 0023-04-26 on file']) {
+      expect(redactLetter(written, patient, []).text, written).toBe('Member [MEMBER_ID] on file');
+    }
+    // A real date written with those separators is still a date (a claim number that is itself one, the recorded residual).
+    expect(redactLetter('Seen 2026_01_31, 2026|01|31 and 2026\\01\\31.', patient, claimsOf('20260131')).text).toBe('Seen 2026_01_31, 2026|01|31 and 2026\\01\\31.');
+    expect(redactLetter('Born 1955_07_14 and 14|07|1955.', patient, []).text).toBe('Born [DATE_OF_BIRTH] and [DATE_OF_BIRTH].');
+    // F4-2: a short claim inside a date read with a month word or across an invisible character is not that date.
+    expect(redactLetter('Claim Jan 31-2026 denied', patient, claimsOf('312026')).text).toBe('Claim Jan [CLAIM_1] denied');
+    expect(redactLetter('Claim Jan-31-2026', patient, claimsOf('312026')).text).toBe('Claim Jan-[CLAIM_1]');
+    expect(holdsIdentifier('Claim Jan 31-2026 denied', patient, claimsOf('312026'))).toBe(true);
+    expect(holdsIdentifier('Claim 1999-1\u200B2-31', patient, claimsOf('19991'))).toBe(true);
+    expect(redactLetter('Claim 1999-1\u200B2-31', patient, claimsOf('19991')).text).not.toContain('1999');
+    // The whole date written across the invisible character is still that date.
+    expect(redactLetter('Seen 1999-1\u200B2-31.', patient, claimsOf('19991231')).text).toBe('Seen 1999-1\u200B2-31.');
   });
 
   it('still replaces every letter or digit today’s code replaced, but in a date that is not a date of birth or an amount (property and the design’s section 1 rows)', () => {
