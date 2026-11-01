@@ -320,6 +320,8 @@ lockfile entry against the release age and the trust policy on every install (`t
   evaluation gate first (packages/model-gateway; PRD 18), in a deliberate pull request.
 - **AWS.** `aws-cdk` with `aws-cdk-lib` and `constructs`, and `@aws-sdk/*`, come in their groups (minor and patch).
   `pnpm cdk:diff` in the build job shows what a CDK bump changes in the stacks; read it before taking one.
+  After a CDK CLI bump, confirm it still honours `CDK_DISABLE_CLI_TELEMETRY` and the `notices` setting (`lib/index.js`,
+  `canCollectTelemetry` and the notices setting).
   `@aws-sdk/*` reaches pricing and packets through the lockfile, so its pull request runs those packages' mutation.
 
 ## Actions
