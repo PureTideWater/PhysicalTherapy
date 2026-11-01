@@ -2,11 +2,11 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { assemblePacket } from './assemble';
-import { checkFigures, checkNarrative } from './check';
+import { checkNarrative, checkReading } from './check';
 import { draftNarrative } from './draft';
 import { narrativeFacts } from './facts';
 import { assemblyInput } from './test-support';
-import { checkedFigures, verifyNarrative } from './verifier';
+import { checkedFigures, findMismatches, verifyNarrative } from './verifier';
 
 /**
  * The builder's check in the browser (@tp/packets/check) says what the stored verifier says: the same
@@ -39,7 +39,7 @@ describe('checkNarrative', () => {
   it('says what each figure was read as, whether it passed, and where the inputs hold a failing one (docs/adr/0086)', () => {
     // A hidden character before the second sentence moves its positions in the readable text, not in the narrative.
     const narrative = 'There were 3 claims [3].\u200b The shortfall was $210.00 and the payer allowed 3650 [3].';
-    const figures = checkFigures(narrative, content);
+    const { figures } = checkReading(narrative, narrativeFacts(content));
     expect(figures.map((figure) => [narrative.slice(figure.start, figure.end), figure.kind, figure.roles, figure.passed, figure.heldAs, figure.sentence])).toEqual([
       ['3', 'number', ['claims'], true, [], 0],
       ['$210.00', 'amount', ['variance'], false, ['allowed'], 1],
@@ -47,6 +47,20 @@ describe('checkNarrative', () => {
     ]);
     expect(checkedFigures(narrative, narrativeFacts(content))).toEqual(figures);
     // A figure no input holds in any role is held in none.
-    expect(checkFigures('The payer kept $1.23 [3].', content).map((figure) => [figure.passed, figure.heldAs])).toEqual([[false, []]]);
+    expect(checkReading('The payer kept $1.23 [3].', narrativeFacts(content)).figures.map((figure) => [figure.passed, figure.heldAs])).toEqual([[false, []]]);
+  });
+
+  it('gives the check and the figures from one reading, each as the separate calls give it, for any text (PE-9)', () => {
+    const facts = narrativeFacts(content);
+    const words = fc.constantFrom('The', 'payer', 'paid', 'allowed', '$56.00', '$100.00', '3650', 'days', '3', 'claims', '[1]', '[3]', '2026-03-09', '.', ',', 'and');
+    fc.assert(
+      fc.property(fc.array(words, { maxLength: 30 }), (parts) => {
+        const narrative = parts.join(' ');
+        const reading = checkReading(narrative, facts);
+        expect(reading.check).toEqual(findMismatches(narrative, facts, []));
+        expect(reading.check).toEqual(checkNarrative(narrative, content));
+        expect(reading.figures).toEqual(checkedFigures(narrative, facts));
+      }),
+    );
   });
 });

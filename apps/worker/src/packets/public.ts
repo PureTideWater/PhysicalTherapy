@@ -12,7 +12,9 @@
  * codes its refusals and failed tries are recorded with are PACKET_EXPORT_REFUSALS and
  * PACKET_EXPORT_FAILURES. The practice administrator sets the correspondence contact the payer's copy prints
  * (setCorrespondenceContact()), and staff find a packet by the reference a payer quotes (packetVersionsByReference();
- * audit item #37 part 1). Nothing here writes a ledger entry or a line stage.
+ * audit item #37 part 1). A request for approval, an approval and the screens ask the verifier again over a stored
+ * version, as the export job does (verifyVersionNow(), caseVerifiersNow(), verifierNow(); docs/adr/0086). Nothing here
+ * writes a ledger entry or a line stage.
  */
 export {
   type AcceptingResponse,
@@ -95,6 +97,7 @@ export {
   exportReadiness,
 } from './readiness';
 export { MA_NONCONTRACTED_CITATION, PACKET_REFUSALS, type PacketRefusal, PacketRefusedError } from './records';
+export { VERIFIER_STANDINGS, type VerifierNow, type VerifierStanding, caseVerifiersNow, verifierNow, verifyVersionNow } from './verifier-now';
 export { PACKET_CSV_COLUMNS } from './csv';
 export { type PayerCopy } from './html';
 export { CorrespondenceContactRefused, practiceCorrespondenceContact, setCorrespondenceContact } from './correspondence';

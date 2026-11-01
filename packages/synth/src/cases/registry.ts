@@ -263,7 +263,12 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'packages/packets/src/roles.property.test.ts',
     'packages/model-gateway/src/functions/narrative-roles.test.ts',
     'apps/worker/src/packets/packets.db.test.ts',
+    'apps/worker/src/packets/verifier-now.test.ts',
     'apps/web/src/lib/packets/view.test.ts',
+    'apps/web/src/lib/routes/workbench-routes.db.test.ts',
+    'apps/web/src/components/packets/stored-narrative.test.tsx',
+    'apps/web/src/components/packets/narrative-editor.browser.test.tsx',
+    'apps/web/e2e/packets.spec.ts',
   ]),
   'CAS-44': none(8, 'Narratives against the SYNTHETIC packets of @tp/packets/testing (role-examples.ts): no file.', [
     'packages/packets/src/verifier.test.ts',

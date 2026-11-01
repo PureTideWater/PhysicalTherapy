@@ -196,7 +196,9 @@ export const REQUEST_MESSAGE_MAX_LENGTH = 1000;
 
 /**
  * Asks a second person to approve the packet's current version (PRD 7: "request approval"), once the
- * verifier passed it, with optional words to the approver (kept encrypted). Asking again does nothing.
+ * verifier passed it, with optional words to the approver (kept encrypted). Asking again does nothing. The verifier
+ * runs again first over the stored narrative and content, as the export job runs it, and a version it fails now is
+ * refused with each mismatch, on the page it was asked from (docs/adr/0086; the review of 2026-11-01, CORR-5).
  */
 export const requestApprovalAction = practiceRoute({
   id: 'practice.cases.packet.request_approval',
@@ -209,7 +211,7 @@ export const requestApprovalAction = practiceRoute({
   audit: { action: 'packet_approval_requested', objectType: 'packet_version' },
   handle: async ({ scope, practiceId, input, services, request }): Promise<MutationResult> => {
     await versionOfCase(scope, practiceId, input.caseId, input.versionId);
-    await underPacketRules(() => requestApproval(scope, services.keys, { practiceId, caseId: input.caseId, versionId: input.versionId, message: input.message ?? null }));
+    await underPacketRules(() => requestApproval(scope, services.keys, { practiceId, caseId: input.caseId, versionId: input.versionId, message: input.message ?? null, requestId: request.requestId }));
     // The drafter is done with any model draft of the packet: its decision is what this version says (docs/adr/0052).
     await reviewNarrativeDrafts(scope, services.keys, { practiceId, versionId: input.versionId, requestId: request.requestId });
     return { objectId: input.versionId, redirect: `/p/${practiceId}/cases/${input.caseId}/packet?notice=requested` };
@@ -222,9 +224,10 @@ export const requestApprovalAction = practiceRoute({
  * the packet version hash"). The database refuses a version the verifier failed (CAS-08), one not
  * current or whose case changed, a person who does not approve packets, and the person who drafted or
  * last edited it (CAS-09) unless no one else may approve the practice's packets and 24 hours have
- * passed, which it flags (CAS-10). An approved version is left as it is. A version whose calculation cannot be worded
- * is refused with the reason the builder shows, and one approved from a page another renderer wrote is refused
- * (combined audit #38).
+ * passed, which it flags (CAS-10). An approved version is left as it is. A version the verifier passed when it was
+ * written and fails now is refused with each mismatch (the verifier runs again over the stored narrative and content, as
+ * the export job runs it; docs/adr/0086, CORR-5); one whose calculation cannot be worded is refused with the reason the
+ * builder shows, and one approved from a page another renderer wrote is refused (combined audit #38).
  */
 export const approvePacketVersionAction = practiceRoute({
   id: 'practice.cases.packet.approve',
@@ -237,7 +240,7 @@ export const approvePacketVersionAction = practiceRoute({
   audit: { action: 'packet_approved', objectType: 'packet_version' },
   handle: async ({ scope, practiceId, input, request, services, access }): Promise<MutationResult> => {
     requireWordsVersion(input.wordsVersion, 'approve');
-    await underPacketRules(() => approveOnce(scope, { practiceId, caseId: input.caseId, versionId: input.versionId, versionSha256: input.versionSha256, requestId: request.requestId }));
+    await underPacketRules(() => approveOnce(scope, services.keys, { practiceId, caseId: input.caseId, versionId: input.versionId, versionSha256: input.versionSha256, requestId: request.requestId }));
     // A model draft not yet reviewed is decided by the version approved, by an approver who may review drafts.
     if (rolesPermit(access.roles, 'packet.draft')) {
       await reviewNarrativeDrafts(scope, services.keys, { practiceId, versionId: input.versionId, requestId: request.requestId });

@@ -1,7 +1,8 @@
-import { type LineDeadline, type PacketContent, type VerifierReport, interestExclusionText, interestStated, lineInterestStated } from '@tp/packets';
+import { type LineDeadline, type PacketContent, interestExclusionText, interestStated, lineInterestStated } from '@tp/packets';
 import { METHOD_TEXT } from '@tp/packets/explain';
 import { type DeadlineStatus, MA_DISPUTE_ROUTE_CONFIRMED } from '@tp/triage';
 import { Alert, AlertDescription, AlertTitle, Badge } from '@tp/ui';
+import type { VerifierNow } from '@tp/worker/packets';
 import Link from 'next/link';
 import { Fragment } from 'react';
 
@@ -9,13 +10,14 @@ import { Money } from '../remittances/display';
 import { ScrollTable } from '../scroll-table';
 import { StatusChip, type StatusTone } from '../status';
 import { labelOf } from '../../lib/copy/words';
-import { DEADLINE_CAUSE_TEXT, DEADLINE_STATUS_TEXT, EVIDENCE_GAP_TEXT, EVIDENCE_KIND_TEXT, MA_ROUTE_NOTICE, SOURCE_KIND_TEXT, mismatchShown, mismatchText } from '../../lib/packets/view';
+import { DEADLINE_CAUSE_TEXT, DEADLINE_STATUS_TEXT, EVIDENCE_GAP_TEXT, EVIDENCE_KIND_TEXT, FAILS_NOW_TEXT, MA_ROUTE_NOTICE, SOURCE_KIND_TEXT, VERIFIER_STANDING_TEXT } from '../../lib/packets/view';
+import { MismatchList, type PlacedFigure } from './mismatch-list';
 
 /**
  * Display pieces of the packet builder (PRD 7, Packet builder; PRD 12, The packet): the citation, the
  * line schedule with each line's trace (identifiers shown as their placeholders: only the export inserts
  * them), the interest line (its own line, never in expected), the evidence list with its gaps, the
- * numbered sources, and the stored verifier result with each mismatch marked in the narrative. Every
+ * numbered sources, and the verifier's result now with each mismatch marked in the narrative. Every
  * dollar figure carries its stage label. A tp-packet/2 version also shows each line's deadline with its
  * status as a label (never a color alone), the version's deadline with the evidence it rests on and,
  * when it is not verified, why in words and what to do. Each line's calculation is in words (./calculation-words), and
@@ -338,9 +340,15 @@ export function Sources({ content }: { readonly content: PacketContent }) {
   );
 }
 
-/** The narrative as stored, each mismatch the server's verifier found marked where it is. */
-export function StoredNarrative({ narrative, verifier }: { readonly narrative: string; readonly verifier: VerifierReport }) {
-  const spans = verifier.mismatches.filter((mismatch) => mismatch.code !== 'sentence_without_citation' && mismatch.code !== 'empty_narrative');
+/**
+ * The narrative as stored, with what the verifier says of it now (docs/adr/0086; the review of 2026-11-01, CORR-5): its
+ * badge passed, failed, or fails now (a version the verifier passed when it was written and fails now, which cannot be
+ * approved, with why and what to do), and each mismatch of that report marked where it is and listed with what the
+ * figure was read as and what the records hold it as.
+ */
+export function StoredNarrative({ narrative, verifier, figures }: { readonly narrative: string; readonly verifier: VerifierNow; readonly figures: readonly PlacedFigure[] }) {
+  const { report, standing } = verifier;
+  const spans = report.mismatches.filter((mismatch) => mismatch.code !== 'sentence_without_citation' && mismatch.code !== 'empty_narrative');
   const parts: { readonly text: string; readonly marked: boolean }[] = [];
   let at = 0;
   for (const span of [...spans].sort((a, b) => a.start - b.start)) {
@@ -353,12 +361,18 @@ export function StoredNarrative({ narrative, verifier }: { readonly narrative: s
   parts.push({ text: narrative.slice(at), marked: false });
   return (
     <div className="flex flex-col gap-2">
-      <p className="flex flex-wrap items-center gap-2 text-sm" data-verifier={verifier.passed ? 'passed' : 'failed'}>
-        <Badge variant={verifier.passed ? 'default' : 'destructive'}>{verifier.passed ? 'Verifier passed' : 'Verifier failed'}</Badge>
+      <p className="flex flex-wrap items-center gap-2 text-sm" data-verifier={standing}>
+        <Badge variant={standing === 'passed' ? 'default' : 'destructive'}>{VERIFIER_STANDING_TEXT[standing]}</Badge>
         <span className="text-muted-foreground">
-          {verifier.sentences} sentences, {verifier.checked} figures, placeholders and citations checked against the version’s input records.
+          <span className="font-mono tabular-nums">{report.sentences}</span> {report.sentences === 1 ? 'sentence' : 'sentences'}, <span className="font-mono tabular-nums">{report.checked}</span>{' '}
+          {report.checked === 1 ? 'figure, placeholder or citation' : 'figures, placeholders and citations'} checked against the version’s records.
         </span>
       </p>
+      {standing === 'fails_now' ? (
+        <p className="text-sm" data-verifier-now="fails">
+          {FAILS_NOW_TEXT}
+        </p>
+      ) : null}
       <p className="whitespace-pre-wrap rounded-md border bg-muted/30 p-3 font-mono text-sm" aria-label="Stored narrative">
         {parts.map((part, index) =>
           part.marked ? (
@@ -370,25 +384,7 @@ export function StoredNarrative({ narrative, verifier }: { readonly narrative: s
           ),
         )}
       </p>
-      {verifier.mismatches.length === 0 ? null : (
-        <ul className="list-disc pl-5 text-sm" aria-label="Verifier mismatches">
-          {verifier.mismatches.map((mismatch) => (
-            <li key={`${String(mismatch.start)}:${String(mismatch.end)}:${mismatch.code}`} data-mismatch={mismatch.code}>
-              {mismatch.sentence < 0 ? '' : `Sentence ${String(mismatch.sentence + 1)}: `}
-              {mismatchText(mismatch.code, mismatch.kind)}
-              {(() => {
-                const shown = mismatchShown(mismatch.code, narrative.slice(mismatch.start, mismatch.end));
-                return shown === null ? null : (
-                  <>
-                    {' '}
-                    <mark className="rounded bg-destructive/20 px-1 font-mono">{shown}</mark>
-                  </>
-                );
-              })()}
-            </li>
-          ))}
-        </ul>
-      )}
+      {report.mismatches.length === 0 ? null : <MismatchList narrative={narrative} mismatches={report.mismatches} figures={figures} label="Verifier mismatches" />}
     </div>
   );
 }

@@ -224,6 +224,20 @@ const DATED: ReadonlySet<FigureKind> = new Set(['date', 'month', 'month_day']);
  * and claim numbers), which the server reads from the canonical records; the browser passes none.
  */
 export function findMismatches(narrative: string, facts: NarrativeFacts, identifiers: readonly string[]): NarrativeCheck {
+  return readNarrative(narrative, facts, identifiers).check;
+}
+
+/** A narrative read once: the check, and every figure as the check read it (checkedFigures()'s answer). */
+export interface NarrativeReading {
+  readonly check: NarrativeCheck;
+  readonly figures: readonly CheckedFigure[];
+}
+
+/**
+ * The check and every figure as it read them, from one reading of the narrative (the review of 2026-11-01, PE-9): the
+ * editor's two answers on each keystroke, so it reads the text once.
+ */
+export function readNarrative(narrative: string, facts: NarrativeFacts, identifiers: readonly string[]): NarrativeReading {
   const readable = readableText(narrative);
   const { text } = readable;
   const scan = scanText(text);
@@ -244,7 +258,8 @@ export function findMismatches(narrative: string, facts: NarrativeFacts, identif
   for (const span of readable.unreadable) {
     add('unreadable_figure', null, span);
   }
-  for (const figure of checkFigures(readable, facts, sentenceOf)) {
+  const figures = checkFigures(readable, facts, sentenceOf);
+  for (const figure of figures) {
     if (!figure.passed) {
       mismatches.push({ code: 'figure_not_in_input', kind: figure.kind, sentence: figure.sentence, start: figure.start, end: figure.end });
     }
@@ -270,5 +285,8 @@ export function findMismatches(narrative: string, facts: NarrativeFacts, identif
     }
   });
   mismatches.sort((a, b) => a.start - b.start || a.end - b.end || a.code.localeCompare(b.code));
-  return { passed: mismatches.length === 0, sentences: sentences.length, checked: scan.figures.length + scan.placeholders.length + scan.markers.length, mismatches };
+  return {
+    check: { passed: mismatches.length === 0, sentences: sentences.length, checked: scan.figures.length + scan.placeholders.length + scan.markers.length, mismatches },
+    figures,
+  };
 }

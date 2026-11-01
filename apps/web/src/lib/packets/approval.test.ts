@@ -18,6 +18,7 @@ import { BLOCKED_TEXT, DEADLINE_NOT_EXPORTABLE, DRAFTER_APPROVAL_TEXT, DRAFTER_R
 const WRITTEN = '2026-10-16T08:00:00.000Z';
 const facts: ApprovalFacts = {
   verifierPassed: true,
+  verifierFailsNow: false,
   verifierCurrent: true,
   current: true,
   matchesCase: true,
@@ -46,6 +47,11 @@ describe('approvalState', () => {
 
   it('blocks approval while the verifier fails, the version is not current, the case changed, its pricing is not current, or the regulation is unconfirmed (CAS-08; audit item #4)', () => {
     expect(approvalState({ ...facts, verifierPassed: false }, second, at(0))).toEqual({ status: 'blocked', reason: 'verifier' });
+    // A stored pass the verifier fails now (CORR-5): blocked ahead, after a stored failure and before an outdated report.
+    expect(approvalState({ ...facts, verifierFailsNow: true }, second, at(0))).toEqual({ status: 'blocked', reason: 'verifier_now' });
+    expect(approvalState({ ...facts, verifierFailsNow: true }, { ...second, userId: 'writer' }, at(0))).toEqual({ status: 'blocked', reason: 'verifier_now' });
+    expect(approvalState({ ...facts, verifierPassed: false, verifierFailsNow: true }, second, at(0))).toEqual({ status: 'blocked', reason: 'verifier' });
+    expect(approvalState({ ...facts, verifierFailsNow: true, verifierCurrent: false }, second, at(0))).toEqual({ status: 'blocked', reason: 'verifier_now' });
     expect(approvalState({ ...facts, verifierCurrent: false }, second, at(0))).toEqual({ status: 'blocked', reason: 'verifier_outdated' });
     expect(approvalState({ ...facts, current: false }, second, at(0))).toEqual({ status: 'blocked', reason: 'not_current' });
     expect(approvalState({ ...facts, matchesCase: false }, second, at(0))).toEqual({ status: 'blocked', reason: 'case_changed' });

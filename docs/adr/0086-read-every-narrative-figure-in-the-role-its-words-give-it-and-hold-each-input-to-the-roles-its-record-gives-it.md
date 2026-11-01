@@ -6,7 +6,8 @@
   (the role check moves into `@tp/packets`) and [0061](0061-verify-a-deadline-only-from-signed-off-evidence-refuse-an-unverified-export-in-sql-and-attest-the-export-over-its-hashes.md)
   (the tp-packet/2 facts); reverses none of their rulings.
 - **Date:** 2026-10-28; one cue's role per figure, quoted figures in their own role and the gateway's proof against
-  the base, 2026-11-01 (the review of 2026-11-01's fix round)
+  the base, 2026-11-01 (the review of 2026-11-01's fix round); a stored version read again at each step and on each
+  screen, and the editor's words, 2026-11-01 (the same fix round, its second part)
 - **Deciders:** the build (Lane B), on product observation (b) of the test-flakes item; the founder, on the pull
   request's review
 - **PRD sections:** 12 (The packet: "any figure that is not in the input fails verification"), 14
@@ -128,16 +129,38 @@ database checks all three; changing the format is a migration, Lane A's alone (s
 the verifier again over what it prints (`apps/worker/src/packets/export.ts`), so a stored version an older reading
 passed and this one fails is refused there (`verifier_failed`), and nothing wrong reaches a payer.
 
-**One reading serves every screen.** `checkedFigures()` (the package root) and `checkFigures()` (`@tp/packets/check`,
+**Until the format moves, a stored pass is read again wherever it counts** (the review of 2026-11-01, CORR-5). A
+version stores the report from when it was written, and the database approves only a stored pass, so a version an
+older reading passed would show "Verifier passed" and could be requested and approved into an export that refuses it.
+`apps/worker/src/packets/verifier-now.ts` holds the one rule, `verifierNow()`: a stored failure stands; a stored pass
+is a pass now only if the verifier passes the same narrative now (and its report is of that narrative), else it
+"fails now". The export job asks it over what it prints. A request for approval and an approval ask it first
+(`verifyVersionNow()`: the narrative decrypted and the schedule rows' identifiers read again, each an audited read under
+`packet_verification`, as when the version was written) and refuse a version that fails now with plain words and each
+mismatch by its sentence and kind, never the narrative's words; nothing is written, and the form keeps the person's
+place (a server action's refusal is its state, not a redirect). The screens ask it for every version of the case
+(`caseVerifiersNow()`: only stored passes are read again, without identifiers, which the stored report checked and each
+step checks today): the builder's badge reads "Verifier fails it now" with why and what to do, its marks and list are
+of today's report, the approval panel is blocked ahead (`verifier_now`), the history says "Fails now (passed when
+written)", and the case's packet line and timeline say it too. The database cannot run the reader; refusing such a
+version in Postgres too is Lane A's `tp-packet-verifier/3` migration.
+
+**One reading serves every screen.** `checkedFigures()` (the package root) and `checkReading()` (`@tp/packets/check`,
 browser-safe) return each figure with the roles it was read in, whether it passed and, when it failed, the roles its
-value is held in. The narrative editor says what a failing figure was read as ("read as a count of claims"), worded
-from `FIGURE_ROLES` (`apps/web/src/lib/packets/view.ts` `ROLE_TEXT`, which TypeScript holds complete). The gateway's
-`roleMismatches()` reads the same facts: a failed figure whose value is held in another role is `figure_in_wrong_role`,
-so a model's swap reads as misstated. Its `role` is the one its nearest cue names, and `roles` and `every` say all of
-them (CORR-21). The gateway's check before a model's draft is written is the verifier's, and it is at least as strict
-as the gateway's own reading was before the verifier read roles: `functions/narrative-roles.test.ts` runs that reading,
-vendored unchanged from the base 83d71fd6 as a fixture only (`narrative-roles.base.fixture.ts`), over 246 generated
-swaps and every misstated example of the review, and requires each one it caught to fail the gateway (PE-2).
+value is held in. The narrative editor builds the version's facts once and reads the narrative once per keystroke:
+`checkReading()` gives the check and the figures from one reading (`readNarrative()`; PE-9). The editor and the
+builder's stored narrative say a failing figure in plain words, with what it was read as and what the records hold it
+as ("$100.00: read as what the payer paid; the records hold it as what the contract requires"), worded from
+`FIGURE_ROLES` (`apps/web/src/lib/packets/view.ts` `ROLE_TEXT`, which TypeScript holds complete); a number with no
+word for what it counts is asked to say it ("3 claims, 6 units, page 2, 3650 days"). Counts are in the mono font. The
+editor's status line, which a screen reader hears, carries only the summary, once the typing pauses (the UX review of
+2026-10-28). The gateway's `roleMismatches()` reads the same facts: a failed figure whose value is held in another
+role is `figure_in_wrong_role`, so a model's swap reads as misstated. Its `role` is the one its nearest cue names, and
+`roles` and `every` say all of them (CORR-21). The gateway's check before a model's draft is written is the
+verifier's, and it is at least as strict as the gateway's own reading was before the verifier read roles:
+`functions/narrative-roles.test.ts` runs that reading, vendored unchanged from the base 83d71fd6 as a fixture only
+(`narrative-roles.base.fixture.ts`), over 246 generated swaps and every misstated example of the review, and requires
+each one it caught to fail the gateway (PE-2).
 
 **The reader's words are their own module and built on each read** (`roles-words.ts` `vocabulary()`), not when the
 module loads, so each word is a mutant only the tests that read it run (a value built at load is a static mutant
@@ -193,8 +216,13 @@ every test reruns: 1,570 of the reader's first 1,988). The reading and its words
   not repeat "42 CFR 422.214"); a five-digit input code before a noun after an article reads as the code. A difference
   written with no role's word ("$14.00 less than the $70.00 it allowed", after "paid $56.00") takes the figure before
   it's role and fails; "a $14.00 patient share" passes.
+- A request for approval, an approval and the builder and case screens run the verifier again over a stored version
+  that passed (CORR-5): a few milliseconds of reading per version shown, an audited read of each version read again, and
+  at a step an audited read of its claims' identifiers. A version an older reading passed says "fails now" and is
+  refused before approval, not at the export.
 - Lane A: one migration to accept `tp-packet-verifier/3` and make it current, then a one-line `VERIFIER_FORMAT`
-  change, so a version the older reading passed reads `verifier_outdated` before export rather than at it.
+  change, so a version the older reading passed reads `verifier_outdated` in Postgres too: the database then refuses its
+  request and approval itself, which the code's re-reading does until then.
 
 ## Revisit when
 

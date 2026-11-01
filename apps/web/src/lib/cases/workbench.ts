@@ -1,6 +1,7 @@
 import { type KeyProvider, type PracticeCipher, type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit } from '@tp/db/runtime';
-import { submissionSentOf } from '@tp/worker/packets';
+import { type VerifierStanding, submissionSentOf } from '@tp/worker/packets';
 
+import { refuseFailingNow } from '../packets/verifier-now';
 import type { CaseEvent } from '../triage/queries';
 import { peopleEmails } from './people';
 import { type CHANNEL_TEXT, type ResponseKindText, type TimelineEvent, inOrder } from './timeline';
@@ -106,15 +107,18 @@ export async function assignOwner(scope: Scope, input: { readonly practiceId: st
 /**
  * Asks a second person to approve the packet's current version (PRD 7, Packet builder: "request
  * approval"), with optional words to the approver; the database refuses a version that is not current,
- * not passing the verifier, or approved. A version already requested is left as it is (false).
+ * not passing the verifier, or approved. A version the verifier passed when it was written and fails now is refused
+ * first, with each mismatch (the verifier runs again over the stored narrative and content, as the export job runs it;
+ * docs/adr/0086, CORR-5). A version already requested is left as it is (false).
  */
 export async function requestApproval(
   scope: Scope,
   keys: KeyProvider,
-  input: { readonly practiceId: string; readonly caseId: string; readonly versionId: string; readonly message: string | null },
+  input: { readonly practiceId: string; readonly caseId: string; readonly versionId: string; readonly message: string | null; readonly requestId: string },
 ): Promise<boolean> {
   // Serialized with the case's packet writes (apps/worker/src/packets/records.ts takes the same lock).
   await scope.client.query("SELECT pg_advisory_xact_lock(hashtextextended('packet:' || $1::text, 0))", [input.caseId]);
+  await refuseFailingNow(scope, keys, { practiceId: input.practiceId, versionId: input.versionId, requestId: input.requestId });
   const { rowCount } = await scope.client.query("SELECT 1 FROM case_activity WHERE practice_id = $1 AND kind = 'approval_requested' AND packet_version_id = $2", [input.practiceId, input.versionId]);
   if ((rowCount ?? 0) > 0) {
     return false;
@@ -130,14 +134,26 @@ export async function requestApproval(
 }
 
 interface MilestoneRows {
-  readonly versions: readonly { drafted_by: string; created_at: Date; version_no: number; verifier_passed: boolean; approved_by: string | null; approved_at: Date | null; approved_alone: boolean; exported_at: Date | null; export_sha256: string | null; attested_at: Date | null }[];
+  readonly versions: readonly {
+    id: string;
+    drafted_by: string;
+    created_at: Date;
+    version_no: number;
+    verifier_passed: boolean;
+    approved_by: string | null;
+    approved_at: Date | null;
+    approved_alone: boolean;
+    exported_at: Date | null;
+    export_sha256: string | null;
+    attested_at: Date | null;
+  }[];
   readonly submissions: readonly { submitted_by: string; created_at: Date; version_no: number; dispute_level: number; channel: keyof typeof CHANNEL_TEXT; unattested_reason: string | null }[];
   readonly responses: readonly { recorded_by: string | null; created_at: Date; kind: ResponseKindText; reopens_case: boolean }[];
 }
 
 async function milestones(scope: Scope, practiceId: string, caseId: string): Promise<MilestoneRows> {
   const { rows: versions } = await scope.client.query<MilestoneRows['versions'][number]>(
-    `SELECT v.drafted_by, v.created_at, v.version_no, v.verifier_passed, v.approved_by, v.approved_at, v.approved_alone, v.exported_at, v.export_sha256, v.attested_at
+    `SELECT v.id, v.drafted_by, v.created_at, v.version_no, v.verifier_passed, v.approved_by, v.approved_at, v.approved_alone, v.exported_at, v.export_sha256, v.attested_at
        FROM packet_version v JOIN packet p ON p.id = v.packet_id WHERE p.case_id = $1 AND v.practice_id = $2 ORDER BY v.version_no`,
     [caseId, practiceId],
   );
@@ -156,11 +172,20 @@ async function milestones(scope: Scope, practiceId: string, caseId: string): Pro
 
 /**
  * The case's whole timeline, oldest first: its opening, the line events of the page the detail shows,
- * its activity, packet versions (written, approved, exported), submissions and responses.
+ * its activity, packet versions (written, approved, exported), submissions and responses. A version written is said with
+ * what the verifier said of it then and, for one it passed then and fails now, that too (`verifiers`: what the verifier
+ * says of each version now, by its ID; docs/adr/0086, CORR-5).
  */
 export async function caseTimeline(
   scope: Scope,
-  input: { readonly practiceId: string; readonly caseId: string; readonly openedAt: string; readonly lineEvents: readonly CaseEvent[]; readonly activity: readonly ActivityView[] },
+  input: {
+    readonly practiceId: string;
+    readonly caseId: string;
+    readonly openedAt: string;
+    readonly lineEvents: readonly CaseEvent[];
+    readonly activity: readonly ActivityView[];
+    readonly verifiers: ReadonlyMap<string, { readonly standing: VerifierStanding }>;
+  },
 ): Promise<TimelineEvent[]> {
   const rows = await milestones(scope, input.practiceId, input.caseId);
   const emails = await peopleEmails(scope, input.practiceId, [
@@ -193,7 +218,13 @@ export async function caseTimeline(
     }
   }
   for (const row of rows.versions) {
-    events.push({ kind: 'version_written', at: row.created_at.toISOString(), by: person(row.drafted_by), versionNo: row.version_no, verifierPassed: row.verifier_passed });
+    events.push({
+      kind: 'version_written',
+      at: row.created_at.toISOString(),
+      by: person(row.drafted_by),
+      versionNo: row.version_no,
+      verifier: input.verifiers.get(row.id)?.standing ?? (row.verifier_passed ? 'fails_now' : 'failed'),
+    });
     if (row.approved_at !== null) {
       events.push({ kind: 'version_approved', at: row.approved_at.toISOString(), by: person(row.approved_by), versionNo: row.version_no, approvedAlone: row.approved_alone });
     }

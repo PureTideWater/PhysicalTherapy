@@ -41,6 +41,7 @@ import {
   writePacketVersion,
 } from './services';
 import { PacketWorld } from './test-support/packet-world';
+import { caseVerifiersNow, verifyVersionNow } from './verifier-now';
 import { grantedReviewer } from './test-support/reviewer';
 
 /**
@@ -224,6 +225,61 @@ describe('CAS-43: a narrative that states an input’s figure in another role (d
       narrativeSha256(older),
     ]);
     expect(await w.export(setup.practice, passing.versionId)).toEqual({ outcome: 'not_exportable', reason: 'verifier_failed' });
+  });
+
+  it('reads a stored version again for each step and screen: one an older reading passed fails now, a stored failure stands, each read audited (CORR-5)', async () => {
+    const setup = await cas08('CAS-43 now');
+    const P = { practiceId: setup.practice.practiceId, caseId: setup.caseId };
+    const draft = await write(setup, setup.practice.manager);
+    const failing = await write(setup, setup.practice.manager, { narrative: 'The payer withheld 1234.56 on these claims [3].', basedOn: draft.versionId });
+    expect(failing.verifier.passed).toBe(false);
+    const passing = await write(setup, setup.practice.manager, { narrative: 'The payer paid these lines short of the contract [3].', basedOn: failing.versionId });
+    // A version written under a reading that passed "There were 900001 units" (the release's number among the counts).
+    const older = `There were ${String(draft.content.rule_releases[0]?.release_no ?? 0)} units [3].`;
+    await w.superuser(`UPDATE packet_version SET narrative = $2, verifier_report = jsonb_set(verifier_report, '{narrative_sha256}', to_jsonb($3::text)) WHERE id = $1`, [
+      passing.versionId,
+      setup.practice.cipher.encrypt('packet_version.narrative', older),
+      narrativeSha256(older),
+    ]);
+    const now = await w.as(setup.practice, setup.second, (scope) => verifyVersionNow(scope, w.keys, { practiceId: P.practiceId, versionId: passing.versionId, requestId: 'test-now-step' }));
+    expect(now?.standing).toBe('fails_now');
+    expect(now?.report.mismatches.map((mismatch) => [mismatch.code, mismatch.kind, older.slice(mismatch.start, mismatch.end)])).toEqual([['figure_not_in_input', 'number', '900001']]);
+    // A stored failure stands as stored, read from its report alone; a version of another practice is not found.
+    expect(await w.as(setup.practice, setup.second, (scope) => verifyVersionNow(scope, w.keys, { practiceId: P.practiceId, versionId: failing.versionId, requestId: 'test-now-failed' }))).toEqual({
+      standing: 'failed',
+      report: failing.verifier,
+    });
+    expect(await w.as(setup.practice, setup.second, (scope) => verifyVersionNow(scope, w.keys, { practiceId: P.practiceId, versionId: randomUUID(), requestId: 'test-now-none' }))).toBeUndefined();
+    // Every version of the case, as the screens say it.
+    const screens = await w.as(setup.practice, setup.second, (scope) => caseVerifiersNow(scope, w.keys, { ...P, requestId: 'test-now-screens' }));
+    expect(new Map([...screens].map(([id, verdict]) => [id, verdict.standing]))).toEqual(
+      new Map([
+        [draft.versionId, 'passed'],
+        [failing.versionId, 'failed'],
+        [passing.versionId, 'fails_now'],
+      ]),
+    );
+    // The step read the version and its claims for packet_verification; the screens read only the versions they read again.
+    const audited = async (requestId: string) =>
+      (
+        await asOwner(w.owner, [P.practiceId], () =>
+          w.owner.query<{ object_type: string; object_id: string; purpose: string }>('SELECT object_type, object_id, purpose FROM audit_event WHERE practice_id = $1 AND request_id = $2 AND action = $3 ORDER BY object_type, object_id', [
+            P.practiceId,
+            requestId,
+            'read',
+          ]),
+        )
+      ).rows;
+    const step = await audited('test-now-step');
+    expect([...new Set(step.map((row) => `${row.object_type}:${row.purpose}`))].sort()).toEqual(['claim:packet_verification', 'packet_version:packet_verification']);
+    expect(step.filter((row) => row.object_type === 'packet_version').map((row) => row.object_id)).toEqual([passing.versionId]);
+    expect(await audited('test-now-failed')).toEqual([]);
+    expect((await audited('test-now-screens')).map((row) => [row.object_type, row.object_id, row.purpose]).sort()).toEqual(
+      [
+        ['packet_version', draft.versionId, 'packet_verification'],
+        ['packet_version', passing.versionId, 'packet_verification'],
+      ].sort(),
+    );
   });
 });
 

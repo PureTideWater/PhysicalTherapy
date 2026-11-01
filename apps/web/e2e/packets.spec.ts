@@ -22,8 +22,9 @@ import { holdExports, startLocalWorker } from './worker';
  * a practice of its own, a billing manager uploads the SYNTHETIC CAS-08 remittance, whose case the
  * worker prices and triages (the payer's schedule abstracted and signed off beside the browser,
  * e2e/packets.ts). The drafter writes the first version from the code-built draft, adds a sentence with
- * a figure that is in no input record, sees the live check flag it and, once saved, approval blocked;
- * writes a passing version again and finds the Approve button disabled as its drafter, with the reason, next
+ * a figure that is in no input record, sees the live check flag it and, once saved, approval blocked; sees that version,
+ * its stored report made a pass as an older reading stored one, say the verifier fails it now, never "Verifier passed",
+ * its approval still blocked (docs/adr/0086, CORR-5); writes a passing version again and finds the Approve button disabled as its drafter, with the reason, next
  * to Request approval (the best-option audit's item #61); a second billing manager approves it and asks for
  * the export while the practice's exports are held, and the builder shows it in progress; a line written off before the worker
  * takes the job is refused at once with its fix, and the job's own refusal is shown with its reason and fix
@@ -140,6 +141,28 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
     await expect(approval.getByRole('button', { name: 'Request approval' })).toHaveCount(0);
   });
 
+  await test.step('a version the verifier passed when it was written and fails now never shows "Verifier passed", and its approval is blocked (docs/adr/0086, CORR-5)', async () => {
+    // Test setup only: version 2's stored report made a pass, as a reading that held figures to no role stored one.
+    const versionId = await shownVersionId(page);
+    await withDatabase(async (client) => {
+      await client.query('BEGIN');
+      await client.query('SET LOCAL session_replication_role = replica');
+      await client.query(`UPDATE packet_version SET verifier_passed = true, verifier_report = verifier_report || '{"passed": true, "mismatches": []}'::jsonb WHERE id = $1`, [versionId]);
+      await client.query('COMMIT');
+    });
+    await page.reload();
+    await expect(page.locator('[data-verifier="fails_now"]')).toContainText('Verifier fails it now');
+    await expect(page.locator('[data-verifier="passed"]')).toHaveCount(0);
+    await expect(page.locator('[data-verifier-now="fails"]')).toContainText('cannot be approved');
+    await expect(page.getByLabel('Stored narrative').locator('mark')).toHaveText(['1234.56']);
+    const approval = page.getByRole('region', { name: 'Approval' });
+    await expect(approval.locator('[data-approval="blocked"][data-reason="verifier_now"]')).toBeVisible();
+    await expect(approval.getByRole('button', { name: 'Approve this version' })).toBeDisabled();
+    await expect(approval.getByRole('button', { name: 'Request approval' })).toHaveCount(0);
+    await expect(page.getByRole('table', { name: 'Versions' }).locator('[data-version="2"]')).toContainText('Fails now');
+    await expectAccessible(page, 'Packet builder, a version the verifier fails now');
+  });
+
   await test.step('the drafter writes a passing version again and finds the Approve button disabled, with the reason, beside Request approval (CAS-09; item #61)', async () => {
     await page.getByRole('button', { name: 'Write a new version from the code-built draft' }).click();
     await expect(page.locator('[data-notice="written"]')).toBeVisible();
@@ -161,7 +184,7 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
     await expect(approval.getByRole('button', { name: 'Request approval' })).toHaveCount(0);
     await expect(approval.getByRole('button', { name: 'Approve this version' })).toHaveAccessibleDescription('Approval is requested; a second person who approves packets approves it here.');
     await expect(page.getByRole('table', { name: 'Versions' }).locator('[data-version="3"]')).toContainText('Passed');
-    await expect(page.getByRole('table', { name: 'Versions' }).locator('[data-version="2"]')).toContainText('Failed');
+    await expect(page.getByRole('table', { name: 'Versions' }).locator('[data-version="2"]')).toContainText('Fails now (passed when written)');
   });
 
   // A context of its own, so the accessibility check runs on the approver's page too.

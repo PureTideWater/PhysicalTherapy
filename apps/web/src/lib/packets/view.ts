@@ -1,5 +1,6 @@
-import type { EvidenceGapCode, EvidenceKind, FigureRole, MismatchCode, SourceKind } from '@tp/packets';
+import type { EvidenceGapCode, EvidenceKind, FigureRole, MismatchCode, SourceKind, VerifierReport } from '@tp/packets';
 import type { DeadlineStatus, DeadlineUnverifiedCause } from '@tp/triage';
+import type { VerifierStanding } from '@tp/worker/packets';
 
 /**
  * The packet screens' words for the codes a version holds (PRD 7, Packet builder; Submissions and
@@ -8,7 +9,7 @@ import type { DeadlineStatus, DeadlineUnverifiedCause } from '@tp/triage';
  */
 
 export const MISMATCH_TEXT: Readonly<Record<MismatchCode, string>> = {
-  figure_not_in_input: 'a figure that is not in the packet’s input records in the role its words give it',
+  figure_not_in_input: 'a figure that does not match this version’s records',
   sentence_without_citation: 'a sentence that cites none of the numbered sources',
   unknown_citation: 'a citation marker that names no source of this version',
   unknown_placeholder: 'an identifier placeholder that names no schedule row or kind',
@@ -18,19 +19,23 @@ export const MISMATCH_TEXT: Readonly<Record<MismatchCode, string>> = {
   identifier_in_narrative: 'one of this case’s identifiers (a patient’s name, a member ID or a claim number); write its placeholder, which the export fills in from the record',
 };
 
+/** A figure's kind, as a mismatch names it ("an amount that does not match this version’s records"). */
 export const FIGURE_KIND_TEXT: Readonly<Record<string, string>> = {
-  amount: 'amount',
-  percent: 'percentage',
-  date: 'date',
-  month: 'month',
-  month_day: 'day of a month',
-  code: 'code',
-  modifier: 'modifier',
-  number: 'number or count; say what it counts or names: 3 claims, 6 units, page 2, 3650 days, release 900001',
-  identifier: 'identifier',
-  placeholder: 'placeholder',
-  citation: 'citation',
+  amount: 'an amount',
+  percent: 'a percentage',
+  date: 'a date',
+  month: 'a month',
+  month_day: 'a day of a month',
+  code: 'a code',
+  modifier: 'a modifier',
+  number: 'a number',
+  identifier: 'an identifier',
+  placeholder: 'a placeholder',
+  citation: 'a citation',
 };
+
+/** What a number with no word for what it counts is asked for, with examples a person writes (the UX review of 2026-10-28). */
+export const SAY_WHAT_IT_COUNTS = 'say what it counts or names: 3 claims, 6 units, page 2, 3650 days';
 
 /**
  * What a mismatch's list item shows beside its words: the figure, placeholder or marker as written, a
@@ -54,8 +59,9 @@ export function mismatchShown(code: MismatchCode, written: string): string | nul
 }
 
 /**
- * What each role a figure is read in means (@tp/packets FIGURE_ROLES; docs/adr/0086), for the editor's words beside a
- * failing figure: "read as a count of claims". Every role the reader has is here, so a role it gains has its words.
+ * What each role a figure is read in means (@tp/packets FIGURE_ROLES; docs/adr/0086), for the words beside a failing
+ * figure: "read as a count of claims; the records hold it as the dispute window’s days". Every role the reader has is
+ * here, so a role it gains has its words.
  */
 export const ROLE_TEXT: Readonly<Record<FigureRole, string>> = {
   window_days: 'the dispute window’s days',
@@ -93,18 +99,98 @@ export const ROLE_TEXT: Readonly<Record<FigureRole, string>> = {
   schedule_year: 'the fee schedule’s year',
 };
 
-/** The roles a figure was read in, in words: "read as a count of claims or a count of lines". */
-export function readAsText(roles: readonly FigureRole[]): string {
-  return `read as ${roles.map((role) => ROLE_TEXT[role]).join(' or ')}`;
+/** Words in a list: "a", "a or b", "a, b or c" (`joiner` "or"; "and" for each of them). */
+function listed(items: readonly string[], joiner: 'or' | 'and'): string {
+  return items.length <= 1 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} ${joiner} ${items.at(-1) ?? ''}`;
 }
 
-/** A mismatch in words: what it is, of what kind, and, for a figure its words give a role, what it was read as. */
-export function mismatchText(code: MismatchCode, kind: string | null, roles: readonly FigureRole[] | null = null): string {
-  const what = MISMATCH_TEXT[code];
-  if (kind === null || code !== 'figure_not_in_input') {
-    return what;
+/** The roles a figure was read in, in words: "read as a count of claims or a count of lines" ("and" when it is each of them). */
+export function readAsText(roles: readonly FigureRole[], every = false): string {
+  return `read as ${listed(
+    roles.map((role) => ROLE_TEXT[role]),
+    every ? 'and' : 'or',
+  )}`;
+}
+
+/** What the records hold a failing figure's value as, in words: "the records hold it as the dispute window’s days". */
+export function heldAsText(roles: readonly FigureRole[]): string {
+  return `the records hold it as ${listed(
+    roles.map((role) => ROLE_TEXT[role]),
+    'and',
+  )}`;
+}
+
+/** A failing figure as the check read it (@tp/packets CheckedFigure): the roles its words give it, and what the records hold it as. */
+export interface FigureAsRead {
+  readonly roles: readonly FigureRole[] | null;
+  /** Its words name several roles and none is its own: it must be held as each of them. */
+  readonly every: boolean;
+  readonly heldAs: readonly FigureRole[];
+}
+
+/**
+ * A mismatch in words, short enough for a phone's width beside the figure it is about (the UX review of 2026-10-28). A
+ * figure the check read is said as what its words give it and what the records hold it as ("read as what the payer
+ * paid; the records hold it as what the contract requires"); a number with no word for what it counts is asked to
+ * say it; a figure without its reading (a stored report, a refusal) is said by its kind.
+ */
+export function mismatchText(code: MismatchCode, kind: string | null, figure: FigureAsRead | null = null): string {
+  if (code !== 'figure_not_in_input') {
+    return MISMATCH_TEXT[code];
   }
-  return `${what} (${FIGURE_KIND_TEXT[kind] ?? kind}${roles === null || roles.length === 0 ? '' : `, ${readAsText(roles)}`})`;
+  const kindText = kind === null ? null : (FIGURE_KIND_TEXT[kind] ?? null);
+  if (figure === null) {
+    return kindText === null ? MISMATCH_TEXT[code] : `${kindText} that does not match this version’s records`;
+  }
+  const held = figure.heldAs.length === 0 ? null : heldAsText(figure.heldAs);
+  if (figure.roles !== null && figure.roles.length > 0) {
+    return `${readAsText(figure.roles, figure.every)}; ${held ?? 'no record holds it as that'}`;
+  }
+  if (kind === 'number') {
+    return held === null ? SAY_WHAT_IT_COUNTS : `say what it counts or names; ${held}`;
+  }
+  return `${kindText ?? 'a figure'} no record holds`;
+}
+
+/** The live check's summary, as the editor's badge shows it and its status line announces it once the typing pauses. */
+export function liveCheckSummary(passed: boolean, mismatches: number): string {
+  return passed ? 'Live check passes' : `Live check: ${String(mismatches)} ${mismatches === 1 ? 'mismatch' : 'mismatches'}`;
+}
+
+/** The badge a stored version's verifier result shows (docs/adr/0086, CORR-5): what the verifier says of it now. */
+export const VERIFIER_STANDING_TEXT: Readonly<Record<VerifierStanding, string>> = {
+  passed: 'Verifier passed',
+  failed: 'Verifier failed',
+  fails_now: 'Verifier fails it now',
+};
+
+/** What the verifier says of a case's current packet version now, on the case's page (docs/adr/0086, CORR-5). */
+export const CASE_VERIFIER_TEXT: Readonly<Record<VerifierStanding, string>> = {
+  passed: 'the verifier passed it',
+  failed: 'the verifier failed it',
+  fails_now: 'the verifier passed it when it was written and fails it now',
+};
+
+/** The builder's history of versions: what the verifier says of each now. */
+export const HISTORY_VERIFIER_TEXT: Readonly<Record<VerifierStanding, string>> = {
+  passed: 'Passed',
+  failed: 'Failed',
+  fails_now: 'Fails now (passed when written)',
+};
+
+/** Why a version the verifier passed when it was written fails now, and what to do (beside its badge). */
+export const FAILS_NOW_TEXT =
+  'The verifier passed this version when it was written. It now checks each figure against what its words say it is, and fails it, so this version cannot be approved: correct the marked figures and save a new version.';
+
+/**
+ * Why a request for approval or an approval of a version the verifier fails now is refused, with each mismatch by its
+ * sentence (its kind, never the narrative's words: a refusal carries the rule's words only). The builder marks each
+ * figure in the narrative.
+ */
+export function failsNowRefusal(report: Pick<VerifierReport, 'mismatches'>): string {
+  const items = report.mismatches.map((mismatch) => `${mismatch.sentence < 0 ? '' : `sentence ${String(mismatch.sentence + 1)}: `}${mismatchText(mismatch.code, mismatch.kind)}`);
+  const count = `${String(items.length)} ${items.length === 1 ? 'mismatch' : 'mismatches'}`;
+  return `the verifier passed this version when it was written and fails it now (${items.length === 0 ? 'its report is not of this narrative' : `${count}: ${items.join('; ')}`}). Correct the narrative and save a new version; only a version the verifier passes now can be approved`;
 }
 
 export const EVIDENCE_KIND_TEXT: Readonly<Record<EvidenceKind, string>> = {

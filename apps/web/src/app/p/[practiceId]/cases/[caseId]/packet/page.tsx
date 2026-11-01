@@ -28,7 +28,7 @@ import { waitText } from '../../../../../../lib/packets/approval';
 import { CONTACT_MALFORMED_TEXT, CONTACT_MISSING_TEXT, type ContactNow, PAYER_COPY_TEXT, correspondenceSettingsPath } from '../../../../../../lib/packets/contact';
 import { ATTEMPT_REFRESH_MS, exportAttemptWords, exportRefusalText } from '../../../../../../lib/packets/export-attempts';
 import { BLOCKED_TEXT, DRAFTER_APPROVAL_TEXT, DRAFTER_REQUESTED_TEXT, type AttachableDocument, type BuilderView, type VersionView } from '../../../../../../lib/packets/queries';
-import { DEADLINE_CAUSE_TEXT } from '../../../../../../lib/packets/view';
+import { DEADLINE_CAUSE_TEXT, HISTORY_VERIFIER_TEXT } from '../../../../../../lib/packets/view';
 import { everyLineStale, staleExportBuilder } from '../../../../../../lib/packets/unattested';
 import { REQUEST_MESSAGE_MAX_LENGTH, packetPage } from '../../../../../../lib/routes/packets';
 import { approveFormAction, draftNarrativeFormAction, exportFormAction, requestApprovalFormAction, writeVersionFormAction } from './actions';
@@ -379,11 +379,11 @@ export default async function PacketPage(props: Props) {
               <CardTitle>Narrative</CardTitle>
               <CardDescription>
                 The pattern statement. Every figure must be among this version’s records and every sentence must cite a numbered source; identifiers are placeholders such as {'{{claim_control_number:1}}'}. The server verifies the narrative
-                again when the version is written: a version that fails cannot be approved.
+                again when the version is written, and again before approval is requested, before it is approved and before it is exported: a version that fails cannot be approved.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              <StoredNarrative narrative={version.narrative} verifier={version.verifier} />
+              <StoredNarrative narrative={version.narrative} verifier={version.verifierNow} figures={version.figures} />
               {version.current ? (
                 <VersionForm
                   writeAction={writeVersionFormAction}
@@ -627,7 +627,9 @@ export default async function PacketPage(props: Props) {
                             <UtcTime at={entry.writtenAt} />, {entry.writtenBy ?? '—'}
                           </span>
                         </td>
-                        <td className="px-2 py-1">{entry.verifierPassed ? 'Passed' : 'Failed'}</td>
+                        <td className="px-2 py-1" data-history-verifier={entry.verifierStanding}>
+                          {HISTORY_VERIFIER_TEXT[entry.verifierStanding]}
+                        </td>
                         <td className="px-2 py-1">
                           <DeadlineChip status={entry.deadlineStatus} />
                         </td>
