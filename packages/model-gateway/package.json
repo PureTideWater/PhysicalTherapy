@@ -25,6 +25,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@opentelemetry/api": "^1.9.1",
     "@tp/synth": "workspace:*",
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
