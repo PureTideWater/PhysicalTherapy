@@ -1,0 +1,119 @@
+export const meta = {
+  name: 'pr42-integrate-78',
+  description: 'PR 6b-4 (#42): merge the latest base, the legal sign-off docs commit, adversarial review of both, the full checks on the final tree, one push',
+  phases: [
+    { title: 'Merge', detail: 'merge claude/build-platform, generators, tables.test, the sign-off docs commit (no push)' },
+    { title: 'Review', detail: 'two lenses review the merge and the docs commit; each finding adversarially verified; fixes' },
+    { title: 'Checks', detail: 'the full checks on the final tree, a completeness critic, then one push' },
+  ],
+}
+const WT = '/home/user/pr6b4'
+const BR = 'co-001/pr-06b-mail-streams'
+const SP = '/tmp/claude-0/-home-user-PhysicalTherapy/b44a103e-64fa-5094-8b17-09d1b9f5409a/scratchpad'
+const OPS = '/home/user/ops'
+const HASH = 'b23fed0e…2518' // archived copy: the full SHA-256 is in the item prompt; shortened for gitleaks (lane-b.md, Pushing)
+const ATTR = `End every commit message with these two lines, after a blank line:
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01FcouKMmYaqDNXbqJyagW8u`
+const SAVE = (file, what) => `Save as you go: keep ${SP}/progress/${file} up to date (${what}), so an interruption loses nothing. If it already exists when you start, an earlier run was interrupted: read it, trust what it holds unless the code says otherwise, and continue from where it stopped.`
+const CTX = `Repository PureTideWater/PhysicalTherapy (PaidWhole). You work for the session acting as Lane A on PR 6b-4: draft PR #42 into claude/build-platform, branch ${BR}, worktree ${WT}. Its pushed head is be63bdc2 (final integrate round: #74, #81 and the 'images' fix). CI on be63bdc2: green except 'domain model' (only the founder's missing approval line) and 'all green' (because of it). The domain model's text SHA-256 is ${HASH}, approval line 7334, and must stay so: this round adds NO migration and does NOT regenerate docs/product/domain-model.md (never write its approval line; never touch packages/db/domain-model/approvers.json; never touch migration 20261107090000_mail_streams.sql).
+Since be63bdc2's merge base, claude/build-platform took #78 (83d71fd6, UX PR 5: a refused download comes back to its page). The delta is 66 files: 53 under apps/web (incl. lib/http/{handler,invoke,next,route,sign-in-for,download-refusal*}.ts, components/field.tsx), ADR 0079, test-matrix, 4 DLR fixtures, synth cases/{common,matrix,registry}.ts and expected/types.ts, tools/brand-copy/scan.ts (lint:copy's rules changed), watched-paths.txt; no workflow, manifest or lockfile. If origin/claude/build-platform has moved past 83d71fd6 when you fetch, take the latest and re-derive what the larger delta needs (a workflow, manifest or lockfile change adds pnpm actions:check and BASE=origin/claude/build-platform pnpm toolchain:check; a migration in the delta means STOP and report).
+The founder's decision of 2026-11-01: the founder (Tyler Williams) signed off as written every legal sentence #42 adds or changes (the text is in ${OPS}/approval-summaries/pr6b4-review-record.md section 1); relayed by the co-founder and confirmed again to Lane B's orchestrator about 14:40 UTC 2026-11-01. Counsel still reviews before the screening opens (O4 stays open). Any later change to those sentences needs a new sign-off. No legal sentence may change.
+Records: ${OPS} is claude/build-ops (read-only for you unless told): approval-summaries/lane-a-pr42-status.md (the item's status), approval-summaries/lane-a-wip/progress/pr42f-integrate.md (the 10-28 round's method: suite script, e2e shards, capacity method incl. the host-speed A/B), lanes/lane-b-item-prompts-2026-11-01/pr42.md (the item's exact steps).
+Environment: export PATH=/opt/node24/bin:/opt/pnpm-bin:/opt/py312-ci/bin:$PATH in every command. PostgreSQL 18 on 5433 (postgres:test; DATABASE_URL=postgres://postgres:test@localhost:5433/postgres); your databases are named tp_pr6b4g_<role>_<n>, dropped when done. Playwright's pinned Chromium is installed. Heavy commands (install, build, typecheck, lint, test, test:db, e2e, Stryker, capacity) run one at a time: flock /tmp/laneb-heavy.lock <cmd>, one command per hold. Never a foreground sleep: long commands run in the background and you wait for them. If PostgreSQL stops answering (pg_isready -h localhost -p 5433): bash /tmp/setup-container.sh ${BR}:${WT}.
+Rules: CLAUDE.md in full. LANES.md rule 6: generated files (pnpm-lock.yaml, watched-paths.txt, packages/db/functions, synth output) are written by their generators, never by hand; shared documents keep both sides. Never skip, loosen or quarantine a test; fix anything red at its root. Never force-push, never --no-verify, never a .gitleaksignore entry, never write files through the GitHub connector. No model name or identifier in any file, commit or text; synthetic data only. Never approve or request changes on a PR. The co-founder's standing direction: build the best, take the recommended option (security: the safer), record why, never ask. If you find an improvement in files this round already changes, note it in your return value; do not widen the round.`
+
+const CHECK_SCHEMA = { type: 'object', properties: { command: { type: 'string' }, passed: { type: 'boolean' }, counts: { type: 'string' }, note: { type: 'string' } }, required: ['command', 'passed'] }
+
+phase('Merge')
+const prep = await agent(`${CTX}
+
+Your task: prepare the round's commits in ${WT}. Do NOT push.
+1. Confirm HEAD is be63bdc2 and clean (if your progress file shows later commits of yours, continue from them). git fetch origin claude/build-platform. Merge origin/claude/build-platform with a merge commit (no rebase). Message in the style of 17e233f0's (read it: git log -1 17e233f0): "Merge claude/build-platform (<short sha>, #78) into PR 6b-4: …", naming what joins and how each conflict was resolved (rule 6). A conflict in a generated file: take either side and rerun its generator, never hand-merge.
+2. Generators on the merged tree, committing only what they write (their own commit if anything, "Generated: …"): flock the lock for pnpm install --frozen-lockfile (the lockfile must not change); pnpm exec tsx tools/screening-capacity/watched.ts --write; pnpm -s synth --all. Afterwards git status must show nothing untracked under fixtures/ and nothing modified.
+3. apps/web/src/app/tables.test.ts: run it (vitest, the web project). Its AFTER_42 exemptions must still pass at console/support 1, users 2, support-access 1. Do not wrap those tables (they belong to UX PRs 74-76, removedBy; the 10-28 decision). If a count moved, find the cause and fix it there; never loosen the test.
+4. The legal sign-off docs commit (rule 8), ONE commit, message "docs: record the founder's sign-off of 6b-4's legal text (2026-11-01, as written)…" with a short body. Places (line numbers as on be63bdc2; #78 touches none of these files, so verify they are unchanged after the merge and locate by content if not): docs/adr/0065-*.md line 56 ("for the founder, then counsel") and lines 246-247 ("The founder signs the words off and counsel sees them…"); docs/adr/0062-*.md line 1551 ("for the founder's sign-off and counsel, O4"); docs/product/reconciliation-001*.md (find it) line 647, edited IN PLACE (never a paragraph appended at the end: #82 and #86 append there). Read each passage and its surroundings first. Rewrite only the words that describe the sign-off as pending so they record: the founder (Tyler Williams) signed off as written, on 2026-11-01, every legal sentence #42 adds or changes (pointing to where those sentences are listed if the passage already points somewhere); the sign-off was relayed by the co-founder; counsel still reviews them before the screening opens (O4 stays open); any later change to those sentences needs a new sign-off. ADR 0065 lines 354-355 (counsel's O4) stay unchanged. Change NO legal sentence (the sentences a person reads in the product, the legal surfaces, the policies): this commit only changes the records ABOUT the sign-off. Also grep the whole tree (git grep -n -i) for other places on this branch that still describe #42's legal text as awaiting or pending the founder's sign-off (e.g. "awaiting the founder", "founder's sign-off", "for the founder, then counsel") within docs/adr, docs/product, docs/runbooks, HANDOFF-like docs on the branch; list each with file:line and fix those that clearly refer to #42's text in the same commit; list but leave any that refer to something else. Match the docs' plain style (.claude/rules/brand.md where it applies to docs), keep line lengths as the file does.
+5. Run quickly, under the lock: pnpm lint:copy, pnpm verify-content (the docs commit must not break them), and git diff be63bdc2 HEAD --stat > ${SP}/pr42g-delta.stat.
+${ATTR}
+${SAVE('pr42g-merge.md', 'the merge and conflicts, the generators, tables.test, the docs commit and each place changed with before/after text, the grep results, quick checks')}
+Return: the base sha merged, the merge commit, every commit you made (sha and subject), the conflicts and how resolved, generator results, tables.test result, each docs place with its exact before and after text, the grep list (fixed / left with reason), the quick checks, and whether the delta contains a workflow, manifest, lockfile or migration change.`, { label: 'merge: base + generators + sign-off docs', phase: 'Merge', schema: { type: 'object', properties: { base: { type: 'string' }, merge_commit: { type: 'string' }, head: { type: 'string' }, commits: { type: 'array', items: { type: 'object', properties: { sha: { type: 'string' }, subject: { type: 'string' } }, required: ['sha', 'subject'] } }, conflicts: { type: 'string' }, generators: { type: 'string' }, tables_test: { type: 'string' }, docs_places: { type: 'array', items: { type: 'object', properties: { file: { type: 'string' }, line: { type: 'number' }, before: { type: 'string' }, after: { type: 'string' } }, required: ['file', 'before', 'after'] } }, grep_list: { type: 'string' }, quick_checks: { type: 'array', items: CHECK_SCHEMA }, delta_needs: { type: 'object', properties: { workflow: { type: 'boolean' }, manifest: { type: 'boolean' }, lockfile: { type: 'boolean' }, migration: { type: 'boolean' } }, required: ['workflow', 'manifest', 'lockfile', 'migration'] }, notes: { type: 'string' } }, required: ['base', 'merge_commit', 'head', 'commits', 'docs_places', 'delta_needs'] } })
+if (!prep || !prep.head) { log('merge agent returned nothing; stopping'); return { prep } }
+if (prep.delta_needs && prep.delta_needs.migration) { log('the base delta carries a migration: stopping for the orchestrator'); return { prep, stopped: 'migration in base delta' } }
+
+phase('Review')
+const FIND_SCHEMA = { type: 'object', properties: { findings: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, severity: { type: 'string', enum: ['blocker', 'major', 'minor'] }, file: { type: 'string' }, line: { type: 'number' }, claim: { type: 'string' }, evidence: { type: 'string' }, fix: { type: 'string' } }, required: ['id', 'severity', 'claim', 'evidence', 'fix'] } }, notes: { type: 'string' } }, required: ['findings'] }
+const LENSES = [
+  { key: 'legal-records', prompt: `Lens: the legal sign-off records. Read the docs commit(s) in full (git show) and each passage's surroundings. Hunt for: any legal sentence (a sentence a person reads in the product, the legal surfaces, the policies, the screening terms, notices) changed in any way; a record that overstates the decision (e.g. says counsel reviewed, says sentences other than #42's were signed off, drops "as written", invents a time or a channel) or understates it; O4 (counsel's review) closed or altered (ADR 0065 lines ~354-355 must be unchanged); a place still saying the sign-off is pending or awaited (git grep -n -i on the head for "awaiting the founder", "founder's sign-off", "for the founder, then counsel", "signs the words off", "sign-off" in docs/adr, docs/product, docs/runbooks); the founder's name wrong (Tyler Williams); the date wrong (2026-11-01); a dated paragraph appended at the end of reconciliation-001 instead of an in-place edit; inconsistent wording between the four places; style broken (line length, markdown). Also confirm git diff be63bdc2 HEAD -- apps/worker/src/screening docs/product/legal-surfaces.md docs/policies/data-retention.md is empty.` },
+  { key: 'merge-integrity', prompt: `Lens: merge and generated-file integrity. Check: the merge commit's parents are be63bdc2 and the base sha; git diff <base> HEAD (the PR's whole diff against its new base) equals git diff <old merge base 56ed6279> be63bdc2 plus only the docs commit and generator outputs, i.e. the merge lost nothing of #42 and nothing of #78 (compare file lists and, for every file both sides changed, read the merged result: docs/product/test-matrix.md, packages/synth/src/cases/{matrix,registry,common}.ts, watched-paths.txt, any other); generated files equal what their generators write (rerun pnpm exec tsx tools/screening-capacity/watched.ts and pnpm -s synth --all in a scratch copy or check git status stays clean after running them; pnpm-lock.yaml unchanged versus be63bdc2 and the base); tables.test.ts unchanged and passing; no file of the migration, docs/product/domain-model.md, packages/db/functions, approvers.json, content/releases/** or packages/pricing/src changed versus be63bdc2; no model name or identifier, PHI or 40/64-hex secret-like string added in the new commits; commit messages carry the two attribution lines and no model identifier.` },
+]
+const reviewed = await pipeline(LENSES,
+  (lens) => agent(`${CTX}
+
+You are an adversarial reviewer of #42's round, which is committed locally in ${WT} and NOT pushed (head ${prep.head}; the merge agent's report: ${JSON.stringify(prep).slice(0, 9000)}). Do not trust that report: check the code. Do not modify ${WT} (read-only: git show/diff/grep; for anything that writes, use a scratch clone: git clone -q ${WT} ${SP}/rev-${lens.key} and work there). Light commands only; anything heavy under the lock.
+${lens.prompt}
+Report only real problems with concrete evidence (file:line, the text). An empty list is a fine answer.
+${SAVE('pr42g-review-' + lens.key + '.md', 'what you checked and each finding')}`, { label: `review: ${lens.key}`, phase: 'Review', schema: FIND_SCHEMA }),
+  (res, lens) => parallel((res && res.findings || []).map(f => () => parallel([0, 1].map(i => () => agent(`${CTX}
+
+Adversarially verify one review finding on #42's local head ${prep.head} in ${WT} (read-only; scratch work in ${SP}/vf-${lens.key}-${f.id}-${i}). Try to REFUTE it: check the code and the records yourself. Default to refuted=true if the evidence does not hold up.
+Finding (${lens.key} lens): ${JSON.stringify(f)}`, { label: `verify: ${lens.key}/${f.id}#${i}`, phase: 'Review', schema: { type: 'object', properties: { refuted: { type: 'boolean' }, reason: { type: 'string' } }, required: ['refuted', 'reason'] } }))).then(vs => ({ ...f, lens: lens.key, votes: vs.filter(Boolean), confirmed: vs.filter(Boolean).filter(v => !v.refuted).length >= 1 && vs.filter(Boolean).filter(v => v.refuted).length < 2 }))))
+)
+const allFindings = reviewed.filter(Boolean).flat().filter(Boolean)
+const confirmed = allFindings.filter(f => f.confirmed)
+log(`review: ${allFindings.length} findings, ${confirmed.length} confirmed`)
+let fix = null
+if (confirmed.length) {
+  fix = await agent(`${CTX}
+
+Fix these confirmed review findings on #42's local head ${prep.head} in ${WT}, at their root, as new commit(s) (never amend or rewrite; nothing is pushed yet, but keep history additive). Do NOT push. Never change a legal sentence; if a finding would need one changed, do not change it: report it as needing a new founder sign-off.
+Findings: ${JSON.stringify(confirmed).slice(0, 20000)}
+Then rerun, under the lock, the quick checks the fix touches (at least pnpm lint:copy and pnpm verify-content; vitest on any test file near what you changed).
+${ATTR}
+${SAVE('pr42g-fix.md', 'each finding, its fix commit, the checks')}
+Return the new head, each finding's resolution, and the checks.`, { label: 'fix: confirmed findings', phase: 'Review', schema: { type: 'object', properties: { head: { type: 'string' }, resolutions: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, resolution: { type: 'string' } }, required: ['id', 'resolution'] } }, checks: { type: 'array', items: CHECK_SCHEMA }, needs_founder: { type: 'string' } }, required: ['head', 'resolutions'] } })
+  if (!fix || !fix.head) { log('fix agent returned nothing; stopping before checks'); return { prep, allFindings, fix } }
+}
+const head = (fix && fix.head) || prep.head
+
+phase('Checks')
+const extra = (prep.delta_needs.workflow || prep.delta_needs.manifest || prep.delta_needs.lockfile) ? ' The base delta changed a workflow, manifest or lockfile: also run pnpm actions:check and BASE=origin/claude/build-platform pnpm toolchain:check.' : ''
+const checksPrompt = (resumeNote) => `${CTX}
+${resumeNote}
+Run the full checks on #42's final local tree in ${WT}: HEAD must be ${head} (committed, not pushed; if HEAD differs, stop and report). Counts come from each run's own totals. One heavy command at a time under the lock. Keep a results file ${SP}/pr42g/suite/results.tsv (command, exit, counts, start, end) and the logs beside it; rebuild the suite script from pr42f-integrate.md's method if useful.
+1. pnpm typecheck; NODE_OPTIONS=--max-old-space-size=6144 pnpm lint; pnpm lint:copy; pnpm lint:logs; pnpm check:fixtures.
+2. pnpm -s synth --all, then git diff --exit-code fixtures/synthetic and nothing untracked under fixtures/.
+3. The engine-freeze check as CI runs it (read .github/workflows/ci.yml for the command and its env).
+4. CI=true pnpm test with the unit step's env as ci.yml sets it (ENGINE_FREEZE_BASE = the merge base with origin/claude/build-platform, GITLEAKS=/root/.cache/paidwhole/gitleaks/8.24.3/gitleaks, anything else the step sets). Expect exactly 1 skip: packages/rules content.test.ts:179 skips as root; any other skip or failure is a problem.
+5. pnpm test:golden; pnpm test:oracle (TP_ORACLE_PYTHON as ci.yml or pr42f-integrate.md sets it); pnpm verify-content.
+6. test:db in CI's four shards (read ci.yml for how it shards), each on a fresh database. Expect 1 skip: restore-drill.
+7. pnpm build and the stamp step as CI does, then e2e in CI's 2 shards with CI=true E2E_PREBUILT=1.
+8. pnpm exec tsx tools/stryker/affected.ts --event pull_request --base be63bdc2 (expect: no shard). If it names any shard, run each named shard and the gate.
+9. The capacity smoke S1,S4 with --time-mode binding, a FRESH --out directory (${SP}/pr42g/capacity-out-<n>, never reused: the harness reuses <out>/data/mail) and a fresh database; #78 hits watched paths. If it goes red on time only, apply the host-speed A/B method recorded in pr42f-integrate.md (the base's own tree on this host as the control) and report both.
+10. pnpm db:domain-model --check on a freshly migrated database: it must read SHA-256 ${HASH} with the approval line at 7334. If it does not, STOP and report (do not regenerate).
+${extra}
+Fix anything red at its root with a new commit only if the cause is in this round's commits (report it; then rerun every check the fix could affect); if red for a reason outside this round, report it with evidence and do not paper over it. Never skip or loosen a test. Do NOT push.
+${ATTR}
+${SAVE('pr42g-checks.md', 'each check, exit, counts, logs path; any fix')}
+Return the head the checks ran on, every check with counts, the domain model SHA-256 and approval line, and notes.`
+const CHECKS_OUT = { type: 'object', properties: { head: { type: 'string' }, checks: { type: 'array', items: CHECK_SCHEMA }, sha256: { type: 'string' }, approval_line: { type: 'number' }, all_passed: { type: 'boolean' }, notes: { type: 'string' } }, required: ['head', 'checks', 'sha256', 'all_passed'] }
+let checks = await agent(checksPrompt(''), { label: 'checks: full suite on the final tree', phase: 'Checks', schema: CHECKS_OUT })
+if (!checks) { log('checks agent returned nothing; stopping'); return { prep, allFindings, fix } }
+
+const critic = await agent(`${CTX}
+
+You are the completeness critic of #42's local checks before its one push. Required list: typecheck; full lint; lint:copy; lint:logs; check:fixtures; synth --all with diff clean; engine-freeze; CI=true pnpm test with the unit env (exactly 1 skip, rules content.test.ts:179); test:golden; test:oracle; verify-content; test:db in four shards on fresh databases (1 skip: restore-drill); build, stamp, e2e two shards CI=true E2E_PREBUILT=1; stryker affected.ts vs be63bdc2 (and its shards if any); capacity S1,S4 binding with a fresh --out (and the A/B if red on time); db:domain-model --check reading ${HASH} at line 7334.${extra}
+The checks agent's report: ${JSON.stringify(checks).slice(0, 14000)}
+Verify independently from ${SP}/pr42g/suite/ (results.tsv and logs) and ${SP}/progress/pr42g-checks.md, and git -C ${WT} log/status: every required check ran on HEAD ${checks.head} (not an earlier tree), its log's own totals match the report, no unexpected skip, nothing was loosened, the tree is clean, HEAD equals ${checks.head}. Read-only. Return ok only if all of that holds; otherwise list exactly what is missing or wrong.`, { label: 'critic: checks complete?', phase: 'Checks', schema: { type: 'object', properties: { ok: { type: 'boolean' }, missing: { type: 'array', items: { type: 'string' } }, notes: { type: 'string' } }, required: ['ok', 'missing'] } })
+if (critic && !critic.ok && critic.missing.length) {
+  log(`critic: ${critic.missing.length} gaps; rerunning what is missing`)
+  checks = await agent(checksPrompt(`RESUMED: the completeness critic found these gaps in your earlier run: ${JSON.stringify(critic.missing)}. Your progress file and results.tsv hold the earlier results. Close every gap (run what is missing or redo what was wrong), and return the WHOLE check list again.`), { label: 'checks: close the critic\'s gaps', phase: 'Checks', schema: CHECKS_OUT })
+}
+if (!checks || !checks.all_passed || checks.sha256 !== HASH) { log('checks not all green or hash moved: not pushing'); return { prep, allFindings, fix, checks, critic } }
+
+const push = await agent(`${CTX}
+
+Push #42's round ONCE. In ${WT}: confirm HEAD is ${checks.head}, the tree is clean, origin/${BR} is still be63bdc2 (git fetch origin ${BR}; if it moved, stop and report). Then: git push origin ${BR} (no -u needed; retry only on a network error after 2, 4, 8, 16 s; never force, never --no-verify). The pre-push hook runs the fixture check and gitleaks: if it refuses, report its output exactly and stop (do not rewrite; the session decides). Then git ls-remote origin ${BR} must show ${checks.head}. Also push the same commit to a WIP ref: git push origin ${checks.head}:refs/heads/co-001/wip-pr42-integrate-2 (a new name; never force).
+Finally copy ${SP}/progress/pr42g-*.md into ${OPS}/approval-summaries/lane-a-wip/progress/ (cd ${OPS}; git pull --no-rebase origin claude/build-ops; add those files; commit "Acting Lane A, #42: integrate round progress records"; GITLEAKS=/root/.cache/paidwhole/gitleaks/8.24.3/gitleaks git -C /home/user/PhysicalTherapy push origin claude/build-ops; shorten any 40- or 64-hex hash in them to 8 digits and an ellipsis first; never force).
+${ATTR}
+Return pushed (bool), the remote head, the hook's output line, and the ops commit.`, { label: 'push once', phase: 'Checks', effort: 'low', schema: { type: 'object', properties: { pushed: { type: 'boolean' }, remote_head: { type: 'string' }, hook: { type: 'string' }, ops_commit: { type: 'string' } }, required: ['pushed', 'remote_head'] } })
+return { prep, findings: allFindings, fix, checks, critic, push }
