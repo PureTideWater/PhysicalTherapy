@@ -1,0 +1,11 @@
+# pr42g review: merge integrity
+- parents ed032539 = be63bdc2 + 83d71fd6 (origin tip, not moved): OK
+- merge-tree recomputation == ed032539 tree (no evil merge): OK
+- #42-only files: HEAD==be63bdc2 except 3 docs files of 10db232c; #78-only files HEAD==83d71fd6; no extra files: OK
+- overlap 4 files: numstat adds sum (6+14,30+24,45+22,8+3): OK
+- commit attribution lines present (same convention as be63bdc2)
+- TODO: generators in scratch clone, lockfile, protected paths, secret/model grep, semantic check overlap
+- pnpm-lock.yaml == be63bdc2 (#78 did not touch it); protected paths unchanged vs be63bdc2; domain-model approval line 7334 hash b23fed0e intact
+- scratch clone: install offline ok; watched.ts --write and synth --all wrote nothing (git status clean); tables.test.ts 7/7, unchanged vs base and be63bdc2
+- no 40/64-hex, no model names in added lines; docs commit changes only the sign-off framing, quoted legal sentences unchanged
+- RESULT: no findings

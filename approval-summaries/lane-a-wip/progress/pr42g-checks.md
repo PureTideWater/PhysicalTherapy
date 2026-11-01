@@ -1,0 +1,26 @@
+# PR 42 (6b-4) checks round g on c65f9cf2 (progress)
+- Start 2026-11-01T17:09:02Z: fresh. HEAD c65f9cf2 verified; origin/claude/build-platform 83d71fd6 (not moved); merge base 83d71fd6.
+- Suite script: /tmp/claude-0/-home-user-PhysicalTherapy/b44a103e-64fa-5094-8b17-09d1b9f5409a/scratchpad/pr42g/suite.sh; results /tmp/claude-0/-home-user-PhysicalTherapy/b44a103e-64fa-5094-8b17-09d1b9f5409a/scratchpad/pr42g/suite/results.tsv; logs beside it. DBs tp_pr6b4g_*.
+- Delta has no workflow/manifest/lockfile -> no actions:check/toolchain:check.
+## Results
+- typecheck 0: 22 projects passed (logs suite/typecheck.log)
+- lint 0: 1,703 files in 3 groups, 0 errors 0 warnings
+- lint:copy 0: 547 files; lint:logs 0: 1,099 files; check:fixtures 0: 333 read, 3,945 searched
+- synth --all 0: 263 cases 0 written/655 unchanged/0 removed; 8 EMR 0/16; diff clean, nothing untracked under fixtures/
+- engine-freeze 0 (base 83d71fd6): no problems
+- capacity watched hits (be63bdc2...HEAD, 69 paths): 13 (pr42g/watched-hits.txt) -> run
+- running: unit golden oracle verify-content
+- unit (CI=true, ENGINE_FREEZE_BASE=83d71fd6, GITLEAKS=8.24.3) 0: 412 files passed; 6,985 passed | 1 skipped (6,986)
+- golden 0: 5 files, 376 passed; oracle 0 (synth --large first, TP_ORACLE_PYTHON=/opt/py312-ci/bin/python): pyx12 4.0.0 agrees with all 687 (676 valid, 11 malformed rejected), edi835 agrees on every one; verify-content 0: every content set passes
+- chunk B launched: db1-4 (fresh db each) + domain-model (fresh db)
+- unit skip confirmed: verbose run of packages/rules/src/content.test.ts shows the one skip "throws when content/outgoing is unreadable (review m3)" (skipIf uid 0) (suite/unit-skipcheck.log)
+- db 1/4 0: 33 files, 3,269 passed | 1 skipped; db 2/4 0: 33 files, 2,163 passed
+- db 3/4 0: 33 files 3,094 passed; db 4/4 0: 33 files 973 passed. Union 132 files each once = git ls-files *.db.test.ts (132). Total 9,499 passed + 1 skipped (restore-drill: pg_dump 16 cannot dump PG 18, environment). 0 failed.
+- domain-model --check (fresh db tp_pr6b4g_dm_1, 45 migrations) exit 0: matches schema at 20261107090000_mail_streams.sql; 375 functions; 98 tables, 1 view, 47 registered, 226 divergence rows (23 to approve), 0 explanation problems. --require-approval exit 1 only for the missing name/date; text SHA-256 b23fed0e...; approval line 7334 (empty). doc/approvers/migrations unchanged since be63bdc2.
+- chunk C launched: build e2e1 e2e2 affected
+- build 0: web+worker Done; stamp apps/web/.next/BUILD_COMMIT = c65f9cf2
+- e2e (CI=true, E2E_PREBUILT=1, chromium, fresh db per shard) shard 1/2 0: 33 passed (6.2m); shard 2/2 0: 32 passed (5.9m); 65 passed, 0 flaky, 0 failed
+- affected.ts --base be63bdc2 0: money/pricing/ledger/packets not affected, "shards: none (no money path changed)" -> no shard, no gate
+- capacity launched (S1,S4 binding, process runtime, fresh out pr42g/capacity-out-<stamp>-c65f9cf2, fresh db tp_pr6b4g_cap_1)
+- capacity S1,S4 binding (process runtime, images from the c65f9cf2 build, fresh out pr42g/capacity-out-20261101T175836-c65f9cf2, fresh db tp_pr6b4g_cap_1 dropped) exit 1 for environment-only checks (partial run 1, limit not applied 5, cold start not applied 4, oracle not compared 2), as every local smoke. Release built and loaded 330.7 s (2,247,791 records). S1-1 31.3 s, S1-2 3.0 s; S4#1 37.6/39.1/35.6/25.7; S4#2 37.1/35.9/37.4/26.7 (MIDDLE, 37.4 s: under 48 and under the 44-s question); S4#3 34.5/35.0/36.1/25.6. Address checks 14/14 at 2.0-2.3 s; 0 run lines waited on the mail gate. No time failure -> no A/B needed. Report says commit 'unknown' (images dir outside git; images built from c65f9cf2 per build stamp).
+- ALL CHECKS DONE on c65f9cf2. No fix, no commit. No tp_pr6b4g_* database left.
