@@ -109,7 +109,7 @@ then SUITE-CAP-3, session_019i9ifDUYaz9Hta77Vukkzo.
 
 ## 5. Counters (LANES.md rule 4)
 
-Next free: **ADR 0088**, **`packages/synth` module 22**, **fixture release 900008**. Reserved and in use: 0078 TBL,
+Next free: **ADR 0089** (0088 reserved for redact-ssn-phone), **`packages/synth` module 22**, **fixture release 900008**. Reserved and in use: 0078 TBL,
 0079 DLR, 0080 SS-01, 0081 SGN, 0082 HOM, 0083 SUITE-CAP-1, 0084 interest, 0085 UX PR 10, 0086 packet day counts,
 0087 SUITE-CAP-3. Test-matrix series and synth modules are in each claim row.
 
@@ -120,21 +120,18 @@ registry merges until #75 merges, or 11:00 UTC). **It lapsed at 11:00 UTC on 202
 everything had stopped. Recommended order now: the CI-only PRs first (#82, then #86), then #75, then #84, #83 and #85,
 each merging the base once before its merge.
 
-## 7. Waiting on the founder
+## 7. The founder's decisions (updated 2026-11-01)
 
-1. #42's domain-model approval, once Lane A posts the suggested approval line. Until runbook 3i, the founder commits
-   that suggestion on GitHub, as on #39.
-2. Sign-off of #42's added and changed legal sentences before counsel, word for word, before and after:
-   `approval-summaries/lane-a-wip/pr42-body-drafts/body-legal.md` (the 90-day address-check sentence, the
-   refused-address sentence in the result email, four `legal-surfaces.md` rows, the paused page and refusals, and
-   `data-retention.md`).
-3. #42's other actions: `approval-summaries/lane-a-wip/pr42-body-drafts/body-actions.md` (the second AWS account per
-   environment, the DNS records, SES production access, Postmaster and SNDS, staging's checks, the consumer's size).
-   The capacity runs on be63bdc2 measured S4's middle run at 45.6 s, over the 44 s sizing line (O9, issue #41).
-4. Close Dependabot #33 by hand, never merged.
-5. From #80: whether letters should have Social Security and phone numbers redacted by pattern (PRD 14).
-6. From SS-01: `REFUSAL_SUMMARY.organization_suspended` reads "new work had stopped for the practice's organization"
-   (wording within brand.md, for the founder to know).
+Decided, relayed by the co-founder on 2026-11-01:
+- **#42's legal text is signed off as written** ("From founder: the legal text in #42 is signed off as written"). This covers every sentence in `approval-summaries/lane-a-wip/pr42-body-drafts/body-legal.md`. In #42's description, mark that section "signed off by the founder 2026-11-01, as written" instead of "awaiting". Counsel still reviews it with the other legal surfaces before the screening opens. Any later change to those sentences needs a new sign-off.
+- **Social Security and phone numbers are redacted by pattern** before the model reads a letter (PRD 14). This is a new Lane B item, claimed in LANES.md: `co-001/redact-ssn-phone`.
+- **Dependabot #33 is closed**, not merged. Lane A's orchestrator closed it on 2026-11-01 at the co-founder's word.
+
+Still waiting on the founder:
+1. #42's domain-model approval, once acting Lane A posts the suggested approval line (section 4a step 5). Until runbook 3i, the founder commits that suggestion on GitHub, as on #39.
+2. #42's other actions: `approval-summaries/lane-a-wip/pr42-body-drafts/body-actions.md`. They cover the second AWS account per environment, the DNS records, SES production access, Postmaster and SNDS, staging's checks and the consumer's size. The capacity runs on be63bdc2 measured S4's middle run at 45.6 s, over the 44 s sizing line (O9, issue #41). None of these blocks #42's merge; they block the screening's launch.
+3. Runbook 3i, the build's own GitHub account. Until then, ordinary PRs merge on green checks and the fresh-clone verification, with no human review. The co-founder was told this on 2026-11-01; recommended before launch.
+4. For the founder to know: SS-01's `REFUSAL_SUMMARY.organization_suspended` reads "new work had stopped for the practice's organization", worded within brand.md.
 
 ## 8. What cost time, so it does not cost Lane B's
 

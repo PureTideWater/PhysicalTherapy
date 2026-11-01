@@ -53,3 +53,8 @@ as on #39. In order:
      nonpayment reason (nonpayment is billing's own hold). A manual nonpayment suspension would need a new ruling,
      and the design recommends against it.
 3. **SUITE-CAP-1b** (the triage lock fix), then **the interest fix**, each after the one before it merges.
+
+## Decided 2026-11-01 (relayed by the co-founder)
+- #42's legal text: signed off as written.
+- Social Security and phone numbers in letters are redacted by pattern before the model reads them (PRD 14): item `co-001/redact-ssn-phone`.
+- Dependabot #33: closed, not merged.

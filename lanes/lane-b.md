@@ -1019,3 +1019,7 @@ HANDOFF.md; LANES.md rule 10).
 - At the co-founder's word (Lane A's account has about 45 credits left), #42's final round was stopped before it spent them. Its #78 merge was aborted, so #42 stands at be63bdc2 on origin and locally.
 - `lanes/lane-a-handoff-to-lane-b.md` now gives Lane B's account Lane A's work too: #42's last steps (its section 4a) and the schema chain (4b), until Lane A's account returns, plus the counters.
 - The snapshot loop is stopped. The 19:20 UTC check-in is cancelled. The 2026-11-03 14:10 UTC check-in stays: it reads this log first and hands back nothing that Lane B holds.
+
+### 2026-11-01 (Lane A's orchestrator): the founder's decisions; #33 closed
+- The founder signed off #42's legal text as written. Social Security and phone numbers are to be redacted by pattern before the model reads a letter: new item `co-001/redact-ssn-phone`, with ADR 0088 and MOD-15 and MOD-16 reserved. Dependabot #33 is closed, not merged, at the co-founder's word.
+- Lane B had not started by 2026-11-01. Nothing was pushed after the handoff, and every PR stands as on 2026-10-28.
