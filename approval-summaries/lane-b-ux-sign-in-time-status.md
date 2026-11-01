@@ -19,7 +19,7 @@ GitHub login: PureTideWater.
 - **#82 merged** (base now bce57f16); the branch merges it in before the build.
 - **Branch:** `co-001/ux-sign-in-time` on origin at 165c5993 with no commits of its own; fast-forwarded locally to the
   base 83d71fd6 (claude/build-platform). Worktree /home/user/ux-sign-in-time (created by setup; pnpm install done).
-- **Running:** nothing (the build workflow starts next). The old scratchpad is gone; its copies are in
+- **Running (17:58 UTC):** build wf_01926a3e-1b8 (slices A-D, integration, conformance; progress `sgn-build-*.md`, `sgn-conform-*.md` in the scratchpad) and before shots wf_67f26406-d45 (tour additions per design 6.3 on build-ops, base run at bce57f16, TOUR_DIR scratchpad/screens-before). Both in this session; if stopped, resume with resumeFromRunId here, or rerun from the worktree in a new session. Check-in trig_01UKpTxtgVU65KX42vRh2Sp5 at 22:11 UTC. The old scratchpad is gone; its copies are in
   `approval-summaries/lane-b-ux-sign-in-time-wip/`. No scheduled tasks exist from the old session.
 - **Reserved:** ADR 0081 (shared with PR 7); test-matrix SGN-01 to SGN-04 (PR 7 has SGN-05 to SGN-08); synth module
   19 (SGN). No migration timestamps. All checked free on 83d71fd6 and every open head (item prompt).
