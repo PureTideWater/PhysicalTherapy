@@ -146,6 +146,16 @@ rule applies to A and B.
   launched: wf_48c765bd-7af (two lenses in fresh clones, skeptic per B/S finding, completeness critic, loop until dry),
   script `workflow-scripts/lane-b-dependabot-batch-reviews-wf_48c765bd-7af.js` (args select the PR).
 
+- 2026-11-01T18:46:00Z (recorded 19:58Z): the account's 5-hour window stopped A's reviews (wf_48c765bd-7af, before any
+  agent finished) and C's integrator after its push. **PR C opened: draft #91** (`co-001/dependabot-group-routing`, head
+  651f8b80; 7 commits on bce57f16: CI-12 red-first cd79ad7f, dependabot.yml db59f5b8, CI-12 row cea54fb2, runbook and ADR
+  0066 Part 2 amendment ae63d8c2, checker fixes fe3158db, 7353f88e, 651f8b80; local checks green). Its description matches
+  the source apart from one trailing newline GitHub keeps (checked 19:57Z). Trial merge with #86 (83167b8f): the same single
+  ADR 0066 hunk conflicts as with the base; C adds none. #90's CI on 06f79c07: 20 success, 2 skipped (green).
+- 2026-11-01T19:58:00Z: window reset (19:10Z). Setup re-run (PostgreSQL restarted; three worktrees OK). Subscribed to #91.
+  A's reviews resumed (wf_48c765bd-7af, same args). B-completion workflow wf_1dedd31c-ddb launched (B(4) after 19:59Z,
+  final-head checks, checker, push, draft PR B); script archived. The 20:02Z check-in deleted (superseded).
+
 ## Waiting on someone
 - 1 moderate Dependabot alert on the default branch (GitHub's push message, 2026-11-01 18:2xZ): a person reads it (the API answers 403 to the build). Does not block.
 - The API version of Stripe's webhook endpoint (design §5.4): a person checks it in Stripe's dashboard. Does not block.
@@ -163,4 +173,4 @@ rule applies to A and B.
 None yet.
 
 ## Next step
-Next: A's reviews (wf_48c765bd-7af) -> A's fix round; at 20:02Z the B-completion workflow (B(4), final checks, push, draft PR B); C's build (wf_7c837166-d80) -> draft PR C; then reviews for B and C with the same script.
+Next: A's reviews -> A's fix round; B's draft (wf_1dedd31c-ddb) -> B's reviews; C's reviews when a heavy slot frees (reviews script with C's args). C merges after #86 (deadline guard 2026-11-04 12:00Z).
