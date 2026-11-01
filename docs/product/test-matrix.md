@@ -243,6 +243,8 @@ generated letters' oracle is the generator, which records where it wrote each id
 
 MOD-17 and MOD-18 were added with SDK 1.x on the Anthropic path (docs/adr/0048, amendment of 2026-11-01): the client's
 tracing, logging and host are held whatever the environment says, and extra headers from the environment are refused.
+MOD-15 and MOD-16 are the redact-ssn-phone item's (Social Security and phone numbers redacted from a letter before the
+model reads it), added by its own pull request.
 
 ## Billing (BIL)
 
