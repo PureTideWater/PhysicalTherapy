@@ -108,7 +108,7 @@ test('a pattern below the case materiality waits; lowered, it opens as a case wi
       await expect(page).toHaveURL(new RegExp(`/p/${practiceId}/cases/[0-9a-f-]{36}$`));
       const summary = page.getByRole('region', { name: 'Case summary' });
       await expect(summary.locator('[data-figure="actionable"]')).toHaveText('$60.00');
-      await expect(summary).toContainText('3 of 3 lines not written off');
+      await expect(summary).toContainText('$60.00 on 3 lines');
       await expect(summary.locator('[data-owner]')).toHaveText(personaEmail('triage-manager'));
       // The deadline is the earliest open window among its lines: CAS-04's payment date and the window.
       await expect(summary).toContainText(new Date(Date.UTC(2026, 5, 4) + disputeWindowDays() * 86_400_000).toISOString().slice(0, 10));

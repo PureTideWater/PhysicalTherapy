@@ -6,7 +6,7 @@ import { Readable } from 'node:stream';
 import { type ScopeClient, documentObjectKey, readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
 import { addMembership, asOwner, createUser } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
-import { casePatientBalance as reportRule } from '@tp/worker/ledger';
+import { practiceLedgerTotals, practiceRecoveredPeriods, casePatientBalance as reportRule } from '@tp/worker/ledger';
 import { type JobContext, printRoiStatement, reconcileHandler } from '@tp/worker/runtime';
 import type { Practice } from '@tp/worker/testing';
 import type { TriageWorld } from '@tp/worker/testing/triage';
@@ -28,7 +28,7 @@ import { practiceHome } from './practice';
 import { matchDepositAction, reconciliationPage, reverseMatchAction, saveTemplateAction, templatePage } from './reconciliation';
 import { generateRoiAction, roiStatementCsv, roiStatementPage, roiStatementPdf, roiStatementsPage } from './roi';
 import { adjustEntryAction, ledgerReviewPage } from './specialist';
-import { casePage } from './triage';
+import { casePage, casesPage } from './triage';
 import { csrfTokenFor } from '../http/csrf';
 
 /**
@@ -407,6 +407,23 @@ describe('the Reconciliation screen (PRD 7)', () => {
     const home = ok(await call(practiceHome, viewer, P())).dashboard;
     expect(home.headline).toMatchObject({ payerApprovedCents: '3000', recoveredCents: '1200', proofLevel: 'deposited' });
     expect(home.recoveredQuarter.cents).toBe('0');
+    // HOM-01: to date since the first entry it sums, from the same read of the ledger as the quarter, each equal to
+    // practiceLedgerTotals' own for all time and for the quarter. The line the recoupment reopened is back at
+    // actionable on its pricing in effect: in the figure, on the home, on Cases and in a statement generated now.
+    expect(home.headline.recoveredSince).toBe('2026-06-09');
+    const { from, to } = home.recoveredQuarter;
+    const [periods, toDate, quarter] = await withPracticeScope(w.app, { actorId: practice.manager, practiceIds: [practice.practiceId] }, async (scope) => [
+      await practiceRecoveredPeriods(scope, practice.practiceId, { from, to }),
+      await practiceLedgerTotals(scope, practice.practiceId),
+      await practiceLedgerTotals(scope, practice.practiceId, { from, to }),
+    ] as const);
+    expect([periods.toDate, periods.period]).toEqual([toDate, quarter]);
+    expect(home.headline.actionable).toEqual({ cents: '3000', lines: 1, outOfFigure: { movedOn: 0, stale: 0 } });
+    expect(ok(await call(casesPage, practice.manager, P())).cases.map((item) => [item.actionableNowCents, item.actionableNowLines, item.openLines])).toEqual([['3000', 1, 1]]);
+    // An ROI statement generated now carries the same figure for the cases still being worked, never the stored total.
+    const statement = ok(await call(generateRoiAction, practice.manager, P(), { periodFrom: from, periodTo: to }));
+    const { detail } = ok(await call(roiStatementPage, viewer, { ...P(), statementId: statement.objectId ?? '' }));
+    expect([detail.actionableOpenCents, detail.actionableCases.length, detail.matches]).toEqual([home.headline.actionable.cents, 1, true]);
   });
 
   it('lets the contract specialist alone adjust an entry, with a reason and confirmation, within what its evidence shows, and never one that was reversed (PRD 13, Entries: adjusted)', async () => {

@@ -79,6 +79,8 @@ test('an adjusted remittance, a posting export, an EFT export and a recoupment m
   test.setTimeout(420_000);
   const practiceId = await ledgerPractice();
   await signInWithTotp(page, 'ledger-manager');
+  let caseId = '';
+  let statementPath = '';
 
   await test.step('the original payment loads, and the worker opens its case', async () => {
     await withWorker(async () => {
@@ -86,7 +88,7 @@ test('an adjusted remittance, a posting export, an EFT export and a recoupment m
       // The chain prices nothing yet (the plan waits on its mapping) and reconciles the document.
       await throughTheChain(practiceId);
       expect(await chainPricedMonths(practiceId)).toEqual([]);
-      await openLedgerCase(practiceId);
+      caseId = await openLedgerCase(practiceId);
     });
     const response = await page.goto(`/p/${practiceId}/reconciliation`);
     expect(response?.headers()['cache-control']).toMatch(/private.*no-store|no-store.*private/);
@@ -150,7 +152,7 @@ test('an adjusted remittance, a posting export, an EFT export and a recoupment m
     });
     await expect(page.locator('[data-figure="recovered"]')).toContainText('$30.00');
     await expect(page.locator('[data-figure="recovered"]')).toContainText('Recovered (deposited)');
-    await expect(page.locator('[data-figure="recovered"]')).toContainText('stage five: cash deposited, proved by the bank export');
+    await expect(page.locator('[data-figure="recovered"]')).toContainText('cash deposited, proved by the bank export, net of recoupments and reversals');
     await expect(page.getByRole('list', { name: 'Case lines' }).getByRole('listitem').first().locator('[data-line-stage]')).toHaveText('Recovered (posted or deposited)');
   });
 
@@ -187,6 +189,7 @@ test('an adjusted remittance, a posting export, an EFT export and a recoupment m
       }).toPass({ timeout: 90_000 });
     });
     await expect(page.locator('[data-state="recomputed"]')).toBeVisible();
+    statementPath = new URL(page.url()).pathname;
     // The region is named with its proof level, as the figure is labelled: never "recovered" alone.
     const recovered = page.getByRole('region', { name: 'Recovered principal, net (deposited)', exact: true });
     await expect(recovered).toContainText('$12.00');
@@ -214,6 +217,38 @@ test('an adjusted remittance, a posting export, an EFT export and a recoupment m
     }).not.toThrow();
     await page.goto(`/p/${practiceId}/reports/roi`);
     await atPhoneWidth(page, 'ROI statements', { tables: ['ROI statements'] });
+  });
+
+  await test.step('the home, Cases and the statement generated after the recoupment show one actionable amount, and recovered names its period (HOM-04)', async () => {
+    await page.goto(`/p/${practiceId}`);
+    const tile = page.locator('[data-figure="actionable"]');
+    const amount = (await tile.locator('.font-mono').first().textContent()) ?? '';
+    expect(amount).toMatch(/^\$\d[\d,]*\.\d{2}$/);
+    // Counted with its own lines; the reopened line, if its pricing is no longer current, named out of the figure with its cause.
+    await expect(tile.locator('[data-note="actionable"]')).toHaveText(
+      /^what the packets ask for: \d+ lines? in cases still being worked(; out of the figure: 1 line (whose pricing is no longer current|moved on past actionable))?$/,
+    );
+    await expect(page.locator('[data-figure="recovered-to-date"]')).toHaveText('$12.00');
+    await expect(page.locator('[data-figure="recovered-total"] [data-note="recovered"]')).toHaveText(
+      'to date, since 2026-06-09: cash deposited, proved by the bank export, net of recoupments and reversals',
+    );
+    await expect(page.locator('[data-figure="recovered-quarter"]')).toHaveText(/^This quarter \(\d{4}-Q[1-4]\): \$\d[\d,]*\.\d{2}$/);
+    await expect(page.locator('[data-figure="payer-approved"]')).toContainText('counted as recovered only once it is deposited');
+    await expect(page.locator('main')).not.toContainText(/stage five/i);
+    await atPhoneWidth(page, 'The practice home');
+    await page.goto(`/p/${practiceId}/cases`);
+    await expect(page.locator('[data-figure="cases-actionable"]')).toHaveText(amount);
+    await page.goto(`/p/${practiceId}/cases/${caseId}`);
+    await expect(page.locator('[data-figure="actionable"]')).toHaveText(amount);
+    await expect(page.getByRole('region', { name: 'Case summary' })).toContainText('(cash deposited, proved by the bank export, net of recoupments and reversals)');
+    await expect(page.locator('main')).not.toContainText(/stage five/i);
+    await page.goto(`/p/${practiceId}/reconciliation`);
+    await expect(page.locator('[data-figure="recovered"]')).not.toContainText(/stage five/i);
+    await page.goto(statementPath);
+    const actionable = page.getByRole('region', { name: 'Actionable in cases still being worked', exact: true });
+    await expect(actionable).toContainText(`Actionable in cases still being worked: ${amount}`);
+    await expect(actionable).toContainText('Counted when the statement was generated, as the practice home and Cases count');
+    await expect(page.getByRole('region', { name: 'Payer approved, not yet at the proof level', exact: true })).toContainText('Nothing approved is waiting to be deposited.');
   });
 
   await test.step('a posting match reversed with its reason, once confirmed, nets posted to zero and leaves recovered as the deposits prove it', async () => {
