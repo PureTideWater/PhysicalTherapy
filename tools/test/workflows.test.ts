@@ -3150,6 +3150,8 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
   }
 
   interface FoundValue extends ValueKey {
+    /** Where it is read, as the rule's messages name a place: its job, its step and its key. */
+    readonly where: string;
     /** The index of the step that reads it, when a step does (a job's own keys are read before or after its steps). */
     readonly step?: number;
   }
@@ -3184,7 +3186,7 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
             refused = [`does not parse (${error instanceof Error ? error.message : 'unknown'})`];
           }
           problems.push(...refused.map((problem) => `${file} ${where}: ${problem}, in \${{${text}}}`));
-          values.push(...found.map((entry) => ({ file, job, value: entry.toLowerCase(), ...(step === undefined ? {} : { step }) })));
+          values.push(...found.map((entry) => ({ file, job, value: entry.toLowerCase(), where, ...(step === undefined ? {} : { step }) })));
         }
       } else if (isList(value)) {
         value.forEach((item, index) => visit(item, `${where}[${String(index)}]`, job, step));
@@ -3493,7 +3495,7 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       ['inputs.runner', []],
     ];
     for (const [expression, values] of accepted) {
-      expect(fixture(expression), expression).toEqual({ problems: [], values: values.map((value) => ({ file: 'fixture.yml', job: 'images', value, step: 0 })) });
+      expect(fixture(expression), expression).toEqual({ problems: [], values: values.map((value) => ({ file: 'fixture.yml', job: 'images', value, where: 'job images step "The step" env.VALUE', step: 0 })) });
     }
 
     // The whole metadata is refused in every place a value reaches a process.
@@ -3571,6 +3573,8 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     readonly bytes: number;
     /** The one value known to be over the limit, and the item that owns its transport. */
     readonly over?: 'ci-findings-transport';
+    /** Where it may be read, exactly (a place as FoundValue's where names it): the over row's every use is pinned. */
+    readonly sites?: readonly string[];
   }
 
   const script = (job: string, step: string, run: string): Ref => ({ kind: 'step', job, step, run });
@@ -3668,6 +3672,7 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       value: 'steps.calendar.outputs.findings',
       bytes: FINDINGS_BYTES,
       refs: [script('check', 'calendar', '837c4152'), ...FINDINGS],
+      sites: ['job check outputs.findings'],
       bound: 'base64 of findings.json (content-calendar.yml), at most 700,000 bytes (MAX_FILE_BYTES, tools/content-calendar/render.ts), so 933,336 characters: a job output, under GitHub’s 1 MB, which reaches no process in this job',
     },
     {
@@ -3676,6 +3681,7 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       value: 'needs.check.outputs.findings',
       bytes: FINDINGS_BYTES,
       refs: [needs('check'), output('check', 'findings'), ...FINDINGS],
+      sites: ['job notify step "Open an issue for each finding not already open" env.FINDINGS_B64'],
       bound: 'FINDINGS_B64, the same base64 of up to 933,336 characters: over 131,072 bytes as one environment string, the open defect whose transport is its own item',
       over: 'ci-findings-transport',
     },
@@ -3913,6 +3919,9 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
           }
         }
       }
+      // A row with sites is read there and nowhere else, so a second use of the value, under any name, is refused.
+      const places = read.map((entry) => entry.where).sort();
+      if (row.sites !== undefined && places.join('\n') !== [...row.sites].sort().join('\n')) say(`read at ${places.join(', ')}, not exactly at its sites, ${row.sites.join(', ')}`);
       // Tool code is never fingerprinted, so the row names the test that proves its bound.
       if (row.refs.some((ref) => ref.kind === 'symbol') && !row.refs.some((ref) => ref.kind === 'test')) say('names tool code but no test that proves its bound');
       // toJSON reads every job it is given and every output of each, so the row names them all, and no other.
@@ -3945,10 +3954,28 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     // ci.yml's gate reads toJSON(needs): results alone, since no ci.yml job declares outputs.
     expect(Object.entries(workflow('ci.yml').jobs).filter(([, job]) => 'outputs' in job).map(([id]) => id)).toEqual([]);
     // One row is over the limit, and says so: the content calendar's findings as FINDINGS_B64, base64 of a file bounded
-    // at MAX_FILE_BYTES. When ci-findings-transport changes the bound or the transport, this turns red and it rewrites the row.
+    // at MAX_FILE_BYTES, held to its one site (refProblems), so no second use joins it under another name. When
+    // ci-findings-transport changes the bound or the transport, this turns red and it rewrites the row.
     expect(BOUNDED_VALUES.filter((row) => row.over !== undefined).map(key)).toEqual(['content-calendar.yml notify needs.check.outputs.findings']);
-    expect(workflow('content-calendar.yml').jobs.notify?.steps.map((step) => step.env?.FINDINGS_B64).filter((value) => value !== undefined)).toEqual(['${{ needs.check.outputs.findings }}']);
+    expect(BOUNDED_VALUES.filter((row) => row.over !== undefined).map((row) => row.sites)).toEqual([['job notify step "Open an issue for each finding not already open" env.FINDINGS_B64']]);
     expect(4 * Math.ceil(MAX_FILE_BYTES / 3) + 'FINDINGS_B64='.length + 1).toBeGreaterThan(131_072);
+  });
+
+  it('holds a row with sites to exactly those places, so a second use of the value over the limit, under any name or key, turns the table red', () => {
+    const text = (more: string) =>
+      `name: fixture\non: push\njobs:\n  check:\n    runs-on: ubuntu-26.04\n    outputs:\n      findings: \${{ steps.calendar.outputs.findings }}\n    steps:\n      - name: Read the calendar\n        id: calendar\n        run: echo "findings=x" >> "$GITHUB_OUTPUT"\n  notify:\n    needs: check\n    runs-on: ubuntu-26.04\n    steps:\n      - name: Open an issue\n        env: { FINDINGS_B64: "\${{ needs.check.outputs.findings }}" }\n        run: echo\n${more}`;
+    const rows: BoundedValue[] = [
+      { file: 'fixture.yml', job: 'check', value: 'steps.calendar.outputs.findings', refs: [script('check', 'calendar', fingerprint('echo "findings=x" >> "$GITHUB_OUTPUT"'))], bound: 'a fixture', bytes: 933_336, sites: ['job check outputs.findings'] },
+      { file: 'fixture.yml', job: 'notify', value: 'needs.check.outputs.findings', refs: [needs('check'), output('check', 'findings')], bound: 'a fixture', bytes: 933_336, over: 'ci-findings-transport', sites: ['job notify step "Open an issue" env.FINDINGS_B64'] },
+    ];
+    const problems = (yaml: string) => refProblems(rows, unboundedValueProblems('fixture.yml', parse(yaml)).values, () => yaml);
+    expect(problems(text(''))).toEqual([]);
+    expect(problems(text('      - name: Copy them\n        env: { FINDINGS_COPY: "${{ needs.check.outputs.findings }}" }\n        run: echo\n'))).toEqual([
+      'fixture.yml notify needs.check.outputs.findings: read at job notify step "Copy them" env.FINDINGS_COPY, job notify step "Open an issue" env.FINDINGS_B64, not exactly at its sites, job notify step "Open an issue" env.FINDINGS_B64',
+    ]);
+    expect(problems(text('      - name: Upload them\n        uses: actions/fixture@v1\n        with: { path: "${{ needs.check.outputs.findings }}" }\n'))).toEqual([
+      'fixture.yml notify needs.check.outputs.findings: read at job notify step "Open an issue" env.FINDINGS_B64, job notify step "Upload them" with.path, not exactly at its sites, job notify step "Open an issue" env.FINDINGS_B64',
+    ]);
   });
 
   it('resolves each row’s producers by name, so a renamed step, a changed script, a removed output or a deleted symbol or test turns the table red, and an edit elsewhere in a file does not', () => {
