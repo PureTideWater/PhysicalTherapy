@@ -255,6 +255,9 @@ describe('a batch’s own problems', () => {
     expect(batchProblems([csv], ERA, LIMITS)).toEqual([]);
     expect(batchProblems([{ name: 'posting.xlsx', type: '', size: 100 }], POSTING, LIMITS)).toEqual([expect.stringMatching(/^File 1 is a spreadsheet: /)]);
     expect(batchProblems(Array.from({ length: 101 }, () => pdf), CONTRACT, LIMITS)).toEqual(['At most 100 files at once; zip the rest and upload the zip.']);
+    // Counted as the panel counts files: one file, and a thousand grouped.
+    expect(batchProblems([pdf, pdf], CONTRACT, { ...LIMITS, maxFiles: 1 })).toEqual(['At most 1 file at once; zip the rest and upload the zip.']);
+    expect(batchProblems(Array.from({ length: 1001 }, () => pdf), CONTRACT, { ...LIMITS, maxFiles: 1000 })).toEqual(['At most 1,000 files at once; zip the rest and upload the zip.']);
   });
 
   it('never include a choice still to make, which the panel waits for instead of refusing', () => {

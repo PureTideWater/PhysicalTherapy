@@ -214,9 +214,9 @@ export function afterChoosing<T extends ChosenFile>(
   return { step: 'hold', held: merged, focus: waiting ?? 'upload' };
 }
 
-/** The refusal of more files than a batch takes. */
+/** The refusal of more files than a batch takes, counted as the panel counts files (counted). */
 function tooMany(limits: { readonly maxFiles: number }): string {
-  return `At most ${String(limits.maxFiles)} files at once; zip the rest and upload the zip.`;
+  return `At most ${counted(limits.maxFiles, 'file')} at once; zip the rest and upload the zip.`;
 }
 
 /**
