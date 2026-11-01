@@ -11,7 +11,16 @@ written by this session's design workflow): `designs/lane-b-suite-cap-3-reconcil
 
 ## Now
 - 2026-11-01 17:00 UTC: container set up (setup-container OK; Node v24.22.0 after moving the base image's v24.22.1 aside);
-  branch re-cut at 83d71fd6 and pushed; worktree installed. Next: adapt and run the design workflow (pipeline stage 1).
+  branch re-cut at 83d71fd6 and pushed; worktree installed.
+- 2026-11-01 17:03 UTC: design workflow wf_4bc31523-700 running (`workflow-scripts/lane-b-suite-cap-3-design-wf_4bc31523-700.js`,
+  adapted from wf_860fa29e-3e1): code map (base and e0646746) beside a real-size profile (shapes: postings only and step 7b;
+  schema states (a) base, (b) + claim_by_superseded, (c) + 1b's sections 3-6; N 2,000, 6,000 and the largest feasible; private
+  cluster port 5494 under /tmp/laneb-suitecap3-pg-*), then the design (fixes probed in ${SP}/cap3-try), two review lenses
+  (payment-engine; security with concurrency and capacity), each finding adversarially verified, revision, completeness critic.
+  Agents keep progress in the session scratchpad's progress/cap3-*.md (SP = /tmp/claude-0/-home-user-PhysicalTherapy/
+  6c15628c-0d1e-52dc-840b-36ff1c157316/scratchpad). Check-in 22:11 UTC (trig_01557eo6ZaxAEGmh24yU9EGk). If stopped in this
+  session: resumeFromRunId wf_4bc31523-700; if the session is lost, rerun the archived script from scratch.
+  Next: commit the design; then builders, draft PR.
 
 ## Corrections of the 2026-10-28 record (stale facts; the 2026-10-28 session and its scratchpad are lost)
 1. Session and orchestrator: now this session, under Lane B's orchestrator, from 2026-11-01 (was session_019i9ifDUYaz9Hta77Vukkzo
@@ -47,6 +56,7 @@ written by this session's design workflow): `designs/lane-b-suite-cap-3-reconcil
 - Founder: runbook 3i and `APPROVAL_REVIEW_REQUIRED` (until then merge on green CI after the verification; does not block).
 
 ## Log
+- 2026-11-01 17:03 UTC: design workflow wf_4bc31523-700 launched.
 - 2026-11-01 17:00 UTC: new session; setup OK; branch re-cut at 83d71fd6 and pushed; status file corrected.
 - 2026-10-28 05:58 UTC: design workflow wf_860fa29e-3e1 launched (lost with the old container).
 - 2026-10-28 05:57 UTC: started after SUITE-CAP-1a merged (its push runs on 56ed6279: ci, mutation, screening-capacity all success).
