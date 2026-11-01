@@ -1,0 +1,23 @@
+1. base notify, FINDINGS_B64 env (83d71fd6 content-calendar.yml:78)
+   file 98292 B, base64 131056 chars, FINDINGS_B64= string 131070 B: started, exit 0, issue creates 1
+   file 98293 B, base64 131060 chars, FINDINGS_B64= string 131074 B: bash did not start, E2BIG
+2. proposed notify, artifact through gh run download
+   worst case: 41 full-length findings, 6 bytes a unit: file 1540660 B; exit 0; creates 21; last "issue create --title Content calendar: findings not filed --label content-due --body-file body.md"; env 346 B, longest string 53 B; not-filed body 5581 chars, 21 titles; tail "- \u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001"
+   near-worst: 41 findings, 2-digit titles, 6 bytes a unit: file 1540045 B; exit 0; creates 21; last "issue create --title Content calendar: findings not filed --label content-due --body-file body.md"; env 346 B, longest string 53 B; not-filed body 5581 chars, 21 titles; tail "- 40 \u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001"
+   ASCII: 41 findings of 6,000-character bodies: file 248084 B; exit 0; creates 21; last "issue create --title Content calendar: findings not filed --label content-due --body-file body.md"; env 346 B, longest string 53 B; not-filed body 415 chars, 21 titles; tail "- Finding 40"
+   just over the old edge: 98,293 bytes: file 98293 B; exit 0; creates 1; last "issue create --title Finding 0 --label content-due --body-file body.md"; env 346 B, longest string 53 B; not-filed body 98329 chars, 0 titles; tail "Opened by the content-calendar workflow: https://github.com/"
+   many findings: 400 short ones (not-filed list capped at MAX_LISTED): file 21093 B; exit 0; creates 21; last "issue create --title Content calendar: findings not filed --label content-due --body-file body.md"; env 346 B, longest string 53 B; not-filed body 2911 chars, 200 titles; tail "- and 180 more, each named in the run's summary"
+3. proposed notify, fail closed
+   no artifact: exit 0; issues ["issue create --title Content calendar check failing --label content-due --body-file body.md"]; downloads 3
+   check failed: exit 0; issues ["issue create --title Content calendar check failing --label content-due --body-file body.md"]; downloads 0
+   file over MAX_FILE_BYTES: exit 0; issues ["issue create --title Content calendar check failing --label content-due --body-file body.md"]; downloads 1
+   not a list: exit 0; issues ["issue create --title Content calendar check failing --label content-due --body-file body.md"]; downloads 1
+4. proposed notify, a download that fails twice, then once more
+   2 failures: exit 0; downloads 3; issues ["issue create --title Finding 1 --label content-due --body-file body.md"]
+   3 failures: exit 0; downloads 3; issues ["issue create --title Content calendar check failing --label content-due --body-file body.md"]
+5. proposed handoff job (pull requests), the same download, then the shape check
+   download block equal in both scripts: true (20 lines)
+   worst case: exit 0; downloads 1; issue calls 0; content-calendar: the notify job reads 41 findings, 1540660 bytes, SHA-256 dde573f43d2fcf604cfa7cec3366a4224f1a9c91a80f1
+   no artifact: exit 1; downloads 3; issue calls 0; 
+   file over MAX_FILE_BYTES: exit 1; downloads 1; issue calls 0; 
+   not a list: exit 1; downloads 1; issue calls 0; 

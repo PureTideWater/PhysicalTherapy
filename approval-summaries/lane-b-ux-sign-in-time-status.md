@@ -7,17 +7,19 @@ session_01FcouKNxVRK8x6iV52PfxXz, a Lane B item session started 2026-11-01 by La
 (`co-001/ux-sign-in-recovery`) and UX PR 8 get their own sessions later; this one leaves design 3.5's hooks for PR 7.
 GitHub login: PureTideWater.
 
-## Now (2026-11-01 17:00 UTC): taken over; finishing the design
-- **Hold lifted:** the co-founder's go-wide answer (2026-11-01 ~14:40 UTC, weekly usage under 20%, relayed by Lane B's
-  orchestrator) lifts the old "paused for UX PR 10" hold; this item runs now, in parallel. #85 (UX PR 10) is still an
-  open draft at 29dded52 (`dirty`).
-- **Design:** `designs/lane-b-ux-sign-in-time.md` is a partial draft (header, 1, 2.1-2.11, 3, 4 with SGN-01..04).
-  The old run wf_3c17f552-0ea cannot be resumed from a new session: the author is rerun from section 5 (after the
-  five live-state corrections in the item prompt), then the review and the revision, from the committed scouts and draft.
-  Author progress seeded from `approval-summaries/lane-b-ux-sign-in-time-wip/sgn-author.md`.
+## Now (2026-11-01 17:55 UTC): design done; building next
+- **Design done:** `designs/lane-b-ux-sign-in-time.md` (1,798 lines, sections 1-9), run wf_72aee928-c8b (author with
+  the five corrections and sections 5-8; one adversarial reviewer, security and UX lenses, `designs/lane-b-ux-sign-in-time/review.md`,
+  R-01..R-15; two skeptics; the revision, section 9 "Review and dispositions"; a completeness critic, C-01..C-09).
+  Script `workflow-scripts/lane-b-ux-sign-in-time-design-2-wf_72aee928-c8b.js`; progress files in
+  `approval-summaries/lane-b-ux-sign-in-time-wip/`.
+- **Decision (C-02), taken by this session:** `step-limits.ts` joins the screening-capacity watched set, so the PR commits
+  the regenerated `tools/screening-capacity/watched-paths.txt` (`watched.ts --write`), although it is a #42 file: LANES.md
+  rule 6 says each PR commits what its generator writes and the PR merged second regenerates it; without it `pnpm test` fails.
+- **#82 merged** (base now bce57f16); the branch merges it in before the build.
 - **Branch:** `co-001/ux-sign-in-time` on origin at 165c5993 with no commits of its own; fast-forwarded locally to the
   base 83d71fd6 (claude/build-platform). Worktree /home/user/ux-sign-in-time (created by setup; pnpm install done).
-- **Running:** nothing yet (the design workflow starts next). The old scratchpad is gone; its copies are in
+- **Running (17:58 UTC):** build wf_01926a3e-1b8 (slices A-D, integration, conformance; progress `sgn-build-*.md`, `sgn-conform-*.md` in the scratchpad) and before shots wf_67f26406-d45 (tour additions per design 6.3 on build-ops, base run at bce57f16, TOUR_DIR scratchpad/screens-before). Both in this session; if stopped, resume with resumeFromRunId here, or rerun from the worktree in a new session. Check-in trig_01UKpTxtgVU65KX42vRh2Sp5 at 22:11 UTC. The old scratchpad is gone; its copies are in
   `approval-summaries/lane-b-ux-sign-in-time-wip/`. No scheduled tasks exist from the old session.
 - **Reserved:** ADR 0081 (shared with PR 7); test-matrix SGN-01 to SGN-04 (PR 7 has SGN-05 to SGN-08); synth module
   19 (SGN). No migration timestamps. All checked free on 83d71fd6 and every open head (item prompt).
@@ -42,3 +44,4 @@ None blocks this PR. UX PR 66 (Cognito/infra, Lane A); the "three days" comment 
 | 2026-10-28 03:55 | Paused | The orchestrator's order: UX PR 10 first. The running design workflow finishes; build resumes after PR 10 merges. |
 | 2026-10-28 05:15 | Clean stop | The limit stopped the design at ~04:20: scouts done, author through section 4. Committed as a partial draft; resumes after PR 10 merges. |
 | 2026-11-01 17:00 | Taken over | session_01FcouKNxVRK8x6iV52PfxXz (Lane B's orchestrator, 2026-11-01). Hold lifted by the co-founder's go-wide answer. Status corrected against live state; branch fast-forwarded locally to 83d71fd6. Next: design sections 5-8, review, revision. |
+| 2026-11-01 17:55 | Design done | wf_72aee928-c8b: sections 5-8, review R-01..R-15 (all disposed), critic C-01..C-09. C-02 decision: commit the regenerated watched-paths.txt. Next: build slices A-D. |

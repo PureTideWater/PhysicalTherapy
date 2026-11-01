@@ -83,6 +83,12 @@ request changes. This tool takes them in any session.
   - A refused download (UX PR 5, co-001/ux-download-refusals) is shot on both sides with the same ids: before it the
     download handler's raw JSON at the download's URL (the 390 px shot is 980 px wide, as a phone draws it), from it on
     the page it returns to with `?refused=`. `downloadRefusal()` in the spec waits for either.
+  - A sign-in step's time limit (UX PR 6, co-001/ux-sign-in-time): the warning and closed states move the page's own
+    clock (`cap`'s `clock`, `toStepPhase`); on a ref before it they are recorded as skipped ('states no time limit'). The
+    kept-email states delete the step cookie as the browser does at its Max-Age. Its personas `time-mfa` and
+    `time-staff` are not seeded before it, so those shots are skipped as "not seeded on this ref", the kept-email ones
+    as "keeps no email" and `?reason=restarted` as "a 404 on this ref". Enrolment's and key registration's warnings are
+    taken in copies of the browser, so the moved clock never reaches the live step's other shots.
 - **The sample** (the reviewer reports any changed route outside it as "not seen, by sample"):
   - every screen and state the diff changes, at 1280 and 390 px light, and 1280 px dark (tokens only);
   - after a change to a shared component, a token or the shell: one shot per layout, at both widths and in the dark
