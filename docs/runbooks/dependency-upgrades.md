@@ -87,8 +87,10 @@ Once a week, after Thursday's npm batch:
    - **the fix is under three days old**: the pull request is red until its dated exclude is added (below, "The
      release age"); add it when the fix cannot wait.
    Never dismiss an alert without a written reason in the alert and, for a dependency we run, the founder's agreement.
-4. **The exception lists.** Remove every release-age exclude whose expiry has passed, from both lists (below);
-   `pnpm toolchain:check` warns of each on every run until then. Read the audit exceptions likewise: an entry nearing
+4. **The exception lists.** Remove every release-age exclude whose expiry has passed, from both lists (below), and
+   every expired entry of `tools/check-action-pins/age-exceptions.json` and `tools/check-toolchain/image-age-exceptions.json`
+   (below, "Actions" and "Base images and PostgreSQL"); `pnpm toolchain:check` and `pnpm actions:check` warn of each on
+   every run until then, and of an entry whose pin or image no workflow, Dockerfile or compose file names any longer. Read the audit exceptions likewise: an entry nearing
    30 days is fixed or renewed (below).
 5. **`check-toolchain`'s warnings.** A newer pnpm 10.x at least three days old: make the `packageManager` pull request
    (below). An action whose tag moved under an unchanged pin (a push run's warning from `pnpm actions:check`): read
@@ -226,16 +228,60 @@ lockfile entry against the release age and the trust policy on every install (`t
   capacity measurement. To read a digest by hand, take the field `digest` (the index digest) of
   `curl -sS https://hub.docker.com/v2/repositories/library/node/tags/24-trixie-slim`.
 - **The BuildKit builder, by hand.** Every `docker/setup-buildx-action` step (ci.yml's images job, release.yml,
-  release-dry-run.yml and screening-capacity.yml) sets
-  `driver-opts: image=moby/buildkit:vX.Y.Z@sha256:<index digest>`, one value on all four, and neither Dockerfile has a
+  release-dry-run.yml, release-capacity.yml and screening-capacity.yml) sets
+  `driver-opts: image=moby/buildkit:vX.Y.Z@sha256:<index digest>`, one value on all five, and neither Dockerfile has a
   `# syntax` line, so the builder and its frontend run by digest (docs/adr/0066, Part 2). Dependabot cannot update a
-  step's `driver-opts`, so `pnpm actions:check` reads Docker Hub on every networked run and warns when a newer
-  `vX.Y.Z` release was pushed three days ago or more, the release age the workspace holds every dependency to. On that
-  warning: read the release notes at github.com/moby/buildkit/releases; take the field `digest` (the index digest) of
-  `curl -sS https://hub.docker.com/v2/repositories/moby/buildkit/tags/vX.Y.Z`; and set the new string on all four
-  steps in one pull request. workflows.test.ts holds the four equal, check-action-pins fails a new builder whose tag is
-  not that digest, and the images job and the release's dry run prove the build. Never take a `nightly`, `master` or
-  `-rc` tag, which the check does not offer.
+  step's `driver-opts`, so `pnpm actions:check` reads Docker Hub on every networked run (waiting out a rate limit for
+  the time Hub names, at most 60 s) and warns when a newer `vX.Y.Z` release was pushed at least the release age ago
+  (`minimumReleaseAge`, three days). On that warning: read the release notes at github.com/moby/buildkit/releases; take
+  the field `digest` (the index digest) of `curl -sS https://hub.docker.com/v2/repositories/moby/buildkit/tags/vX.Y.Z`;
+  and set the new string on all five steps in one pull request. workflows.test.ts holds the five equal,
+  check-action-pins fails a new builder whose tag is not that digest, `pnpm toolchain:check` holds the new digest to
+  three days from its push (below), and the images job and the release's dry run prove the build. Never take a
+  `nightly`, `master` or `-rc` tag, which the check does not offer.
+- **Every image held to three days** (docs/adr/0066, Part 5). `pnpm toolchain:check` reads Docker Hub for every digest
+  the pull request names that its base names nowhere: the Dockerfiles' `FROM` lines and frontend, read as BuildKit
+  v0.34.1 reads them (a `# syntax=` or `//syntax=` line, after a byte-order mark or a `#!` line), the compose file's
+  services (merge keys honoured), the builder above, and any workflow job container, service container, `docker://` step
+  or setup-qemu image. A digest passes when Docker Hub pushed it at least three days ago (the youngest of the tag's
+  `tag_last_pushed`, `last_updated` and its platforms' `last_pushed`); otherwise the step fails with the instant it is
+  old enough. What a change meets:
+  - Dependabot's images pull request writes the tag's current digest, which can be younger than its seven-day cooldown
+    (#33's was 5.14 days old); it passes from three days, and a re-run after the printed instant clears it.
+  - A digest the tag no longer names is looked for on the repository's most recently updated tags; found on none, it
+    fails, naming the tag's current digest and when that one is old enough, and no exclude clears it: pin a tag's
+    current digest.
+  - **A revert.** The exact revert of an images bump, back to a digest that a merge commit on the build branch's
+    first-parent history named (in an `apps/*/Dockerfile`, `docker-compose.yml` or a workflow) at least three days ago,
+    passes by that commit's time with no Docker Hub read, even after Docker Hub's tags stopped carrying it; the line
+    names the commit. A digest named there less than three days ago, or only by a merged side branch's own commits, is
+    read from Docker Hub as any other.
+  - An image from a registry other than Docker Hub is "age unprovable", since no push time is read there.
+  - Offline, every image is `name:tag@sha256:<64 hex>`, and a reference the rule does not read is refused:
+    - a `COPY --from=` or `RUN --mount=…,from=` naming an image (an ONBUILD trigger's too), and a Dockerfile line the
+      reader cannot place: a JSON Dockerfile, one BuildKit would not parse, a `FROM` line BuildKit does not read as a
+      `FROM` instruction (a heredoc's body, a continuation), a `from=` outside every COPY and RUN;
+    - on a build-push-action step: any `build-contexts`, a `BUILDKIT_SYNTAX` build-arg, a `context:` outside the
+      checkout, a literal `file:` other than `apps/<name>/Dockerfile`, a cache other than `type=gha`, an SBOM scan;
+    - another tracked image file, by Docker's own names (`Dockerfile`, `Containerfile`, `Dockerfile.dev`,
+      `web.Dockerfile`, `compose.yaml`, `docker-compose.override.yml`; never `dockerfile.ts` or `dockerfiles.md`);
+    - a compose `build:`, `include:` or `extends:`;
+    - a setup-buildx step that names no builder image or whose driver is not `docker-container` or `docker`, a
+      setup-qemu step that names no image, and a `docker/bake-action` step.
+  - "hub.docker.com: the image reads stopped at their deadline (180 s)" is an outage: re-run the job.
+  - A push run only warns, an exceptions entry outside its window included: the pull request was the gate.
+- **An image exclude** in `tools/check-toolchain/image-age-exceptions.json`, only when the image cannot wait. Each entry
+  names one exact `image` (`name:tag@sha256:<64 hex>`), its `kind`, `advisory`, `reason`, `added` and `expires` (UTC
+  instants), and waives one requirement:
+  - `security-fix`, for a young digest that fixes an advisory (a GHSA or CVE id) and `fixes: { package, version }`, the
+    package the advisory is against and the version the image now carries. It waives the release age only: the expiry
+    is no earlier than the push time plus three days and no later than seven days after `added`. The advisory is held
+    for form only (no registry answers for it), so the pull request's description says how the fix was verified, and a
+    digest found on no tag passes under no entry.
+  - `age-unprovable`, for an image on a registry other than Docker Hub, with its reason; an expiry within seven days of
+    `added` and no advisory. It never applies to a Docker Hub image.
+  An expired entry fails only a pull request that edits the list, and warns elsewhere until the weekly triage removes
+  it.
 - **Node 24 to 26, on a plan, before Gate 1.** Node 26 is LTS from 2026-10-28. One pull request moves the Dockerfiles'
   `FROM`, `.nvmrc`, `engines`, `@types/node` (major ignored until then) and the workflows' `node-version` together,
   and `mutation.yml`'s exact Node with `tools/stryker/unicode.json` after the Unicode-bound equivalents are checked
@@ -284,3 +330,45 @@ seven days old. The workflow tests find steps by the action's name, so a pin bum
 a changed default. `publish-content.yml` takes the same pins under the founder's standing exception F4; any other change
 to it fails its frozen-copy test. An action added by hand is pinned the same way, at its latest release
 (docs/runbooks/ci.md, "Changing CI").
+
+**Every new pin held to three days** (docs/adr/0066, Part 5). A pin no workflow of the base names passes only when its
+commit is on its repository's default branch, its tag still names it, and it is at least three days old by the youngest
+time read: the committer and author dates, an annotated tag's tagger date, the web-flow signature, and on CI GitHub's
+`verified_at` (with its `reason`), the release's `published_at` and `immutable`, and the push that brought it onto the
+default branch when GitHub's activity answers. One of them must be a time GitHub recorded: on CI a `verified_at` or an
+immutable release's `published_at`. What a change meets:
+- Dependabot's actions pull request is seven days old by its own date and passes on honest dates. It trips only when
+  another time is younger: a tag moved to a newer commit ("tag moved", both commits named), or a late `verified_at`.
+- A hand bump to a release three to six days old passes; under three days it fails, naming every time read, its
+  source and "old enough from <instant>". Wait, or for a security fix add an exclude (below).
+- **A late `verified_at`.** GitHub records it the next time it verifies an older commit's signature, which can be this
+  check. When it is the youngest time and more than three days after every other, the message names the instant to
+  re-run the check after; no exclude is needed.
+- "not on <branch>": the commit is not on the default branch. Choose a release on it; a release made on a maintenance
+  branch, as GitHub's guidance for action authors allows, takes an `off-default-branch` exclude.
+- "age unprovable": an unsigned commit with no immutable release, or on CI a `verified_at` that is null. Choose a
+  release GitHub signed or published immutable, or add an `age-unprovable` exclude with its reason.
+- A time in the future makes the pin young until then, and no exclude clears it: choose another release.
+- "… failed 3 times …" or "the age reads stopped at their 180 s deadline": GitHub did not answer; re-run the job.
+- A file in a subdirectory of `.github/workflows` fails offline: GitHub never runs it and the check never reads it, so
+  a pin parked there would vouch for nothing. Keep drafts outside `.github/workflows`.
+- A push run only warns, for a pin new against the previous head as for any other: a failed read, a moved tag, a pin
+  left unread at the deadline. A problem in what was read (an input, a nested action, an `action.yml` that does not
+  parse) stays an error. A push that aged a pin also compares GitHub's published web-flow keys with
+  `tools/check-action-pins/github-web-flow.asc`, and warns of a rotation: add the new key to the file.
+
+**An action exclude** in `tools/check-action-pins/age-exceptions.json`, one entry per pin and kind: `pin`
+(`owner/repo@<40 hex>`, exact, no pattern), `version` (the pin's `# vX.Y.Z`), `kind`, `advisory`, `reason`, `added` and
+`expires` (UTC instants). Each kind waives one requirement and nothing else:
+- `security-fix` waives the release age only, with the advisory's GHSA id. The expiry is no earlier than the pin's
+  youngest time plus three days and no later than seven days after `added`. On CI the check reads the advisory from
+  GitHub's advisory database: it must not be withdrawn, and must list a vulnerability in the `actions` ecosystem for
+  that repository whose range covers the version the base pins and not the new one; an action the base does not pin is
+  refused. This read has not yet run live (no such exclude has existed), so the first one is watched in its run's log.
+- `age-unprovable` waives only the need for a time GitHub recorded; `off-default-branch` only the default-branch rule.
+  Each takes `advisory: null`, a reason, and an expiry within seven days of `added`, and is refused when what it waives
+  holds (the age is known, or the pin is on the default branch). Under either the pin is still held to three days by
+  every time read, so the exclude never shortens the wait. A pin needing two waivers carries two entries.
+
+An expired entry fails only a pull request that edits the list, and warns elsewhere until the weekly triage removes it;
+an entry for a pin no workflow uses warns too.

@@ -5,7 +5,7 @@ import { stringify } from 'yaml';
 
 import { type CheckEvent, type Finding, type Tree, checkOffline, checkToolchain, dockerfileRule } from './check';
 import { compareVersions, parseSelector, rangeHolds, splitSpec } from './policy';
-import { type Advisory, NetworkReadError, type Packument, type Registry, type VersionFacts } from './registry';
+import { type Advisory, type HubTag, NetworkReadError, type Packument, type Registry, type VersionFacts } from './registry';
 
 /**
  * check-toolchain's rules on synthetic trees, against recorded synthetic registry answers (no network). Now is
@@ -46,15 +46,30 @@ const DEFAULT_ADVISORIES: AdvisoryTable = { '@scope/fix@2.0.0': [FIX_ADVISORY] }
 
 /**
  * A registry that answers from TIMES, FACTS and an advisory table keyed by `name@version` (a bare version key is
- * pnpm's), counting reads; `fail` names packages whose reads fail closed.
+ * pnpm's), and Docker Hub from a recorded table of tags keyed by `<repository>:<tag>` (none by default, the image rule's
+ * cases being images.test.ts's), counting reads; `fail` names packages whose reads fail closed.
  */
 function fakeRegistry(
-  options: { readonly advisories?: AdvisoryTable; readonly fail?: readonly string[]; readonly times?: Record<string, Record<string, string>>; readonly facts?: Facts } = {},
+  options: {
+    readonly advisories?: AdvisoryTable;
+    readonly fail?: readonly string[];
+    readonly times?: Record<string, Record<string, string>>;
+    readonly facts?: Facts;
+    readonly hub?: Readonly<Record<string, HubTag>>;
+  } = {},
 ): Registry & { readonly reads: string[] } {
   const reads: string[] = [];
   const times = { ...TIMES, ...options.times };
   return {
     reads,
+    hubTag(repository, tag) {
+      reads.push(`hub ${repository}:${tag}`);
+      return Promise.resolve(options.hub?.[`${repository}:${tag}`] ?? null);
+    },
+    hubTags(repository) {
+      reads.push(`hub ${repository}`);
+      return Promise.resolve({ tags: Object.entries(options.hub ?? {}).flatMap(([key, tag]) => (key.startsWith(`${repository}:`) ? [tag] : [])), next: false });
+    },
     packument(name: string): Promise<Packument> {
       reads.push(name);
       if (options.fail?.includes(name)) {
@@ -157,7 +172,7 @@ describe('check-toolchain', () => {
     const findings = await run(tree());
     expect(problems(findings)).toEqual([]);
     expect(problems(findings, 'warning')).toEqual([]);
-    expect(findings.map((finding) => finding.rule)).toEqual(['gates', 'settings', 'pnpm advisories', 'pnpm release age', 'newer pnpm', 'pnpm integrity', 'Dockerfiles', 'audit exceptions', 'release-age excludes', 'lockfile resolutions', 'lockfile release age', 'lockfile integrity', 'lockfile trust', 'trust excludes', 'overrides']);
+    expect(findings.map((finding) => finding.rule)).toEqual(['gates', 'settings', 'pnpm advisories', 'pnpm release age', 'newer pnpm', 'pnpm integrity', 'Dockerfiles', 'images', 'audit exceptions', 'release-age excludes', 'lockfile resolutions', 'lockfile release age', 'lockfile integrity', 'lockfile trust', 'trust excludes', 'overrides']);
   });
 
   it('fails on a moderate or worse advisory against packageManager’s pnpm, and warns on a low one', async () => {
@@ -542,12 +557,13 @@ describe('check-toolchain', () => {
 });
 
 describe('the committed lists', () => {
-  it('hold the trust exclude CQ2 (a) ruled, and no audit or release-age entry', async () => {
+  it('hold the trust exclude CQ2 (a) ruled, and no audit, release-age or image-age entry', async () => {
     const { readFileSync } = await import('node:fs');
     const read = (file: string) => JSON.parse(readFileSync(new URL(file, import.meta.url), 'utf8')) as { entries: Record<string, string>[] };
     expect(read('./trust-exceptions.json').entries.map((entry) => entry.package)).toEqual(['semver@6.3.1']);
     expect(read('./audit-exceptions.json').entries).toEqual([]);
     expect(read('./release-age-exceptions.json').entries).toEqual([]);
+    expect(read('./image-age-exceptions.json').entries).toEqual([]);
   });
 
   it("hold the repository's real tree to every offline rule, overrides and trust excludes among them (ci-infra N3)", async () => {
@@ -556,7 +572,7 @@ describe('the committed lists', () => {
     const real = readWorkingTree(repositoryRoot);
     const findings = checkOffline(real);
     expect(problems(findings)).toEqual([]);
-    expect(findings.map((finding) => finding.rule)).toEqual(['gates', 'settings', 'Dockerfiles', 'lockfile resolutions', 'trust excludes', 'overrides']);
+    expect(findings.map((finding) => finding.rule)).toEqual(['gates', 'settings', 'Dockerfiles', 'images', 'lockfile resolutions', 'trust excludes', 'overrides']);
     // packageManager carries the tarball's sha512 the images check (N1); the networked rule holds it to the registry.
     expect(JSON.parse(real.packageJson ?? '{}')).toMatchObject({ packageManager: expect.stringMatching(/^pnpm@\d+\.\d+\.\d+\+sha512\.[0-9a-f]{128}$/) as unknown });
     // The slip it exists to catch: an override without its overrides.json entry. Whatever overrides the real tree

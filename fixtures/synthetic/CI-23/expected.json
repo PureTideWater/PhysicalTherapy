@@ -1,0 +1,22 @@
+{
+  "case": "CI-23",
+  "module": "CI",
+  "title": "A pin or digest by dated exclude",
+  "assertion": "An exact pin or digest enters young under a security-fix exclude with an advisory that covers its whole young window and lasts at most seven days, or unprovable or off the default branch under a reasoned exclude of at most seven days and still at least three days old by every time read; a Docker Hub digest found on no tag enters under no exclude; an image's advisory is held for form only, with the package and version it fixes; an expired one fails only where the list is edited",
+  "synthetic": true,
+  "completesIn": 0,
+  "assertedBy": [
+    "tools/check-action-pins/age.test.ts",
+    "tools/check-toolchain/images.test.ts",
+    "tools/check-toolchain/exclude-window.test.ts",
+    "tools/check-toolchain/check.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The exception lists are written in synthetic trees; GitHub's and Docker Hub's answers are synthetic and recorded; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
