@@ -25,7 +25,8 @@ Before 2026-11-01 it was run by session_01TAgFZo3SGSTBEfKRjX1jeG on Lane A's orc
 - **Machine:** setup-container OK (2026-11-01 16:59); GitHub login PureTideWater.
 - **Done:** before-shots wf_174c3c87-c25 (39 shots at 83d71fd6 in /home/user/screens85-before, tiles there; tour steps committed 545fe984); its critic found 10 sample gaps (refused empty choice, letter states, grouped list, contracts kind label, notice=recorded, upload gate), closed in the reviews' shots stage.
 - **Was running (2026-11-01 17:00):** base merge wf_f0e6c606-13a (merge, adversarial review, checks; progress `pay-merge-83d71fd6*.md`) and before-shots wf_174c3c87-c25 (tour steps, base shots in /home/user/screens85-before; progress `pay-shots-before.md`). Check-in trig_0143j37zDG7i2N3ZksY4Zy8p at 22:10 UTC.
-- **Next:** the two reviews (workflow), then the two reviews, fix round, description, verification, merge
+- **Running (2026-11-01 17:31):** reviews wf_ce1bb1c0-265 on 90ec40ab (security+money in /home/user/rev85-sec; shots closing the 10 sample gaps, after shots in /home/user/screens85-after, gallery files in /home/user/gallery85 for the orchestrator to publish; UX+brand; second-pass finders; 3 verifiers per finding). Progress `rev85-*.md`, `shots85.md`. Check-in trig_015cgf5ocT25RCMnnrGytFxN at 22:41 UTC.
+- **Next:** findings to `approval-summaries/lane-b-ux-payer-response-review-findings.json`, then then the two reviews, fix round, description, verification, merge
   (last of #82, #86, #75, #84, #83, #85).
 - **For Lane A** (design 7.2; reported to the orchestrator 2026-11-01 16:59 for the handoff to Lane A before 2026-11-03 14:00 UTC):
   1. `case_line_rules()` refuses a person's "Window passed" while the window is open or unknown;
@@ -90,3 +91,4 @@ Before 2026-11-01 it was run by session_01TAgFZo3SGSTBEfKRjX1jeG on Lane A's orc
 | 2026-11-01 16:59 | Taken back | Lane B's orchestrator's item session took the item; status corrected; old reviews run lost; PR dirty, no CI; subscription refused, polling. Base merge next. |
 | 2026-11-01 17:00 | Base merge; before shots | wf_f0e6c606-13a and wf_174c3c87-c25 started; scripts archived. |
 | 2026-11-01 17:30 | Base merged | 90ec40ab pushed (merge of 83d71fd6); checks green locally; before shots done. Reviews next. |
+| 2026-11-01 17:31 | Reviews | wf_ce1bb1c0-265 started; script archived. |
