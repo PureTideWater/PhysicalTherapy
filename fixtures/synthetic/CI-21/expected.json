@@ -1,0 +1,24 @@
+{
+  "case": "CI-21",
+  "module": "CI",
+  "title": "An action pin held to three days",
+  "assertion": "A pin new against the base passes on a pull request only when its commit is on the upstream default branch, its tag still names it, and it is at least three days old by the youngest time read with a time GitHub recorded; an unchanged pin is never read for its age, except on the change that adds the rule; on a push a finding warns",
+  "synthetic": true,
+  "completesIn": 0,
+  "assertedBy": [
+    "tools/check-action-pins/age.test.ts",
+    "tools/check-action-pins/check.test.ts",
+    "tools/check-action-pins/buildkit.test.ts",
+    "tools/check-action-pins/verify.test.ts",
+    "tools/check-action-pins/workflows.test.ts",
+    "tools/test/workflows.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The workflows are read; GitHub's answers are synthetic and recorded, and the signed commits and tag are the synthetic ones tools/check-action-pins/testdata/age/make.sh made; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

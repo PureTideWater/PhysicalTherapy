@@ -1,0 +1,13 @@
+tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+parent a3a4463a7b1b40c695e815c8b6c3e362b6d64023
+author Synthetic <synthetic@example.invalid> 1739145600 +0000
+committer Synthetic <synthetic@example.invalid> 1739145600 +0000
+gpgsig -----BEGIN PGP SIGNATURE-----
+ 
+ iHUEABYKAB0WIQSoh5MnBX23lj3LgvBlkLhWcUgrQQUCZ6lBgAAKCRBlkLhWcUgr
+ Qdr/AP4laayYPaP5E77uXYYNZbkSUumT8rDaTJUJMwlgxkAmTgD/QTjaQr1iA0TG
+ gi6NbVSlACo2LLyvqPpylerwDZHkfwQ=
+ =QFv6
+ -----END PGP SIGNATURE-----
+
+signed by the retired key after its expiry
