@@ -6,10 +6,30 @@ option (the co-founder's ruling of 2026-10-26 ~00:20 UTC), recorded here and in 
 
 Open questions: none.
 
-Waiting on someone: the founder or the triager closes Dependabot PR #33 by hand (2026-10-28; why in the resume block).
+Waiting on someone: nothing (Dependabot #33 was closed unmerged at 2026-11-01T14:03:52Z).
 
 <!-- RESUME-BLOCK -->
-## Current state (2026-10-28 08:05 UTC): P1 #82 verified on 96758e44, every check green; waiting on the merge hold; ci-images-digest running
+## Current state (2026-11-01 17:00 UTC): P1 #82 base merged and pushed (9db52a2b); CI running; first in Lane B's merge order
+- **Session:** session_01FcouKNP2XtaombFLueKLnu (a Lane B item session started by Lane B's orchestrator session_01FcouKNNHsdecRMzfTs7XwW; brief `lanes/lane-b-session-brief.md`, item `lanes/lane-b-item-prompts-2026-11-01/ci-pin-age.md`). GitHub login PureTideWater. Machine: `setup-container.sh co-001/ci-pin-age:/home/user/ci-pin-age` OK at 16:58 (the script moved the base image's Node v24.22.1 aside by itself; playwright lines ok); hook launcher present, `core.hooksPath` unset.
+- **P1 PR [#82](https://github.com/PureTideWater/PhysicalTherapy/pull/82)** (draft), head **9db52a2b**: merges `claude/build-platform` 83d71fd6 (#78) into 96758e44 with no conflict; tree `d72150bd…`, the tree of merge ref b9669bbf, which CI ran green for 96758e44 (so no re-verification is due). `pnpm install --frozen-lockfile`, `pnpm synth --all` and `watched.ts --write` wrote nothing. Pushed through the hook (gitleaks clean). The hold of 2026-10-28 lapsed at 11:00 UTC that day; nothing blocks the merge (LANES rule 7).
+- **Subscription:** `subscribe_pr_activity` for #82 was refused ("Could not subscribe"); CI is watched by polling `get_check_runs`. **Check-in:** trig_01X3M3myEJXK3LSTwTKSUe71 at 22:08 UTC (cancel after the merge).
+- **Verified earlier** (wf_4dac1326-48a, `lane-b-ci-pin-age-verify-summary.md`): PASS on the code, the local runs and CI on 96758e44; body v3 (SHA-256 7b7c808a…) read back.
+- **Next (P1):** CI green on 9db52a2b (`all green`, `mutation`, `screening-capacity gate`, `approval-of-record`, and release-dry-run); the description's merge line (item file step 6) with `update_pull_request`, read back; `draft: false`; approval-of-record's re-run green; `merge_pull_request` (merge, `expectedHeadSha` 9db52a2b). If the base moves first, merge it again. Then unsubscribe, read the push runs, clean up, message the orchestrator. #86 merges second and resolves ADR 0066, reconciliation-001 and workflows.test.ts against #82.
+- **Then, in this session:** P2 `co-001/ci-trivy-version` (ADR 0066 Part 6, CI-24 to CI-26), then P4 `co-001/ci-mutation-trigger` (Part 7, CI-27 to CI-29), each its own PR through the whole pipeline; each design needs a re-read against the then-current base first (both were written against 6ddd587 + ci-deps 19e3d98e). P5 `ci-catalog` is not this session's (it waits for #42).
+- **Dependabot:** #33 closed unmerged 2026-11-01T14:03:52Z. Nothing waits on it.
+- **Also:** ci-images-digest (#86) is its own item session (`lane-b-ci-images-digest-status.md`); ci-findings-transport is its own session after #86. Nothing else runs in this session.
+<!-- RESUME-BLOCK -->
+
+## Continued 2026-11-01 by a Lane B item session (session_01FcouKNP2XtaombFLueKLnu), started by Lane B's orchestrator (session_01FcouKNNHsdecRMzfTs7XwW)
+
+Brief: `lanes/lane-b-session-brief.md`; item: `lanes/lane-b-item-prompts-2026-11-01/ci-pin-age.md` (#82, then P2, then P4). GitHub login: PureTideWater.
+
+### 2026-11-01 17:00 UTC: machine OK; base merged into #82 (9db52a2b), pushed; CI running
+- Corrections to this file's earlier state (each earlier entry is kept; dated notes mark what it superseded): #33 closed unmerged at 2026-11-01T14:03:52Z, nothing waits; the merge hold lapsed at 2026-10-28 11:00 UTC and #82 is first in Lane B's merge order; #82's head was 96758e44 (not b574d4e8) and `behind` 83d71fd6; the old subscription (session_01UzQ6wgZgtThBRBxXTFYhRB) and check-in trig_01VRYza7kBainue2gH5RZVHo no longer exist; ci-images-digest (#86) is its own session; ci-findings-transport is its own session after #86; this session takes P2 then P4 after #82 merges; P1 is built (#82), ci-deps (#48, e908c214) and ci-browser (#77, ecebdc90) are merged, and P2 and P4 each need a re-read before their build; storage.googleapis.com has been allowed since 2026-10-27; build-ops' setup script pins pnpm 10.34.8 (07e96172).
+- Container fact: `tools/setup-container.sh` at build-ops 15725ba2 FAILed with "node: /opt/node24/bin/node reports 'v24.22.1', not v24.22.0" on the current base image; the fix was `mv /opt/node24 /opt/node24.base-image` and a re-run. The script at e92795e now moves it aside itself ("moved the base image's Node v24.22.1 aside to /opt/node24.base-image-v24.22.1"); this run printed OK first time.
+- The base merge, push and next step as in the RESUME-BLOCK.
+
+### 2026-10-28 08:05 UTC: the resume block as it stood (kept as history)
 - **ci-browser: merged** (#77, ecebdc90); push runs green; the O5 probe on #41.
 - **P1 PR [#82](https://github.com/PureTideWater/PhysicalTherapy/pull/82)** (draft; subscribed), head **b574d4e8** on 0dd1ba7e (11 commits: B2 1-3, B1 4-5, the merge, the seam (NaN floor), commit 6 documents, a test timeout, Part 5's live readings, bake-action refused). Local: 386 files, 6,480 + 1. **CI green on b574d4e8** (every check; unit 395 files, 6,627 + 1 against base 165c5993's 392 and 6,565 + 1; `Action pins` aged all 12 pins with the token: every `verified_at` present with reason valid, 8 immutable releases, youngest login-action 4.50 days; the token reads another owner's `/activity`). Build summary `lane-b-ci-pin-age-build-summary.md`.
 - **Reviews** (`lane-b-ci-pin-age-review-{ci-infra,security-supply}.md`): CI 0 B, 4 S, 7 N; security 0 B, 4 S, 4 N. All taken. CI-S4 supersedes E16 (on a push every read fault warns); CI-S3's revert path through the base's first-parent history; SEC-S1/S2 a BuildKit-faithful Dockerfile reader shared with CI-13.
@@ -20,7 +40,7 @@ Waiting on someone: the founder or the triager closes Dependabot PR #33 by hand 
 - **Merge hold (the orchestrator, 07:20 UTC):** no merge of a PR touching docs/product/test-matrix.md, packages/synth/src/cases/{matrix,registry}.ts or uploader.tsx until #75 merges or 11:00 UTC, whichever is first. #82 touches the first three, so it waits; ci-images-digest is exempt.
 - **Verified** (wf_4dac1326-48a, `lane-b-ci-pin-age-verify-summary.md`): PASS on the code (§14-16 and every finding; scope clean; trial merges with #42 and base 83d71fd6 clean), the local runs (32 files, 451 tests; checks clean; the BuildKit differential re-run, 23,037 inputs) and CI on 96758e44 (every check green: ci 40649212144, unit 404 files 6,893 + 1 on the merge ref; screening-capacity 40649212134; mutation 40649212125; dry run 40649212209); FAIL on the description only, 11 corrections, **applied as body v3 and read back byte for byte** (SHA-256 7b7c808a…).
 - **Next (P1):** when the hold lifts (#75 merged, or 11:00 UTC): merge the latest claude/build-platform in (a merge commit; shared documents keep both; `pnpm synth --all`), push, CI green, the description's merge-commit line, ready, approval-of-record's re-run, `merge_pull_request` (merge, `expectedHeadSha`). **Also running:** ci-images-digest (`lane-b-ci-images-digest-status.md`). **Queued:** ci-findings-transport (after ci-images-digest merges; below #82's merge). Then P2, P4.
-<!-- RESUME-BLOCK -->
+- 2026-11-01: superseded; see the RESUME-BLOCK (head 96758e44, not b574d4e8; the hold lapsed 2026-10-28 11:00 UTC; the subscription and check-in no longer exist; #33 closed; ci-images-digest is its own session).
 
 ## Continued from 2026-10-27 by a Lane B item session (session_01UzQ6wgZgtThBRBxXTFYhRB), started by Lane A's orchestrator
 
@@ -28,6 +48,7 @@ Brief: `lanes/lane-b-session-brief.md`. Item: ci-browser, then P1, P2, P4; also 
 
 ### 2026-10-27 01:45 UTC: machine, pnpm pin, Dependabot #33 explained
 - **Machine:** `setup-container.sh co-001/ci-browser:/home/user/ci-browser`: everything ok but the two `playwright` lines (1194 for the main checkout and the worktree, still on 1.56.1): the proxy refuses `storage.googleapis.com` (403 to CONNECT). **Waiting on the person: storage.googleapis.com** for every stage that needs a local browser (1248's layout, the baselines, the specs, the UX shots). Everything else goes ahead.
+- 2026-11-01: superseded; see the RESUME-BLOCK (storage.googleapis.com has been allowed since 2026-10-27).
 - **pnpm 10.34.8 pinned in `tools/setup-container.sh`** (this branch): `PNPM_*` pins move to 10.34.8 (tarball SHA-256 `5be9fac9...195630`, SHA-512 the registry's integrity `sha512-9ieo6XE0...R/FqA==`, published 2026-10-23T18:06:37Z by GitHub Actions as a trusted publisher). The script now always installs it in `/opt/pnpm-10.34.8` (not only when no pnpm is on PATH), refuses unless `packageManager`'s version and `+sha512` equal the pins (the hex of the pinned SHA-512 is `f627a8e9...f91fc5a8`, `packageManager`'s), compares the tree file for file with the tarball (1072 files), links it at `/opt/pnpm-bin/pnpm`, and runs every install with `/opt/pnpm-bin` second on PATH after Node 24, so installs no longer go through the base image's 10.28.0 switching itself. The base image's `/opt/node22/bin/pnpm` is left alone. Tested: `SETUP_CHECK=1` before the install FAILs "pnpm 10.34.8 is not in /opt/pnpm-10.34.8"; a real run installs it (`ok pnpm 10.34.8 ... 1072 files match`); `SETUP_CHECK=1` after is ok; an extra file in the tree FAILs the check ("extra extra.txt"). For a shell: `export PATH=/opt/node24/bin:/opt/pnpm-bin:/opt/py312-ci/bin:$PATH` (proposal for lanes/lane-b.md's Node line; the orchestrator's file).
 - **Dependabot #33 rebased to `node:26-trixie-slim` at 21:07 on e908c21: why.** The run (40401687498, job 121848892213) was a `recreate` job of the existing PR #33 (base push made it stale), and its job definition carried `"dependency-groups":[{"name":"base-images",...}]` and `"ignore-conditions":[]`: the docker entry as it was in the config #33 was opened under (main's `dependabot.yml`, `target-branch: claude/build-platform`, group `base-images`, no ignore; e908c21^1's had the same docker block), not ci-deps' entry (multi-ecosystem group `container-images`, the node-major ignore). So ci-deps' rule was never applied to that job; the rule itself is sound: in dependabot-core (main 4a1c86bb, 2026-10-26) `Docker::Tag` reads `24-trixie-slim` as version 24 with suffix `-trixie-slim`, and `IgnoreCondition`'s semver-major gives `>= 25.a`, which excludes 26. (The log's "could not determine update type for 24-trixie-slim -> 26-trixie-slim" is the group selector's update-types filter, which the docker groups do not use.) No change needed in a PR. **What happens next:** under the current config there is no `base-images` group, and dependabot-core's refresh closes a group PR whose group "has been removed from the update config" (`refresh_group_update_pull_request.rb:95-101`); the container-images run is Wednesday 04:43 UTC. If #33 is still open and still on node 26 after that run, it is recorded again here with that run's job definition (never merged; closing it is the person's call). #40 (actions) was closed by Dependabot at 21:10, superseded by ci-deps' pins. No Dependabot run has started since the default-branch switch; the first are Tuesday 04:37 (actions), Wednesday 04:43 (images), Thursday 04:31 (npm), read when they run.
 - **Next:** merge `claude/build-platform` (e908c21) into `co-001/ci-browser`, then the design re-read against the merged base with one reviewer (the brief: designs written before 2026-10-26's merges are re-read), then phase 2's no-browser parts.
@@ -170,11 +191,13 @@ worktrees remain (`/home/user/ci-deps` at 123b8fa, `/home/user/ci-browser` at 8b
   verification and the merge. Design: `designs/lane-b-ci.md` §3.3.
 - **After #42 merges** (a follow-up, ADR 0066 Part 3 "After #42"): the harness's report fields, `run.ts`'s identity
   read through `image-id.ts`, launch-check's runner-image refusal; and O6, axe 4.14 over #42's mail pages.
+- 2026-11-01: superseded; see the RESUME-BLOCK (ci-browser merged as #77, ecebdc90; ci-deps as #48, e908c214).
 
 ### Follow-ups P1, P2, P4: designed and reviewed, not built
 - `designs/lane-b-ci/follow-up-p1-pin-age.md` (`co-001/ci-pin-age`), `follow-up-p2-trivy-version.md`
   (`co-001/ci-trivy-version`), `follow-up-p4-mutation-trigger.md` (`co-001/ci-mutation-trigger`), each with its
   `-review.md`; cut each after ci-deps and ci-browser merge.
+- 2026-11-01: superseded; see the RESUME-BLOCK (P1 built as #82; P2 and P4 each need a re-read before their build).
 
 ## ci-deps (CI 2 of 4; `co-001/ci-deps`, worktree `/home/user/ci-deps`)
 
@@ -222,7 +245,10 @@ worktrees remain (`/home/user/ci-deps` at 123b8fa, `/home/user/ci-browser` at 8b
 |---|---|---|
 | 2026-10-26 04:20 | Designs done | Workflow wf_bdbe0a79-0d1 (an author, one adversarial reviewer and a fold each; resumed once after the session limit). `designs/lane-b-ci/follow-up-p1-pin-age.md` (19 findings, all fixed: age from the pinned commit with GitHub's `verified_at` or an immutable release's `published_at`, else fail on CI; the pin on its repository's default branch; a moved tag fails; push runs warn), `follow-up-p2-trivy-version.md` (19 findings, 18 fixed; Trivy pinned in the gitleaks form with its Sigstore bundle verified against a TUF root; the database from ghcr only; S7 kept: no early exception to the three-day floor for Trivy, the safer option, taken without asking under the co-founder's ruling of 00:20 UTC), `follow-up-p4-mutation-trigger.md` (17 findings, all fixed; a replay of 35 merged PRs: 7 would have run less, about 173 runner-minutes saved; up to about 95 a week). Each is built only after ci-deps and ci-browser merge, and only if the allowance holds (the orchestrator's priority of 02:16 UTC). |
 
+2026-11-01: superseded; see the RESUME-BLOCK (P1 built as #82; P2 and P4 each need a re-read before their build).
+
 ## Proposals outside these PRs
 - `tools/setup-container.sh` pins pnpm 10.28.0 (`:36-37, 72-74`). Once ci-deps merges, it should move to 10.34.8 with
   the registry's SHA-512 (`sha512-9ieo6XE0…FqA==`), so session containers match `packageManager` (design §5). This
   session may change that file only for the browser layout, so the orchestrator takes it.
+- 2026-11-01: done; build-ops' `tools/setup-container.sh` pins pnpm 10.34.8 (07e96172). Superseded; see the RESUME-BLOCK.
