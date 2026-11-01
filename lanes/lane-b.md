@@ -1094,3 +1094,44 @@ HANDOFF.md; LANES.md rule 10).
   base image; the fix is `mv /opt/node24 /opt/node24.base-image`, then run it again (every item prompt says so).
   storage.googleapis.com has been allowed since 2026-10-27, so the playwright line reads ok.
 - **Next:** the item sessions start.
+
+### 2026-11-01 16:58 UTC (Lane B's orchestrator): fifteen item sessions started, every one in ultracode
+- **Records pushed first (rule 3):** 8b10b9f6 (claims, counters, briefs, item prompts), 2fa076c3 (every session runs in
+  ultracode, the co-founder's instruction of 2026-11-01), e92795ee (`tools/setup-container.sh` now moves a base image's
+  own `/opt/node24` of another version aside by itself and installs the pinned v24.22.0; tested with a stub and
+  `SETUP_CHECK=1`). The manual `mv` in the 14:50 entry is no longer needed.
+- **The co-founder, 2026-11-01 ~16:50 UTC:** "No need to ask for approvals just make sure things are optimized" and
+  "Make sure every session prompt ensures ultra code is used." Every prompt starts with `ultracode.`; the session brief's
+  section 4 makes every substantive stage a workflow with adversarial verification.
+- **Each session's prompt** is short: it reads `lanes/lane-b-session-brief.md` (plus `lanes/acting-lane-a-brief.md` when
+  acting Lane A) and its item file `lanes/lane-b-item-prompts-2026-11-01/<key>.md` from build-ops, then resumes from its
+  status file. A lost session restarts from the same three files.
+- **Sessions** (environment env_018EqbVb4cYQpfgMLn55TVEj, repository attached at `claude/build-platform`, auto mode),
+  in the order started:
+
+  | Key | Item | Session |
+  | --- | --- | --- |
+  | pr42 | #42 PR 6b-4, last steps (acting Lane A) | `session_01FcouKMmYaqDNXbqJyagW8u` |
+  | ci-pin-age | #82 P1, then P2, then P4 | `session_01FcouKNP2XtaombFLueKLnu` |
+  | ci-images-digest | #86 | `session_01FcouKN1UjKZTWt4U9bZjyW` |
+  | contract-phi-check | #75 | `session_01FcouKPAcRv6FTuHCMKAre2` |
+  | packet-day-counts | #84 | `session_01FcouKQVq7K3Np8pwNtDhew` |
+  | ux-screening-result-tables | #83 UX PR 4 (then 4b after #42) | `session_01FcouKRDfoFAeXZK4Thp8M8` |
+  | ux-payer-response | #85 UX PR 10 | `session_01FcouKNxBLBBy2FVM7bfSvj` |
+  | ux-home-figures | UX PR 9 | `session_01FcouKPLmdYyBmbVaUjag2c` |
+  | suite-cap-3 | SUITE-CAP-3 | `session_01FcouKP4ekrT97eyDtLe4Rd` |
+  | ux-sign-in-time | UX PR 6 | `session_01FcouKNxVRK8x6iV52PfxXz` |
+  | ci-findings-transport | ci-findings-transport (build after #86) | `session_01FcouKQ3BjYKaME5uBLn8Lz` |
+  | unmapped-plan | #32, then #48 narrative draft | `session_01FcouKNB2TyuPCAha9BaEjQ` |
+  | redact-ssn-phone | SSN and phone redaction (build after #75) | `session_01FcouKP1U2GGDFhhZT9CaUV` |
+  | dependabot-batch | #87, #88, #89 as the build's own PRs | `session_01FcouKRD17iBBR4HhnYcQQx` |
+  | schema-chain | SS-01, 1b, interest (acting Lane A) | `session_01FcouKQthXdmDnPmwhFepxW` |
+
+- **Not started yet, each its own session later:** UX PR 7 (sign-in recovery) after UX PR 6; UX PR 8 (account security,
+  claimed today) after UX PR 7; ux-forms-after-42 after #42 merges; P5 ci-catalog after #42; #46 Verified seal as
+  ux-home-figures' follow-on.
+- **Merge order** (handoff §6): #82, #86, #75, #84, #83, #85; the schema chain one PR at a time after #42.
+- **Waiting on the founder:** #42's domain-model approval (the suggested line, once posted); the 8-CPU runner for 1b's
+  real-size runs; #42's launch actions 2–7; runbook 3i.
+- **Next:** each session reports its stage changes here by message; the orchestrator keeps LANES.md and this log current
+  and writes the handoff back to Lane A before 2026-11-03 14:00 UTC.
