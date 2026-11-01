@@ -52,7 +52,8 @@ export type Pending =
 export type RefusalReason = 'credentials' | 'locked' | 'expired' | 'hardware_key_required' | 'no_account' | 'key_not_registered' | 'invitation_expired';
 
 export type FlowResult =
-  | { readonly kind: 'pending'; readonly pending: Pending }
+  /** `keyRequired`: on the first step's result, the account must also register a hardware key (the web layer numbers the setup steps). */
+  | { readonly kind: 'pending'; readonly pending: Pending; readonly keyRequired?: true }
   | { readonly kind: 'signed_in'; readonly session: OpenedSession; readonly userId: string }
   | { readonly kind: 'refused'; readonly reason: RefusalReason }
   | { readonly kind: 'invalid_password'; readonly problems: readonly string[]; readonly pending: Pending }
@@ -175,7 +176,8 @@ export class SignInFlow {
         return refused('invitation_expired');
       }
     }
-    return this.after(await this.deps.provider.signIn(email, password), email, context);
+    const result = await this.after(await this.deps.provider.signIn(email, password), email, context);
+    return result.kind === 'pending' && account?.hardware_key_required === true ? { ...result, keyRequired: true } : result;
   }
 
   async newPassword(pending: Pending, password: string, context: SignInContext): Promise<FlowResult> {

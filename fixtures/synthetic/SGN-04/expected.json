@@ -1,0 +1,22 @@
+{
+  "case": "SGN-04",
+  "module": "SGN",
+  "title": "The invited paths are numbered, and the timed steps pass axe",
+  "assertion": "An invited customer's headings read \"Step 1 of 2: Choose a password\" and \"Step 2 of 2: Set up two-step verification\", the number shown over the step's name, and an invited staff member's run from \"Step 1 of 3\" to \"Step 3 of 3: Register a hardware key\", counted by the server from the provider's answer and the account; an everyday sign-in, and a restart with one step left, show no number; the code and enrolment steps pass axe (WCAG 2.1 A and AA) with the warning shown, at 1280 and 390 px, and when closed, as do key registration with its warning and the sign-in page with the email kept",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": [
+    "apps/web/src/lib/auth/sign-in.db.test.ts",
+    "apps/web/src/app/sign-in/notice.test.tsx",
+    "apps/web/src/lib/routes/sign-in-routes.db.test.ts",
+    "apps/web/e2e/sign-in-time.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Synthetic invited personas, a customer and a staff member, choose a password and enrol through the local identity provider; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
