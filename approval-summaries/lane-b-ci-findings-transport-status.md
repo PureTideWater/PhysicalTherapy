@@ -40,11 +40,14 @@ Open questions: none.
 - **Proposals (outside):** P1 the calendar schema refuses two entries with one title; P4 (for #86's owner) a ci.md
   `:130-132` clause on jobs that report failure as an issue.
 - **Heads at 2026-11-01T17:47:59Z:** #82 merged (9db52a2b); #86 open at 83167b8f, not merged; base 83d71fd6.
-- **Next:** poll #86 (`gh api repos/PureTideWater/PhysicalTherapy/pulls/86 --jq '.merged, .merge_commit_sha'`, send_later
-  check-ins; do not subscribe to #86). After it merges: re-read the design against the merge commit (T3, T6,
-  expectQuietNotify, CI-10 line numbers; adapt `lane-b-ci-pin-age-reread-wf_05b5c43a-d57.js` if anything moved), cut
-  and push the branch, setup with `co-001/ci-findings-transport:/home/user/ci-findings-transport`, build red first
-  (adapt `lane-b-ci-pin-age-build-wf_6cbdbf9d-9c3.js`), draft PR, subscribe.
+- **Next (2026-11-01T20:37:07Z, the orchestrator's ruling of 20:36 UTC):** build early on a WIP ref `co-001/wip-ci-findings-transport`
+  cut from #86's FIX-ROUND head (R3), not from 83167b8f (#86's fix round replaces T6's line citations with structural
+  references and may touch expectQuietNotify). At each send_later check-in, `git ls-remote origin co-001/ci-images-digest`:
+  when it moves past 83167b8f, re-read the design against it, cut the WIP ref there, push it, run setup with
+  `co-001/wip-ci-findings-transport:/home/user/ci-findings-transport`, build red first (adapt
+  `lane-b-ci-pin-age-build-wf_6cbdbf9d-9c3.js`). After #86 merges: merge the base in (merge commit), push as
+  `co-001/ci-findings-transport`, open the draft PR, subscribe. The standing merge rule of 20:36 UTC: merge when verified
+  and green; this item conflicts with #86 (workflows.test.ts T6/expectQuietNotify, ADR 0066), so it follows #86.
 - **Waiting on someone:** none (#86's merge only).
 <!-- RESUME-BLOCK -->
 
@@ -53,3 +56,4 @@ Open questions: none.
   The item session starts now.
 - 2026-11-01T16:59:14Z: session session_01FcouKQ3BjYKaME5uBLn8Lz started; setup OK (GitHub login PureTideWater); the design workflow starts.
 - 2026-11-01T17:47:59Z: design done (wf_963d4fd3-855; design 074b5432…, review 896aca92…); artifact transport chosen; waiting on #86.
+- 2026-11-01T20:37:07Z: the orchestrator ruled: build early on a WIP ref from #86's fix-round head once #86 pushes R3; PR after #86 merges.
