@@ -1,0 +1,43 @@
+export const meta = {
+  name: 'lane-b-ux-payer-response-merge-83d71fd6',
+  description: 'PR #85: merge claude/build-platform (83d71fd6: #81, #78) keeping both sides, adversarially review the resolution, run the checks on the merged tree',
+  phases: [{ title: 'Merge', detail: 'resolve the 4 conflicts keeping both sides; regenerate' }, { title: 'Review', detail: 'adversarial check of the resolution against both parents' }, { title: 'Checks', detail: 'checks on the merged tree' }],
+}
+const WIP = '/home/user/ops/approval-summaries/lane-b-ux-payer-response-wip'
+const WT = '/home/user/ux-payer-response'
+const OLD = '29dded52'
+const BASE = '83d71fd6'
+const COMMON = `PR #85 of the PaidWhole build (UX PR 10, co-001/ux-payer-response; ADR 0085; CAS-45 to CAS-48): head ${OLD}, one commit on 165c5993 (#74). claude/build-platform is now ${BASE}: it adds 56ed6279 (#81, SUITE-CAP-1a) and 83d71fd6 (#78, UX PR 5 ux-download-refusals: changed components/uploads/uploader.tsx (a leave guard and more) and lib/routes/uploads.ts, created uploader.test.tsx, added DLR rows / CAS-41 etc.). git merge-tree finds conflicts in 4 files: apps/web/src/components/uploads/uploader.tsx (3 hunks), docs/product/test-matrix.md, packages/synth/src/cases/matrix.ts, packages/synth/src/cases/registry.ts. lib/routes/uploads.ts auto-merges.
+This PR's design: /home/user/ops/designs/lane-b-ux-payer-response.md (the uploader's five additive changes: the kind, a non-submitting Retry, a finished-upload callback, single-file mode, a heading level; §3.7, §4.8). #78's design: /home/user/ops/designs/lane-b-ux-download-refusals.md and ADR 0079 in the tree. Diff of the base delta: git diff 165c5993 ${BASE}.
+LANES.md rule 6: the PR merged second (this one) keeps both sides' changes. Generated files (pnpm-lock.yaml, tools/screening-capacity/watched-paths.txt, fixtures/synthetic, packages/db/functions) are never hand-merged: regenerate them on the merged tree. Never rebase, never force, never --no-verify. Do NOT push (the session pushes).
+Rules: no migration; nothing under packages/pricing; never edit a file on LANES.md's "Not while #42 is open" list (/home/user/ops/LANES.md) beyond the shared documents; no model name or identifier in any file; synthetic data only. Machine: export PATH=/opt/node24/bin:/opt/pnpm-bin:/opt/py312-ci/bin:$PATH in every command; every heavy command (install, build, typecheck, lint, tests, test:db, e2e, synth --all) under "flock /tmp/laneb-heavy.lock <cmd>", never holding the lock across commands; long ones with run_in_background and waited on; never a foreground sleep. PostgreSQL 18 on 5433 and 16 on 5432 (postgres:test). Never pkill -f a pattern your own shell matches. Improve as you go: a real defect you find in files this PR touches is fixed (and reported); anything else goes in notes. Report every command and its result honestly.`
+const SAVE = (file, what) => `Save as you go: keep ${WIP}/${file} up to date (${what}). If it already exists, an earlier run was interrupted: read it and continue from it (check git status in the worktree first: a merge may be in progress). Do not commit in /home/user/ops; the session does.`
+const RESULT = { type: 'object', properties: { headSha: { type: 'string' }, done: { type: 'array', items: { type: 'string' } }, filesChanged: { type: 'array', items: { type: 'string' } }, commands: { type: 'array', items: { type: 'object', properties: { command: { type: 'string' }, result: { type: 'string' } }, required: ['command', 'result'] } }, findings: { type: 'array', items: { type: 'string' } }, notDone: { type: 'array', items: { type: 'string' } }, notes: { type: 'array', items: { type: 'string' } } }, required: ['headSha', 'done', 'filesChanged', 'commands', 'findings', 'notDone', 'notes'] }
+const ATTR = `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01FcouKNxBLBBy2FVM7bfSvj`
+
+phase('Merge')
+const merge = await agent(`${COMMON}
+${SAVE('pay-merge-83d71fd6.md', 'each conflict, how it was resolved and why, commands and results')}
+In ${WT} (HEAD must be ${OLD}; check): git fetch origin claude/build-platform; confirm origin/claude/build-platform is ${BASE} (if it moved, stop and report); git merge --no-ff --no-commit origin/claude/build-platform. Resolve each conflict keeping both sides' behaviour:
+- uploader.tsx: #78's leave guard and every other change of #78 (read git diff 165c5993 ${BASE} -- apps/web/src/components/uploads/uploader.tsx and its new uploader.test.tsx) together with this PR's five additive changes (git diff 165c5993 ${OLD} -- that file). Both sides' tests must pass: #78's uploader.test.tsx and this PR's browser and unit tests of the uploader and the response-letter field. Think about interactions: does #78's leave guard fire wrongly when the letter is uploaded inside "Log a payer response" (single-file mode, the finished-upload callback, the form submit after upload)? Does Retry (type=button) interact with the guard? Resolve so both intents hold, and add a test if the interaction is new.
+- docs/product/test-matrix.md, packages/synth/src/cases/matrix.ts and registry.ts: keep all rows of both sides (CAS-41 beside CAS-45 to CAS-48; the DLR rows), in the files' ID order convention.
+- Then check the auto-merged files both sides touched (git diff 165c5993 ${BASE} --name-only intersected with git diff 165c5993 ${OLD} --name-only), especially lib/routes/uploads.ts: each must keep both intents (this PR's letter kind / upload gate and #78's changes).
+- Regenerate: flock pnpm install --frozen-lockfile; pnpm exec tsx tools/screening-capacity/watched.ts --write; pnpm synth --all; stage what they write.
+- Typecheck (pnpm typecheck) and eslint the conflicted and auto-merged files; run apps/web's uploader.test.tsx, this PR's uploader/response-letter browser and unit tests. Fix what fails in the resolution (never by weakening a test).
+- Commit the merge: "merge claude/build-platform (${BASE}: #81, #78) into co-001/ux-payer-response, keeping both (LANES.md rule 6): <what was resolved where>", then a blank line and:
+${ATTR}
+Return the merge commit SHA as headSha and, per conflicted file, the resolution in done.`, { label: 'merge', phase: 'Merge', schema: RESULT })
+
+phase('Review')
+const review = await agent(`${COMMON}
+${SAVE('pay-merge-83d71fd6-review.md', 'each file checked, findings, fixes')}
+The merge agent's result: ${JSON.stringify(merge).slice(0, 10000)}
+You are an adversarial reviewer of the merge commit (HEAD of ${WT}; its parents ${OLD} and ${BASE}). Default to suspicion: for every file either side changed (git diff ${OLD} HEAD and git diff ${BASE} HEAD), confirm nothing of #78's or #81's (the leave guard, refusal notices, returnTo, uploads.ts changes, DLR rows, CAS-41, SUITE-CAP rows, their tests) and nothing of this PR's (the five uploader changes, the letter kind, upload gate, the response-letter field, write-off checks, CAS-45 to 48, ADR 0085, its tests) was lost, duplicated or broken. Read the conflicted hunks line by line against both parents. Check that the regenerated files equal what their generators write (re-run watched.ts --write and pnpm synth --all, then git diff --exit-code). Fix anything wrong in a follow-up commit (same attribution lines: ${ATTR.replace(/\n/g, ' / ')}); never amend the merge. List every finding (and its fix) in findings.`, { label: 'merge-review', phase: 'Review', schema: RESULT })
+
+phase('Checks')
+const checks = await agent(`${COMMON}
+${SAVE('pay-merge-83d71fd6-checks.md', 'each command and its result')}
+The merge and review results: ${JSON.stringify({ merge, review }).slice(0, 12000)}
+Run the checks the base merge touches on the merged tree (HEAD of ${WT}), each under the lock: pnpm typecheck; pnpm lint; pnpm lint:copy; pnpm lint:logs; pnpm check:fixtures; pnpm test (the whole unit project, apps/web's browser tests included: #78's uploader.test.tsx is new to this branch); pnpm synth --all and watched.ts --write each followed by git diff --exit-code; then pnpm test:db limited to the uploads and workbench/triage/submissions/contracts route db tests and the generated route-test shards that cover lib/routes/uploads.ts (find how earlier runs selected them in ${WIP}/pay-build-check.md), DATABASE_URL on PostgreSQL 18 at 5433 (a fresh database, dropped after). A failure is root-caused and fixed in a commit (same attribution lines: ${ATTR.replace(/\n/g, ' / ')}), then re-run; a flake gets one re-run and is named. Do not push. Return the final head SHA as headSha.`, { label: 'merge-checks', phase: 'Checks', schema: RESULT })
+return { merge, review, checks }

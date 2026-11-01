@@ -1,0 +1,31 @@
+export const meta = {
+  name: 'lane-b-ux-payer-response-shots-before',
+  description: '#85: add design 6.2 cap() steps and 4.8 letter choice to the screen tour, take the BEFORE shots at the base 83d71fd6 (1280/390 light, 1280 dark), critic checks the sample',
+  phases: [{ title: 'Tour', detail: 'spec + route map, before shots' }, { title: 'Critic', detail: 'sample completeness' }],
+}
+const WIP = '/home/user/ops/approval-summaries/lane-b-ux-payer-response-wip'
+const DESIGN = '/home/user/ops/designs/lane-b-ux-payer-response.md'
+const BASE = '83d71fd62c6d419be61fd7aaa5b9033ef5c18b56'
+const HEAD_OLD = '29dded52'
+const COMMON = `PaidWhole build, PR #85 (UX PR 10, co-001/ux-payer-response): "the payer's answer and the write-off reason start unchosen; the payer's letter is uploaded in its response". Base claude/build-platform ${BASE}. The branch's own commit is ${HEAD_OLD} (a base merge is being made right now in /home/user/ux-payer-response by another workflow: do not touch that worktree). Design: ${DESIGN} (section 6.2 is the screenshot sample; 4.8 the p.submissions.error act's letter choice; 6.1 the strings).
+Machine: export PATH=/opt/node24/bin:/opt/pnpm-bin:/opt/py312-ci/bin:$PATH in every command. Every heavy step (install, build, the tour's build/serve/run, any browser run) under "flock /tmp/laneb-heavy.lock <cmd>", never holding it across commands; long ones run_in_background and waited on; never a foreground sleep; never pkill -f a pattern your own shell matches. PostgreSQL 18 on 5433 (postgres:test). Chromium 1248 in /opt/pw-browsers. Synthetic data only. No model name or identifier in any file. Never write the development master key to a file. Never put a PNG or tile on any branch.`
+const SAVE = (file, what) => `Save as you go: keep ${WIP}/${file} up to date (${what}). If it exists already, an earlier run was interrupted: read it and continue from it.`
+const R = { type: 'object', properties: { sample: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, route: { type: 'string' }, state: { type: 'string' }, widths: { type: 'string' } }, required: ['id', 'route', 'state', 'widths'] } }, beforeDir: { type: 'string' }, tilesDir: { type: 'string' }, failedOrSkipped: { type: 'array', items: { type: 'string' } }, specChanges: { type: 'string' }, opsCommit: { type: 'string' }, notes: { type: 'array', items: { type: 'string' } } }, required: ['sample', 'beforeDir', 'tilesDir', 'failedOrSkipped', 'specChanges', 'opsCommit', 'notes'] }
+
+phase('Tour')
+const tour = await agent(`${COMMON}
+${SAVE('pay-shots-before.md', 'the sample ids, spec edits, each run step and result, retakes, folders')}
+Task: read /home/user/ops/tools/lane-b-screen-tour/README.md whole ("From another lane", "Set-up and a run", pitfalls). Then:
+1. In /home/user/ops (claude/build-ops; git pull --no-rebase origin claude/build-ops first), add design 6.2's cap(...) steps and 4.8's act change (the p.submissions.error step chooses the first listed letter, index 1, before pressing, guarded by what the page shows, so the same spec runs on the base, which has no letter upload field and a pre-chosen select, and on the head, whose selects start empty with required: on the head every required select the act submits must be chosen) to tools/lane-b-screen-tour/capture/tour.spec.ts, and the routes' entries to designs/lane-b-ux-review/route-map.json. Write the steps so they run on BOTH the base and the head (git -C /home/user/PhysicalTherapy show ${HEAD_OLD}:<path> shows the head's pages; the form fields' names and labels are in the design 4.x and 6.1).
+2. Run the tour on the base: TOUR_DIR=/home/user/screens85-before, TOUR_REF=${BASE}, TOUR_ONLY = the sample's ids (6.2's list, plus one shot per layout of any shared component the PR changes, plus the screens of UX-035 and UX-007 in /home/user/ops/designs/lane-b-ux-review.md), at 1280 and 390 px light and 1280 px dark, as the README says. Stop the server after (fuser 3297/tcp empty), drop tp_e2e_screens and remove /tmp/tp-e2e-tp_e2e_screens-*. Then /usr/bin/python3 -I tools/lane-b-screen-tour/tile.py on the TOUR_DIR. Check by Reading a few tiles that each shot shows what its id says (not an error page or a sign-in screen); retake failures.
+3. Commit the spec and route-map changes in /home/user/ops with a message "lane-b ux-payer-response: tour steps for #85 (design 6.2, 4.8)" plus a blank line and:
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01FcouKNxBLBBy2FVM7bfSvj
+then git pull --no-rebase origin claude/build-ops (keep both sides if another session changed the spec), and push: GITLEAKS=/root/.cache/paidwhole/gitleaks/8.24.3/gitleaks git -C /home/user/PhysicalTherapy push origin claude/build-ops (never force, never --no-verify; on a race pull and push again). Commit your progress file with it.
+Return the sample, the before TOUR_DIR and tiles folder, every shot that failed or was skipped and why, the spec changes summary, and the build-ops commit.`, { label: 'tour-before', phase: 'Tour', schema: R })
+
+phase('Critic')
+const critic = await agent(`${COMMON}
+The tour agent's result: ${JSON.stringify(tour).slice(0, 8000)}
+You are a completeness critic of the screenshot sample for the UX and brand review of #85. Read design 6.2 and 6.1, the PR's changed screens (git -C /home/user/PhysicalTherapy diff ${'165c5993'} ${HEAD_OLD} --name-only, the page and component files), the UX baseline review's UX-035 and UX-007 "Screens", and the committed tour.spec.ts. List any changed screen or state (empty select, refused empty choice named on its field, withheld "Window passed" hint, the letter upload's states: idle, uploading, scanning, ready, held/duplicate, the grouped letter list, the contracts kind label, Reconciliation's upload gate) the sample does not shoot, and any shot whose before tile is wrong (Read the tiles in the tiles folder). Edit no file. Return them in notes; failedOrSkipped lists gaps.`, { label: 'sample-critic', phase: 'Critic', schema: R })
+return { tour, critic }
