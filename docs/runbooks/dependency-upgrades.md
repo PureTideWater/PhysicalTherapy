@@ -25,7 +25,7 @@ docs/runbooks/github-governance.md, "The default branch until launch"):
 
 | Ecosystem | Day (UTC) | Cooldown | Pull requests |
 | --- | --- | --- | --- |
-| npm | Thursday 04:31 | 3 days, every update type | one per group, at most 8: `browser-tests`, `anthropic-sdk`, `pg-boss`, `next`, `aws-sdk`, `aws-cdk`, `minor-and-patch`; and `security` for security updates |
+| npm | Thursday 04:31 | 3 days, every update type | one per group, at most 8: `browser-tests`, `anthropic-sdk`, `pg-boss`, `next`, `aws-sdk`, `aws-cdk`, `minor-and-patch`; and `security` for security updates; each dependency is in exactly one group (minor-and-patch excludes the others' patterns) |
 | GitHub Actions | Tuesday 04:37 | 7 days | one, every action |
 | the node image and compose's postgres | Wednesday 04:43 | 7 days | one, `container-images` |
 
@@ -58,7 +58,9 @@ Once a week, after Thursday's npm batch:
    Open each `failure` and read its log; fix the cause in a pull request (run 40223237798 of 2026-10-25 is the
    example: every npm update failed with `ERR_PNPM_NO_MATURE_MATCHING_VERSION`, because a locked version was under
    three days old). A successful run whose log says "release-age block detected" dropped a version without a pull
-   request; under CQ1 (a) it should not occur, so record it and find which locked version caused it.
+   request; under CQ1 (a) it should not occur, so record it and find which locked version caused it. In the npm run's
+   log, `belongs to more specific group` naming any group but a specific one means the routing broke: fix
+   `.github/dependabot.yml` (CI-12).
 2. **Each open Dependabot pull request.** Read its checks, then its changes:
    - all green: read the release notes of every major or minor in it for a change in behaviour our code relies on,
      then take it as a pull request of the build's own: merge the build branch in, add what the notes call for, and
@@ -66,7 +68,10 @@ Once a week, after Thursday's npm batch:
    - red: read the failing check. A red test that names a real incompatibility is the update's work; a red check that
      is not about the update (a flaky journey, a runner lost) is fixed or re-run as any other (docs/runbooks/ci.md);
    - `browser-tests`: red by design (below);
-   - a group that moves a money closure's packages runs mutation in full; read its survivors like any other.
+   - a group that moves a money closure's packages runs mutation in full; read its survivors like any other;
+   - check that each group's pull request holds only its group's members; a replacement taken as the build's own pull
+     request closes the bot's with a comment naming it and its merge commit, once it merges (never
+     `@dependabot ignore`).
 3. **Open Dependabot alerts.** An alert can stand with no pull request behind it, so read the alerts, not only the
    pull requests:
 
@@ -99,6 +104,8 @@ Once a week, after Thursday's npm batch:
 6. **Stored ignores.** `@dependabot ignore …` comments on a pull request are stored by GitHub, outside the file. List
    them with `@dependabot show <dependency> ignore conditions` on any Dependabot pull request, and remove one with
    `@dependabot unignore <dependency>`; the file's `ignore` entries are the only ones meant to exist.
+
+Each triage is recorded in the item's design (`designs/` on build-ops), steps 1-6 in order.
 
 For the first four weekly batches after the switch, read the bot queue time as `docs/runbooks/ci.md` says.
 
@@ -318,9 +325,12 @@ lockfile entry against the release age and the trust policy on every install (`t
   `typescript <6.1.0`); `typecheck.sh`'s time and `pnpm typecheck`'s are re-measured.
 - **The Anthropic SDK.** The `anthropic-sdk` group is never merged as it stands: a model-gateway change passes the
   evaluation gate first (packages/model-gateway; PRD 18), in a deliberate pull request.
-- **AWS.** `aws-cdk` with `aws-cdk-lib` and `constructs`, and `@aws-sdk/*`, come in their groups (minor and patch).
-  `pnpm cdk:diff` in the build job shows what a CDK bump changes in the stacks; read it before taking one.
-  `@aws-sdk/*` reaches pricing and packets through the lockfile, so its pull request runs those packages' mutation.
+- **AWS.** `aws-cdk` with `aws-cdk-lib` and `constructs` come in their group, and `@aws-sdk/*` come in the `aws-sdk`
+  group, which minor-and-patch's exclusions keep theirs (minor and patch).
+  `pnpm cdk:diff` in the build job shows what a CDK bump changes in the stacks; read it before taking one. The CLI
+  moves with the library: a library's cloud assembly names the oldest CLI that reads it (`minimumCliVersion`).
+  `@aws-sdk/*` reaches pricing and packets through `packages/contracts` and `packages/db`'s manifests and the lockfile,
+  so its pull request runs those packages' mutation.
 
 ## Actions
 

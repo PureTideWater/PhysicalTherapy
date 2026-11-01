@@ -728,6 +728,18 @@ on every install); actionlint accepts `concurrency.queue` and the bot-queue read
 (about 10 bot pull requests a week, about 3,500 to 4,000 billed minutes a month); or the launch switches the default
 branch back to `main`.
 
+### Amendment (`co-001/dependabot-group-routing`, 2026-11-01): each dependency in one group
+
+"In this order" (above) did not route. Dependabot ranks a group with no patterns (500) above a wildcard pattern
+(`@aws-sdk/*` 95, `@next/*` 92) and the empty group never gives a dependency up (dependabot-core 85379652,
+`pattern_specificity_calculator.rb`, `dependency_group_engine.rb`), so npm run 40818560725 put the nine `@aws-sdk/*`
+packages and `@next/eslint-plugin-next` in minor-and-patch (#89), and only the file's order kept an exact name in its
+group. GitHub's documentation says the first matching group wins. minor-and-patch now excludes every pattern the
+specific groups name, which routes each dependency to one group under both rules; CI-12 ports the assignment and
+routes every direct dependency. Alternative: `patterns: ["*"]` on minor-and-patch (rests on undocumented scores; routes
+as before under the documented rule). Revisit when: Dependabot documents its group precedence, or a group is added
+(the test fails until it is excluded).
+
 ## Part 3 (`co-001/ci-browser`)
 
 ### Context
