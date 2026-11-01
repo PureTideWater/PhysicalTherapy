@@ -129,6 +129,12 @@ rule applies to A and B.
   draft PR). Script archived as `workflow-scripts/lane-b-dependabot-batch-build-c-wf_7c837166-d80.js`. Two heavy workflows
   now run (A/B build and C build).
 
+- 2026-11-01T18:16:00Z: builder B returned partial: its background wait for stripe 23.1.0's age was cut at 18:07Z. Done on
+  `co-001/deps-aws-cdk-minor-patch` (not yet pushed): base merge 92a9db62, B(1) ed29c77a, B(2) 692ec2d8 (red), B(3) b2a6f208,
+  B(5) df6abf6a; checker: no B/S defect (2 nits). Not done: B(4) (@aws-sdk + stripe, from 19:59:00Z) and the final-head checks.
+  Plan: B's integrator pushes and opens the draft now; a B-completion workflow after 19:59Z adds B(4), runs the final-head
+  checks with an adversarial check, pushes once and updates the description; B's reviews start after it.
+
 ## Waiting on someone
 - The API version of Stripe's webhook endpoint (design §5.4): a person checks it in Stripe's dashboard. Does not block.
 - Dependabot alerts (triage step 3): the founder or the co-founder reads the alerts page (the API gives the build 403). Does
