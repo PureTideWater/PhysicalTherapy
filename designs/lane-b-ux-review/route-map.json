@@ -658,7 +658,8 @@
   "interactions": [
    "PACKETS (after packets.spec): list 'Awaiting abstraction' holds the payer letter (letter.pdf, uploaded on screen at packets.spec.ts:422-426) with its TagForm (Payer, Contract, 'Title of a new contract', 'Effective from', 'Last day (optional)', 'Tag to the payer'); submitting it creates a contract and draft version (a write)",
    "Links above the heading: 'Specialist queue', 'Regulations to confirm', 'Ledger corrections'",
-   "Card 'Questions to the practice' with 'Withdraw the question' per open question: reachable only if the specialist asks one on a version page first"
+   "Card 'Questions to the practice' with 'Withdraw the question' per open question: reachable only if the specialist asks one on a version page first",
+   "From PR #85 (co-001/ux-payer-response): a payer letter that a payer response names is not awaiting abstraction, so PACKETS' acceptance letter leaves 'Awaiting abstraction' (the default's note says so); the error-tag step, which tags that letter, then has no TagForm on PACKETS and needs another practice's untagged document."
   ],
   "notes": "Sign in contract-specialist with registerKeyAndSignIn (internal personas need a hardware key; it registers once per database and no populate spec registers it). The support grants expire 4 hours after populate created them; capture well inside TOUR_MINUTES. 'Versions in progress' is always empty after populate (every journey version ends signed off)."
  },
@@ -895,7 +896,8 @@
    "Assign form (Owner select + Assign).",
    "Notes card #notes with 'Add the note'.",
    "Timeline card (CaseTimeline): long; full-page shot.",
-   "Struck-through WINDOW_PASSED lines: triage.spec.ts (not in the tour set)."
+   "Struck-through WINDOW_PASSED lines: triage.spec.ts (not in the tour set).",
+   "From PR #85 (co-001/ux-payer-response): 'Write this line off' Reason starts on 'Choose the reason' (required), lists only the reasons that can be true for the line (no 'Window passed' while its window is open, with the hint saying so); the error step chooses 'Other' by label, unchanged."
   ],
   "notes": "Tour shoots PACKETS' case (14-case.png) and at 390 px (28-phone-case.png). viewer-phi.spec.ts covers the viewer's case page."
  },
@@ -1029,18 +1031,19 @@
   "reachable": "after-populate",
   "notReachableReason": "",
   "states": {
-   "empty": "'Not submitted yet' Submission log and 'Nothing to submit yet' with 'The packet' link: LAYOUT's case (layout-1280.spec.ts; packet not approved) or MONITORING's case. 'No response document yet' EmptyState in 'Log a payer response' needs a submission but no clean letter: not reached (PACKETS has the letter). Viewer: log only, no forms (ledger-viewer on LEDGER's case, which has no submission).",
+   "empty": "'Not submitted yet' Submission log and 'Nothing to submit yet' with 'The packet' link: LAYOUT's case (layout-1280.spec.ts; packet not approved) or MONITORING's case. 'No response document yet' EmptyState in 'Log a payer response' needs a submission but no clean letter: not reached (PACKETS has the letter). Viewer: log only, no forms (ledger-viewer on LEDGER's case, which has no submission). From PR #85 the 'No response document yet' EmptyState is replaced by the letter field's hint ('Upload the payer\u2019s letter here; it is chosen once it is scanned clean.'): not reached either (no-letter, skipped with the reason).",
    "loading": "cases/[caseId]/submissions/loading.tsx 'Loading submissions and responses'. Hold on client navigation from the case page ('Submissions and responses' link) with page.route delaying the RSC request.",
-   "error": "Log a payer response (PACKETS, as packet-approver): Response 'Partial', leave 'Amount accepted' empty, press 'Record the response' -> Alert 'Check the fields marked below.' with 'what the payer accepted, in dollars and cents' (submissions.ts responds handler, InputError before any write). Response 'Denial' with 'Reopens the case' ticked and no denial reason -> 'a denial reopens the case for the next level only with its reason'. 'Follow-up due' alert (follow-up date passed): not reached. Closed case alert 'No submission is logged on a closed case': unattested.spec.ts only.",
+   "error": "Log a payer response (PACKETS, as packet-approver): Response 'Partial', leave 'Amount accepted' empty, press 'Record the response' -> Alert 'Check the fields marked below.' with 'what the payer accepted, in dollars and cents' (submissions.ts responds handler, InputError before any write). Response 'Denial' with 'Reopens the case' ticked and no denial reason -> 'a denial reopens the case for the next level only with its reason'. 'Follow-up due' alert (follow-up date passed): not reached. Closed case alert 'No submission is logged on a closed case': unattested.spec.ts only. From PR #85 (co-001/ux-payer-response) the form's first field is the required 'Payer\u2019s letter' select, starting on 'Choose the payer\u2019s letter', and Response starts on 'Choose the payer\u2019s answer': the tour's error act chooses the first letter listed (index 1) when the field is there, then Partially accepted, and checks no required select is left unchosen before the press (design lane-b-ux-payer-response.md 4.8).",
    "notFound": "/p/<packets>/cases/<random uuid>/submissions -> app/not-found.tsx."
   },
   "interactions": [
    "'Log a submission' form (Submitted on, Channel, Payer's reference, Follow up on) - writes; PACKETS already has one, the form remains for a re-log.",
    "'Log a payer response' form (Response, Received on, Amount accepted, Document, Denial reason, Reopens the case, Notes) - writes.",
    "'Submission log' list with export hash, follow-up badge and responses.",
-   "?notice=logged (and logged_flagged/logged_unattested) shows the notice Alert alone."
+   "?notice=logged (and logged_flagged/logged_unattested) shows the notice Alert alone.",
+   "From PR #85: 'Log a payer response' starts with 'Payer\u2019s letter' (select; groups by response) and an uploader under 'Upload the payer\u2019s letter' (one PDF; the file input 'Choose a file to upload'), then 'What the letter says', Response (empty first), Received on, the amount, Denial reason, Reopen the case, Notes. letter-scanning (tour key p.submissions.letter-scanning): Partially accepted chosen, a note typed, a SYNTHETIC PDF uploaded in the form; no worker runs, so it stays in intake with data-letter-status=scanning (a write: an intake document on PACKETS that no later shot lists). letter-chosen needs the worker: not reached. Before PR #85 the state does not exist and is skipped with that reason."
   ],
-  "notes": "Tour probes PACKETS' submissions (probe-submissions.png) as packet-approver. Earlier-export sections and the unattested states need unattested.spec.ts."
+  "notes": "Tour probes PACKETS' submissions (probe-submissions.png) as packet-approver. Earlier-export sections and the unattested states need unattested.spec.ts. PR #85 (design 6.2): letter-scanning is the last PACKETS submissions shot; its letter stays in intake on PACKETS for the rest of the run."
  },
  {
   "file": "apps/web/src/app/p/[practiceId]/cases/by-reference/page.tsx",
@@ -1167,7 +1170,8 @@
    "Upload card 'Upload a contract or exhibit': the Uploader with 'Kind of document' select (do not upload: it writes a record)",
    "Upload card, a file chosen before the kind (from PR #75, whose panel starts with no kind and a disabled 'Choose the kind of document' placeholder): from its fix round the file waits ('Waiting to upload: 1 file'), the kind select marked invalid and focused with 'Choose the kind of document for this file, then upload it.'; at 9b7eadfe it was refused ('Nothing was uploaded'). State interaction:held-ready: the kind then chosen, 'Upload 1 file' shown, never pressed. Writes nothing (the tour aborts any upload request). On a build whose panel preselects the first kind the same step uploads, so the tour stops before choosing a file there",
    "Contract calendar table 'Calendar': rows appear once a signed-off version has dates ahead of today (OTHER PRACTICE and LAYOUT after their sign-offs)",
-   "Header 'Help with this screen' details (the shell's, on every practice page): click its summary"
+   "Header 'Help with this screen' details (the shell's, on every practice page): click its summary",
+   "From PR #85 (co-001/ux-payer-response): the upload panel's description adds that a payer\u2019s answer to a dispute goes with its response on the case\u2019s Submissions and responses page; its kind select's payer_letter reads 'Payer\u2019s terms or policy letter'. Its uploader is the shared components/uploads/uploader.tsx (also on Uploads and Reconciliation)."
   ],
   "notes": "Best capture: OTHER PRACTICE (contracts table with 'Version 1 (in force)', 'Signed off', plan SYNPLAN-COMM-C; coverage share reads 'No pricing run in effect yet' there) and LAYOUT (coverage share from its runs) as a billing manager. era-manager is not signed in by any populate spec (the tour's contract.spec.ts uses it). The specialist's questions list is always empty on populated data: no spec creates a contract_question; the AnswerForm ('Send the answer') shows only if a specialist asks one on the abstraction screen. Pager appears only past one page; not reachable with the populated counts."
  },
