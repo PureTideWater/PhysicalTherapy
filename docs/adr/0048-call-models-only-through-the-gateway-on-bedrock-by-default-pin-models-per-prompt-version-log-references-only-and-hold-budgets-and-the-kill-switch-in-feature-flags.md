@@ -212,5 +212,8 @@ client option cannot be overridden from outside); recording `ANTHROPIC_CUSTOM_HE
 would send headers no one sees).
 
 Revisit when: the product registers a tracer provider or HTTP/fetch instrumentation (keep the SDK's spans and
-propagation off, or record why not); the SDK reads a new environment variable (read its `readEnv` calls at each
-major); the SDK's next major or API version.
+propagation off, or record why not); the SDK reads a new environment variable, touches the environment in a new place
+or gains a runtime dependency (MOD-17 pins all three from the installed SDK's code, so any version taken that changes
+one fails until the new read is closed by a client option, refused in readGatewayConfig, or recorded as unreachable
+from the gateway); its default-on telemetry or default headers change (read at each version taken); the SDK's next
+major or API version.

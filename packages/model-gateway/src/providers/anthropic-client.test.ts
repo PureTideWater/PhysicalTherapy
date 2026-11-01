@@ -1,3 +1,7 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import path from 'node:path';
+
 import Anthropic from '@anthropic-ai/sdk';
 import { type Span, type TextMapPropagator, type Tracer, type TracerProvider, propagation, trace } from '@opentelemetry/api';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -43,6 +47,96 @@ const GATEWAY_HEADERS = [
   'x-stainless-runtime-version',
   'x-stainless-timeout',
 ] as const;
+
+/**
+ * Every environment variable the installed SDK reads, each closed for the gateway (docs/adr/0048, amendment of
+ * 2026-11-01). MOD-17 reads them out of the SDK's own code, so a version that reads another fails until it is closed by a
+ * client option, refused in readGatewayConfig, or recorded here as out of the gateway's reach.
+ */
+const SDK_ENV_READS = [
+  // Fixed by anthropicClient's options: the host, the logging, the tracing with its propagation and content, the webhook key.
+  'ANTHROPIC_BASE_URL',
+  'ANTHROPIC_LOG',
+  'ANTHROPIC_OPEN_TELEMETRY',
+  'ANTHROPIC_OPEN_TELEMETRY_PROPAGATION',
+  'ANTHROPIC_OPEN_TELEMETRY_TRACES_CONTENT_MODE',
+  'ANTHROPIC_OPEN_TELEMETRY_TRACES_MAX_CONTENT_BYTES',
+  'ANTHROPIC_WEBHOOK_SIGNING_KEY',
+  // No client option overrides it: readGatewayConfig refuses it on the Anthropic path (config.test.ts).
+  'ANTHROPIC_CUSTOM_HEADERS',
+  // The SDK's credential chain and its profile files, never read because the client is given its key.
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_CONFIG_DIR',
+  'ANTHROPIC_FEDERATION_RULE_ID',
+  'ANTHROPIC_IDENTITY_TOKEN',
+  'ANTHROPIC_IDENTITY_TOKEN_FILE',
+  'ANTHROPIC_ORGANIZATION_ID',
+  'ANTHROPIC_PROFILE',
+  'ANTHROPIC_SCOPE',
+  'ANTHROPIC_SERVICE_ACCOUNT_ID',
+  'ANTHROPIC_WORKSPACE_ID',
+  'APPDATA',
+  'HOME',
+  'USERPROFILE',
+  'XDG_CONFIG_HOME',
+  // Entry points the gateway never calls: the self-hosted environments' worker and poller (lib/environments) and the
+  // agent toolset (tools/agent-toolset).
+  'ANTHROPIC_ENVIRONMENT_ID',
+  'ANTHROPIC_ENVIRONMENT_KEY',
+  'ANTHROPIC_SESSION_ID',
+  'ANTHROPIC_WORK_ID',
+  'ANTHROPIC_WORK_SECRET',
+  'HOSTNAME',
+  'PATH',
+] as const;
+
+/**
+ * Every other place the SDK touches the environment object, by file without its extension: an alias, an enumeration or a
+ * name the name pattern cannot read. A new one fails MOD-17 even where no name can be read from it.
+ */
+const SDK_ENV_SITES = [
+  'internal/utils/env', // readEnv itself, which every read above goes through
+  'lib/environments/poller', // an alias of process.env, read for HOSTNAME by an entry point the gateway never calls
+  'tools/agent-toolset/node', // Object.entries(process.env), scrubbing a child shell's environment in the agent toolset
+] as const;
+
+/** The SDK's runtime dependencies at the locked version, none of which touches the environment; a new one is read first. */
+const SDK_DEPENDENCIES = ['@opentelemetry/api', 'json-schema-to-ts', 'standardwebhooks'] as const;
+
+/** A name the SDK reads: through readEnv, an index of process.env or Deno.env.get, or a property of process.env. */
+const ENV_NAME = /(?:readEnv\)?\(|process\??\.env(?:\?\.)?\[|env\?\.\[|Deno\??\.env\??\.get\??\.?\()\s*(['"`])([A-Z0-9_]+)\1|process\??\.env\.([A-Z][A-Z0-9_]*)/g;
+
+/** Any other touch of the environment: readEnv with a computed name, or process.env or Deno.env not followed by a literal name. */
+const ENV_SITE = /\breadEnv\)?\(\s*(?!['"`][A-Z0-9_]+['"`])[^)\s]|(?:process\??\.env|Deno\??\.env)(?!(?:\?\.)?\[\s*['"`][A-Z0-9_]+['"`]|\.[A-Z][A-Z0-9_]*)/g;
+
+/** The installed SDK's directory (its package.json is not in its exports). */
+function sdkDirectory(): string {
+  return path.dirname(createRequire(import.meta.url).resolve('@anthropic-ai/sdk'));
+}
+
+/**
+ * The SDK's shipped code: every JavaScript file and extensionless script, without its TypeScript sources, type
+ * declarations, source maps or nested packages. Comments are read too: a name mentioned only there costs a review, never
+ * a missed read.
+ */
+function sdkCode(directory: string): { readonly file: string; readonly text: string }[] {
+  const code: { readonly file: string; readonly text: string }[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== 'src' && entry.name !== 'node_modules') {
+          walk(full);
+        }
+      } else if (/\.(?:c?js|mjs)$/.test(entry.name) || (entry.isFile() && !entry.name.includes('.') && !entry.name.startsWith('LICENSE'))) {
+        code.push({ file: path.relative(directory, full).split(path.sep).join('/'), text: readFileSync(full, 'utf8') });
+      }
+    }
+  };
+  walk(directory);
+  return code;
+}
 
 const CONSOLE_METHODS = ['debug', 'info', 'warn', 'log', 'error'] as const;
 
@@ -133,6 +227,24 @@ describe('MOD-17: the Anthropic client as configuration builds it, whatever the 
   it('leaves the webhook signing key in the environment unread', () => {
     vi.stubEnv('ANTHROPIC_WEBHOOK_SIGNING_KEY', 'whsec_synthetic');
     expect(built().webhookKey).toBeNull();
+  });
+
+  it('is built by an SDK that reads no environment variable, touches the environment nowhere and depends on nothing but what this file lists, each closed', () => {
+    const directory = sdkDirectory();
+    const names = new Set<string>();
+    const sites = new Set<string>();
+    for (const { file, text } of sdkCode(directory)) {
+      for (const match of text.matchAll(ENV_NAME)) {
+        names.add(match[2] ?? match[3] ?? '');
+      }
+      if (text.search(ENV_SITE) !== -1) {
+        sites.add(file.replace(/\.(?:c?js|mjs)$/, ''));
+      }
+    }
+    expect([...names].sort()).toEqual([...SDK_ENV_READS].sort());
+    expect([...sites].sort()).toEqual([...SDK_ENV_SITES].sort());
+    const manifest = JSON.parse(readFileSync(path.join(directory, 'package.json'), 'utf8')) as { dependencies?: Record<string, string> };
+    expect(Object.keys(manifest.dependencies ?? {}).sort()).toEqual([...SDK_DEPENDENCIES]);
   });
 });
 
