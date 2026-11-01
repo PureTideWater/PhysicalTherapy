@@ -47,7 +47,8 @@ updates:
         update-types: ["version-update:semver-major"]
     # Each dependency belongs to one group: minor-and-patch excludes every pattern the groups above it name. Without the
     # exclusions, Dependabot ranks a group with no patterns above a wildcard pattern, so "@aws-sdk/*" and "@next/*" lost
-    # their packages to minor-and-patch (run 40818560725), and only the file's order kept an exact name in its group.
+    # their packages to minor-and-patch (run 40818560725), and an exact name was in two groups, kept out of
+    # minor-and-patch's pull request only by the file's order.
     # dependabot-config.test.ts holds the list equal to those patterns and routes every direct dependency.
     groups:
       # Red on the browser.json check by design until ADR 0058's baseline procedure runs.
