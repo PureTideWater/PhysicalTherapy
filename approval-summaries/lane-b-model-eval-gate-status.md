@@ -77,6 +77,9 @@ None. The co-founder's standing ruling of 2026-10-26 ~00:20 UTC (relayed by the 
 - 2026-10-28 ~07:00 UTC: base merge 4 (wf_d798a96c-014) started; **lost** when Lane A's account stopped (~08:00 UTC).
 - 2026-11-01 16:58 UTC: **Resumed** in this session (started by Lane B's orchestrator session_01FcouKNNHsdecRMzfTs7XwW from `lanes/lane-b-session-brief.md` and `lanes/lane-b-item-prompts-2026-11-01/contract-phi-check.md`). `setup-container.sh` OK (every line ok, playwright included); `gh api user` is PureTideWater; pre-push hook installed; gitleaks 8.24.3. This status file corrected against live state.
 
+- 2026-11-01 17:00 UTC: worktree fast-forwarded to 7f77cb19 (wip-5). `subscribe_pr_activity` on #75 was **refused** ("Could not subscribe to this PR"), as for #42's session: this session relies on `send_later` check-ins and reading CI itself. Check-in at 22:10 UTC (trig_01JRBMQQxYPWCMLnoRBUUqe2) to resume the workflow if stopped.
+- 2026-11-01 17:02 UTC: **Base merge 4 running** (wf_4ca98146-d24; script `workflow-scripts/lane-b-model-eval-gate-phi-merge-4-wf_4ca98146-d24.js`): merge (staged) with reference shots on 7f77cb19 in parallel; two adversarial re-reads (both-sides; safety and accessibility), each finding checked by two refuters; the check agent fixes confirmed findings, runs the full local suite once (oracle and the gateway eval included, 4 db shards, e2e) and commits (no push); merged-head shots compared with the reference; a completeness critic. Progress files in `/tmp/claude-0/sp/phi/progress/`, reports in `/tmp/claude-0/sp/phi/fix/` (copied here when done). Improvement over the lost script: the adversarial re-read is its own verified stage, the reference shots are retaken, and a critic gates the push.
+
 ## Handoff: `co-001/contract-phi-check` (#120), for whoever takes it
 Done: design, build, integrate, draft PR #75; reviews wf_85f2ff34-1ed and wf_fe838a07-52a; fix round wf_aa0fc3e3-0ae; verification 1 wf_425beb65-3b9 (FAIL); fix 2 wf_8a6ef988-e60; base merges f5292c6c (by hand), 871faff9 (wf_435f3768-f95) and 26388626 (wf_31aff985-e31); fix 3 wf_7cf8f8c4-5e8 and its shots5. The builders' notes are in `approval-summaries/lane-b-model-eval-gate-phi-build.md`; the design is `designs/lane-b-model-eval-gate.md` (section 5, Appendix A.3, rulings 1, 3, 4, 8; M7, M8, M9, M12, m3, m9, m14, m15); departures are in ADR 0070 Part 3 on the branch.
 
@@ -105,4 +108,4 @@ Not part of it: F3 (lookup hashes and a SECURITY DEFINER screen function) and F4
 - Nothing blocks. (storage.googleapis.com has been allowed since 2026-10-27; playwright ok.) Wording table: the co-founder may reverse any line. Approval of record: before runbook 3i the merge goes on green checks plus a passed fresh-clone verification (LANES rule 7).
 
 ## Next step
-Base merge 4 (workflow), then push once.
+Wait for wf_4ca98146-d24; copy merge4.md, check5.md, shots-ref.md, shots6.md to `lane-b-model-eval-gate-wip/fix/`; if the critic says READY-TO-PUSH, push once (fast-forward from 871faff9) and read CI; then the description.
