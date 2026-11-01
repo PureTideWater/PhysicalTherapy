@@ -79,6 +79,11 @@ Follow-on: none.
 - 2026-11-01T20:37Z: the orchestrator's merge rule of 20:36 UTC (merge when verified and green; the section-6 order only between
   PRs that conflict) does not change this item: it builds on #75's code (`redact.ts`, its tests, PRD §14, ADR 0054), so it still
   waits for #75's merge before the branch is cut.
+- 2026-11-01T22:01Z: #75 still unmerged (PR head 871faff9, dirty). Its session has pushed WIP refs `-6` (7cd60740) and `-7`
+  (cf61a828): a base merge of 83d71fd6, 3a033b32 (a written date needs a plausible year: the R14 fix) and cf61a828 (a letter's
+  number joins over `_`, `|` and `\`; a number stays a date only when it is that whole date). Against 871faff9 they change
+  `redact.ts` (+48 lines net), `redact.test.ts`, `redact.property.test.ts` and ADR 0054. Build step 0 must re-read these: the join
+  set and the whole-date rule touch design §3 (joiners), §17 R1/R7 (date barriers in the survivor scan) and R14.
 
 ## Waiting on someone
 - **#75's merge** (its own session, S4): the build waits for it (cut only from a base containing its merge commit).
