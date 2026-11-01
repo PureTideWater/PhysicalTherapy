@@ -7,7 +7,8 @@ import path from 'node:path';
 import { isDeepStrictEqual, stripVTControlCharacters } from 'node:util';
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { parse } from 'yaml';
+import ts from 'typescript';
+import { LineCounter, isMap, isSeq, parse, parseDocument } from 'yaml';
 
 import { consistencyProblems, formProblems, parsePin } from '../check-action-pins/workflows';
 import { readDockerfile } from '../check-toolchain/images';
@@ -3102,10 +3103,15 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     return problems;
   }
 
-  interface FoundValue {
+  interface ValueKey {
     readonly file: string;
     readonly job: string;
     readonly value: string;
+  }
+
+  interface FoundValue extends ValueKey {
+    /** The index of the step that reads it, when a step does (a job's own keys are read before or after its steps). */
+    readonly step?: number;
   }
 
   /**
@@ -3125,7 +3131,7 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       const declared = isRecord(on) && isRecord(on.inputs) ? on.inputs : {};
       for (const [name, declaration] of Object.entries(declared)) inputs[name.toLowerCase()] = isRecord(declaration) ? declaration.type : undefined;
     }
-    const visit = (value: unknown, where: string, job: string): void => {
+    const visit = (value: unknown, where: string, job: string, step?: number): void => {
       if (typeof value === 'string') {
         for (const match of value.matchAll(/\$\{\{([\s\S]*?)\}\}/g)) {
           const text = match[1] ?? '';
@@ -3137,12 +3143,12 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
             refused = [`does not parse (${error instanceof Error ? error.message : 'unknown'})`];
           }
           problems.push(...refused.map((problem) => `${file} ${where}: ${problem}, in \${{${text}}}`));
-          values.push(...found.map((entry) => ({ file, job, value: entry.toLowerCase() })));
+          values.push(...found.map((entry) => ({ file, job, value: entry.toLowerCase(), ...(step === undefined ? {} : { step }) })));
         }
       } else if (isList(value)) {
-        value.forEach((item, index) => visit(item, `${where}[${String(index)}]`, job));
+        value.forEach((item, index) => visit(item, `${where}[${String(index)}]`, job, step));
       } else if (isRecord(value)) {
-        for (const [key, item] of Object.entries(value)) visit(item, `${where}.${key}`, job);
+        for (const [key, item] of Object.entries(value)) visit(item, `${where}.${key}`, job, step);
       }
     };
     visit(root.env, 'env', '-');
@@ -3152,7 +3158,7 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       (isList(job.steps) ? job.steps : []).forEach((step, index) => {
         if (!isRecord(step)) return;
         const named = `job ${id} step ${typeof step.name === 'string' ? JSON.stringify(step.name) : String(index)}`;
-        for (const key of ['env', 'with', 'run', 'working-directory']) visit(step[key], `${named} ${key}`, id);
+        for (const key of ['env', 'with', 'run', 'working-directory']) visit(step[key], `${named} ${key}`, id, index);
         for (const line of (typeof step.run === 'string' ? step.run : '').split('\n').filter((text) => text.includes('GITHUB_ENV'))) {
           if (!GITHUB_ENV_NAMES.has(GITHUB_ENV_WRITE.exec(line)?.[1] ?? '')) problems.push(`${file} ${named} run: a $GITHUB_ENV write outside its closed list: ${line.trim()}`);
         }
@@ -3215,7 +3221,7 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       ['inputs.runner', []],
     ];
     for (const [expression, values] of accepted) {
-      expect(fixture(expression), expression).toEqual({ problems: [], values: values.map((value) => ({ file: 'fixture.yml', job: 'images', value })) });
+      expect(fixture(expression), expression).toEqual({ problems: [], values: values.map((value) => ({ file: 'fixture.yml', job: 'images', value, step: 0 })) });
     }
 
     // The whole metadata is refused in every place a value reaches a process.
@@ -3245,117 +3251,376 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     expect(write('cat file >> $GITHUB_ENV')).toEqual(['fixture.yml job images step "The step" run: a $GITHUB_ENV write outside its closed list: cat file >> $GITHUB_ENV']);
   });
 
-  interface BoundedValue extends FoundValue {
-    /** The producer and its bound, with file and line. */
+  /**
+   * Where a row's value comes from, each named by what it is, never by a line, so an edit elsewhere in a file moves
+   * none and a renamed, moved or removed producer turns the table red:
+   * - a step of a job, by its id: a `run:` step with the fingerprint of its script as parsed (the first 8 hexadecimal
+   *   digits of its SHA-256), so a changed script fails until a person re-reads the bound and writes the new one; a
+   *   `uses:` step with its action (its pin is the pin rules', CI-11);
+   * - an output a job declares, a key of a job's matrix, and a job the reading job needs;
+   * - tool code by the name it declares (path#symbol, read with TypeScript's parser), never fingerprinted: other lanes
+   *   own it and change it for their own reasons, so the row names the unit test that proves the bound instead.
+   */
+  type Ref =
+    | { readonly kind: 'step'; readonly job: string; readonly step: string; readonly run: string }
+    | { readonly kind: 'step'; readonly job: string; readonly step: string; readonly uses: string }
+    | { readonly kind: 'output'; readonly job: string; readonly name: string }
+    | { readonly kind: 'matrix'; readonly job: string; readonly key: string }
+    | { readonly kind: 'needs'; readonly job: string }
+    | { readonly kind: 'symbol'; readonly path: string; readonly symbol: string }
+    | { readonly kind: 'test'; readonly path: string; readonly name: string };
+
+  interface BoundedValue extends ValueKey {
+    /** What writes it, resolved by name in the test below. */
+    readonly refs: readonly Ref[];
+    /** Its bound, in words: what the producers write, and why no more. */
     readonly bound: string;
     /** The one value known to be over the limit, and the item that owns its transport. */
     readonly over?: 'ci-findings-transport';
   }
 
-  const runnerImage = (where: string) => `the runner image step (${where}) writes the runner image's name and version, $ImageOS-$ImageVersion and $ImageOS`;
-  const cacheKey = (where: string, parts: string) => `actions/cache/restore echoes the key it was given (${where}), made of ${parts}`;
+  const script = (job: string, step: string, run: string): Ref => ({ kind: 'step', job, step, run });
+  const action = (job: string, step: string, uses: string): Ref => ({ kind: 'step', job, step, uses });
+  const output = (job: string, name: string): Ref => ({ kind: 'output', job, name });
+  const needs = (job: string): Ref => ({ kind: 'needs', job });
+  const symbol = (reference: string): Ref => {
+    const [file = '', name = ''] = reference.split('#');
+    return { kind: 'symbol', path: file, symbol: name };
+  };
+  const unitTest = (file: string, name: string): Ref => ({ kind: 'test', path: file, name });
+
+  const RUNNER_IMAGE = "the runner image step writes the runner image's name and version, $ImageOS-$ImageVersion and $ImageOS";
+  const runnerImage = (job: string): Ref[] => [script(job, 'runner-image', '84e0b642')];
+  const cacheKey = (parts: string) => `actions/cache/restore echoes the key it was given, made of ${parts}`;
   const RUNNER_HASH = 'runner.os and a hashFiles digest';
   const APT_KEY = "the runner image's key and a hashFiles digest";
-  const identity = (where: string) => `the identity step (${where}) writes the archive's SHA-256 and the config and top-level digests image-id.ts reads, each 64 hexadecimal digits`;
-  const AFFECTED = 'tools/stryker/affected.ts:776 writes any (true or false), packages and shards (JSON lists of the mutation packages, stryker/base.mjs, and their shards)';
-  const RELEASE_BUILD = (where: string, digests: string) => `the build job's outputs (${where}), ${digests} digests of 64 hexadecimal digits, by the identity step`;
+  const IDENTITY = "the identity step writes, for its matrix's image, the archive's SHA-256 (64 hexadecimal digits) and the config and top-level digests image-id.ts reads from the archive's bytes (sha256: and 64 hexadecimal digits, the top-level one '' for an archive without an index)";
+  const IMAGE_ID = [symbol('tools/screening-capacity/image-id.ts#identityOf'), unitTest('tools/screening-capacity/image-id.test.ts', 'refuses a config whose bytes do not hash to the digest that names it, and a missing config')];
+  const identity = (run: string): Ref[] => [script('build', 'identity', run), { kind: 'matrix', job: 'build', key: 'image' }, ...IMAGE_ID];
+  const AFFECTED = 'tools/stryker/affected.ts writes any (true or false), packages and shards (JSON lists of the mutation packages, MUTATION_PACKAGES, and their shards, shardsFor)';
+  const AFFECTED_CODE = [symbol('stryker/base.mjs#MUTATION_PACKAGES'), symbol('tools/stryker/affected.ts#shardsFor'), unitTest('tools/stryker/affected.test.ts', 'selects every shard of each affected package')];
+  const AFFECTED_STEP = script('changes', 'affected', '29b3bfbb');
+  const RELEASE_BUILD = (digests: string) => `the build job's outputs, ${digests} digests of 64 hexadecimal digits (sha256: before the config and top-level ones), by the identity step`;
+  const releaseBuild = (images: readonly string[]): Ref[] => [needs('build'), ...images.flatMap((image) => ['sha256', 'config', 'target'].map((kind) => output('build', `${kind}_${image}`)))];
+  const ADVISORIES = [
+    symbol('tools/release-capacity/checks.ts#verdict'),
+    symbol('tools/release-capacity/checks.ts#advisoriesOutput'),
+    unitTest('tools/release-capacity/checks.test.ts', 'records times as advisory: a slow windows query, or none, fails nothing'),
+    unitTest('tools/release-capacity/checks.test.ts', 'is empty with no advisory, and otherwise one line of base64 holding each advisory on a line of its own'),
+  ];
+  const SIZING = [symbol('tools/screening-capacity/report.ts#sizingQuestion'), unitTest('tools/screening-capacity/report.test.ts', 'passes the verdict and is reported as a sizing question for the founder, never as a wider limit (O9)')];
+  const TIME_WARNINGS = [symbol('tools/screening-capacity/report.ts#verdict'), unitTest('tools/screening-capacity/report.test.ts', 'passes an advisory run failing only on time, each time verdict a warning the job annotates and hands to the gate')];
+  const MEASURE_OUTPUTS = [script('capacity', 'measure', '366a6ad6'), symbol('tools/screening-capacity/report.ts#jobResult'), symbol('tools/screening-capacity/run.ts#main')];
+  const FINDINGS = [symbol('tools/content-calendar/render.ts#MAX_FILE_BYTES'), symbol('tools/content-calendar/render.ts#findingsJson'), unitTest('tools/content-calendar/content-calendar.test.ts', 'refuses a findings file past its bound, so the check fails rather than hand on a cut list')];
 
   /**
    * Every step output and every value one job hands another that reaches a process, each with its bound: a new one fails
-   * the test below until a reviewed row names its bound (docs/adr/0066, Part 3, N32).
+   * the test below until a reviewed row names its producers and its bound (docs/adr/0066, Part 3, N32).
    */
   const BOUNDED_VALUES: readonly BoundedValue[] = [
-    { file: 'ci.yml', job: 'all-green', value: 'tojson(needs)', bound: 'the eight jobs it needs (ci.yml:791), each a result word, and their outputs, of which there are none: no ci.yml job declares outputs (asserted below)' },
-    { file: 'ci.yml', job: 'db', value: 'steps.runner-image.outputs.key', bound: runnerImage('ci.yml:328-336') },
-    { file: 'ci.yml', job: 'db', value: 'steps.runner-image.outputs.os', bound: runnerImage('ci.yml:328-336') },
-    { file: 'ci.yml', job: 'db', value: 'steps.vitest-cache.outputs.cache-primary-key', bound: cacheKey('ci.yml:374', 'runner.os, strategy.job-total, matrix.shard and github.sha') },
-    { file: 'ci.yml', job: 'e2e', value: 'steps.runner-image.outputs.key', bound: runnerImage('ci.yml:527-535') },
-    { file: 'ci.yml', job: 'e2e', value: 'steps.runner-image.outputs.os', bound: runnerImage('ci.yml:527-535') },
-    { file: 'ci.yml', job: 'images', value: "fromjson(steps.web.outputs.metadata || '{}')['containerimage.config.digest']", bound: "buildx's config digest of the web build (ci.yml:688-699), sha256: and 64 hexadecimal digits, or '' when the metadata lacks it" },
-    { file: 'ci.yml', job: 'images', value: "fromjson(steps.worker.outputs.metadata || '{}')['containerimage.config.digest']", bound: "buildx's config digest of the worker build (ci.yml:712-724), sha256: and 64 hexadecimal digits, or '' when the metadata lacks it" },
-    { file: 'ci.yml', job: 'static', value: 'steps.range.outputs.base', bound: 'the commits step (ci.yml:56-75) writes origin/ and the base branch, github.event.before or a commit SHA, each checked to name a commit' },
-    { file: 'ci.yml', job: 'static', value: 'steps.tsc-cache.outputs.cache-primary-key', bound: cacheKey('ci.yml:150', `${RUNNER_HASH} and github.sha`) },
-    { file: 'ci.yml', job: 'unit', value: 'steps.apt.outputs.cache-primary-key', bound: cacheKey('ci.yml:233', APT_KEY) },
-    { file: 'ci.yml', job: 'unit', value: 'steps.browsers.outputs.cache-primary-key', bound: cacheKey('ci.yml:213', RUNNER_HASH) },
-    { file: 'ci.yml', job: 'unit', value: 'steps.runner-image.outputs.key', bound: runnerImage('ci.yml:216-224') },
-    { file: 'ci.yml', job: 'unit', value: 'steps.runner-image.outputs.os', bound: runnerImage('ci.yml:216-224') },
+    {
+      file: 'ci.yml',
+      job: 'all-green',
+      value: 'tojson(needs)',
+      refs: ['static', 'lint', 'unit', 'db', 'domain-model', 'build', 'e2e', 'images'].map(needs),
+      bound: 'the eight jobs it needs, each a result word, and their outputs, of which there are none: no ci.yml job declares outputs (asserted below)',
+    },
+    { file: 'ci.yml', job: 'db', value: 'steps.runner-image.outputs.key', refs: runnerImage('db'), bound: RUNNER_IMAGE },
+    { file: 'ci.yml', job: 'db', value: 'steps.runner-image.outputs.os', refs: runnerImage('db'), bound: RUNNER_IMAGE },
+    { file: 'ci.yml', job: 'db', value: 'steps.vitest-cache.outputs.cache-primary-key', refs: [action('db', 'vitest-cache', 'actions/cache/restore')], bound: cacheKey('runner.os, strategy.job-total, matrix.shard and github.sha') },
+    { file: 'ci.yml', job: 'e2e', value: 'steps.runner-image.outputs.key', refs: runnerImage('e2e'), bound: RUNNER_IMAGE },
+    { file: 'ci.yml', job: 'e2e', value: 'steps.runner-image.outputs.os', refs: runnerImage('e2e'), bound: RUNNER_IMAGE },
+    {
+      file: 'ci.yml',
+      job: 'images',
+      value: "fromjson(steps.web.outputs.metadata || '{}')['containerimage.config.digest']",
+      refs: [action('images', 'web', 'docker/build-push-action')],
+      bound: "buildx's config digest of the web build, sha256: and 64 hexadecimal digits, or '' when the metadata lacks it",
+    },
+    {
+      file: 'ci.yml',
+      job: 'images',
+      value: "fromjson(steps.worker.outputs.metadata || '{}')['containerimage.config.digest']",
+      refs: [action('images', 'worker', 'docker/build-push-action')],
+      bound: "buildx's config digest of the worker build, sha256: and 64 hexadecimal digits, or '' when the metadata lacks it",
+    },
+    { file: 'ci.yml', job: 'static', value: 'steps.range.outputs.base', refs: [script('static', 'range', '4dccf1d2')], bound: 'the commits step writes origin/ and the base branch, github.event.before or a commit SHA, each checked to name a commit' },
+    { file: 'ci.yml', job: 'static', value: 'steps.tsc-cache.outputs.cache-primary-key', refs: [action('static', 'tsc-cache', 'actions/cache/restore')], bound: cacheKey(`${RUNNER_HASH} and github.sha`) },
+    { file: 'ci.yml', job: 'unit', value: 'steps.apt.outputs.cache-primary-key', refs: [action('unit', 'apt', 'actions/cache/restore')], bound: cacheKey(APT_KEY) },
+    { file: 'ci.yml', job: 'unit', value: 'steps.browsers.outputs.cache-primary-key', refs: [action('unit', 'browsers', 'actions/cache/restore')], bound: cacheKey(RUNNER_HASH) },
+    { file: 'ci.yml', job: 'unit', value: 'steps.runner-image.outputs.key', refs: runnerImage('unit'), bound: RUNNER_IMAGE },
+    { file: 'ci.yml', job: 'unit', value: 'steps.runner-image.outputs.os', refs: runnerImage('unit'), bound: RUNNER_IMAGE },
     {
       file: 'content-calendar.yml',
       job: 'check',
       value: 'steps.calendar.outputs.findings',
-      bound: 'base64 of findings.json (content-calendar.yml:60), at most 700,000 bytes (MAX_FILE_BYTES, tools/content-calendar/render.ts:17-18, :127-135), so 933,336 characters: a job output, under GitHub’s 1 MB, which reaches no process in this job',
+      refs: [script('check', 'calendar', '837c4152'), ...FINDINGS],
+      bound: 'base64 of findings.json (content-calendar.yml), at most 700,000 bytes (MAX_FILE_BYTES, tools/content-calendar/render.ts), so 933,336 characters: a job output, under GitHub’s 1 MB, which reaches no process in this job',
     },
     {
       file: 'content-calendar.yml',
       job: 'notify',
       value: 'needs.check.outputs.findings',
-      bound: 'FINDINGS_B64 (content-calendar.yml:78), the same base64 of up to 933,336 characters: over 131,072 bytes as one environment string, the open defect whose transport is its own item',
+      refs: [needs('check'), output('check', 'findings'), ...FINDINGS],
+      bound: 'FINDINGS_B64, the same base64 of up to 933,336 characters: over 131,072 bytes as one environment string, the open defect whose transport is its own item',
       over: 'ci-findings-transport',
     },
-    { file: 'large-zip.yml', job: 'large-zip', value: 'steps.runner-image.outputs.key', bound: runnerImage('large-zip.yml:37-45') },
-    { file: 'large-zip.yml', job: 'large-zip', value: 'steps.runner-image.outputs.os', bound: runnerImage('large-zip.yml:37-45') },
-    { file: 'mutation.yml', job: 'changes', value: 'steps.affected.outputs.any', bound: AFFECTED },
-    { file: 'mutation.yml', job: 'changes', value: 'steps.affected.outputs.packages', bound: AFFECTED },
-    { file: 'mutation.yml', job: 'changes', value: 'steps.affected.outputs.shards', bound: AFFECTED },
-    { file: 'mutation.yml', job: 'mutation', value: 'needs.changes.outputs.any', bound: `the changes job's outputs (mutation.yml:44-47): ${AFFECTED}` },
-    { file: 'mutation.yml', job: 'mutation', value: 'needs.changes.outputs.packages', bound: `the changes job's outputs (mutation.yml:44-47): ${AFFECTED}` },
-    { file: 'mutation.yml', job: 'mutation', value: 'needs.changes.outputs.shards', bound: `the changes job's outputs (mutation.yml:44-47): ${AFFECTED}` },
-    { file: 'mutation.yml', job: 'stryker', value: 'needs.changes.outputs.shards', bound: `the shards' matrix (mutation.yml:77): ${AFFECTED}` },
+    { file: 'large-zip.yml', job: 'large-zip', value: 'steps.runner-image.outputs.key', refs: runnerImage('large-zip'), bound: RUNNER_IMAGE },
+    { file: 'large-zip.yml', job: 'large-zip', value: 'steps.runner-image.outputs.os', refs: runnerImage('large-zip'), bound: RUNNER_IMAGE },
+    { file: 'mutation.yml', job: 'changes', value: 'steps.affected.outputs.any', refs: [AFFECTED_STEP, ...AFFECTED_CODE], bound: AFFECTED },
+    { file: 'mutation.yml', job: 'changes', value: 'steps.affected.outputs.packages', refs: [AFFECTED_STEP, ...AFFECTED_CODE], bound: AFFECTED },
+    { file: 'mutation.yml', job: 'changes', value: 'steps.affected.outputs.shards', refs: [AFFECTED_STEP, ...AFFECTED_CODE], bound: AFFECTED },
+    { file: 'mutation.yml', job: 'mutation', value: 'needs.changes.outputs.any', refs: [needs('changes'), output('changes', 'any'), ...AFFECTED_CODE], bound: `the changes job's outputs: ${AFFECTED}` },
+    { file: 'mutation.yml', job: 'mutation', value: 'needs.changes.outputs.packages', refs: [needs('changes'), output('changes', 'packages'), ...AFFECTED_CODE], bound: `the changes job's outputs: ${AFFECTED}` },
+    { file: 'mutation.yml', job: 'mutation', value: 'needs.changes.outputs.shards', refs: [needs('changes'), output('changes', 'shards'), ...AFFECTED_CODE], bound: `the changes job's outputs: ${AFFECTED}` },
+    {
+      file: 'mutation.yml',
+      job: 'stryker',
+      value: 'needs.changes.outputs.shards',
+      refs: [needs('changes'), output('changes', 'shards'), { kind: 'matrix', job: 'stryker', key: 'shard' }, ...AFFECTED_CODE],
+      bound: `the shards' matrix: ${AFFECTED}`,
+    },
     {
       file: 'publish-content.yml',
       job: 'publish',
       value: 'steps.publish.outputs.releases',
-      bound: 'the release numbers tools/publish-content.sh publishes (:15-19, :49), separated by spaces (publish-content.yml:48), and read in a script, which the runner writes to a file (the file is frozen to its copy)',
+      refs: [script('publish', 'publish', '847745ef'), unitTest('tools/test/publish-content.test.ts', 'refuses a directory that is not a release number'), unitTest('tools/test/publish-content.test.ts', 'refuses a number reserved for SYNTHETIC fixture releases')],
+      bound: 'the release numbers tools/publish-content.sh publishes, each a number below 900,000, separated by spaces, and read in a script, which the runner writes to a file (the file is frozen to its copy)',
     },
-    { file: 'release-capacity.yml', job: 'capacity', value: 'steps.measure.outputs.advisories', bound: 'base64 of at most one advisory line (tools/release-capacity/checks.ts:181-195), written by tools/release-capacity/run.ts:535-536' },
-    { file: 'release-capacity.yml', job: 'notify', value: 'needs.capacity.outputs.advisories', bound: 'ADVISORIES_B64 (release-capacity.yml:141): base64 of at most one advisory line (tools/release-capacity/checks.ts:181-195)' },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.config_web', bound: identity('release-dry-run.yml:164-192') },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.config_worker', bound: identity('release-dry-run.yml:164-192') },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.sha256_web', bound: identity('release-dry-run.yml:164-192') },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.sha256_worker', bound: identity('release-dry-run.yml:164-192') },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.target_web', bound: identity('release-dry-run.yml:164-192') },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.target_worker', bound: identity('release-dry-run.yml:164-192') },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.dockerfile', bound: 'one of two Dockerfile paths (release-dry-run.yml:102-105)' },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.origin', bound: "'' or a repository variable, at most 48 KB (release-dry-run.yml:97-110)" },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.ref', bound: "ghcr.io, the repository, the matrix's image and dry-run- with the run's ID (release-dry-run.yml:100)" },
-    { file: 'release-dry-run.yml', job: 'capacity', value: 'tojson(needs.build.outputs)', bound: RELEASE_BUILD('release-dry-run.yml:70-76', 'six') },
-    { file: 'release-dry-run.yml', job: 'push', value: 'tojson(needs.build.outputs)', bound: RELEASE_BUILD('release-dry-run.yml:70-76', 'six') },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web', bound: identity('release.yml:169-197') },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web-production', bound: identity('release.yml:169-197') },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web-staging', bound: identity('release.yml:169-197') },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_worker', bound: identity('release.yml:169-197') },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_web', bound: identity('release.yml:169-197') },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_web-production', bound: identity('release.yml:169-197') },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_web-staging', bound: identity('release.yml:169-197') },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_worker', bound: identity('release.yml:169-197') },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_web', bound: identity('release.yml:169-197') },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_web-production', bound: identity('release.yml:169-197') },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_web-staging', bound: identity('release.yml:169-197') },
-    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_worker', bound: identity('release.yml:169-197') },
-    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.dockerfile', bound: 'one of two Dockerfile paths (release.yml:91-94)' },
-    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.origin', bound: "'' or a repository variable, at most 48 KB (release.yml:86-99)" },
-    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.ref', bound: "ghcr.io, the repository, the matrix's image and the tag's name (release.yml:89)" },
-    { file: 'release.yml', job: 'capacity', value: 'tojson(needs.build.outputs)', bound: RELEASE_BUILD('release.yml:55-67', 'twelve') },
-    { file: 'release.yml', job: 'push', value: 'tojson(needs.build.outputs)', bound: RELEASE_BUILD('release.yml:55-67', 'twelve') },
-    { file: 'release.yml', job: 'report', value: 'steps.attest.outputs.bundle-path', bound: 'the path of the bundle actions/attest-build-provenance writes (release.yml:446-450)' },
-    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.apt.outputs.cache-primary-key', bound: cacheKey('screening-capacity.yml:254', APT_KEY) },
-    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.measure.outputs.sizing', bound: "one sentence of numbers and an upload's label (tools/screening-capacity/report.ts:835-838), written by run.ts:1036-1039" },
-    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.measure.outputs.time-warnings', bound: 'one line per judged scenario upload of a fixed list (tools/screening-capacity/report.ts:635-639), joined (:866-867)' },
-    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.runner-image.outputs.key', bound: runnerImage('screening-capacity.yml:238-246') },
-    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.runner-image.outputs.os', bound: runnerImage('screening-capacity.yml:238-246') },
-    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.scale-release.outputs.cache-primary-key', bound: cacheKey('screening-capacity.yml:286', 'one hashFiles digest') },
-    { file: 'screening-capacity.yml', job: 'changes', value: 'steps.watched.outputs.measure', bound: 'true or false (screening-capacity.yml:88-130)' },
-    { file: 'screening-capacity.yml', job: 'gate', value: 'needs.capacity.outputs.sizing', bound: "SIZING (screening-capacity.yml:351): one sentence of numbers and an upload's label (tools/screening-capacity/report.ts:835-838)" },
-    { file: 'screening-capacity.yml', job: 'gate', value: 'needs.capacity.outputs.time-warnings', bound: 'TIME_WARNINGS (screening-capacity.yml:352): one line per judged scenario upload of a fixed list (tools/screening-capacity/report.ts:635-639)' },
-    { file: 'screening-capacity.yml', job: 'gate', value: 'needs.changes.outputs.measure', bound: 'MEASURE (screening-capacity.yml:349): true or false (:88-130)' },
+    {
+      file: 'release-capacity.yml',
+      job: 'capacity',
+      value: 'steps.measure.outputs.advisories',
+      refs: [script('capacity', 'measure', '03100cc3'), symbol('tools/release-capacity/run.ts#main'), ...ADVISORIES],
+      bound: 'base64 of at most one advisory line (verdict, tools/release-capacity/checks.ts), written by tools/release-capacity/run.ts',
+    },
+    { file: 'release-capacity.yml', job: 'notify', value: 'needs.capacity.outputs.advisories', refs: [needs('capacity'), output('capacity', 'advisories'), ...ADVISORIES], bound: 'ADVISORIES_B64: base64 of at most one advisory line (verdict, tools/release-capacity/checks.ts)' },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.config_web', refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.config_worker', refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.sha256_web', refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.sha256_worker', refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.target_web', refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.target_worker', refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.dockerfile', refs: [script('build', 'image', 'fff96722')], bound: 'one of two Dockerfile paths' },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.origin', refs: [script('build', 'image', 'fff96722')], bound: "'' or a repository variable, at most 48 KB" },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.ref', refs: [script('build', 'image', 'fff96722')], bound: "ghcr.io, the repository, the matrix's image and dry-run- with the run's ID" },
+    { file: 'release-dry-run.yml', job: 'capacity', value: 'tojson(needs.build.outputs)', refs: releaseBuild(['web', 'worker']), bound: RELEASE_BUILD('six') },
+    { file: 'release-dry-run.yml', job: 'push', value: 'tojson(needs.build.outputs)', refs: releaseBuild(['web', 'worker']), bound: RELEASE_BUILD('six') },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web', refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web-production', refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web-staging', refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_worker', refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_web', refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_web-production', refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_web-staging', refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.sha256_worker', refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_web', refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_web-production', refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_web-staging', refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_worker', refs: identity('cb290c31'), bound: IDENTITY },
+    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.dockerfile', refs: [script('build', 'image', 'ab81eb8f')], bound: 'one of two Dockerfile paths' },
+    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.origin', refs: [script('build', 'image', 'ab81eb8f')], bound: "'' or a repository variable, at most 48 KB" },
+    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.ref', refs: [script('build', 'image', 'ab81eb8f')], bound: "ghcr.io, the repository, the matrix's image and the tag's name" },
+    { file: 'release.yml', job: 'capacity', value: 'tojson(needs.build.outputs)', refs: releaseBuild(['web', 'web-staging', 'web-production', 'worker']), bound: RELEASE_BUILD('twelve') },
+    { file: 'release.yml', job: 'push', value: 'tojson(needs.build.outputs)', refs: releaseBuild(['web', 'web-staging', 'web-production', 'worker']), bound: RELEASE_BUILD('twelve') },
+    { file: 'release.yml', job: 'report', value: 'steps.attest.outputs.bundle-path', refs: [action('report', 'attest', 'actions/attest-build-provenance')], bound: 'the path of the bundle actions/attest-build-provenance writes' },
+    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.apt.outputs.cache-primary-key', refs: [action('capacity', 'apt', 'actions/cache/restore')], bound: cacheKey(APT_KEY) },
+    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.measure.outputs.sizing', refs: [...MEASURE_OUTPUTS, ...SIZING], bound: "one sentence of numbers and an upload's label (sizingQuestion, tools/screening-capacity/report.ts), written by run.ts" },
+    {
+      file: 'screening-capacity.yml',
+      job: 'capacity',
+      value: 'steps.measure.outputs.time-warnings',
+      refs: [...MEASURE_OUTPUTS, ...TIME_WARNINGS],
+      bound: 'one line per judged scenario upload of a fixed list (verdict, tools/screening-capacity/report.ts), joined (jobResult)',
+    },
+    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.runner-image.outputs.key', refs: runnerImage('capacity'), bound: RUNNER_IMAGE },
+    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.runner-image.outputs.os', refs: runnerImage('capacity'), bound: RUNNER_IMAGE },
+    { file: 'screening-capacity.yml', job: 'capacity', value: 'steps.scale-release.outputs.cache-primary-key', refs: [action('capacity', 'scale-release', 'actions/cache/restore')], bound: cacheKey('one hashFiles digest') },
+    { file: 'screening-capacity.yml', job: 'changes', value: 'steps.watched.outputs.measure', refs: [script('changes', 'watched', '37daa562')], bound: 'true or false' },
+    { file: 'screening-capacity.yml', job: 'gate', value: 'needs.capacity.outputs.sizing', refs: [needs('capacity'), output('capacity', 'sizing'), ...SIZING], bound: "SIZING: one sentence of numbers and an upload's label (sizingQuestion, tools/screening-capacity/report.ts)" },
+    {
+      file: 'screening-capacity.yml',
+      job: 'gate',
+      value: 'needs.capacity.outputs.time-warnings',
+      refs: [needs('capacity'), output('capacity', 'time-warnings'), ...TIME_WARNINGS],
+      bound: 'TIME_WARNINGS: one line per judged scenario upload of a fixed list (verdict, tools/screening-capacity/report.ts)',
+    },
+    { file: 'screening-capacity.yml', job: 'gate', value: 'needs.changes.outputs.measure', refs: [needs('changes'), output('changes', 'measure')], bound: 'MEASURE: true or false, by the changed paths step' },
   ];
 
+  /** A repository file's text, for a symbol or a test a row names (tool code is read from the repository, never CI_TREE's copy of the CI files), or undefined. */
+  function repositorySource(file: string): string | undefined {
+    const full = path.join(repositoryRoot, file);
+    return existsSync(full) ? readFileSync(full, 'utf8') : undefined;
+  }
+
+  /** The names a module declares at its top level (a function, class, variable, type, interface or enum, exported or not), read with TypeScript's parser. */
+  function declaredNames(file: string, text: string): Set<string> {
+    const names = new Set<string>();
+    for (const statement of ts.createSourceFile(file, text, ts.ScriptTarget.Latest).statements) {
+      if (ts.isVariableStatement(statement)) {
+        for (const declaration of statement.declarationList.declarations) if (ts.isIdentifier(declaration.name)) names.add(declaration.name.text);
+      } else if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement) || ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement) || ts.isEnumDeclaration(statement)) && statement.name !== undefined) {
+        names.add(statement.name.text);
+      }
+    }
+    return names;
+  }
+
+  /** The titles of a test file's it() and test() calls written as literals, it.skipIf(…)(…) and the like included. */
+  function testTitles(file: string, text: string): Set<string> {
+    const titles = new Set<string>();
+    const callee = (node: ts.Expression): ts.Expression => (ts.isCallExpression(node) || ts.isPropertyAccessExpression(node) ? callee(node.expression) : node);
+    const visit = (node: ts.Node): void => {
+      if (ts.isCallExpression(node)) {
+        const name = callee(node.expression);
+        const [title] = node.arguments;
+        if (ts.isIdentifier(name) && (name.text === 'it' || name.text === 'test') && title !== undefined && ts.isStringLiteralLike(title)) titles.add(title.text);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(ts.createSourceFile(file, text, ts.ScriptTarget.Latest));
+    return titles;
+  }
+
+  /** The fingerprint a row holds for a `run:` step: the first 8 hexadecimal digits of the SHA-256 of its script as parsed. */
+  const fingerprint = (run: string): string => createHash('sha256').update(run).digest('hex').slice(0, 8);
+
+  /** A step's line in its workflow's text, for a message alone: no row holds a line. */
+  function stepLine(text: string, job: string, id: string): number | undefined {
+    const counter = new LineCounter();
+    const steps = parseDocument(text, { lineCounter: counter }).getIn(['jobs', job, 'steps']);
+    const item = isSeq(steps) ? steps.items.find((entry) => isMap(entry) && entry.get('id') === id) : undefined;
+    return isMap(item) && item.range !== undefined && item.range !== null ? counter.linePos(item.range[0]).line : undefined;
+  }
+
+  /**
+   * The output names a `run:` step's own script writes to $GITHUB_OUTPUT (echo "name=…"), each $VAR whose env is one
+   * matrix value spelled out by every value of that key: sha256_$IMAGE= from matrix.image gives sha256_web, … . Only a
+   * key the row names is spelled out.
+   */
+  function writtenOutputs(step: Step, job: Job, keys: readonly string[]): Set<string> {
+    const names = new Set<string>();
+    const run = step.run ?? '';
+    if (!run.includes('GITHUB_OUTPUT')) return names;
+    for (const [, template = ''] of run.matchAll(/\becho "((?:[\w-]|\$\{?[A-Za-z_]\w*\}?)+)=/g)) {
+      let spelled = [''];
+      for (const [, literal, variable] of template.matchAll(/([\w-]+)|\$\{?([A-Za-z_]\w*)\}?/g)) {
+        if (literal !== undefined) {
+          spelled = spelled.map((name) => name + literal);
+          continue;
+        }
+        const key = MATRIX_REFERENCE.exec(String(step.env?.[variable ?? ''] ?? ''))?.[1];
+        const values = key !== undefined && keys.includes(key) ? matrixValues(job.strategy?.matrix, key) : undefined;
+        spelled = values === undefined ? [] : spelled.flatMap((name) => values.map((value) => name + String(value)));
+      }
+      for (const name of spelled) names.add(name.toLowerCase());
+    }
+    return names;
+  }
+
+  /** A job's needs as a list. */
+  const needsOf = (job: Job | undefined): string[] => (job?.needs === undefined ? [] : [job.needs].flat().map(String));
+  /** A job's declared output names. */
+  const outputsOf = (job: Job | undefined): string[] => {
+    const declared = (job as { readonly outputs?: unknown } | undefined)?.outputs;
+    return isRecord(declared) ? Object.keys(declared) : [];
+  };
+
+  /**
+   * What does not resolve of each row's references on these workflows (text gives a file's) and this repository's
+   * tool code (source gives a file's): each named for its row, with a line where one helps.
+   */
+  function refProblems(rows: readonly BoundedValue[], found: readonly FoundValue[], text: (file: string) => string, source: (file: string) => string | undefined = repositorySource): string[] {
+    const problems: string[] = [];
+    for (const row of rows) {
+      const say = (problem: string) => problems.push(`${row.file} ${row.job} ${row.value}: ${problem}`);
+      const workflowText = text(row.file);
+      const jobs = (parse(workflowText) as Workflow).jobs;
+      const reader = jobs[row.job];
+      if (row.refs.length === 0) say('names no producer');
+      const read = found.filter((entry) => entry.file === row.file && entry.job === row.job && entry.value === row.value);
+      const keys = row.refs.flatMap((ref) => (ref.kind === 'matrix' ? [ref.key] : []));
+      for (const ref of row.refs) {
+        switch (ref.kind) {
+          case 'step': {
+            const steps = jobs[ref.job]?.steps ?? [];
+            const index = steps.findIndex((step) => step.id === ref.step);
+            const step = steps[index];
+            if (step === undefined) {
+              say(`job ${ref.job} has no step ${ref.step}`);
+              break;
+            }
+            const where = `step ${ref.step} of job ${ref.job} (${row.file}:${String(stepLine(workflowText, ref.job, ref.step) ?? '?')})`;
+            if ('run' in ref) {
+              const now = step.run === undefined ? undefined : fingerprint(step.run);
+              if (now === undefined) say(`${where} runs no script to fingerprint`);
+              else if (now !== ref.run) say(`${where} has a changed script, fingerprint ${now}, not ${ref.run}: re-check the bound against it, then write ${now} in this row`);
+            } else if (actionOf(step) !== ref.uses) {
+              say(`${where} uses ${actionOf(step) ?? 'no action'}, not ${ref.uses}`);
+            }
+            if (ref.job === row.job) {
+              for (const entry of read) if (entry.step !== undefined && entry.step <= index) say(`${where} does not come before the step that reads it`);
+              const name = new RegExp(`^steps\\.${escaped(ref.step.toLowerCase())}\\.outputs\\.([^.]+)$`).exec(row.value)?.[1];
+              if (name !== undefined && 'run' in ref && !writtenOutputs(step, jobs[ref.job] ?? { steps: [] }, keys).has(name) && !row.refs.some((other) => other.kind === 'symbol')) {
+                say(`${where} writes no ${name}= to $GITHUB_OUTPUT, and the row names no tool that does`);
+              }
+            }
+            break;
+          }
+          case 'output':
+            if (!outputsOf(jobs[ref.job]).includes(ref.name)) say(`job ${ref.job} declares no output ${ref.name}`);
+            break;
+          case 'matrix': {
+            const matrix = jobs[ref.job]?.strategy?.matrix;
+            const include = isRecord(matrix) && isList(matrix.include) ? matrix.include : [];
+            if (!isRecord(matrix) || !(Object.hasOwn(matrix, ref.key) || include.some((entry) => isRecord(entry) && Object.hasOwn(entry, ref.key)))) say(`job ${ref.job}'s matrix has no key ${ref.key}`);
+            break;
+          }
+          case 'needs':
+            if (jobs[ref.job] === undefined || !needsOf(reader).includes(ref.job)) say(`job ${row.job} does not need a job ${ref.job}`);
+            break;
+          case 'symbol': {
+            const code = source(ref.path);
+            if (code === undefined) say(`no file ${ref.path}`);
+            else if (!declaredNames(ref.path, code).has(ref.symbol)) say(`${ref.path} declares no ${ref.symbol}`);
+            break;
+          }
+          case 'test': {
+            const code = source(ref.path);
+            if (code === undefined) say(`no file ${ref.path}`);
+            else if (!testTitles(ref.path, code).has(ref.name)) say(`${ref.path} has no test named "${ref.name}"`);
+            break;
+          }
+        }
+      }
+      // Tool code is never fingerprinted, so the row names the test that proves its bound.
+      if (row.refs.some((ref) => ref.kind === 'symbol') && !row.refs.some((ref) => ref.kind === 'test')) say('names tool code but no test that proves its bound');
+      // toJSON reads every job it is given and every output of each, so the row names them all, and no other.
+      const whole = /^tojson\(needs(?:\.([^.]+)\.outputs)?\)$/.exec(row.value);
+      if (whole !== null) {
+        const given = whole[1] === undefined ? needsOf(reader) : [whole[1]];
+        const named = row.refs.flatMap((ref) => (ref.kind === 'needs' ? [ref.job] : []));
+        if (whole[1] === undefined && [...named].sort().join() !== [...given].sort().join()) say(`toJSON reads every job ${row.job} needs (${given.join(', ')}), and the row names ${named.join(', ')}`);
+        for (const job of given) {
+          const declared = outputsOf(jobs[job]).sort();
+          const cited = row.refs.flatMap((ref) => (ref.kind === 'output' && ref.job === job ? [ref.name] : [])).sort();
+          if (declared.join() !== cited.join()) say(`toJSON reads every output of job ${job} (${declared.join(', ') || 'none'}), and the row names ${cited.join(', ') || 'none'}`);
+        }
+      }
+    }
+    return problems;
+  }
+
   it('hands a step another step’s or job’s output only from the list below, each with its bound', () => {
-    const key = ({ file, job, value }: FoundValue) => `${file} ${job} ${value}`;
-    const found = new Set(workflowFiles().flatMap((file) => unboundedValueProblems(file, workflow(file)).values.map(key)));
+    const key = ({ file, job, value }: ValueKey) => `${file} ${job} ${value}`;
+    const values = workflowFiles().flatMap((file) => unboundedValueProblems(file, workflow(file)).values);
+    const found = new Set(values.map(key));
     expect([...found].sort()).toEqual(BOUNDED_VALUES.map(key).sort());
-    // Each row names its producer's file and line.
-    for (const row of BOUNDED_VALUES) expect(row.bound, key(row)).toMatch(/[\w-]+\.(?:ya?ml|ts|mjs|sh):\d+/);
+    // Each row names its producers by what they are, never by a line (a line goes stale with any edit above it), and
+    // each resolves on this tree.
+    for (const row of BOUNDED_VALUES) expect(row.bound, key(row)).not.toMatch(/\.(?:ya?ml|ts|mjs|sh):\d+/);
+    expect(refProblems(BOUNDED_VALUES, values, (file) => readFileSync(path.join(WORKFLOWS, file), 'utf8'))).toEqual([]);
     // ci.yml's gate reads toJSON(needs): results alone, since no ci.yml job declares outputs.
     expect(Object.entries(workflow('ci.yml').jobs).filter(([, job]) => 'outputs' in job).map(([id]) => id)).toEqual([]);
     // One row is over the limit, and says so: the content calendar's findings as FINDINGS_B64, base64 of a file bounded
@@ -3363,6 +3628,75 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     expect(BOUNDED_VALUES.filter((row) => row.over !== undefined).map(key)).toEqual(['content-calendar.yml notify needs.check.outputs.findings']);
     expect(workflow('content-calendar.yml').jobs.notify?.steps.map((step) => step.env?.FINDINGS_B64).filter((value) => value !== undefined)).toEqual(['${{ needs.check.outputs.findings }}']);
     expect(4 * Math.ceil(MAX_FILE_BYTES / 3) + 'FINDINGS_B64='.length + 1).toBeGreaterThan(131_072);
+  });
+
+  it('resolves each row’s producers by name, so a renamed step, a changed script, a removed output or a deleted symbol or test turns the table red, and an edit elsewhere in a file does not', () => {
+    const workflowText = [
+      'name: fixture',
+      'on: push',
+      'jobs:',
+      '  build:',
+      '    runs-on: ubuntu-26.04',
+      '    strategy: { matrix: { image: [web, worker] } }',
+      '    outputs:',
+      '      digest_web: ${{ steps.identity.outputs.digest_web }}',
+      '    steps:',
+      '      - name: Record the identity',
+      '        id: identity',
+      '        env: { IMAGE: "${{ matrix.image }}" }',
+      '        run: echo "digest_$IMAGE=$(node tools/fixture.ts)" >> "$GITHUB_OUTPUT"',
+      '      - name: Read it',
+      '        env: { DIGEST: "${{ steps.identity.outputs.digest_web }}" }',
+      '        run: echo "$DIGEST"',
+      '  use:',
+      '    needs: build',
+      '    runs-on: ubuntu-26.04',
+      '    steps:',
+      '      - env: { DIGEST: "${{ needs.build.outputs.digest_web }}" }',
+      '        run: echo "$DIGEST"',
+      '',
+    ].join('\n');
+    const run = 'echo "digest_$IMAGE=$(node tools/fixture.ts)" >> "$GITHUB_OUTPUT"';
+    const tool = 'export function digest(): string {\n  return "";\n}\n';
+    const tests = "it('proves the digest', () => {});\n";
+    const rows: BoundedValue[] = [
+      {
+        file: 'fixture.yml',
+        job: 'build',
+        value: 'steps.identity.outputs.digest_web',
+        refs: [script('build', 'identity', fingerprint(run)), { kind: 'matrix', job: 'build', key: 'image' }, symbol('tools/fixture.ts#digest'), unitTest('tools/fixture.test.ts', 'proves the digest')],
+        bound: 'a digest',
+      },
+      { file: 'fixture.yml', job: 'use', value: 'needs.build.outputs.digest_web', refs: [needs('build'), output('build', 'digest_web')], bound: 'a digest' },
+    ];
+    const problems = (text: string, files: Readonly<Record<string, string>> = { 'tools/fixture.ts': tool, 'tools/fixture.test.ts': tests }, table: readonly BoundedValue[] = rows) =>
+      refProblems(table, unboundedValueProblems('fixture.yml', parse(text)).values, () => text, (file) => files[file]);
+    expect(problems(workflowText)).toEqual([]);
+    // An edit elsewhere in the file, a comment above the producer, moves no reference.
+    expect(problems(workflowText.replace('      - name: Record the identity', '      # A comment above the producer.\n      - name: Record the identity'))).toEqual([]);
+    const [produced, handed] = rows;
+    if (produced === undefined || handed === undefined) throw new Error('two rows');
+    // A name the script does not write is excused only by a tool the row names, so the last case names none.
+    const scriptOnly = [{ ...produced, refs: produced.refs.filter((ref) => ref.kind !== 'symbol') }, handed];
+    const RED: readonly (readonly [string, string, RegExp])[] = [
+      ['a renamed step id', workflowText.replace('id: identity', 'id: identities'), /^fixture\.yml build steps\.identity\.outputs\.digest_web: job build has no step identity$/],
+      ['a changed script', workflowText.replace('$(node tools/fixture.ts)', '$(git log -1 --format=%B)'), /^fixture\.yml build steps\.identity\.outputs\.digest_web: step identity of job build \(fixture\.yml:10\) has a changed script, fingerprint [0-9a-f]{8}, not [0-9a-f]{8}: re-check the bound against it, then write [0-9a-f]{8} in this row$/],
+      ['a removed job output', workflowText.replace('    outputs:\n      digest_web: ${{ steps.identity.outputs.digest_web }}\n', ''), /^fixture\.yml use needs\.build\.outputs\.digest_web: job build declares no output digest_web$/],
+      ['a need removed', workflowText.replace('    needs: build\n', ''), /^fixture\.yml use needs\.build\.outputs\.digest_web: job use does not need a job build$/],
+      ['the producer after its reader', workflowText.replace(/( {6}- name: Record the identity\n(?: {8}.*\n){3})( {6}- name: Read it\n(?: {8}.*\n){2})/, '$2$1'), /^fixture\.yml build steps\.identity\.outputs\.digest_web: step identity of job build \(fixture\.yml:13\) does not come before the step that reads it$/],
+      ['a template its matrix does not spell', workflowText.replace('[web, worker]', '[api, worker]'), /^fixture\.yml build steps\.identity\.outputs\.digest_web: step identity of job build \(fixture\.yml:10\) writes no digest_web= to \$GITHUB_OUTPUT, and the row names no tool that does$/],
+    ];
+    for (const [what, text, message] of RED) expect(problems(text, undefined, scriptOnly), what).toEqual([expect.stringMatching(message)]);
+    // Tool code: a deleted symbol, a deleted or renamed test, and a symbol without a test.
+    expect(problems(workflowText, { 'tools/fixture.ts': 'export function digests(): string {\n  return "";\n}\n', 'tools/fixture.test.ts': tests })).toEqual(['fixture.yml build steps.identity.outputs.digest_web: tools/fixture.ts declares no digest']);
+    expect(problems(workflowText, { 'tools/fixture.ts': tool, 'tools/fixture.test.ts': "it('proves a digest', () => {});\n" })).toEqual(['fixture.yml build steps.identity.outputs.digest_web: tools/fixture.test.ts has no test named "proves the digest"']);
+    expect(problems(workflowText, { 'tools/fixture.ts': tool })).toEqual(['fixture.yml build steps.identity.outputs.digest_web: no file tools/fixture.test.ts']);
+    expect(problems(workflowText, undefined, [{ ...produced, refs: produced.refs.filter((ref) => ref.kind !== 'test') }])).toEqual(['fixture.yml build steps.identity.outputs.digest_web: names tool code but no test that proves its bound']);
+    // toJSON of a job's outputs names every output, and no other.
+    const whole = workflowText.replace('{ DIGEST: "${{ needs.build.outputs.digest_web }}" }', '{ BUILD: "${{ toJSON(needs.build.outputs) }}" }');
+    const json = (refs: readonly Ref[]) => problems(whole, undefined, [produced, { file: 'fixture.yml', job: 'use', value: 'tojson(needs.build.outputs)', refs, bound: 'a digest' }]);
+    expect(json([needs('build'), output('build', 'digest_web')])).toEqual([]);
+    expect(json([needs('build')])).toEqual(['fixture.yml use tojson(needs.build.outputs): toJSON reads every output of job build (digest_web), and the row names none']);
   });
 
   it('sets BUILDX_METADATA_PROVENANCE: disabled on every docker/build-push-action step of every workflow, and nothing else writes or reads buildx’s metadata provenance', () => {

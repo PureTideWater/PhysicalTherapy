@@ -427,8 +427,11 @@ user that cannot run the binary.
 - A step takes only the value it uses (one environment string stops at 131,072 bytes). `workflows.test.ts` reads every
   expression in an env, an input, a script, a job's outputs or a matrix as the runner does, and admits only bounded
   values. Never use a build's whole metadata, an event object, a description or title, or `toJSON` of anything but
-  `needs`. A new step output or value one job hands another joins its list with its bound, and a new `$GITHUB_ENV`
-  variable joins its closed list. Every `docker/build-push-action` step sets `BUILDX_METADATA_PROVENANCE: disabled`
+  `needs`. A new step output or value one job hands another joins its list with its bound and its producers by name
+  (a step by job and id, a job output, a matrix key, a needed job, tool code as `path#symbol` with the unit test that
+  proves its bound), never by line. A row whose producer is a `run:` step holds its script's fingerprint: when the
+  test prints a new one, re-read the bound against the changed script, then write the new fingerprint in the row. A
+  new `$GITHUB_ENV` variable joins its closed list. Every `docker/build-push-action` step sets `BUILDX_METADATA_PROVENANCE: disabled`
   (docs/adr/0066, Part 3, N32).
 - A new workflow's concurrency group starts with its own name (`${{ github.workflow }}-`), since groups are shared by
   every workflow of the repository.

@@ -993,6 +993,11 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
   - **What holds it.** `workflows.test.ts` reads every expression that reaches a step's environment, an input or a
     script as the runner reads it, and admits only a closed list. That list holds values GitHub or the workflow
     bounds, and every step output and value one job hands another, each listed with its bound.
+    - Each row names its producers by what they are, never by a line, and the test resolves each on the tree: a step
+      by its job and id, a job's output, a matrix key, a job the reader needs, and tool code by the name it declares
+      (`path#symbol`). A row whose producer is a workflow's `run:` step holds the fingerprint of its script as parsed,
+      so a changed script fails until a person re-reads the bound and updates it; a row whose bound is tool code's
+      names the unit test that proves it instead, since other lanes change that code for their own reasons.
     - One listed value is over the limit and named so: the content calendar's findings (`FINDINGS_B64`). Their
       transport is an item of its own.
     - A `$GITHUB_ENV` write names a variable from a closed list.
