@@ -1,8 +1,9 @@
 import { recordAuditEvent, requirePracticePermission } from '@tp/db/runtime';
-import { type LedgerTotals, type RoiStatement, caseEntries, entriesById, ledgerTotals, periodEntries, roiStatement } from '@tp/ledger';
+import { type LedgerEntry, type LedgerTotals, type ProofLevel, type RoiStatement, caseEntries, entriesById, ledgerTotals, periodEntries, roiStatement } from '@tp/ledger';
 import { type Cents, ZERO_CENTS, parseCents } from '@tp/money';
 
 import { PAID_INVOICE_FEES } from '../billing/fees';
+import { ACTIONABLE_NOW } from '../triage/actionable-now';
 import { type Scope, ledgerEntries, practiceLedgerSettings } from './ledger';
 
 /**
@@ -43,6 +44,41 @@ export async function practiceLedgerTotals(scope: Scope, practiceId: string, fil
   return ledgerTotals(inPeriod, proofLevel, entriesById(all));
 }
 
+/**
+ * Recovered over two periods from one ledger: to date and a period (the practice home's tile, "to date"
+ * and "this quarter"; docs/adr/0082).
+ */
+export interface RecoveredPeriods {
+  /** Every entry's totals: recovered to date, payer approved, and the rest. */
+  readonly toDate: LedgerTotals;
+  /** The period's entries' totals, their corrections' targets found in the whole ledger (as practiceLedgerTotals reads a period). */
+  readonly period: LedgerTotals;
+  /** The earliest date of the entries recovered to date sums (toDate.entryIds.recovered), never an approval's; null when it sums none. */
+  readonly firstOn: string | null;
+}
+
+/**
+ * Recovered to date and over `from` to `to` (calendar dates, both included) from the practice's whole
+ * ledger `all` (in ledger order), at `proofLevel`: the same totals practiceLedgerTotals gives for all time
+ * and for the period, read from one set of entries. A reversal inside the period of an entry before it
+ * finds its target in the whole ledger, so it nets the period as it nets the practice's period total.
+ */
+export function recoveredPeriods(all: readonly LedgerEntry[], proofLevel: ProofLevel, period: { readonly from: string; readonly to: string }): RecoveredPeriods {
+  const ledger = entriesById(all);
+  const toDate = ledgerTotals(all, proofLevel, ledger);
+  const counted = new Set(toDate.entryIds.recovered);
+  // Calendar dates compare as text.
+  const firstOn = all.reduce<string | null>((first, entry) => (counted.has(entry.id) && (first === null || entry.effectiveOn < first) ? entry.effectiveOn : first), null);
+  return { toDate, period: ledgerTotals(periodEntries(all, period.from, period.to), proofLevel, ledger), firstOn };
+}
+
+/** The practice's recovered to date and over the period, from one read of its ledger and its proof level (recoveredPeriods). */
+export async function practiceRecoveredPeriods(scope: Scope, practiceId: string, period: { readonly from: string; readonly to: string }): Promise<RecoveredPeriods> {
+  const all = await ledgerEntries(scope, practiceId);
+  const { proofLevel } = await practiceLedgerSettings(scope, practiceId);
+  return recoveredPeriods(all, proofLevel, period);
+}
+
 export interface GeneratedStatement {
   readonly statementId: string;
   readonly statement: RoiStatement;
@@ -52,6 +88,17 @@ interface OpenCaseRow {
   readonly id: string;
   readonly actionable_cents: string;
 }
+
+/**
+ * The cases still being worked (any not resolved or closed, as the practice home and Cases count them) with
+ * each one's live figure (ACTIONABLE_NOW: its lines still actionable on their pricing in effect; docs/adr/
+ * 0082), never the case's stored ask. An input to roiStatement(), which sums it as the statement's
+ * actionable figure for open cases.
+ */
+export const OPEN_CASES_ACTIONABLE = `SELECT c.id, ${ACTIONABLE_NOW('c')}::text AS actionable_cents
+       FROM "case" c
+      WHERE c.practice_id = $1 AND c.state NOT IN ('resolved', 'closed_written_off')
+      ORDER BY c.opened_at, c.id`;
 
 /**
  * Generates an ROI statement for the practice and period from its entries and stores it with the
@@ -69,10 +116,7 @@ export async function generateRoiStatement(
     requirePracticePermission(scope, practiceId, 'posting.reconcile');
   }
   const { proofLevel } = await practiceLedgerSettings(scope, practiceId);
-  const { rows: open } = await scope.client.query<OpenCaseRow>(
-    `SELECT c.id, c.actionable_cents::text AS actionable_cents FROM "case" c WHERE c.practice_id = $1 AND c.state NOT IN ('resolved', 'closed_written_off') ORDER BY c.opened_at, c.id`,
-    [practiceId],
-  );
+  const { rows: open } = await scope.client.query<OpenCaseRow>(OPEN_CASES_ACTIONABLE, [practiceId]);
   const statement = roiStatement({
     periodFrom,
     periodTo,
