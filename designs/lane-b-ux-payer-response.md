@@ -9,13 +9,16 @@ The UX baseline review's tenth pull request. Branch `co-001/ux-payer-response`, 
 scouts' reports sit beside this file (`designs/lane-b-ux-payer-response/scout-{choices,letter,risk}.md`). Where a scout
 and the code disagree, this design follows the code and says so (section 1.5).
 
-Reserved for this PR: ADR 0085 (used: section 5), test-matrix rows CAS-45 to CAS-48 (section 4.1). No synth fixture:
-each row gets a no-file registry entry in module 5 (CAS). **No migration** (section 7): four database rules and one
+Reserved for this PR: ADR 0085 (used: section 5), test-matrix rows CAS-45 to CAS-48 (section 4.1). No synth input
+file: each row gets a no-file registry entry in module 5 (CAS), for which `pnpm synth` writes only
+`fixtures/synthetic/CAS-4x/expected.json`, as it does for CAS-39 (section 10, critic n5). **No migration** (section 7): four database rules and one
 column are recorded for Lane A.
 
 **Lands on** `claude/build-platform` as it stands: #74, #51 and #52, which prs.json's `dependsOn` names, are merged in
-`165c599`. Two open draft pull requests change `components/uploads/uploader.tsx` (#75, #78), and #75 also changes
-`app/p/[practiceId]/contracts/page.tsx`: LANES.md rule 6, the one merged second keeps both (section 3.7). #42 is open
+`165c599`. Two pull requests that were open drafts when this was written change `components/uploads/uploader.tsx`
+(#75, #78), and #75 also changes `app/p/[practiceId]/contracts/page.tsx`: LANES.md rule 6, the one merged second keeps
+both (section 3.7). Since then #78 has merged (`83d71fd6`, the base this branch merged before the reviews) and #81 has
+merged (`56ed6279`); #75 is still open (section 10). #42 is open
 (`46974a2`, 217 files, read by REST on 2026-10-28: `gh pr view` is refused by the GraphQL block; the 143-line
 `pr42-files.txt` is stale, so the intersection was run again against the 217); no file here is one of #42's, except
 the three shared documents rule 6 covers. Re-run the intersection at build.
@@ -37,6 +40,7 @@ Section 9 lists each finding, its disposition and where it landed.
 7. No migration; the proposals outside this PR
 8. Risks, and what is waiting on someone
 9. Review and dispositions
+10. Fix round (2026-11-01)
 
 Findings answered, by section: 2.1 to 2.4 answer UX-035 whole (the two pre-answered selects, the reasons listed only
 when they can be true, the server refusal, the words under Response) and U-UX-6; 2.5 and 2.6 answer UX-007 whole (the
@@ -217,7 +221,9 @@ kind select inside a form, its placeholder becomes enabled. Recorded for the orc
 
 **"Received on" stays prefilled with today** (`submissions/page.tsx:284`), as UX-035 rules: a date the person sees and
 can change, bounded by the submission and today (`min`, `max`), and refused by the database outside them
-(`payer_response_belongs.sql:32-34`).
+(`payer_response_belongs.sql:32-34`). **Superseded in the fix round** (section 10, S2-N2): the next dispute level's
+window is counted from this date, so it now starts empty and `required`, with a hint saying so, and the route refuses
+it empty on its field ("enter the date the payer’s letter was received"); ADR 0085 D1 says the same.
 
 ### 2.2 The reasons listed are the ones that can be true for the line
 
@@ -389,7 +395,9 @@ options are `{ value: '', label: 'Choose the payer’s letter' }` followed by up
 rendered as `<optgroup>`, `:274-276`; an empty group is left out): "Letters no response names yet", "Letters of this
 case’s earlier responses", "Letters of other cases’ responses" (2.6, review S1). Each option is labelled as today
 (`submissions/page.tsx:300-306`, the kind's words moving from the page's `KIND_TEXT`, `:37`). The letter this form
-uploaded ends with a plain run, " (uploaded here)" (review nit 7), so the person can find it in the list. The select's
+uploaded ends with a plain run, " (uploaded here)" (review nit 7), so the person can find it in the list. **Superseded
+in the fix round** (section 10, S2-N3 and U2-ux85-r2-2): four groups, the first split by who uploaded the letter, and
+each option starts with what tells it apart ("Uploaded here, {time}: payer letter, SHA-256 …"); 6.1 has the words. The select's
 `describedBy` is the status line, `<p id="response-letter-status" role="status" data-letter-status={state}>`, rendered
 empty from the first render so that the live region exists before it changes (review nit 10). Then:
 
@@ -428,11 +436,11 @@ whether the person chose it. "In the list" below means in any of the three group
 | The batch | What the field does | Status line (`data-letter-status`) |
 | --- | --- | --- |
 | A file is waiting, uploading, or sent with its receipt not settled (`inFlight`) | Nothing chosen yet. While the select is still on `''`, `setCustomValidity` gives it the scanning sentence, so a press shows that sentence in the browser's bubble and sends nothing | `scanning` |
-| Settled `stored`, and the letter is in the list | It is chosen, unless the person chose a letter themselves since the upload began | `chosen`, or `stored-not-chosen` |
+| Settled `stored`, and the letter is in the list | It is chosen only while the select is empty or still holds a letter the field chose itself. A letter the person chose, at any time, before the upload or while it ran, is never replaced (the bold rule above; ADR 0085 D3; fix round, critic n2: this row said "since the upload began", which the code never did) | `chosen`, or `stored-not-chosen` |
 | Settled `stored`, and the letter is not in the list yet (review S8) | The field reads the page again itself: `startTransition(() => router.refresh())` (`useTransition`), beside the uploader's own one-off refresh (`uploader.tsx:253-259`), whose end no caller can see. While the select is still on `''`, the custom validity holds the "being added" sentence. When the transition ends, the letter is chosen if it is now in the list (as the row above) | `stored-listing` |
 | Settled `stored`, and the field's refresh has ended without the letter in the list (the refresh failed, or a tag in another tab took it out) | Nothing chosen; the custom validity is cleared, so `required` gives the browser's own words; the status says to reload | `stored-not-listed` |
-| Settled `duplicate`, and its original (`receipt.duplicateOf.documentId`) is in the list | The original is chosen, on the same terms; when it is in "Letters of other cases’ responses" the status says so (2.6) | `duplicate-chosen`, or `duplicate-chosen-other-case` |
-| Settled `duplicate`, and the original is not in the list (a contract's document, another kind, or held) | Nothing chosen | `duplicate-unusable` |
+| Settled `duplicate`, and its original (`receipt.duplicateOf.documentId`) is in the list | The original is chosen, on the same terms; when it is in "Letters of other cases’ responses" the status says so (2.6). When the person's own choice keeps it unchosen, the status names the copy by when it was uploaded, the words its option starts with (fix round, n1 and F3) | `duplicate-chosen`, or `duplicate-chosen-other-case`; unchosen, `duplicate-not-chosen` or `duplicate-not-chosen-other-case` |
+| Settled `duplicate`, and the original is not in the list (a contract's document, another kind, held, or older than the letters listed: fix round, n6) | Nothing chosen | `duplicate-unusable` |
 | Settled anything else (held, quarantined, wrong type, unreadable) | Nothing chosen; the batch row shows the receipt's own words (`ReceiptStatus`) | `held` |
 | Not sent (the PUT failed) | Nothing chosen; the batch row shows Not sent and Retry, as on Uploads | none |
 
@@ -808,14 +816,17 @@ difference is the letter's field, the handler checks and their lock, the uploade
 
 ### 3.7 Open pull requests that touch these files
 
-From `gh api repos/PureTideWater/PhysicalTherapy/pulls/{n}/files` on 2026-10-28, intersected with this design's files:
+From `gh api repos/PureTideWater/PhysicalTherapy/pulls/{n}/files` on 2026-10-28, intersected with this design's files.
+**Since then** (read by REST on 2026-11-01): #78 merged (`83d71fd6`, which this branch merged at `90ec40ab` before the
+reviews, keeping its leave guard) and #81 merged (`56ed6279`); #82 and #83 merged too (the base is now `43565235`, no
+conflict). #75 and #42 are still open. The table keeps the state it was written in:
 
 | PR | Branch | Shared files | What it means here |
 | --- | --- | --- | --- |
 | #75 (draft, `871faff`) | `co-001/contract-phi-check` | `components/uploads/uploader.tsx` (it rewrites the kind's handling: `startingKind`, `KindField` with `required`, a **disabled** "Choose the kind of document" placeholder (`CHOOSE_KIND_PLACEHOLDER`) and a help line, files held for an explicit Upload, `batchProblems`, `initialKind`; it creates `uploader.test.tsx`), `app/p/[practiceId]/contracts/page.tsx` | Whichever merges second keeps both. With #75 in: `KindField` renders only when more than one kind is offered (its `startingKind` already starts a lone kind chosen); `single` refuses through its `batchProblems`; its Upload button for held files is `type="button"`; 4.4's test that no uploader button submits the form covers it; `headingLevel` applies to its headings as to today's. Its disabled kind placeholder is consistent with ADR 0085 D1 as revised: a controlled select outside any form that holds its own action (2.1; review S11). Its `initialKind` keeps the Uploads panel on "835 remittance", which 7.3 item 1 lists. On `contracts/page.tsx`, the panel's sentence goes beside #75's change to the same description, and `CONTRACT_KIND_LABELS` into whatever `kinds` map #75 leaves at `:217` |
-| #78 (draft, `f47437e`) | `co-001/ux-download-refusals` | `components/uploads/uploader.tsx` (a leave guard while sending), `lib/routes/uploads.ts`, `components/uploads/receipts.tsx` (not rendered here); it also creates `uploader.test.tsx` | Its leave guard protects the in-form upload too. `uploadGate` sits beside its `uploads.ts` changes |
-| #83 (draft, `f4a9766`, opened 2026-10-28) | `co-001/ux-screening-result-tables` | the three shared documents (TBL rows, no CAS id) | LANES.md rule 6. It also changes `apps/web/e2e/a11y.ts`, which 4.7 calls but does not change: if it lands first, 4.7's checks run its additions too |
-| #81, #82 (drafts) | `co-001/suite-cap-1-bounded-reads`, `co-001/ci-pin-age` | the three shared documents | LANES.md rule 6; #81's design reserves CAS-40 to CAS-42 (`designs/suite-cap-1-triage-locks.md:18`), so CAS-45 to CAS-48 sit after them in id order |
+| #78 (draft, `f47437e`; merged since, `83d71fd6`) | `co-001/ux-download-refusals` | `components/uploads/uploader.tsx` (a leave guard while sending), `lib/routes/uploads.ts`, `components/uploads/receipts.tsx` (not rendered here); it also creates `uploader.test.tsx` | Its leave guard protects the in-form upload too. `uploadGate` sits beside its `uploads.ts` changes |
+| #83 (draft, `f4a9766`, opened 2026-10-28; merged since) | `co-001/ux-screening-result-tables` | the three shared documents (TBL rows, no CAS id) | LANES.md rule 6. It also changes `apps/web/e2e/a11y.ts`, which 4.7 calls but does not change: if it lands first, 4.7's checks run its additions too |
+| #81, #82 (drafts; both merged since, #81 as `56ed6279`) | `co-001/suite-cap-1-bounded-reads`, `co-001/ci-pin-age` | the three shared documents | LANES.md rule 6; #81's design reserves CAS-40 to CAS-42 (`designs/suite-cap-1-triage-locks.md:18`), so CAS-45 to CAS-48 sit after them in id order |
 | #42 (draft, `46974a2`) | `co-001/pr-06b-mail-streams` | the three shared documents | LANES.md rule 6 |
 
 No open pull request adds CAS-45 to CAS-48 (#81 adds CAS-41, #75 MOD-12, #78 DLR-01 to DLR-04, #82 CI-21 to CI-23,
@@ -878,7 +889,8 @@ response, apart from the contract documents.`, each `none(8, …)` (milestone 8,
 | CAS-47 | "A SYNTHETIC payer letter the test builds as a PDF and uploads in the browser: no file." | `apps/web/src/components/packets/response-letter.browser.test.tsx`, `apps/web/e2e/packets.spec.ts` |
 | CAS-48 | "Documents the test inserts in each intake state, and a response recorded with one: no file." | `apps/web/src/lib/routes/workbench-routes.db.test.ts`, `apps/web/src/components/packets/response-letter.browser.test.tsx`, `apps/web/e2e/packets.spec.ts` |
 
-No new module: these are case and packet behaviour (module 5, CAS). Every test that asserts a row names its id in its
+For a no-file entry, `pnpm synth` writes `fixtures/synthetic/{id}/expected.json` and no input, as for CAS-39; the four
+are committed with the rows. No new module: these are case and packet behaviour (module 5, CAS). Every test that asserts a row names its id in its
 title, as the repository's tests do.
 
 ### 4.3 Unit: `lib/cases/write-off.test.ts` (new; CAS-45)
@@ -1182,41 +1194,54 @@ its reason") are reworded so that "its", after "Reason:", cannot read as the rea
 
 | Where | Words |
 | --- | --- |
-| Card description (today `:268`) | To the submission of {date}. Start with the payer’s letter: upload it here, or choose one already on file, and fill in what it says while it is scanned. A denial with a reason can reopen the case for the next dispute level, within its window. |
+| Card description, letters on file, the person can upload (today `:268`) | To the submission of {date}. Start with the payer’s letter: upload it here, or choose one already on file, and fill in what it says while it is scanned. A denial with a reason can reopen the case for the next dispute level, within its window. |
+| Card description, no letter on file, the person can upload (fix pass 2) | To the submission of {date}. Start with the payer’s letter: upload it here, and fill in what it says while it is scanned. A denial with a reason can reopen the case for the next dispute level, within its window. |
+| Card description, letters on file, the person cannot upload or uploads are paused or closed (U2-ux85-r2-1) | To the submission of {date}. Choose the payer’s letter already on file, then fill in what it says; the note under Payer’s letter says why nothing can be uploaded here now. A denial with a reason can reopen the case for the next dispute level, within its window. |
+| Card description, no letter on file, the person cannot upload or uploads are paused or closed (fix pass 2) | To the submission of {date}. No payer’s letter is on file, and none can be uploaded here now, so no response can be recorded yet; the note under Payer’s letter says why. |
 | Letter select, label (today "Document") | Payer’s letter |
 | Letter select, first option | Choose the payer’s letter |
-| Letter select, its groups (2.6) | Letters no response names yet / Letters of this case’s earlier responses / Letters of other cases’ responses |
-| Letter select, the option of the letter this form uploaded | {Payer letter, uploaded 2026-10-28 14:02 UTC, SHA-256 {prefix}…} (uploaded here) |
+| Letter select, its groups (2.6; fix round, S2-N3: a letter no response names is split by who uploaded it) | Letters you uploaded that no response names yet / Letters others uploaded that no response names yet / Letters of this case’s earlier responses / Letters of other cases’ responses |
+| Letter select, the option of the letter this form uploaded (fix round, U2-ux85-r2-2: what tells it apart first; today's "(uploaded here)" at the end is gone) | Uploaded here, {YYYY-MM-DD HH:MM UTC}: payer letter, SHA-256 {prefix}… (the prefix a run of its own, in Plex Mono) |
+| Letter select, every other letter's option (fix round, U2-ux85-r2-2) | {YYYY-MM-DD HH:MM UTC}: payer letter, SHA-256 {prefix}… ("other document" for kind `other`) |
 | Hint, no letter on file, the person can upload (replaces the empty state, `:272-275`) | Upload the payer’s letter here; it is chosen once it is scanned clean. |
 | Hint, letters on file, the person can upload | Upload the payer’s letter here, or choose one already on file; a letter uploaded here is chosen once it is scanned clean. |
-| Hint, letters on file, the person cannot upload or uploads are paused | Choose the payer’s letter already on file; the note below says why nothing can be uploaded here. |
-| Hint, no letter on file, the person cannot upload or uploads are paused | No payer’s letter is on file yet, and it cannot be uploaded here now; the note below says why. |
+| Hint, letters on file, the person cannot upload or uploads are not open, paused or closed | Choose the payer’s letter already on file; the note below says why nothing can be uploaded here. |
+| Hint, no letter on file, the person cannot upload or uploads are not open, paused or closed | No payer’s letter is on file yet, and it cannot be uploaded here now; the note below says why. |
 | Status, `scanning` | The letter is being uploaded and scanned. It is chosen here once it is scanned clean, and what you typed stays. |
 | Status, `stored-listing` | The letter is scanned clean and stored, and is being added to the list. |
 | Status, `stored-not-listed` | The letter is stored, but the list could not show it. Reload the page, then choose it in the list; a reload clears what you typed. |
 | Status, `chosen` | The letter you uploaded is chosen. |
 | Status, `duplicate-chosen` | That file was already on file, so the copy on file is chosen. |
 | Status, `duplicate-chosen-other-case` | That file was already on file as the letter of another case’s response, so that copy is chosen. Check that it answers this case too, or choose another letter. |
-| Status, `duplicate-unusable` | This file was uploaded before, as another kind of document or as a contract’s document, so it cannot be this response’s letter. Upload the letter saved another way, such as the payer’s portal page saved as a PDF. |
+| Status, `duplicate-not-chosen` (fix round, n1; fix pass 2, F3: names the copy as its option starts; the person chose another letter while the file was scanned) | That file was already on file: the copy uploaded {YYYY-MM-DD HH:MM UTC} is in the list. Choose it if it is this response’s letter. |
+| Status, `duplicate-not-chosen-other-case` (fix pass 2) | That file was already on file as the letter of another case’s response: the copy uploaded {YYYY-MM-DD HH:MM UTC} is in the list, under Letters of other cases’ responses. Choose it if it is this response’s letter, after checking that it answers this case too. |
+| Status, `duplicate-unusable` (fix round, n6: true too of a copy older than the letters listed) | This file was already on file, and that copy cannot be chosen here: it was filed as another kind of document or as a contract’s document, or it is older than the letters listed. Upload the letter saved another way, such as the payer’s portal page saved as a PDF. |
 | Status, `held` | The letter was held at intake, so it is not chosen; its line under This batch says why. |
-| Status, `stored-not-chosen` | The letter you uploaded is stored and marked “uploaded here” in the list. Choose it if it is this response’s letter; until a response names it, it is listed among the contract documents to tag. |
+| Status, `stored-not-chosen` (fix round, U2-ux85-r2-2: points to the option's new start) | The letter you uploaded is stored and starts “Uploaded here” in the list. Choose it if it is this response’s letter; until a response names it, it is listed among the contract documents to tag. |
 | Bubble while uploading or scanning (`setCustomValidity`) | The payer’s letter is still being uploaded and scanned; it is chosen here once it is scanned clean. |
 | Bubble while being added to the list (`setCustomValidity`, `stored-listing`) | The payer’s letter is being added to the list; it is chosen here in a moment. |
-| Drop zone heading (`<h3>`) | Upload the payer’s letter |
+| Drop zone heading (`<h3>`; fix round, U2-ux85-r2-6: it names the drop zone's region, today "Drop zone") | Upload the payer’s letter |
 | Drop zone description | One PDF, up to 2.0 GiB. The file is scanned for malware before anything reads it. (the size is `formatBytes`'s, `receipt-labels.ts:208-217`; the second sentence is the uploader's own in `single` mode, 2.5.4 d) |
 | Drop zone button; the file input's label | Choose a file; Choose a file to upload |
 | The batch's title (`<h3>`) | This batch (the uploader's words, unchanged) |
 | Refused in the browser (`single`) | Choose one PDF: the payer’s letter itself, not a zip or another kind of file. (under "Nothing was uploaded") |
+| Refused in the browser (`single`), an empty file (fix round, U2-ux85-r2-3: one file's words, never the batch's "File 1 is empty.") | The file is empty. (under "Nothing was uploaded") |
+| Refused in the browser (`single`), a file over the limit (fix round, U2-ux85-r2-3: never the batch's "split it or zip it", which `single` refuses) | The file is larger than 2.0 GiB; save the letter as a smaller PDF. (under "Nothing was uploaded"; the limit is `formatBytes`'s) |
 | Who uploads, when the role cannot | Billing managers, analysts and firm principals upload files; a letter already on file can still be chosen above. |
 | The heading before Response (`<h3>`, 2.5.1) | What the letter says |
 | Response, first option | Choose the payer’s answer |
-| Hint under Response | Every response is recorded for good. Accepted marks the case Resolved and Partially accepted marks it Partially resolved, unless a line has already reached Payer approved. At the next reconcile, the recovery ledger approves up to the amount below on the lines this submission asked for (Payer approved). Nothing is recovered until it is posted or deposited. |
+| Hint under Response (fix round: S2-N1 every answer, U2-ux85-r2-5 quoted, fix pass 3 a line moved back) | Every response is recorded for good. “Accepted”, or “Denied” without reopening the case, marks the case “Resolved”; “Partially accepted” marks it “Partially resolved”; “More information requested”, or a denial that reopens it, marks it “Awaiting response”. If the case’s lines already decide its state, a response leaves it as it is: a line at “Payer approved” or later, a line moved back from it (the case stays “Awaiting response”), or every line written off. At the next reconcile, the recovery ledger approves up to the amount below on the lines this submission asked for (“Payer approved”). Nothing is recovered until it is posted or deposited. |
+| Received on (fix round, S2-N2) | Starts empty, `required`, bounded by the submission's date and today; today is no longer filled in |
+| Hint under Received on (fix round, S2-N2) | The date the payer’s letter reached the practice. A denial that reopens the case counts the next dispute level’s window from it. |
+| Refusal, no date received (route, `receivedOn`; fix round, S2-N2) | enter the date the payer’s letter was received |
 | Refusal, no answer (route) | choose the payer’s answer |
 | Refusal, no letter (route) | choose the payer’s letter |
 | Refusal, a letter a response may not carry (route) | choose the payer’s letter from the list, or upload it here |
 
-The hint under Response is the review's recommended wording (S6), with the one correction 2.4 gives (the lines decide
-the case's state first). Scout A's longer hint ("…the recovery ledger’s next reconcile approves that amount across the
+The hint under Response was first the review's recommended wording (S6), with the one correction 2.4 gives (the lines
+decide the case's state first). The fix round (section 10) made it name the state every answer gives, as
+`case_rules()` derives it, quoted the options and states as the write-off hint quotes its reason, and named a line the
+ledger moved back from “Payer approved”. Scout A's longer hint ("…the recovery ledger’s next reconcile approves that amount across the
 lines…") was shortened earlier, and its "until a remittance pays it" corrected (1.5). The review's empty-state words,
 taken under the co-founder's ruling ("Upload the payer's letter here; it can be chosen once it is scanned clean."),
 are kept but for "it can be chosen", which becomes "it is chosen", since the form now chooses it. `duplicate-unusable`
@@ -1232,11 +1257,17 @@ reload clears what you typed" to say the same thing more plainly.
 | A response with its letter | (with its document: [the receipt of the payer letter uploaded 2026-10-28 14:02 UTC], SHA-256 {hash}), the bracket a link to its receipt (review nit 5); "the receipt of the other document uploaded …" for kind `other` |
 | A reprocessed remittance's response | (from a reprocessed remittance), unchanged |
 
-**Contracts, "Upload a contract, exhibit or payer letter"** (description, `contracts/page.tsx:205-206`)
+**Contracts, the upload panel** (description, `contracts/page.tsx:205-206`)
 
 > Each file goes through the same scanned intake as an 835. Once it is stored, tag it to its payer below; it then
 > enters the contract specialist’s queue. A payer’s answer to a dispute goes with its response instead, on the case’s
 > Submissions and responses page.
+
+| Where | Words |
+| --- | --- |
+| Card title (`<h2>`; fix round, ux85-5; it names the card's region, fix pass 3, today "Upload a contract or exhibit") | Upload a contract, exhibit or payer’s terms letter (today "Upload a contract, exhibit or payer letter") |
+| Drop zone heading (`<h3>`; fix round, ux85-5; level 3 under the card's `<h2>`, fix pass 3) | Choose contracts, exhibits or payer’s terms letters to upload (today "Drop contracts, exhibits or payer letters here") |
+| Drop zone description (fix round, ux85-7: the size is `formatBytes`'s, as on Submissions) | PDFs (a fee-schedule exhibit may also be a spreadsheet), one at a time or a batch, up to 2.0 GiB each. (today "2 GiB") |
 
 **Contracts, the panel's "Kind of document"** (`contracts/page.tsx:217`; review S12)
 
@@ -1253,13 +1284,36 @@ so #74 shows it alone)
 | --- | --- |
 | Refusal (`documentId`) | a payer’s answer to a dispute stays with its case’s response and is not a contract’s document; choose the contract, exhibit or payer’s terms letter instead (review nit 8: a next step, `PRD.md:256`; "choose", not "tag", since the amendment and the correction refuse it too) |
 
-**Contracts and Reconciliation, a suspended organization's panel** (through `uploadGate`; the words are today's on
-Uploads, `uploads.ts:117`): "Uploads are not open yet" / "Uploads are paused: {reason}."
+**Reconciliation, the export upload panel and the Exports empty state** (the final delta, a97d6011; the UX delta review)
+
+| Where | Words |
+| --- | --- |
+| Card title (`<h2>`, now naming the card's region, today "Upload exports") | Upload posting and EFT exports (unchanged) |
+| Drop zone heading (`<h3>`, under the card's `<h2>`) | Choose posting or EFT exports to upload (today "Drop posting or EFT exports here") |
+| Exports empty state, next step, the person can upload and uploads are open | Upload the practice-management system’s payment-posting export and the bank’s EFT export above. (unchanged) |
+| Exports empty state, next step, uploads not open, paused or closed | No export can be uploaded now; the note above says why. |
+| Exports empty state, next step, the person cannot upload | Billing managers, analysts and firm principals upload the practice-management system’s payment-posting export and the bank’s EFT export. |
+
+**Every upload panel, when uploads are closed** (Uploads, Contracts, Reconciliation, and the note under Payer’s letter;
+through `uploadGate` and `suspendedGate`, `uploads.ts`; fix round, ux85-1 and fix pass 3). Today every closed panel is
+titled "Uploads are not open yet", and a suspension's body is "Uploads are paused: {the database's run words}." The
+titles and bodies now say what is true of an upload; the three suspension texts are keyed by the exact words of
+`organization_run_refusal()`.
+
+| The organization's state | Title | Body |
+| --- | --- | --- |
+| No business associate agreement on file | Uploads are not open yet | Uploads open once the practice’s business associate agreement is on file. A platform administrator records it when it is signed. (unchanged) |
+| Suspended | Uploads are paused | The organization is suspended. What is on file stays readable, and uploads open again once a platform administrator reinstates it. |
+| Suspended for nonpayment | Uploads are paused | The organization is suspended for nonpayment: an invoice has stayed unpaid for 30 days since its payment failed. What is on file stays readable, and uploads open again once the invoice is paid. |
+| Closed | Uploads are closed | The organization is closed. What is on file stays readable, and nothing new is uploaded. |
+| A refusal text not keyed (the database function changed; unreachable today) | Uploads are stopped | The database's sentence whole, its first letter capitalised, ending in a full stop |
 
 ### 6.2 Screenshots the UX review needs
 
 By the screen tour's ids (`<route key>.<variant>.<width>`, `.1280-dark` for the dark tokens; `tour.spec.ts:428`), at
-1280 and 390 light and 1280 dark, **before** at `165c599` and **after** at this branch's head:
+1280 and 390 light and 1280 dark, **before** at `83d71fd6` (the base this branch merged at `90ec40ab` before the
+reviews; this section first named `165c599`, the commit the branch was cut from, which the reviews did not use) and
+**after** at this branch's head:
 
 | Route | Shot ids | What changes |
 | --- | --- | --- |
@@ -1401,7 +1455,7 @@ panel's kind label, are taken in this pull request instead (2.5.4 e, 2.5.7; revi
 
 | Risk | What holds it |
 | --- | --- |
-| #75 or #78 merges first and its `uploader.tsx` conflicts | LANES.md rule 6; 3.7 says what each keeps; 4.4's tests (no uploader button submits the form; a lone kind shows no select; the headings are level 3; a dropped file is cleared for another person) fail if a merge drops any of them |
+| #75 or #78 merges first and its `uploader.tsx` conflicts (#78 merged first, `83d71fd6`, and this branch merged it at `90ec40ab`, keeping both; #75 is still open) | LANES.md rule 6; 3.7 says what each keeps; 4.4's tests (no uploader button submits the form; a lone kind shows no select; the headings are level 3; a dropped file is cleared for another person) fail if a merge drops any of them |
 | The console's count disagrees with the web lists until Lane A's item 2 | Said in the pull request's description; a count, not money |
 | A letter already a contract version's source (uploaded on Contracts before this PR and tagged) is the payer's answer | It cannot be the response's letter (2.6); uploading it again is a duplicate that cannot be chosen, and the status line says to upload the letter saved another way, such as the payer's portal page saved as a PDF. Only synthetic data exists before launch; the product question is in 8.2 |
 | **A letter uploaded in the form and never recorded** stays in the contract lists, can be tagged, and its pages can then be read by roles without `phi.read` (review S3) | **Open until Lane A's item 5, a security item.** Narrowed here: the form chooses its own upload once stored; `stored-not-chosen` says where the letter goes if no response names it; the Contracts kind reads "Payer’s terms or policy letter". It is the case today for every payer letter uploaded on Contracts. Stated in ADR 0085's Consequences, 2.8 and the pull request's description |
@@ -1432,8 +1486,9 @@ panel's kind label, are taken in this pull request instead (2.5.4 e, 2.5.7; revi
   - (i) `uploader.tsx` takes five changes, not only the kind (2.5.4). They are taken under the standing rule. If
     prs.json's "only the kind" is held, (a) and (b) are the floor, and (c), (d) and (e) go to UX PR 47. Review S2's drop
     path and S5's headings then stay open until it lands.
-  - (ii) Files beyond prs.json's list (3.6), two of them shared with open drafts: `app/p/[practiceId]/contracts/page.tsx`
-    (#75), which now takes the description's sentence and the kind's label, and `lib/routes/uploads.ts` (#78).
+  - (ii) Files beyond prs.json's list (3.6), two of them shared with what were open drafts when this was written:
+    `app/p/[practiceId]/contracts/page.tsx` (#75, still open), which now takes the description's sentence and the
+    kind's label, and `lib/routes/uploads.ts` (#78, merged since as `83d71fd6`, which this branch merged at `90ec40ab`).
     `lib/routes/reconciliation.ts` is added for the one gate; no open pull request holds it.
   - (iii) The Channel select is fixed here, though no finding names it (1.3).
   - (iv) ADR 0085 is used.
@@ -1496,4 +1551,91 @@ N6 and N8 (a phrase each).
    confirms 2.5.8's "refusing it after".
 
 **Reserved numbers used:** ADR 0085 (5.1); test-matrix rows CAS-45 to CAS-48 (4.1), each with a no-file registry
-entry in module 5 (4.2). No synth fixture, no new module, no migration.
+entry in module 5 (4.2). No synth input file (the generator writes each no-file entry's `expected.json` only, as for
+CAS-39: `fixtures/synthetic/CAS-45/expected.json` to `CAS-48/expected.json`), no new module, no migration.
+
+---
+
+## 10. Fix round (2026-11-01)
+
+The built branch (`29dded52`) merged `claude/build-platform` at `83d71fd6` (#78 and #81, merged since this design was
+written) as `90ec40ab`, keeping #78's leave guard beside this pull request's in-form uploader. Two reviews then read
+`83d71fd6..90ec40ab` (run `wf_ce1bb1c0-265`): security with the money lens, and UX and brand from before and after tour
+shots (before at `83d71fd6`, 6.2). They found twenty findings, each checked by three skeptics: **13 real** (five
+should-fix, eight polish; nothing blocking) and seven not upheld. The design critic's eight nits (n1 to n8) from the
+build were carried into the same round. Findings: `approval-summaries/lane-b-ux-payer-response-review-findings.json`;
+progress: `approval-summaries/lane-b-ux-payer-response-wip/pay-fix*.md`, `pay-rerev-*.md`, `pay-final-*.md`.
+
+Where sections 1 to 9 still say otherwise, 6.1 and this section hold. The words in 6.1 are the code's at `a97d6011`.
+
+### 10.1 The thirteen findings, and what was done
+
+| Id | Severity | Finding | Resolution |
+| --- | --- | --- | --- |
+| S2-N1 | Should-fix (introduced here) | The hint under Response named only the acceptances; `case_rules()` also marks a case Resolved after "Denied" without a reopen | **Applied.** The hint names the state every answer gives, as `case_rules()` derives it, and when the lines decide first. Pinned by the e2e regex and a database test (Denied without a reopen resolves the case). ADR 0085 D1, CAS-46 |
+| S2-N2 | Should-fix (before this PR) | "Received on" was filled with today, and the next dispute level's window, the case's deadline and the packet export gate are counted from it | **Applied.** It starts empty and `required`, with a hint that the window counts from it; the route refuses it empty, blank or missing on its field ("enter the date the payer’s letter was received"). Database tests show the window follows the date entered. ADR 0085 D1; 2.1 notes the change |
+| S2-N3 | Polish (before this PR, which narrows it) | A letter uploaded in another case's form and not yet recorded was listed first on every case's form | **Applied.** "Letters no response names yet" splits by who uploaded the letter (`uploaded_by = app_actor_id()`): "Letters you uploaded…" first, "Letters others uploaded…" second. This case's own letters are listed whole, with the limit of 50 over the rest (critic n6). Named as a second consequence of the residual (2.8) in ADR 0085; Lane A's item 5 closes it |
+| ux85-1 | Should-fix | A suspended organization's panel read "Uploads are not open yet" with a run's words, now on three more screens | **Applied.** `UploadGate` carries a title; `suspendedGate()` maps the three exact texts of `organization_run_refusal()` to an upload's title and words ("Uploads are paused", "Uploads are closed"). Fix pass 3: a text not keyed shows the database's sentence under "Uploads are stopped". Database tests on Uploads, Contracts and Reconciliation (critic n7) |
+| ux85-2 | Should-fix | At 390 px the Contracts kind select cut "Payer’s terms or policy letter" | **Applied:** the drop zone's padding is `p-4 sm:p-8`. The e2e measures it at 390 px |
+| ux85-5 | Polish | "Payer letter" named two things | **Applied:** the Contracts card is titled "Upload a contract, exhibit or payer’s terms letter", and the drop zone's heading is "Choose contracts, exhibits or payer’s terms letters to upload" |
+| ux85-7 | Polish | "2 GiB" on Contracts, "2.0 GiB" on Submissions | **Applied:** Contracts uses `formatBytes` |
+| U2-ux85-r2-1 | Should-fix | The response card said "upload it here" while uploads were paused | **Applied.** The card's description follows `canUpload && gate.open` and whether a letter is on file, in four texts (6.1), from one component (`components/packets/response-card.tsx`) the page and the harness both render (fix pass 2) |
+| U2-ux85-r2-2 | Polish | Every option started alike, so a phone cut what told them apart | **Applied:** the option starts "Uploaded here, " for this form's upload, then the time, the kind and the hash prefix; `stored-not-chosen` points to the new start |
+| U2-ux85-r2-3 | Polish | A too-large letter was told to "split it or zip it", which `single` refuses | **Applied:** "The file is empty." and "The file is larger than 2.0 GiB; save the letter as a smaller PDF." |
+| U2-ux85-r2-5 | Polish | The hint under Response named options and states unquoted | **Applied** with S2-N1: quoted, as the write-off hint quotes its reason |
+| U2-ux85-r2-6 | Polish | The drop zone was a landmark named "Drop zone" | **Applied:** the region is named by its heading (`aria-labelledby`, `useId`), on every page with an uploader |
+| U2-ux85-r2-7 | Polish | The progress bar was the browser's green | **Applied:** the bar takes the primary token on the muted track |
+
+**Not upheld by the skeptics** (no change): F1 ("Window passed" judged by the line's original window, which is the
+product's one meaning of the reason, shared with triage's strike and the reopen rule; for Lane A or the product if
+ever changed); ux85-3 (the summary's order: both selects are `required`, so a person never sees both refused);
+ux85-4 ("This batch" drawn larger than the h3s beside it: it is a card's title at the brand's card-title size, as
+before this PR); ux85-6 (two parentheses in a log line, already there at `83d71fd6`; the words are 6.1's); ux85-8 ("Choose a file" offered while scanning: a new choice replaces the batch, so nothing is lost);
+U2-ux85-r2-4 (a refusal kept under the select once the field chose a letter: the browser stops an empty press
+first, and a field's issue staying until the next response is the forms' design, ADR 0077 D1); U2-ux85-r2-8
+(a link to Cases beside the Contracts sentence: the rail links Cases on every page).
+
+### 10.2 The critic's nits
+
+| Nit | Resolution |
+| --- | --- |
+| n1 | **Applied:** a duplicate the field did not choose, because the person chose another letter, now has a status (`duplicate-not-chosen`); fix pass 2 names the copy by its upload time and adds `duplicate-not-chosen-other-case` (6.1) |
+| n2 | **Design wording.** 2.5.2's row said a letter is chosen "unless the person chose a letter themselves since the upload began"; the code, ADR 0085 D3 and the bold rule never replace the person's choice, made at any time. The row now says so |
+| n3 | **Applied:** ADR 0085 D4 no longer lists "the console's count" among the lists the letter leaves (this PR does not change it; Lane A's item 2) |
+| n4 | **Applied:** `DOCUMENT_USE_LOCK` is exported once from `lib/contracts/tagging.ts` and used by `lib/packets/submissions.ts`; the database test keeps its own literal on purpose, to pin the key Lane A's triggers match |
+| n5 | **Design wording.** "No synth fixture" was not quite true: for a no-file registry entry the generator writes `fixtures/synthetic/{id}/expected.json` only, as for CAS-39. The header, 4.2 and section 9 now say so |
+| n6 | **Applied:** `duplicate-unusable`'s words hold too for a copy older than the letters listed, and this case's letters are listed whole |
+| n7 | **Applied:** the paused gate on Contracts and Reconciliation is tested (suspend, check, reinstate) |
+| n8 | **Outside the repository:** the tour (its Contracts region name and the "Uploaded here" note) and the pull request's description, both done on `claude/build-ops` |
+
+### 10.3 Re-review rounds
+
+Each round re-read the whole fix diff on two tracks (correctness, security and money; UX, brand and tests), and each
+finding was checked by two skeptics before it was fixed.
+
+| Round | Head | Found | Fix |
+| --- | --- | --- | --- |
+| 1 | `2865db68` (fix pass 1) | UX and tests: the closed-upload card text asserted by no test (should-fix); the closed card with no letter on file contradicting its hint; `duplicate-not-chosen` not saying which option; the 390 px select and the progress bar pinned by no test. Security: `receivedOn` bounded only by the form (raised, then found held by the database's `payer_response_belongs()`, which refuses a date before the submission or after today) | Fix pass 2, `cf6d0f42`: F1 to F4 (the card component and its tests, the card's fourth text, the copy named by its time, the 390 px measure and the progress tokens) |
+| 2 | `cf6d0f42` | The hint left out a line the ledger moved back from "Payer approved" (the case stays "Awaiting response"); its "A case its lines already decide keeps their state" hard to parse; the Contracts strings pinned by no test and the card region's name not its title, with the drop zone an h2 beside the card's h2; the unknown-text fallback saying "Uploads are paused" twice. (The 390 px select fitting with 0 px of slack was not taken: it fits at 390) | Fix pass 3: the hint reworded (ADR D1, CAS-46, a database test on the reopened line); the Contracts card named by its title, the drop zone at h3, both pinned by the e2e; the fallback under "Uploads are stopped" |
+| 3 | `cf6d0f42` with fix pass 3 | None, on either track: every item proven by a test that fails without it | — |
+
+**UX delta review** (after2 shots at `cf6d0f42`, fix 3 read from the code): no finding against the change; one polish
+it did not cause: Reconciliation's empty Exports state said "Upload … above" while uploads were paused. Fixed with fix
+pass 3 as `13e4e2fe`: `exportsEmptyNextStep()` follows the upload panel's order (no right to upload, then the gate),
+three unit tests. The full suite ran on `13e4e2fe` and passed: typecheck, lint, copy, logs, fixtures, unit 6,823,
+golden 376, oracle 687, database 9,293 over four shards, build, e2e 63/63, the mutation gate (no money path changed),
+synth and the watched paths unchanged.
+
+### 10.4 The final delta
+
+Two final reviews read `cf6d0f42..13e4e2fe` (fix pass 3 had gone uncommitted past the re-review) with after3 shots:
+the code review found nothing; the words review found nothing caused, and one polish of the same class fix pass 3 fixed
+on Contracts: Reconciliation's upload card was named "Upload exports", not its title, and its drop zone was an h2
+"Drop posting or EFT exports here" beside the card's h2. Fixed as **`a97d6011`**: the card is named by its title
+("Upload posting and EFT exports"), and the drop zone is an h3, "Choose posting or EFT exports to upload"; the e2e
+finds and asserts both (typecheck, eslint, lint:copy, lint:logs, build, e2e 13/13 over seven specs, synth and the
+watched paths unchanged). `a97d6011` is the pull request's head, pushed once.
+
+**What did not change.** No migration, no change to the pricing engine, the ledger, the reconcile code or any tenancy
+path. Lane A's five items (7.2), the residual (2.8) and the founder's write-off question (8.2) stand as written; S2-N3
+adds a second consequence to the residual, which the same item 5 closes.
