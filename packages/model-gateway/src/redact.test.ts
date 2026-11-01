@@ -164,12 +164,14 @@ describe('identifierRuns: the page runs the contract screen compares', () => {
     expect(identifierRuns('ABCDEF', { minLength: 6, maxLength: 5 })).toEqual([]);
   });
 
-  it('finds every single-line writing the letter path reads over the separators the screen joins, and the letter path reads exactly those with no "*" and no "." or "/" between two digits (property; docs/adr/0070 Part 3, N6)', () => {
+  it('finds every single-line writing the letter path reads over the separators the screen joins, and the letter path reads exactly those with no "*" and no "." or "/" between two digits but after an identifier label (property; docs/adr/0070 Part 3, N6)', () => {
     const group = fc.string({ unit: fc.constantFrom(...'ABCDEFGHJKLMNPQRSTUVWXYZ0123456789abcz'), minLength: 1, maxLength: 6 });
     // Every gap the screen's JOIN takes: none, one space, a dash or minus sign with at most one space on either side,
     // one dot, slash, underscore or asterisk, and invisible characters anywhere in a gap.
     const separator = fc.constantFrom('', ' ', '-', ' - ', '–', ' – ', ' ', '- ', ' -', '.', '/', '_', '*', '\u2212', ' \u2212 ', '\u00AD', '\u200B', '\uFEFF', '-\u200B', '\u200B.', '_\u00AD');
     const before = fc.constantFrom('', 'Member ID:', 'Claim#', '(', 'ID ', 'see the claim ', 'X\n', '\t');
+    // The prefixes that are identifier labels (redact.ts IDENTIFIER_LABEL), after which digits alone join over "." and "/" too (review finding R5-2).
+    const LABELS = new Set(['Member ID:', 'Claim#', 'ID ', 'see the claim ']);
     const after = fc.constantFrom('', ')', '.', ',', ' on file', '\n', '  next', ';');
     const letter = /\p{L}/u;
     fc.assert(
@@ -183,12 +185,14 @@ describe('identifierRuns: the page runs the contract screen compares', () => {
         fc.pre(!(/^\d+$/u.test(compact) && datesIn(text).some((span) => span.separated && span.dates.length > 0)));
         // What the letter path joins over these gaps: all but "*", and "." or "/" only next to a letter ("_" anywhere, review finding F4-1).
         const letterReads = groups.slice(1).every(([next, sep], index) => !sep.includes('*') && (!/[./]/u.test(sep) || letter.test(groups[index]?.[0].at(-1) ?? '') || letter.test(next[0] ?? '')));
+        const labeledReads = LABELS.has(prefix) && /^\d+$/u.test(compact) && groups.slice(1).every(([, sep]) => !sep.includes('*'));
         const tokens = 1 + groups.slice(1).filter(([, sep]) => sep !== '').length;
         const screen = runs(text).includes(compact);
         const matcher = holdsIdentifier(text, { pseudonym: 'synthetic', names: [], datesOfBirth: [], memberIds: [written] }, []);
         const candidate = identifierCandidates(text).includes(compact);
         // The letter's candidates (identifierCandidates) join at most three tokens and offer only a run with a digit.
-        return screen && matcher === letterReads && candidate === (letterReads && tokens <= 3 && /\d/u.test(compact));
+        // The candidates read no label: they offer what letterReads joins.
+        return screen && matcher === (letterReads || labeledReads) && candidate === (letterReads && tokens <= 3 && /\d/u.test(compact));
       }),
       { numRuns: 2000 },
     );
@@ -223,11 +227,15 @@ describe('identifierRuns: the page runs the contract screen compares', () => {
       expect(screens(text, [stored]), what).toBe(false);
       expect(screens(text, [written]), what).toBe(asStored);
     }
-    // And the other way: digits alone joined by "." or "/", and "*" anywhere, which the screen reads and the letter path does not.
+    // And the other way: digits alone joined by "." or "/" with no identifier label before them, and "*" anywhere, which the screen reads and the letter path does not.
     for (const written of ['1234.567890', '20261234/01', 'SYN*PCN*44551', '123*4567890']) {
-      const text = `Member ${written} on file`;
+      const text = `Also ${written} on file`;
       expect(screens(text, [compactIdentifier(written)]), written).toBe(true);
       expect(holdsIdentifier(text, { pseudonym: 'synthetic', names: [], datesOfBirth: [], memberIds: [compactIdentifier(written)] }, []), written).toBe(false);
+    }
+    // After an identifier label the letter path reads digits joined by "." or "/" too (review finding R5-2), never "*".
+    for (const [written, reads] of [['1234.567890', true], ['20261234/01', true], ['123*4567890', false]] as const) {
+      expect(holdsIdentifier(`Member ${written} on file`, { pseudonym: 'synthetic', names: [], datesOfBirth: [], memberIds: [compactIdentifier(written)] }, []), written).toBe(reads);
     }
     // And neither: a comma, a plus sign or a closing parenthesis, which the screen joins only as the practice's own separator.
     for (const written of ['ZZ,1234567', 'ZZ+1234567', 'ZZ)1234567']) {
@@ -236,6 +244,12 @@ describe('identifierRuns: the page runs the contract screen compares', () => {
       expect(screens(text, ['ZZ1234567']), written).toBe(false);
       expect(screens(text, [written]), written).toBe(true);
     }
+    // And neither reads digits of another script, which NFKC does not fold (a recorded gap: docs/adr/0070 Part 3 "Not caught", review finding R5-3);
+    // full-width digits it folds are read by both.
+    expect(screens('Member \u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668 on file', ['12345678'])).toBe(false);
+    expect(holdsIdentifier('Member \u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668 on file', { pseudonym: 'synthetic', names: [], datesOfBirth: [], memberIds: ['12345678'] }, [])).toBe(false);
+    expect(screens('Member \uFF11\uFF12\uFF13\uFF14\uFF15\uFF16\uFF17\uFF18 on file', ['12345678'])).toBe(true);
+    expect(holdsIdentifier('Member \uFF11\uFF12\uFF13\uFF14\uFF15\uFF16\uFF17\uFF18 on file', { pseudonym: 'synthetic', names: [], datesOfBirth: [], memberIds: ['12345678'] }, [])).toBe(true);
   });
 
   it('never finds a single-token identifier with a letter or digit joined to it (property)', () => {

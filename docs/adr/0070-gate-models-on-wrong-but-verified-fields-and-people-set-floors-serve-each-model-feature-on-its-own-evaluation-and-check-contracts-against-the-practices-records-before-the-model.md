@@ -1016,9 +1016,14 @@ over time", S2 as "The practice's access log", S3 under "The audit trail", S4 un
     filler (U+115F, U+1160, U+3164 or U+FFA0), which is a letter by class, so the run keeps it and equals no stored
     value; or written with an accented letter where the stored value has the plain one ("ZŽ1234567" against a stored
     "ZZ1234567"), since a run is compared as NFKC writes it. Among these, the letter path reads the line break, the
-    tab, the spaces, the dashes, U+2043, the mark, the filler and the accent, and next to a letter a colon, a hash, an
-    opening parenthesis, and a dot or slash with a space or another separator beside it; never a comma, a plus sign or
-    a closing parenthesis (N6);
+    tab, the spaces, the dashes, U+2043, the mark, the filler and the accent, the bar, the backslash, and the
+    apostrophes, "~", middle dots, bullets, ";", double quotes, U+02D7 and U+2796 of review finding R5-1, and next to a
+    letter a colon, a hash, an opening parenthesis, and a dot or slash with a space or another separator beside it;
+    never a comma, a plus sign or a closing parenthesis (N6);
+  - an identifier written in the digits of another script (Arabic-Indic "١٢٣٤٥٦٧٨" against a stored "12345678"):
+    NFKC folds full-width digits to 0-9 but leaves other scripts' digits as they are, so the run equals no stored value
+    (review finding R5-3; the letter path records the same gap, ADR 0054). Folding every Unicode decimal digit to 0-9
+    on both sides is the proposal in "Revisit when";
   - an identifier with a prefix or suffix glued on (a person-code or dependent suffix, payer letters, a check digit:
     "ZZ712003401" or "XYZZZ7120034" against a stored "ZZ7120034"), since the match is exact on whole tokens. It arises
     only when the page prints a form neither the 835's patient (QC) nor its insured (IL) segment carried: the loader
@@ -1327,7 +1332,8 @@ The fix round of the pull request's review (2026-10-27) adds these:
   - Both join an identifier's tokens over nothing, one space, a dash or minus sign with at most one space beside it,
     invisible characters, an underscore anywhere (the letter path between two digits too since review finding F4-1,
     2026-11-01), and a dot or slash next to a letter.
-  - Only the contract screen joins over a dot or slash between two digits, an asterisk anywhere
+  - Only the contract screen joins over a dot or slash between two digits (the letter path's redaction too, but only
+    after an identifier label such as "Claim" or "ICN:", since review finding R5-2), an asterisk anywhere
     ("1234.567890", "20261234/01", "SYN*PCN*44551"), any separator the practice's own kept values hold, and more than
     three tokens, where the letter's candidates stop at three. The letter redaction rewrites the text the model reads,
     so it must leave "150.00" an amount and "03/15/2027" a deadline. The screen rewrites nothing; it refuses. Joining
@@ -1335,7 +1341,9 @@ The fix round of the pull request's review (2026-10-27) adds these:
     "Measured: the false refusals"), where not joining would send an identifier written in groups.
   - Only the letter path joins over any run of white space and dashes (two spaces, a tab, a line break, two dashes, a
     dash with two spaces beside it), U+2043 HYPHEN BULLET, a bar or a backslash anywhere ("ZZ|1234567",
-    "1234\\567890", since F4-1), and, next to a letter, any such run with a dot, slash, underscore, colon, "#" or "("
+    "1234\\567890", since F4-1), the apostrophes of digit grouping, "~", the middle dots and bullets, ";", the double
+    quotes, U+02D7 and U+2796 anywhere ("12'345'678", "1234·5678", "ZZ~7654321", since review finding R5-1), and, next
+    to a letter, any such run with a dot, slash, underscore, colon, "#" or "("
     in it ("ZZ:1234567", "ZZ(1234567", "ZZ. 1234567", "ZZ / 1234567", "ZZ-.1234567");
     neither path joins over a comma, a plus sign or a closing parenthesis. The letter path also reads a Hangul filler
     as a space and a lone combining mark as invisible, and its matcher (`holdsIdentifier`, not `identifierCandidates`)
@@ -1395,7 +1403,9 @@ confusable fold of O to 0, I and L to 1 and S to 5 on runs that are mostly digit
 and a 2-character-suffix or 3-letter-prefix match for stored values of 9 or more characters); a contract-kind document
 is refused on a version that holds two (the redirect could carry the refused document's opaque ID, so the notice names
 it and the select offers the other); a practice's people reach the screen's limits in ordinary work
-(`MODEL_SCREEN_LIMITED` without a loop).
+(`MODEL_SCREEN_LIMITED` without a loop); a practice serves patients whose documents write digits of another script
+(fold every Unicode decimal digit to 0-9 on the stored side and on the page alike, keeping each page position: review
+finding R5-3).
 
 ### Tests (test matrix MOD-12)
 

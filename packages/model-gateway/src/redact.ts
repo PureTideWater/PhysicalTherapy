@@ -14,9 +14,10 @@
  * - every match is found on one folded view of the letter: case folded in full (ß is SS), marks
  *   dropped (José is JOSE), and a run of invisible characters (soft hyphen, zero-width space) one
  *   character that joins inside a word and still ends one;
- * - a member ID or claim number matches with or without the white space, dashes and invisible characters
- *   a letter puts inside it, and the underscores, periods, slashes and colons next to a letter
- *   ("ZZ 1234567", "ZZ-1234567", "ZZ_1234567", "ZZ/1234567");
+ * - a member ID or claim number matches with or without the white space, dashes, invisible characters and
+ *   other number joiners (NUMBER_JOINERS: "_", "|", "\\", grouping apostrophes, "~", middle dots, bullets, ";")
+ *   a letter puts inside it, and the periods, slashes and colons next to a letter
+ *   ("ZZ 1234567", "ZZ-1234567", "ZZ_1234567", "ZZ/1234567", "12'345'678");
  * - a name matches with or without the dashes and apostrophes inside it (O’Brien, Smith–Jones), across a
  *   dash at a line break whatever its case ("Van-⏎tree", "Jo-⏎ann"), and with a space only where each
  *   side is a capitalized piece of two letters or more ("Jo Ann", never "in a");
@@ -31,7 +32,8 @@
  * Every match is found on the letter before anything is replaced, and overlapping matches become one
  * placeholder, so no placeholder is ever rewritten. What the task reads stays: in a date that is not a
  * date of birth, written with a separator (DATE_SEPARATOR) or a month word and with a calendar reading, a
- * month word is not a name, and digits whose own written form is that date are not a number; a claim's digits
+ * month word is not a name, and digits whose own written form is that date are not a number unless an identifier
+ * label ("Claim", "ICN:", "Member ID", "#") introduces them (IDENTIFIER_LABEL); a claim's digits
  * written as an amount, after a currency sign and with cents, are not its number. The letter's own
  * square brackets become parentheses, so the only bracketed text sent is a placeholder. Nothing else of
  * the letter changes.
@@ -334,8 +336,14 @@ const writtenAt = (view: View, normal: string, index: number) => codePointAt(nor
 
 /** Dashes (with the minus sign and hyphen bullet PDF text writes for a hyphen), apostrophes, the underscore and VANISHED: they join a name anywhere. */
 const NAME_JOINERS = "\\p{Pd}\\u2212\\u2043'\\u2018\\u2019\\u02BC`\\u00B4_\\u00AD";
-/** White space, dashes, "_", "|", "\\" and VANISHED: they join a member ID or claim number anywhere ("." "/" ":" "#" and "(" only next to a letter). */
-const NUMBER_JOINERS = '\\s\\p{Pd}\\u2212\\u2043_|\\\\\\u00AD';
+/**
+ * What joins a member ID or claim number anywhere ("." "/" ":" "#" and "(" only next to a letter): white space, dashes
+ * (with the minus sign, the hyphen bullet, U+02D7 and U+2796), "_", "|", "\\", VANISHED, and since review finding
+ * R5-1 the apostrophes of digit grouping ("12'345'678", "12’345’678"), "~", the middle dots and bullets ("1234·5678",
+ * "1234•5678"), ";" and the double quotes. None of these is a date separator (DATE_SEPARATOR) or an amount's
+ * punctuation, so a number written with one is never read as a date or an amount.
+ */
+const NUMBER_JOINERS = "\\s\\p{Pd}\\u2212\\u2043\\u02D7\\u2796_|\\\\\\u00AD'\\u2018\\u2019\\u02BC`~\\u00B7\\u2027\\u2219\\u22C5\\u30FB\\u2022;\"\\u201C\\u201D";
 /** A line break, and a dash (or VANISHED) before one: a word hyphenated at the end of a line ("Van-⏎tree"). */
 const LINE_BREAK = '(?:\\r\\n|[\\n\\r\\u0085\\u2028\\u2029])';
 const HYPHENATION = `[\\p{Pd}\\u2212\\u2043\\u00AD]${SPACES.replace('+', '*')}${LINE_BREAK}${SPACES.replace('+', '*')}`;
@@ -350,6 +358,8 @@ const GAP = {
   number: `[${NUMBER_JOINERS}]*`,
   /** Between two characters of a number of which one is a letter: "SYN.555001", "ZZ_1234567", "ZZ#1234567", "ZZ(1234567)" (never "150.00"). */
   numberNearLetter: `[${NUMBER_JOINERS}./:#(]*`,
+  /** Between two digits of a digits-only number after an identifier label: "." and "/" too ("Claim 1955/07/14", "ICN 1234.5678"). */
+  labeledNumber: `[${NUMBER_JOINERS}./]*`,
 } as const;
 
 /** A gap that is a word hyphenated at a line break, which joins inside a part whatever the pieces' case ("Jo-⏎ann"). */
@@ -373,8 +383,13 @@ interface Form {
   readonly pattern: RegExp;
   /** For a name, whether each gap is inside a part (where a space must leave capitalized pieces of two letters or more). */
   readonly insidePart: readonly boolean[];
-  /** A number of digits only: only such a number may be a claim's amount, or the digits of a date written with its dashes. */
+  /** A number of digits only: only such a number may be a claim's amount, or the digits whose own written form is a whole separated calendar date (writtenAsDate). */
   readonly digitsOnly: boolean;
+  /**
+   * For a digits-only number, its pattern with "." and "/" joining digits too: taken only after an identifier label
+   * (IDENTIFIER_LABEL), where "Claim 1955/07/14" or "ICN 1234.5678" is the number and not a date or an amount.
+   */
+  readonly labeled: RegExp | null;
 }
 
 function patternOf(characters: readonly string[], gaps: readonly string[]): RegExp {
@@ -390,7 +405,8 @@ function numberForm(value: string, kind: 'claim' | 'member', claim: number): For
   }
   const letter = (character: string | undefined) => character !== undefined && /\p{L}/u.test(character);
   const gaps = characters.slice(1).map((next, i) => (letter(characters[i]) || letter(next) ? GAP.numberNearLetter : GAP.number));
-  return { compact, kind, claim, pattern: patternOf(characters, gaps), insidePart: [], digitsOnly: /^\p{N}+$/u.test(compact) };
+  const digitsOnly = /^\p{N}+$/u.test(compact);
+  return { compact, kind, claim, pattern: patternOf(characters, gaps), insidePart: [], digitsOnly, labeled: digitsOnly ? patternOf(characters, gaps.map(() => GAP.labeledNumber)) : null };
 }
 
 /** A name's parts, each compacted from its folded value, grouped by word. */
@@ -422,7 +438,7 @@ function nameForm(parts: readonly string[]): Form | null {
   if (characters.length < 2) {
     return null;
   }
-  return { compact: characters.join(''), kind: 'name', claim: 0, pattern: patternOf(characters, gaps), insidePart, digitsOnly: false };
+  return { compact: characters.join(''), kind: 'name', claim: 0, pattern: patternOf(characters, gaps), insidePart, digitsOnly: false, labeled: null };
 }
 
 /** What is matched: names, member IDs and the claims' numbers, and whether dates of birth and initials are taken too. */
@@ -528,6 +544,17 @@ const writtenAsDate = (normal: string, range: Range) =>
     return datesIn(written).some((span) => span.separated && span.dates.length > 0 && span.start === 0 && span.end === written.length);
   });
 
+/**
+ * A label that introduces a claim number or member ID, ending where its number begins ("Claim", "Claim #",
+ * "Claim No.", "ICN:", "PCN", "Member ID", "Ref", "#", "number is"), on the folded view, where an invisible
+ * character is VANISHED. A digits-only match after one is the identifier even when its written form is a
+ * calendar date: the letter says what it is (review finding R5-2), as BIRTH_LABEL says a date of birth.
+ */
+const IDENTIFIER_LABEL = /(?:\b(?:claim|icn|pcn|dcn|tcn|member|subscriber|id|ref|reference|account|acct|number|no)\b\.?|#)(?:[\s\u00AD]*(?:\b(?:number|nbr|no|id)\b\.?|#))*[\s\u00AD]*[:#-]?[\s\u00AD]*(?:is[\s\u00AD]+)?$/iu;
+
+/** Whether an identifier label (IDENTIFIER_LABEL) ends just before a view position. */
+const labeledAt = (view: View, start: number) => IDENTIFIER_LABEL.test(view.text.slice(Math.max(0, start - 40), start));
+
 interface Found extends Range {
   readonly kind: Kind;
   readonly claim: number;
@@ -576,10 +603,20 @@ function matchesIn(normal: string, subject: Subject): Found[] {
           continue;
         }
         names.push({ start, end });
-      } else if (form.digitsOnly && ((form.kind === 'claim' && isAmount(normal, range)) || (inOtherDate(range) && writtenAsDate(normal, range)))) {
+      } else if (form.digitsOnly && ((form.kind === 'claim' && isAmount(normal, range)) || (inOtherDate(range) && writtenAsDate(normal, range) && !labeledAt(view, start)))) {
         continue;
       }
       found.push({ ...range, kind: form.kind, claim: form.claim });
+    }
+    if (form.labeled !== null) {
+      // After an identifier label, digits joined over "." or "/" are the number too (never an amount: isAmount).
+      const labeled = new RegExp(form.labeled.source, form.labeled.flags);
+      for (let match = labeled.exec(view.text); match !== null; match = labeled.exec(view.text)) {
+        const range = inNormal(view, match.index, match.index + match[0].length);
+        if (labeledAt(view, match.index) && !(form.kind === 'claim' && isAmount(normal, range))) {
+          found.push({ ...range, kind: form.kind, claim: form.claim });
+        }
+      }
     }
   }
   if (subject.initials) {
@@ -798,7 +835,8 @@ export function holdsNameOrNumber(text: string, identifiers: { readonly names: r
  * runs are returned.
  */
 export function identifierTokenRuns(text: string, options: { readonly joins: (between: string, left: string, right: string) => boolean; readonly maxTokens: number; readonly keep: (run: string) => boolean }): string[] {
-  const scan = text.normalize('NFKC').replace(/[\s\S]/gu, (character) => (BLANK.test(character) ? ' ' : IGNORABLE.test(character) ? VANISHED : character));
+  // U+02BC, a letter by class, is an apostrophe here, as in the matcher (compactFolded), so "12ʼ345ʼ678" is three tokens a caller may join.
+  const scan = text.normalize('NFKC').replace(/[\s\S]/gu, (character) => (BLANK.test(character) ? ' ' : IGNORABLE.test(character) ? VANISHED : character === '\u02BC' ? "'" : character));
   const tokens = [...scan.matchAll(/[\p{L}\p{N}\p{M}]+/gu)].map((match) => ({ text: match[0], start: match.index, end: match.index + match[0].length }));
   const runs = new Set<string>();
   for (let start = 0; start < tokens.length; start += 1) {
@@ -818,17 +856,21 @@ export function identifierTokenRuns(text: string, options: { readonly joins: (be
   return [...runs];
 }
 
-/** What joins two tokens of one identifier in a letter: white space, dashes, "_", "|", "\\" and invisible characters, and ".", "/", ":", "#" or "(" next to a letter. */
+/** What may lie between two tokens of one identifier in a letter: the number joiners (NUMBER_JOINERS), and ".", "/", ":", "#" or "(" too. */
+const LETTER_GAP = new RegExp(`^[${NUMBER_JOINERS}./:#(]+$`, 'u');
+
+/** What joins two tokens of one identifier in a letter: what joins a number's characters (NUMBER_JOINERS) anywhere, and ".", "/", ":", "#" or "(" next to a letter. */
 function letterJoins(between: string, left: string, right: string): boolean {
-  return /^[\s\p{Pd}−⁃\u00AD_|\\./:#(]+$/u.test(between) && (!/[./:#(]/u.test(between) || /\p{L}\p{M}*$/u.test(left) || /^\p{L}/u.test(right));
+  return LETTER_GAP.test(between) && (!/[./:#(]/u.test(between) || /\p{L}\p{M}*$/u.test(left) || /^\p{L}/u.test(right));
 }
 
 /**
  * The runs of the redacted text that could be another patient's member ID or claim number: each token
- * with a digit in it, and each run of up to three tokens a letter may have spaced, hyphenated or joined
- * with an underscore, a period, a slash, a colon, "#", "(" or an invisible character ("ZZ 1234567",
- * "ZZ_7654321", "ZZ/7654321", "ZZ#7654321", "ID:ZZ7654321"), as compact identifiers (letters and digits,
- * upper case) of at least five characters. A placeholder's word is never one, nor part of one; a claim's placeholder keeps its digits
+ * with a digit in it, and each run of up to three tokens joined as letterJoins reads it: anywhere over
+ * white space, dashes, "_", "|", "\\", invisible characters and the other number joiners (NUMBER_JOINERS:
+ * grouping apostrophes, "~", middle dots, bullets, ";", double quotes), and next to a letter over ".", "/",
+ * ":", "#" or "(" too ("ZZ 1234567", "1234|5678", "12'345'678", "ZZ_7654321", "ZZ/7654321", "ZZ#7654321",
+ * "ID:ZZ7654321"), as compact identifiers (letters and digits, upper case) of at least five characters. A placeholder's word is never one, nor part of one; a claim's placeholder keeps its digits
  * (a redacted letter's [CLAIM_n] number its claims, never five digits; a letter's own "[CLAIM_7654321]"
  * offers 7654321).
  */
