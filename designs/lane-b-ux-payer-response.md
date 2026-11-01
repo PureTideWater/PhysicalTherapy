@@ -819,7 +819,8 @@ difference is the letter's field, the handler checks and their lock, the uploade
 From `gh api repos/PureTideWater/PhysicalTherapy/pulls/{n}/files` on 2026-10-28, intersected with this design's files.
 **Since then** (read by REST on 2026-11-01): #78 merged (`83d71fd6`, which this branch merged at `90ec40ab` before the
 reviews, keeping its leave guard) and #81 merged (`56ed6279`); #82 and #83 merged too (the base is now `43565235`, no
-conflict). #75 and #42 are still open. The table keeps the state it was written in:
+conflict). #75 (`871faff9`) and #42 are still open; #42 has moved to `6c28d6a2` (219 files), and its intersection with
+this pull request is still the three shared documents. The table keeps the state it was written in:
 
 | PR | Branch | Shared files | What it means here |
 | --- | --- | --- | --- |
@@ -1196,8 +1197,8 @@ its reason") are reworded so that "its", after "Reason:", cannot read as the rea
 | --- | --- |
 | Card description, letters on file, the person can upload (today `:268`) | To the submission of {date}. Start with the payer’s letter: upload it here, or choose one already on file, and fill in what it says while it is scanned. A denial with a reason can reopen the case for the next dispute level, within its window. |
 | Card description, no letter on file, the person can upload (fix pass 2) | To the submission of {date}. Start with the payer’s letter: upload it here, and fill in what it says while it is scanned. A denial with a reason can reopen the case for the next dispute level, within its window. |
-| Card description, letters on file, the person cannot upload or uploads are paused or closed (U2-ux85-r2-1) | To the submission of {date}. Choose the payer’s letter already on file, then fill in what it says; the note under Payer’s letter says why nothing can be uploaded here now. A denial with a reason can reopen the case for the next dispute level, within its window. |
-| Card description, no letter on file, the person cannot upload or uploads are paused or closed (fix pass 2) | To the submission of {date}. No payer’s letter is on file, and none can be uploaded here now, so no response can be recorded yet; the note under Payer’s letter says why. |
+| Card description, letters on file, the person cannot upload or uploads are not open, paused or closed (U2-ux85-r2-1; the card follows `canUpload && gate.open`) | To the submission of {date}. Choose the payer’s letter already on file, then fill in what it says; the note under Payer’s letter says why nothing can be uploaded here now. A denial with a reason can reopen the case for the next dispute level, within its window. |
+| Card description, no letter on file, the person cannot upload or uploads are not open, paused or closed (fix pass 2) | To the submission of {date}. No payer’s letter is on file, and none can be uploaded here now, so no response can be recorded yet; the note under Payer’s letter says why. |
 | Letter select, label (today "Document") | Payer’s letter |
 | Letter select, first option | Choose the payer’s letter |
 | Letter select, its groups (2.6; fix round, S2-N3: a letter no response names is split by who uploaded it) | Letters you uploaded that no response names yet / Letters others uploaded that no response names yet / Letters of this case’s earlier responses / Letters of other cases’ responses |
