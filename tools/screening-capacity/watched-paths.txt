@@ -52,8 +52,10 @@ apps/web/src/components/screening/coverage.tsx
 apps/web/src/components/screening/opened-signal.tsx
 apps/web/src/components/screening/result-summary.tsx
 apps/web/src/components/screening/result-view.tsx
+apps/web/src/components/screening/table-parts.tsx
 apps/web/src/components/screening/upload-form.tsx
 apps/web/src/components/scroll-table.tsx
+apps/web/src/components/stacked-rows.tsx
 apps/web/src/components/status.tsx
 apps/web/src/lib/agreements/documents.ts
 apps/web/src/lib/agreements/esign.ts
