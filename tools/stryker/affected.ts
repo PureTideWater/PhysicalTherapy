@@ -10,6 +10,7 @@ import { MUTATE, MUTATION_PACKAGES, type MutationPackage, type Shard, readShards
 import { EXCLUDED, TEST_SETS } from '../../vitest.mutation.config';
 import { repositoryRoot } from '../content-files';
 import { importGraph } from '../screening-capacity/watched';
+import { DEPENDENCY_FIELDS } from './manifests';
 import { shardsOf } from './shards';
 import { workspaceDirectories } from './workspace';
 
@@ -132,6 +133,12 @@ export const GLOBAL_INPUTS = [
 /** The mutation tooling's own entry points: whatever they import decides what runs and how it is judged. */
 export const GLOBAL_ENTRY_POINTS = ['tools/stryker/affected.ts', 'tools/stryker/gate.ts', 'tools/stryker/shards.ts', 'tools/stryker/canary/verdict.ts', 'vitest.mutation.config.ts'] as const;
 
+/** The files a shard loads by path, not by import. Not yet listed. */
+export const GLOBAL_LOADED: readonly string[] = [];
+
+/** The shard that proves a pin-only change of the workflow on its runner: it holds money and ledger whole (stryker/shards.json). */
+export const RUNNER_PROOF_SHARD = 'money-ledger';
+
 /** Where in a closure a path literal is looked for: data under these directories must be in DATA_FILES. */
 export const DATA_ROOTS = ['fixtures', 'content', 'docs'] as const;
 
@@ -212,6 +219,8 @@ export interface AffectedConfig {
   readonly uncalledReads?: readonly UncalledRead[];
   readonly global: readonly string[];
   readonly globalEntryPoints: readonly string[];
+  /** The files a shard loads by path (GLOBAL_LOADED for this repository); a synthetic world names its own. */
+  readonly globalLoaded?: readonly string[];
   readonly tooling: readonly string[];
 }
 
@@ -496,8 +505,6 @@ export function parseLockfile(text: string): Lockfile {
   return (parse(text) ?? {}) as Lockfile;
 }
 
-const DEPENDENCY_FIELDS = ['dependencies', 'devDependencies', 'optionalDependencies'] as const;
-
 /** A dependency's snapshot key: `name@version`, or the aliased package's own key for an `npm:` alias. */
 function snapshotKey(name: string, version: string): string | undefined {
   if (version.startsWith('link:') || version.startsWith('file:')) return undefined;
@@ -576,6 +583,11 @@ export interface Change {
   readonly files: readonly string[];
   /** The lockfile before and after the change, when it changed (undefined text: no lockfile on that side). */
   readonly lockfile?: { readonly before: string | undefined; readonly after: string | undefined };
+  /**
+   * Each classified file's text before and after the change: a string is that side's text, null says the file does not
+   * exist on that side, and undefined (or no entry) says it was not read, which fails closed.
+   */
+  readonly texts?: Readonly<Record<string, { readonly before?: string | null; readonly after?: string | null }>>;
 }
 
 export interface Affected {
@@ -681,6 +693,11 @@ export function closureProblems(closures: readonly Closure[], global: GlobalInpu
 export function shardsFor(packages: readonly MutationPackage[], shards: readonly Shard[] = readShards()): string[] {
   const selected = new Set(packages.flatMap((pkg) => shardsOf(pkg, shards).map((shard) => shard.name)));
   return shards.filter((shard) => selected.has(shard.name)).map((shard) => shard.name);
+}
+
+/** The environment every git spawn runs in. Not yet narrowed. */
+export function gitEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return env;
 }
 
 /** The repository's tracked files. */
