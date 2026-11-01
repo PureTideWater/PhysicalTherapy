@@ -37,6 +37,7 @@ import {
   type PlatformSpec,
   type PracticeSpec,
   type PublicSpec,
+  type ReturnTo,
   type Route,
   type RouteRequest,
   type Shell,
@@ -337,6 +338,7 @@ interface Shape {
   readonly rateLimit?: RateBucket;
   readonly termsExempt?: boolean;
   readonly signedBySender?: boolean;
+  readonly returnTo?: ReturnTo;
 }
 
 /** What every route records about itself; a mutation without an audit event is refused at definition. */
@@ -366,6 +368,7 @@ function common(spec: Shape, access: Access): Omit<Route, 'invoke'> {
     originChecked: mutation && spec.signedBySender !== true,
     csrfToken: mutation && access.kind !== 'public',
     termsExempt: spec.termsExempt === true,
+    returnTo: spec.returnTo ?? null,
   };
 }
 
