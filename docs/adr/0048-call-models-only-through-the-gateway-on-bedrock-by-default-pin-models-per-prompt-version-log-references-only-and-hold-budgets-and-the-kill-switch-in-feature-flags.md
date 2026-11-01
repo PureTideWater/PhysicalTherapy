@@ -1,6 +1,8 @@
 # 0048. Call models only through the gateway, on Bedrock by default; pin models per prompt version, log references only, and hold budgets and the kill switch in feature flags
 
-- **Status:** accepted for the build; the model path is provisional until counsel's read of both agreements (PRD 20)
+- **Status:** accepted for the build; the model path is provisional until counsel's read of both agreements (PRD 20);
+  amended 2026-11-01: SDK 1.x on the Anthropic path, its tracing, propagation, logging and host fixed on the client and
+  `ANTHROPIC_CUSTOM_HEADERS` refused ("Amendment (`co-001/deps-anthropic-sdk-1`, 2026-11-01)", below)
 - **Date:** 2026-10-16
 - **Deciders:** founder (engineering)
 - **PRD sections:** 14 (AI gateway: the four functions, Provider and data path, PHI minimization, Untrusted input,
