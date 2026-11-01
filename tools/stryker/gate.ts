@@ -5,7 +5,7 @@ import { MUTATION_PACKAGES, type MutationPackage, type Shard, readNoMutants, rea
 import { repositoryRoot } from '../content-files';
 import { CANARY_CASES, CANARY_FORMAT, type CanaryVerdict, type Runtime, canaryPassed } from './canary/verdict';
 import { DETECTED, type KeyedMutant, type MutantKey, type MutationReport, UNDETECTED, describeMutant, keyOf, keyedMutants, repositoryPath } from './mutants';
-import { type Pins, readPins } from './runtime';
+import { type Pins, UNICODE_FILE, describeRuntime, readPins, runtimeProblems } from './runtime';
 import { packagesOf, shardsOf } from './shards';
 
 /**
@@ -13,8 +13,12 @@ import { packagesOf, shardsOf } from './shards';
  * reports by package and fails when
  *
  * - a shard the changes job selected reported nothing, or a shard that ran lacks its canary verdict of 5 of 5 as
- *   expected (naming the Node, Unicode and ICU it ran on), or one of its packages' reports, or a file of a package it
- *   holds that the report leaves out (stryker/shards.json's noMutants lists the files Stryker finds no mutant in);
+ *   expected (naming the Node, Unicode, ICU and pnpm it ran on and its commit), or one of its packages' reports, or a
+ *   file of a package it holds that the report leaves out (stryker/shards.json's noMutants lists the files Stryker
+ *   finds no mutant in);
+ * - a shard ran on another Node, Unicode, ICU or pnpm than the pins (tools/stryker/runtime.ts: the Node, Unicode and ICU
+ *   tools/stryker/unicode.json's entries were checked on, and the root's packageManager), or on another commit than
+ *   the one tested (GITHUB_SHA, on Actions) or than another shard (docs/adr/0066, Part 7);
  * - a shard leaves a report of a package it does not hold, or the reports directory holds a file at its top;
  * - a package ran in some of its shards and not all (a package's shards run all or none);
  * - a fully-run package scores at or below 85%. The score is Stryker's, (Killed + Timeout) / (Killed + Timeout +
@@ -30,7 +34,8 @@ import { packagesOf, shardsOf } from './shards';
  *   reviewer and date, is reviewed by its proposer or on a date after the run's, no longer matches a mutant (stale), or
  *   matches one a test detects or that breaks a load;
  * - tools/stryker/unicode.json is malformed, or, for a fully-run package, lists an entry its equivalents file does not
- *   record, or lists entries a shard scored on other Unicode or ICU data than they were checked on.
+ *   record, or lists entries a shard scored on other Unicode or ICU data than they were checked on (which also fails
+ *   that shard's runtime, above; this failure names the equivalents and the remedy).
  *
  * A package none of whose shards ran is "not affected", judged by neither score rule, and its equivalents' review and
  * staleness are not judged either. With no shard run at all the gate passes: "no money path changed".
@@ -48,13 +53,15 @@ import { packagesOf, shardsOf } from './shards';
  * comma-separated list; empty is refused, since only a changes job that wrote no output leaves it); --summary appends the
  * markdown summary (the workflow passes $GITHUB_STEP_SUMMARY). It prints per-package and per-file scores and every
  * survivor with its covering tests. `--shard <name>` prints one shard's view and judges nothing (the shard job's log).
+ * The CLI reads the pins from the repository, and the tested commit from GITHUB_SHA when GITHUB_ACTIONS is true; off
+ * Actions it holds the shards' commits equal to each other only, and says so.
  */
 
 /** "Above 85%": a package passes when detected / valid > THRESHOLD_PERCENT / 100. */
 export const THRESHOLD_PERCENT = 85;
 export const EQUIVALENT_DIRECTORY = 'tools/stryker/equivalent';
 /** The equivalents that rest on the engine's Unicode data, and the runtime they were checked on. */
-export const UNICODE_FILE = 'tools/stryker/unicode.json';
+export { UNICODE_FILE };
 const UNICODE_KEYS = ['file', 'mutator', 'original', 'occurrence', 'replacement'] as const;
 export const EQUIVALENT_KEYS = ['file', 'mutator', 'original', 'occurrence', 'replacement', 'reason', 'proposedBy', 'reviewedBy', 'reviewedOn'] as const;
 
@@ -223,11 +230,19 @@ function reviewProblem(entry: EquivalentEntry, today: string): string | undefine
   return undefined;
 }
 
-/** A canary verdict's runtime, when it names one as process.versions gives it. */
+/** A canary verdict's runtime, when it names one: node, unicode and icu as process.versions gives them, and pnpm. */
 function runtimeOf(verdict: unknown): Runtime | undefined {
   const runtime = (verdict as { runtime?: unknown } | undefined)?.runtime as Record<string, unknown> | undefined;
-  if (typeof runtime !== 'object' || runtime === null || !['node', 'unicode', 'icu'].every((key) => typeof runtime[key] === 'string')) return undefined;
+  if (typeof runtime !== 'object' || runtime === null || !['node', 'unicode', 'icu', 'pnpm'].every((key) => typeof runtime[key] === 'string')) return undefined;
   return runtime as unknown as Runtime;
+}
+
+const COMMIT = /^[0-9a-f]{40}$/;
+
+/** A canary verdict's commit, when it names one (40 hex). */
+function commitOf(verdict: unknown): string | undefined {
+  const commit = (verdict as { commit?: unknown } | undefined)?.commit;
+  return typeof commit === 'string' && COMMIT.test(commit) ? commit : undefined;
 }
 
 /** The canary verdict a shard left, checked: its format, its shard, and 5 of 5 cases as expected. */
@@ -237,7 +252,8 @@ function canaryProblem(name: string, value: unknown): string | undefined {
   if (verdict.format !== CANARY_FORMAT) return `shard ${name}'s canary verdict is not ${CANARY_FORMAT}`;
   if (verdict.shard !== name) return `shard ${name}'s canary verdict is shard ${String(verdict.shard)}'s`;
   if (!canaryPassed(verdict as CanaryVerdict)) return `shard ${name}'s canary is ${String(verdict.asExpected)} of ${String(CANARY_CASES)} cases as expected, not ${String(CANARY_CASES)} of ${String(CANARY_CASES)}`;
-  if (runtimeOf(verdict) === undefined) return `shard ${name}'s canary verdict names no runtime (node, unicode and icu, from process.versions)`;
+  if (runtimeOf(verdict) === undefined) return `shard ${name}'s canary verdict names no runtime (node, unicode and icu from process.versions, and pnpm from its user agent)`;
+  if (commitOf(verdict) === undefined) return `shard ${name}'s canary verdict names no commit (the 40-hex commit its shard ran on, read from .git)`;
   return undefined;
 }
 
@@ -262,11 +278,24 @@ export function judge(input: GateInput): GateResult {
     }
     for (const name of input.ran.keys()) if (names.has(name) && !input.expected.includes(name)) failures.push(`shard ${name} reported, but the changes job did not select it`);
   }
+  // Every shard on the pinned runtime and on one commit, the tested one on Actions (docs/adr/0066, Part 7).
+  const expectedCommit = input.commit;
+  if (expectedCommit !== undefined && !COMMIT.test(expectedCommit)) failures.push(`the tested commit (GITHUB_SHA) is ${JSON.stringify(expectedCommit)}, not 40 hex, so no shard can be held to it`);
+  let firstCommit: { readonly shard: string; readonly commit: string } | undefined;
   for (const shard of input.shards) {
     const result = input.ran.get(shard.name);
     if (result === undefined) continue;
     const canary = canaryProblem(shard.name, result.canary);
     if (canary !== undefined) failures.push(canary);
+    const runtime = runtimeOf(result.canary);
+    if (runtime !== undefined) failures.push(...runtimeProblems(runtime, input.pins).map((problem) => `shard ${shard.name} ran on ${problem}`));
+    const commit = commitOf(result.canary);
+    if (commit !== undefined) {
+      if (expectedCommit !== undefined) {
+        if (COMMIT.test(expectedCommit) && commit !== expectedCommit) failures.push(`shard ${shard.name} ran on commit ${commit}, not the tested commit ${expectedCommit} (GITHUB_SHA)`);
+      } else if (firstCommit === undefined) firstCommit = { shard: shard.name, commit };
+      else if (commit !== firstCommit.commit) failures.push(`shard ${shard.name} ran on commit ${commit}, and shard ${firstCommit.shard} on ${firstCommit.commit}: every shard runs on one commit`);
+    }
     for (const pkg of packagesOf(shard)) if (!result.reports.has(pkg)) failures.push(`shard ${shard.name} ran without its ${pkg} report (${pkg}.json)`);
     for (const stray of result.stray) failures.push(`shard ${shard.name} left ${stray}, which no shard writes`);
     for (const pkg of result.reports.keys()) if (!(packagesOf(shard) as string[]).includes(pkg)) failures.push(`shard ${shard.name} left ${pkg}.json, a report of ${pkg}, which the shard does not hold`);
@@ -402,6 +431,7 @@ export function judge(input: GateInput): GateResult {
       if (mutant.coveredBy.length > 3) lines.push(`      and ${String(mutant.coveredBy.length - 3)} more tests`);
     }
   }
+  if (expectedCommit === undefined && input.ran.size > 0) lines.push("The shards' commits are held equal to each other only: off Actions there is no GITHUB_SHA to hold them to.");
   if (packages.every((result) => result.state === 'not affected') && failures.length === 0) lines.push('No money path changed: no mutation run, nothing to judge.');
   lines.push(...failures.map((failure) => `FAIL ${failure}`));
   lines.push(failures.length === 0 ? 'mutation gate: passed' : `mutation gate: failed (${String(failures.length)} problems)`);
@@ -409,11 +439,17 @@ export function judge(input: GateInput): GateResult {
 }
 
 /**
- * One shard's view, for its own job's log: each of its packages' files with their scores, and every survivor, marked
- * when an equivalent records it. It judges nothing: a package is judged once all its shards have run, by the gate.
+ * One shard's view, for its own job's log: first the runtime and commit its canary verdict names (so a runtime or
+ * checkout other than the pinned one shows in the shard's own log too), then each of its packages' files with their
+ * scores, and every survivor, marked when an equivalent records it. It judges nothing: a package is judged once all its
+ * shards have run, by the gate.
  */
 export function shardView(shard: Shard, result: ShardResult, equivalents: Readonly<Partial<Record<MutationPackage, unknown>>>): string[] {
-  const lines: string[] = [];
+  const runtime = runtimeOf(result.canary);
+  const commit = commitOf(result.canary);
+  const lines: string[] = [
+    `${shard.name} ran ${runtime === undefined ? 'on a runtime its canary verdict does not name' : `on ${describeRuntime(runtime)}`}, ${commit === undefined ? 'at a commit its canary verdict does not name' : `at commit ${commit}`}`,
+  ];
   for (const pkg of packagesOf(shard)) {
     const report = result.reports.get(pkg);
     if (report === undefined) {
