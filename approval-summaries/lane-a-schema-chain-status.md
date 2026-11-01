@@ -26,10 +26,19 @@ returns (2026-11-03 14:00 UTC, possibly 15:00). Briefs: `lanes/lane-b-session-br
   co-001/wip-pr42-*" are stale: #42 is at be63bdc2. The base delta for SS-01 is now #78 (83d71fd6) only; the trial merge
   conflicts in `apps/web/scripts/synthetic-personas.ts` only (#80, #79, #74 are already in SS-01). SUITE-CAP-3 is Lane B's
   own item (`lane-b-suite-cap-3-status.md`), not this session's.
-- **Next:** one workflow (acting Lane A; see the next entry when it starts): base 83d71fd6 into SS-01 with the whole check
-  list; SS-01 into 1b; then, in parallel, 1b's deferred parts + 1b's integrator (full suite less CAS-42.5/.6) and the
-  interest chain (1b's new head merged in, builder W's slice 4, interest's integrator and full suite). Then #42's step-1
-  head into SS-01 -> 1b -> interest when S0 pushes it. SS-01's PR opens only after #42 merges.
+- **Running: wf_5566bd1c-8eb (acting Lane A; script `workflow-scripts/lane-a-schema-chain-merge-build-wf_5566bd1c-8eb.js`),
+  from 17:10 UTC.** (1) base 83d71fd6 (#78) into SS-01, verifying #79/#74 patterns, the whole check list (f897a282 was
+  unchecked), push; adversarial verifier + fixer. (2) SS-01 into 1b, push; verifier + fixer. (3) In parallel: 1b's
+  deferred parts (gate, CAS-42.1/.2, SLOW_FIRST, ADR 0083 1b section) + read-only real-size route scout + 1b's integrator
+  (full suite less CAS-42.5/.6, one push); and the interest chain (1b's new head merged in, builder W slice 4, integrator
+  with the full suite, one push). (4) Fresh-clone adversarial verifiers on both heads. Progress files in the session
+  scratchpad `progress/sc-*.md`. Check-in scheduled (send_later, ~22:20 UTC).
+  **Decision (acting Lane A):** the item file's two workflows run as one, with 1b's deferred parts and the interest chain as
+  parallel branches after the 1b merge: the interest branch starts the moment stage 2 pushes (as the item file requires)
+  with no idle wait for a session turn, both share the heavy lock and their own e2e port ranges, and every step gains an
+  adversarial verifier (ultracode). If stopped: setup, leftover markers, resumeFromRunId.
+- **Next:** when #42's S0 pushes its step-1 head (be63bdc2 moves): merge it into SS-01 -> 1b -> interest (never into a
+  worktree a workflow is writing). SS-01's PR opens only after #42 merges.
 
 ## History (session_019i9ifCi6u3MV8sy7oAhUmy, Lane A's account, 2026-10-27/28; corrected above)
 - **2026-10-27 20:45 UTC.** Machine OK (tools/setup-container.sh, every line ok, Playwright's Chromium included).
