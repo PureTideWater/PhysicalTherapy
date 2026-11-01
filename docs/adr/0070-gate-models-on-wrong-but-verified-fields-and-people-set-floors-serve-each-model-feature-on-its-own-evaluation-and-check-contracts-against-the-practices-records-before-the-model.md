@@ -994,7 +994,7 @@ there at that width; the system's select and its help say where an ERA export co
   the kind and system chosen for them, would be lost with nothing of them on the server and no receipt to show them
   (`leaveAsks`: a file waiting, or `stillSending`). Clear, or Upload once every file is sent or failed, lets the page
   go without asking. A waiting file is never in "This batch" or the receipts, so nothing calls it sent or received
-  until Upload starts it (the merge of #78).
+  until Upload starts it (the merge of #78; ADR 0079's decision 4 and its unverified list point back here).
 - The contracts and reconciliation pages pass the union of every offered kind's content types, no longer the first
   kind's; each file's declared type is still taken from the chosen kind. The uploads page names its kind
   (`initialKind="x12_835"`): its heading names 835 files, and its other kind, an ERA export, already needs a second,
