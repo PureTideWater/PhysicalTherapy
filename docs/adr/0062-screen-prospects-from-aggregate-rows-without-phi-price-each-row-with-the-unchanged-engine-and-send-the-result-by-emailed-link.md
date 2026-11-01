@@ -1548,8 +1548,12 @@ a work address's domain, so a colleague at the practice was told their own addre
   address, or request an audit instead.";
 - what is kept: "If email to the address you gave cannot be delivered, or is reported as spam, we keep a coded form of
   it, which cannot be turned back into the address, for 12 months, only to refuse another screening to that address.";
-- and beside it (the review of 2026-10-27, for the founder's sign-off and counsel, O4): "The mail service that checks
+- and beside it (the review of 2026-10-27; signed off as below, counsel still to review, O4): "The mail service that checks
   whether the address can receive email keeps a record of that check, which can name the address, for 90 days."
+
+The founder, Tyler Williams, signed off as written, on 2026-11-01 (relayed by the co-founder), every legal sentence
+PR 6b-4 adds or changes, these among them (word for word in its pull request, before and after); counsel still
+reviews them before the screening opens (O4), and any later change to those sentences needs a new sign-off.
 
 **What proves it.** `apps/web/src/lib/screening/address.test.ts` and `validation.test.ts` (the hints, the DNS
 verdicts, the validation table, the cap, the timeouts and the logs), `routes.db.test.ts` (paused and not ready closing

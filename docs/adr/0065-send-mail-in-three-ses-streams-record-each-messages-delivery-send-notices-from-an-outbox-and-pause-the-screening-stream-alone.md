@@ -53,7 +53,9 @@ decision is one of the four conditions the plan sets before it opens ("the mail 
   never call it deleted.
 - **Q12, the screening's sender and wording:** `results@screening.<domain>`, display name "PaidWhole", Reply-To the
   support address; the recommended paused-page wording and one sentence for every refused address, each shown word for
-  word in the pull request for the founder, then counsel, before the screening opens.
+  word in the pull request. The founder, Tyler Williams, signed off as written, on 2026-11-01 (relayed by the
+  co-founder), every legal sentence PR 6b-4 adds or changes; counsel still reviews them before the screening opens
+  (O4), and any later change to those sentences needs a new sign-off.
 
 **The streams (D1 to D4).** Every message goes through exactly one SES configuration set, `tp-<env>-transactional`
 (Cognito's mail and the digests), `tp-<env>-notices` (break-glass and dunning notices) or `tp-<env>-screening` (the
@@ -243,8 +245,9 @@ or the call (`MAIL_VALIDATION_REFUSED`), which would leave every address to DNS 
    roles, used only to deploy. Ninety days is longer than the screening's 30 and outside Q11 (b)'s keyed-hash-only
    rule. The screening's pages and its result email, which say the email address is deleted with the result, also say
    that the mail service keeps its record of the check 90 days (`ADDRESS_CHECK_KEPT`,
-   `apps/worker/src/screening/wording.ts`; the review of 2026-10-27). The founder signs the words off and counsel sees
-   them before the screening opens (O4).
+   `apps/worker/src/screening/wording.ts`; the review of 2026-10-27). The founder signed the words off as written on
+   2026-11-01 (relayed by the co-founder), with every legal sentence PR 6b-4 adds or changes; counsel still reviews
+   them before the screening opens (O4), and any later change to them needs a new sign-off.
 2. The validation account's trail never holds a validation only while CloudTrail reads the call as a read. Staging's
    check (O11; docs/runbooks/deliverability.md, section 2) confirms that it does, with a mailbox the team controls. If it
    reads as a write, the screening stays closed until that trail changes (the fallback: no trail there, its changes
