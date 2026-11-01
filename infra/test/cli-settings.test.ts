@@ -13,9 +13,11 @@ const manifest = readJson<{ scripts: Record<string, string> }>('package.json');
 const cdkJson = readJson<{ context?: Record<string, unknown>; notices?: unknown }>('cdk.json');
 
 // A script runs the CLI directly when a command in it (start, or after a shell separator, past any
-// VAR=value prefixes) is `cdk`.
+// VAR=value prefixes and a package-runner launcher: pnpm [exec|dlx], npx [flags], yarn [dlx]) is `cdk`.
+const launcher = String.raw`(?:pnpm\s+(?:(?:exec|dlx)\s+)?|npx\s+(?:-\S+\s+)*|yarn\s+(?:dlx\s+)?)?`;
+const directCdk = new RegExp(String.raw`^\s*(?:[A-Z_][A-Z0-9_]*=\S*\s+)*` + launcher + String.raw`cdk(?:\s|$)`);
 const runsCdkDirectly = (command: string): boolean =>
-  command.split(/&&|\|\||;|\|/).some((part) => /^\s*(?:[A-Z_][A-Z0-9_]*=\S*\s+)*cdk(?:\s|$)/.test(part));
+  command.split(/&&|\|\||;|\|/).some((part) => directCdk.test(part));
 
 describe('the CDK CLI sends no telemetry and fetches no notices', () => {
   it('synthesizes with telemetry off and without notices', () => {
@@ -35,7 +37,7 @@ describe('the CDK CLI sends no telemetry and fetches no notices', () => {
 
   it('keeps cdk:diff running the CLI with telemetry off', () => {
     const script = readFileSync(path.join(infraDir, 'scripts/cdk-diff.ts'), 'utf8');
-    expect(script).toMatch(/CDK_DISABLE_CLI_TELEMETRY:\s*'true'/);
+    expect(script).toMatch(/\benv:\s*\{[^}]*\bCDK_DISABLE_CLI_TELEMETRY:\s*'true'[^}]*\}/);
   });
 
   it('turns notices off in cdk.json for any cdk command run from infra/', () => {
@@ -50,7 +52,16 @@ describe('the CDK CLI sends no telemetry and fetches no notices', () => {
     expect(runsCdkDirectly('cdk synth --quiet')).toBe(true);
     expect(runsCdkDirectly('A=1 CDK_DISABLE_CLI_TELEMETRY=true cdk synth')).toBe(true);
     expect(runsCdkDirectly('tsc --noEmit && cdk ls')).toBe(true);
+    expect(runsCdkDirectly('pnpm exec cdk deploy')).toBe(true);
+    expect(runsCdkDirectly('pnpm dlx cdk deploy')).toBe(true);
+    expect(runsCdkDirectly('pnpm cdk deploy')).toBe(true);
+    expect(runsCdkDirectly('npx cdk deploy')).toBe(true);
+    expect(runsCdkDirectly('npx --yes cdk deploy')).toBe(true);
+    expect(runsCdkDirectly('yarn cdk deploy')).toBe(true);
+    expect(runsCdkDirectly('CDK_DISABLE_CLI_TELEMETRY=true pnpm exec cdk ls')).toBe(true);
     expect(runsCdkDirectly('tsx scripts/cdk-diff.ts')).toBe(false);
+    expect(runsCdkDirectly('pnpm cdk:diff')).toBe(false);
+    expect(runsCdkDirectly('pnpm exec tsx scripts/cdk-diff.ts')).toBe(false);
     expect(runsCdkDirectly('vitest run --root .. --project unit infra/')).toBe(false);
   });
 });
