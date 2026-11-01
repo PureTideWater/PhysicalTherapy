@@ -1181,7 +1181,11 @@ Each is recorded with its reason; the founder can reverse any.
    CSV or xlsx exhibit carries through to the screen. The cost is measured above. A join over a dot or slash with a
    space beside it was measured and refused: it adds 77,754 distinct runs over set v2's prose ("ARTICLE1PARTIES ...").
 2. **The date rule's years.** YYYYMMDD and MMDDYYYY, with years 1900 to 2099; the design gave no range. DDMMYYYY is
-   not dropped, so a stored 13012026 is still looked for: a gap the rule does not widen, tested.
+   not dropped, so a stored 13012026 is still looked for: a gap the rule does not widen, tested. Since 2026-11-01 the
+   bound is one pair of constants in `src/redact.ts` (`EARLIEST_WRITTEN_YEAR`, `LATEST_WRITTEN_YEAR`) that the letter
+   reader's written dates use too: a four-digit year outside it is no year, so a claim number 00230426 written
+   `0023-04-26` reads as no date and is redacted, where it had been kept as a date and sent (MOD-13, seed 1162287068;
+   docs/adr/0054).
 3. **The log codes.** `screen_failed` is logged as `MODEL_INPUT_SCREEN_FAILED` apart from the bound's
    `MODEL_INPUT_SCREEN_UNAVAILABLE`, where the design used one code for both, so an operator can tell the bound from a
    failure; `screen_invalid` is logged too (`MODEL_INPUT_SCREEN_INVALID`), and any other error a screen throws as

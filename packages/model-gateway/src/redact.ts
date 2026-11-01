@@ -98,10 +98,21 @@ const ORDINAL = '(?:st|nd|rd|th)?';
 /** A month's number from its name or abbreviation. */
 const monthOf = (word: string) => MONTH_INDEX[word.toLowerCase().slice(0, 3)] ?? 0;
 
-/** The years a written year may be: a two-digit year is either century. */
+/**
+ * The years a written date may be in: 1900 to 2099, what a date of birth, a date of service or a remittance date can
+ * be, and what a two-digit year reads as (either century). Four digits outside it are no year, so a number written like
+ * a date ("0023-04-26", a claim number 00230426 with its dashes) reads as no date and is never kept as one (MOD-13,
+ * docs/adr/0054 and 0070 Part 3).
+ */
+export const EARLIEST_WRITTEN_YEAR = 1900;
+export const LATEST_WRITTEN_YEAR = 2099;
+
+const plausibleYear = (year: number) => year >= EARLIEST_WRITTEN_YEAR && year <= LATEST_WRITTEN_YEAR;
+
+/** The years a written year may be: a two-digit year is either century; a four-digit one only a plausible year. */
 function years(written: string): number[] {
   const value = Number.parseInt(written, 10);
-  return written.length === 2 ? [1900 + value, 2000 + value] : written.length === 4 ? [value] : [];
+  return written.length === 2 ? [1900 + value, 2000 + value] : written.length === 4 && plausibleYear(value) ? [value] : [];
 }
 
 function iso(year: number, month: number, day: number): string | null {
@@ -840,12 +851,12 @@ export const SCREEN_MIN_RUN = Math.min(...Object.values(SCREEN_FLOORS).map((floo
 /** The longest run the screen compares, whatever the records hold: no identifier of any kind is longer (X12 caps CLP01 at 38 and CLP07 at 50). */
 export const SCREEN_MAX_RUN = 80;
 
-/** Whether eight digits are a calendar date written YYYYMMDD or MMDDYYYY, a year from 1900 to 2099: what the tokenizer makes of "2026-01-01" or "01-01-2026". */
+/** Whether eight digits are a calendar date written YYYYMMDD or MMDDYYYY, a year from EARLIEST_WRITTEN_YEAR to LATEST_WRITTEN_YEAR (1900 to 2099, the bound a written date has): what the tokenizer makes of "2026-01-01" or "01-01-2026". */
 export function isCompactCalendarDate(digits: string): boolean {
   if (!/^\d{8}$/.test(digits)) {
     return false;
   }
-  const valid = (year: number, month: number, day: number) => year >= 1900 && year <= 2099 && month >= 1 && month <= 12 && day >= 1 && day <= new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const valid = (year: number, month: number, day: number) => plausibleYear(year) && month >= 1 && month <= 12 && day >= 1 && day <= new Date(Date.UTC(year, month, 0)).getUTCDate();
   const n = (start: number, end: number) => Number.parseInt(digits.slice(start, end), 10);
   return valid(n(0, 4), n(4, 6), n(6, 8)) || valid(n(4, 8), n(0, 2), n(2, 4));
 }

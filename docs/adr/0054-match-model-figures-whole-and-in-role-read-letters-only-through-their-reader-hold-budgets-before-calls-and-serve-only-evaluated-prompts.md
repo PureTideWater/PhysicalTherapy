@@ -301,7 +301,11 @@ this amendment holds.
   is separated (written with a slash, a backslash, a period, a dash, `_`, `|` or a month word) and has a calendar
   reading ("Appeal by 2027-03-15" keeps its deadline). An invisible character or a space is no date separator, and
   numbers shaped like a date no calendar holds are no date, so `1234<ZWSP>5678`, `12-34-56`, `1234-56-78`, `03 15 61`
-  and "Claim 20270315" are replaced.
+  and "Claim 20270315" are replaced. A calendar reading needs a plausible year (2026-11-01, MOD-13 seed 1162287068):
+  a four-digit year from 1900 to 2099 (`EARLIEST_WRITTEN_YEAR`, `LATEST_WRITTEN_YEAR`, what a date of birth, a date of
+  service or a remittance date can be, and the range a two-digit year reads in), so a claim number 00230426 written
+  `0023-04-26`, or 21000426 written `2100-04-26`, is no date and is replaced; the contract screen's
+  `isCompactCalendarDate` uses the same bound (docs/adr/0070 Part 3).
 - **Names**: each whole name, each word and each part (the words split on white space, `,`, `;`, `/`; the parts on
   dashes, apostrophes, `.` and `_`), two letters or digits or more. Dashes, apostrophes, `_` and invisible characters
   join anywhere; between the parts the records hold apart, white space, `.` and `,` too; inside a part, a space or `.`
@@ -372,7 +376,8 @@ not limited to three); another patient's identifier the screen sees only with a 
 while the stored side keeps values from two; another patient's name, which the screen does not look for; and addresses,
 phone numbers and Social Security numbers, which PRD 14 does not list for redaction. Recorded with the review round
 (each the cost of keeping what the task reads, or not new): a digits-only member ID or claim number that is itself a
-real calendar date written with dashes reads as that date and is sent (member 031561 written `03-15-61`); a claim's
+real calendar date written with dashes (a year from 1900 to 2099) reads as that date and is sent (member 031561 written
+`03-15-61`); a claim's
 digits written after a currency sign and with cents are sent as an amount (`$555001.00`); digits alone with a slash
 or a period between them (`12/34/5678`, `1234.5678`) are not a number, being how dates and amounts are written; and a
 part written in lower case with a space inside it (`jo ann`) is not a name. Recorded with the second review round: a

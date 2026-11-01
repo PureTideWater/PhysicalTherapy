@@ -2,7 +2,7 @@ import { identifierForms } from '@tp/packets';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { type LetterClaim, type PatientIdentifiers, compactIdentifier, dateForms, datesIn, holdsIdentifier, identifierCandidates, redactLetter, redactionSpans } from './redact';
+import { EARLIEST_WRITTEN_YEAR, LATEST_WRITTEN_YEAR, type LetterClaim, type PatientIdentifiers, compactIdentifier, dateForms, datesIn, holdsIdentifier, identifierCandidates, redactLetter, redactionSpans } from './redact';
 
 /**
  * The letter reader's redaction over generated SYNTHETIC letters (test matrix MOD-13, MOD-14; docs/adr/0054, amendment of
@@ -121,14 +121,15 @@ const MONTH_NAMES = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'se
  * The calendar dates written text is, read here on its own and not by the code under test: three numbers
  * with a slash, a period or a dash between each two (year first, or month and day in either order before
  * the year), or a month word with a day and a year. Numbers with spaces alone, compact digits, an invisible
- * character and a date no calendar holds read as none.
+ * character, a date no calendar holds and a four-digit year outside 1900 to 2099 read as none.
  */
 function separatedDateReadings(written: string): string[] {
   const valid = (year: number, month: number, day: number) => {
     const date = new Date(Date.UTC(year, month - 1, day));
     return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day ? date.toISOString().slice(0, 10) : null;
   };
-  const yearsOf = (text: string) => (text.length === 2 ? [1900 + Number.parseInt(text, 10), 2000 + Number.parseInt(text, 10)] : text.length === 4 ? [Number.parseInt(text, 10)] : []);
+  // A four-digit year from 1900 to 2099 only, what a written date's year can be (a claim number written 0023-04-26 is no date).
+  const yearsOf = (text: string) => (text.length === 2 ? [1900 + Number.parseInt(text, 10), 2000 + Number.parseInt(text, 10)] : text.length === 4 && Number.parseInt(text, 10) >= 1900 && Number.parseInt(text, 10) <= 2099 ? [Number.parseInt(text, 10)] : []);
   const read = (orders: readonly (readonly [string, string, string])[]) => [...new Set(orders.flatMap(([year, month, day]) => yearsOf(year).map((y) => valid(y, Number.parseInt(month, 10), Number.parseInt(day, 10)))).filter((date): date is string => date !== null))];
   const word = (written.match(/[a-z]{3,}/gi) ?? []).find((each) => MONTH_NAMES.includes(each.slice(0, 3).toLowerCase()));
   const numbers = written.match(/\d+/g) ?? [];
@@ -320,42 +321,79 @@ function keptOnPurpose(normal: string, patient: PatientIdentifiers, claims: read
 // ---------------------------------------------------------------------------------------------------
 // MOD-13
 
+/**
+ * MOD-13's first property: no letter or digit the generator wrote an identifier with is sent, every claim keeps its
+ * placeholder, and only exact placeholders are written.
+ */
+const sendsNoIdentifier = fc.property(letterCase, ({ patient, claims, segments }) => {
+  const { text, secrets } = assemble(segments);
+  expect(text.normalize('NFKC')).toBe(text);
+  const { text: normal, spans } = redactionSpans(text, patient, claims);
+  expect(normal).toBe(text);
+  const redacted = redactLetter(text, patient, claims);
+  // The output is the letter with each span replaced, and nothing else changed.
+  let rebuilt = '';
+  let kept = 0;
+  for (const span of spans) {
+    expect(span.start).toBeGreaterThanOrEqual(kept);
+    rebuilt += text.slice(kept, span.start) + span.placeholder;
+    kept = span.end;
+  }
+  expect(redacted.text).toBe(rebuilt + text.slice(kept));
+  const spanAt = (at: number) => spans.find((span) => span.start <= at && at < span.end);
+  for (const secret of secrets) {
+    const span = spanAt(secret.at);
+    expect(span, `${secret.secret} at ${String(secret.at)} in ${JSON.stringify(text)} -> ${JSON.stringify(redacted.text)}`).toBeDefined();
+    if (secret.secret === 'claim') {
+      // The claim's placeholder, of this claim or of a lower one its number also is.
+      expect(Number.parseInt(/^\[CLAIM_(\d+)\]$/.exec(span?.placeholder ?? '')?.[1] ?? 'none', 10), JSON.stringify(text)).toBeLessThanOrEqual(secret.claim);
+    }
+  }
+  // Every placeholder is exact (the letters hold no bracket of their own) and counted.
+  const brackets = redacted.text.match(/\[[^[\]]*\]/g) ?? [];
+  expect(brackets.every((bracket) => EXACT.test(bracket))).toBe(true);
+  expect(brackets).toHaveLength(redacted.replaced);
+  expect(holdsIdentifier(redacted.text, patient, claims)).toBe(false);
+});
+
+/** The seed on which a claim number written like a date with a year below 1900 ("0000-01-01", "0023-04-26") was kept as a date (MOD-13, 2026-11-01). */
+const YEAR_BELOW_1900_SEED = 1162287068;
+
 describe('MOD-13: every placeholder survives and no identifier survives', () => {
   it('sends no letter or digit the generator wrote an identifier with, keeps every claim’s placeholder, and writes only exact placeholders (property)', () => {
-    fc.assert(
-      fc.property(letterCase, ({ patient, claims, segments }) => {
-        const { text, secrets } = assemble(segments);
-        expect(text.normalize('NFKC')).toBe(text);
-        const { text: normal, spans } = redactionSpans(text, patient, claims);
-        expect(normal).toBe(text);
-        const redacted = redactLetter(text, patient, claims);
-        // The output is the letter with each span replaced, and nothing else changed.
-        let rebuilt = '';
-        let kept = 0;
-        for (const span of spans) {
-          expect(span.start).toBeGreaterThanOrEqual(kept);
-          rebuilt += text.slice(kept, span.start) + span.placeholder;
-          kept = span.end;
-        }
-        expect(redacted.text).toBe(rebuilt + text.slice(kept));
-        const spanAt = (at: number) => spans.find((span) => span.start <= at && at < span.end);
-        for (const secret of secrets) {
-          const span = spanAt(secret.at);
-          expect(span, `${secret.secret} at ${String(secret.at)} in ${JSON.stringify(text)} -> ${JSON.stringify(redacted.text)}`).toBeDefined();
-          if (secret.secret === 'claim') {
-            // The claim's placeholder, of this claim or of a lower one its number also is.
-            expect(Number.parseInt(/^\[CLAIM_(\d+)\]$/.exec(span?.placeholder ?? '')?.[1] ?? 'none', 10), JSON.stringify(text)).toBeLessThanOrEqual(secret.claim);
-          }
-        }
-        // Every placeholder is exact (the letters hold no bracket of their own) and counted.
-        const brackets = redacted.text.match(/\[[^[\]]*\]/g) ?? [];
-        expect(brackets.every((bracket) => EXACT.test(bracket))).toBe(true);
-        expect(brackets).toHaveLength(redacted.replaced);
-        expect(holdsIdentifier(redacted.text, patient, claims)).toBe(false);
-      }),
-      { numRuns: 400 },
-    );
+    fc.assert(sendsNoIdentifier, { numRuns: 400 });
   }, 60_000);
+
+  it(`replaces a claim number written like a date with a year below 1900 (the property on seed ${String(YEAR_BELOW_1900_SEED)}, regression)`, () => {
+    fc.assert(sendsNoIdentifier, { numRuns: 400, seed: YEAR_BELOW_1900_SEED });
+  }, 60_000);
+
+  it('reads a written date only with a year from 1900 to 2099, so a claim number written like a date is its placeholder and real dates keep their behaviour', () => {
+    expect(EARLIEST_WRITTEN_YEAR).toBe(1900);
+    expect(LATEST_WRITTEN_YEAR).toBe(2099);
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-13', names: ['VANTREE, JANE'], datesOfBirth: ['1955-07-14'], memberIds: ['ZZ1234567'] };
+    const claims: LetterClaim[] = [
+      { claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['00230426'] },
+      { claimId: 'synthetic-claim-2', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['00010203'] },
+      { claimId: 'synthetic-claim-3', patientPseudonym: 'synthetic-patient-13', claimNumbers: ['21000426'] },
+    ];
+    for (const written of ['0023-04-26', '0023/04/26', '0023.04.26', '0001/02/03', '2100-04-26']) {
+      expect(datesIn(written).flatMap((span) => span.dates), written).toEqual([]);
+    }
+    expect(redactLetter('Claim 0023-04-26 was denied.', patient, claims).text).toBe('Claim [CLAIM_1] was denied.');
+    // Any dash (a claim's digits join over dashes, never over a slash or a period between digits: docs/adr/0054).
+    expect(redactLetter('Claim 0023–04–26 and claim 0001-02-03; claim 2100\u221204\u221226.', patient, claims).text).toBe('Claim [CLAIM_1] and claim [CLAIM_2]; claim [CLAIM_3].');
+    expect(holdsIdentifier('Claim 0023-04-26 was denied.', patient, claims)).toBe(true);
+    // A date of service, a deadline and a two-digit year still read as dates and stay.
+    expect(datesIn('2026-04-26').flatMap((span) => span.dates)).toEqual(['2026-04-26']);
+    expect(datesIn('04/26/26').flatMap((span) => span.dates)).toContain('2026-04-26');
+    expect(redactLetter('Seen on 2026-04-26; appeal by April 26, 2027; billed 4/26/26.', patient, claims).text).toBe('Seen on 2026-04-26; appeal by April 26, 2027; billed 4/26/26.');
+    // A 1950s date of birth is replaced in every form, labeled or not, as before.
+    for (const written of [...dateForms('1955-07-14'), '07 14 1955', '19550714', '07141955', '071455']) {
+      expect(redactLetter(`Seen ${written}.`, patient, claims).text, written).toBe('Seen [DATE_OF_BIRTH].');
+    }
+    expect(redactLetter('DOB 0023-04-26.', patient, []).text).toBe('DOB [DATE_OF_BIRTH].');
+  });
 
   it('still replaces every letter or digit today’s code replaced, but in a date that is not a date of birth or an amount (property and the design’s section 1 rows)', () => {
     const check = (text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]) => {
