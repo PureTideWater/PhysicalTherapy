@@ -3705,7 +3705,7 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       bytes: FINDINGS_BYTES,
       refs: [script('check', 'calendar', '837c4152'), ...FINDINGS],
       sites: ['job check outputs.findings'],
-      bound: 'base64 of findings.json (content-calendar.yml), at most 700,000 bytes (MAX_FILE_BYTES, tools/content-calendar/render.ts), so 933,336 characters: a job output, under GitHub’s 1 MB, which reaches no process in this job',
+      bound: 'base64 of findings.json (content-calendar.yml), at most 700,000 bytes (MAX_FILE_BYTES, tools/content-calendar/render.ts), so up to 933,336 characters, 1,866,672 bytes counted as UTF-16, over GitHub’s 1 MB job-output limit (ci-findings-transport’s to fix), which reaches no process in this job',
     },
     {
       file: 'content-calendar.yml',
@@ -3991,6 +3991,8 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     expect(BOUNDED_VALUES.filter((row) => row.over !== undefined).map(key)).toEqual(['content-calendar.yml notify needs.check.outputs.findings']);
     expect(BOUNDED_VALUES.filter((row) => row.over !== undefined).map((row) => row.sites)).toEqual([['job notify step "Open an issue for each finding not already open" env.FINDINGS_B64']]);
     expect(4 * Math.ceil(MAX_FILE_BYTES / 3) + 'FINDINGS_B64='.length + 1).toBeGreaterThan(131_072);
+    // As check's job output, GitHub counts it in UTF-16, two bytes a character: over its 1 MB too (the row's words).
+    expect(2 * FINDINGS_BYTES).toBe(1_866_672);
   });
 
   it('holds a row with sites to exactly those places, so a second use of the value over the limit, under any name or key, turns the table red', () => {
