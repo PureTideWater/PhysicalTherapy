@@ -754,6 +754,34 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/components/download-refusal.test.tsx',
     'apps/web/src/components/uploads/uploader.test.tsx',
   ]),
+  // The sign-in steps of the UX baseline review's sixth pull request (docs/adr/0081).
+  'SGN-01': none(1, 'Synthetic personas sign in through the local identity provider on an injected clock and in the browser, and the limit is read from infra’s source text; no file.', [
+    'apps/web/src/lib/auth/step-limits.test.ts',
+    'apps/web/src/lib/auth/dev-provider.test.ts',
+    'apps/web/src/lib/auth/pending.test.ts',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/src/components/step-timer.test.tsx',
+    'apps/web/e2e/sign-in-time.spec.ts',
+  ]),
+  'SGN-02': none(1, 'The step timer runs in the browser harness and on synthetic sign-ins, on a clock the test moves; no file.', [
+    'apps/web/src/lib/auth/step-limits.test.ts',
+    'apps/web/src/components/step-timer.test.tsx',
+    'apps/web/src/components/step-timer.browser.test.tsx',
+    'apps/web/e2e/sign-in-time.spec.ts',
+  ]),
+  'SGN-03': none(1, 'Synthetic personas sign in through the local identity provider; no file.', [
+    'apps/web/src/lib/auth/pending.test.ts',
+    'apps/web/src/app/sign-in/notice.test.tsx',
+    'apps/web/src/components/step-timer.browser.test.tsx',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/e2e/sign-in-time.spec.ts',
+  ]),
+  'SGN-04': none(1, 'Synthetic invited personas, a customer and a staff member, choose a password and enrol through the local identity provider; no file.', [
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/src/app/sign-in/notice.test.tsx',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/e2e/sign-in-time.spec.ts',
+  ]),
 };
 
 export interface CaseDefinition {

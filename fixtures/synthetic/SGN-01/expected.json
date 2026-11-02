@@ -1,0 +1,24 @@
+{
+  "case": "SGN-01",
+  "module": "SGN",
+  "title": "A sign-in step's time limit, stated and enforced",
+  "assertion": "The new-password, enrolment and code steps say \"This step stays open for 3 minutes.\" before their work, and key registration says 15 minutes (a page rendered later in the step says the time left instead, \"This step closes within 2 minutes.\", rounded up), from one constant that infra's sign-in session and access token pin: the shorter of the provider's limit and the pending cookie's; the dev provider's challenge reads the same constant; the server closes a step at that limit, counted from before the provider issued its challenge, whatever the cookie's own life, and the rewrite after a refused new password extends nothing; a page or a press after the limit starts again without asking the provider and counts no failure; a step sealed before the deploy shows no countdown and is left to the provider",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": [
+    "apps/web/src/lib/auth/step-limits.test.ts",
+    "apps/web/src/lib/auth/dev-provider.test.ts",
+    "apps/web/src/lib/auth/pending.test.ts",
+    "apps/web/src/lib/routes/sign-in-routes.db.test.ts",
+    "apps/web/src/components/step-timer.test.tsx",
+    "apps/web/e2e/sign-in-time.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Synthetic personas sign in through the local identity provider on an injected clock and in the browser, and the limit is read from infra’s source text; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
