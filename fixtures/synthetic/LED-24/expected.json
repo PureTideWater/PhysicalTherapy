@@ -6,6 +6,7 @@
   "synthetic": true,
   "completesIn": 9,
   "assertedBy": [
+    "apps/web/src/lib/routes/reconciliation-routes.db.test.ts",
     "apps/worker/src/reconcile/interest.db.test.ts",
     "apps/worker/src/reconcile/ledger-oracle.db.test.ts",
     "packages/ledger/src/interest.test.ts"
