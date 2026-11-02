@@ -1011,7 +1011,8 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
     The defect this notice fixes came from action code, buildx copying the event into its metadata, which no
     expression rule can read, so every step output is bounded where a workflow reads it, by the rule and its list.
     - Each row names its producers by what they are, never by a line, and the test resolves each on the tree: a step
-      by its job and id, a job's output, a matrix key, a job the reader needs, and tool code by the name it declares
+      by its job and id, a job's output (which must declare one step's or needed job's output alone, whose own row's
+      bound is within the reader's), a matrix key, a job the reader needs, and tool code by the name it declares
       (`path#symbol`). A row whose producer is a workflow's `run:` step holds the fingerprint of what the script runs
       with as parsed, its `run`, `env`, `shell` and `working-directory`, so a changed script or input fails until a
       person re-reads the bound and updates it; a row whose bound is tool code's names the unit test that proves it

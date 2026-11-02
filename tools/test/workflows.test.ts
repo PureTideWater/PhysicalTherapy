@@ -3967,6 +3967,22 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     const declared = (job as { readonly outputs?: unknown } | undefined)?.outputs;
     return isRecord(declared) ? Object.keys(declared) : [];
   };
+  /** What a job's output declares, as written. */
+  const jobOutput = (job: Job | undefined, name: string): unknown => {
+    const declared = (job as { readonly outputs?: unknown } | undefined)?.outputs;
+    return isRecord(declared) ? declared[name] : undefined;
+  };
+  /** The value a job's output hands on when it is exactly one ${{ }} reading a step's or a needed job's output, as the table keys it. */
+  function handedValue(declared: unknown): string | undefined {
+    const whole = typeof declared === 'string' ? /^\$\{\{((?:(?!\}\})[\s\S])*)\}\}$/.exec(declared) : null;
+    if (whole === null) return undefined;
+    try {
+      const names = namesOf(parseExpression(lexExpression(whole[1] ?? '')));
+      return names?.length === 4 && (names[0] === 'steps' || names[0] === 'needs') && names[2] === 'outputs' ? names.join('.').toLowerCase() : undefined;
+    } catch {
+      return undefined;
+    }
+  }
 
   /**
    * What does not resolve of each row's references on these workflows (text gives a file's) and this repository's
@@ -4013,9 +4029,21 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
             }
             break;
           }
-          case 'output':
-            if (!outputsOf(jobs[ref.job]).includes(ref.name)) say(`job ${ref.job} declares no output ${ref.name}`);
+          case 'output': {
+            if (!outputsOf(jobs[ref.job]).includes(ref.name)) {
+              say(`job ${ref.job} declares no output ${ref.name}`);
+              break;
+            }
+            // What the output declares is one step's or needed job's output alone, with its own row in that job, whose
+            // bound this row's holds: a repointed or joined output turns the row red, so no reader's sum undercounts.
+            const declared = jobOutput(jobs[ref.job], ref.name);
+            const given = handedValue(declared);
+            const producer = rows.find((entry) => entry.file === row.file && entry.job === ref.job && entry.value === given);
+            if (given === undefined) say(`job ${ref.job}'s output ${ref.name} is ${JSON.stringify(declared)}, not one step's or needed job's output alone`);
+            else if (producer === undefined) say(`job ${ref.job}'s output ${ref.name} reads ${given}, which has no row in job ${ref.job}`);
+            else if (producer.bytes > row.bytes) say(`job ${ref.job}'s output ${ref.name} reads ${given}, bounded at ${String(producer.bytes)} bytes, over this row's ${String(row.bytes)}`);
             break;
+          }
           case 'matrix': {
             const matrix = jobs[ref.job]?.strategy?.matrix;
             const include = isRecord(matrix) && isList(matrix.include) ? matrix.include : [];
@@ -4055,6 +4083,10 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
           const cited = row.refs.flatMap((ref) => (ref.kind === 'output' && ref.job === job ? [ref.name] : [])).sort();
           if (declared.join() !== cited.join()) say(`toJSON reads every output of job ${job} (${declared.join(', ') || 'none'}), and the row names ${cited.join(', ') || 'none'}`);
         }
+        // And holds them all: its bound is at least the sum of theirs.
+        const bounds = given.flatMap((job) => outputsOf(jobs[job]).map((name) => rows.find((entry) => entry.file === row.file && entry.job === job && entry.value === handedValue(jobOutput(jobs[job], name)))?.bytes ?? 0));
+        const total = bounds.reduce((sum, bytes) => sum + bytes, 0);
+        if (total > row.bytes) say(`toJSON reads outputs bounded at ${String(total)} bytes together, over this row's ${String(row.bytes)}`);
       }
     }
     return problems;
@@ -4184,11 +4216,26 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     expect(problems(workflowText, { 'tools/fixture.ts': tool, 'tools/fixture.test.ts': "it('proves a digest', () => {});\n" })).toEqual(['fixture.yml build steps.identity.outputs.digest_web: tools/fixture.test.ts has no test named "proves the digest"']);
     expect(problems(workflowText, { 'tools/fixture.ts': tool })).toEqual(['fixture.yml build steps.identity.outputs.digest_web: no file tools/fixture.test.ts']);
     expect(problems(workflowText, undefined, [{ ...produced, refs: produced.refs.filter((ref) => ref.kind !== 'test') }])).toEqual(['fixture.yml build steps.identity.outputs.digest_web: names tool code but no test that proves its bound']);
-    // toJSON of a job's outputs names every output, and no other.
+    // A job's output is one step's output alone, which has its row in that job, its bound within the reader's: a joined
+    // or a repointed output, or a reader that claims less, turns the reading row red.
+    const declared = '      digest_web: ${{ steps.identity.outputs.digest_web }}\n';
+    const handedProblem = (problem: string) => `fixture.yml use needs.build.outputs.digest_web: job build's output digest_web ${problem}`;
+    expect(problems(workflowText.replace(declared, '      digest_web: ${{ steps.identity.outputs.digest_web }}${{ steps.identity.outputs.digest_web }}\n'))).toEqual([
+      handedProblem('is "${{ steps.identity.outputs.digest_web }}${{ steps.identity.outputs.digest_web }}", not one step\'s or needed job\'s output alone'),
+    ]);
+    expect(problems(workflowText.replace(declared, "      digest_web: ${{ steps.identity.outputs.digest_web || 'none' }}\n"))).toEqual([handedProblem('is "${{ steps.identity.outputs.digest_web || \'none\' }}", not one step\'s or needed job\'s output alone')]);
+    expect(problems(workflowText.replace(declared, '      digest_web: ${{ steps.other.outputs.digest_web }}\n'))).toEqual([handedProblem('reads steps.other.outputs.digest_web, which has no row in job build')]);
+    expect(problems(workflowText, undefined, [produced, { ...handed, bytes: 64 }])).toEqual([handedProblem('reads steps.identity.outputs.digest_web, bounded at 71 bytes, over this row\'s 64')]);
+    expect(problems(workflowText.replace(declared, '      digest_web: ${{steps.identity.outputs.DIGEST_WEB}}\n'))).toEqual([]);
+    // toJSON of a job's outputs names every output, and no other, and holds them all.
     const whole = workflowText.replace('{ DIGEST: "${{ needs.build.outputs.digest_web }}" }', '{ BUILD: "${{ toJSON(needs.build.outputs) }}" }');
-    const json = (refs: readonly Ref[]) => problems(whole, undefined, [produced, { file: 'fixture.yml', job: 'use', value: 'tojson(needs.build.outputs)', refs, bound: 'a digest', bytes: 256 }]);
+    const json = (refs: readonly Ref[], bytes = 256) => problems(whole, undefined, [produced, { file: 'fixture.yml', job: 'use', value: 'tojson(needs.build.outputs)', refs, bound: 'a digest', bytes }]);
     expect(json([needs('build'), output('build', 'digest_web')])).toEqual([]);
     expect(json([needs('build')])).toEqual(['fixture.yml use tojson(needs.build.outputs): toJSON reads every output of job build (digest_web), and the row names none']);
+    expect(json([needs('build'), output('build', 'digest_web')], 70)).toEqual([
+      "fixture.yml use tojson(needs.build.outputs): job build's output digest_web reads steps.identity.outputs.digest_web, bounded at 71 bytes, over this row's 70",
+      "fixture.yml use tojson(needs.build.outputs): toJSON reads outputs bounded at 71 bytes together, over this row's 70",
+    ]);
   });
 
   it('sets BUILDX_METADATA_PROVENANCE: disabled on every docker/build-push-action step of every workflow, and uploads its build record only off a pull request, and nothing else writes or reads buildx’s metadata provenance', () => {
