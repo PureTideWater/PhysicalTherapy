@@ -259,6 +259,8 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   // SUITE-CAP-1b (co-001/suite-cap-1-triage-locks, ADR 0083): a line's stage lock is its head row, so a real-size month triages and reports.
   'CAS-40': none(8, 'Concurrent stage events on generated lines: no file.', ['packages/db/src/line-status.db.test.ts', 'apps/worker/src/reconcile/stage-head.db.test.ts']),
   'CAS-42': none(8, 'Generated at size by the test, and release 900110 built outside the repository by the weekly run: no file.', [
+    'apps/worker/src/triage/triage.large.db.test.ts',
+    'apps/worker/src/reconcile/reconcile.large.db.test.ts',
     'tools/release-capacity/checks.test.ts',
     'tools/release-capacity/scenario.test.ts',
   ]),
