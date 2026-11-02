@@ -3694,6 +3694,10 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     const beside = 'fixture.yml job images step "The step" env.S: holds the value over the limit with more beside it';
     expect(sum(step('env: { S: "${{ steps.web.outputs.size }}" }'), marked)).toEqual([]);
     expect(sum(step('env: { S: "${{STEPS.web.outputs.SIZE}}" }'), marked)).toEqual([]);
+    // Alone it is exempt from its own string's limit, never from its process's whole: with 36 variables of 48 KB beside it
+    // (each string under the limit, 1,769,642 bytes together) the step passes ARG_MAX less the runner's own.
+    expect(sum(step(`env: { S: "\${{ steps.web.outputs.size }}", ${many(36)} }`), marked)).toEqual([totalOver('job images step "The step"', 'S='.length + 100_000 + 1 + allOf(36))]);
+    expect(sum(step(`env: { ${many(36)} }`), marked)).toEqual([]);
     for (const value of ['${{ steps.web.outputs.size }}${{ vars.A }}', 'x${{ steps.web.outputs.size }}', '${{ steps.web.outputs.size }} ', '${{ steps.web.outputs.size || vars.A }}', '${{ steps.web.outputs.size }}${{ env.UNSET }}', "${{ steps.web.outputs.size }}${{ format('{0}', 'x') }}"]) {
       expect(sum(step(`env: { S: ${JSON.stringify(value)} }`), marked), value).toEqual([beside]);
     }
@@ -4451,6 +4455,13 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     expect(problems(text('      - name: Upload them\n        uses: actions/fixture@v1\n        with: { path: "${{ needs.check.outputs.findings }}" }\n'))).toEqual([
       'fixture.yml notify needs.check.outputs.findings: read at job notify step "Open an issue" env.FINDINGS_B64, job notify step "Upload them" with.path, not exactly at its sites, job notify step "Open an issue" env.FINDINGS_B64',
     ]);
+    // A second step of the same name reading it under the same key: the same place twice, so each read is counted.
+    expect(problems(text('      - name: Open an issue\n        env: { FINDINGS_B64: "${{ needs.check.outputs.findings }}" }\n        run: echo again\n'))).toEqual([
+      'fixture.yml notify needs.check.outputs.findings: read at job notify step "Open an issue" env.FINDINGS_B64, job notify step "Open an issue" env.FINDINGS_B64, not exactly at its sites, job notify step "Open an issue" env.FINDINGS_B64',
+    ]);
+    // A row with sites that is not the one over the limit is held the same way: a second read of check's findings.
+    const second = text('').replace('        run: echo "findings=x" >> "$GITHUB_OUTPUT"\n', '        run: echo "findings=x" >> "$GITHUB_OUTPUT"\n      - name: Copy them\n        env: { COPY: "${{ steps.calendar.outputs.findings }}" }\n        run: echo\n');
+    expect(problems(second)).toEqual(['fixture.yml check steps.calendar.outputs.findings: read at job check outputs.findings, job check step "Copy them" env.COPY, not exactly at its sites, job check outputs.findings']);
   });
 
   it('resolves each row’s producers by name, so a renamed step, a changed script, a removed output or a deleted symbol or test turns the table red, and an edit elsewhere in a file does not', () => {
