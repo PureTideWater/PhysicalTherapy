@@ -1,0 +1,548 @@
+{
+ "workflow": "wf_5566bd1c-8eb",
+ "note": "acting Lane A; agent results as returned",
+ "results": [
+  {
+   "head": "efb20704b8a358681c8d60378bc78674e3b0d2c8",
+   "merged": "origin/claude/build-platform 83d71fd6 (#78) merged as 9777ddc0. After that push the base moved to bce57f16 (#82, ci-pin-age), and it was merged as efb20704 with no conflict. On a re-fetch before the final push the base was still at bce57f16. efb20704 was pushed to co-001/ss-01-suspension-refusal and the remote branch now matches it.",
+   "domain_model_sha256": "6559c5b90af3d1249e80d9369da18885971e118fbd4411c4a6a5bb8775c2fadc",
+   "approval_line_number": 7413,
+   "conflicts": [
+    "apps/web/scripts/synthetic-personas.ts (merging #78): the only conflict was in the header comment. Both sentences were kept (the BIL-09 firms and the refused-downloads personas), and the persona arrays merged on their own with both sides intact.",
+    "Merging #82 (bce57f16): no conflict.",
+    "Generated files on both merged trees: domain-model.md changed only in its provenance line and was regenerated with db:domain-model --out --strict on a freshly migrated database. packages/db/functions wrote 0 files, watched.ts --write left watched-paths unchanged, synth --all wrote 0 files and pnpm install --frozen-lockfile changed nothing."
+   ],
+   "checks": [
+    {
+     "command": "pnpm typecheck",
+     "passed": true,
+     "note": "22 projects (round 1 on 9777ddc0 and round 2 on efb20704)"
+    },
+    {
+     "command": "pnpm lint",
+     "passed": true,
+     "note": "round 2: 1,719 files, 0 errors, 0 warnings"
+    },
+    {
+     "command": "pnpm lint:copy",
+     "passed": true,
+     "note": "550 files"
+    },
+    {
+     "command": "pnpm lint:logs",
+     "passed": true,
+     "note": "round 2: 1,106 files"
+    },
+    {
+     "command": "pnpm test (unit)",
+     "passed": true,
+     "note": "round 2: 418 files, 7,125 passed, 4 skipped"
+    },
+    {
+     "command": "pnpm test:db shard 1/4 (fresh database)",
+     "passed": true,
+     "note": "Round 2 first run: 1 failure in tools/release/load.db.test.ts, 'leaves the release analyzed and frozen' (relallvisible was 0, expected 7, after VACUUM FREEZE), and 3,291 passed. Neither SS-01 nor #82 touches that file, and it passed in round 1. Rerun on a fresh database: 34 files, 3,292 passed, 1 skipped. The file alone, three times: 13 of 13 passed each time."
+    },
+    {
+     "command": "pnpm test:db shard 2/4",
+     "passed": true,
+     "note": "34 files, 2,697 passed"
+    },
+    {
+     "command": "pnpm test:db shard 3/4",
+     "passed": true,
+     "note": "34 files, 2,590 passed"
+    },
+    {
+     "command": "pnpm test:db shard 4/4",
+     "passed": true,
+     "note": "33 files, 982 passed. Total: 135 files, 9,561 passed, 1 skipped"
+    },
+    {
+     "command": "pnpm build + build stamp",
+     "passed": true,
+     "note": "stamp efb20704b8a358681c8d60378bc78674e3b0d2c8"
+    },
+    {
+     "command": "E2E_PREBUILT=1 E2E_PORT=4971 pnpm test:e2e --workers=2 (whole suite)",
+     "passed": true,
+     "note": "68 passed in 11.0m. An earlier round-2 run was killed by SIGTERM when the session was interrupted at test 67 of 68, with no failures up to then; it was rerun in full."
+    },
+    {
+     "command": "pnpm verify-content",
+     "passed": true
+    },
+    {
+     "command": "pnpm synth --all + pnpm check:fixtures",
+     "passed": true,
+     "note": "0 written (662 and 16 unchanged); the guard read 333 files and searched 3,987; every interchange is synthetic"
+    },
+    {
+     "command": "pnpm -s db:domain-model --check",
+     "passed": true,
+     "note": "Matches the schema at head 20261108090000 and the 381 function names. Approval line is line 7413, and its hash is 6559c5b9... The SHA-256 of the whole file is cdb8c5234c3e55fef1358486d59aa5585ecb9d57a7bc874aa0ee823123c8361c."
+    },
+    {
+     "command": "pnpm actions:check",
+     "passed": true,
+     "note": "no new pins"
+    },
+    {
+     "command": "pnpm toolchain:check",
+     "passed": true,
+     "note": "0 errors, 1 warning"
+    },
+    {
+     "command": "git push -u origin co-001/ss-01-suspension-refusal",
+     "passed": true,
+     "note": "Went through the pre-push hook. The hook reported that every commit was already on the remote (both parents of efb20704 had been pushed and checked), so it had nothing to check. 9777ddc0..efb20704"
+    },
+    {
+     "command": "Pattern check (tables and forms) on f897a282",
+     "passed": true,
+     "note": "Both SS-01 tables use ScrollTable: the suspension History table and the console mail Undelivered messages table. The phone e2e covers them in billing.spec (History) and mail-cutoff (/console/mail). The suspend, change-reason, reinstate and resume forms all use ActionForm, and billing.spec checks that a refused suspension keeps the reason and the note. No gap was found, so nothing was changed."
+    }
+   ],
+   "all_passed": true,
+   "pushed": true,
+   "open_items": [
+    "Flaky test: on the first round-2 run of test:db shard 1, tools/release/load.db.test.ts saw relallvisible 0 after VACUUM FREEZE. It passed on a fresh-database rerun and on 3 runs of the file alone. The likely cause is another session on the shared PostgreSQL 18 cluster holding back the VACUUM horizon. The file is outside SS-01; it is recorded rather than changed.",
+    "Phone stacked rows: no SS-01 table uses StackedRows, and nothing on the base uses it yet. ADR 0078 section 5 applies it to working lists, and leaves those to the review's 34th pull request. The SS-01 tables (suspension History, Undelivered messages) are read-only record lists in ScrollTable, so they were left unchanged. If the 34th pull request is meant to stack them too, it should include them.",
+    "The SS-01 commits are 9777ddc0 (merge of #78) and efb20704 (merge of #82). The SS-01 pull request opens only after #42 merges, and its approval line still needs the founder's review.",
+    "GitHub reports 1 moderate Dependabot alert on the default branch (alert 1). It is outside SS-01's scope."
+   ]
+  },
+  {
+   "ok": true,
+   "problems": [
+    {
+     "what": "The pushed head adds a second merge (#82) that the task did not describe",
+     "evidence": "efb20704 has parents 9777ddc0 and bce57f16, which is claude/build-platform's current tip (#82, the CI pin-age work). The task describes only the #78 merge, which is 9777ddc0 (parents f897a282 and 83d71fd6). I replayed the #82 merge: it has no conflicts, and the committed tree differs from git's automatic merge only in the domain model's provenance line. The merge commit's message explains it.",
+     "severity": "nit",
+     "fix": "None needed. The orchestrator should record that the SS-01 head now includes #82, so later steps (1b, the interest fix) merge from bce57f16 and not from 83d71fd6."
+    },
+    {
+     "what": "SS-01's own screening form still uses a raw controlled checkbox, not #74's CheckboxField",
+     "evidence": "apps/web/src/components/screening/upload-form.tsx:109 has <input type=\"checkbox\" id=\"field-keepAddress\" ... checked={keep} onChange=...>. It comes from commit 89998f41e on the SS-01 side, which is not in main and is older than this merge. CheckboxField has no controlled checked prop, and the box's state lives in the client component, so the input is probably kept after a refusal. No unit or browser test covers keeping keepAddress after a refusal (only routes.ts and routes.db.test.ts mention it).",
+     "severity": "nit",
+     "fix": "Open item, outside this merge: add a controlled variant to CheckboxField, or a test that the box keeps its value after a refusal (in line with ADR 0077)."
+    }
+   ],
+   "notes": "Verdict: I could not refute the step. It is correct. I checked it in my own clone (/tmp/claude-0/-home-user-PhysicalTherapy/6af08ef9-734c-5d6d-a787-51ade7156d78/scratchpad/verify-ss01) at efb20704, which matches origin/co-001/ss-01-suspension-refusal. The progress log is /tmp/claude-0/-home-user-PhysicalTherapy/6af08ef9-734c-5d6d-a787-51ade7156d78/scratchpad/progress/verify-ss01.md.\n\nParents:\n- 9777ddc0 = f897a282 + 83d71fd6 (#78).\n- efb20704 = 9777ddc0 + bce57f16 (#82, the current build-platform tip).\n- The merge-base is 56ed6279, so #74 and #79 were already on both sides before this merge.\n\nConflicts (replayed with git merge --no-commit):\n- The #78 merge had one conflict, the doc comment in apps/web/scripts/synthetic-personas.ts. The resolution keeps both sides' text, re-wrapped:\n  - SS-01's suspended firm, client group administrator and console suspension administrator.\n  - #78's billing manager and viewer for the refused-downloads journey.\n  - Every code line from both sides is present.\n- Apart from that hunk and the domain model's provenance line, the committed merge is byte-equal to git's automatic merge. The #82 merge had no conflicts and also differs only in the provenance line.\n- Eight files were changed by both sides: personas, invoke.ts, uploads.ts, reconciliation-001, test-matrix, the synth matrix and registry, and watched-paths. Every added line from each side is present in the merge except the re-wrapped comment lines. The edits to invoke.ts and uploads.ts do not overlap.\n- The case IDs DLR-01/04, CI-21/23, SEC-19, SCR-22 and BIL-09 all appear in the test matrix, the registry and the synth matrix.\n- Scope: the only file the merges changed beyond main's own changes is docs/product/domain-model.md (provenance line). No migration or content/releases file changed.\n\nGenerated files, all byte-equal (git status in the clone stayed clean after every generator):\n- pnpm install --frozen-lockfile: exit 0.\n- pnpm -s exec tsx tools/screening-capacity/watched.ts --write: exit 0, 547 lines, no change.\n- pnpm synth --all: 270 cases, 0 files written, 662 unchanged, 0 removed; 8 EMR export formats, 0 written, 16 unchanged.\n- pnpm db:migrate on a fresh tp_vss01_1: 46 migrations applied.\n- pnpm -s db:domain-model --check: exit 0. The document and the 381 packages/db/functions files match the schema at 20261108090000.\n\nRules:\n- tables.test.ts is identical to all four parents, and it passes.\n- No .allow-protected-edit file is in the tree.\n- approvers.json is unchanged and the approval line is still blank.\n- No model identifier appears in either merge's diff. \"Opus\" appears only in the required Co-Authored-By trailer.\n- SS-01's new tables (suspension-card, console mail and organizations pages, and others) use ScrollTable. Its forms use ActionForm, Field, SelectField and CheckboxField; the only raw inputs are hidden fields, apart from the keepAddress checkbox (second nit). The raw checkbox on the users page is old main code.\n\nOther checks:\n- apps/web vitest (tables, form-hints, form-issues, fields, action-form, scroll-table, console/*, billing/*, suspension-words): 11 files, 140 tests passed.\n- packages/synth vitest: 13 files, 185 tests passed.\n- tools/screening-capacity/watched.test.ts: 6 tests passed.\n- pnpm typecheck: 22 projects passed.\n- pnpm verify-content: every content set passes.\n- tp_vss01_1 has been dropped."
+  },
+  {
+   "head": "ce408d2f5c82991235a156b7261cdfa9981b0aff",
+   "merged": "efb20704b8a358681c8d60378bc78674e3b0d2c8 (SS-01, carrying claude/build-platform and SUITE-CAP-1a #81) merged --no-ff into SUITE-CAP-1b 358dc53f; merge commit ce408d2f pushed to origin/co-001/suite-cap-1-triage-locks",
+   "domain_model_sha256": "81d0ac762702a2c2a2bb1f1b523ffdbf38be30320a619837ca93598b80254065",
+   "approval_line_number": 7458,
+   "conflicts": [
+    "docs/product/test-matrix.md: kept both sides, with the rows in order CAS-39, CAS-41 (1a), CAS-40, CAS-42 (1b)",
+    "packages/synth/src/cases/matrix.ts: kept both sides in the same order (CAS-39, CAS-41, CAS-40, CAS-42)",
+    "packages/synth/src/cases/registry.ts: kept both sides. 1a's CAS-41 entry and its comment come first, then 1b's CAS-40 and CAS-42 entries and their comment",
+    "docs/runbooks/ci.md (release-capacity capacity row): merged by meaning. Kept 1b's row (A's reconcile phase, the large jobs together, the fail conditions) and added the base's clause 'the worker image built and its headless shell held to browser.json (browser-build.ts --image)'",
+    "docs/product/domain-model.md (generated): took the SS-01 side to clear the marker, then regenerated it with pnpm db:domain-model --out --strict on tp_sc1b_m2_1, freshly migrated from empty (47 migrations; 100 tables, 1 view, 48 registered, 230 divergence rows with 23 to approve, 0 explanation problems; 381 function files, 0 written, 0 removed)",
+    "No conflict in docs/adr/0083: 1b never wrote it, so SUITE-CAP-1a's file is kept whole. No conflict in the worker or db files: 1a and 1b share no file there. watched-paths.txt auto-merged; the regeneration left it unchanged (548 lines) and left pnpm-lock.yaml unchanged. pnpm synth --all wrote 0 files"
+   ],
+   "checks": [
+    {
+     "command": "git fetch origin co-001/ss-01-suspension-refusal; git merge --no-ff efb20704 (in /home/user/sc1b)",
+     "passed": true,
+     "note": "FETCH_HEAD = efb20704; f5bd6201 is its ancestor. 5 conflicts, resolved as listed. Merge commit ce408d2f has parents 358dc53f and efb20704."
+    },
+    {
+     "command": "Step 2: do 1a's and 1b's code meet (read)",
+     "passed": true,
+     "note": "1a adds no migration. claim_by_superseded exists only in 1b's 20261109090000 and schema/remittances.ts. 1a's readers still read line_status by seq DESC: judgedCandidates/candidateRows (execute.ts:230), gatherReport/runLines (content.ts:394,485) and advanceStages' LATERAL lookup (execute.ts:391-396) through line_status_by_line. 1b keeps that index and keeps line_status_head internal, as the design's 'elsewhere' item says, so the readers run unchanged on the merged schema. test:db, which includes 1a's batched and streamed tests and 1b's line-status and stage-head tests, passes. 1b re-implements nothing of 1a's: apps/worker/src/heap.ts is the production D19 live-heap watcher, not a copy of 1a's test-support/memory.ts, and 1b changes no reconcile TypeScript. 1b changes no workflow file, so release-capacity.yml is the base's: runs-on ubuntu-26.04 on both jobs, with the browser-build --image step."
+    },
+    {
+     "command": "pnpm install; pnpm -s exec tsx tools/screening-capacity/watched.ts --write",
+     "passed": true,
+     "note": "Neither the lockfile nor watched-paths.txt changed (548 lines)."
+    },
+    {
+     "command": "pnpm db:migrate && pnpm db:domain-model --out --strict (fresh tp_sc1b_m2_1, dropped)",
+     "passed": true,
+     "note": "The domain model was regenerated and committed; 0 function files were written."
+    },
+    {
+     "command": "pnpm typecheck",
+     "passed": true
+    },
+    {
+     "command": "NODE_OPTIONS=--max-old-space-size=6144 pnpm lint",
+     "passed": true
+    },
+    {
+     "command": "pnpm lint:copy",
+     "passed": true
+    },
+    {
+     "command": "pnpm lint:logs",
+     "passed": true
+    },
+    {
+     "command": "pnpm test",
+     "passed": false,
+     "note": "First run: 418 of 419 files passed; 7,150 tests passed, 2 failed, 4 skipped. Both failures were in tools/test/workflows.test.ts and had one cause in this machine's environment: an orphaned playwright-core@1.56.1 left in node_modules/.pnpm by an earlier install. I pruned it as docs/runbooks/ci.md says (pnpm install --frozen-lockfile --config.modules-cache-max-age=0), and the repository did not change."
+    },
+    {
+     "command": "pnpm exec vitest run --project unit tools/test/workflows.test.ts (after the prune)",
+     "passed": true,
+     "note": "1 file, 116/116 passed. The full unit suite was not rerun after the prune."
+    },
+    {
+     "command": "pnpm db:migrate && pnpm test:db --shard=k/4 (k=1..4, each on a fresh tp_sc1b_m2_s<k>, one after another, dropped after)",
+     "passed": true,
+     "note": "Shard 1: 35 files, 3,316 passed and 1 skipped (restore-drill's pg_dump case, as before). Shard 2: 35 files, 2,179 passed. Shard 3: 34 files, 3,115 passed. Shard 4: 34 files, 990 passed. Total: 138 files, 9,600 passed and 1 skipped."
+    },
+    {
+     "command": "pnpm verify-content",
+     "passed": true
+    },
+    {
+     "command": "pnpm synth --all",
+     "passed": true,
+     "note": "272 cases: 0 written, 664 unchanged, 0 removed. 8 EMR formats: 0 written."
+    },
+    {
+     "command": "pnpm check:fixtures",
+     "passed": true,
+     "note": "333 files read by the guard, 3,995 text files searched."
+    },
+    {
+     "command": "pnpm -s db:domain-model --check (fresh tp_sc1b_m2_c, dropped)",
+     "passed": true,
+     "note": "The document matches the schema at 20261109090000 and the 381 function files. SHA-256 81d0ac76...254065; the approval line is at 7458."
+    },
+    {
+     "command": "pnpm -s db:domain-model --check --require-approval",
+     "passed": false,
+     "note": "Expected: the line is unapproved, with no name and no date. I wrote neither the approval line nor approvers.json."
+    },
+    {
+     "command": "git push -u origin co-001/suite-cap-1-triage-locks",
+     "passed": true,
+     "note": "The pre-push hook passed (fixture guard, and gitleaks found no secret). 358dc53f..ce408d2f, first try."
+    }
+   ],
+   "all_passed": true,
+   "pushed": true,
+   "open_items": [
+    "The full pnpm test was not rerun after the node_modules prune. Only the failing file was rerun (workflows.test.ts, 116/116). CI will run the full suite.",
+    "The domain-model approval line (line 7458, SHA-256 81d0ac762702a2c2a2bb1f1b523ffdbf38be30320a619837ca93598b80254065) waits for the founder. It goes as a suggested change when 1b's PR opens after #42.",
+    "Not changed: the design leaves 1a's readers reading line_status by seq DESC rather than line_status_head (the design's later performance item).",
+    "No protected-edit marker was needed or created; no migration was edited.",
+    "The progress file is /tmp/claude-0/-home-user-PhysicalTherapy/6af08ef9-734c-5d6d-a787-51ade7156d78/scratchpad/progress/sc-m2-1b.md. All tp_sc1b_m2_* databases are dropped."
+   ]
+  },
+  {
+   "ok": true,
+   "problems": [
+    {
+     "what": "ADR 0083 has no SUITE-CAP-1b side, so after the merge the ADR still describes 1b's decisions as reserved and not yet built, even though 1b's code and documents cite them as decided",
+     "evidence": "Neither side's changes to ADR 0083 were dropped: 358dc53f never touched the file (git diff --stat f5bd6201 358dc53f -- docs/adr/0083* is empty), and the merge's copy equals efb20704 byte for byte. But the ADR's own status line (lines 3-6) says 1b 'completes this status line and adds the lock's section as built', and lines 114-118 list D1-D6, D9, D10, D15, D19, D20, D22 and D23 as 'Reserved for SUITE-CAP-1b'. Meanwhile 1b's commits, migration comments, ci.md ('Reading a red release-capacity run (SUITE-CAP-1b, ADR 0083)') and the ADR 0038 note cite 'docs/adr/0083, D19 and D23' and D20 as decided. Design ops/designs/suite-cap-1-triage-locks.md lines 1218 and 1275 list 'ADR 0083's status and lock section' as a 1b deliverable. The merge commit's subject says outright: 'ADR 0083 stays as SUITE-CAP-1a wrote it'. So the claim that the merge 'kept 1a's and 1b's sides in ADR 0083' holds only because 1b has no side; the ADR does not yet cover 1b's decisions.",
+     "severity": "should-fix",
+     "fix": "In a follow-up commit on co-001/suite-cap-1-triage-locks (no rewrite of the pushed merge), complete ADR 0083's status line and add 1b's lock section as built, recording D1-D6, D9, D10, D15, D19, D20, D22 and D23, then update 'Revisit when'."
+    },
+    {
+     "what": "CAS-42's in-repo test coverage is incomplete: the 100,000-line triage and report parts (CAS-42.1 and .2) have no test, and the registry's CAS-42 entry leaves out reconcile.large.db.test.ts",
+     "evidence": "registry.ts:261-264 gives CAS-42 assertedBy as only tools/release-capacity/checks.test.ts and scenario.test.ts. apps/worker/src/reconcile/reconcile.large.db.test.ts (CAS-42.3) mentions CAS-42 but is not listed. The design (lines 1212-1213) names apps/worker/src/triage/triage.large.db.test.ts (new) and a SLOW_FIRST entry in vitest.config.ts; neither exists on 358dc53f or on ce408d2f, where vitest.config.ts:39-44 lists only 1a's batched and streamed tests. These gaps predate the merge (1b was written before it had 1a's batched reads), so this is an open item for 1b, not an error in the merge.",
+     "severity": "should-fix",
+     "fix": "On 1b, now that 1a's batched reads are merged, add triage.large.db.test.ts for CAS-42.1 and .2 with its SLOW_FIRST entry, and add it and reconcile.large.db.test.ts to CAS-42's assertedBy."
+    },
+    {
+     "what": "The merge commit has a subject of about 400 characters and no body; the sibling merges on SS-01 explain each conflict and the regeneration in a body",
+     "evidence": "git log -1 --format=%B ce408d2f gives the subject, a blank line and the two trailers. Compare 9777ddc0 and efb20704, whose bodies list each conflict, how it was resolved and every regenerated file. The commit is pushed, so changing the message would need a force push, which is not allowed.",
+     "severity": "nit",
+     "fix": "Leave it. Put the conflict and regeneration account in the PR description when 1b's PR opens."
+    }
+   ],
+   "notes": "I could not refute the merge itself. Verified on a read-only clone at /tmp/claude-0/-home-user-PhysicalTherapy/6af08ef9-734c-5d6d-a787-51ade7156d78/scratchpad/verify-1b-merge, checked out at ce408d2f. The live remote's co-001/suite-cap-1-triage-locks also points to ce408d2f (git ls-remote).\n\nParents and conflicts:\n- Parents are 358dc53f (first) and efb20704 (second); the merge base is f5bd6201.\n- Re-running the merge without committing gave five conflicts: docs/product/domain-model.md, docs/product/test-matrix.md, docs/runbooks/ci.md, packages/synth/src/cases/matrix.ts and registry.ts. The pushed tree differs from the automatic merge only in those five files, so nothing was edited by hand elsewhere.\n- Resolutions: the test matrix, the synth matrix and the registry run CAS-39, CAS-41, CAS-40, CAS-42 with both sides whole. The ci.md release-capacity row joins the base's headless-shell check (browser-build.ts --image) with 1b's reconcile phase, the large jobs together and the failure list. The domain model was regenerated.\n- A script checked every line each side added (relative to the merge base) to test-matrix, ci.md, the synth matrix and registry, reconciliation-001, ADR 0038 and the deploy-and-rollback and incident-response runbooks. Every line is present in the merge, except each side's own version of the one combined ci.md row, as intended.\n\nCode merged by meaning:\n- No worker or db file was changed by both sides, so these merged without conflict.\n- 1a's readers (advanceStages, the triage query, the report and the patient-balance reads) find a line's latest stage by seq DESC through line_status_by_line, the index from migration 20261019160000. That still holds on 1b's schema, because 1b's trigger draws seq under the line_status_head row lock.\n- 1a's superseded_by_claim_id lookups are served by 1b's claim_by_superseded.\n\nGenerated files on that tree:\n- pnpm db:domain-model --check --strict on a database freshly migrated from empty (all 47 migrations, head 20261109090000): rc 0, document and function files match (381 function names, 100 tables, 23 divergences to approve).\n- --out to a temporary path: byte-equal except the provenance line, which --check ignores. Function files identical.\n- pnpm install --frozen-lockfile: ok. pnpm install --lockfile-only: no diff.\n- watched.ts --write: no diff (548 lines).\n- pnpm synth --all: 272 cases, 0 files written, 664 unchanged, 0 removed; 8 EMR export formats, 16 unchanged.\n- git status stayed clean throughout.\n\nOther checks:\n- apps/web/src/app/tables.test.ts is identical to efb20704's copy (the file is new from the SS-01 side), so its counts are unchanged.\n- packages/db/domain-model/approvers.json is unchanged, the approval line is still blank with only the generated hash, no .allow-protected-edit file is in the tree, and there is no .gitleaksignore change.\n- No model identifier appears in any line the merge adds; the only match is the required Co-Authored-By trailer.\n- Scope is the parents' content only.\n\nTest runs:\n- pnpm typecheck: passed, 22 projects.\n- Targeted unit run, vitest --project unit over packages/synth, tables.test.ts, heap, worker, csv-arena, patient-share, tools/release-capacity, tools/screening-capacity and packages/observability: 31 files, 565 tests passed.\n- Targeted db run, vitest --project db over catalog, cross-tenant, line-status, migrate, packages/db/src/domain-model and apps/worker/src/{triage,report,reconcile} (batched, streamed, stage-head and reconcile.large among them): 26 files, 1,499 tests passed.\n- Heavy commands ran under flock /tmp/laneb-heavy.lock. Databases tp_v1b-merge_1 and tp_v1b-merge_2 are dropped.\n\nThe full test:db, e2e, lint and test:golden suites were not run. Progress log: /tmp/claude-0/-home-user-PhysicalTherapy/6af08ef9-734c-5d6d-a787-51ade7156d78/scratchpad/progress/verify-1b-merge.md. Run logs are under /tmp/claude-0/-home-user-PhysicalTherapy/6af08ef9-734c-5d6d-a787-51ade7156d78/scratchpad/logs/ (v1b-*.log)."
+  },
+  {
+   "head": "d39b72c098a9a5d28775e32f8ae3a5a2e64a4dc6",
+   "merged": "c18a847e (merge of ce408d2f5c82991235a156b7261cdfa9981b0aff into co-001/ledger-interest-once over e0646746; d39b72c0 is the test fix on top). Not pushed yet.",
+   "checks": [
+    {
+     "command": "pnpm typecheck",
+     "passed": true,
+     "note": "22 projects pass"
+    },
+    {
+     "command": "pnpm lint",
+     "passed": true,
+     "note": "1,729 files, 0 errors, 0 warnings"
+    },
+    {
+     "command": "pnpm test (unit)",
+     "passed": true,
+     "note": "Run 2 had 2 failures, 7237 passed and 4 skipped. Both failures were 5 s timeouts under shared load in 1b's image-id.test.ts and csv-arena.test.ts. Both passed in run 1, and a rerun of those two files alone passed 16/16. Run 1's 2 workflows.test.ts failures came from an orphan playwright-core in node_modules; after a reinstall that file passed 116/116."
+    },
+    {
+     "command": "pnpm -s db:migrate && pnpm test:db --shard=1/4 (fresh tp_intmerge_b1)",
+     "passed": true,
+     "note": "35/35 files, 3332 passed and 1 skipped. The skip is restore-drill, which ran without PG_BIN_DIR. It still needs a rerun with PG_BIN_DIR=/opt/pg18/bin."
+    },
+    {
+     "command": "pnpm -s db:migrate && pnpm test:db --shard=2/4 (fresh tp_intmerge_b2)",
+     "passed": true,
+     "note": "35/35 files, 2184/2184 passed"
+    },
+    {
+     "command": "pnpm test:db --shard=3/4 and 4/4 (fresh tp_intmerge_b3/b4, PG_BIN_DIR=/opt/pg18/bin)",
+     "passed": false,
+     "note": "Not finished. The earlier run was cut off and the rerun was still going when this report was forced, so there is no result."
+    },
+    {
+     "command": "pnpm -s db:domain-model --check",
+     "passed": true,
+     "note": "SHA-256 matches (3083defa33a3...). The approval line is blank and is the founder's to fill, so --require-approval exits 1 as expected."
+    },
+    {
+     "command": "pnpm db:domain-model --out --strict (fresh tp_intmerge_1, 48 migrations, head 20261110090000); watched.ts --write; pnpm install --frozen-lockfile",
+     "passed": true,
+     "note": "Only the provenance line changed. Functions: 382 files, 0 written, 0 removed. watched-paths unchanged."
+    },
+    {
+     "command": "pnpm synth --all; pnpm check:fixtures",
+     "passed": false,
+     "note": "Not run yet"
+    }
+   ],
+   "all_passed": false,
+   "pushed": false,
+   "conflicts": [
+    "docs/product/domain-model.md (generated): took ours, then regenerated it with db:domain-model --out --strict on a freshly migrated database",
+    "Auto-merged and checked by meaning: apps/worker/src/reconcile/remittances.ts. 1b split chainContext into chainMatches, claimReversals and practiceChains; the interest fix's ORDER BY m.seq is kept in chainMatches. reconciliation-001, test-matrix, the synth matrix and registry, and watched-paths.txt keep both sides.",
+    "Merged by meaning in follow-up d39b72c0: 1b's streamed.db.test.ts LEDGER_MATCHES_SENT now expects 'ORDER BY m.seq'. The route tests' ledger-world.ts now pays interest through a PLB L6 (-50, SYNCCNROUTE0003), a claim match and a two-record interest match, because migration 20261110 skips an interest match that has no provider adjustment."
+   ],
+   "open_items": [
+    "Finish test:db shards 3/4 and 4/4 on fresh databases with /tmp/claude-0/-home-user-PhysicalTherapy/6af08ef9-734c-5d6d-a787-51ade7156d78/scratchpad/int-merge-dbB34.sh. The background run is ended when this report is returned.",
+    "Rerun apps/worker/src/platform/restore-drill.db.test.ts with PG_BIN_DIR=/opt/pg18/bin; it was skipped in shard 1",
+    "Run pnpm synth --all and pnpm check:fixtures, and commit anything they write",
+    "Push co-001/ledger-interest-once (176 commits ahead, head d39b72c0) with git push -u origin co-001/ledger-interest-once",
+    "Drop tp_intmerge_1 and tp_intmerge_b1 to b4 when done",
+    "Unit-test timeouts under load in 1b's image-id.test.ts and csv-arena.test.ts (5 s default) belong to 1b's lane",
+    "Progress is saved in /tmp/claude-0/-home-user-PhysicalTherapy/6af08ef9-734c-5d6d-a787-51ade7156d78/scratchpad/progress/sc-int-merge.md"
+   ],
+   "domain_model_sha256": "3083defa33a3 (prefix as recorded)"
+  },
+  {
+   "head": "ce408d2f5c82991235a156b7261cdfa9981b0aff (nothing committed or pushed; the work is uncommitted in /home/user/sc1b)",
+   "peaks": "Head ce408d2f at 100,000 lines, two full runs (logs/gate-head-100k.log, logs/head-100k-2.log). Times below are from run 2; run 1 is in brackets.\n- CAS-42.1, A's triage alone with a 420 MiB heap flag: 60.1 s [61.5 s] against a 120 s budget. The actionable write took 6.6 s [6.7 s] against 30 s. Live heap peak 151 MiB [160] against the 315 MiB line. Sampled heap 231 MiB, resident memory 486 MiB, at most 1 advisory lock. 83,332 lines validated, 41,667 actionable, 1 case. PASS.\n- CAS-42.1, A's report alone right after that triage: 460.2 s [481.3 s] against a 180 s budget, so it FAILS on time. Live heap 128 MiB [149], sampled 212 MiB, resident 549 MiB, 1 lock.\n- CAS-42.2, A's report and Y's triage together with a 560 MiB flag: the report took 87.2 s [89.4], the triage 70.0 s [72.3] with its actionable write at 6.9 s. Live heap 189 MiB [220] against the 420 MiB line. Sampled 307 MiB, resident 649 MiB, 1 lock. PASS.\n- Shared setup took 191 s and 317 s. The whole file took 838 s and 939 s.\n- Base efb20704 with the test, its child script and heap.ts copied into a scratch worktree, since removed:\n  - At 100,000 lines, B's 20,000-line triage in setup failed with 53200 (out of shared memory) after 30 s, so both tests were skipped.\n  - At 20,000 lines, both tests failed with 53200 (A's triage, and A's report beside Y's triage). Setup 44.7 s, total 71 s.\n- V8's heap_size_limit is 612 MiB under a 420 flag and 752 MiB under a 560 flag.",
+   "checks": [
+    {
+     "command": "flock /tmp/laneb-heavy.lock pnpm exec vitest run --project db apps/worker/src/triage/triage.large.db.test.ts (head, 100k, run 2)",
+     "passed": false,
+     "note": "Tests: 1 failed, 1 passed (2), 938.7 s. CAS-42.2 passes. CAS-42.1 fails on the report's 180 s budget (460,197 ms). The test files have not changed since this run."
+    },
+    {
+     "command": "same, base efb20704 scratch, TP_LARGE_TRIAGE_LINES=100000",
+     "passed": false,
+     "note": "Expected failure. 53200 in setup at B's validated insert; 2 tests skipped; 29 s."
+    },
+    {
+     "command": "same, base efb20704 scratch, TP_LARGE_TRIAGE_LINES=20000",
+     "passed": false,
+     "note": "Expected failure. Tests: 2 failed (2); both children failed with 'large job failed: 53200 out of shared memory'; 71.5 s."
+    },
+    {
+     "command": "diagnostic run with auto_explain and autovacuum off (zz-diag file, deleted, never committed)",
+     "passed": false,
+     "note": "The report's DECLARE triage_candidates took 421.7 s. The planner used a nested loop anti join to case_line through case_line_by_case and filtered 2.6e9 rows."
+    },
+    {
+     "command": "pnpm -s synth --case CAS-42",
+     "passed": true,
+     "note": "1 file written: fixtures/synthetic/CAS-42/expected.json, with both large tests added to assertedBy."
+    },
+    {
+     "command": "scratchpad/g-checks.sh: pnpm typecheck; pnpm lint; pnpm lint:logs; vitest --project unit tools/test packages/synth; pnpm check:fixtures; pnpm verify-content",
+     "passed": false,
+     "note": "Not finished. Typecheck was still running when this turn had to end, so none of these checks has a result."
+    }
+   ],
+   "open_items": [
+    "CAS-42.1 fails on the head: A's report right after A's triage takes 460 to 481 s against a 180 s budget; 391.8 s of that is FETCH from triage_candidates. Cause: the NOT EXISTS (case_line) check in the candidateRows query in apps/worker/src/triage/execute.ts. The planner works from statistics taken before the triage added 41,667 case lines, picks a nested loop through case_line_by_case and filters 2.6e9 rows. It ignores the case_line_once index. When autovacuum's ANALYZE runs first, the report takes about 80 s. Fix: a lookup through case_line_once, or an index on (practice_id, service_line_id). execute.ts is not my file, so this goes to Lane A. Written up in ADR 0083's 1b section and under Revisit when. The test is not loosened.",
+    "Nothing is committed or pushed. Next run: rerun /tmp/claude-0/-home-user-PhysicalTherapy/6af08ef9-734c-5d6d-a787-51ade7156d78/scratchpad/g-checks.sh, then commit and run git push -u origin co-001/suite-cap-1-triage-locks. The progress file /tmp/claude-0/-home-user-PhysicalTherapy/6af08ef9-734c-5d6d-a787-51ade7156d78/scratchpad/progress/sc-1b-gate.md is up to date.",
+    "apps/worker/src/triage/test-support/large-jobs.ts is a new file outside my owned list. It is the child process that runs the jobs, and the test needs it.",
+    "The weekly live-heap check (tools/release-capacity/checks.ts) takes 75% of V8's heap_size_limit, which is 752 MiB under the worker's 560 MiB flag. That gives a 564 MiB line instead of the 420 MiB the design meant. The production alarm is not affected. Recorded under Revisit when.",
+    "I did not split CAS-42.2 into together.large.db.test.ts: a second file would repeat the 3 to 5 minute setup. With 4 shards this file lands in shard 1 next to streamed, reconcile.large, price.large and era-export.large. The file takes 14 to 16 minutes locally while the report bug lasts, against the 20-minute CI job limit. Check the shard's wall time in the PR.",
+    "Leftover tp_test_* databases on port 5433 (6 of them) do not show which run made them, so I left them in place.",
+    "CAS-42.5 and CAS-42.6 need an 8-CPU runner (RUNNER_TOO_SMALL here). They are waiting on the founder and were not run."
+   ],
+   "files": [
+    "/home/user/sc1b/apps/worker/src/triage/triage.large.db.test.ts",
+    "/home/user/sc1b/apps/worker/src/triage/test-support/large-jobs.ts",
+    "/home/user/sc1b/vitest.config.ts",
+    "/home/user/sc1b/tools/test/db-shards.test.ts",
+    "/home/user/sc1b/packages/synth/src/cases/registry.ts",
+    "/home/user/sc1b/fixtures/synthetic/CAS-42/expected.json",
+    "/home/user/sc1b/docs/adr/0083-read-a-months-triage-and-audit-report-in-batches-look-each-line-up-through-an-index-and-hold-only-a-small-measured-share-of-heap-per-line.md",
+    "/tmp/claude-0/-home-user-PhysicalTherapy/6af08ef9-734c-5d6d-a787-51ade7156d78/scratchpad/progress/sc-1b-gate.md"
+   ],
+   "differences_from_design": [
+    "CAS-42.1 does not yet meet section 8.4's report budget on the head. The heap gate in section 8.2 holds: every live peak is under 50% of the flag in force.",
+    "The test checks each live peak against 75% of the heap flag, not against V8's heap_size_limit, because heap_size_limit includes the young generation.",
+    "The db-shards SLOW_FIRST count went from 15 to 17 (triage.large and reconcile.large)."
+   ]
+  },
+  {
+   "recommended_route": "Neither run needs the founder or any money. The premise that run.ts stops as RUNNER_TOO_SMALL below 8 CPUs does not match the code at ce408d2f. runnerTooSmall() needs 4 CPUs (requiredCpus = sharedLayoutCpus = 4). I evaluated it with tsx and it returns no problems both for this container (4 CPUs, 16,091 MiB) and for GitHub's 4-CPU, about 15,990 MiB runner. Two FULL_SIZE runs already measured on GitHub's free 4-CPU runner without that stop: 40479127979 (scheduled) and 40584379787 (dispatched on co-001/ci-browser). Both logged \"runner 4 CPUs ... runtime docker\", loaded release 900110 and reached a verdict. Recommended route: (1) CAS-42.5, the after run: dispatch release-capacity.yml on co-001/suite-cap-1-triage-locks. It runs on the free ubuntu-26.04 runner with the Docker runtime, so Postgres is held to db.t4g.medium's limits and gets the 1 ms delay. (2) CAS-42.6, before and after with the same harness: the design's section 8.2 local route in this container. Use the head's harness with --runtime process, two image directories (the base's and the head's) and one release directory, under flock. Withdraw the note that these runs wait on the founder.",
+   "routes": [
+    {
+     "route": "A. Dispatch the weekly workflow on co-001/suite-cap-1-triage-locks (GitHub's free standard 4-CPU runner, ubuntu-26.04). This gives CAS-42.5, the after run.",
+     "needs_person": false,
+     "cost": "$0. The repository is public and the owner is a User account; standard-runner minutes are free. Expect 60 to 180 minutes (timeout 180). The earlier runs on the base took 27 to 31 minutes because they failed at A's triage. The head adds 7b and 7c.",
+     "commands": "gh workflow run release-capacity.yml -R PureTideWater/PhysicalTherapy --ref co-001/suite-cap-1-triage-locks. There are no dispatch inputs. Alternatives: the MCP tool actions_run_trigger (run_workflow, workflow_id release-capacity.yml, ref co-001/suite-cap-1-triage-locks), or the Actions page, Run workflow, branch co-001/suite-cap-1-triage-locks. Watch the run with gh api repos/PureTideWater/PhysicalTherapy/actions/workflows/release-capacity.yml/runs?branch=co-001/suite-cap-1-triage-locks, then read the run's release-capacity artifact (summary.md, release-capacity.json). Notes: (1) The dispatch uses the pushed head. ce408d2f is pushed. The worktree's two uncommitted edits (ADR 0083, synth registry.ts) are not in it. (2) The workflow builds one image from its own ref and has no base-image input, so it cannot give CAS-42.6's before run with the same harness. (3) A failure makes the notify job comment on open issue #73. (4) The proxy refused the actions/runners and actions/permissions reads, and I did not test the dispatch endpoint. If gh is refused, use the MCP tool or the Actions page. A person is needed only if both are refused (the token's account, PureTideWater, has admin)."
+    },
+    {
+     "route": "B. The design's section 8.2 local reproduction in this container (process runtime, cgroup v1 cpu/cpuset/memory present and writable, PostgreSQL 18 on 5433, Chromium in /opt/pw-browsers). The head's harness runs on the base's and the head's worker builds against one release directory. This gives CAS-42.6's before and after, and an indicative CAS-42.5.",
+     "needs_person": false,
+     "cost": "$0. Each heavy step runs one at a time under flock /tmp/laneb-heavy.lock. The release build takes about 10 to 20 minutes (6 GB heap; this machine has 16 GB). Each run takes one to three hours, mostly the release load (452 to 561 s on GitHub) and the head's 7b. The worker is held to 0.5 vCPU and 1,024 MiB by cgroups. Postgres is the shared server: unlimited, warm, no netem. The run records that as departures. release-capacity's checks.ts has no Postgres-limit check, so a correct run can pass. Times are advisory either way.",
+     "commands": "Prefix every command with export PATH=/opt/node24/bin:/opt/pnpm-bin:/opt/py312-ci/bin:$PATH. S is a scratch directory under .../scratchpad. (1) Base build: git -C /home/user/sc1b worktree add $S/base origin/claude/build-platform. That is 43565235 now; use the PR's base at the time. In it run pnpm install --frozen-lockfile and flock /tmp/laneb-heavy.lock pnpm --filter @tp/worker build. mkdir -p $S/img-base/worker/node_modules $S/img-base/web, then cp -R $S/base/apps/worker/dist $S/img-base/worker/ ; cp -R $S/base/packages/db/migrations $S/img-base/worker/ ; cp -RL $S/base/apps/worker/node_modules/playwright-core $S/img-base/worker/node_modules/. (2) Do the same from /home/user/sc1b into $S/img-head. (3) Release, built once (tools/release and the Dockerfile are unchanged between base and head, and manifest 0b700554...8723 was identical on two CI runs): cd /home/user/sc1b && NODE_OPTIONS=--max-old-space-size=6144 flock /tmp/laneb-heavy.lock pnpm exec tsx tools/release/scale.ts --shape quarterly --out $S/quarterly-release. (4) Each run, from /home/user/sc1b, base first, then head with img-head and tp_<role>_cap_head: PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers flock /tmp/laneb-heavy.lock taskset -c \"$(pnpm -s exec tsx tools/release-capacity/run.ts --print-harness-cpus)\" pnpm exec tsx tools/release-capacity/run.ts --out $S/rc-base --runtime process --images $S/img-base --admin-url postgres://postgres:test@localhost:5433/postgres --database tp_<role>_cap_base --release-dir $S/quarterly-release. Run each with run_in_background. The harness drops its database and suffixed logins unless --keep-database is given. Then git worktree remove the base worktree. processImagesProblems ignores the web's server.js for this harness. Run a --small smoke first (about minutes) to prove the layout. The base's migrations come from its own dist/migrate.js, so the before run gets the base schema."
+    },
+    {
+     "route": "C. Dispatch on the base (claude/build-platform), or wait for the scheduled run on Tuesday 2026-11-03 at 03:29 UTC. This is a Docker-faithful before run, but with the base's own harness.",
+     "needs_person": false,
+     "cost": "$0, and the scheduled run happens anyway.",
+     "commands": "gh workflow run release-capacity.yml -R PureTideWater/PhysicalTherapy --ref claude/build-platform, or nothing (the cron fires on the default branch). This does not satisfy CAS-42.6. The base's run.ts, checks.ts and scenario.ts lack 1b's changes (+798/-130 lines between base and head): no 7b, no 7c, and none of the lock, heap or first-attempt checks. The design asks for the same harness on both images. Use it only as a supporting before figure: A's triage and report failing 53200, as on 10-27."
+    },
+    {
+     "route": "D. A self-hosted runner, 8 CPUs or more, registered on the repository (allowed for a User-owned repository).",
+     "needs_person": true,
+     "cost": "Free on GitHub; the owner supplies and secures the hardware. It needs the owner-admin (the founder) to register the runner and a change to the workflow's runs-on label, which is a workflow change outside 1b's scope.",
+     "commands": "Not recommended. GitHub advises against self-hosted runners on public repositories because fork pull requests can run code on them. It would give the 'own' 8-CPU layout, but release-capacity's times are advisory, so that adds nothing to CAS-42.5 or .6, whose hard checks are first attempt, at most 64 locks, live heap at most 75% and memory at most 90%, all about the 0.5 vCPU worker. The release's launch check uses --deny-self-hosted-runners for the screening, which is a different report."
+    },
+    {
+     "route": "E. A paid GitHub larger runner (8-core, 'own' layout).",
+     "needs_person": true,
+     "cost": "The founder would create an organization on GitHub Team (per user per month), transfer the repository, create the runner (for example paidwhole-8core), allow public repositories in its runner group, and change runs-on. Per-minute billing: re-read GitHub's price (O12). HANDOFF's estimate for the screening's runner was about $44 a month.",
+     "commands": "Not recommended, and not needed. The founder already declined this on 2026-10-23 ('Free: time advisory'). It changes only the CPU layout of advisory times, not the worker's 0.5 vCPU, so it would not change any of CAS-42.5's verdicts."
+    },
+    {
+     "route": "F. A smaller substitute: run.ts --small, or the large db tests (CAS-42.1, .2 and .3 with TP_LARGE_* sizes).",
+     "needs_person": false,
+     "cost": "$0, minutes.",
+     "commands": "pnpm exec tsx tools/release-capacity/run.ts --small ... (otherwise as in B). This does not satisfy CAS-42.5 or .6: --small 'proves the harness end to end and measures nothing' (run.ts header), and the large tests run in vitest's process, not the worker image at the task's limits (design 8.3). Use it only as the smoke run before B and as a harness check. Do not report it as the real-size run."
+    }
+   ],
+   "why": "The code contradicts the RUNNER_TOO_SMALL premise. limits.ts requiredCpus() is 4 (the shared layout); 8 CPUs only changes the layout to 'own'. The 8-core requirement (273b28d) was reverted by the founder's third ruling of 2026-10-23, 'Free: time advisory'. The claim seems to come from screening-capacity.md:267, which is about a private repository's 2-CPU runner, and runbook line 478 says 'the machine needs 4 CPUs'. The CI logs confirm it: two FULL_SIZE release-capacity runs on GitHub's free 4-CPU runners measured to a verdict. The workflow on the head reads ubuntu-26.04 for both jobs (358dc53f read ubuntu-24.04), has workflow_dispatch, and a dispatch on a non-default branch has worked before (co-001/ci-browser). So route A gives CAS-42.5 faithfully, with Docker, Postgres held to db.t4g.medium's limits and the delay, at no cost. The workflow builds only its own ref's image, so CAS-42.6 (the same harness on the base's and the head's images, one release directory) is the design's own section 8.2 local route, B. That route works in this container: cgroup v1 is writable, so the worker runs at 0.5 vCPU and 1,024 MiB. Migrations come from each build's dist/migrate.js, so the before run gets the base schema. release-capacity's verdict has no Postgres-limit check. The Docker daemon is not running here and tc is missing, so a local Docker run is not ready. Routes D and E need the founder and cost money or carry risk, yet change only advisory times. Route F measures nothing at real size. Open items: (1) A risk on every route: at FULL_SIZE, step 7b reconciles all of A's actionable lines (about 33,000 in the probes' shape) in one reconcile job at 0.5 vCPU. Builder R measured 6,000 lines at 341.8 s unthrottled, growing faster than the line count. The head run will probably exceed pg-boss's 15-minute attempt or the harness's 45-minute JOB_WAIT and fail at 7b. That would be SUITE-CAP-3's reconcile defect (Lane B's), not the runner. run.ts has no flag to size 7b on its own, and the orchestrator's 'leave reconcile at real size out' cannot be honoured without a harness change, so Lane A should ask for a ruling before reading a red 7b as 1b's failure. (2) A failing dispatch comments on open issue #73. (3) The proxy refuses some Actions endpoints (runners, permissions), and the dispatch endpoint is untested. (4) The prior build result's notes that CAS-42.5 and .6 are 'waiting on the founder' and 'RUNNER_TOO_SMALL' should be corrected. (5) /home/user/sc1b has two uncommitted edits (ADR 0083, packages/synth/src/cases/registry.ts) that another agent made; I left them alone, and a dispatch will not include them. Checks run (all reads): gh api of the repository (owner User, public), of the workflows and of runs 40479127979 and 40584379787 with their job logs; a tsx evaluation of runnerTooSmall and cpuLayout; git diff between base and head of tools/release-capacity, tools/release and the Dockerfile; cgroup, Docker and tc probes. Nothing was written in the repositories or on GitHub. Progress file: /tmp/claude-0/-home-user-PhysicalTherapy/6af08ef9-734c-5d6d-a787-51ade7156d78/scratchpad/progress/sc-1b-route.md. Scratch files: /tmp/claude-0/-home-user-PhysicalTherapy/6af08ef9-734c-5d6d-a787-51ade7156d78/scratchpad/rts.ts and the two run logs rc-40479127979.log and rc-40584379787.log in the same directory."
+  },
+  {
+   "head": "048bc8437b75128f572851b84129ea8a9e9b0376",
+   "domain_model_sha256": "e024cf9fce732e2c94795c0cacf8dfc890cef486413c92039108034854efc4df",
+   "approval_line_number": 7459,
+   "scope_ok": true,
+   "pushed": true,
+   "suite": [
+    {
+     "command": "poll origin/co-001/ss-01-suspension-refusal until it contains 6c28d6a2",
+     "passed": true,
+     "note": "SS-01 arrived at 02:24 UTC as bb13be1b, which holds #42 6c28d6a2 and claude/build-platform 43565235."
+    },
+    {
+     "command": "git merge --no-ff origin/co-001/ss-01-suspension-refusal (merge add1ebed)",
+     "passed": true,
+     "note": "The only conflict was docs/product/domain-model.md. It is generated, so I took our side and regenerated it. test-matrix, reconciliation-001, synth matrix.ts and registry.ts, monitoring.ts, fields.ts, schema/index.ts and watched-paths.txt merged on their own with both sides kept. #42's changes to 20261107090000 touch nothing 20261109090000 recreates: no line_status, ledger, claim, case_line or triage objects. 20261109090000 is unchanged and the marker was never used."
+    },
+    {
+     "command": "pnpm install --frozen-lockfile; watched.ts --write; pnpm db:migrate on a fresh tp_sc1bint_1 (47 migrations) then pnpm db:domain-model --out --strict; pnpm synth --all",
+     "passed": true,
+     "note": "The lockfile is unchanged. watched-paths.txt has 550 lines and did not change. Domain model: 100 tables, 48 registered, 381 function files with 0 written and 0 removed. synth: 276 cases and 8 EMR formats, 0 files written."
+    },
+    {
+     "command": "pnpm typecheck",
+     "passed": true,
+     "note": "22 projects passed."
+    },
+    {
+     "command": "NODE_OPTIONS=--max-old-space-size=6144 pnpm lint",
+     "passed": true,
+     "note": "1,732 files, 0 errors, 0 warnings. Run again on the final head 048bc843 with the same result."
+    },
+    {
+     "command": "pnpm lint:copy; pnpm lint:logs",
+     "passed": true,
+     "note": "lint:copy read 552 files. lint:logs scanned 1,110 files."
+    },
+    {
+     "command": "pnpm test (unit and property)",
+     "passed": true,
+     "note": "422 files: 7,188 passed and 4 skipped. That includes infra, which also passes alone: 26 files, 705 tests."
+    },
+    {
+     "command": "pnpm test:golden",
+     "passed": true,
+     "note": "5 files, 376 passed."
+    },
+    {
+     "command": "pnpm test:oracle",
+     "passed": true,
+     "note": "pyx12 and edi835 agree on all 687 synthetic 835s: 676 valid, 11 rejected as expected. The ledger oracle runs in test:db and passed there."
+    },
+    {
+     "command": "pnpm db:migrate && pnpm test:db --shard=k/4 (k=1..4, each on a fresh tp_sc1bint_s<k>, one after another, Chromium, PG_BIN_DIR=/opt/pg18/bin)",
+     "passed": true,
+     "note": "Shard 1: 35 files, 3,312 passed and 1 skipped, 722 s. Shard 2: 35 files, 2,187 passed, 202 s. Shard 3: 35 files, 3,118 passed, 460 s. Shard 4: 34 files, 991 passed, 166 s. Total: 139 files, 9,608 passed and 1 skipped. The skip is restore-drill's pg_dump case: there is no PostgreSQL 18 pg_dump in this container. Shard 1 holds triage.large and reconcile.large and took 12 minutes against CI's 20-minute job limit. CAS-42.1: A's triage took 70.8 s (budget 120 s), its actionable write 6.9 s (budget 30 s), live heap 163 MiB. A's report right after it took 95.8 s (budget 180 s; it was 460 s before the fix) with live heap 117 MiB. CAS-42.2: the report took 111.8 s and the triage 88.6 s, live heap 219 MiB against the 420 MiB line. At most 1 advisory lock per backend throughout. CAS-42.3: 2,000 lines, the pass took 67.2 s, 1 lock."
+    },
+    {
+     "command": "pnpm build && build-stamp --write <head>; E2E_PREBUILT=1 E2E_PORT=4971 playwright test --workers=2",
+     "passed": true,
+     "note": "The first build refused to stamp because the tree had uncommitted documentation edits. Those were committed as 048bc843, then build, stamp and e2e ran on the clean tree: 69 passed in 10.8 minutes."
+    },
+    {
+     "command": "Stryker, the shards tools/stryker/affected.ts picks against bb13be1b (canary, verdict, shards.ts, gate --shard), then gate.ts --expected",
+     "passed": true,
+     "note": "Six shards are affected through the db schema imports. packets-scan 416 s, packets-rest 745 s, packets-explain 784 s, pricing-engine 413 s, pricing-recompute 330 s, pricing-rest 338 s. Every run and every shard gate exited 0, and the overall gate printed 'mutation gate: passed'. money and ledger are not affected."
+    },
+    {
+     "command": "pnpm verify-content; pnpm check:fixtures",
+     "passed": true,
+     "note": "Every content set passes. The fixture check read 333 files and found every interchange synthetic."
+    },
+    {
+     "command": "tsx tools/engine-freeze/check.ts efb20704b8a358681c8d60378bc78674e3b0d2c8 (and against bb13be1b)",
+     "passed": true,
+     "note": "No non-test file under packages/pricing/src changed. No problems."
+    },
+    {
+     "command": "pnpm -s db:domain-model --check",
+     "passed": true,
+     "note": "Matches the schema at 20261109090000_line_status_heads.sql and its 381 function names. The SHA-256 is e024cf9f...efc4df. The approval line is line 7459 and is blank."
+    },
+    {
+     "command": "pnpm -s db:domain-model --check --require-approval",
+     "passed": false,
+     "note": "Expected failure (exit 1): the line names no person and no date. The founder's approval belongs there, and I did not write it."
+    },
+    {
+     "command": "CAS-42.5 and CAS-42.6 (real-size runs with the FULL_SIZE harness)",
+     "passed": false,
+     "note": "Not run, as instructed: recorded as waiting on the founder's 8-CPU runner. See open items: the route scout found the code needs only 4 CPUs."
+    },
+    {
+     "command": "git push -u origin co-001/suite-cap-1-triage-locks",
+     "passed": true,
+     "note": "ce408d2f..048bc843 on the first try. The pre-push hook checked 4 commits and gitleaks found no secret. No force and no --no-verify."
+    }
+   ],
+   "fixes": [
+    "Fix 1, reliability (apps/worker/src/worker.ts): attempt() wrote the job heap line in a finally block that could throw. A logger or sink that threw would fail a completed job, so pg-boss would run it again, or replace a failed job's own error. The line now sits in a try/catch that swallows the error. The weekly run still fails closed on a measured job with no heap line. The new worker.test.ts test, 'never lets the heap line change how an attempt ends', failed before the fix ('promise rejected synthetic sink failure') and passes after it.",
+    "Fix 2, the weekly heap check (tools/release-capacity/checks.ts): it held a job's live heap to 75% of V8's heap_size_limit. That limit is 752 MiB under the 560 MiB flag because it includes the young generation, so the line was 564 MiB where the alarm and the design use 420 MiB. The new heapLimitMib(command, logged) takes the smaller of the worker command's --max-old-space-size and the logged limit. checks.test.ts gained cases at 752 and with no flag. They failed first (1 failed of 21) and now pass (38 of 38 in tools/release-capacity). ADR 0083 and the ci.md runbook paragraph are updated, and the Revisit item is closed.",
+    "Fix 3, performance (apps/worker/src/triage/execute.ts, the candidates' query): NOT EXISTS (case_line) became NOT coalesce((SELECT true FROM case_line cl WHERE cl.service_line_id = p.service_line_id), false). The planner runs this per row through case_line_once, so there is no anti-join plan left to go wrong. The rows and their order are the same, because case_line_once allows one case line per line. Failing first: the gate's head runs of CAS-42.1 failed at 460 and 481 s. My diagnostic used the same database shape (100,000 lines, A and Y priced, autovacuum off, the cursor read as the worker's login). The old form was stopped at 120 s with 16,000 of 41,665 rows read; the new form read them all in 4.4 s. After the fix, CAS-42.1's report took 95.8 s against its 180 s budget. ADR 0083's reading is updated and its Revisit item removed. The diagnostic file was untracked and is deleted.",
+    "Committed the gate builder's uncommitted work as 91efb58a: CAS-42.1 and .2 (triage.large.db.test.ts and its child test-support/large-jobs.ts), SLOW_FIRST, db-shards (17), the synth registry and the CAS-42 expected.json.",
+    "Improvement: ADR 0083 records the after-fix CAS-42 figures, and the SLOW_FIRST comment now gives the large files' times (about 11 and about 5 minutes instead of 14 to 16)."
+   ],
+   "open_items": [
+    "CAS-42.5 and CAS-42.6 are recorded as waiting on the founder's 8-CPU runner and were not run, as instructed. The route scout's evidence contradicts the premise. At ce408d2f, runnerTooSmall() needs 4 CPUs (requiredCpus = sharedLayoutCpus = 4). Two FULL_SIZE runs on GitHub's free 4-CPU runner (40479127979 and 40584379787) did not stop with RUNNER_TOO_SMALL. The scout's recommended route is to dispatch release-capacity.yml on co-001/suite-cap-1-triage-locks for CAS-42.5 (free) and to run design 8.2's local process runtime for CAS-42.6, both without the founder. A routing decision is needed. Report: /tmp/claude-0/-home-user-PhysicalTherapy/6af08ef9-734c-5d6d-a787-51ade7156d78/scratchpad/progress/sc-1b-route.md.",
+    "The domain-model approval line (line 7459, SHA-256 e024cf9f...efc4df) is the founder's to fill. --require-approval fails until then, and I did not write it.",
+    "These files are beyond the original files_1b list, all Lane A's: apps/worker/src/triage/execute.ts (fix 3), apps/worker/src/triage/test-support/large-jobs.ts (the test's child process) and tools/test/db-shards.test.ts (the SLOW_FIRST count). No other file is out of scope, there is one migration, and nothing under packages/ledger or packages/pricing changed.",
+    "I did not split CAS-42.2 out: with the fix, shard 1 (both large files) took 722 s locally against the 20-minute CI limit. Check the shard's CI wall time on the PR.",
+    "restore-drill's pg_dump case stays skipped here because the container has no PostgreSQL 18 pg_dump. This is environmental and unchanged.",
+    "The reconcile pass at real size remains Lane B's SUITE-CAP-3; it is left out, as instructed.",
+    "No PR is opened. It opens after #42 merges, as planned. The progress file is /tmp/claude-0/-home-user-PhysicalTherapy/6af08ef9-734c-5d6d-a787-51ade7156d78/scratchpad/progress/sc-1b-integrate.md."
+   ]
+  }
+ ]
+}

@@ -48,6 +48,31 @@ returns (2026-11-03 14:00 UTC, possibly 15:00). Briefs: `lanes/lane-b-session-br
   Worker restarted; setup re-run 19:58 UTC (PostgreSQL back; no marker); efb20704 kept as WIP ref
   `co-001/wip-ss01-chain`; **resumed 19:59 UTC** with resumeFromRunId (the stage-1 agent continues from its progress file,
   copied to `approval-summaries/lane-a-wip/progress/sc-m1-ss01.md`).
+- **~05:10 UTC (acting Lane A): wf_5566bd1c-8eb done** (results: `approval-summaries/lane-a-schema-chain-wf_5566bd1c-8eb-result.json`).
+  - **1b head 048bc843 pushed** (add1ebed merged SS-01 bb13be1b with #42 6c28d6a2 and base 43565235; only the domain model
+    conflicted, regenerated; 20261109090000 unchanged, marker never used). Built: the measurement gate, CAS-42.1/.2
+    (apps/worker/src/triage/triage.large.db.test.ts + test-support/large-jobs.ts), SLOW_FIRST 15 -> 17, ADR 0083's 1b
+    section. **Full local suite once, green:** unit 7,188 + 4 skipped; golden 376; oracle 687; test:db 4 shards 9,608 + 1
+    skipped (shard 1 722 s, holds both large tests); build, stamp, e2e 69; Stryker six affected shards + gate passed;
+    verify-content; fixtures; engine-freeze clean; **domain model SHA-256
+    e024cf9fce732e2c94795c0cacf8dfc890cef486413c92039108034854efc4df, approval line 7459** (blank; provisional).
+    CAS-42.1: triage 70.8 s (budget 120), report right after 95.8 s (budget 180; was 460 s before the integrator's fix of
+    the report's candidate query planning on stale statistics), live heap 163/117 MiB, 1 advisory lock; CAS-42.2 report
+    111.8 s + triage 88.6 s, live 219 MiB < 420; base: 53200 out of shared memory at 20,000 lines.
+    Integrator fixes: the heap line can no longer fail a finished job (worker.ts, failing-first test); the weekly heap
+    check now uses the worker's --max-old-space-size (checks.ts); the report's candidate lookup (performance).
+  - **The real-size runs need no 8-CPU runner (route scout, 02:30 UTC):** runnerTooSmall needs requiredCpus = 4 (the
+    shared layout since the founder's "Free: time advisory" ruling); FULL_SIZE runs 40479127979 and 40584379787 reached a
+    verdict on GitHub's free 4-CPU runner. CAS-42.5: dispatch release-capacity.yml on 1b's branch ($0); CAS-42.6: the
+    design's section 8.2 local process-runtime route (base and head builds, one release dir). Being proved by a --small
+    smoke now (wf_3c4cf5ac-af0); the "waiting on the founder" entry is withdrawn when it passes. The full runs go at 1b's
+    PR stage on its final head (pacing: no run on a head the reviews may still change).
+  - **Interest: not finished.** The forced stop at 02:15 made its merge agent return early (local d39b72c0, WIP ref
+    `co-001/wip-interest-chain`; not pushed), so W and its integrator did not run. Lesson recorded: stopping a workflow
+    makes in-flight agents return and their partial results are cached on resume.
+  - **Running: wf_3c4cf5ac-af0** (script `workflow-scripts/lane-a-schema-chain-interest-finish-wf_3c4cf5ac-af0.js`), from
+    05:15 UTC: interest merges 1b 048bc843 (quick checks, push), builder W slice 4, the integrator's seam read and ONE full
+    local suite, push; beside it the route smoke (read-only; no dispatch).
 - **~03:40 UTC (acting Lane A): wf_a12c973a-c12 done. SS-01 head bb13be1b pushed** (6af518c5 merged #42 6c28d6a2: only
   the domain model conflicted, regenerated; bb13be1b merged base 43565235, no conflict). SS-01's recreated objects re-read
   on #42's bodies: audit_event_record keeps #42's 7 reserved actions and adds organization_suspended/_reinstated; #42
