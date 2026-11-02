@@ -162,45 +162,221 @@ export async function caseLines(scope: Scope, cipher: PracticeCipher, practiceId
   }));
 }
 
-interface CandidateRow {
+/** A new claim found for a case line, with what the chain's claim order sorts it by (CHAIN_ORDER: payment date, load, id). */
+interface Candidate extends ClaimCandidate {
+  readonly remittanceId: string;
+  readonly paidOn: string;
+  /** When its remittance was loaded (claim.created_at, in microseconds since the epoch). */
+  readonly loadedAt: bigint;
+}
+
+/** An open case line whose new claims the pass looks for, by its place in the pass, with the claims its chain already knows. */
+interface Searched {
+  readonly ix: number;
+  readonly line: CaseLine;
+  readonly known: ReadonlySet<string>;
+}
+
+/**
+ * The chain's claim order, as `ORDER BY r.bpr16_date, c.created_at, c.id` gives it: by payment date (bpr16_date is NOT
+ * NULL, and its ISO text sorts as the date), when loaded (created_at to the microsecond), then ID (a UUID's lower-case
+ * text sorts as its bytes, which is how PostgreSQL compares UUIDs).
+ */
+function inChainOrder(a: Candidate, b: Candidate): number {
+  if (a.paidOn !== b.paidOn) {
+    return a.paidOn < b.paidOn ? -1 : 1;
+  }
+  if (a.loadedAt !== b.loadedAt) {
+    return a.loadedAt < b.loadedAt ? -1 : 1;
+  }
+  return a.claimId < b.claimId ? -1 : a.claimId > b.claimId ? 1 : 0;
+}
+
+/** The searched lines as the candidate queries take them: one array per column, and each line's known claims as pairs. */
+function searchArrays(searched: readonly Searched[]): { readonly lines: unknown[]; readonly known: unknown[] } {
+  const knownIx: number[] = [];
+  const knownIds: string[] = [];
+  for (const item of searched) {
+    for (const claimId of item.known) {
+      knownIx.push(item.ix);
+      knownIds.push(claimId);
+    }
+  }
+  return {
+    lines: [searched.map((item) => item.ix), searched.map((item) => item.line.serviceLineId), searched.map((item) => item.line.remittanceId), searched.map((item) => item.line.claimId)],
+    known: [knownIx, knownIds],
+  };
+}
+
+/**
+ * The searched lines' new claims by payer claim control number, in one statement for every line: per line, each claim
+ * a known claim's correction names (superseded_by_claim_id) or carrying a known claim's control number, under the same
+ * filters each line's own query applied (loaded, not a reversal, not known, not of the line's own remittance, loaded no
+ * earlier than the line's claim, never matched to the line, no case line's claim), in the chain's claim order.
+ */
+async function controlCandidates(scope: Scope, practiceId: string, searched: readonly Searched[]): Promise<Map<number, Candidate[]>> {
+  const { lines, known } = searchArrays(searched);
+  const { rows } = await scope.client.query<{ ix: number; id: string; remittance_id: string; paid_on: string; loaded_at: string }>(
+    `WITH l (ix, service_line_id, remittance_id, claim_id) AS (SELECT * FROM unnest($2::int[], $3::uuid[], $4::uuid[], $5::uuid[])),
+          k (ix, claim_id) AS (SELECT * FROM unnest($6::int[], $7::uuid[])),
+          probe (ix, claim_id) AS (
+            SELECT k.ix, q.superseded_by_claim_id FROM k JOIN claim q ON q.id = k.claim_id WHERE q.superseded_by_claim_id IS NOT NULL
+             UNION
+            SELECT k.ix, c.id FROM k JOIN claim q ON q.id = k.claim_id JOIN claim c ON c.practice_id = $1 AND c.payer_claim_control_number_hash = q.payer_claim_control_number_hash)
+     SELECT l.ix, c.id, c.remittance_id, r.bpr16_date::text AS paid_on, (extract(epoch FROM c.created_at) * 1000000)::bigint::text AS loaded_at
+       FROM probe p JOIN l ON l.ix = p.ix JOIN claim c ON c.id = p.claim_id JOIN remittance r ON r.id = c.remittance_id
+      WHERE c.practice_id = $1 AND r.status = 'loaded' AND c.claim_status_code <> '22'
+        AND NOT EXISTS (SELECT 1 FROM k WHERE k.ix = l.ix AND k.claim_id = c.id) AND c.remittance_id <> l.remittance_id
+        AND c.created_at >= (SELECT o.created_at FROM claim o WHERE o.id = l.claim_id)
+        AND NOT EXISTS (SELECT 1 FROM ledger_match m WHERE m.kind = 'claim' AND m.claim_id = c.id AND m.service_line_id = l.service_line_id)
+        AND NOT EXISTS (SELECT 1 FROM case_line x JOIN service_line xl ON xl.id = x.service_line_id WHERE xl.claim_id = c.id)
+      ORDER BY l.ix, r.bpr16_date, c.created_at, c.id`,
+    [practiceId, ...lines, ...known],
+  );
+  const found = new Map<number, Candidate[]>();
+  for (const row of rows) {
+    const list = found.get(row.ix) ?? [];
+    list.push({ claimId: row.id, key: 'payer_claim_control_number', remittanceId: row.remittance_id, paidOn: row.paid_on, loadedAt: BigInt(row.loaded_at) });
+    found.set(row.ix, list);
+  }
+  return found;
+}
+
+interface PatientRow {
   readonly id: string;
   readonly remittance_id: string;
   readonly paid_on: string;
+  readonly loaded_at: string;
   readonly patient_control_number: string;
+  readonly codes: string[];
+  readonly dates: (string | null)[];
 }
 
-const CANDIDATE_FILTERS = `
-       c.practice_id = $1 AND r.status = 'loaded' AND c.claim_status_code <> '22'
-   AND c.id <> ALL ($2::uuid[]) AND c.remittance_id <> $3 AND c.created_at >= (SELECT o.created_at FROM claim o WHERE o.id = $4)
-   AND NOT EXISTS (SELECT 1 FROM ledger_match m WHERE m.kind = 'claim' AND m.claim_id = c.id AND m.service_line_id = $5)
-   AND NOT EXISTS (SELECT 1 FROM case_line x JOIN service_line xl ON xl.id = x.service_line_id WHERE xl.claim_id = c.id)`;
+/**
+ * The searched lines' new claims by patient control number, service date and code, in one statement for every line:
+ * the claims some line's own query returned (a line of its code and date, under the same filters), each read and
+ * decrypted once for the pass however many lines share its code and date (never a claim no line's query would have
+ * decrypted), then given to each line whose patient control number, code and date it carries and whose filters it
+ * passes, in the chain's claim order.
+ */
+async function patientCandidates(scope: Scope, cipher: PracticeCipher, practiceId: string, searched: readonly Searched[], matched: ReadonlySet<string>): Promise<Map<number, Candidate[]>> {
+  const { lines, known } = searchArrays(searched);
+  const { rows } = await scope.client.query<PatientRow>(
+    `WITH l (ix, service_line_id, remittance_id, claim_id, code, service_date) AS (SELECT * FROM unnest($2::int[], $3::uuid[], $4::uuid[], $5::uuid[], $8::text[], $9::date[])),
+          k (ix, claim_id) AS (SELECT * FROM unnest($6::int[], $7::uuid[])),
+          named (ix, claim_id) AS (
+            SELECT l.ix, s.claim_id FROM l JOIN service_line s ON s.procedure_code = l.code AND s.service_date = l.service_date
+             UNION
+            SELECT l.ix, s.claim_id FROM l JOIN service_line s ON s.procedure_code = l.code AND s.service_date IS NULL AND l.service_date IS NULL)
+     SELECT c.id, c.remittance_id, r.bpr16_date::text AS paid_on, (extract(epoch FROM c.created_at) * 1000000)::bigint::text AS loaded_at, c.patient_control_number,
+            ARRAY(SELECT s.procedure_code FROM service_line s WHERE s.claim_id = c.id ORDER BY s.line_no) AS codes,
+            ARRAY(SELECT s.service_date::text FROM service_line s WHERE s.claim_id = c.id ORDER BY s.line_no) AS dates
+       FROM claim c JOIN remittance r ON r.id = c.remittance_id
+      WHERE c.practice_id = $1 AND r.status = 'loaded' AND c.claim_status_code <> '22'
+        AND NOT EXISTS (SELECT 1 FROM case_line x JOIN service_line xl ON xl.id = x.service_line_id WHERE xl.claim_id = c.id)
+        AND EXISTS (SELECT 1 FROM named n JOIN l ON l.ix = n.ix
+                     WHERE n.claim_id = c.id AND c.remittance_id <> l.remittance_id AND c.created_at >= (SELECT o.created_at FROM claim o WHERE o.id = l.claim_id)
+                       AND NOT EXISTS (SELECT 1 FROM k WHERE k.ix = l.ix AND k.claim_id = c.id)
+                       AND NOT EXISTS (SELECT 1 FROM ledger_match m WHERE m.kind = 'claim' AND m.claim_id = c.id AND m.service_line_id = l.service_line_id))
+      ORDER BY c.id`,
+    [practiceId, ...lines, ...known, searched.map((item) => item.line.procedureCode), searched.map((item) => item.line.serviceDate)],
+  );
+  if (rows.length === 0) {
+    return new Map();
+  }
+  const { rows: loaded } = await scope.client.query<{ id: string; loaded_at: string }>(
+    'SELECT o.id, (extract(epoch FROM o.created_at) * 1000000)::bigint::text AS loaded_at FROM claim o WHERE o.practice_id = $1 AND o.id = ANY ($2::uuid[])',
+    [practiceId, [...new Set(searched.map((item) => item.line.claimId))]],
+  );
+  const loadedAt = new Map(loaded.map((row) => [row.id, BigInt(row.loaded_at)]));
+  // Each claim decrypted once; grouped by its patient control number.
+  const byPatient = new Map<string, { readonly row: PatientRow; readonly candidate: Candidate }[]>();
+  for (const row of rows) {
+    const patient = cipher.decrypt('claim.patient_control_number', row.patient_control_number);
+    const group = byPatient.get(patient) ?? [];
+    group.push({ row, candidate: { claimId: row.id, key: 'patient_control_number', remittanceId: row.remittance_id, paidOn: row.paid_on, loadedAt: BigInt(row.loaded_at) } });
+    byPatient.set(patient, group);
+  }
+  const found = new Map<number, Candidate[]>();
+  for (const { ix, line, known: knownOfLine } of searched) {
+    const since = loadedAt.get(line.claimId);
+    const list = (byPatient.get(line.patientControlNumber) ?? [])
+      .filter(
+        ({ row, candidate }) =>
+          since !== undefined &&
+          candidate.remittanceId !== line.remittanceId &&
+          candidate.loadedAt >= since &&
+          !knownOfLine.has(candidate.claimId) &&
+          !matched.has(`${candidate.claimId} ${line.serviceLineId}`) &&
+          row.codes.some((code, index) => code === line.procedureCode && (row.dates[index] ?? null) === line.serviceDate),
+      )
+      .map(({ candidate }) => candidate)
+      .sort(inChainOrder);
+    if (list.length > 0) {
+      found.set(ix, list);
+    }
+  }
+  return found;
+}
 
-/** A case line's new claims: by payer claim control number first, else by patient control number, service date and code. */
-async function candidatesFor(scope: Scope, cipher: PracticeCipher, practiceId: string, line: CaseLine, known: readonly string[]): Promise<(ClaimCandidate & { readonly remittanceId: string; readonly paidOn: string })[]> {
-  const base = [practiceId, known, line.remittanceId, line.claimId, line.serviceLineId];
-  const byControl = await scope.client.query<CandidateRow>(
-    `SELECT c.id, c.remittance_id, r.bpr16_date::text AS paid_on, c.patient_control_number
-       FROM claim c JOIN remittance r ON r.id = c.remittance_id
-      WHERE ${CANDIDATE_FILTERS}
-        AND (c.id IN (SELECT k.superseded_by_claim_id FROM claim k WHERE k.id = ANY ($2::uuid[]))
-             OR c.payer_claim_control_number_hash IN (SELECT k.payer_claim_control_number_hash FROM claim k WHERE k.id = ANY ($2::uuid[])))
-      ORDER BY r.bpr16_date, c.created_at, c.id`,
-    base,
-  );
-  const byPatient = await scope.client.query<CandidateRow>(
-    `SELECT c.id, c.remittance_id, r.bpr16_date::text AS paid_on, c.patient_control_number
-       FROM claim c JOIN remittance r ON r.id = c.remittance_id
-      WHERE ${CANDIDATE_FILTERS}
-        AND EXISTS (SELECT 1 FROM service_line s WHERE s.claim_id = c.id AND s.procedure_code = $6 AND s.service_date IS NOT DISTINCT FROM $7::date)
-      ORDER BY r.bpr16_date, c.created_at, c.id`,
-    [...base, line.procedureCode, line.serviceDate],
-  );
-  return preferredCandidates([
-    ...byControl.rows.map((row) => ({ claimId: row.id, key: 'payer_claim_control_number' as const, remittanceId: row.remittance_id, paidOn: row.paid_on })),
-    ...byPatient.rows
-      .filter((row) => cipher.decrypt('claim.patient_control_number', row.patient_control_number) === line.patientControlNumber)
-      .map((row) => ({ claimId: row.id, key: 'patient_control_number' as const, remittanceId: row.remittance_id, paidOn: row.paid_on })),
-  ]);
+/**
+ * Every open case line's new claims, to a fixpoint, for the whole pass at once (SUITE-CAP-3): what each line's own
+ * search found (candidateClosure, one line at a time), in the same rounds. In each round a line's candidates are those
+ * found by payer claim control number, else those found by patient control number (@tp/ledger preferredCandidates),
+ * less the ones it has seen; a candidate the line pairs with (@tp/ledger pairLines) joins what the line knows and
+ * extends its next round; a line with no candidates stops. The by-patient search reads once: its filters never change
+ * within the pass but for the line's known claims, which are taken off each round. Nothing is written while the search
+ * runs, and no line's search reads another line's writes (each filter names the line itself), so searching every line
+ * before any is matched finds what searching each just before it is matched did. The claims' lines are read once a
+ * round for every line's new candidates into `lines`, which the matching then reads.
+ */
+async function passCandidates(
+  scope: Scope,
+  cipher: PracticeCipher,
+  practiceId: string,
+  open: readonly { readonly line: CaseLine; readonly chain: LineChain }[],
+  matched: ReadonlySet<string>,
+  lines: Map<string, readonly ClaimLine[]>,
+): Promise<Candidate[][]> {
+  const known = open.map(({ chain }) => new Set(chain.claims.map((claim) => claim.claimId)));
+  const seen = open.map(() => new Set<string>());
+  const found: Candidate[][] = open.map(() => []);
+  if (open.length === 0) {
+    return found;
+  }
+  const searchedOf = (ix: number): Searched => ({ ix, line: (open[ix] as { line: CaseLine }).line, known: known[ix] as Set<string> });
+  const byPatient = await patientCandidates(scope, cipher, practiceId, open.map((_, ix) => searchedOf(ix)), matched);
+  let active = open.map((_, ix) => ix);
+  while (active.length > 0) {
+    const byControl = await controlCandidates(scope, practiceId, active.map(searchedOf));
+    const round = new Map<number, Candidate[]>();
+    for (const ix of active) {
+      const knownOfLine = known[ix] as Set<string>;
+      const patient = (byPatient.get(ix) ?? []).filter((candidate) => !knownOfLine.has(candidate.claimId));
+      const candidates = preferredCandidates([...(byControl.get(ix) ?? []), ...patient]).filter((candidate) => !(seen[ix] as Set<string>).has(candidate.claimId));
+      if (candidates.length > 0) {
+        round.set(ix, candidates);
+      }
+    }
+    const unread = [...new Set([...round.values()].flatMap((candidates) => candidates.map((candidate) => candidate.claimId)))].filter((claimId) => !lines.has(claimId));
+    if (unread.length > 0) {
+      for (const [claimId, claimLinesOf] of await claimLines(scope, unread)) {
+        lines.set(claimId, claimLinesOf);
+      }
+    }
+    for (const [ix, candidates] of round) {
+      const { line } = open[ix] as { line: CaseLine };
+      for (const candidate of candidates) {
+        (seen[ix] as Set<string>).add(candidate.claimId);
+        if (caseLinePair(lines, line, candidate.claimId) !== undefined) {
+          (known[ix] as Set<string>).add(candidate.claimId);
+          (found[ix] as Candidate[]).push(candidate);
+        }
+      }
+    }
+    active = [...round.keys()];
+  }
+  return found.map((candidates) => [...candidates].sort(inChainOrder));
 }
 
 /** A line of a claim as the pairing and the shares read it. */
@@ -527,6 +703,26 @@ function reversalRule(chain: Pick<LineChain, 'original' | 'claims'>, reversed: C
   return { take, base: earlier ?? (chain.claims[0] as ChainClaim) };
 }
 
+/** Each line's standing matches, in the context's order, indexed once per context's matches (a line's chain reads its own). */
+const standingIndex = new WeakMap<readonly StoredMatch[], ReadonlyMap<string | null, readonly StoredMatch[]>>();
+
+function standingByLine(matches: readonly StoredMatch[]): ReadonlyMap<string | null, readonly StoredMatch[]> {
+  const known = standingIndex.get(matches);
+  if (known !== undefined) {
+    return known;
+  }
+  const index = new Map<string | null, StoredMatch[]>();
+  for (const match of matches) {
+    if (match.standing) {
+      const list = index.get(match.serviceLineId) ?? [];
+      list.push(match);
+      index.set(match.serviceLineId, list);
+    }
+  }
+  standingIndex.set(matches, index);
+  return index;
+}
+
 /**
  * A case line's chain from the context: its standing claim matches with their paired lines, and the
  * baselines walked over every event in chain order (@tp/ledger paymentChain): each standing claim match
@@ -539,7 +735,7 @@ export function lineChain(context: ChainContext, line: ChainLine): LineChain | u
   if (original === undefined) {
     return undefined;
   }
-  const own = context.matches.filter((match) => match.serviceLineId === line.serviceLineId && match.standing);
+  const own = standingByLine(context.matches).get(line.serviceLineId) ?? [];
   const claims: ChainClaim[] = [{ match: null, claimId: line.claimId, position: -1, line: original }];
   for (const [position, match] of own.entries()) {
     const pair = match.kind === 'claim' ? caseLinePair(context.lines, line, match.claimId as string) : undefined;
@@ -595,8 +791,11 @@ export async function reprocessingOf(
   line: ChainLine,
   claimId: string,
   against: { readonly original: PaidLine; readonly baselines: PaymentBaselines; readonly ledger: LineLedger },
+  read?: ReadonlyMap<string, readonly ClaimLine[]>,
 ): Promise<Reprocessed | null> {
-  const next = caseLinePair(await claimLines(scope, [line.claimId, claimId]), line, claimId);
+  // The claims' lines as the pass already read them (claimLines reads stored rows only, which the pass never changes), else read here.
+  const lines = read !== undefined && read.has(line.claimId) && read.has(claimId) ? read : await claimLines(scope, [line.claimId, claimId]);
+  const next = caseLinePair(lines, line, claimId);
   if (next === undefined) {
     return null;
   }
@@ -700,56 +899,28 @@ interface ClaimPass {
  * pairing only, never on its outcome). Then they are compared in the stored chain's own claim order (by
  * payment date, then load, then id; CHAIN_ORDER), so what the pass writes is what every later walk of the
  * chain reads. The line's baselines are walked from its stored chain once, then carried through the pass
- * as each candidate is matched.
+ * as each candidate is matched. Every line's candidates are found for the pass at once, and every claim's
+ * lines read once (passCandidates); the lines are then matched one after another in the same order as ever.
  */
 async function matchClaims(pass: ClaimPass, cipher: PracticeCipher, lines: readonly CaseLine[]): Promise<void> {
   const { scope, practiceId } = pass;
   const context = await chainContext(scope, practiceId, lines.map((line) => line.claimId), await ledgerEntries(scope, practiceId));
+  const open: { readonly line: CaseLine; readonly chain: LineChain }[] = [];
   for (const line of lines.filter((item) => item.open)) {
     const chain = lineChain(context, line);
-    if (chain === undefined) {
-      continue;
+    if (chain !== undefined) {
+      open.push({ line, chain });
     }
+  }
+  const matched = new Set(context.matches.filter((match) => match.kind === 'claim').map((match) => `${match.claimId as string} ${match.serviceLineId as string}`));
+  const claimLinesRead = new Map<string, readonly ClaimLine[]>(context.lines);
+  const candidates = await passCandidates(scope, cipher, practiceId, open, matched, claimLinesRead);
+  for (const [ix, { line, chain }] of open.entries()) {
     const state = { original: paidLine(chain.original), baselines: chain.chain.current };
-    for (const candidate of await chainOrdered(scope, await candidateClosure(scope, cipher, practiceId, line, chain))) {
-      await matchCandidate(pass, line, state, candidate);
+    for (const candidate of candidates[ix] ?? []) {
+      await matchCandidate(pass, line, state, candidate, claimLinesRead);
     }
   }
-}
-
-type Candidate = Awaited<ReturnType<typeof candidatesFor>>[number];
-
-/** A case line's candidates to a fixpoint: each one paired with the line extends the search by its own control numbers. */
-async function candidateClosure(scope: Scope, cipher: PracticeCipher, practiceId: string, line: CaseLine, chain: LineChain): Promise<Candidate[]> {
-  const known = new Set(chain.claims.map((claim) => claim.claimId));
-  const seen = new Set<string>();
-  const found: Candidate[] = [];
-  for (;;) {
-    const candidates = (await candidatesFor(scope, cipher, practiceId, line, [...known])).filter((candidate) => !seen.has(candidate.claimId));
-    if (candidates.length === 0) {
-      return found;
-    }
-    const lines = await claimLines(scope, [line.claimId, ...candidates.map((candidate) => candidate.claimId)]);
-    for (const candidate of candidates) {
-      seen.add(candidate.claimId);
-      if (caseLinePair(lines, line, candidate.claimId) !== undefined) {
-        known.add(candidate.claimId);
-        found.push(candidate);
-      }
-    }
-  }
-}
-
-/** The candidates in the chain's claim order: by payment date (BPR16), then when each was loaded, then id. */
-async function chainOrdered(scope: Scope, candidates: readonly Candidate[]): Promise<Candidate[]> {
-  if (candidates.length < 2) {
-    return [...candidates];
-  }
-  const { rows } = await scope.client.query<{ id: string }>(
-    'SELECT c.id FROM claim c JOIN remittance r ON r.id = c.remittance_id WHERE c.id = ANY ($1::uuid[]) ORDER BY r.bpr16_date, c.created_at, c.id',
-    [candidates.map((candidate) => candidate.claimId)],
-  );
-  return rows.map((row) => candidates.find((candidate) => candidate.claimId === row.id) as Candidate);
 }
 
 /** Compares one candidate with the line, records it, and carries the line's baselines past it. */
@@ -758,10 +929,11 @@ async function matchCandidate(
   line: CaseLine,
   state: { readonly original: PaidLine; baselines: PaymentBaselines },
   candidate: { readonly claimId: string; readonly remittanceId: string; readonly paidOn: string },
+  read: ReadonlyMap<string, readonly ClaimLine[]>,
 ): Promise<void> {
   const { scope, practiceId, ledgers, counts } = pass;
   const ledger = ledgers.get(line.serviceLineId) ?? EMPTY_LINE_LEDGER;
-  const reprocessed = await reprocessingOf(scope, line, candidate.claimId, { original: state.original, baselines: state.baselines, ledger });
+  const reprocessed = await reprocessingOf(scope, line, candidate.claimId, { original: state.original, baselines: state.baselines, ledger }, read);
   if (reprocessed === null) {
     return;
   }

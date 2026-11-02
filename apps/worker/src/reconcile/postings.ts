@@ -68,13 +68,21 @@ interface PostingRowRow {
   readonly service_date: string | null;
 }
 
+/** A remittance's claims with their patient control numbers decrypted, by remittance, read once for a run of posting rows. */
+export type RemittanceClaims = Map<string, readonly { readonly id: string; readonly paid_cents: string; readonly patientControlNumber: string }[]>;
+
 /** The claims of a remittance carrying a claim reference, with their payments and lines. */
-async function claimsWithReference(scope: Scope, cipher: PracticeCipher, remittanceId: string, reference: string): Promise<PostedClaim[]> {
-  const claims = await scope.client.query<{ id: string; paid_cents: string; patient_control_number: string }>(
-    'SELECT c.id, c.paid_cents::text AS paid_cents, c.patient_control_number FROM claim c WHERE c.remittance_id = $1 ORDER BY c.claim_no',
-    [remittanceId],
-  );
-  const named = claims.rows.filter((claim) => cipher.decrypt('claim.patient_control_number', claim.patient_control_number) === reference);
+async function claimsWithReference(scope: Scope, cipher: PracticeCipher, remittanceId: string, reference: string, read?: RemittanceClaims): Promise<PostedClaim[]> {
+  let claims = read?.get(remittanceId);
+  if (claims === undefined) {
+    const { rows } = await scope.client.query<{ id: string; paid_cents: string; patient_control_number: string }>(
+      'SELECT c.id, c.paid_cents::text AS paid_cents, c.patient_control_number FROM claim c WHERE c.remittance_id = $1 ORDER BY c.claim_no',
+      [remittanceId],
+    );
+    claims = rows.map((claim) => ({ id: claim.id, paid_cents: claim.paid_cents, patientControlNumber: cipher.decrypt('claim.patient_control_number', claim.patient_control_number) }));
+    read?.set(remittanceId, claims);
+  }
+  const named = claims.filter((claim) => claim.patientControlNumber === reference);
   if (named.length === 0) {
     return [];
   }
@@ -108,14 +116,21 @@ export type PostingDecision =
  * Where a posting row belongs: among `candidates` (by default the remittances of its check or trace
  * number; a person names one when matching by hand).
  */
-export async function postingDecision(scope: Scope, cipher: PracticeCipher, practiceId: string, row: PostingRowRow, candidates?: readonly { readonly id: string; readonly paymentCents: Cents }[]): Promise<PostingDecision> {
+export async function postingDecision(
+  scope: Scope,
+  cipher: PracticeCipher,
+  practiceId: string,
+  row: PostingRowRow,
+  candidates?: readonly { readonly id: string; readonly paymentCents: Cents }[],
+  read?: RemittanceClaims,
+): Promise<PostingDecision> {
   const remittances = candidates ?? (await remittancesOf(scope, practiceId, row.check_or_trace));
   const amount = parseCents(row.amount_cents);
   if (row.claim_reference !== null) {
     const reference = cipher.decrypt('posting_row.claim_reference', row.claim_reference);
     const found: { remittanceId: string; claimId: string }[] = [];
     for (const remittance of remittances) {
-      const claimId = linePosting({ amountCents: amount, procedureCode: row.procedure_code, serviceDate: row.service_date, claims: await claimsWithReference(scope, cipher, remittance.id, reference) });
+      const claimId = linePosting({ amountCents: amount, procedureCode: row.procedure_code, serviceDate: row.service_date, claims: await claimsWithReference(scope, cipher, remittance.id, reference, read) });
       if (claimId !== null) {
         found.push({ remittanceId: remittance.id, claimId });
       }
@@ -138,17 +153,34 @@ export async function postingRow(scope: Scope, practiceId: string, postingRowId:
   return rows[0];
 }
 
+/**
+ * The IDs of the practice's posting (or EFT) rows no match was ever made for, standing or reversed. The rows' IDs and
+ * the matched IDs are read apart and compared here, so the comparison is linear whatever plan the tables' statistics
+ * give (an anti-join planned on a table not yet analyzed, as a newly loaded export's rows are, reads the matches once
+ * per row). Identifiers only; no row's content is read here.
+ */
+async function neverMatched(scope: Scope, practiceId: string, table: 'posting_row' | 'eft_row'): Promise<string[]> {
+  const column = table === 'posting_row' ? 'posting_row_id' : 'eft_row_id';
+  const { rows: matched } = await scope.client.query<{ id: string }>(`SELECT m.${column} AS id FROM ledger_match m WHERE m.practice_id = $1 AND m.${column} IS NOT NULL`, [practiceId]);
+  const made = new Set(matched.map((row) => row.id));
+  const { rows } = await scope.client.query<{ id: string }>(`SELECT r.id FROM ${table} r WHERE r.practice_id = $1`, [practiceId]);
+  return rows.map((row) => row.id).filter((id) => !made.has(id));
+}
+
 /** Matches the practice's posting rows no match was ever made for, in the order they posted. */
 export async function matchPostings(scope: Scope, cipher: PracticeCipher, practiceId: string): Promise<number> {
+  const waiting = await neverMatched(scope, practiceId, 'posting_row');
   const { rows } = await scope.client.query<PostingRowRow>(
     `SELECT ${POSTING_ROW_COLUMNS} FROM posting_row p
-      WHERE p.practice_id = $1 AND NOT EXISTS (SELECT 1 FROM ledger_match m WHERE m.posting_row_id = p.id)
+      WHERE p.practice_id = $1 AND p.id = ANY ($2::uuid[])
       ORDER BY p.posted_on, p.created_at, p.row_no`,
-    [practiceId],
+    [practiceId, waiting],
   );
   let matched = 0;
+  // Claims never change within the pass: each remittance's are read and decrypted once, however many rows name it.
+  const read: RemittanceClaims = new Map();
   for (const row of rows) {
-    const decision = await postingDecision(scope, cipher, practiceId, row);
+    const decision = await postingDecision(scope, cipher, practiceId, row, undefined, read);
     if (decision.kind === 'unmatched') {
       continue;
     }
@@ -188,11 +220,12 @@ export async function depositDecision(scope: Scope, practiceId: string, row: { r
 
 /** Matches the practice's EFT rows no match was ever made for: each alone, or each batch together. */
 export async function matchDeposits(scope: Scope, practiceId: string): Promise<number> {
+  const waiting = await neverMatched(scope, practiceId, 'eft_row');
   const { rows } = await scope.client.query<EftRowRow>(
     `SELECT e.id, e.source_document_id, e.trace, e.amount_cents::text AS amount_cents, e.batch_reference FROM eft_row e
-      WHERE e.practice_id = $1 AND NOT EXISTS (SELECT 1 FROM ledger_match m WHERE m.eft_row_id = e.id)
+      WHERE e.practice_id = $1 AND e.id = ANY ($2::uuid[])
       ORDER BY e.deposited_on, e.created_at, e.row_no`,
-    [practiceId],
+    [practiceId, waiting],
   );
   let matched = 0;
   const batches = new Map<string, EftRowRow[]>();
@@ -334,15 +367,15 @@ export async function settleMatches(scope: Scope, practiceId: string, createdBy:
   }
   const standing = matches.filter((match) => match.standing && (match.kind === 'posting' || match.kind === 'deposit'));
   let count = 0;
-  for (const [position, match] of standing.entries()) {
+  // Each check's check-level postings so far, in the standing matches' order: what a partial posting's share is what they leave of.
+  const checkPostedBefore = new Map<string, bigint>();
+  for (const match of standing) {
     const { amount, payment, code, date } = amountOf.get(match.id) as { amount: Cents; payment: Cents; code: string | null; date: string | null };
     // The check's check-level postings before this one: a partial posting's share is what they leave.
-    const before = cents(
-      standing
-        .slice(0, position)
-        .filter((other) => other.kind === 'posting' && other.level === 'check' && other.remittanceId === match.remittanceId)
-        .reduce((sum, other) => sum + (amountOf.get(other.id)?.amount ?? ZERO_CENTS), 0n),
-    );
+    const before = cents(checkPostedBefore.get(match.remittanceId) ?? 0n);
+    if (match.kind === 'posting' && match.level === 'check') {
+      checkPostedBefore.set(match.remittanceId, before + (amountOf.get(match.id)?.amount ?? ZERO_CENTS));
+    }
     const owed = match.level === 'claim' ? byClaim.get(match.claimId as string) : byRemittance.get(match.remittanceId);
     if (owed === undefined || (only !== undefined && match.id !== only)) {
       continue;

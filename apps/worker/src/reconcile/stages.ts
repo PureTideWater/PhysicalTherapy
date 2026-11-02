@@ -57,15 +57,35 @@ interface LineRow {
   readonly current_stage: Stage | null;
 }
 
-async function insertStage(scope: Scope, practiceId: string, serviceLineId: string, stage: Stage, setBy: string | null, reopen?: { readonly from: Stage; readonly reason: string }): Promise<void> {
-  await scope.client.query('INSERT INTO line_status (practice_id, service_line_id, stage, set_by, reason, reopened_from) VALUES ($1, $2, $3, $4, $5, $6)', [
-    practiceId,
-    serviceLineId,
-    stage,
-    setBy,
-    reopen?.reason ?? null,
-    reopen?.from ?? null,
-  ]);
+interface StageEvent {
+  readonly serviceLineId: string;
+  readonly stage: Stage;
+  readonly reopen?: { readonly from: Stage; readonly reason: string };
+}
+
+/**
+ * Writes the events in one statement, in the order given (each row's seq is drawn in that order, and each row's
+ * triggers see the rows before it, so a line's payer approved is checked before its recovered): the cases they touch
+ * are refreshed once (line_status_refresh_cases, a statement trigger) instead of once an event.
+ */
+async function insertStages(scope: Scope, practiceId: string, events: readonly StageEvent[], setBy: string | null): Promise<void> {
+  if (events.length === 0) {
+    return;
+  }
+  await scope.client.query(
+    `INSERT INTO line_status (practice_id, service_line_id, stage, set_by, reason, reopened_from)
+     SELECT $1, e.service_line_id, e.stage, $2, e.reason, e.reopened_from
+       FROM unnest($3::uuid[], $4::text[], $5::text[], $6::text[]) WITH ORDINALITY AS e (service_line_id, stage, reason, reopened_from, n)
+      ORDER BY e.n`,
+    [
+      practiceId,
+      setBy,
+      events.map((event) => event.serviceLineId),
+      events.map((event) => event.stage),
+      events.map((event) => event.reopen?.reason ?? null),
+      events.map((event) => event.reopen?.from ?? null),
+    ],
+  );
 }
 
 /** Brings every case line with ledger entries to the stage its entries put it at. */
@@ -80,24 +100,27 @@ export async function syncLineStages(scope: Scope, cipher: PracticeCipher, pract
   );
   let forward = 0;
   let back = 0;
+  const events: StageEvent[] = [];
   for (const row of rows) {
     const target = row.ledger_stage;
     const current = row.current_stage;
     if (target !== null && (current === null || RANK[target] > RANK[current])) {
       if (target === 'recovered' && (current === null || RANK[current] < RANK.payer_approved)) {
-        await insertStage(scope, practiceId, row.service_line_id, 'payer_approved', setBy);
+        events.push({ serviceLineId: row.service_line_id, stage: 'payer_approved' });
         forward += 1;
       }
-      await insertStage(scope, practiceId, row.service_line_id, target, setBy);
+      events.push({ serviceLineId: row.service_line_id, stage: target });
       forward += 1;
       continue;
     }
     if ((current === 'payer_approved' || current === 'recovered') && (target === null || RANK[target] < RANK[current])) {
+      // Read before any event is written, as before: the note reads only this line's own events and entries.
       const note = target === null ? REOPEN_NOTES.recoupment : current === 'recovered' ? await moveBackNote(scope, row.service_line_id) : REOPEN_NOTES.reversal;
-      await insertStage(scope, practiceId, row.service_line_id, target ?? 'actionable', setBy, { from: current, reason: cipher.encrypt('line_status.reason', note) });
+      events.push({ serviceLineId: row.service_line_id, stage: target ?? 'actionable', reopen: { from: current, reason: cipher.encrypt('line_status.reason', note) } });
       back += 1;
     }
   }
+  await insertStages(scope, practiceId, events, setBy);
   return { forward, back };
 }
 
