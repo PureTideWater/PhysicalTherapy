@@ -10,7 +10,10 @@ number). No migration timestamps. Gateway-only Lane B work, never a schema PR. I
 released: record it here and tell the orchestrator.
 Follow-on: none.
 
-## Now (2026-11-01T17:58Z)
+## Now (2026-11-02T02:12Z)
+- **PAUSED** on the co-founder's pacing call (relayed by the orchestrator 2026-11-02 02:10 UTC: the 7-day limit is at its
+  warning level; resets 2026-11-06 19:00 UTC). Clean point: stage 1 (design) done; nothing built, no branch, no PR, no WIP ref
+  needed (no code). One send_later at 2026-11-06T19:15Z; all other check-ins cancelled. Resume only when the orchestrator says.
 - **Stage 1 (design) done; waiting on #75's merge to build.** Design `designs/lane-b-redact-ssn-phone.md` (reviewed: one reviewer,
   a completeness critic, two-lens verification; F1-F12 and C1-C10 all applied; section 17 R1-R13 is the rule set the build follows).
   Workflow wf_8670bbfd-b5d, archived as `workflow-scripts/lane-b-redact-ssn-phone-design-wf_8670bbfd-b5d.js`.
@@ -84,6 +87,10 @@ Follow-on: none.
   number joins over `_`, `|` and `\`; a number stays a date only when it is that whole date). Against 871faff9 they change
   `redact.ts` (+48 lines net), `redact.test.ts`, `redact.property.test.ts` and ADR 0054. Build step 0 must re-read these: the join
   set and the whole-date rule touch design §3 (joiners), §17 R1/R7 (date barriers in the survivor scan) and R14.
+- 2026-11-02T01:01Z and 02:02Z: #75 still unmerged (PR head 871faff9, dirty); a newer WIP ref `-8` (49156dd8) exists. Step 0 reads
+  #75's merged state, whatever its last WIP was.
+- 2026-11-02T02:12Z: paused on the co-founder's pacing call (orchestrator, 02:10 UTC). Check-ins cancelled except one at
+  2026-11-06T19:15Z. Reported to the orchestrator.
 
 ## Waiting on someone
 - **#75's merge** (its own session, S4): the build waits for it (cut only from a base containing its merge commit).
@@ -109,9 +116,12 @@ align packages/observability phi-guard's SSN and phone shapes; 16.10 log prepare
 caller.
 
 ## Next step
-Wait for #75 to merge: check `gh api repos/PureTideWater/PhysicalTherapy/pulls/75 --jq '.merged, .merge_commit_sha'` on a
-send_later (no polling; do not subscribe to #75). Then: design §13 step 0 (diff #75's merged gateway files, PRD §14, ADR 0054,
-test-matrix and synth against 871faff9; re-run the probe and the prototype in the scratchpad if any gateway file changed; record);
-cut `co-001/redact-ssn-phone` from a base containing #75's merge (item prompt step 6); setup with
+Paused. On resume (the orchestrator says so, after 2026-11-06 19:00 UTC or a raised limit): re-run setup if PostgreSQL is down
+(`bash /tmp/setup-container.sh`; the probe worktree `/home/user/redact-ssn-phone-probe` may need re-adding at 871faff9 if the
+container was reclaimed); check #75 with `gh api repos/PureTideWater/PhysicalTherapy/pulls/75 --jq '.merged, .merge_commit_sha'` on
+an hourly send_later (no polling; do not subscribe to #75). Once merged: design §13 step 0 (diff #75's merged gateway files, PRD §14,
+ADR 0054, test-matrix and synth against 871faff9 — expect at least the WIP -7/-8 changes: plausible-year dates, joins over `_`, `|`,
+`\`, whole-date rule; re-run the probe and the prototype in a scratchpad if any gateway file changed; reconcile design §3, §17 R1,
+R7, R14 with them; record); cut `co-001/redact-ssn-phone` from a base containing #75's merge (item prompt step 6); setup with
 `co-001/redact-ssn-phone:/home/user/redact-ssn-phone`; remove the probe worktree; then the build workflow (stage 2) on design §13
 and §17, and the draft PR (stage 3).
