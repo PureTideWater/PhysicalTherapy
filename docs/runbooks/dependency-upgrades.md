@@ -25,15 +25,17 @@ docs/runbooks/github-governance.md, "The default branch until launch"):
 
 | Ecosystem | Day (UTC) | Cooldown | Pull requests |
 | --- | --- | --- | --- |
-| npm | Thursday 04:31 | 3 days, every update type | one per group, at most 8: `browser-tests`, `anthropic-sdk`, `pg-boss`, `next`, `aws-sdk`, `aws-cdk`, `minor-and-patch`; and `security` for security updates |
+| npm | Thursday 04:31 | 3 days, every update type | one per group, at most 8: `browser-tests`, `anthropic-sdk`, `pg-boss`, `next`, `aws-sdk`, `aws-cdk`, `minor-and-patch`; and `security` for security updates; each dependency is in exactly one group (minor-and-patch excludes the others' patterns) |
 | GitHub Actions | Tuesday 04:37 | 7 days | one, every action |
 | the node image and compose's postgres | Wednesday 04:43 | 7 days | one, `container-images` |
 
 Majors are ignored for `@types/node`, `typescript`, `next`, `@next/eslint-plugin-next`, `pg-boss`, the node image and
-compose's postgres: each moves in a pull request of its own (below). The ignores hold for security updates too, so an
-advisory fixed only in one of those majors raises an alert and no pull request: the weekly triage reads the alerts for
-that reason (below). Monday holds the weekly mutation (05:23), large-zip (06:17) and capacity (06:41) runs, so no
-ecosystem runs then.
+compose's postgres: each moves in a pull request of its own (below). Those entries name update types, and Dependabot
+applies an update-type ignore to version updates only (dependabot-core 85379652, `ignore_condition.rb`: a security job
+keeps only an entry's `versions`), so an npm advisory fixed only in one of those majors may still open a `security`
+pull request that crosses it, and one that opens none leaves only an alert: the weekly triage reads the alerts for that
+reason (below). Monday holds the weekly mutation (05:23), large-zip (06:17) and capacity (06:41) runs, so no ecosystem
+runs then.
 
 npm's cooldown equals the release age on purpose (the co-founder's CQ1 (a)). Dependabot hands pnpm its own release
 age whenever that is longer than the repository's: its update checker probes each candidate with the version's
@@ -43,6 +45,20 @@ direct dependency was younger than that. Do not add semver-specific days to the 
 only `default-days`.
 
 ## The weekly triage
+
+A pull request that changes `.github/dependabot.yml` merges only with its `.github/dependabot.yml` check green as well
+as CI-12: GitHub's own "Dependabot config file validation", which is not a required check. CI-12 proves what the file
+means, not that GitHub accepts it, and GitHub stops using a file it rejects, with only a banner to say so.
+
+A merge that changes `.github/dependabot.yml` on the default branch starts Dependabot at once, under the new file: #27's
+merge (2026-10-20T22:24:07Z) started the npm, actions and docker version runs at 22:24:13Z (39507843042, 39507843420,
+39507843520) and a recreate of the open `minor-and-patch` pull request at 22:24:15Z (39507847707). A recreated group
+pull request whose dependencies changed is closed ("dependencies changed") and replaced under a new number (#89 by #97
+on 2026-11-02); one whose target versions changed is left to GitHub, which that day re-pushed #88 in place, under its
+own number and branch, and otherwise closes it as superseded by the new one; and one with nothing left to update is
+closed with none (dependabot-core 85379652, `group_update_refreshing.rb`). On the day of such a merge, read those runs
+as step 1 does, with `since` the merge's date, and record which bot pull requests were closed, re-pushed, replaced or
+opened.
 
 Once a week, after Thursday's npm batch:
 
@@ -58,7 +74,36 @@ Once a week, after Thursday's npm batch:
    Open each `failure` and read its log; fix the cause in a pull request (run 40223237798 of 2026-10-25 is the
    example: every npm update failed with `ERR_PNPM_NO_MATURE_MATCHING_VERSION`, because a locked version was under
    three days old). A successful run whose log says "release-age block detected" dropped a version without a pull
-   request; under CQ1 (a) it should not occur, so record it and find which locked version caused it.
+   request; under CQ1 (a) it should not occur, so record it and find which locked version caused it. The routing
+   broke, and `.github/dependabot.yml` needs a fix (CI-12), when the npm run's log has any
+   `belongs to more specific group` line, or a `groups where no dependencies match` warning or a
+   `does not match any allowed dependencies` line naming a group whose packages are still in the manifests (when a
+   group matches nothing, its packages went to another group or arrive ungrouped, and no "belongs to" line says so).
+   Read the log, green runs included. The `groups where no dependencies match` warning names its groups on the lines
+   after it, one `- <group>` each, so the last command lists them:
+
+   ```sh
+   run=<the npm run's id>
+   job=$(gh api "repos/PureTideWater/PhysicalTherapy/actions/runs/$run/jobs" --jq '.jobs[0].id')
+   gh api "repos/PureTideWater/PhysicalTherapy/actions/jobs/$job/logs" \
+     | grep -E 'Pulling image|belongs to more specific group|no dependencies match|does not match any allowed'
+   gh api "repos/PureTideWater/PhysicalTherapy/actions/jobs/$job/logs" \
+     | awk '/no dependencies match/ { on = 1; next } on && $2 == "-" { print "matches nothing: " $3; next } { on = 0 }'
+   ```
+
+   GitHub picks the updater for each run, and the log names it:
+   `Pulling image ghcr.io/dependabot/dependabot-updater-npm:<commit>`. CI-12's model ports dependabot-core 85379652
+   (`tools/test/dependabot-config.test.ts`), and run 40818560725 ran dec480ad, whose `updater/`, `common/` and
+   `npm_and_yarn/` equal 85379652's. When the commit differs from the last triage's, check the four files of the
+   group assignment in a blobless clone of dependabot-core:
+
+   ```sh
+   git diff --quiet 85379652 <commit> -- common/lib/dependabot/dependency_group.rb common/lib/wildcard_matcher.rb \
+     updater/lib/dependabot/dependency_group_engine.rb updater/lib/dependabot/updater/pattern_specificity_calculator.rb
+   ```
+
+   If it reports a difference, read the change against CI-12's port, record it, and amend the port in a pull request
+   when the routing changes.
 2. **Each open Dependabot pull request.** Read its checks, then its changes:
    - all green: read the release notes of every major or minor in it for a change in behaviour our code relies on,
      then take it as a pull request of the build's own: merge the build branch in, add what the notes call for, and
@@ -66,7 +111,13 @@ Once a week, after Thursday's npm batch:
    - red: read the failing check. A red test that names a real incompatibility is the update's work; a red check that
      is not about the update (a flaky journey, a runner lost) is fixed or re-run as any other (docs/runbooks/ci.md);
    - `browser-tests`: red by design (below);
-   - a group that moves a money closure's packages runs mutation in full; read its survivors like any other.
+   - a group that moves a money closure's packages runs mutation in full; read its survivors like any other;
+   - check that each group's pull request holds only its group's members; a replacement taken as the build's own pull
+     request closes the bot's with a comment naming it and its merge commit, once it merges (never
+     `@dependabot ignore`). Closing a grouped pull request ignores nothing. Closing an individual (ungrouped) one makes
+     Dependabot skip that exact version for good ("OK, I won't notify you again about this release", #16 and #17): the
+     version stays in each job's `existing-pull-requests`, and `@dependabot show` does not list it. Close an
+     individual one only when the replacement took that version or a newer one, and say which in the comment.
 3. **Open Dependabot alerts.** An alert can stand with no pull request behind it, so read the alerts, not only the
    pull requests:
 
@@ -76,13 +127,15 @@ Once a week, after Thursday's npm batch:
        (.security_vulnerability.first_patched_version.identifier // "no fix"), .html_url] | @tsv'
    ```
 
-   For each, find the `security` group's pull request that fixes it. When there is none:
-   - **the fix is only in a major the file ignores** (`@types/node`, `typescript`, `next`, `@next/eslint-plugin-next`,
-     `pg-boss`): a file `ignore` entry applies to security updates too, so Dependabot opens nothing. (Alerts cover the
-     npm packages and the actions; the images' advisories surface in the images job's scan.) Handle it by hand as a
+   For each, find the `security` group's pull request that fixes it. One that crosses a major the file ignores
+   (`@types/node`, `typescript`, `next`, `@next/eslint-plugin-next`, `pg-boss`) can open, since those entries bind
+   version updates only (above): read it as the deliberate upgrade it is (below, "The upgrades made on purpose"). When
+   there is none:
+   - **the fix is only in a major the file ignores, and no `security` pull request takes it**: handle it by hand as a
      deliberate upgrade (below, "The upgrades made on purpose"), in its own pull request, at once for a moderate or
      worse advisory on anything the product runs; if the advisory cannot reach what we run, record why in an audit
-     exception (below) instead;
+     exception (below) instead (alerts cover the npm packages and the actions; the images' advisories surface in the
+     images job's scan);
    - **no fixed version yet**: an audit exception with its reason and expiry (below), and the alert read again weekly;
    - **the fix is under three days old**: the pull request is red until its dated exclude is added (below, "The
      release age"); add it when the fix cannot wait.
@@ -96,9 +149,28 @@ Once a week, after Thursday's npm batch:
    (below). An action whose tag moved under an unchanged pin (a push run's warning from `pnpm actions:check`): read
    why upstream moved it; a pin is a commit, so nothing we run changed, but a moved tag on a security tool is reported
    to the founder.
-6. **Stored ignores.** `@dependabot ignore …` comments on a pull request are stored by GitHub, outside the file. List
-   them with `@dependabot show <dependency> ignore conditions` on any Dependabot pull request, and remove one with
-   `@dependabot unignore <dependency>`; the file's `ignore` entries are the only ones meant to exist.
+6. **Stored ignores.** `@dependabot ignore …` comments on a pull request are stored by GitHub, outside the file; the
+   file's `ignore` entries are the only ones meant to exist. Read them first without writing anything: the npm run's
+   `Job definition:` log line (the job of step 1) lists every ignore condition with its `source`, and as
+   `existing-pull-requests` the individual pull requests Dependabot treats as existing, closed ones included, whose
+   versions it will not propose again (step 2):
+
+   ```sh
+   definition=$(gh api "repos/PureTideWater/PhysicalTherapy/actions/jobs/$job/logs" | grep -m1 'Job definition' \
+     | sed 's/^[^{]*//')
+   printf '%s' "$definition" | jq -r '.job["ignore-conditions"][] | [.["dependency-name"], .source] | @tsv'
+   printf '%s' "$definition" | jq -r '.job["existing-pull-requests"][] | [.["pr-number"],
+     (.dependencies | map(.["dependency-name"] + " " + .["dependency-version"]) | join(", "))] | @tsv'
+   ```
+
+   A condition whose `source` is not `.github/dependabot.yml` was stored by a comment. On 2026-10-29 all five came from
+   the file, and `existing-pull-requests` held the closed #16 (typescript 7.0.2) and #17 (`@types/node` 26.6.5), both
+   majors the file ignores anyway. `@dependabot show <dependency> ignore conditions` on any Dependabot pull request
+   lists one dependency's, and `@dependabot unignore <dependency>` removes one; both are comments, so writes.
+
+Record each weekly triage, steps 1-6 in order, with the runs and pull requests read and what was done, in the
+build's lane log on `claude/build-ops` (`lanes/lane-b.md` while Lane B runs the triage), or in the item's design when
+the triage belongs to an item.
 
 For the first four weekly batches after the switch, read the bot queue time as `docs/runbooks/ci.md` says.
 
@@ -318,18 +390,22 @@ lockfile entry against the release age and the trust policy on every install (`t
   `typescript <6.1.0`); `typecheck.sh`'s time and `pnpm typecheck`'s are re-measured.
 - **The Anthropic SDK.** The `anthropic-sdk` group is never merged as it stands: a model-gateway change passes the
   evaluation gate first (packages/model-gateway; PRD 18), in a deliberate pull request.
-- **AWS.** `aws-cdk` with `aws-cdk-lib` and `constructs`, and `@aws-sdk/*`, come in their groups (minor and patch).
-  `pnpm cdk:diff` in the build job shows what a CDK bump changes in the stacks; read it before taking one.
+- **AWS.** `aws-cdk`, `aws-cdk-lib` and `constructs` come in the `aws-cdk` group and `@aws-sdk/*` in the `aws-sdk`
+  group, minor and patch only; minor-and-patch excludes their patterns, so none of them comes in its pull request.
+  `pnpm cdk:diff` in the build job shows what a CDK bump changes in the stacks; read it before taking one. The CLI
+  moves with the library: a library's cloud assembly names the oldest CLI that reads it (`minimumCliVersion`).
   `infra/test/cli-settings.test.ts` asks the installed CDK CLI whether its telemetry is off (its
   `cli-telemetry --status`, under the synth script's variables), runs it with and without `--no-notices` to see that
   the flag stops the notices fetch, and fails when its `lib/index.js` no longer skips the version check on
   `CDK_DISABLE_VERSION_CHECK`. When it fails on a CDK CLI bump, read `canCollectTelemetry`, the `--no-notices`
   handling and `shouldDisplayVersionMessage`, and change the settings and the test together.
-  `@aws-sdk/*` reaches pricing and packets through the lockfile, so its pull request runs those packages' mutation. No
-  CI job runs the SDK over a real socket or inside the worker's esbuild bundle (the capacity job uses local providers,
-  e2e imports the sources, the images job only builds), so an `@aws-sdk/*`, `@smithy/*` or credential-provider move is
-  also compared, base against head, over real sockets to local stubs and in the worker's bundle: Bedrock over HTTP/2,
-  S3 multipart with 100-continue and checksum validation, KMS, SES, RDS, and ECS container credentials.
+  `@aws-sdk/*` reaches pricing and packets through `packages/contracts` and `packages/db`'s manifests and the lockfile,
+  so its pull request runs those packages' mutation.
+  No CI job runs the SDK over a real socket or inside the worker's esbuild bundle (the capacity job uses local
+  providers, e2e imports the sources, the images job only builds), so an `@aws-sdk/*`, `@smithy/*` or
+  credential-provider move is also compared, base against head, over real sockets to local stubs and in the worker's
+  bundle: Bedrock over HTTP/2, S3 multipart with 100-continue and checksum validation, KMS, SES, RDS, and ECS
+  container credentials.
   A `@aws-sdk/client-textract` or `@smithy/core` move is a Textract-reader bump (docs/adr/0070): `pnpm test:golden`
   reads the evaluation's scans through a real `TextractClient` answering from their recordings
   (`packages/model-gateway/eval/sets.ts`), so a move that changes the pages as read fails `set_changed`
