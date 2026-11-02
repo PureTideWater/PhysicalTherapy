@@ -578,6 +578,9 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   // The letter reader's one-pass redaction (docs/adr/0054, amendment of 2026-10-27).
   'MOD-13': none(10, 'Letters are generated in memory by the property test, which records where it wrote each identifier; no file.', ['packages/model-gateway/src/redact.property.test.ts', 'packages/model-gateway/src/functions/denial-letter.test.ts']),
   'MOD-14': none(10, 'Letters are generated in memory by the property test; no file.', ['packages/model-gateway/src/redact.property.test.ts', 'packages/model-gateway/src/functions/denial-letter.test.ts']),
+  // SDK 1.x on the Anthropic path: the client's tracing, logging and host held, extra headers refused (docs/adr/0048, amendment of 2026-11-01).
+  'MOD-17': none(10, 'The client and the configuration are built in memory with a synthetic key, the SDK’s code is read where pnpm installed it, and a fake fetch answers each failure in memory; no file.', ['packages/model-gateway/src/providers/anthropic-client.test.ts', 'packages/model-gateway/src/config.test.ts']),
+  'MOD-18': none(10, 'A fake fetch answers a synthetic message in memory; no request leaves the process; no file.', ['packages/model-gateway/src/providers/anthropic-client.test.ts']),
   // Milestone 11's billing (PRD 6, 15), as combined audit item 135 orders its payment methods (docs/adr/0073).
   'BIL-01': none(11, 'The Payment Element’s options and the confirmation’s notices are built from values the test passes in memory; Stripe’s form never renders; no file.', ['apps/web/src/components/billing/billing.test.tsx']),
   'BIL-02': none(11, 'The Stripe adapter runs against a mocked SDK client that records each request; no file.', ['packages/billing/src/stripe.test.ts', 'packages/billing/src/types.test.ts']),
