@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import os from 'node:os';
 import path from 'node:path';
 
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { MUTATION_PACKAGES, type MutationPackage } from '../../stryker/base.mjs';
 import { repositoryRoot } from '../content-files';
@@ -451,12 +451,18 @@ describe('on this repository', () => {
 });
 
 describe('on a synthetic world: the mirror rule’s closures and the files a shard loads by path', () => {
-  const world = syntheticWorld();
-  const closures = closuresOf(world);
-  const global = globalFiles(world.root, world.files, SYNTHETIC);
+  // Written in beforeAll, never at collection, so collecting this file leaves no temporary directory (collection.test.ts).
+  let world: World;
+  let closures: Closure[];
+  let global: GlobalInputs;
+  beforeAll(() => {
+    world = syntheticWorld();
+    closures = closuresOf(world);
+    global = globalFiles(world.root, world.files, SYNTHETIC);
+  });
+  afterAll(() => world.remove());
   const packages = (texts: Texts) => affected({ files: Object.keys(texts), texts }, closures, global).packages;
   const text = (file: string) => readFileSync(path.join(world.root, file), 'utf8');
-  afterAll(() => world.remove());
 
   it('affects pricing alone for a root dependency only pricing’s closure imports', () => {
     const before = text('package.json');
@@ -499,7 +505,11 @@ describe('on a synthetic world: a manifest edit that captures an import a closur
     for (const pkg of ['pricing', 'ledger', 'packets']) world.write(`packages/${pkg}/src/index.ts`, 'export const x = 1;\n');
     return world.write('apps/site/package.json', json({ name: siteName, exports: { '.': './src/page.ts' } })).write('apps/site/src/page.ts', 'export const helper = 2;\n');
   };
-  const worlds = { before: base('@tp/site'), captures: base('@tp/helper'), capturesNone: base('@tp/nobody') };
+  // Written in beforeAll, never at collection (collection.test.ts).
+  let worlds: Readonly<Record<'before' | 'captures' | 'capturesNone', World>>;
+  beforeAll(() => {
+    worlds = { before: base('@tp/site'), captures: base('@tp/helper'), capturesNone: base('@tp/nobody') };
+  });
   afterAll(() => Object.values(worlds).forEach((world) => world.remove()));
   const judge = (head: World): readonly MutationPackage[] => {
     const closures: Closure[] = unionClosures(closuresOf(head), closuresOf(worlds.before));
