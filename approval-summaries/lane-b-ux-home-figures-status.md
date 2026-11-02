@@ -8,7 +8,7 @@ item session, 2026-10-27), as the follow-on of PR 5 (`co-001/ux-download-refusal
 GitHub merged_at 2026-10-28T06:50:22Z).
 
 ## Now (2026-11-02 02:50 UTC): MERGED
-- **PR #93 merged** 2026-11-02 ~02:47 UTC as 877e662f (method merge, expectedHeadSha d1e4c4c4), into claude/build-platform. Unsubscribed. Worktree `/home/user/ux-home-figures` and the local branch removed (the remote branch stays); main checkout fast-forwarded to 877e662f and `pnpm install` run. Push runs on 877e662f (ci, screening-capacity, mutation): being read; recorded below when done.
+- **PR #93 merged** 2026-11-02 ~02:47 UTC as 877e662f (method merge, expectedHeadSha d1e4c4c4), into claude/build-platform. Unsubscribed. Worktree `/home/user/ux-home-figures` and the local branch removed (the remote branch stays); main checkout fast-forwarded to 877e662f and `pnpm install` run. Push runs on 877e662f: ci success, screening-capacity success, mutation success. **Stopped at a clean point** (no follow-on, per the pacing call).
 - **Stages, all done:** 1 design and review (wf_132e0b59-2b4); 2 build (wf_21e8bd67-64f; af3b6d89), before shots (wf_c880ba51-8cf); 3 draft PR and description (wf_b80e9712-f4a); base merge 1 (#82, #83: 87691be4, wf_4a5f0f16-f8c); 4 reviews (wf_a1a88081-22f: payment-engine and UX/brand with 38 after shots; no blocking; 23 real findings); 5 fix round (wf_768311e7-b88: all fixed, a fourth round's 4 fixed, full local suite once; 30c055c9); description republished (wf_52437a96-5cc); base merge 2 (#92: d1e4c4c4, rows kept both sides, SGN 19 then HOM 20; wf_7be2d381-b60); 6 fresh-clone verification (wf_e45d195a-ebd: scope, #42 overlap, HOM rows, ADR 0082; CI on d1e4c4c4 read after it completed: every check green, all green, mutation, screening-capacity gate and approval-of-record included; description brought to the head); 7 ready, approval-of-record re-run green, merged.
 - **Merge order:** the 20:36 UTC rule; no conflicting PR was ready ahead (#42, #85 drafts).
 - **Freeze exception:** none needed (payment-engine review). **Migration:** none. packages/pricing, packages/ledger, packages/db untouched.
@@ -36,6 +36,7 @@ GitHub merged_at 2026-10-28T06:50:22Z).
 - 2026-11-02 ~02:20 UTC: base merge 2 (#92) d1e4c4c4 pushed; the 30c055c9 run's e2e and capacity were cancelled by that push (not defects).
 - 2026-11-02 02:41 UTC: CI green on d1e4c4c4; verification complete; PR marked ready; approval-of-record re-run green.
 - 2026-11-02 ~02:47 UTC: **merged as 877e662f**; unsubscribed; worktree cleaned.
+- 2026-11-02 ~03:30 UTC: push runs on 877e662f all green (ci, screening-capacity, mutation). Item done; session stopped at a clean point.
 
 ## Waiting on someone
 - Nothing.
