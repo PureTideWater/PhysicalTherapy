@@ -30,6 +30,8 @@ export const ACTIONABLE_OPEN_LABEL = 'Actionable in cases still being worked';
 
 /**
  * What the statement's actionable figure is (docs/adr/0082): counted once, when the statement was generated, through
- * the one actionable predicate; its links name the cases, not the lines, so it is not recomputed from them.
+ * the one actionable predicate; the statement keeps the cases it counted, not their lines, so the figure is not
+ * recomputed later from them. One wording for the web page (above the case links), the PDF (before the case ids) and
+ * a statement that counted no case.
  */
-export const ACTIONABLE_OPEN_NOTE = 'Counted when the statement was generated, as the practice home and Cases count: each case’s lines still actionable on their pricing in effect. Not recomputed from its links.';
+export const ACTIONABLE_OPEN_NOTE = 'Counted when the statement was generated, as the practice home and Cases count: each case’s lines still actionable on their pricing in effect. The figure is not recomputed later from the cases it counted.';

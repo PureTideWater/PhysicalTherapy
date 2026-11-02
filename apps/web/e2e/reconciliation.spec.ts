@@ -222,28 +222,32 @@ test('an adjusted remittance, a posting export, an EFT export and a recoupment m
   await test.step('the home, Cases and the statement generated after the recoupment show one actionable amount, and recovered names its period (HOM-04)', async () => {
     await page.goto(`/p/${practiceId}`);
     const tile = page.locator('[data-figure="actionable"]');
-    const amount = (await tile.locator('.font-mono').first().textContent()) ?? '';
-    expect(amount).toMatch(/^\$\d[\d,]*\.\d{2}$/);
-    // Counted with its own lines; the reopened line, if its pricing is no longer current, named out of the figure with its cause.
-    await expect(tile.locator('[data-note="actionable"]')).toHaveText(
-      /^what the packets ask for: \d+ lines? in cases still being worked(; out of the figure: 1 line (whose pricing is no longer current|moved on past actionable))?$/,
-    );
+    // This world's one value (design §4 HOM-04): the recoupment's chain priced the case's line again, so the line it
+    // joined with is no longer current and the figure holds no line; the tile names the line out of it and why.
+    const amount = '$0.00';
+    await expect(tile.locator('.font-mono').first()).toHaveText(amount);
+    await expect(tile.locator('[data-note="actionable"]')).toHaveText('what the packets ask for: 0 lines in cases still being worked; out of the figure: 1 line whose pricing is no longer current');
     await expect(page.locator('[data-figure="recovered-to-date"]')).toHaveText('$12.00');
     await expect(page.locator('[data-figure="recovered-total"] [data-note="recovered"]')).toHaveText(
       'to date, since 2026-06-09: cash deposited, proved by the bank export, net of recoupments and reversals',
     );
     await expect(page.locator('[data-figure="recovered-quarter"]')).toHaveText(/^This quarter \(\d{4}-Q[1-4]\): \$\d[\d,]*\.\d{2}$/);
-    await expect(page.locator('[data-figure="payer-approved"]')).toContainText('counted as recovered only once it is deposited');
-    await expect(page.locator('main')).not.toContainText(/stage five/i);
+    await expect(page.locator('[data-figure="payer-approved"]')).toContainText('deposited or not, never the patient’s share; only deposited cash counts as recovered');
+    // No stage number in any read text of the home (stage five, stage-five or stage 5), its help apart.
+    const homeText = (await page.locator('main > :not(details[data-help])').allTextContents()).join(' ');
+    expect(homeText).not.toMatch(/stage[\s-]*(five|5)/i);
+    // The one known exception, a #42 file (components/help.ts:10). Remove this line once #42's follow-up lands: it then fails.
+    await expect(page.locator('details[data-help="practice"]')).toContainText('stage-five');
     await atPhoneWidth(page, 'The practice home');
     await page.goto(`/p/${practiceId}/cases`);
     await expect(page.locator('[data-figure="cases-actionable"]')).toHaveText(amount);
     await page.goto(`/p/${practiceId}/cases/${caseId}`);
     await expect(page.locator('[data-figure="actionable"]')).toHaveText(amount);
-    await expect(page.getByRole('region', { name: 'Case summary' })).toContainText('(cash deposited, proved by the bank export, net of recoupments and reversals)');
-    await expect(page.locator('main')).not.toContainText(/stage five/i);
+    const summary = page.getByRole('region', { name: 'Case summary' });
+    await expect(summary).toContainText('(cash deposited, proved by the bank export, net of recoupments and reversals)');
+    await expect(page.locator('main')).not.toContainText(/stage[\s-]*(five|5)/i);
     await page.goto(`/p/${practiceId}/reconciliation`);
-    await expect(page.locator('[data-figure="recovered"]')).not.toContainText(/stage five/i);
+    await expect(page.locator('[data-figure="recovered"]')).not.toContainText(/stage[\s-]*(five|5)/i);
     await page.goto(statementPath);
     const actionable = page.getByRole('region', { name: 'Actionable in cases still being worked', exact: true });
     await expect(actionable).toContainText(`Actionable in cases still being worked: ${amount}`);

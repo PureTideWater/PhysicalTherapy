@@ -625,6 +625,10 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'CI-18': none(0, "The manifests, the lockfile, the worker's Dockerfile and the workflows are read; the browser check runs on stand-in builds and a stand-in docker in a temporary directory, and the baseline step's script in a temporary git repository; no file.", ['tools/test/browser-version.test.ts', 'tools/ci/browser-build.test.ts', 'tools/test/no-duplicated-versions.test.ts', 'tools/test/workflows.test.ts']),
   'CI-19': none(0, "The brand journey reads the header's accessible names and visible text in the browser, and every journey's axe scan reads its pages; no file.", ['apps/web/e2e/brand.spec.ts', 'apps/web/e2e/a11y.ts']),
   'CI-20': none(0, "Every workflow file is read; the release's archive check runs on stand-in archives with a stand-in docker, the apt check with stand-in apt tools, and the archive reader and the harness's image proof on synthetic archives, each in a temporary directory; no file.", ['tools/test/workflows.test.ts', 'tools/ci/apt-archives.test.ts', 'tools/screening-capacity/image-id.test.ts', 'tools/screening-capacity/measure.test.ts']),
+  // The release age of pins and images (docs/adr/0066, Part 5).
+  'CI-21': none(0, "The workflows are read; GitHub's answers are synthetic and recorded, and the signed commits and tag are the synthetic ones tools/check-action-pins/testdata/age/make.sh made; no file.", ['tools/check-action-pins/age.test.ts', 'tools/check-action-pins/check.test.ts', 'tools/check-action-pins/buildkit.test.ts', 'tools/check-action-pins/verify.test.ts', 'tools/check-action-pins/workflows.test.ts', 'tools/test/workflows.test.ts']),
+  'CI-22': none(0, "The Dockerfiles, docker-compose.yml and the workflows are read, at the head and in synthetic base trees; Docker Hub's answers are synthetic and recorded; no file.", ['tools/check-toolchain/images.test.ts', 'tools/check-toolchain/tree.test.ts', 'tools/check-toolchain/registry.test.ts', 'tools/check-toolchain/check.test.ts', 'tools/check-toolchain/exclude-window.test.ts']),
+  'CI-23': none(0, "The exception lists are written in synthetic trees; GitHub's and Docker Hub's answers are synthetic and recorded; no file.", ['tools/check-action-pins/age.test.ts', 'tools/check-toolchain/images.test.ts', 'tools/check-toolchain/exclude-window.test.ts', 'tools/check-toolchain/check.test.ts']),
   // The generated function files of the combined audit's item 111 (docs/adr/0068).
   'DBF-01': none(0, 'The function files are generated from a scratch database the drift file migrates; no file.', ['packages/db/src/domain-model/function-files.db.test.ts']),
   'DBF-02': none(0, 'A probe migration changes a function on a scratch database; no file.', ['packages/db/src/domain-model/domain-model-drift.db.test.ts']),
@@ -713,6 +717,21 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/e2e/pricing.spec.ts',
   ]),
   'TBL-04': none(1, 'The stacked rows are rendered from synthetic rows the test passes in memory; no file.', ['apps/web/src/components/stacked-rows.test.tsx']),
+  // The screening result's tables, the UX baseline review's fourth pull request (docs/adr/0078).
+  'TBL-05': none(1, 'The result is rendered from synthetic groups, rows and coverage the test writes by hand, and the browser opens a result the screening consumer prices from a synthetic upload built in memory (CLEAN_ROWS, e2e/screening.ts); no file.', [
+    'apps/web/src/components/screening/result-tables.test.tsx',
+    'apps/web/e2e/screening-phone.spec.ts',
+  ]),
+  'TBL-06': none(1, 'The result is rendered from synthetic groups, rows and coverage the test writes by hand, and the browser opens a result the screening consumer prices from a synthetic upload built in memory (CLEAN_ROWS, e2e/screening.ts); no file.', [
+    'apps/web/src/components/screening/result-tables.test.tsx',
+    'apps/web/e2e/screening-phone.spec.ts',
+  ]),
+  'TBL-07': none(1, 'The browser opens a result the screening consumer prices from a synthetic upload built in memory (CLEAN_ROWS, e2e/screening.ts); no file.', ['apps/web/e2e/screening-phone.spec.ts']),
+  'TBL-08': none(1, 'The words and tones are rendered from synthetic groups, rows and coverage the test writes by hand, the browser opens a result the screening consumer prices from a synthetic upload built in memory (CLEAN_ROWS, e2e/screening.ts), and the copy lint reads the screening files; no file.', [
+    'apps/web/src/components/screening/result-tables.test.tsx',
+    'apps/web/e2e/screening-phone.spec.ts',
+    'tools/brand-copy/scan.test.ts',
+  ]),
   // Milestone 11's error states with a next step (PRD 6, 7), as the UX baseline review's fifth pull request brings a
   // refused download back to the page it was opened from (docs/adr/0079).
   'DLR-01': none(11, 'The download routes are fake routes the test builds, and Coverage’s letter is refused on a synthetic practice the journey creates; no file.', [
@@ -747,6 +766,9 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'HOM-02': none(9, 'The tiles and the words are rendered from synthetic figures the tests pass in memory, and the copy lint reads the app’s own files; no file.', [
     'apps/web/src/components/dashboard/headline.test.tsx',
     'apps/web/src/components/format.test.ts',
+    'apps/web/src/components/reconciliation/display.test.tsx',
+    'apps/web/src/components/triage/display.test.tsx',
+    'apps/web/src/lib/triage/queries.test.ts',
     'tools/brand-copy/scan.test.ts',
   ]),
   'HOM-03': none(9, 'The agreements are recorded on synthetic practices by the test, and the empty states rendered in memory; no file.', [

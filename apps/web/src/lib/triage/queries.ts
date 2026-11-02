@@ -295,6 +295,9 @@ export async function flaggedLines(scope: Scope, practiceId: string, anomaly: An
 
 export type CaseState = 'open' | 'submitted' | 'awaiting_response' | 'partially_resolved' | 'resolved' | 'closed_written_off';
 
+/** What a case's Net expected value shows (netExpectedOf): nothing pursued, no pursuit estimate, no line in the figure, or the figure. */
+export type NetExpectedState = 'closed' | 'unestimated' | 'no_line' | 'live';
+
 export interface CaseSummary {
   readonly id: string;
   readonly state: CaseState;
@@ -323,6 +326,9 @@ export interface CaseSummary {
   readonly deadline: DeadlineState;
   readonly materialityCents: string;
   readonly pursuitCostCents: string | null;
+  /** What the case page's Net expected value shows (netExpectedOf): the figure only when it is live. */
+  readonly netExpectedState: NetExpectedState;
+  /** The live figure less the pursuit cost when netExpectedState is live; null otherwise. */
   readonly netExpectedCents: string | null;
   /** The owner's email, and their opaque ID (null when unassigned). */
   readonly owner: string | null;
@@ -372,9 +378,35 @@ const CASES = (where: string, order = '', window = '') => `
     CROSS JOIN LATERAL ${ACTIONABLE_NOW_OF('c')} a
    ${order}`;
 
+/**
+ * What pursuing a case is worth now (docs/adr/0082 Decision 5), and whether there is a figure to show: none on a
+ * resolved or closed case (nothing is being pursued, and its pursuit cost, set when it opened, would read as a loss);
+ * none without a pursuit estimate; none when no line is in the actionable figure (every line moved on, stale or written
+ * off: the cost alone is not what the case is worth); otherwise its live figure less the cost (the audit report's
+ * rule), never the stored ask, and negative when pursuit is not worth it.
+ */
+export function netExpectedOf(row: {
+  readonly state: CaseState;
+  readonly actionableNowCents: string;
+  readonly actionableNowLines: number;
+  readonly pursuitCostCents: string | null;
+}): { readonly state: NetExpectedState; readonly cents: string | null } {
+  if (row.state === 'resolved' || row.state === 'closed_written_off') {
+    return { state: 'closed', cents: null };
+  }
+  if (row.pursuitCostCents === null) {
+    return { state: 'unestimated', cents: null };
+  }
+  if (row.actionableNowLines === 0) {
+    return { state: 'no_line', cents: null };
+  }
+  const net = netExpectedValue(parseCents(row.actionableNowCents), parseCents(row.pursuitCostCents));
+  return net === null ? { state: 'unestimated', cents: null } : { state: 'live', cents: net.toString() };
+}
+
 function caseSummary(row: CaseRow, asOf: string, emails: ReadonlyMap<string, string>): CaseSummary {
-  // What pursuing the case is worth now: its live figure less the cost (the audit report's rule), never the stored ask.
-  const net = netExpectedValue(parseCents(row.actionable_now_cents), row.pursuit_cost_cents === null ? null : parseCents(row.pursuit_cost_cents));
+  const actionableNowLines = Number.parseInt(row.actionable_now_lines, 10);
+  const net = netExpectedOf({ state: row.state, actionableNowCents: row.actionable_now_cents, actionableNowLines, pursuitCostCents: row.pursuit_cost_cents });
   return {
     id: row.id,
     state: row.state,
@@ -387,7 +419,7 @@ function caseSummary(row: CaseRow, asOf: string, emails: ReadonlyMap<string, str
     openLines: Number.parseInt(row.open_lines, 10),
     actionableCents: row.actionable_cents,
     actionableNowCents: row.actionable_now_cents,
-    actionableNowLines: Number.parseInt(row.actionable_now_lines, 10),
+    actionableNowLines,
     actionableNowMovedOn: Number.parseInt(row.actionable_now_moved_on, 10),
     actionableNowStale: Number.parseInt(row.actionable_now_stale, 10),
     writtenOffCents: row.written_off_cents,
@@ -395,7 +427,8 @@ function caseSummary(row: CaseRow, asOf: string, emails: ReadonlyMap<string, str
     deadline: deadlineState(row.deadline_on, asOf),
     materialityCents: row.materiality_cents,
     pursuitCostCents: row.pursuit_cost_cents,
-    netExpectedCents: net === null ? null : net.toString(),
+    netExpectedState: net.state,
+    netExpectedCents: net.cents,
     owner: row.owner_user_id === null ? null : (emails.get(row.owner_user_id) ?? 'a former member of the practice'),
     ownerUserId: row.owner_user_id,
     openedAt: row.opened_at.toISOString(),

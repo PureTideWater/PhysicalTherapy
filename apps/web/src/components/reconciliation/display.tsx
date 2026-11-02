@@ -50,10 +50,11 @@ export function recoveredLabel(level: string): string {
 
 /**
  * The proof level, in the words the ROI statement uses (PRD 13: a practice that cannot supply deposit data says
- * "posted"): the cash it counts, deposited or posted, then what proves it. It follows "cash" or a recovered label.
+ * "posted"): the cash it counts, deposited or posted, then what proves it. It follows "cash" or a recovered label, and
+ * a screen may set it in parentheses ("$0.00 (cash posted, ...)"), so it holds none of its own.
  */
 export function proofLevelWords(level: 'posted' | 'deposited'): string {
-  return level === 'deposited' ? 'deposited, proved by the bank export' : 'posted, proved by the posting export (no deposit data is supplied)';
+  return level === 'deposited' ? 'deposited, proved by the bank export' : 'posted, proved by the posting export, as no deposit data is supplied';
 }
 
 export interface TotalsFigures {
@@ -74,18 +75,25 @@ export function recoveredCashWords(level: 'posted' | 'deposited'): string {
 
 /**
  * The Payer approved tile's note on Reconciliation, by proof level: short, so the six tiles keep one height (UX-9);
- * its reversal detail is in LEDGER_TOTALS_HELP. On a practice that proves by deposit, a posting alone recovers nothing,
- * so the note names the one stage that counts. Each is written out whole for the copy lint.
+ * its reversal detail is in LEDGER_TOTALS_HELP. The figure is cumulative (an approval stays approved once its cash
+ * arrives, and after a takeback), so the note says "to date" and gives the proof level's rule, never a status: "only
+ * deposited cash counts as recovered", not "counted as recovered only once it is deposited", which read as money still
+ * to come beside a smaller Recovered; the Deposited tile beside it says how much has come. As long as the note it
+ * replaced, so the row keeps its height. Each is written out whole for the copy lint.
  */
 export const PAYER_APPROVED_NOTE: Readonly<Record<'posted' | 'deposited', string>> = {
-  posted: 'what payers agreed to pay, never the patient’s share; counted as recovered only once it is posted',
-  deposited: 'what payers agreed to pay, never the patient’s share; counted as recovered only once it is deposited',
+  posted: 'what payers agreed to pay to date, never the patient’s share; only posted cash counts as recovered',
+  deposited: 'what payers agreed to pay to date, never the patient’s share; only deposited cash counts as recovered',
 };
 
-/** The practice home's Payer approved tile's note, by proof level, in the same terms as PAYER_APPROVED_NOTE. */
+/**
+ * The practice home's Payer approved tile's note, by proof level: PAYER_APPROVED_NOTE's terms (to date, never the
+ * patient's share, the proof level's rule), and, since no Deposited tile stands beside it, the lines it is on and that
+ * it holds what has come as well as what has not; the home's three tiles have room for it.
+ */
 export const PAYER_APPROVED_HOME_NOTE: Readonly<Record<'posted' | 'deposited', string>> = {
-  posted: 'what payers have agreed to pay on the lines they corrected, from the recovery ledger; counted as recovered only once it is posted',
-  deposited: 'what payers have agreed to pay on the lines they corrected, from the recovery ledger; counted as recovered only once it is deposited',
+  posted: 'what payers agreed to pay to date on the lines they corrected, posted or not, never the patient’s share; only posted cash counts as recovered',
+  deposited: 'what payers agreed to pay to date on the lines they corrected, deposited or not, never the patient’s share; only deposited cash counts as recovered',
 };
 
 /** The totals' help beneath the screen's description, by proof level: what Payer approved is net of, moved from its tile's note (UX-9). */

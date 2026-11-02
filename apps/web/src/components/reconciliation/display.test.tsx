@@ -349,27 +349,32 @@ describe('the ledger’s totals', () => {
       />,
     );
 
-  it('notes payer approved as what payers agreed to pay, never the patient’s share, its reversal detail in the help (UX-9)', () => {
+  it('notes payer approved as what payers agreed to pay to date, never the patient’s share, its reversal detail in the help (UX-9)', () => {
     const shown = totals('deposited');
-    expect(shown).toContain('Payer approved$24.00what payers agreed to pay, never the patient’s share; counted as recovered only once it is deposited');
+    expect(shown).toContain('Payer approved$24.00what payers agreed to pay to date, never the patient’s share; only deposited cash counts as recovered');
     expect(shown).toContain(`By stage. ${LEDGER_TOTALS_HELP.deposited}`);
     expect(LEDGER_TOTALS_HELP.deposited).toBe('Payer approved is net of reversals and of what was taken back before it was deposited.');
   });
 
   it('names the proof level’s stage in the approval note and the help, and recovered without a stage number (HOM-02)', () => {
     const posted = totals('posted');
-    expect(posted).toContain('counted as recovered only once it is posted');
+    expect(posted).toContain('only posted cash counts as recovered');
     expect(posted).toContain(`By stage. ${LEDGER_TOTALS_HELP.posted}`);
     expect(LEDGER_TOTALS_HELP.posted).toBe('Payer approved is net of reversals and of what was taken back before it posted.');
-    expect(posted).toContain('Recovered (posted)$24.00cash posted, proved by the posting export (no deposit data is supplied), net of recoupments and reversals');
+    expect(posted).toContain('Recovered (posted)$24.00cash posted, proved by the posting export, as no deposit data is supplied, net of recoupments and reversals');
     expect(totals('deposited')).toContain('Recovered (deposited)$24.00cash deposited, proved by the bank export, net of recoupments and reversals');
     for (const shown of [posted, totals('deposited')]) {
-      expect(shown).not.toMatch(/stage five/i);
+      expect(shown).not.toMatch(/stage[\s-]*(five|5)/i);
     }
     for (const level of ['posted', 'deposited'] as const) {
-      expect(PAYER_APPROVED_NOTE[level]).toContain(`only once it is ${level}`);
-      expect(PAYER_APPROVED_HOME_NOTE[level]).toContain(`only once it is ${level}`);
+      // Both notes: cumulative, never the patient's share, and the proof level's rule, never a status (UX-R1-02, ux-r3-02).
+      for (const note of [PAYER_APPROVED_NOTE[level], PAYER_APPROVED_HOME_NOTE[level]]) {
+        expect(note).toContain('to date');
+        expect(note).toContain(`never the patient’s share; only ${level} cash counts as recovered`);
+      }
       expect(recoveredCashWords(level)).toBe(`cash ${proofLevelWords(level)}, net of recoupments and reversals`);
+      // A screen sets the cash words in parentheses, so they hold none of their own (ux-r2-03).
+      expect(recoveredCashWords(level)).not.toContain('(');
     }
   });
 });

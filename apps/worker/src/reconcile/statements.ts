@@ -35,13 +35,31 @@ export interface StatementSources {
 
 export const DEFAULT_STATEMENT_SOURCES: StatementSources = { fees: PAID_INVOICE_FEES, pursuitHours: NO_TIME_LOG };
 
-/** The practice's ledger totals, for its cases named (all by default) and the period named (all time by default). */
-export async function practiceLedgerTotals(scope: Scope, practiceId: string, filter: { readonly caseIds?: readonly string[]; readonly from?: string; readonly to?: string } = {}): Promise<LedgerTotals> {
-  const all = await ledgerEntries(scope, practiceId);
-  const { proofLevel } = await practiceLedgerSettings(scope, practiceId);
+/** Which entries a total reads: the cases named (all by default) and the period named (all time by default), calendar dates, both included. */
+export interface LedgerTotalsFilter {
+  readonly caseIds?: readonly string[];
+  readonly from?: string;
+  readonly to?: string;
+}
+
+/**
+ * The totals of the practice's whole ledger `all` (in ledger order) at `proofLevel`, over the cases and
+ * period `filter` names: the entries of those cases dated in the period, their corrections' targets found
+ * in the whole ledger, so a reversal inside the period of an entry before it nets the period. The one
+ * composition practiceLedgerTotals and recoveredPeriods both read, so the home's tile and every other
+ * figure of a period total the same entries the same way.
+ */
+export function ledgerTotalsOver(all: readonly LedgerEntry[], proofLevel: ProofLevel, filter: LedgerTotalsFilter = {}): LedgerTotals {
   const byCase = filter.caseIds === undefined ? all : filter.caseIds.flatMap((caseId) => caseEntries(all, caseId));
   const inPeriod = periodEntries(byCase, filter.from ?? '0001-01-01', filter.to ?? '9999-12-31');
   return ledgerTotals(inPeriod, proofLevel, entriesById(all));
+}
+
+/** The practice's ledger totals, for its cases named (all by default) and the period named (all time by default): ledgerTotalsOver its ledger. */
+export async function practiceLedgerTotals(scope: Scope, practiceId: string, filter: LedgerTotalsFilter = {}): Promise<LedgerTotals> {
+  const all = await ledgerEntries(scope, practiceId);
+  const { proofLevel } = await practiceLedgerSettings(scope, practiceId);
+  return ledgerTotalsOver(all, proofLevel, filter);
 }
 
 /**
@@ -53,23 +71,29 @@ export interface RecoveredPeriods {
   readonly toDate: LedgerTotals;
   /** The period's entries' totals, their corrections' targets found in the whole ledger (as practiceLedgerTotals reads a period). */
   readonly period: LedgerTotals;
-  /** The earliest date of the entries recovered to date sums (toDate.entryIds.recovered), never an approval's; null when it sums none. */
+  /**
+   * The earliest date of the entries recovered to date sums (toDate.entryIds.recovered) that still stand:
+   * an original entry, never a reversal or an adjustment, and never one reversed since (a wrong match
+   * undone). Never an approval's. Null when none stands, so a ledger whose recoveries were all reversed
+   * reads nothing recovered yet, not a date.
+   */
   readonly firstOn: string | null;
 }
 
 /**
  * Recovered to date and over `from` to `to` (calendar dates, both included) from the practice's whole
- * ledger `all` (in ledger order), at `proofLevel`: the same totals practiceLedgerTotals gives for all time
- * and for the period, read from one set of entries. A reversal inside the period of an entry before it
- * finds its target in the whole ledger, so it nets the period as it nets the practice's period total.
+ * ledger `all` (in ledger order), at `proofLevel`: ledgerTotalsOver for all time and for the period, the
+ * totals practiceLedgerTotals gives, read from one set of entries; and the first date a recovery that
+ * still stands was made (RecoveredPeriods.firstOn).
  */
 export function recoveredPeriods(all: readonly LedgerEntry[], proofLevel: ProofLevel, period: { readonly from: string; readonly to: string }): RecoveredPeriods {
-  const ledger = entriesById(all);
-  const toDate = ledgerTotals(all, proofLevel, ledger);
+  const toDate = ledgerTotalsOver(all, proofLevel);
   const counted = new Set(toDate.entryIds.recovered);
+  const reversedIds = new Set(all.filter((entry) => entry.stage === 'reversed').map((entry) => entry.evidenceId));
+  const standing = (entry: LedgerEntry) => counted.has(entry.id) && entry.stage !== 'reversed' && entry.stage !== 'adjusted' && !reversedIds.has(entry.id);
   // Calendar dates compare as text.
-  const firstOn = all.reduce<string | null>((first, entry) => (counted.has(entry.id) && (first === null || entry.effectiveOn < first) ? entry.effectiveOn : first), null);
-  return { toDate, period: ledgerTotals(periodEntries(all, period.from, period.to), proofLevel, ledger), firstOn };
+  const firstOn = all.filter(standing).reduce<string | null>((first, entry) => (first === null || entry.effectiveOn < first ? entry.effectiveOn : first), null);
+  return { toDate, period: ledgerTotalsOver(all, proofLevel, period), firstOn };
 }
 
 /** The practice's recovered to date and over the period, from one read of its ledger and its proof level (recoveredPeriods). */

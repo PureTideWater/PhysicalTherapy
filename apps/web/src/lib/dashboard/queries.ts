@@ -47,9 +47,13 @@ export const DEADLINE_WINDOW_DAYS = 14;
 
 /** The case lines of the cases still being worked that are not written off and out of the actionable figure, by cause. */
 export interface OutOfFigure {
-  /** Moved on past actionable (to payer approved or recovered). */
+  /** Whose latest stage is not actionable: moved on to payer approved or recovered, or (rarely) reopened by a person to an earlier stage. */
   readonly movedOn: number;
-  /** At actionable, but their pricing is no longer current (priced again, a release withdrawn, a version no longer in force). */
+  /**
+   * At actionable, but priced_line_pricing_check() is not 'current' (PRICING_CHECK_RESULTS, packages/db/src/schema/
+   * packets.ts): priced again or no run in effect, its rule release withdrawn, its plan mapping no longer in force on the
+   * service date, or its contract version no longer signed off or no longer covering the service date.
+   */
   readonly stale: number;
 }
 

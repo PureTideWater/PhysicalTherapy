@@ -21,7 +21,7 @@ import { type AttachableOption, VersionForm } from '../../../../../../components
 import { Money } from '../../../../../../components/remittances/display';
 import { ScrollTable } from '../../../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../../../components/shell';
-import { CaseStateBadge, actionableLinesWords, stageLabel } from '../../../../../../components/triage/display';
+import { ActionableLinesOn, CaseStateBadge, stageLabel } from '../../../../../../components/triage/display';
 import { downloadRefusal } from '../../../../../../lib/http/download-refusal';
 import { loadPage } from '../../../../../../lib/http/next';
 import { waitText } from '../../../../../../lib/packets/approval';
@@ -216,7 +216,7 @@ export default async function PacketPage(props: Props) {
           Packet: {item.payer}, {item.plan} <CaseStateBadge state={item.state} />
         </h1>
         <p className="text-base text-muted-foreground">
-          {item.behaviorText}. {stageLabel('actionable')}: <Money value={item.actionableNowCents} /> on {actionableLinesWords(item)}, as of {asOf}.
+          {item.behaviorText}. {stageLabel('actionable')}: <Money value={item.actionableNowCents} /> on <ActionableLinesOn item={item} />, as of {asOf}.
         </p>
       </div>
       {notice === null ? null : (

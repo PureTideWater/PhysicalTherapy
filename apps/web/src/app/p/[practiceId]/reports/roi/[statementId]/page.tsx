@@ -138,10 +138,11 @@ export default async function RoiStatementPage(props: Props) {
             <p className="text-sm text-muted-foreground">No case was being worked.</p>
           ) : (
             <ul className="flex flex-wrap gap-3 text-sm">
-              {detail.actionableCases.map((caseId) => (
+              {/* Each link named by its place in the list, as Reconciliation names a case line (WCAG 2.4.4: never "Case, Case"). */}
+              {detail.actionableCases.map((caseId, index) => (
                 <li key={caseId}>
                   <Link className="underline" href={`/p/${practiceId}/cases/${caseId}`}>
-                    Case
+                    {`Case ${String(index + 1)} of ${String(detail.actionableCases.length)}`}
                   </Link>
                 </li>
               ))}

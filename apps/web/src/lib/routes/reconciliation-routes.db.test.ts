@@ -418,6 +418,8 @@ describe('the Reconciliation screen (PRD 7)', () => {
       await practiceLedgerTotals(scope, practice.practiceId, { from, to }),
     ] as const);
     expect([periods.toDate, periods.period]).toEqual([toDate, quarter]);
+    // 3000 is the line's full variance, which is also what a packet built now asks; 1200 of it stands as recovered
+    // (the remaining-ask follow-up in ADR 0082). Every surface carries the same figure.
     expect(home.headline.actionable).toEqual({ cents: '3000', lines: 1, outOfFigure: { movedOn: 0, stale: 0 } });
     expect(ok(await call(casesPage, practice.manager, P())).cases.map((item) => [item.actionableNowCents, item.actionableNowLines, item.openLines])).toEqual([['3000', 1, 1]]);
     // An ROI statement generated now carries the same figure for the cases still being worked, never the stored total.
