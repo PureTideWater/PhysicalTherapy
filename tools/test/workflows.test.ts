@@ -3004,8 +3004,15 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     return names;
   }
 
-  /** Linux's limit on one environment string, NAME=value and its NUL (MAX_ARG_STRLEN, 32 pages of 4 KiB). */
+  /** Linux's limit on one environment string, NAME=value and its NUL, or one argument (MAX_ARG_STRLEN, 32 pages of 4 KiB). */
   const MAX_ARG_STRLEN = 131_072;
+  /**
+   * Linux's limit on a process's environment and arguments together (ARG_MAX: a quarter of the 8 MiB stack limit
+   * the runner's images set), and what is kept back of it for the runner's own: the image's variables, GITHUB_* and
+   * RUNNER_*, and a pointer for each string. 256 KiB is a round figure with headroom, not a measured one.
+   */
+  const ARG_MAX = 2_097_152;
+  const RUNNER_MARGIN = 262_144;
   /** A repository variable's or a secret's bound, 48 KB (GitHub's documentation). */
   const VARIABLE_BYTES = 49_152;
   /** A path the runner or git keeps (Linux's PATH_MAX). */
@@ -3433,18 +3440,21 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
         return false;
       }
     };
-    const strings = (mapping: unknown, where: string, at: Omit<Reading, 'unbounded' | 'over'>, input = false): void => {
+    /** Each string of a mapping, refused over the limit or unbounded; their bytes together, for the totals below (Infinity where one is already refused). */
+    const strings = (mapping: unknown, where: string, at: Omit<Reading, 'unbounded' | 'over'>, input = false): number => {
       // GitHub takes one expression in place of a mapping wherever the mapping takes a context (its schema's step env
       // and with, job and workflow env, a container and its env): its names and strings come from the value at run
       // time, so neither this sum nor the key rule could read them.
       if (typeof mapping === 'string' && mapping.includes('${{')) {
         problems.push(`${file} ${where}: a mapping from an expression, whose names and strings no sum can read`);
-        return;
+        return Infinity;
       }
+      let total = 0;
       for (const [name, value] of Object.entries(record(mapping))) {
         const reading: Reading = { ...at, unbounded: [], over: false };
         const variable = input ? `INPUT_${name.replace(/ /g, '_').toUpperCase()}` : name;
         const bytes = Buffer.byteLength(`${variable}=`) + scalar(value, reading) + 1;
+        total += bytes;
         if (reading.over) {
           // Exempt from the sum only alone in its string, so nothing joins the value over the limit where it is read.
           if (!overAlone(value, at.job)) problems.push(`${file} ${where}.${name}: holds the value over the limit with more beside it`);
@@ -3453,22 +3463,59 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
         if (reading.unbounded.length > 0) problems.push(`${file} ${where}.${name}: no bound for ${reading.unbounded.join('; ')}`);
         else if (bytes > MAX_ARG_STRLEN) problems.push(`${file} ${where}.${name}: ${variable}=… is up to ${String(bytes)} bytes with its NUL, over ${String(MAX_ARG_STRLEN)}`);
       }
+      return total;
     };
-    strings(root.env, 'env', { job: undefined, scopes: [] });
+    /** One argument the runner hands a process (an image, a container's options, a shell), held to the same 131,072 bytes. */
+    const argument = (value: unknown, where: string, at: Omit<Reading, 'unbounded' | 'over'>): number => {
+      if (value === undefined || value === null) return 0;
+      const reading: Reading = { ...at, unbounded: [], over: false };
+      const bytes = scalar(value, reading) + 1;
+      if (reading.unbounded.length > 0) problems.push(`${file} ${where}: no bound for ${reading.unbounded.join('; ')}`);
+      else if (bytes > MAX_ARG_STRLEN) problems.push(`${file} ${where}: an argument of up to ${String(bytes)} bytes with its NUL, over ${String(MAX_ARG_STRLEN)}`);
+      return bytes;
+    };
+    /** A process's environment and arguments together, under ARG_MAX less what the runner adds. */
+    const total = (bytes: number, where: string): void => {
+      if (Number.isFinite(bytes) && bytes > ARG_MAX - RUNNER_MARGIN) problems.push(`${file} ${where}: its environment and arguments are up to ${String(bytes)} bytes, over ${String(ARG_MAX - RUNNER_MARGIN)} (ARG_MAX, less ${String(RUNNER_MARGIN)} for the runner's own)`);
+    };
+    const shellOf = (defaults: unknown): unknown => record(record(defaults).run).shell;
+    const workflowEnv = strings(root.env, 'env', { job: undefined, scopes: [] });
+    const workflowShell = argument(shellOf(root.defaults), 'defaults.run.shell', { job: undefined, scopes: [record(root.env)] });
     for (const [id, job] of Object.entries(jobs)) {
       if (!isRecord(job)) continue;
-      strings(job.env, `job ${id} env`, { job: id, scopes: [record(root.env)] });
-      // A container or a service named by a plain string (an image) sets no environment string; one from an expression could.
-      const container = (definition: unknown, where: string) => strings(typeof definition === 'string' ? definition : record(definition).env, typeof definition === 'string' ? where : `${where}.env`, { job: id, scopes: [] });
-      container(job.container, `job ${id} container`);
+      const jobEnv = strings(job.env, `job ${id} env`, { job: id, scopes: [record(root.env)] });
+      const jobShell = shellOf(job.defaults) === undefined ? workflowShell : argument(shellOf(job.defaults), `job ${id} defaults.run.shell`, { job: id, scopes: [record(job.env), record(root.env)] });
+      // A container or a service: its env, and each other value an argument of docker's (an image, options, an
+      // entrypoint, a command, a volume, a port, credentials). One named by a plain string is its image; one given as
+      // an expression is refused, its strings unread.
+      const container = (definition: unknown, where: string): void => {
+        const at = { job: id, scopes: [] };
+        if (typeof definition === 'string') {
+          if (definition.includes('${{')) strings(definition, where, at);
+          else argument(definition, `${where} image`, at);
+          return;
+        }
+        let bytes = strings(record(definition).env, `${where}.env`, at);
+        for (const [key, value] of Object.entries(record(definition))) {
+          if (key === 'env') continue;
+          const items: [string, unknown][] = isList(value) ? value.map((item, index) => [`${key}[${String(index)}]`, item]) : isRecord(value) ? Object.entries(value).map(([name, item]) => [`${key}.${name}`, item]) : [[key, value]];
+          for (const [name, item] of items) bytes += argument(item, `${where}.${name}`, at);
+        }
+        total(bytes, where);
+      };
+      if (job.container !== undefined) container(job.container, `job ${id} container`);
       if (typeof job.services === 'string') strings(job.services, `job ${id} services`, { job: id, scopes: [] });
       for (const [service, definition] of Object.entries(record(job.services))) container(definition, `job ${id} services.${service}`);
       (isList(job.steps) ? job.steps : []).forEach((step, index) => {
         if (!isRecord(step)) return;
         const named = `job ${id} step ${typeof step.name === 'string' ? JSON.stringify(step.name) : String(index)}`;
         const scopes = [record(step.env), record(job.env), record(root.env)];
-        strings(step.env, `${named} env`, { job: id, scopes });
-        strings(step.with, `${named} with`, { job: id, scopes }, true);
+        const stepEnv = strings(step.env, `${named} env`, { job: id, scopes });
+        const inputs = strings(step.with, `${named} with`, { job: id, scopes }, true);
+        const shell = step.shell === undefined ? (step.run === undefined ? 0 : jobShell) : argument(step.shell, `${named} shell`, { job: id, scopes });
+        // Every string the step's process is given from the workflow: the workflow's, the job's and its own env, its
+        // inputs, and its shell (a name set twice counted twice, more than the runner passes).
+        total(workflowEnv + jobEnv + stepEnv + inputs + shell, named);
       });
     }
     return problems;
@@ -3523,6 +3570,25 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     expect(sum(step('env: { E: x }', `    env: { NOTES: ${three} }\n`))).toEqual([notes('job images env')]);
     expect(sum(step('env: { E: x }', `    container: { image: x, env: { NOTES: ${three} } }\n`))).toEqual([notes('job images container.env')]);
     expect(sum(step('env: { E: x }', `    services:\n      db: { image: x, env: { NOTES: ${three} } }\n`))).toEqual([notes('job images services.db.env')]);
+    // One argument the runner hands a process is held to the same limit: a container's or a service's options, image,
+    // entrypoint or command, a job's or the workflow's default shell, a step's shell.
+    const argumentOver = (where: string, bytes: number) => `fixture.yml ${where}: an argument of up to ${String(bytes)} bytes with its NUL, over 131072`;
+    const vars3 = '${{ vars.A }}${{ vars.B }}${{ vars.C }}';
+    expect(sum(step('env: { E: x }', `    container: { image: x, options: "--label=${vars3}" }\n`))).toEqual([argumentOver('job images container.options', '--label='.length + 3 * 49_152 + 1)]);
+    expect(sum(step('env: { E: x }', `    services: { db: { image: x, entrypoint: "${vars3}" } }\n`))).toEqual([argumentOver('job images services.db.entrypoint', 3 * 49_152 + 1)]);
+    expect(sum(step('env: { E: x }', `    services: { db: { image: "${vars3}" } }\n`))).toEqual([argumentOver('job images services.db.image', 3 * 49_152 + 1)]);
+    expect(sum(step('env: { E: x }', `    defaults: { run: { shell: "bash -c '${vars3}' {0}" } }\n`))).toEqual([argumentOver('job images defaults.run.shell', "bash -c '' {0}".length + 3 * 49_152 + 1)]);
+    expect(sum(`defaults: { run: { shell: "${vars3}" } }\n${step('env: { E: x }')}`)).toEqual([argumentOver('defaults.run.shell', 3 * 49_152 + 1)]);
+    expect(sum(step(`shell: "${vars3}"\n        env: { E: x }`))).toEqual([argumentOver('job images step "The step" shell', 3 * 49_152 + 1)]);
+    expect(sum(step('env: { E: x }', `    container: { image: x, options: "\${{ inputs.note }}" }\n`))).toEqual(['fixture.yml job images container.options: no bound for inputs.note']);
+    // And a process's environment and arguments together are held under ARG_MAX, less the runner's own: fifty
+    // variables of 48 KB, each one string under the limit, are 2,457,840 bytes.
+    const many = (count: number) => Array.from({ length: count }, (_, index) => `V${String(index)}: "\${{ vars.A${String(index)} }}"`).join(', ');
+    const allOf = (count: number) => Array.from({ length: count }, (_, index) => `V${String(index)}=`.length + 49_152 + 1).reduce((all, bytes) => all + bytes, 0);
+    const totalOver = (where: string, bytes: number) => `fixture.yml ${where}: its environment and arguments are up to ${String(bytes)} bytes, over 1835008 (ARG_MAX, less 262144 for the runner's own)`;
+    expect(sum(step(`env: { ${many(50)} }`))).toEqual([totalOver('job images step "The step"', allOf(50))]);
+    expect(sum(step(`env: { ${many(30)} }`))).toEqual([]);
+    expect(sum(step('env: { E: x }', `    container: { image: x, env: { ${many(40)} } }\n`))).toEqual([totalOver('job images container', allOf(40) + 'x'.length + 1)]);
     // The token is held as a secret is, 48 KB.
     expect(sum(step('env: { NOTES: "${{ github.token }}${{ secrets.A }}${{ vars.B }}" }'))).toEqual([over('env.NOTES', 'NOTES', 6 + 3 * 49_152 + 1)]);
     // A mapping given as one expression, wherever GitHub accepts one, names its own strings: refused, where a container

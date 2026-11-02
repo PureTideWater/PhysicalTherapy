@@ -148,12 +148,13 @@ differential test, which prices the base's engine and this commit's.
    - **`images`:** the Trivy table names each HIGH or CRITICAL finding with a fixed version: take the fix (a
      base-image or package bump), or record why not in docs/adr/0010's way. An identity step's `::error` names the
      archive's config digest and the one buildx reported ("nothing it reported" when the metadata lacked it);
-     "Argument list too long" on any step means an environment string (`NAME=value` and its NUL) over 131,072 bytes,
-     or the whole environment and arguments over `ARG_MAX`; `workflows.test.ts` sums each environment string a
-     workflow sets and refuses one over 131,072 bytes, or one holding a value it does not list with its bound, but for
-     the content calendar's `FINDINGS_B64`, recorded over the limit and `ci-findings-transport`'s to fix, which it
-     holds alone in its string at its one place (docs/adr/0066, Part 3, N32). A pull request's run uploads no build
-     record (`.dockerbuild`) by design; a push's run on the build branch does.
+     "Argument list too long" on any step means an environment string (`NAME=value` and its NUL) or one argument over
+     131,072 bytes, or the whole environment and arguments over `ARG_MAX`; `workflows.test.ts` sums each environment
+     string and argument a workflow sets, and each step's and container's whole, and refuses one over 131,072 bytes (a
+     whole over `ARG_MAX` less 256 KiB), or one holding a value it does not list with its bound, but for the content
+     calendar's `FINDINGS_B64`, recorded over the limit and `ci-findings-transport`'s to fix, which it holds alone in
+     its string at its one place (docs/adr/0066, Part 3, N32). A pull request's run uploads no build record
+     (`.dockerbuild`) by design; a push's run on the build branch does.
 3. **Re-running.** Re-run failed jobs only for an infrastructure failure (a runner lost, a download refused, a service
    that did not start), never for a test that failed: a test that passes on a re-run is a flaky test, and is fixed.
    A re-run replaces the artifacts the first attempt left (`overwrite: true`).
