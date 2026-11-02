@@ -1039,15 +1039,16 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
       github value its own, `env.X` the bound of X where it is set, each row of the list its bytes, a `toJSON` row's
       holding what toJSON writes of every output it reads, quoted and escaped, six bytes a byte at most, with their
       names and indents), and refuses one over 131,072 bytes, or one holding a value with no bound, but for the one
-      value named over the limit, which is exempt only alone in its string: one expression that reads it and nothing
-      else, at its one place. A mapping given as one expression (an env, a step's `with:`, a container or a service),
-      whose names and strings come from the value at run time, is refused, so each string a workflow sets is one the
-      sum reads. It holds each argument the runner hands a process to the same 131,072 bytes (a container's or a
-      service's image, options, entrypoint or command, a default or a step's shell), and every string a step's process
-      or a container is given from the workflow, together, under `ARG_MAX` (2 MiB) less 256 KiB kept for the runner's
-      own. A value a job passes a called workflow as a secret is held to a secret's 48 KB, the bound that workflow's
-      own sum gives `secrets.<name>` (the pin rules refuse a reusable workflow today, so none is passed). What a
-      script builds from the values it reads, its own commands' arguments, is the script's: no rule reads it.
+      value named over the limit, which is exempt from that limit only alone in its string (one expression that reads
+      it and nothing else, at its one place), never from its process's whole below. A mapping given as one expression
+      (an env, a step's `with:`, a container or a service), whose names and strings come from the value at run time,
+      is refused, so each string a workflow sets is one the sum reads. It holds each argument the runner hands a
+      process to the same 131,072 bytes (a container's or a service's image, options, entrypoint or command, a default
+      or a step's shell), and every string a step's process or a container is given from the workflow, together, under
+      `ARG_MAX` (2 MiB) less 256 KiB kept for the runner's own. A value a job passes a called workflow as a secret is
+      held to a secret's 48 KB, the bound that workflow's own sum gives `secrets.<name>` (the pin rules refuse a
+      reusable workflow today, so none is passed). What a script builds from the values it reads, its own commands'
+      arguments, is the script's: no rule reads it.
     - One listed value is over the limit and named so: the content calendar's findings (`FINDINGS_B64`), held to the
       one place each job reads them, and alone in its string there, so no second use and no other value joins them.
       Their transport is an item of its own, `ci-findings-transport`, which also owns their job output: up to 933,336

@@ -150,11 +150,12 @@ differential test, which prices the base's engine and this commit's.
      archive's config digest and the one buildx reported ("nothing it reported" when the metadata lacked it);
      "Argument list too long" on any step means an environment string (`NAME=value` and its NUL) or one argument over
      131,072 bytes, or the whole environment and arguments over `ARG_MAX`; `workflows.test.ts` sums each environment
-     string and argument a workflow sets, and each step's and container's whole, and refuses one over 131,072 bytes (a
-     whole over `ARG_MAX` less 256 KiB), or one holding a value it does not list with its bound, but for the content
-     calendar's `FINDINGS_B64`, recorded over the limit and `ci-findings-transport`'s to fix, which it holds alone in
-     its string at its one place (docs/adr/0066, Part 3, N32). A pull request's run uploads no build record
-     (`.dockerbuild`) by design; a push's run on the build branch does.
+     string and argument a workflow sets, and each step's and container's whole, and refuses a string or argument over
+     131,072 bytes, or one holding a value it does not list with its bound (but for the content calendar's
+     `FINDINGS_B64`, recorded over the limit and `ci-findings-transport`'s to fix, which it holds alone in its string
+     at its one place), and a whole over `ARG_MAX` less 256 KiB, that value counted in it (docs/adr/0066, Part 3,
+     N32). A pull request's run uploads no build record (`.dockerbuild`) by design; a push's run on the build branch
+     does.
 3. **Re-running.** Re-run failed jobs only for an infrastructure failure (a runner lost, a download refused, a service
    that did not start), never for a test that failed: a test that passes on a re-run is a flaky test, and is fixed.
    A re-run replaces the artifacts the first attempt left (`overwrite: true`).
@@ -431,22 +432,24 @@ user that cannot run the binary.
   ruleset, which only the founder sets.
 - A step takes only the value it uses (one environment string, `NAME=value` and its NUL, is at most 131,072 bytes; the
   test sums each one a workflow sets, a step input as `INPUT_<NAME>`, from its name, its literal bytes and each
-  value's bound in bytes, all but `FINDINGS_B64`, recorded over the limit and held alone in its string at its one
-  place; an env, a `with:`, a container or a service given as one expression is refused, since no sum can read its
-  strings). `workflows.test.ts` reads every expression in an env, an input, a script, a job's outputs, a matrix or a
-  key as the runner does, and admits only bounded values, none in any key (GitHub evaluates one as an env name, an
-  input's name, a service id or a matrix key), and refuses a workflow's, a job's or a step's key it does not read (a
-  new GitHub key joins its list once the rule reads it). It reads this repository's workflows; a pinned action's own
-  `action.yml` and code are not read by it (`pnpm actions:check` reads a pin's `action.yml` for the pin rules, never
-  for values): the defect N32 fixes came from action code (buildx copying the event into its metadata), which no
-  expression rule can read, so every step output is bounded where a workflow hands it to a process, by the value rule
-  and its list. Never use a build's whole metadata, an event object, a description or title, or `toJSON` of anything
-  but `needs` or one job's `outputs` (of one value it quotes and escapes, up to six bytes a byte; a `toJSON` row holds
-  that of every output it reads, with their names and indents). A new step output or value one job hands another joins
-  its list with its bound and its producers by name, exactly those its value reads (a step by job and id, a `uses:`
-  step with its action, a job output that is one step's or needed job's output alone, a matrix key, a needed job, tool
-  code as `path#symbol` with the unit test its owners keep for its bound, named by its title: the test checks that
-  title is one plain `it()` or `test()` that always runs as written, not what it asserts), never by line. A row whose
+  value's bound in bytes, and holds each to 131,072 bytes but `FINDINGS_B64`, recorded over the limit and held alone
+  in its string at its one place; an env, a `with:`, a container or a service given as one expression is refused,
+  since no sum can read its strings). `workflows.test.ts` reads every expression in an env, an input, a script, a
+  job's outputs, a matrix or a key as the runner does, and admits only bounded values, none in any key (GitHub
+  evaluates one as an env name, an input's name, a service id or a matrix key), and refuses a workflow's, a job's or a
+  step's key it does not read (a new GitHub key joins its list once the rule reads it). It reads this repository's
+  workflows; a pinned action's own `action.yml` and code are not read by it (`pnpm actions:check` reads a pin's
+  `action.yml` for the pin rules, never for values): the defect N32 fixes came from action code (buildx copying the
+  event into its metadata), which no expression rule can read, so every step output is bounded where a workflow hands
+  it to a process, by the value rule and its list. Never use a build's whole metadata, an event object, a description
+  or title, or `toJSON` of anything but `needs` or one job's `outputs` (of one value it quotes and escapes, up to six
+  bytes a byte; a `toJSON` row holds that of every output it reads, with their names and indents). A new step output
+  or value one job hands another joins its list with its bound and its producers by name, exactly those its value
+  reads (a step by job and id, a `uses:` step with its action, a job output that is one step's or needed job's output
+  alone, a matrix key, a needed job, tool code as `path#symbol` with the unit test its owners keep for its bound,
+  named by its title: the test checks that title is one plain `it()` or `test()` that always runs as written, not what
+  it asserts), never by line; a row whose bound passes 131,072 bytes also names every place it is read (`sites`, each
+  as the rule writes a place, its job, step and key), and any other read fails the value table's test. A row whose
   producer is a `run:` step holds the fingerprint of its script and what it runs with, its own `env`, `shell` and
   `working-directory` or those its job and the workflow give it, and its job's container: when the test prints a new
   one, re-read the bound against the change, then write the new fingerprint in the row. A new `$GITHUB_ENV` write

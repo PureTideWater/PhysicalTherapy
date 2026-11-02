@@ -3319,10 +3319,11 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
    * workflow's, each job's, each job container's and service's, and each step's env, and each step input as
    * INPUT_<NAME>. Its bytes are the name's, '=' and the NUL, the value's literal bytes outside ${{ }}, and each
    * expression's bound: a github value BOUNDED_GITHUB's, a variable or a secret 48 KB, a bounded input its type's, a
-   * matrix key its longest value's (its include entries' among them), env.X the bound of X where it is set (the step's env, the job's, the workflow's),
-   * and a table row its bytes. What refuses one: a sum over 131,072, or a value with no bound, each naming its file,
-   * place and name. The one value marked over is exempt only alone in its string, one expression that reads it and
-   * nothing else; beside anything else it is refused, and its sites (below) hold where it is read.
+   * matrix key its longest value's (its include entries' among them), env.X the bound of X where it is set (the
+   * step's env, the job's, the workflow's), and a table row its bytes. What refuses one: a sum over 131,072, or a value
+   * with no bound, each naming its file, place and name. The one value marked over is exempt from that 131,072 only
+   * alone in its string, one expression that reads it and nothing else, and is still counted in its process's whole;
+   * beside anything else it is refused, and its sites (below) hold where it is read.
    */
   function environmentProblems(file: string, parsed: unknown, rows: readonly BoundedValue[] = BOUNDED_VALUES): string[] {
     const problems: string[] = [];
@@ -3493,7 +3494,8 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
         const bytes = Buffer.byteLength(`${variable}=`) + scalar(value, reading) + 1;
         total += bytes;
         if (reading.over) {
-          // Exempt from the sum only alone in its string, so nothing joins the value over the limit where it is read.
+          // Exempt from its own string's 131,072-byte limit only alone in its string, so nothing joins the value over
+          // the limit where it is read; its bytes are still in the total above, its process's whole.
           if (!overAlone(value, at.job)) problems.push(`${file} ${where}.${name}: holds the value over the limit with more beside it`);
           continue;
         }
@@ -3875,7 +3877,8 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     readonly bytes: number;
     /**
      * The one value known to be over Linux's 131,072 bytes as one environment string, and the item that owns its
-     * transport: exempt from the sum only alone in its string, and held to its sites.
+     * transport: exempt from its own string's 131,072-byte limit only alone in its string (still counted in its
+     * process's whole), and held to its sites.
      */
     readonly over?: 'ci-findings-transport';
     /**
