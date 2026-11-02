@@ -30,3 +30,12 @@ Note: tree has uncommitted fix-round edits (22 files M); no commit allowed in th
 ## RESUMED 2026-11-02 ~01:10 UTC (earlier run stopped by 5-hour limit during e2e; machine restarted)
 - fix round now committed locally as b8654622 (not pushed); git status clean (0 files). PG18 on 5433 accepting.
 - Batches 1-3 results kept. Now: build, stamp, e2e E2E_PREBUILT=1 2 shards, stryker affected, gate.
+- pnpm build: pass 66s; build-stamp --write b8654622: stamped
+- stryker affected.ts --event pull_request --base bce57f16: money/pricing/ledger/packets not affected; shards: none
+- e2e shard 1 attempt: my invocation error (E2E_ADMIN_URL without password -> SASL 'client password must be a string' in WebServer). Not code. Re-run with postgres://postgres:test@localhost:5433/postgres
+- stryker gate.ts <empty dir> --expected '[]': 'No money path changed', mutation gate: passed
+- e2e --shard=1/2 --workers=2 (E2E_PREBUILT=1, tp_e2e_pr92, port 3192): pass, 34 passed (6.3m)
+- e2e --shard=2/2: pass, 33 passed (6.9m), incl. the real 3-minute sign-in-time expiry (3.1m) and SGN specs; no flake re-run
+- e2e total 67 passed, 0 failed; tp_e2e_pr92 dropped; tree clean, HEAD b8654622
+- model-identifier scan of diff bce57f16..HEAD and messages: only attribution lines
+## SUITE COMPLETE

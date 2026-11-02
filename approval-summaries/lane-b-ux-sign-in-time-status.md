@@ -7,7 +7,13 @@ session_01FcouKNxVRK8x6iV52PfxXz, a Lane B item session started 2026-11-01 by La
 (`co-001/ux-sign-in-recovery`) and UX PR 8 get their own sessions later; this one leaves design 3.5's hooks for PR 7.
 GitHub login: PureTideWater.
 
-## Now (2026-11-02 01:15 UTC): fix round committed locally (b8654622); suite finishing
+## Now (2026-11-02 01:35 UTC): fix round pushed (b8654622); shots-based UX review running
+- **Pushed** b8654622 to #92 (one push). The full local suite passed on it: install, check:fixtures, typecheck, lint,
+  lint:copy, lint:logs, verify-content, engine-freeze, watched paths, synth; unit 6,932; golden 376; oracle 687; db 9,298
+  (4 shards); build + stamp; e2e 67 (34 + 33, E2E_PREBUILT=1, the real 3-minute test 3.1 min); Stryker: no money path,
+  gate passed.
+- **Running:** after shots at b8654622 + the UX and brand review with before/after shots + a skeptic per finding
+  (wf_055bfbb1-e76; script `workflow-scripts/lane-b-ux-sign-in-time-ux-review-wf_055bfbb1-e76.js`, args {head: b8654622}).
 - **Fix round** (wf_aabddb31-b59): SEC-01 (Start again is a POST through the new sign_in.restart route: it ends the
   pending step and releases a key registration's grant, keeps the email; ADR 0081 rewritten), SEC-02, UXS-02..05 applied
   with tests; SEC-03 and UXS-01 recorded as not applied (design section 9, PR #92 table). Two skeptics, then a re-fix.
@@ -18,7 +24,7 @@ GitHub login: PureTideWater.
 - **Before shots re-run** (wf_6dc4c594-2c1): screens-before-2, 48 shots + 33 skips, all true before reasons (tour at
   ceabc9a2, with a2d62189). Lesson: a workflow agent that returns while a background run is going kills it (the earlier
   capture and a first re-run were lost this way); every capture prompt now says so.
-- **Next:** push b8654622 (+ anything the suite fixes); the after shots + shots-based UX and brand review with skeptics
+- **Next:** the after shots + shots-based UX and brand review with skeptics
   (`workflow-scripts/lane-b-ux-sign-in-time-ux-review-pending.js`, args.head = the pushed head); a short fix round if
   it finds anything; merge the latest base (PR is `behind`; 20:36 ruling: merge when verified and green, resolving
   shared documents with any PR merged first); the fresh-clone verification; ready; merge.
@@ -77,3 +83,4 @@ None blocks this PR. UX PR 66 (Cognito/infra, Lane A); the "three days" comment 
 
 | 2026-11-01 20:35 | Reviews done; fix round | Reviews wf_b4cf4f54-7c4 (description, security, UX from code; capture cut off). Fix round wf_aabddb31-b59 and before re-run wf_12938616-543 started. |
 | 2026-11-02 01:15 | Fix round committed | wf_aabddb31-b59 fixes + checks done; suite stopped by the limit in e2e, resumed after a machine restart; b8654622 local, WIP ref -2; before re-run done (wf_6dc4c594-2c1). |
+| 2026-11-02 01:35 | Fix round pushed | Suite green (e2e 67, db 9,298); b8654622 pushed; UX review with shots wf_055bfbb1-e76 started. |
