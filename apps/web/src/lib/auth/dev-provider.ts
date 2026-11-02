@@ -15,6 +15,7 @@ import type { DevCredentialStore, DevUserRecord } from './dev-store';
 import { DEFAULT_SCRYPT_COST, type ScryptCost, hashPassword, passwordProblems, verifyPassword } from './password';
 import type { AuthProvider, AuthStep, KeyChallenge, NewPasswordStep, TotpSetup } from './provider';
 import type { Sealer } from './seal';
+import { PROVIDER_CHALLENGE_SECONDS, PROVIDER_GRANT_SECONDS } from './step-limits';
 import { newTotpSecret, totpUri, verifyTotp } from './totp';
 
 /**
@@ -23,7 +24,8 @@ import { newTotpSecret, totpUri, verifyTotp } from './totp';
  * sign-in with a temporary one, TOTP enrollment before anything else and a TOTP code on every sign-in
  * (each code once), and real WebAuthn verification with user verification required, so a browser's
  * virtual authenticator can exercise the hardware-key path. Challenges last three minutes (the user
- * pool's sign-in session) and grants fifteen (its access tokens).
+ * pool's sign-in session) and grants fifteen (its access tokens), from the constants the sign-in
+ * steps state and infra pins (step-limits.ts).
  */
 
 export interface WebAuthnSettings {
@@ -44,8 +46,8 @@ export interface DevAuthOptions {
   readonly scryptCost?: ScryptCost;
 }
 
-const CHALLENGE_MS = 3 * 60_000;
-const GRANT_MS = 15 * 60_000;
+const CHALLENGE_MS = PROVIDER_CHALLENGE_SECONDS * 1000;
+const GRANT_MS = PROVIDER_GRANT_SECONDS * 1000;
 
 type Step = 'new_password' | 'mfa_setup' | 'mfa' | 'key' | 'register';
 
