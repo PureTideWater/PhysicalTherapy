@@ -52,6 +52,10 @@ describe('the monitor job', () => {
     const planned = await run({ outcome: 'planned', releaseNo: 900001, created: [], waitingOnMapping: [{ periodFrom: '2026-03-01', periodTo: '2026-03-31' }], waitingOnLocation: [], waitingOnContent: [], queued: [RUN] });
     expect(planned.queued).toEqual([{ type: 'price', payload: { practice_id: PRACTICE, pricing_run_id: RUN }, options: undefined }]);
     expect(planned.lines.map((line) => line.msg)).toEqual(['monitoring left months waiting on a plan mapping', 'monitoring planned the practice’s months']);
+    // MAP-07: the months with no mapped plan at all, by count only; no month, plan or other new field.
+    expect(planned.lines[0]).toEqual(expect.objectContaining({ level: 'info', error_code: 'UNMAPPED_PLAN', record_count: 1, release_no: 900001 }));
+    expect(Object.keys(planned.lines[0] ?? {}).sort()).toEqual(['error_code', 'level', 'msg', 'record_count', 'release_no', 'time']);
+    expect(JSON.stringify(planned.lines)).not.toMatch(/2026-03/);
     const quiet = await run({ outcome: 'planned', releaseNo: 900001, created: [], waitingOnMapping: [], waitingOnLocation: [], waitingOnContent: [], queued: [] });
     expect(quiet.lines.map((line) => line.msg)).toEqual(['monitoring planned the practice’s months']);
     // On the daily schedule the day's own reconcile follows; nothing more is queued here.
@@ -108,8 +112,24 @@ describe('the monitor job', () => {
     vi.mocked(planMonitoring).mockResolvedValue({ outcome: 'planned', releaseNo: 900001, created: [], waitingOnMapping: [], waitingOnLocation: [], waitingOnContent: [], queued: [RUN] });
     const { job, queued } = context();
     await monitorHandler()({ practice_id: PRACTICE, request_id: 'test-6f1d2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b' }, job);
-    expect(vi.mocked(planMonitoring)).toHaveBeenCalledWith(expect.anything(), PRACTICE, job.jobId);
+    expect(vi.mocked(planMonitoring)).toHaveBeenCalledWith(expect.anything(), PRACTICE, job.jobId, undefined);
     expect(queued.map((item) => [item.type, item.payload])).toEqual([['price', { practice_id: PRACTICE, pricing_run_id: RUN }]]);
+  });
+
+  it('MAP-07: plans only the months a mapping’s request names, and every uncovered month for a request that names none (D20)', async () => {
+    vi.mocked(planMonitoring).mockResolvedValue({ outcome: 'planned', releaseNo: 900001, created: [], waitingOnMapping: [], waitingOnLocation: [], waitingOnContent: [], queued: [] });
+    const mapping = context();
+    await monitorHandler()({ practice_id: PRACTICE, request_id: 'test-6f1d2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b', months: ['2026-02-01', '2026-03-01'] }, mapping.job);
+    expect(vi.mocked(planMonitoring)).toHaveBeenLastCalledWith(expect.anything(), PRACTICE, mapping.job.jobId, ['2026-02-01', '2026-03-01']);
+    // A request with no months ("Price them now", a location save) and the daily and document triggers plan every month.
+    const now = context();
+    await monitorHandler()({ practice_id: PRACTICE, request_id: 'test-7a1d2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b' }, now.job);
+    expect(vi.mocked(planMonitoring)).toHaveBeenLastCalledWith(expect.anything(), PRACTICE, now.job.jobId, undefined);
+    const daily = context();
+    await monitorHandler()({ practice_id: PRACTICE, day: '2026-11-01' }, daily.job);
+    expect(vi.mocked(planMonitoring)).toHaveBeenLastCalledWith(expect.anything(), PRACTICE, daily.job.jobId, undefined);
+    // No month is logged.
+    expect(JSON.stringify([...mapping.lines, ...now.lines, ...daily.lines])).not.toMatch(/2026-0[23]-01/);
   });
 
   const afterDocument = async (plan: MonitorPlan) => {

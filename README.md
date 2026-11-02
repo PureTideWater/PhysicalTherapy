@@ -201,7 +201,10 @@ and signed-off versions and the approval and sign-off checks. A contract special
 grant, as a support engineer does.
 
 Mapping, coverage and contract screens (ADR 0030): Payer and plan mapping (`/p/<practice>/mapping`, unmapped plans and
-their dollars first; a plan's page shows its mapping history and how its lines resolve now), Coverage
+their dollars first; a plan's page shows its mapping history and how its lines resolve now; the list and each plan's
+page offer "Price them now" for months no run covers yet, and "Price these months again" for months already priced while
+a plan of theirs had no mapping, which creates one re-run per ready month through `createRerun` in the person's name,
+each accepted by hand on its page after its list of changes; ADR 0075), Coverage
 (`/p/<practice>/coverage`: the latest complete pricing run's priced shares and unpriced reasons by count, with the remedies of the rules reference, the
 dollars waiting on mappings, the request-to-payer letter as a text download) and Contracts (`/p/<practice>/contracts`:
 tag an uploaded contract, exhibit or payer letter to its payer, the calendar, sign-off and answers to the specialist's
@@ -226,8 +229,9 @@ timed-units rule is `UNKNOWN` leaves its lines `UNITS_RULE_UNKNOWN` (ADR 0033).
 
 Pricing runs (ADR 0035): a billing manager or firm principal creates a run for whole months of service dates on the
 Pricing runs screen (`/p/<practice>/pricing-runs`); `createPricingRun` (`@tp/worker/pricing`) refuses a release other
-than the newest published one, a period with no lines and a plan with no mapping at all (MAP-01), and records the run
-queued with the release and `ENGINE_VERSION`. The worker's `price` job (`apps/worker/src/price`, one practice per job,
+than the newest published one, a period with no lines and a period none of whose plans has a mapping (MAP-07); in any
+other run a plan with no mapping leaves its own lines unpriced as `NO_MAPPING` (MAP-01). It records the run queued
+with the release and `ENGINE_VERSION`. The worker's `price` job (`apps/worker/src/price`, one practice per job,
 one run of a practice at a time, idempotent by run, three attempts) resolves every line through `agreementResolver`,
 prices it with `price()` under the run's release (read back from `rule_record`) and stores `priced_line` with its
 amounts or reason, its adjustments, its window's end and its trace, then completes the run with its coverage summary in
@@ -262,9 +266,13 @@ Monitoring, digests and notifications (ADR 0039): once an 835 is done, its parse
 a job of one practice keyed by type, practice and subject, three attempts and the operator's alert on the third. `monitor`
 (after the rest of the upload batch has landed: it waits while an 835 is still on its way) creates a run for each month
 of service dates whose newest line no run covers, under the release in force and in the job's own name
-(`pricing_run.created_by_job_id`; a month with an unmapped plan waits); `price` prices it and, for a run the chain created,
-queues `triage`, which tells the practice's people in the app and queues `reconcile`, the recovery ledger's step
-(ADR 0042, below). The operator's daily `monitoring_schedule` (05:10 UTC, where
+(`pricing_run.created_by_job_id`; a month none of whose plans is mapped waits, and in any other month a plan with no
+mapping leaves its own lines unpriced as `NO_MAPPING`); `price` prices it and, for a run the chain created, queues
+`triage`, which tells the practice's people in the app and queues `reconcile`, the recovery ledger's step
+(ADR 0042, below). A mapping that leaves months no run covers with every plan of their lines mapped, and not held on
+the billing ZIP or on Medicare content, queues `monitor` keyed by its request and naming those months (their first
+days, at most 240); "Price them now" on Payer and plan mapping queues it, keyed by its request, for every month no run
+covers (ADR 0075). The operator's daily `monitoring_schedule` (05:10 UTC, where
 `OPERATOR_DATABASE_URL` is set) queues each active practice's `monitor` for the day (which first writes off, window
 passed, every open case's line whose window has closed), `reconcile` for the day and `digest` for the month before:
 one digest per practice and month, its figures fixed when recorded (new validated variance by payer, cases nearing
@@ -435,7 +443,8 @@ The practice dashboard and the Reports screen (ADR 0045; migration
 The Playwright journeys run on a fresh e2e database in practices of their own: J8 (`triage.spec.ts`), J11
 (`monitoring.spec.ts`, the digest landing in the local outbox) and J12 (`reports.spec.ts`). J10's payer response is a
 step in `packets.spec.ts`. The e2e worker runs the monitoring chain's planning step for J11's and J10's practices
-(`e2e/worker.ts`), so in J10 (`reconciliation.spec.ts`) every 835 reaches the ledger through the chain's own monitor,
+and for the pricing-location and mapping journeys' practices (`LOCATION_PRACTICE_PREFIX`, `MAPPING_PRACTICE_PREFIX`
+in `e2e/worker.ts`), so in J10 (`reconciliation.spec.ts`) every 835 reaches the ledger through the chain's own monitor,
 price, triage and reconcile; the spec only starts the monitor job a parse queued without its two-minute batch wait
 (`chainFrom` in `e2e/journeys.ts`). What the e2e does not wait for is the daily schedule: J11 queues the day's monitor
 and `packets.spec.ts` the day's reconcile, each as `queueMonitoringSchedule` queues it. Each journey runs axe-core's

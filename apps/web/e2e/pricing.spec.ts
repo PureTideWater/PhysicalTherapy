@@ -79,7 +79,11 @@ test('a billing manager creates a pricing run; the worker prices it, and its lin
     await page.getByLabel('Agreement', { exact: true }).selectOption({ label: 'Medicare Advantage, non-contracted' });
     await page.getByLabel('Effective from', { exact: true }).fill('2026-01-01');
     await page.getByRole('button', { name: 'Save the mapping' }).click();
-    await expect(page.locator('[data-notice="mapped"]')).toBeVisible();
+    // February holds this plan's lines alone, the practice's location is set and a release is in force, so the mapping
+    // completes it and queues monitoring of it (combined audit #32, D2b; MAP-07). The monitor is the e2e placeholder
+    // for this practice (worker.ts), so it creates no run: February's run is the one created below.
+    await expect(page.locator('[data-notice="mapped_pricing"]')).toBeVisible();
+    await expect(page.locator('[data-notice="mapped_pricing"]')).toContainText('The months whose plans now all have a mapping are being priced; they show on Pricing runs when done.');
   });
 
   await test.step('a run for February is created, and the price job prices it', async () => {
@@ -165,6 +169,8 @@ test('a billing manager creates a pricing run; the worker prices it, and its lin
 
   await test.step('the run is re-run; its diff shows before anyone accepts it, and Coverage reads it only once accepted', async () => {
     await page.goto(`/p/${other}/pricing-runs`);
+    // February has exactly one run, the person's: the monitoring the mapping queued created none (MAP-07).
+    await expect(page.getByRole('list', { name: 'Pricing runs' }).getByRole('link', { name: /^Pricing run, 2026-02-01 to 2026-02-28, priced / })).toHaveCount(1);
     const firstRun = page.getByRole('list', { name: 'Pricing runs' }).getByRole('listitem').first();
     const firstId = (await firstRun.getAttribute('data-run')) ?? '';
     // Each run's link reads alone, priced to the second (UX recheck of PR #50, N4).

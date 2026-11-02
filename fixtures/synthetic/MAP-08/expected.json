@@ -1,0 +1,23 @@
+{
+  "case": "MAP-08",
+  "module": "MAP",
+  "title": "Plans mapped after their months were priced",
+  "assertion": "The mapping list and each plan's page list, oldest first, each run in effect holding `NO_MAPPING` lines that a mapping now covers, with their lines and billed dollars. \"Price these months again\" creates one re-run of each in that person's name, queued and not accepted, with one audit event per re-run; two plans mapped and pressed in turn give one counting re-run per month, and a second press of the same page, by anyone, at any moment, including two presses at once, creates no second re-run. A month whose first run of overlapping dates is queued or being priced is not re-run (`newer_run_pending`) and says it waits. A month whose re-run since the mapping is pending links to it; one whose re-run is superseded or pinned to a withdrawn release is ready again. A month whose re-run since the mapping failed on the billing ZIP or on Medicare content says so, links to it and is not offered again until the location is saved, the terms change or a release loads more of that content; after any other failure it is ready again and says the last re-run failed. Once accepted, the month says to triage it on Cases until triage has validated its short lines that were `NO_MAPPING` before; a re-run accepted after a sign-off or a release alone is not listed. A job never creates the re-runs",
+  "synthetic": true,
+  "completesIn": 7,
+  "assertedBy": [
+    "apps/web/src/lib/pricing/mapped-plan.db.test.ts",
+    "apps/web/src/lib/pricing/mapped-plan-content.db.test.ts",
+    "apps/web/src/lib/routes/mapping-routes.db.test.ts",
+    "apps/web/src/components/mapping/months.test.tsx",
+    "apps/web/e2e/mapping.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "No file of their own: MAP-06's file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

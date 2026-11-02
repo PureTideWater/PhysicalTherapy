@@ -776,6 +776,12 @@ export async function wholeGatherReport(scope: PracticeScope<ScopeClient>, input
       priced_lines: coverage.priced.lines,
       priced_charge_cents: coverage.priced.charge_cents,
       reasons: coverage.reasons.filter((entry) => entry.lines > 0).map((entry) => ({ ...entry, remedy: UNPRICED_REMEDIES[entry.reason].remedy })),
+      // The run's own record of its plans with no mapping (combined audit #32, docs/adr/0075), as the batched read takes it.
+      unmapped_plans: {
+        plans: coverage.unmapped_plans.length,
+        lines: coverage.unmapped_plans.reduce((total, plan) => total + plan.lines, 0),
+        charge_cents: text(sum(coverage.unmapped_plans.map((plan) => plan.charge_cents))),
+      },
     },
     anomalies,
     validated: {

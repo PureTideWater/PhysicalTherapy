@@ -16,6 +16,7 @@ import {
   RunFailureText,
   RunStateBadges,
   RunStatusBadge,
+  UnmappedPlansPriced,
   UnpricedReasons,
   nothingMoreToAccept,
   rerunBlockedTitle,
@@ -41,6 +42,7 @@ function coverage(unpriced: Partial<Record<(typeof UNPRICED_REASONS)[number], nu
     engine_errors: [],
     versions: [],
     patterns: [],
+    unmapped_plans: [],
   };
 }
 
@@ -66,13 +68,13 @@ describe('a run’s unpriced reasons', () => {
     expect(renderToStaticMarkup(<UnpricedReasons coverage={coverage({ NO_AGREEMENT: 1 })} />)).toMatch(
       /^<div data-slot="scroll-table" data-scroll="unmeasured" class="min-w-0 max-w-full"><div class="pw-scroll-frame"><div role="region" aria-label="Unpriced reasons, scrolls sideways" tabindex="0" data-scroller="" class="relative /,
     );
-    expect(renderToStaticMarkup(<PatternTable practiceId="p" coverage={{ ...coverage(), patterns: [pattern()] }} names={{ payers: {}, plans: {}, versions: {} }} />)).toMatch(
+    expect(renderToStaticMarkup(<PatternTable practiceId="p" coverage={{ ...coverage(), patterns: [pattern()] }} names={{ payers: {}, plans: {}, planPayers: {}, versions: {} }} />)).toMatch(
       /^<div data-slot="scroll-table" data-scroll="unmeasured" class="min-w-0 max-w-full"><div class="pw-scroll-frame"><div role="region" aria-label="Variance by payer pattern, scrolls sideways" tabindex="0" data-scroller="" class="relative /,
     );
   });
 
   it('give every header but the last the right padding its column’s cells have, so no two headers run together (C2)', () => {
-    for (const html of [renderToStaticMarkup(<UnpricedReasons coverage={coverage({ NO_AGREEMENT: 1 })} />), renderToStaticMarkup(<PatternTable practiceId="p" coverage={{ ...coverage(), patterns: [pattern()] }} names={{ payers: {}, plans: {}, versions: {} }} />)]) {
+    for (const html of [renderToStaticMarkup(<UnpricedReasons coverage={coverage({ NO_AGREEMENT: 1 })} />), renderToStaticMarkup(<PatternTable practiceId="p" coverage={{ ...coverage(), patterns: [pattern()] }} names={{ payers: {}, plans: {}, planPayers: {}, versions: {} }} />)]) {
       const headers = [...html.matchAll(/<th class="([^"]*)"/g)].map((match) => match[1] ?? '');
       expect(headers.length).toBeGreaterThan(1);
       expect(headers.slice(0, -1).filter((classes) => !/\bpr-3\b/.test(classes))).toEqual([]);
@@ -110,6 +112,61 @@ describe('a failed run’s words', () => {
     expect(FAILURE_TEXT.waiting_on_content_mppr).toContain('Medicare’s multiple-procedure reduction list (MPPR) for dates PaidWhole has not loaded it for yet');
     expect(FAILURE_TEXT.waiting_on_content_mue).toContain('Medicare’s unit limits (MUE) for dates PaidWhole has not loaded them for yet');
     expect(FAILURE_TEXT.waiting_on_content_mppr_mue).toContain('(MPPR) and unit limits (MUE) for dates PaidWhole has not loaded them for yet');
+  });
+});
+
+describe('the plans a run held with no mapping (combined audit #32; MAP-06, PRC-30)', () => {
+  const PLAN_A = '00000000-0000-4000-8000-0000000000e1';
+  const PLAN_B = '00000000-0000-4000-8000-0000000000e2';
+  const names = { payers: {}, plans: { [PLAN_A]: 'CE:SYNPLAN-UNMAPPED-06', [PLAN_B]: 'PLAN:SYNPLAN-EXPORT-06' }, planPayers: { [PLAN_A]: 'SYNTHETIC PAYER M' }, versions: {} };
+  const words = (html: string) => html.replace(/<[^>]+>/g, '');
+
+  it('say nothing for a run that had none (a /1 run reads as none)', () => {
+    expect(renderToStaticMarkup(<UnmappedPlansPriced practiceId="p" coverage={coverage({ NO_MAPPING: 2 })} names={names} />)).toBe('');
+  });
+
+  it('say how many plans had no mapping when the run was priced, their lines and billed dollars, and link each plan by its key', () => {
+    const held = { ...coverage({ NO_MAPPING: 13, ENGINE_ERROR: 1 }), unmapped_plans: [{ plan_id: PLAN_A, lines: 10, charge_cents: '100000' }, { plan_id: PLAN_B, lines: 4, charge_cents: '23400' }] };
+    const html = renderToStaticMarkup(<UnmappedPlansPriced practiceId="p" coverage={held} names={names} />);
+    expect(words(html)).toContain('When this run was priced, 2 plans had no mapping; their lines are not priced (14 lines, $1,234.00 billed).');
+    expect(html).toContain(`href="/p/p/mapping/${PLAN_A}"`);
+    expect(words(html)).toContain('CE:SYNPLAN-UNMAPPED-06');
+    expect(words(html)).toContain('PLAN:SYNPLAN-EXPORT-06');
+  });
+
+  it('use the singular for one plan and one line, and keep a signed sum', () => {
+    const held = { ...coverage({ NO_MAPPING: 1 }), unmapped_plans: [{ plan_id: PLAN_A, lines: 1, charge_cents: '-500' }] };
+    expect(words(renderToStaticMarkup(<UnmappedPlansPriced practiceId="p" coverage={held} names={names} />))).toContain(
+      'When this run was priced, 1 plan had no mapping; its lines are not priced (1 line, -$5.00 billed).',
+    );
+  });
+
+  // UX-9: words before the code: the payer's name, then the plan key in the mono face inside the link; never a UUID.
+  it('name each plan by its payer in words, then its key in the mono face as the link, and never by its opaque ID (UX-9)', () => {
+    const held = { ...coverage({ NO_MAPPING: 13 }), unmapped_plans: [{ plan_id: PLAN_A, lines: 10, charge_cents: '100000' }, { plan_id: PLAN_B, lines: 3, charge_cents: '300' }] };
+    const html = renderToStaticMarkup(<UnmappedPlansPriced practiceId="p" coverage={held} names={names} />);
+    expect(html).toContain(`SYNTHETIC PAYER M <a class="underline" href="/p/p/mapping/${PLAN_A}"><span class="font-mono tabular-nums">CE:SYNPLAN-UNMAPPED-06</span></a>`);
+    // A plan whose payer's name is not to hand reads "Payer", as the variance table does.
+    expect(html).toContain(`Payer <a class="underline" href="/p/p/mapping/${PLAN_B}"><span class="font-mono tabular-nums">PLAN:SYNPLAN-EXPORT-06</span></a>`);
+    const unnamed = renderToStaticMarkup(<UnmappedPlansPriced practiceId="p" coverage={held} names={{ payers: {}, plans: {}, planPayers: {}, versions: {} }} />);
+    expect(words(unnamed)).toContain('Payer This plan (its key is not recorded)');
+    // The ID stays in the link's address and the row's hook, never in the words.
+    expect(words(unnamed)).not.toContain(PLAN_A);
+    const table = renderToStaticMarkup(<PatternTable practiceId="p" coverage={{ ...coverage(), patterns: [pattern()] }} names={{ payers: {}, plans: {}, planPayers: {}, versions: {} }} />);
+    expect(words(table)).toContain('This plan (its key is not recorded)');
+    expect(words(table)).not.toContain(pattern().plan_id);
+  });
+
+  // UX-6: no internal name (an audit's number) in a customer's words.
+  it('say a run that stopped for an unmapped plan did so at the time, in the danger colour, and what a new run does now, with no internal name (UX-6)', () => {
+    expect(FAILURE_TEXT.unmapped_plan).toBe(
+      'A plan of the period’s lines had no mapping, and at the time a run stopped for that. Runs no longer do: create a new run, which prices every mapped plan and leaves the unmapped plan’s lines unpriced.',
+    );
+    for (const text of Object.values(FAILURE_TEXT)) {
+      expect(text).not.toMatch(/audit|#\d/i);
+    }
+    expect(waitingLabel('unmapped_plan')).toBeNull();
+    expect(renderToStaticMarkup(<RunFailureText code="unmapped_plan" />)).toContain('text-destructive');
   });
 });
 

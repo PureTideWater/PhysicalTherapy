@@ -196,3 +196,34 @@ PRC-24, as the worker's login), `apps/worker/src/jobs/registry.test.ts` and `app
 Audit #76 (docs/adr/0065): each digest email goes through the transactional stream's SES configuration set, one
 person a message as before, tagged with its kind (`digest`), the digest's ID and the person's user ID (never an
 address), so its delivery is recorded by message. Nothing else about the digest changes.
+
+## Amendment (`co-001/unmapped-plan`, 2026-11-01): the MAP-01 wait applies only to months with no mapped plan, and two new uses of the request-keyed monitor
+
+Combined audit #32 ("One unmapped plan freezes a whole month"), adopted by the founder with the whole audit on
+2026-10-20, with its milestone 3 exception; built under the founder's standing rule of 2026-10-18 and recorded in
+ADR [0075](0075-price-around-a-plan-with-no-mapping-and-price-its-months-again-from-the-mapping-screens-by-hand.md).
+
+- **The MAP-01 wait.** The Decision above has a month "with an unmapped plan" wait, logged, until the next trigger. A
+  month now waits on mappings only when none of its plans has a mapping (`PricingRunNothingMapped`, MAP-07), still
+  listed in `waitingOnMapping` and logged as `UNMAPPED_PLAN`, now with `record_count`, the number of such months. Any
+  other month gets its run, and each line of a plan with no mapping is left `NO_MAPPING` (MAP-01, MAP-06). The location
+  wait (the amendment of PR 6b-2, above) and the content wait (ADR 0071) come first, in that order, unchanged.
+- **After a mapping that completes months.** When a mapping, in its own transaction, leaves at least one month that no
+  run covers with every plan of its lines mapped and not held on the location or on Medicare content, while a release
+  is in force, `mapPlanAction` queues the request-keyed `monitor` (`monitor:<practice>:<request>`, the location save's
+  key) after its commit. Its payload carries an optional `months`: the first days of every such month, oldest first, 1
+  to 240, calendar dates only, which the job-payload PHI guard admits in that one format (SEC-08). `planMonitoring`
+  then plans only the listed months that no run covers, each through the same checks, so a mapping's job never prices a
+  month still waiting on another plan's mapping. A job without `months` plans as before.
+- **After "Price them now".** The mapping screens' button for a month holding mapped and unmapped plans queues the same
+  request-keyed job with no `months`, so it plans every month no run covers, mixed months included, as the daily
+  schedule does.
+- Both mapping routes take the practice's `plan_months:` transaction lock first, so two people mapping a month's last
+  two plans at once queue monitoring once. Neither new use creates a re-run: a job creates first runs only, and the
+  months already priced are priced again by a person's re-runs (ADR 0037, ADR 0075).
+
+Tests: `apps/worker/src/monitor/monitor.db.test.ts` (MAP-06, MAP-07: an all-unmapped batch waits with `record_count`,
+a mixed month is priced, a job naming month 1 alone prices month 1 and not month 2),
+`apps/worker/src/monitor/job.test.ts`, `apps/worker/src/jobs/registry.test.ts`,
+`apps/web/src/lib/routes/mapping-routes.db.test.ts` and `apps/web/src/lib/routes/audit-e2e.db.test.ts` (AUDIT-01's flow
+gains one `monitor` step that creates no run).
