@@ -48,6 +48,15 @@ returns (2026-11-03 14:00 UTC, possibly 15:00). Briefs: `lanes/lane-b-session-br
   Worker restarted; setup re-run 19:58 UTC (PostgreSQL back; no marker); efb20704 kept as WIP ref
   `co-001/wip-ss01-chain`; **resumed 19:59 UTC** with resumeFromRunId (the stage-1 agent continues from its progress file,
   copied to `approval-summaries/lane-a-wip/progress/sc-m1-ss01.md`).
+- **~11:00 UTC (acting Lane A): 1b's CAS-42.1 fixed: 1b head 22177731 pushed** (wf_3118d5d7-edb; no migration, domain
+  model unchanged at e024cf9f…efc4df). Cause: RUN_LINES_QUERY joined each line to a DISTINCT ON CTE over the practice's
+  whole stage log and plain-joined case_line; on pre-triage statistics the planner chose a nested loop (first 2,000 rows
+  27.4 s; ~23 min for 100,000). Fix (query shape): the stage as a scalar subquery on line_status_head through
+  line_status_head_once, the case line as LEFT JOIN LATERAL ... LIMIT 1 through case_line_once; rows unchanged
+  (streamed.db.test.ts). Proof: cold statistics, all 100,000 lines read in 16.6 s; CAS-42.1 report 79.5-85.9 s in 4
+  runs (autovacuum off once, on three times), 1 lock; CAS-42.2 passes. Skeptic in a fresh clone: ok, report 75.4 s.
+  ADR 0083's 1b section updated. Revisit: CANDIDATE_QUERY's DISTINCT ON over the stage log. Interest (74a6b290) takes
+  22177731 at its PR stage.
 - **~09:20 UTC (acting Lane A): interest at its clean point: 74a6b290 pushed** (wf_3c4cf5ac-af0; results
   `approval-summaries/lane-a-schema-chain-wf_3c4cf5ac-af0-result.json`). 379fed9f merged 1b 048bc843; builder W's slice
   4 d37a0ee3 (reconciliation and ROI words per section 7, word for word in the result; routes db test 17/17 and
