@@ -34,8 +34,12 @@ export function chromiumInstalled(): boolean {
 
 /** A started harness: open a form in a new page, then close everything. */
 export interface Harness {
-  /** Opens the harness's form `form` in a new page of `width` CSS pixels (1280 by default); its errors fail `errors()`. */
-  open(form: string, options?: { readonly width?: number }): Promise<Page>;
+  /**
+   * Opens the harness's form `form` in a new page of `width` CSS pixels (1280 by default); its errors fail `errors()`.
+   * With `clock` (epoch ms), Playwright's fake clock is installed at that time before the page loads, so the test moves
+   * the page's own timers (a sign-in step's, docs/adr/0081).
+   */
+  open(form: string, options?: { readonly width?: number; readonly clock?: number }): Promise<Page>;
   /** The uncaught errors of every page opened so far. */
   errors(): readonly string[];
   close(): Promise<void>;
@@ -75,6 +79,9 @@ export async function startHarness(): Promise<Harness> {
     async open(form, options = {}) {
       const page = await browser.newPage({ viewport: { width: options.width ?? 1280, height: 800 } });
       page.on('pageerror', (error) => errors.push(error.message));
+      if (options.clock !== undefined) {
+        await page.clock.install({ time: options.clock });
+      }
       await page.goto(`${base}forms-harness.html?form=${encodeURIComponent(form)}`);
       await page.waitForFunction(() => (window as unknown as { harnessReady?: boolean }).harnessReady === true, null, { timeout: 30_000 });
       return page;

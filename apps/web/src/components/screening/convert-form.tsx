@@ -1,4 +1,4 @@
-import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
+import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle, buttonVariants } from '@tp/ui';
 
 import type { ActionState } from '../../lib/http/next';
 import { type KeptWith, convertKept } from '../../lib/screening/retention';
@@ -15,6 +15,28 @@ import { Field, SelectField, TextAreaField } from '../field';
  * (the founder's rulings of 2026-10-20). A legal surface counsel reviews before the screening opens
  * (docs/product/legal-surfaces.md, screening-kept-convert).
  */
+/** The form's title, which the link at the top of the result reads too: one name for the one request. */
+const CONVERT_TITLE = 'Ask for a PaidWhole audit';
+/** The title's id, the link's target. */
+const CONVERT_ID = 'screening-convert';
+
+/**
+ * The prospect's one action, at the top of the result (UX-134): a link in the primary button's style to the form's
+ * title, in the title's own words, shown only while the form is. The title takes the focus when the link is followed
+ * (it is focusable, out of the tab order), so the keyboard goes on from there into the form; a plain link, so the
+ * browser moves it before any script runs.
+ */
+export function ScreeningConvertLink({ requested, converted }: { readonly requested: boolean; readonly converted: boolean }) {
+  if (requested || converted) {
+    return null;
+  }
+  return (
+    <a className={buttonVariants({ className: 'self-start' })} href={`#${CONVERT_ID}`} data-link="convert">
+      {CONVERT_TITLE}
+    </a>
+  );
+}
+
 export function ScreeningConvertForm({
   action,
   resultId,
@@ -45,7 +67,9 @@ export function ScreeningConvertForm({
   return (
     <Card data-section="convert">
       <CardHeader>
-        <CardTitle id="screening-convert">Ask for a PaidWhole audit</CardTitle>
+        <CardTitle id={CONVERT_ID} tabIndex={-1}>
+          {CONVERT_TITLE}
+        </CardTitle>
         <CardDescription>
           An audit prices every line under your signed contracts and the contracts&apos; own rules, the rows this screening could not. We already have your practice&apos;s name and your email from the screening. No patient information.{' '}
           <span data-copy="convert-kept" data-legal-surface="screening-kept-convert">
