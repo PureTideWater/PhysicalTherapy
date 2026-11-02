@@ -621,7 +621,8 @@ describe('the findings file', () => {
     const body = dueBody(item, CONTENT_CALENDAR, { releaseNo: null });
     expect(body.length).toBeLessThanOrEqual(MAX_BODY);
     expect(body).not.toMatch(/[\uD800-\uDBFF]$/);
-    expect(body.isWellFormed()).toBe(true);
+    // No lone surrogate anywhere.
+    expect(body).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
   });
 
   it("every finding reaches the notify job whole, and every issue it writes fits GitHub's limits (ci-findings-transport)", () => {
