@@ -1,0 +1,13 @@
+# command: flock /tmp/laneb-heavy.lock pnpm exec vitest run --project unit tools/content-calendar tools/test/workflows.test.ts
+# cwd: /home/user/ci-findings-transport; commit 1's tests on commit 2's code (c1 to c3)
+# started: 2026-11-02T01:35:18Z
+
+ RUN  v5.0.5 /home/user/ci-findings-transport
+
+
+ Test Files  3 passed (3)
+      Tests  165 passed (165)
+   Start at  01:35:19
+   Duration  50.84s (tests 96%, import 3%, transform 1%)
+
+# exit: 0 finished: 2026-11-02T01:36:10Z

@@ -30,6 +30,11 @@ trial merges show no conflict with #42, #75, #83, #84, #85 or #86; re-checked by
 ready (18:00 ruling 2c: not waiting for #42; whichever merges second regenerates the lockfile); C waits for #86 (deadline
 guard 2026-11-04 12:00 UTC).
 
+ORCHESTRATOR RULING (2026-11-02 01:02 UTC) on O9 for #94: the consumer's size (S4 middle run vs the 44 s line, issue #41) is a
+standing founder item that blocks the screening's launch, not a merge; the numbers (37.1 s on 43565235, 52.3 s on bce57f16,
+55.1 s on #42, same consumer code) show runner noise, not a #94 regression. #94's description records it that way with a link
+to issue #41, and #94 merges on green when ready. The orchestrator carries it in the founder list.
+
 ## Now (2026-11-01T14:50:00Z)
 - **Stage: not started; session starting.** No pipeline stage is done: design, build, draft PRs, reviews, fix round,
   verification, merge, then closing the bot PRs.
@@ -192,7 +197,20 @@ guard 2026-11-04 12:00 UTC).
   checker, the full local suite once, one push with the description rewritten and read back; record
   `approval-summaries/lane-b-dependabot-batch-A-fix-round.md`); script archived (args select the PR).
 
+- 2026-11-01T22:30Z (recorded 2026-11-02T01:02Z): the account's 5-hour window stopped both workflows again (reset 00:10Z),
+  despite the orchestrator's 19:20Z note that the hourly limits no longer apply. **A's fix round** (wf_416e36ca-397): fixer
+  done (merge f5664b5b of 43565235; 11 commits applying all 18 distinct findings; 5 description-only, with design corrections
+  and 7 status-file proposals in the scratchpad's `fix-A/description-changes.md`); checker done (1 S: MOD-17's SDK inventory
+  pinned files not sites; 9 N); the suite agent had committed 950e8ca8 (check-A S1) when stopped; suite and push not done.
+  A's unpushed commits saved at WIP ref `co-001/wip-dependabot-batch-a` (950e8ca8). **B/C reviews** (wf_91a35eba-252): round 1
+  and its skeptics done for both (12 agents); round 2, the critics and the records not done. Early B finding (confirmed S):
+  #94's CI screening-capacity gate raised the O9 sizing question (S4 middle run 45.6 s > 44 s; variance: base 43565235 37.1 s,
+  bce57f16 52.3 s, #42 55.1 s), which the runbook takes to the founder before merge.
+- 2026-11-02T01:02Z: setup re-run (PostgreSQL down). B/C reviews resumed (same run id, cached agents replay); A's fix round
+  resumes once PostgreSQL is up.
+
 ## Waiting on someone
+- The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
 - 1 moderate Dependabot alert on the default branch (GitHub's push message, 2026-11-01 18:2xZ): a person reads it (the API answers 403 to the build). Does not block.
 - The API version of Stripe's webhook endpoint (design §5.4): a person checks it in Stripe's dashboard. Does not block.
 - Dependabot alerts (triage step 3): the founder or the co-founder reads the alerts page (the API gives the build 403). Does
@@ -202,11 +220,61 @@ guard 2026-11-04 12:00 UTC).
 - A credentialed `cdk:diff` against `tp-staging`: a person runs it if a staging stack exists. Does not block.
 - A trust-policy failure on a recent version, should one appear: the founder's security question; it blocks only that version.
 - Runbook 3i and `APPROVAL_REVIEW_REQUIRED`: until then, merge on green checks after the verification (rule 7). Does not block.
-- Merge order: the #88/#89 PR after #42 (conflicts in `apps/web/package.json`, `apps/worker/package.json`, `pnpm-lock.yaml`);
-  #82 first; the #87 PR after #75 and #84. While #42 waits for the founder's line, ask the orchestrator before merging anything.
+- Merge order: superseded by the 20:36 UTC rule (top of file): A and B merge when verified and green; C after #86 (deadline
+  guard 2026-11-04 12:00 UTC). Conflicting pairs only: A/#94 (model-gateway manifest), B/C (runbook AWS paragraph), C/#86 (ADR 0066).
 
 ## Proposals (outside this PR)
-None yet.
+From PR A's reviews and fix round (2026-11-02; the description of #90 names this list):
+1. **A refused model path gets its own log code** (the build checker's N2; ci-infra-r1-N2). In
+   `apps/web/src/lib/models/path.ts`, a `GatewayConfigError` refusal (today `ANTHROPIC_CUSTOM_HEADERS`) is logged as
+   `MODEL_PATH_UNAVAILABLE` with "the model path is not configured"; an operator reads it as a missing key. Give a
+   refusal its own code (for example `MODEL_PATH_REFUSED`) and words. With it (ci-infra-r2-S1's proposals): (a) an
+   apps/web unit test that pins `modelPathFromEnv({MODEL_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: <synthetic>,
+   ANTHROPIC_CUSTOM_HEADERS: 'x-synthetic: 1'})` to kind `unavailable`, the refusal as its reason and a single warn (no
+   test exercises `modelPathFromEnv` today); (b) optionally, read the model path once at server start (a Next
+   instrumentation `register` calling `modelPathFromEnv`), so the refusal is logged at deploy time; features still turn
+   off, the server never fails. `path.ts` is not on LANES.md's "Not while #42 is open" list.
+2. **The API version in the evaluation record** (SEC-S2's proposals). (a) Design P1, for #75's owner: record the API
+   version each provider path sends in each baseline entry and compare it in `servingDecisions`, so ADR 0048's new rule
+   is enforced in code. (b) `docs/runbooks/model-evaluation.md` :3-5 and :199-207: add "an API version change (an
+   Anthropic SDK version that moves `anthropic-version`, or Bedrock's `anthropic_version`)" to the triggers and to "When
+   it goes wrong", with the single gated `eval --record` (no `--new-set`) against the held entry. (c)
+   `docs/runbooks/dependency-upgrades.md` :319-320: once a real Anthropic entry exists, "passes the evaluation gate" for
+   the `anthropic-sdk` group means that people-run re-record, not CI's local gate; and "a red MOD-17 inventory names a
+   new environment read, place or dependency: close it before updating the constants" (SEC-S1's skeptic). Both
+   runbooks are edited by other open PRs (#75; B and C), so these wait for them.
+3. **PRD.md:571's eligible list** (SEC3-N1; ci-infra P12, security-supply P8; check-A N5): the list (Messages,
+   Citations, inline PDFs, prompt caching, structured outputs) leaves out effort, which every Anthropic request sends as
+   `output_config.effort` and the provider's eligibility table lists as HIPAA eligible (read 2026-11-01T21:39Z), and it
+   leaves out the table's condition on structured outputs: no PHI in a JSON schema definition, since the provider caches
+   the schema for up to 24 hours (ADR 0048's amendment now records it, c30be8ea). Optionally, a gateway test that
+   `output_config.format.schema` is exactly the prompt version's committed schema (security-supply P8). The founder's
+   text.
+4. **The evaluation CLI's errors** (SEC3-S2's skeptic): `packages/model-gateway/eval/cli.ts` lets every configuration
+   and usage error end in an uncaught stack trace with exit 1, the same code as "gate: FAILED". Catch at the top level,
+   print `error.message` and exit 2, as `apps/worker/src/models/permitted-cli.ts` does. For the gateway's owner.
+5. **A pinned model on the SDK's deprecated lists** (SEC-N2's option): the SDK keeps its deprecated-model and
+   thinking-warning lists unexported (`resources/messages/messages.mjs`), so a deprecation shows only as a
+   `console.warn` in the log group. A check that no prompt-pinned model is on either list, read from the installed
+   SDK's code until it exports them, would show it in CI. Today: 0 of the 2 Anthropic pins on either list (counted at
+   21:37:30Z, ids not printed).
+6. **408 and 409 on the Anthropic path** (the CI review's P9, "Map 408 differently"; 409 added by the fix round): `anthropicFailure` maps 408 (request timeout) and
+   409 to `rejected`, which the gateway does not retry, although the SDK's own retry rule treats both as retryable.
+   Consider 408 as `timeout` and 409 as `unavailable`, with their cases added to MOD-17's failure table. Also a 200
+   whose body is not JSON maps to `rejected` today (not pinned by the fix round, on purpose).
+7. **Merge-order bullet of the status file** ("Waiting on someone"): it still orders "the #87 PR after #75 and #84" and
+   says to ask the orchestrator; the 20:36 UTC rule supersedes it (description section 4 above).
+8. **The two reviews' other proposals** (check-A N5): the proposals outside PR A's files in
+   `approval-summaries/lane-b-dependabot-batch-A-review-ci-infra.md` (P1-P3, P7, P13, P14) and
+   `approval-summaries/lane-b-dependabot-batch-A-review-security-supply.md` (P3, P5-P7, P9, P11-P14) stand as written
+   there; those not folded into 1-7 above are tracked from those records. In short: an environment scrub for the unit
+   project (ci-infra P1); `dependency-upgrades.md` on MOD-18's version and header pins (ci-infra P2, with 2(c) above);
+   `fixtures.test.ts` checks each `assertedBy` file names its case (ci-infra P3); a bundle smoke of
+   `evaluate-permitted.js` with the refusal in CI's build job (ci-infra P7, security-supply P5); re-run merge-tree before
+   the merge (ci-infra P13); Trivy and bundled JavaScript (security-supply P3); cost by service tier, speed and geo
+   (security-supply P6); a shorter images-job log (security-supply P7); Next's patched fetch and tracing
+   (security-supply P9); `npm audit signatures` (security-supply P11); check-A's note on `lib/environments/worker.mjs`
+   (security-supply P12); design P6 (security-supply P13); the design's record names (both P14).
 
 ## Next step
 Next: A's fix round when its reviews return; B's and C's fix rounds when wf_91a35eba-252 returns; then fresh-clone verifications; A and B merge when ready (20:36Z rule), C after #86.

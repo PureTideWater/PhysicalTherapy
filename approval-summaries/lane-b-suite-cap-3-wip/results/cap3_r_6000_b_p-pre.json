@@ -1,0 +1,4816 @@
+{
+  "n": 6000,
+  "db": "cap3_r_6000_b_pre",
+  "export": false,
+  "passMs": 923990,
+  "error": null,
+  "summary": {
+    "exports": [],
+    "approvedFromResponses": 0,
+    "remittances": {
+      "approved": 6000,
+      "confirmed": 0,
+      "noPaymentIncrease": 0,
+      "decreased": 0,
+      "decreasedNoEntry": 0,
+      "noChange": 0,
+      "recoupments": 0,
+      "interest": 0,
+      "recouped": 0
+    },
+    "postingsMatched": 0,
+    "depositsMatched": 0,
+    "entriesSettled": 0,
+    "stages": {
+      "forward": 6000,
+      "back": 0
+    },
+    "notified": 0
+  },
+  "statements": 54033,
+  "sqlMs": 908263,
+  "tsBetweenMs": 15706,
+  "byPhase": {
+    "cipher": {
+      "statements": 2,
+      "sqlMs": 4,
+      "tsMs": 5,
+      "wallMs": 9
+    },
+    "responses": {
+      "statements": 2,
+      "sqlMs": 7,
+      "tsMs": 3,
+      "wallMs": 8
+    },
+    "remittances": {
+      "statements": 48017,
+      "sqlMs": 756336,
+      "tsMs": 13535,
+      "wallMs": 769871
+    },
+    "postings": {
+      "statements": 1,
+      "sqlMs": 1,
+      "tsMs": 0,
+      "wallMs": 1
+    },
+    "deposits": {
+      "statements": 3,
+      "sqlMs": 37,
+      "tsMs": 3,
+      "wallMs": 39
+    },
+    "settle": {
+      "statements": 6,
+      "sqlMs": 416,
+      "tsMs": 973,
+      "wallMs": 1387
+    },
+    "stages": {
+      "statements": 6001,
+      "sqlMs": 151460,
+      "tsMs": 1186,
+      "wallMs": 152634
+    },
+    "notify": {
+      "statements": 1,
+      "sqlMs": 3,
+      "tsMs": 1,
+      "wallMs": 3
+    }
+  },
+  "byFamily": {
+    "claimLines": {
+      "count": 12003,
+      "ms": 366670,
+      "rows": 126000,
+      "maxMs": 330,
+      "perCallMs": 30.548
+    },
+    "candidates.byControl": {
+      "count": 12000,
+      "ms": 255864,
+      "rows": 6000,
+      "maxMs": 72.9,
+      "perCallMs": 21.322
+    },
+    "stages.insert": {
+      "count": 6000,
+      "ms": 150633,
+      "rows": 6000,
+      "maxMs": 107.1,
+      "perCallMs": 25.105
+    },
+    "candidates.byPatient": {
+      "count": 12000,
+      "ms": 103002,
+      "rows": 186000,
+      "maxMs": 83.9,
+      "perCallMs": 8.584
+    },
+    "insert.entry": {
+      "count": 6000,
+      "ms": 22452,
+      "rows": 6000,
+      "maxMs": 33.5,
+      "perCallMs": 3.742
+    },
+    "insert.match": {
+      "count": 6000,
+      "ms": 8287,
+      "rows": 6000,
+      "maxMs": 37.3,
+      "perCallMs": 1.381
+    },
+    "stages.select": {
+      "count": 1,
+      "ms": 827,
+      "rows": 6000,
+      "maxMs": 827.2,
+      "perCallMs": 827.2
+    },
+    "ledger.matches": {
+      "count": 7,
+      "ms": 134,
+      "rows": 36000,
+      "maxMs": 26.7,
+      "perCallMs": 19.12
+    },
+    "chain.order": {
+      "count": 3,
+      "ms": 115,
+      "rows": 12000,
+      "maxMs": 57,
+      "perCallMs": 38.37
+    },
+    "remit.caseLines": {
+      "count": 1,
+      "ms": 106,
+      "rows": 6000,
+      "maxMs": 106,
+      "perCallMs": 105.968
+    },
+    "chain.reversals": {
+      "count": 3,
+      "ms": 75,
+      "rows": 4500,
+      "maxMs": 26.1,
+      "perCallMs": 25.163
+    },
+    "ledger.entries": {
+      "count": 4,
+      "ms": 35,
+      "rows": 12000,
+      "maxMs": 17.5,
+      "perCallMs": 8.652
+    },
+    "settle.caseLines": {
+      "count": 1,
+      "ms": 29,
+      "rows": 6000,
+      "maxMs": 28.9,
+      "perCallMs": 28.876
+    },
+    "settle.amounts": {
+      "count": 1,
+      "ms": 14,
+      "rows": 0,
+      "maxMs": 13.7,
+      "perCallMs": 13.734
+    },
+    "responses": {
+      "count": 1,
+      "ms": 6,
+      "rows": 0,
+      "maxMs": 6.3,
+      "perCallMs": 6.311
+    },
+    "remit.claimInterest": {
+      "count": 1,
+      "ms": 4,
+      "rows": 0,
+      "maxMs": 4.1,
+      "perCallMs": 4.139
+    },
+    "notify.manual": {
+      "count": 1,
+      "ms": 3,
+      "rows": 0,
+      "maxMs": 2.7,
+      "perCallMs": 2.739
+    },
+    "exports": {
+      "count": 1,
+      "ms": 2,
+      "rows": 0,
+      "maxMs": 2.3,
+      "perCallMs": 2.344
+    },
+    "cipher": {
+      "count": 1,
+      "ms": 1,
+      "rows": 1,
+      "maxMs": 1.4,
+      "perCallMs": 1.375
+    },
+    "remit.providerAdjustments": {
+      "count": 1,
+      "ms": 1,
+      "rows": 0,
+      "maxMs": 1.3,
+      "perCallMs": 1.261
+    },
+    "ledger.lock": {
+      "count": 1,
+      "ms": 1,
+      "rows": 1,
+      "maxMs": 1,
+      "perCallMs": 0.997
+    },
+    "postings.rows": {
+      "count": 1,
+      "ms": 1,
+      "rows": 0,
+      "maxMs": 0.7,
+      "perCallMs": 0.719
+    },
+    "deposits.rows": {
+      "count": 1,
+      "ms": 1,
+      "rows": 0,
+      "maxMs": 0.6,
+      "perCallMs": 0.647
+    }
+  },
+  "crypto": {
+    "decrypt claim.patient_control_number @remittances": 192000
+  },
+  "heap": {
+    "sampledPeakMiB": 107.8,
+    "liveBeforeMiB": 38.2,
+    "liveAfterMiB": 36.8,
+    "limit": "max-old-space-size=560"
+  },
+  "locks": {
+    "peakPerBackend": 12001,
+    "peakAll": 12001,
+    "samples": 4452,
+    "timeline": [
+      {
+        "t": 857,
+        "perBackend": 4,
+        "all": 4
+      },
+      {
+        "t": 1876,
+        "perBackend": 12,
+        "all": 12
+      },
+      {
+        "t": 2893,
+        "perBackend": 22,
+        "all": 22
+      },
+      {
+        "t": 3912,
+        "perBackend": 31,
+        "all": 31
+      },
+      {
+        "t": 4928,
+        "perBackend": 39,
+        "all": 39
+      },
+      {
+        "t": 5956,
+        "perBackend": 47,
+        "all": 47
+      },
+      {
+        "t": 6974,
+        "perBackend": 57,
+        "all": 57
+      },
+      {
+        "t": 7990,
+        "perBackend": 68,
+        "all": 68
+      },
+      {
+        "t": 9011,
+        "perBackend": 77,
+        "all": 77
+      },
+      {
+        "t": 10033,
+        "perBackend": 85,
+        "all": 85
+      },
+      {
+        "t": 11051,
+        "perBackend": 93,
+        "all": 93
+      },
+      {
+        "t": 12067,
+        "perBackend": 101,
+        "all": 101
+      },
+      {
+        "t": 13084,
+        "perBackend": 110,
+        "all": 110
+      },
+      {
+        "t": 14101,
+        "perBackend": 119,
+        "all": 119
+      },
+      {
+        "t": 15118,
+        "perBackend": 128,
+        "all": 128
+      },
+      {
+        "t": 16134,
+        "perBackend": 136,
+        "all": 136
+      },
+      {
+        "t": 17154,
+        "perBackend": 145,
+        "all": 145
+      },
+      {
+        "t": 18169,
+        "perBackend": 153,
+        "all": 153
+      },
+      {
+        "t": 19187,
+        "perBackend": 163,
+        "all": 163
+      },
+      {
+        "t": 20205,
+        "perBackend": 172,
+        "all": 172
+      },
+      {
+        "t": 21223,
+        "perBackend": 181,
+        "all": 181
+      },
+      {
+        "t": 22241,
+        "perBackend": 191,
+        "all": 191
+      },
+      {
+        "t": 23259,
+        "perBackend": 197,
+        "all": 197
+      },
+      {
+        "t": 24278,
+        "perBackend": 206,
+        "all": 206
+      },
+      {
+        "t": 25297,
+        "perBackend": 214,
+        "all": 214
+      },
+      {
+        "t": 26317,
+        "perBackend": 223,
+        "all": 223
+      },
+      {
+        "t": 27334,
+        "perBackend": 231,
+        "all": 231
+      },
+      {
+        "t": 28352,
+        "perBackend": 239,
+        "all": 239
+      },
+      {
+        "t": 29374,
+        "perBackend": 247,
+        "all": 247
+      },
+      {
+        "t": 30396,
+        "perBackend": 256,
+        "all": 256
+      },
+      {
+        "t": 31415,
+        "perBackend": 263,
+        "all": 263
+      },
+      {
+        "t": 32434,
+        "perBackend": 271,
+        "all": 271
+      },
+      {
+        "t": 33450,
+        "perBackend": 278,
+        "all": 278
+      },
+      {
+        "t": 34471,
+        "perBackend": 286,
+        "all": 286
+      },
+      {
+        "t": 35492,
+        "perBackend": 294,
+        "all": 294
+      },
+      {
+        "t": 36510,
+        "perBackend": 304,
+        "all": 304
+      },
+      {
+        "t": 37529,
+        "perBackend": 314,
+        "all": 314
+      },
+      {
+        "t": 38547,
+        "perBackend": 324,
+        "all": 324
+      },
+      {
+        "t": 39567,
+        "perBackend": 333,
+        "all": 333
+      },
+      {
+        "t": 40583,
+        "perBackend": 341,
+        "all": 341
+      },
+      {
+        "t": 41600,
+        "perBackend": 350,
+        "all": 350
+      },
+      {
+        "t": 42621,
+        "perBackend": 360,
+        "all": 360
+      },
+      {
+        "t": 43644,
+        "perBackend": 369,
+        "all": 369
+      },
+      {
+        "t": 44662,
+        "perBackend": 378,
+        "all": 378
+      },
+      {
+        "t": 45685,
+        "perBackend": 387,
+        "all": 387
+      },
+      {
+        "t": 46707,
+        "perBackend": 396,
+        "all": 396
+      },
+      {
+        "t": 47726,
+        "perBackend": 404,
+        "all": 404
+      },
+      {
+        "t": 48744,
+        "perBackend": 413,
+        "all": 413
+      },
+      {
+        "t": 49762,
+        "perBackend": 422,
+        "all": 422
+      },
+      {
+        "t": 50782,
+        "perBackend": 431,
+        "all": 431
+      },
+      {
+        "t": 51804,
+        "perBackend": 440,
+        "all": 440
+      },
+      {
+        "t": 52825,
+        "perBackend": 449,
+        "all": 449
+      },
+      {
+        "t": 53842,
+        "perBackend": 456,
+        "all": 456
+      },
+      {
+        "t": 54864,
+        "perBackend": 464,
+        "all": 464
+      },
+      {
+        "t": 55882,
+        "perBackend": 472,
+        "all": 472
+      },
+      {
+        "t": 56899,
+        "perBackend": 480,
+        "all": 480
+      },
+      {
+        "t": 57920,
+        "perBackend": 489,
+        "all": 489
+      },
+      {
+        "t": 58939,
+        "perBackend": 495,
+        "all": 495
+      },
+      {
+        "t": 59956,
+        "perBackend": 503,
+        "all": 503
+      },
+      {
+        "t": 60976,
+        "perBackend": 512,
+        "all": 512
+      },
+      {
+        "t": 61996,
+        "perBackend": 521,
+        "all": 521
+      },
+      {
+        "t": 63015,
+        "perBackend": 530,
+        "all": 530
+      },
+      {
+        "t": 64038,
+        "perBackend": 539,
+        "all": 539
+      },
+      {
+        "t": 65055,
+        "perBackend": 548,
+        "all": 548
+      },
+      {
+        "t": 66077,
+        "perBackend": 556,
+        "all": 556
+      },
+      {
+        "t": 67096,
+        "perBackend": 565,
+        "all": 565
+      },
+      {
+        "t": 68117,
+        "perBackend": 575,
+        "all": 575
+      },
+      {
+        "t": 69133,
+        "perBackend": 582,
+        "all": 582
+      },
+      {
+        "t": 70154,
+        "perBackend": 590,
+        "all": 590
+      },
+      {
+        "t": 71173,
+        "perBackend": 598,
+        "all": 598
+      },
+      {
+        "t": 72193,
+        "perBackend": 606,
+        "all": 606
+      },
+      {
+        "t": 73215,
+        "perBackend": 615,
+        "all": 615
+      },
+      {
+        "t": 74237,
+        "perBackend": 624,
+        "all": 624
+      },
+      {
+        "t": 75256,
+        "perBackend": 633,
+        "all": 633
+      },
+      {
+        "t": 76275,
+        "perBackend": 641,
+        "all": 641
+      },
+      {
+        "t": 77299,
+        "perBackend": 649,
+        "all": 649
+      },
+      {
+        "t": 78322,
+        "perBackend": 657,
+        "all": 657
+      },
+      {
+        "t": 79343,
+        "perBackend": 665,
+        "all": 665
+      },
+      {
+        "t": 80363,
+        "perBackend": 674,
+        "all": 674
+      },
+      {
+        "t": 81385,
+        "perBackend": 684,
+        "all": 684
+      },
+      {
+        "t": 82405,
+        "perBackend": 692,
+        "all": 692
+      },
+      {
+        "t": 83428,
+        "perBackend": 700,
+        "all": 700
+      },
+      {
+        "t": 84449,
+        "perBackend": 710,
+        "all": 710
+      },
+      {
+        "t": 85469,
+        "perBackend": 720,
+        "all": 720
+      },
+      {
+        "t": 86493,
+        "perBackend": 729,
+        "all": 729
+      },
+      {
+        "t": 87517,
+        "perBackend": 737,
+        "all": 737
+      },
+      {
+        "t": 88534,
+        "perBackend": 746,
+        "all": 746
+      },
+      {
+        "t": 89558,
+        "perBackend": 754,
+        "all": 754
+      },
+      {
+        "t": 90576,
+        "perBackend": 763,
+        "all": 763
+      },
+      {
+        "t": 91597,
+        "perBackend": 772,
+        "all": 772
+      },
+      {
+        "t": 92621,
+        "perBackend": 780,
+        "all": 780
+      },
+      {
+        "t": 93638,
+        "perBackend": 789,
+        "all": 789
+      },
+      {
+        "t": 94659,
+        "perBackend": 797,
+        "all": 797
+      },
+      {
+        "t": 95679,
+        "perBackend": 805,
+        "all": 805
+      },
+      {
+        "t": 96700,
+        "perBackend": 812,
+        "all": 812
+      },
+      {
+        "t": 97722,
+        "perBackend": 820,
+        "all": 820
+      },
+      {
+        "t": 98741,
+        "perBackend": 828,
+        "all": 828
+      },
+      {
+        "t": 99763,
+        "perBackend": 836,
+        "all": 836
+      },
+      {
+        "t": 100784,
+        "perBackend": 843,
+        "all": 843
+      },
+      {
+        "t": 101805,
+        "perBackend": 852,
+        "all": 852
+      },
+      {
+        "t": 102830,
+        "perBackend": 861,
+        "all": 861
+      },
+      {
+        "t": 103857,
+        "perBackend": 867,
+        "all": 867
+      },
+      {
+        "t": 104880,
+        "perBackend": 874,
+        "all": 874
+      },
+      {
+        "t": 105904,
+        "perBackend": 881,
+        "all": 881
+      },
+      {
+        "t": 106926,
+        "perBackend": 888,
+        "all": 888
+      },
+      {
+        "t": 107953,
+        "perBackend": 896,
+        "all": 896
+      },
+      {
+        "t": 108974,
+        "perBackend": 904,
+        "all": 904
+      },
+      {
+        "t": 109994,
+        "perBackend": 913,
+        "all": 913
+      },
+      {
+        "t": 111018,
+        "perBackend": 921,
+        "all": 921
+      },
+      {
+        "t": 112037,
+        "perBackend": 930,
+        "all": 930
+      },
+      {
+        "t": 113058,
+        "perBackend": 936,
+        "all": 936
+      },
+      {
+        "t": 114080,
+        "perBackend": 943,
+        "all": 943
+      },
+      {
+        "t": 115100,
+        "perBackend": 950,
+        "all": 950
+      },
+      {
+        "t": 116129,
+        "perBackend": 958,
+        "all": 958
+      },
+      {
+        "t": 117154,
+        "perBackend": 968,
+        "all": 968
+      },
+      {
+        "t": 118176,
+        "perBackend": 976,
+        "all": 976
+      },
+      {
+        "t": 119200,
+        "perBackend": 984,
+        "all": 984
+      },
+      {
+        "t": 120222,
+        "perBackend": 993,
+        "all": 993
+      },
+      {
+        "t": 121246,
+        "perBackend": 1003,
+        "all": 1003
+      },
+      {
+        "t": 122269,
+        "perBackend": 1010,
+        "all": 1010
+      },
+      {
+        "t": 123292,
+        "perBackend": 1019,
+        "all": 1019
+      },
+      {
+        "t": 124315,
+        "perBackend": 1027,
+        "all": 1027
+      },
+      {
+        "t": 125338,
+        "perBackend": 1034,
+        "all": 1034
+      },
+      {
+        "t": 126363,
+        "perBackend": 1043,
+        "all": 1043
+      },
+      {
+        "t": 127386,
+        "perBackend": 1050,
+        "all": 1050
+      },
+      {
+        "t": 128408,
+        "perBackend": 1058,
+        "all": 1058
+      },
+      {
+        "t": 129430,
+        "perBackend": 1066,
+        "all": 1066
+      },
+      {
+        "t": 130451,
+        "perBackend": 1073,
+        "all": 1073
+      },
+      {
+        "t": 131471,
+        "perBackend": 1082,
+        "all": 1082
+      },
+      {
+        "t": 132499,
+        "perBackend": 1090,
+        "all": 1090
+      },
+      {
+        "t": 133522,
+        "perBackend": 1099,
+        "all": 1099
+      },
+      {
+        "t": 134544,
+        "perBackend": 1106,
+        "all": 1106
+      },
+      {
+        "t": 135575,
+        "perBackend": 1114,
+        "all": 1114
+      },
+      {
+        "t": 136603,
+        "perBackend": 1122,
+        "all": 1122
+      },
+      {
+        "t": 137633,
+        "perBackend": 1129,
+        "all": 1129
+      },
+      {
+        "t": 138654,
+        "perBackend": 1137,
+        "all": 1137
+      },
+      {
+        "t": 139678,
+        "perBackend": 1146,
+        "all": 1146
+      },
+      {
+        "t": 140703,
+        "perBackend": 1155,
+        "all": 1155
+      },
+      {
+        "t": 141724,
+        "perBackend": 1163,
+        "all": 1163
+      },
+      {
+        "t": 142744,
+        "perBackend": 1171,
+        "all": 1171
+      },
+      {
+        "t": 143768,
+        "perBackend": 1179,
+        "all": 1179
+      },
+      {
+        "t": 144791,
+        "perBackend": 1188,
+        "all": 1188
+      },
+      {
+        "t": 145814,
+        "perBackend": 1197,
+        "all": 1197
+      },
+      {
+        "t": 146838,
+        "perBackend": 1204,
+        "all": 1204
+      },
+      {
+        "t": 147866,
+        "perBackend": 1212,
+        "all": 1212
+      },
+      {
+        "t": 148886,
+        "perBackend": 1220,
+        "all": 1220
+      },
+      {
+        "t": 149910,
+        "perBackend": 1227,
+        "all": 1227
+      },
+      {
+        "t": 150935,
+        "perBackend": 1236,
+        "all": 1236
+      },
+      {
+        "t": 151959,
+        "perBackend": 1243,
+        "all": 1243
+      },
+      {
+        "t": 152980,
+        "perBackend": 1250,
+        "all": 1250
+      },
+      {
+        "t": 154004,
+        "perBackend": 1260,
+        "all": 1260
+      },
+      {
+        "t": 155028,
+        "perBackend": 1268,
+        "all": 1268
+      },
+      {
+        "t": 156053,
+        "perBackend": 1275,
+        "all": 1275
+      },
+      {
+        "t": 157076,
+        "perBackend": 1282,
+        "all": 1282
+      },
+      {
+        "t": 158096,
+        "perBackend": 1290,
+        "all": 1290
+      },
+      {
+        "t": 159118,
+        "perBackend": 1298,
+        "all": 1298
+      },
+      {
+        "t": 160138,
+        "perBackend": 1306,
+        "all": 1306
+      },
+      {
+        "t": 161162,
+        "perBackend": 1315,
+        "all": 1315
+      },
+      {
+        "t": 162187,
+        "perBackend": 1322,
+        "all": 1322
+      },
+      {
+        "t": 163212,
+        "perBackend": 1330,
+        "all": 1330
+      },
+      {
+        "t": 164236,
+        "perBackend": 1337,
+        "all": 1337
+      },
+      {
+        "t": 165258,
+        "perBackend": 1344,
+        "all": 1344
+      },
+      {
+        "t": 166279,
+        "perBackend": 1352,
+        "all": 1352
+      },
+      {
+        "t": 167303,
+        "perBackend": 1362,
+        "all": 1362
+      },
+      {
+        "t": 168326,
+        "perBackend": 1371,
+        "all": 1371
+      },
+      {
+        "t": 169349,
+        "perBackend": 1377,
+        "all": 1377
+      },
+      {
+        "t": 170374,
+        "perBackend": 1385,
+        "all": 1385
+      },
+      {
+        "t": 171401,
+        "perBackend": 1392,
+        "all": 1392
+      },
+      {
+        "t": 172426,
+        "perBackend": 1401,
+        "all": 1401
+      },
+      {
+        "t": 173452,
+        "perBackend": 1409,
+        "all": 1409
+      },
+      {
+        "t": 174478,
+        "perBackend": 1418,
+        "all": 1418
+      },
+      {
+        "t": 175502,
+        "perBackend": 1426,
+        "all": 1426
+      },
+      {
+        "t": 176527,
+        "perBackend": 1432,
+        "all": 1432
+      },
+      {
+        "t": 177552,
+        "perBackend": 1440,
+        "all": 1440
+      },
+      {
+        "t": 178574,
+        "perBackend": 1449,
+        "all": 1449
+      },
+      {
+        "t": 179600,
+        "perBackend": 1457,
+        "all": 1457
+      },
+      {
+        "t": 180622,
+        "perBackend": 1465,
+        "all": 1465
+      },
+      {
+        "t": 181647,
+        "perBackend": 1473,
+        "all": 1473
+      },
+      {
+        "t": 182672,
+        "perBackend": 1481,
+        "all": 1481
+      },
+      {
+        "t": 183695,
+        "perBackend": 1488,
+        "all": 1488
+      },
+      {
+        "t": 184719,
+        "perBackend": 1495,
+        "all": 1495
+      },
+      {
+        "t": 185744,
+        "perBackend": 1501,
+        "all": 1501
+      },
+      {
+        "t": 186771,
+        "perBackend": 1509,
+        "all": 1509
+      },
+      {
+        "t": 187795,
+        "perBackend": 1518,
+        "all": 1518
+      },
+      {
+        "t": 188823,
+        "perBackend": 1525,
+        "all": 1525
+      },
+      {
+        "t": 189848,
+        "perBackend": 1533,
+        "all": 1533
+      },
+      {
+        "t": 190878,
+        "perBackend": 1541,
+        "all": 1541
+      },
+      {
+        "t": 191904,
+        "perBackend": 1548,
+        "all": 1548
+      },
+      {
+        "t": 192926,
+        "perBackend": 1558,
+        "all": 1558
+      },
+      {
+        "t": 193949,
+        "perBackend": 1565,
+        "all": 1565
+      },
+      {
+        "t": 194976,
+        "perBackend": 1571,
+        "all": 1571
+      },
+      {
+        "t": 196001,
+        "perBackend": 1578,
+        "all": 1578
+      },
+      {
+        "t": 197027,
+        "perBackend": 1586,
+        "all": 1586
+      },
+      {
+        "t": 198051,
+        "perBackend": 1594,
+        "all": 1594
+      },
+      {
+        "t": 199077,
+        "perBackend": 1603,
+        "all": 1603
+      },
+      {
+        "t": 200102,
+        "perBackend": 1611,
+        "all": 1611
+      },
+      {
+        "t": 201126,
+        "perBackend": 1618,
+        "all": 1618
+      },
+      {
+        "t": 202147,
+        "perBackend": 1627,
+        "all": 1627
+      },
+      {
+        "t": 203169,
+        "perBackend": 1635,
+        "all": 1635
+      },
+      {
+        "t": 204196,
+        "perBackend": 1642,
+        "all": 1642
+      },
+      {
+        "t": 205220,
+        "perBackend": 1648,
+        "all": 1648
+      },
+      {
+        "t": 206248,
+        "perBackend": 1655,
+        "all": 1655
+      },
+      {
+        "t": 207273,
+        "perBackend": 1662,
+        "all": 1662
+      },
+      {
+        "t": 208301,
+        "perBackend": 1671,
+        "all": 1671
+      },
+      {
+        "t": 209324,
+        "perBackend": 1679,
+        "all": 1679
+      },
+      {
+        "t": 210349,
+        "perBackend": 1687,
+        "all": 1687
+      },
+      {
+        "t": 211374,
+        "perBackend": 1695,
+        "all": 1695
+      },
+      {
+        "t": 212399,
+        "perBackend": 1704,
+        "all": 1704
+      },
+      {
+        "t": 213423,
+        "perBackend": 1712,
+        "all": 1712
+      },
+      {
+        "t": 214452,
+        "perBackend": 1721,
+        "all": 1721
+      },
+      {
+        "t": 215478,
+        "perBackend": 1729,
+        "all": 1729
+      },
+      {
+        "t": 216501,
+        "perBackend": 1736,
+        "all": 1736
+      },
+      {
+        "t": 217527,
+        "perBackend": 1744,
+        "all": 1744
+      },
+      {
+        "t": 218551,
+        "perBackend": 1752,
+        "all": 1752
+      },
+      {
+        "t": 219577,
+        "perBackend": 1760,
+        "all": 1760
+      },
+      {
+        "t": 220602,
+        "perBackend": 1769,
+        "all": 1769
+      },
+      {
+        "t": 221626,
+        "perBackend": 1777,
+        "all": 1777
+      },
+      {
+        "t": 222652,
+        "perBackend": 1786,
+        "all": 1786
+      },
+      {
+        "t": 223678,
+        "perBackend": 1793,
+        "all": 1793
+      },
+      {
+        "t": 224703,
+        "perBackend": 1801,
+        "all": 1801
+      },
+      {
+        "t": 225727,
+        "perBackend": 1810,
+        "all": 1810
+      },
+      {
+        "t": 226756,
+        "perBackend": 1818,
+        "all": 1818
+      },
+      {
+        "t": 227780,
+        "perBackend": 1827,
+        "all": 1827
+      },
+      {
+        "t": 228806,
+        "perBackend": 1836,
+        "all": 1836
+      },
+      {
+        "t": 229835,
+        "perBackend": 1844,
+        "all": 1844
+      },
+      {
+        "t": 230862,
+        "perBackend": 1853,
+        "all": 1853
+      },
+      {
+        "t": 231886,
+        "perBackend": 1861,
+        "all": 1861
+      },
+      {
+        "t": 232913,
+        "perBackend": 1869,
+        "all": 1869
+      },
+      {
+        "t": 233937,
+        "perBackend": 1876,
+        "all": 1876
+      },
+      {
+        "t": 234962,
+        "perBackend": 1885,
+        "all": 1885
+      },
+      {
+        "t": 235987,
+        "perBackend": 1893,
+        "all": 1893
+      },
+      {
+        "t": 237013,
+        "perBackend": 1901,
+        "all": 1901
+      },
+      {
+        "t": 238040,
+        "perBackend": 1908,
+        "all": 1908
+      },
+      {
+        "t": 239067,
+        "perBackend": 1915,
+        "all": 1915
+      },
+      {
+        "t": 240092,
+        "perBackend": 1923,
+        "all": 1923
+      },
+      {
+        "t": 241115,
+        "perBackend": 1932,
+        "all": 1932
+      },
+      {
+        "t": 242137,
+        "perBackend": 1940,
+        "all": 1940
+      },
+      {
+        "t": 243163,
+        "perBackend": 1949,
+        "all": 1949
+      },
+      {
+        "t": 244186,
+        "perBackend": 1957,
+        "all": 1957
+      },
+      {
+        "t": 245214,
+        "perBackend": 1965,
+        "all": 1965
+      },
+      {
+        "t": 246240,
+        "perBackend": 1974,
+        "all": 1974
+      },
+      {
+        "t": 247265,
+        "perBackend": 1982,
+        "all": 1982
+      },
+      {
+        "t": 248293,
+        "perBackend": 1991,
+        "all": 1991
+      },
+      {
+        "t": 249321,
+        "perBackend": 1998,
+        "all": 1998
+      },
+      {
+        "t": 250348,
+        "perBackend": 2006,
+        "all": 2006
+      },
+      {
+        "t": 251373,
+        "perBackend": 2014,
+        "all": 2014
+      },
+      {
+        "t": 252402,
+        "perBackend": 2022,
+        "all": 2022
+      },
+      {
+        "t": 253427,
+        "perBackend": 2031,
+        "all": 2031
+      },
+      {
+        "t": 254453,
+        "perBackend": 2039,
+        "all": 2039
+      },
+      {
+        "t": 255483,
+        "perBackend": 2046,
+        "all": 2046
+      },
+      {
+        "t": 256511,
+        "perBackend": 2054,
+        "all": 2054
+      },
+      {
+        "t": 257543,
+        "perBackend": 2063,
+        "all": 2063
+      },
+      {
+        "t": 258567,
+        "perBackend": 2070,
+        "all": 2070
+      },
+      {
+        "t": 259591,
+        "perBackend": 2076,
+        "all": 2076
+      },
+      {
+        "t": 260617,
+        "perBackend": 2084,
+        "all": 2084
+      },
+      {
+        "t": 261642,
+        "perBackend": 2092,
+        "all": 2092
+      },
+      {
+        "t": 262668,
+        "perBackend": 2100,
+        "all": 2100
+      },
+      {
+        "t": 263691,
+        "perBackend": 2108,
+        "all": 2108
+      },
+      {
+        "t": 264719,
+        "perBackend": 2116,
+        "all": 2116
+      },
+      {
+        "t": 265745,
+        "perBackend": 2123,
+        "all": 2123
+      },
+      {
+        "t": 266771,
+        "perBackend": 2130,
+        "all": 2130
+      },
+      {
+        "t": 267798,
+        "perBackend": 2139,
+        "all": 2139
+      },
+      {
+        "t": 268829,
+        "perBackend": 2147,
+        "all": 2147
+      },
+      {
+        "t": 269856,
+        "perBackend": 2153,
+        "all": 2153
+      },
+      {
+        "t": 270887,
+        "perBackend": 2160,
+        "all": 2160
+      },
+      {
+        "t": 271918,
+        "perBackend": 2167,
+        "all": 2167
+      },
+      {
+        "t": 272943,
+        "perBackend": 2177,
+        "all": 2177
+      },
+      {
+        "t": 273974,
+        "perBackend": 2185,
+        "all": 2185
+      },
+      {
+        "t": 275002,
+        "perBackend": 2192,
+        "all": 2192
+      },
+      {
+        "t": 276031,
+        "perBackend": 2200,
+        "all": 2200
+      },
+      {
+        "t": 277056,
+        "perBackend": 2208,
+        "all": 2208
+      },
+      {
+        "t": 278081,
+        "perBackend": 2216,
+        "all": 2216
+      },
+      {
+        "t": 279109,
+        "perBackend": 2222,
+        "all": 2222
+      },
+      {
+        "t": 280137,
+        "perBackend": 2229,
+        "all": 2229
+      },
+      {
+        "t": 281169,
+        "perBackend": 2236,
+        "all": 2236
+      },
+      {
+        "t": 282199,
+        "perBackend": 2242,
+        "all": 2242
+      },
+      {
+        "t": 283232,
+        "perBackend": 2249,
+        "all": 2249
+      },
+      {
+        "t": 284259,
+        "perBackend": 2256,
+        "all": 2256
+      },
+      {
+        "t": 285289,
+        "perBackend": 2263,
+        "all": 2263
+      },
+      {
+        "t": 286319,
+        "perBackend": 2271,
+        "all": 2271
+      },
+      {
+        "t": 287351,
+        "perBackend": 2278,
+        "all": 2278
+      },
+      {
+        "t": 288377,
+        "perBackend": 2284,
+        "all": 2284
+      },
+      {
+        "t": 289416,
+        "perBackend": 2290,
+        "all": 2290
+      },
+      {
+        "t": 290448,
+        "perBackend": 2297,
+        "all": 2297
+      },
+      {
+        "t": 291475,
+        "perBackend": 2303,
+        "all": 2303
+      },
+      {
+        "t": 292505,
+        "perBackend": 2309,
+        "all": 2309
+      },
+      {
+        "t": 293533,
+        "perBackend": 2316,
+        "all": 2316
+      },
+      {
+        "t": 294560,
+        "perBackend": 2323,
+        "all": 2323
+      },
+      {
+        "t": 295587,
+        "perBackend": 2330,
+        "all": 2330
+      },
+      {
+        "t": 296619,
+        "perBackend": 2337,
+        "all": 2337
+      },
+      {
+        "t": 297645,
+        "perBackend": 2343,
+        "all": 2343
+      },
+      {
+        "t": 298672,
+        "perBackend": 2350,
+        "all": 2350
+      },
+      {
+        "t": 299700,
+        "perBackend": 2357,
+        "all": 2357
+      },
+      {
+        "t": 300727,
+        "perBackend": 2363,
+        "all": 2363
+      },
+      {
+        "t": 301760,
+        "perBackend": 2370,
+        "all": 2370
+      },
+      {
+        "t": 302790,
+        "perBackend": 2377,
+        "all": 2377
+      },
+      {
+        "t": 303819,
+        "perBackend": 2386,
+        "all": 2386
+      },
+      {
+        "t": 304844,
+        "perBackend": 2393,
+        "all": 2393
+      },
+      {
+        "t": 305877,
+        "perBackend": 2401,
+        "all": 2401
+      },
+      {
+        "t": 306905,
+        "perBackend": 2409,
+        "all": 2409
+      },
+      {
+        "t": 307937,
+        "perBackend": 2416,
+        "all": 2416
+      },
+      {
+        "t": 308966,
+        "perBackend": 2423,
+        "all": 2423
+      },
+      {
+        "t": 309996,
+        "perBackend": 2429,
+        "all": 2429
+      },
+      {
+        "t": 311026,
+        "perBackend": 2436,
+        "all": 2436
+      },
+      {
+        "t": 312058,
+        "perBackend": 2442,
+        "all": 2442
+      },
+      {
+        "t": 313086,
+        "perBackend": 2449,
+        "all": 2449
+      },
+      {
+        "t": 314121,
+        "perBackend": 2457,
+        "all": 2457
+      },
+      {
+        "t": 315160,
+        "perBackend": 2466,
+        "all": 2466
+      },
+      {
+        "t": 316185,
+        "perBackend": 2474,
+        "all": 2474
+      },
+      {
+        "t": 317213,
+        "perBackend": 2482,
+        "all": 2482
+      },
+      {
+        "t": 318244,
+        "perBackend": 2491,
+        "all": 2491
+      },
+      {
+        "t": 319273,
+        "perBackend": 2500,
+        "all": 2500
+      },
+      {
+        "t": 320306,
+        "perBackend": 2510,
+        "all": 2510
+      },
+      {
+        "t": 321362,
+        "perBackend": 2518,
+        "all": 2518
+      },
+      {
+        "t": 322392,
+        "perBackend": 2526,
+        "all": 2526
+      },
+      {
+        "t": 323418,
+        "perBackend": 2534,
+        "all": 2534
+      },
+      {
+        "t": 324451,
+        "perBackend": 2541,
+        "all": 2541
+      },
+      {
+        "t": 325481,
+        "perBackend": 2550,
+        "all": 2550
+      },
+      {
+        "t": 326509,
+        "perBackend": 2559,
+        "all": 2559
+      },
+      {
+        "t": 327536,
+        "perBackend": 2569,
+        "all": 2569
+      },
+      {
+        "t": 328566,
+        "perBackend": 2578,
+        "all": 2578
+      },
+      {
+        "t": 329593,
+        "perBackend": 2588,
+        "all": 2588
+      },
+      {
+        "t": 330631,
+        "perBackend": 2596,
+        "all": 2596
+      },
+      {
+        "t": 331663,
+        "perBackend": 2604,
+        "all": 2604
+      },
+      {
+        "t": 332690,
+        "perBackend": 2614,
+        "all": 2614
+      },
+      {
+        "t": 333722,
+        "perBackend": 2623,
+        "all": 2623
+      },
+      {
+        "t": 334754,
+        "perBackend": 2631,
+        "all": 2631
+      },
+      {
+        "t": 335783,
+        "perBackend": 2641,
+        "all": 2641
+      },
+      {
+        "t": 336812,
+        "perBackend": 2649,
+        "all": 2649
+      },
+      {
+        "t": 337846,
+        "perBackend": 2658,
+        "all": 2658
+      },
+      {
+        "t": 338878,
+        "perBackend": 2666,
+        "all": 2666
+      },
+      {
+        "t": 339907,
+        "perBackend": 2675,
+        "all": 2675
+      },
+      {
+        "t": 340935,
+        "perBackend": 2683,
+        "all": 2683
+      },
+      {
+        "t": 341967,
+        "perBackend": 2691,
+        "all": 2691
+      },
+      {
+        "t": 342999,
+        "perBackend": 2700,
+        "all": 2700
+      },
+      {
+        "t": 344035,
+        "perBackend": 2709,
+        "all": 2709
+      },
+      {
+        "t": 345062,
+        "perBackend": 2718,
+        "all": 2718
+      },
+      {
+        "t": 346093,
+        "perBackend": 2726,
+        "all": 2726
+      },
+      {
+        "t": 347128,
+        "perBackend": 2734,
+        "all": 2734
+      },
+      {
+        "t": 348162,
+        "perBackend": 2741,
+        "all": 2741
+      },
+      {
+        "t": 349192,
+        "perBackend": 2749,
+        "all": 2749
+      },
+      {
+        "t": 350225,
+        "perBackend": 2758,
+        "all": 2758
+      },
+      {
+        "t": 351249,
+        "perBackend": 2766,
+        "all": 2766
+      },
+      {
+        "t": 352282,
+        "perBackend": 2776,
+        "all": 2776
+      },
+      {
+        "t": 353313,
+        "perBackend": 2786,
+        "all": 2786
+      },
+      {
+        "t": 354351,
+        "perBackend": 2794,
+        "all": 2794
+      },
+      {
+        "t": 355377,
+        "perBackend": 2803,
+        "all": 2803
+      },
+      {
+        "t": 356407,
+        "perBackend": 2811,
+        "all": 2811
+      },
+      {
+        "t": 357439,
+        "perBackend": 2819,
+        "all": 2819
+      },
+      {
+        "t": 358471,
+        "perBackend": 2827,
+        "all": 2827
+      },
+      {
+        "t": 359503,
+        "perBackend": 2835,
+        "all": 2835
+      },
+      {
+        "t": 360536,
+        "perBackend": 2843,
+        "all": 2843
+      },
+      {
+        "t": 361565,
+        "perBackend": 2851,
+        "all": 2851
+      },
+      {
+        "t": 362595,
+        "perBackend": 2861,
+        "all": 2861
+      },
+      {
+        "t": 363627,
+        "perBackend": 2870,
+        "all": 2870
+      },
+      {
+        "t": 364658,
+        "perBackend": 2878,
+        "all": 2878
+      },
+      {
+        "t": 365689,
+        "perBackend": 2887,
+        "all": 2887
+      },
+      {
+        "t": 366721,
+        "perBackend": 2896,
+        "all": 2896
+      },
+      {
+        "t": 367752,
+        "perBackend": 2905,
+        "all": 2905
+      },
+      {
+        "t": 368794,
+        "perBackend": 2914,
+        "all": 2914
+      },
+      {
+        "t": 369822,
+        "perBackend": 2922,
+        "all": 2922
+      },
+      {
+        "t": 370852,
+        "perBackend": 2931,
+        "all": 2931
+      },
+      {
+        "t": 371885,
+        "perBackend": 2938,
+        "all": 2938
+      },
+      {
+        "t": 372918,
+        "perBackend": 2947,
+        "all": 2947
+      },
+      {
+        "t": 373949,
+        "perBackend": 2955,
+        "all": 2955
+      },
+      {
+        "t": 374978,
+        "perBackend": 2964,
+        "all": 2964
+      },
+      {
+        "t": 376011,
+        "perBackend": 2971,
+        "all": 2971
+      },
+      {
+        "t": 377042,
+        "perBackend": 2978,
+        "all": 2978
+      },
+      {
+        "t": 378072,
+        "perBackend": 2984,
+        "all": 2984
+      },
+      {
+        "t": 379102,
+        "perBackend": 2991,
+        "all": 2991
+      },
+      {
+        "t": 380128,
+        "perBackend": 3000,
+        "all": 3000
+      },
+      {
+        "t": 381158,
+        "perBackend": 3009,
+        "all": 3009
+      },
+      {
+        "t": 382190,
+        "perBackend": 3018,
+        "all": 3018
+      },
+      {
+        "t": 383223,
+        "perBackend": 3026,
+        "all": 3026
+      },
+      {
+        "t": 384262,
+        "perBackend": 3033,
+        "all": 3033
+      },
+      {
+        "t": 385296,
+        "perBackend": 3042,
+        "all": 3042
+      },
+      {
+        "t": 386331,
+        "perBackend": 3050,
+        "all": 3050
+      },
+      {
+        "t": 387364,
+        "perBackend": 3058,
+        "all": 3058
+      },
+      {
+        "t": 388394,
+        "perBackend": 3066,
+        "all": 3066
+      },
+      {
+        "t": 389422,
+        "perBackend": 3074,
+        "all": 3074
+      },
+      {
+        "t": 390453,
+        "perBackend": 3083,
+        "all": 3083
+      },
+      {
+        "t": 391483,
+        "perBackend": 3091,
+        "all": 3091
+      },
+      {
+        "t": 392517,
+        "perBackend": 3099,
+        "all": 3099
+      },
+      {
+        "t": 393546,
+        "perBackend": 3106,
+        "all": 3106
+      },
+      {
+        "t": 394581,
+        "perBackend": 3114,
+        "all": 3114
+      },
+      {
+        "t": 395617,
+        "perBackend": 3122,
+        "all": 3122
+      },
+      {
+        "t": 396653,
+        "perBackend": 3129,
+        "all": 3129
+      },
+      {
+        "t": 397689,
+        "perBackend": 3135,
+        "all": 3135
+      },
+      {
+        "t": 398723,
+        "perBackend": 3142,
+        "all": 3142
+      },
+      {
+        "t": 399751,
+        "perBackend": 3149,
+        "all": 3149
+      },
+      {
+        "t": 400790,
+        "perBackend": 3158,
+        "all": 3158
+      },
+      {
+        "t": 401822,
+        "perBackend": 3165,
+        "all": 3165
+      },
+      {
+        "t": 402851,
+        "perBackend": 3173,
+        "all": 3173
+      },
+      {
+        "t": 403887,
+        "perBackend": 3181,
+        "all": 3181
+      },
+      {
+        "t": 404919,
+        "perBackend": 3187,
+        "all": 3187
+      },
+      {
+        "t": 405952,
+        "perBackend": 3193,
+        "all": 3193
+      },
+      {
+        "t": 406987,
+        "perBackend": 3200,
+        "all": 3200
+      },
+      {
+        "t": 408019,
+        "perBackend": 3206,
+        "all": 3206
+      },
+      {
+        "t": 409048,
+        "perBackend": 3213,
+        "all": 3213
+      },
+      {
+        "t": 410078,
+        "perBackend": 3221,
+        "all": 3221
+      },
+      {
+        "t": 411113,
+        "perBackend": 3228,
+        "all": 3228
+      },
+      {
+        "t": 412153,
+        "perBackend": 3234,
+        "all": 3234
+      },
+      {
+        "t": 413181,
+        "perBackend": 3241,
+        "all": 3241
+      },
+      {
+        "t": 414214,
+        "perBackend": 3248,
+        "all": 3248
+      },
+      {
+        "t": 415246,
+        "perBackend": 3254,
+        "all": 3254
+      },
+      {
+        "t": 416279,
+        "perBackend": 3261,
+        "all": 3261
+      },
+      {
+        "t": 417312,
+        "perBackend": 3268,
+        "all": 3268
+      },
+      {
+        "t": 418346,
+        "perBackend": 3274,
+        "all": 3274
+      },
+      {
+        "t": 419379,
+        "perBackend": 3280,
+        "all": 3280
+      },
+      {
+        "t": 420407,
+        "perBackend": 3287,
+        "all": 3287
+      },
+      {
+        "t": 421439,
+        "perBackend": 3294,
+        "all": 3294
+      },
+      {
+        "t": 422470,
+        "perBackend": 3300,
+        "all": 3300
+      },
+      {
+        "t": 423502,
+        "perBackend": 3307,
+        "all": 3307
+      },
+      {
+        "t": 424536,
+        "perBackend": 3313,
+        "all": 3313
+      },
+      {
+        "t": 425572,
+        "perBackend": 3320,
+        "all": 3320
+      },
+      {
+        "t": 426606,
+        "perBackend": 3327,
+        "all": 3327
+      },
+      {
+        "t": 427640,
+        "perBackend": 3334,
+        "all": 3334
+      },
+      {
+        "t": 428675,
+        "perBackend": 3340,
+        "all": 3340
+      },
+      {
+        "t": 429707,
+        "perBackend": 3347,
+        "all": 3347
+      },
+      {
+        "t": 430741,
+        "perBackend": 3354,
+        "all": 3354
+      },
+      {
+        "t": 431772,
+        "perBackend": 3362,
+        "all": 3362
+      },
+      {
+        "t": 432803,
+        "perBackend": 3370,
+        "all": 3370
+      },
+      {
+        "t": 433838,
+        "perBackend": 3375,
+        "all": 3375
+      },
+      {
+        "t": 434876,
+        "perBackend": 3382,
+        "all": 3382
+      },
+      {
+        "t": 435913,
+        "perBackend": 3389,
+        "all": 3389
+      },
+      {
+        "t": 436946,
+        "perBackend": 3396,
+        "all": 3396
+      },
+      {
+        "t": 438134,
+        "perBackend": 3402,
+        "all": 3402
+      },
+      {
+        "t": 439165,
+        "perBackend": 3408,
+        "all": 3408
+      },
+      {
+        "t": 440196,
+        "perBackend": 3414,
+        "all": 3414
+      },
+      {
+        "t": 441254,
+        "perBackend": 3422,
+        "all": 3422
+      },
+      {
+        "t": 442290,
+        "perBackend": 3428,
+        "all": 3428
+      },
+      {
+        "t": 443322,
+        "perBackend": 3434,
+        "all": 3434
+      },
+      {
+        "t": 444356,
+        "perBackend": 3441,
+        "all": 3441
+      },
+      {
+        "t": 445392,
+        "perBackend": 3447,
+        "all": 3447
+      },
+      {
+        "t": 446434,
+        "perBackend": 3453,
+        "all": 3453
+      },
+      {
+        "t": 447466,
+        "perBackend": 3460,
+        "all": 3460
+      },
+      {
+        "t": 448504,
+        "perBackend": 3466,
+        "all": 3466
+      },
+      {
+        "t": 449537,
+        "perBackend": 3473,
+        "all": 3473
+      },
+      {
+        "t": 450567,
+        "perBackend": 3480,
+        "all": 3480
+      },
+      {
+        "t": 451600,
+        "perBackend": 3486,
+        "all": 3486
+      },
+      {
+        "t": 452637,
+        "perBackend": 3491,
+        "all": 3491
+      },
+      {
+        "t": 453672,
+        "perBackend": 3498,
+        "all": 3498
+      },
+      {
+        "t": 454708,
+        "perBackend": 3505,
+        "all": 3505
+      },
+      {
+        "t": 455744,
+        "perBackend": 3511,
+        "all": 3511
+      },
+      {
+        "t": 456778,
+        "perBackend": 3519,
+        "all": 3519
+      },
+      {
+        "t": 457812,
+        "perBackend": 3526,
+        "all": 3526
+      },
+      {
+        "t": 458849,
+        "perBackend": 3534,
+        "all": 3534
+      },
+      {
+        "t": 459879,
+        "perBackend": 3541,
+        "all": 3541
+      },
+      {
+        "t": 460921,
+        "perBackend": 3547,
+        "all": 3547
+      },
+      {
+        "t": 461956,
+        "perBackend": 3554,
+        "all": 3554
+      },
+      {
+        "t": 462991,
+        "perBackend": 3561,
+        "all": 3561
+      },
+      {
+        "t": 464028,
+        "perBackend": 3567,
+        "all": 3567
+      },
+      {
+        "t": 465065,
+        "perBackend": 3573,
+        "all": 3573
+      },
+      {
+        "t": 466111,
+        "perBackend": 3580,
+        "all": 3580
+      },
+      {
+        "t": 467142,
+        "perBackend": 3587,
+        "all": 3587
+      },
+      {
+        "t": 468174,
+        "perBackend": 3593,
+        "all": 3593
+      },
+      {
+        "t": 469210,
+        "perBackend": 3601,
+        "all": 3601
+      },
+      {
+        "t": 470248,
+        "perBackend": 3607,
+        "all": 3607
+      },
+      {
+        "t": 471288,
+        "perBackend": 3613,
+        "all": 3613
+      },
+      {
+        "t": 472328,
+        "perBackend": 3619,
+        "all": 3619
+      },
+      {
+        "t": 473365,
+        "perBackend": 3626,
+        "all": 3626
+      },
+      {
+        "t": 474396,
+        "perBackend": 3632,
+        "all": 3632
+      },
+      {
+        "t": 475432,
+        "perBackend": 3639,
+        "all": 3639
+      },
+      {
+        "t": 476478,
+        "perBackend": 3645,
+        "all": 3645
+      },
+      {
+        "t": 477513,
+        "perBackend": 3651,
+        "all": 3651
+      },
+      {
+        "t": 478555,
+        "perBackend": 3657,
+        "all": 3657
+      },
+      {
+        "t": 479593,
+        "perBackend": 3663,
+        "all": 3663
+      },
+      {
+        "t": 480628,
+        "perBackend": 3670,
+        "all": 3670
+      },
+      {
+        "t": 481665,
+        "perBackend": 3677,
+        "all": 3677
+      },
+      {
+        "t": 482700,
+        "perBackend": 3684,
+        "all": 3684
+      },
+      {
+        "t": 483739,
+        "perBackend": 3690,
+        "all": 3690
+      },
+      {
+        "t": 484786,
+        "perBackend": 3696,
+        "all": 3696
+      },
+      {
+        "t": 485905,
+        "perBackend": 3702,
+        "all": 3702
+      },
+      {
+        "t": 486937,
+        "perBackend": 3708,
+        "all": 3708
+      },
+      {
+        "t": 487976,
+        "perBackend": 3714,
+        "all": 3714
+      },
+      {
+        "t": 489009,
+        "perBackend": 3720,
+        "all": 3720
+      },
+      {
+        "t": 490045,
+        "perBackend": 3725,
+        "all": 3725
+      },
+      {
+        "t": 491084,
+        "perBackend": 3731,
+        "all": 3731
+      },
+      {
+        "t": 492127,
+        "perBackend": 3737,
+        "all": 3737
+      },
+      {
+        "t": 493169,
+        "perBackend": 3742,
+        "all": 3742
+      },
+      {
+        "t": 494208,
+        "perBackend": 3748,
+        "all": 3748
+      },
+      {
+        "t": 495249,
+        "perBackend": 3754,
+        "all": 3754
+      },
+      {
+        "t": 496283,
+        "perBackend": 3761,
+        "all": 3761
+      },
+      {
+        "t": 497318,
+        "perBackend": 3766,
+        "all": 3766
+      },
+      {
+        "t": 498354,
+        "perBackend": 3772,
+        "all": 3772
+      },
+      {
+        "t": 499393,
+        "perBackend": 3778,
+        "all": 3778
+      },
+      {
+        "t": 500431,
+        "perBackend": 3785,
+        "all": 3785
+      },
+      {
+        "t": 501468,
+        "perBackend": 3792,
+        "all": 3792
+      },
+      {
+        "t": 502502,
+        "perBackend": 3799,
+        "all": 3799
+      },
+      {
+        "t": 503538,
+        "perBackend": 3806,
+        "all": 3806
+      },
+      {
+        "t": 504576,
+        "perBackend": 3812,
+        "all": 3812
+      },
+      {
+        "t": 505621,
+        "perBackend": 3819,
+        "all": 3819
+      },
+      {
+        "t": 506658,
+        "perBackend": 3826,
+        "all": 3826
+      },
+      {
+        "t": 507691,
+        "perBackend": 3833,
+        "all": 3833
+      },
+      {
+        "t": 508725,
+        "perBackend": 3840,
+        "all": 3840
+      },
+      {
+        "t": 509759,
+        "perBackend": 3846,
+        "all": 3846
+      },
+      {
+        "t": 510797,
+        "perBackend": 3852,
+        "all": 3852
+      },
+      {
+        "t": 511839,
+        "perBackend": 3859,
+        "all": 3859
+      },
+      {
+        "t": 512874,
+        "perBackend": 3866,
+        "all": 3866
+      },
+      {
+        "t": 513908,
+        "perBackend": 3874,
+        "all": 3874
+      },
+      {
+        "t": 514942,
+        "perBackend": 3881,
+        "all": 3881
+      },
+      {
+        "t": 515977,
+        "perBackend": 3888,
+        "all": 3888
+      },
+      {
+        "t": 517013,
+        "perBackend": 3894,
+        "all": 3894
+      },
+      {
+        "t": 518052,
+        "perBackend": 3901,
+        "all": 3901
+      },
+      {
+        "t": 519088,
+        "perBackend": 3908,
+        "all": 3908
+      },
+      {
+        "t": 520122,
+        "perBackend": 3915,
+        "all": 3915
+      },
+      {
+        "t": 521157,
+        "perBackend": 3921,
+        "all": 3921
+      },
+      {
+        "t": 522193,
+        "perBackend": 3927,
+        "all": 3927
+      },
+      {
+        "t": 523227,
+        "perBackend": 3934,
+        "all": 3934
+      },
+      {
+        "t": 524262,
+        "perBackend": 3941,
+        "all": 3941
+      },
+      {
+        "t": 525304,
+        "perBackend": 3948,
+        "all": 3948
+      },
+      {
+        "t": 526338,
+        "perBackend": 3955,
+        "all": 3955
+      },
+      {
+        "t": 527381,
+        "perBackend": 3960,
+        "all": 3960
+      },
+      {
+        "t": 528420,
+        "perBackend": 3967,
+        "all": 3967
+      },
+      {
+        "t": 529452,
+        "perBackend": 3974,
+        "all": 3974
+      },
+      {
+        "t": 530490,
+        "perBackend": 3980,
+        "all": 3980
+      },
+      {
+        "t": 531531,
+        "perBackend": 3988,
+        "all": 3988
+      },
+      {
+        "t": 532568,
+        "perBackend": 3995,
+        "all": 3995
+      },
+      {
+        "t": 533606,
+        "perBackend": 4003,
+        "all": 4003
+      },
+      {
+        "t": 534643,
+        "perBackend": 4010,
+        "all": 4010
+      },
+      {
+        "t": 535680,
+        "perBackend": 4017,
+        "all": 4017
+      },
+      {
+        "t": 536714,
+        "perBackend": 4022,
+        "all": 4022
+      },
+      {
+        "t": 537752,
+        "perBackend": 4029,
+        "all": 4029
+      },
+      {
+        "t": 538786,
+        "perBackend": 4035,
+        "all": 4035
+      },
+      {
+        "t": 539828,
+        "perBackend": 4041,
+        "all": 4041
+      },
+      {
+        "t": 540865,
+        "perBackend": 4047,
+        "all": 4047
+      },
+      {
+        "t": 541909,
+        "perBackend": 4056,
+        "all": 4056
+      },
+      {
+        "t": 542949,
+        "perBackend": 4063,
+        "all": 4063
+      },
+      {
+        "t": 543986,
+        "perBackend": 4071,
+        "all": 4071
+      },
+      {
+        "t": 545019,
+        "perBackend": 4079,
+        "all": 4079
+      },
+      {
+        "t": 546054,
+        "perBackend": 4087,
+        "all": 4087
+      },
+      {
+        "t": 547093,
+        "perBackend": 4094,
+        "all": 4094
+      },
+      {
+        "t": 548126,
+        "perBackend": 4103,
+        "all": 4103
+      },
+      {
+        "t": 549165,
+        "perBackend": 4111,
+        "all": 4111
+      },
+      {
+        "t": 550200,
+        "perBackend": 4119,
+        "all": 4119
+      },
+      {
+        "t": 551236,
+        "perBackend": 4126,
+        "all": 4126
+      },
+      {
+        "t": 552273,
+        "perBackend": 4133,
+        "all": 4133
+      },
+      {
+        "t": 553311,
+        "perBackend": 4141,
+        "all": 4141
+      },
+      {
+        "t": 554344,
+        "perBackend": 4150,
+        "all": 4150
+      },
+      {
+        "t": 555378,
+        "perBackend": 4156,
+        "all": 4156
+      },
+      {
+        "t": 556415,
+        "perBackend": 4165,
+        "all": 4165
+      },
+      {
+        "t": 557447,
+        "perBackend": 4174,
+        "all": 4174
+      },
+      {
+        "t": 558487,
+        "perBackend": 4183,
+        "all": 4183
+      },
+      {
+        "t": 559523,
+        "perBackend": 4192,
+        "all": 4192
+      },
+      {
+        "t": 560556,
+        "perBackend": 4199,
+        "all": 4199
+      },
+      {
+        "t": 561590,
+        "perBackend": 4207,
+        "all": 4207
+      },
+      {
+        "t": 562630,
+        "perBackend": 4215,
+        "all": 4215
+      },
+      {
+        "t": 563665,
+        "perBackend": 4224,
+        "all": 4224
+      },
+      {
+        "t": 564701,
+        "perBackend": 4233,
+        "all": 4233
+      },
+      {
+        "t": 565743,
+        "perBackend": 4242,
+        "all": 4242
+      },
+      {
+        "t": 566779,
+        "perBackend": 4252,
+        "all": 4252
+      },
+      {
+        "t": 567814,
+        "perBackend": 4263,
+        "all": 4263
+      },
+      {
+        "t": 568851,
+        "perBackend": 4270,
+        "all": 4270
+      },
+      {
+        "t": 569892,
+        "perBackend": 4279,
+        "all": 4279
+      },
+      {
+        "t": 570928,
+        "perBackend": 4289,
+        "all": 4289
+      },
+      {
+        "t": 571964,
+        "perBackend": 4297,
+        "all": 4297
+      },
+      {
+        "t": 572998,
+        "perBackend": 4305,
+        "all": 4305
+      },
+      {
+        "t": 574036,
+        "perBackend": 4313,
+        "all": 4313
+      },
+      {
+        "t": 575075,
+        "perBackend": 4322,
+        "all": 4322
+      },
+      {
+        "t": 576114,
+        "perBackend": 4331,
+        "all": 4331
+      },
+      {
+        "t": 577152,
+        "perBackend": 4341,
+        "all": 4341
+      },
+      {
+        "t": 578191,
+        "perBackend": 4351,
+        "all": 4351
+      },
+      {
+        "t": 579232,
+        "perBackend": 4358,
+        "all": 4358
+      },
+      {
+        "t": 580263,
+        "perBackend": 4368,
+        "all": 4368
+      },
+      {
+        "t": 581301,
+        "perBackend": 4375,
+        "all": 4375
+      },
+      {
+        "t": 582338,
+        "perBackend": 4383,
+        "all": 4383
+      },
+      {
+        "t": 583383,
+        "perBackend": 4392,
+        "all": 4392
+      },
+      {
+        "t": 584420,
+        "perBackend": 4401,
+        "all": 4401
+      },
+      {
+        "t": 585462,
+        "perBackend": 4409,
+        "all": 4409
+      },
+      {
+        "t": 586495,
+        "perBackend": 4418,
+        "all": 4418
+      },
+      {
+        "t": 587529,
+        "perBackend": 4425,
+        "all": 4425
+      },
+      {
+        "t": 588564,
+        "perBackend": 4433,
+        "all": 4433
+      },
+      {
+        "t": 589603,
+        "perBackend": 4440,
+        "all": 4440
+      },
+      {
+        "t": 590640,
+        "perBackend": 4449,
+        "all": 4449
+      },
+      {
+        "t": 591672,
+        "perBackend": 4458,
+        "all": 4458
+      },
+      {
+        "t": 592714,
+        "perBackend": 4466,
+        "all": 4466
+      },
+      {
+        "t": 593753,
+        "perBackend": 4475,
+        "all": 4475
+      },
+      {
+        "t": 594787,
+        "perBackend": 4483,
+        "all": 4483
+      },
+      {
+        "t": 595824,
+        "perBackend": 4493,
+        "all": 4493
+      },
+      {
+        "t": 596859,
+        "perBackend": 4501,
+        "all": 4501
+      },
+      {
+        "t": 597900,
+        "perBackend": 4509,
+        "all": 4509
+      },
+      {
+        "t": 598941,
+        "perBackend": 4519,
+        "all": 4519
+      },
+      {
+        "t": 599981,
+        "perBackend": 4528,
+        "all": 4528
+      },
+      {
+        "t": 601021,
+        "perBackend": 4537,
+        "all": 4537
+      },
+      {
+        "t": 602060,
+        "perBackend": 4544,
+        "all": 4544
+      },
+      {
+        "t": 603104,
+        "perBackend": 4554,
+        "all": 4554
+      },
+      {
+        "t": 604142,
+        "perBackend": 4562,
+        "all": 4562
+      },
+      {
+        "t": 605183,
+        "perBackend": 4571,
+        "all": 4571
+      },
+      {
+        "t": 606223,
+        "perBackend": 4580,
+        "all": 4580
+      },
+      {
+        "t": 607260,
+        "perBackend": 4589,
+        "all": 4589
+      },
+      {
+        "t": 608304,
+        "perBackend": 4599,
+        "all": 4599
+      },
+      {
+        "t": 609339,
+        "perBackend": 4608,
+        "all": 4608
+      },
+      {
+        "t": 610376,
+        "perBackend": 4616,
+        "all": 4616
+      },
+      {
+        "t": 611415,
+        "perBackend": 4627,
+        "all": 4627
+      },
+      {
+        "t": 612452,
+        "perBackend": 4636,
+        "all": 4636
+      },
+      {
+        "t": 613492,
+        "perBackend": 4645,
+        "all": 4645
+      },
+      {
+        "t": 614525,
+        "perBackend": 4654,
+        "all": 4654
+      },
+      {
+        "t": 615558,
+        "perBackend": 4661,
+        "all": 4661
+      },
+      {
+        "t": 616601,
+        "perBackend": 4670,
+        "all": 4670
+      },
+      {
+        "t": 617643,
+        "perBackend": 4680,
+        "all": 4680
+      },
+      {
+        "t": 618681,
+        "perBackend": 4689,
+        "all": 4689
+      },
+      {
+        "t": 619718,
+        "perBackend": 4699,
+        "all": 4699
+      },
+      {
+        "t": 620759,
+        "perBackend": 4708,
+        "all": 4708
+      },
+      {
+        "t": 621797,
+        "perBackend": 4717,
+        "all": 4717
+      },
+      {
+        "t": 622831,
+        "perBackend": 4724,
+        "all": 4724
+      },
+      {
+        "t": 623871,
+        "perBackend": 4733,
+        "all": 4733
+      },
+      {
+        "t": 624915,
+        "perBackend": 4740,
+        "all": 4740
+      },
+      {
+        "t": 625955,
+        "perBackend": 4748,
+        "all": 4748
+      },
+      {
+        "t": 626997,
+        "perBackend": 4756,
+        "all": 4756
+      },
+      {
+        "t": 628036,
+        "perBackend": 4763,
+        "all": 4763
+      },
+      {
+        "t": 629072,
+        "perBackend": 4772,
+        "all": 4772
+      },
+      {
+        "t": 630104,
+        "perBackend": 4781,
+        "all": 4781
+      },
+      {
+        "t": 631144,
+        "perBackend": 4791,
+        "all": 4791
+      },
+      {
+        "t": 632182,
+        "perBackend": 4799,
+        "all": 4799
+      },
+      {
+        "t": 633223,
+        "perBackend": 4809,
+        "all": 4809
+      },
+      {
+        "t": 634266,
+        "perBackend": 4818,
+        "all": 4818
+      },
+      {
+        "t": 635321,
+        "perBackend": 4827,
+        "all": 4827
+      },
+      {
+        "t": 636361,
+        "perBackend": 4837,
+        "all": 4837
+      },
+      {
+        "t": 637400,
+        "perBackend": 4846,
+        "all": 4846
+      },
+      {
+        "t": 638445,
+        "perBackend": 4856,
+        "all": 4856
+      },
+      {
+        "t": 639486,
+        "perBackend": 4865,
+        "all": 4865
+      },
+      {
+        "t": 640526,
+        "perBackend": 4876,
+        "all": 4876
+      },
+      {
+        "t": 641564,
+        "perBackend": 4886,
+        "all": 4886
+      },
+      {
+        "t": 642610,
+        "perBackend": 4896,
+        "all": 4896
+      },
+      {
+        "t": 643654,
+        "perBackend": 4907,
+        "all": 4907
+      },
+      {
+        "t": 644696,
+        "perBackend": 4916,
+        "all": 4916
+      },
+      {
+        "t": 645738,
+        "perBackend": 4924,
+        "all": 4924
+      },
+      {
+        "t": 646783,
+        "perBackend": 4932,
+        "all": 4932
+      },
+      {
+        "t": 647826,
+        "perBackend": 4940,
+        "all": 4940
+      },
+      {
+        "t": 648871,
+        "perBackend": 4949,
+        "all": 4949
+      },
+      {
+        "t": 649910,
+        "perBackend": 4959,
+        "all": 4959
+      },
+      {
+        "t": 650948,
+        "perBackend": 4968,
+        "all": 4968
+      },
+      {
+        "t": 651988,
+        "perBackend": 4977,
+        "all": 4977
+      },
+      {
+        "t": 653034,
+        "perBackend": 4986,
+        "all": 4986
+      },
+      {
+        "t": 654079,
+        "perBackend": 4995,
+        "all": 4995
+      },
+      {
+        "t": 655122,
+        "perBackend": 5005,
+        "all": 5005
+      },
+      {
+        "t": 656158,
+        "perBackend": 5013,
+        "all": 5013
+      },
+      {
+        "t": 657200,
+        "perBackend": 5021,
+        "all": 5021
+      },
+      {
+        "t": 658241,
+        "perBackend": 5029,
+        "all": 5029
+      },
+      {
+        "t": 659286,
+        "perBackend": 5037,
+        "all": 5037
+      },
+      {
+        "t": 660334,
+        "perBackend": 5045,
+        "all": 5045
+      },
+      {
+        "t": 661373,
+        "perBackend": 5053,
+        "all": 5053
+      },
+      {
+        "t": 662411,
+        "perBackend": 5064,
+        "all": 5064
+      },
+      {
+        "t": 663450,
+        "perBackend": 5073,
+        "all": 5073
+      },
+      {
+        "t": 664490,
+        "perBackend": 5083,
+        "all": 5083
+      },
+      {
+        "t": 665527,
+        "perBackend": 5094,
+        "all": 5094
+      },
+      {
+        "t": 666580,
+        "perBackend": 5103,
+        "all": 5103
+      },
+      {
+        "t": 667616,
+        "perBackend": 5111,
+        "all": 5111
+      },
+      {
+        "t": 668658,
+        "perBackend": 5121,
+        "all": 5121
+      },
+      {
+        "t": 669723,
+        "perBackend": 5130,
+        "all": 5130
+      },
+      {
+        "t": 670757,
+        "perBackend": 5139,
+        "all": 5139
+      },
+      {
+        "t": 671804,
+        "perBackend": 5148,
+        "all": 5148
+      },
+      {
+        "t": 672845,
+        "perBackend": 5157,
+        "all": 5157
+      },
+      {
+        "t": 673886,
+        "perBackend": 5167,
+        "all": 5167
+      },
+      {
+        "t": 674930,
+        "perBackend": 5177,
+        "all": 5177
+      },
+      {
+        "t": 675972,
+        "perBackend": 5187,
+        "all": 5187
+      },
+      {
+        "t": 677014,
+        "perBackend": 5198,
+        "all": 5198
+      },
+      {
+        "t": 678052,
+        "perBackend": 5207,
+        "all": 5207
+      },
+      {
+        "t": 679090,
+        "perBackend": 5216,
+        "all": 5216
+      },
+      {
+        "t": 680129,
+        "perBackend": 5227,
+        "all": 5227
+      },
+      {
+        "t": 681168,
+        "perBackend": 5236,
+        "all": 5236
+      },
+      {
+        "t": 682208,
+        "perBackend": 5246,
+        "all": 5246
+      },
+      {
+        "t": 683248,
+        "perBackend": 5254,
+        "all": 5254
+      },
+      {
+        "t": 684290,
+        "perBackend": 5264,
+        "all": 5264
+      },
+      {
+        "t": 685329,
+        "perBackend": 5274,
+        "all": 5274
+      },
+      {
+        "t": 686373,
+        "perBackend": 5283,
+        "all": 5283
+      },
+      {
+        "t": 687415,
+        "perBackend": 5292,
+        "all": 5292
+      },
+      {
+        "t": 688458,
+        "perBackend": 5301,
+        "all": 5301
+      },
+      {
+        "t": 689505,
+        "perBackend": 5310,
+        "all": 5310
+      },
+      {
+        "t": 690555,
+        "perBackend": 5320,
+        "all": 5320
+      },
+      {
+        "t": 691596,
+        "perBackend": 5330,
+        "all": 5330
+      },
+      {
+        "t": 692637,
+        "perBackend": 5340,
+        "all": 5340
+      },
+      {
+        "t": 693677,
+        "perBackend": 5349,
+        "all": 5349
+      },
+      {
+        "t": 694714,
+        "perBackend": 5357,
+        "all": 5357
+      },
+      {
+        "t": 695748,
+        "perBackend": 5365,
+        "all": 5365
+      },
+      {
+        "t": 696791,
+        "perBackend": 5373,
+        "all": 5373
+      },
+      {
+        "t": 697838,
+        "perBackend": 5380,
+        "all": 5380
+      },
+      {
+        "t": 698882,
+        "perBackend": 5391,
+        "all": 5391
+      },
+      {
+        "t": 699924,
+        "perBackend": 5401,
+        "all": 5401
+      },
+      {
+        "t": 700969,
+        "perBackend": 5410,
+        "all": 5410
+      },
+      {
+        "t": 702015,
+        "perBackend": 5420,
+        "all": 5420
+      },
+      {
+        "t": 703057,
+        "perBackend": 5428,
+        "all": 5428
+      },
+      {
+        "t": 704096,
+        "perBackend": 5437,
+        "all": 5437
+      },
+      {
+        "t": 705139,
+        "perBackend": 5446,
+        "all": 5446
+      },
+      {
+        "t": 706179,
+        "perBackend": 5456,
+        "all": 5456
+      },
+      {
+        "t": 707218,
+        "perBackend": 5464,
+        "all": 5464
+      },
+      {
+        "t": 708261,
+        "perBackend": 5472,
+        "all": 5472
+      },
+      {
+        "t": 709309,
+        "perBackend": 5480,
+        "all": 5480
+      },
+      {
+        "t": 710350,
+        "perBackend": 5489,
+        "all": 5489
+      },
+      {
+        "t": 711393,
+        "perBackend": 5498,
+        "all": 5498
+      },
+      {
+        "t": 712439,
+        "perBackend": 5506,
+        "all": 5506
+      },
+      {
+        "t": 713481,
+        "perBackend": 5515,
+        "all": 5515
+      },
+      {
+        "t": 714528,
+        "perBackend": 5523,
+        "all": 5523
+      },
+      {
+        "t": 715565,
+        "perBackend": 5532,
+        "all": 5532
+      },
+      {
+        "t": 716607,
+        "perBackend": 5540,
+        "all": 5540
+      },
+      {
+        "t": 717664,
+        "perBackend": 5549,
+        "all": 5549
+      },
+      {
+        "t": 718712,
+        "perBackend": 5558,
+        "all": 5558
+      },
+      {
+        "t": 719768,
+        "perBackend": 5569,
+        "all": 5569
+      },
+      {
+        "t": 720817,
+        "perBackend": 5576,
+        "all": 5576
+      },
+      {
+        "t": 721856,
+        "perBackend": 5585,
+        "all": 5585
+      },
+      {
+        "t": 722892,
+        "perBackend": 5596,
+        "all": 5596
+      },
+      {
+        "t": 723939,
+        "perBackend": 5604,
+        "all": 5604
+      },
+      {
+        "t": 724984,
+        "perBackend": 5613,
+        "all": 5613
+      },
+      {
+        "t": 726024,
+        "perBackend": 5621,
+        "all": 5621
+      },
+      {
+        "t": 727068,
+        "perBackend": 5631,
+        "all": 5631
+      },
+      {
+        "t": 728107,
+        "perBackend": 5639,
+        "all": 5639
+      },
+      {
+        "t": 729147,
+        "perBackend": 5648,
+        "all": 5648
+      },
+      {
+        "t": 730190,
+        "perBackend": 5659,
+        "all": 5659
+      },
+      {
+        "t": 731231,
+        "perBackend": 5669,
+        "all": 5669
+      },
+      {
+        "t": 732277,
+        "perBackend": 5677,
+        "all": 5677
+      },
+      {
+        "t": 733324,
+        "perBackend": 5686,
+        "all": 5686
+      },
+      {
+        "t": 734364,
+        "perBackend": 5695,
+        "all": 5695
+      },
+      {
+        "t": 735403,
+        "perBackend": 5704,
+        "all": 5704
+      },
+      {
+        "t": 736449,
+        "perBackend": 5712,
+        "all": 5712
+      },
+      {
+        "t": 737487,
+        "perBackend": 5721,
+        "all": 5721
+      },
+      {
+        "t": 738538,
+        "perBackend": 5730,
+        "all": 5730
+      },
+      {
+        "t": 739579,
+        "perBackend": 5740,
+        "all": 5740
+      },
+      {
+        "t": 740627,
+        "perBackend": 5749,
+        "all": 5749
+      },
+      {
+        "t": 741669,
+        "perBackend": 5757,
+        "all": 5757
+      },
+      {
+        "t": 742709,
+        "perBackend": 5766,
+        "all": 5766
+      },
+      {
+        "t": 743750,
+        "perBackend": 5774,
+        "all": 5774
+      },
+      {
+        "t": 744790,
+        "perBackend": 5782,
+        "all": 5782
+      },
+      {
+        "t": 745830,
+        "perBackend": 5792,
+        "all": 5792
+      },
+      {
+        "t": 746869,
+        "perBackend": 5800,
+        "all": 5800
+      },
+      {
+        "t": 747914,
+        "perBackend": 5809,
+        "all": 5809
+      },
+      {
+        "t": 748959,
+        "perBackend": 5818,
+        "all": 5818
+      },
+      {
+        "t": 750002,
+        "perBackend": 5827,
+        "all": 5827
+      },
+      {
+        "t": 751043,
+        "perBackend": 5835,
+        "all": 5835
+      },
+      {
+        "t": 752089,
+        "perBackend": 5845,
+        "all": 5845
+      },
+      {
+        "t": 753136,
+        "perBackend": 5852,
+        "all": 5852
+      },
+      {
+        "t": 754178,
+        "perBackend": 5861,
+        "all": 5861
+      },
+      {
+        "t": 755229,
+        "perBackend": 5870,
+        "all": 5870
+      },
+      {
+        "t": 756277,
+        "perBackend": 5881,
+        "all": 5881
+      },
+      {
+        "t": 757323,
+        "perBackend": 5890,
+        "all": 5890
+      },
+      {
+        "t": 758366,
+        "perBackend": 5900,
+        "all": 5900
+      },
+      {
+        "t": 759411,
+        "perBackend": 5910,
+        "all": 5910
+      },
+      {
+        "t": 760450,
+        "perBackend": 5920,
+        "all": 5920
+      },
+      {
+        "t": 761498,
+        "perBackend": 5929,
+        "all": 5929
+      },
+      {
+        "t": 762543,
+        "perBackend": 5940,
+        "all": 5940
+      },
+      {
+        "t": 763587,
+        "perBackend": 5949,
+        "all": 5949
+      },
+      {
+        "t": 764632,
+        "perBackend": 5959,
+        "all": 5959
+      },
+      {
+        "t": 765679,
+        "perBackend": 5969,
+        "all": 5969
+      },
+      {
+        "t": 766726,
+        "perBackend": 5977,
+        "all": 5977
+      },
+      {
+        "t": 767769,
+        "perBackend": 5986,
+        "all": 5986
+      },
+      {
+        "t": 768818,
+        "perBackend": 5996,
+        "all": 5996
+      },
+      {
+        "t": 769914,
+        "perBackend": 6001,
+        "all": 6001
+      },
+      {
+        "t": 771804,
+        "perBackend": 6001,
+        "all": 6001
+      },
+      {
+        "t": 772868,
+        "perBackend": 6026,
+        "all": 6026
+      },
+      {
+        "t": 773916,
+        "perBackend": 6067,
+        "all": 6067
+      },
+      {
+        "t": 774969,
+        "perBackend": 6113,
+        "all": 6113
+      },
+      {
+        "t": 776011,
+        "perBackend": 6160,
+        "all": 6160
+      },
+      {
+        "t": 777056,
+        "perBackend": 6203,
+        "all": 6203
+      },
+      {
+        "t": 778101,
+        "perBackend": 6244,
+        "all": 6244
+      },
+      {
+        "t": 779150,
+        "perBackend": 6290,
+        "all": 6290
+      },
+      {
+        "t": 780196,
+        "perBackend": 6331,
+        "all": 6331
+      },
+      {
+        "t": 781244,
+        "perBackend": 6377,
+        "all": 6377
+      },
+      {
+        "t": 782293,
+        "perBackend": 6424,
+        "all": 6424
+      },
+      {
+        "t": 783337,
+        "perBackend": 6469,
+        "all": 6469
+      },
+      {
+        "t": 784384,
+        "perBackend": 6509,
+        "all": 6509
+      },
+      {
+        "t": 785440,
+        "perBackend": 6549,
+        "all": 6549
+      },
+      {
+        "t": 786485,
+        "perBackend": 6593,
+        "all": 6593
+      },
+      {
+        "t": 787532,
+        "perBackend": 6631,
+        "all": 6631
+      },
+      {
+        "t": 788583,
+        "perBackend": 6677,
+        "all": 6677
+      },
+      {
+        "t": 789628,
+        "perBackend": 6724,
+        "all": 6724
+      },
+      {
+        "t": 790678,
+        "perBackend": 6771,
+        "all": 6771
+      },
+      {
+        "t": 791729,
+        "perBackend": 6811,
+        "all": 6811
+      },
+      {
+        "t": 792781,
+        "perBackend": 6850,
+        "all": 6850
+      },
+      {
+        "t": 793835,
+        "perBackend": 6894,
+        "all": 6894
+      },
+      {
+        "t": 794885,
+        "perBackend": 6937,
+        "all": 6937
+      },
+      {
+        "t": 795931,
+        "perBackend": 6978,
+        "all": 6978
+      },
+      {
+        "t": 796983,
+        "perBackend": 7010,
+        "all": 7010
+      },
+      {
+        "t": 798043,
+        "perBackend": 7050,
+        "all": 7050
+      },
+      {
+        "t": 799088,
+        "perBackend": 7090,
+        "all": 7090
+      },
+      {
+        "t": 800137,
+        "perBackend": 7138,
+        "all": 7138
+      },
+      {
+        "t": 801189,
+        "perBackend": 7187,
+        "all": 7187
+      },
+      {
+        "t": 802243,
+        "perBackend": 7230,
+        "all": 7230
+      },
+      {
+        "t": 803289,
+        "perBackend": 7264,
+        "all": 7264
+      },
+      {
+        "t": 804334,
+        "perBackend": 7299,
+        "all": 7299
+      },
+      {
+        "t": 805395,
+        "perBackend": 7344,
+        "all": 7344
+      },
+      {
+        "t": 806443,
+        "perBackend": 7389,
+        "all": 7389
+      },
+      {
+        "t": 807505,
+        "perBackend": 7429,
+        "all": 7429
+      },
+      {
+        "t": 808549,
+        "perBackend": 7466,
+        "all": 7466
+      },
+      {
+        "t": 809600,
+        "perBackend": 7511,
+        "all": 7511
+      },
+      {
+        "t": 810658,
+        "perBackend": 7554,
+        "all": 7554
+      },
+      {
+        "t": 811704,
+        "perBackend": 7598,
+        "all": 7598
+      },
+      {
+        "t": 812748,
+        "perBackend": 7638,
+        "all": 7638
+      },
+      {
+        "t": 813799,
+        "perBackend": 7685,
+        "all": 7685
+      },
+      {
+        "t": 814851,
+        "perBackend": 7733,
+        "all": 7733
+      },
+      {
+        "t": 815900,
+        "perBackend": 7779,
+        "all": 7779
+      },
+      {
+        "t": 816953,
+        "perBackend": 7823,
+        "all": 7823
+      },
+      {
+        "t": 818003,
+        "perBackend": 7872,
+        "all": 7872
+      },
+      {
+        "t": 819047,
+        "perBackend": 7917,
+        "all": 7917
+      },
+      {
+        "t": 820101,
+        "perBackend": 7966,
+        "all": 7966
+      },
+      {
+        "t": 821153,
+        "perBackend": 8008,
+        "all": 8008
+      },
+      {
+        "t": 822202,
+        "perBackend": 8053,
+        "all": 8053
+      },
+      {
+        "t": 823257,
+        "perBackend": 8101,
+        "all": 8101
+      },
+      {
+        "t": 824320,
+        "perBackend": 8148,
+        "all": 8148
+      },
+      {
+        "t": 825375,
+        "perBackend": 8194,
+        "all": 8194
+      },
+      {
+        "t": 826421,
+        "perBackend": 8242,
+        "all": 8242
+      },
+      {
+        "t": 827474,
+        "perBackend": 8290,
+        "all": 8290
+      },
+      {
+        "t": 828526,
+        "perBackend": 8336,
+        "all": 8336
+      },
+      {
+        "t": 829579,
+        "perBackend": 8378,
+        "all": 8378
+      },
+      {
+        "t": 830638,
+        "perBackend": 8426,
+        "all": 8426
+      },
+      {
+        "t": 831690,
+        "perBackend": 8468,
+        "all": 8468
+      },
+      {
+        "t": 832745,
+        "perBackend": 8516,
+        "all": 8516
+      },
+      {
+        "t": 833805,
+        "perBackend": 8557,
+        "all": 8557
+      },
+      {
+        "t": 834863,
+        "perBackend": 8598,
+        "all": 8598
+      },
+      {
+        "t": 835927,
+        "perBackend": 8642,
+        "all": 8642
+      },
+      {
+        "t": 836991,
+        "perBackend": 8683,
+        "all": 8683
+      },
+      {
+        "t": 838049,
+        "perBackend": 8729,
+        "all": 8729
+      },
+      {
+        "t": 839101,
+        "perBackend": 8774,
+        "all": 8774
+      },
+      {
+        "t": 840152,
+        "perBackend": 8813,
+        "all": 8813
+      },
+      {
+        "t": 841208,
+        "perBackend": 8861,
+        "all": 8861
+      },
+      {
+        "t": 842258,
+        "perBackend": 8904,
+        "all": 8904
+      },
+      {
+        "t": 843319,
+        "perBackend": 8946,
+        "all": 8946
+      },
+      {
+        "t": 844371,
+        "perBackend": 8989,
+        "all": 8989
+      },
+      {
+        "t": 845430,
+        "perBackend": 9035,
+        "all": 9035
+      },
+      {
+        "t": 846496,
+        "perBackend": 9081,
+        "all": 9081
+      },
+      {
+        "t": 847553,
+        "perBackend": 9129,
+        "all": 9129
+      },
+      {
+        "t": 848621,
+        "perBackend": 9173,
+        "all": 9173
+      },
+      {
+        "t": 849693,
+        "perBackend": 9212,
+        "all": 9212
+      },
+      {
+        "t": 850755,
+        "perBackend": 9252,
+        "all": 9252
+      },
+      {
+        "t": 851820,
+        "perBackend": 9294,
+        "all": 9294
+      },
+      {
+        "t": 852875,
+        "perBackend": 9337,
+        "all": 9337
+      },
+      {
+        "t": 853943,
+        "perBackend": 9375,
+        "all": 9375
+      },
+      {
+        "t": 854996,
+        "perBackend": 9419,
+        "all": 9419
+      },
+      {
+        "t": 856057,
+        "perBackend": 9456,
+        "all": 9456
+      },
+      {
+        "t": 857114,
+        "perBackend": 9500,
+        "all": 9500
+      },
+      {
+        "t": 858168,
+        "perBackend": 9540,
+        "all": 9540
+      },
+      {
+        "t": 859238,
+        "perBackend": 9580,
+        "all": 9580
+      },
+      {
+        "t": 860296,
+        "perBackend": 9617,
+        "all": 9617
+      },
+      {
+        "t": 861354,
+        "perBackend": 9659,
+        "all": 9659
+      },
+      {
+        "t": 862420,
+        "perBackend": 9701,
+        "all": 9701
+      },
+      {
+        "t": 863493,
+        "perBackend": 9741,
+        "all": 9741
+      },
+      {
+        "t": 864554,
+        "perBackend": 9777,
+        "all": 9777
+      },
+      {
+        "t": 865623,
+        "perBackend": 9818,
+        "all": 9818
+      },
+      {
+        "t": 866689,
+        "perBackend": 9862,
+        "all": 9862
+      },
+      {
+        "t": 867754,
+        "perBackend": 9907,
+        "all": 9907
+      },
+      {
+        "t": 868819,
+        "perBackend": 9948,
+        "all": 9948
+      },
+      {
+        "t": 869887,
+        "perBackend": 9988,
+        "all": 9988
+      },
+      {
+        "t": 870960,
+        "perBackend": 10027,
+        "all": 10027
+      },
+      {
+        "t": 872025,
+        "perBackend": 10063,
+        "all": 10063
+      },
+      {
+        "t": 873098,
+        "perBackend": 10111,
+        "all": 10111
+      },
+      {
+        "t": 874165,
+        "perBackend": 10152,
+        "all": 10152
+      },
+      {
+        "t": 875283,
+        "perBackend": 10199,
+        "all": 10199
+      },
+      {
+        "t": 876354,
+        "perBackend": 10243,
+        "all": 10243
+      },
+      {
+        "t": 877421,
+        "perBackend": 10287,
+        "all": 10287
+      },
+      {
+        "t": 878494,
+        "perBackend": 10334,
+        "all": 10334
+      },
+      {
+        "t": 879558,
+        "perBackend": 10374,
+        "all": 10374
+      },
+      {
+        "t": 880625,
+        "perBackend": 10415,
+        "all": 10415
+      },
+      {
+        "t": 881696,
+        "perBackend": 10450,
+        "all": 10450
+      },
+      {
+        "t": 882761,
+        "perBackend": 10493,
+        "all": 10493
+      },
+      {
+        "t": 883829,
+        "perBackend": 10535,
+        "all": 10535
+      },
+      {
+        "t": 884891,
+        "perBackend": 10574,
+        "all": 10574
+      },
+      {
+        "t": 885956,
+        "perBackend": 10611,
+        "all": 10611
+      },
+      {
+        "t": 887022,
+        "perBackend": 10649,
+        "all": 10649
+      },
+      {
+        "t": 888079,
+        "perBackend": 10688,
+        "all": 10688
+      },
+      {
+        "t": 889147,
+        "perBackend": 10731,
+        "all": 10731
+      },
+      {
+        "t": 890207,
+        "perBackend": 10764,
+        "all": 10764
+      },
+      {
+        "t": 891272,
+        "perBackend": 10799,
+        "all": 10799
+      },
+      {
+        "t": 892340,
+        "perBackend": 10834,
+        "all": 10834
+      },
+      {
+        "t": 893407,
+        "perBackend": 10869,
+        "all": 10869
+      },
+      {
+        "t": 894477,
+        "perBackend": 10903,
+        "all": 10903
+      },
+      {
+        "t": 895551,
+        "perBackend": 10940,
+        "all": 10940
+      },
+      {
+        "t": 896614,
+        "perBackend": 10977,
+        "all": 10977
+      },
+      {
+        "t": 897677,
+        "perBackend": 11020,
+        "all": 11020
+      },
+      {
+        "t": 898874,
+        "perBackend": 11062,
+        "all": 11062
+      },
+      {
+        "t": 899947,
+        "perBackend": 11099,
+        "all": 11099
+      },
+      {
+        "t": 901014,
+        "perBackend": 11131,
+        "all": 11131
+      },
+      {
+        "t": 902079,
+        "perBackend": 11163,
+        "all": 11163
+      },
+      {
+        "t": 903144,
+        "perBackend": 11200,
+        "all": 11200
+      },
+      {
+        "t": 904220,
+        "perBackend": 11240,
+        "all": 11240
+      },
+      {
+        "t": 905287,
+        "perBackend": 11272,
+        "all": 11272
+      },
+      {
+        "t": 906366,
+        "perBackend": 11312,
+        "all": 11312
+      },
+      {
+        "t": 907445,
+        "perBackend": 11355,
+        "all": 11355
+      },
+      {
+        "t": 908512,
+        "perBackend": 11391,
+        "all": 11391
+      },
+      {
+        "t": 909577,
+        "perBackend": 11426,
+        "all": 11426
+      },
+      {
+        "t": 910720,
+        "perBackend": 11466,
+        "all": 11466
+      },
+      {
+        "t": 911792,
+        "perBackend": 11505,
+        "all": 11505
+      },
+      {
+        "t": 912864,
+        "perBackend": 11548,
+        "all": 11548
+      },
+      {
+        "t": 913932,
+        "perBackend": 11591,
+        "all": 11591
+      },
+      {
+        "t": 915007,
+        "perBackend": 11635,
+        "all": 11635
+      },
+      {
+        "t": 916080,
+        "perBackend": 11680,
+        "all": 11680
+      },
+      {
+        "t": 917147,
+        "perBackend": 11727,
+        "all": 11727
+      },
+      {
+        "t": 918214,
+        "perBackend": 11770,
+        "all": 11770
+      },
+      {
+        "t": 919285,
+        "perBackend": 11811,
+        "all": 11811
+      },
+      {
+        "t": 920362,
+        "perBackend": 11856,
+        "all": 11856
+      },
+      {
+        "t": 921436,
+        "perBackend": 11895,
+        "all": 11895
+      },
+      {
+        "t": 922511,
+        "perBackend": 11936,
+        "all": 11936
+      },
+      {
+        "t": 923583,
+        "perBackend": 11983,
+        "all": 11983
+      }
+    ]
+  },
+  "after": {
+    "approved": 6000,
+    "posted": 0,
+    "matches": 6000,
+    "stage_events": 18000,
+    "posted_cents": "0",
+    "recovered": 0,
+    "payer_approved": 6000
+  },
+  "logs": [],
+  "fingerprints": {
+    "4234085352": {
+      "family": "ledger.entries",
+      "text": "SELECT e.id, e.case_id, e.service_line_id, e.stage, e.amount_cents::text, e.evidence_kind, e.evidence_id, e.match_id, e.allocated, e.effective_on::text FROM led"
+    },
+    "cac1ac0ddf": {
+      "family": "cipher",
+      "text": "SELECT data_key_ref FROM practice WHERE id = $1"
+    },
+    "6f51bae801": {
+      "family": "exports",
+      "text": "SELECT d.id, d.kind FROM source_document d WHERE d.practice_id = $1 AND d.kind IN ('posting_export', 'eft_export') AND d.status = 'stored' AND d.scan_status = '"
+    },
+    "89140a1b95": {
+      "family": "ledger.lock",
+      "text": "SELECT pg_advisory_xact_lock(hashtextextended('ledger:' || $1::text, 0))"
+    },
+    "6b93a3ade1": {
+      "family": "responses",
+      "text": "SELECT r.id, r.submission_id, s.case_id, s.packet_version_id, r.kind, r.amount_cents::text, r.received_on::text, r.document_id, (SELECT jsonb_agg(jsonb_build_ob"
+    },
+    "e8e8d22f5c": {
+      "family": "remit.caseLines",
+      "text": "SELECT cl.case_id, cl.service_line_id, l.claim_id, c.remittance_id, l.line_no, l.procedure_code, l.modifiers, l.units::text AS units, l.service_date::text AS se"
+    },
+    "e6b5959fde": {
+      "family": "chain.order",
+      "text": "SELECT m.id, (extract(epoch FROM m.matched_at) * 1000000)::bigint::text AS matched_at FROM ledger_match m JOIN remittance r ON r.id = m.remittance_id LEFT JOIN "
+    },
+    "defa68ac89": {
+      "family": "ledger.matches",
+      "text": "SELECT m.id, m.kind, m.claim_id, m.posting_row_id, m.eft_row_id, m.provider_adjustment_id, m.remittance_id, m.service_line_id, m.outcome, m.level, m.allocated, "
+    },
+    "56095a69da": {
+      "family": "chain.reversals",
+      "text": "SELECT v.id, v.remittance_id, v.reversal_of_claim_id AS reversed_claim_id, r.bpr16_date::text AS paid_on, (extract(epoch FROM v.created_at) * 1000000)::bigint::"
+    },
+    "452e934c15": {
+      "family": "claimLines",
+      "text": "WITH RECURSIVE named (id) AS ( SELECT unnest($1::uuid[]) UNION SELECT k.id FROM claim k JOIN named n ON k.superseded_by_claim_id = n.id) SELECT s.id, s.claim_id"
+    },
+    "081876bf77": {
+      "family": "candidates.byControl",
+      "text": "SELECT c.id, c.remittance_id, r.bpr16_date::text AS paid_on, c.patient_control_number FROM claim c JOIN remittance r ON r.id = c.remittance_id WHERE c.practice_"
+    },
+    "08335e425a": {
+      "family": "candidates.byPatient",
+      "text": "SELECT c.id, c.remittance_id, r.bpr16_date::text AS paid_on, c.patient_control_number FROM claim c JOIN remittance r ON r.id = c.remittance_id WHERE c.practice_"
+    },
+    "4ed2d1afe1": {
+      "family": "insert.match",
+      "text": "INSERT INTO ledger_match (practice_id, kind, claim_id, posting_row_id, eft_row_id, provider_adjustment_id, remittance_id, service_line_id, outcome, level, alloc"
+    },
+    "61a3c8f342": {
+      "family": "insert.entry",
+      "text": "INSERT INTO ledger_entry (practice_id, case_id, service_line_id, stage, amount_cents, evidence_kind, evidence_id, match_id, allocated, effective_on, created_by,"
+    },
+    "62bcf1e3a1": {
+      "family": "remit.providerAdjustments",
+      "text": "SELECT a.id, a.remittance_id, a.reference, a.amount_cents::text AS amount_cents, r.bpr16_date::text AS paid_on, a.category FROM provider_adjustment a JOIN remit"
+    },
+    "6fb3815ea7": {
+      "family": "remit.claimInterest",
+      "text": "SELECT c.id, c.remittance_id, c.interest_cents::text AS interest_cents, r.bpr16_date::text AS paid_on FROM claim c JOIN remittance r ON r.id = c.remittance_id W"
+    },
+    "020eaeeb1c": {
+      "family": "postings.rows",
+      "text": "SELECT p.id, p.check_or_trace, p.amount_cents::text AS amount_cents, p.claim_reference, p.procedure_code, p.service_date::text AS service_date FROM posting_row "
+    },
+    "b577a0aa98": {
+      "family": "deposits.rows",
+      "text": "SELECT e.id, e.source_document_id, e.trace, e.amount_cents::text AS amount_cents, e.batch_reference FROM eft_row e WHERE e.practice_id = $1 AND NOT EXISTS (SELE"
+    },
+    "b93e42e456": {
+      "family": "settle.caseLines",
+      "text": "SELECT cl.service_line_id, cl.case_id, l.claim_id FROM case_line cl JOIN service_line l ON l.id = cl.service_line_id WHERE cl.practice_id = $1 ORDER BY l.claim_"
+    },
+    "de4c3e02c7": {
+      "family": "settle.amounts",
+      "text": "SELECT m.id AS match_id, coalesce(p.amount_cents, e.amount_cents)::text AS amount_cents, r.bpr02_cents::text AS payment_cents, p.procedure_code, p.service_date:"
+    },
+    "4c546afa42": {
+      "family": "stages.select",
+      "text": "SELECT cl.service_line_id, ledger_line_stage(cl.service_line_id) AS ledger_stage, (SELECT s.stage FROM line_status s WHERE s.service_line_id = cl.service_line_i"
+    },
+    "c09e41a6f0": {
+      "family": "stages.insert",
+      "text": "INSERT INTO line_status (practice_id, service_line_id, stage, set_by, reason, reopened_from) VALUES ($1, $2, $3, $4, $5, $6)"
+    },
+    "7c99706b9e": {
+      "family": "notify.manual",
+      "text": "SELECT e.id, e.case_id, e.service_line_id, e.amount_cents::text AS amount_cents FROM ledger_entry e WHERE e.practice_id = $1 AND e.stage = 'recouped' AND e.crea"
+    }
+  }
+}

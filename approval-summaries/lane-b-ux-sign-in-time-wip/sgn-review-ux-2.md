@@ -1,0 +1,21 @@
+# sgn-review-ux-2 progress
+started; reading agent def, prior review, design
+- read: agent def, brand.md, design 6.1+9, prior review+UXS verifications, step-timer/notice/step-heading/arrival-focus at head
+- note: Start again is buttonVariants outline (design 6.1 says outline, not link-styled)
+- composites in uxrev2-comp (before row/after row; 1280 crop x380-900, 1280-dark, 390) built by uxrev2-bin/comp.py
+- seen: mfa.warning (ok; outline Start again 105x36ish; neutral Alert, no emphasis), mfa.default (sentence fine)
+- dark (advisory, pre-existing): sign-in shell Paper bg in dark, lockup + h1 near-invisible (light text on Paper) before and after
+- seen: mfa.closed (Sign in stays primary; ok by design), enroll.warning t1/t2, enroll.closed t1/t2, register-key.warning (UXS-04 note present, ok)
+- FINDING candidate: enroll.closed - setup key + otpauth link still live-looking right under 'This step has closed.'; 'This setup key no longer works' only in region below fold at 1280x800 and 390 -> should-fix (cue lacks note)
+- enroll warning region below 800px fold at 1280 (accepted R-03)
+- seen: restarted-kept (no ring after click focus: ok), step-expired-chosen/temporary (strings match 6.1, ring visible), hardware-key.reason-step-expired, reason-restarted, new-password.invited-staff (Step 1 of 3), error-mismatch
+- contrast: marker slate on paper 5.85 light OK; dark marker A7B1C2 on paper 1.97 (advisory, shell bug pre-existing: h1 1.02)
+- Start again: buttonVariants outline h-9 (36px) target ok; global :focus-visible outline brand.css:52 ok
+- seen: enroll.default, register-key.loading, enroll.error, mfa.error
+- CANDIDATE: mfa.error/enroll.error after server refusal sentence reads 'This step closes within 3 minutes.' (default read 'stays open for 3 minutes') -> sentence changes on a refusal despite step-timer.tsx:134-141 comment; investigating tour spec + why
+- mfa/enroll.error 'within 3 minutes' explained: tour goto(route) after loading shot -> reload >5s in -> UXS-03 phrase, by design. NOT a finding
+- register-key.error.390 'closes within 15 minutes' (fresh phone load) vs 1280 'stays open for 15' - true, by design 6.1; not raised
+- seen: step-expired-kept, register-key.error
+- seen rest (montage _rest.png): sign-in.default, new-password.default/error-policy, mfa.loading, register-key.default, reason-restarted t2: no issue
+- FINAL findings: F1 should-fix enroll closed cue lacks dead-key note (step-timer.tsx:80, enroll/page.tsx:33-40); F2 nit advisory dark marker 1.97:1 on paper (step-heading.tsx:15, cause layout.tsx:11)
+- DONE, returning

@@ -255,6 +255,12 @@ above the setup key, so the person reads it before they start copying. The steps
 `/sign-in/enroll`, `/sign-in/mfa` and `/sign-in/register-key`. Not `/sign-in` (no step is open yet) and not
 `/sign-in/hardware-key` (one ceremony).
 
+A page rendered after its step began (a reload, a return, a phone that discarded the tab) states the time left by the
+server's count for that request instead, once `closesIn` is more than five seconds below the limit: "This step closes
+within 2 minutes.", the minutes rounded up after "within", true for as long as it stands (PR #92's review UXS-03,
+section 9). Within the warning the first render shows the warning's phrase; the status stays empty until the browser
+counts.
+
 `register-key/page.tsx` is not in the queue's file list; it is added (the three scouts agree; not a #42 file, not in PR
 7's list). Without it, key registration is a 15-minute limit with no statement and no warning, and an invited staff
 member reads "Step 2 of 2" and then meets a third step (2.7).
@@ -402,13 +408,27 @@ keeps (the email), and, on enrolment, that starting again gives a new setup key.
 
 ### 2.6 Start again, with the email kept
 
-**Start again is a link**, `<Link href="/sign-in?reason=restarted">` styled with `buttonVariants({ variant: 'outline' })`,
-inside the region. It is the same element in the warning and the closed phase (review R-02): one JSX position, after
-the words, with no `key` and no branch around it, so React keeps the node and only the text nodes before it change. A
-keyboard or screen-reader user who tabbed to it during the warning still holds it at zero (WCAG 2.4.3); a new `<Link>`
-would drop the focus to `body`. Harness test 2b holds it. A link because it goes to another page; a GET with no side effect, so Next's prefetch is harmless; it
-works without JavaScript; it needs no route, no audit event and no rate limit, and it re-issues nothing (2.11). The old
-pending cookie it leaves is harmless: the first step overwrites or clears it (below), and it dies at its Max-Age.
+**Start again is a POST that ends the step** (PR #92's security review, SEC-01, section 9; this replaces the link this
+section first chose). `<form action={restart}><button type="submit" className={buttonVariants({ variant: 'outline' })}>`,
+inside the region, where `restart` is the server action `restartStep` (`app/sign-in/actions.ts`) the four pages pass.
+It runs the public route `sign_in.restart` (`lib/routes/sign-in.ts`, `kind: 'action'`, `input: z.object({})`) through
+`runSignInStep`, as every sign-in step does: the origin check, the `mfa` bucket counted by the pending step it names
+(`pendingAccount`, never an account), no request key and no audit event, as a step closing at its limit writes none.
+Its handler reads the pending step, deletes `tp_sign_in` (`clearPending`, never `clearKeptEmail`), gives key
+registration's grant back to the provider (`SignInFlow.abandon`, which calls `provider.release` as every other way out
+of that step does), and answers `/sign-in?reason=restarted`; a refusal (its rate limit) still goes there, where the
+first step ends what this could not. So the setup key, the code's challenge and the key-registration grant open
+nothing for whoever presses Back or opens the step's address next at a shared computer; Next's router cache is
+dropped by the action's cookie write, so Back asks the server, which sends it to `?reason=step_expired`. The link
+first chosen left them usable to the limit, and the premise "the first step overwrites or clears it" held only if
+someone submitted one. A GET that ends the step was refused: Next prefetches a link in view, which would end a live
+step during its warning, and another site's top-level link (SameSite=Lax) could end someone's step. A route handler was
+refused: the steps are server actions through their routes (the registry test holds it), and a handler adds a path and
+a redirect for one button. It is the same element in the warning and the closed phase (review R-02): one JSX position,
+after the words, with no `key` and no branch around it, so React keeps the form and its button and only the text nodes
+before them change. A keyboard or screen-reader user who tabbed to it during the warning still holds it at zero (WCAG
+2.4.3). Harness test 2b holds it. Without JavaScript no warning comes, so no Start again either (the next press after
+the limit starts again).
 
 **A new reason, `restarted`,** appended to `SIGN_IN_REASONS` (`lib/routes/sign-in.ts:23-35`) and to `REASONS`
 (`app/sign-in/notice.tsx:6-18`), because a person who starts again during the warning has not had a step close, and
@@ -424,7 +444,7 @@ pending cookie it leaves is harmless: the first step overwrites or clears it (be
 | Flags | `HttpOnly; Secure; SameSite=Lax; Path=/`, through the adapters unchanged (`lib/http/next.ts:25`, `:27-38`; `lib/http/handler.ts:47-49`) | 2.11 |
 | Lifetime | Seal expiry and Max-Age at `startedAt + stepSeconds(step) + KEPT_EMAIL_EXTRA_SECONDS`, absolute: 1,080 s on the three challenge steps, 1,800 s on key registration | Counted from the step's start, so no rewrite extends it. Fifteen minutes past the step: shorter fails the person who left to find their phone or the invitation email, the case the feature is for; longer is a new visit, not a restart |
 | Written | Only in `settle`'s `pending` branch, for the steps it can produce after the password: `new_password`, `mfa_setup`, `mfa`, `register_key` | Each exists only after the provider accepted the password. **Never in `writePending`**, which also writes the hardware-key step for any typed address (`:276`; `lib/auth/sign-in.ts:230-237`) |
-| Cleared | By a new helper `clearSignIn` (both cookies): in `writeSession` (`pending.ts:33-37`); in `settle`'s `locked`, `hardware_key_required` and `key_registered` branches (`:109-122`); by every first-step result that is not `pending`; and by `hardwareKeyOptions` in every case | Wherever the attempt ends, except at expiry, which is what the cookie is for: `settle`'s `expired` branch keeps calling `clearPending` (the pending cookie only) |
+| Cleared | By a new helper `clearSignIn` (both cookies): in `writeSession` (`pending.ts:33-37`); in `settle`'s `locked`, `hardware_key_required`, `key_registered` and `no_account` branches (`:109-122`; `no_account` added for SEC-02: an account disabled or removed after the password); by every first-step result that is not `pending`; and by `hardwareKeyOptions` in every case | Wherever the attempt ends, except at expiry and Start again, which are what the cookie is for: `settle`'s `expired` branch and `sign_in.restart` call `clearPending` (the pending cookie only) |
 | Read | Only by `signInPage`, and only when `reason` is `step_expired` or `restarted`: it returns `{ reason, email, use }` when the cookie opens **and** its email passes `emailAddress` (`lib/routes/schemas.ts:22`) and `use`, when present, is one of the two (absent after an everyday code step, or an active staff member's key registration, where no password changed in this attempt; critic C-07) | Plain `/sign-in` and every other reason fill nothing, which narrows what a passer-by sees |
 | Shown | Once, as the Email field's `defaultValue` (`app/sign-in/page.tsx:28`; `Field` passes it through with its other props, `components/field.tsx:82`, `:92`). The notice says the email is filled in and never prints the address, so it is never in a live region (review R-15) | Never in a URL, an `ActionState`, a step timer prop, a `data-` attribute, the notice, a log or an error |
 
@@ -483,8 +503,9 @@ leaks nothing: the cookie exists only after the password was proven, and only th
 
 **On arrival, the notice takes the focus once** (scout-timer 2.7). Next 16 leaves focus where it was on navigation, and
 a `role="status"` notice already present at load is not reliably read. For `step_expired` and `restarted` only, the
-notice is wrapped in `ArrivalFocus` (`components/arrival-focus.tsx`, new, client): a `<div tabIndex={-1}
-data-slot="arrival-focus">` focused once on mount, with the focus ring classes `RefusalTakeover` uses
+notice is `ArrivalNotice` (`components/arrival-focus.tsx`, new, client; PR #92's review UXS-02, section 9): the Alert
+itself, `role="note"` (never also a live region: a status inserted already filled and then focused can be read twice,
+VoiceOver with Safari), `tabIndex={-1}`, `data-slot="arrival-focus"`, focused once on mount, with the focus ring classes `RefusalTakeover` uses
 (`components/action-form.tsx:163`), and with its guard (review R-13): it focuses only when nothing holds the focus
 (`document.activeElement` is `null` or `body`, as `RefusalTakeover` checks at `:158`). After Next's client redirect the
 pressed button is gone and the focus is on `body`, and after a full load it is too, so the notice takes it; a person who
@@ -638,7 +659,8 @@ by Tab after the button. Whether a real iOS and Android keyboard leave the cue i
 | The region above the form, so a phone keeps it in view (review R-03) | Insert the warning between the sentence and the form | Inserting it pushes the field down while the person types, and a browser may then leave the field under the keyboard; reserving its space from the first render leaves an empty box over the work |
 | Scroll the warning into view, or pin it to the bottom of the screen | `scrollIntoView`, or `position: sticky; bottom: 0` | Scrolling moves the page under a typing person (and is refused, 2.5); on iOS, and on Chrome since it resizes only the visual viewport, a bottom-pinned box sits behind the keyboard anyway |
 | A same-page refusal at zero (`{ error, final: true }`) | The press after zero refused in place | Two presses where one does (refused, then Start again), and the closed words said twice, once assertively; the redirect leaves ActionForm untouched |
-| Start again as a form (POST) that clears the step | A server action | More surface for no gain: a mutation, a request key and an audit event to do what the next first step already does |
+| Start again as a link to `/sign-in?reason=restarted` (this design's first choice) | A GET with no side effect | Leaves the step the person chose to leave usable to its limit: at a shared computer Back reopens the setup key, the code's challenge or key registration's grant (PR #92's review SEC-01; 2.6 takes a POST that ends it) |
+| A GET route handler that ends the step | A link that clears the cookie | A GET that changes state: Next prefetches a link in view, which would end a live step during its warning, and another site's top-level link (SameSite=Lax) could end someone's step |
 | A real-clock knob for tests (a configured offset, or a short-challenge persona in the dev store) | | A time override of a security limit in the production artifact (`services.ts`, `config.ts`, #42 files), or a test branch in `dev-provider.ts` and `dev-store.ts` (PR 7's); 4.1 tests the server with the injected clock it already has, and the browser with `page.clock` |
 | The marker as its own line above the heading, in UX-128's words | "Step 1 of 2: choose a password" over "Choose a password" | Prints the step's name twice; the caption inside the heading says the same words to a screen reader and once to the eye |
 | Number the steps by the URL or the page | | The page cannot know the path; a URL could be crafted to show a wrong count |
@@ -1317,16 +1339,20 @@ R-06); `pnpm lint:copy` runs on them. None holds an apostrophe, so none needs �
 | Where | Before | After |
 | --- | --- | --- |
 | The limit, before the work: `/sign-in/new-password`, `/sign-in/enroll` (above the setup key), `/sign-in/mfa` | (none) | "This step stays open for 3 minutes." |
+| The same sentence on a page rendered later in the step (a reload, a return), more than five seconds below the limit by the server's count (UXS-03) | (none) | "This step closes within 2 minutes." (the minutes left, rounded up: "within 3 minutes" to "within 2 minutes"; "within 11 minutes" on key registration), or within the warning its phrase |
 | The same sentence's place during the warning (the visible cue, not announced; 2.4) | (none) | "This step closes within a minute." ("within 2 minutes" on key registration) |
 | The same sentence's place once closed | (none) | "This step has closed." |
+| The same, enrolment's own (`cue.closed`, UXR2-01), directly above the setup key | (none) | "This step and its setup key have closed." |
 | The same, `/sign-in/register-key` | (none) | "This step stays open for 15 minutes." |
 | The warning's title (`AlertTitle`), at `warningSeconds` left | (none) | "This step closes within a minute" (the three 3-minute steps); "This step closes within 2 minutes" (key registration) |
 | The warning's words (`AlertDescription`) | (none) | "If you need more time, start again: your email is kept, and you type your password again." |
 | The same, enrolment's note after it (`notes.warning`) | (none) | "Starting again gives you a new setup key: replace this one in your authenticator app." |
+| The same, key registration's note after it (`notes.warning`, UXS-04) | (none) | "Starting again also asks for a code from your authenticator app." |
 | The closed title, at zero | (none) | "This step has closed" |
 | The closed words | (none) | "Start again: your email is kept, and you type your password again." |
 | The same, enrolment's note after it (`notes.closed`) | (none) | "This setup key no longer works: starting again gives you a new one." |
-| The link in the warning and the closed state (`buttonVariants({ variant: 'outline' })`) | (none) | "Start again" (to `/sign-in?reason=restarted`) |
+| The same, key registration's note after it (`notes.closed`, UXS-04) | (none) | "Starting again also asks for a code from your authenticator app." |
+| The button in the warning and the closed state (`buttonVariants({ variant: 'outline' })`, a form's submit; SEC-01) | (none) | "Start again" (ends the step, then `/sign-in?reason=restarted`) |
 | Step marker, the caption over each heading (2.7) | (none) | "Step 1 of 2", "Step 2 of 2" (invited customer: new password, enrolment); "Step 1 of 3", "Step 2 of 3", "Step 3 of 3" (invited staff member: new password, enrolment, key registration); none elsewhere |
 | `/sign-in?reason=step_expired`, title | "Start again" | "Sign-in step closed" |
 | The same, words, with the email kept | "That sign-in step expired. Start again from your email and password." | "That sign-in step closed. Your email is filled in: type your password to start again." |
@@ -1345,8 +1371,8 @@ R-06); `pnpm lint:copy` runs on them. None holds an apostrophe, so none needs �
 | Moment | Heard |
 | --- | --- |
 | A step page loads | its heading, "Step 1 of 2: Choose a password" on a numbered step (the `sr-only` ": " joins caption and name; `getByRole('heading', { name })` asserts it), then in reading order "This step stays open for 3 minutes.", the form; the empty status region says nothing and takes no space |
-| The warning (polite, atomic, said once, never while hidden) | "This step closes within a minute. If you need more time, start again: your email is kept, and you type your password again. Start again, link" (and enrolment's note before the link) |
-| Zero | "This step has closed. Start again: your email is kept, and you type your password again. Start again, link" |
+| The warning (polite, atomic, said once, never while hidden) | "This step closes within a minute. If you need more time, start again: your email is kept, and you type your password again. Start again, button" (and enrolment's or key registration's note before the button) |
+| Zero | "This step has closed. Start again: your email is kept, and you type your password again. Start again, button" |
 | Arrival on `/sign-in` after either | the focus on the notice: "Sign-in step closed. That sign-in step closed. Your email is filled in: type your password to start again. Use the password you chose: the temporary one no longer works."; Tab then reaches Email (filled) and Password (empty) |
 | Arrival on `/sign-in/hardware-key` with either reason | the focus on the notice: "Sign-in step closed. That sign-in step closed. Start again with your hardware key." |
 | The sentence's cue changing at the warning or at zero | nothing: it is not a live region; the region says it, once. Read line by line, the sentence says the current state |
@@ -1359,7 +1385,8 @@ R-06); `pnpm lint:copy` runs on them. None holds an apostrophe, so none needs �
 | --- | --- | --- |
 | "This step closes in 1 minute." | "This step closes within a minute" (title) | The warning stays on screen for the whole minute; "in 1 minute" is false a second later, and changing it each second is the ticking count 2.4 rejects. "within" stays true until zero. "a minute", not "1 minute": the house's phrase (`lib/screening/sent.ts:28`), and it reads as speech where "within 1 minute" reads as a readout; counts of two or more stay digits ("within 2 minutes"). A title, so no full stop (the Alert's titles carry none); the sentence's cue (2.4) is a sentence, so it carries one |
 | "Start it again to get more time." | "If you need more time, start again: your email is kept, and you type your password again." | Starting again does not add time to this step: it costs the password (and a new code) and keeps the email. Saying both is what lets a person decide; the house's clause form ("{instruction}: {what follows}") as in ADR 0077's words |
-| A "Start again" button | A link, styled as an outline button, with the same words | It goes to another page with no side effect (2.6): a link is the right element, works without JavaScript and needs no route |
+| A "Start again" button | A button, in a form whose action ends the step, styled as an outline button, with the same words | First taken as a link (no side effect); PR #92's review (SEC-01) showed the step must end when the person leaves it, so it is a POST, and a button is the element for one (2.6) |
+| (none: UXS-03) | "This step closes within 2 minutes." on a page rendered after the step began | The open sentence would claim the full limit with less left; "within" with the minutes rounded up stays true while it is on screen, as the warning's title does; rounded down ("stays open for 2 more minutes") it would turn false while it stood, and changing it is the ticking count 2.4 rejects |
 | "That sign-in step expired. Start again from your email and password." (today's, kept by the review) | "That sign-in step closed. …" and the kept-email and password lines | One verb for one event across the warning, the closed state and the notice; the person's email is now filled in, so "from your email" would be false |
 | UX-128: "Step 1 of 2: choose a password" as a line | The caption "Step 1 of 2" over the heading, read with it as "Step 1 of 2: Choose a password" | The step's name said once (2.7); the screen reader hears the review's words |
 
@@ -1796,3 +1823,28 @@ that are the founder's are unchanged from section 7.2: UX PR 66's 15-minute Cogn
 trade-off, with its recommendation), the stale "three days" comment in `identity.ts` (item 1, for Lane A or #42), and
 Lane A's staging check of `AssociateSoftwareToken`'s session (item 7). The privacy notice's treatment of strictly
 necessary cookies stays with #51 and counsel (R-10).
+
+**PR #92's review** (2026-11-01, on `e4e05a0d`: a security lens and a UX lens, then a skeptic on each finding, reading
+the code). Three security findings and five UX findings; each skeptic's verdict and fix decided the disposition, its fix
+taken where it was better. Applied in the worktree before the suite; no migration, no new dependency, no infrastructure
+or Cognito change, and no #42 file.
+
+| Id | Severity (reviewer → skeptic) | Disposition | Where |
+| --- | --- | --- | --- |
+| SEC-01 | blocking → should-fix | **Applied, the safer option.** Start again was a GET link that cleared nothing, so the step the person chose to leave (enrolment's setup key, the code's challenge, key registration's grant) stayed usable to its limit; at a shared computer a passer-by pressing Back during the warning's remaining minute or two could register their own key on a staff account. The skeptic narrowed the window (Start again appears only in the warning or once closed) but upheld it. Start again is now a POST: a form whose action, `restartStep`, runs the public route `sign_in.restart` (origin-checked, the `mfa` bucket by the pending step, no audit event), deletes `tp_sign_in`, keeps `tp_sign_in_email`, gives key registration's grant back (`SignInFlow.abandon`, the skeptic's "if cheap": one `release`, as every other exit of that step makes) and goes to `?reason=restarted`. Mechanism: a server action, not a route handler (the steps' own adapter, the registry test's rule, and the button works from the browser's form) and never a GET (prefetch, and a cross-site top-level GET under SameSite=Lax, would end someone's step). One JSX position in both phases (R-02 holds). Tests: the routes' database test (each step's page and press, and both key ceremonies, start again after it; the grant given back; the email kept), the harness (a button, no link, its action run once; the focused button kept across zero), the e2e (Start again during the warning, then Back and the step's address on new password and enrolment land on `step_expired` with no setup key) | 2.6; 2.10; 6.1; ADR 0081 D6, alternatives, consequences |
+| SEC-02 | should-fix → nit | **Applied.** `settle`'s `no_account` (an account disabled or removed after a proven step) now calls `clearSignIn`; `key_not_registered` keeps the step. A database test primes a code step, disables the account, answers a valid code and finds both cookies gone and no email filled | 2.6 cookie table; ADR 0081 D6 |
+| SEC-03 | nit → not a defect | **Not applied.** The skeptic holds on the code: only `newPassword` returns `invalid_password`, and its one caller (`chooseNewPassword`) always passes `from`; the two settle paths without `from` (the first step, `hardwareKeyOptions`) cannot receive it. A hypothetical later caller is UX PR 7's to type: the skeptic's narrower form (make `from` required for that action) is noted for it | 3.5 (UX PR 7) |
+| UXS-01 | should-fix → not a defect | **Not applied.** The skeptic holds: the stale key step's redirect to `/sign-in?reason=step_expired` is the base's (the words then said "expired"), this PR adds no wrong instruction, and design 2.6 and 3.5 give the key surface's redirects to UX PR 7 by ruling. Its one residual nit is taken: the fix lives in `lib/routes/sign-in.ts` (`verifyHardwareKey`'s `RESTART` and `settle`'s `expired` when `from?.step === 'key'`), not `components/hardware-key.tsx`, for UX PR 7 with the finding's `KEY_RESTART`, a database test and the tour state reached by the flow | 3.5 (UX PR 7) |
+| UXS-02 | should-fix → should-fix | **Applied, with the skeptic's correction.** The restart notice was a `role="status"` inside a focused wrapper, so a client navigation could read it twice. It is now `ArrivalNotice`: the Alert itself focused (`tabIndex={-1}`, the focus ring), with an explicit `role="note"` (the Alert's default would be `alert`), and no live region; every other reason stays a polite status with no focus. Tests: the notice's unit test (one role, a note, no status or `aria-live`, `tabindex="-1"` on the restart reasons only), the harness's arrival test, and the e2e's focused-notice checks. For audit #103's manual list: heard once after Start again and after a closed step's press, with VoiceOver and Safari and with NVDA and Chrome | 2.6 "On arrival"; ADR 0081 D6, Not verified here |
+| UXS-03 | should-fix → should-fix | **Applied.** The first render now takes its phase from the server's `closesIn` for that request (the same props on server and browser, so no hydration change), and the open sentence states the limit only while `closesIn` is within five seconds of it (the time from challenge to page). Otherwise it says "This step closes within N minutes.", the minutes rounded up. The brief suggested rounding down; that would say "stays open for 2 more minutes" and turn false within the minute while the sentence stood still, so "within" and rounding up, the warning's own form, is the one that never claims more time than is left while it is on screen. The status stays empty until the browser's first count: no ticking clock and nothing said at load. Tests: the timer's unit test (fresh, five seconds in, 174.999 s, 120 s, 90 s, 60.001 s, 45 s in the warning, 630 s on key registration) and the harness (a mount 90 s from closing says "within 2 minutes", flips nothing and says nothing until the warning) | 2.3; 6.1; ADR 0081 D3 |
+| UXS-04 | nit → nit | **Applied.** Key registration passes `notes`: "Starting again also asks for a code from your authenticator app." after the warning's and the closed words; the shared sentence is unchanged (on enrolment, code and new password no extra code is asked). The e2e asserts it at the warning | 6.1 |
+| UXS-05 | nit → nit | **Applied, with the skeptic's riskier state.** The invited viewer's e2e asserts at 390 by 500 px, "New password again" focused, that the sentence's phrase stays in view during the warning, and again after two passwords that differ were refused (the summary between the sentence and the fields) | 4.4; ADR 0081 tests |
+
+**PR #92's second UX review** (2026-11-02, on `b8654622`: a UX lens, then a skeptic on each finding, reading the code).
+Two findings; each skeptic's verdict and fix decided the disposition. No migration, no new dependency, no infrastructure
+or Cognito change, and no #42 file.
+
+| Id | Severity (reviewer → skeptic) | Disposition | Where |
+| --- | --- | --- | --- |
+| UXR2-01 | should-fix → should-fix | **Applied, the skeptic's fix.** Once enrolment had closed, the setup key and its authenticator link sat directly under "This step has closed." and still looked usable; the words saying the key no longer works were in the status below the form, out of view on a phone. `StepTimerProps` gains `cue?: { readonly closed?: string }`; `limitPhrases` takes `cue?.closed ?? 'This step has closed.'`, and enrolment passes "This step and its setup key have closed.", which shares the sentence's cell. The cell is sized by its longest phrase, so the e2e asserts it stays one line at 1280 and at 390 px (no blank line under the open phrase) and that enrolment's closed sentence reads the new words; the status's title and words are unchanged. Tests: the timer's unit test (the cue replaces the closed phrase only, and is rendered in the cell from the first render) and the invited viewer's e2e | 6.1 |
+| UXR2-02 | should-fix → not a defect | **Not applied.** The finding assumed a dark theme a person could switch to; the app has no switch (ADR 0056), so the state it describes is not reachable. An advisory for the dark-mode work: check the status's Alert and the sentence's cell in dark when that work lands | (advisory, dark-mode work) |

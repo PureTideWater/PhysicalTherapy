@@ -33,7 +33,7 @@ where security and convenience pull apart, the safer option is taken.
 | # | Decision | Options | Chosen | Why |
 |---|---|---|---|---|
 | D1 | SDK version for #87 | 1.3.0 (bot); hold 0.x | `@anthropic-ai/sdk ^1.3.0` | Newest, 8+ days old (published 2026-10-23T23:31Z, `npm view` 17:02Z); every change checked against the gateway (§3); the 0.x line gets no fixes. |
-| D2 | What the SDK may take from the environment (tracing, logging, host, headers) | leave the SDK defaults; off by env var; fixed on the client, and refused in configuration where no client option can fix it | `anthropicClient` (`anthropic.ts:46`) passes `baseURL: 'https://api.anthropic.com'`, `logLevel: 'off'`, `webhookKey: null` and `openTelemetry: { traces: false, propagation: false }`; `readGatewayConfig` (`config.ts:115-116`) refuses `ANTHROPIC_CUSTOM_HEADERS` on the Anthropic path; pinned by MOD-17/MOD-18 and a config test | Safer: ADR 0048:150-152 and PRD.md:583 forbid prompts and outputs leaving the product's own records. Without these, `…TRACES_CONTENT_MODE=content` puts prompts in spans, `ANTHROPIC_LOG=debug` logs every request body to the console (1.3.0 `client.mjs:156-162,821`; `internal/utils/log.mjs:90-107` masks only auth headers), `ANTHROPIC_BASE_URL` sends the key and prompts to another host (`client.mjs:102,147`), and `ANTHROPIC_CUSTOM_HEADERS` adds headers no client option can remove (`client.mjs:176-185`). A client option wins over every env var; an env var does not protect against a forgotten one; the one variable no option overrides fails closed at startup. All four reads exist in 0.131.0 too (review S1), so this hardens, not repairs. |
+| D2 | What the SDK may take from the environment (tracing, logging, host, headers) | leave the SDK defaults; off by env var; fixed on the client, and refused in configuration where no client option can fix it | `anthropicClient` (`anthropic.ts:46`) passes `baseURL: 'https://api.anthropic.com'`, `logLevel: 'off'`, `webhookKey: null` and `openTelemetry: { traces: false, propagation: false }`; `readGatewayConfig` (`config.ts:115-116`) refuses `ANTHROPIC_CUSTOM_HEADERS` on the Anthropic path; pinned by MOD-17/MOD-18 and a config test | Safer: ADR 0048:150-152 and PRD.md:583 forbid prompts and outputs leaving the product's own records. Without these, `…TRACES_CONTENT_MODE=content` puts prompts in spans, `ANTHROPIC_LOG=debug` logs every request body to the console (1.3.0 `client.mjs:156-162,821`; `internal/utils/log.mjs:90-107` masks only auth headers), `ANTHROPIC_BASE_URL` sends the key and prompts to another host (`client.mjs:102,147`), and `ANTHROPIC_CUSTOM_HEADERS` adds headers no client option can remove (`client.mjs:176-185`). A client option wins over every env var; an env var does not protect against a forgotten one; the one variable no option overrides is refused by configuration and fails closed: the web turns every model feature off when it first reads the model path, at its first model request (it logs `MODEL_PATH_UNAVAILABLE` once, shows the refusal as the reason on /console/models and keeps serving with hand entry); the evaluate-permitted task exits 2 and the evaluation CLI (`eval/cli.ts --provider configured`) throws, both before any call (corrected in A's fix round, ci-infra-r2-S1, SEC2-N1). All four reads exist in 0.131.0 too (review S1), so this hardens, not repairs. |
 | D3 | `@opentelemetry/api` | 1.10.0 (bot's lockfile); 1.9.1 (already locked) | 1.9.1, unchanged, plus a gateway devDependency `^1.9.1` for the tests | `pnpm install --lockfile-only` keeps 1.9.1 (scout trial 17:04:51Z); only the bot's lockfile moved it. Moving it re-keys vitest and runs all 7 shards for no gain. |
 | D4 | Record of the SDK change | new ADR 0089; amend ADR 0048 | Amend ADR 0048; release ADR 0089 | No new decision: the gateway's design is unchanged, the amendment records the tracing setting, API version, auth header and licence (§3.7). |
 | D5 | CDK versions (#88) | lib 2.274.0 + CLI 2.1146.1 (bot); newest usable | aws-cdk-lib `^2.275.0`, aws-cdk `^2.1146.1` now, `^2.1147.0` if built at or after 2026-11-02T18:57:11Z; constructs stays `^10.8.1` | Newest under the 3-day age; the lib and CLI move together (lib 2.275's assembly declares `minimumCliVersion` 2.1146.1). 2.1147.0's notes are already read (§4.3). |
@@ -119,11 +119,13 @@ Range `^1.3.0`; `pnpm install --lockfile-only` changes 2 files, 7+/6- in the loc
 and the snapshot gains `'@opentelemetry/api': 1.9.1`. Nothing else moves (scout trial, 17:04:51-17:05:01Z,
 `tmp/scout-sdk/trial.diff`). **This corrects item correction 4:** the replacement does not move `@opentelemetry/api`.
 
-Trust: 0.131.0, 1.0.0 and 1.3.0 all carry trusted-publisher SLSA provenance from `anthropics/anthropic-sdk-typescript`
-`refs/heads/main`. From 1.0.0 the publishing workflow moved from `.github/workflows/create-releases.yml` to
-`publish-npm.yml` in the same repository, with a new trusted-publisher config id (registry attestations and `npm view
-_npmUser`, fold 17:51:39Z; review N2 17:38Z). Same repository and branch, still provenance: no downgrade, and
-`toolchain:check`'s trust rule passed (`tmp/scout-sdk/toolchain.log`). The PR A description says so.
+Trust: 0.131.0 (from `.github/workflows/create-releases.yml`) and 1.0.0 and 1.3.0 (from `publish-npm.yml`) all carry
+trusted-publisher SLSA provenance from `anthropics/anthropic-sdk-typescript` `refs/heads/main`. The publishing workflow
+moved to `publish-npm.yml` in the same repository, under a new trusted-publisher config id, at 0.132.1 (published
+2026-10-08T03:20:39Z), not at 1.0.0; every release since has used it (registry attestations read by A's two reviews,
+2026-11-01 20:28-20:29Z; corrected in A's fix round, ci-infra-r2-N2, SEC2-N3). Same repository and branch, still
+provenance: no downgrade, and `toolchain:check`'s trust rule passed (`tmp/scout-sdk/toolchain.log`). The PR A
+description says so.
 
 ### 3.2 Every changelog and migration-guide item against the gateway
 Sources: `npm pack @anthropic-ai/sdk@{0.131.0,1.3.0}` (CHANGELOG.md 1-290 read whole); the migration guide
@@ -813,6 +815,10 @@ on the resolved head whenever a base merge-in carries a conflict resolution or a
 #42; A after #75, #84 or a MOD-row PR).
 
 ### 8.7 Merge order (LANES.md rule 6: the PR merged second resolves and keeps both)
+Superseded by Lane B's standing rule of 2026-11-01 20:36 UTC (status file): each PR merges when verified and green; the
+order applies only against a conflicting unmerged PR (A: #94, `packages/model-gateway/package.json`; B: C, the runbook's AWS
+paragraph; C: #86, ADR 0066).
+
 **First, for every merge (A, B and C):** while #42 waits on the founder's approval line, ask the orchestrator before
 merging any of them (item :178; status-file ORDER ASK (c), §8.0). A changes #42's files `pnpm-lock.yaml`, `test-matrix.md`,
 synth `matrix.ts` and `registry.ts`, and `watched-paths.txt` when it is regenerated; B and C change #42 files too

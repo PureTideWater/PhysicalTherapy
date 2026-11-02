@@ -1,0 +1,13 @@
+
+> therapy-platform@ lint /home/user/ci-findings-transport
+> tsx tools/lint/run.ts
+
+lint: 3 groups, largest heap first, within a memory budget of 11,629 MB (13,677 MB less 2,048 MB reserved) and 4 processes at once
+lint apps/web: started (heap 6,144 MB)
+lint packages: started (heap 4,096 MB)
+lint packages: passed, 501 files, 0 errors, 0 warnings, peak RSS 2,931 MB (heap 4,096 MB), 65.5 s
+lint .: started (heap 4,096 MB)
+lint apps/web: passed, 630 files, 0 errors, 0 warnings, peak RSS 3,797 MB (heap 6,144 MB), 85.4 s
+lint .: passed, 549 files, 0 errors, 0 warnings, peak RSS 2,988 MB (heap 4,096 MB), 64.4 s
+lint: passed, 1,680 files in 3 groups, 0 errors, 0 warnings, 129.9 s wall
+exit 0

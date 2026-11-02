@@ -1223,3 +1223,66 @@ HANDOFF.md; LANES.md rule 10).
   - schema-chain: SS-01 pushed 9777ddc0 (all green); now efb20704 (bce57f16 in), checks green through test:db; build
     and e2e next; waits for #42's #82-merged head.
 - **Next:** #86 merges first, then #75, #84, #83, #85; #42's push, then its suggested approval line for the founder.
+
+### 2026-11-02 01:00 UTC (Lane B's orchestrator): check-in 3
+- **Merged:** #83 (UX PR 4, the screening result on a phone) as 43565235, 2026-11-01 20:40 UTC (from 71536c60, under the
+  20:36 UTC rule); push runs green: ci 41348075952, mutation 41348076075, screening-capacity 41348076076.
+- **New PRs:** #90 (Dependabot A, the SDK major), #91 (C, group routing), #92 (UX PR 6, sign-in time), #93 (UX PR 9, home
+  figures), #94 (B, aws-cdk and minor-and-patch), #95 (#32, one unmapped plan).
+- **Ruling, 2026-11-01 20:36 UTC (Lane B's orchestrator): the merge rule.** A verified, green PR merges as soon as it is
+  ready; the section-6 order applies only between PRs that conflict with each other (the one merged second resolves).
+  Broadcast to 11 sessions (wf_0d9195c0-5f7); #83, ready and verified, was told to merge at once. Recorded in LANES.md
+  under the lapsed merge hold.
+- **Ruling, 2026-11-01 21:59 UTC (Lane B's orchestrator):** #85 waits for #75 only (it resolves #75's `uploader.tsx` and
+  contracts page, design 3.7); #84 resolves #85's test-matrix/registry overlap at its base merge. Told #85 and #84.
+- **New conflict pairs:** #94/#91 (`docs/runbooks/dependency-upgrades.md`'s AWS paragraph); #42/#94 (both app manifests
+  and the lockfile; the one merged second regenerates).
+- **ADR 0066 numbering** (in LANES.md's CI follow-ups row): #86 notice N32; P2 notices N33-N42, proposals P38-P42; P4
+  notices from N43, proposals P29-P37, P43, P44.
+- **#42 at the founder:** verified (21:14 UTC) at head 6c28d6a2; description posted (64,998 characters); `images` comment
+  posted. The suggested approval line (Tyler Williams, 2026-11-01, `b23fed0e…2518`, line 7334):
+  https://github.com/PureTideWater/PhysicalTherapy/pull/42#discussion_r4437376734. **Waiting on the founder to commit the
+  suggestion**; the schema chain opens nothing until #42 merges. 6c28d6a2 forwarded to the schema chain.
+- **#85's after-fix galleries** (a97d6011):
+  - 1280 px: https://claude.ai/artifact/3iCSW99opuzmyvS7eohkzz
+  - 390 px: https://claude.ai/artifact/C5TvJaTbjSfUjUEJ5Woxus
+  - 1280 px dark: https://claude.ai/artifact/7nVhABbzohq7uv8TPbfAP3
+- **The co-founder's question, 21:40 UTC:** "How can we speed this development up?" The orchestrator's recommendations:
+  - the founder approves suggestions the same day (#42's line gates the whole schema chain);
+  - move the repository to a GitHub organization on Team: 8-CPU runners (the real-size runs SUITE-CAP-1b waits for), a
+    merge queue, a private repository;
+  - start the people-only launch work now;
+  - a second wave of 8-10 sessions;
+  - CI as the full-suite record, with affected tests run locally: awaiting the co-founder's yes (a LANES.md rule 1
+    change);
+  - group same-code work.
+- **Stage per item:**
+  - pr42: verified; suggested approval line posted; waiting on the founder's commit;
+  - ci-pin-age: P2 re-read done (22 findings, 8 critic gaps; e71571bf), waits for #86; P4 re-read done (28 findings, 12
+    gaps; dafb08f1), building (wf_f8ce3582-ddc) on `co-001/ci-mutation-trigger` at 43565235;
+  - ci-images-digest (#86): reviews verified (CI S1; security S1/S2/S3; 6 nits; 2 refuted); fix round wf_401c564d-6b7
+    (base 43565235, T6 structural references, key-expression refusal, per-string byte sums, the pull-request runs'
+    build-record upload off: the event was public for 90 days; nits), full suite, trial merges against #42 and the co-001
+    heads, one push (R3);
+  - contract-phi-check (#75): fix 4 in (a year of 1900-2099 only; the seed's regression test); F4-1 found and fixed
+    (numbers joined by an underscore, a pipe or a backslash never matched: an older redaction gap); cf61a828 (WIP -7);
+    base merge 5 (43565235) wf_51ee625f-c33 running (at 22:12 UTC the suite green so far on 49156dd8); then one push;
+  - packet-day-counts (#84): fix round; resolves #85's test-matrix/registry overlap at its base merge; merges after #75;
+  - ux-screening-result-tables (#83): merged; idle at a clean point until #42 merges, then UX PR 4b (reuses TBL-08);
+  - ux-payer-response (#85): fix round pushed a97d6011 (13 findings and the nits fixed; re-review dry; unit 6,823, db
+    9,293, e2e 63); verified and ready (21:59 UTC, CI green); waits for #75 only;
+  - ux-home-figures (#93): draft at af3b6d89 (integration green; CAS-41 gate passes); base 43565235 in (87691be4, CI
+    green); reviews done (~21:40 UTC: 23 real findings, none blocking); fix round wf_768311e7-b88;
+  - suite-cap-3: design;
+  - ux-sign-in-time (#92): CI green on e4e05a0d; reviews done (SEC-01: Start again left the pending step live; SEC-02;
+    UXS-02 to UXS-05); fix round wf_aabddb31-b59, then the after-push shots and the UX review;
+  - ci-findings-transport: design done; builds early on a WIP ref from #86's fix-round head; its PR after #86 merges;
+  - unmapped-plan (#95): draft at 8517ee3a (local checks green: unit 6,845, catalog and cross-tenant); CI green; three
+    reviews running (wf_4b65ed61-326);
+  - redact-ssn-phone: design done, waits for #75 (idle by design);
+  - dependabot-batch: A #90 reviews done (0 blocking, 5 should fix, 13 nits), fix round wf_416e36ca-397; B #94 (484e9f06,
+    43565235 in, CI green) and C #91 (651f8b80, CI green) in reviews (wf_91a35eba-252);
+  - schema-chain: SS-01 efb20704 green (e2e 68); 1b ce408d2f (SS-01 in; db 9,600); wf_5566bd1c-8eb (1b's gate and the
+    interest fix's slice 4) and wf_a12c973a-c12 (#42's 6c28d6a2 and the base 43565235 into SS-01) running.
+- **Next:** each PR merges as soon as it is verified and green; between conflicting pairs, #86 before P2 and #91, #75
+  before #85 and #84; #42 at the founder's commit, then the schema chain.

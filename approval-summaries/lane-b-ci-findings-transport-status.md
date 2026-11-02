@@ -12,8 +12,32 @@ ADR expected (ADR 0071 amended; ADR 0066's Part 3 sentence at `:982-983` on #86 
 Open questions: none.
 
 <!-- RESUME-BLOCK -->
-## Current state (2026-11-01T17:47:59Z): design done; waiting on #86's merge
-- **Stage: design done (folded); waiting on #86.** Workflow wf_963d4fd3-855 (33 agents: author, adversarial reviewer
+## Current state (2026-11-02T02:03:24Z): built on WIP b9a83bd3; reviews next; PR after #86 merges
+- **Stage (2026-11-02T02:03:24Z): built.** Build workflow wf_68f40358-e23 (script archived): design §16 "Re-read at d257fe6d" written and
+  checked (5 checker gaps fixed: the runner count 22→23, notifyEnv's values order, runNotify's job argument, the cap case's
+  timing, line numbers); builder red first then green; whole-diff adversary 4 findings (S1 TEST_TIMEOUT_MS 30→45 s with its
+  comment, N1 `timeout -k 10 60` per download try in notify and handoff with stall tests, N2, N3), all fixed.
+  - WIP `co-001/wip-ci-findings-transport` at **b9a83bd3** (pushed through the hook): 1ec3508b red, 4e62201e typecheck, c9102267
+    ci green, 872d06ad docs, 5cf06451, 7068adea, 3c2ac310, b9a83bd3. Red: 22 failed of 165 on behaviour (T-E E2BIG on the
+    98,293-byte file); green 165/165; `pnpm test` 406 files, 6,935 passed, 4 skipped, 0 failed (at 872d06ad); typecheck, lint,
+    lint:logs, actionlint, actions:check (no new pin), toolchain:check (one unrelated warning: pnpm 10.34.9 newer) green;
+    synth --all wrote only RCC-08/expected.json (its assertion).
+  - Summary `approval-summaries/lane-b-ci-findings-transport-build-summary.md`, logs and built proof in
+    `approval-summaries/lane-b-ci-findings-transport-build/`. To do in the fix round: regenerate the §7 proof against the
+    timeout download block (a stall case in its fake gh); proposal: log one line per failed try with its exit status.
+  - #86 has still not pushed R3 or merged (PR head 83167b8f; WIP d257fe6d unchanged since ~22:00 UTC).
+- **Next:** the two adversarial reviews now, in fresh clones, on the WIP diff d257fe6d..b9a83bd3 (CI and test
+  infrastructure; security and supply chain); then, when #86 merges, merge the base in, push `co-001/ci-findings-transport`,
+  the draft PR (description from the template), subscribe; then the fix round, verification, merge.
+- **Stage (2026-11-02T01:01:53Z): build starting.** The session's worker restarted (~22:30-01:00 UTC; PostgreSQL down, setup re-run with
+  `co-001/wip-ci-findings-transport:/home/user/ci-findings-transport`). #86's fix round (wf_401c564d-6b7) has not pushed R3
+  to `co-001/ci-images-digest` (still 83167b8f), but its D1-D10 commits are on `co-001/wip-ci-images-digest` d257fe6d. The
+  WIP ref `co-001/wip-ci-findings-transport` is cut at d257fe6d and pushed (choice, recorded: that head already holds D1
+  structural T6 citations, D3 the byte sum per env string and D4 the findings rows' exact sites, which the orchestrator
+  named as the reason to wait for R3; whatever R3 adds beyond it is merged in, not rebuilt). Next: the build workflow
+  (re-read the design at d257fe6d, builder red first, whole-diff adversary), then merge #86's R3 / merge commit in, push
+  `co-001/ci-findings-transport`, draft PR.
+- **Earlier stage: design done (folded).** Workflow wf_963d4fd3-855 (33 agents: author, adversarial reviewer
   for CI/test infrastructure with the security lens on notify, two skeptics per finding, fold, completeness critic,
   second fold), archived as `workflow-scripts/lane-b-ci-findings-transport-design-wf_963d4fd3-855.js`.
   - Design `designs/lane-b-ci/ci-findings-transport.md` (SHA-256 `074b5432…`), review
@@ -57,3 +81,5 @@ Open questions: none.
 - 2026-11-01T16:59:14Z: session session_01FcouKQ3BjYKaME5uBLn8Lz started; setup OK (GitHub login PureTideWater); the design workflow starts.
 - 2026-11-01T17:47:59Z: design done (wf_963d4fd3-855; design 074b5432…, review 896aca92…); artifact transport chosen; waiting on #86.
 - 2026-11-01T20:37:07Z: the orchestrator ruled: build early on a WIP ref from #86's fix-round head once #86 pushes R3; PR after #86 merges.
+- 2026-11-02T01:01:53Z: resumed after the worker restart; WIP ref co-001/wip-ci-findings-transport cut at #86's WIP d257fe6d and pushed; build starting.
+- 2026-11-02T02:03:24Z: built (wf_68f40358-e23); WIP head b9a83bd3; reviews next.

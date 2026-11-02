@@ -1,0 +1,10 @@
+
+ RUN  v5.0.5 /home/user/ci-findings-transport
+
+
+ Test Files  1 passed (1)
+      Tests  130 passed (130)
+   Start at  01:54:32
+   Duration  48.95s (tests 97%, import 2%, transform 2%)
+
+exit 0

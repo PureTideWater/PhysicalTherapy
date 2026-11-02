@@ -1,0 +1,8 @@
+
+> therapy-platform@ synth /home/user/ci-findings-transport
+> tsx packages/synth/src/cli.ts --all
+
+wrote fixtures/synthetic/RCC-08/expected.json
+synth: 265 case(s); 1 file(s) written, 656 unchanged, 0 removed.
+synth: 8 EMR export format(s); 0 file(s) written, 16 unchanged, 0 removed.
+exit 0

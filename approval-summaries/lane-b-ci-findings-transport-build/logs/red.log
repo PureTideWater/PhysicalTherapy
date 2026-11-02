@@ -1,0 +1,713 @@
+# command: flock /tmp/laneb-heavy.lock pnpm exec vitest run --project unit tools/content-calendar tools/test/workflows.test.ts
+# cwd: /home/user/ci-findings-transport; commit 1's tests on d257fe6d's code (content-calendar.yml, render.ts, index.ts as at d257fe6d)
+# started: 2026-11-02T01:34:33Z
+
+ RUN  v5.0.5 /home/user/ci-findings-transport
+
+ ❯ |unit| tools/content-calendar/content-calendar.test.ts (32 tests | 6 failed) 386ms
+   ❯ the findings file (11)
+     × refuses a findings file past its bound, so the check fails rather than hand on a cut list 16ms
+     × refuses a finding's title over MAX_TITLE characters, GitHub's limit on an issue title, and admits one at it (ci-findings-transport) 2ms
+     × writes the summary before it bounds the findings file, so a check stopped at the bound still names every finding (ci-findings-transport) 9ms
+     × cuts a body with no line to cut at a whole character, never inside a surrogate pair (ci-findings-transport) 3ms
+     × every finding reaches the notify job whole, and every issue it writes fits GitHub's limits (ci-findings-transport) 40ms
+     × a run has at most MAX_FINDINGS findings: two of the calendar's own and, per family, one review, one due item and one source finding (ci-findings-transport) 2ms
+ ❯ |unit| tools/test/workflows.test.ts (130 tests | 16 failed) 22238ms
+   ❯ workflows (23)
+     × run every job on GitHub’s free ubuntu-26.04 runner but the release’s capacity chain, which stays on the release’s runner, and name no larger runner’s label (the founder’s F5 and third ruling of 2026-10-23, “Free: time advisory”) 82ms
+   ❯ the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08) (15)
+     × content-calendar: runs daily, on request, and on a push to the build branch or a pull request touching the calendar or the content, with a read-only token 4ms
+     × content-calendar: its check job only reads, with no permissions of its own and no secret, and uploads its findings as the run's own artifact 3ms
+     × content-calendar: its check step, as the runner runs it, appends the summary also when the check stops, exits with the check's status, and logs the findings file's size and SHA-256 (ci-findings-transport) 17ms
+     × content-calendar: its notify job alone writes issues, skips pull requests, dedupes by exact title against every open issue, and opens at most MAX_OPENED_PER_RUN a run 6ms
+     × content-calendar: notify opens, or comments on, the one "check failing" issue when the check did not finish or handed on no findings list (fix round S8; sec-boundary improvement 2) 142ms
+     × content-calendar: notify downloads the findings in three tries, refuses a file over MAX_FILE_BYTES, and opens or comments on "check failing" when it cannot read them (ci-findings-transport) 4ms
+     × content-calendar: notify lists at most MAX_LISTED titles in the "findings not filed" issue and names how many more (ci-findings-transport) 3ms
+     × content-calendar: notify makes one Actions call, the download of this run's findings artifact, and reads no findings from its env (ci-findings-transport) 3ms
+     × content-calendar: on a pull request, its handoff job downloads the findings with the notify job's own lines, holds actions: read alone and writes nothing (ci-findings-transport) 3ms
+     × content-calendar: notify starts bash and files the finding from a file one byte past the 98,292 bytes FINDINGS_B64 could carry, the over row #86's T6 held (ci-findings-transport) 14ms
+     × content-calendar: notify starts bash, opens 20 and lists the other 21 titles from the worst 41-finding file, 1,540,660 bytes (ci-findings-transport) 20ms
+   ❯ job timeouts (CI-10) (1)
+     × give every job of every workflow the timeout its table names, well under GitHub’s 360 minutes 30ms
+   ❯ one environment string under Linux’s 131,072 bytes (docs/adr/0066, Part 3, N32) (6)
+     × keeps every environment string a workflow sets under 131,072 bytes, NAME=value and its NUL, summed from its name, its literal bytes and each value’s bound 51ms
+     × hands a step another step’s or job’s output only from the list below, each with its bound 41ms
+   ❯ a simulated Dependabot rewrite (A4 (a); docs/adr/0066, Part 2) (1)
+     × passes every workflow, Dependabot and version assertion with every action pin and image digest rewritten, and fails on one deliberate break, so the run reads the copy 12974ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 22 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| tools/content-calendar/content-calendar.test.ts > the findings file > refuses a findings file past its bound, so the check fails rather than hand on a cut list
+AssertionError: expected 700000 to be 2000000 // Object.is equality
+
+- Expected
++ Received
+
+- 2000000
++ 700000
+
+ ❯ tools/content-calendar/content-calendar.test.ts:585:28
+    583|     const one = (body: string) => [{ title: 'Finding', body }];
+    584|     const empty = Buffer.byteLength(`${JSON.stringify(one(''), null, 2…
+    585|     expect(MAX_FILE_BYTES).toBe(2_000_000);
+       |                            ^
+    586|     expect(() => findingsJson(one('x'.repeat(MAX_FILE_BYTES - empty)))…
+    587|     expect(() => findingsJson(one('x'.repeat(MAX_FILE_BYTES - empty + …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/22]⎯
+
+ FAIL  |unit| tools/content-calendar/content-calendar.test.ts > the findings file > refuses a finding's title over MAX_TITLE characters, GitHub's limit on an issue title, and admits one at it (ci-findings-transport)
+AssertionError: expected undefined to be 256 // Object.is equality
+
+- Expected:
+256
+
++ Received:
+undefined
+
+ ❯ tools/content-calendar/content-calendar.test.ts:594:23
+    592|   it("refuses a finding's title over MAX_TITLE characters, GitHub's li…
+    593|     // The title bound's only test: the calendar's schema caps an entr…
+    594|     expect(MAX_TITLE).toBe(256);
+       |                       ^
+    595|     expect(() => findingsJson([{ title: 'x'.repeat(MAX_TITLE), body: '…
+    596|     expect(() => findingsJson([{ title: 'x'.repeat(MAX_TITLE + 1), bod…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/22]⎯
+
+ FAIL  |unit| tools/content-calendar/content-calendar.test.ts > the findings file > writes the summary before it bounds the findings file, so a check stopped at the bound still names every finding (ci-findings-transport)
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ tools/content-calendar/content-calendar.test.ts:611:26
+    609|     rmSync(path.join(root, 'summary.md'));
+    610|     const refused = await run(['--today', '2026-12-01', '--no-fetch'],…
+    611|     expect(refused.code).toBe(1);
+       |                          ^
+    612|     expect(refused.summary).toBe(whole.summary);
+    613|     expect(refused.summary).toContain('- Content due: Medicare unit li…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/22]⎯
+
+ FAIL  |unit| tools/content-calendar/content-calendar.test.ts > the findings file > cuts a body with no line to cut at a whole character, never inside a surrogate pair (ci-findings-transport)
+AssertionError: expected 'x😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀…' not to match /[\uD800-\uDBFF]$/
+
+- Expected:
+/[\uD800-\uDBFF]$/
+
++ Received:
+"x😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀�"
+
+ ❯ tools/content-calendar/content-calendar.test.ts:623:22
+    621|     const body = dueBody(item, CONTENT_CALENDAR, { releaseNo: null });
+    622|     expect(body.length).toBeLessThanOrEqual(MAX_BODY);
+    623|     expect(body).not.toMatch(/[\uD800-\uDBFF]$/);
+       |                      ^
+    624|     expect(body.isWellFormed()).toBe(true);
+    625|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/22]⎯
+
+ FAIL  |unit| tools/content-calendar/content-calendar.test.ts > the findings file > every finding reaches the notify job whole, and every issue it writes fits GitHub's limits (ci-findings-transport)
+AssertionError: expected undefined to be 3 // Object.is equality
+
+- Expected:
+3
+
++ Received:
+undefined
+
+ ❯ tools/content-calendar/content-calendar.test.ts:637:33
+    635|     expect([Buffer.byteLength(JSON.stringify('\u{1F600}')) - 2, '\u{1F…
+    636|     // The count: two of the calendar's own and three per family (the …
+    637|     expect(FINDINGS_PER_FAMILY).toBe(3);
+       |                                 ^
+    638|     expect(MAX_FINDINGS).toBe(2 + FINDINGS_PER_FAMILY * CONTENT_FAMILI…
+    639|     expect(MAX_TITLE).toBe(GITHUB_TITLE);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/22]⎯
+
+ FAIL  |unit| tools/content-calendar/content-calendar.test.ts > the findings file > a run has at most MAX_FINDINGS findings: two of the calendar's own and, per family, one review, one due item and one source finding (ci-findings-transport)
+AssertionError: expected undefined to be 3 // Object.is equality
+
+- Expected:
+3
+
++ Received:
+undefined
+
+ ❯ tools/content-calendar/content-calendar.test.ts:678:33
+    676|
+    677|   it("a run has at most MAX_FINDINGS findings: two of the calendar's o…
+    678|     expect(FINDINGS_PER_FAMILY).toBe(3);
+       |                                 ^
+    679|     expect(MAX_FINDINGS).toBe(2 + FINDINGS_PER_FAMILY * CONTENT_FAMILI…
+    680|     const day = fc.date({ min: new Date('2023-01-01T00:00:00Z'), max: …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/22]⎯
+
+ FAIL  |unit| tools/test/workflows.test.ts > workflows > run every job on GitHub’s free ubuntu-26.04 runner but the release’s capacity chain, which stays on the release’s runner, and name no larger runner’s label (the founder’s F5 and third ruling of 2026-10-23, “Free: time advisory”)
+AssertionError: expected [ …(22) ] to have a length of 23 but got 22
+
+- Expected
++ Received
+
+- 23
++ 22
+
+ ❯ tools/test/workflows.test.ts:524:80
+    522|     // report is advisory and never attested, so F5's chain does not h…
+    523|     // notify.
+    524|     expect(Object.keys(runners).filter((job) => !RELEASE_CHAIN.include…
+       |                                                                                ^
+    525|     // GitHub's larger runners exist only for an organization on GitHu…
+    526|     // personal account: actionlint's configuration, which named the 8…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/22]⎯
+
+ FAIL  |unit| tools/test/workflows.test.ts > the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08) > content-calendar: runs daily, on request, and on a push to the build branch or a pull request touching the calendar or the content, with a read-only token
+AssertionError: expected [ 'check', 'notify' ] to deeply equal [ 'check', 'handoff', 'notify' ]
+
+- Expected
++ Received
+
+  [
+    "check",
+-   "handoff",
+    "notify",
+  ]
+
+ ❯ tools/test/workflows.test.ts:1156:40
+    1154|     expect(calendar.permissions).toEqual({ contents: 'read' });
+    1155|     expect(calendar.concurrency).toEqual({ group: '${{ github.workflow…
+    1156|     expect(Object.keys(calendar.jobs)).toEqual(['check', 'handoff', 'n…
+       |                                        ^
+    1157|     // The header names every public output, the one-day findings arti…
+    1158|     const lines = readFileSync(path.join(WORKFLOWS, 'content-calendar.…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/22]⎯
+
+ FAIL  |unit| tools/test/workflows.test.ts > the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08) > content-calendar: its check job only reads, with no permissions of its own and no secret, and uploads its findings as the run's own artifact
+AssertionError: expected { Object (findings) } to be undefined
+
+- Expected:
+undefined
+
++ Received:
+{
+  "findings": "${{ steps.calendar.outputs.findings }}",
+}
+
+ ❯ tools/test/workflows.test.ts:1173:28
+    1171|     expect(script).toContain('--today "$(date -u +%F)" --out "$RUNNER_…
+    1172|     expect(script).toContain('>> "$GITHUB_STEP_SUMMARY"');
+    1173|     expect(check?.outputs).toBeUndefined();
+       |                            ^
+    1174|     // The findings, every one whole, as this run's own artifact, kept…
+    1175|     // after the step that writes them.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/22]⎯
+
+ FAIL  |unit| tools/test/workflows.test.ts > the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08) > content-calendar: its check step, as the runner runs it, appends the summary also when the check stops, exits with the check's status, and logs the findings file's size and SHA-256 (ci-findings-transport)
+AssertionError: content-calendar: the findings file holds 101 bytes, over 100
+: expected [ 1, '' ] to deeply equal [ 1, …(1) ]
+
+- Expected
++ Received
+
+  [
+    1,
+-   "## Content calendar, 2026-11-01
+-
+- - Finding 1
+- ",
++   "",
+  ]
+
+ ❯ tools/test/workflows.test.ts:1215:63
+    1213|     };
+    1214|     const refused = run('refused');
+    1215|     expect([refused.status, refused.summary], refused.output).toEqual(…
+       |                                                               ^
+    1216|     const usage = run('usage');
+    1217|     expect([usage.status, usage.summary], usage.output).toEqual([2, ''…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/22]⎯
+
+ FAIL  |unit| tools/test/workflows.test.ts > the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08) > content-calendar: its notify job alone writes issues, skips pull requests, dedupes by exact title against every open issue, and opens at most MAX_OPENED_PER_RUN a run
+AssertionError: content-calendar.yml: expected { issues: 'write' } to deeply equal { actions: 'read', issues: 'write' }
+
+- Expected
++ Received
+
+  {
+-   "actions": "read",
+    "issues": "write",
+  }
+
+ ❯ expectQuietNotify tools/test/workflows.test.ts:1137:39
+    1135|     expect(notify?.needs, name).toBe(needs);
+    1136|     expect(notify?.if, name).toBe(condition);
+    1137|     expect(notify?.permissions, name).toEqual(permissions);
+       |                                       ^
+    1138|     expect(notify?.steps.filter((step) => step.uses !== undefined), na…
+    1139|     expect(runs(notify).filter((run) => run.includes('${{')), name).to…
+ ❯ tools/test/workflows.test.ts:1319:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/22]⎯
+
+ FAIL  |unit| tools/test/workflows.test.ts > the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08) > content-calendar: notify opens, or comments on, the one "check failing" issue when the check did not finish or handed on no findings list (fix round S8; sec-boundary improvement 2)
+AssertionError: success null: expected [] to have a length of 3 but got +0
+
+- Expected
++ Received
+
+- 3
++ 0
+
+ ❯ tools/test/workflows.test.ts:1372:78
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/22]⎯
+
+ FAIL  |unit| tools/test/workflows.test.ts > the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08) > content-calendar: notify downloads the findings in three tries, refuses a file over MAX_FILE_BYTES, and opens or comments on "check failing" when it cannot read them (ci-findings-transport)
+Error: content-calendar.yml: MAX_FILE_BYTES is not in the step's env
+ ❯ notifyEnv tools/test/workflows.test.ts:1269:80
+    1267|   function notifyEnv(name: string, step: Step, values: Readonly<Record…
+    1268|     const env = step.env ?? {};
+    1269|     for (const key of Object.keys(values)) if (!Object.hasOwn(env, key…
+       |                                                                                ^
+    1270|     const forms: Readonly<Record<string, string>> = {
+    1271|       '${{ github.token }}': 'token',
+ ❯ runNotify tools/test/workflows.test.ts:1300:10
+ ❯ tools/test/workflows.test.ts:1386:18
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/22]⎯
+
+ FAIL  |unit| tools/test/workflows.test.ts > the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08) > content-calendar: notify lists at most MAX_LISTED titles in the "findings not filed" issue and names how many more (ci-findings-transport)
+Error: content-calendar.yml: MAX_LISTED is not in the step's env
+ ❯ notifyEnv tools/test/workflows.test.ts:1269:80
+    1267|   function notifyEnv(name: string, step: Step, values: Readonly<Record…
+    1268|     const env = step.env ?? {};
+    1269|     for (const key of Object.keys(values)) if (!Object.hasOwn(env, key…
+       |                                                                                ^
+    1270|     const forms: Readonly<Record<string, string>> = {
+    1271|       '${{ github.token }}': 'token',
+ ❯ runNotify tools/test/workflows.test.ts:1300:10
+ ❯ tools/test/workflows.test.ts:1402:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/22]⎯
+
+ FAIL  |unit| tools/test/workflows.test.ts > the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08) > content-calendar: notify makes one Actions call, the download of this run's findings artifact, and reads no findings from its env (ci-findings-transport)
+AssertionError: expected [] to deeply equal [ Array(1) ]
+
+- Expected
++ Received
+
+- [
+-   "gh run download \"$GITHUB_RUN_ID\" -n findings -D \"$RUNNER_TEMP/findings\"",
+- ]
++ []
+
+ ❯ tools/test/workflows.test.ts:1430:144
+    1428|   it("content-calendar: notify makes one Actions call, the download of…
+    1429|     const step = notifyStep('content-calendar.yml');
+    1430|     expect(ghCommands(step?.run ?? '').filter((command) => !/^gh (?:ap…
+       |                                                                                                                                                ^
+    1431|     expect(step?.env?.MAX_FILE_BYTES).toBe(String(MAX_FILE_BYTES));
+    1432|     expect(step?.env?.DOWNLOAD_PAUSE).toBe('10');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/22]⎯
+
+ FAIL  |unit| tools/test/workflows.test.ts > the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08) > content-calendar: on a pull request, its handoff job downloads the findings with the notify job's own lines, holds actions: read alone and writes nothing (ci-findings-transport)
+AssertionError: expected undefined to be 'check' // Object.is equality
+
+- Expected:
+"check"
+
++ Received:
+undefined
+
+ ❯ tools/test/workflows.test.ts:1439:28
+    1437|   it("content-calendar: on a pull request, its handoff job downloads t…
+    1438|     const handoff = read('content-calendar.yml').jobs.handoff;
+    1439|     expect(handoff?.needs).toBe('check');
+       |                            ^
+    1440|     expect(handoff?.if).toBe("github.event_name == 'pull_request'");
+    1441|     expect(handoff?.permissions).toEqual({ actions: 'read' });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/22]⎯
+
+ FAIL  |unit| tools/test/workflows.test.ts > the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08) > content-calendar: notify starts bash and files the finding from a file one byte past the 98,292 bytes FINDINGS_B64 could carry, the over row #86's T6 held (ci-findings-transport)
+AssertionError: content-calendar.yml notify: bash did not start: expected 'spawnSync bash E2BIG' to be undefined
+
+- Expected:
+undefined
+
++ Received:
+"spawnSync bash E2BIG"
+
+ ❯ runNotify tools/test/workflows.test.ts:1313:73
+    1311|     const result = spawnSync('bash', ['--noprofile', '--norc', '-e', '…
+    1312|     // As #42's job met it: one environment string over 131,072 bytes …
+    1313|     expect(result.error?.message, `${name} ${job}: bash did not start`…
+       |                                                                         ^
+    1314|     return { status: result.status, output: result.stdout + result.std…
+    1315|   }
+ ❯ expectCarried tools/test/workflows.test.ts:1478:17
+ ❯ tools/test/workflows.test.ts:1490:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/22]⎯
+
+ FAIL  |unit| tools/test/workflows.test.ts > the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08) > content-calendar: notify starts bash, opens 20 and lists the other 21 titles from the worst 41-finding file, 1,540,660 bytes (ci-findings-transport)
+AssertionError: content-calendar.yml notify: bash did not start: expected 'spawnSync bash E2BIG' to be undefined
+
+- Expected:
+undefined
+
++ Received:
+"spawnSync bash E2BIG"
+
+ ❯ runNotify tools/test/workflows.test.ts:1313:73
+    1311|     const result = spawnSync('bash', ['--noprofile', '--norc', '-e', '…
+    1312|     // As #42's job met it: one environment string over 131,072 bytes …
+    1313|     expect(result.error?.message, `${name} ${job}: bash did not start`…
+       |                                                                         ^
+    1314|     return { status: result.status, output: result.stdout + result.std…
+    1315|   }
+ ❯ expectCarried tools/test/workflows.test.ts:1478:17
+ ❯ tools/test/workflows.test.ts:1502:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/22]⎯
+
+ FAIL  |unit| tools/test/workflows.test.ts > job timeouts (CI-10) > give every job of every workflow the timeout its table names, well under GitHub’s 360 minutes
+AssertionError: expected { …(10) } to deeply equal { …(10) }
+
+- Expected
++ Received
+
+@@ -13,11 +13,10 @@
+      "static": 15,
+      "unit": 20,
+    },
+    "content-calendar.yml": {
+      "check": 15,
+-     "handoff": 5,
+      "notify": 5,
+    },
+    "large-zip.yml": {
+      "large-zip": 45,
+    },
+
+ ❯ tools/test/workflows.test.ts:3019:20
+    3017|       workflowFiles().map((file) => [file, Object.fromEntries(Object.e…
+    3018|     );
+    3019|     expect(limits).toEqual({
+       |                    ^
+    3020|       'approval-of-record.yml': { 'approval-of-record': 5 },
+    3021|       // Each about three times its expected time (docs/adr/0066, Part…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/22]⎯
+
+ FAIL  |unit| tools/test/workflows.test.ts > one environment string under Linux’s 131,072 bytes (docs/adr/0066, Part 3, N32) > keeps every environment string a workflow sets under 131,072 bytes, NAME=value and its NUL, summed from its name, its literal bytes and each value’s bound
+AssertionError: expected [ Array(1) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "content-calendar.yml job notify step \"Open an issue for each finding not already open\" env.FINDINGS_B64: no bound for needs.check.outputs.findings, which no row of the table bounds",
++ ]
+
+ ❯ tools/test/workflows.test.ts:3671:90
+    3669|
+    3670|   it('keeps every environment string a workflow sets under 131,072 byt…
+    3671|     expect(workflowFiles().flatMap((file) => environmentProblems(file,…
+       |                                                                                          ^
+    3672|     const huge: BoundedValue = { file: 'fixture.yml', job: 'images', v…
+    3673|     const sum = (jobs: string, rows: readonly BoundedValue[] = [huge])…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/22]⎯
+
+ FAIL  |unit| tools/test/workflows.test.ts > one environment string under Linux’s 131,072 bytes (docs/adr/0066, Part 3, N32) > hands a step another step’s or job’s output only from the list below, each with its bound
+AssertionError: expected [ …(67) ] to deeply equal [ …(65) ]
+
+- Expected
++ Received
+
+@@ -11,10 +11,12 @@
+    "ci.yml static steps.tsc-cache.outputs.cache-primary-key",
+    "ci.yml unit steps.apt.outputs.cache-primary-key",
+    "ci.yml unit steps.browsers.outputs.cache-primary-key",
+    "ci.yml unit steps.runner-image.outputs.key",
+    "ci.yml unit steps.runner-image.outputs.os",
++   "content-calendar.yml check steps.calendar.outputs.findings",
++   "content-calendar.yml notify needs.check.outputs.findings",
+    "large-zip.yml large-zip steps.runner-image.outputs.key",
+    "large-zip.yml large-zip steps.runner-image.outputs.os",
+    "mutation.yml changes steps.affected.outputs.any",
+    "mutation.yml changes steps.affected.outputs.packages",
+    "mutation.yml changes steps.affected.outputs.shards",
+
+ ❯ tools/test/workflows.test.ts:4183:31
+    4181|     const values = workflowFiles().flatMap((file) => unboundedValuePro…
+    4182|     const found = new Set(values.map(key));
+    4183|     expect([...found].sort()).toEqual(BOUNDED_VALUES.map(key).sort());
+       |                               ^
+    4184|     // Each row names its producers by what they are, never by a line …
+    4185|     // each resolves on this tree.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/22]⎯
+
+ FAIL  |unit| tools/test/workflows.test.ts > a simulated Dependabot rewrite (A4 (a); docs/adr/0066, Part 2) > passes every workflow, Dependabot and version assertion with every action pin and image digest rewritten, and fails on one deliberate break, so the run reads the copy
+AssertionError: JSON report written to /tmp/tp-workflows-ruWlfN/report-UD0q2K/report.json
+
+tools/test/workflows.test.ts > workflows run every job on GitHub’s free ubuntu-26.04 runner but the release’s capacity chain, which stays on the release’s runner, and name no larger runner’s label (the founder’s F5 and third ruling of 2026-10-23, “Free: time advisory”)
+AssertionError: expected [ …(22) ] to have a length of 23 but got 22
+    at Proxy.<anonymous> (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/index.aTZaPVhf.js:2163:20)
+    at Proxy.<anonymous> (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/index.aTZaPVhf.js:1958:14)
+    at Proxy.methodWrapper (file:///home/user/ci-findings-transport/node_modules/.pnpm/chai@6.3.0/node_modules/chai/index.js:1737:25)
+    at /home/user/ci-findings-transport/tools/test/workflows.test.ts:524:80
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:1632:35
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:26
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3333:10)
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3318:20
+
+tools/test/workflows.test.ts > the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08) content-calendar: runs daily, on request, and on a push to the build branch or a pull request touching the calendar or the content, with a read-only token
+AssertionError: expected [ 'check', 'notify' ] to deeply equal [ 'check', 'handoff', 'notify' ]
+    at /home/user/ci-findings-transport/tools/test/workflows.test.ts:1156:40
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:1632:35
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:26
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3333:10)
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3276:10)
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3904:64
+
+tools/test/workflows.test.ts > the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08) content-calendar: its check job only reads, with no permissions of its own and no secret, and uploads its findings as the run's own artifact
+AssertionError: expected { Object (findings) } to be undefined
+    at /home/user/ci-findings-transport/tools/test/workflows.test.ts:1173:28
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:1632:35
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:26
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3333:10)
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3276:10)
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3904:64
+
+tools/test/workflows.test.ts > the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08) content-calendar: its check step, as the runner runs it, appends the summary also when the check stops, exits with the check's status, and logs the findings file's size and SHA-256 (ci-findings-transport)
+AssertionError: content-calendar: the findings file holds 101 bytes, over 100
+: expected [ 1, '' ] to deeply equal [ 1, …(1) ]
+    at /home/user/ci-findings-transport/tools/test/workflows.test.ts:1215:63
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:1632:35
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:26
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3333:10)
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3276:10)
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3904:64
+
+tools/test/workflows.test.ts > the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08) content-calendar: its notify job alone writes issues, skips pull requests, dedupes by exact title against every open issue, and opens at most MAX_OPENED_PER_RUN a run
+AssertionError: content-calendar.yml: expected { issues: 'write' } to deeply equal { actions: 'read', issues: 'write' }
+    at expectQuietNotify (/home/user/ci-findings-transport/tools/test/workflows.test.ts:1137:39)
+    at /home/user/ci-findings-transport/tools/test/workflows.test.ts:1319:5
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:1632:35
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:26
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3333:10)
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3276:10)
+
+tools/test/workflows.test.ts > the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08) content-calendar: notify opens, or comments on, the one "check failing" issue when the check did not finish or handed on no findings list (fix round S8; sec-boundary improvement 2)
+AssertionError: success null: expected [] to have a length of 3 but got +0
+    at Proxy.<anonymous> (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/index.aTZaPVhf.js:2163:20)
+    at Proxy.<anonymous> (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/index.aTZaPVhf.js:1958:14)
+    at Proxy.methodWrapper (file:///home/user/ci-findings-transport/node_modules/.pnpm/chai@6.3.0/node_modules/chai/index.js:1737:25)
+    at /home/user/ci-findings-transport/tools/test/workflows.test.ts:1372:78
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:1632:35
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:26
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3333:10)
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3318:20
+
+tools/test/workflows.test.ts > the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08) content-calendar: notify downloads the findings in three tries, refuses a file over MAX_FILE_BYTES, and opens or comments on "check failing" when it cannot read them (ci-findings-transport)
+Error: content-calendar.yml: MAX_FILE_BYTES is not in the step's env
+    at notifyEnv (/home/user/ci-findings-transport/tools/test/workflows.test.ts:1269:80)
+    at runNotify (/home/user/ci-findings-transport/tools/test/workflows.test.ts:1300:10)
+    at /home/user/ci-findings-transport/tools/test/workflows.test.ts:1386:18
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:1632:35
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:26
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3333:10)
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3318:20
+    at new Promise (<anonymous>)
+
+tools/test/workflows.test.ts > the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08) content-calendar: notify lists at most MAX_LISTED titles in the "findings not filed" issue and names how many more (ci-findings-transport)
+Error: content-calendar.yml: MAX_LISTED is not in the step's env
+    at notifyEnv (/home/user/ci-findings-transport/tools/test/workflows.test.ts:1269:80)
+    at runNotify (/home/user/ci-findings-transport/tools/test/workflows.test.ts:1300:10)
+    at /home/user/ci-findings-transport/tools/test/workflows.test.ts:1402:17
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:1632:35
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:26
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3333:10)
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3318:20
+    at new Promise (<anonymous>)
+
+tools/test/workflows.test.ts > the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08) content-calendar: notify makes one Actions call, the download of this run's findings artifact, and reads no findings from its env (ci-findings-transport)
+AssertionError: expected [] to deeply equal [ Array(1) ]
+    at /home/user/ci-findings-transport/tools/test/workflows.test.ts:1430:144
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:1632:35
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:26
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3333:10)
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3276:10)
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3904:64
+
+tools/test/workflows.test.ts > the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08) content-calendar: on a pull request, its handoff job downloads the findings with the notify job's own lines, holds actions: read alone and writes nothing (ci-findings-transport)
+AssertionError: expected undefined to be 'check' // Object.is equality
+    at /home/user/ci-findings-transport/tools/test/workflows.test.ts:1439:28
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:1632:35
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:26
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3333:10)
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3276:10)
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3904:64
+
+tools/test/workflows.test.ts > the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08) content-calendar: notify starts bash and files the finding from a file one byte past the 98,292 bytes FINDINGS_B64 could carry, the over row #86's T6 held (ci-findings-transport)
+AssertionError: content-calendar.yml notify: bash did not start: expected 'spawnSync bash E2BIG' to be undefined
+    at runNotify (/home/user/ci-findings-transport/tools/test/workflows.test.ts:1313:73)
+    at expectCarried (/home/user/ci-findings-transport/tools/test/workflows.test.ts:1478:17)
+    at /home/user/ci-findings-transport/tools/test/workflows.test.ts:1490:5
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:1632:35
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:26
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3333:10)
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3318:20
+    at new Promise (<anonymous>)
+
+tools/test/workflows.test.ts > the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08) content-calendar: notify starts bash, opens 20 and lists the other 21 titles from the worst 41-finding file, 1,540,660 bytes (ci-findings-transport)
+AssertionError: content-calendar.yml notify: bash did not start: expected 'spawnSync bash E2BIG' to be undefined
+    at runNotify (/home/user/ci-findings-transport/tools/test/workflows.test.ts:1313:73)
+    at expectCarried (/home/user/ci-findings-transport/tools/test/workflows.test.ts:1478:17)
+    at /home/user/ci-findings-transport/tools/test/workflows.test.ts:1502:5
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:1632:35
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:26
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3333:10)
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3318:20
+    at new Promise (<anonymous>)
+
+tools/test/workflows.test.ts > job timeouts (CI-10) give every job of every workflow the timeout its table names, well under GitHub’s 360 minutes
+AssertionError: expected { …(10) } to deeply equal { …(10) }
+    at /home/user/ci-findings-transport/tools/test/workflows.test.ts:3019:20
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:1632:35
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:26
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3333:10)
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3276:10)
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3904:64
+
+tools/test/workflows.test.ts > one environment string under Linux’s 131,072 bytes (docs/adr/0066, Part 3, N32) keeps every environment string a workflow sets under 131,072 bytes, NAME=value and its NUL, summed from its name, its literal bytes and each value’s bound
+AssertionError: expected [ Array(1) ] to deeply equal []
+    at /home/user/ci-findings-transport/tools/test/workflows.test.ts:3671:90
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:1632:35
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:26
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3333:10)
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3276:10)
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3904:64
+
+tools/test/workflows.test.ts > one environment string under Linux’s 131,072 bytes (docs/adr/0066, Part 3, N32) hands a step another step’s or job’s output only from the list below, each with its bound
+AssertionError: expected [ …(67) ] to deeply equal [ …(65) ]
+    at /home/user/ci-findings-transport/tools/test/workflows.test.ts:4183:31
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:1632:35
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:26
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3333:10)
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3276:10)
+    at file:///home/user/ci-findings-transport/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.1_@types+node@24.19.2_@vitest+coverage-v8@5.0.5_vit_426bc48dd733d977106ee32999780068/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3904:64: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ tools/test/workflows.test.ts:524:80
+    522|     // report is advisory and never attested, so F5's chain does not h…
+    523|     // notify.
+    524|     expect(Object.keys(runners).filter((job) => !RELEASE_CHAIN.include…
+       |                                                                                ^
+    525|     // GitHub's larger runners exist only for an organization on GitHu…
+    526|     // personal account: actionlint's configuration, which named the 8…
+ ❯ tools/test/workflows.test.ts:1156:40
+ ❯ tools/test/workflows.test.ts:1173:28
+ ❯ tools/test/workflows.test.ts:1215:63
+ ❯ expectQuietNotify tools/test/workflows.test.ts:1137:39
+ ❯ tools/test/workflows.test.ts:1319:5
+ ❯ tools/test/workflows.test.ts:1372:78
+ ❯ notifyEnv tools/test/workflows.test.ts:1269:80
+ ❯ runNotify tools/test/workflows.test.ts:1300:10
+ ❯ tools/test/workflows.test.ts:1386:18
+ ❯ notifyEnv tools/test/workflows.test.ts:1269:80
+ ❯ runNotify tools/test/workflows.test.ts:1300:10
+ ❯ tools/test/workflows.test.ts:1402:17
+ ❯ tools/test/workflows.test.ts:1430:144
+ ❯ tools/test/workflows.test.ts:1439:28
+ ❯ runNotify tools/test/workflows.test.ts:1313:73
+ ❯ expectCarried tools/test/workflows.test.ts:1478:17
+ ❯ tools/test/workflows.test.ts:1490:5
+ ❯ runNotify tools/test/workflows.test.ts:1313:73
+ ❯ expectCarried tools/test/workflows.test.ts:1478:17
+ ❯ tools/test/workflows.test.ts:1502:5
+ ❯ tools/test/workflows.test.ts:3019:20
+ ❯ tools/test/workflows.test.ts:3671:90
+ ❯ tools/test/workflows.test.ts:4183:31
+ ❯ tools/test/workflows.test.ts:4652:80
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22/22]⎯
+
+
+ Test Files  2 failed | 1 passed (3)
+      Tests  22 failed | 143 passed (165)
+   Start at  01:34:34
+   Duration  24.91s (tests 89%, import 6%, transform 5%)
+
+# exit: 1 finished: 2026-11-02T01:34:59Z

@@ -1,0 +1,12 @@
+
+> therapy-platform@ actions:check /home/user/ci-findings-transport
+> tsx tools/check-action-pins/index.ts
+
+actions:check: against the merge base 43565235b85d: only pins new or with changed inputs are read
+actions:check: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9: v7.0.2 is this commit
+actions:check: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9: node24, 10 step(s), inputs declared
+actions:check: the builder moby/buildkit:v0.34.1: its tag is the index sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
+actions:check: the builder moby/buildkit:v0.34.1: no newer release is three days old
+actions:check: age: no pin new against the base, nothing read
+actions:check: every action is pinned to its release's commit, and every pin new against the base is old enough.
+exit 0
