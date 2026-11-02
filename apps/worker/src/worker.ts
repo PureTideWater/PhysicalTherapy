@@ -110,9 +110,14 @@ async function attempt(type: string, job: QueuedJob, logger: Logger, run: () => 
     }
     throw error;
   } finally {
-    const { heapLivePeakMib, heapLimitMib } = heap.end();
-    // The text is JOB_HEAP_MESSAGE, written out for the log lint; worker.test.ts holds them equal.
-    logger.info('job heap', { job_id: job.id, job_type: type, heap_live_peak_mib: heapLivePeakMib, heap_limit_mib: heapLimitMib });
+    // A measurement only: it never fails a completed job (pg-boss would run it again) or replaces a job's own error.
+    try {
+      const { heapLivePeakMib, heapLimitMib } = heap.end();
+      // The text is JOB_HEAP_MESSAGE, written out for the log lint; worker.test.ts holds them equal.
+      logger.info('job heap', { job_id: job.id, job_type: type, heap_live_peak_mib: heapLivePeakMib, heap_limit_mib: heapLimitMib });
+    } catch {
+      // Nothing to do: the line is lost, and the weekly run fails closed on a measured job with no heap line.
+    }
   }
 }
 

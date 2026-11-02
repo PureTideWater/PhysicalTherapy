@@ -79,7 +79,7 @@ test('a support-access notice the suppression list stops is not delivered to 1 o
     await page.goto(`/p/${practiceId}/notifications`);
     const link = page.getByRole('link', { name: 'A support-access opening notice did not reach every administrator' });
     await expect(link).toBeVisible();
-    await expect(page.getByRole('list', { name: 'Notifications' })).toContainText("Check your administrators' email addresses.");
+    await expect(page.getByRole('list', { name: 'Notifications' })).toContainText("Check your administrators' email addresses; if an address is right, ask PaidWhole support to release it.");
     await expect(page.getByRole('list', { name: 'Notifications' })).not.toContainText('@');
     await expectAccessible(page, 'the notifications with an undelivered notice');
     await atPhoneWidth(page, 'the notifications with an undelivered notice');

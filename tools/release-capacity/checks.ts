@@ -37,6 +37,17 @@ export const ADVISORY_LOCKS_PER_TRANSACTION: number = TRACE_LOCK_BUCKETS;
 /** The share of its heap limit a job's live heap may reach (D19's `job heap` line; 420 of 560 MiB). */
 export const HEAP_LIVE_PERCENT = 75;
 
+/**
+ * The heap limit a job's live heap is held to, in MiB: the worker's `--max-old-space-size` flag, the limit the alarm
+ * reads (infra/lib/heap.ts), or the limit the job logged when that is lower or the command has no flag. V8's
+ * heap_size_limit, which the line logs, adds the young generation to the flag (752 MiB under 560), so 75% of it alone
+ * would hold the run to a looser line than production's alarm.
+ */
+export function heapLimitMib(command: readonly string[], loggedLimitMib: number): number {
+  const flag = command.map((part) => /^--max-old-space-size=(\d+)$/.exec(part)?.[1]).find((value) => value !== undefined);
+  return flag === undefined ? loggedLimitMib : Math.min(Number.parseInt(flag, 10), loggedLimitMib);
+}
+
 /** The jobs the harness queues in each phase: the concurrent phase's six, and the large jobs together's seven (D20). */
 export const CONCURRENT_JOBS = 6;
 export const TOGETHER_JOBS = 7;
@@ -224,8 +235,9 @@ export function verdict(m: CapacityMeasurements): Verdict {
         reasons.push(`${job.what} (${job.name}) logged no job heap line${where}`);
       }
     }
-    if (job.heap !== null && job.heap.peakMib > (job.heap.limitMib * HEAP_LIVE_PERCENT) / 100) {
-      reasons.push(`${job.what} (${job.name}${job.jobId === null ? '' : ` ${job.jobId}`}) had a live heap of ${String(job.heap.peakMib)} MiB, above ${String(HEAP_LIVE_PERCENT)}% of its ${String(job.heap.limitMib)} MiB limit (${String((job.heap.limitMib * HEAP_LIVE_PERCENT) / 100)} MiB)${where}`);
+    const limitMib = job.heap === null ? null : heapLimitMib(m.worker.command, job.heap.limitMib);
+    if (job.heap !== null && limitMib !== null && job.heap.peakMib > (limitMib * HEAP_LIVE_PERCENT) / 100) {
+      reasons.push(`${job.what} (${job.name}${job.jobId === null ? '' : ` ${job.jobId}`}) had a live heap of ${String(job.heap.peakMib)} MiB, above ${String(HEAP_LIVE_PERCENT)}% of its ${String(limitMib)} MiB limit (${String((limitMib * HEAP_LIVE_PERCENT) / 100)} MiB)${where}`);
     }
   }
   for (const [phase, wanted, names] of [

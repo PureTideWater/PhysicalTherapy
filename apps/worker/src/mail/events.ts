@@ -81,6 +81,8 @@ export interface MailEventRecord {
   readonly messageId: string;
   readonly stream: MailStream;
   readonly event: MailEvent;
+  /** SES's own event type (detail.eventType, one this job reads): a Complaint SES raised for a suppressed address is recorded as its bounce. */
+  readonly sesEventType: string;
   /** When SES accepted the message (mail.timestamp). */
   readonly mailAt: Date;
   /** When the event happened, where SES says. */
@@ -205,6 +207,7 @@ function sesEvent(parsed: z.infer<typeof SES_EVENT>, prefix: string): MailQueueE
       messageId: detail.mail.messageId,
       stream,
       event: recorded,
+      sesEventType: detail.eventType,
       mailAt: new Date(detail.mail.timestamp),
       eventAt,
       recipient,

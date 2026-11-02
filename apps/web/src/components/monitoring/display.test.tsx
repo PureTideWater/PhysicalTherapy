@@ -32,11 +32,11 @@ function undelivered(notice: 'support_grant_opened' | 'support_grant_closed'): N
 }
 
 describe('an undelivered support-access notice', () => {
-  it('says which notice did not reach every administrator, links to its grant and asks for the addresses to be checked', () => {
+  it('says which notice did not reach every administrator, links to its grant and asks for the addresses to be checked, and support to release a right one', () => {
     const opening = renderToStaticMarkup(<NotificationText practiceId={PRACTICE} notification={undelivered('support_grant_opened')} />);
     expect(opening).toContain('A support-access opening notice did not reach every administrator');
     expect(opening).toContain(`href="/p/${PRACTICE}/support-access/${GRANT}"`);
-    expect(opening).toContain('Check your administrators&#x27; email addresses.');
+    expect(opening).toContain('Check your administrators&#x27; email addresses; if an address is right, ask PaidWhole support to release it.');
     const closing = renderToStaticMarkup(<NotificationText practiceId={PRACTICE} notification={undelivered('support_grant_closed')} />);
     expect(closing).toContain('A support-access closing notice did not reach every administrator');
     // No figure and no address: the grant's page says how many it reached.

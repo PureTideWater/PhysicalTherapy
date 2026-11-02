@@ -77,10 +77,12 @@ the job, by ID and type only.
   report and reconcile each hold one advisory lock.
 - **A job's live heap passed 75% of its limit, or a measured job logged no `job heap` line.** Each job attempt logs
   `job heap` with `heap_live_peak_mib` (the heap in use just after the largest major collection while it ran) and
-  `heap_limit_mib`. Above 75% the month outgrew the bounded readers' margin: find which job by its ID, then which reader
-  holds a month's lines (ADR 0083's rule: no job holds a month's lines beyond a small, measured per-line holder). A
-  missing line means the worker image does not log it, or the job never ended: read the worker's log for the job ID.
-  Production alarms at the same line (docs/runbooks/incident-response.md).
+  `heap_limit_mib` (V8's limit, which adds the young generation to the flag). The check holds the peak to 75% of the
+  worker's `--max-old-space-size` flag (420 of 560 MiB), or of the logged limit when that is lower. Above it the month
+  outgrew the bounded readers' margin: find which job by its ID, then which reader holds a month's lines (ADR 0083's
+  rule: no job holds a month's lines beyond a small, measured per-line holder). A missing line means the worker image
+  does not log it, or the job never ended: read the worker's log for the job ID. Production alarms at the same line
+  (docs/runbooks/incident-response.md).
 - **A phase's or a chain job's memory above 90%.** The task's `memory.current`, sampled each second, passed 921.6 MiB;
   the line names the phase and the chain job. The large jobs together share one worker process, so read their live
   heaps beside the peak.

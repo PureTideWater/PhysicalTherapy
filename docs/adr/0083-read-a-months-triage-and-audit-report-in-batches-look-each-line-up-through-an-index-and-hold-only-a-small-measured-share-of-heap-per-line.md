@@ -1,17 +1,23 @@
 # 0083. Read a month's triage and audit report in batches, look each line up through an index, and hold only a small, measured share of heap per line
 
-- **Status:** accepted for SUITE-CAP-1a (`co-001/suite-cap-1-bounded-reads`, bounded reads, no migration). This ADR is
-  shared with SUITE-CAP-1b (`co-001/suite-cap-1-triage-locks`, the stage lock), which completes this status line and
-  adds the lock's section as built ("The split", below). Only SUITE-CAP-1a's part is written here; the decisions it
-  reserves for SUITE-CAP-1b are listed by number and are not yet decided as built.
+- **Status:** accepted for SUITE-CAP-1a (`co-001/suite-cap-1-bounded-reads`, bounded reads, no migration), merged as
+  #81. SUITE-CAP-1b (`co-001/suite-cap-1-triage-locks`, the stage lock, built on SS-01 and #81's merge) is built and
+  recorded below ("SUITE-CAP-1b, as built"); its migration `20261109090000_line_status_heads.sql` takes effect only
+  with the founder's approval of the regenerated domain model (CO-02), which its pull request asks for. SUITE-CAP-1a's
+  part is kept as it merged; the decisions it reserved for SUITE-CAP-1b are now recorded as built.
 - **Date:** 2026-10-28
 - **Deciders:** the co-founder, under the founder's delegation of 2026-10-25 (LANES.md, claim row 188), whose ruling of
   2026-10-26 (about 00:20 UTC, "Don't ask for approvals anymore just build and optimize") has the build take each
   recommended option without asking; the build (Lane B), for the design's choices and its review's findings, each
   reversible. Every option is judged under the founder's standing rule of 2026-10-18. SUITE-CAP-1a needs no founder
   action: it has no migration, no domain-model change and no freeze item.
+- **SUITE-CAP-1b's ledger freeze exception (D8):** granted by the founder, Tyler Williams, relayed by the co-founder,
+  on 2026-10-27 at 20:49 UTC (`approval-summaries/founder-asks-2026-10-27.md`, line 3), word for word: "Granted: the
+  ledger freeze exceptions in designs/ledger-interest-once.md section 10.1 and designs/suite-cap-1-triage-locks.md
+  section 4.5, as written." Recorded also in reconciliation-001, "Ledger semantics". SUITE-CAP-1b stays inside that
+  text: section 4.5 changes the lock line of the two `ledger_entry` triggers and nothing else.
 - **PRD sections:** 6 (Reports and exports), 8 (`line_status` and the status machine), 12 (triage and cases), 15 (the
-  worker), 18 (testing and release); test matrix CAS-41; ADRs
+  worker), 18 (testing and release); test matrix CAS-40, CAS-41 and CAS-42; ADRs
   [0038](0038-triage-runs-into-anomalies-and-cases-keep-five-stages-and-release-an-audit-report-only-once-a-reviewer-signs.md)
   (one transaction per triage and per report, unchanged),
   [0067](0067-measure-every-ledger-amount-in-what-the-payer-pays-decide-the-outcome-on-the-allowed-amount-show-the-patients-share-beside-and-take-back-on-a-reversal-the-payment-it-removes.md)
@@ -268,6 +274,106 @@ previous image runs the whole reads on a trigger that no longer stops them. A ro
 supported step on SUITE-CAP-1b's schema: on a large month the whole reads take the worker, and every practice's
 in-flight job, down. SUITE-CAP-1b's runbook note for its release says so.
 
+### SUITE-CAP-1b, as built
+
+SUITE-CAP-1b moves a line's stage lock out of the cluster's shared lock table and measures the worker's heap per job.
+It changes no writer's code and no sentence a person reads.
+
+#### The decisions it reserved, as built
+
+| # | Decision, as built | Why |
+| --- | --- | --- |
+| D1, D5, D6 | `line_status_head`: one row per service line with any stage event, holding its current stage and the `seq` of its latest event. Its key is an `id` (every registered table's key is one column, which the cross-tenant tests address rows by); the unique index `line_status_head_once (practice_id, service_line_id)` is the upsert's arbiter and keeps `practice_id` leading. No foreign keys. Forced row-level security with the tenant policy `line_status_head_tenant`, a registry row, and `line_status`'s guards (`triage_never_deleted()`, `triage_no_truncate()`). | The design's option H. The stage event the trigger checks carries the same references in the same statement; CAS-40.5's property and CAS-40.7's backfill hold the head row equal to the line's latest event, which a foreign key cannot say. |
+| D2, D3 | `line_status_rules()` takes the line's lock by writing its head row first: `INSERT … ON CONFLICT (practice_id, service_line_id) DO UPDATE … RETURNING WITH (OLD AS prior, NEW AS next) prior.stage, next.seq`. `prior.stage` is the stage the event follows (null for a line's first) and the checks run against it, with today's messages; `NEW.seq` is the identity value a first event drew, or a `nextval` drawn under the lock. The `pg_advisory_xact_lock` per line is gone. | A writer of the same line waits on the row until the other commits, so a line's events sort in commit order (CAS-40.2) and the lock lives in the row, not in the shared lock table (CAS-40.9, 30,000 events in one transaction with no advisory lock). |
+| D4 | `line_status_rules()` is `SECURITY DEFINER`, owned by `tp_owner`, `SET search_path = pg_catalog, public, pg_temp`, `REVOKE ALL … FROM PUBLIC`. No role may insert, update or delete `line_status_head`; the trigger is its only writer. **`tp_app` holds `SELECT` on it,** within its practices by the tenant policy, as it reads `line_status`. | The design said no grant at all. Every tenant table is read as `tp_app` by the generated access and cross-tenant tests (`access.db.test.ts`, 6 tests; `cross-tenant.db.test.ts`, 8 tests), which fail with "permission denied" without it, and those tests are never loosened (CLAUDE.md rule 4). A read grant shows a person nothing new: the head row is the latest event of `line_status`, which `tp_app` already reads in the same practices. CAS-40.8 asserts the exact ACL. The founder's approval of the domain model covers it. |
+| D7 | No writer's code changes for locking: triage, the report, opening a case, reconcile, manual ledger work and the reopen keep their transactions, their outer locks (`triage:`, `ledger:`) and their statements. | ADR 0038's "an advisory lock per practice" stays true (its dated note of 2026-10-28). |
+| D8 | Under the founder's grant (Deciders, above): `ledger_entry_within_evidence()` and `ledger_entry_within_line()` take `pg_advisory_xact_lock(hashtextextended('ledger:' \|\| NEW.practice_id::text, 0))`, the key `lockLedger` already holds, instead of one key per posting or EFT row and one per line. Nothing else in either body changes; CAS-40.8 diffs each body against `20261027090000`'s. | Every `ledger_entry` writer runs after `lockLedger`, so the triggers re-take a lock the transaction holds: no new lock-table entry and no deadlock. |
+| D9 | `max_locks_per_transaction` stays 64 everywhere. | The tests prove a bound that does not depend on it. |
+| D10, D20 | The weekly run reads the new checks (first attempt; at most `TRACE_LOCK_BUCKETS` = 64 advisory locks per backend; the live heap at most `HEAP_LIVE_PERCENT` = 75% of its `job heap` line's limit; memory per phase) and runs the phases "reconcile" (step 7b) and "the large jobs together" (step 7c). | The review's F1 and F2. |
+| D11 | The stored per-content windows stay with #8. | Unchanged. |
+| D15 | `claim_by_superseded ON claim (superseded_by_claim_id) WHERE superseded_by_claim_id IS NOT NULL`, built under the lock loop's `SHARE` lock. | The report's patient balance and `claimLines` look claims up by the claim they supersede (Context, defect 4). |
+| D19 | The heap line: `apps/worker/src/heap.ts` keeps one process-wide `PerformanceObserver` on major collections and the heap in use just after the latest one. `attempt()` in `apps/worker/src/worker.ts` opens a handle before every attempt of every job kind the worker runs (the practice jobs, the platform jobs and the screening jobs) and logs, in a `finally`, whether the attempt completed, failed or was refused, `job heap` with `job_id`, `job_type`, `heap_live_peak_mib` and `heap_limit_mib`. The peak is the largest live heap seen while the attempt ran (a job with no major collection reports the latest value from before it began), rounded **up** to a whole MiB, so a peak just over a line never reads under it; the limit is V8's `heap_size_limit`, rounded **down**. IDs and numbers only. | The quantity that crashes the worker is the live heap, not a sampled `heapUsed`. |
+| D22 | The migration takes `claim`'s `SHARE` lock and `line_status`'s `SHARE ROW EXCLUSIVE` lock together with `NOWAIT`, once a second, up to 300 tries, in a subtransaction each; after that it fails with "line_status or claim stayed in use for five minutes; run the deploy again (docs/adr/0083)" (55P03). | A refused try queues nobody, so no reopen or 835 load waits behind the migration. |
+| D23 | An alarm on the metric `JobHeapLivePeak` (`TherapyPlatform/Worker`, from a filter on `job heap`): the maximum of `heap_live_peak_mib` over 300 s above `HEAP_MIB.worker` × 75% (420 MiB), missing data not breaching, routed as the worker's other alarms. | The weekly run's line, read in production. |
+
+#### CAS-42.3 at 2,000 lines
+
+The reconcile at size (`apps/worker/src/reconcile/reconcile.large.db.test.ts`) runs 2,000 case lines by default, not the
+design's 20,000; `TP_LARGE_RECONCILE_LINES` sets any size. The pass grows faster than its lines whatever its locks:
+`candidatesFor` runs two queries per open case line per pass (the by-patient one decrypting every claim of the same code
+and date), `claimLines` reads each line's correction chain on its own, and `syncLineStages` writes each stage as a
+statement of its own that refreshes the line's whole case. 2,000 lines took 57.7 s and 6,000 took 341.8 s on 4 CPUs
+with the lock fixed, so 20,000 would take hours, past a CI shard. The lock bound it proves (at most the practice's one
+`ledger:` lock) is the same at every size: on SUITE-CAP-1a's merge the sampled peak was 6,001 locks at 2,000 lines,
+about three per line. The pass's own time at size is handed on (Revisit when). Its 835s are LED-06's SYNTHETIC segments
+repeated under new numbers, since the worker does not depend on `@tp/synth`.
+
+#### The proof at real size (CAS-42.1 and CAS-42.2), measured
+
+`apps/worker/src/triage/triage.large.db.test.ts` (`TP_LARGE_TRIAGE_LINES`, 100,000 by default) builds the harness's
+shape: B's month (20,000 lines) priced, triaged and reported; A's and Y's months (100,000 lines each) priced. Each
+month is half Medicare Advantage non-contracted and half under a SYNTHETIC contract at 110% of Medicare with a cited and
+verified 365-day window, in claims of four lines with sealed SYNTHETIC claim numbers, priced by the price job. Each job
+runs through its own code (`executeTriage`, `generateAuditReport`) in a child process
+(`apps/worker/src/triage/test-support/large-jobs.ts`) on the worker's login, printing with Chromium, and the heap is
+D19's observer in that child. The advisory locks per backend are sampled every 25 ms.
+
+Measured on this container (4 CPUs, Node 24, PostgreSQL 18.4 with 64 locks per transaction and 100 connections),
+Chromium from `/opt/pw-browsers`, on 2026-11-01 and 2026-11-02 (two full runs of the file at `ce408d2f`; the times
+below are the second's, the first's within 5%):
+
+| Job | Heap flag | Time (budget) | Live heap peak (75% of the flag) | Advisory locks per backend | For the record: sampled `heapUsed`, resident |
+| --- | --- | --- | --- | --- | --- |
+| A's triage alone (CAS-42.1): 83,332 validated, 41,667 actionable in 1 case | 420 MiB | **60.1 s** (120 s); actionable write **6.6 s** (30 s) | **151 MiB** (315 MiB) | 1 | 231 MiB, 486 MiB |
+| A's report alone, right after A's triage (CAS-42.1) | 420 MiB | **460.2 s** (180 s): **fails the budget**, see below | **128 MiB** (315 MiB) | 1 | 212 MiB, 549 MiB |
+| A's second report and Y's triage together (CAS-42.2) | 560 MiB | report **87.2 s**, triage **70.0 s** (actionable 6.9 s) | **189 MiB** (420 MiB) | 1 | 307 MiB, 649 MiB |
+
+The first run gave 61.5 s (actionable 6.7 s) and a live peak of 160 MiB for the triage, 481.3 s and 149 MiB for the
+report alone, and 89.4 s, 72.3 s and 220 MiB for the pair. The file took 838 and 939 s, of which the shared setup
+(B's month priced, triaged and reported; A's and Y's months priced) took 191 and 317 s.
+
+With the candidates' query fixed (below), the integration's full database suite on 2026-11-02 ran the file in its
+first shard (its shard took 722 s with every other file in it, against CI's 20-minute job): setup 358.3 s; A's triage
+alone 70.8 s (actionable write 6.9 s), live peak 163 MiB; A's report alone right after it **95.8 s** (180 s), its
+candidate read 10.8 s, live peak 117 MiB; A's second report and Y's triage together 111.8 s and 88.6 s (actionable
+8.5 s), live peak 219 MiB (420 MiB); at most 1 advisory lock per backend throughout. Both tests pass.
+
+On SUITE-CAP-1a's merge (`efb20704`, without SUITE-CAP-1b's migration; the test, its child and `heap.ts` copied in as a
+scratch measurement): B's 20,000-line triage, in the shared setup, failed with 53200
+("out of shared memory") at its validated write after 30 s, so neither test ran. At 20,000 lines
+(`TP_LARGE_TRIAGE_LINES=20000`, B at 4,000), the setup completed in 44.7 s and both tests failed with 53200: A's
+triage alone (CAS-42.1), and A's report beside Y's triage (CAS-42.2). The heap never came into it: the shared lock
+table runs out first, as probe B found. So CAS-42.1 and CAS-42.2 fail on the base and, but for the report's time, pass
+on the head.
+
+Every live peak is far below 75% of the flag in force, so the gate of section 8.2 (the heap) holds and SUITE-CAP-1b
+went on. Three readings of the numbers:
+- **A report right after its own practice's triage took the wrong plan (fixed here).** 391.8 s of the 460.2 s is
+  `FETCH 2000 FROM triage_candidates` (21 fetches): the report's own read of the candidates, `candidateRows`' query. The
+  same practice's next report (CAS-42.2, minutes later) took 87.2 s, its candidate read 10.3 s. With autovacuum off on `line_status`, `case_line`
+  and `line_status_head` the cursor took 421.7 s, and its plan (`auto_explain`) shows why: the statistics still hold
+  `case_line` and `line_status` as they were before the triage added 41,667 case lines and 124,999 stage events, so the
+  planner expects one candidate and answers `NOT EXISTS (… case_line …)` with a nested loop over every case line of the
+  practice through `case_line_by_case (practice_id, case_id)`, 83,332 loops of 31,250 rows (2.6 billion rows filtered),
+  instead of the unique `case_line_once (service_line_id)`. With autovacuum on, whether the report wins the race with
+  its `ANALYZE` decides between about 80 s and about 460 s (two runs of 460 and 481 s, one of 80 s). It was a plan
+  that depended on statistics, as D12's was. The integration fixed it: the query asks whether a line is in a case
+  through a correlated subquery, `NOT coalesce((SELECT true FROM case_line cl WHERE cl.service_line_id = …), false)`,
+  which the planner keeps per row and answers through `case_line_once`, so no anti-join plan is left to choose. Its
+  rows and their order are unchanged (one case line per line, `case_line_once`). On the same database and statistics
+  (100,000 lines, A's and Y's months priced, autovacuum off on the three tables, the cursor read as the worker's login),
+  the old form had read 16,000 of 41,665 candidates when it was stopped at 120 s; the new one read all of them in 4.4 s
+  (3.9 s for the old form once analysed). CAS-42.1 holds the report to its 180 s budget.
+- **The limit V8 reports is not the flag.** `heap_size_limit` is the old generation's limit plus the young
+  generation's: 612 MiB under `--max-old-space-size=420` and 752 MiB under 560, measured on Node 24.22. CAS-42 holds
+  each peak to 75% of the flag itself. The weekly run's check took 75% of the `job heap` line's `heap_limit_mib`, which
+  allowed 564 MiB under the worker's 560 MiB flag where the design meant 420 MiB. It now holds each peak to 75% of the
+  worker command's `--max-old-space-size` flag (or of the logged limit, when that is lower or the command has none:
+  `heapLimitMib` in `tools/release-capacity/checks.ts`), the line the production alarm reads (420 MiB). The line still
+  logs V8's limit, as D19 says.
+- **The sampled `heapUsed` and the resident memory are printed for the record only.** They count garbage V8 has yet to
+  collect, and resident memory leaves out the Chromium processes.
+
 ## Alternatives considered
 
 | Option | Why not (or when we would switch) |
@@ -304,3 +410,6 @@ in-flight job, down. SUITE-CAP-1b's runbook note for its release says so.
   4 CPUs): bounded in memory here, not in time; storing the waiting patterns at triage is handed to Lane A.
 - `candidateRows`' and `runLines`' queries still read the practice's whole stage log through a `DISTINCT ON`, which
   grows with the practice's history: SUITE-CAP-1b's head row, or a per-line lookup, would remove it in a later item.
+- The reconcile pass's own time at size (CAS-42.3 runs 2,000 lines, not 20,000): `candidatesFor`'s two queries per
+  open case line, `claimLines`' per-line correction chain and `syncLineStages`' statement per stage, which grow faster
+  than the lines. SUITE-CAP-3 measures reconcile at real size.

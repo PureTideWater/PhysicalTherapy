@@ -91,20 +91,31 @@ export const MAIL_EVENTS_QUEUE_PERIOD_SECONDS = 300;
 /**
  * The codes the platform jobs log as `error_code` that page the operator, each counted by its own metric filter on the
  * platform's log group and alarmed at one in five minutes (D5): the screening stream paused, a notice not delivered to a
- * recipient, a notice with no recipient at all, an invitation not delivered, a probe not back within 26 hours.
+ * recipient, a notice with no recipient at all, an invitation not delivered, a stream with no probe back in 26 hours.
  */
 export const MAIL_PLATFORM_ALARM_CODES = ['MAIL_STREAM_PAUSED', 'NOTICE_UNDELIVERED', 'NOTICE_UNDELIVERABLE', 'INVITATION_UNDELIVERED', 'MAIL_PROBE_MISSED'] as const;
 export type MailPlatformAlarmCode = (typeof MAIL_PLATFORM_ALARM_CODES)[number];
 export const MAIL_PLATFORM_ALARM_PERIOD_SECONDS = 300;
 
 /**
+ * The probes' hours as the database decides them (D5, D8; review M3 and the review of 2026-10-27), which the tests read
+ * from the generated packages/db/functions: a probe goes daily, and hourly while its stream is missed; a stream is
+ * missed once its last proof, the older of its last delivered and bounced probe since the last resume, is 26 hours old,
+ * or, with one not back since the resume, an hour after the first probe sent since then, which a re-send never moves
+ * (operator_mail_streams().probe_missed); the platform then logs MAIL_PROBE_MISSED on every minute's run until both
+ * come back, so the alarm stays raised; the screening is ready only while both came back within 48 hours
+ * (screening_mail_status()). A daily probe sent and lost pages 2 hours after it went, 22 before readiness lapses; a
+ * resumed stream whose probes do not come back pages an hour after they went.
+ */
+export const MAIL_PROBE_HOURS = { daily: 24, firstProof: 1, missed: 26, ready: 48 } as const;
+
+/**
  * A probe the platform could not send (review M3). While a stream's probe is due, each minute's mail_events run tries
- * it and, when the send throws, logs MAIL_PROBE_UNSENT and tries again on the next run. Nothing then comes back, but no
- * probe is outstanding either, so MAIL_PROBE_MISSED never fires, and 48 hours after the last probe came back the
- * stream is no longer ready: staging and production close the screening. Counted on the platform's log group and
- * alarmed when each of three five-minute periods has one, so a send that fails once and goes on the next run pages no
- * one, and a send that keeps failing pages within 15 minutes. The probes go a day apart, so that is about a day before
- * readiness lapses.
+ * it and, when the send throws, logs MAIL_PROBE_UNSENT and tries again on the next run. Nothing then comes back:
+ * MAIL_PROBE_MISSED follows 26 hours after the last probe did, and at 48 the stream is no longer ready (staging and
+ * production close the screening). This alarm names the cause sooner: counted on the platform's log group and alarmed
+ * when each of three five-minute periods has one, so a send that fails once and goes on the next run pages no one, and
+ * a send that keeps failing pages within 15 minutes, about a day before readiness lapses.
  */
 export const MAIL_PROBE_UNSENT_ALARM = { code: 'MAIL_PROBE_UNSENT', periodSeconds: 300, periods: 3 } as const;
 

@@ -186,6 +186,13 @@ describe('the release capacity verdict', () => {
     expect(verdict({ ...PASSING, jobs: change('A audit report', { heap: { peakMib: 420, limitMib: 560 } }) }).pass).toBe(true);
     failsWith({ jobs: change('A audit report', { heap: { peakMib: 421, limitMib: 560 } }) }, /A audit report \(audit_report 00000000-0000-4000-8000-\d{12}\) had a live heap of 421 MiB, above 75% of its 560 MiB limit \(420 MiB\) \(the chain\)/);
     failsWith({ jobs: change('B triage', { heap: { peakMib: 500, limitMib: 560 } }) }, /B triage .* had a live heap of 500 MiB/);
+    // V8's heap_size_limit adds the young generation to the flag (752 MiB under 560): the line is the flag's, as the alarm's is.
+    expect(verdict({ ...PASSING, jobs: change('A audit report', { heap: { peakMib: 420, limitMib: 752 } }) }).pass).toBe(true);
+    failsWith({ jobs: change('A audit report', { heap: { peakMib: 421, limitMib: 752 } }) }, /A audit report .* had a live heap of 421 MiB, above 75% of its 560 MiB limit \(420 MiB\) \(the chain\)/);
+    // With no flag in the worker's command, the limit the job logged.
+    const unflagged = { ...PASSING.worker, command: ['node', 'dist/main.js'] };
+    expect(verdict({ ...PASSING, worker: unflagged, jobs: change('A audit report', { heap: { peakMib: 564, limitMib: 752 } }) }).pass).toBe(true);
+    failsWith({ worker: unflagged, jobs: change('A audit report', { heap: { peakMib: 565, limitMib: 752 } }) }, /A audit report .* had a live heap of 565 MiB, above 75% of its 752 MiB limit \(564 MiB\)/);
     failsWith({ jobs: change('E price', { heap: null }) }, /E price \(price\) logged no job heap line \(the large jobs together\)/);
     failsWith({ jobs: change('C parse 2', { heap: null }) }, /C parse 2 \(parse_835\) logged no job heap line \(concurrent phase\)/);
     // Setup's jobs are not measured; a job that did not complete fails as that alone.

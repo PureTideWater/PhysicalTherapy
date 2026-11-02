@@ -2,7 +2,7 @@
 -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
 
 -- console_resume_mail_stream(text,text)
--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: aa7deca1804d4ed7
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: f2458e37f39a9b9d
 -- Trigger function of: (none)
 -- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.console_resume_mail_stream(stream text, reason text)
@@ -21,7 +21,7 @@ BEGIN
   END IF;
   UPDATE mail_stream s
      SET paused_at = NULL, paused_reason = NULL, paused_by = NULL, pause_sends = NULL, pause_bounces = NULL, pause_complaints = NULL,
-         window_starts_at = now(), resumed_at = now(), probe_sent_at = NULL, ses_enabled_confirmed_at = NULL
+         window_starts_at = now(), resumed_at = now(), probe_sent_at = NULL, first_probe_sent_at = NULL, ses_enabled_confirmed_at = NULL
    WHERE s.stream = stream AND s.paused_at IS NOT NULL;
   IF NOT FOUND THEN
     RETURN false;

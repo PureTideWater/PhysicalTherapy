@@ -21,9 +21,16 @@ import { type NoticeClient, asOperator } from './support-notices';
  *    included, keeps a paused set sending), enabled while it is open; the stream is confirmed sending only once SES
  *    reads the set enabled again, and the screening's runs are claimed only then (screening_run_mail_gate). Only the
  *    screening set is ever disabled: the transactional and notices streams never pause.
- * 2. Probes, once the stack's identities are verified (phase 2): a stream due one (daily, at once after a resume, again
- *    when one has not come back in 26 hours, which is MAIL_PROBE_MISSED) sends one message to SES's simulator's success
- *    address and one to its bounce address, through the stream's set, and nothing else.
+ * 2. Probes, once the stack's identities are verified (phase 2): a stream due one (at once after a resume, daily once
+ *    the last came back, and hourly while it is missed) sends one message to SES's simulator's success address and one
+ *    to its bounce address, through the stream's set, and nothing else. A missed stream (operator_mail_streams(): both
+ *    probes back since the last resume and the older 26 hours old, or one not back an hour after the first probe sent
+ *    since then) logs MAIL_PROBE_MISSED on every run until both come back, due or not, so its alarm stays raised: a
+ *    probe sent and lost pages 2 hours after it went and one that cannot be sent pages too, each 22 hours before the
+ *    screening's readiness lapses (review M3), and a resumed stream whose probes do not come back pages an hour after
+ *    they went, however often they go again (the review of 2026-10-27). Each probe event recorded is logged by its SES
+ *    message ID, stream, SES event type, state and bounce subtype (no address: a probe goes to the simulator or to the
+ *    operator's synthetic mailbox), which the staging checks read (docs/runbooks/deliverability.md, section 2).
  * 3. Drain the queue: up to 10 messages a receive, at most 1,000 or 50 seconds a run. Each SES event is recorded once
  *    per message and event, in any order (operator_record_mail_event(), by SES's message ID and the state's rank), in a
  *    transaction scoped to its support notice's practice (its tp_practice tag) or to none; the message is deleted from
@@ -219,6 +226,7 @@ export interface MailEventsResult {
   /** Why the screening stream paused in this run, if it did. */
   readonly paused: MailPauseReason | null;
   readonly probed: readonly MailStream[];
+  /** The streams whose last proof is 26 hours old (operator_mail_streams().probe_missed), each logged MAIL_PROBE_MISSED. */
   readonly probesMissed: readonly MailStream[];
 }
 
@@ -260,17 +268,17 @@ function logPaused(logger: Logger, reason: MailPauseReason, requestId: string): 
   }
 }
 
-/** A probe that has not come back in 26 hours: one fixed sentence a stream, each with MAIL_PROBE_MISSED. */
+/** No probe of the stream back in 26 hours: one fixed sentence a stream, each with MAIL_PROBE_MISSED. */
 function logProbeMissed(logger: Logger, stream: MailStream, requestId: string): void {
   switch (stream) {
     case 'transactional':
-      logger.error('transactional mail probe has not come back in 26 hours', { job_id: requestId, error_code: MAIL_LOG_CODES.probeMissed });
+      logger.error('transactional mail probe has not come back', { job_id: requestId, error_code: MAIL_LOG_CODES.probeMissed });
       return;
     case 'notices':
-      logger.error('notices mail probe has not come back in 26 hours', { job_id: requestId, error_code: MAIL_LOG_CODES.probeMissed });
+      logger.error('notices mail probe has not come back', { job_id: requestId, error_code: MAIL_LOG_CODES.probeMissed });
       return;
     case 'screening':
-      logger.error('screening mail probe has not come back in 26 hours', { job_id: requestId, error_code: MAIL_LOG_CODES.probeMissed });
+      logger.error('screening mail probe has not come back', { job_id: requestId, error_code: MAIL_LOG_CODES.probeMissed });
       return;
   }
 }
@@ -367,12 +375,15 @@ export async function runMailEvents(options: MailEventsOptions): Promise<MailEve
   const probesMissed: MailStream[] = [];
   if (options.probes) {
     for (const row of await streams()) {
-      if (!row.probe_due) {
-        continue;
-      }
+      // Missed is read from the stream's proofs since the last resume, due or not (review M3): logged on every run while
+      // it holds, so its alarm stays raised until both come back, whether the last went and was lost, none could be sent,
+      // or a re-send went (the review of 2026-10-27).
       if (row.probe_missed) {
         probesMissed.push(row.stream);
         logProbeMissed(logger, row.stream, requestId);
+      }
+      if (!row.probe_due) {
+        continue;
       }
       try {
         await options.mail.send(probeMessage(row.stream, MAIL_PROBE_RECIPIENTS.delivered));
@@ -442,6 +453,18 @@ export async function runMailEvents(options: MailEventsOptions): Promise<MailEve
         continue;
       }
       recorded += 1;
+      if (entry.record.kind === 'probe') {
+        // A probe's outcome, readable by its message ID (the staging checks of docs/runbooks/deliverability.md, section 2;
+        // the review of 2026-10-27): no address, since a probe goes only to the simulator or the operator's own mailbox.
+        logger.info('mail probe event recorded', {
+          job_id: requestId,
+          ses_message_id: entry.record.messageId,
+          mail_stream_code: entry.record.stream,
+          ses_event_type: entry.record.sesEventType,
+          mail_state_code: row.state,
+          bounce_subtype_code: entry.record.event === 'bounce' ? entry.record.bounceSubtype : null,
+        });
+      }
       if (row.notice_undelivered !== null) {
         logger.error('support-access notice not delivered to every administrator', { job_id: requestId, support_grant_id: row.notice_undelivered, error_code: MAIL_LOG_CODES.noticeUndelivered });
       }
