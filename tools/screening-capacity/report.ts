@@ -29,7 +29,8 @@ import { MEASURED_SCENARIOS, REPEATED_SCENARIO, REPETITIONS, scenarioLabel } fro
  * the consumer measured at a size other than the one declared, a runner too small, a wrong or unfinished result, a
  * stalled run, a small upload not queued behind the large ones, the consumer's slots not used at once, the platform
  * pricing a screening, an upload in the waiting tier, a time metric missing or outside its bounds, a request
- * that left for the static origin, a submission time not captured, an oracle mismatch or an oracle that compared fewer
+ * that left for the static origin, a submission time not captured, an upload whose address checks the web did not
+ * measure or measured under their 2-second worst case (G1), an oracle mismatch or an oracle that compared fewer
  * rows than the upload's Medicare rows, a partial run: every one of S1 to S5 must be measured, S4 three times, and a
  * declared screening consumer the harness does not run as production will). Time is judged by timeVerdict(): "open, PR 6b" while
  * environments.ts declares no screening consumer; with it declared (PR 6b-3), above 48 s on the runner fails
@@ -268,6 +269,12 @@ export interface UploadMeasure {
    * normal line or the waiting tier's; null when no consumer logged one.
    */
   readonly logged: { readonly elapsedMs: number; readonly atMs: number; readonly tier: 'normal' | 'waiting' } | null;
+  /**
+   * How long the web's address checks (the DNS check and SES's validation, run together, D9) took for this upload, as
+   * the web measured and logged them with its run (`screening address checked`; PR 6b-4), inside its time to email;
+   * null when the web logged no such line for the run (absent from a report written before this round, read the same).
+   */
+  readonly addressCheckMs: number | null;
 }
 
 export interface ContainerMeasure {
@@ -389,6 +396,46 @@ export interface Measurements {
   readonly notStarted: readonly string[];
   /** A step that could not finish, with what stopped it (a code and a short reason of the harness's own). */
   readonly aborted: string | null;
+  /**
+   * The screening's mail as the harness ran it (PR 6b-4; audit #76): whether the screening stream was seeded sending and
+   * ready (its delivered and bounced probes back), so the mail gate holds no run; and how many lines the consumers
+   * logged of a run waiting on the mail gate, which must be none. Absent from a report written before PR 6b-4, which the
+   * verdict fails. The address checks' time is each upload's own, as the web measured it (UploadMeasure.addressCheckMs).
+   */
+  readonly mail?: { readonly screeningReady: boolean; readonly heldLines: number };
+}
+
+/**
+ * The least time the web's address checks may take on a measured upload (the harness slows its stand-ins to it with
+ * MAIL_CHECK_DELAY_MS): the worst case of the DNS check and SES's validation, run together after the row checks and the
+ * rate limit, each bounded by one 2-second timeout (the plan's section 5, G1). The verdict reads the time the web
+ * measured on each upload, never the delay the harness set, so a change that skips or shortens the checks on the
+ * measured path fails it (review M4). The 48-s line is unchanged; with the checks charged, CI's run on 13f59b1 measured
+ * S4's middle run (S4#2) at a worst upload of 47.7 s, 0.3 s under it, which raised the sizing question O9 (issue #41).
+ */
+export const ADDRESS_CHECK_CHARGE_MS = 2_000;
+
+/**
+ * The code the screening consumer logs a run by while the screening's mail is not sending (the worker's
+ * SCREENING_MAIL_PAUSED_CODE: `screening run waits: email paused`), and when an email went after a pause held its run.
+ */
+export const SCREENING_MAIL_HELD_CODE = 'SCREENING_MAIL_PAUSED';
+
+/** How many of the consumers' log lines (JSON lines; anything else is skipped) name a run the mail gate held. */
+export function mailHeldLines(lines: Iterable<string>): number {
+  let held = 0;
+  for (const line of lines) {
+    if (!line.startsWith('{')) {
+      continue;
+    }
+    try {
+      const entry = JSON.parse(line) as { readonly error_code?: unknown };
+      held += entry.error_code === SCREENING_MAIL_HELD_CODE ? 1 : 0;
+    } catch {
+      // Not a log line.
+    }
+  }
+  return held;
 }
 
 export interface Verdict {
@@ -529,6 +576,15 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
     reasons.push(`deadline: ${measured.notStarted.join(', ')} not started inside the harness's budget`);
   }
   reasons.push(...measured.runnerProblems.map((problem) => `runner too small: ${problem}`));
+  // The screening's mail (PR 6b-4): no run held by the mail gate; each upload's address checks, as the web measured
+  // them, are judged with the upload below.
+  const mail = measured.mail;
+  if (mail?.screeningReady !== true) {
+    reasons.push("screening mail not ready: the harness seeds the screening stream sending with its probes back, so the mail gate holds no measured run");
+  }
+  if ((mail?.heldLines ?? 0) > 0) {
+    reasons.push(`screening mail held runs: the consumer logged ${String(mail?.heldLines)} line${mail?.heldLines === 1 ? '' : 's'} of a run waiting while the screening's mail was not sending`);
+  }
   // The layout the harness gives this runner, read again from the report's own limits: the free runner's shared CPUs
   // pass there, and CPUs of their own on eight or more (the founder's rulings of 2026-10-23).
   const expected = measured.expected;
@@ -613,6 +669,7 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
       } else if (upload.lastPageStatus !== 200) {
         reasons.push(`result's last page of groups did not open: ${where} (HTTP ${String(upload.lastPageStatus)})`);
       }
+      reasons.push(...addressCheckProblems(upload, where));
       if (upload.storedRows !== upload.rows) {
         reasons.push(`row count: ${where} stored ${String(upload.storedRows)} of ${String(upload.rows)}`);
       }
@@ -691,6 +748,35 @@ export function timeMetricProblems(upload: UploadMeasure, harnessMs: number, whe
   return [];
 }
 
+/**
+ * Whether an upload's time to email carries the address checks' worst case (the plan's G1): the web's own measured time
+ * for its run, which must be there and at least ADDRESS_CHECK_CHARGE_MS. An upload the page never took, or with no run,
+ * has no line and fails here as well as where its missing email fails.
+ */
+export function addressCheckProblems(upload: Pick<UploadMeasure, 'addressCheckMs'>, where: string): string[] {
+  // A report written before the web measured them has no field: read as no line.
+  const measuredMs = typeof upload.addressCheckMs === 'number' ? upload.addressCheckMs : null;
+  if (measuredMs === null) {
+    return [`address checks not measured: ${where} has no line of the web's measured address checks for its run, so its time to email may not carry their worst case (G1)`];
+  }
+  if (measuredMs < ADDRESS_CHECK_CHARGE_MS) {
+    return [`address checks not charged: ${where}'s DNS check and address validation took ${String(measuredMs)} ms on the web; every upload is charged their worst case, ${String(ADDRESS_CHECK_CHARGE_MS)} ms, inside its time to email (G1)`];
+  }
+  return [];
+}
+
+/** The least and the most address-check time the web measured across the run's uploads, and how many it measured. */
+export function addressCheckSpan(scenarios: readonly ScenarioMeasure[]): { readonly measured: number; readonly uploads: number; readonly leastMs: number | null; readonly mostMs: number | null } {
+  const times = scenarios.flatMap((scenario) => scenario.uploads.map((upload) => (typeof upload.addressCheckMs === 'number' ? upload.addressCheckMs : null)));
+  const measured = times.filter((ms): ms is number => ms !== null);
+  return {
+    measured: measured.length,
+    uploads: times.length,
+    leastMs: measured.length === 0 ? null : Math.min(...measured),
+    mostMs: measured.length === 0 ? null : Math.max(...measured),
+  };
+}
+
 export interface Report extends Measurements {
   readonly format: typeof REPORT_FORMAT;
   /** Whether time failed this run (binding: a release's) or only warned (advisory: every other run's). */
@@ -745,6 +831,8 @@ export function markdown(full: Report, rule: TimeRule): string {
     '',
     `Layout: ${layoutText(full.expected.layout)}; the harness ran on CPUs ${String(full.harnessAffinity)}.`,
     '',
+    full.mail === undefined ? 'Screening mail: not recorded (a report written before PR 6b-4).' : `Screening mail: ${addressCheckLine(full.scenarios)}; the screening stream ${full.mail.screeningReady ? 'was seeded sending and ready' : 'was not ready'}, and ${String(full.mail.heldLines)} run line${full.mail.heldLines === 1 ? '' : 's'} waited on the mail gate.`,
+    '',
     full.workflow.ref === null
       ? 'Measured outside GitHub Actions (no GITHUB_WORKFLOW_REF).'
       : `Measured by ${full.workflow.ref}, run ${String(full.workflow.runId)}, attempt ${String(full.workflow.runAttempt)}.`,
@@ -793,6 +881,15 @@ export function markdown(full: Report, rule: TimeRule): string {
     lines.push('Time warnings (advisory: they do not fail this run; a binding run fails on each):', ...timeWarnings.map((warning) => `- ${warning}`), '');
   }
   return lines.join('\n');
+}
+
+/** The address checks as the summary states them: what the web measured on how many uploads, inside each time to email. */
+function addressCheckLine(scenarios: readonly ScenarioMeasure[]): string {
+  const span = addressCheckSpan(scenarios);
+  if (span.leastMs === null || span.mostMs === null) {
+    return `the web measured no upload's address checks (${String(span.uploads)} upload${span.uploads === 1 ? '' : 's'})`;
+  }
+  return `the web measured the address checks of ${String(span.measured)} of ${String(span.uploads)} uploads at ${(span.leastMs / 1000).toFixed(1)} to ${(span.mostMs / 1000).toFixed(1)} s, inside each time to email (G1)`;
 }
 
 /** The consumer as the summary states it. */

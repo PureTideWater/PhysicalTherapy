@@ -3,6 +3,8 @@ import path from 'node:path';
 
 import { developmentMasterKey, readDatabaseUrl } from '@tp/db';
 
+import { DEVELOPMENT_MAIL_STREAM_PREFIX, MAIL_STREAM_PREFIX_PATTERN } from './mail/streams';
+
 export interface WorkerConfig {
   /** NODE_ENV=production: a deployed worker (staging or production), where no local implementation may run. */
   readonly production: boolean;
@@ -167,7 +169,12 @@ export function readScreeningConfig(env: Env = process.env): ScreeningConfig | n
   if (databaseUrl === undefined) {
     return null;
   }
-  return { databaseUrl, concurrency: screeningConcurrency(env), notifications: readNotificationConfig(env) };
+  const notifications = readNotificationConfig(env);
+  if (notifications.mail.kind === 'ses' && notifications.mail.screening === null) {
+    // The screening's mail goes from its own sender, with the support address to reply to (Q12), never from MAIL_FROM.
+    throw new WorkerConfigError('SCREENING_MAIL_FROM and SCREENING_REPLY_TO are required when the screening consumer sends through SES');
+  }
+  return { databaseUrl, concurrency: screeningConcurrency(env), notifications };
 }
 
 /** A screening-only worker's settings (WORKER_JOBS=screening): the screening login and pg-boss's are both required. */
@@ -202,7 +209,31 @@ export type RestoreDrillConfig =
       readonly adminUrl: string;
     };
 
-export type MailConfig = { readonly kind: 'ses'; readonly from: string } | { readonly kind: 'local'; readonly dir: string };
+/** Where a stream's messages go from, and where a reply goes (the screening's: the support address). */
+export interface MailAddressConfig {
+  readonly from: string;
+  readonly replyTo: string;
+}
+
+/**
+ * Email (docs/adr/0065): SES, from MAIL_FROM on the transactional and notices streams and, where the screening's mail
+ * is sent, from SCREENING_MAIL_FROM with Reply-To SCREENING_REPLY_TO on the screening stream, each through its
+ * configuration set `<MAIL_STREAM_PREFIX>-<stream>`; or, in development, a local outbox directory and, where
+ * MAIL_EVENTS_DIR is set, a directory of the simulator-shaped events each message would have, which the platform's local
+ * mail_events source reads (none is written or read without it).
+ */
+export type MailConfig =
+  | { readonly kind: 'ses'; readonly from: string; readonly screening: MailAddressConfig | null; readonly streamPrefix: string }
+  | { readonly kind: 'local'; readonly dir: string; readonly eventsDir: string | null; readonly streamPrefix: string };
+
+/**
+ * Where the platform's mail_events job reads SES's events: the mail-events queue (MAIL_EVENTS_QUEUE_URL, required in
+ * production) or, in development, the local sender's events directory (MAIL_EVENTS_DIR; none, nothing to read). Probes go only once the stack's mail
+ * identities are verified (MAIL_IDENTITIES_VERIFIED=true, phase 2); a development worker probes its local outbox.
+ */
+export type MailEventsConfig =
+  | { readonly kind: 'sqs'; readonly queueUrl: string; readonly identitiesVerified: boolean }
+  | { readonly kind: 'local'; readonly dir: string | null; readonly identitiesVerified: boolean };
 
 /** The platform jobs' settings (docs/adr/0014 and 0017), or null when this worker runs none. */
 /** Where mail to the support address waits: SES's bucket, or (development) a directory of .eml files. */
@@ -218,6 +249,8 @@ export interface PlatformConfig {
   readonly mail: MailConfig;
   readonly appOrigin: string;
   readonly staticAssetOrigin: string | null;
+  /** The mail_events job's queue (or local directory) and whether probes go. */
+  readonly mailEvents: MailEventsConfig;
 }
 
 const IN_PRODUCTION = 'when NODE_ENV is production';
@@ -299,7 +332,55 @@ export function readPlatformConfig(env: Env = process.env): PlatformConfig | nul
     throw new WorkerConfigError('at most one of SUPPORT_MAIL_BUCKET and SUPPORT_MAIL_DIR is set');
   }
   const supportInbox: SupportInboxConfig = mailBucket !== undefined ? { kind: 's3', bucket: mailBucket } : { kind: 'local', dir: mailDir ?? path.join(tmpdir(), 'tp-support-inbox') };
-  return { operatorDatabaseUrl, auditStore, restoreDrill, supportInbox, ...readNotificationConfig(env) };
+  const notifications = readNotificationConfig(env);
+  if (notifications.mail.kind === 'ses' && notifications.mail.screening === null) {
+    // The platform probes every stream, the screening's from its own sender.
+    throw new WorkerConfigError('SCREENING_MAIL_FROM and SCREENING_REPLY_TO are required when MAIL_FROM is set on a platform worker (its probes)');
+  }
+  return { operatorDatabaseUrl, auditStore, restoreDrill, supportInbox, ...notifications, mailEvents: readMailEventsConfig(env, notifications.mail) };
+}
+
+/**
+ * The mail_events job's source: MAIL_EVENTS_QUEUE_URL (an https SQS queue URL; required in production, and with SES)
+ * or the local events directory; MAIL_IDENTITIES_VERIFIED, true or false (required in production; true in development,
+ * where probes go to the local outbox).
+ */
+function readMailEventsConfig(env: Env, mail: MailConfig): MailEventsConfig {
+  const production = isProduction(env);
+  const verified = production ? required(env, 'MAIL_IDENTITIES_VERIFIED', IN_PRODUCTION) : (value(env, 'MAIL_IDENTITIES_VERIFIED') ?? 'true');
+  if (verified !== 'true' && verified !== 'false') {
+    throw new WorkerConfigError('MAIL_IDENTITIES_VERIFIED is true or false');
+  }
+  const identitiesVerified = verified === 'true';
+  const queueUrl = production || mail.kind === 'ses' ? required(env, 'MAIL_EVENTS_QUEUE_URL', production ? IN_PRODUCTION : 'when MAIL_FROM is set') : value(env, 'MAIL_EVENTS_QUEUE_URL');
+  if (queueUrl === undefined) {
+    return { kind: 'local', dir: mail.kind === 'local' ? mail.eventsDir : null, identitiesVerified };
+  }
+  if (!/^https:\/\/sqs\.[a-z0-9-]+\.amazonaws\.com\/\d{12}\/[A-Za-z0-9_-]{1,80}$/.test(queueUrl)) {
+    throw new WorkerConfigError('MAIL_EVENTS_QUEUE_URL is an SQS queue URL, such as https://sqs.us-east-1.amazonaws.com/123456789012/tp-production-mail-events');
+  }
+  return { kind: 'sqs', queueUrl, identitiesVerified };
+}
+
+const ADDRESS = /^[^@\s]+@[^@\s]+$/;
+
+/**
+ * The screening stream's sender (the founder's Q12 ruling of 2026-10-21): SCREENING_MAIL_FROM, results@screening.<domain>
+ * as "PaidWhole", with Reply-To SCREENING_REPLY_TO, the support address; both or neither. Null where neither is set.
+ */
+function readScreeningSender(env: Env): MailAddressConfig | null {
+  const from = value(env, 'SCREENING_MAIL_FROM');
+  const replyTo = value(env, 'SCREENING_REPLY_TO');
+  if ((from === undefined) !== (replyTo === undefined)) {
+    throw new WorkerConfigError('SCREENING_MAIL_FROM and SCREENING_REPLY_TO are set together');
+  }
+  if (from === undefined || replyTo === undefined) {
+    return null;
+  }
+  if (!ADDRESS.test(from) || !ADDRESS.test(replyTo)) {
+    throw new WorkerConfigError('SCREENING_MAIL_FROM and SCREENING_REPLY_TO are email addresses');
+  }
+  return { from, replyTo };
 }
 
 /** Where email goes from and the application it links to: the platform's notices and the practices' digests. */
@@ -327,17 +408,30 @@ export const STATIC_ORIGIN_PATTERN = /^https:\/\/[a-z0-9]([a-z0-9-]*[a-z0-9])?(\
 export function readNotificationConfig(env: Env = process.env): NotificationConfig {
   const production = isProduction(env);
   if (production) {
-    refused(env, 'MAIL_OUTBOX_DIR', `${IN_PRODUCTION} (it selects a local implementation)`);
+    for (const name of ['MAIL_OUTBOX_DIR', 'MAIL_EVENTS_DIR']) {
+      refused(env, name, `${IN_PRODUCTION} (it selects a local implementation)`);
+    }
   }
   const from = production ? required(env, 'MAIL_FROM', IN_PRODUCTION) : value(env, 'MAIL_FROM');
   const outbox = value(env, 'MAIL_OUTBOX_DIR');
   if (from !== undefined && outbox !== undefined) {
     throw new WorkerConfigError('at most one of MAIL_FROM and MAIL_OUTBOX_DIR is set');
   }
-  if (from !== undefined && !/^[^@\s]+@[^@\s]+$/.test(from)) {
+  if (from !== undefined && !ADDRESS.test(from)) {
     throw new WorkerConfigError('MAIL_FROM is an email address');
   }
-  const mail: MailConfig = from !== undefined ? { kind: 'ses', from } : { kind: 'local', dir: outbox ?? path.join(tmpdir(), 'tp-mail-outbox') };
+  const streamPrefix = production ? required(env, 'MAIL_STREAM_PREFIX', IN_PRODUCTION) : (value(env, 'MAIL_STREAM_PREFIX') ?? DEVELOPMENT_MAIL_STREAM_PREFIX);
+  if (!MAIL_STREAM_PREFIX_PATTERN.test(streamPrefix)) {
+    throw new WorkerConfigError('MAIL_STREAM_PREFIX is tp- and the environment, such as tp-production');
+  }
+  const eventsDir = value(env, 'MAIL_EVENTS_DIR');
+  let mail: MailConfig;
+  if (from !== undefined) {
+    refused(env, 'MAIL_EVENTS_DIR', 'when MAIL_FROM is set (SES publishes the events)');
+    mail = { kind: 'ses', from, screening: readScreeningSender(env), streamPrefix };
+  } else {
+    mail = { kind: 'local', dir: outbox ?? path.join(tmpdir(), 'tp-mail-outbox'), eventsDir: eventsDir ?? null, streamPrefix };
+  }
   const origin = production ? required(env, 'APP_ORIGIN', IN_PRODUCTION) : (value(env, 'APP_ORIGIN') ?? 'http://localhost:3000');
   let appOrigin: URL;
   try {

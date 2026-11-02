@@ -115,3 +115,45 @@ PR 6b's Q1 and Q7; docs/adr/0062 records the consumer and the time check, 0019 i
   job's; a run whose thread fails it fails its job with fixed text, never the error's. The consumer's graceful stop
   waits 110 seconds for the runs in hand, under its service's 120-second stop timeout.
 
+
+## Amendment (PR 6b-4, 2026-10-21): the mail record's platform jobs
+
+Audit #76, built under the founder's answers of 2026-10-21 (about 22:30 UTC) to PR 6b's Q1 (the mail streams and the
+SQS interface endpoint), Q9 (the screening's cut-off), Q10 (a) (the bounce budget), Q11 (b) (the keyed refusal hash)
+and Q12 (the screening's sender); migration 20261107090000; docs/adr/0065 records the streams, 0019 the functions the
+jobs call and 0050 the dunning outbox.
+
+- **`mail_events`, every minute** (`apps/worker/src/platform/mail-events.ts`). It reconciles the screening's SES
+  configuration set with its stream (disabled while the stream is paused, enabled and then confirmed once SES reads
+  it so; the transactional and notices sets are never touched), sends each stream's daily probe to SES's simulator
+  once the stack's identities are verified (`MAIL_IDENTITIES_VERIFIED`), and drains the mail-events queue: at most
+  1,000 messages or 50 seconds a run, each SES event recorded once per message and event in its own transaction and
+  deleted from the queue only after that commits (JOB-05); an account alarm's state change pauses the screening
+  stream. It logs IDs and codes only: `MAIL_STREAM_PAUSED`, `NOTICE_UNDELIVERED` (with the support grant's or the
+  invoice's ID), `INVITATION_UNDELIVERED` (with the invitation's ID), `MAIL_PROBE_MISSED` (on each run while a
+  stream's probes have not come back: the older of its delivered and bounced probe since the last resume 26 hours old,
+  or one not back an hour after the first probe sent since then; the probes then go hourly; ADR 0065), and
+  `MAIL_EVENT_UNREADABLE` (with the queue message's ID; the message is left for the dead-letter queue). Each probe
+  event it records is logged at info by SES's message ID and codes alone (the stream, SES's event type, the state and
+  the bounce subtype), which the deliverability runbook's staging checks read (the review of 2026-10-27).
+- **`mail_expiry`, nightly at 03:50 UTC.** It deletes, 1,000 of each a call until none is left
+  (`operator_mail_expire()`), the mail records past their days: a message's row 30 days after it was sent on the
+  screening stream (its prospect's own 30) and 90 on the others; a bounce mark after 7 days; a refused screening
+  address's keyed hash 365 days after its latest bounce or complaint (Q11 (b)). The durable record of a notice's
+  delivery is its recipient row, which follows the grant or the invoice.
+- **`dunning_notices`, every minute.** It sends each billing owner a dunning notice whose send is due again (the
+  outbox's retries after 1, 5, 15 and 60 minutes; docs/adr/0050), as `tp_billing`. The daily `billing_dunning` job
+  still records the stages, now with each stage's outbox, and sends what it opened at once.
+- **`support_grant_notices` sends from a recorded outbox.** `operator_record_support_notice()` and
+  `operator_practice_administrator_emails()` are dropped. Each run opens each due notice in its practice's scope
+  (`operator_open_support_notice()`: the notice and one pending recipient a current administrator), then sends each
+  pending recipient one message in its own transaction (`operator_support_notice_claim()`, the send,
+  `operator_support_notice_sent()` with SES's message ID); a send that throws is recorded in a new transaction
+  (`operator_support_notice_failed()`) and tried again later, so a retry reaches only the administrators still
+  pending. `notice_sent` is written at the notice's first accepted send; a notice with no administrator writes
+  `notice_undelivered` and no `notice_sent`, and the job logs `NOTICE_UNDELIVERABLE` with the grant's ID (SEC-19).
+- **Payloads stay empty.** The three new jobs take `{}`, as every platform job's payload names no practice, address
+  or message.
+
+Tests: `apps/worker/src/platform/mail-events.db.test.ts`, `apps/worker/src/platform/support-notices.db.test.ts`,
+`apps/worker/src/billing/billing.db.test.ts`, `apps/worker/src/jobs/platform.test.ts`.

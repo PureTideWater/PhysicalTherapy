@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { S3_PREFIX_LIST_ID_PATH, S3_PREFIX_LIST_LOOKUP_TYPE } from '../lib/constructs/network';
+import { S3_PREFIX_LIST_ID_PATH, S3_PREFIX_LIST_LOOKUP_TYPE, SQS_ENDPOINT_ACTIONS } from '../lib/constructs/network';
+import { MAIL_EVENTS_QUEUE_ACTIONS } from '../lib/constructs/operator-role';
 import { ENVIRONMENTS, environmentSettings } from '../lib/environments';
 import { logGroupName } from '../lib/log-groups';
 import { type CfnResource, type CfnStatement, getAtt, keyId, logicalIdOf, onlyResource, propertiesOf, ref, resourceById, resourcesOf, roleStatements, synthesized } from './synth';
@@ -83,11 +84,11 @@ describe.each(ENVIRONMENTS)('%s: network', (environment) => {
     }
   });
 
-  it('has interface endpoints for KMS, Bedrock runtime, Secrets Manager, CloudWatch Logs, ECR, the RDS API, the SES API and Textract, and an S3 gateway', () => {
+  it('has interface endpoints for KMS, Bedrock runtime, Secrets Manager, CloudWatch Logs, ECR, the RDS API, the SES API, Textract and SQS, and an S3 gateway', () => {
     const endpoints = resourcesOf(template, 'AWS::EC2::VPCEndpoint');
     const interfaces = endpoints.filter(([, e]) => propertiesOf(e).VpcEndpointType === 'Interface');
     expect(interfaces.map(([, e]) => endpointService(e)).sort()).toEqual(
-      ['bedrock-runtime', 'ecr.api', 'ecr.dkr', 'email', 'kms', 'logs', 'rds', 'secretsmanager', 'textract'].sort(),
+      ['bedrock-runtime', 'ecr.api', 'ecr.dkr', 'email', 'kms', 'logs', 'rds', 'secretsmanager', 'sqs', 'textract'].sort(),
     );
     const appSubnetRefs = idsIn('app').map(ref);
     for (const [id, endpoint] of interfaces) {
@@ -97,6 +98,27 @@ describe.each(ENVIRONMENTS)('%s: network', (environment) => {
     const gateways = endpoints.filter(([, e]) => propertiesOf(e).VpcEndpointType === 'Gateway');
     expect(gateways.map(([, e]) => endpointService(e))).toEqual(['s3']);
     expect(propertiesOf(gateways[0]?.[1] ?? { Type: '' }).RouteTableIds).toEqual(idsIn('app').map(routeTableOf));
+  });
+
+  it('limits the SQS endpoint to this account\'s principals reading this account\'s queues, with the mail_events job\'s calls alone (docs/adr/0065; Q1 (e))', () => {
+    const endpoints = resourcesOf(template, 'AWS::EC2::VPCEndpoint').filter(([, e]) => endpointService(e) === 'sqs');
+    expect(endpoints).toHaveLength(1);
+    const policy = propertiesOf((endpoints[0] as [string, CfnResource])[1]).PolicyDocument as { Statement: CfnStatement[] };
+    expect(policy.Statement).toEqual([
+      {
+        Sid: 'ThisAccountsQueuesOnly',
+        Effect: 'Allow',
+        Principal: { AWS: '*' },
+        Action: [...SQS_ENDPOINT_ACTIONS],
+        Resource: { 'Fn::Join': ['', ['arn:', { Ref: 'AWS::Partition' }, ':sqs:', { Ref: 'AWS::Region' }, ':', { Ref: 'AWS::AccountId' }, ':*']] },
+        Condition: { StringEquals: { 'aws:PrincipalAccount': { Ref: 'AWS::AccountId' } } },
+      },
+    ]);
+    expect([...SQS_ENDPOINT_ACTIONS].sort()).toEqual([...MAIL_EVENTS_QUEUE_ACTIONS].sort());
+    // Every other endpoint keeps AWS's default policy.
+    for (const [id, endpoint] of resourcesOf(template, 'AWS::EC2::VPCEndpoint').filter(([, e]) => endpointService(e) !== 'sqs')) {
+      expect(propertiesOf(endpoint).PolicyDocument, id).toBeUndefined();
+    }
   });
 
   it('admits only HTTPS from inside the VPC to the endpoints', () => {
