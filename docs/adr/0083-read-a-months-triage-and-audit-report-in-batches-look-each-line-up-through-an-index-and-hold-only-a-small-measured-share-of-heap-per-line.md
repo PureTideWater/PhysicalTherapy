@@ -332,6 +332,12 @@ The first run gave 61.5 s (actionable 6.7 s) and a live peak of 160 MiB for the 
 report alone, and 89.4 s, 72.3 s and 220 MiB for the pair. The file took 838 and 939 s, of which the shared setup
 (B's month priced, triaged and reported; A's and Y's months priced) took 191 and 317 s.
 
+With the candidates' query fixed (below), the integration's full database suite on 2026-11-02 ran the file in its
+first shard (its shard took 722 s with every other file in it, against CI's 20-minute job): setup 358.3 s; A's triage
+alone 70.8 s (actionable write 6.9 s), live peak 163 MiB; A's report alone right after it **95.8 s** (180 s), its
+candidate read 10.8 s, live peak 117 MiB; A's second report and Y's triage together 111.8 s and 88.6 s (actionable
+8.5 s), live peak 219 MiB (420 MiB); at most 1 advisory lock per backend throughout. Both tests pass.
+
 On SUITE-CAP-1a's merge (`efb20704`, without SUITE-CAP-1b's migration; the test, its child and `heap.ts` copied in as a
 scratch measurement): B's 20,000-line triage, in the shared setup, failed with 53200
 ("out of shared memory") at its validated write after 30 s, so neither test ran. At 20,000 lines
