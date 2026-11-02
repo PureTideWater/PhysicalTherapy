@@ -2,18 +2,23 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parse, stringify } from 'yaml';
 
 import { MUTATION_PACKAGES, type MutationPackage } from '../../stryker/base.mjs';
+import { SEED_SETUP_FILE, mutationTestConfig } from '../../vitest.mutation.config';
 import { repositoryRoot } from '../content-files';
 import {
   type AffectedConfig,
+  type Change,
   type Closure,
   DATA_FILES,
   DIRECTORY_READS,
   GLOBAL_INPUTS,
+  GLOBAL_LOADED,
+  RUNNER_PROOF_SHARD,
   TEST_TOOLING,
   UNCALLED_READS,
   affected,
@@ -22,6 +27,7 @@ import {
   closureProblems,
   covers,
   dataLiterals,
+  gitEnvironment,
   globToRegExp,
   globalFiles,
   lockedPackages,
@@ -36,6 +42,8 @@ import {
   unionClosures,
   unionGlobal,
 } from './affected';
+import { CANARY_TESTS } from './canary/vitest.config';
+import { packagesOf, shardNamed, shardsOf } from './shards';
 
 /**
  * What a change affects, for the mutation workflow (tools/stryker/affected.ts; docs/adr/0066, Part 4; test matrix
@@ -189,7 +197,7 @@ snapshots:
 describe('on a synthetic repository', () => {
   const repo = new SyntheticRepository();
   let closures: Closure[];
-  const affects = (files: string[], lockfile?: { before: string; after: string }) => affected({ files, lockfile }, closures, globalFiles(repo.root, repo.files, synthetic), synthetic.tooling).packages;
+  const affects = (files: string[], lockfile?: { before: string; after: string }, texts?: Change['texts']) => affected({ files, lockfile, texts }, closures, globalFiles(repo.root, repo.files, synthetic), synthetic.tooling).packages;
 
   beforeAll(() => {
     repo.write('pnpm-workspace.yaml', 'packages:\n  - apps/*\n  - packages/*\n').write('package.json', '{"name":"root"}').write('pnpm-lock.yaml', LOCK);
@@ -234,8 +242,15 @@ describe('on a synthetic repository', () => {
 
   it('affects a package through the manifests of its closure, its data files and the global inputs', () => {
     expect(affects(['packages/money/package.json'])).toEqual(['money', 'pricing', 'ledger', 'packets']);
-    expect(affects(['packages/pricing/package.json'])).toEqual(['pricing', 'packets']);
-    expect(affects(['packages/helper/package.json', 'apps/site/package.json'])).toEqual([]);
+    const pricing = JSON.stringify({ name: '@tp/pricing', exports: { '.': './src/index.ts' } });
+    expect(affects(['packages/pricing/package.json'], undefined, { 'packages/pricing/package.json': { before: pricing, after: JSON.stringify({ name: '@tp/pricing', exports: { '.': './src/index.ts', './engine': './src/engine.ts' } }) } })).toEqual(['pricing', 'packets']);
+    const dev = (name: string, command: string) => JSON.stringify({ name, scripts: { dev: command } });
+    expect(
+      affects(['packages/helper/package.json', 'apps/site/package.json'], undefined, {
+        'packages/helper/package.json': { before: dev('@tp/helper', 'tsx watch src/index.ts'), after: dev('@tp/helper', 'tsx watch src') },
+        'apps/site/package.json': { before: dev('@tp/site', 'next dev'), after: dev('@tp/site', 'next dev --port 3001') },
+      }),
+    ).toEqual([]);
     expect(affects(['fixtures/golden/claims/G1.json'])).toEqual(['pricing']);
     expect(affects(['fixtures/other/x.json'])).toEqual([]);
     expect(affects(['stryker/base.mjs'])).toEqual(['money', 'pricing', 'ledger', 'packets']);
@@ -621,4 +636,228 @@ describe('what stops the changes job, and the tooling’s own packages, on this 
     expect(TEST_TOOLING).toContain('tsx');
     expect([...(global.imports.get('tools') ?? [])]).toContain('yaml');
   }, 60_000);
+});
+
+/** A workflow in mutation.yml's shape, each step reference pinned: the cases' base text. */
+const PINS = { checkout: 'a'.repeat(40), setup: 'b'.repeat(40), node: 'c'.repeat(40), upload: 'd'.repeat(40), download: 'e'.repeat(40) } as const;
+const SETUP_STEP = `      - uses: pnpm/action-setup@${PINS.setup} # v6.1.0\n`;
+const NODE_STEP = `      - uses: actions/setup-node@${PINS.node} # v7.1.0\n        with:\n          node-version: 24.22.0\n`;
+const FLOW = [
+  'name: mutation',
+  'on: [pull_request]',
+  'jobs:',
+  '  changes:',
+  '    runs-on: ubuntu-26.04',
+  '    steps:',
+  `      - uses: actions/checkout@${PINS.checkout} # v7.0.1`,
+  '        with:',
+  '          persist-credentials: false',
+  `${SETUP_STEP}${NODE_STEP}      - run: pnpm install --frozen-lockfile`,
+  '  stryker:',
+  '    runs-on: ubuntu-26.04',
+  '    steps:',
+  `      - uses: actions/checkout@${PINS.checkout} # v7.0.1`,
+  `      - uses: actions/upload-artifact@${PINS.upload} # v7.0.2`,
+  '  mutation:',
+  '    runs-on: ubuntu-26.04',
+  '    steps:',
+  `      - uses: actions/download-artifact@${PINS.download} # v8.0.2`,
+  '',
+].join('\n');
+
+/** A 40-hex commit other than `sha`. */
+const other = (sha: string) => [...sha].map((char) => '0123456789abcdef'[('0123456789abcdef'.indexOf(char) + 1) % 16]).join('');
+
+/** #40's mutation.yml at its base, every step kept in its place and only its reference or its name (the PR moved nothing else). */
+const PR40_BASE = `jobs:
+  changes:
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - run: pnpm install --frozen-lockfile
+      - name: What the change affects
+  stryker:
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - run: pnpm install --frozen-lockfile
+      - name: The canary
+      - name: The shard
+      - name: The shard's scores and survivors
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+  mutation:
+    steps:
+      - name: The jobs it needs
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - name: The gate
+`;
+
+/** #40's moves, every one a SHA to a SHA of the same action, the artifact actions among them. */
+const PR40_MOVES = [
+  ['actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0', 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1'],
+  ['pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0', 'pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10'],
+  ['actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0', 'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0'],
+  ['actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2', 'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2'],
+  ['actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0', 'actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2'],
+] as const;
+
+const scripts = (entries: Record<string, string>) => JSON.stringify({ scripts: entries }, null, 2);
+
+describe('the field rule, the runner proof and what else affects every package, on this repository (docs/adr/0066, Part 7)', () => {
+  const files = trackedFiles();
+  const closures = repositoryClosures(repositoryRoot, files);
+  const global = globalFiles(repositoryRoot, files);
+  const judge = (texts: NonNullable<Change['texts']>) => affected({ files: Object.keys(texts), texts }, closures, global);
+  const workflow = (before: string, after: string) => judge({ '.github/workflows/mutation.yml': { before, after } });
+  const WORKFLOW = readFileSync(path.join(repositoryRoot, '.github/workflows/mutation.yml'), 'utf8');
+  const ALL = [...MUTATION_PACKAGES];
+  const proof = packagesOf(shardNamed(RUNNER_PROOF_SHARD));
+
+  it('gives the runner-proof shard’s packages alone when only step references move from one SHA to another, with their comments', () => {
+    let moved = 0;
+    const bumped = WORKFLOW.replace(/(uses: ([^@\s]+)@)([0-9a-f]{40}) # v[\d.]+/g, (all: string, prefix: string, ref: string, sha: string) => {
+      if (ref === 'actions/upload-artifact' || ref === 'actions/download-artifact') return all;
+      moved += 1;
+      return `${prefix}${other(sha)} # v99.0.0`;
+    });
+    expect(moved).toBeGreaterThan(0);
+    const reason = `.github/workflows/mutation.yml step references only: runner proved on ${RUNNER_PROOF_SHARD}`;
+    for (const [before, after] of [
+      [WORKFLOW, bumped],
+      [FLOW, FLOW.replaceAll(PINS.checkout, other(PINS.checkout)).replace(PINS.setup, other(PINS.setup)).replace('# v6.1.0', '# v6.2.0')],
+    ] as const) {
+      const result = workflow(before, after);
+      expect(result.packages).toEqual(proof);
+      for (const pkg of proof) expect(result.reasons[pkg]).toEqual([reason]);
+    }
+  });
+
+  it('gives none for a change to mutation.yml’s comments alone', () => {
+    expect(workflow(WORKFLOW, `# A comment.\n${WORKFLOW.replace('# v7.0.1', '# v7.0.1, checked')}`).packages).toEqual([]);
+    expect(workflow(FLOW, FLOW.replace('jobs:\n', 'jobs:\n  # The jobs.\n')).packages).toEqual([]);
+  });
+
+  it('gives all four for any other change to mutation.yml: a tag or branch ref, a job-level ref, docker://, ./ and $/ refs, another action or path, an artifact action, runs-on, with:, run:, a new step, a step-order change', () => {
+    const tagged = FLOW.replaceAll(`actions/checkout@${PINS.checkout}`, 'actions/checkout@v7');
+    const reusable = (sha: string) => `${FLOW}  reusable:\n    uses: octo/flows/.github/workflows/w.yml@${sha}\n`;
+    const checkoutTo = (ref: string) => FLOW.replace(`actions/checkout@${PINS.checkout}`, ref);
+    for (const [what, before, after] of [
+      ['a SHA to @v7', FLOW, tagged],
+      ['@v7 to a SHA', tagged, FLOW],
+      ['@main', FLOW, FLOW.replaceAll(`actions/checkout@${PINS.checkout}`, 'actions/checkout@main')],
+      ['a job-level ref', reusable(PINS.checkout), reusable(other(PINS.checkout))],
+      ['docker://', FLOW, checkoutTo('docker://alpine:3.20')],
+      ['./local', FLOW, checkoutTo('./.github/actions/checkout')],
+      ['$/', FLOW, checkoutTo('$/.github/actions/checkout')],
+      ['another action', FLOW, checkoutTo(`foo/checkout@${other(PINS.checkout)}`)],
+      ['another path', FLOW, checkoutTo(`actions/checkout/sub@${other(PINS.checkout)}`)],
+      ['upload-artifact', FLOW, FLOW.replace(PINS.upload, other(PINS.upload))],
+      ['download-artifact', FLOW, FLOW.replace(PINS.download, other(PINS.download))],
+      ['upload-artifact, its name in capitals', FLOW.replace('actions/upload-artifact', 'Actions/Upload-Artifact'), FLOW.replace('actions/upload-artifact', 'Actions/Upload-Artifact').replace(PINS.upload, other(PINS.upload))],
+      ['runs-on', FLOW, FLOW.replace('ubuntu-26.04', 'ubuntu-24.04')],
+      ['with:', FLOW, FLOW.replace('persist-credentials: false', 'persist-credentials: true')],
+      ['run:', FLOW, FLOW.replace('pnpm install --frozen-lockfile', 'pnpm install --frozen-lockfile --prefer-offline')],
+      ['a new step', FLOW, FLOW.replace('      - run: pnpm install', '      - run: echo x\n      - run: pnpm install')],
+      ['a step-order change', FLOW, FLOW.replace(`${SETUP_STEP}${NODE_STEP}`, `${NODE_STEP}${SETUP_STEP}`)],
+    ] as const) {
+      expect(before === after, what).toBe(false);
+      expect(workflow(before, after).packages, what).toEqual(ALL);
+    }
+  });
+
+  it('holds the runner-proof shard to packages no other shard holds, read from stryker/shards.json', () => {
+    expect(proof.length).toBeGreaterThan(0);
+    for (const pkg of proof) expect(shardsOf(pkg).map((shard) => shard.name), pkg).toEqual([RUNNER_PROOF_SHARD]);
+  });
+
+  it('gives all four for .npmrc, a pnpmfile, a patch, the workflows’ action lockfile, a package.yaml or package.json5, .pnp.cjs and a local action', () => {
+    for (const file of ['.npmrc', '.pnpmfile.cjs', 'patches/x.patch', '.github/workflows/actions.lock', 'apps/foo/package.yaml', 'apps/foo/package.json5', '.pnp.cjs', '.github/actions/x/action.yml']) {
+      expect(affected({ files: [file] }, closures, global).packages, file).toEqual(ALL);
+    }
+  });
+
+  it('gives all four for the tsconfig.json of a package that holds the mutation tooling (tools/tsconfig.json)', () => {
+    expect(affected({ files: ['tools/tsconfig.json'] }, closures, global).packages).toEqual(ALL);
+  });
+
+  it('holds GLOBAL_LOADED to every file a shard loads by path, and only those, and follows their imports, tests included', async () => {
+    const steps = (parse(WORKFLOW) as { jobs: Record<string, { steps: { name?: string; run?: string }[] }> }).jobs.stryker?.steps ?? [];
+    const configs = (steps.find((step) => step.name === 'The canary')?.run ?? '').split(/\s+/).filter((token) => token.endsWith('.config.mjs'));
+    expect(configs).toHaveLength(1);
+    const canary = configs[0] ?? '';
+    const module = (await import(pathToFileURL(path.join(repositoryRoot, canary)).href)) as { default: { vitest?: { configFile?: string } } };
+    const vitestConfig = module.default.vitest?.configFile ?? '';
+    // Each shard runs stryker/<package>.config.mjs by path (tools/stryker/shards.ts), with the seed's setup file.
+    expect(readFileSync(path.join(repositoryRoot, 'tools/stryker/shards.ts'), 'utf8')).toContain('stryker/${pkg}.config.mjs');
+    expect(mutationTestConfig([]).test?.setupFiles).toEqual([path.join(repositoryRoot, SEED_SETUP_FILE)]);
+    const loaded = [...MUTATION_PACKAGES.map((pkg) => `stryker/${pkg}.config.mjs`), SEED_SETUP_FILE, canary, vitestConfig, ...CANARY_TESTS];
+    expect([...GLOBAL_LOADED].sort()).toEqual([...loaded].sort());
+    for (const file of GLOBAL_LOADED) expect(files, file).toContain(file);
+    expect([...global.files]).toContain('tools/stryker/canary/lib/index.ts');
+    expect([...(global.imports.get('tools') ?? [])]).toContain('@tp/stryker-canary');
+  });
+
+  it('gives none for #3’s manifests: a db:domain-model script in the root and in packages/db', () => {
+    expect(
+      judge({
+        'package.json': { before: scripts({ 'db:migrate': 'tsx packages/db/src/cli/migrate.ts' }), after: scripts({ 'db:migrate': 'tsx packages/db/src/cli/migrate.ts', 'db:domain-model': 'tsx packages/db/src/cli/domain-model.ts' }) },
+        'packages/db/package.json': { before: scripts({ typecheck: 'tsc --noEmit' }), after: scripts({ typecheck: 'tsc --noEmit', 'db:domain-model': 'tsx src/cli/domain-model.ts' }) },
+      }).packages,
+    ).toEqual([]);
+  });
+
+  it('gives the owners of tools/package.json for #31’s manifests: its exports, besides scripts, an unread dependency and an app’s exports', () => {
+    const tools = (more: boolean) =>
+      JSON.stringify({
+        exports: { './workspace': './release/workspace.ts', ...(more ? { './screening-capacity/uploads': './screening-capacity/uploads.ts' } : {}) },
+        scripts: { typecheck: 'tsc --noEmit', ...(more ? { 'screening:capacity': 'tsx screening-capacity/run.ts' } : {}) },
+        devDependencies: { 'fast-check': 'catalog:', ...(more ? { 'playwright-core': '1.56.1' } : {}) },
+      });
+    const worker = (more: boolean) =>
+      JSON.stringify({
+        exports: {
+          './era-formats': './src/parse/era/formats.ts',
+          ...(more ? { './screening': './src/screening/public.ts', './screening-format': './src/screening/format.ts', './screening-wording': './src/screening/wording.ts', './screening-oracle': './src/screening/test-support/legacy-release.ts' } : {}),
+        },
+      });
+    const owners = closures.filter((closure) => closure.manifests.includes('tools/package.json')).map((closure) => closure.pkg);
+    expect(owners.length).toBeGreaterThan(0);
+    expect(
+      judge({
+        'package.json': { before: scripts({ 'release:rollback': 'tsx tools/release/index.ts rollback' }), after: scripts({ 'release:rollback': 'tsx tools/release/index.ts rollback', 'screening:capacity': 'tsx tools/screening-capacity/run.ts' }) },
+        'tools/package.json': { before: tools(false), after: tools(true) },
+        'apps/worker/package.json': { before: worker(false), after: worker(true) },
+      }).packages,
+    ).toEqual(owners);
+  });
+
+  it('gives all four for #40’s mutation.yml: it moves the artifact actions with the other pins', () => {
+    const head = PR40_MOVES.reduce((text, [from, to]) => text.replaceAll(from, to), PR40_BASE);
+    expect(workflow(PR40_BASE, head).packages).toEqual(ALL);
+  });
+
+  it('gives none for #43’s root manifest: the typecheck and lint scripts', () => {
+    expect(
+      judge({
+        'package.json': {
+          before: scripts({ typecheck: 'tsc --noEmit -p tsconfig.json && pnpm -r --workspace-concurrency=4 typecheck', lint: 'node --max-old-space-size=8192 node_modules/eslint/bin/eslint.js . --max-warnings=0' }),
+          after: scripts({ typecheck: 'tsx tools/typecheck/run.ts', lint: 'tsx tools/lint/run.ts' }),
+        },
+      }).packages,
+    ).toEqual([]);
+  });
+});
+
+describe('every git the changes job runs', () => {
+  it('runs with no node_modules/.bin directory, and no relative one, on its PATH, every other entry and variable kept', () => {
+    const env = { PATH: ['/repo/node_modules/.bin', '/usr/local/bin', '/repo/tools/node_modules/.bin/', '/opt/pnpm/node_modules/.pnpm/node_modules/.bin', '', '.', 'node_modules/.bin', 'bin', '/usr/bin', '/bin'].join(path.delimiter), HOME: '/home/x', GIT_DIR: '/repo/.git' };
+    expect(gitEnvironment(env)).toEqual({ PATH: ['/usr/local/bin', '/usr/bin', '/bin'].join(path.delimiter), HOME: '/home/x', GIT_DIR: '/repo/.git' });
+    expect(env.PATH.startsWith('/repo/node_modules/.bin')).toBe(true);
+  });
 });

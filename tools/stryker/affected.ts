@@ -7,9 +7,11 @@ import path from 'node:path';
 import { parse } from 'yaml';
 
 import { MUTATE, MUTATION_PACKAGES, type MutationPackage, type Shard, readShards } from '../../stryker/base.mjs';
-import { EXCLUDED, TEST_SETS } from '../../vitest.mutation.config';
+import { EXCLUDED, SEED_SETUP_FILE, TEST_SETS } from '../../vitest.mutation.config';
 import { repositoryRoot } from '../content-files';
 import { importGraph } from '../screening-capacity/watched';
+import { CANARY_TESTS } from './canary/vitest.config';
+import { DEPENDENCY_FIELDS, NAMED_FILES, classifyManifests, workspaceManifestGlobs } from './manifests';
 import { shardsOf } from './shards';
 import { workspaceDirectories } from './workspace';
 
@@ -35,8 +37,17 @@ import { workspaceDirectories } from './workspace';
  * manifest or data file it deletes or moves out of a package's sets still affects that package; and any changed path
  * its mutate or test set selects affects it, whether or not the file still exists.
  *
- * And GLOBAL_INPUTS (the mutation configurations, the canary, the gate, this file and what they import, the root
- * manifest, the workspace list, the workflow) affect all four.
+ * And GLOBAL_INPUTS (the mutation configurations, the canary, the gate, this file and what they import, the files a
+ * shard loads by path and what they import, tests included, the root tsconfigs and install-time files) affect all
+ * four, and so does the tsconfig.json of a workspace package that holds one of those files.
+ *
+ * The root manifest, pnpm-workspace.yaml, the workflow and every workspace package's manifest are read field by field
+ * on both sides (tools/stryker/manifests.ts; docs/adr/0066, Part 7): a field affects every package when the install,
+ * pnpm, Node or the mutation tooling reads it, the packages whose closures import it or list its manifest, or none (a
+ * script no install runs, a dependency or catalog entry no closure imports, the release-age and trust settings,
+ * comments); a workflow change that only moves step references from one full SHA to another of the same action, the
+ * artifact actions excepted, runs the runner-proof shard alone. Anything not read, not parsed or not listed affects
+ * all four.
  *
  * `pnpm -s exec tsx tools/stryker/affected.ts --event <event> [--base <sha>] [--github-output <file>] [--summary <file>]`
  * prints, and writes to the job's outputs: `packages` and `shards` (JSON arrays) and `any`. A pull_request event diffs
@@ -117,7 +128,13 @@ export const DATA_FILES: Readonly<Record<MutationPackage, readonly DataEntry[]>>
  */
 export const TEST_TOOLING = ['vitest', '@vitest/*', '@stryker-mutator/*', 'fast-check', 'tsx'] as const;
 
-/** What affects every package, by glob, besides the import closure of GLOBAL_ENTRY_POINTS. */
+/**
+ * What affects every package, by glob, besides the import closure of GLOBAL_ENTRY_POINTS and GLOBAL_LOADED: the
+ * mutation configurations and tooling, the root tsconfigs, and what pnpm or the runner reads at install or on every
+ * step (.npmrc, a pnpmfile, patches, a package.yaml or package.json5 manifest, a Plug'n'Play loader, the workflows'
+ * action lockfile and local actions). The root manifest, the workspace file and the workflow are listed here and
+ * read field by field (tools/stryker/manifests.ts); any other file a glob matches is never classified.
+ */
 export const GLOBAL_INPUTS = [
   'stryker/**',
   'tools/stryker/**',
@@ -127,10 +144,34 @@ export const GLOBAL_INPUTS = [
   'tsconfig.json',
   'tsconfig.base.json',
   '.github/workflows/mutation.yml',
+  '.npmrc',
+  '.pnpmfile.*',
+  'patches/**',
+  '.github/workflows/actions.lock',
+  '**/package.yaml',
+  '**/package.json5',
+  '.pnp.cjs',
+  '.github/actions/**',
 ] as const;
 
 /** The mutation tooling's own entry points: whatever they import decides what runs and how it is judged. */
 export const GLOBAL_ENTRY_POINTS = ['tools/stryker/affected.ts', 'tools/stryker/gate.ts', 'tools/stryker/shards.ts', 'tools/stryker/canary/verdict.ts', 'vitest.mutation.config.ts'] as const;
+
+/** The canary's Stryker configuration, which each shard's canary step runs by path (.github/workflows/mutation.yml). */
+const CANARY_CONFIG = 'tools/stryker/canary/stryker.config.mjs';
+
+/** The canary's Vitest configuration, which CANARY_CONFIG names as its vitest.configFile. */
+const CANARY_VITEST_CONFIG = 'tools/stryker/canary/vitest.config.ts';
+
+/**
+ * The files a shard loads by path, not by import, so they and what they import (tests included) affect every package:
+ * each package's Stryker configuration (tools/stryker/shards.ts), the seed's setup file (vitest.mutation.config.ts),
+ * and the canary's configurations and case tests. A test holds the list to those loads.
+ */
+export const GLOBAL_LOADED: readonly string[] = [...MUTATION_PACKAGES.map((pkg) => `stryker/${pkg}.config.mjs`), SEED_SETUP_FILE, CANARY_CONFIG, CANARY_VITEST_CONFIG, ...CANARY_TESTS];
+
+/** The shard that proves a pin-only change of the workflow on its runner: it holds money and ledger whole (stryker/shards.json). */
+export const RUNNER_PROOF_SHARD = 'money-ledger';
 
 /** Where in a closure a path literal is looked for: data under these directories must be in DATA_FILES. */
 export const DATA_ROOTS = ['fixtures', 'content', 'docs'] as const;
@@ -212,6 +253,8 @@ export interface AffectedConfig {
   readonly uncalledReads?: readonly UncalledRead[];
   readonly global: readonly string[];
   readonly globalEntryPoints: readonly string[];
+  /** The files a shard loads by path (GLOBAL_LOADED for this repository); a synthetic world names its own. */
+  readonly globalLoaded?: readonly string[];
   readonly tooling: readonly string[];
 }
 
@@ -224,6 +267,7 @@ export const REPOSITORY_CONFIG: AffectedConfig = {
   uncalledReads: UNCALLED_READS,
   global: GLOBAL_INPUTS,
   globalEntryPoints: GLOBAL_ENTRY_POINTS,
+  globalLoaded: GLOBAL_LOADED,
   tooling: TEST_TOOLING,
 };
 
@@ -496,8 +540,6 @@ export function parseLockfile(text: string): Lockfile {
   return (parse(text) ?? {}) as Lockfile;
 }
 
-const DEPENDENCY_FIELDS = ['dependencies', 'devDependencies', 'optionalDependencies'] as const;
-
 /** A dependency's snapshot key: `name@version`, or the aliased package's own key for an `npm:` alias. */
 function snapshotKey(name: string, version: string): string | undefined {
   if (version.startsWith('link:') || version.startsWith('file:')) return undefined;
@@ -576,12 +618,19 @@ export interface Change {
   readonly files: readonly string[];
   /** The lockfile before and after the change, when it changed (undefined text: no lockfile on that side). */
   readonly lockfile?: { readonly before: string | undefined; readonly after: string | undefined };
+  /**
+   * Each classified file's text before and after the change: a string is that side's text, null says the file does not
+   * exist on that side, and undefined (or no entry) says it was not read, which fails closed.
+   */
+  readonly texts?: Readonly<Record<string, { readonly before?: string | null; readonly after?: string | null }>>;
 }
 
 export interface Affected {
   readonly packages: readonly MutationPackage[];
   /** Why each package is affected: the first changed paths (or the lockfile's moved packages) that reach it. */
   readonly reasons: Readonly<Partial<Record<MutationPackage, readonly string[]>>>;
+  /** The manifest and workflow fields the change holds that affect no package, each with why. */
+  readonly inert?: readonly string[];
 }
 
 /** The global inputs: the fixed globs, every file the mutation tooling's own entry points import, and what those files import by name. */
@@ -589,13 +638,28 @@ export interface GlobalInputs {
   readonly globs: readonly string[];
   readonly files: ReadonlySet<string>;
   readonly imports: ReadonlyMap<string, ReadonlySet<string>>;
+  /** The workspace package directories (`.` for the root) a file of `files` lies in: the mutation tooling's own packages. */
+  readonly holding: ReadonlySet<string>;
+  /** The workspace's package manifests, as globs (tools/stryker/manifests.ts workspaceManifestGlobs). */
+  readonly workspaceManifests: readonly string[];
 }
 
-/** The global inputs of the repository at `root`, whose files are `files`. */
+/**
+ * The global inputs of the repository at `root`, whose files are `files`: the import closure of the mutation tooling's
+ * entry points and of the files a shard loads by path, tests included (five of those are the canary's tests).
+ */
 export function globalFiles(root: string, files: readonly string[], config: AffectedConfig = REPOSITORY_CONFIG): GlobalInputs {
-  const entries = config.globalEntryPoints.filter((entry) => files.includes(entry) || existsSync(path.join(root, entry)));
-  const closure = importGraph(entries, root).files;
-  return { globs: config.global, files: new Set(closure), imports: importsOf(root, closure, workspaceDirectories(root)) };
+  const entries = [...config.globalEntryPoints, ...(config.globalLoaded ?? [])].filter((entry) => files.includes(entry) || existsSync(path.join(root, entry)));
+  const closure = importGraph(entries, root, { includeTests: true }).files;
+  const directories = workspaceDirectories(root);
+  const workspace = path.join(root, 'pnpm-workspace.yaml');
+  return {
+    globs: config.global,
+    files: new Set(closure),
+    imports: importsOf(root, closure, directories),
+    holding: new Set(closure.map((file) => ownerOf(file, directories))),
+    workspaceManifests: existsSync(workspace) ? workspaceManifestGlobs(readFileSync(workspace, 'utf8')) : [],
+  };
 }
 
 /** Each package's closure at the head, widened by its closure at the merge base: what either side's run reads. */
@@ -617,10 +681,25 @@ export function unionClosures(head: readonly Closure[], base: readonly Closure[]
 
 /** The global inputs of both sides. */
 export function unionGlobal(head: GlobalInputs, base: GlobalInputs): GlobalInputs {
-  return { globs: head.globs, files: new Set([...head.files, ...base.files]), imports: mergeImports(head.imports, base.imports) };
+  return {
+    globs: head.globs,
+    files: new Set([...head.files, ...base.files]),
+    imports: mergeImports(head.imports, base.imports),
+    holding: new Set([...head.holding, ...base.holding]),
+    workspaceManifests: [...new Set([...head.workspaceManifests, ...base.workspaceManifests])].sort(),
+  };
 }
 
-/** The packages a change affects, given each package's closure. */
+/** Whether a changed path is the tsconfig.json of a workspace package the mutation tooling's own files lie in (tools/tsconfig.json). */
+function isHoldingTsconfig(file: string, global: GlobalInputs): boolean {
+  return file.endsWith('/tsconfig.json') && global.holding.has(file.slice(0, -'/tsconfig.json'.length));
+}
+
+/**
+ * The packages a change affects, given each package's closure. The root manifest, the workspace file, the workflow
+ * and each workspace package's manifest no glob holds are judged field by field from the change's texts
+ * (classifyManifests); every other path as before.
+ */
 export function affected(change: Change, closures: readonly Closure[], global: GlobalInputs, tooling: readonly string[] = TEST_TOOLING): Affected {
   const reasons: Partial<Record<MutationPackage, string[]>> = {};
   const note = (pkg: MutationPackage, why: string) => {
@@ -629,9 +708,15 @@ export function affected(change: Change, closures: readonly Closure[], global: G
     reasons[pkg] = list;
   };
   const lockfile = 'pnpm-lock.yaml';
+  const verdicts = classifyManifests(change, closures, global, tooling);
+  const classified = new Set(verdicts.map((verdict) => verdict.file));
+  for (const verdict of verdicts) {
+    for (const why of verdict.global) for (const pkg of MUTATION_PACKAGES) note(pkg, why);
+    for (const pkg of MUTATION_PACKAGES) for (const why of verdict.packages[pkg] ?? []) note(pkg, why);
+  }
   for (const file of change.files) {
-    if (file === lockfile) continue;
-    const isGlobal = global.files.has(file) || matchesAny(file, global.globs);
+    if (file === lockfile || classified.has(file)) continue;
+    const isGlobal = global.files.has(file) || matchesAny(file, global.globs) || isHoldingTsconfig(file, global);
     for (const closure of closures) {
       const atBase = closure.atBase?.has(file) === true;
       if (isGlobal) note(closure.pkg, `${file} (mutation tooling, every package)`);
@@ -656,7 +741,7 @@ export function affected(change: Change, closures: readonly Closure[], global: G
       if (moved.length > 0) note(closure.pkg, `${lockfile} moves ${moved.slice(0, 3).join(', ')}${moved.length > 3 ? ` and ${String(moved.length - 3)} more` : ''}`);
     }
   }
-  return { packages: MUTATION_PACKAGES.filter((pkg) => reasons[pkg] !== undefined), reasons };
+  return { packages: MUTATION_PACKAGES.filter((pkg) => reasons[pkg] !== undefined), reasons, inert: verdicts.flatMap((verdict) => verdict.inert) };
 }
 
 /**
@@ -683,9 +768,20 @@ export function shardsFor(packages: readonly MutationPackage[], shards: readonly
   return shards.filter((shard) => selected.has(shard.name)).map((shard) => shard.name);
 }
 
+/**
+ * The environment every git spawn runs in: `env` with each node_modules/.bin directory, and each relative directory,
+ * taken off PATH, so no dependency's bin and no file of the change answers for git (`pnpm exec` puts the root's
+ * node_modules/.bin first).
+ */
+export function gitEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  if (env.PATH === undefined) return { ...env };
+  const kept = env.PATH.split(path.delimiter).filter((entry) => path.isAbsolute(entry) && !/(?:^|[\\/])node_modules[\\/]\.bin(?:[\\/]|$)/.test(entry));
+  return { ...env, PATH: kept.join(path.delimiter) };
+}
+
 /** The repository's tracked files. */
 export function trackedFiles(root: string = repositoryRoot): string[] {
-  return execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+  return execFileSync('git', ['ls-files', '-z'], { cwd: root, env: gitEnvironment(process.env), encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
     .split('\0')
     .filter((file) => file !== '');
 }
@@ -702,7 +798,7 @@ export function repositoryClosures(root: string = repositoryRoot, files: readonl
 export function treeAt<T>(revision: string, use: (root: string, files: readonly string[]) => T, root: string = repositoryRoot): T {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'tp-affected-tree-'));
   try {
-    const env = { ...process.env, GIT_INDEX_FILE: path.join(dir, 'index') };
+    const env = { ...gitEnvironment(process.env), GIT_INDEX_FILE: path.join(dir, 'index') };
     const git = (...args: string[]) => execFileSync('git', args, { cwd: root, env, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
     git('read-tree', revision);
     const tree = path.join(dir, 'tree');
@@ -716,20 +812,34 @@ export function treeAt<T>(revision: string, use: (root: string, files: readonly 
   }
 }
 
-/** The change from `base` to HEAD in the repository: the paths (both names of a move) and the lockfile on each side. */
+/**
+ * The change from `base` to HEAD in the repository: the paths (both names of a move), the lockfile on each side, and
+ * the texts of the root manifest, the workspace file, the workflow and every changed package.json on each side (null
+ * where `git diff --name-status` says the file is added or deleted; undefined, which fails closed, where git cannot
+ * show a side that exists).
+ */
 export function changeSince(base: string, root: string = repositoryRoot): Change {
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
-  const files = git('diff', '--name-only', '--no-renames', '-z', base, 'HEAD')
-    .split('\0')
-    .filter((file) => file !== '');
-  const show = (revision: string) => {
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, env: gitEnvironment(process.env), encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+  const listing = git('diff', '--name-status', '--no-renames', '-z', base, 'HEAD').split('\0');
+  const status = new Map<string, string>();
+  for (let at = 0; at + 1 < listing.length; at += 2) {
+    const [code = '', file = ''] = [listing[at], listing[at + 1]];
+    if (file !== '') status.set(file, code);
+  }
+  const files = [...status.keys()];
+  const show = (revision: string, file: string) => {
     try {
-      return git('show', `${revision}:pnpm-lock.yaml`);
+      return git('show', `${revision}:${file}`);
     } catch {
       return undefined;
     }
   };
-  return { files, lockfile: files.includes('pnpm-lock.yaml') ? { before: show(base), after: show('HEAD') } : undefined };
+  const texts: Record<string, { before: string | null | undefined; after: string | null | undefined }> = {};
+  for (const file of files.filter((candidate) => (NAMED_FILES as readonly string[]).includes(candidate) || candidate.endsWith('/package.json'))) {
+    const code = status.get(file) ?? '';
+    texts[file] = { before: code === 'A' ? null : show(base, file), after: code === 'D' ? null : show('HEAD', file) };
+  }
+  return { files, lockfile: files.includes('pnpm-lock.yaml') ? { before: show(base, 'pnpm-lock.yaml'), after: show('HEAD', 'pnpm-lock.yaml') } : undefined, texts };
 }
 
 /**
@@ -737,7 +847,7 @@ export function changeSince(base: string, root: string = repositoryRoot): Change
  * the merge base. It throws, naming each, on what HEAD's closures cannot account for (closureProblems).
  */
 export function affectedSince(base: string, root: string = repositoryRoot, config: AffectedConfig = REPOSITORY_CONFIG): { readonly mergeBase: string; readonly result: Affected } {
-  const mergeBase = execFileSync('git', ['merge-base', base, 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+  const mergeBase = execFileSync('git', ['merge-base', base, 'HEAD'], { cwd: root, env: gitEnvironment(process.env), encoding: 'utf8' }).trim();
   const files = trackedFiles(root);
   const head = repositoryClosures(root, files, config);
   const headGlobal = globalFiles(root, files, config);
@@ -770,6 +880,8 @@ if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.reso
   }
   const shards = shardsFor(result.packages);
   const lines = MUTATION_PACKAGES.map((pkg) => `${pkg}: ${result.reasons[pkg] === undefined ? 'not affected' : `affected by ${(result.reasons[pkg] ?? []).join('; ')}`}`);
+  const inert = result.inert ?? [];
+  if (inert.length > 0) lines.push(`read and affecting no package: ${inert.slice(0, 10).join('; ')}${inert.length > 10 ? ` and ${String(inert.length - 10)} more` : ''}`);
   lines.push(`shards: ${shards.length === 0 ? 'none (no money path changed)' : shards.join(', ')}`);
   process.stdout.write(`${lines.join('\n')}\n`);
   if (output !== undefined) {
