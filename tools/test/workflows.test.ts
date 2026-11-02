@@ -3734,6 +3734,7 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     // at its start. GitHub refuses one in a job's outputs, a reusable workflow's with: and secrets:, a step's own keys
     // or a job's id when it parses the file, and the rule refuses those too.
     const body = '${{ github.event.pull_request.body }}';
+    const packed = '${{github.event.pull_request.body}}';
     // Each with the rule's message and any other the fixture earns (a step's own key is also one the rule does not read).
     const keyed: (readonly [string, string, ...string[]])[] = [
       [`env: { "${body}": '1' }\njobs: { images: { runs-on: ubuntu-26.04, steps: [] } }`, `env.${body}`],
@@ -3749,10 +3750,15 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       [`jobs: { images: { runs-on: ubuntu-26.04, strategy: { matrix: { "${body}": [a] } }, steps: [] } }`, `jobs.images.strategy.matrix.${body}`],
       [`jobs: { images: { runs-on: ubuntu-26.04, steps: [{ name: The step, run: echo, "${body}": '1' }] } }`, `jobs.images.steps[0].${body}`, `fixture.yml job images step "The step": ${body}, a key the value rule does not read`],
       [`jobs: { images: { runs-on: ubuntu-26.04, steps: [{ name: The step, env: { "X_${body}": '1' }, run: echo }] } }`, `jobs.images.steps[0].env.X_${body}`],
+      // GitHub evaluates the spelling with no spaces too; and a job's id is refused at parse time.
+      [`jobs: { images: { runs-on: ubuntu-26.04, steps: [{ name: The step, env: { "${packed}": '1' }, run: echo }] } }`, `jobs.images.steps[0].env.${packed}`],
+      [`jobs: { "${body}": { runs-on: ubuntu-26.04, steps: [] } }`, `jobs.${body}`],
     ];
     for (const [jobs, where, ...also] of keyed) {
       expect(unboundedValueProblems('fixture.yml', parse(`name: fixture\non: push\n${jobs}\n`)).problems, where).toEqual([`fixture.yml ${where}: an expression in a key`, ...also]);
     }
+    // And an input's name under on:, which GitHub refuses at parse time.
+    expect(unboundedValueProblems('fixture.yml', parse(`name: fixture\non:\n  workflow_dispatch:\n    inputs:\n      "${body}": { type: string }\njobs: {}\n`)).problems).toEqual([`fixture.yml on.workflow_dispatch.inputs.${body}: an expression in a key`]);
 
     // A key the rule does not read, whatever it holds: a nested parallel: list of steps (GitHub's parser has one), a
     // job's or the workflow's key it does not know.
