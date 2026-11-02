@@ -3635,7 +3635,10 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
      * transport: exempt from the sum only alone in its string, and held to its sites.
      */
     readonly over?: 'ci-findings-transport';
-    /** Where it may be read, exactly (a place as FoundValue's where names it): the over row's every use is pinned. */
+    /**
+     * Where it may be read, exactly (a place as FoundValue's where names it): every use of a row whose bytes pass
+     * MAX_ARG_STRLEN is pinned, so such a value reaches no environment string or input it was not reviewed for.
+     */
     readonly sites?: readonly string[];
   }
 
@@ -3769,6 +3772,7 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       value: 'steps.publish.outputs.releases',
       bytes: 899_999 * 7,
       refs: [script('publish', 'publish', '847745ef'), unitTest('tools/test/publish-content.test.ts', 'refuses a directory that is not a release number'), unitTest('tools/test/publish-content.test.ts', 'refuses a number reserved for SYNTHETIC fixture releases')],
+      sites: ['job publish step "Push the release commits and tags" run'],
       bound: 'the release numbers tools/publish-content.sh publishes, each a number below 900,000, separated by spaces, and read in a script, which the runner writes to a file (the file is frozen to its copy)',
     },
     {
@@ -4021,6 +4025,9 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     // ci-findings-transport changes the bound or the transport, this turns red and it rewrites the row.
     expect(BOUNDED_VALUES.filter((row) => row.over !== undefined).map(key)).toEqual(['content-calendar.yml notify needs.check.outputs.findings']);
     expect(BOUNDED_VALUES.filter((row) => row.over !== undefined).map((row) => row.sites)).toEqual([['job notify step "Open an issue for each finding not already open" env.FINDINGS_B64']]);
+    // Every row that could pass the limit is held to its sites, whether it is read in a script, a job output or an
+    // environment string, so a second use of any of them, under any name, is refused by refProblems above.
+    expect(BOUNDED_VALUES.filter((row) => row.bytes > MAX_ARG_STRLEN && row.sites === undefined).map(key)).toEqual([]);
     expect(4 * Math.ceil(MAX_FILE_BYTES / 3) + 'FINDINGS_B64='.length + 1).toBeGreaterThan(131_072);
     // As check's job output, GitHub counts it in UTF-16, two bytes a character: over its 1 MB too (the row's words).
     expect(2 * FINDINGS_BYTES).toBe(1_866_672);
