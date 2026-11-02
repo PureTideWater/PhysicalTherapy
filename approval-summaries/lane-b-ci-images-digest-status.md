@@ -10,7 +10,19 @@ safer), recorded here and in the PR description.
 Open questions: none.
 
 <!-- RESUME-BLOCK -->
-## Current state (2026-11-02 01:02 UTC): fix round built (WIP d257fe6d); checks and integration resumed
+## Current state (2026-11-02 06:25 UTC): fix round's check round 2 resumed (WIP a5bc1170)
+- **Check round 1** (11 verifiers, done before the 01:xx window): every disposition had issues; two loosenings
+  (D4 removed FINDINGS_B64's exact-value pin; D3+D4 exempted a whole string holding the over row). **Repair 1** fixed
+  them and the rest with red/green evidence: WIP **a5bc1170** (0dd58dbf…a5bc1170 on top of d257fe6d, among them
+  46e555e9 the over row exempt only when it is the whole string, 212da396 release's image step refuses a static-host
+  variable holding a line break). Logs `scratchpad/imgdigest/logs/R1-*`; progress `…-wip/progress/fix-repair-1.md`.
+- **Check round 2** was cut by the window at ~02:30 UTC after one verifier (D2: two nits). Resumed 06:22 UTC with the
+  script edited (archived): a third round re-checks only the dispositions still open plus the whole diff (the 7-day
+  pacing call of 02:10 UTC: nothing that does not change the outcome), and a missing verifier or repair result now
+  stops the run instead of passing as clean. Base moved to **88708069**: the integrator merges it.
+- **Pacing (orchestrator, 02:10 UTC):** the account's 7-day limit is at its warning level (resets 2026-11-06 19:00 UTC);
+  #86 is to be FINISHED to its merge, no stage skipped, no repeated full suite on an unchanged head, no follow-on.
+  Check-in scheduled ~11:35 UTC.
 - **Built** (builder of `wf_401c564d-6b7`, done before the 5-hour window cut the run at ~21:55 UTC): WIP ref
   `co-001/wip-ci-images-digest` at **d257fe6d** = 29251dbb merge of 43565235 (#83), then 8681adb9 D1, 330deea0 D2,
   c1e80912 D3, 9ac28806 D4, 6adc518f D5, a7ccead0 D6, 19cc7bf5 D7, 91910da1 D8, d5f987a4 D9, f89770ca D10, d257fe6d an
