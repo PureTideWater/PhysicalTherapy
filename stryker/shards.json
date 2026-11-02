@@ -4,6 +4,7 @@
     "packages/ledger/src/index.ts",
     "packages/money/src/index.ts",
     "packages/packets/src/explain/index.ts",
+    "packages/packets/src/roles-reader/kinds.ts",
     "packages/pricing/src/index.ts",
     "packages/pricing/src/types.ts"
   ],
@@ -46,15 +47,66 @@
       "name": "packets-roles",
       "mutate": {
         "packets": [
+          "packages/packets/src/roles-reader/kinds.ts",
+          "packages/packets/src/roles-reader/walk.ts",
           "packages/packets/src/roles.ts"
         ]
       }
     },
     {
-      "name": "packets-words",
+      "name": "packets-roles-cues",
       "mutate": {
         "packets": [
-          "packages/packets/src/roles-words.ts"
+          "packages/packets/src/roles-reader/cues.ts"
+        ]
+      }
+    },
+    {
+      "name": "packets-roles-numbers",
+      "mutate": {
+        "packets": [
+          "packages/packets/src/roles-reader/numbers.ts"
+        ]
+      }
+    },
+    {
+      "name": "packets-words-labels",
+      "mutate": {
+        "packets": [
+          "packages/packets/src/roles-words/labels.ts"
+        ]
+      }
+    },
+    {
+      "name": "packets-words-amounts",
+      "mutate": {
+        "packets": [
+          "packages/packets/src/roles-words/amounts.ts"
+        ]
+      }
+    },
+    {
+      "name": "packets-words-days",
+      "mutate": {
+        "packets": [
+          "packages/packets/src/roles-words/days.ts"
+        ]
+      }
+    },
+    {
+      "name": "packets-words-dates",
+      "mutate": {
+        "packets": [
+          "packages/packets/src/roles-words/dates.ts"
+        ]
+      }
+    },
+    {
+      "name": "packets-words-prose",
+      "mutate": {
+        "packets": [
+          "packages/packets/src/roles-words/index.ts",
+          "packages/packets/src/roles-words/prose.ts"
         ]
       }
     },
