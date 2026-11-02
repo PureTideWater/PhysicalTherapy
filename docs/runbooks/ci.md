@@ -447,7 +447,8 @@ user that cannot run the binary.
   row whose producer is a `run:` step holds the fingerprint of its script, `env`, `shell` and `working-directory`:
   when the test prints a new one, re-read the bound against the change, then write the new fingerprint in the row. A
   new `$GITHUB_ENV` write joins its closed map: its file, job, step and exact line, its step's fingerprint, its bound,
-  and the test that runs the step and reads the whole file. Every `docker/build-push-action` step sets
+  and the test that runs the step and reads the whole file; no env sets `ACTIONS_ALLOW_UNSECURE_COMMANDS`, which would
+  let a script set a variable with `::set-env`. Every `docker/build-push-action` step sets
   `BUILDX_METADATA_PROVENANCE: disabled` and `DOCKER_BUILD_RECORD_UPLOAD: ${{ github.event_name != 'pull_request' }}`,
   and no other variable (no `DOCKER_BUILD_` or `BUILDX_` variable is set for a whole job or workflow): its build
   record (a `.dockerbuild` artifact whose provenance holds the whole event, a description and title or commit messages

@@ -1041,10 +1041,13 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
       characters, 1,866,672 bytes as GitHub counts an output (UTF-16), over its 1 MB limit. Every listed value whose
       bound passes 131,072 bytes is held to the places it is read in the same way: those findings in both jobs, and
       publish-content's release numbers, read in one script.
-    - A `$GITHUB_ENV` write is one entry of a closed map, its variable's only write: its file, job, step and exact
-      line (so its value's form too), with its step's fingerprint (a changed script or input fails until a person
-      re-reads the bound) and its bound, which the behavioural test named beside it holds by running the step and
-      reading the whole file it writes.
+    - Every line of a workflow's script that names `$GITHUB_ENV` (a backslash-newline joining two, as bash reads them)
+      is one entry of a closed map, its variable's only write: its file, job, step and exact line (so its value's form
+      too), with its step's fingerprint (a changed script or input fails until a person re-reads the bound) and its
+      bound, which the behavioural test named beside it holds by running the step and reading the whole file it
+      writes. The runner's switch for `::set-env` (`ACTIONS_ALLOW_UNSECURE_COMMANDS`) is refused in any env. A script
+      that reaches the file without naming it (a name built at run time, another interpreter) is not closed by reading
+      text.
 
 ### Consequences
 

@@ -3066,7 +3066,9 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
    * exactly (so its value's form too), the fingerprint of its step (as a row's run: producer holds one, so any change to
    * the script or its inputs fails until a person re-reads the bound), and its bound, which the behavioural test named
    * beside it holds by running the step and reading the whole file it writes. Each is written once, and every line of
-   * every workflow that names GITHUB_ENV is one of them.
+   * every workflow's script that names GITHUB_ENV (a backslash-newline joining two, as bash reads them) is one of them;
+   * no env sets ACTIONS_ALLOW_UNSECURE_COMMANDS (::set-env). A script that reaches the file without naming it (a name
+   * built at run time, another interpreter) is not closed by reading text.
    */
   const GITHUB_ENV_WRITES: Readonly<Record<string, { readonly file: string; readonly job: string; readonly step: string; readonly line: string; readonly fingerprint: string; readonly bound: string; readonly test: string }>> = {
     ENGINE_FREEZE_BASE: {
@@ -3242,6 +3244,9 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
         for (const [key, item] of Object.entries(value)) {
           const at = where === '' ? key : `${where}.${key}`;
           if (key.includes('${{')) problems.push(`${file} ${at}: an expression in a key`);
+          // The runner's switch for ::set-env and ::add-path, which let any script set a variable for every later step
+          // without $GITHUB_ENV; actionlint, which flags them, does not run on CI.
+          if (key.toUpperCase() === 'ACTIONS_ALLOW_UNSECURE_COMMANDS') problems.push(`${file} ${at}: a switch for ::set-env, which writes a variable outside $GITHUB_ENV's closed map`);
           keys(item, at);
         }
       }
@@ -3264,7 +3269,8 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
         const named = `job ${id} step ${typeof step.name === 'string' ? JSON.stringify(step.name) : String(index)}`;
         unread(step, STEP_KEYS, named);
         for (const key of ['env', 'with', 'run', 'working-directory', 'shell']) visit(step[key], `${named} ${key}`, id, index);
-        for (const line of (typeof step.run === 'string' ? step.run : '').split('\n').filter((text) => text.includes('GITHUB_ENV'))) {
+        // Each line as bash reads it, a backslash-newline joining two, so a write split across lines is still read.
+        for (const line of (typeof step.run === 'string' ? step.run : '').replace(/\\\n/g, '').split('\n').filter((text) => text.includes('GITHUB_ENV'))) {
           const write = Object.entries(GITHUB_ENV_WRITES).find(([, entry]) => entry.file === file && entry.job === id && entry.step === step.name && entry.line === line.trim());
           if (write === undefined) problems.push(`${file} ${named} run: a $GITHUB_ENV write outside its closed map: ${line.trim()}`);
           else writes.set(write[0], (writes.get(write[0]) ?? 0) + 1);
@@ -3749,6 +3755,14 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     // Any other variable, or any other form.
     expect(write(['echo "BODY=$x" >> "$GITHUB_ENV"'])).toEqual([outside('echo "BODY=$x" >> "$GITHUB_ENV"')]);
     expect(write(['cat file >> $GITHUB_ENV'])).toEqual([outside('cat file >> $GITHUB_ENV')]);
+    // A write split by a backslash-newline is the line bash reads; the switch for ::set-env is refused anywhere.
+    expect(write([freeze, 'echo "BODY=$x" >> "$GITHUB_\\', 'ENV"'])).toEqual([outside('echo "BODY=$x" >> "$GITHUB_ENV"')]);
+    expect(unboundedValueProblems('fixture.yml', parse("name: fixture\non: push\njobs: { images: { runs-on: ubuntu-26.04, steps: [{ name: The step, env: { ACTIONS_ALLOW_UNSECURE_COMMANDS: 'true' }, run: echo }] } }\n")).problems).toEqual([
+      "fixture.yml jobs.images.steps[0].env.ACTIONS_ALLOW_UNSECURE_COMMANDS: a switch for ::set-env, which writes a variable outside $GITHUB_ENV's closed map",
+    ]);
+    expect(unboundedValueProblems('fixture.yml', parse("name: fixture\non: push\nenv: { actions_allow_unsecure_commands: 'true' }\njobs: {}\n")).problems).toEqual([
+      "fixture.yml env.actions_allow_unsecure_commands: a switch for ::set-env, which writes a variable outside $GITHUB_ENV's closed map",
+    ]);
   });
 
   /**
