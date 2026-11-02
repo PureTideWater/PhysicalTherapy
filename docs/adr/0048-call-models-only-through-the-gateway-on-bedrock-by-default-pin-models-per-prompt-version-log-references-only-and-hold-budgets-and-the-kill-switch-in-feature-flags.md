@@ -217,16 +217,18 @@ Nothing in the gateway's design changes; five things about the Anthropic path ar
   Messages changes touch no field the gateway uses). The first real-model record on the Anthropic path will be made on
   SDK 1.x and this version. HIPAA readiness is per organization and feature: the provider's feature eligibility table
   names no API version or credential header, and the Messages API, structured outputs and effort, all the gateway sends,
-  stay listed as eligible (read 2026-11-01). From the first real-model entry of a provider on, a change of the API
-  version that path sends is a model change under ADR 0070, though no baseline key or set hash sees it. On the Anthropic
-  path that is an SDK version that sends another `anthropic-version` (a major, as 1.0.0 was), which fails MOD-18's pin;
-  on Bedrock it is `BEDROCK_ANTHROPIC_VERSION`. The pull request that makes it does not merge until a person has run
-  every entry of that provider (each purpose and variant) under the new version, each recorded against the held entry on
-  the same set with every regression rule in force (`eval --record`, without `--new-set`, since the set, prompt and
-  model are the held entry's; docs/runbooks/model-evaluation.md) and committed in that pull request. Each contract entry
-  is then `permitted: 'pending'` until its permitted run is recorded, so that feature is entered by hand meanwhile.
-  While a provider has no real entry (as at this amendment: `eval/baseline.json` holds `local` entries only), CI's gate
-  suffices.
+  stay listed as eligible (read 2026-11-01), structured outputs on the table's condition that no PHI is in a JSON schema
+  definition, which the provider caches for up to 24 hours: the gateway meets it, since each request's schema is its
+  prompt version's committed schema (`prompt.schema`), never practice material. From the first real-model entry of a
+  provider on, a change of the API version that path sends is a model change under ADR 0070, though no baseline key or
+  set hash sees it. On the Anthropic path that is an SDK version that sends another `anthropic-version` (a major, as
+  1.0.0 was), which fails MOD-18's pin; on Bedrock it is `BEDROCK_ANTHROPIC_VERSION`. The pull request that makes it
+  does not merge until a person has run every entry of that provider (each purpose and variant) under the new version,
+  each recorded against the held entry on the same set with every regression rule in force (`eval --record`, without
+  `--new-set`, since the set, prompt and model are the held entry's; docs/runbooks/model-evaluation.md) and committed in
+  that pull request. Each contract entry is then `permitted: 'pending'` until its permitted run is recorded, so that
+  feature is entered by hand meanwhile. While a provider has no real entry (as at this amendment: `eval/baseline.json`
+  holds `local` entries only), CI's gate suffices.
 - **Credential.** The key goes as `Authorization: Bearer`, not `X-Api-Key`, and is the client's only credential: a
   credential passed in code means the SDK reads none from the environment or disk.
 - **Licence.** The SDK is Apache-2.0 from 1.0.0 (was MIT); the licence allowlist already allows it.
