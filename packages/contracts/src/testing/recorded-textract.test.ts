@@ -25,6 +25,26 @@ const bytes = (text: string) => new TextEncoder().encode(text);
 const document = { bytes: new Uint8Array([1]), contentType: 'application/pdf' };
 const staging = { stage: () => Promise.resolve({ bucket: 'synthetic-recording', name: 'recorded' }) };
 
+// What a TextractPageReader reads from a recording of `lineCount` synthetic lines (the first three on page 1, the rest
+// on page 2) answered in pages of `pageSize` blocks, and the NextToken of each GetDocumentTextDetection it sends.
+const readPaged = async (lineCount: number, pageSize: number) => {
+  const lines = Array.from({ length: lineCount }, (_, index) => ({ BlockType: 'LINE', Page: index < 3 ? 1 : 2, Text: `SYNTHETIC line ${index + 1}` }));
+  const client = recordedTextractClient(bytes(JSON.stringify({ JobStatus: 'SUCCEEDED', DocumentMetadata: { Pages: 2 }, Blocks: lines })), { pageSize });
+  const tokens: (string | undefined)[] = [];
+  client.middlewareStack.add(
+    (next) => (args) => {
+      const input = args.input as { readonly NextToken?: string; readonly JobId?: string };
+      if (input.JobId !== undefined) {
+        tokens.push(input.NextToken);
+      }
+      return next(args);
+    },
+    { step: 'initialize' },
+  );
+  const pages = await new TextractPageReader({ client, staging, pollMilliseconds: 0 }).pageTexts(document);
+  return { pages, tokens };
+};
+
 describe('recordedTextractClient: a real TextractClient answering from a recording', () => {
   it("answers through the SDK's own deserializer, as the service's answers are read", async () => {
     const client = recordedTextractClient(bytes(RECORDING));
@@ -40,22 +60,16 @@ describe('recordedTextractClient: a real TextractClient answering from a recordi
   });
 
   it('pages a long result by NextToken, as Textract does, and the reader follows every page', async () => {
-    const lines = Array.from({ length: 5 }, (_, index) => ({ BlockType: 'LINE', Page: index < 3 ? 1 : 2, Text: `SYNTHETIC line ${index + 1}` }));
-    const client = recordedTextractClient(bytes(JSON.stringify({ JobStatus: 'SUCCEEDED', DocumentMetadata: { Pages: 2 }, Blocks: lines })), { pageSize: 2 });
-    const tokens: (string | undefined)[] = [];
-    client.middlewareStack.add(
-      (next) => (args) => {
-        const input = args.input as { readonly NextToken?: string; readonly JobId?: string };
-        if (input.JobId !== undefined) {
-          tokens.push(input.NextToken);
-        }
-        return next(args);
-      },
-      { step: 'initialize' },
-    );
-    expect(await new TextractPageReader({ client, staging, pollMilliseconds: 0 }).pageTexts(document)).toEqual(['SYNTHETIC line 1\nSYNTHETIC line 2\nSYNTHETIC line 3', 'SYNTHETIC line 4\nSYNTHETIC line 5']);
-    expect(tokens).toEqual([undefined, 'synthetic-page-1', 'synthetic-page-2']);
+    const read = await readPaged(5, 2);
+    expect(read.pages).toEqual(['SYNTHETIC line 1\nSYNTHETIC line 2\nSYNTHETIC line 3', 'SYNTHETIC line 4\nSYNTHETIC line 5']);
+    expect(read.tokens).toEqual([undefined, 'synthetic-page-1', 'synthetic-page-2']);
     expect(TEXTRACT_PAGE_SIZE).toBe(1000);
+  });
+
+  it('ends at the last page when the blocks fill it exactly, with no NextToken past it', async () => {
+    const read = await readPaged(4, 2);
+    expect(read.pages).toEqual(['SYNTHETIC line 1\nSYNTHETIC line 2\nSYNTHETIC line 3', 'SYNTHETIC line 4']);
+    expect(read.tokens).toEqual([undefined, 'synthetic-page-1']);
   });
 
   it('answers only text detection, and only for the job it started', async () => {
