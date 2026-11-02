@@ -333,8 +333,8 @@ lockfile entry against the release age and the trust policy on every install (`t
   `typescript <6.1.0`); `typecheck.sh`'s time and `pnpm typecheck`'s are re-measured.
 - **The Anthropic SDK.** The `anthropic-sdk` group is never merged as it stands: a model-gateway change passes the
   evaluation gate first (packages/model-gateway; PRD 18), in a deliberate pull request.
-- **AWS.** `aws-cdk` with `aws-cdk-lib` and `constructs` come in their group, and `@aws-sdk/*` come in the `aws-sdk`
-  group, which minor-and-patch's exclusions keep theirs (minor and patch).
+- **AWS.** `aws-cdk`, `aws-cdk-lib` and `constructs` come in the `aws-cdk` group and `@aws-sdk/*` in the `aws-sdk`
+  group, minor and patch only; minor-and-patch excludes their patterns, so none of them comes in its pull request.
   `pnpm cdk:diff` in the build job shows what a CDK bump changes in the stacks; read it before taking one. The CLI
   moves with the library: a library's cloud assembly names the oldest CLI that reads it (`minimumCliVersion`).
   `@aws-sdk/*` reaches pricing and packets through `packages/contracts` and `packages/db`'s manifests and the lockfile,
