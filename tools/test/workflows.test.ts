@@ -3794,7 +3794,8 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
    *   env, shell and working-directory (the first 8 hexadecimal digits of their SHA-256), so a changed script or input
    *   fails until a person re-reads the bound and writes the new one; a `uses:` step with its action (its pin is the
    *   pin rules', CI-11);
-   * - an output a job declares, a key of a job's matrix, and a job the reading job needs;
+   * - an output a job declares, a key of a job's matrix, and a job the reading job needs (the steps, needed jobs and
+   *   outputs a row names being exactly those its value reads, producersOf);
    * - tool code by the name it declares (path#symbol, read with TypeScript's parser), never fingerprinted: other lanes
    *   own it and change it for their own reasons, so the row names instead the unit test that holds the bound, by its
    *   title, one that always runs (testTitles: no skip, todo or condition).
@@ -4160,6 +4161,21 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
   }
 
   /**
+   * The steps, needed jobs and job outputs a row's value reads, as refProblems names them: a steps.<id> value (or a
+   * build's digest from one) its own job's step <id>; a needs.<j>.outputs.<n> value job <j> and its output <n>; toJSON
+   * each job it is given and every output of each. What the row must cite, and all of those kinds it may.
+   */
+  function producersOf(row: BoundedValue, jobs: Readonly<Record<string, Job>>): string[] {
+    const step = /^(?:fromjson\()?steps\.([^.]+)\.outputs\./.exec(row.value);
+    if (step !== null) return [`step ${step[1] ?? ''} of job ${row.job}`];
+    const handed = /^needs\.([^.]+)\.outputs\.([^.]+)$/.exec(row.value);
+    if (handed !== null) return [`needed job ${handed[1] ?? ''}`, `output ${handed[2] ?? ''} of job ${handed[1] ?? ''}`];
+    const whole = /^tojson\(needs(?:\.([^.]+)\.outputs)?\)$/.exec(row.value);
+    const given = whole === null ? [] : whole[1] === undefined ? needsOf(jobs[row.job]).map((job) => job.toLowerCase()) : [whole[1]];
+    return given.flatMap((job) => [`needed job ${job}`, ...outputsOf(jobs[job]).map((name) => `output ${name.toLowerCase()} of job ${job}`)]);
+  }
+
+  /**
    * What does not resolve of each row's references on these workflows (text gives a file's) and this repository's
    * tool code (source gives a file's): each named for its row, with a line where one helps.
    */
@@ -4252,23 +4268,23 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
           }
         }
       }
+      // The producers it cites are the ones its value reads, and no other step, needed job or output: each kind above
+      // resolves wherever it points, so only this ties a row to its own producer, and the output check above (one
+      // value alone, within this row's bytes) runs for every value one job hands another.
+      const wanted = producersOf(row, jobs);
+      const cited = row.refs.flatMap((ref) => (ref.kind === 'step' ? [`step ${ref.step.toLowerCase()} of job ${ref.job.toLowerCase()}`] : ref.kind === 'needs' ? [`needed job ${ref.job.toLowerCase()}`] : ref.kind === 'output' ? [`output ${ref.name.toLowerCase()} of job ${ref.job.toLowerCase()}`] : []));
+      for (const producer of wanted) if (!cited.includes(producer)) say(`names no ${producer}`);
+      for (const producer of cited) if (!wanted.includes(producer)) say(`names ${producer}, which its value does not read`);
       // A row with sites is read there and nowhere else, so a second use of the value, under any name, is refused.
       const places = read.map((entry) => entry.where).sort();
       if (row.sites !== undefined && places.join('\n') !== [...row.sites].sort().join('\n')) say(`read at ${places.join(', ')}, not exactly at its sites, ${row.sites.join(', ')}`);
       // Tool code is never fingerprinted, so the row names the test that holds its bound.
       if (row.refs.some((ref) => ref.kind === 'symbol') && !row.refs.some((ref) => ref.kind === 'test')) say('names tool code but no test that proves its bound');
-      // toJSON reads every job it is given and every output of each, so the row names them all, and no other.
+      // toJSON reads every job it is given and every output of each (the row names them all, and no other, above),
+      // and holds them all: its bound is at least the sum of theirs.
       const whole = /^tojson\(needs(?:\.([^.]+)\.outputs)?\)$/.exec(row.value);
       if (whole !== null) {
         const given = whole[1] === undefined ? needsOf(reader) : [whole[1]];
-        const named = row.refs.flatMap((ref) => (ref.kind === 'needs' ? [ref.job] : []));
-        if (whole[1] === undefined && [...named].sort().join() !== [...given].sort().join()) say(`toJSON reads every job ${row.job} needs (${given.join(', ')}), and the row names ${named.join(', ')}`);
-        for (const job of given) {
-          const declared = outputsOf(jobs[job]).sort();
-          const cited = row.refs.flatMap((ref) => (ref.kind === 'output' && ref.job === job ? [ref.name] : [])).sort();
-          if (declared.join() !== cited.join()) say(`toJSON reads every output of job ${job} (${declared.join(', ') || 'none'}), and the row names ${cited.join(', ') || 'none'}`);
-        }
-        // And holds them all: its bound is at least the sum of theirs.
         const bounds = given.flatMap((job) => outputsOf(jobs[job]).map((name) => rows.find((entry) => entry.file === row.file && entry.job === job && entry.value === handedValue(jobOutput(jobs[job], name)))?.bytes ?? 0));
         const total = bounds.reduce((sum, bytes) => sum + bytes, 0);
         if (total > row.bytes) say(`toJSON reads outputs bounded at ${String(total)} bytes together, over this row's ${String(row.bytes)}`);
@@ -4451,11 +4467,22 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     expect(problems(workflowText.replace(declared, '      digest_web: ${{ steps.other.outputs.digest_web }}\n'))).toEqual([handedProblem('reads steps.other.outputs.digest_web, which has no row in job build')]);
     expect(problems(workflowText, undefined, [produced, { ...handed, bytes: 64 }])).toEqual([handedProblem('reads steps.identity.outputs.digest_web, bounded at 71 bytes, over this row\'s 64')]);
     expect(problems(workflowText.replace(declared, '      digest_web: ${{steps.identity.outputs.DIGEST_WEB}}\n'))).toEqual([]);
+    // Each row cites the producers its value reads and no other, so a row that cites a step of another job, another of
+    // the job's outputs, only its tool code, or leaves its producer out, turns red even where what it cites resolves.
+    const tie = (row: BoundedValue, problem: string) => `fixture.yml ${row.job} ${row.value}: ${problem}`;
+    const otherJob = workflowText.replace('      - env: { DIGEST: "${{ needs.build.outputs.digest_web }}" }\n', '      - id: identity\n        env: { DIGEST: "${{ needs.build.outputs.digest_web }}" }\n');
+    const otherStep = script('use', 'identity', fingerprint({ run: 'echo "$DIGEST"', env: { DIGEST: '${{ needs.build.outputs.digest_web }}' } }));
+    expect(problems(otherJob, undefined, [{ ...produced, refs: [otherStep, ...produced.refs.slice(1)] }, handed])).toEqual([tie(produced, 'names no step identity of job build'), tie(produced, 'names step identity of job use, which its value does not read')]);
+    expect(problems(workflowText, undefined, [{ ...produced, refs: produced.refs.filter((ref) => ref.kind !== 'step') }, handed])).toEqual([tie(produced, 'names no step identity of job build')]);
+    const twoOutputs = workflowText.replace(declared, `${declared}      small: \${{ steps.identity.outputs.digest_web }}\n`);
+    expect(problems(twoOutputs, undefined, [produced, { ...handed, refs: [needs('build'), output('build', 'small')] }])).toEqual([tie(handed, 'names no output digest_web of job build'), tie(handed, 'names output small of job build, which its value does not read')]);
+    expect(problems(workflowText, undefined, [produced, { ...handed, refs: produced.refs.filter((ref) => ref.kind === 'symbol' || ref.kind === 'test') }])).toEqual([tie(handed, 'names no needed job build'), tie(handed, 'names no output digest_web of job build')]);
     // toJSON of a job's outputs names every output, and no other, and holds them all.
     const whole = workflowText.replace('{ DIGEST: "${{ needs.build.outputs.digest_web }}" }', '{ BUILD: "${{ toJSON(needs.build.outputs) }}" }');
     const json = (refs: readonly Ref[], bytes = 256) => problems(whole, undefined, [produced, { file: 'fixture.yml', job: 'use', value: 'tojson(needs.build.outputs)', refs, bound: 'a digest', bytes }]);
     expect(json([needs('build'), output('build', 'digest_web')])).toEqual([]);
-    expect(json([needs('build')])).toEqual(['fixture.yml use tojson(needs.build.outputs): toJSON reads every output of job build (digest_web), and the row names none']);
+    expect(json([needs('build')])).toEqual(['fixture.yml use tojson(needs.build.outputs): names no output digest_web of job build']);
+    expect(json([output('build', 'digest_web')])).toEqual(['fixture.yml use tojson(needs.build.outputs): names no needed job build']);
     expect(json([needs('build'), output('build', 'digest_web')], 70)).toEqual([
       "fixture.yml use tojson(needs.build.outputs): job build's output digest_web reads steps.identity.outputs.digest_web, bounded at 71 bytes, over this row's 70",
       "fixture.yml use tojson(needs.build.outputs): toJSON reads outputs bounded at 71 bytes together, over this row's 70",

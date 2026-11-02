@@ -1020,10 +1020,13 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
     - Each row names its producers by what they are, never by a line, and the test resolves each on the tree: a step
       by its job and id (a `uses:` step with its action, whose pin is the pin rules'), a job's output (which must
       declare one step's or needed job's output alone, whose own row's bound is within the reader's), a matrix key, a
-      job the reader needs, and tool code by the name it declares (`path#symbol`). A row whose producer is a
-      workflow's `run:` step holds the fingerprint of what the script runs with as parsed, its `run`, `env`, `shell`
-      and `working-directory`, so a changed script or input fails until a person re-reads the bound and updates it; a
-      row whose bound is tool code's names instead the unit test that holds it, by its title, and the test must be one
+      job the reader needs, and tool code by the name it declares (`path#symbol`). The steps, needed jobs and job
+      outputs a row names are exactly those its value reads (a `steps.<id>` value its own job's step `<id>`, a
+      `needs.<j>.outputs.<n>` value job `<j>` and its output `<n>`, `toJSON` each job and output it is given), so a
+      row that cites another job's producer, or leaves its own out, fails. A row whose producer is a workflow's `run:`
+      step holds the fingerprint of what the script runs with as parsed, its `run`, `env`, `shell` and
+      `working-directory`, so a changed script or input fails until a person re-reads the bound and updates it; a row
+      whose bound is tool code's names instead the unit test that holds it, by its title, and the test must be one
       that always runs (no skip, todo or condition), since other lanes change that code for their own reasons.
     - It sums each environment string a workflow sets as Linux counts it, `NAME=value` and its NUL (a step input as
       `INPUT_<NAME>`): the name, the literal bytes and each value's bound (a repository variable or a secret 48 KB, a
