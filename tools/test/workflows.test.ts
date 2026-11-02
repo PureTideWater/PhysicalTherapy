@@ -3523,12 +3523,13 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       const jobEnv = strings(job.env, `job ${id} env`, { job: id, scopes: [record(root.env)] });
       const jobShell = shellOf(job.defaults) === undefined ? workflowShell : argument(shellOf(job.defaults), `job ${id} defaults.run.shell`, { job: id, scopes: [record(job.env), record(root.env)] });
       // A container or a service: its env, and each other value an argument of docker's (an image, options, an
-      // entrypoint, a command, a volume, a port, credentials). One named by a plain string is its image; one given as
-      // an expression is refused, its strings unread.
+      // entrypoint, a command, a volume, a port, credentials). One named by a string is its image, an expression in it
+      // read as any other (node:${{ matrix.node }}); one given as one expression alone may be a mapping, so it is
+      // refused, its strings unread.
       const container = (definition: unknown, where: string): void => {
         const at = { job: id, scopes: [] };
         if (typeof definition === 'string') {
-          if (definition.includes('${{')) strings(definition, where, at);
+          if (/^\$\{\{(?:(?!\}\})[\s\S])*\}\}$/.test(definition)) strings(definition, where, at);
           else argument(definition, `${where} image`, at);
           return;
         }
@@ -3665,6 +3666,10 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     expect(sum(step('env: { E: x }', `    services: { db: ${mapping} }\n`))).toEqual([fromExpression('job images services.db')]);
     expect(sum(step('env: { E: x }', `    services: { db: { image: x, env: ${mapping} } }\n`))).toEqual([fromExpression('job images services.db.env')]);
     expect(sum(step('env: { E: x }', '    container: node:24\n    services: { db: postgres:18 }\n'))).toEqual([]);
+    // A container or a service named by a string with an expression in it is its image, an argument held to the limit.
+    expect(sum(step('env: { E: x }', '    strategy: { matrix: { node: [22, 24] } }\n    container: "node:${{ matrix.node }}"\n    services: { db: "postgres:${{ matrix.node }}" }\n'))).toEqual([]);
+    expect(sum(step('env: { E: x }', `    container: "node:${vars3}"\n`))).toEqual([argumentOver('job images container image', 'node:'.length + 3 * 49_152 + 1)]);
+    expect(sum(step('env: { E: x }', `    services: { db: "postgres:${vars3}" }\n`))).toEqual([argumentOver('job images services.db image', 'postgres:'.length + 3 * 49_152 + 1)]);
     // The one value marked over is the table's to hold, by its sites, and only alone in its string: one expression
     // reading it, in any spelling the runner reads alike. Anything beside it, bounded or not, is refused.
     const marked = [{ ...huge, over: 'ci-findings-transport' as const }];
