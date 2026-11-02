@@ -3823,7 +3823,10 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
   const DIGEST_BYTES = 'sha256:'.length + 64;
   /** The findings' base64: four characters for each three bytes of MAX_FILE_BYTES. */
   const FINDINGS_BYTES = 4 * Math.ceil(MAX_FILE_BYTES / 3);
-  /** affected.ts's lists as JSON: the four mutation packages' names (38 bytes) and their seven shards' (under 120). */
+  /**
+   * affected.ts's lists as JSON: the mutation packages' names (38 bytes for today's four) and their shards' names from
+   * stryker/shards.json (116 bytes for today's seven; 1,024 holds some fifty more of their length).
+   */
   const PACKAGES_BYTES = 256;
   const SHARDS_BYTES = 1_024;
   /** toJSON indents what it writes: each job it is given (its result and empty outputs) or output takes under 128 bytes. */
