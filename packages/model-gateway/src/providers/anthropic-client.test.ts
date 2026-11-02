@@ -395,7 +395,7 @@ describe('MOD-17: the failures a request through that client meets, as the gatew
     ['an overload (529)', 'unavailable', answer(529, 'overloaded_error')],
     ['a server error (500)', 'unavailable', answer(500, 'api_error')],
     ['a 503 that is not JSON', 'unavailable', () => Promise.resolve(new Response('synthetic upstream text', { status: 503 }))],
-    ['a refused connection', 'unavailable', () => Promise.reject(new TypeError('fetch failed', { cause: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }) }))],
+    ['a refused connection', 'unavailable', () => Promise.reject(new TypeError('fetch failed', { cause: Object.assign(new Error('connect ECONNREFUSED 192.0.2.1:443'), { code: 'ECONNREFUSED' }) }))],
     ['a connect timeout', 'timeout', () => Promise.reject(new TypeError('fetch failed', { cause: new Error('Connect Timeout Error') }))],
     ['a bad request (400)', 'rejected', answer(400, 'invalid_request_error')],
     ['an authentication failure (401)', 'rejected', answer(401, 'authentication_error')],
