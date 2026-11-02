@@ -4648,7 +4648,7 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     expect(needsRow(521)).toEqual(["fixture.yml use tojson(needs): toJSON writes up to 522 bytes of what it reads, each output quoted and escaped, over this row's 521"]);
   });
 
-  it('sets BUILDX_METADATA_PROVENANCE: disabled on every docker/build-push-action step of every workflow, and uploads its build record only off a pull request, and nothing else writes or reads buildx’s metadata provenance', () => {
+  it('sets BUILDX_METADATA_PROVENANCE: disabled on every docker/build-push-action step of every workflow, and uploads its build record only off a pull request, with no other variable, and nothing else writes or reads buildx’s metadata provenance', () => {
     // buildx v0.38.1 copies the whole event into every build record's provenance and, in its default mode (min), into
     // the metadata file build-push-action prints and outputs; disabled leaves the key out, and buildx reads the word
     // exactly (Disabled would be min). Matched in lower case: usesAction's prefix is case-sensitive.
@@ -4708,7 +4708,8 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     const unmatched = workflowFiles().flatMap((file) => {
       const parsed = builds.filter((build) => build.file === file).map(({ where }) => where);
       const lines = usesLines(file);
-      return parsed.length === lines.length ? [] : [`${file}: ${String(parsed.length)} builds parsed (${parsed.join('; ')}), ${String(lines.length)} uses: keys at lines ${lines.join(', ')} (an alias repeats a step, or a build sits where the parse does not list it)`];
+      const counted = (count: number, one: string, many: string) => `${String(count)} ${count === 1 ? one : many}`;
+      return parsed.length === lines.length ? [] : [`${file}: ${counted(parsed.length, 'build', 'builds')} parsed (${parsed.join('; ')}), ${counted(lines.length, 'uses: key', 'uses: keys')} at ${lines.length === 1 ? 'line' : 'lines'} ${lines.join(', ')} (an alias repeats a step, or a build sits where the parse does not list it)`];
     });
     expect(unmatched).toEqual([]);
     // Nothing writes buildx's metadata another way, and nothing reads its provenance.
