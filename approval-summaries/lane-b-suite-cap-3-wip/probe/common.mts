@@ -24,6 +24,10 @@ export const FAMILIES: readonly (readonly [string, RegExp])[] = [
   ['scope.begin_end', /^(BEGIN|COMMIT|ROLLBACK)\b/i],
   ['scope.set_config', /set_config\('app\./],
   ['ledger.lock', /pg_advisory_xact_lock\(hashtextextended\('ledger:'/],
+  // SUITE-CAP-3's candidate fix (the pass-level candidate search): its own families.
+  ['candidates.passControl', /probe \(ix, claim_id\) AS/],
+  ['candidates.passPatient', /named \(ix, claim_id\) AS/],
+  ['candidates.passLoadedAt', /AS loaded_at FROM claim o WHERE o\.practice_id/],
   ['remit.caseLines', /FROM case_line cl JOIN "case" k ON k\.id = cl\.case_id JOIN service_line l/],
   ['ledger.entries', /FROM ledger_entry e WHERE e\.practice_id = \$1 ORDER BY e\.seq/],
   ['ledger.matches', /FROM ledger_match m WHERE m\.practice_id = \$1 ORDER BY m\.matched_at, m\.id/],
