@@ -3920,6 +3920,9 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     return isMap(item) && item.range !== undefined && item.range !== null ? counter.linePos(item.range[0]).line : undefined;
   }
 
+  /** A line of a script's own that writes an output, echo "name=…", its name a template of literals and $VARs. */
+  const OWN_OUTPUT_LINE = /\becho "((?:[\w-]|\$\{?[A-Za-z_]\w*\}?)+)=/;
+
   /**
    * The output names a `run:` step's own script writes to $GITHUB_OUTPUT (echo "name=…"), each $VAR whose env is one
    * matrix value spelled out by every value of that key: sha256_$IMAGE= from matrix.image gives sha256_web, … . Only a
@@ -3929,7 +3932,7 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     const names = new Set<string>();
     const run = step.run ?? '';
     if (!run.includes('GITHUB_OUTPUT')) return names;
-    for (const [, template = ''] of run.matchAll(/\becho "((?:[\w-]|\$\{?[A-Za-z_]\w*\}?)+)=/g)) {
+    for (const [, template = ''] of run.matchAll(new RegExp(OWN_OUTPUT_LINE.source, 'g'))) {
       let spelled = [''];
       for (const [, literal, variable] of template.matchAll(/([\w-]+)|\$\{?([A-Za-z_]\w*)\}?/g)) {
         if (literal !== undefined) {
@@ -3988,8 +3991,12 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
             if (ref.job === row.job) {
               for (const entry of read) if (entry.step !== undefined && entry.step <= index) say(`${where} does not come before the step that reads it`);
               const name = new RegExp(`^steps\\.${escaped(ref.step.toLowerCase())}\\.outputs\\.([^.]+)$`).exec(row.value)?.[1];
-              if (name !== undefined && 'run' in ref && !writtenOutputs(step, jobs[ref.job] ?? { steps: [] }, keys).has(name) && !row.refs.some((other) => other.kind === 'symbol')) {
-                say(`${where} writes no ${name}= to $GITHUB_OUTPUT, and the row names no tool that does`);
+              const written = 'run' in ref ? writtenOutputs(step, jobs[ref.job] ?? { steps: [] }, keys) : undefined;
+              // A script that writes NAME= lines of its own must spell this one out (a $VAR from the cited matrix key);
+              // a tool the row names excuses only a script that writes none, the tool writing $GITHUB_OUTPUT itself.
+              if (name !== undefined && written !== undefined && !written.has(name)) {
+                if (OWN_OUTPUT_LINE.test(step.run ?? '')) say(`${where} writes no ${name}= to $GITHUB_OUTPUT: its own lines spell ${[...written].sort().join(', ') || 'none'}`);
+                else if (!row.refs.some((other) => other.kind === 'symbol')) say(`${where} writes no ${name}= to $GITHUB_OUTPUT, and the row names no tool that does`);
               }
             }
             break;
@@ -4132,7 +4139,8 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     expect(problems(workflowText.replace('      - name: Record the identity', '      # A comment above the producer.\n      - name: Record the identity'))).toEqual([]);
     const [produced, handed] = rows;
     if (produced === undefined || handed === undefined) throw new Error('two rows');
-    // A name the script does not write is excused only by a tool the row names, so the last case names none.
+    // A name the script does not write: its own lines spell it or it fails, so the last case fails with or without the
+    // row's tool (both below).
     const scriptOnly = [{ ...produced, refs: produced.refs.filter((ref) => ref.kind !== 'symbol') }, handed];
     const RED: readonly (readonly [string, string, RegExp])[] = [
       ['a renamed step id', workflowText.replace('id: identity', 'id: identities'), /^fixture\.yml build steps\.identity\.outputs\.digest_web: job build has no step identity$/],
@@ -4140,9 +4148,18 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       ['a removed job output', workflowText.replace('    outputs:\n      digest_web: ${{ steps.identity.outputs.digest_web }}\n', ''), /^fixture\.yml use needs\.build\.outputs\.digest_web: job build declares no output digest_web$/],
       ['a need removed', workflowText.replace('    needs: build\n', ''), /^fixture\.yml use needs\.build\.outputs\.digest_web: job use does not need a job build$/],
       ['the producer after its reader', workflowText.replace(/( {6}- name: Record the identity\n(?: {8}.*\n){3})( {6}- name: Read it\n(?: {8}.*\n){2})/, '$2$1'), /^fixture\.yml build steps\.identity\.outputs\.digest_web: step identity of job build \(fixture\.yml:13\) does not come before the step that reads it$/],
-      ['a template its matrix does not spell', workflowText.replace('[web, worker]', '[api, worker]'), /^fixture\.yml build steps\.identity\.outputs\.digest_web: step identity of job build \(fixture\.yml:10\) writes no digest_web= to \$GITHUB_OUTPUT, and the row names no tool that does$/],
+      ['a template its matrix does not spell', workflowText.replace('[web, worker]', '[api, worker]'), /^fixture\.yml build steps\.identity\.outputs\.digest_web: step identity of job build \(fixture\.yml:10\) writes no digest_web= to \$GITHUB_OUTPUT: its own lines spell digest_api, digest_worker$/],
     ];
     for (const [what, text, message] of RED) expect(problems(text, undefined, scriptOnly), what).toEqual([expect.stringMatching(message)]);
+    // A script that writes its own NAME= lines is held to them even when the row names a tool: its template, its matrix
+    // and its env must spell the name. A tool excuses only a script that writes none (the tool writes the output).
+    const spelled = (names: string) => `fixture.yml build steps.identity.outputs.digest_web: step identity of job build (fixture.yml:10) writes no digest_web= to $GITHUB_OUTPUT: its own lines spell ${names}`;
+    expect(problems(workflowText.replace('[web, worker]', '[api, worker]'))).toEqual([spelled('digest_api, digest_worker')]);
+    expect(problems(workflowText.replace('IMAGE: "${{ matrix.image }}"', 'IMAGE: "${{ matrix.image }}-x"'))).toEqual([spelled('none')]);
+    const viaTool = workflowText.replace(run, 'node tools/fixture.ts >> "$GITHUB_OUTPUT"');
+    const toolStep = script('build', 'identity', fingerprint('node tools/fixture.ts >> "$GITHUB_OUTPUT"'));
+    expect(problems(viaTool, undefined, [{ ...produced, refs: [toolStep, ...produced.refs.slice(1)] }])).toEqual([]);
+    expect(problems(viaTool, undefined, [{ ...produced, refs: [toolStep] }])).toEqual(['fixture.yml build steps.identity.outputs.digest_web: step identity of job build (fixture.yml:10) writes no digest_web= to $GITHUB_OUTPUT, and the row names no tool that does']);
     // Tool code: a deleted symbol, a deleted or renamed test, and a symbol without a test.
     expect(problems(workflowText, { 'tools/fixture.ts': 'export function digests(): string {\n  return "";\n}\n', 'tools/fixture.test.ts': tests })).toEqual(['fixture.yml build steps.identity.outputs.digest_web: tools/fixture.ts declares no digest']);
     expect(problems(workflowText, { 'tools/fixture.ts': tool, 'tools/fixture.test.ts': "it('proves a digest', () => {});\n" })).toEqual(['fixture.yml build steps.identity.outputs.digest_web: tools/fixture.test.ts has no test named "proves the digest"']);
