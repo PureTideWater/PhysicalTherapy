@@ -1,0 +1,8 @@
+pre-push: 4 commits checked: 0 file(s) read by the fixture guard, 14 text file(s) searched for an X12 header, and gitleaks found no secret.
+remote: 
+remote: GitHub found 1 vulnerability on PureTideWater/PhysicalTherapy's default branch (1 moderate). To find out more, visit:        
+remote:      https://github.com/PureTideWater/PhysicalTherapy/security/dependabot/1        
+remote: 
+To https://github.com/PureTideWater/PhysicalTherapy
+   d257fe6d..872d06ad  co-001/wip-ci-findings-transport -> co-001/wip-ci-findings-transport
+exit 0

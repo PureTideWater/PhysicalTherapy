@@ -1,0 +1,6 @@
+
+> therapy-platform@ lint:logs /home/user/ci-findings-transport
+> tsx tools/lint-logs/index.ts
+
+lint:logs: 1087 files scanned; every log call uses allowlisted fields.
+exit 0

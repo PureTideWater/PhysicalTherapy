@@ -840,6 +840,8 @@ Two runs, in R7's form (#86, `ci-images-digest.md:1068-1073`), each recorded in 
 
 ## 11. Builders' steps
 
+Build on d257fe6d (`co-001/wip-ci-findings-transport`): §16 maps every line and text below and in §5, §6 and §8 to that head, and where they differ §16 governs.
+
 1. Cut `co-001/ci-findings-transport` from `claude/build-platform` after #86 merges. Check that #86's merge left
    `content-calendar.yml`, `tools/content-calendar/**`, ADR 0071 and `content-updates.md` as at 83d71fd6.
 2. Commit 1 (red): §6's tests. Run under `flock /tmp/laneb-heavy.lock`:
@@ -988,3 +990,327 @@ Three gaps, each re-checked against #86's head (83167b8f) and the base (83d71fd6
 | G1. CI-10's timeout table is not edited | fixed, refined | Real: #86 `tools/test/workflows.test.ts:2724-2746` builds every job's `timeout-minutes` of every workflow and holds it with `toEqual`; `:2734` is `'content-calendar.yml': { check: 15, notify: 5 }`. §6 now edits that row to `{ check: 15, handoff: 5, notify: 5 }` and the comment at `:2733` to "The daily calendar check, its one issues call, and on a pull request the hand-over proof (docs/adr/0071)."; "Failing first" names it (red on the missing `handoff`); §11 steps 2 and 3 record and run it; §9 says the existing CI-10 row (`test-matrix.md:276`) covers it, so no row or number is taken; c1 places `handoff` between `check` and `notify`. Refined: `toEqual` ignores key order, so only the jobs list (`:1153`) depends on YAML order; the table row is written in file order for reading, not because the test needs it. |
 | G2. T-O's title case cannot be built | fixed | Real: `index.ts:55-60` checks the schema before any finding exists and returns 1 with no summary; `calendar.ts:38` caps an entry title at 80, so every finding title is at most about 145. T-O's title case is dropped; T-O keeps the `maxFileBytes: 100` case, which also proves the order for the title refusal (the same `findingsJson` call in the same `try`, after the summary). T-R's unit case (refuses 257, admits 256) is named the title bound's only test. c2, c3, A4 and R5 say the title refusal is a guard the schema keeps unreachable today. Not taken: a `findingsFor` seam on `CalendarRun`; it would add production surface only to reach an unreachable branch. |
 | G3. The 1 MiB step-summary limit is uncited | fixed, refined | Real: no source was given. It is documented: `github/docs content/actions/reference/workflows-and-actions/workflow-commands.md:933-935` ("Step isolation and limits", at 33b1f4a): 1MiB per step, and an overflow fails the summary upload with an annotation but not the step or the job. T-P's line now states the exact assertion (`Buffer.byteLength(summaryMarkdown(...))` of 41 titles of 256 three-byte units ≤ 1,048,576; measured 31,794 with Node 24) and the consequence (titles lost from the summary, which the "not filed" issue points to past `MAX_LISTED`). R6 notes this limit is documented, unlike 65,536 and 256; §13 lists the docs file. |
+
+---
+
+## 16. Re-read at d257fe6d (2026-11-02)
+
+The build head is d257fe6d (`co-001/wip-ci-findings-transport`): #86's fix-round WIP, base 43565235 merged in, then
+D1 to D10 (8681adb9 to d257fe6d). Lines below are at d257fe6d (`git show d257fe6d:<path>`). Where this section and an
+earlier one differ, this one governs.
+
+### 16.1 What did not move
+
+- `git diff --stat 83d71fd6 d257fe6d -- .github/workflows/content-calendar.yml tools/content-calendar docs/adr/0071*
+  docs/runbooks/content-updates.md packages/rules/src/calendar.ts` prints nothing. §2's lines for those files, c1 to
+  c3 and §8's ADR 0071 and `content-updates.md` edits stand as written. `tools/content-calendar/content-calendar.test.ts`
+  is unchanged too: `run` at `:489-508`, the file-bound test at `:578-585`.
+- **The choice (§4) does not change.** Nothing on the head reaches it. The new per-string sum (c1e80912) makes any
+  environment transport, (a) included, carry a table row with exact bytes per chunk, which only adds to (a)'s cost;
+  (b) puts no new value in any environment. The pins are as cited: `actions/upload-artifact@cf430e03…` at `ci.yml:484`
+  and `:577` (and seven other workflow lines: `release-dry-run.yml:197`, `release-capacity.yml:112`, `release.yml:146`,
+  `:202`, `:316`, `mutation.yml:100`, `screening-capacity.yml:318`), `actions/download-artifact@9000827c…` at
+  `ci.yml:557`.
+
+### 16.2 Line map, `tools/test/workflows.test.ts` (4,500 lines)
+
+| Design cites (#86 = 83167b8f) | At d257fe6d |
+| --- | --- |
+| `:13` import of `MAX_FILE_BYTES`, `MAX_OPENED_PER_RUN` | `:15` (kept: T-N and T-E use both) |
+| (not cited) the test-timeout comment and `TEST_TIMEOUT_MS` | `:21-30`, `:31` (thirty seconds a test and a child process) |
+| (not cited) the runner test's count of jobs outside `RELEASE_CHAIN` | `:519` (each on `RUNNER`), comment `:520-522`, `toHaveLength(22)` `:523` |
+| `:1130-1139` `expectQuietNotify`, permissions `:1134` | `:1131-1141`, permissions `:1136` |
+| `:1153` the jobs list | `:1155` |
+| `:1156-1167` the check job's test, outputs `:1166` | `:1158-1169`: the `${{` check `:1164`, `--today` `:1166`, outputs `:1168` |
+| `:1173-1193` `fakeGh` | `:1171-1195` (doc `:1171-1174`; `fake/` already exists, `:1178`) |
+| `:1195` `notifyStep`, `:1198-1204` `runNotify`, `:1205` `b64` | `:1197`, `:1199-1206`, `:1207` |
+| `:1208-1266` notify's three tests (S8 cases) | `:1210-1268` (S8 cases `:1250-1257`, the comment case `:1264`, empty list `:1267`) |
+| `:1292` release-capacity's `expectQuietNotify` | `:1294-1298`; its `runNotify` calls `:1305`, `:1311`, `:1315` |
+| `:276` `runScript` asserts `result.error` | `:276-280`, the assertion `:278` |
+| `:1752-1770` every upload sets `overwrite: true` | `:1807-1824`, the assertion `:1821` |
+| `:1875-1889` `identityEnv` | `:1925-1944` |
+| `:1911-1923`, `:1916-1921` T2's E2BIG pattern | `:1966-1979`: `result.error` first (`:1974`), then the sum of every string (`:1976`) |
+| `:2724-2746` CI-10's table, row `:2734`, comment `:2733` | describe `:2779`, row `:2789`, comment `:2788` |
+| `:3064` T3 `unboundedValueProblems` | `:3182-3245`, returning `{ problems, values }`, each value with `where` and `step` (`FoundValue`, `:3167-3172`) |
+| `:3159` `runner.temp` admitted | `ONE_LEVEL` `:3047` (read at `:3085`); summed as `RUNNER_BYTES` (4,096) `:3053`, `:3353` |
+| `:3194-3199` `BoundedValue`, `over?` `:3197-3198` | `:3603-3614`: `over?` `:3610-3611`, `sites?` `:3612-3613` |
+| `:3228-3240` the two content-calendar rows | `:3705-3723` (check row: `refs` fingerprint `837c4152`, `sites`; notify row: `sites`, `over`) |
+| `:3302` the set equality, `:3307-3311` the over assertions | T6 `:3979-3999`: set `:3983`, over assertions `:3992-3999` |
+| (new) | `FINDINGS_BYTES` `:3632-3633`, `FINDINGS` refs `:3663`; the sum's over machinery `:3247-3254`, `:3262-3263`, `:3284`, `:3318`, `:3401`, `:3406`, `:3470-3471`; `refProblems`' sites check `:3958-3960`; the sites fixture test `:4002-4017` |
+
+Other files:
+
+| Design cites | At d257fe6d |
+| --- | --- |
+| ADR 0066 `:982-983` (Part 3 sentence) | N32 `:981-1028`; the sum's exception `:1018-1021`; the over-limit bullet `:1022-1025` |
+| `ci.md:56`, `:60`, `:61` | the same (`:55-56` is the sentence; `:60`, `:61` the rows) |
+| `ci.md:130-132` (re-running; R4, P4) | `:155-157` |
+| `ci.md` E2BIG wording (#86 `:123`) | `:149-154`; it never names the over-limit exception, so it does not change |
+| `reconciliation-001.md` #86 entry `:659-661` | `:663-665`, the file's end |
+| `test-matrix.md:319` RCC-08, `:276` CI-10 | `:323`, `:277` |
+| `matrix.ts:451` RCC-08 | `:454` |
+| `registry.ts:653-661` | `:657-665` (unchanged; still names both test files) |
+| `fixtures.test.ts:41-42`, `:91-92` | word for word `:33-44`, drift `:91-93`; `builder.ts:175` unchanged; `fixtures/synthetic/RCC-08` unchanged |
+| 83d71fd6 `ci.yml:187-188`, `:287` (§10) | `unit` `:191-192`, `pnpm test` `:291` |
+| #86 `ci.yml:480`, `:573`, `:553` (§4.1 f, §4.2) | `:484`, `:577`, `:557` |
+
+### 16.3 §5 (c1 to c3) on this head
+
+- c1 to c3 stand. Two head rules constrain the text, and c1 already meets both. a7ccead0's closed `$GITHUB_ENV` map:
+  any script line containing `GITHUB_ENV` must be a map entry, and nothing new writes it, so no comment may name it
+  either. 330deea0's key rule: no mapping key may hold `${{`, and c1 has none.
+- **The per-string sum (c1e80912), for every new value.** Nothing new needs a row or a constant. The content
+  calendar's only cross-job value goes with the check job's `outputs` and `FINDINGS_B64`, so T3 finds no value in the
+  file (handoff's and notify's `${{ github.token }}`, `${{ github.repository }}` and `${{ needs.check.result }}`
+  push none). The largest new strings, as the sum counts them:
+  - `GH_TOKEN` in `handoff`: 9 + 49,152 + 1 = 49,162 bytes.
+  - The upload's `INPUT_PATH=${{ runner.temp }}/findings.json`: 11 + 4,096 + 14 + 1 = 4,122 bytes.
+  - `GH_REPO`: 149 bytes. `CHECK_RESULT`: 23 bytes. Notify's unchanged `RUN_URL`: 451 bytes.
+  - The new literals (`MAX_FILE_BYTES`, `DOWNLOAD_PAUSE`, `MAX_LISTED`) are under 25 bytes each. `retention-days: 1`
+    counts as 1 byte, `overwrite: true` as 4.
+- **The runner's own variables are not counted, and are fine.** `RUNNER_TEMP` (a path, at most 4,096) and
+  `GITHUB_RUN_ID` are set by the runner, not the workflow. The artifact's bytes never enter an environment: `gh`
+  writes them to `$RUNNER_TEMP/findings/` and `head -c` copies them into a file.
+
+### 16.4 §6 on this head
+
+**`expectQuietNotify`** (`:1131-1141`) becomes:
+
+```ts
+  function expectQuietNotify(name: string, needs: string, condition: string, permissions: Readonly<Record<string, string>> = { issues: 'write' }) {
+```
+
+with `:1136` `expect(notify?.permissions, name).toEqual(permissions);`. The calendar's call at `:1211` passes
+`{ actions: 'read', issues: 'write' }`. Release-capacity's (`:1294-1298`) does not change.
+
+**The jobs list** `:1155`: `expect(Object.keys(calendar.jobs)).toEqual(['check', 'handoff', 'notify']);`.
+
+**The check job's test** `:1158-1169`.
+- Its title becomes "content-calendar: its check job only reads, with no permissions of its own and no secret, and
+  uploads its findings as the run's own artifact".
+- `:1168` becomes `expect(check?.outputs).toBeUndefined();`, followed by §6's upload-step and order assertions.
+- `:1164`'s `run.includes('${{')` check stays as it is. The upload's `${{ runner.temp }}` is in `with:`, not in `run:`.
+
+**`fakeGh`** (`:1171-1195`): the doc gains "`gh run download` copies `fake/findings.json` into its `-D` directory,
+after failing as many tries as `fake/fail` holds". Its list gains these lines before the `--body-file` loop:
+
+```ts
+        'if [ "$1 $2" = "run download" ]; then',
+        '  dest="${!#}"; fails=$(cat "$FAKE_DIR/fake/fail" 2>/dev/null || echo 0)',
+        '  if [ "$fails" -gt 0 ]; then echo $((fails - 1)) > "$FAKE_DIR/fake/fail"; echo "HTTP 502: Bad Gateway" >&2; exit 1; fi',
+        '  if [ ! -f "$FAKE_DIR/fake/findings.json" ]; then echo "no valid artifacts found to download" >&2; exit 1; fi',
+        '  mkdir -p "$dest"; cp "$FAKE_DIR/fake/findings.json" "$dest/findings.json"; exit 0',
+        'fi',
+```
+
+The script runs in `gh.dir` and the fake's files are under `gh.dir/fake/`, as at `:1178`. So `: > findings.json`
+truncates only the script's own copy.
+
+**`runNotify` and `notifyEnv`** (`:1197-1207`). This is head-forced: release-capacity's test shares `runNotify`
+(`:1305`, `:1311`, `:1315`) and passes its two expression values (`CAPACITY_RESULT`, `ADVISORIES_B64`). So a
+`notifyEnv` that only knew the content calendar's forms would throw on release-capacity's step. The shape that serves
+both, and handoff's step too:
+- `notifyStep(name, job = 'notify')` (`:1197`) reads `read(name).jobs[job]?.steps[0]`. Its callers at `:1212` and
+  `:1302` keep the default.
+- `runNotify(name, values, open, findings: string | null = null, job = 'notify')` runs `notifyStep(name, job)`, and
+  throws `${name}: no job ${job}` when there is none (commit 1's T-H is then red on the missing `handoff`, not green on
+  an empty script). It stages `findings`, when not null, as `fake/findings.json`. T-H runs handoff's one step through it as
+  `runNotify('content-calendar.yml', values, [], findings, 'handoff')`: handoff's five env entries are notify's own
+  forms (three expressions, two literals), so the same emulator serves both, and the fake's log shows any issue call.
+- It builds the env as `{ ...notifyEnv(step, values, findings), RUNNER_TEMP: <mkdtempSync(path.join(scratch,
+  'runner-temp-'))>, GITHUB_RUN_ID: '1', DOWNLOAD_PAUSE: '0', GITHUB_REF_NAME, GITHUB_SHA, FAKE_DIR, PATH }`.
+  `DOWNLOAD_PAUSE` is set last, so no case waits between tries whatever it passes.
+- `notifyEnv(step, values, findings)`, beside `identityEnv` (`:1925-1944`) and in its form, maps each env entry in
+  this order:
+  - a name the case gives in `values` maps to that value, literal or expression alike. This keeps `:1204`'s rule
+    that a case's value wins (`...values` last), so a case can lower a literal: `MAX_FILE_BYTES: '100'` for the
+    over-bound cases, `MAX_LISTED: '5'` for the cap case. A `values` name that is no env entry of the step throws
+    `${name}: ${key} is not in the step's env`, so a mistyped override cannot pass silently against the real
+    literal (every call at d257fe6d names only env entries: `CHECK_RESULT`, `FINDINGS_B64`, `CAPACITY_RESULT`,
+    `ADVISORIES_B64`);
+  - a literal maps as written;
+  - `${{ github.token }}` maps to `'token'`, `${{ github.repository }}` to `'owner/repo'`, and the `RUN_URL` form
+    (`${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`) to
+    `'https://github.com/owner/repo/actions/runs/1'`;
+  - `${{ needs.check.outputs.findings }}` maps to `Buffer.from(findings ?? '').toString('base64')`;
+  - any other form throws `${name}: ${value} is a form this emulator does not know`.
+  - `${{ needs.check.result }}` and release-capacity's two are given by each case in `values`; one not given
+    reaches the last rule and throws.
+- In commit 1 the old step's `FINDINGS_B64` then resolves to the staged file's base64, so T-E is red with E2BIG, the
+  defect itself. In commit 1 no case passes `FINDINGS_B64` in `values` (it moves into `findings`), or it would win
+  over the mapping. In commit 2 the form is gone, and the mapping can stay as the guard §6 names or be dropped. Keep
+  it: it costs one line.
+- `b64` (`:1207`) is deleted. Its callers pass `JSON.stringify(…)` as `findings`.
+
+**Notify's three tests** (`:1210-1268`).
+- The `FINDINGS_B64:` values at `:1224`, `:1235`, `:1243`, `:1264` and `:1267` move into the new `findings`
+  argument.
+- The S8 list (`:1250-1257`) becomes §6's six cases. Each case is `{ CHECK_RESULT }` and a `findings` string or
+  `null`:
+  - `failure`, `null`;
+  - `cancelled`, `JSON.stringify([finding(1)])`;
+  - `success`, `null`;
+  - `success`, `'!!not json!!'`;
+  - `success`, `JSON.stringify({ title: 'x' })`;
+  - `success`, `JSON.stringify([{ title: 'x' }])`.
+- The body assertion at `:1261` holds as written. `CHECK_RESULT` still names the check's result.
+- §6's added cases go in tests of their own after `:1268`, not inside the test at `:1248-1268`. The head's comment
+  (`:21-30`) measures that test at up to 7.4 s on one loaded CPU, and thirty seconds holds four times the worst.
+  - One test: a file over the bound (`values` `{ CHECK_RESULT: 'success', MAX_FILE_BYTES: '100' }`, a 200-byte
+    finding), which goes to "check failing"; two failed tries then success, which files the finding; three failed
+    tries, which goes to "check failing".
+  - **The cap case replaces §6's 400 findings.** Measured with the proof's `work/proposed-notify.sh` and a stand-in
+    `gh` (2026-11-02, a 4-CPU container): 400 short findings took 4.3 s idle and 32.7 s under `taskset -c 0` beside
+    eight busy loops, over the 30-second `TEST_TIMEOUT_MS` that also kills the child; 221 (20 + `MAX_LISTED` + 1)
+    took 2.4 s and 18.8 s, under the limit but not four times under it. Each finding costs one `jq` call, open or
+    not, so pre-opening titles saves little. The case instead passes `values`
+    `{ CHECK_RESULT: 'success', MAX_LISTED: '5' }` with 26 findings: 20 opened, and the "not filed" body lists 5
+    titles and ends "- and 1 more, each named in the run's summary". Measured: 0.5 s idle, 3.7 to 4.0 s on the
+    loaded CPU. Its test carries that measurement in a comment, as `:21-30` does. It exercises the same `head -n
+    "$MAX_LISTED"` and the "and N more" line. The real 200 stays held where it was: T-N pins `MAX_LISTED === '200'`,
+    T-P's arithmetic bounds that body (52,010 ≤ 65,536), and §7's local proof ran 400 at 200. §10's "the
+    400-finding notify case" reads as this case.
+  - The builder re-times the cap case under `taskset -c 0` beside eight busy loops before committing and writes the
+    figure in its comment.
+
+**T-E** follows T2 at `:1966-1979`.
+- `runScript` already asserts `result.error` (`:278`), so a separate assertion is not needed. Its message is not
+  T2's, though. For the same reading, T-E may run the step as T2's `run` does, as a file
+  (`bash --noprofile --norc -e -o pipefail <file>`, `:1969-1971`), and assert `result.error?.message` undefined with
+  `bash did not start`.
+- Then the sum, written as T2 writes it at `:1976`: `Object.entries(env).reduce((bytes, [name, value]) => bytes +
+  Buffer.byteLength(`${name}=${value}`) + 1, 0)` under 131,072.
+- Its name cites the 98,292-byte edge and "the over row #86's T6 held" (that row is deleted in the same commit).
+
+**The runner test** (`:519-523`). `handoff` runs on `ubuntu-26.04` and is outside `RELEASE_CHAIN`, so the count of
+such jobs goes from 22 to 23. In commit 1 (the test leads, as for CI-10's row):
+- `:523` becomes `expect(Object.keys(runners).filter((job) => !RELEASE_CHAIN.includes(job))).toHaveLength(23);`.
+- `:520-522` becomes "Twenty-three on ubuntu-26.04: approval-of-record's one, ci.yml's nine, content-calendar's
+  check, handoff and notify, large-zip's one, mutation's three, publish-content's one, release-capacity's capacity and
+  notify (its report is advisory and never attested, so F5's chain does not hold it), and screening-capacity's
+  changes, gate and notify." (1 + 9 + 3 + 1 + 3 + 1 + 2 + 3 = 23.)
+- `:519` holds as written: `handoff`'s `runs-on: ubuntu-26.04` is `RUNNER`. No other assertion counts jobs: the pin
+  test (`:2339-2350`) asks only for at least one `uses:` per workflow.
+
+**CI-10** (`:2788-2789`):
+
+```ts
+      // The daily calendar check, its one issues call, and on a pull request the hand-over proof (docs/adr/0071).
+      'content-calendar.yml': { check: 15, handoff: 5, notify: 5 },
+```
+
+The CI-10 row is now `test-matrix.md:277`, its words unchanged.
+
+**T6 and the sum: the over-limit rows, `over` and `sites`, removed cleanly.**
+
+Choice (head-forced, recommended): **delete `sites` with `over`.** 9ac28806 added `sites` only to pin the one row the
+sum exempted ("the name pin … gives way to an exact sites list"). Once nothing is exempt, every read of every row is
+summed wherever it stands, so a second use is already held. `sites` would then guard nothing and name no row. Keep
+`FoundValue.where`: T3's own test asserts it (`:3524`), and it names places in messages.
+
+Delete or replace, all in `tools/test/workflows.test.ts`:
+1. **Rows.** `:3705-3723`, the two content-calendar rows (check's `steps.calendar.outputs.findings` and notify's
+   `needs.check.outputs.findings`).
+2. **Constants.** `:3632-3633`, `FINDINGS_BYTES` and its doc line. `:3663`, `FINDINGS`.
+3. **`BoundedValue`.** `:3610-3613`, `over?` and `sites?` with their doc lines.
+4. **`Reading`** (`:3247-3254`).
+   - Delete `over: boolean;` and its doc (`:3252-3253`).
+   - At `:3401`, the type `Omit<Reading, 'unbounded' | 'over'>` becomes `Omit<Reading, 'unbounded'>`.
+   - At `:3403`, `{ ...at, unbounded: [], over: false }` becomes `{ ...at, unbounded: [] }`.
+5. **The sum's machinery.**
+   - `:3284`: delete `if (found.over !== undefined) at.over = true;`.
+   - `:3406`: delete `if (reading.over) continue;`.
+   - `:3262-3263`, the doc's last sentence. "…each naming its file, place and name. A string that holds the one value
+     marked over is the table's (its sites, below)." becomes "…each naming its file, place and name."
+   - `:3318`: "// A matrix is read with no env context, and only a value read directly is the one marked over." becomes
+     "// A matrix is read with no env context."
+6. **The sum test.** `:3470-3471`: delete the over fixture case.
+7. **`refProblems`.** `:3958-3960`: delete the sites check and its comment.
+8. **Fixture test.** `:4002-4017`: delete the test "holds a row with sites to exactly those places…".
+9. **The Ref doc** (`:3584-3592`) does not mention sites, so it stays.
+10. **T6** (`:3979-3999`). Replace `:3992-3999` (the over comment and four assertions) with:
+
+```ts
+    // No row is over the limit: the content calendar hands its findings on as the run's own artifact, so its jobs
+    // declare no outputs and no workflow reads FINDINGS_B64 (ci-findings-transport, docs/adr/0071, Amendment).
+    expect(Object.entries(workflow('content-calendar.yml').jobs).filter(([, job]) => 'outputs' in job).map(([id]) => id)).toEqual([]);
+    expect(workflowFiles().filter((file) => readFileSync(path.join(WORKFLOWS, file), 'utf8').includes('FINDINGS_B64'))).toEqual([]);
+```
+
+  The set equality at `:3983` holds with the rows gone. Content-calendar yields no value: `runner.temp` and
+  `needs.check.result` push none (`:3085-3090`).
+- **T-P keeps both of #86's arithmetic points where the bound now lives.** The env one:
+  `4 * Math.ceil(98_293 / 3) + 'FINDINGS_B64='.length + 1 > 131_072`. The UTF-16 one, as 91910da1 wrote it, but for
+  the worst file: `2 * 4 * Math.ceil(1_540_660 / 3) > 1_000_000`. That is 4,108,432 bytes counted as UTF-16: job
+  outputs could not carry it.
+- **Failing first (§6) on this head.** Commit 1 deletes the rows, so T6's set and the sum are red too:
+  - T6: `content-calendar.yml check steps.calendar.outputs.findings` and `… notify needs.check.outputs.findings` are
+    found with no row.
+  - The sum: `job notify step "Open an issue for each finding not already open" env.FINDINGS_B64: no bound for
+    needs.check.outputs.findings, which no row of the table bounds`.
+  - Both name the defect. Record them beside T-E's E2BIG.
+  - The runner test (`:523`): 22 jobs outside `RELEASE_CHAIN` where 23 are expected, the missing `handoff`. Record
+    it beside CI-10's table, which is red for the same reason.
+- **The file-bound test's title.** T-R's byte case keeps `:578`'s title, "refuses a findings file past its bound, so
+  the check fails rather than hand on a cut list". T-P takes its own title.
+  - The rows' `FINDINGS` refs name that title until commit 1 deletes the rows, so keeping it keeps a stray "has no
+    test named" out of commit 1's red record.
+  - It is also T-R's exact claim.
+
+### 16.5 §8 on this head
+
+- **ADR 0066.** This replaces §8's ":982-983" edit. N32 holds the item in two places.
+  - `:1020-1021`: "…and refuses one over 131,072 bytes, or one holding a value with no bound, but for the one value
+    named over the limit." becomes "…and refuses one over 131,072 bytes, or one holding a value with no bound."
+  - `:1022-1025`, the bullet, becomes:
+
+    > - The content calendar's findings, once a job output (up to 933,336 characters, 1,866,672 bytes as GitHub
+    >   counts an output, UTF-16, over its 1 MB limit) read as one environment variable over the limit
+    >   (`FINDINGS_B64`), travel as the run's own artifact (docs/adr/0071, Amendment, `co-001/ci-findings-transport`).
+    >   No listed value is over the limit, and every environment string is summed, with no exception.
+
+  - No Date or Deciders change: the amendment is ADR 0071's.
+- **`ci.md`.** §8's four edits apply at `:55-56`, `:60` (the new `handoff` row after it) and `:61`. The E2BIG wording
+  (`:149-154`) and the value-rule paragraph (`:429-446`) never name the exception, so neither changes. R4 and P4's
+  re-run rule is at `:155-157`.
+- **`reconciliation-001.md`.** §8's paragraph goes after `:665` (#86's entry, `:663-665`).
+  - #86's own words ("the content calendar's findings recorded over the limit, their transport its own item") stay.
+    They are its record, and rule 6 keeps both sides.
+  - d5f987a4 dropped the C-labels from #86's entry, and §8's text already cites the ADR rather than letters.
+- **RCC-08.** `test-matrix.md:323` and `matrix.ts:454`, word for word, as §8 says. Then `pnpm synth --all`.
+  `fixtures/synthetic/RCC-08/expected.json` is unchanged at d257fe6d, so the regenerated `assertion` line is the
+  only drift expected.
+
+### 16.6 §10 to §13 on this head
+
+- §10: `pnpm test` runs in ci.yml's `unit` job at `:191-192`, with `pnpm test` at `:291`.
+- §11 step 1 is already done on this branch (16.1). Merging #86's final head in later re-runs the check in 16.1. If
+  #86's R3 moves the lines above, re-map them by the same anchors (the function and test names in 16.2), not by
+  number.
+- §11 step 2's red record also holds the runner test (`:523`, 22 where 23 are expected), beside CI-10's table
+  (16.4). §11 step 3 runs it green.
+- §10's "the 400-finding notify case" is the cap case of 16.4 (26 findings, `MAX_LISTED` 5).
+- §12 R4: `ci.md:155-157`.
+- §13: #86's T6 is now the structural table (8681adb9). This item deletes two of its rows and the `over` and `sites`
+  machinery, and edits nothing else in it.
+
+### 16.7 Checker (2026-11-02)
+
+Each gap verified at d257fe6d (`git show d257fe6d:tools/test/workflows.test.ts`).
+- **The runner test counts 22 jobs on ubuntu-26.04.** Real: `:519` and `:523`, comment `:520-522`; `handoff` makes
+  23. Fixed: 16.4 "The runner test" (`:523` to 23, the comment naming handoff), 16.4 "Failing first" and 16.6 add it
+  to commit 1's red record beside CI-10; 16.2 maps the lines. No other assertion counts jobs.
+- **`notifyEnv`'s order drops a case's `MAX_FILE_BYTES: '100'`.** Real: a literal came first, and `runNotify` no
+  longer spread `values`. Fixed, recommended option: `values` comes before the literal, keeping `:1204`'s rule that a
+  case's value wins; refined (safer) so that a `values` name that is not in the step's env throws. The over-bound
+  case passes `MAX_FILE_BYTES: '100'` through `values` (16.4).
+- **No way to run handoff's step.** Real: `notifyStep` read only `jobs.notify`. Fixed: `notifyStep(name, job =
+  'notify')` and `runNotify(…, findings = null, job = 'notify')`, which throws on a missing job; T-H calls it with
+  `'handoff'` (16.4).
+- **The 400-finding case can exceed the 30-second timeout.** Real, measured: 32.7 s on one CPU beside eight busy
+  loops (4.3 s idle). The checker's 221 findings measured 18.8 s, under the limit but not four times under it as
+  `:21-30` asks, and pre-opening saves little (one `jq` call a finding either way). Fixed, refined: the case lowers
+  `MAX_LISTED` to 5 through `values` with 26 findings (3.7 to 4.0 s loaded, 0.5 s idle), in a test of its own; the
+  real 200 stays held by T-N, T-P and §7. The builder re-times it and writes the figure beside it (16.4).
+- **Wrong line numbers.** Real, all five. Fixed: permissions `:1136`; the check test `:1158-1169`, outputs `:1168`,
+  the `${{` check `:1164`; `fake/` at `:1178`; "seven other workflow lines", each named (16.1, 16.2, 16.4).

@@ -1,0 +1,23 @@
+
+> therapy-platform@ toolchain:check /home/user/ci-findings-transport
+> tsx tools/check-toolchain/index.ts
+
+check-toolchain: comparing this tree with 43565235b85d9b4909f6d7b51f23097e0775cef5 (git merge-base origin/claude/build-platform HEAD), as a pull request.
+check-toolchain: ok, gates: minimumReleaseAge 4320 minutes, trustPolicy no-downgrade, neither loosened elsewhere
+check-toolchain: ok, settings: every package resolves from https://registry.npmjs.org/; no pnpmfile or config dependency
+check-toolchain: ok, pnpm advisories: pnpm 10.34.8: no advisory (registry.npmjs.org bulk endpoint)
+check-toolchain: ok, pnpm release age: pnpm 10.34.8 was published 2026-10-23T18:06:37.606Z, at least three days ago
+check-toolchain: warning, newer pnpm: pnpm 10.34.9 (published 2026-10-25T17:54:00.645Z) is newer than packageManager's 10.34.8 and at least three days old; Dependabot never moves packageManager, so bump it by hand at the weekly triage (docs/runbooks/dependency-upgrades.md, "pnpm itself")
+check-toolchain: ok, pnpm integrity: packageManager's sha512 is the registry's dist.integrity for pnpm 10.34.8
+check-toolchain: ok, Dockerfiles: apps/web/Dockerfile and apps/worker/Dockerfile install pnpm with tools/check-toolchain/install-pnpm.sh, from packageManager and checked against its sha512; no pnpm literal
+check-toolchain: ok, images: no image is new against the base, so nothing is read (3 digests named, each one in the base)
+check-toolchain: ok, audit exceptions: 0 audit exception(s), equal in both lists and in date
+check-toolchain: ok, release-age excludes: 0 exclude(s), each one exact version, equal in both lists and in date
+check-toolchain: ok, lockfile resolutions: all 613 entries resolve from https://registry.npmjs.org/ by sha512 integrity
+check-toolchain: ok, lockfile release age: the lockfile adds no version against the base
+check-toolchain: ok, lockfile integrity: no added version to compare
+check-toolchain: ok, lockfile trust: no added version to compare
+check-toolchain: ok, trust excludes: 1 trust exclude(s) (semver@6.3.1), equal in both lists and each still resolved
+check-toolchain: ok, overrides: 1 override(s), each with its entry and still applied
+check-toolchain: passed, 0 error(s), 1 warning(s).
+exit 0

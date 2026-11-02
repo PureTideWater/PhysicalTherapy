@@ -1,0 +1,41 @@
+
+ RUN  v5.0.5 /home/user/ci-findings-transport
+
+ ❯ |unit| tools/test/workflows.test.ts (130 tests | 1 failed | 129 skipped) 30382ms
+   ❯ the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08) (15)
+     × content-calendar: notify downloads the findings in three tries, each stopped after DOWNLOAD_LIMIT seconds, refuses a file over MAX_FILE_BYTES, and opens or comments on "check failing" when it cannot read them (ci-findings-transport) 30372ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| tools/test/workflows.test.ts > the content calendar and the weekly real-size test (docs/adr/0071; test matrix RCC-07 and RCC-08) > content-calendar: notify downloads the findings in three tries, each stopped after DOWNLOAD_LIMIT seconds, refuses a file over MAX_FILE_BYTES, and opens or comments on "check failing" when it cannot read them (ci-findings-transport)
+AssertionError: expected [ +0, …(2) ] to deeply equal [ +0, …(2) ]
+
+- Expected
++ Received
+
+  [
+    0,
+    [
+-     "issue create --title Finding 1 --label content-due --body-file body.md",
++     "issue create --title Content calendar check failing --label content-due --body-file body.md",
+    ],
+-   2,
++   1,
+  ]
+
+ ❯ tools/test/workflows.test.ts:1403:67
+    1401|     // end in "check failing" rather than at the job's timeout with no…
+    1402|     const slow = runNotify('content-calendar.yml', { CHECK_RESULT: 'su…
+    1403|     expect([slow.status, issues(slow), tries(slow)], slow.output).toEq…
+       |                                                                   ^
+    1404|     const stalled = runNotify('content-calendar.yml', { CHECK_RESULT: …
+    1405|     expect([stalled.status, issues(stalled), tries(stalled)], stalled.…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 129 skipped (130)
+   Start at  01:57:00
+   Duration  32.01s (tests 97%, import 3%, transform 1%)
+
