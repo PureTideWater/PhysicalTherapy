@@ -3,6 +3,7 @@ import { type EvidenceKind, type LedgerEntry, type LedgerStage, entriesById, led
 import { centsToString, parseCents, sumCents } from '@tp/money';
 
 import { PRICED_IN_EFFECT } from '../price/in-effect';
+import { ACTIONABLE_NOW } from '../triage/actionable-now';
 import { CONTRACT_EXPIRY_DAYS, DEADLINE_DAYS, type DigestCounts, type DigestFigures, type DigestTotals, digestCountsSchema, digestTotalsSchema } from './view';
 
 /**
@@ -14,7 +15,8 @@ import { CONTRACT_EXPIRY_DAYS, DEADLINE_DAYS, type DigestCounts, type DigestFigu
  *   shortfall of the priced line triage validated them on (its variance; a per-visit line's at most its
  *   visit's net, priced_line_shortfall_cents()), by payer.
  * - Cases nearing deadline: open cases whose deadline falls on the digest's day or within
- *   DEADLINE_DAYS after it, with their actionable total (the case's own, derived in SQL).
+ *   DEADLINE_DAYS after it, with their lines still actionable on their pricing in effect (ACTIONABLE_NOW,
+ *   the figure the practice home and Cases show; docs/adr/0082), never the case's stored total.
  * - Recoveries posted: from the recovery ledger (docs/adr/0042), the lines with a posted or deposited
  *   entry (by the practice's proof level) dated in the month that no reversal offsets, and recovered:
  *   the month's entries' recovered total (proof less recoupments and reversals; approved and interest
@@ -58,7 +60,7 @@ export const DIGEST_QUERIES = {
       WHERE v.shortfall IS NOT NULL
       GROUP BY pl.payer_id
       ORDER BY pl.payer_id`,
-  deadlines: `SELECT count(*)::int AS cases, coalesce(sum(c.actionable_cents), 0)::text AS cents
+  deadlines: `SELECT count(*)::int AS cases, coalesce(sum(${ACTIONABLE_NOW('c')}), 0)::text AS cents
        FROM "case" c
       WHERE c.practice_id = $1 AND c.state = 'open' AND c.deadline_on BETWEEN $2::date AND $2::date + $3::int`,
   coverage: COVERAGE_IN_EFFECT,

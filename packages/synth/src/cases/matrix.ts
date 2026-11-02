@@ -411,6 +411,18 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
       "The one-patient screen is offered it, in the redacted letter too; a placeholder's word, or a redacted letter's own placeholder, never. Digits alone with `/` or `.` between them are not offered (a date's or an amount's writing; recorded in docs/adr/0054)",
   },
   {
+    id: 'MOD-17',
+    title: "The Anthropic client as configuration builds it, with the environment asking for the SDK's tracing and its content, debug logging and another host; the configuration with extra headers asked for on the Anthropic path; the installed SDK's own code; and the failures a request through that client meets",
+    assertion:
+      "SDK retries off and the gateway's timeout; the SDK's OpenTelemetry tracing and propagation off, its logging off and the host the API's own, whatever `ANTHROPIC_OPEN_TELEMETRY`, its content mode, `ANTHROPIC_LOG` and `ANTHROPIC_BASE_URL` say; no webhook key, whatever `ANTHROPIC_WEBHOOK_SIGNING_KEY` says; `ANTHROPIC_CUSTOM_HEADERS` is refused on the Anthropic path and ignored on the others; the environment variables the installed SDK reads, the number of other places each of its files touches the environment and the packages its manifest names, of every kind, are the reviewed lists, each closed, and no package it brings in, its dependencies' own included, reads or touches the environment; through that client, a 429 reaches the gateway as `throttled`, a 529, a 500, a 503 that is not JSON and a refused connection as `unavailable`, a connect timeout, the SDK's own timeout and the gateway's abort as `timeout`, and a 400 or 401 as `rejected`, each after one request",
+  },
+  {
+    id: 'MOD-18',
+    title: "A request through that client while the process has a tracer provider and a trace-context propagator registered and the environment asks for debug logging and another host",
+    assertion:
+      "One request, to the API's own host; no span is started; no `traceparent`, `tracestate` or `baggage` header and no header outside the gateway's set is sent; nothing is written to the console (but the SDK's own deprecation warning, for a model on its lists, which carries the model id and never request content); the request carries API version `2026-10-21` and the key as `Authorization: Bearer`, with no `X-Api-Key`; a client left at the SDK's default does trace and log, and lets `ANTHROPIC_CUSTOM_HEADERS` replace its key (the control)",
+  },
+  {
     id: 'BIL-01',
     title: "Stripe's payment form opens on the bank account",
     assertion:
@@ -494,7 +506,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'TBL-01',
     title: "A wide table's scroller and a fixed-height text box",
     assertion:
-      'Rendered on the server as a region named after its table with ", scrolls sideways" added (a text box: ", scrolls") with tabindex 0, the containing block of what its table positions, with a visible focus outline, so it is reachable before any script runs; in the browser it has no role, name or tab stop while its content fits and the scroller itself does not hold focus (a link inside it does not count), and is a region again when the content overflows; edge fades show only at an edge with content past it and the caption "Scroll sideways for more columns." only while it overflows, both from classes and data attributes alone (no style attribute); every table in apps/web/src is the direct and only child of the ScrollTable of components/scroll-table, under whatever name it is imported, and none is made by createElement or written in markup, but in the #42 pages listed with the pull requests that wrap them, and an exemption that no longer matches fails',
+      'Rendered on the server as a region named after its table with ", scrolls sideways" added (a text box: ", scrolls") with tabindex 0, the containing block of what its table positions, with a visible focus outline, so it is reachable before any script runs; in the browser it has no role, name or tab stop while its content fits and the scroller itself does not hold focus (a link inside it does not count), and is a region again when the content overflows; edge fades show only at an edge with content past it and the caption "Scroll sideways for more columns." only while it overflows, both from classes and data attributes alone (no style attribute); at 390 px Tab reaches the region of a wide table, whose frame draws a 2 px focus outline, an arrow key scrolls it, only the end edge fades at the start, both in the middle and only the start at the end, and the first link inside it draws its ring inside its own box, within the clip of the scroller; every table in apps/web/src is the direct and only child of the ScrollTable of components/scroll-table, under whatever name it is imported, and none is made by createElement or written in markup, but in the #42 pages listed with the pull requests that wrap them, and an exemption that no longer matches fails; no ScrollTable label is the same in every row of a list, in its file or through a component or import; and wrap-anywhere is never on a td or th, and inside one only on or within a block with a min-w',
   },
   {
     id: 'TBL-02',
@@ -506,13 +518,37 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'TBL-03',
     title: "Every changed route at a phone's width passes axe",
     assertion:
-      "At 390 px every changed route, each with its wide table populated and overflowing, has no axe-core WCAG 2.1 A or AA violation, a scrollable region the keyboard cannot reach (scrollable-region-focusable) among them, and every scroller's state agrees with its measurement before axe runs; the screening result's is the review's fourth pull request's",
+      "At 390 px every changed route, each with its wide table populated and overflowing, has no axe-core WCAG 2.1 A or AA violation, a scrollable region the keyboard cannot reach (scrollable-region-focusable) among them, and no two landmarks of a role share a name (axe's landmark-unique), every scroller's state agreeing with its measurement before axe runs; the screening result's is TBL-07",
   },
   {
     id: 'TBL-04',
     title: 'One stacked-row layout',
     assertion:
-      "Each stacked row is a list item headed by its naming cell at the level the caller gives (a link when the row has one), then a definition list of each column's label and value, then the row's actions; expected, paid and short are given together and in that order, and the stacked rows keep the table's column order, each figure in the mono face with tabular numerals; a status wraps inside the card; the rows carry their own hooks, never the table's, and no id or hook repeats between the two copies; with a table, the table shows from the table's own width up and the rows below it, by a container query on a full-width wrapper",
+      "Each stacked row is an item of a list named by its label or by the title that names it, a list by its role too (Safari drops the role of an unstyled list), headed by its naming cell at the level the caller gives (h3 by default; a link when the row has one), then, when given, a line that describes it, then a definition list of each column's label and value, terms over values until the list is 24rem wide and beside them after, in a term column of at most 40% of the list, each pair apart from the next in either layout, then the row's actions, with no actions box when they render nothing; expected, paid and short are given together and in that order, and the stacked rows keep the table's column order, each figure, code and count in the mono face with tabular numerals; a status chip, a Badge and a key longer than the card wrap inside it; the rows carry their own hooks, never the table's, and no id or hook repeats between the two copies; with a table, the table shows from the table's own width up and the rows below it, by a container query on a full-width wrapper that is never squeezed to nothing; a list with no name is refused",
+  },
+  {
+    id: 'TBL-05',
+    title: "The screening result's rows on a phone",
+    assertion:
+      "At 390 px each row of the screening result's three tables, the anomalies by code and payer product, the coverage and the rows with the largest differences, is an item of a list named by its card's title, headed by its naming cells (a group by its code and payer product, a coverage row by its payer product and outcome, a top row by its number, code and payer product) and holding every other column (a coverage row's Reason only when it has one) under the table's own header and in the table's order, each value as its table row's cell under that header has it: the Medicare figures, the allowed amount in the file and the differences together and in that order, in the mono face, a missing second figure said in words, and the status in words on its tint; the other groups, summed, are the last item, their note under its heading; every value lies inside the window, no status is cut and no page scrolls sideways; the items carry their own hooks, never the table rows', and no id or hook repeats between the two copies; and the link under the result's heading, named as the audit request's form is titled, is in view on load and, followed from the keyboard, puts the focus on that title, from which Tab goes into the form (UX-134)",
+  },
+  {
+    id: 'TBL-06',
+    title: "The screening result's tables from a desktop's width",
+    assertion:
+      "At 1280 px the three tables show, each in its scroller named after its card's title, with one row for each group, coverage row and top row the database returns, and the lists are hidden from view and from assistive technology; each card switches at its own table's width, so at 820 px the anomalies and the top rows stack while the coverage keeps its table, and without script the switch is the same; the table and the list render from one row array and one list of column labels; a status wraps in its cell above a 10rem floor, so the synthetic result's anomalies and coverage fit their cards at 1280 px and where the cards' content is exactly 54rem (994 px without a classic scrollbar), the narrowest width at which all three tables show, while a table wider than its card scrolls in its region with the caption, as the rows with the largest differences do at 1280 px; a table that was hidden measures again when it shows",
+  },
+  {
+    id: 'TBL-07',
+    title: 'The screening result passes axe at 1280 and 390 px',
+    assertion:
+      "A result the screening consumer prices from a synthetic upload, opened from its emailed link once its run is complete, has no axe-core WCAG 2.1 A or AA violation at 1280 px, and at 390 px, loaded at that width, none and no two landmarks of a role sharing a name, every scroller's state agreeing with its measurement before axe runs",
+  },
+  {
+    id: 'TBL-08',
+    title: "The screening result's words and tones",
+    assertion:
+      "The top rows head their claim-line count Claim lines; one sentence above each table of differences says that each difference is its Medicare figure less the allowed amount in the file and which way its sign runs; the coverage shows an unpriced reason in words alone, its code kept in its row's data attribute; the could-not-price card and the top rows say what PaidWhole prices, never the engine; every count on the result groups its digits and takes a noun that agrees with it (the one other group, its rows summed); an empty value is said as none; on a phone an anomaly shows in the unpriced tone and every other standing neutral, never Short or Whole; never owed, underpaid or recovered",
   },
   {
     id: 'DLR-01',
@@ -537,5 +573,53 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     title: 'The person sees it in the frame (e2e and axe)',
     assertion:
       "In a practice of its own, a letter with \"ABC\" sent past the pattern returns to Coverage with the entries kept, the codes field `aria-invalid`, its message first in its description and the focus on it, and axe (WCAG 2.1 A and AA) passing at 1280 px and at 390 px with no sideways scroll; a contract that is not the payer's is stopped in the browser in the words its refusal would be marked with, and sent past that comes back marked on its control; once corrected, the letter downloads with its marks cleared and the refusal out of the URL, and a reload shows the plain form; a payer that is not the practice's comes back marked and unanswered, and choosing one clears the mark; a refusal the form cannot mark is said as a notice and takes the letter's entries out of the URL; the pattern stops \"ABC\" before the round trip and takes good codes; a good letter downloads and the page stays; a refused file of the Reports list comes back beside that list, and the list leaves the URL with the refusal; a viewer who opens the audit report's line CSV as a page lands on the report with the forbidden notice focused, still there after a router refresh that never asks for the refusal and gone after a reload, while a script's request keeps the JSON refusal; on Uploads a receipt's report downloads in place and its refusal is said above the receipts, focused, while the page stays; and a viewer who opens a packet's PDF lands on the packet's permission state, told who downloads its files, with the refusal out of the URL",
+  },
+  {
+    id: 'SGN-01',
+    title: "A sign-in step's time limit, stated and enforced",
+    assertion:
+      "The new-password, enrolment and code steps say \"This step stays open for 3 minutes.\" before their work, and key registration says 15 minutes (a page rendered later in the step says the time left instead, \"This step closes within 2 minutes.\", rounded up), from one constant that infra's sign-in session and access token pin: the shorter of the provider's limit and the pending cookie's; the dev provider's challenge reads the same constant; the server closes a step at that limit, counted from before the provider issued its challenge, whatever the cookie's own life, and the rewrite after a refused new password extends nothing; a page or a press after the limit starts again without asking the provider and counts no failure; a step sealed before the deploy shows no countdown and is left to the provider",
+  },
+  {
+    id: 'SGN-02',
+    title: 'The warning before a step closes',
+    assertion:
+      "At one minute left (two on a step of ten minutes or more) one polite status, never an alert and never focused, says the step closes within a minute, what Start again costs and keeps, and on enrolment that it gives a new setup key; it is said once and never each second, the limit sentence above the work shows the same state in place and stays in view on a phone with its keyboard up, nothing above it moves, and the focus and what was typed stay, Start again's too; a tab that slept, was hidden, or had its clock set back or forward shows the right state when it is visible again, and says it then; a re-render keeps the count; at the limit the same status says once that the step has closed, nothing redirects and the form stays usable; nothing animates",
+  },
+  {
+    id: 'SGN-03',
+    title: 'Starting again keeps the email',
+    assertion:
+      "Start again, a press after the limit and a step page loaded after it land on the sign-in page with the email filled and the password empty, from a sealed, HttpOnly, SameSite=Lax cookie written only after the password was proven, never for the hardware-key step, and lasting 15 minutes past the step; Start again ends the step it leaves before the sign-in page renders, so Back and the step's address open it no more and key registration's grant is given back; the notice, a note and never also a live region, takes the focus once and says to use the temporary password after a new-password step, or the chosen one once it was saved; the email is in no URL and is filled only on those two reasons; an unknown address and a wrong password write the same cookies; the kept email ends when a session opens, an account locks or is found disabled, a key is required or registered, or a first step opens no step, and outlives an expiry and Start again",
+  },
+  {
+    id: 'SGN-04',
+    title: 'The invited paths are numbered, and the timed steps pass axe',
+    assertion:
+      "An invited customer's headings read \"Step 1 of 2: Choose a password\" and \"Step 2 of 2: Set up two-step verification\", the number shown over the step's name, and an invited staff member's run from \"Step 1 of 3\" to \"Step 3 of 3: Register a hardware key\", counted by the server from the provider's answer and the account; an everyday sign-in, and a restart with one step left, show no number; the code and enrolment steps pass axe (WCAG 2.1 A and AA) with the warning shown, at 1280 and 390 px, and when closed, as do key registration with its warning and the sign-in page with the email kept",
+  },
+  {
+    id: 'HOM-01',
+    title: 'One actionable figure everywhere',
+    assertion:
+      "On one synthetic case before and after its re-run is accepted (its lines priced again), on a case whose rule release is withdrawn, and on a case with a line moved on to payer approved, the home's headline dollars and lines, its cases by state and deadlines, the Cases header and each row's figure and count, the case page's figure and counted lines, an ROI statement generated on demand and the digest's nearing-deadline figure agree, each read through the one predicate; every line not written off is in the figure, moved past actionable or on pricing no longer current, and is counted under that one cause; the case's stored total is untouched and shown nowhere as actionable; the statement recomputes from its entries and the database accepts it; the home reads its cases in one statement that runs the pricing check at one plan node, once per case line at actionable and for no line written off or moved off actionable; the recovered figures to date and for the quarter, from one ledger read, equal ledgerTotalsOver (practiceLedgerTotals's own totals) for all time and for the quarter, on random ledgers whose reversals cross the quarter's boundary, and to date is dated from the first counted entry that stands, none when every recovery was reversed",
+  },
+  {
+    id: 'HOM-02',
+    title: "The home's figures in words",
+    assertion:
+      "The tile counts its lines with counted() and names each cause of the lines out of the figure (0, 1 and 2 of each) only when there are any, as the case page and the packet builder do through outOfFigureWords(); the Recovered tile reads to date since its first counted entry that stands, or none yet, and this quarter from quarter(), each date and quarter key kept on one line; quarter() writes a quarter key and refuses any other; the Payer approved notes say the figure is to date and never the patient’s share and, with the ledger totals' help and the statement's empty line, follow the proof level; the case page's Net expected value shows an amount only on a case still being worked with a line in the figure and a pursuit estimate, and otherwise says why (resolved or closed, not estimated, no line in the figure, every line written off); no read text of the home, Reconciliation, the case page or the statement says a stage number (stage five, stage-five or stage 5), except the home's help (components/help.ts, a #42 file; follow-up after #42); pnpm lint:copy passes",
+  },
+  {
+    id: 'HOM-03',
+    title: 'The empty home names the upload gate',
+    assertion:
+      "The home's gate equals the Uploads page's: a practice BAA and an organization-wide BAA open it, a BAA signed in the future and none close it, a suspension pauses it; open shows the upload sentence with Go to Uploads, closed the BAA sentence with See the agreement chain for a role that may open Settings and no link for a viewer, paused the suspension sentence with no link",
+  },
+  {
+    id: 'HOM-04',
+    title: 'The home and the statement agree in the browser',
+    assertion:
+      "In the LED-06 journey after the recoupment, the home's actionable tile reads $0.00 and \"what the packets ask for: 0 lines in cases still being worked; out of the figure: 1 line whose pricing is no longer current\", and the Cases header, the case page and an ROI statement generated then (Actionable in cases still being worked) read $0.00; the Recovered tile's to-date figure reads since 2026-06-09 with this quarter's line; the Payer approved note reads deposited or not, never the patient’s share; the home's read text, its help apart, the case page and Reconciliation's recovered figure carry no stage number, and the home's help still says stage-five until #42's follow-up; the statement's empty approval line names deposited",
   },
 ];

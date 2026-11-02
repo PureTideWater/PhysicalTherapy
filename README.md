@@ -449,7 +449,8 @@ anywhere else, and `src/lint.test.ts` proves it on a fixture test file. `ModelGa
 prompt version under `prompts/<purpose>/v<n>/` (with a changelog per prompt), an output schema and a verifier, and
 each call logs one `model_call` row of hashes, counts and codes (never text). The provider is configuration:
 `MODEL_PROVIDER=bedrock` (the production default: `BEDROCK_REGION` or `AWS_REGION`, optionally `BEDROCK_ENDPOINT` for
-the VPC endpoint), `anthropic` (`ANTHROPIC_API_KEY`) or `local` (the default elsewhere: the deterministic provider,
+the VPC endpoint), `anthropic` (`ANTHROPIC_API_KEY`; no other variable the SDK reads from the environment is used, and
+`ANTHROPIC_CUSTOM_HEADERS` is refused, ADR 0048) or `local` (the default elsewhere: the deterministic provider,
 which answers only outputs registered for the exact request, from code or `MODEL_LOCAL_FIXTURES_DIR`). Model
 identifiers are pinned per prompt version in its `prompt.json`; prices are in `config/models.json`, and production
 serves no feature of a real provider whose models' prices a person has not confirmed there. Outside production the gateway sends no practice's material
