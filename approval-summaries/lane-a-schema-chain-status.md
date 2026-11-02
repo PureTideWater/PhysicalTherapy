@@ -48,6 +48,20 @@ returns (2026-11-03 14:00 UTC, possibly 15:00). Briefs: `lanes/lane-b-session-br
   Worker restarted; setup re-run 19:58 UTC (PostgreSQL back; no marker); efb20704 kept as WIP ref
   `co-001/wip-ss01-chain`; **resumed 19:59 UTC** with resumeFromRunId (the stage-1 agent continues from its progress file,
   copied to `approval-summaries/lane-a-wip/progress/sc-m1-ss01.md`).
+- **06:25 UTC (acting Lane A): resumed after the 5-hour stop (~05:50) and a worker restart.**
+  - **Route proved; the 8-CPU-runner ask is WITHDRAWN.** wf_3c4cf5ac-af0's smoke: release-capacity run.ts --small
+    --runtime process at 1b 048bc843 on this 4-CPU container: "runner 4 CPUs, 16091 MiB", verdict pass, 19 jobs on
+    attempt 1, 1 advisory lock; requiredCpus = 4 (limits.ts); runs 40479127979 and 40584379787 reached FULL_SIZE
+    verdicts on GitHub's free 4-CPU runner. Needs no person and no money while the repository stays public. At 1b's PR
+    stage on its final head: CAS-42.5 by dispatching release-capacity.yml on 1b's branch (a failure or advisory also
+    comments on the "Release capacity test failing" issue); CAS-42.6 by the local process route, base and head builds,
+    one release dir (commits named by hand: the process route records Commit unknown; Postgres unthrottled, recorded as
+    departures). Commands in `approval-summaries/lane-a-wip/progress/rc-smoke.md`.
+  - **Interest: pushed 379fed9f** (1b 048bc843 merged). Builder W stopped mid failing-first e2e with its implementation
+    stashed (stash 589e31d5, saved as WIP ref `co-001/wip-interest-w`); its progress file says to pop it. Setup re-run
+    (PostgreSQL back; no marker); **wf_3c4cf5ac-af0 resumed 06:22 UTC** (W, then the integrator's one full suite).
+  - #42: open, draft, head 9426a8d1 (moved past 6c28d6a2), base now 88708069. SS-01 takes #42's final head and the base at
+    SS-01's PR stage (after #42 merges).
 - **~05:10 UTC (acting Lane A): wf_5566bd1c-8eb done** (results: `approval-summaries/lane-a-schema-chain-wf_5566bd1c-8eb-result.json`).
   - **1b head 048bc843 pushed** (add1ebed merged SS-01 bb13be1b with #42 6c28d6a2 and base 43565235; only the domain model
     conflicted, regenerated; 20261109090000 unchanged, marker never used). Built: the measurement gate, CAS-42.1/.2
@@ -238,7 +252,7 @@ returns (2026-11-03 14:00 UTC, possibly 15:00). Briefs: `lanes/lane-b-session-br
 ## Waiting on someone
 - #42's merge (SS-01's PR opens after it); #42's own domain-model approval is the founder's.
 - The founder: each schema PR's domain-model approval (the founder commits the suggested line, as on #39, 54ec890).
-- **Waiting on the founder: an 8-CPU runner for 1b's real-size runs (CAS-42.5 and .6).** This container's 4 CPUs stop
+- ~~Waiting on the founder: an 8-CPU runner~~ **Withdrawn 2026-11-02 06:25 UTC: the runs need 4 CPUs (proved by smoke; see Now).** Former text: This container's 4 CPUs stop
   them as RUNNER_TOO_SMALL; GitHub's larger runners exist only for organizations on Team or Enterprise Cloud and the owner
   PureTideWater is a User account; the 2026-10-23 "Free: time advisory" ruling does not decide this case. A cost and
   owner-admin decision; it does not block 1b's PR or reviews, but as designed it blocks 1b's merge.
