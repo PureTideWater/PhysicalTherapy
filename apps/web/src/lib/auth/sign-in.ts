@@ -52,7 +52,8 @@ export type Pending =
 export type RefusalReason = 'credentials' | 'locked' | 'expired' | 'hardware_key_required' | 'no_account' | 'key_not_registered' | 'invitation_expired';
 
 export type FlowResult =
-  | { readonly kind: 'pending'; readonly pending: Pending }
+  /** `keyRequired`: on the first step's result, the account must also register a hardware key (the web layer numbers the setup steps). */
+  | { readonly kind: 'pending'; readonly pending: Pending; readonly keyRequired?: true }
   | { readonly kind: 'signed_in'; readonly session: OpenedSession; readonly userId: string }
   | { readonly kind: 'refused'; readonly reason: RefusalReason }
   | { readonly kind: 'invalid_password'; readonly problems: readonly string[]; readonly pending: Pending }
@@ -175,7 +176,8 @@ export class SignInFlow {
         return refused('invitation_expired');
       }
     }
-    return this.after(await this.deps.provider.signIn(email, password), email, context);
+    const result = await this.after(await this.deps.provider.signIn(email, password), email, context);
+    return result.kind === 'pending' && account?.hardware_key_required === true ? { ...result, keyRequired: true } : result;
   }
 
   async newPassword(pending: Pending, password: string, context: SignInContext): Promise<FlowResult> {
@@ -261,5 +263,16 @@ export class SignInFlow {
     await this.audit(pending.userId, 'hardware_key_registered', context.requestId, 'webauthn');
     await this.deps.provider.release(pending.grant);
     return { kind: 'key_registered' };
+  }
+
+  /**
+   * The person left the step (Start again, docs/adr/0081): key registration's grant is given back, as every other way
+   * out of that step gives it back. The other steps hold only a challenge, which the provider ends at its own limit and
+   * which nothing can answer once the cookie that seals it is gone.
+   */
+  async abandon(pending: Pending): Promise<void> {
+    if (pending.step === 'register_key') {
+      await this.deps.provider.release(pending.grant);
+    }
   }
 }
