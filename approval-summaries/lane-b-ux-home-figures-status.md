@@ -7,25 +7,14 @@ orchestrator (session_01FcouKNNHsdecRMzfTs7XwW); before that by session_01L3tN5L
 item session, 2026-10-27), as the follow-on of PR 5 (`co-001/ux-download-refusals`, merged as #78, 83d71fd6,
 GitHub merged_at 2026-10-28T06:50:22Z).
 
-## Now (2026-11-01 17:00 UTC)
-- **Machine:** setup OK (2026-11-01 ~16:59 UTC; every line ok). GitHub login: PureTideWater.
-- **Base:** claude/build-platform = 83d71fd6 (unchanged since #78); the design's line references hold.
-- **Stage 1 done:** the design `designs/lane-b-ux-home-figures.md` (D1 to D11; the predicate in `apps/worker/src/triage/actionable-now.ts`, exported through `@tp/worker/triage`) and its adversarial review (`wf_132e0b59-2b4`: build with changes; no migration; no frozen code; 13 findings, all taken, dispositions at the design's end, which win). ADR 0082 is taken.
-- **Stage 2 done** (wf_21e8bd67-64f, resumed once): committed af3b6d89 on `co-001/ux-home-figures` (48 files, +1722 -221), pushed through the hook. Integrate: unit 404 files / 6818 passed / 4 skipped; db project 126 pass, the 5 catalog files that fail on PG16 pass on PG18 (34 tests); 13 changed/related db files on PG18 1265 pass; build; e2e 19 passed; typecheck; lint (one fix); lint:copy; lint:logs; synth 0 written; Stryker affected: no money shard, gate passes; watched-paths +1 line (kept). CAS-41 gate passes (100k: 7775.4 ms vs 18312.4 ms).
-- **Stage 3 done: draft PR #93**, subscribed; description from the template written and adversarially checked (wf_b80e9712-f4a; one wording fix), read back byte for byte (copy: `approval-summaries/lane-b-ux-home-figures-pr93-body.md`). CI on af3b6d89: all 23 runs green.
-- **Base merged in early** (rule 6, so the reviews see the real merged code): claude/build-platform 43565235 (#82, #83) merged as 87691be4 (wf_4a5f0f16-f8c: no conflicts, nothing regenerated, merge checked by a second agent in a fresh clone); unit 409 files / 6937 passed / 4 skipped and the PR's 6 db files (36 tests, PG18) pass; pushed.
-- **Stage 4 done** (wf_a1a88081-22f, 33 agents): payment-engine review 3 rounds (10 findings, 8 real: 2 should-fix, 6 nit); UX and brand review with 38 after shots (0 failed; 3 out-of-sample ids skipped) 3 rounds (16 findings, 15 real: 7 should-fix, 8 nit); no blocking finding; refuted: engine-r1-E5, engine-r3-R1, ux-r2-04. The loop hit its 3-round cap still finding nits, so the fix round adds a fourth round on the fixes. **Freeze exception: none needed** (payment-engine reviewer: packages/pricing, packages/ledger, packages/db diff empty; the ROI statement's actionable figure is an input roiStatement() only sums; the digest is monitoring output). Findings: `approval-summaries/lane-b-ux-home-figures-review-findings.json`. E4 (a line in reconciliation-001.md) is a #42 file: the sentence goes in ADR 0082, the line is a follow-up after #42.
-- **Stage 5 done** (wf_768311e7-b88, resumed once): fix round committed as 30c055c9 and pushed once (base 43565235 unchanged). All 23 real findings fixed per their verdicts; a fourth review round on the fixes found 4 more (N1, N2, F2, F4: fixed); two of its nits (F1 words for a reopened line; F3 the case page's Payer approved fact) carried as proposals. Full local suite once: install, check:fixtures, typecheck, lint, lint:copy, lint:logs, verify-content, engine-freeze, watched.ts, synth (clean), unit 410 files / 6950 passed / 4 skipped, golden 376, oracle 687 agree, db 4 PG18 shards 131 files / 9290 passed / 1 skipped, build, e2e both shards (brand.spec.ts fixed for the mono counts; rerun green), Stryker affected: none, gate passed. Record: `approval-summaries/lane-b-ux-home-figures-fix-suite.md`.
-- **Next: stage 6**, the fresh-clone verification reading CI on 30c055c9; then stage 7 (merge). Pacing (co-founder via orchestrator, 2026-11-02 02:10 UTC): finish to merge spending nothing that does not change the outcome; no follow-on item after the merge.
-- **Merge rule (orchestrator, 2026-11-01 20:36 UTC):** a verified green PR merges as soon as ready; wait only for an earlier unmerged PR that conflicts (for this PR: #42 and #85 share test-matrix/synth rows; #85 also uploads.ts and the case page).
-- **Branch:** `co-001/ux-home-figures` = 83d71fd6 (no commits of its own), worktree `/home/user/ux-home-figures` (recreated by setup). PR #93 (draft). WIP ref `co-001/wip-ux-home-figures` f22eeffc (superseded by af3b6d89).
-- **Reserved:** ADR 0082 if needed; test-matrix HOM-01 to HOM-04, a new series; `packages/synth` module 20 (HOM) if needed.
-- **Reviews (the brief):** the UX and brand review, and the payment-engine review (`.claude/agents/payment-engine-reviewer.md`,
-  as a default workflow agent with that checklist). It changes how a dollar figure is computed and shown: code computes
-  every number (CLAUDE.md rule 1), money stays integer cents.
-- **For Lane A, if found:** anything that needs a migration or changes frozen code (the engine under packages/pricing,
-  the ledger's existing behaviour) is recorded here and left out.
-- **#42 files:** #42 at be63bdc2, 219 files (merge base 56ed6279; it does not contain 83d71fd6). Overlap with this PR: rows only, in `docs/product/test-matrix.md` and `packages/synth/src/cases/{matrix,registry}.ts`. Re-check at stage 4 (#42's session is about to merge the base into it).
+## Now (2026-11-02 02:50 UTC): MERGED
+- **PR #93 merged** 2026-11-02 ~02:47 UTC as 877e662f (method merge, expectedHeadSha d1e4c4c4), into claude/build-platform. Unsubscribed. Worktree `/home/user/ux-home-figures` and the local branch removed (the remote branch stays); main checkout fast-forwarded to 877e662f and `pnpm install` run. Push runs on 877e662f (ci, screening-capacity, mutation): being read; recorded below when done.
+- **Stages, all done:** 1 design and review (wf_132e0b59-2b4); 2 build (wf_21e8bd67-64f; af3b6d89), before shots (wf_c880ba51-8cf); 3 draft PR and description (wf_b80e9712-f4a); base merge 1 (#82, #83: 87691be4, wf_4a5f0f16-f8c); 4 reviews (wf_a1a88081-22f: payment-engine and UX/brand with 38 after shots; no blocking; 23 real findings); 5 fix round (wf_768311e7-b88: all fixed, a fourth round's 4 fixed, full local suite once; 30c055c9); description republished (wf_52437a96-5cc); base merge 2 (#92: d1e4c4c4, rows kept both sides, SGN 19 then HOM 20; wf_7be2d381-b60); 6 fresh-clone verification (wf_e45d195a-ebd: scope, #42 overlap, HOM rows, ADR 0082; CI on d1e4c4c4 read after it completed: every check green, all green, mutation, screening-capacity gate and approval-of-record included; description brought to the head); 7 ready, approval-of-record re-run green, merged.
+- **Merge order:** the 20:36 UTC rule; no conflicting PR was ready ahead (#42, #85 drafts).
+- **Freeze exception:** none needed (payment-engine review). **Migration:** none. packages/pricing, packages/ledger, packages/db untouched.
+- **Reserved numbers used:** ADR 0082; test-matrix HOM-01 to HOM-04; synth module 20 (HOM). Nothing else.
+- **WIP refs:** `co-001/wip-ux-home-figures` (27a848c1) is superseded by the merge; left in place (never force or delete without the orchestrator).
+- **Follow-on:** none taken (pacing call 2026-11-02 02:10 UTC: no new item after the merge). #46 (Verified seal) stays undesigned for the orchestrator to assign.
 
 ## Log
 - 2026-10-28 06:50 UTC: PR 5 merged (#78; GitHub merged_at 06:50:22Z); PR 9 started: branch cut, status file written.
@@ -44,6 +33,9 @@ GitHub merged_at 2026-10-28T06:50:22Z).
 - 2026-11-01 ~23:00 UTC: the account's 5-hour limit stopped wf_768311e7-b88 after the fixes (money, screens, records) and the UX fourth-round review; the engine fourth-round review, four skeptics and the suite failed. Uncommitted fixes saved as WIP `co-001/wip-ux-home-figures` 27a848c1 (snapshot 4).
 - 2026-11-02 01:05 UTC: machine restarted; setup re-run (PG up); wf_768311e7-b88 resumed with resumeFromRunId.
 - 2026-11-02 ~02:40 UTC: fix round done; 30c055c9 pushed; PR description being republished.
+- 2026-11-02 ~02:20 UTC: base merge 2 (#92) d1e4c4c4 pushed; the 30c055c9 run's e2e and capacity were cancelled by that push (not defects).
+- 2026-11-02 02:41 UTC: CI green on d1e4c4c4; verification complete; PR marked ready; approval-of-record re-run green.
+- 2026-11-02 ~02:47 UTC: **merged as 877e662f**; unsubscribed; worktree cleaned.
 
 ## Waiting on someone
 - Nothing.
