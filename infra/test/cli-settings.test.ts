@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
@@ -17,22 +17,70 @@ const readJson = <T>(file: string): T => JSON.parse(readFileSync(path.join(infra
 const manifest = readJson<{ scripts: Record<string, string> }>('package.json');
 const cdkJson = readJson<{ context?: Record<string, unknown>; notices?: unknown }>('cdk.json');
 
-// A script runs the CLI directly when a command in it (start, or after a shell separator, past any
-// VAR=value prefixes and a package-runner launcher: pnpm [exec|dlx], npx [flags], yarn [dlx]) is `cdk`.
-const launcher = String.raw`(?:pnpm\s+(?:(?:exec|dlx)\s+)?|npx\s+(?:-\S+\s+)*|yarn\s+(?:dlx\s+)?)?`;
-const directCdk = new RegExp(String.raw`^\s*(?:[A-Z_][A-Z0-9_]*=\S*\s+)*` + launcher + String.raw`cdk(?:\s|$)`);
-const runsCdkDirectly = (command: string): boolean =>
-  command.split(/&&|\|\||;|\|/).some((part) => directCdk.test(part));
-
-// The env object cdk:diff spawns the CLI with, its comments removed: a commented-out setting is not a setting.
-const withoutComments = (source: string): string => source.replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
-const envObject = (source: string): string => /\benv:\s*\{([^}]*)\}/.exec(withoutComments(source))?.[1] ?? '';
-const cdkDiffEnv = envObject(readFileSync(path.join(infraDir, 'scripts/cdk-diff.ts'), 'utf8'));
-
+// The commands of a script, split at the shell's separators.
+const commands = (script: string): string[] => script.split(/&&|\|\||;|\||&/).map((command) => command.trim());
+// A command that names the cdk CLI as a word, however it is started (directly, by a package runner, by a path, through
+// env or cross-env, in a subshell). It fails closed: a command that names it must carry the settings itself, so a way
+// of starting the CLI this test does not know of still needs them. `cdk:diff`, `cdk-diff.ts`, `cdk.json` and `cdk.out`
+// do not name it.
+const namesCdk = (command: string): boolean => /(?<![\w-])cdk(?![\w:.-])/.test(command);
 // The VAR=value prefix of a command, as the variables it sets.
 const prefixVariables = (command: string): Record<string, string> => {
   const prefix = /^\s*((?:[A-Z_][A-Z0-9_]*=\S*\s+)*)/.exec(command)?.[1] ?? '';
   return Object.fromEntries([...prefix.matchAll(/([A-Z_][A-Z0-9_]*)=(\S*)/g)].map((match) => [match[1] ?? '', match[2] ?? '']));
+};
+
+// The commands of a script that name the cdk CLI without all three settings of their own: the two variables in the
+// command's own VAR=value prefix (a prefix reaches only the command it precedes) and --no-notices among its arguments.
+const commandsWithoutSettings = (script: string): string[] =>
+  commands(script)
+    .filter(namesCdk)
+    .filter((command) => {
+      const variables = prefixVariables(command);
+      return variables.CDK_DISABLE_CLI_TELEMETRY !== 'true' || variables.CDK_DISABLE_VERSION_CHECK !== 'true' || !command.split(/\s+/).includes('--no-notices');
+    });
+
+// Every cdk command `pnpm cdk:diff` starts, with its arguments and CDK_ variables, recorded by a stand-in `cdk` first on
+// PATH. cdk-diff.ts itself runs, under tsx, with no AWS credentials and no metadata endpoint, so its credential probe
+// fails without a request, and with the caller's environment turning both settings back on, which it must override.
+interface CdkCall {
+  readonly args: readonly string[];
+  readonly env: Readonly<Record<string, string>>;
+}
+const cdkDiffCalls = (): CdkCall[] => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tp-cdk-stand-in-'));
+  try {
+    const log = path.join(dir, 'calls.jsonl');
+    const standIn = path.join(dir, 'cdk');
+    writeFileSync(
+      standIn,
+      `#!${process.execPath}\nconst env = Object.fromEntries(Object.entries(process.env).filter(([name]) => name.startsWith('CDK_')));\n` +
+        `require('node:fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args: process.argv.slice(2), env }) + '\\n');\n`,
+    );
+    chmodSync(standIn, 0o755);
+    const none = path.join(dir, 'none');
+    const tsx = createRequire(import.meta.url).resolve('tsx/cli');
+    const result = spawnSync(process.execPath, [tsx, 'scripts/cdk-diff.ts'], {
+      cwd: infraDir,
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        PATH: `${dir}${path.delimiter}${process.env.PATH ?? ''}`,
+        HOME: dir,
+        AWS_EC2_METADATA_DISABLED: 'true',
+        AWS_CONFIG_FILE: none,
+        AWS_SHARED_CREDENTIALS_FILE: none,
+        HTTPS_PROXY: 'http://127.0.0.1:9',
+        HTTP_PROXY: 'http://127.0.0.1:9',
+        CDK_DISABLE_CLI_TELEMETRY: '0',
+        CDK_DISABLE_VERSION_CHECK: '',
+      },
+    });
+    expect(result.status, `${result.stderr}${result.error?.message ?? ''}`).toBe(0);
+    return existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').map((line) => JSON.parse(line) as CdkCall) : [];
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 };
 
 // The CLI infra installs, the one both scripts run. When a CLI bump changes how it reads a setting, these tests fail and
@@ -86,19 +134,22 @@ describe("the repository's cdk runs send no telemetry, fetch no notices and skip
     expect(synth.split(/\s+/)).toContain('--no-notices');
   });
 
-  it('sets the same three on every infra script that runs the CLI directly', () => {
-    const direct = Object.entries(manifest.scripts).filter(([, command]) => runsCdkDirectly(command));
-    expect(direct.map(([name]) => name)).toContain('synth');
-    for (const [name, command] of direct) {
-      expect(command, name).toMatch(/(?:^|\s)CDK_DISABLE_CLI_TELEMETRY=true\s/);
-      expect(command, name).toMatch(/(?:^|\s)CDK_DISABLE_VERSION_CHECK=true\s/);
-      expect(command.split(/\s+/), name).toContain('--no-notices');
+  it('sets all three on each cdk command of every infra script', () => {
+    const named = Object.entries(manifest.scripts).filter(([, script]) => commands(script).some(namesCdk));
+    expect(named.map(([name]) => name)).toContain('synth');
+    for (const [name, script] of Object.entries(manifest.scripts)) {
+      expect(commandsWithoutSettings(script), name).toEqual([]);
     }
   });
 
-  it('keeps cdk:diff running the CLI with telemetry and the version check off', () => {
-    expect(cdkDiffEnv).toMatch(/\bCDK_DISABLE_CLI_TELEMETRY:\s*'true'/);
-    expect(cdkDiffEnv).toMatch(/\bCDK_DISABLE_VERSION_CHECK:\s*'true'/);
+  it('starts the CLI from cdk:diff with all three, whatever the caller set, and the installed CLI then sends no telemetry', () => {
+    const calls = cdkDiffCalls();
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) {
+      expect(call.env, call.args.join(' ')).toMatchObject({ CDK_DISABLE_CLI_TELEMETRY: 'true', CDK_DISABLE_VERSION_CHECK: 'true' });
+      expect(call.args, call.args.join(' ')).toContain('--no-notices');
+    }
+    expect(runCli(['cli-telemetry', '--status', '--no-notices'], calls[0]?.env ?? {}).output).toMatch(/CLI Telemetry is disabled\./);
   });
 
   it("leaves notices to the CLI default for a person's own cdk commands: cdk.json sets no notices key", () => {
@@ -128,28 +179,43 @@ describe("the repository's cdk runs send no telemetry, fetch no notices and skip
     expect(cdkJson.context).toEqual({});
   });
 
-  it('recognizes a direct CLI run, with or without a variable prefix', () => {
-    expect(runsCdkDirectly('cdk synth --quiet')).toBe(true);
-    expect(runsCdkDirectly('A=1 CDK_DISABLE_CLI_TELEMETRY=true cdk synth')).toBe(true);
-    expect(runsCdkDirectly('tsc --noEmit && cdk ls')).toBe(true);
-    expect(runsCdkDirectly('pnpm exec cdk deploy')).toBe(true);
-    expect(runsCdkDirectly('pnpm dlx cdk deploy')).toBe(true);
-    expect(runsCdkDirectly('pnpm cdk deploy')).toBe(true);
-    expect(runsCdkDirectly('npx cdk deploy')).toBe(true);
-    expect(runsCdkDirectly('npx --yes cdk deploy')).toBe(true);
-    expect(runsCdkDirectly('yarn cdk deploy')).toBe(true);
-    expect(runsCdkDirectly('CDK_DISABLE_CLI_TELEMETRY=true pnpm exec cdk ls')).toBe(true);
-    expect(runsCdkDirectly('tsx scripts/cdk-diff.ts')).toBe(false);
-    expect(runsCdkDirectly('pnpm cdk:diff')).toBe(false);
-    expect(runsCdkDirectly('pnpm exec tsx scripts/cdk-diff.ts')).toBe(false);
-    expect(runsCdkDirectly('vitest run --root .. --project unit infra/')).toBe(false);
+  it('finds every command that names the cdk CLI, however it is started, and nothing else', () => {
+    for (const command of [
+      'cdk synth --quiet',
+      'A=1 CDK_DISABLE_CLI_TELEMETRY=true cdk synth',
+      'pnpm exec cdk deploy',
+      'pnpm dlx cdk deploy',
+      'pnpm cdk deploy',
+      'pnpm -s cdk deploy',
+      'pnpm --silent exec cdk deploy',
+      'npx cdk deploy',
+      'npx --yes cdk deploy',
+      'npx --package aws-cdk cdk deploy',
+      'npm exec -- cdk deploy tp-staging',
+      'yarn cdk deploy',
+      'bunx cdk deploy',
+      'env AWS_PROFILE=synthetic cdk deploy',
+      'cross-env A=1 cdk deploy',
+      'node_modules/.bin/cdk deploy',
+      './node_modules/.bin/cdk deploy',
+      '(cdk ls)',
+    ]) {
+      expect(namesCdk(command), command).toBe(true);
+    }
+    for (const command of ['tsx scripts/cdk-diff.ts', 'pnpm cdk:diff', 'pnpm exec tsx scripts/cdk-diff.ts', 'vitest run --root .. --project unit infra/', 'tsc --noEmit', 'cat cdk.json', 'rm -rf cdk.out', 'pnpm --filter aws-cdk-lib ls']) {
+      expect(namesCdk(command), command).toBe(false);
+    }
   });
 
-  it("reads cdk:diff's env object without its comments", () => {
-    expect(envObject("spawnSync('cdk', [], { env: { ...process.env, A: 'true' } });")).toContain("A: 'true'");
-    expect(envObject("env: {\n  ...process.env,\n  B: 'true',\n}")).toContain("B: 'true'");
-    expect(envObject("env: {\n  ...process.env,\n  // A: 'true',\n}")).not.toContain("A: 'true'");
-    expect(envObject("env: { ...process.env /* A: 'true' */ }")).not.toContain("A: 'true'");
-    expect(envObject("// env: { A: 'true' }")).toBe('');
+  it('asks each cdk command for the settings itself, since a VAR=value prefix reaches only the command it precedes', () => {
+    const on = 'CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true';
+    expect(commandsWithoutSettings(`${on} cdk synth --quiet --no-notices`)).toEqual([]);
+    expect(commandsWithoutSettings(`${on} cdk synth --quiet --no-notices && cdk ls`)).toEqual(['cdk ls']);
+    expect(commandsWithoutSettings(`${on} tsc --noEmit && cdk deploy --no-notices`)).toEqual(['cdk deploy --no-notices']);
+    expect(commandsWithoutSettings(`tsc --noEmit && (${on} cdk ls --no-notices)`)).toEqual([`(${on} cdk ls --no-notices)`]);
+    expect(commandsWithoutSettings(`env ${on} cdk deploy --no-notices`)).toEqual([`env ${on} cdk deploy --no-notices`]);
+    expect(commandsWithoutSettings(`${on} cdk deploy`)).toEqual([`${on} cdk deploy`]);
+    expect(commandsWithoutSettings('CDK_DISABLE_CLI_TELEMETRY=true cdk ls --no-notices')).toEqual(['CDK_DISABLE_CLI_TELEMETRY=true cdk ls --no-notices']);
+    expect(commandsWithoutSettings('tsx scripts/cdk-diff.ts')).toEqual([]);
   });
 });
