@@ -11,8 +11,8 @@
   its 19 freeze exceptions granted, #30's among them), under the standing rule of 2026-10-18; the co-founder, under the
   founder's delegation of 2026-10-25 (LANES.md), for the choices the design reports as taken, and by his ruling of
   2026-10-26 (about 00:20 UTC, "Don't ask for approvals anymore just build and optimize") for the cost and security
-  trade-offs Q1 and Q2, both taken as recommended, and for the findings' transport (the Amendment); the build (Lane B, LANES queue item 14), for the rest, each
-  reversible.
+  trade-offs Q1 and Q2, both taken as recommended, and for the findings' transport (the Amendment); the build (Lane B,
+  LANES queue item 14), for the rest, each reversible.
 - **PRD sections:** 9 (content releases: the checker, the record types and their refresh), 11 (the engine's content
   reads, through its trace), 12 (triage), 16 (operations security: what a public issue may hold), 18 (the checks and
   the weekly tests); 19's runbooks (`docs/runbooks/content-updates.md`); Change Order 001 and reconciliation-001's
