@@ -766,6 +766,9 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'HOM-02': none(9, 'The tiles and the words are rendered from synthetic figures the tests pass in memory, and the copy lint reads the app’s own files; no file.', [
     'apps/web/src/components/dashboard/headline.test.tsx',
     'apps/web/src/components/format.test.ts',
+    'apps/web/src/components/reconciliation/display.test.tsx',
+    'apps/web/src/components/triage/display.test.tsx',
+    'apps/web/src/lib/triage/queries.test.ts',
     'tools/brand-copy/scan.test.ts',
   ]),
   'HOM-03': none(9, 'The agreements are recorded on synthetic practices by the test, and the empty states rendered in memory; no file.', [

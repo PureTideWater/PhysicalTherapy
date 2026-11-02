@@ -7,9 +7,9 @@ import { ActionForm } from '../../../../../components/action-form';
 import { CheckboxField, Field, SelectField, TextAreaField } from '../../../../../components/field';
 import { CaseTimeline } from '../../../../../components/cases/timeline';
 import { utc } from '../../../../../components/format';
-import { Fact, Money, Pager } from '../../../../../components/remittances/display';
+import { Counted, Fact, Money, Pager } from '../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../components/shell';
-import { CaseStateBadge, Deadline, actionableLinesWords, lineName, stageLabel, writeOffText } from '../../../../../components/triage/display';
+import { ActionableLinesOn, CaseStateBadge, Deadline, NetExpected, lineName, stageLabel, writeOffText } from '../../../../../components/triage/display';
 import { loadPage } from '../../../../../lib/http/next';
 import { PRICING_CAUSE_TEXT } from '../../../../../lib/packets/pricing';
 import { WRITE_OFF_CONSEQUENCE, casePage } from '../../../../../lib/routes/triage';
@@ -80,10 +80,10 @@ export default async function CasePage(props: Props) {
               <span data-figure="actionable">
                 <Money value={item.actionableNowCents} />
               </span>{' '}
-              on {actionableLinesWords(item)}
+              on <ActionableLinesOn item={item} />
             </Fact>
             <Fact label="Written off">
-              <Money value={item.writtenOffCents} /> ({item.lines - item.openLines} lines, struck through below)
+              <Money value={item.writtenOffCents} /> (<Counted value={item.lines - item.openLines} one="line" />, struck through below)
             </Fact>
             <Fact label={stageLabel('payer_approved')}>
               <span data-figure="payer-approved">
@@ -113,16 +113,7 @@ export default async function CasePage(props: Props) {
             </Fact>
             <Fact label="Pursuit cost (estimate)">{item.pursuitCostCents === null ? 'Not estimated (no staff rate and minutes in the practice’s settings)' : <Money value={item.pursuitCostCents} />}</Fact>
             <Fact label="Net expected value">
-              {item.netExpectedCents === null ? (
-                '—'
-              ) : (
-                <>
-                  <span data-figure="net-expected">
-                    <Money value={item.netExpectedCents} />
-                  </span>{' '}
-                  ({stageLabel('actionable').toLowerCase()} less the pursuit cost)
-                </>
-              )}
+              <NetExpected item={item} />
             </Fact>
             <Fact label="Owner">
               <span data-owner={item.ownerUserId ?? 'none'}>{item.owner ?? 'Unassigned'}</span>

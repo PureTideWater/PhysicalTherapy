@@ -23,7 +23,8 @@ import { DEADLINE_WINDOW_DAYS, HOME_CASES, dashboard } from './queries';
  *
  * - HOM-01, cost (F1): the home reads its cases in one statement, the only one of dashboard() that runs the pricing
  *   check; its plan computes the check at one node, once (the per-line value behind the OFFSET 0 fence, never once
- *   per aggregate), and counted, it runs once per case line at actionable.
+ *   per aggregate), and counted, it runs once per case line not written off at actionable: never for a line written off
+ *   or one moved off actionable.
  * - HOM-03: the home's upload gate is the one Uploads reads: a practice's BAA and its organization's open it; one
  *   signed tomorrow and none close it.
  */
@@ -172,11 +173,25 @@ describe('the home reads its cases in one statement (HOM-01, F1)', () => {
 
     // Measured: in one transaction with the function's calls counted, the statement runs the check once for each case
     // line not written off at actionable, and for no other line. Read as the database's superuser (track_functions is
-    // its setting), which the policies do not restrict; the statement names the practice itself.
+    // its setting), which the policies do not restrict; the statement names the practice itself. Inside the
+    // transaction, rolled back after, one case line is written off and a person reopens another back to validated, so
+    // the CASE's two conditions each keep a line from the check: a check run first, for every case line, counts more.
+    let caseLines = 0;
     const { calls, atActionable } = await counted(async () => {
+      await w.owner.query("SELECT set_config('app.practice_ids', $1, true), set_config('app.actor_id', $2, true)", [`{${practice.practiceId}}`, practice.manager]);
+      const lines = await w.owner.query<{ id: string; service_line_id: string }>('SELECT id, service_line_id FROM case_line WHERE practice_id = $1 ORDER BY id LIMIT 2', [practice.practiceId]);
+      const [writtenOff, reopened] = lines.rows;
+      await w.owner.query("UPDATE case_line SET written_off_reason = 'not_worth_pursuit', written_off_by = $2 WHERE id = $1", [writtenOff?.id, practice.manager]);
+      await w.owner.query("INSERT INTO line_status (practice_id, service_line_id, stage, reopened_from, reason, set_by) VALUES ($1, $2, 'validated', 'actionable', 'enc:v1:SYNTHETIC', $3)", [
+        practice.practiceId,
+        reopened?.service_line_id,
+        practice.manager,
+      ]);
+      caseLines = (await w.owner.query<{ n: number }>('SELECT count(*)::int AS n FROM case_line WHERE practice_id = $1', [practice.practiceId])).rows[0]?.n ?? 0;
       await w.owner.query(HOME_CASES, [practice.practiceId, today(), DEADLINE_WINDOW_DAYS]);
     });
     expect(atActionable).toBeGreaterThan(0);
+    expect(caseLines - atActionable).toBe(2);
     expect(calls).toBe(atActionable);
   }, 60_000);
 });

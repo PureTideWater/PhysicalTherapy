@@ -82,15 +82,25 @@ entry; both apps' `package.json` are #42 files; and a database function would be
    migration). It is read only where it is labelled as the case's whole total: the audit report's "Whole case" column,
    and `CaseSummary.actionableCents`, shown on no screen and kept for Lane A's PR 11 and for the test that the stored
    total is untouched. No screen, document or email shows it as "actionable". The case page's "Net expected value"
-   becomes `netExpectedValue(actionableNowCents, pursuitCost)`, the audit report's rule already, and is negative when
-   nothing is left to pursue.
+   becomes `netExpectedValue(actionableNowCents, pursuitCost)`, the audit report's rule already, only on a case still
+   being worked with a line in the figure and a pursuit estimate; it is negative there when pursuit is not worth it.
+   Elsewhere it shows no amount and says why (`CaseSummary.netExpectedState`, `netExpectedOf` in
+   `lib/triage/queries.ts`): on a resolved or closed case nothing is being pursued, and the pursuit cost set when it
+   opened would read as a loss, so the page reads "— (the case is resolved or closed; nothing is left to pursue)";
+   with no pursuit estimate, "— (not estimated)"; on a case still being worked whose figure holds no line, "Not
+   computed: no line is in the actionable figure now (out of the figure: …)", or "Not computed: every line is written
+   off".
 6. **Two stored figures change meaning from this ADR's date, 2026-11-01 (D4, F3).** Both are fixed once recorded:
    - `roi_statement.actionable_open_cents`: `generateRoiStatement` passes `roiStatement()` the cases not resolved or
      closed, each with `ACTIONABLE_NOW` (`OPEN_CASES_ACTIONABLE`), in place of each case's stored total. An input to
      the ledger, not a change to it: `roiStatement()` sums `openCases[].actionableCents` and lists their IDs;
      `recomputeStatement()` and `roi_statement_rules()` check recovered, interest and approved-unposted, never
      actionable; and the column's `CHECK (actionable_open_cents >= 0)` holds, since a line reaches actionable only
-     with a positive shortfall.
+     with a positive shortfall. Not an exception to `reconciliation-001.md`'s "Ledger semantics" checks: no DDL or
+     trigger on `roi_statement`, no file under `packages/ledger` changes, and the stage `CHECK`, the recovered total
+     and LED-01 to LED-11 are unchanged; the figure is an input `roiStatement()` sums, and neither
+     `recomputeStatement()` nor `roi_statement_rules()` checks it. The freeze's record notes it after #42 merges
+     (Revisit when).
    - `digest.totals_cents.cases_nearing_deadline_actionable`: `DIGEST_QUERIES.deadlines` sums `ACTIONABLE_NOW('c')`
      over its own case set (state `open`, deadline from the digest's day to 14 days after, ADR 0039), its words
      unchanged. ADR 0039 is not edited.
@@ -107,10 +117,15 @@ entry; both apps' `package.json` are #42 files; and a database function would be
 8. **The Recovered tile's two periods come from one ledger read (D7, F8).** `recoveredPeriods(all, proofLevel, { from,
    to })` in `reconcile/statements.ts`, pure, gives the to-date totals, the quarter's totals (the quarter's entries
    totalled against the whole ledger through `entriesById(all)`, as `practiceLedgerTotals` does, so a reversal in the
-   quarter of an earlier entry nets rather than throws) and `firstOn`, the earliest `effective_on` of the entries the
-   to-date recovered figure sums. `practiceRecoveredPeriods` wraps it after one `ledgerEntries` read and one settings
-   read. Recovered is still computed from ledger entries at posted or deposited, by proof level, and nowhere else; an
-   addition, with `practiceLedgerTotals` and `packages/ledger` unchanged.
+   quarter of an earlier entry nets rather than throws) and `firstOn`, the date "to date" is counted from: the
+   earliest `effective_on` of the entries the to-date recovered figure sums that still stand, each an original entry,
+   never a reversal or an adjustment, and never one reversed since (a wrong match undone; `manual.ts`'s
+   `reversedIds`). A ledger whose recoveries were all reversed has no such date, so the tile reads "to date, none
+   yet", never "since" an undone entry's date. Both periods and `practiceLedgerTotals` total their entries through
+   one pure function, `ledgerTotalsOver(all, proofLevel, filter)`, so the tile's figures cannot drift from any other
+   period's. `practiceRecoveredPeriods` wraps it after one `ledgerEntries` read and one settings read. Recovered is
+   still computed from ledger entries at posted or deposited, by proof level, and nowhere else; an addition, with
+   `practiceLedgerTotals`'s totals and `packages/ledger` unchanged.
 9. **The empty home asks the database Uploads asks (D9, F11).** `baaOnFile()` and `NO_BAA` move to
    `lib/uploads/gate.ts`; `lib/routes/uploads.ts` imports and re-exports them, so its other importers need no edit.
    `dashboard()` gains `uploads.baaOnFile` (`practice_baa_on_file()`, which admits an organization-wide BAA and refuses
@@ -138,19 +153,25 @@ entry; both apps' `package.json` are #42 files; and a database function would be
 - `roi_statement.actionable_open_cents` and `digest.totals_cents.cases_nearing_deadline_actionable` mean the cases'
   lines still actionable on their pricing in effect when generated, from 2026-11-01; `packages/ledger` and its tests
   (LED-11) are unchanged.
-- The home runs the pricing check in one statement, at most once per case line at actionable and never for other lines,
-  and Node receives at most one row per state. Its database work is still linear in the practice's case lines (the
-  latest-stage lookups) plus its lines at actionable (the check): bounded in memory, not in time. The home as a whole
-  still reads every ledger entry and runs the stage summary, so it is not bounded either (F13). The design's gate (F1)
-  compares the new statement's time against the sum of the three it replaces on CAS-41's 100,000-line month, recorded
-  in the pull request with the whole `dashboard()` call's.
-- The case page's net expected value can be negative: nothing left to pursue costs the pursuit.
+- The home runs the pricing check in one statement, at most once per case line at actionable and never for other lines
+  (measured with one line written off and one a person moved off actionable), and Node receives at most one row per
+  state. Its database work is still linear in the practice's case lines (the latest-stage lookups) plus its lines at
+  actionable (the check): bounded in memory, not in time. The home as a whole still reads every ledger entry and runs
+  the stage summary, so it is not bounded either (F13). The design's gate (F1) compares the new statement's time against
+  the sum of the three it replaces on CAS-41's 100,000-line month, recorded in the pull request with the whole
+  `dashboard()` call's.
+- The case page's net expected value can be negative on a case still being worked whose lines in the figure are worth
+  less than the pursuit; it is never shown as the whole pursuit cost lost on a resolved or closed case, or on a case
+  with no line in the figure.
+- A line that a partial recoupment put back to actionable counts its whole variance in the figure, in the case's
+  stored ask and in a packet, until Lane A defines a line's remaining ask (Revisit when).
 - The HOM rows of the test matrix hold the behaviour: `pricing-current-routes.db.test.ts`,
   `reconciliation-routes.db.test.ts`, `home-figures.db.test.ts` (one statement, the check at one plan node, once per
   line at actionable; the upload gate against `practice_baa_on_file()`), `triage/actionable-now.db.test.ts` (the
   statement and the digest, before and after a re-run) and `reconcile/recovered-periods.test.ts` (500 random ledgers
-  with corrections crossing the quarter's boundary) for HOM-01 and HOM-03; the words' unit tests and `pnpm lint:copy`
-  for HOM-02; `reconciliation.spec.ts` for HOM-04.
+  with corrections crossing the quarter's boundary) for HOM-01 and HOM-03; the words' unit tests (the net expected
+  value's in `lib/triage/queries.test.ts` and `triage/display.test.tsx`) and `pnpm lint:copy` for HOM-02;
+  `reconciliation.spec.ts` for HOM-04.
 
 ## Not verified here
 
@@ -169,9 +190,19 @@ entry; both apps' `package.json` are #42 files; and a database function would be
 - #42 merges: the monthly summary counts a case line as actionable only through `ACTIONABLE_NOW_LINE` and reports the
   rest apart as out of the figure; the practice help's "only stage-five amounts are recovered" (`components/help.ts`)
   becomes "Dollar figures carry their stage; only cash posted or deposited at the practice’s proof level, net of
-  recoupments and reversals, is recovered.", with a copy-lint rule against stage numbers.
+  recoupments and reversals, is recovered.", with a copy-lint rule against stage numbers (HOM-04 pins the old line as
+  the one known exception, and fails once it is gone); and `reconciliation-001.md`'s "Ledger semantics" (a #42 file)
+  gains "*Noted (UX PR 9, docs/adr/0082):* `generateRoiStatement` passes `roiStatement()` each worked case's live
+  `ACTIONABLE_NOW` in place of `case.actionable_cents`; no DDL on `roi_statement`, no change under
+  `packages/ledger/src`, LED-01 to LED-11 unchanged. Not an exception." (Decision 6).
+- Lane A defines a line's remaining ask, in an additive migration: `line_remaining_ask_cents(case_line)`, the
+  variance less the line's standing net approved (approved entries less recouped ones and less the reversals of those
+  approvals), never below zero, read at once by `ACTIONABLE_NOW_*`, by `case_rules()` for `actionable_cents` and by the
+  packet builder's per-line ask, with golden cases for a partial recoupment on a deposited line and on a line approved
+  and not deposited (each asking 1800 of 3000). Until then such a line counts its whole variance (Consequences).
 - The audit report's per-run actionable figure and its Payer approved note, which has no proof level, are taken up
-  (the design's open question 2).
+  (the design's open question 2); its per-case "Net expected" column, which predates this ADR, takes the case page's
+  rule (Decision 5).
 - Launch precedes the merge of this change: statements generated before it hold stored totals under the same label,
   and the change is dated by `generated_at` against the deploy.
 - The digest's case set (state `open`, passed deadlines excluded) and the home's (every worked state, passed deadlines

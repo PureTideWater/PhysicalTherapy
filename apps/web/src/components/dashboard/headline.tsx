@@ -8,17 +8,18 @@ import { NO_BAA } from '../../lib/uploads/gate';
 import { WholeDates } from '../dates';
 import { quarter, utcDate } from '../format';
 import { PAYER_APPROVED_HOME_NOTE, recoveredCashWords, recoveredLabel } from '../reconciliation/display';
-import { Money } from '../remittances/display';
-import { outOfFigureWords } from '../triage/display';
+import { Counted, Money } from '../remittances/display';
+import { OutOfFigure, outOfFigureWords } from '../triage/display';
 
 /**
  * The practice home's headline and its empty state (PRD 7, Practice dashboard; PRD 12, What a customer sees as the
  * headline; docs/adr/0082), apart from the page so a unit test renders them (test matrix HOM-02, HOM-03).
  *
  * The three tiles: Actionable is what the packets ask for, counted with its own lines through the one actionable
- * predicate, and naming the lines of the cases still being worked that it leaves out and why; Payer approved says
- * which stage at the proof level counts it as recovered; Recovered carries both of its periods, to date since its
- * first counted entry and this quarter, from the ledger's entries at the proof level only.
+ * predicate, and naming the lines of the cases still being worked that it leaves out and why; Payer approved says it
+ * is cumulative, never the patient's share, and which cash counts as recovered at the proof level; Recovered carries
+ * both of its periods, to date since its first counted entry and this quarter, from the ledger's entries at the proof
+ * level only.
  */
 
 /**
@@ -30,21 +31,36 @@ const TILE_LABEL = 'block text-xs font-medium text-fg-muted';
 const TILE_VALUE = 'block text-2xl font-medium';
 const TILE_NOTE = 'block text-xs text-fg-muted';
 
-/** What the Recovered tile's period says before its first counted entry, at each proof level. */
-const NOTHING_YET: Readonly<Record<Headline['proofLevel'], string>> = {
-  posted: 'nothing posted yet',
-  deposited: 'nothing deposited yet',
-};
+/**
+ * What the Recovered tile's period says before its first counted entry, at either proof level: no cash verb, since the
+ * cash words follow it ("to date, none yet: cash posted, ..."; "nothing posted yet: cash posted" read as both).
+ */
+const NOTHING_YET = 'none yet';
 
-/** The Actionable tile's note: its lines counted, then the worked cases' lines out of the figure, only when there are any. */
+/** The Actionable tile's note in words: its lines counted, then the worked cases' lines out of the figure, only when there are any. The text <ActionableNote/> renders, and a test's oracle. */
 export function actionableNote(actionable: Headline['actionable']): string {
   const out = outOfFigureWords(actionable.outOfFigure.movedOn, actionable.outOfFigure.stale);
   return `what the packets ask for: ${counted(actionable.lines, 'line')} in cases still being worked${out === '' ? '' : `; ${out}`}`;
 }
 
-/** The Recovered tile's period: "to date, since 2026-06-09", or "to date, nothing deposited yet" before the first entry. */
-export function recoveredPeriodWords(headline: Pick<Headline, 'recoveredSince' | 'proofLevel'>): string {
-  return `to date, ${headline.recoveredSince === null ? NOTHING_YET[headline.proofLevel] : `since ${utcDate(headline.recoveredSince)}`}`;
+/** actionableNote's words with each count in the mono face (<Counted/>; docs/brand/BRAND.md: every unit count). */
+export function ActionableNote({ actionable }: { readonly actionable: Headline['actionable'] }) {
+  const { movedOn, stale } = actionable.outOfFigure;
+  return (
+    <>
+      what the packets ask for: <Counted value={actionable.lines} one="line" /> in cases still being worked
+      {movedOn > 0 || stale > 0 ? (
+        <>
+          ; <OutOfFigure movedOn={movedOn} stale={stale} />
+        </>
+      ) : null}
+    </>
+  );
+}
+
+/** The Recovered tile's period: "to date, since 2026-06-09", or "to date, none yet" before the first entry. */
+export function recoveredPeriodWords(headline: Pick<Headline, 'recoveredSince'>): string {
+  return `to date, ${headline.recoveredSince === null ? NOTHING_YET : `since ${utcDate(headline.recoveredSince)}`}`;
 }
 
 /** The headline's three tiles, each its own stage and none added to another; each opens the screen it comes from. */
@@ -57,7 +73,7 @@ export function HeadlineTiles({ practiceId, headline, recoveredQuarter }: { read
           <Money value={headline.actionable.cents} />
         </span>
         <span className={TILE_NOTE} data-note="actionable">
-          {actionableNote(headline.actionable)}
+          <ActionableNote actionable={headline.actionable} />
         </span>
       </Link>
       <Link href={`/p/${practiceId}/reconciliation`} className={TILE} data-figure="payer-approved">
@@ -76,7 +92,8 @@ export function HeadlineTiles({ practiceId, headline, recoveredQuarter }: { read
           <WholeDates text={`${recoveredPeriodWords(headline)}: ${recoveredCashWords(headline.proofLevel)}`} />
         </span>
         <span className={TILE_NOTE} data-figure="recovered-quarter">
-          This quarter ({quarter(recoveredQuarter.quarter)}): <Money value={recoveredQuarter.cents} />
+          {/* The quarter key kept whole as WholeDates keeps a date (docs/adr/0078 Decision 1): at a tablet's width the note broke it at "2026-". */}
+          This quarter (<span className="whitespace-nowrap">{quarter(recoveredQuarter.quarter)}</span>): <Money value={recoveredQuarter.cents} />
         </span>
       </Link>
     </div>

@@ -2,10 +2,12 @@
  * The one actionable figure of a case (PRD 12: "actionable" is stage three; PRD 8, The status machine;
  * docs/adr/0061 and 0082): the variance of its lines not written off whose latest stage is still
  * actionable and whose pricing is still current. A line priced again since it joined the case, priced
- * under a rule release withdrawn since, or priced under a contract version no longer signed off or no
- * longer covering its service date (the database's priced_line_pricing_check(); audit item #4) drops out
- * at once, though the case keeps it and its stored actionable_cents (the case's ask, case_rules()) until
- * Lane A's PR 11 refreshes the case. A line that moved on to payer approved or recovered drops out too.
+ * under a rule release withdrawn since, priced under a plan mapping no longer in force on its service
+ * date, or priced under a contract version no longer signed off or no longer covering its service date
+ * (the database's priced_line_pricing_check(), whose results are PRICING_CHECK_RESULTS in
+ * packages/db/src/schema/packets.ts; audit item #4) drops out at once, though the case keeps it and
+ * its stored actionable_cents (the case's ask, case_rules()) until Lane A's PR 11 refreshes the case. A
+ * line that moved on to payer approved or recovered drops out too.
  *
  * SQL texts, as COVERAGE_IN_EFFECT and PRICED_IN_EFFECT are, so every live actionable figure of the
  * practice's cases reads this predicate and counts its lines with it: the practice home's tile, its cases
@@ -53,7 +55,11 @@ export interface ActionableNowColumns {
   readonly open_lines: string;
   /** Lines not written off whose latest stage is not actionable (moved on to payer approved or recovered, or never there). */
   readonly moved_on: string;
-  /** Lines not written off at actionable whose pricing check is not current (priced again, a release withdrawn, a version no longer in force). */
+  /**
+   * Lines not written off at actionable whose priced_line_pricing_check() is not 'current' (PRICING_CHECK_RESULTS):
+   * priced again or no run in effect, its rule release withdrawn, its plan mapping no longer in force on the service
+   * date, or its contract version no longer signed off or no longer covering the service date.
+   */
   readonly stale: string;
 }
 

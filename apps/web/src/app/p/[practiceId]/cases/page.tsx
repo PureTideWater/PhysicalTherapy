@@ -7,10 +7,10 @@ import Link from 'next/link';
 import { ActionForm } from '../../../../components/action-form';
 import { SelectField } from '../../../../components/field';
 import { MoneyField } from '../../../../components/money-field';
-import { Money, Pager } from '../../../../components/remittances/display';
+import { Counted, Money, Pager } from '../../../../components/remittances/display';
 import { ScrollTable } from '../../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../../components/shell';
-import { CASE_STATE_TEXT, CaseStateBadge, Deadline, stageLabel } from '../../../../components/triage/display';
+import { CASE_STATE_TEXT, CaseStateBadge, Deadline, casesLinesCell, stageLabel } from '../../../../components/triage/display';
 import { loadPage } from '../../../../lib/http/next';
 import { dollarsForInput } from '../../../../lib/money-input';
 import { casesPage } from '../../../../lib/routes/triage';
@@ -55,8 +55,8 @@ export default async function CasesPage(props: Props) {
           <span data-figure="cases-actionable">
             <Money value={actionableCents} />
           </span>{' '}
-          across {openCases} {openCases === 1 ? 'case' : 'cases'} still being worked{filtered ? ' the filters admit' : ''}, as of {asOf}. Each case counts its lines still actionable, on their pricing in
-          effect; a written-off line is struck through and out of it. Payer approved and recovered (posted or deposited) amounts come from the recovery ledger, on each case’s page.
+          across <Counted value={openCases} one="case" /> still being worked{filtered ? ' the filters admit' : ''}, as of {asOf}. Each case counts its lines still actionable, on their pricing
+          in effect; a written-off line is out of it, struck through on the case’s page. Payer approved and recovered (posted or deposited) amounts come from the recovery ledger, on each case’s page.
         </p>
       </div>
       {notice === 'materiality' ? (
@@ -259,7 +259,7 @@ export default async function CasesPage(props: Props) {
                       <CaseStateBadge state={item.state} />
                     </td>
                     <td className="px-2 py-1 font-mono tabular-nums whitespace-nowrap">
-                      {item.actionableNowLines} of {item.openLines}
+                      {casesLinesCell(item)}
                     </td>
                     <td className="px-2 py-1">
                       <Money value={item.actionableNowCents} />

@@ -3,13 +3,13 @@ import { describe, expect, it } from 'vitest';
 
 import type { Dashboard, Headline } from '../../lib/dashboard/queries';
 import { NO_BAA } from '../../lib/uploads/gate';
-import { FirstUpload, HeadlineTiles, actionableNote, recoveredPeriodWords, uploadGate } from './headline';
+import { ActionableNote, FirstUpload, HeadlineTiles, actionableNote, recoveredPeriodWords, uploadGate } from './headline';
 
 /**
  * The practice home's headline in words (test matrix HOM-02) and its empty state (HOM-03): the Actionable tile
- * counts its lines and names those out of the figure only when there are any; Payer approved names the stage that
- * counts it as recovered at the proof level; Recovered reads to date since its first counted entry, or nothing yet,
- * with this quarter beside it and no stage number; and before the first file the home says the gate Uploads uses.
+ * counts its lines and names those out of the figure only when there are any; Payer approved says it is cumulative and
+ * which cash counts as recovered at the proof level; Recovered reads to date since its first counted entry, or none
+ * yet, with this quarter beside it and no stage number; and before the first file the home says the gate Uploads uses.
  */
 
 const text = (html: string) => html.replace(/<[^>]+>/g, '').replaceAll('&#x27;', '’').replaceAll('&amp;', '&');
@@ -44,7 +44,20 @@ describe('the Actionable tile', () => {
     expect(note(0, 2)).toBe('what the packets ask for: 0 lines in cases still being worked; out of the figure: 2 lines whose pricing is no longer current');
     expect(note(1, 0)).toBe('what the packets ask for: 0 lines in cases still being worked; out of the figure: 1 line moved on past actionable');
     expect(note(2, 0)).toBe('what the packets ask for: 0 lines in cases still being worked; out of the figure: 2 lines moved on past actionable');
-    expect(note(2, 1)).toBe('what the packets ask for: 0 lines in cases still being worked; out of the figure: 1 line whose pricing is no longer current, 2 lines moved on past actionable');
+    expect(note(2, 1)).toBe('what the packets ask for: 0 lines in cases still being worked; out of the figure: 1 line whose pricing is no longer current and 2 lines moved on past actionable');
+  });
+
+  it('renders the note’s words exactly, every count in the mono face (docs/brand/BRAND.md: every unit count)', () => {
+    for (const [lines, movedOn, stale] of [
+      [0, 0, 0],
+      [1, 0, 1],
+      [1204, 2, 1],
+    ] as const) {
+      const actionable = { lines, cents: '0', outOfFigure: { movedOn, stale } };
+      const html = renderToStaticMarkup(<ActionableNote actionable={actionable} />);
+      expect(text(html)).toBe(actionableNote(actionable));
+      expect(html.replace(/<span class="font-mono tabular-nums">[^<]*<\/span>/g, '').replace(/\D/g, '')).toBe('');
+    }
   });
 
   it('shows its dollars and its note in the tile that opens Cases', () => {
@@ -55,13 +68,21 @@ describe('the Actionable tile', () => {
 });
 
 describe('the Payer approved tile', () => {
-  it('names the stage that counts it as recovered at the proof level', () => {
+  it('says it is cumulative, never the patient’s share, and which cash counts as recovered at the proof level', () => {
     expect(text(tiles(headline({ proofLevel: 'deposited' })))).toContain(
-      'what payers have agreed to pay on the lines they corrected, from the recovery ledger; counted as recovered only once it is deposited',
+      'what payers agreed to pay to date on the lines they corrected, deposited or not, never the patient’s share; only deposited cash counts as recovered',
     );
     expect(text(tiles(headline({ proofLevel: 'posted', recoveredSince: null })))).toContain(
-      'what payers have agreed to pay on the lines they corrected, from the recovery ledger; counted as recovered only once it is posted',
+      'what payers agreed to pay to date on the lines they corrected, posted or not, never the patient’s share; only posted cash counts as recovered',
     );
+  });
+
+  it('reads as all that was approved, not money still to come, beside a smaller Recovered after a takeback (UX-R1-02)', () => {
+    // Approved $30.00, deposited $30.00, $18.00 taken back: Payer approved stays $30.00, Recovered is $12.00.
+    const shown = text(tiles(headline({ payerApprovedCents: '3000', recoveredCents: '1200' })));
+    expect(shown).toContain('Payer approved$30.00what payers agreed to pay to date on the lines they corrected, deposited or not,');
+    expect(shown).toContain('Recovered (deposited)$12.00');
+    expect(shown).not.toMatch(/only once it is|until it is|not yet/);
   });
 });
 
@@ -72,15 +93,18 @@ describe('the Recovered tile', () => {
     expect(html).toMatch(/data-figure="recovered-to-date"><span class="font-mono tabular-nums">\$12\.00<\/span><\/span>/);
     expect(text(html)).toContain('Recovered (deposited)$12.00to date, since 2026-06-09: cash deposited, proved by the bank export, net of recoupments and reversals');
     expect(text(html)).toContain('This quarter (2026-Q4): $5.00');
-    // The date stays whole at a phone's width (docs/adr/0078 Decision 1).
+    // The date and the quarter key stay whole at a phone's and a tablet's width (docs/adr/0078 Decision 1; UX-R1-04).
     expect(html).toContain('<span class="whitespace-nowrap">2026-06-09</span>');
+    expect(html).toContain('<span class="whitespace-nowrap">2026-Q4</span>');
   });
 
-  it('reads nothing yet at the proof level before its first counted entry', () => {
-    expect(recoveredPeriodWords({ recoveredSince: null, proofLevel: 'posted' })).toBe('to date, nothing posted yet');
-    expect(recoveredPeriodWords({ recoveredSince: null, proofLevel: 'deposited' })).toBe('to date, nothing deposited yet');
+  it('reads none yet before its first counted entry, with no cash verb before the cash words', () => {
+    expect(recoveredPeriodWords({ recoveredSince: null })).toBe('to date, none yet');
     expect(text(tiles(headline({ proofLevel: 'posted', recoveredSince: null, recoveredCents: '0' })))).toContain(
-      'Recovered (posted)$0.00to date, nothing posted yet: cash posted, proved by the posting export (no deposit data is supplied), net of recoupments and reversals',
+      'Recovered (posted)$0.00to date, none yet: cash posted, proved by the posting export, as no deposit data is supplied, net of recoupments and reversals',
+    );
+    expect(text(tiles(headline({ proofLevel: 'deposited', recoveredSince: null, recoveredCents: '0' })))).toContain(
+      'Recovered (deposited)$0.00to date, none yet: cash deposited, proved by the bank export, net of recoupments and reversals',
     );
   });
 
@@ -90,7 +114,7 @@ describe('the Recovered tile', () => {
 
   it('says no stage number in any tile', () => {
     for (const proofLevel of ['posted', 'deposited'] as const) {
-      expect(text(tiles(headline({ proofLevel })))).not.toMatch(/stage (five|5)/i);
+      expect(text(tiles(headline({ proofLevel })))).not.toMatch(/stage[\s-]*(five|5)/i);
     }
   });
 });
