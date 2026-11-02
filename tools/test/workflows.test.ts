@@ -3797,8 +3797,8 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
    * - an output a job declares, a key of a job's matrix, and a job the reading job needs (the steps, needed jobs and
    *   outputs a row names being exactly those its value reads, producersOf);
    * - tool code by the name it declares (path#symbol, read with TypeScript's parser), never fingerprinted: other lanes
-   *   own it and change it for their own reasons, so the row names instead the unit test that holds the bound, by its
-   *   title, one that always runs (testTitles: no skip, todo or condition).
+   *   own it and change it for their own reasons, so the row names instead the unit test its owners keep for the
+   *   bound, by its title, one test's alone that always runs as written (testTitles); what it asserts is not read.
    */
   type Ref =
     | { readonly kind: 'step'; readonly job: string; readonly step: string; readonly run: string }
@@ -4069,14 +4069,18 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
   }
 
   /**
-   * The titles of a test file's tests that always run: it() and test() calls with a literal title and no modifier but
-   * concurrent or sequential, inside no describe with any other. A test written it.skip, .todo, .only, .fails,
-   * .skipIf(…)(…), .runIf(…)(…) or .each(…)(…), or inside a describe written so, is not one: it may not run, so it holds
-   * no bound.
+   * The titles of a test file's tests that always run as written, each title one test's alone in the file: an it() or
+   * test() call with a literal title, standing as a statement at the file's top level or directly in the callback of a
+   * describe() counted the same way, each with no modifier but concurrent or sequential, no options but a timeout,
+   * retry, repeats, concurrent or sequential, and no skip through its context (context.skip(), or a skip it takes
+   * apart). A test inside an if, a loop, a ternary or a function; one written it.skip, .todo, .only, .fails,
+   * .skipIf(…)(…), .runIf(…)(…) or .each(…)(…), or given { skip: true }; one inside a describe written so; and a title
+   * two tests share (the one that runs may not be the one that holds the bound) hold no bound. What a test asserts, or
+   * whether it returns early, is not read: its owners keep it for the bound, and review holds that.
    */
   function testTitles(file: string, text: string): Set<string> {
-    const titles = new Set<string>();
     const RUNS = new Set(['concurrent', 'sequential']);
+    const OPTIONS = new Set(['timeout', 'retry', 'repeats', 'concurrent', 'sequential']);
     /** A callee's base name, and whether it runs as written: every modifier on the way one that runs, and no call. */
     const chain = (node: ts.Expression): { readonly base: string | undefined; readonly runs: boolean } => {
       if (ts.isIdentifier(node)) return { base: node.text, runs: true };
@@ -4086,20 +4090,46 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       }
       return { base: ts.isCallExpression(node) ? chain(node.expression).base : undefined, runs: false };
     };
-    const visit = (node: ts.Node, runs: boolean): void => {
+    const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest);
+    // Every it() or test() with a literal title, wherever and however it is written.
+    const written = new Map<string, number>();
+    const count = (node: ts.Node): void => {
       if (ts.isCallExpression(node)) {
-        const { base, runs: plain } = chain(node.expression);
         const [title] = node.arguments;
-        if ((base === 'it' || base === 'test') && runs && plain && title !== undefined && ts.isStringLiteralLike(title)) titles.add(title.text);
-        if (base === 'describe' && !plain) {
-          ts.forEachChild(node, (child) => visit(child, false));
-          return;
-        }
+        const { base } = chain(node.expression);
+        if ((base === 'it' || base === 'test') && title !== undefined && ts.isStringLiteralLike(title)) written.set(title.text, (written.get(title.text) ?? 0) + 1);
       }
-      ts.forEachChild(node, (child) => visit(child, runs));
+      ts.forEachChild(node, count);
     };
-    visit(ts.createSourceFile(file, text, ts.ScriptTarget.Latest), true);
-    return titles;
+    count(source);
+    /** Whether a test's or a describe's other arguments let it run as written: its callback, a timeout, plain options. */
+    const plain = (rest: readonly ts.Expression[]): boolean =>
+      rest.every((argument) => ts.isArrowFunction(argument) || ts.isFunctionExpression(argument) || ts.isNumericLiteral(argument) || (ts.isObjectLiteralExpression(argument) && argument.properties.every((property) => ts.isPropertyAssignment(property) && ts.isIdentifier(property.name) && OPTIONS.has(property.name.text))));
+    /** Whether a callback that takes a context calls a skip: context.skip(), or a skip it takes apart. */
+    const skips = (callback: ts.ArrowFunction | ts.FunctionExpression): boolean => {
+      let found = false;
+      const look = (node: ts.Node): void => {
+        if (ts.isCallExpression(node) && ((ts.isIdentifier(node.expression) && node.expression.text === 'skip') || (ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'skip'))) found = true;
+        ts.forEachChild(node, look);
+      };
+      if (callback.parameters.length > 0) look(callback.body);
+      return found;
+    };
+    const titles = new Set<string>();
+    const statements = (list: readonly ts.Statement[]): void => {
+      for (const statement of list) {
+        if (!ts.isExpressionStatement(statement) || !ts.isCallExpression(statement.expression)) continue;
+        const call = statement.expression;
+        const { base, runs } = chain(call.expression);
+        const [title, ...rest] = call.arguments;
+        if (!runs || title === undefined || !ts.isStringLiteralLike(title) || !plain(rest)) continue;
+        const callback = rest.find((argument): argument is ts.ArrowFunction | ts.FunctionExpression => ts.isArrowFunction(argument) || ts.isFunctionExpression(argument));
+        if ((base === 'it' || base === 'test') && callback !== undefined && !skips(callback)) titles.add(title.text);
+        if (base === 'describe' && callback !== undefined && ts.isBlock(callback.body)) statements(callback.body.statements);
+      }
+    };
+    statements(source.statements);
+    return new Set([...titles].filter((title) => written.get(title) === 1));
   }
 
   /** A value as JSON with every mapping's keys sorted, so a reordered or restyled mapping reads the same. */
@@ -4470,7 +4500,9 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     expect(problems(workflowText, { 'tools/fixture.ts': 'export function digests(): string {\n  return "";\n}\n', 'tools/fixture.test.ts': tests })).toEqual(['fixture.yml build steps.identity.outputs.digest_web: tools/fixture.ts declares no digest']);
     expect(problems(workflowText, { 'tools/fixture.ts': tool, 'tools/fixture.test.ts': "it('proves a digest', () => {});\n" })).toEqual(['fixture.yml build steps.identity.outputs.digest_web: tools/fixture.test.ts has no test named "proves the digest" that always runs']);
     expect(problems(workflowText, { 'tools/fixture.ts': tool })).toEqual(['fixture.yml build steps.identity.outputs.digest_web: no file tools/fixture.test.ts']);
-    // A test that may not run holds no bound: skipped, to do, conditional, inverted or inside a describe written so.
+    // A test that may not run holds no bound: skipped, to do, conditional, inverted or inside a describe written so;
+    // under an if, in a loop, a ternary or a function; skipped through its context or its options; or one of two tests
+    // with its title, the other the one that runs.
     const notRun = 'fixture.yml build steps.identity.outputs.digest_web: tools/fixture.test.ts has no test named "proves the digest" that always runs';
     for (const written of [
       "it.skip('proves the digest', () => {});\n",
@@ -4480,10 +4512,26 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       "it.fails('proves the digest', () => {});\n",
       "describe.skip('the digest', () => {\n  it('proves the digest', () => {});\n});\n",
       "describe.skipIf(true)('the digest', () => {\n  describe('inside', () => {\n    it('proves the digest', () => {});\n  });\n});\n",
+      "if (process.env.CI === undefined) {\n  it('proves the digest', () => {});\n}\n",
+      "describe('the digest', () => {\n  if (Math.random() > 2) it('proves the digest', () => {});\n});\n",
+      "if (process.env.NEVER) {\n  describe('the digest', () => {\n    it('proves the digest', () => {});\n  });\n}\n",
+      "for (const _ of []) it('proves the digest', () => {});\n",
+      "process.env.CI ? it('proves the digest', () => {}) : undefined;\n",
+      "function never(): void {\n  it('proves the digest', () => {});\n}\n",
+      "it('proves the digest', (context) => {\n  context.skip();\n});\n",
+      "it('proves the digest', ({ skip }) => {\n  skip();\n});\n",
+      "it('proves the digest', { skip: true }, () => {});\n",
+      "describe('the digest', { skip: true }, () => {\n  it('proves the digest', () => {});\n});\n",
+      "describe('one', () => {\n  it.skip('proves the digest', () => {});\n});\ndescribe('two', () => {\n  it('proves the digest', () => {});\n});\n",
     ]) {
       expect(problems(workflowText, { 'tools/fixture.ts': tool, 'tools/fixture.test.ts': written }), written).toEqual([notRun]);
     }
-    for (const written of ["describe('the digest', () => {\n  it.concurrent('proves the digest', () => {});\n});\n", "test('proves the digest', () => {});\n"]) {
+    for (const written of [
+      "describe('the digest', () => {\n  it.concurrent('proves the digest', () => {});\n});\n",
+      "test('proves the digest', () => {});\n",
+      "describe('the digest', () => {\n  describe.sequential('inside', () => {\n    it('proves the digest', async () => {}, 30_000);\n  });\n});\n",
+      "it('proves the digest', { timeout: 30_000, retry: 0 }, ({ expect: check }) => {\n  check(1).toBe(1);\n});\n",
+    ]) {
       expect(problems(workflowText, { 'tools/fixture.ts': tool, 'tools/fixture.test.ts': written }), written).toEqual([]);
     }
     expect(problems(workflowText, undefined, [{ ...produced, refs: produced.refs.filter((ref) => ref.kind !== 'test') }])).toEqual(['fixture.yml build steps.identity.outputs.digest_web: names tool code but no test that proves its bound']);

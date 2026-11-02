@@ -445,10 +445,11 @@ user that cannot run the binary.
   output it reads, with their names and indents). A new step output or value one job hands another joins its list with
   its bound and its producers by name, exactly those its value reads (a step by job and id, a `uses:` step with its
   action, a job output that is one step's or needed job's output alone, a matrix key, a needed job, tool code as
-  `path#symbol` with the unit test that holds its bound, named by its title and always run), never by line. A row
-  whose producer is a `run:` step holds the fingerprint of its script and what it runs with, its own `env`, `shell`
-  and `working-directory` or those its job and the workflow give it, and its job's container: when the test prints a
-  new one, re-read the bound against the change, then write the new fingerprint in the row. A new `$GITHUB_ENV` write
+  `path#symbol` with the unit test its owners keep for its bound, named by its title: the test checks that title is
+  one plain `it()` or `test()` that always runs as written, not what it asserts), never by line. A row whose producer
+  is a `run:` step holds the fingerprint of its script and what it runs with, its own `env`, `shell` and
+  `working-directory` or those its job and the workflow give it, and its job's container: when the test prints a new
+  one, re-read the bound against the change, then write the new fingerprint in the row. A new `$GITHUB_ENV` write
   joins its closed map: its file, job, step and exact line, its step's fingerprint, its bound, and the test that runs
   the step and reads the whole file; no env sets `ACTIONS_ALLOW_UNSECURE_COMMANDS`, which would let a script set a
   variable with `::set-env`. Every `docker/build-push-action` step sets `BUILDX_METADATA_PROVENANCE: disabled` and
