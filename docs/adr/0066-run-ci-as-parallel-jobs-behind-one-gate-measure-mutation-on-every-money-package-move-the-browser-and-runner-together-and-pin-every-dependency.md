@@ -732,8 +732,9 @@ branch back to `main`.
 
 "In this order" (above) did not route. Dependabot ranks a group with no patterns (500) above a wildcard pattern
 (`@aws-sdk/*` 95, `@next/*` 92) and the empty group never gives a dependency up (dependabot-core 85379652,
-`pattern_specificity_calculator.rb`, `dependency_group_engine.rb`), so npm run 40818560725 put the nine `@aws-sdk/*`
-packages and `@next/eslint-plugin-next` in minor-and-patch (#89), and an exact name was in two groups, kept out of
+`pattern_specificity_calculator.rb`, `dependency_group_engine.rb`), so npm run 40818560725 assigned the nine
+`@aws-sdk/*` packages and `@next/eslint-plugin-next` to minor-and-patch, and its pull request (#89) carried the nine
+`@aws-sdk/*` with stripe (`@next/eslint-plugin-next` had no update); an exact name was in two groups, kept out of
 minor-and-patch's pull request only by the file's order. GitHub's documentation says the first matching group wins.
 minor-and-patch now excludes every pattern the specific groups name, which routes each dependency to one group under
 both rules; CI-12 ports the assignment and routes every direct dependency. Alternative: `patterns: ["*"]` on
