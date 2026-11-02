@@ -30,10 +30,12 @@ docs/runbooks/github-governance.md, "The default branch until launch"):
 | the node image and compose's postgres | Wednesday 04:43 | 7 days | one, `container-images` |
 
 Majors are ignored for `@types/node`, `typescript`, `next`, `@next/eslint-plugin-next`, `pg-boss`, the node image and
-compose's postgres: each moves in a pull request of its own (below). The ignores hold for security updates too, so an
-advisory fixed only in one of those majors raises an alert and no pull request: the weekly triage reads the alerts for
-that reason (below). Monday holds the weekly mutation (05:23), large-zip (06:17) and capacity (06:41) runs, so no
-ecosystem runs then.
+compose's postgres: each moves in a pull request of its own (below). Those entries name update types, and Dependabot
+applies an update-type ignore to version updates only (dependabot-core 85379652, `ignore_condition.rb`: a security job
+keeps only an entry's `versions`), so an npm advisory fixed only in one of those majors may still open a `security`
+pull request that crosses it, and one that opens none leaves only an alert: the weekly triage reads the alerts for that
+reason (below). Monday holds the weekly mutation (05:23), large-zip (06:17) and capacity (06:41) runs, so no ecosystem
+runs then.
 
 npm's cooldown equals the release age on purpose (the co-founder's CQ1 (a)). Dependabot hands pnpm its own release
 age whenever that is longer than the repository's: its update checker probes each candidate with the version's
@@ -120,13 +122,15 @@ Once a week, after Thursday's npm batch:
        (.security_vulnerability.first_patched_version.identifier // "no fix"), .html_url] | @tsv'
    ```
 
-   For each, find the `security` group's pull request that fixes it. When there is none:
-   - **the fix is only in a major the file ignores** (`@types/node`, `typescript`, `next`, `@next/eslint-plugin-next`,
-     `pg-boss`): a file `ignore` entry applies to security updates too, so Dependabot opens nothing. (Alerts cover the
-     npm packages and the actions; the images' advisories surface in the images job's scan.) Handle it by hand as a
+   For each, find the `security` group's pull request that fixes it. One that crosses a major the file ignores
+   (`@types/node`, `typescript`, `next`, `@next/eslint-plugin-next`, `pg-boss`) can open, since those entries bind
+   version updates only (above): read it as the deliberate upgrade it is (below, "The upgrades made on purpose"). When
+   there is none:
+   - **the fix is only in a major the file ignores, and no `security` pull request takes it**: handle it by hand as a
      deliberate upgrade (below, "The upgrades made on purpose"), in its own pull request, at once for a moderate or
      worse advisory on anything the product runs; if the advisory cannot reach what we run, record why in an audit
-     exception (below) instead;
+     exception (below) instead (alerts cover the npm packages and the actions; the images' advisories surface in the
+     images job's scan);
    - **no fixed version yet**: an audit exception with its reason and expiry (below), and the alert read again weekly;
    - **the fix is under three days old**: the pull request is red until its dated exclude is added (below, "The
      release age"); add it when the fix cannot wait.

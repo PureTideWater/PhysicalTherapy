@@ -743,6 +743,12 @@ documents its group precedence; a group is added (the test fails until it is exc
 group assignment, such as how `exclude-patterns` or a group without patterns matches (GitHub picks the updater for
 each run: the weekly triage's step 1 reads each npm run's updater and its log for it).
 
+The same reading corrects a consequence above: the file's `ignore` entries do not hold for security updates. They name
+update types, which dependabot-core applies to version updates only (`ignore_condition.rb` at 85379652: a security job
+keeps only an entry's `versions`), so an advisory fixed only in an ignored major may open a `security` pull request
+that crosses it. The weekly triage reads such a pull request as a deliberate upgrade, and still reads the open alerts
+for a fix no pull request takes.
+
 ## Part 3 (`co-001/ci-browser`)
 
 ### Context
