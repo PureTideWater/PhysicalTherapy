@@ -252,9 +252,10 @@ export async function loadAgreementRecords(scope: PracticeScope<ScopeClient>, re
 }
 
 /**
- * The plans of the lines that have no mapping at all, sorted, read under the practice's scope (RLS):
- * what a pricing run's creator checks before it records a run (MAP-07: a period none of whose plans
- * has a mapping gets no run, since it would price nothing). It never refuses: a plan with no mapping
+ * The plans none of whose lines has a mapping in force on its service date (no mapping at all, or
+ * mappings only for other dates: PR #95 review R3N-1), sorted, read under the practice's scope (RLS):
+ * what a pricing run's creator checks before it records a run (MAP-07: a period no line of which has
+ * a mapping in force gets no run, since it would price nothing). It never refuses: a plan with no mapping
  * leaves its own lines NO_MAPPING while every other line prices (MAP-01, combined audit #32).
  */
 export async function practiceUnmappedPlanIds(scope: PracticeScope<ScopeClient>, request: ReadRequest, lines: readonly MappedLine[]): Promise<string[]> {

@@ -24,7 +24,7 @@ import { LocalUploadTargets } from '../uploads/targets';
 import { coveragePage } from './coverage';
 import { MONTHS_CHANGED, mapPlanAction, mappingPage, planPage, priceAgainAction, priceAgainRefusal, priceWaitingAction } from './mapping';
 import { practiceHome } from './practice';
-import { acceptPricingRunAction, createPricingRunAction, pricingRunPage, pricingRunsPage } from './pricing';
+import { NOTHING_MAPPED, acceptPricingRunAction, createPricingRunAction, pricingRunPage, pricingRunsPage } from './pricing';
 import { loadRouteRelease } from './test-support/pricing-world';
 import { completeUpload, requestUploads, uploadContent } from './uploads';
 
@@ -138,6 +138,7 @@ const redirectOf = (outcome: Outcome<MutationResult>) => ok(outcome).redirect ??
 
 interface Target {
   readonly practiceId: string;
+  readonly organizationId: string;
   readonly manager: string;
   /** A second billing manager, for two people at once. */
   readonly other: string;
@@ -165,7 +166,7 @@ async function practice(label: string): Promise<Target> {
       [world.organizationId, practiceId, randomBytes(32).toString('hex')],
     ),
   );
-  return { practiceId, manager, other, viewer };
+  return { practiceId, organizationId: world.organizationId, manager, other, viewer };
 }
 
 function jobContext(practiceId: string): JobContext {
@@ -252,7 +253,8 @@ async function send(target: Target, bytes: Buffer): Promise<void> {
 
 const planOf = async (target: Target, key: string) =>
   ((await owner.query<{ id: string }>('SELECT id FROM plan WHERE practice_id = $1 AND plan_key = $2', [target.practiceId, `CE:${key}`])).rows[0] ?? { id: '' }).id;
-const mapAs = (target: Target, planId: string, by = target.manager) => call(mapPlanAction, by, { practiceId: target.practiceId }, { planId, kind: 'no_agreement', effectiveFrom: '2026-01-01' });
+const mapAs = (target: Target, planId: string, by = target.manager, dates: { readonly effectiveFrom: string; readonly lastDay?: string } = { effectiveFrom: '2026-01-01' }) =>
+  call(mapPlanAction, by, { practiceId: target.practiceId }, { planId, kind: 'no_agreement', ...dates });
 const monitorJobs = () => queue.jobs.filter((job) => job.type === 'monitor');
 const rerunsOf = async (runId: string) => (await owner.query<{ id: string }>('SELECT id FROM pricing_run WHERE rerun_of_id = $1 ORDER BY created_at', [runId])).rows.map((row) => row.id);
 const eventsOf = async (action: string, practiceId: string) => (await owner.query('SELECT 1 FROM audit_event WHERE action = $1 AND practice_id = $2', [action, practiceId])).rowCount ?? 0;
@@ -300,7 +302,7 @@ describe('under SYNTHETIC release 900001', () => {
     expect(ok(await call(pricingRunsPage, target.viewer, P)).unmappedPlans).toEqual(unmapped);
     expect(ok(await call(practiceHome, target.viewer, P)).dashboard.unmappedPlans).toEqual(unmapped);
     // MAP-07: a run would price nothing.
-    expect(refusedWith(await call(createPricingRunAction, target.manager, P, { fromMonth: '2026-02', releaseNo: '900001' }))).toMatch(/^fromMonth: none of the period’s plans has a mapping yet/);
+    expect(refusedWith(await call(createPricingRunAction, target.manager, P, { fromMonth: '2026-02', releaseNo: '900001' }))).toBe(`fromMonth: ${NOTHING_MAPPED}`);
 
     // Plan A mapped: February is mixed, so nothing is queued and the plan's page offers "Price them now".
     expect(redirectOf(await mapAs(target, a))).toBe(`/p/${target.practiceId}/mapping/${a}?notice=mapped`);
@@ -336,11 +338,12 @@ describe('under SYNTHETIC release 900001', () => {
     // Plan B mapped: February is covered, so nothing is queued; its lines are now mapped and still NO_MAPPING in effect.
     expect(redirectOf(await mapAs(target, b))).toBe(`/p/${target.practiceId}/mapping/${b}?notice=mapped`);
     expect(monitorJobs()).toEqual([]);
-    const figure = { lines: 3, chargeCents: '30000', runs: 1 };
+    // UX-3: B is mapped as no agreement, so a re-run only records its lines (NO_AGREEMENT): none of them to price.
+    const figure = { lines: 3, chargeCents: '30000', runs: 1, months: 1, linesToPrice: 0, chargeCentsToPrice: '0' };
     const list = ok(await call(mappingPage, target.viewer, P));
     expect(list.mappedNotPriced).toEqual(figure);
     expect(list.unmappedPlans).toEqual({ plans: 0, lines: 0, chargeCents: '0' });
-    expect(list.months.priceAgain.map((month) => [month.pricingRunId, month.lines, month.chargeCents, month.state.kind])).toEqual([[runId, 3, '30000', 'ready']]);
+    expect(list.months.priceAgain.map((month) => [month.pricingRunId, month.lines, month.chargeCents, month.linesToPrice, month.state.kind])).toEqual([[runId, 3, '30000', 0, 'ready']]);
     expect(list.months.readyRunIds).toEqual([runId]);
     expect(list.months.releaseNo).toBe(900001);
     expect(ok(await call(coveragePage, target.viewer, P)).mappedNotPriced).toEqual(figure);
@@ -365,8 +368,8 @@ describe('under SYNTHETIC release 900001', () => {
     ]);
     expect(await eventsOf('plan_months_priced_again', target.practiceId)).toBe(1);
     expect((await owner.query("SELECT object_id FROM audit_event WHERE action = 'pricing_run_rerun_created' AND practice_id = $1", [target.practiceId])).rows).toEqual([{ object_id: rerun }]);
-    // A second press of the same page, by a second person: nothing created, and it succeeds.
-    expect(redirectOf(await call(priceAgainAction, target.other, P, press))).toBe(`/p/${target.practiceId}/mapping?notice=priced_again`);
+    // A second press of the same page, by a second person: nothing created, it succeeds and says so (R2-5).
+    expect(redirectOf(await call(priceAgainAction, target.other, P, press))).toBe(`/p/${target.practiceId}/mapping?notice=already_pricing`);
     expect(await rerunsOf(runId)).toEqual([rerun]);
     await runQueue();
     expect(ok(await call(planPage, target.viewer, { ...P, planId: b })).months.priceAgain.map((month) => month.state)).toEqual([{ kind: 'to_accept', rerunId: rerun }]);
@@ -374,7 +377,7 @@ describe('under SYNTHETIC release 900001', () => {
     // Accepted by hand: the figure falls to zero on every screen. B's lines are now NO_AGREEMENT (a "no agreement" mapping
     // prices nothing), so none waits for triage.
     ok(await call(acceptPricingRunAction, target.manager, P, { runId: rerun, replacesId: runId }));
-    const none = { lines: 0, chargeCents: '0', runs: 0 };
+    const none = { lines: 0, chargeCents: '0', runs: 0, months: 0, linesToPrice: 0, chargeCentsToPrice: '0' };
     expect(ok(await call(mappingPage, target.viewer, P)).mappedNotPriced).toEqual(none);
     expect(ok(await call(coveragePage, target.viewer, P)).mappedNotPriced).toEqual(none);
     expect(ok(await call(pricingRunsPage, target.viewer, P)).mappedNotPriced).toEqual(none);
@@ -473,6 +476,8 @@ describe('under SYNTHETIC release 900001', () => {
     // Two presses at once: one re-run in all, both succeed, one rerun event.
     const outcomes = await atOnce(target.practiceId, () => [call(priceAgainAction, target.manager, P, press), call(priceAgainAction, target.other, P, press)]);
     expect(outcomes.map((outcome) => outcome.status)).toEqual(['ok', 'ok']);
+    // R2-5: the press that created the re-run says so; the other says the month was already being priced again.
+    expect(outcomes.map((outcome) => /notice=(\w+)$/.exec(redirectOf(outcome))?.[1]).sort()).toEqual(['already_pricing', 'priced_again']);
     const reruns = await rerunsOf(runId);
     expect(reruns).toHaveLength(1);
     expect(await eventsOf('pricing_run_rerun_created', target.practiceId)).toBe(1);
@@ -503,6 +508,73 @@ describe('under SYNTHETIC release 900001', () => {
     queue.jobs.splice(0);
   });
 
+  // R3N-1 and security F2: a mapping only for later dates completes no month, so it queues nothing and says Mapped.
+  it('R3N-1: queues nothing and refuses a run for a month whose plans are mapped only from a later date; the mappings that cover it queue its first run', async () => {
+    const target = await practice('mapping later dates');
+    const P = { practiceId: target.practiceId };
+    await send(target, map06());
+    queue.jobs.splice(0);
+    const [a, b] = [await planOf(target, 'SYNPLAN-COMM-06'), await planOf(target, 'SYNPLAN-UNMAPPED-06')];
+    const june = { effectiveFrom: '2026-06-01' };
+    expect(redirectOf(await mapAs(target, a, target.manager, june))).toMatch(/notice=mapped$/);
+    expect(redirectOf(await mapAs(target, b, target.manager, june))).toMatch(/notice=mapped$/);
+    expect(monitorJobs()).toEqual([]);
+    expect(ok(await call(coveragePage, target.viewer, P)).unmappedPlans).toEqual({ plans: 2, lines: 7, chargeCents: '75000' });
+    expect(refusedWith(await call(createPricingRunAction, target.manager, P, { fromMonth: '2026-02', releaseNo: '900001' }))).toBe(`fromMonth: ${NOTHING_MAPPED}`);
+    const earlier = { effectiveFrom: '2026-01-01', lastDay: '2026-05-31' };
+    expect(redirectOf(await mapAs(target, a, target.manager, earlier))).toMatch(/notice=mapped$/);
+    expect(redirectOf(await mapAs(target, b, target.manager, earlier))).toBe(`/p/${target.practiceId}/mapping/${b}?notice=mapped_pricing`);
+    expect(queue.jobs).toEqual([{ type: 'monitor', payload: { practice_id: target.practiceId, request_id: expect.any(String) as unknown, months: ['2026-02-01'] } }]);
+    expect(await runQueue({ monitor: true })).toEqual(['monitor', 'price']);
+    expect((await owner.query('SELECT status FROM pricing_run WHERE practice_id = $1', [target.practiceId])).rows).toEqual([{ status: 'complete' }]);
+  });
+
+  // Security F1: the worker refuses a suspended practice's monitoring, so the mapping queues none and never says "being priced".
+  it('security F1: keeps a mapping made while the practice is suspended, queues nothing, says mapped_held with the reason on the page; once reinstated the month prices', async () => {
+    const target = await practice('mapping suspended');
+    const P = { practiceId: target.practiceId };
+    await send(target, map06());
+    queue.jobs.splice(0);
+    const [a, b] = [await planOf(target, 'SYNPLAN-COMM-06'), await planOf(target, 'SYNPLAN-UNMAPPED-06')];
+    expect(redirectOf(await mapAs(target, a))).toMatch(/notice=mapped$/);
+    expect(ok(await call(planPage, target.viewer, { ...P, planId: b })).suspension).toBeNull();
+    await owner.query("UPDATE organization SET status = 'suspended' WHERE id = $1", [target.organizationId]);
+    expect(redirectOf(await mapAs(target, b))).toBe(`/p/${target.practiceId}/mapping/${b}?notice=mapped_held`);
+    expect(monitorJobs()).toEqual([]);
+    expect((await owner.query('SELECT 1 FROM payer_plan_mapping WHERE plan_id = $1', [b])).rowCount).toBe(1);
+    expect(ok(await call(planPage, target.viewer, { ...P, planId: b })).suspension).toMatch(/^the organization is suspended/);
+    expect(ok(await call(mappingPage, target.viewer, P)).suspension).toMatch(/^the organization is suspended/);
+    // A correction made while suspended is held the same way.
+    const mappingId = (await owner.query<{ id: string }>('SELECT id FROM payer_plan_mapping WHERE plan_id = $1', [b])).rows[0]?.id ?? '';
+    expect(redirectOf(await call(mapPlanAction, target.manager, P, { planId: b, kind: 'no_agreement', effectiveFrom: '2026-01-02', supersedesId: mappingId }))).toBe(
+      `/p/${target.practiceId}/mapping/${b}?notice=corrected_held`,
+    );
+    expect(monitorJobs()).toEqual([]);
+    expect((await owner.query('SELECT 1 FROM pricing_run WHERE practice_id = $1', [target.practiceId])).rowCount).toBe(0);
+    // Reinstated: nothing was lost; "Price them now" prices the month.
+    await owner.query("UPDATE organization SET status = 'active' WHERE id = $1", [target.organizationId]);
+    expect(ok(await call(planPage, target.viewer, { ...P, planId: b })).suspension).toBeNull();
+    expect(redirectOf(await call(priceWaitingAction, target.manager, P, {}))).toBe(`/p/${target.practiceId}/mapping?notice=pricing_requested`);
+    expect(await runQueue({ monitor: true })).toEqual(['monitor', 'price']);
+    expect((await owner.query('SELECT status FROM pricing_run WHERE practice_id = $1', [target.practiceId])).rows).toEqual([{ status: 'complete' }]);
+  });
+
+  // UX-7: a press on the filtered list returns to the same filtered list; a filter that is not valid is dropped.
+  it('UX-7: returns a list press to the list with its view and payer kept, before the notice', async () => {
+    const target = await practice('mapping filters');
+    const P = { practiceId: target.practiceId };
+    await send(target, map06());
+    queue.jobs.splice(0);
+    const payer = (await owner.query<{ payer_id: string }>('SELECT payer_id FROM plan WHERE practice_id = $1 LIMIT 1', [target.practiceId])).rows[0]?.payer_id ?? '';
+    expect(redirectOf(await call(priceWaitingAction, target.manager, P, { view: 'all', payer }))).toBe(`/p/${target.practiceId}/mapping?view=all&payer=${payer}&notice=pricing_requested`);
+    expect(redirectOf(await call(priceWaitingAction, target.manager, P, { view: 'mapped' }))).toBe(`/p/${target.practiceId}/mapping?view=mapped&notice=pricing_requested`);
+    expect(redirectOf(await call(priceWaitingAction, target.manager, P, { view: 'nonsense', payer: 'not an id' }))).toBe(`/p/${target.practiceId}/mapping?notice=pricing_requested`);
+    // A plan's page has no list filters: it returns to the plan.
+    const a = await planOf(target, 'SYNPLAN-COMM-06');
+    expect(redirectOf(await call(priceWaitingAction, target.manager, P, { planId: a, view: 'all' }))).toBe(`/p/${target.practiceId}/mapping/${a}?notice=pricing_requested`);
+    queue.jobs.splice(0);
+  });
+
   it('refuses as months_changed a press that leaves out a month ready to price again, creating nothing, and prices both once both are sent (MAP-09)', async () => {
     // February and March each hold A and B; each month priced with B unmapped, then B mapped: two months ready.
     const target = await practice('mapping not sent');
@@ -528,7 +600,8 @@ describe('under SYNTHETIC release 900001', () => {
     expect(queue.jobs).toEqual([]);
 
     // Both sent: one re-run of each.
-    expect(redirectOf(await call(priceAgainAction, target.manager, P, { runIds: `${february},${march}`, releaseNo: '900001' }))).toBe(`/p/${target.practiceId}/mapping?notice=priced_again`);
+    // UX-7: posted from the list filtered to every plan, it returns there.
+    expect(redirectOf(await call(priceAgainAction, target.manager, P, { runIds: `${february},${march}`, releaseNo: '900001', view: 'all' }))).toBe(`/p/${target.practiceId}/mapping?view=all&notice=priced_again`);
     expect([(await rerunsOf(february)).length, (await rerunsOf(march)).length]).toEqual([1, 1]);
     expect(queue.jobs.map((job) => job.type)).toEqual(['price', 'price']);
     queue.jobs.splice(0);

@@ -10,7 +10,7 @@ import { coverageInEffect } from '../coverage/in-effect';
 import { practiceStageSummary } from '../monitoring/queries';
 import { type MappedNotPricedTotals, mappedNotPricedTotals } from '../pricing/mapped-plan';
 import { RUN_IN_EFFECT } from '../pricing/queries';
-import { ACTIONABLE_NOW, practiceTriageSettings } from '../triage/queries';
+import { ACTIONABLE_NOW, ACTIONABLE_NOW_LINES, practiceTriageSettings } from '../triage/queries';
 
 /**
  * The practice dashboard's counts and totals (PRD 7, Practice dashboard: "data freshness (last file,
@@ -21,7 +21,10 @@ import { ACTIONABLE_NOW, practiceTriageSettings } from '../triage/queries';
  * is read as the screen it links to reads it, so the number and the screen agree:
  *
  * - actionable: the Cases screen's figure, the variance of case lines still at actionable, not written
- *   off, in the cases still being worked;
+ *   off and whose pricing is still current, in the cases still being worked, and the count of exactly
+ *   those lines (one predicate, ACTIONABLE_NOW and ACTIONABLE_NOW_LINES; UX-1), with the lines at
+ *   actionable the figure leaves out because their pricing is no longer current (priced again, or its
+ *   terms or release changed) counted apart;
  * - payer approved and recovered: the recovery ledger's totals (recovered at the practice's proof
  *   level, net of recoupments and reversals; approved is its own stage and never summed into it), as
  *   Reconciliation shows them; recovered this quarter is the same for entries dated in the quarter;
@@ -43,6 +46,7 @@ type Scope = PracticeScope<ScopeClient>;
 export const DEADLINE_WINDOW_DAYS = 14;
 
 export interface Headline {
+  /** The actionable figure and the lines it sums: one predicate, ACTIONABLE_NOW and ACTIONABLE_NOW_LINES (UX-1). */
   readonly actionable: { readonly lines: number; readonly cents: string };
   readonly payerApprovedCents: string;
   readonly recoveredCents: string;
@@ -81,6 +85,13 @@ export interface Dashboard {
     readonly pricedChargeCents: string;
   } | null;
   readonly headline: Headline;
+  /**
+   * The lines the actionable figure leaves out (UX-1): of cases still being worked, at actionable and not written off,
+   * whose pricing is no longer current (priced_line_pricing_check <> 'current': priced again, or its terms or release
+   * changed), until the case is refreshed (PR 11). Shown under the figure with a link to Cases when above 0. Beside the
+   * headline rather than in it, so the headline's shape (three numbers and their counts) stays as every screen reads it.
+   */
+  readonly actionableNotCurrent: { readonly lines: number };
   /** The practice's cases by state, with each state's stage-three figure (lines still at actionable). */
   readonly casesByState: readonly { readonly state: string; readonly cases: number; readonly actionableCents: string }[];
   /** Cases still being worked whose deadline falls within DEADLINE_WINDOW_DAYS of today (any passed included), as the Cases screen's deadline filter lists them. */
@@ -90,7 +101,7 @@ export interface Dashboard {
   /** Recovered this quarter: the ledger's, for entries dated in the quarter (the practice's proof level, net), never an estimate and never approved. */
   readonly recoveredQuarter: { readonly quarter: string; readonly from: string; readonly to: string; readonly cents: string };
   readonly queues: Queues;
-  /** The plans with no mapping at all, whose lines no run prices, with their lines and billed cents (Coverage's figure). */
+  /** The plans with no mapping in force on their lines' dates, whose lines no run prices, with their lines and billed cents (Coverage's figure). */
   readonly unmappedPlans: UnmappedPlanTotals;
   /** The lines of mapped plans still NO_MAPPING in the pricing in effect, their billed cents and the runs holding them (PRC-31). */
   readonly mappedNotPriced: MappedNotPricedTotals;
@@ -98,24 +109,30 @@ export interface Dashboard {
 
 const WORKED = "state NOT IN ('resolved', 'closed_written_off')";
 
-async function headlineOf(scope: Scope, practiceId: string): Promise<Headline> {
-  const actionable = await scope.client.query<{ lines: number; cents: string }>(
-    `SELECT (SELECT count(*)::int FROM case_line x JOIN "case" k ON k.id = x.case_id
+async function headlineOf(scope: Scope, practiceId: string): Promise<{ readonly headline: Headline; readonly notCurrentLines: number }> {
+  // The count and the cents share one predicate (UX-1): a line whose pricing is no longer current leaves both at once.
+  const actionable = await scope.client.query<{ lines: number; cents: string; not_current_lines: number }>(
+    `SELECT coalesce((SELECT sum(${ACTIONABLE_NOW_LINES('c')}) FROM "case" c WHERE c.practice_id = $1 AND c.${WORKED}), 0)::int AS lines,
+            coalesce((SELECT sum(${ACTIONABLE_NOW('c')}) FROM "case" c WHERE c.practice_id = $1 AND c.${WORKED}), 0)::text AS cents,
+            (SELECT count(*)::int FROM case_line x JOIN "case" k ON k.id = x.case_id
               WHERE x.practice_id = $1 AND k.${WORKED} AND x.written_off_reason IS NULL
-                AND (SELECT s.stage FROM line_status s WHERE s.service_line_id = x.service_line_id ORDER BY s.seq DESC LIMIT 1) = 'actionable') AS lines,
-            coalesce((SELECT sum(${ACTIONABLE_NOW('c')}) FROM "case" c WHERE c.practice_id = $1 AND c.${WORKED}), 0)::text AS cents`,
+                AND (SELECT s.stage FROM line_status s WHERE s.service_line_id = x.service_line_id ORDER BY s.seq DESC LIMIT 1) = 'actionable'
+                AND priced_line_pricing_check(x.priced_line_id) <> 'current') AS not_current_lines`,
     [practiceId],
   );
   const ledger = await practiceLedgerTotals(scope, practiceId);
   const stages = await practiceStageSummary(scope, practiceId);
   return {
-    actionable: { lines: actionable.rows[0]?.lines ?? 0, cents: actionable.rows[0]?.cents ?? '0' },
-    // Approvals net of what recoupments took back of them before they were proved (PRD 12: what has been accepted).
-    payerApprovedCents: centsToString(ledger.payerApprovedCents),
-    recoveredCents: centsToString(ledger.recoveredCents),
-    proofLevel: ledger.proofLevel,
-    flagged: { lines: stages.figures.flagged.lines },
-    validated: { lines: stages.figures.validated.lines, cents: stages.figures.validated.varianceCents ?? '0' },
+    headline: {
+      actionable: { lines: actionable.rows[0]?.lines ?? 0, cents: actionable.rows[0]?.cents ?? '0' },
+      // Approvals net of what recoupments took back of them before they were proved (PRD 12: what has been accepted).
+      payerApprovedCents: centsToString(ledger.payerApprovedCents),
+      recoveredCents: centsToString(ledger.recoveredCents),
+      proofLevel: ledger.proofLevel,
+      flagged: { lines: stages.figures.flagged.lines },
+      validated: { lines: stages.figures.validated.lines, cents: stages.figures.validated.varianceCents ?? '0' },
+    },
+    notCurrentLines: actionable.rows[0]?.not_current_lines ?? 0,
   };
 }
 
@@ -154,6 +171,7 @@ export async function dashboard(scope: Scope, practiceId: string, today: string)
     [practiceId, today, DEADLINE_WINDOW_DAYS],
   );
   const due = await followUpsDue(scope, { practiceId, asOf: today });
+  const { headline, notCurrentLines } = await headlineOf(scope, practiceId);
   const quarter = quarterOf(today);
   const period = quarterPeriod(quarter);
   return {
@@ -169,7 +187,8 @@ export async function dashboard(scope: Scope, practiceId: string, today: string)
             chargeCents: coverage.of.chargeCents,
             pricedChargeCents: coverage.priced.chargeCents,
           },
-    headline: await headlineOf(scope, practiceId),
+    headline,
+    actionableNotCurrent: { lines: notCurrentLines },
     casesByState: states.rows.map((row) => ({ state: row.state, cases: row.cases, actionableCents: row.actionable })),
     deadlines: { cases: near.rows[0]?.cases ?? 0, actionableCents: near.rows[0]?.actionable ?? '0', earliest: near.rows[0]?.earliest ?? null },
     followUps: { due: due.length, earliest: due[0]?.followUpOn ?? null, first: due.slice(0, 5).map((item) => ({ caseId: item.caseId, followUpOn: item.followUpOn })) },

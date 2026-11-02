@@ -17,8 +17,9 @@ import { MAPPING_PRACTICE_PREFIX, startLocalWorker } from './worker';
  * neither mapped: the parse's own monitoring leaves the month without a run, and Coverage counts both plans' lines as
  * not priced. Mapping the first plan leaves the month waiting for the other; "Price them now" has monitoring give it a
  * first run, which prices the mapped plan's lines and leaves the other's unpriced, and the run's page names that plan.
- * Mapping the second plan then lists the month to price again; "Price these months again" creates the re-run in the
- * manager's name, which is accepted by hand, and Coverage's figures fall to zero.
+ * Mapping the second plan then lists the month to price again; "Price these months again" (worded "Record these months
+ * under their mappings" here, since the plan is mapped as no agreement) creates the re-run in the manager's name, which
+ * is accepted by hand, and Coverage's figures fall to zero.
  *
  * In a practice of its own for each attempt (MAPPING_PRACTICE_PREFIX, whose monitoring the e2e worker runs for real:
  * worker.ts), so every count it asserts is exact and a retry starts from an empty practice. Both plans are mapped as no
@@ -103,7 +104,7 @@ test('one plan with no mapping no longer freezes its month: the rest prices, and
       await expect(page.getByRole('table', { name: 'Unpriced reasons and their remedies' }).getByRole('row').filter({ hasText: 'NO_MAPPING' })).toContainText('Map the plan');
       await page.goto(`/p/${practiceId}/pricing-runs`);
       await expect(page.locator('[data-state="unmapped"]')).toContainText(
-        '7 lines, $750.00 billed, are not priced in any run until their plans are mapped; a line the engine reaches is left as NO_MAPPING. Map them.',
+        '7 lines, $750.00 billed, are not priced in any run until their plans are mapped; each is left unpriced as NO_MAPPING, unless it fails a check of its own facts first. Map them.',
       );
       await expect(page.getByText('No pricing run yet')).toBeVisible();
     });
@@ -114,6 +115,8 @@ test('one plan with no mapping no longer freezes its month: the rest prices, and
       const waiting = page.getByRole('region', { name: 'Months waiting for a first run' });
       await expect(waiting).toContainText('1 month holding this plan’s lines waits for 1 other plan’s mapping.');
       await expect(waiting).toContainText('2026-02-01 to 2026-02-28');
+      // Each waiting month says what it holds (UX-10): no line of a plan mapped as no agreement prices, the other plan's 3 lines have no mapping.
+      await expect(waiting.locator('tr[data-waiting-month="2026-02-01"]')).toContainText('$750.00');
       await expectAccessible(page, 'a plan’s page with a month waiting for another plan’s mapping');
       await waiting.getByRole('button', { name: 'Price them now' }).click();
       await expect(page.locator('[data-notice="pricing_requested"]')).toContainText('Monitoring is pricing the waiting months now; they show on Pricing runs when done.');
@@ -151,7 +154,8 @@ test('one plan with no mapping no longer freezes its month: the rest prices, and
       await expect(row).toHaveAttribute('data-state', 'ready');
       await expect(row).toContainText('2026-02-01 to 2026-02-28');
       await expect(row).toContainText('$300.00');
-      await expect(row).toContainText('Ready to price again');
+      // Both plans are mapped as no agreement, so the re-run records the lines under that mapping, unpriced (UX-3).
+      await expect(row).toContainText('Ready to record under its mapping');
       await expectAccessible(page, 'a plan’s page with a month to price again');
       await atPhoneWidth(page, 'a plan’s page with a month to price again');
       await page.goto(`/p/${practiceId}/coverage`);
@@ -159,15 +163,24 @@ test('one plan with no mapping no longer freezes its month: the rest prices, and
       await expect(page.locator('[data-state="mapped"]')).toContainText('Every plan has a mapping');
       const mappedNotPriced = page.locator('[data-state="mapped_not_priced"]');
       await expect(mappedNotPriced).toContainText('3 lines of mapped plans are still not priced');
-      await expect(mappedNotPriced).toContainText('$300.00 billed, in 1 priced month, are still NO_MAPPING in the pricing in effect: their plans were mapped after that month was priced.');
+      // Counted in pricing runs, never "priced months" (R2-4), and what a re-run does with them (UX-3).
+      await expect(mappedNotPriced).toContainText('$300.00 billed, in 1 pricing run, are still NO_MAPPING in the pricing in effect: their plans were mapped after that run was priced.');
+      await expect(mappedNotPriced).toContainText('Their plans are mapped as no agreement, government or other, so a re-run records them under that mapping and they stay unpriced.');
+      await expect(mappedNotPriced).toHaveAttribute('role', 'status');
     });
 
     await test.step('"Price these months again" creates the re-run in the manager’s name, and it is accepted by hand (MAP-08)', async () => {
-      await page.goto(`/p/${practiceId}/mapping`);
+      await page.goto(`/p/${practiceId}/mapping?view=all`);
       const region = page.getByRole('region', { name: 'Months with lines of mapped plans not priced' });
       await expect(region).toContainText('3 lines of mapped plans are still not priced');
-      await region.getByRole('button', { name: 'Price these months again (1)' }).click();
+      // The plan is mapped as no agreement, so the button says what the re-run does: it records the lines (UX recheck R-2).
+      await expect(region.getByRole('button', { name: 'Price these months again (1)' })).toHaveCount(0);
+      await region.getByRole('button', { name: 'Record these months under their mappings (1)' }).click();
       await expect(page.locator('[data-notice="priced_again"]')).toContainText('Accept each on its page after its list of changes.');
+      // The notice is a note, said once: it leaves the address bar, and the list keeps the filter it showed (UX-7, C-2).
+      await expect(page.locator('[data-notice="priced_again"]')).toHaveAttribute('role', 'status');
+      await expect(page).toHaveURL(/[?&]view=all(&|$)/);
+      await expect(page).not.toHaveURL(/notice=/);
       expectNoPhiIn(page.url());
       await expect(page.locator('tr[data-month]')).toHaveAttribute('data-state', /^(being_priced|to_accept)$/);
       await expect(async () => {
@@ -178,6 +191,8 @@ test('one plan with no mapping no longer freezes its month: the rest prices, and
         async (client) => (await client.query<{ n: number }>('SELECT count(*)::int AS n FROM pricing_run WHERE practice_id = $1 AND rerun_of_id IS NOT NULL AND created_by_job_id IS NULL', [practiceId])).rows[0]?.n,
       );
       expect(created).toBe(1);
+      // The reloads above showed the page as it is now, not the notice again (UX-7).
+      await expect(page.locator('[data-notice="priced_again"]')).toHaveCount(0);
       await page.locator('tr[data-month]').getByRole('link', { name: 'Priced again: review and accept' }).click();
       await expect(page.getByRole('region', { name: 'Re-run' })).toBeVisible();
       await page.getByRole('button', { name: 'Accept this run' }).click();

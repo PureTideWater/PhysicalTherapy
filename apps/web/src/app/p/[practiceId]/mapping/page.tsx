@@ -1,9 +1,10 @@
-import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Label } from '@tp/ui';
+import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Label } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { MappingText, TotalsText } from '../../../../components/contracts/display';
 import { FormKeys } from '../../../../components/form-keys';
+import { MappingNotice } from '../../../../components/mapping/held-notice';
 import { MONTHS_NOTICES, MonthsToPriceAgainRegion, MonthsWaitingRegion, unmappedPlansTitle } from '../../../../components/mapping/months';
 import { Money, Pager } from '../../../../components/remittances/display';
 import { ScrollTable } from '../../../../components/scroll-table';
@@ -35,14 +36,17 @@ const VIEWS = [
  * contract version. Each plan opens to its mappings and the form that maps it. Filters in the URL. A plan with no
  * mapping is never priced while every other plan's lines price (combined audit #32; docs/adr/0075): below the dollars
  * waiting, the months that wait for other plans' mappings ("Price them now") and the priced months whose lines of
- * mapped plans are still NO_MAPPING ("Price these months again"), for the whole practice (MAP-07, MAP-08, PRC-31).
+ * mapped plans are still NO_MAPPING ("Price these months again"), for the whole practice (MAP-07, MAP-08, PRC-31). Their
+ * forms post the list's filters back, so the list returns as it was shown, and an action's notice is said once, a note,
+ * then leaves the address bar (PR #95 review UX-7, C-2).
  */
 export default async function MappingPage(props: Props) {
   const page = await loadPage(mappingPage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="mapping" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, filters, payers, waiting, list, unmappedPlans, mappedNotPriced, months, notice, canMap, canWorkCases } = page.data;
+  const { practiceId, filters, payers, waiting, list, unmappedPlans, mappedNotPriced, months, notice, suspension, canMap, canWorkCases } = page.data;
+  const kept = { view: filters.view, payer: filters.payer };
   const path = `/p/${practiceId}/mapping`;
   return (
     <AppShell shell={page.shell} section="mapping">
@@ -70,13 +74,17 @@ export default async function MappingPage(props: Props) {
           </CardDescription>
         </CardHeader>
       </Card>
-      {notice === null ? null : (
-        <Alert data-notice={notice}>
-          <AlertTitle>{MONTHS_NOTICES[notice].title}</AlertTitle>
-          <AlertDescription>{MONTHS_NOTICES[notice].text}</AlertDescription>
-        </Alert>
-      )}
-      <MonthsWaitingRegion practiceId={practiceId} planId={null} waiting={months.waiting} canMap={canMap} action={priceWaitingFormAction} formKeys={() => <FormKeys />} />
+      <MappingNotice notice={notice === null ? null : { key: notice, ...MONTHS_NOTICES[notice] }} />
+      <MonthsWaitingRegion
+        practiceId={practiceId}
+        planId={null}
+        waiting={months.waiting}
+        canMap={canMap}
+        action={priceWaitingFormAction}
+        formKeys={() => <FormKeys />}
+        filters={kept}
+        suspension={suspension}
+      />
       <MonthsToPriceAgainRegion
         practiceId={practiceId}
         planId={null}
@@ -86,6 +94,8 @@ export default async function MappingPage(props: Props) {
         canWorkCases={canWorkCases}
         action={priceAgainFormAction}
         formKeys={() => <FormKeys />}
+        filters={kept}
+        suspension={suspension}
       />
       <form method="get" action={path} className="flex flex-wrap items-end gap-3" aria-label="Filter plans">
         <div className="flex flex-col gap-1">

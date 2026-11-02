@@ -114,21 +114,26 @@ describe('the report documents (docs/adr/0045)', () => {
     expect(coverageReportHtml(coverage({ run: null, pricing_runs: 2 }), PINS)).toContain('No pricing run had completed');
   });
 
-  it('says a new report’s plans with no mapping are not priced while the rest price, and a stored report keeps both of its sentences (combined audit #32; PRC-30, MAP-06, R3-9)', () => {
+  it('says in the past tense that a new report’s plans had no mapping and their lines were not priced, and a stored report keeps both of its sentences (combined audit #32; PRC-30, MAP-06, R3-9, UX-5)', () => {
     const now = coverageWithUnmappedLines();
     expect(parseReportDocument('coverage', now)).toEqual(now);
-    expect(coverageReportHtml(now, PINS)).toContain('<p>1 plan has no mapping; its lines are not priced (1 line, <span class="figure-amount">$100.00</span> billed).</p>');
+    // UX-5: the figures are fixed when the report is generated, so it states the past; a plan mapped since never makes it false.
+    expect(coverageReportHtml(now, PINS)).toContain('<p>1 plan had no mapping; its lines were not priced (1 line, <span class="figure-amount">$100.00</span> billed).</p>');
     const two = coverageWithUnmappedLines({ readiness: { allowed: false, unmapped_plans: 2, unmapped_lines: 14, unmapped_charge_cents: '123400' } });
-    expect(coverageReportHtml(two, PINS)).toContain('2 plans have no mapping; their lines are not priced (14 lines, <span class="figure-amount">$1,234.00</span> billed).');
+    expect(coverageReportHtml(two, PINS)).toContain('2 plans had no mapping; their lines were not priced (14 lines, <span class="figure-amount">$1,234.00</span> billed).');
     // Signed cents: a line's charge has no sign check, so neither has the sum.
     const negative = coverageWithUnmappedLines({ readiness: { allowed: false, unmapped_plans: 1, unmapped_lines: 2, unmapped_charge_cents: '-500' } });
     expect(parseReportDocument('coverage', negative)).toEqual(negative);
     expect(coverageReportHtml(negative, PINS)).toContain('(2 lines, <span class="figure-amount">-$5.00</span> billed)');
     const mapped = coverageWithUnmappedLines({ readiness: { allowed: true, unmapped_plans: 0, unmapped_lines: 0, unmapped_charge_cents: '0' }, waiting_plans: [] });
-    expect(coverageReportHtml(mapped, PINS)).toContain('<p>Every plan with lines has a mapping.</p>');
+    expect(coverageReportHtml(mapped, PINS)).toContain('<p>Every plan with lines had a mapping.</p>');
     for (const html of [coverageReportHtml(now, PINS), coverageReportHtml(two, PINS), coverageReportHtml(mapped, PINS)]) {
       expect(html).not.toContain('refused');
       expect(html).not.toContain('a pricing run can start');
+      // UX-5: no present-tense claim about the practice in a stored snapshot's sentences. The reasons table's
+      // NO_MAPPING row defines the reason ("The payer and plan have no mapping on the service date"), a definition in a
+      // cell, not a claim, so only the paragraphs are read.
+      expect(html).not.toMatch(/<p>[^<]*(plans? (has|have) no mapping|lines are not priced|lines has a mapping)/);
     }
     // A report stored before records neither field, and prints the sentences it was generated with.
     expect(coverageReportHtml(coverage(), PINS)).toContain('<p>1 plan had no mapping at all: a pricing run over them is refused until they are mapped.</p>');

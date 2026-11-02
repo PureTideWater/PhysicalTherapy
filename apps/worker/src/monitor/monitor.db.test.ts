@@ -971,6 +971,22 @@ describe('PRC-23: months that wait on the practice’s pricing location (audit #
     expect(plan).toMatchObject({ outcome: 'planned', created: [], waitingOnMapping: [], waitingOnLocation: [{ ...MONTH, status: 'zip_missing' }], queued: [] });
   });
 
+  // R3N-2 (the mapping check comes before the location check) and R3N-1 (a mapping only for later dates maps nothing).
+  it('R3N-2, R3N-1: lists a month with no plan mapped on its dates and no location as waiting on a mapping, then on the location once a mapping is in force', async () => {
+    const practice = await w.practice('LOC-UNMAPPED');
+    await w.pricing.load(practice, 'MAP-05/remit.835');
+    await w.pricing.withoutLocation(practice);
+    const planOnce = () => withJobScope(w.app, { jobId: randomUUID(), practiceId: practice.practiceId }, (scope) => planMonitoring(scope, practice.practiceId, randomUUID()));
+    expect(await planOnce()).toMatchObject({ outcome: 'planned', created: [], waitingOnMapping: [MONTH], waitingOnLocation: [] });
+    const planId = await w.pricing.planOf(practice, 'CE:SYNPLAN-MA-05');
+    const june = await w.pricing.mapped(practice, planId, 'ma_noncontracted', '2026-06-01');
+    expect(await planOnce()).toMatchObject({ created: [], waitingOnMapping: [MONTH], waitingOnLocation: [] });
+    await w.pricing.as(practice, practice.manager, (context) =>
+      correctMapping(context, { practiceId: practice.practiceId, planId, kind: 'ma_noncontracted', contractVersionId: null, effectiveFrom: '2026-01-01', supersedesId: june }),
+    );
+    expect(await planOnce()).toMatchObject({ created: [], waitingOnMapping: [], waitingOnLocation: [{ ...MONTH, status: 'zip_missing' }] });
+  });
+
   it('fails a month whose lines need the ZIP+4 as location_not_ready with no line kept, and does not create it again on the next day’s plan', async () => {
     const practice = await medicareMonth('LOC-PLUS-FOUR');
     expect(await w.pricing.setLocation(practice, '00012')).toBe('zip_plus_four_needed');

@@ -45,18 +45,21 @@ const RUN_LINES = `
    AND l.created_at <= $4`;
 
 /**
- * One line per plan of the run's lines (its earliest service date). It serves the creator's "nothing
- * mapped" check (MAP-07: a period none of whose plans has a mapping gets no run) and the coverage's
- * unmapped plans (PRC-30): a plan with no mapping leaves its own lines NO_MAPPING while every other line
- * prices (MAP-01, MAP-06). Plans are opaque IDs.
+ * One line per plan and service date of the run's lines (the line's own date, else its claim's first),
+ * by plan, then date. It serves the creator's "nothing mapped" check (MAP-07: a period none of whose
+ * lines has a mapping in force on its date gets no run) and the coverage's unmapped plans (PRC-30):
+ * `unmappedPlanIds` decides each plan on these dates, the resolver's own rule, never on whether some
+ * mapping of it exists (PR #95 review R3N-1, security F2). A plan with no mapping in force leaves its
+ * own lines NO_MAPPING while every other line prices (MAP-01, MAP-06). Plans are opaque IDs; at most
+ * one row per plan per day of the period.
  */
 export async function runPlans(client: ScopeClient, run: RunScope): Promise<MappedLine[]> {
-  const { rows } = await client.query<{ plan_id: string; first_date: string }>(
-    `SELECT l.payer_plan_key AS plan_id, min(coalesce(l.service_date, c.service_from))::text AS first_date ${RUN_LINES}
-      GROUP BY l.payer_plan_key ORDER BY l.payer_plan_key`,
+  const { rows } = await client.query<{ plan_id: string; service_date: string }>(
+    `SELECT DISTINCT l.payer_plan_key AS plan_id, coalesce(l.service_date, c.service_from)::text AS service_date ${RUN_LINES}
+      ORDER BY 1, 2`,
     [run.practiceId, run.periodFrom, run.periodTo, run.loadedBy],
   );
-  return rows.map((row) => ({ planId: row.plan_id, serviceDate: row.first_date }));
+  return rows.map((row) => ({ planId: row.plan_id, serviceDate: row.service_date }));
 }
 
 /** A line's patient-responsibility adjustment (CAS PR at line level). */

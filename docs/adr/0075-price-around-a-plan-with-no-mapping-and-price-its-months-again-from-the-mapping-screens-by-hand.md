@@ -73,16 +73,21 @@ month it touched:
    No new unpriced reason and no engine change: `PricingRefusedError`, `assertPricingAllowed` and
    `assertPracticePricingAllowed` are deleted, `unmappedPlanIds` stays, and `practiceUnmappedPlanIds` returns the
    unmapped plans instead of throwing.
-2. **A period none of whose plans has a mapping gets no run (D2).** It would price nothing. `createPricingRun` throws
-   `PricingRunNothingMapped` (counts only) before the location check, so the monitor still lists the month in
-   `waitingOnMapping`, now logged with `record_count`, and a person's run is refused on "First month of service": "none
-   of the period’s plans has a mapping yet, so a run would price nothing: map them on Payer and plan mapping, and each
-   month is priced once every plan it holds is mapped".
+2. **A period no line of which has a mapping of its plan in force on its date gets no run (D2).** It would price
+   nothing. "Mapped" is decided per line by the mapping in force on its date (`mappingInForce`,
+   `payer_plan_mapping_in_force`), the resolver's own rule, so a mapping only for other dates maps nothing (PR #95
+   review R3N-1, security F2). `createPricingRun` throws `PricingRunNothingMapped` (counts only) before the location
+   check, so the monitor still lists the month in `waitingOnMapping`, now logged with `record_count`, and a person's
+   run is refused on "First month of service": "none of the period’s plans has a mapping in force on its lines’ dates
+   yet, so a run would price nothing: map them on Payer and plan mapping. A month is priced as soon as every plan it
+   holds is mapped, or once any one is, by the daily monitoring or a run from here; its other plans’ lines then need it
+   priced again." (review F2).
 3. **Nothing is refused at execution.** A mapping is corrected, never removed, so a run whose plans were mapped at
    creation still has them when it prices; a run created before this change and priced after it prices as rule 1
    says. `FailureCode` keeps `unmapped_plan` for the runs that already failed with it, and the run page words it as a
-   failure of the past: "A plan of the period’s lines had no mapping, and runs then stopped for it (before combined
-   audit #32); create a new run: it prices every mapped plan."
+   failure of the past, with no internal name (review UX-6): "A plan of the period’s lines had no mapping, and at the
+   time a run stopped for that. Runs no longer do: create a new run, which prices every mapped plan and leaves the
+   unmapped plan’s lines unpriced."
 4. **The other waits are unchanged.** A month still waits, with no new run, on the pricing location (ADR 0064) and on
    Medicare content its release does not load (ADR 0071), in the monitor's order: location, content, then rule 2. A
    line of a plan with no mapping stops at the resolver, so it reads neither the locality nor any Medicare content and
@@ -173,9 +178,11 @@ month it touched:
     usual." and "Map them" (or, without `mapping.edit`, "See them on Payer and plan mapping"); a second Alert, "{L}
     lines of mapped plans are still not priced", links to the months to price again. Everyone who opens the practice
     sees the figures; only `mapping.edit` holders get the actions.
-17. **The reports.** The coverage report (present tense, of the practice now) says "{N} plans have no mapping; their
-    lines are not priced ({L} lines, {$X} billed)."; a stored report without the two new optional fields keeps both of
-    its own sentences, in each view. The audit report (past tense, of one run as priced) says "{N} plans had no mapping
+17. **The reports.** The coverage report is a stored snapshot, its figures fixed when it is made, so a new one says in
+    the past tense "{N} plans had no mapping; their lines were not priced ({L} lines, {$X} billed)." or "Every plan
+    with lines had a mapping.": a plan mapped later never makes a stored document false (review UX-5; the screens keep
+    the present tense, of the practice now). A stored report without the two new optional fields keeps both of its own
+    sentences, in each view. The audit report (past tense, of one run as priced) says "{N} plans had no mapping
     when this run was priced; their lines are not priced ({L} lines, {$X} billed).", from the run's own coverage.
 
 ### The milestone 3 exception

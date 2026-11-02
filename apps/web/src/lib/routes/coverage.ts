@@ -78,7 +78,7 @@ export interface CoveragePageData {
   readonly contentHeadline: ContentHeadline;
   /** The fee-schedule periods the release in force does not load, with the lines in effect unpriced for them (audit #7 and #59). */
   readonly feeScheduleNotLoaded: readonly { readonly period: FeeSchedulePeriod; readonly lines: number; readonly chargeCents: string }[];
-  /** The plans with no mapping at all, whose lines no run prices, with their lines and billed cents (MAP-06). */
+  /** The plans with no mapping in force on their lines' dates, whose lines no run prices, with their lines and billed cents (MAP-06; R3N-1). */
   readonly unmappedPlans: UnmappedPlanTotals;
   /** The lines of mapped plans still NO_MAPPING in the pricing in effect, their billed cents and the runs holding them (PRC-31). */
   readonly mappedNotPriced: MappedNotPricedTotals;

@@ -306,9 +306,12 @@ function document(kind: ReportDocumentKind, title: string, short: string, covers
 /**
  * The coverage report's sentence on plans with no mapping, in the words of the rule it was generated
  * under. A report that records the unmapped plans' lines and cents (combined audit #32, docs/adr/0075;
- * PRC-30) says the plans' lines are not priced while the rest price; one generated before keeps both of
- * its own sentences, true when it was generated, since a stored document is never reworded into a
- * different claim (decision D8; review R3-9). The same presence check decides both branches.
+ * PRC-30) says, in the past tense, that the plans had no mapping and their lines were not priced: the
+ * report is a stored snapshot whose figures are fixed when it is generated, and a plan mapped later
+ * must not make it state something false (UX-5; D8 amended: the screens speak of the practice now, a
+ * stored report of the moment it was made). One generated before keeps both of its own sentences, true
+ * when it was generated, since a stored document is never reworded into a different claim (decision D8;
+ * review R3-9). The same presence check decides both branches.
  */
 function readinessText(readiness: CoverageReportContent['readiness']): string {
   if (readiness.unmapped_lines === undefined || readiness.unmapped_charge_cents === undefined) {
@@ -317,10 +320,9 @@ function readinessText(readiness: CoverageReportContent['readiness']): string {
       : `${plural(readiness.unmapped_plans, 'plan')} had no mapping at all: a pricing run over them is refused until they are mapped.`;
   }
   if (readiness.allowed) {
-    return 'Every plan with lines has a mapping.';
+    return 'Every plan with lines had a mapping.';
   }
-  const one = readiness.unmapped_plans === 1;
-  return `${plural(readiness.unmapped_plans, 'plan')} ${one ? 'has' : 'have'} no mapping; ${one ? 'its' : 'their'} lines are not priced (${plural(readiness.unmapped_lines, 'line')}, ${usd(readiness.unmapped_charge_cents)} billed).`;
+  return `${plural(readiness.unmapped_plans, 'plan')} had no mapping; ${readiness.unmapped_plans === 1 ? 'its' : 'their'} lines were not priced (${plural(readiness.unmapped_lines, 'line')}, ${usd(readiness.unmapped_charge_cents)} billed).`;
 }
 
 /** The coverage report as one self-contained HTML document: what the Coverage screen showed when it was generated. */

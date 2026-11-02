@@ -2,7 +2,7 @@
   "case": "PRC-30",
   "module": "PRC",
   "title": "The coverage a run records of plans with no mapping",
-  "assertion": "`tp-pricing-coverage/2` lists each plan of the run's lines with no mapping when it was priced, with all its lines (whatever their unpriced reason) and billed cents, together at most the run's unpriced count. A `tp-pricing-coverage/1` run reads as having none. The printed audit report says \"N plans had no mapping when this run was priced; their lines are not priced\", and the coverage report \"N plans have no mapping; their lines are not priced\"; a coverage report stored before keeps both of its own sentences",
+  "assertion": "`tp-pricing-coverage/2` lists each plan of the run's lines with no mapping when it was priced, with all its lines (whatever their unpriced reason) and billed cents, together at most the run's unpriced count. A `tp-pricing-coverage/1` run reads as having none. The printed audit report says \"N plans had no mapping when this run was priced; their lines are not priced\", and a new coverage report, its figures fixed when it was made, \"N plans had no mapping; their lines were not priced\"; a coverage report stored before keeps both of its own sentences",
   "synthetic": true,
   "completesIn": 3,
   "assertedBy": [
@@ -11,6 +11,8 @@
     "apps/web/src/components/pricing/display.test.tsx",
     "apps/worker/src/report/documents.test.ts",
     "apps/worker/src/report/report.test.ts",
+    "apps/worker/src/report/unmapped-report.db.test.ts",
+    "apps/web/src/components/reports/display.test.tsx",
     "apps/web/src/lib/routes/report-documents-routes.db.test.ts"
   ],
   "codeListRelease": null,
