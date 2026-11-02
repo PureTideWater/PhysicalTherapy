@@ -15,8 +15,8 @@ import { workspacePatterns } from './workspace';
  *   workspace's `packages`, as YAML and as tools/stryker/workspace.ts reads it, `onlyBuiltDependencies`, `overrides`,
  *   `patchedDependencies`), the test tooling and what the mutation tooling imports, a root dependency named for a
  *   runtime or not specified from the registry, and every key no table lists (fail closed). So is a file not read on
- *   one side, one that does not parse, a YAML anchor, alias, merge key, tag, directive or duplicate key, and a key
- *   holding a control character.
+ *   one side, one that does not parse, a YAML anchor, alias, merge key, tag, directive or duplicate key, and a key or
+ *   a manifest's path holding a control character.
  * - **Some packages**: a dependency or catalog entry by the closures that import it (the mirror rule: the lockfile
  *   rule names the same packages whenever the lockfile moves with it), and the module fields of a closure's own
  *   manifest by the packages whose closure lists it (its owners).
@@ -216,8 +216,13 @@ class Judgement {
 
   constructor(readonly file: string) {}
 
+  /** The file as a reason prints it: JSON-quoted when its path holds a control character, as a key is. */
+  private get shown(): string {
+    return hasControlCharacter(this.file) ? quoted(this.file) : this.file;
+  }
+
   private line(what: string, why: string): string {
-    return what === '' ? `${this.file} (${why})` : `${this.file} ${what} (${why})`;
+    return what === '' ? `${this.shown} (${why})` : `${this.shown} ${what} (${why})`;
   }
 
   global(what: string, why: string): void {
@@ -234,7 +239,7 @@ class Judgement {
 
   /** The runner-proof shard's packages, for a pin-only change of the workflow. */
   proved(packages: readonly MutationPackage[], text: string): void {
-    for (const pkg of packages) (this.some[pkg] ??= []).push(`${this.file} ${text}`);
+    for (const pkg of packages) (this.some[pkg] ??= []).push(`${this.shown} ${text}`);
   }
 
   inert(what: string, why: string): void {
@@ -549,7 +554,8 @@ export function workspaceManifestGlobs(text: string): string[] {
  * already holds (a manifest under tools/stryker/** stays global), unless a closure or the mutation tooling reads the
  * file whole (imports it, or lists it as data), which affected() then judges as it judges any other file. No text, an
  * unread side or a file that does not parse affects every package; an absent side is `{}` for a workspace manifest and
- * affects every package for a named file.
+ * affects every package for a named file. A manifest whose path holds a control character affects every package and
+ * is printed JSON-quoted, as a key is.
  */
 export function classifyManifests(change: Change, closures: readonly Closure[], global: GlobalInputs, tooling: readonly string[]): ManifestVerdict[] {
   const context: Context = { closures, global, tooling: tooling.map(globToRegExp), globalNames: new Set([...global.imports.values()].flatMap((names) => [...names])) };
@@ -560,7 +566,8 @@ export function classifyManifests(change: Change, closures: readonly Closure[], 
     if (readWhole || (!named && (global.globs.some((glob) => globToRegExp(glob).test(file)) || !isWorkspaceManifest(file, global)))) continue;
     const judgement = new Judgement(file);
     const { before, after } = change.texts?.[file] ?? {};
-    if (before === undefined || after === undefined) judgement.global('', 'not read on one side');
+    if (hasControlCharacter(file)) judgement.global('', 'a path holding a control character');
+    else if (before === undefined || after === undefined) judgement.global('', 'not read on one side');
     else if (named && (before === null || after === null)) judgement.global('', 'added or deleted');
     else if (named && before !== null && after !== null) {
       if (file === ROOT_MANIFEST) classifyRoot(judgement, before, after, context);

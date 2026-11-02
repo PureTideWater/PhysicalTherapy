@@ -353,6 +353,13 @@ describe('on this repository', () => {
     const reasons = Object.values(result.reasons).flat();
     expect(reasons.some((reason) => reason.includes(JSON.stringify(key)))).toBe(true);
     expect(reasons.filter((reason) => reason.includes('\n'))).toEqual([]);
+    // A workspace manifest's path is the change's too: one holding the same newline is global, and printed JSON-quoted.
+    const file = `apps/${key}/package.json`;
+    const added = judge(changed(file, null, json({ name: '@tp/x', scripts: { dev: 'next dev' } })));
+    expect(added.packages).toEqual(ALL);
+    const lines = [...Object.values(added.reasons).flat(), ...(added.inert ?? [])];
+    expect(lines.some((line) => line.startsWith(JSON.stringify(file)))).toBe(true);
+    expect(lines.filter((line) => line.includes('\n'))).toEqual([]);
   });
 
   it('affects none for a catalog line for react or playwright-core, which no closure imports', () => {
