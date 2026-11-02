@@ -1,13 +1,15 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { CONTENT_IDS, ContentSummaryBuilder, type ContentId, type ReleaseCoverage, type RuleRecord, renderCoverageFile } from '@tp/rules';
-import { CONTENT_CALENDAR, type CalendarEntry, type ContentCalendar, type DueItem } from '@tp/rules/calendar';
+import { CONTENT_CALENDAR, CONTENT_FAMILIES, type CalendarEntry, type ContentCalendar, type ContentState, type DueItem, type DueSources, contentDue } from '@tp/rules/calendar';
 import { readRecordFile } from '@tp/rules/content';
+import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 
 import {
   type FetchAnswer,
@@ -25,7 +27,7 @@ import {
   watchSources,
 } from './fetch';
 import { runContentCalendar } from './index';
-import { MAX_BODY, MAX_FILE_BYTES, MAX_OPENED_PER_RUN, findings, findingsJson, sourceBody, summaryMarkdown } from './render';
+import { FINDINGS_PER_FAMILY, MAX_BODY, MAX_FILE_BYTES, MAX_FINDINGS, MAX_OPENED_PER_RUN, MAX_TITLE, dueBody, findings, findingsJson, sourceBody, summaryMarkdown } from './render';
 import { pendingFingerprint, readCalendarSources, readPendingStatesCached } from './sources';
 
 /**
@@ -486,11 +488,12 @@ describe('the fetcher (fix round SB-3, SB-4)', () => {
 describe('the findings file', () => {
   const MUE_ONLY: ContentCalendar = [reviewed(entryOf('ncci_mue'))];
 
-  async function run(argv: string[], calendar?: ContentCalendar): Promise<{ code: number; out: string; summary: string; stderr: string }> {
+  async function run(argv: string[], calendar?: ContentCalendar, maxFileBytes?: number): Promise<{ code: number; out: string; summary: string; stderr: string }> {
     let stderr = '';
     const code = await runContentCalendar([...argv, '--out', path.join(root, 'findings.json'), '--summary', path.join(root, 'summary.md')], {
       root,
       ...(calendar === undefined ? {} : { calendar }),
+      ...(maxFileBytes === undefined ? {} : { maxFileBytes }),
       fetcher: () => Promise.reject(new Error('no network in tests')),
       sleep: () => Promise.resolve(),
       stdout: () => undefined,
@@ -576,12 +579,146 @@ describe('the findings file', () => {
   });
 
   it('refuses a findings file past its bound, so the check fails rather than hand on a cut list', () => {
-    const one = { title: 'Finding', body: 'x'.repeat(MAX_BODY) };
-    const fits = Math.floor(MAX_FILE_BYTES / (MAX_BODY + 60));
-    expect(() => findingsJson(Array.from({ length: fits }, () => one))).not.toThrow();
-    expect(() => findingsJson(Array.from({ length: fits + 20 }, () => one))).toThrow(RangeError);
-    // Its base64 fits GitHub's 1 MB job output.
-    expect(Math.ceil(MAX_FILE_BYTES / 3) * 4).toBeLessThan(1_000_000);
+    // The bound a caller gives, and MAX_FILE_BYTES itself, to the byte. The message has no separators.
+    const one = (body: string) => [{ title: 'Finding', body }];
+    const empty = Buffer.byteLength(`${JSON.stringify(one(''), null, 2)}\n`);
+    expect(MAX_FILE_BYTES).toBe(2_000_000);
+    expect(() => findingsJson(one('x'.repeat(MAX_FILE_BYTES - empty)))).not.toThrow();
+    expect(() => findingsJson(one('x'.repeat(MAX_FILE_BYTES - empty + 1)))).toThrow(new RangeError(`the findings file holds ${String(MAX_FILE_BYTES + 1)} bytes, over ${String(MAX_FILE_BYTES)}`));
+    expect(() => findingsJson(one('x'.repeat(101 - empty)), 100)).toThrow(new RangeError('the findings file holds 101 bytes, over 100'));
+    expect(() => findingsJson(one('x'.repeat(100 - empty)), 100)).not.toThrow();
+  });
+
+  it("refuses a finding's title over MAX_TITLE characters, GitHub's limit on an issue title, and admits one at it (ci-findings-transport)", () => {
+    // The title bound's only test: the calendar's schema caps an entry's title at 80, so the CLI cannot reach it.
+    expect(MAX_TITLE).toBe(256);
+    expect(() => findingsJson([{ title: 'x'.repeat(MAX_TITLE), body: 'Body' }])).not.toThrow();
+    expect(() => findingsJson([{ title: 'x'.repeat(MAX_TITLE + 1), body: 'Body' }])).toThrow(new RangeError("a finding's title is 257 characters, over 256"));
+    // findings() refuses no count: the count is held by the generators' property below, not at run time.
+    const item = (index: number): DueItem => ({ family: null, stage: 'no_release', title: `Finding ${String(index)}`, loadedThrough: null, period: null, dueOn: null, commands: [], lines: ['x'] });
+    expect(findings(Array.from({ length: 3 * MAX_FINDINGS }, (_, index) => item(index)), [], CONTENT_CALENDAR, { releaseNo: null })).toHaveLength(3 * MAX_FINDINGS);
+  });
+
+  it('writes the summary before it bounds the findings file, so a check stopped at the bound still names every finding (ci-findings-transport)', async () => {
+    writeCoverage('content/releases', 3, everyContent({ ncci_mue: content('ncci_mue', '2026-01-01', '2026-12-31') }));
+    const whole = await run(['--today', '2026-12-01', '--no-fetch'], MUE_ONLY);
+    expect(whole.code).toBe(0);
+    const bytes = Buffer.byteLength(whole.out);
+    expect(bytes).toBeGreaterThan(100);
+    rmSync(path.join(root, 'findings.json'));
+    rmSync(path.join(root, 'summary.md'));
+    const refused = await run(['--today', '2026-12-01', '--no-fetch'], MUE_ONLY, 100);
+    expect(refused.code).toBe(1);
+    expect(refused.summary).toBe(whole.summary);
+    expect(refused.summary).toContain('- Content due: Medicare unit limits (MUE), loaded content ends within 45 days (2026-12-31)\n');
+    expect(existsSync(path.join(root, 'findings.json'))).toBe(false);
+    expect(refused.stderr).toBe(`content-calendar: the findings file holds ${String(bytes)} bytes, over 100\n`);
+  });
+
+  it('cuts a body with no line to cut at a whole character, never inside a surrogate pair (ci-findings-transport)', () => {
+    // 6,001 units: one letter, then 3,000 pairs, so a cut at MAX_BODY units would end on a high surrogate.
+    const item: DueItem = { family: null, stage: 'no_release', title: 'Finding', loadedThrough: null, period: null, dueOn: null, commands: [], lines: [`x${'\u{1F600}'.repeat(3_000)}`] };
+    const body = dueBody(item, CONTENT_CALENDAR, { releaseNo: null });
+    expect(body.length).toBeLessThanOrEqual(MAX_BODY);
+    expect(body).not.toMatch(/[\uD800-\uDBFF]$/);
+    expect(body.isWellFormed()).toBe(true);
+  });
+
+  it("every finding reaches the notify job whole, and every issue it writes fits GitHub's limits (ci-findings-transport)", () => {
+    // GitHub refuses an issue title over 256 characters and a body over 65,536 ("body is too long (maximum is 65536
+    // characters)"): the API's refusals, not documented limits.
+    const GITHUB_TITLE = 256;
+    const GITHUB_BODY = 65_536;
+    // The worst UTF-16 unit, computed: a control character or a lone surrogate escapes as six bytes of JSON.
+    const worstUnit = Math.max(...Array.from({ length: 65_536 }, (_, code) => Buffer.byteLength(JSON.stringify(String.fromCharCode(code))) - 2));
+    expect(worstUnit).toBe(6);
+    expect([Buffer.byteLength(JSON.stringify('\u{1F600}')) - 2, '\u{1F600}'.length]).toEqual([4, 2]);
+    // The count: two of the calendar's own and three per family (the generators' property below holds it).
+    expect(FINDINGS_PER_FAMILY).toBe(3);
+    expect(MAX_FINDINGS).toBe(2 + FINDINGS_PER_FAMILY * CONTENT_FAMILIES.length);
+    expect(MAX_TITLE).toBe(GITHUB_TITLE);
+    // The worst file: every finding at its longest, every unit escaped as six bytes (findingsJson has no duplicate-title
+    // rule). Two-space JSON takes 39 bytes an entry, 2 between entries and 5 for the list.
+    const worst = Array.from({ length: MAX_FINDINGS }, () => ({ title: '\u0001'.repeat(MAX_TITLE), body: '\u0001'.repeat(MAX_BODY) }));
+    const bytes = Buffer.byteLength(findingsJson(worst));
+    expect(bytes).toBe(5 + MAX_FINDINGS * (39 + worstUnit * (MAX_TITLE + MAX_BODY)) + 2 * (MAX_FINDINGS - 1));
+    expect(bytes).toBe(1_540_660);
+    expect(bytes).toBeLessThanOrEqual(MAX_FILE_BYTES);
+    // P3 as #86 wrote it: MAX_OPENED_PER_RUN worst findings and the others, whole, fit MAX_FILE_BYTES, the transport's
+    // capacity (an artifact has no smaller cap): the same worst file, which holds every other title whole too.
+    expect(MAX_OPENED_PER_RUN).toBeLessThanOrEqual(MAX_FINDINGS);
+    // What the notify job writes. An opened body: the finding's, its run line (44 characters with jq's newline) and a
+    // run address of at most 100.
+    expect(MAX_BODY + '\n\n\nOpened by the content-calendar workflow: '.length + 100).toBeLessThanOrEqual(GITHUB_BODY);
+    // The "findings not filed" body: its header, at most MAX_LISTED titles and one last line, whatever the count.
+    const workflow = parse(readFileSync(path.join(REPOSITORY, '.github/workflows/content-calendar.yml'), 'utf8')) as { jobs: Record<string, { steps: { env?: Record<string, string> }[] }> };
+    const MAX_LISTED = 200;
+    expect(workflow.jobs.notify?.steps[0]?.env?.MAX_LISTED).toBe(String(MAX_LISTED));
+    const url = `https://github.com/${'o'.repeat(81)}`;
+    expect(url).toHaveLength(100);
+    const header = `A run opens at most ${String(MAX_OPENED_PER_RUN)} new issues. These 999999 findings were not filed by ${url}; a later run files them:\n\n`;
+    const last = "- and 999999 more, each named in the run's summary\n";
+    expect([header.length, last.length]).toEqual([202, 51]);
+    expect(256 + MAX_LISTED * (MAX_TITLE + '- \n'.length) + 64).toBe(52_120);
+    expect(52_120).toBeLessThanOrEqual(GITHUB_BODY);
+    // The check's summary fits GitHub's 1 MiB a step ("each step is restricted to a maximum size of 1MiB"), every title
+    // at its longest in three-byte units, the most a unit takes in UTF-8: the "not filed" issue points to it.
+    const titles = Array.from({ length: MAX_FINDINGS }, () => ({ title: 'ࠀ'.repeat(MAX_TITLE), body: '' }));
+    expect(Buffer.byteLength(summaryMarkdown(titles, '2026-11-01'))).toBeLessThanOrEqual(1_048_576);
+    // Why the old transport failed: one byte past 98,292, the base64 as FINDINGS_B64= and its NUL is over 131,072
+    // bytes, one environment string, and bash never starts (E2BIG); and as a job output, counted as UTF-16, the worst
+    // file's base64 is 4,108,432 bytes, over GitHub's 1 MB.
+    expect(4 * Math.ceil(98_292 / 3) + 'FINDINGS_B64='.length + 1).toBeLessThanOrEqual(131_072);
+    expect(4 * Math.ceil(98_293 / 3) + 'FINDINGS_B64='.length + 1).toBeGreaterThan(131_072);
+    expect(2 * 4 * Math.ceil(1_540_660 / 3)).toBe(4_108_432);
+    expect(2 * 4 * Math.ceil(1_540_660 / 3)).toBeGreaterThan(1_000_000);
+  });
+
+  it("a run has at most MAX_FINDINGS findings: two of the calendar's own and, per family, one review, one due item and one source finding (ci-findings-transport)", async () => {
+    expect(FINDINGS_PER_FAMILY).toBe(3);
+    expect(MAX_FINDINGS).toBe(2 + FINDINGS_PER_FAMILY * CONTENT_FAMILIES.length);
+    const day = fc.date({ min: new Date('2023-01-01T00:00:00Z'), max: new Date('2030-12-31T00:00:00Z'), noInvalidDate: true }).map((date) => date.toISOString().slice(0, 10));
+    const state: fc.Arbitrary<ContentState> = fc.record({
+      windows: fc.array(fc.tuple(day, day, fc.boolean()).map(([a, b, open]) => ({ from: a < b ? a : b, to: open ? null : a < b ? b : a })), { maxLength: 3 }),
+      newestFrom: fc.option(day, { nil: null }),
+      newestRetrieved: fc.option(day, { nil: null }),
+    });
+    // Synthetic file names, some matching an entry's pattern, some none.
+    const NAMES = ['RVU27A.zip', 'RVU26D_x.zip', 'ZIP5_2027.zip', 'ZIP9.zip', 'MPPR27.csv', 'MPPR26.zip', 'MUE27.csv', 'MUE26.zip', 'PTP27.zip', 'PTP26.zip', 'notes.pdf', 'a b.zip'];
+    const entry = fc.record({
+      entry: fc.constantFrom(...CONTENT_CALENDAR),
+      review: fc.option(day, { nil: null }),
+      knownFiles: fc.option(fc.subarray(NAMES), { nil: null }),
+      page: fc.option(fc.subarray(NAMES), { nil: null }),
+      inForce: fc.option(state, { nil: undefined }),
+      pending: fc.option(state, { nil: undefined }),
+    });
+    await fc.assert(
+      fc.asyncProperty(fc.uniqueArray(entry, { minLength: 1, maxLength: CONTENT_FAMILIES.length, selector: (one) => one.entry.family }), fc.option(fc.integer({ min: 1, max: 5 }), { nil: null }), day, async (drawn, releaseNo, today) => {
+        const calendar: ContentCalendar = drawn.map((one) => ({ ...one.entry, review: one.review === null ? null : { by: 'Synthetic Reviewer', on: one.review }, knownFiles: one.knownFiles }));
+        const statesOf = (key: 'inForce' | 'pending') => Object.fromEntries(drawn.flatMap((one) => (one[key] === undefined ? [] : one.entry.contents.map((id) => [id, one[key]]))));
+        const sources: DueSources = { releaseNo, inForce: statesOf('inForce'), pending: statesOf('pending') };
+        const pages = new Map(drawn.map((one) => [one.entry.source.page, one.page]));
+        const fetcher: Fetcher = (url) => {
+          const names = pages.get(url);
+          return names === null || names === undefined ? Promise.reject(new Error('unreachable')) : Promise.resolve({ status: 200, text: page(...names.map((name) => `/f/${name}`)) });
+        };
+        const items = contentDue(calendar, sources, today);
+        const found = await watchSources(calendar, fetcher, () => Promise.resolve());
+        const own = items.filter((item) => item.family === null);
+        expect(own.filter((item) => item.stage === 'no_release').length).toBeLessThanOrEqual(1);
+        expect(own.filter((item) => item.stage === 'calendar_unreviewed').length).toBeLessThanOrEqual(1);
+        expect(own.every((item) => item.stage === 'no_release' || item.stage === 'calendar_unreviewed')).toBe(true);
+        for (const family of CONTENT_FAMILIES) {
+          const mine = items.filter((item) => item.family === family);
+          expect(mine.filter((item) => item.stage === 'calendar_review_due').length, family).toBeLessThanOrEqual(1);
+          expect(mine.filter((item) => item.stage !== 'calendar_review_due').length, family).toBeLessThanOrEqual(1);
+          expect(found.filter((finding) => finding.entry.family === family).length, family).toBeLessThanOrEqual(1);
+        }
+        expect(findings(items, found, calendar, { releaseNo }).length).toBeLessThanOrEqual(MAX_FINDINGS);
+      }),
+      { numRuns: 200 },
+    );
   });
 
   it('refuses a title that is not one line', async () => {
