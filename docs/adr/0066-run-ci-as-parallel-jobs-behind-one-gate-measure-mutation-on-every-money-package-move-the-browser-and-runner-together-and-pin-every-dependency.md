@@ -739,7 +739,9 @@ minor-and-patch's pull request only by the file's order. GitHub's documentation 
 minor-and-patch now excludes every pattern the specific groups name, which routes each dependency to one group under
 both rules; CI-12 ports the assignment and routes every direct dependency. Alternative: `patterns: ["*"]` on
 minor-and-patch (rests on undocumented scores; routes as before under the documented rule). Revisit when: Dependabot
-documents its group precedence, or a group is added (the test fails until it is excluded).
+documents its group precedence; a group is added (the test fails until it is excluded); or dependabot-core changes its
+group assignment, such as how `exclude-patterns` or a group without patterns matches (GitHub picks the updater for
+each run: the weekly triage's step 1 reads each npm run's updater and its log for it).
 
 ## Part 3 (`co-001/ci-browser`)
 

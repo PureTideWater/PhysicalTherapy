@@ -77,8 +77,22 @@ Once a week, after Thursday's npm batch:
    run=<the npm run's id>
    job=$(gh api "repos/PureTideWater/PhysicalTherapy/actions/runs/$run/jobs" --jq '.jobs[0].id')
    gh api "repos/PureTideWater/PhysicalTherapy/actions/jobs/$job/logs" \
-     | grep -E 'belongs to more specific group|no dependencies match|does not match any allowed'
+     | grep -E 'Pulling image|belongs to more specific group|no dependencies match|does not match any allowed'
    ```
+
+   GitHub picks the updater for each run, and the log names it:
+   `Pulling image ghcr.io/dependabot/dependabot-updater-npm:<commit>`. CI-12's model ports dependabot-core 85379652
+   (`tools/test/dependabot-config.test.ts`), and run 40818560725 ran dec480ad, whose `updater/`, `common/` and
+   `npm_and_yarn/` equal 85379652's. When the commit differs from the last triage's, check the four files of the
+   group assignment in a blobless clone of dependabot-core:
+
+   ```sh
+   git diff --quiet 85379652 <commit> -- common/lib/dependabot/dependency_group.rb common/lib/wildcard_matcher.rb \
+     updater/lib/dependabot/dependency_group_engine.rb updater/lib/dependabot/updater/pattern_specificity_calculator.rb
+   ```
+
+   If it reports a difference, read the change against CI-12's port, record it, and amend the port in a pull request
+   when the routing changes.
 2. **Each open Dependabot pull request.** Read its checks, then its changes:
    - all green: read the release notes of every major or minor in it for a change in behaviour our code relies on,
      then take it as a pull request of the build's own: merge the build branch in, add what the notes call for, and
