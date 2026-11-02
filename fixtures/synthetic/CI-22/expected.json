@@ -1,0 +1,23 @@
+{
+  "case": "CI-22",
+  "module": "CI",
+  "title": "An image digest held to three days",
+  "assertion": "A digest new against the base's Dockerfiles, compose file and workflows passes on a pull request only when Docker Hub pushed it at least three days ago; a superseded or unreadable digest fails closed; an unchanged digest is never read; on a push a finding warns",
+  "synthetic": true,
+  "completesIn": 0,
+  "assertedBy": [
+    "tools/check-toolchain/images.test.ts",
+    "tools/check-toolchain/tree.test.ts",
+    "tools/check-toolchain/registry.test.ts",
+    "tools/check-toolchain/check.test.ts",
+    "tools/check-toolchain/exclude-window.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The Dockerfiles, docker-compose.yml and the workflows are read, at the head and in synthetic base trees; Docker Hub's answers are synthetic and recorded; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

@@ -36,9 +36,11 @@ export function chromiumInstalled(): boolean {
 export interface Harness {
   /**
    * Opens the harness's form `form` in a new page of `width` CSS pixels (1280 by default); its errors fail `errors()`.
-   * `init` is handed to the page as window.harnessInit before its script runs (the narrative editor's content).
+   * With `clock` (epoch ms), Playwright's fake clock is installed at that time before the page loads, so the test moves
+   * the page's own timers (a sign-in step's, docs/adr/0081). `init` is handed to the page as window.harnessInit before
+   * its script runs (the narrative editor's content).
    */
-  open(form: string, options?: { readonly width?: number; readonly init?: unknown }): Promise<Page>;
+  open(form: string, options?: { readonly width?: number; readonly clock?: number; readonly init?: unknown }): Promise<Page>;
   /** The uncaught errors of every page opened so far. */
   errors(): readonly string[];
   close(): Promise<void>;
@@ -79,6 +81,9 @@ export async function startHarness(): Promise<Harness> {
     async open(form, options = {}) {
       const page = await browser.newPage({ viewport: { width: options.width ?? 1280, height: 800 } });
       page.on('pageerror', (error) => errors.push(error.message));
+      if (options.clock !== undefined) {
+        await page.clock.install({ time: options.clock });
+      }
       if (options.init !== undefined) {
         await page.addInitScript((value) => {
           Object.assign(window, { harnessInit: value });

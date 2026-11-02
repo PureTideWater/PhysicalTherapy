@@ -18,6 +18,8 @@ export const SESSION_LIMITS = { absoluteHours: 12, idleMinutes: 30 } as const;
 export const SESSION_COOKIE = 'tp_session';
 export const DEVICE_COOKIE = 'tp_device';
 export const SIGN_IN_COOKIE = 'tp_sign_in';
+/** The email kept for a restart once a sign-in step closes (docs/adr/0081). */
+export const KEPT_EMAIL_COOKIE = 'tp_sign_in_email';
 /** A browser keeps its device cookie for 400 days (the longest browsers honour). */
 export const DEVICE_COOKIE_DAYS = 400;
 
