@@ -140,11 +140,21 @@ Once a week, after Thursday's npm batch:
    (below). An action whose tag moved under an unchanged pin (a push run's warning from `pnpm actions:check`): read
    why upstream moved it; a pin is a commit, so nothing we run changed, but a moved tag on a security tool is reported
    to the founder.
-6. **Stored ignores.** `@dependabot ignore …` comments on a pull request are stored by GitHub, outside the file. List
-   them with `@dependabot show <dependency> ignore conditions` on any Dependabot pull request, and remove one with
-   `@dependabot unignore <dependency>`; the file's `ignore` entries are the only ones meant to exist. A closed
-   individual pull request also holds its version back, outside both lists (step 2): today #16 (typescript 7.0.2) and
-   #17 (`@types/node` 26.6.5), both majors the file ignores anyway.
+6. **Stored ignores.** `@dependabot ignore …` comments on a pull request are stored by GitHub, outside the file; the
+   file's `ignore` entries are the only ones meant to exist. Read them first without writing anything: the npm run's
+   `Job definition:` log line (the job of step 1) lists every ignore condition with its `source`, and as
+   `existing-pull-requests` the individual pull requests Dependabot treats as existing, closed ones included, whose
+   versions it will not propose again (step 2):
+
+   ```sh
+   gh api "repos/PureTideWater/PhysicalTherapy/actions/jobs/$job/logs" | grep -m1 'Job definition' | sed 's/^[^{]*//' \
+     | jq -r '.job["ignore-conditions"][] | [.["dependency-name"], .source] | @tsv'
+   ```
+
+   A condition whose `source` is not `.github/dependabot.yml` was stored by a comment. On 2026-10-29 all five came from
+   the file, and `existing-pull-requests` held the closed #16 (typescript 7.0.2) and #17 (`@types/node` 26.6.5), both
+   majors the file ignores anyway. `@dependabot show <dependency> ignore conditions` on any Dependabot pull request
+   lists one dependency's, and `@dependabot unignore <dependency>` removes one; both are comments, so writes.
 
 Each triage is recorded in the item's design (`designs/` on build-ops), steps 1-6 in order.
 
