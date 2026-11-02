@@ -10,7 +10,13 @@ safer), recorded here and in the PR description.
 Open questions: none.
 
 <!-- RESUME-BLOCK -->
-## Current state (2026-11-01 20:55 UTC): reviews verified; fix round running (wf_401c564d-6b7)
+## Current state (2026-11-02 01:02 UTC): fix round built (WIP d257fe6d); checks and integration resumed
+- **Built** (builder of `wf_401c564d-6b7`, done before the 5-hour window cut the run at ~21:55 UTC): WIP ref
+  `co-001/wip-ci-images-digest` at **d257fe6d** = 29251dbb merge of 43565235 (#83), then 8681adb9 D1, 330deea0 D2,
+  c1e80912 D3, 9ac28806 D4, 6adc518f D5, a7ccead0 D6, 19cc7bf5 D7, 91910da1 D8, d5f987a4 D9, f89770ca D10, d257fe6d an
+  ADR wording fix (Part 5 "N23 to N31 with an N29 of its own"). The PR branch is still 83167b8f.
+- **Resumed 01:01 UTC** (same run, cached builder replayed): the eleven verifiers, then the integrator (full suite,
+  trial merges, records, §6.3 read, the one push). PostgreSQL restarted by the setup script. Check-in scheduled ~06:12 UTC.
 - **Fix round** `wf_401c564d-6b7` (script `workflow-scripts/lane-b-ci-images-digest-fix-round-wf_401c564d-6b7.js`),
   started ~20:53 UTC: merge the latest base (43565235, #83) first; D1–D10 below, one commit each, red/green logged, the
   WIP ref pushed as it goes; a verifier per disposition plus a whole-diff adversary (repair loop up to 2); then the
