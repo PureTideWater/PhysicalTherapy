@@ -17,6 +17,11 @@ const readJson = <T>(file: string): T => JSON.parse(readFileSync(path.join(infra
 const manifest = readJson<{ scripts: Record<string, string> }>('package.json');
 const cdkJson = readJson<{ context?: Record<string, unknown>; notices?: unknown }>('cdk.json');
 
+// The longest one spawned process (tsx or the CLI) may take. A test that spawns gets this much per process it spawns,
+// past the unit project's 5-second default, which a cold CI runner can overrun: the first run of the cdk:diff test in a
+// fresh worktree took 4.6 s. So a slow process fails as its own timeout, with its output, not as the test's.
+const SPAWN_TIMEOUT_MS = 60_000;
+
 // The commands of a script, split at the shell's separators.
 const commands = (script: string): string[] => script.split(/&&|\|\||;|\||&/).map((command) => command.trim());
 // A command that names the cdk CLI as a word, however it is started (directly, by a package runner, by a path, through
@@ -63,7 +68,7 @@ const cdkDiffCalls = (): CdkCall[] => {
     const result = spawnSync(process.execPath, [tsx, 'scripts/cdk-diff.ts'], {
       cwd: infraDir,
       encoding: 'utf8',
-      timeout: 60_000,
+      timeout: SPAWN_TIMEOUT_MS,
       env: {
         PATH: `${dir}${path.delimiter}${process.env.PATH ?? ''}`,
         HOME: dir,
@@ -105,7 +110,7 @@ const runCli = (args: readonly string[], variables: Readonly<Record<string, stri
     const result = spawnSync(process.execPath, [cliBin, ...args, '-vv'], {
       cwd: infraDir,
       encoding: 'utf8',
-      timeout: 60_000,
+      timeout: SPAWN_TIMEOUT_MS,
       env: {
         PATH: process.env.PATH ?? '',
         HOME: home,
@@ -150,7 +155,7 @@ describe("the repository's cdk runs send no telemetry, fetch no notices and skip
       expect(call.args, call.args.join(' ')).toContain('--no-notices');
     }
     expect(runCli(['cli-telemetry', '--status', '--no-notices'], calls[0]?.env ?? {}).output).toMatch(/CLI Telemetry is disabled\./);
-  });
+  }, 2 * SPAWN_TIMEOUT_MS);
 
   it("leaves notices to the CLI default for a person's own cdk commands: cdk.json sets no notices key", () => {
     expect(cdkJson).not.toHaveProperty('notices');
@@ -160,13 +165,13 @@ describe("the repository's cdk runs send no telemetry, fetch no notices and skip
     const variables = prefixVariables(manifest.scripts.synth ?? '');
     expect(Object.keys(variables)).toContain('CDK_DISABLE_CLI_TELEMETRY');
     expect(runCli(['cli-telemetry', '--status', '--no-notices'], variables).output).toMatch(/CLI Telemetry is disabled\./);
-  });
+  }, SPAWN_TIMEOUT_MS);
 
   it('makes the installed CLI fetch no notices under --no-notices, where without it the CLI does fetch them', () => {
     const variables = prefixVariables(manifest.scripts.synth ?? '');
     expect(runCli(['cli-telemetry', '--status'], variables).fetchedNotices, 'the control run, without --no-notices').toBe(true);
     expect(runCli(['cli-telemetry', '--status', '--no-notices'], variables).fetchedNotices).toBe(false);
-  });
+  }, 2 * SPAWN_TIMEOUT_MS);
 
   it('finds the installed CLI still skipping its version check when CDK_DISABLE_VERSION_CHECK is set', () => {
     // The check runs only when stdout is a terminal, which a test cannot give the CLI, so its code is read.
