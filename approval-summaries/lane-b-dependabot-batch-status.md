@@ -41,6 +41,14 @@ the outcome: one full suite per head, no review loops past dry, no follow-on ite
 stop at a clean point and report. For B: no wait for the merge-time version windows; the lockfile is regenerated only when a
 base merge needs it (rule 6). WIP refs kept pushed.
 
+ORCHESTRATOR RULING (2026-11-02 06:22 UTC): this session owns the FRM-01 fix as **PR D** of the batch: branch
+`co-001/test-flakes-2` from the latest base, tests only: (1) FRM-01's `shownCount` wait becomes monotonic (data-shown >= N),
+with a test proving the old exact wait could hang (the forced reproduction); (2) if cheap, the second flake
+`apps/worker/src/report/csv-arena.test.ts:151` (CAS-41.3, timed out at its 5 s default under runner load on #92's merge run)
+gets an explicit timeout sized from its measured runtime, or the reason why not. No new test-matrix IDs. The claim joins this
+item's row. Pipeline: draft PR, two reviews (CI/test infrastructure; a skeptic of the race analysis), one fix round,
+verification, merge when green. Order: after B and C if it slows them, otherwise as soon as ready.
+
 ## Now (2026-11-01T14:50:00Z)
 - **Stage: not started; session starting.** No pipeline stage is done: design, build, draft PRs, reviews, fix round,
   verification, merge, then closing the bot PRs.
@@ -275,6 +283,11 @@ base merge needs it (rule 6). WIP refs kept pushed.
   commit kept git's "# Conflicts:" lines after the attribution lines; unpushed, so it was replaced by f43f809d (same tree and
   parents, clean message) with a soft reset. WIP refs: `co-001/wip-dependabot-batch-b` = f43f809d, `-c` = a84a498b. Setup
   re-run (PostgreSQL down); fix rounds resume next (wf_66dd34d8-a6a, same run id).
+
+- 2026-11-02T06:25:00Z: PR D ruling recorded (top). `co-001/test-flakes-2` created on origin at 88708069 through the hook.
+  C's saved head is b1fd5df1 (the suite stage had committed check N2 and N3 before the stop), not a84a498b as logged above.
+  Plan for D: design from the FRM-01 investigation and its skeptic (the design's reviewer), plus a CAS-41.3 runtime
+  measurement; build after B's and C's full suites, so D does not slow them (all heavy work shares one lock).
 
 ## Waiting on someone
 - The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
