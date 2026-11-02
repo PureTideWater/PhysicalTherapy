@@ -7,7 +7,18 @@ session_01FcouKNxVRK8x6iV52PfxXz, a Lane B item session started 2026-11-01 by La
 (`co-001/ux-sign-in-recovery`) and UX PR 8 get their own sessions later; this one leaves design 3.5's hooks for PR 7.
 GitHub login: PureTideWater.
 
-## Now (2026-11-02 01:35 UTC): fix round pushed (b8654622); shots-based UX review running
+## Now (2026-11-02 02:00 UTC): head ab68af87 (base merged); description + fresh-clone verification running
+- **Shots-based UX and brand review** (wf_055bfbb1-e76): after shots at b8654622, 81 of 81 ids, 0 skips (tour fix ddd6fd1f:
+  Start again by link or button); before at bce57f16 in screens-before-2. Findings: UXR2-01 (should-fix, upheld: a closed
+  enrolment's setup key still looked usable) applied; UXR2-02 (dark-only contrast of the marker) refuted (no dark switch,
+  ADR 0056), an advisory for the dark-mode work.
+- **Fix 2 + base merge** (wf_5971145f-281): d557f7d9 (UXR2-01: "This step and its setup key have closed."), ab68af87
+  merge of claude/build-platform 43565235 (#83), clean, tree identical to git's own merge; checks on the merged tree all
+  pass (unit 6,959; db 30 targeted; harness 14; e2e sign-in-time + screening-phone 5/5). Pushed ab68af87. CI was green on
+  e4e05a0d and b8654622.
+- **Running:** wf_1b56253c-138 (the description rewritten for the final head and checked; the fresh-clone verification
+  reading CI on ab68af87). Then: mark ready, wait for approval-of-record's re-run, merge with expectedHeadSha (20:36
+  ruling: merge when verified and green).
 - **Pushed** b8654622 to #92 (one push). The full local suite passed on it: install, check:fixtures, typecheck, lint,
   lint:copy, lint:logs, verify-content, engine-freeze, watched paths, synth; unit 6,932; golden 376; oracle 687; db 9,298
   (4 shards); build + stamp; e2e 67 (34 + 33, E2E_PREBUILT=1, the real 3-minute test 3.1 min); Stryker: no money path,
@@ -84,3 +95,5 @@ None blocks this PR. UX PR 66 (Cognito/infra, Lane A); the "three days" comment 
 | 2026-11-01 20:35 | Reviews done; fix round | Reviews wf_b4cf4f54-7c4 (description, security, UX from code; capture cut off). Fix round wf_aabddb31-b59 and before re-run wf_12938616-543 started. |
 | 2026-11-02 01:15 | Fix round committed | wf_aabddb31-b59 fixes + checks done; suite stopped by the limit in e2e, resumed after a machine restart; b8654622 local, WIP ref -2; before re-run done (wf_6dc4c594-2c1). |
 | 2026-11-02 01:35 | Fix round pushed | Suite green (e2e 67, db 9,298); b8654622 pushed; UX review with shots wf_055bfbb1-e76 started. |
+
+| 2026-11-02 02:00 | Base merged | UX review with shots (UXR2-01 applied); #83 merged in (ab68af87, pushed); verification wf_1b56253c-138 started. |

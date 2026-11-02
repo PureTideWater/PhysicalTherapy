@@ -1,0 +1,11 @@
+# sgn-fix2 progress
+- Step 1 (UXR2-01): edited step-timer.tsx (cue prop), enroll/page.tsx (cue), step-timer.test.tsx (cue test), e2e sign-in-time.spec.ts (expectOneLineCell at 1280/390 in enrolment open; closed phrase), design 6.1 row + section 9 second-review table. Pending: verify tests.
+- Step 2: committed d557f7d9
+- Step 3: merged base 43565235 as ab68af87 (clean). #83 db tests: none; e2e: screening-phone.spec.ts
+- install: up to date; watched.ts --write: 542 lines, no change; synth --all: 0 written. No follow-up commit.
+- typecheck, lint, lint:copy, lint:logs, verify-content, check:fixtures: all exit 0
+- pnpm test: 411 files, 6959 passed, 4 skipped, exit 0
+- db tests (sign-in-routes, sign-in, seed): 3 files 30 passed; #83 changed no db test
+- step-timer.browser.test.tsx: 14 passed
+- build (by playwright webServer, BUILD_ID 01:46:39 UTC) + e2e sign-in-time.spec.ts (4) and screening-phone.spec.ts (1): 5 passed (4.6m), exit 0
+- tp_e2e_fix2 dropped. DONE. Not pushed.
