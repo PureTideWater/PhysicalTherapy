@@ -34,6 +34,7 @@ export default async function EnrollPage() {
               warning: 'Starting again gives you a new setup key: replace this one in your authenticator app.',
               closed: 'This setup key no longer works: starting again gives you a new one.',
             }}
+            cue={{ closed: 'This step and its setup key have closed.' }}
           >
             <p className="rounded-md border bg-muted px-3 py-2 font-mono text-sm" data-slot="totp-secret" data-secret={secret}>
               {grouped}

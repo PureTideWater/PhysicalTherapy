@@ -70,14 +70,16 @@ WCAG 2.2.1 (A, a timing that is adjustable), 2.2.6 (AAA, taken as practice: the 
   that the step closed), never by moving the focus, with nothing animated. It says what Start again costs and keeps
   ("If you need more time, start again: your email is kept, and you type your password again."), and on enrolment that
   the setup key will change. The limit sentence above the work shows the same state in a few words ("This step closes
-  within a minute.", "This step has closed."), its three phrases stacked in one grid cell sized from the first render,
-  so a phone with its keyboard up shows the warning beside the field without anything moving; the sentence is not a
-  live region, so the warning is said once, by the region. The browser counts on the smaller of its wall and monotonic
-  clocks, anchored per deadline so a re-render keeps its first count, and takes off the latency between the server's
-  render and the page's load; the server decides.
+  within a minute.", "This step has closed.", on enrolment "This step and its setup key have closed."), its three
+  phrases stacked in one grid cell sized from the first render, so a phone with its keyboard up shows the warning
+  beside the field without anything moving; the sentence is not a live region, so the warning is said once, by the
+  region. The browser counts on the smaller of its wall and monotonic clocks, anchored per deadline so a re-render
+  keeps its first count, and takes off the latency between the server's render and the page's load; the server
+  decides.
 - **D5. At zero** the same region says once that the step has closed, with Start again; nothing redirects, the form
-  stays usable (its button is never `disabled`), and the next press or a reload lands on
-  `/sign-in?reason=step_expired`. The setup key is not hidden: the closed words say it no longer works.
+  stays usable (its button is never `disabled`), and the next press or a reload lands on `/sign-in?reason=step_expired`.
+  The setup key is not hidden: the sentence directly above it says it has closed with the step, and the closed words say
+  it no longer works.
 - **D6. Start again ends the step and keeps the email.** Start again is a button, styled as an outline button, in a
   form whose action (`restartStep`, the public route `sign_in.restart`) ends the step the person is leaving before the
   sign-in page renders: it deletes `tp_sign_in`, gives key registration's grant back to the provider, keeps

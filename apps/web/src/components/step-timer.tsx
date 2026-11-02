@@ -32,6 +32,11 @@ export interface StepTimerProps {
   readonly restart: (form: FormData) => void | Promise<void>;
   /** This step's own words, said with the warning and with the closed notice (enrolment's new key). */
   readonly notes?: { readonly warning?: string; readonly closed?: string };
+  /**
+   * This step's own sentence above the work once closed, in place of "This step has closed." (enrolment names its setup
+   * key, which sits right below it). It shares the sentence's cell, so it must fit on one line at 390 px, as the others do.
+   */
+  readonly cue?: { readonly closed?: string };
   readonly children: ReactNode;
 }
 
@@ -72,12 +77,12 @@ const FRESH_MS = 5_000;
  * rendered later in the step (`closesIn` more than a few seconds below the limit) states the time left instead, in
  * whole minutes rounded up after "within", so it stays true for as long as it is on screen without a ticking count.
  */
-export function limitPhrases(limitSeconds: number, warningSeconds: number, closesIn?: number): Readonly<Record<StepPhase, string>> {
+export function limitPhrases(limitSeconds: number, warningSeconds: number, closesIn?: number, cue?: StepTimerProps['cue']): Readonly<Record<StepPhase, string>> {
   const underWay = closesIn !== undefined && closesIn < limitSeconds * 1000 - FRESH_MS;
   return {
     open: underWay ? `This step closes ${within(Math.ceil(closesIn / 1000))}.` : `This step stays open for ${counted(Math.floor(limitSeconds / 60), 'minute')}.`,
     warning: `This step closes ${within(warningSeconds)}.`,
-    closed: 'This step has closed.',
+    closed: cue?.closed ?? 'This step has closed.',
   };
 }
 
@@ -127,7 +132,7 @@ function anchorOf(closesIn: number, closesAt: number | undefined, firstInDocumen
  * it stays in the accessibility tree from the first render. Start again is one form and button in both phases, so a
  * person who reached it during the warning still holds it once the step has closed.
  */
-export function StepTimer({ limitSeconds, warningSeconds, closesIn, closesAt, restart, notes, children }: StepTimerProps) {
+export function StepTimer({ limitSeconds, warningSeconds, closesIn, closesAt, restart, notes, cue, children }: StepTimerProps) {
   // The phase shown, with the step it belongs to: a new deadline is a new step, whose count starts again.
   const [shown, setShown] = useState<{ readonly closesAt: number | undefined; readonly phase: StepPhase } | null>(null);
   const phase = shown !== null && shown.closesAt === closesAt ? shown.phase : undefined;
@@ -182,7 +187,7 @@ export function StepTimer({ limitSeconds, warningSeconds, closesIn, closesAt, re
     };
   }, [closesIn, closesAt, warningSeconds]);
 
-  const phrases = limitPhrases(limitSeconds, warningSeconds, firstIn);
+  const phrases = limitPhrases(limitSeconds, warningSeconds, firstIn, cue);
   // Before the first count, the phase the server's time left gives, which the server and the browser render alike; the
   // status stays empty until the count, so nothing is said at load.
   const visible = phase ?? (closesIn === undefined ? 'open' : stepPhase(closesIn, warningSeconds * 1000));

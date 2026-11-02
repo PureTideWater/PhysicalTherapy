@@ -130,6 +130,17 @@ describe('the words', () => {
     expect(limitPhrases(900, 120)).toEqual({ open: 'This step stays open for 15 minutes.', warning: 'This step closes within 2 minutes.', closed: 'This step has closed.' });
   });
 
+  it('SGN-02: a step’s own closed sentence (enrolment’s, naming its setup key) takes the closed phrase’s place, and only that one', () => {
+    const cue = { closed: 'This step and its setup key have closed.' };
+    expect(limitPhrases(180, 60, undefined, cue)).toEqual({ open: 'This step stays open for 3 minutes.', warning: 'This step closes within a minute.', closed: 'This step and its setup key have closed.' });
+    expect(limitPhrases(180, 60, undefined, {})).toEqual(limitPhrases(180, 60));
+    const markup = server({ cue });
+    expect(markup).toContain('<span class="invisible col-start-1 row-start-1" aria-hidden="true">This step and its setup key have closed.</span></p>');
+    expect(markup).not.toContain('This step has closed.');
+    // The status keeps its own title: the cue is the sentence's alone.
+    expect(spokenWords('closed', 60).title).toBe('This step has closed');
+  });
+
   it('SGN-02: the status says what Start again costs and keeps, with the step’s own note after it', () => {
     expect(spokenWords('warning', 60)).toEqual({
       title: 'This step closes within a minute',

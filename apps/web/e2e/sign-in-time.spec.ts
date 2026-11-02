@@ -82,6 +82,28 @@ async function expectCueInView(page: Page, field: Locator, what: string): Promis
   }
 }
 
+/**
+ * The sentence's cell is one line tall at 1280 and at 390 px: each phrase shares it, the longest included, so the open
+ * state shows no blank line under its phrase (enrolment's closed phrase is the longest).
+ */
+async function expectOneLineCell(page: Page, what: string): Promise<void> {
+  const before = page.viewportSize();
+  try {
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 800 });
+      const cell = await page.locator('[data-slot="step-limit"]').evaluate((element) => ({
+        height: Math.round(element.getBoundingClientRect().height),
+        line: Math.round(Number.parseFloat(getComputedStyle(element).lineHeight)),
+      }));
+      expect(cell.height, `${what}: the sentence's cell is one line at ${String(width)} px (${JSON.stringify(cell)})`).toBe(cell.line);
+    }
+  } finally {
+    if (before !== null) {
+      await page.setViewportSize(before);
+    }
+  }
+}
+
 /** The step page's status, empty and polite, once the timer has counted: before the clock moves, so its anchor is taken first. */
 async function expectOpen(page: Page): Promise<void> {
   const region = regionOf(page);
@@ -370,6 +392,7 @@ test('an invited viewer’s steps are numbered, Start again during the warning k
     expect(await precedes(page.locator('[data-slot="step-limit"]'), page.locator('[data-slot="totp-secret"]'))).toBe(true);
     first = await setupKeyOf(page);
     await expectOpen(page);
+    await expectOneLineCell(page, 'Enrolment, open');
   });
 
   const kept = 'That sign-in step closed. Your email is filled in: type your password to start again.';
@@ -409,6 +432,8 @@ test('an invited viewer’s steps are numbered, Start again during the warning k
     await page.clock.fastForward('01:00');
     await expect(region).toHaveAttribute('data-phase', 'closed');
     await expect(region).toContainText('This setup key no longer works: starting again gives you a new one.');
+    // Directly above the setup key, the sentence says the key has closed with the step.
+    await expect(phraseOf(page)).toHaveText('This step and its setup key have closed.');
     await expectAccessible(page, 'Enrolment, closed');
   });
 
