@@ -1004,12 +1004,13 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
       needs #82's builder rule changed (`tools/check-action-pins/buildkit.ts` holds `driver-opts` to exactly
       `image=…@sha256:…`), so it stays with the founder.
   - **What holds it.** `workflows.test.ts` reads every expression that reaches a step's environment, an input or a
-    script, or a key, as the runner reads it, and admits only a closed list; it refuses any expression in a key, which
-    GitHub would evaluate as a variable's or an input's name. That list holds values GitHub or the workflow bounds,
-    and every step output and value one job hands another, each listed with its bound. It reads this repository's
-    workflows: a pinned action's own `action.yml` (its inputs' defaults, a composite's steps) and code are not read.
-    The defect this notice fixes came from action code, buildx copying the event into its metadata, which no
-    expression rule can read, so every step output is bounded where a workflow reads it, by the rule and its list.
+    script, or a key, as the runner reads it, and admits only a closed list; it refuses an expression in any key:
+    GitHub evaluates one in an env name, a step input's name (`INPUT_<key>`), a service's id or a matrix key, and
+    refuses the file for one anywhere else. That list holds values GitHub or the workflow bounds, and every step
+    output and value one job hands another, each listed with its bound. It reads this repository's workflows: a pinned
+    action's own `action.yml` (its inputs' defaults, a composite's steps) and code are not read. The defect this
+    notice fixes came from action code, buildx copying the event into its metadata, which no expression rule can read,
+    so every step output is bounded where a workflow reads it, by the rule and its list.
     - Each row names its producers by what they are, never by a line, and the test resolves each on the tree: a step
       by its job and id (a `uses:` step with its action, whose pin is the pin rules'), a job's output (which must
       declare one step's or needed job's output alone, whose own row's bound is within the reader's), a matrix key, a

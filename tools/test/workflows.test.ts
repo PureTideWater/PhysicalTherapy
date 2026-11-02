@@ -3176,7 +3176,8 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
    * env, outputs, strategy, container, services, with, secrets and defaults (its run's shell is the command the runner
    * starts); each step's env, with, run and working-directory (`if:` and `name:` reach none). GitHub's contexts table
    * names every key that takes a context. A mapping's keys are read too, anywhere in the file: GitHub evaluates an
-   * expression in an env name or an input's name (INPUT_<key>), so none may hold one. What it refuses, each naming its
+   * expression in an env name, an input's name (INPUT_<key>), a service's id or a matrix key, and refuses the file for
+   * one anywhere else, so none may hold one. What it refuses, each naming its
    * file, job, step and key, and the values it found for BOUNDED_VALUES.
    */
   function unboundedValueProblems(file: string, parsed: unknown): { problems: string[]; values: FoundValue[] } {
@@ -3210,8 +3211,8 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
         for (const [key, item] of Object.entries(value)) visit(item, `${where}.${key}`, job, step);
       }
     };
-    // Every key of the whole file, apart from the places visit reads: an expression in a key is refused wherever it
-    // stands (the security review's S1).
+    // Every key of the whole file, independent of the places visit reads: an expression in a key is refused wherever it
+    // stands.
     const keys = (value: unknown, where: string): void => {
       if (isList(value)) {
         value.forEach((item, index) => keys(item, `${where}[${String(index)}]`));
@@ -3603,9 +3604,10 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     }
 
     // An expression in a key, wherever GitHub evaluates one: an env name (the workflow's, a job's, a step's, a job
-    // container's or a service's) or a step input's name (INPUT_<key>), so the description would be an environment
-    // string's name. GitHub refuses one in a job's outputs or a reusable workflow's with: and secrets: when it parses
-    // the file, and the rule refuses those too.
+    // container's or a service's), a step input's name (INPUT_<key>), a service's id or a matrix key, so the
+    // description would be an environment string's name, a container's or a matrix value's; anywhere in a key, not only
+    // at its start. GitHub refuses one in a job's outputs, a reusable workflow's with: and secrets:, a step's own keys
+    // or a job's id when it parses the file, and the rule refuses those too.
     const body = '${{ github.event.pull_request.body }}';
     const keyed: (readonly [string, string])[] = [
       [`env: { "${body}": '1' }\njobs: { images: { runs-on: ubuntu-26.04, steps: [] } }`, `env.${body}`],
@@ -3617,6 +3619,10 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       [`jobs: { images: { runs-on: ubuntu-26.04, outputs: { "${body}": '1' }, steps: [] } }`, `jobs.images.outputs.${body}`],
       [`jobs: { images: { uses: ./.github/workflows/fixture.yml, with: { "${body}": '1' } } }`, `jobs.images.with.${body}`],
       [`jobs: { images: { uses: ./.github/workflows/fixture.yml, secrets: { "${body}": '1' } } }`, `jobs.images.secrets.${body}`],
+      [`jobs: { images: { runs-on: ubuntu-26.04, services: { "${body}": { image: 'postgres:18' } }, steps: [] } }`, `jobs.images.services.${body}`],
+      [`jobs: { images: { runs-on: ubuntu-26.04, strategy: { matrix: { "${body}": [a] } }, steps: [] } }`, `jobs.images.strategy.matrix.${body}`],
+      [`jobs: { images: { runs-on: ubuntu-26.04, steps: [{ name: The step, run: echo, "${body}": '1' }] } }`, `jobs.images.steps[0].${body}`],
+      [`jobs: { images: { runs-on: ubuntu-26.04, steps: [{ name: The step, env: { "X_${body}": '1' }, run: echo }] } }`, `jobs.images.steps[0].env.X_${body}`],
     ];
     for (const [jobs, where] of keyed) {
       expect(unboundedValueProblems('fixture.yml', parse(`name: fixture\non: push\n${jobs}\n`)).problems, where).toEqual([`fixture.yml ${where}: an expression in a key`]);
