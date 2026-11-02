@@ -24,11 +24,13 @@ import { CONFIG, attestedArchive } from '../screening-capacity/test-support/imag
  * the unit project runs, so their time grows with the runner's load. The content-calendar notify test took 0.9 s on an
  * idle 4-CPU container, 1.0 to 2.2 s in that nested run beside the full unit project, 1.8 s in CI's own run (job
  * 122241596089) and over 5 s in that job's nested run, which failed it at vitest's five-second default; on one CPU
- * shared with eight busy loops it took 7.4 s and the slowest other test 4.0 s. Thirty seconds holds four times the
- * worst of those. A test's timeout cannot interrupt a synchronous child process, so each one the file starts is bounded
- * by the same thirty seconds and killed after it: a hung script, git or actionlint fails its test rather than holding it.
+ * shared with eight busy loops it took 7.4 s and the slowest other test 4.0 s. The worst one is now the 41-finding
+ * notify test (ci-findings-transport): 1.3 to 1.5 s idle and 10.2 to 10.7 s on that loaded CPU. Forty-five seconds
+ * holds four times the worst of those. A test's timeout cannot interrupt a synchronous child process, so each one the
+ * file starts is bounded by the same forty-five seconds and killed after it: a hung script, git or actionlint fails its
+ * test rather than holding it.
  */
-const TEST_TIMEOUT_MS = 30_000;
+const TEST_TIMEOUT_MS = 45_000;
 vi.setConfig({ testTimeout: TEST_TIMEOUT_MS });
 
 /**
