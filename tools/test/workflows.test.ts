@@ -4427,9 +4427,10 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     expect(builds.filter(({ step }) => step.env?.BUILDX_METADATA_PROVENANCE !== 'disabled').map(({ where }) => where)).toEqual([]);
     // Each build's record (BuildKit's history, its provenance holding the whole event: a pull request's description,
     // title and labels, a push's commit messages and authors' e-mails) is an artifact any signed-in account can read in
-    // this public repository for 90 days, so a pull request's run uploads none; a push's and the release's keep the
-    // default, the release's record being the only full provenance of a released image. build-push-action v7.4.0 reads
-    // the variable in its post step with actions-toolkit's parseBool (true or false; anything else is a warning).
+    // this public repository for 90 days, so a pull request's run uploads none; every other run (a push's, a scheduled
+    // or a dispatched one's, the release's) keeps the default, the release's record being the only full provenance of a
+    // released image. build-push-action v7.4.0 reads the variable in its post step with actions-toolkit's parseBool
+    // (true or false; anything else is a warning).
     expect(builds.filter(({ step }) => step.env?.DOCKER_BUILD_RECORD_UPLOAD !== "${{ github.event_name != 'pull_request' }}").map(({ where }) => where)).toEqual([]);
     // And nothing else: another of build-push-action's variables (DOCKER_BUILD_SUMMARY: false skips the record's export
     // and upload on every run) set on a build, or any DOCKER_BUILD_ or BUILDX_ variable set for a whole job or
