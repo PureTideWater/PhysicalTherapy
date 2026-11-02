@@ -4,7 +4,7 @@ import { cents, formatUsd } from '@tp/money';
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 import { Fragment, type ReactNode } from 'react';
 
-import type { BillableView, CorrectionView, MatchView } from '../../lib/reconciliation/queries';
+import type { BillableView, CorrectionView, MatchView, ReportedInterestView } from '../../lib/reconciliation/queries';
 import { Money } from '../remittances/display';
 
 /**
@@ -85,7 +85,7 @@ export function LedgerTotals({ totals, title, description }: { readonly totals: 
     { key: 'posted', label: 'Posted', cents: totals.postedCents, note: 'posting export rows matched to the remittance' },
     { key: 'deposited', label: 'Deposited', cents: totals.depositedCents, note: 'bank export rows matched to the remittance' },
     { key: 'recouped', label: 'Recouped', cents: totals.recoupedCents, note: 'taken back by PLB WO or a reversal' },
-    { key: 'interest', label: 'Interest', cents: totals.interestCents, note: 'paid by the payer, apart from principal' },
+    { key: 'interest', label: 'Interest', cents: totals.interestCents, note: 'paid by the payer, net of any it took back, apart from principal' },
   ];
   return (
     <Card role="region" aria-label={title}>
@@ -116,6 +116,44 @@ export function LedgerTotals({ totals, title, description }: { readonly totals: 
         </dl>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * An interest match's words after its remittance (designs/ledger-interest-once.md section 7; docs/adr/0084): a PLB L6's
+ * interest paid or taken back in its check, by the sign of the match's own interest entry; an AMT I match written before
+ * the interest fix (development data only) keeps its words.
+ */
+export function interestWords(match: Pick<MatchView, 'source' | 'takesBack'>): string {
+  if (match.source !== 'plb') {
+    return ': the claim’s interest';
+  }
+  return match.takesBack ? ': interest taken back in this check (PLB L6)' : ': interest paid in this check (PLB L6)';
+}
+
+/**
+ * Under a line's Interest list: each remittance in which the claims of a chain the line is matched to report interest
+ * (AMT I) netting to other than zero, as reported and counted nowhere, then once what is counted (docs/adr/0084). Nothing
+ * when no chain reports any.
+ */
+export function ReportedInterest({ rows }: { readonly rows: readonly ReportedInterestView[] }) {
+  if (rows.length === 0) {
+    return null;
+  }
+  return (
+    <div className="flex flex-col gap-1" data-reported-interest={rows.length}>
+      <ul className="flex flex-col gap-1">
+        {rows.map((row, index) => (
+          <li key={`${row.remittanceId}-${String(index)}`} className="text-sm" data-reported={row.takenBack ? 'taken-back' : 'paid'} data-cents={row.amountCents}>
+            Remittance <span className="font-mono">{row.trace}</span>, {row.payerName}, paid {row.paidOn}: the claim reports <Money value={row.amountCents} /> of interest
+            {row.takenBack ? ' taken back' : ''} (AMT I).
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-muted-foreground" data-reported-note="">
+        Interest is counted only as a check pays it or takes it back (PLB L6), in the list above.
+      </p>
+    </div>
   );
 }
 

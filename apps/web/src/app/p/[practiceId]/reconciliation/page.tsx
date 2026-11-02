@@ -7,7 +7,19 @@ import { ActionForm } from '../../../../components/action-form';
 import { UtcTime } from '../../../../components/dates';
 import { CheckboxField, TextAreaField } from '../../../../components/field';
 import { roleNames, utc } from '../../../../components/format';
-import { EVIDENCE_WORDS, KindBadge, LedgerTotals, LineCorrectionWords, correctionWords, entryStage, exportStatusText, levelWords, lineEntriesEmptyText } from '../../../../components/reconciliation/display';
+import {
+  EVIDENCE_WORDS,
+  KindBadge,
+  LedgerTotals,
+  LineCorrectionWords,
+  ReportedInterest,
+  correctionWords,
+  entryStage,
+  exportStatusText,
+  interestWords,
+  levelWords,
+  lineEntriesEmptyText,
+} from '../../../../components/reconciliation/display';
 import { UnattestedSubmissions } from '../../../../components/packets/unattested';
 import { Money, Pager } from '../../../../components/remittances/display';
 import { ScrollTable } from '../../../../components/scroll-table';
@@ -71,7 +83,7 @@ function MatchItem({ practiceId, match, canReconcile, phi }: { readonly practice
         {match.kind === 'claim' ? <>: {correctionWords(match)}</> : ''}
         {match.kind === 'posting' || match.kind === 'deposit' ? ` (${levelWords(match.level, match.allocated)})` : ''}
         {match.kind === 'recoupment' ? (match.source === 'plb' ? ': PLB WO take-back' : ': reversal of the attached claim') : ''}
-        {match.kind === 'interest' ? (match.source === 'plb' ? ': PLB L6 interest' : ': the claim’s interest') : ''}; matched {who(match)}, {utc(match.matchedAt)}.
+        {match.kind === 'interest' ? interestWords(match) : ''}; matched {who(match)}, {utc(match.matchedAt)}.
       </span>
       {match.standing ? null : (
         <span className="block text-xs text-muted-foreground" data-state="reversed">
@@ -198,10 +210,13 @@ function LinkageItem({ line, place, total, practiceId, canReconcile, phi }: { re
         <Matches title="Posting" matches={line.postings} empty="No posting export row is matched to its remittance." {...shared} />
         <Matches title="EFT or bank deposit" matches={line.deposits} empty="No deposit is matched to its remittance." {...shared} />
       </div>
-      {line.recoupments.length === 0 && line.interest.length === 0 ? null : (
+      {line.recoupments.length === 0 && line.interest.length === 0 && line.reportedInterest.length === 0 ? null : (
         <div className="grid gap-3 lg:grid-cols-2">
           <Matches title="Recoupments" matches={line.recoupments} empty="Nothing taken back." {...shared} />
-          <Matches title="Interest" matches={line.interest} empty="No interest paid." {...shared} />
+          <div className="flex flex-col gap-1">
+            <Matches title="Interest" matches={line.interest} empty="No interest paid." {...shared} />
+            <ReportedInterest rows={line.reportedInterest} />
+          </div>
         </div>
       )}
       <LineCorrectionWords correction={line.correction} />
