@@ -3319,7 +3319,7 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
    * workflow's, each job's, each job container's and service's, and each step's env, and each step input as
    * INPUT_<NAME>. Its bytes are the name's, '=' and the NUL, the value's literal bytes outside ${{ }}, and each
    * expression's bound: a github value BOUNDED_GITHUB's, a variable or a secret 48 KB, a bounded input its type's, a
-   * matrix key its longest value's, env.X the bound of X where it is set (the step's env, the job's, the workflow's),
+   * matrix key its longest value's (its include entries' among them), env.X the bound of X where it is set (the step's env, the job's, the workflow's),
    * and a table row its bytes. What refuses one: a sum over 131,072, or a value with no bound, each naming its file,
    * place and name. The one value marked over is exempt only alone in its string, one expression that reads it and
    * nothing else; beside anything else it is refused, and its sites (below) hold where it is read.
@@ -3371,8 +3371,12 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     const matrix = (key: string, at: Reading): number => {
       const strategy = record(record(jobs[at.job ?? '']).strategy);
       const given = strategy.matrix;
-      // A matrix from an expression, or a key's list from one: each value is part of what it gives.
-      const values = typeof given === 'string' ? [given] : (matrixValues(given, key) ?? (isRecord(given) && typeof given[key] === 'string' ? [given[key]] : undefined));
+      // A matrix from an expression, or a key's list from one: each value is part of what it gives, and so is each
+      // include entry's value for the key (GitHub makes an entry that would change it a job of its own), or the whole
+      // include where an expression gives it.
+      const include = isRecord(given) ? given.include : undefined;
+      const beside = include === undefined ? [] : isList(include) ? include.map((entry) => (isRecord(entry) ? entry[key] : entry)) : [include];
+      const values = typeof given === 'string' ? [given] : (matrixValues(given, key) ?? (isRecord(given) && typeof given[key] === 'string' ? [given[key], ...beside] : undefined));
       if (values === undefined) {
         at.unbounded.push(`matrix.${key}, which job ${at.job ?? '-'}'s matrix does not give`);
         return Infinity;
@@ -3627,6 +3631,17 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     expect(sum(step(`env: { ${many(50)} }`))).toEqual([totalOver('job images step "The step"', allOf(50))]);
     expect(sum(step(`env: { ${many(30)} }`))).toEqual([]);
     expect(sum(step('env: { E: x }', `    container: { image: x, env: { ${many(40)} } }\n`))).toEqual([totalOver('job images container', allOf(40) + 'x'.length + 1)]);
+    // A key's list from an expression, with include entries beside it: each entry's value counts, and an include from
+    // an expression its whole bound. The key's expression alone fits.
+    const keyed = (include: string, env = 'env: { M: "${{ matrix.note }}${{ vars.A }}" }') => step(env, `    strategy: { matrix: { note: "\${{ fromJSON(steps.web.outputs.size) }}"${include} } }\n`);
+    const tiny = [{ ...huge, bytes: 10 }, { ...huge, value: 'steps.web.outputs.whole' }];
+    expect(sum(keyed(''), tiny)).toEqual([]);
+    expect(sum(keyed(`, include: [ { note: "${'y'.repeat(90_000)}" } ]`), tiny)).toEqual([over('env.M', 'M', 2 + 90_000 + 49_152 + 1)]);
+    expect(sum(keyed(', include: [ { note: "${{ vars.A }}${{ vars.B }}${{ vars.C }}" } ]', 'env: { M: "${{ matrix.note }}" }'), tiny)).toEqual([over('env.M', 'M', 2 + 3 * 49_152 + 1)]);
+    expect(sum(keyed(', include: "${{ fromJSON(steps.web.outputs.whole) }}"'), tiny)).toEqual([over('env.M', 'M', 2 + 100_000 + 49_152 + 1)]);
+    expect(sum(keyed(', include: [ { other: x }, { note: short } ]'), tiny)).toEqual([]);
+    // And beside a key's list, as matrixValues reads one: an include entry's value counts there too.
+    expect(sum(step('env: { M: "${{ matrix.note }}${{ vars.A }}" }', `    strategy: { matrix: { note: [a], include: [ { note: "${'y'.repeat(90_000)}" } ] } }\n`))).toEqual([over('env.M', 'M', 2 + 90_000 + 49_152 + 1)]);
     // The token is held as a secret is, 48 KB.
     expect(sum(step('env: { NOTES: "${{ github.token }}${{ secrets.A }}${{ vars.B }}" }'))).toEqual([over('env.NOTES', 'NOTES', 6 + 3 * 49_152 + 1)]);
     // A mapping given as one expression, wherever GitHub accepts one, names its own strings: refused, where a container
