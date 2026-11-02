@@ -556,4 +556,28 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     assertion:
       "An invited customer's headings read \"Step 1 of 2: Choose a password\" and \"Step 2 of 2: Set up two-step verification\", the number shown over the step's name, and an invited staff member's run from \"Step 1 of 3\" to \"Step 3 of 3: Register a hardware key\", counted by the server from the provider's answer and the account; an everyday sign-in, and a restart with one step left, show no number; the code and enrolment steps pass axe (WCAG 2.1 A and AA) with the warning shown, at 1280 and 390 px, and when closed, as do key registration with its warning and the sign-in page with the email kept",
   },
+  {
+    id: 'HOM-01',
+    title: 'One actionable figure everywhere',
+    assertion:
+      "On one synthetic case before and after its re-run is accepted (its lines priced again), on a case whose rule release is withdrawn, and on a case with a line moved on to payer approved, the home's headline dollars and lines, its cases by state and deadlines, the Cases header and each row's figure and count, the case page's figure and counted lines, an ROI statement generated on demand and the digest's nearing-deadline figure agree, each read through the one predicate; every line not written off is in the figure, moved past actionable or on pricing no longer current, and is counted under that one cause; the case's stored total is untouched and shown nowhere as actionable; the statement recomputes from its entries and the database accepts it; the home reads its cases in one statement that runs the pricing check at one plan node, once per case line at actionable and for no line written off or moved off actionable; the recovered figures to date and for the quarter, from one ledger read, equal ledgerTotalsOver (practiceLedgerTotals's own totals) for all time and for the quarter, on random ledgers whose reversals cross the quarter's boundary, and to date is dated from the first counted entry that stands, none when every recovery was reversed",
+  },
+  {
+    id: 'HOM-02',
+    title: "The home's figures in words",
+    assertion:
+      "The tile counts its lines with counted() and names each cause of the lines out of the figure (0, 1 and 2 of each) only when there are any, as the case page and the packet builder do through outOfFigureWords(); the Recovered tile reads to date since its first counted entry that stands, or none yet, and this quarter from quarter(), each date and quarter key kept on one line; quarter() writes a quarter key and refuses any other; the Payer approved notes say the figure is to date and never the patient’s share and, with the ledger totals' help and the statement's empty line, follow the proof level; the case page's Net expected value shows an amount only on a case still being worked with a line in the figure and a pursuit estimate, and otherwise says why (resolved or closed, not estimated, no line in the figure, every line written off); no read text of the home, Reconciliation, the case page or the statement says a stage number (stage five, stage-five or stage 5), except the home's help (components/help.ts, a #42 file; follow-up after #42); pnpm lint:copy passes",
+  },
+  {
+    id: 'HOM-03',
+    title: 'The empty home names the upload gate',
+    assertion:
+      "The home's gate equals the Uploads page's: a practice BAA and an organization-wide BAA open it, a BAA signed in the future and none close it, a suspension pauses it; open shows the upload sentence with Go to Uploads, closed the BAA sentence with See the agreement chain for a role that may open Settings and no link for a viewer, paused the suspension sentence with no link",
+  },
+  {
+    id: 'HOM-04',
+    title: 'The home and the statement agree in the browser',
+    assertion:
+      "In the LED-06 journey after the recoupment, the home's actionable tile reads $0.00 and \"what the packets ask for: 0 lines in cases still being worked; out of the figure: 1 line whose pricing is no longer current\", and the Cases header, the case page and an ROI statement generated then (Actionable in cases still being worked) read $0.00; the Recovered tile's to-date figure reads since 2026-06-09 with this quarter's line; the Payer approved note reads deposited or not, never the patient’s share; the home's read text, its help apart, the case page and Reconciliation's recovered figure carry no stage number, and the home's help still says stage-five until #42's follow-up; the statement's empty approval line names deposited",
+  },
 ];
