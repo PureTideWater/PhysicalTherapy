@@ -97,18 +97,23 @@ const cliDir = path.dirname(cliPackage);
 const cliBin = path.join(cliDir, (JSON.parse(readFileSync(cliPackage, 'utf8')) as { bin: { cdk: string } }).bin.cdk);
 
 // The installed CLI run from infra/ with only the given variables, so nothing outside the repository decides it: an
-// empty HOME (no ~/.cdk.json), CDK_HOME for its cache, no AWS configuration and no metadata endpoint. An empty
-// TELEMETRY_ENDPOINT and a closed proxy keep even a CLI that has regressed from sending anything. A notices fetch shows
-// as the notices cache it writes under CDK_HOME, or as the refresh it logs at -vv.
+// empty HOME (no ~/.cdk.json), CDK_HOME for its cache, TMPDIR for what it hands a telemetry sender, no AWS configuration
+// and no metadata endpoint. TELEMETRY_ENDPOINT is a local port nothing listens on, so the CLI decides on a telemetry
+// sink as it would with AWS's endpoint, and traces that decision at -vvv, while a sink it builds sends nowhere: its
+// detached sender (the control below starts one) fails to connect, and the proxies are closed too. A notices fetch
+// shows as the notices cache it writes under CDK_HOME, or as the refresh it logs.
 interface CliRun {
   readonly output: string;
   readonly fetchedNotices: boolean;
+  /** The CLI's own trace of its telemetry decision: a sink registered, telemetry disabled, or neither traced. */
+  readonly telemetrySink: 'registered' | 'disabled' | undefined;
 }
+const CLOSED_TELEMETRY_ENDPOINT = 'http://127.0.0.1:9/metrics';
 const runCli = (args: readonly string[], variables: Readonly<Record<string, string>>): CliRun => {
   const home = mkdtempSync(path.join(os.tmpdir(), 'tp-cdk-home-'));
   try {
     const none = path.join(home, 'none');
-    const result = spawnSync(process.execPath, [cliBin, ...args, '-vv'], {
+    const result = spawnSync(process.execPath, [cliBin, ...args, '-vvv'], {
       cwd: infraDir,
       encoding: 'utf8',
       timeout: SPAWN_TIMEOUT_MS,
@@ -116,7 +121,8 @@ const runCli = (args: readonly string[], variables: Readonly<Record<string, stri
         PATH: process.env.PATH ?? '',
         HOME: home,
         CDK_HOME: path.join(home, '.cdk'),
-        TELEMETRY_ENDPOINT: '',
+        TMPDIR: home,
+        TELEMETRY_ENDPOINT: CLOSED_TELEMETRY_ENDPOINT,
         HTTPS_PROXY: 'http://127.0.0.1:9',
         HTTP_PROXY: 'http://127.0.0.1:9',
         AWS_EC2_METADATA_DISABLED: 'true',
@@ -127,7 +133,11 @@ const runCli = (args: readonly string[], variables: Readonly<Record<string, stri
     });
     expect(result.status, `${result.stderr}${result.error?.message ?? ''}`).toBe(0);
     const output = `${result.stdout}${result.stderr}`;
-    return { output, fetchedNotices: existsSync(path.join(home, '.cdk', 'cache', 'notices.json')) || /refresh(?:ed)? notices/i.test(output) };
+    return {
+      output,
+      fetchedNotices: existsSync(path.join(home, '.cdk', 'cache', 'notices.json')) || /refresh(?:ed)? notices/i.test(output),
+      telemetrySink: /\] Telemetry sink registered$/m.test(output) ? 'registered' : /\] Telemetry disabled$/m.test(output) ? 'disabled' : undefined,
+    };
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
@@ -155,18 +165,27 @@ describe("the repository's cdk runs send no telemetry, fetch no notices and skip
       expect(call.env, call.args.join(' ')).toMatchObject({ CDK_DISABLE_CLI_TELEMETRY: 'true', CDK_DISABLE_VERSION_CHECK: 'true' });
       expect(call.args, call.args.join(' ')).toContain('--no-notices');
     }
-    expect(runCli(['cli-telemetry', '--status', '--no-notices'], calls[0]?.env ?? {}).output).toMatch(/CLI Telemetry is disabled\./);
+    const run = runCli(['cli-telemetry', '--status', '--no-notices'], calls[0]?.env ?? {});
+    expect(run.output).toMatch(/CLI Telemetry is disabled\./);
+    expect(run.telemetrySink).toBe('disabled');
   }, 2 * SPAWN_TIMEOUT_MS);
 
   it("leaves notices to the CLI default for a person's own cdk commands: cdk.json sets no notices key", () => {
     expect(cdkJson).not.toHaveProperty('notices');
   });
 
-  it("leaves the installed CLI's telemetry off under the synth script's variables, by the CLI's own status command", () => {
+  it("leaves the installed CLI's telemetry off under the synth script's variables, by its status command and its sink, where without them it registers a sink", () => {
     const variables = prefixVariables(manifest.scripts.synth ?? '');
     expect(Object.keys(variables)).toContain('CDK_DISABLE_CLI_TELEMETRY');
-    expect(runCli(['cli-telemetry', '--status', '--no-notices'], variables).output).toMatch(/CLI Telemetry is disabled\./);
-  }, SPAWN_TIMEOUT_MS);
+    const run = runCli(['cli-telemetry', '--status', '--no-notices'], variables);
+    expect(run.output).toMatch(/CLI Telemetry is disabled\./);
+    // The sink is decided apart from the status command (the CLI's startTelemetry), so it is asked for itself.
+    expect(run.telemetrySink).toBe('disabled');
+    expect(run.output).not.toMatch(/Telemetry dispatched/);
+    const control = runCli(['cli-telemetry', '--status', '--no-notices'], {});
+    expect(control.output, 'the control run, without the variables').toMatch(/CLI Telemetry is enabled\./);
+    expect(control.telemetrySink, 'the control run, without the variables').toBe('registered');
+  }, 2 * SPAWN_TIMEOUT_MS);
 
   it('makes the installed CLI fetch no notices under --no-notices, where without it the CLI does fetch them', () => {
     const variables = prefixVariables(manifest.scripts.synth ?? '');
