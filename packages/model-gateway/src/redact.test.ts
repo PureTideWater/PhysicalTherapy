@@ -165,24 +165,30 @@ describe('identifierRuns: the page runs the contract screen compares', () => {
   });
 
   it('finds every single-line writing the letter path reads over the separators the screen joins, and the letter path reads exactly those with no "*" and no "." or "/" between two digits but after an identifier label (property; docs/adr/0070 Part 3, N6)', () => {
+    // Groups of letters and digits, or of digits alone (where only a label lets "." and "/" join them).
     const group = fc.string({ unit: fc.constantFrom(...'ABCDEFGHJKLMNPQRSTUVWXYZ0123456789abcz'), minLength: 1, maxLength: 6 });
+    const digitGroup = fc.string({ unit: fc.constantFrom(...'0123456789'), minLength: 1, maxLength: 6 });
     // Every gap the screen's JOIN takes: none, one space, a dash or minus sign with at most one space on either side,
     // one dot, slash, underscore or asterisk, and invisible characters anywhere in a gap.
     const separator = fc.constantFrom('', ' ', '-', ' - ', '–', ' – ', ' ', '- ', ' -', '.', '/', '_', '*', '\u2212', ' \u2212 ', '\u00AD', '\u200B', '\uFEFF', '-\u200B', '\u200B.', '_\u00AD');
-    const before = fc.constantFrom('', 'Member ID:', 'Claim#', '(', 'ID ', 'see the claim ', 'X\n', '\t');
-    // The prefixes that are identifier labels (redact.ts IDENTIFIER_LABEL), after which digits alone join over "." and "/" too (review finding R5-2).
-    const LABELS = new Set(['Member ID:', 'Claim#', 'ID ', 'see the claim ']);
+    const before = fc.constantFrom('', 'Member ID:', 'Claim#', '(', 'ID ', 'see the claim ', 'X\n', '\t', 'ICN (', 'Claim: \u201C', '**Claim:** ', 'Re: ', 'The number ', 'reference: ', 'no. ');
+    // The prefixes that are identifier labels (redact.ts IDENTIFIER_LABEL), after which digits alone join over "." and "/" too (review
+    // finding R5-2), of either kind (a claim label before a member ID too, but for a whole written date); a bare "ID", "number",
+    // "reference" or lower-case "no." is none (review finding G2).
+    const LABELS = new Set(['Member ID:', 'Claim#', 'see the claim ', 'ICN (', 'Claim: \u201C', '**Claim:** ', 'Re: ']);
     const after = fc.constantFrom('', ')', '.', ',', ' on file', '\n', '  next', ';');
     const letter = /\p{L}/u;
     fc.assert(
-      fc.property(fc.array(fc.tuple(group, separator), { minLength: 1, maxLength: 4 }), before, after, (groups, prefix, suffix) => {
+      fc.property(fc.oneof(fc.array(fc.tuple(group, separator), { minLength: 1, maxLength: 4 }), fc.array(fc.tuple(digitGroup, separator), { minLength: 1, maxLength: 4 })), before, after, (groups, prefix, suffix) => {
         const written = groups.map(([text, sep], index) => (index === 0 ? text : `${sep}${text}`)).join('');
         const compact = compactIdentifier(written);
         fc.pre(compact.length >= SCREEN_MIN_RUN && compact.length <= 30);
         const text = `${prefix}${written}${suffix}`;
         // Digits alone written as a separated calendar date stay that date in a letter (docs/adr/0054, amendment of
         // 2026-10-27): the letter's deadline rule, not this property's case.
-        fc.pre(!(/^\d+$/u.test(compact) && datesIn(text).some((span) => span.separated && span.dates.length > 0)));
+        // Read as the letter path reads one, with its invisible characters dropped or as spaces too ("07-<ZWSP>08 − 00", seed -1708812387).
+        const readings = [text, text.replace(/\p{Default_Ignorable_Code_Point}/gu, ''), text.replace(/\p{Default_Ignorable_Code_Point}/gu, ' ')];
+        fc.pre(!(/^\d+$/u.test(compact) && readings.some((reading) => datesIn(reading).some((span) => span.separated && span.dates.length > 0))));
         // What the letter path joins over these gaps: all but "*", and "." or "/" only next to a letter ("_" anywhere, review finding F4-1).
         const letterReads = groups.slice(1).every(([next, sep], index) => !sep.includes('*') && (!/[./]/u.test(sep) || letter.test(groups[index]?.[0].at(-1) ?? '') || letter.test(next[0] ?? '')));
         const labeledReads = LABELS.has(prefix) && /^\d+$/u.test(compact) && groups.slice(1).every(([, sep]) => !sep.includes('*'));
@@ -190,9 +196,9 @@ describe('identifierRuns: the page runs the contract screen compares', () => {
         const screen = runs(text).includes(compact);
         const matcher = holdsIdentifier(text, { pseudonym: 'synthetic', names: [], datesOfBirth: [], memberIds: [written] }, []);
         const candidate = identifierCandidates(text).includes(compact);
-        // The letter's candidates (identifierCandidates) join at most three tokens and offer only a run with a digit.
-        // The candidates read no label: they offer what letterReads joins.
-        return screen && matcher === (letterReads || labeledReads) && candidate === (letterReads && tokens <= 3 && /\d/u.test(compact));
+        // The letter's candidates (identifierCandidates) join at most three tokens and offer only a run with a digit; they read
+        // the label as the matcher does (review finding G1), so they offer what either reading joins.
+        return screen && matcher === (letterReads || labeledReads) && candidate === ((letterReads || labeledReads) && tokens <= 3 && /\d/u.test(compact));
       }),
       { numRuns: 2000 },
     );

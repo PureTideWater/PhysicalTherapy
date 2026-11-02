@@ -298,13 +298,29 @@ this amendment holds.
   (2026-11-01) a number joins anywhere over the apostrophes of digit grouping (`'`, U+2018, U+2019, U+02BC and the
   backtick: `12'345'678`, `12’345’678`), `~` (NFKC writes U+FF5E as it), the middle dots (U+00B7, U+2027, U+2219,
   U+22C5, U+30FB), the bullet U+2022, `;`, the double quotes (`"`, U+201C, U+201D), U+02D7 MODIFIER LETTER MINUS SIGN
-  and U+2796 HEAVY MINUS SIGN (`1234~5678`, `1234·5678`, `ZZ~7654321`). None is a date separator or an amount's
-  punctuation, so no date or amount reads differently; the screen's candidates (`identifierCandidates`) join over the
-  same characters. A comma between digits still joins nothing (an amount's grouping). Since review finding R5-2
-  (2026-11-01), after an identifier label (`IDENTIFIER_LABEL`: `Claim`, `Claim #`, `Claim No.`, `ICN:`, `PCN`, `DCN`,
-  `TCN`, `Member ID`, `Subscriber`, `ID`, `Ref`, `Account`, `#`, `number is`, with white space, invisible characters
-  and one `:`, `#` or `-` before the number) a digits-only number joins over `.` and `/` between digits too
-  (`Claim 1955/07/14`, `ICN 1234.5678`), never as an amount (`isAmount` still applies). Digits alone are kept in two
+  and U+2796 HEAVY MINUS SIGN (`1234~5678`, `1234·5678`, `ZZ~7654321`), and since review finding G4 (2026-11-02) over
+  the primes OCR writes for a grouping apostrophe (U+2032, U+2035, and U+2033, which NFKC writes as two U+2032) and the
+  modifier-letter prime and acute (U+02B9, U+02CA), which, like U+02BC, are letters by class read as apostrophes, in a
+  name too (`Ilʹich` is ILICH). None is a date separator or an amount's punctuation, so no date or amount reads
+  differently. A comma between digits still joins nothing (an amount's grouping). Since review finding R5-2
+  (2026-11-01), after an identifier label a digits-only number joins over `.` and `/` between digits too
+  (`Claim 1955/07/14`, `ICN 1234.5678`), never as an amount (`isAmount` still applies). The label
+  (`IDENTIFIER_LABEL`, as review finding G2 narrowed it on 2026-11-02) is a head word (`Claim`, `ICN`, `PCN`, `DCN`,
+  `TCN`, `Control`, `Account`, `Acct`, `Member`, `Subscriber`, `Ref`) with any of `number`, `nbr`, `no`, `id`,
+  `control` and `#` after it (`Claim #`, `Claim No.`, `Member ID`, `Patient control no.`, `CLAIM NUMBER IS`);
+  `Reference` only with one of those after it; `No.`, `No:` or `No#` with a capital N; `ID:` or `ID#`; `number is`;
+  or `Re:`. Its end may hold white space, invisible characters, `*` (Markdown bold), one `:`, `#` or `-` or one `,`,
+  `is`, and then `(` or an opening quote (`"`, `'`, U+201C, U+2018) right before the number (review finding G3:
+  `**Claim:** 2026-04-26`, `Claim, 2026-04-26,`, `ICN (2026-04-26)`, `Claim: “2026-04-26”`, `Re: 2026-04-26`). A bare
+  `no`, `number`, `id`, `#` or `reference` is no label, so "The number 2027-03-15", "No 2027-03-15 appeal",
+  "Answer: no. 2027-03-15", "reference: 2027-03-15" and "Reference date #2027-03-15" keep their deadline when it equals
+  a claim's digits. A member's label (`Member`, `Subscriber`) makes a whole written date a member ID only, a claim's
+  label a claim's number only (`Member: 2027-03-15` keeps a deadline equal to a claim's digits), and the others
+  either; digits joined over `.` or `/` that are not a whole written date are the number after a label of either kind.
+  The screen's candidates (`identifierCandidates`) join over the same characters, the label's `.` and `/` between
+  digits included (review finding G1, 2026-11-02): a run of digits alone that a label of any kind introduces also joins
+  over `.` and `/` (`ICN 1234.5678` offers 12345678, `Claim 1955/07/14` 19550714, `Member ID: 7654.321` 7654321), so
+  `more_than_one_patient` sees another patient's number written so. Digits alone are kept in two
   cases only. A claim's digits written as an amount, after a currency sign and with cents (`$15000.00` for claim
   15000), are kept: with their cents they are never the claim's own written form; `$555001`, `555001.01` and
   `555001,12` are the claim's. A member ID is never read as an amount (`$12345678` for member 12345678 is replaced).
@@ -312,7 +328,7 @@ this amendment holds.
   a backslash, a period, a dash, `_`, `|` or a month word) and has a calendar reading, and the match's own written form,
   read alone, is a whole such date ("Appeal by 2027-03-15" keeps its deadline), and, since review finding R5-2, no
   identifier label stands right before it: "Claim 1955-07-14" for claim 19550714 is `Claim [CLAIM_1]`, as a birth label
-  makes any date a date of birth. Since review finding F4-2 (2026-11-01) a
+  makes any date a date of birth (a label of the number's kind, or of either: G2 above). Since review finding F4-2 (2026-11-01) a
   match that is only part of the date is replaced: claim 312026 in `Jan 31-2026`, claim 19991 in `1999-1<ZWSP>2-31`.
   An invisible character or a space is no date separator, and
   numbers shaped like a date no calendar holds are no date, so `1234<ZWSP>5678`, `12-34-56`, `1234-56-78`, `03 15 61`
@@ -364,9 +380,11 @@ this amendment holds.
   accepts what lies between. `identifierCandidates` masks the exact placeholders' words (only those, so `[QQ_7654321]`
   is read, and a claim placeholder keeps its digits: `[CLAIM_7654321]` offers 7654321, while a redacted letter's
   `[CLAIM_n]` never reaches five characters) and joins up to three tokens across white space, dashes, invisible
-  characters, `_`, `|`, `\` and the joiners of review finding R5-1 anywhere (`1234|5678`, `12'345'678`; U+02BC read as
-  an apostrophe), and `.`, `/`, `:`, `#` or `(` next to a letter, so `ID:ZZ7654321`, `ZZ_7654321`, `ZZ/7654321`,
-  `ZZ#7654321`, `YY<ZWSP>7654321`, `REF<ZWSP>ZZ7654321` and a digits-only `765 4321` are offered.
+  characters, `_`, `|`, `\` and the joiners of review findings R5-1 and G4 anywhere (`1234|5678`, `12'345'678`,
+  `1234′5678`; U+02BC, U+02B9 and U+02CA read as apostrophes), `.`, `/`, `:`, `#` or `(` next to a letter, and, in a
+  run of digits alone right after an identifier label, `.` and `/` (review finding G1: `ICN 1234.5678`), so
+  `ID:ZZ7654321`, `ZZ_7654321`, `ZZ/7654321`, `ZZ#7654321`, `YY<ZWSP>7654321`, `REF<ZWSP>ZZ7654321`, a digits-only
+  `765 4321` and `Claim 1955/07/14` are offered.
 - **The narrative drafter's check** (`mentionsIdentifier`, before a `draftPacketNarrative` call) uses the same
   matcher, names as names and member IDs and claim numbers as numbers (`NarrativeInput.names`, which the worker's
   `packetDraftInputs` now passes), so a fact text that writes an identifier another way is refused. Every number there
@@ -397,8 +415,16 @@ when no identifier label stands right before it (member 031561 written `Seen 03-
 `Claim 03-15-61` and `Member ID 03-15-61` are replaced); a claim's
 digits written after a currency sign and with cents are sent as an amount (`$555001.00`); digits alone with a slash
 or a period between them (`12/34/5678`, `1234.5678`) are not a number, being how dates and amounts are written, unless
-an identifier label stands right before them (R5-2); a comma between digits (`1234,5678`) joins nothing; and a
-part written in lower case with a space inside it (`jo ann`) is not a name. Recorded with the second review round: a
+an identifier label stands right before them (R5-2), and then the candidates join them too (G1); a comma between digits
+(`1234,5678`) joins nothing; and a part written in lower case with a space inside it (`jo ann`) is not a name.
+Recorded with review findings G2 to G4 (2026-11-02), each the cost of keeping a deadline or a word: a bare `ID`,
+`number`, `no` (lower case, or with no `.`, `:` or `#`), `#` or `reference` before a claim number or member ID written as
+a calendar date, or with `.` or `/` between its digits, is no label, so that date or those digits are kept as an
+ordinary letter's would be (`ID 03-14-1962`, `#1955/07/14`; the head words, `No.`, `ID:` and `Re:` are labels); a
+claim's label before a member ID written as a whole calendar date, or a member's label before a claim's number written
+so, keeps the date (`Claim# 1955-07-14` for member 19550714); a label more than 40 characters before its number, or
+with other words between them (`Claim number for this service: 2026-04-26`), is none; and the katakana prolonged sound
+mark U+30FC, a letter inside Japanese words and names, joins no number (`1234ー5678`). Recorded with the second review round: a
 date of birth with its day or month spelled out as a word (`MARCH THIRD 1961`), which `datesIn` does not read; and the
 `)` after a member ID written `ZZ(1234567)`, which is sent after the placeholder (`[MEMBER_ID])`) and holds no digit.
 

@@ -15,7 +15,7 @@
  *   dropped (José is JOSE), and a run of invisible characters (soft hyphen, zero-width space) one
  *   character that joins inside a word and still ends one;
  * - a member ID or claim number matches with or without the white space, dashes, invisible characters and
- *   other number joiners (NUMBER_JOINERS: "_", "|", "\\", grouping apostrophes, "~", middle dots, bullets, ";")
+ *   other number joiners (NUMBER_JOINERS: "_", "|", "\\", grouping apostrophes and primes, "~", middle dots, bullets, ";")
  *   a letter puts inside it, and the periods, slashes and colons next to a letter
  *   ("ZZ 1234567", "ZZ-1234567", "ZZ_1234567", "ZZ/1234567", "12'345'678");
  * - a name matches with or without the dashes and apostrophes inside it (O’Brien, Smith–Jones), across a
@@ -33,7 +33,7 @@
  * placeholder, so no placeholder is ever rewritten. What the task reads stays: in a date that is not a
  * date of birth, written with a separator (DATE_SEPARATOR) or a month word and with a calendar reading, a
  * month word is not a name, and digits whose own written form is that date are not a number unless an identifier
- * label ("Claim", "ICN:", "Member ID", "#") introduces them (IDENTIFIER_LABEL); a claim's digits
+ * label of their kind ("Claim", "ICN:", "Member ID", "Claim #", "No.") introduces them (IDENTIFIER_LABEL); a claim's digits
  * written as an amount, after a currency sign and with cents, are not its number. The letter's own
  * square brackets become parentheses, so the only bracketed text sent is a placeholder. Nothing else of
  * the letter changes.
@@ -335,15 +335,17 @@ const writtenAt = (view: View, normal: string, index: number) => codePointAt(nor
 // Forms and the matcher
 
 /** Dashes (with the minus sign and hyphen bullet PDF text writes for a hyphen), apostrophes, the underscore and VANISHED: they join a name anywhere. */
-const NAME_JOINERS = "\\p{Pd}\\u2212\\u2043'\\u2018\\u2019\\u02BC`\\u00B4_\\u00AD";
+const NAME_JOINERS = "\\p{Pd}\\u2212\\u2043'\\u2018\\u2019\\u02BC\\u02B9\\u02CA`\\u00B4_\\u00AD";
 /**
  * What joins a member ID or claim number anywhere ("." "/" ":" "#" and "(" only next to a letter): white space, dashes
  * (with the minus sign, the hyphen bullet, U+02D7 and U+2796), "_", "|", "\\", VANISHED, and since review finding
  * R5-1 the apostrophes of digit grouping ("12'345'678", "12’345’678"), "~", the middle dots and bullets ("1234·5678",
- * "1234•5678"), ";" and the double quotes. None of these is a date separator (DATE_SEPARATOR) or an amount's
+ * "1234•5678"), ";" and the double quotes, and since review finding G4 the primes OCR writes for a grouping apostrophe
+ * (U+2032, U+2035, and U+2033 as NFKC writes it, two U+2032) and the modifier-letter primes and acute (U+02B9, U+02CA,
+ * apostrophes here as U+02BC is: APOSTROPHE_LETTER). None of these is a date separator (DATE_SEPARATOR) or an amount's
  * punctuation, so a number written with one is never read as a date or an amount.
  */
-const NUMBER_JOINERS = "\\s\\p{Pd}\\u2212\\u2043\\u02D7\\u2796_|\\\\\\u00AD'\\u2018\\u2019\\u02BC`~\\u00B7\\u2027\\u2219\\u22C5\\u30FB\\u2022;\"\\u201C\\u201D";
+const NUMBER_JOINERS = "\\s\\p{Pd}\\u2212\\u2043\\u02D7\\u2796_|\\\\\\u00AD'\\u2018\\u2019\\u02BC\\u02B9\\u02CA\\u2032\\u2035`~\\u00B7\\u2027\\u2219\\u22C5\\u30FB\\u2022;\"\\u201C\\u201D";
 /** A line break, and a dash (or VANISHED) before one: a word hyphenated at the end of a line ("Van-⏎tree"). */
 const LINE_BREAK = '(?:\\r\\n|[\\n\\r\\u0085\\u2028\\u2029])';
 const HYPHENATION = `[\\p{Pd}\\u2212\\u2043\\u00AD]${SPACES.replace('+', '*')}${LINE_BREAK}${SPACES.replace('+', '*')}`;
@@ -367,10 +369,13 @@ const HYPHENATED = new RegExp(`^[${NAME_JOINERS}]*${HYPHENATION}[${NAME_JOINERS}
 
 /** A name's words and parts as the records write them: words split by white space, ",", ";" and "/"; parts by dashes, apostrophes, "." and "_". */
 const WORD_SPLIT = /[\s,;/]+/u;
-const PIECE_SPLIT = /[\p{Pd}−⁃'‘’ʼ`´._\u00AD]+/u;
+const PIECE_SPLIT = /[\p{Pd}−⁃'‘’ʼʹˊ`´._\u00AD]+/u;
 
-/** The letters and digits of folded text (U+02BC, a letter by class, is an apostrophe here). */
-const compactFolded = (text: string) => text.replace(/[^\p{L}\p{N}]|ʼ/gu, '');
+/** U+02BC, U+02B9 and U+02CA: letters by class (modifier letters), apostrophes here, in a name and in a number. */
+const APOSTROPHE_LETTER = /^[\u02BC\u02B9\u02CA]$/u;
+
+/** The letters and digits of folded text (an APOSTROPHE_LETTER is an apostrophe here). */
+const compactFolded = (text: string) => text.replace(/[^\p{L}\p{N}]|[\u02BC\u02B9\u02CA]/gu, '');
 
 type Kind = 'claim' | 'member' | 'birth' | 'name';
 
@@ -496,7 +501,7 @@ function spacedPiecesPass(form: Form, view: View, normal: string, start: number,
   let gap = '';
   for (let i = start; i < end; ) {
     const codePoint = codePointAt(view.text, i);
-    if (WORD_CHARACTER.test(codePoint) && codePoint !== 'ʼ') {
+    if (WORD_CHARACTER.test(codePoint) && !APOSTROPHE_LETTER.test(codePoint)) {
       if (letters.length > 0) {
         spaced.push(/[\s.,]/u.test(gap) && !HYPHENATED.test(gap));
       }
@@ -545,15 +550,59 @@ const writtenAsDate = (normal: string, range: Range) =>
   });
 
 /**
- * A label that introduces a claim number or member ID, ending where its number begins ("Claim", "Claim #",
- * "Claim No.", "ICN:", "PCN", "Member ID", "Ref", "#", "number is"), on the folded view, where an invisible
- * character is VANISHED. A digits-only match after one is the identifier even when its written form is a
- * calendar date: the letter says what it is (review finding R5-2), as BIRTH_LABEL says a date of birth.
+ * A label that introduces a claim number or member ID, ending where its number begins, on the folded view (an
+ * invisible character VANISHED) or on NFKC text: a head word ("Claim", "ICN", "PCN", "DCN", "TCN", "Control",
+ * "Account", "Acct", "Member", "Subscriber", "Ref") with any of "number", "nbr", "no", "id", "control" and "#" after
+ * it ("Claim #", "Claim No.", "Member ID", "Patient control no.", "CLAIM NUMBER IS"); "Reference" only with one of
+ * those after it ("Reference number"); "No" alone only written "No.", "No:" or "No#" with a capital N; "ID" alone only
+ * written "ID:" or "ID#"; "number is"; and "Re:". Its end may take ":", "#" or "-", "is", "*" (Markdown bold), one ",", "(" and an opening quote
+ * ("**Claim:** ", "Claim, ", "ICN (", "Claim: “"; review finding G3). A bare "no", "number", "id", "#" or
+ * "reference" is no label ("The number 2027-03-15", "No 2027-03-15 appeal", "Answer: no. 2027-03-15", "reference:
+ * 2027-03-15", "Reference date #2027-03-15": review finding G2). A digits-only match after one is the identifier even
+ * when its written form is a calendar date, and digits joined over "." or "/" after one are the number: the letter
+ * says what it is (review finding R5-2), as BIRTH_LABEL says a date of birth.
  */
-const IDENTIFIER_LABEL = /(?:\b(?:claim|icn|pcn|dcn|tcn|member|subscriber|id|ref|reference|account|acct|number|no)\b\.?|#)(?:[\s\u00AD]*(?:\b(?:number|nbr|no|id)\b\.?|#))*[\s\u00AD]*[:#-]?[\s\u00AD]*(?:is[\s\u00AD]+)?$/iu;
+const LABEL_SPACE = '[\\s\\u00AD]';
+const LABEL_QUALIFIER = `(?:\\b(?:number|nbr|no|id|control)\\b\\.?|#)`;
+const IDENTIFIER_LABEL = new RegExp(
+  `(?:\\b(?:(?<claim>claim|icn|pcn|dcn|tcn|control|account|acct)|(?<member>member|subscriber)|ref)\\b\\.?(?:${LABEL_SPACE}*${LABEL_QUALIFIER})*` +
+    `|\\breference(?:${LABEL_SPACE}*${LABEL_QUALIFIER})+` +
+    `|\\b(?<no>no)(?=\\.|${LABEL_SPACE}*[:#])\\.?` +
+    `|\\bid(?=${LABEL_SPACE}*[:#])` +
+    `|\\bnumber(?=${LABEL_SPACE}*[:-]?${LABEL_SPACE}*is${LABEL_SPACE})` +
+    `|\\bre(?=${LABEL_SPACE}*:))` +
+    `[\\s\\u00AD*]*(?:[:#-][\\s\\u00AD*]*|,${LABEL_SPACE}*)?(?:is${LABEL_SPACE}+)?(?:[("'\\u201C\\u2018]${LABEL_SPACE}*)?$`,
+  'iu',
+);
 
-/** Whether an identifier label (IDENTIFIER_LABEL) ends just before a view position. */
-const labeledAt = (view: View, start: number) => IDENTIFIER_LABEL.test(view.text.slice(Math.max(0, start - 40), start));
+/** What an identifier label introduces: a claim's number, a member ID, or either ("Ref", "No.", "ID:", "number is", "Re:"). */
+type LabelKind = 'claim' | 'member' | 'either';
+
+/**
+ * The kind of the identifier label (IDENTIFIER_LABEL) that ends at a position of text, or null when none does. `written`
+ * gives the code point a letter wrote at a position, where "No" must be capitalized ("No. 2027-03-15", never "no.").
+ */
+function labelBefore(text: string, at: number, written: (index: number) => string): LabelKind | null {
+  const from = Math.max(0, at - 40);
+  const match = IDENTIFIER_LABEL.exec(text.slice(from, at));
+  if (match === null || (match.groups?.no !== undefined && !capital(written(from + match.index)))) {
+    return null;
+  }
+  return match.groups?.claim !== undefined ? 'claim' : match.groups?.member !== undefined ? 'member' : 'either';
+}
+
+/**
+ * Whether an identifier label ends just before a view position that introduces this kind of number: a member label a
+ * member ID, a claim label a claim's number (review finding G2: "Member: 2027-03-15" is no claim number), and "Ref",
+ * "No.", "ID:", "number is" or "Re:" either. Only such a label makes a whole written calendar date the number.
+ */
+function labelFor(view: View, normal: string, start: number, kind: Kind): boolean {
+  const label = labelBefore(view.text, start, (index) => writtenAt(view, normal, index));
+  return label === 'either' || label === kind;
+}
+
+/** Whether any identifier label ends just before a view position: after one, digits joined over "." or "/" that are not a whole written calendar date are the number. */
+const labeledAt = (view: View, normal: string, start: number) => labelBefore(view.text, start, (index) => writtenAt(view, normal, index)) !== null;
 
 interface Found extends Range {
   readonly kind: Kind;
@@ -603,17 +652,19 @@ function matchesIn(normal: string, subject: Subject): Found[] {
           continue;
         }
         names.push({ start, end });
-      } else if (form.digitsOnly && ((form.kind === 'claim' && isAmount(normal, range)) || (inOtherDate(range) && writtenAsDate(normal, range) && !labeledAt(view, start)))) {
+      } else if (form.digitsOnly && ((form.kind === 'claim' && isAmount(normal, range)) || (inOtherDate(range) && writtenAsDate(normal, range) && !labelFor(view, normal, start, form.kind)))) {
         continue;
       }
       found.push({ ...range, kind: form.kind, claim: form.claim });
     }
     if (form.labeled !== null) {
-      // After an identifier label, digits joined over "." or "/" are the number too (never an amount: isAmount).
+      // After an identifier label, digits joined over "." or "/" are the number too (never an amount: isAmount), and a
+      // whole written calendar date only after a label of the number's kind (labelFor).
       const labeled = new RegExp(form.labeled.source, form.labeled.flags);
       for (let match = labeled.exec(view.text); match !== null; match = labeled.exec(view.text)) {
         const range = inNormal(view, match.index, match.index + match[0].length);
-        if (labeledAt(view, match.index) && !(form.kind === 'claim' && isAmount(normal, range))) {
+        const fits = labelFor(view, normal, match.index, form.kind) || (labeledAt(view, normal, match.index) && !writtenAsDate(normal, range));
+        if (fits && !(form.kind === 'claim' && isAmount(normal, range))) {
           found.push({ ...range, kind: form.kind, claim: form.claim });
         }
       }
@@ -628,9 +679,9 @@ function matchesIn(normal: string, subject: Subject): Found[] {
 }
 
 /** What may lie between an initial and the name it belongs to: white space, apostrophes, dashes, "_" and VANISHED (after the name, a comma too). */
-const INITIAL_GAP = /^[\s'‘’ʼ`´\p{Pd}−⁃_\u00AD]*$/u;
-const INITIAL_GAP_AFTER = /^[\s'‘’ʼ`´\p{Pd}−⁃_\u00AD]*(?:,[\s\u00AD]*)?$/u;
-const GAP_CHARACTER = /^[\s'‘’ʼ`´\p{Pd}−⁃_\u00AD,]$/u;
+const INITIAL_GAP = /^[\s'‘’ʼʹˊ`´\p{Pd}−⁃_\u00AD]*$/u;
+const INITIAL_GAP_AFTER = /^[\s'‘’ʼʹˊ`´\p{Pd}−⁃_\u00AD]*(?:,[\s\u00AD]*)?$/u;
+const GAP_CHARACTER = /^[\s'‘’ʼʹˊ`´\p{Pd}−⁃_\u00AD,]$/u;
 
 /**
  * The initials of the patient's name written next to a name (view ranges), to a fixed point, so
@@ -832,11 +883,15 @@ export function holdsNameOrNumber(text: string, identifiers: { readonly names: r
  * space, and an invisible character is VANISHED and never part of a token, so "REF<ZWSP>ZZ7654321" gives
  * "ZZ7654321" and the run joined across it. From each token, a run extends over at most maxTokens tokens
  * while `joins` accepts what lies between two of them (given with the two tokens); `keep` decides which
- * runs are returned.
+ * runs are returned. `joins` is also given the scanned text, where the run's first token starts in it and the run so far
+ * (compact), so it may read what comes before the run (an identifier label: letterJoins).
  */
-export function identifierTokenRuns(text: string, options: { readonly joins: (between: string, left: string, right: string) => boolean; readonly maxTokens: number; readonly keep: (run: string) => boolean }): string[] {
-  // U+02BC, a letter by class, is an apostrophe here, as in the matcher (compactFolded), so "12ʼ345ʼ678" is three tokens a caller may join.
-  const scan = text.normalize('NFKC').replace(/[\s\S]/gu, (character) => (BLANK.test(character) ? ' ' : IGNORABLE.test(character) ? VANISHED : character === '\u02BC' ? "'" : character));
+export function identifierTokenRuns(
+  text: string,
+  options: { readonly joins: (between: string, left: string, right: string, run: { readonly text: string; readonly start: number; readonly joined: string }) => boolean; readonly maxTokens: number; readonly keep: (run: string) => boolean },
+): string[] {
+  // An APOSTROPHE_LETTER, a letter by class, is an apostrophe here, as in the matcher (compactFolded), so "12ʼ345ʼ678" is three tokens a caller may join.
+  const scan = text.normalize('NFKC').replace(/[\s\S]/gu, (character) => (BLANK.test(character) ? ' ' : IGNORABLE.test(character) ? VANISHED : APOSTROPHE_LETTER.test(character) ? "'" : character));
   const tokens = [...scan.matchAll(/[\p{L}\p{N}\p{M}]+/gu)].map((match) => ({ text: match[0], start: match.index, end: match.index + match[0].length }));
   const runs = new Set<string>();
   for (let start = 0; start < tokens.length; start += 1) {
@@ -844,7 +899,7 @@ export function identifierTokenRuns(text: string, options: { readonly joins: (be
     for (let length = 1; length <= options.maxTokens && start + length <= tokens.length; length += 1) {
       const token = tokens[start + length - 1];
       const before = tokens[start + length - 2];
-      if (token === undefined || (length > 1 && (before === undefined || !options.joins(scan.slice(before.end, token.start), before.text, token.text)))) {
+      if (token === undefined || (length > 1 && (before === undefined || !options.joins(scan.slice(before.end, token.start), before.text, token.text, { text: scan, start: tokens[start]?.start ?? 0, joined })))) {
         break;
       }
       joined += compactIdentifier(token.text);
@@ -858,6 +913,8 @@ export function identifierTokenRuns(text: string, options: { readonly joins: (be
 
 /** What may lie between two tokens of one identifier in a letter: the number joiners (NUMBER_JOINERS), and ".", "/", ":", "#" or "(" too. */
 const LETTER_GAP = new RegExp(`^[${NUMBER_JOINERS}./:#(]+$`, 'u');
+/** What may lie between two digit tokens of a run an identifier label introduces: the number joiners, "." and "/" (the matcher's GAP.labeledNumber). */
+const LABELED_GAP = new RegExp(`^[${NUMBER_JOINERS}./]+$`, 'u');
 
 /** What joins two tokens of one identifier in a letter: what joins a number's characters (NUMBER_JOINERS) anywhere, and ".", "/", ":", "#" or "(" next to a letter. */
 function letterJoins(between: string, left: string, right: string): boolean {
@@ -865,17 +922,29 @@ function letterJoins(between: string, left: string, right: string): boolean {
 }
 
 /**
+ * What joins two tokens of a digits-only identifier an identifier label (IDENTIFIER_LABEL, of any kind) introduces: the
+ * number joiners and "." or "/" between digits, when the run so far and the next token are digits alone and the label
+ * ends right before the run, as the matcher reads a digits-only number after a label (GAP.labeledNumber; review finding
+ * G1: "ICN 1234.5678", "Claim 1955/07/14", "Member ID: 7654.321").
+ */
+function labeledDigitsJoin(between: string, _left: string, right: string, run: { readonly text: string; readonly start: number; readonly joined: string }): boolean {
+  return LABELED_GAP.test(between) && /^\p{N}+$/u.test(run.joined) && /^\p{N}+$/u.test(compactIdentifier(right)) && labelBefore(run.text, run.start, (index) => codePointAt(run.text, index)) !== null;
+}
+
+/**
  * The runs of the redacted text that could be another patient's member ID or claim number: each token
  * with a digit in it, and each run of up to three tokens joined as letterJoins reads it: anywhere over
  * white space, dashes, "_", "|", "\\", invisible characters and the other number joiners (NUMBER_JOINERS:
- * grouping apostrophes, "~", middle dots, bullets, ";", double quotes), and next to a letter over ".", "/",
+ * grouping apostrophes and primes, "~", middle dots, bullets, ";", double quotes), next to a letter over ".", "/",
  * ":", "#" or "(" too ("ZZ 1234567", "1234|5678", "12'345'678", "ZZ_7654321", "ZZ/7654321", "ZZ#7654321",
- * "ID:ZZ7654321"), as compact identifiers (letters and digits, upper case) of at least five characters. A placeholder's word is never one, nor part of one; a claim's placeholder keeps its digits
+ * "ID:ZZ7654321"), and digits alone over "." or "/" too after an identifier label (labeledDigitsJoin: "ICN 1234.5678"), as compact identifiers (letters and digits, upper case) of at least five characters. A placeholder's word is never one, nor part of one; a claim's placeholder keeps its digits
  * (a redacted letter's [CLAIM_n] number its claims, never five digits; a letter's own "[CLAIM_7654321]"
  * offers 7654321).
  */
 export function identifierCandidates(text: string): string[] {
-  return identifierTokenRuns(masked(text), { joins: letterJoins, maxTokens: 3, keep: (run) => /\d/.test(run) && run.length >= 5 }).sort();
+  const scanned = masked(text);
+  const keep = (run: string) => /\d/.test(run) && run.length >= 5;
+  return [...new Set([...identifierTokenRuns(scanned, { joins: letterJoins, maxTokens: 3, keep }), ...identifierTokenRuns(scanned, { joins: labeledDigitsJoin, maxTokens: 3, keep })])].sort();
 }
 
 // ---------------------------------------------------------------------------------------------------

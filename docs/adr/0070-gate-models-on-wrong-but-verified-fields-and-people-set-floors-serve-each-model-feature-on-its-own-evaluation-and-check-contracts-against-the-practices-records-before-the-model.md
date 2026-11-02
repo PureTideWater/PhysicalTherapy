@@ -1017,7 +1017,8 @@ over time", S2 as "The practice's access log", S3 under "The audit trail", S4 un
     value; or written with an accented letter where the stored value has the plain one ("ZŽ1234567" against a stored
     "ZZ1234567"), since a run is compared as NFKC writes it. Among these, the letter path reads the line break, the
     tab, the spaces, the dashes, U+2043, the mark, the filler and the accent, the bar, the backslash, and the
-    apostrophes, "~", middle dots, bullets, ";", double quotes, U+02D7 and U+2796 of review finding R5-1, and next to a
+    apostrophes, "~", middle dots, bullets, ";", double quotes, U+02D7 and U+2796 of review finding R5-1, the primes and
+    U+02B9 and U+02CA of review finding G4, and next to a
     letter a colon, a hash, an opening parenthesis, and a dot or slash with a space or another separator beside it;
     never a comma, a plus sign or a closing parenthesis (N6);
   - an identifier written in the digits of another script (Arabic-Indic "١٢٣٤٥٦٧٨" against a stored "12345678"):
@@ -1332,8 +1333,9 @@ The fix round of the pull request's review (2026-10-27) adds these:
   - Both join an identifier's tokens over nothing, one space, a dash or minus sign with at most one space beside it,
     invisible characters, an underscore anywhere (the letter path between two digits too since review finding F4-1,
     2026-11-01), and a dot or slash next to a letter.
-  - Only the contract screen joins over a dot or slash between two digits (the letter path's redaction too, but only
-    after an identifier label such as "Claim" or "ICN:", since review finding R5-2), an asterisk anywhere
+  - Only the contract screen joins over a dot or slash between two digits (the letter path too, but only after an
+    identifier label such as "Claim" or "ICN:": its redaction since review finding R5-2, and its candidates,
+    `identifierCandidates`, for a run of digits alone since review finding G1, 2026-11-02), an asterisk anywhere
     ("1234.567890", "20261234/01", "SYN*PCN*44551"), any separator the practice's own kept values hold, and more than
     three tokens, where the letter's candidates stop at three. The letter redaction rewrites the text the model reads,
     so it must leave "150.00" an amount and "03/15/2027" a deadline. The screen rewrites nothing; it refuses. Joining
@@ -1342,7 +1344,9 @@ The fix round of the pull request's review (2026-10-27) adds these:
   - Only the letter path joins over any run of white space and dashes (two spaces, a tab, a line break, two dashes, a
     dash with two spaces beside it), U+2043 HYPHEN BULLET, a bar or a backslash anywhere ("ZZ|1234567",
     "1234\\567890", since F4-1), the apostrophes of digit grouping, "~", the middle dots and bullets, ";", the double
-    quotes, U+02D7 and U+2796 anywhere ("12'345'678", "1234·5678", "ZZ~7654321", since review finding R5-1), and, next
+    quotes, U+02D7 and U+2796 anywhere ("12'345'678", "1234·5678", "ZZ~7654321", since review finding R5-1), the primes
+    U+2032, U+2033 (as NFKC writes it) and U+2035 and the modifier letters U+02B9 and U+02CA anywhere ("1234′5678",
+    since review finding G4), and, next
     to a letter, any such run with a dot, slash, underscore, colon, "#" or "("
     in it ("ZZ:1234567", "ZZ(1234567", "ZZ. 1234567", "ZZ / 1234567", "ZZ-.1234567");
     neither path joins over a comma, a plus sign or a closing parenthesis. The letter path also reads a Hangul filler
@@ -1572,7 +1576,8 @@ under "Bound to the caller's scope".) P13 a deep freeze of `PROMPTS`
 did not evaluate (Part 2's, not this part's: the provider adapters' use of the schema objects is checked first).
 P14 the letter path joins an asterisk next to a letter (#80's `GAP.numberNearLetter` and `letterJoins`), as this
 part's fix round had the old `identifierPattern` join it, so a letter's "SYN*PCN*44551" is redacted and offered as a
-candidate (N6; digits joined over a dot or slash stay #80's recorded residual); measured first against #80's
+candidate (N6; digits joined over a dot or slash with no identifier label before them stay #80's recorded residual);
+measured first against #80's
 properties and its amounts rule (a Lane B item, no migration). P15 the contract screen joins U+2043 HYPHEN BULLET as
 a dash (`JOIN` and `storedSeparators`) and reads a Hangul filler as a space before it tokenizes, as the letter path
 does since #80 ("Not caught"); measured first against set v2's false refusals and gate.golden (a Lane B item, no
