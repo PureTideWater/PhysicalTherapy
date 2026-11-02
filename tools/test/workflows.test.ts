@@ -2869,7 +2869,7 @@ describe('concurrency groups', () => {
  * rules, never for values), and the defect itself came from action code (buildx copying the event into its metadata),
  * which no expression rule can read, so every step output is bounded where a workflow hands it to a process.
  */
-describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, Part 3, N32)', () => {
+describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/0066, Part 3, N32)', () => {
   type Token = { readonly kind: 'string' | 'number' | 'keyword' | 'name' | 'function' | 'punctuation' | 'operator' | 'star'; readonly text: string };
   type Expression =
     | { readonly t: 'literal'; readonly kind: 'string' | 'number' | 'keyword'; readonly value: string }
@@ -3575,7 +3575,7 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     }
   });
 
-  it('keeps every environment string a workflow sets under 131,072 bytes, NAME=value and its NUL, summed from its name, its literal bytes and each value’s bound', () => {
+  it('keeps every environment string a workflow sets at 131,072 bytes at most, NAME=value and its NUL, summed from its name, its literal bytes and each value’s bound', () => {
     expect(workflowFiles().flatMap((file) => environmentProblems(file, workflow(file)))).toEqual([]);
     const huge: BoundedValue = { file: 'fixture.yml', job: 'images', value: 'steps.web.outputs.size', bytes: 100_000, refs: [], bound: 'a fixture' };
     const sum = (jobs: string, rows: readonly BoundedValue[] = [huge]) =>
