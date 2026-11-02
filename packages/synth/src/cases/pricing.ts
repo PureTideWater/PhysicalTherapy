@@ -4,7 +4,7 @@
  * be stated before the milestone that asserts them. Expected amounts for PRC cases are the pricing
  * oracle's golden lines (fixtures/golden), not stated here.
  */
-import { centsToString, sumCents } from '@tp/money';
+import { cents, centsToString, sumCents } from '@tp/money';
 
 import { type CalendarDate, addDays, calendarDate } from '../core/dates';
 import { prettyJson } from '../core/json';
@@ -42,11 +42,74 @@ export function map01(b: CaseBuilder): void {
   remitWith(b, claims, 'Claims from a payer and plan with no mapping.', base);
   b.scenario({ mappings: [], plan: 'SYNPLAN-UNMAPPED-01', payer: base.payer.name });
   b.outcome({
-    pricing: 'refused for every line: NO_MAPPING',
+    pricing: 'every line NO_MAPPING; the run prices every other line',
     coverageWaiting: {
       lines: claims.reduce((total, item) => total + item.lines.length, 0),
       chargeCents: centsToString(sumCents(claims.map((item) => item.charge))),
       paidCents: centsToString(sumCents(claims.map((item) => item.paid))),
+    },
+  });
+}
+
+/** MAP-06's mapped plan's terms: a SYNTHETIC fixed schedule of 50.00 a unit for every code, Medicare flags off. */
+const MAP06_UNIT_CENTS = 5000n;
+
+/**
+ * MAP-06 (combined audit #32; docs/adr/0075): one month holding lines of a mapped plan and of a plan
+ * with no mapping. The run prices the mapped plan's lines and leaves every line of the other plan
+ * unpriced (`NO_MAPPING` where the resolver reaches it), and its coverage records that plan with all
+ * its lines and billed cents. MAP-07 to MAP-09, PRC-29 and PRC-31 reuse this file; PRC-29 maps the
+ * second plan to the same terms afterwards, so two of its lines are paid below what those terms
+ * expect and triage has short lines to validate.
+ *
+ * The mapped plan's terms are a fixed schedule, so every expected amount here is worked out in code
+ * (units times the unit amount, as the engine computes FIXED_SCHEDULE and PRC-05 states it) and the
+ * month prices under release 900001 whatever the practice's location. Each line's allowed amount is
+ * fixed, so the shortfalls are exact. Synthetic data only.
+ */
+export function map06(b: CaseBuilder): void {
+  const base = basics(b, 'M');
+  const lineOf = (code: string, allowedCents: bigint, units = 1) => therapyLine(b.world, { code, units, date: base.date, unitCharge: 7500n, allowed: allowedCents });
+  const claimOf = (n: number, plan: string, lines: ReturnType<typeof lineOf>[]) => therapyClaim(b.world, { caseId: b.info.id, n, plan, filingIndicator: '12', lines });
+  const mapped = [
+    claimOf(1, 'SYNPLAN-COMM-06', [lineOf('97110', 10_000n, 2), lineOf('97140', 4200n), lineOf('97530', 5200n)]),
+    claimOf(2, 'SYNPLAN-COMM-06', [lineOf('97112', 9600n, 2)]),
+  ];
+  const unmapped = [claimOf(3, 'SYNPLAN-UNMAPPED-06', [lineOf('97110', 9000n, 2), lineOf('97140', 4600n), lineOf('97530', 5000n)])];
+  remitWith(b, [...mapped, ...unmapped], 'One month: two claims of a plan mapped to a fixed schedule and one claim of a plan with no mapping.', base);
+  const expectedOf = (units: string | undefined) => cents(MAP06_UNIT_CENTS * BigInt(units ?? '1'));
+  const linesOf = (claims: readonly Claim[], offset: number) =>
+    claims.flatMap((item, claim) =>
+      item.lines.map((entry, line) => ({
+        claim: claim + offset,
+        line,
+        code: entry.procedure.code,
+        units: entry.units ?? '1',
+        chargeCents: centsToString(entry.charge),
+        // paid plus the patient's share: the observed allowed basis `paid_plus_pr`.
+        observedAllowedCents: centsToString(sumCents([entry.paid, ...entry.adjustments.filter((cas) => cas.group === 'PR').flatMap((cas) => cas.items.map((share) => share.amount))])),
+        expectedAllowedCents: centsToString(expectedOf(entry.units)),
+      })),
+    );
+  const unmappedLines = linesOf(unmapped, mapped.length);
+  b.scenario({
+    release: RELEASE,
+    serviceMonth: `${base.date.slice(0, 7)}-01`,
+    mappings: [{ plan: 'SYNPLAN-COMM-06', kind: 'contract', method: 'FIXED_SCHEDULE', amountCentsPerUnit: centsToString(cents(MAP06_UNIT_CENTS)), scope: 'every code', flags: COMMERCIAL_OFF, effectiveFrom: '2026-01-01' }],
+    unmappedPlan: 'SYNPLAN-UNMAPPED-06',
+    payer: base.payer.name,
+  });
+  b.outcome({
+    priced: linesOf(mapped, 0),
+    unpriced: unmappedLines.map(({ claim, line }) => ({ claim, line, reason: 'NO_MAPPING' })),
+    unmapped: {
+      plans: 1,
+      lines: unmappedLines.length,
+      chargeCents: centsToString(sumCents(unmapped.map((item) => item.charge))),
+    },
+    afterMapping: {
+      mapping: 'SYNPLAN-UNMAPPED-06 to the same fixed schedule, from 2026-01-01',
+      priced: unmappedLines.map(({ claim, line, expectedAllowedCents, observedAllowedCents }) => ({ claim, line, expectedAllowedCents, observedAllowedCents })),
     },
   });
 }

@@ -15,12 +15,13 @@ import {
   createUser,
   endPool,
 } from '@tp/db/testing';
+import { createLogger } from '@tp/observability';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { MemoryMailSender } from '../mail/mail';
 import { generateRoiStatement } from '../reconcile/statements';
 import { BillingRefusedError, assertManagesBilling, ensureCustomer, issueAuditInvoice, organizationBilling, paymentMethodOnFile, payOpenInvoice, startPaymentMethodSetup, subscribe } from './account';
-import { dunningMessage, runDunning } from './dunning';
+import { dunningMessage, runDunning, sendDunningNotices } from './dunning';
 import { receiveWebhook } from './events';
 import { practiceRunRefusal } from './refusal';
 import { withBilling } from './scope';
@@ -387,9 +388,106 @@ describe('billing with the local Stripe test-mode simulator', () => {
     expect(await one<{ n: string }>("SELECT count(*)::text AS n FROM audit_event WHERE action = 'billing_reinstated' AND object_id = $1", [world.organizationId])).toEqual({ n: '1' });
     await runDunning({ ...options, requestId: `job-${randomUUID()}` });
     expect(mail.sent.filter((message) => message.links[0]?.endsWith(world.organizationId) && message.subject === 'New runs have started again')).toHaveLength(1);
-    expect(dunningMessage('payment_failed', ['a@synthetic.test'], { number: null, amount_remaining_cents: '100', first_failed_at: new Date('2026-03-01T00:00:00Z') }, 'http://x/settings/billing/1').lines[0]).toBe(
-      'The payment for an invoice ($1.00) failed.',
+    const invoiceId = randomUUID();
+    const userId = randomUUID();
+    const message = dunningMessage('payment_failed', 'a@synthetic.test', userId, { id: invoiceId, number: null, amount_remaining_cents: '100', first_failed_at: new Date('2026-03-01T00:00:00Z') }, 'http://x/settings/billing/1');
+    expect(message.lines[0]).toBe('The payment for an invoice ($1.00) failed.');
+    // One owner a message, on the notices stream, tagged with the invoice and the owner (docs/adr/0050 and 0065).
+    expect(message.to).toEqual(['a@synthetic.test']);
+    expect(message.identity).toEqual({ stream: 'notices', kind: 'dunning', subjectId: invoiceId, recipientUserId: userId });
+  });
+
+  it('sends a stage notice one message per billing owner from a recorded outbox, and a retry reaches only the owner whose send threw', async () => {
+    const world = await customerWithMethod('dunning outbox');
+    const second = await createUser(owner);
+    await addMembership(owner, world.organizationId, second, 'practice_admin');
+    const customer = await customerRef(world.organizationId);
+    const failed = `in_hand${randomBytes(6).toString('hex')}`;
+    await receive(signed('invoice.payment_failed', invoiceObject(failed, customer, 'open', 4200, 0), new Date(Date.now() - 3_600_000)));
+    const { id: invoiceId } = await one<{ id: string }>('SELECT id FROM invoice WHERE stripe_invoice_id = $1', [failed]);
+    const memory = new MemoryMailSender();
+    // The second owner's first send is refused by the mail service; every other send is accepted.
+    let refused = 0;
+    const flaky = {
+      send: (message: Parameters<MemoryMailSender['send']>[0]) => {
+        if (message.identity.recipientUserId === second && refused === 0) {
+          refused += 1;
+          return Promise.reject(Object.assign(new Error('SYNTHETIC throttled'), { name: 'TooManyRequestsException' }));
+        }
+        return memory.send(message);
+      },
+    };
+    const lines: Record<string, unknown>[] = [];
+    const logger = createLogger({ sink: (line) => lines.push(JSON.parse(line) as Record<string, unknown>) });
+    const options = { pool: operator, mail: flaky, origin: 'http://localhost:3000', requestId: `job-${randomUUID()}`, now: new Date(), logger };
+    await runDunning(options);
+    const ours = () => memory.sent.filter((message) => message.identity.subjectId === invoiceId);
+    expect(ours().map((message) => message.identity.recipientUserId)).toEqual([world.adminUserId]);
+    expect(ours().every((message) => message.to.length === 1 && message.identity.stream === 'notices' && message.identity.kind === 'dunning')).toBe(true);
+    const recipients = () =>
+      owner.query<{ user_id: string; state: string; attempts: number; sent: boolean }>(
+        'SELECT user_id, state, attempts, ses_message_id IS NOT NULL AS sent FROM dunning_notice_recipient WHERE invoice_id = $1 ORDER BY user_id',
+        [invoiceId],
+      );
+    expect((await recipients()).rows).toEqual(
+      [
+        { user_id: world.adminUserId, state: 'sent', attempts: 0, sent: true },
+        { user_id: second, state: 'pending', attempts: 1, sent: false },
+      ].sort((a, b) => a.user_id.localeCompare(b.user_id)),
     );
+    // The retry comes due (1 minute later): only the owner still pending is sent the notice, once.
+    await owner.query('UPDATE dunning_notice_recipient SET next_attempt_at = now() WHERE invoice_id = $1 AND user_id = $2', [invoiceId, second]);
+    await sendDunningNotices({ ...options, requestId: `job-${randomUUID()}` });
+    await sendDunningNotices({ ...options, requestId: `job-${randomUUID()}` });
+    expect(ours().map((message) => message.identity.recipientUserId).sort()).toEqual([world.adminUserId, second].sort());
+    expect((await recipients()).rows.map((row) => row.state)).toEqual(['sent', 'sent']);
+    expect(lines.filter((line) => line.level === 'error')).toEqual([]);
+    expect(JSON.stringify(lines)).not.toContain('@');
+  });
+
+  it('records a stage notice with no billing owner as undelivered on the invoice, and fails an owner at once on a permanent refusal', async () => {
+    const lonely = await customerWithMethod('dunning without owner');
+    // Its one administrator has not accepted the invitation yet: no active billing owner to send to.
+    await asOwner(owner, [], () => owner.query('UPDATE "user" SET status = \'invited\' WHERE id = $1', [lonely.adminUserId]));
+    const unowned = `in_hand${randomBytes(6).toString('hex')}`;
+    await receive(signed('invoice.payment_failed', invoiceObject(unowned, await customerRef(lonely.organizationId), 'open', 700, 0), new Date(Date.now() - 3_600_000)));
+    const world = await customerWithMethod('dunning refused');
+    const refusedInvoice = `in_hand${randomBytes(6).toString('hex')}`;
+    await receive(signed('invoice.payment_failed', invoiceObject(refusedInvoice, await customerRef(world.organizationId), 'open', 800, 0), new Date(Date.now() - 3_600_000)));
+    const lines: Record<string, unknown>[] = [];
+    const logger = createLogger({ sink: (line) => lines.push(JSON.parse(line) as Record<string, unknown>) });
+    const memory = new MemoryMailSender();
+    const rejecting = {
+      send: (message: Parameters<MemoryMailSender['send']>[0]) =>
+        message.identity.recipientUserId === world.adminUserId ? Promise.reject(Object.assign(new Error('SYNTHETIC rejected'), { name: 'MessageRejected' })) : memory.send(message),
+    };
+    await runDunning({ pool: operator, mail: rejecting, origin: 'http://localhost:3000', requestId: `job-${randomUUID()}`, now: new Date(), logger });
+    const ids = await owner.query<{ stripe_invoice_id: string; id: string }>('SELECT stripe_invoice_id, id FROM invoice WHERE stripe_invoice_id = ANY ($1)', [[unowned, refusedInvoice]]);
+    const idOf = (stripe: string) => ids.rows.find((row) => row.stripe_invoice_id === stripe)?.id ?? '';
+    // No owner: notice_undelivered on the invoice (purpose: the stage), no recipient row, no message.
+    const undelivered = await owner.query<{ object_id: string; purpose: string }>(
+      "SELECT object_id, purpose FROM audit_event WHERE action = 'notice_undelivered' AND object_type = 'invoice' AND object_id = ANY ($1) ORDER BY object_id",
+      [[idOf(unowned), idOf(refusedInvoice)]],
+    );
+    expect(undelivered.rows.sort((a, b) => a.object_id.localeCompare(b.object_id))).toEqual(
+      [
+        { object_id: idOf(unowned), purpose: 'payment_failed' },
+        { object_id: idOf(refusedInvoice), purpose: 'payment_failed' },
+      ].sort((a, b) => a.object_id.localeCompare(b.object_id)),
+    );
+    expect((await owner.query('SELECT 1 FROM dunning_notice_recipient WHERE invoice_id = $1', [idOf(unowned)])).rows).toEqual([]);
+    expect(memory.sent.filter((message) => message.identity.subjectId === idOf(unowned) || message.identity.subjectId === idOf(refusedInvoice))).toEqual([]);
+    // A permanent refusal fails the owner at once, with the error's name, never its message.
+    expect((await owner.query('SELECT state, attempts, failure_code FROM dunning_notice_recipient WHERE invoice_id = $1', [idOf(refusedInvoice)])).rows).toEqual([
+      { state: 'failed', attempts: 1, failure_code: 'MessageRejected' },
+    ]);
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ level: 'error', invoice_id: idOf(unowned), error_code: 'NOTICE_UNDELIVERABLE' }),
+        expect.objectContaining({ level: 'error', invoice_id: idOf(refusedInvoice), error_code: 'NOTICE_UNDELIVERED' }),
+      ]),
+    );
+    expect(JSON.stringify(lines)).not.toMatch(/@|SYNTHETIC/);
   });
 
   it('reaches a new failure past more than 500 settled invoices, and tells an organization paid after its suspension took effect that runs started again', async () => {
@@ -566,7 +664,16 @@ describe('billing reads no PHI table (PRD 8)', () => {
       `SELECT p.oid::regprocedure::text AS name FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
         WHERE n.nspname = 'public' AND p.prosecdef AND has_function_privilege('tp_billing', p.oid, 'EXECUTE') ORDER BY 1`,
     );
-    expect(rows.map((row) => row.name)).toEqual(['billing_owner_emails(uuid)', 'billing_record_audit(text,text,uuid,text,text)', 'billing_usage_counts()']);
+    // The owners' addresses come one at a time, through the dunning outbox's claim (migration 20261107090000; audit #76).
+    expect(rows.map((row) => row.name)).toEqual([
+      'billing_dunning_notice_claim(uuid,text,uuid)',
+      'billing_dunning_notice_failed(uuid,text,uuid,text,boolean,text)',
+      'billing_dunning_notice_sent(uuid,text,uuid,text,text)',
+      'billing_dunning_notices_pending(integer)',
+      'billing_open_dunning_notice(uuid,text,text)',
+      'billing_record_audit(text,text,uuid,text,text)',
+      'billing_usage_counts()',
+    ]);
     const members = await owner.query<{ member: string; inherits: boolean; switches: boolean }>(
       `SELECT pg_get_userbyid(m.member) AS member, m.inherit_option AS inherits, m.set_option AS switches FROM pg_auth_members m WHERE m.roleid = 'tp_billing'::regrole ORDER BY 1`,
     );

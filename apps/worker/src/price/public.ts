@@ -6,8 +6,8 @@
  * pricing. Which run is in effect for its period is defined here once (in-effect.ts), for every reader, and
  * whether a packet version's pricing is still current (pricing-check.ts, the database's one check). Executing a run is the worker's (the price job); nothing here stores a priced line.
  */
-export { type CreatePricingRunInput, type CreatedPricingRun, PricingLocationWaiting, PricingRunInputError, createPricingRun } from './create';
-export { COVERAGE_FORMAT, type RunCoverage, operatorAlerts, parseCoverage, runCoverageSchema } from './coverage';
+export { type CreatePricingRunInput, type CreatedPricingRun, PricingLocationWaiting, PricingRunInputError, PricingRunNothingMapped, createPricingRun } from './create';
+export { COVERAGE_FORMAT, COVERAGE_FORMAT_1, type RunCoverage, operatorAlerts, parseCoverage, runCoverageSchema } from './coverage';
 export { CAUSE_KINDS, type CauseKind, type ContractPin, type LineCause, type MappingPin, type RecordVersion, SETTINGS_FIELDS, type SettingsField } from './causes';
 export { CONTENT_NOT_LOADED_MESSAGE, type FailureCode } from './execute';
 export {
@@ -30,8 +30,10 @@ export {
   compareAcceptance,
   compareRuns,
 } from './diff';
+export { PRICEABLE_LINE } from './lines';
+export { MONITOR_MONTHS_LIMIT } from '../jobs/registry';
 export { type ImpactOptions, type ImpactRun, type RunImpact, completeRuns, runReleaseImpact } from './impact';
-export { coversMore, termsUnchangedSince } from '../monitor/plan';
+export { coversMore, termsUnchangedSince, uncoveredMonths } from '../monitor/plan';
 export {
   ELIGIBLE_RUN,
   IN_EFFECT_SINCE,

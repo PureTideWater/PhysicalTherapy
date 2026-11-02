@@ -1,4 +1,5 @@
 import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
+import { rolesPermit } from '@tp/db/runtime';
 import { STAGE_LABELS } from '@tp/triage';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -6,6 +7,7 @@ import Link from 'next/link';
 import { Figure, PricedShare } from '../../../components/coverage/share';
 import { FirstUpload, HeadlineTiles, uploadGate } from '../../../components/dashboard/headline';
 import { roleNames, utc, utcDate } from '../../../components/format';
+import { MappedNotPricedAlert, UnmappedPlansAlert } from '../../../components/mapping/months';
 import { NotificationText } from '../../../components/monitoring/display';
 import { Money } from '../../../components/remittances/display';
 import { ScrollTable } from '../../../components/scroll-table';
@@ -139,6 +141,9 @@ const OUTCOME_NAMES: Readonly<Record<string, string>> = {
  * jump to, the practice record and its agreements. Every number links to the screen and stage it came
  * from; before the first file, the empty state names the gate Uploads uses (the BAA on file, then the
  * organization not suspended; test matrix HOM-03) and the next step it leaves.
+ * Above the queues, the plans with no mapping, whose lines no run prices, and the lines of mapped plans still
+ * NO_MAPPING in effect, as Coverage counts them, each linking to Payer and plan mapping ("Map them" for a person who
+ * may map plans; combined audit #32, docs/adr/0075; MAP-06, PRC-31).
  */
 export default async function PracticePage(props: { readonly params: Promise<{ practiceId: string }> }) {
   const page = await loadPage(practiceHome, props);
@@ -321,6 +326,8 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
               </dl>
             </CardContent>
           </Card>
+          <UnmappedPlansAlert practiceId={practice.id} totals={dashboard.unmappedPlans} canMap={rolesPermit(access.roles, 'mapping.edit')} place="home" />
+          <MappedNotPricedAlert practiceId={practice.id} totals={dashboard.mappedNotPriced} canMap={rolesPermit(access.roles, 'mapping.edit')} />
           <Card role="region" aria-label="Queues">
             <CardHeader>
               <CardTitle>Queues</CardTitle>

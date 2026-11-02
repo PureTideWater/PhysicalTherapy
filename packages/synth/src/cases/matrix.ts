@@ -38,11 +38,40 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
   { id: 'PAR-28', title: 'Renamed executable in a zip', assertion: 'Quarantined; nothing parsed' },
   { id: 'PAR-29', title: '10,000-claim file', assertion: 'Parses within target; memory bounded' },
   { id: 'PAR-30', title: 'Same file uploaded concurrently twice', assertion: 'Exactly one remittance row' },
-  { id: 'MAP-01', title: 'Unmapped payer and plan', assertion: 'Pricing refused; coverage shows dollars waiting' },
+  {
+    id: 'MAP-01',
+    title: 'Unmapped payer and plan',
+    assertion:
+      'No line of the plan is ever priced; a line the resolver reaches is left unpriced as `NO_MAPPING`, one by one; the run prices every other line of its period. Coverage shows dollars waiting',
+  },
   { id: 'MAP-02', title: 'Mapping with an effective date after some lines', assertion: 'Earlier lines `NO_MAPPING`; later priced' },
   { id: 'MAP-03', title: 'Mapping corrected', assertion: 'New mapping; old run unchanged; re-run offered' },
   { id: 'MAP-04', title: 'Mapped as no agreement', assertion: 'Lines go to anomaly screening only' },
   { id: 'MAP-05', title: 'Mapped as MA non-contracted', assertion: 'Priced from the fee schedule with all flags on' },
+  {
+    id: 'MAP-06',
+    title: 'A month holding lines of a mapped plan and of a plan with no mapping',
+    assertion:
+      "Priced by the monitor and by a person's run, in the worker and with nothing refused in Postgres: the mapped plan's lines price under their mapping, and no line of the other plan is priced (`NO_MAPPING` one by one where the resolver reaches it; `ENGINE_ERROR` for a line that fails the engine's fact checks first). The run's coverage records the plan with no mapping, all its lines and billed cents, equal to what Coverage counts for that month. Coverage, Pricing runs and the home page say the plan has no mapping and its lines are not priced; the run's page and the printed audit report say it had no mapping when the run was priced, and the printed coverage report that it had none when the report was made, in counts and cents only. The engine is unchanged",
+  },
+  {
+    id: 'MAP-07',
+    title: 'A period none of whose plans has a mapping, and the mapping that completes it',
+    assertion:
+      'No run is created: the monitor leaves the month waiting, logged as `UNMAPPED_PLAN` with the count of months, and a person\'s run is refused as pricing nothing. A mapping queues monitoring only when, with a release in force, it leaves a month no run covers with every plan of its lines mapped and no wait on the billing ZIP or on Medicare content holding it; that job names every such month, by its first day only, and prices those months alone as first runs in effect with no hand re-run, never a month still waiting on another plan\'s mapping (with month 1 holding plans A and B and month 2 holding A and C, mapping A, then B, then C gives each month one first run and no re-run). A mapping that leaves the month mixed, or held on the billing ZIP, queues nothing and says only "Mapped", and the page says how many months wait and offers "Price them now", which queues monitoring of every uncovered month and is refused while the practice is suspended. Two people mapping a month\'s last two plans at the same moment queue monitoring exactly once. A month whose last run waited on Medicare content is planned again once a mapping completes it',
+  },
+  {
+    id: 'MAP-08',
+    title: 'Plans mapped after their months were priced',
+    assertion:
+      'The mapping list and each plan\'s page list, oldest first, each run in effect holding `NO_MAPPING` lines that a mapping now covers, with their lines and billed dollars. "Price these months again" creates one re-run of each in that person\'s name, queued and not accepted, with one audit event per re-run; two plans mapped and pressed in turn give one counting re-run per month, and a second press of the same page, by anyone, at any moment, including two presses at once, creates no second re-run. A month whose first run of overlapping dates is queued or being priced is not re-run (`newer_run_pending`) and says it waits. A month whose re-run since the mapping is pending links to it; one whose re-run is superseded or pinned to a withdrawn release is ready again. A month whose re-run since the mapping failed on the billing ZIP or on Medicare content says so, links to it and is not offered again until the location is saved, the terms change or a release loads more of that content; after any other failure it is ready again and says the last re-run failed. Once accepted, the month says to triage it on Cases until triage has validated its short lines that were `NO_MAPPING` before; a re-run accepted after a sign-off or a release alone is not listed. A job never creates the re-runs',
+  },
+  {
+    id: 'MAP-09',
+    title: 'Pricing months again from a page that is out of date, or without the right',
+    assertion:
+      "When a month became ready that the form did not send, or the form sent a month that is neither ready nor already being priced again, the request is refused as `months_changed` with nothing created, the refused field is named in the form's summary, and the page shows the months as they are now. A refusal of one month names it by its dates and creates nothing. A run of another practice, a plan of another practice, a release not in force, a practice that is suspended, and a person without `mapping.edit` are refused, with nothing created",
+  },
   { id: 'CON-01', title: 'Two versions with overlapping windows', assertion: 'Refused' },
   { id: 'CON-02', title: 'Amendment closes the prior window', assertion: 'Prior `effective_to` set; prior unchanged otherwise' },
   { id: 'CON-03', title: 'Edit attempt on a signed-off version', assertion: 'Refused; supersession required' },
@@ -117,6 +146,24 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     title: 'Re-running a run that is not in effect',
     assertion:
       'A run that a later run or an accepted re-run replaced, and a re-run nobody accepted, are not re-run (`not_in_effect`). Their pages offer the run in effect for those service dates instead. A run in effect is re-run as before. A re-run of a re-run nobody accepted, left from before this rule, is not accepted (`superseded`)',
+  },
+  {
+    id: 'PRC-29',
+    title: 'A re-run of a month priced around a plan with no mapping, after the plan is mapped',
+    assertion:
+      "The re-run prices the same lines (the original's cut-off), the plan's lines under the mapping and every other line as the original did, unless something else changed since. Its page lists exactly the lines whose pricing in effect changes. Accepted, it is the run in effect and the plan's lines leave `NO_MAPPING`; `recompute(trace)` holds on every priced line; triaged from Cases, the plan's short lines reach validated",
+  },
+  {
+    id: 'PRC-30',
+    title: 'The coverage a run records of plans with no mapping',
+    assertion:
+      '`tp-pricing-coverage/2` lists each plan of the run\'s lines with no mapping when it was priced, with all its lines (whatever their unpriced reason) and billed cents, together at most the run\'s unpriced count. A `tp-pricing-coverage/1` run reads as having none. The printed audit report says "N plans had no mapping when this run was priced; their lines are not priced", and a new coverage report, its figures fixed when it was made, "N plans had no mapping; their lines were not priced"; a coverage report stored before keeps both of its own sentences',
+  },
+  {
+    id: 'PRC-31',
+    title: 'Lines of mapped plans still unpriced as `NO_MAPPING` in the pricing in effect',
+    assertion:
+      'Coverage, Pricing runs, the home page and the mapping list count the lines whose pricing in effect is `NO_MAPPING` while a mapping is now in force on their date, in lines, billed cents and priced months only; the count falls to zero once the re-runs pricing them are accepted, and never counts a line of a plan with no mapping',
   },
   { id: 'CAS-01', title: 'Cohort below minimum size', assertion: 'No anomaly' },
   { id: 'CAS-02', title: 'Anomaly never enters a case or report total', assertion: 'Holds' },
@@ -222,6 +269,18 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'SEC-17',
     title: 'Screening tables hold no PHI-shaped columns',
     assertion: "Catalog read finds no name, birth date, member ID, service date or claim number column, no practice_id and no registry row; owner-only policy, no other role's privilege",
+  },
+  {
+    id: 'SEC-18',
+    title: "No screening address outlives its screening but as a keyed hash (audit #76; the founder's Q10 (a) and Q11 (b) of 2026-10-21)",
+    assertion:
+      "The screening's SES set uses no suppression list, so SES keeps no screening address and no screening outcome silences a customer's mail; the mail record holds no address and no hash of one; the only values derived from a screening address kept past its prospect are the refusal list's keyed hash of the mailbox an address reaches (its every spelling: ASCII case and white space, a +tag, Gmail's dots, googlemail.com, and me.com and mac.com for icloud.com; an address with any other character as read) that was reported as spam, or of the address with its +tag kept that bounced permanently, on the screening stream, for 365 days, and the bounce budget's 7-day marks of the rate limiter's keyed subjects; the keyed hash differs from a plain SHA-256 of the address and changes with its pepper, which no role reads, and a scan of every text column after the mail scenarios finds it only on the refusal list; no address or domain appears in a log line, job payload, SES tag, audit event or error; no login role has a grant on the mail tables or may call the keyed hash; the application role may not write notice_undelivered, mail_stream_paused or mail_stream_resumed (42501)",
+  },
+  {
+    id: 'SEC-19',
+    title: 'A break-glass notice, or an invitation, that reaches no one (audit #76)',
+    assertion:
+      "A support-access notice goes one message per current practice administrator, from recipient rows recorded before any send, each sent in its own transaction with its message ID kept and retried only to pending recipients after 1, 5, 15 and 60 minutes, so no administrator gets two (a send that throws is sent again to that administrator alone); the first accepted send writes notice_sent, and each recipient's delivery is recorded by message ID in either order; a notice not delivered to every administrator writes notice_undelivered once, notifies each administrator in the app (which notice, linked to its grant, with no figure and no address), reads not delivered to n of m administrators on the grant's page and on the console's support list, and logs NOTICE_UNDELIVERED, which pages the operator; a notice with no administrator writes notice_undelivered, never notice_sent, and logs NOTICE_UNDELIVERABLE; dunning goes the same way, its undelivered stage reported once on the invoice; a message SES accepted and never sent, its administrator on the account's suppression list for an earlier bounce or complaint, reads not delivered, never delivered; an invitation whose latest message bounced, was suppressed, rejected or reported reads not delivered on the users page, one SES held back with its suppression list or reported as spam offering no resend (a resend posted anyway is refused) and naming PaidWhole's support, which releases the address, and the late bounce of a message a resend replaced flags nothing",
   },
   {
     id: 'SCR-01',
@@ -331,10 +390,28 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     assertion:
       "The CDK app computes the launch value at synthesis from the report and the attestation bundle the deploy names, with the launch check, only for the tag's binding report that release.yml measured on the tag and attested in that run (GitHub's artifact attestation, verified by gh attestation verify against the bundle as signed by this repository's release.yml at refs/tags/<tag>, at the tag's commit, on a GitHub-hosted runner, then read again field by field: the report's SHA-256, the signer, the ref, the commit, the runner, the event and the run the report records; the report's recorded GITHUB_WORKFLOW_REF the tag's release.yml, its run and attempt named in the note; a report measured anywhere else, attested by another workflow, ref or repository, or edited after it was signed, refused, naming why) from the Docker runtime that passes with time enforced, as recorded and as read again in binding mode (every scenario but S4's three runs judged on time whatever repetition it records; an advisory report, a pull request's, refused whatever its verdict, the mode named), measured at the tag's commit, on both images by config digest as ECR holds them for the stack's repositories (each manifest read from the registry, an index resolved to its linux/amd64 manifest, nothing pulled, whatever the deployer's image store; a registry not read, a platform manifest not found, no linux/amd64 manifest or an unexpected media type named) and with every size production declares (the web, the platform, each consumer task and their number, Postgres, the storage and the consumer's concurrency), on the layout the release's runner gives, the free 4-CPU runner's shared CPUs (CPUs of their own refused until a release measures on 8 CPUs); anything else stops the synthesis, naming decision 13 and each reason; no report keeps the screening closed; a value set by hand is refused (context of any spelling, and no ScreeningLaunch parameter is declared); a rule refuses a deploy whose image tag is not the report's; the consumer runs whenever a launch value is set, so no deploy opens the screening without it; the web keeps production closed unless the value names the image tag it runs; staging and development are not gated",
   },
+  {
+    id: 'SCR-21',
+    title: "The screening stream's cut-off (audit #76; the founder's Q9 of 2026-10-21)",
+    assertion:
+      "In a 7-day window since the last resume, the screening stream pauses when its permanent bounces pass 3% of its sends with a floor of 200 (6 of 150 leave it open, 7 pause it; 30 of 1,000 open, 31 pause) or its complaints other than not_spam pass 0.08% with a floor of 2,500 (2 open and 3 pause at low volume; 8 of 10,000 open, 9 pause), a bounce from SES's global suppression list counted as SES counts it, and a message the account's own suppression list held back (its bounce or its complaint of that subtype), a transient or undetermined bounce, a probe and a send before the window never counted; the cut-off is read at each screening bounce or complaint and once each mail_events run, so a window that shrinks past the line pauses it too; it also pauses when the account's bounce or complaint rate reaches its warning alarm (2.5%, 0.05%) or SES puts the account under review; each pause writes one mail_stream_paused, a repeat changes nothing, and MAIL_STREAM_PAUSED pages the operator; the platform disables the screening's SES set alone, and disables it again whenever it reads it enabled while paused; the transactional and notices streams never pause (a CHECK refuses it, and all their mail bouncing leaves them open) and their notices still go; while paused the page says new screenings are paused and that uploads already made are kept, a submission is refused (screening_paused), and a queued run is neither claimed, completed nor failed but kept; only a platform administrator resumes it, in the console with a reason (mail_stream_resumed); a resumed stream claims nothing until the platform reads its set enabled and confirms it, and in staging and production the screening opens again only with a delivered and a bounced probe of the stream since the resume and within 48 hours",
+  },
+  {
+    id: 'SCR-22',
+    title: "The address a screening's result is sent to (audit #76; the founder's Q1 (g), Q10 (a), Q11 (b) and Q12 of 2026-10-21)",
+    assertion:
+      "The form hints at a likely typo of a large mail provider's domain (gmial.com, yaho.com, outlok.com, hotmal.com) and warns of an ending no top-level domain uses, in the browser and again on the server, and the prospect may keep the address as typed; only after the upload's own checks, the rate limit and the database's refusals for the submitter (closed, paused, the bounce budget, which spend no validation), the server asks DNS whether the domain takes mail (no such domain, a null MX, or neither an MX nor an address refuses; a timeout or a failure accepts) and SES whether the mailbox exists (a LOW validity, syntax, DNS or mailbox verdict refuses, a MEDIUM validity or mailbox warns, an error or a timeout accepts), the two together, so the added worst case is one 2-second timeout, and SES no more than the day's cap (1,000 in production, 50 in staging; past it the DNS check alone, MAIL_VALIDATION_CAP_REACHED logged and alarmed); an address on the refusal list (a screening permanent bounce, a global suppression list's bounce among them, matched by the address with its +tag kept, or abuse complaint, matched by the mailbox it reaches, in the last 365 days: trimmed, in any case, at Gmail its dots, its +tag and googlemail.com, and at Apple me.com and mac.com) is refused only after those checks and submit_screening()'s own, so a listed address gets the same answer as any other on every path that ends without an email (a ZIP the release cannot price, a mailbox SES cannot confirm), and a bounce of a +tag spelling refuses that spelling alone, while a customer stream's bounce or complaint, a transient bounce, the account's own suppression and a not_spam complaint put nothing on it; every refused address, whatever refused it, gets the same one sentence, which says nothing about an earlier screening or a customer's mail; a client or an email account with 3 screening permanent bounces in 7 days is refused (screening_bounce_budget), before and whatever the address, so it learns nothing of the refusal list, and the stream stays open; no log line names the address or its domain",
+  },
   { id: 'JOB-01', title: 'Replayed job with the same key', assertion: 'No duplicate effects' },
   { id: 'JOB-02', title: 'Three failures', assertion: 'Alert raised; dashboard shows last run failed' },
   { id: 'JOB-03', title: 'Digest', assertion: 'Counts and totals only; no PHI column referenced' },
   { id: 'JOB-04', title: 'Two heartbeats missed', assertion: 'Alarm' },
+  {
+    id: 'JOB-05',
+    title: 'A mail event delivered twice, late or out of order (audit #76)',
+    assertion:
+      "The platform's mail_events job records each SES event once per message and event, in any order (a bounce before its send makes the message's row with SES's own send time; a delay after a delivery and a delivery after a complaint change nothing), and deletes it from the queue only after its record commits; an unreadable event is left on the queue and reaches the dead-letter queue, which alarms, as does a queue whose oldest event is 15 minutes old; the queue admits only the stack's two rules and is encrypted with the environment's key; each stream is probed at SES's simulator alone, at once after a resume, daily, and hourly while missed, never while paused, unconfirmed or before the identities are verified; a stream whose probes are not back logs MAIL_PROBE_MISSED on every run until both are, 26 hours after the older of its proofs since the last resume or an hour after the first probe sent since then, however often it goes again; and each probe event recorded is logged by its message ID and codes, no address",
+  },
   { id: 'MOD-01', title: 'Contract proposal quotes verify', assertion: 'All quotes are substrings of the page' },
   { id: 'MOD-02', title: 'Proposal with a date not in its quote', assertion: 'Field rejected' },
   { id: 'MOD-03', title: 'Narrative evaluation set of 300', assertion: 'Zero critical errors' },

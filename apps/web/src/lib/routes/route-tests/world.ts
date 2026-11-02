@@ -41,7 +41,7 @@ import { seedModelProposals } from '../test-support/model-world';
 import { seedMonitoring } from '../test-support/monitoring-world';
 import { acceptCurrentTerms, publishSyntheticTerms, seedOnboarding } from '../test-support/onboarding-world';
 import { seedPacketCases, seedPacketLine, seedPackets } from '../test-support/packet-world';
-import { loadRouteRelease, seedPricingRun } from '../test-support/pricing-world';
+import { loadRouteRelease, seedMappedNotPriced, seedPricingRun } from '../test-support/pricing-world';
 import { seedReportDocument } from '../test-support/report-world';
 import { seedTriage, seedTriageLine } from '../test-support/triage-world';
 
@@ -480,6 +480,16 @@ export class RouteWorlds {
     const packetLineId = await seedPacketLine({ owner, practiceId: tenant.practiceId, claimId: loaded.claimId, planId: loaded.planId });
     const regulationLineId = await seedPacketLine({ owner, practiceId: tenant.practiceId, claimId: loaded.claimId, planId: loaded.planId, lineNo: 4, serviceDate: '2026-03-18' });
     const { pricingRunId, rerunId } = await seedPricingRun({ owner, app, practiceId: tenant.practiceId, planId: loaded.planId, signedOffVersionId: contracts.signedOffVersionId, managerId: manager });
+    // April priced around a plan with no mapping, the plan mapped since: the month the mapping screens price again (combined audit #32).
+    const { mappedNotPricedRunId } = await seedMappedNotPriced({
+      owner,
+      app,
+      practiceId: tenant.practiceId,
+      claimId: loaded.claimId,
+      payerId: loaded.payerId,
+      planId: loaded.planId,
+      managerId: manager,
+    });
     // The packets' own cases, before the audit report's triage (which would take their lines, their windows verified, into its case).
     const packetCases = await seedPacketCases({
       owner,
@@ -566,6 +576,7 @@ export class RouteWorlds {
       ...contracts,
       pricingRunId,
       rerunId,
+      mappedNotPricedRunId,
       ...triage,
       ...monitoring,
       ...ledger,

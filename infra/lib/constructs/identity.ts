@@ -1,4 +1,4 @@
-import { Duration, RemovalPolicy, Stack, aws_cognito as cognito } from 'aws-cdk-lib';
+import { Aws, type CfnCondition, Duration, Fn, RemovalPolicy, Stack, aws_cognito as cognito } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
 /**
@@ -28,6 +28,10 @@ export interface IdentityProps {
   readonly relyingPartyId: string;
   /** The sender of Cognito's email, and the domain whose verified SES identity sends it. */
   readonly mailFrom: { readonly address: string; readonly domain: string };
+  /** The transactional stream's configuration set, which Cognito's email goes through (docs/adr/0065). */
+  readonly configurationSet: string;
+  /** True in phase 2 (MailIdentitiesVerified): the stack's identity is verified, so Cognito may send through it. */
+  readonly identitiesVerified: CfnCondition;
 }
 
 /**
@@ -50,7 +54,10 @@ export interface IdentityProps {
  *   can use them (docs/adr/0049).
  * - Cognito's own email (invitations, verification and recovery codes) goes through SES from
  *   MailFromAddress, the worker's sender too, under the SES identity of its domain in this region
- *   (the DEVELOPER sending account), not Cognito's capped default sender.
+ *   (the DEVELOPER sending account) and the transactional stream's configuration set, so its bounces and
+ *   complaints are recorded and an undelivered invitation is flagged (docs/adr/0065). Only in phase 2
+ *   (MailIdentitiesVerified=true): the stack creates that identity, and Cognito refuses an unverified one,
+ *   so in phase 1 the pool keeps Cognito's own capped sender, before any customer exists (D2).
  *
  * Lockout after ten failures, the 30-minute idle limit and the device list are application rules
  * (sessions.md); Cognito's own lockout sits beneath them.
@@ -87,12 +94,17 @@ export class Identity extends Construct {
       removalPolicy: RemovalPolicy.RETAIN,
     });
     // Written to the resource directly: the L2 SES option checks the address's domain at synth time,
-    // and both are deploy-time parameters here.
-    (this.userPool.node.defaultChild as cognito.CfnUserPool).emailConfiguration = {
-      emailSendingAccount: 'DEVELOPER',
-      from: props.mailFrom.address,
-      sourceArn: `arn:${stack.partition}:ses:${stack.region}:${stack.account}:identity/${props.mailFrom.domain}`,
-    };
+    // and both are deploy-time parameters here. Phase 1 leaves the property out (Cognito's own sender).
+    (this.userPool.node.defaultChild as cognito.CfnUserPool).emailConfiguration = Fn.conditionIf(
+      props.identitiesVerified.logicalId,
+      {
+        EmailSendingAccount: 'DEVELOPER',
+        From: props.mailFrom.address,
+        SourceArn: `arn:${stack.partition}:ses:${stack.region}:${stack.account}:identity/${props.mailFrom.domain}`,
+        ConfigurationSet: props.configurationSet,
+      },
+      Aws.NO_VALUE,
+    );
 
     // The web app's server signs users in with SRP or the choice-based flow (passkeys); there is no
     // hosted UI and no OAuth flow, and no client secret to store.
