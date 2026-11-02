@@ -655,6 +655,27 @@ describe('workflows', () => {
       expect(naming.env).toMatchObject({ STAGING_ORIGIN: '${{ vars.STAGING_STATIC_ASSET_ORIGIN }}', PRODUCTION_ORIGIN: '${{ vars.PRODUCTION_STATIC_ASSET_ORIGIN }}' });
       expect(naming.run).toContain('web-production) echo "dockerfile=apps/web/Dockerfile" >> "$GITHUB_OUTPUT"; origin="$PRODUCTION_ORIGIN" ;;');
       expect(naming.run).toContain('worker) echo "dockerfile=apps/worker/Dockerfile" >> "$GITHUB_OUTPUT"; origin="" ;;');
+      // Run: each image's three outputs, one line each, and a variable with a line break refused before it is written,
+      // so it can add no other output or build argument (the value table's bounds, docs/adr/0066, Part 3, N32).
+      const dir = mkdtempSync(path.join(os.tmpdir(), 'release-image-'));
+      try {
+        const named = (image: string, origin: string) => {
+          const file = path.join(dir, `output-${String(Math.random()).slice(2)}`);
+          writeFileSync(file, '');
+          const result = runScript(naming.run ?? '', { IMAGE: image, STAGING_ORIGIN: origin, PRODUCTION_ORIGIN: 'https://d222.cloudfront.net', GITHUB_OUTPUT: file, GITHUB_REPOSITORY: 'PureTideWater/PhysicalTherapy', GITHUB_REF_NAME: 'v1.2.3' }, dir);
+          return { status: result.status, written: readFileSync(file, 'utf8'), output: result.output };
+        };
+        expect(named('web-staging', 'https://d111.cloudfront.net')).toMatchObject({ status: 0, written: 'ref=ghcr.io/puretidewater/physicaltherapy/web-staging:v1.2.3\ndockerfile=apps/web/Dockerfile\norigin=https://d111.cloudfront.net\n' });
+        expect(named('worker', '')).toMatchObject({ status: 0, written: 'ref=ghcr.io/puretidewater/physicaltherapy/worker:v1.2.3\ndockerfile=apps/worker/Dockerfile\norigin=\n' });
+        for (const origin of ['https://d111.cloudfront.net\ndockerfile=apps/worker/Dockerfile', 'https://d111.cloudfront.net\r\nref=evil']) {
+          const refused = named('web-staging', origin);
+          expect(refused, JSON.stringify(origin)).toMatchObject({ status: 1, written: 'ref=ghcr.io/puretidewater/physicaltherapy/web-staging:v1.2.3\ndockerfile=apps/web/Dockerfile\n' });
+          expect(refused.output).toContain("::error title=web-staging::its static host's repository variable holds a line break");
+          expect(refused.output).not.toContain('d111');
+        }
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
       const scan = stepIndex(steps, isScan);
       const sbom = stepIndex(steps, (step) => step.with?.format === 'spdx-json');
       const saved = stepIndex(steps, (step) => step.run?.includes('docker save') === true);
@@ -3961,9 +3982,9 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.sha256_worker', bytes: 64, refs: identity('dbb694de'), bound: IDENTITY },
     { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.target_web', bytes: DIGEST_BYTES, refs: identity('dbb694de'), bound: IDENTITY },
     { file: 'release-dry-run.yml', job: 'build', value: 'steps.identity.outputs.target_worker', bytes: DIGEST_BYTES, refs: identity('dbb694de'), bound: IDENTITY },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.dockerfile', bytes: 'apps/worker/Dockerfile'.length, refs: [script('build', 'image', 'c9ae1b40')], bound: 'one of two Dockerfile paths' },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.origin', bytes: VARIABLE_BYTES, refs: [script('build', 'image', 'c9ae1b40')], bound: "'' or a repository variable, at most 48 KB" },
-    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.ref', bytes: 'ghcr.io/'.length + 140 + '/'.length + IMAGE_NAME_BYTES + ':dry-run-'.length + INTEGER_BYTES, refs: [script('build', 'image', 'c9ae1b40')], bound: "ghcr.io, the repository, the matrix's image and dry-run- with the run's ID" },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.dockerfile', bytes: 'apps/worker/Dockerfile'.length, refs: [script('build', 'image', 'e6378687')], bound: 'one of two Dockerfile paths' },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.origin', bytes: VARIABLE_BYTES, refs: [script('build', 'image', 'e6378687')], bound: "'' or a repository variable on one line (the step refuses a line break), at most 48 KB" },
+    { file: 'release-dry-run.yml', job: 'build', value: 'steps.image.outputs.ref', bytes: 'ghcr.io/'.length + 140 + '/'.length + IMAGE_NAME_BYTES + ':dry-run-'.length + INTEGER_BYTES, refs: [script('build', 'image', 'e6378687')], bound: "ghcr.io, the repository, the matrix's image and dry-run- with the run's ID" },
     { file: 'release-dry-run.yml', job: 'capacity', value: 'tojson(needs.build.outputs)', bytes: toJsonBytes(6), refs: releaseBuild(['web', 'worker']), bound: RELEASE_BUILD('six') },
     { file: 'release-dry-run.yml', job: 'push', value: 'tojson(needs.build.outputs)', bytes: toJsonBytes(6), refs: releaseBuild(['web', 'worker']), bound: RELEASE_BUILD('six') },
     { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.config_web', bytes: DIGEST_BYTES, refs: identity('dbb694de'), bound: IDENTITY },
@@ -3978,9 +3999,9 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_web-production', bytes: DIGEST_BYTES, refs: identity('dbb694de'), bound: IDENTITY },
     { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_web-staging', bytes: DIGEST_BYTES, refs: identity('dbb694de'), bound: IDENTITY },
     { file: 'release.yml', job: 'build', value: 'steps.identity.outputs.target_worker', bytes: DIGEST_BYTES, refs: identity('dbb694de'), bound: IDENTITY },
-    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.dockerfile', bytes: 'apps/worker/Dockerfile'.length, refs: [script('build', 'image', '76af533a')], bound: 'one of two Dockerfile paths' },
-    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.origin', bytes: VARIABLE_BYTES, refs: [script('build', 'image', '76af533a')], bound: "'' or a repository variable, at most 48 KB" },
-    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.ref', bytes: 'ghcr.io/'.length + 140 + '/'.length + IMAGE_NAME_BYTES + ':'.length + PATH_BYTES, refs: [script('build', 'image', '76af533a')], bound: "ghcr.io, the repository, the matrix's image and the tag's name" },
+    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.dockerfile', bytes: 'apps/worker/Dockerfile'.length, refs: [script('build', 'image', 'e3cbe28b')], bound: 'one of two Dockerfile paths' },
+    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.origin', bytes: VARIABLE_BYTES, refs: [script('build', 'image', 'e3cbe28b')], bound: "'' or a repository variable on one line (the step refuses a line break), at most 48 KB" },
+    { file: 'release.yml', job: 'build', value: 'steps.image.outputs.ref', bytes: 'ghcr.io/'.length + 140 + '/'.length + IMAGE_NAME_BYTES + ':'.length + PATH_BYTES, refs: [script('build', 'image', 'e3cbe28b')], bound: "ghcr.io, the repository, the matrix's image and the tag's name" },
     { file: 'release.yml', job: 'capacity', value: 'tojson(needs.build.outputs)', bytes: toJsonBytes(12), refs: releaseBuild(['web', 'web-staging', 'web-production', 'worker']), bound: RELEASE_BUILD('twelve') },
     { file: 'release.yml', job: 'push', value: 'tojson(needs.build.outputs)', bytes: toJsonBytes(12), refs: releaseBuild(['web', 'web-staging', 'web-production', 'worker']), bound: RELEASE_BUILD('twelve') },
     { file: 'release.yml', job: 'report', value: 'steps.attest.outputs.bundle-path', bytes: PATH_BYTES, refs: [action('report', 'attest', 'actions/attest-build-provenance')], bound: 'the path of the bundle actions/attest-build-provenance writes' },
