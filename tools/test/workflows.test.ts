@@ -4117,10 +4117,19 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
    */
   function refProblems(rows: readonly BoundedValue[], found: readonly FoundValue[], text: (file: string) => string, source: (file: string) => string | undefined = repositorySource): string[] {
     const problems: string[] = [];
+    // Each file read and parsed once, each module's names and each test file's titles read once, for every row.
+    const once = <T>(cache: Map<string, T>, key: string, make: () => T): T => {
+      if (!cache.has(key)) cache.set(key, make());
+      return cache.get(key) as T;
+    };
+    const texts = new Map<string, string>();
+    const parsed = new Map<string, Workflow>();
+    const names = new Map<string, Set<string>>();
+    const titled = new Map<string, Set<string>>();
     for (const row of rows) {
       const say = (problem: string) => problems.push(`${row.file} ${row.job} ${row.value}: ${problem}`);
-      const workflowText = text(row.file);
-      const jobs = (parse(workflowText) as Workflow).jobs;
+      const workflowText = once(texts, row.file, () => text(row.file));
+      const jobs = once(parsed, row.file, () => parse(workflowText) as Workflow).jobs;
       const reader = jobs[row.job];
       if (row.refs.length === 0) say('names no producer');
       const read = found.filter((entry) => entry.file === row.file && entry.job === row.job && entry.value === row.value);
@@ -4135,23 +4144,24 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
               say(`job ${ref.job} has no step ${ref.step}`);
               break;
             }
-            const where = `step ${ref.step} of job ${ref.job} (${row.file}:${String(stepLine(workflowText, ref.job, ref.step) ?? '?')})`;
+            // Its line, for a message alone, found only when one is written.
+            const where = (): string => `step ${ref.step} of job ${ref.job} (${row.file}:${String(stepLine(workflowText, ref.job, ref.step) ?? '?')})`;
             if ('run' in ref) {
               const now = step.run === undefined ? undefined : fingerprint(step);
-              if (now === undefined) say(`${where} runs no script to fingerprint`);
-              else if (now !== ref.run) say(`${where} has a changed script, env, shell or working-directory, fingerprint ${now}, not ${ref.run}: re-check the bound against it, then write ${now} in this row`);
+              if (now === undefined) say(`${where()} runs no script to fingerprint`);
+              else if (now !== ref.run) say(`${where()} has a changed script, env, shell or working-directory, fingerprint ${now}, not ${ref.run}: re-check the bound against it, then write ${now} in this row`);
             } else if (actionOf(step) !== ref.uses) {
-              say(`${where} uses ${actionOf(step) ?? 'no action'}, not ${ref.uses}`);
+              say(`${where()} uses ${actionOf(step) ?? 'no action'}, not ${ref.uses}`);
             }
             if (ref.job === row.job) {
-              for (const entry of read) if (entry.step !== undefined && entry.step <= index) say(`${where} does not come before the step that reads it`);
+              for (const entry of read) if (entry.step !== undefined && entry.step <= index) say(`${where()} does not come before the step that reads it`);
               const name = new RegExp(`^steps\\.${escaped(ref.step.toLowerCase())}\\.outputs\\.([^.]+)$`).exec(row.value)?.[1];
               const written = 'run' in ref ? writtenOutputs(step, jobs[ref.job] ?? { steps: [] }, keys) : undefined;
               // A script that writes NAME= lines of its own must spell this one out (a $VAR from the cited matrix key);
               // a tool the row names excuses only a script that writes none, the tool writing $GITHUB_OUTPUT itself.
               if (name !== undefined && written !== undefined && !written.has(name)) {
-                if (OWN_OUTPUT_LINE.test(step.run ?? '')) say(`${where} writes no ${name}= to $GITHUB_OUTPUT: its own lines spell ${[...written].sort().join(', ') || 'none'}`);
-                else if (!row.refs.some((other) => other.kind === 'symbol')) say(`${where} writes no ${name}= to $GITHUB_OUTPUT, and the row names no tool that does`);
+                if (OWN_OUTPUT_LINE.test(step.run ?? '')) say(`${where()} writes no ${name}= to $GITHUB_OUTPUT: its own lines spell ${[...written].sort().join(', ') || 'none'}`);
+                else if (!row.refs.some((other) => other.kind === 'symbol')) say(`${where()} writes no ${name}= to $GITHUB_OUTPUT, and the row names no tool that does`);
               }
             }
             break;
@@ -4183,13 +4193,13 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
           case 'symbol': {
             const code = source(ref.path);
             if (code === undefined) say(`no file ${ref.path}`);
-            else if (!declaredNames(ref.path, code).has(ref.symbol)) say(`${ref.path} declares no ${ref.symbol}`);
+            else if (!once(names, ref.path, () => declaredNames(ref.path, code)).has(ref.symbol)) say(`${ref.path} declares no ${ref.symbol}`);
             break;
           }
           case 'test': {
             const code = source(ref.path);
             if (code === undefined) say(`no file ${ref.path}`);
-            else if (!testTitles(ref.path, code).has(ref.name)) say(`${ref.path} has no test named "${ref.name}" that always runs`);
+            else if (!once(titled, ref.path, () => testTitles(ref.path, code)).has(ref.name)) say(`${ref.path} has no test named "${ref.name}" that always runs`);
             break;
           }
         }
