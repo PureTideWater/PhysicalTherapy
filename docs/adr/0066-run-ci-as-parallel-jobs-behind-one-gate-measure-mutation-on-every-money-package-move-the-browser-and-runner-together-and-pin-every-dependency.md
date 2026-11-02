@@ -1063,9 +1063,11 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
       re-reads the bound) and its bound, which the behavioural test named beside it holds by running the step and
       reading the whole file it writes. The runner's switch for `::set-env` (`ACTIONS_ALLOW_UNSECURE_COMMANDS`) is
       refused in any env. Nothing else names it: a shell (a step's or a default), an input, or an env's name or value
-      naming `$GITHUB_ENV` is refused, since a command template or an action could write it unread, and so is anything
-      naming the runner's file command files (`_runner_file_commands`), a script line included. A script that reaches
-      the file without naming it (a name built at run time, another interpreter) is not closed by reading text.
+      naming `$GITHUB_ENV` or `$GITHUB_PATH` is refused, since a command template or an action could write it unread,
+      and so is anything naming the runner's file command files (`_runner_file_commands`), a script line included.
+      `$GITHUB_PATH`, which puts a directory on `PATH`, an environment string of every later step, has no map: every
+      line naming it is refused. A script that reaches the file without naming it (a name built at run time, another
+      interpreter) is not closed by reading text.
 
 ### Consequences
 

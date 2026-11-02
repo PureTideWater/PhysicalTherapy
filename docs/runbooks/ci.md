@@ -455,16 +455,17 @@ user that cannot run the binary.
   one, re-read the bound against the change, then write the new fingerprint in the row. A new `$GITHUB_ENV` write
   joins its closed map: its file, job, step and exact line, its step's fingerprint, its bound, and the test that runs
   the step and reads the whole file; no env sets `ACTIONS_ALLOW_UNSECURE_COMMANDS`, which would let a script set a
-  variable with `::set-env`, and nothing but a step's `run:` names `$GITHUB_ENV` (a shell, a default shell, an input
-  or an env naming it is refused), nor anything the runner's `_runner_file_commands`. Every `docker/build-push-action`
-  step sets `BUILDX_METADATA_PROVENANCE: disabled` and
-  `DOCKER_BUILD_RECORD_UPLOAD: ${{ github.event_name != 'pull_request' }}`, and no other variable (no `DOCKER_BUILD_`
-  or `BUILDX_` variable is set for a whole job (its env or its container's) or workflow): its build record (a
-  `.dockerbuild` artifact whose provenance holds the whole event, a description and title or commit messages and
-  e-mails) can be downloaded by any signed-in account for 90 days in this public repository, so a pull request's run
-  uploads none, while every other run (a push's, a scheduled or a dispatched one's, the release's) keeps the default
-  (docs/adr/0066, Part 3, N32); so a workflow with a build runs only on `push`, `pull_request`, `schedule` or
-  `workflow_dispatch`, never on another event whose payload carries a pull request.
+  variable with `::set-env`, and nothing but a step's `run:` names `$GITHUB_ENV` or `$GITHUB_PATH` (a shell, a default
+  shell, an input or an env naming it is refused), nor anything the runner's `_runner_file_commands`. A `$GITHUB_PATH`
+  write has no map: every script line naming it is refused. Every `docker/build-push-action` step sets
+  `BUILDX_METADATA_PROVENANCE: disabled` and `DOCKER_BUILD_RECORD_UPLOAD: ${{ github.event_name != 'pull_request' }}`,
+  and no other variable (no `DOCKER_BUILD_` or `BUILDX_` variable is set for a whole job (its env or its container's)
+  or workflow): its build record (a `.dockerbuild` artifact whose provenance holds the whole event, a description and
+  title or commit messages and e-mails) can be downloaded by any signed-in account for 90 days in this public
+  repository, so a pull request's run uploads none, while every other run (a push's, a scheduled or a dispatched
+  one's, the release's) keeps the default (docs/adr/0066, Part 3, N32); so a workflow with a build runs only on
+  `push`, `pull_request`, `schedule` or `workflow_dispatch`, never on another event whose payload carries a pull
+  request.
 - A new workflow's concurrency group starts with its own name (`${{ github.workflow }}-`), since groups are shared by
   every workflow of the repository.
 - A new action is pinned as `owner/repo@<40 hex> # vX.Y.Z` at its latest release, read with `git ls-remote`, and takes
