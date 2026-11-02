@@ -205,6 +205,12 @@ guard 2026-11-04 12:00 UTC).
   resumes once PostgreSQL is up.
 
 ## Waiting on someone
+- **The founder, through the orchestrator (asked 2026-11-02T01:04Z): the consumer's size (O9, issue #41) for PR B #94.** CI's
+  capacity gate on 484e9f06 measured S4's middle run at 45.6 s (> 44 s; pass, time advisory). The consumer's source is
+  unchanged; only its AWS clients and @smithy/core move; the same code measured 37.1 s on base 43565235 and 52.3 s on bce57f16
+  (#42's head 55.1 s). docs/runbooks/screening-capacity.md:101-103 takes it to the founder before merge. Recommended: no
+  change to the consumer from #94; the founder settles O9 on the faithful measurement (issue #41). #94 does not merge until
+  the orchestrator relays a ruling or says the existing #41 question covers it.
 - 1 moderate Dependabot alert on the default branch (GitHub's push message, 2026-11-01 18:2xZ): a person reads it (the API answers 403 to the build). Does not block.
 - The API version of Stripe's webhook endpoint (design §5.4): a person checks it in Stripe's dashboard. Does not block.
 - Dependabot alerts (triage step 3): the founder or the co-founder reads the alerts page (the API gives the build 403). Does
