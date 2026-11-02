@@ -153,13 +153,16 @@ a public file, cached an hour), and on a terminal it also asks the npm registry 
 `pnpm --filter @tp/infra synth` does too, and both scripts set `CDK_DISABLE_VERSION_CHECK=true`. Notices stay on for a
 person's own `cdk` commands from `infra/` (docs/runbooks/deploy-and-rollback.md), where they carry advisories matched
 to our CLI, construct, Node and bootstrap-stack versions. Bootstrap notices are matched only while a deploy, rollback
-or asset publish validates the bootstrap stack, so nothing else can show them. All of these are CLI settings, not
-context: `context` stays empty, as the Decision above requires, and `infra/test/cli-settings.test.ts` holds them on
-each command of every infra script that names `cdk`, and on `cdk:diff`, which it runs against a stand-in `cdk`
-whatever the caller's environment sets; it also holds that `cdk.json` sets no `notices` key and that the installed CLI
-still honours them. `versionReporting` stays on: turning it off would remove `AWS::CDK::Metadata` from every template,
-a stack change. Alternatives: the `cli-telemetry: false` context key (context the app reads, against this ADR's empty
-`cdk.json`); a top-level `notices: false` in `cdk.json` (it would hide those advisories from a person's deploy, and
-the scripts already pass `--no-notices`). Revisit when: a deploy is run through a repository script (set the variables
-there), or `infra/test/cli-settings.test.ts` fails on a CLI bump (read `canCollectTelemetry`, `--no-notices` and
-`shouldDisplayVersionMessage`).
+or asset publish validates the bootstrap stack, so nothing else can show them. A person's own `cdk deploy` from
+`infra/` still sends telemetry and, on a terminal, runs the version check unless both variables are set: no `cdk.json`
+setting but a context key turns telemetry off, so until a repository deploy script sets them (Revisit when, below), a
+person runs the deploy commands with `CDK_DISABLE_CLI_TELEMETRY=true CDK_DISABLE_VERSION_CHECK=true` in front. All of
+these are CLI settings, not context: `context` stays empty, as the Decision above requires, and
+`infra/test/cli-settings.test.ts` holds them on each command of every infra script that names `cdk`, and on
+`cdk:diff`, which it runs against a stand-in `cdk` whatever the caller's environment sets; it also holds that
+`cdk.json` sets no `notices` key and that the installed CLI still honours them. `versionReporting` stays on: turning
+it off would remove `AWS::CDK::Metadata` from every template, a stack change. Alternatives: the `cli-telemetry: false`
+context key (context the app reads, against this ADR's empty `cdk.json`); a top-level `notices: false` in `cdk.json`
+(it would hide those advisories from a person's deploy, and the scripts already pass `--no-notices`). Revisit when: a
+deploy is run through a repository script (set the variables there), or `infra/test/cli-settings.test.ts` fails on a
+CLI bump (read `canCollectTelemetry`, `--no-notices` and `shouldDisplayVersionMessage`).
