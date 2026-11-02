@@ -8,7 +8,7 @@ import { isDeepStrictEqual, stripVTControlCharacters } from 'node:util';
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import ts from 'typescript';
-import { LineCounter, isMap, isSeq, parse, parseDocument } from 'yaml';
+import { LineCounter, isMap, isPair, isScalar, isSeq, parse, parseDocument } from 'yaml';
 
 import { consistencyProblems, formProblems, parsePin } from '../check-action-pins/workflows';
 import { readDockerfile } from '../check-toolchain/images';
@@ -4408,10 +4408,22 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     // buildx v0.38.1 copies the whole event into every build record's provenance and, in its default mode (min), into
     // the metadata file build-push-action prints and outputs; disabled leaves the key out, and buildx reads the word
     // exactly (Disabled would be min). Matched in lower case: usesAction's prefix is case-sensitive.
-    const steps = workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => job.steps.map((step) => ({ where: `${file} ${id} ${step.name ?? step.id ?? ''}`, step }))));
-    const builds = steps.filter(({ step }) => step.uses?.toLowerCase().startsWith('docker/build-push-action@') === true);
+    const steps = workflowFiles().flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([id, job]) => job.steps.map((step) => ({ file, where: `${file} ${id} ${step.name ?? step.id ?? ''}`, step }))));
+    // An action as the runner resolves a `uses:` (actions/runner's PipelineTemplateConverter: split at '@', then on '/'
+    // and '\', empty segments dropped, the first two the repository), in lower case, so docker/build-push-action/.@<sha>
+    // and Docker/Build-Push-Action@<sha> are builds too.
+    const repository = (uses: string): string =>
+      (uses.split('@')[0] ?? '')
+        .split(/[/\\]/)
+        .filter((part) => part !== '')
+        .slice(0, 2)
+        .join('/')
+        .toLowerCase();
+    const isBuild = (uses: string | undefined) => uses !== undefined && repository(uses) === 'docker/build-push-action';
+    const builds = steps.filter(({ step }) => isBuild(step.uses));
     // Each build that does not set it is named; a new build that does passes, with no fixed count of them. The parsed
-    // builds are as many as the files' own lines name, so a build the parse missed (or one an alias repeats) fails.
+    // builds of each file are as many as its document's own uses: keys name (a key in a block scalar is no key), so a
+    // build the parse missed, or one an alias repeats, fails, naming the file and the lines.
     expect(builds.filter(({ step }) => step.env?.BUILDX_METADATA_PROVENANCE !== 'disabled').map(({ where }) => where)).toEqual([]);
     // Each build's record (BuildKit's history, its provenance holding the whole event: a pull request's description,
     // title and labels, a push's commit messages and authors' e-mails) is an artifact any signed-in account can read in
@@ -4420,10 +4432,27 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     // the variable in its post step with actions-toolkit's parseBool (true or false; anything else is a warning).
     expect(builds.filter(({ step }) => step.env?.DOCKER_BUILD_RECORD_UPLOAD !== "${{ github.event_name != 'pull_request' }}").map(({ where }) => where)).toEqual([]);
     expect(builds.length).toBeGreaterThan(0);
-    const lines = workflowFiles().flatMap((file) => readFileSync(path.join(WORKFLOWS, file), 'utf8').split('\n').filter((line) => /^\s*(?:-\s+)?uses:\s*["']?docker\/build-push-action@/i.test(line)));
-    expect(builds).toHaveLength(lines.length);
+    const usesLines = (file: string): number[] => {
+      const counter = new LineCounter();
+      const lines: number[] = [];
+      const walk = (node: unknown): void => {
+        if (isMap(node) || isSeq(node)) for (const item of node.items) walk(item);
+        else if (isPair(node)) {
+          if (isScalar(node.key) && node.key.value === 'uses' && isScalar(node.value) && typeof node.value.value === 'string' && isBuild(node.value.value) && node.value.range) lines.push(counter.linePos(node.value.range[0]).line);
+          walk(node.value);
+        }
+      };
+      walk(parseDocument(readFileSync(path.join(WORKFLOWS, file), 'utf8'), { lineCounter: counter }).contents);
+      return lines;
+    };
+    const unmatched = workflowFiles().flatMap((file) => {
+      const parsed = builds.filter((build) => build.file === file).map(({ where }) => where);
+      const lines = usesLines(file);
+      return parsed.length === lines.length ? [] : [`${file}: ${String(parsed.length)} builds parsed (${parsed.join('; ')}), ${String(lines.length)} uses: keys at lines ${lines.join(', ')} (an alias repeats a step, or a build sits where the parse does not list it)`];
+    });
+    expect(unmatched).toEqual([]);
     // Nothing writes buildx's metadata another way, and nothing reads its provenance.
-    expect(steps.filter(({ step }) => step.uses?.toLowerCase().startsWith('docker/bake-action@') === true).map(({ where }) => where)).toEqual([]);
+    expect(steps.filter(({ step }) => step.uses !== undefined && repository(step.uses) === 'docker/bake-action').map(({ where }) => where)).toEqual([]);
     expect(steps.filter(({ step }) => step.run?.includes('--metadata-file') === true).map(({ where }) => where)).toEqual([]);
     expect(workflowFiles().filter((file) => readFileSync(path.join(WORKFLOWS, file), 'utf8').includes('buildx.build.provenance'))).toEqual([]);
   });
