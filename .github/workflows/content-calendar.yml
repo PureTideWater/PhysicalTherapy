@@ -6,10 +6,12 @@ name: content-calendar
 # under the same title, at most 20 new ones a run: content that ends within 45 or 14 days or has ended, a period due
 # with no draft, an open-ended content whose next files are overdue, a source page whose files changed, were never
 # recorded or are no longer listed, and calendar entries never reviewed or reviewed more than 13 months ago. The check
-# job only reads (contents: read, no secrets); the notify job alone writes issues, with the job's own token, checks
-# nothing out and runs no repository code, every value reaching its shell through env. Issues hold only calendar data,
-# release numbers, public page addresses and file names seen on those pages, plain or percent-encoded (docs/adr/0071).
-# A pull request runs the check alone. Not a required check.
+# job only reads (contents: read, no secrets) and uploads its findings as this run's own artifact, kept one day; the
+# notify job alone writes issues, with the job's own token, reads only that artifact (actions: read), checks nothing out
+# and runs no repository code, every value reaching its shell through env or that artifact. Issues, the check's summary
+# and its one-day findings artifact hold only calendar data, release numbers, public page addresses and file names seen
+# on those pages, plain or percent-encoded (docs/adr/0071). A pull request runs the check and the handoff job, which
+# downloads the artifact as notify would and writes nothing. Not a required check.
 on:
   schedule:
     # Daily. Schedules fire only from the default branch (the founder's ruling F1 (a)).
@@ -42,8 +44,6 @@ jobs:
   check:
     runs-on: ubuntu-26.04
     timeout-minutes: 15
-    outputs:
-      findings: ${{ steps.calendar.outputs.findings }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
@@ -52,22 +52,82 @@ jobs:
         with: { node-version: 24, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - name: Read the calendar and the content
-        id: calendar
         run: |
           set -euo pipefail
-          pnpm exec tsx tools/content-calendar/index.ts --today "$(date -u +%F)" --out "$RUNNER_TEMP/findings.json" --summary "$RUNNER_TEMP/summary.md"
-          cat "$RUNNER_TEMP/summary.md" >> "$GITHUB_STEP_SUMMARY"
-          echo "findings=$(base64 -w0 "$RUNNER_TEMP/findings.json")" >> "$GITHUB_OUTPUT"
+          status=0
+          pnpm exec tsx tools/content-calendar/index.ts --today "$(date -u +%F)" --out "$RUNNER_TEMP/findings.json" --summary "$RUNNER_TEMP/summary.md" || status=$?
+          # The summary names every finding, also when the check stopped at a bound (index.ts writes it first).
+          if [ -f "$RUNNER_TEMP/summary.md" ]; then cat "$RUNNER_TEMP/summary.md" >> "$GITHUB_STEP_SUMMARY"; fi
+          if [ -f "$RUNNER_TEMP/findings.json" ]; then printf 'content-calendar: the findings file holds %s bytes, SHA-256 %s\n' "$(wc -c < "$RUNNER_TEMP/findings.json" | tr -d ' ')" "$(sha256sum "$RUNNER_TEMP/findings.json" | cut -d ' ' -f 1)"; fi
+          exit "$status"
+      # The findings, every one whole, as this run's own artifact: the notify job reads it with gh (docs/adr/0071).
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: findings
+          path: ${{ runner.temp }}/findings.json
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
+
+  # On a pull request, the hand-over the notify job depends on, proved on a runner without writing anything: this run's
+  # findings artifact downloads with gh and reads as a findings list, as the notify job reads it (docs/adr/0071).
+  handoff:
+    needs: check
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    steps:
+      - name: Download the findings as the notify job does
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CHECK_RESULT: ${{ needs.check.result }}
+          # tools/content-calendar/render.ts, MAX_FILE_BYTES.
+          MAX_FILE_BYTES: "2000000"
+          # Seconds between the three tries to download the findings.
+          DOWNLOAD_PAUSE: "10"
+        run: |
+          set -euo pipefail
+          # The download, word for word in the notify and the handoff job (tools/test/workflows.test.ts holds the two equal).
+          # The findings the check uploaded, this run's own artifact (docs/adr/0071), in three tries DOWNLOAD_PAUSE seconds
+          # apart, gh's error each time in the log; at most MAX_FILE_BYTES, as the check bounds it, or no findings list.
+          : > findings.json
+          downloaded=false
+          if [ "$CHECK_RESULT" = "success" ]; then
+            for try in 1 2 3; do
+              rm -rf "$RUNNER_TEMP/findings"
+              if gh run download "$GITHUB_RUN_ID" -n findings -D "$RUNNER_TEMP/findings"; then
+                downloaded=true
+                break
+              fi
+              if [ "$try" -lt 3 ]; then sleep "$DOWNLOAD_PAUSE"; fi
+            done
+          fi
+          if [ "$downloaded" = true ]; then
+            head -c "$((MAX_FILE_BYTES + 1))" "$RUNNER_TEMP/findings/findings.json" > findings.json 2>/dev/null || : > findings.json
+            [ "$(wc -c < findings.json)" -le "$MAX_FILE_BYTES" ] || : > findings.json
+          fi
+          # End of the download.
+          if ! jq -e 'type == "array" and all(.[]; (.title | type) == "string" and (.body | type) == "string")' findings.json > /dev/null 2>&1; then
+            printf 'content-calendar: the notify job could not read this run'"'"'s findings (the check: %s)\n' "$CHECK_RESULT" >&2
+            exit 1
+          fi
+          printf 'content-calendar: the notify job reads %s findings, %s bytes, SHA-256 %s\n' "$(jq length findings.json)" "$(wc -c < findings.json | tr -d ' ')" "$(sha256sum findings.json | cut -d ' ' -f 1)"
 
   # The notify job opens at most MAX_OPENED new issues a run, counting only titles not already open, so no finding is
   # starved by older ones staying open; the rest are listed in one "findings not filed" issue (fix round SB-5). A
-  # check that did not finish, or handed on no findings list, opens or comments on one "check failing" issue (S8).
+  # check that did not finish, or handed on no findings list, opens or comments on one "check failing" issue (S8). It
+  # reads the findings from the run's own findings artifact, which a step's environment could not carry (one string
+  # stops at 131,072 bytes).
   notify:
     needs: check
     if: always() && github.event_name != 'pull_request'
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
+      actions: read
       issues: write
     steps:
       - name: Open an issue for each finding not already open
@@ -75,10 +135,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           CHECK_RESULT: ${{ needs.check.result }}
-          FINDINGS_B64: ${{ needs.check.outputs.findings }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           # tools/content-calendar/render.ts, MAX_OPENED_PER_RUN.
           MAX_OPENED: "20"
+          # tools/content-calendar/render.ts, MAX_FILE_BYTES.
+          MAX_FILE_BYTES: "2000000"
+          # Seconds between the three tries to download the findings.
+          DOWNLOAD_PAUSE: "10"
+          # The most titles the "findings not filed" issue lists, so its body stays under GitHub's 65,536 characters.
+          MAX_LISTED: "200"
         run: |
           set -euo pipefail
           gh label create content-due --description "Rule content due (audit #59)" --color FBCA04 2>/dev/null || true
@@ -96,10 +161,26 @@ jobs:
               gh issue comment "$number" --body-file body.md
             fi
           }
+          # The download, word for word in the notify and the handoff job (tools/test/workflows.test.ts holds the two equal).
+          # The findings the check uploaded, this run's own artifact (docs/adr/0071), in three tries DOWNLOAD_PAUSE seconds
+          # apart, gh's error each time in the log; at most MAX_FILE_BYTES, as the check bounds it, or no findings list.
           : > findings.json
+          downloaded=false
           if [ "$CHECK_RESULT" = "success" ]; then
-            printf '%s' "$FINDINGS_B64" | base64 -d > findings.json 2>/dev/null || : > findings.json
+            for try in 1 2 3; do
+              rm -rf "$RUNNER_TEMP/findings"
+              if gh run download "$GITHUB_RUN_ID" -n findings -D "$RUNNER_TEMP/findings"; then
+                downloaded=true
+                break
+              fi
+              if [ "$try" -lt 3 ]; then sleep "$DOWNLOAD_PAUSE"; fi
+            done
           fi
+          if [ "$downloaded" = true ]; then
+            head -c "$((MAX_FILE_BYTES + 1))" "$RUNNER_TEMP/findings/findings.json" > findings.json 2>/dev/null || : > findings.json
+            [ "$(wc -c < findings.json)" -le "$MAX_FILE_BYTES" ] || : > findings.json
+          fi
+          # End of the download.
           if ! jq -e 'type == "array" and all(.[]; (.title | type) == "string" and (.body | type) == "string")' findings.json > /dev/null 2>&1; then
             printf '%s\n' "Content calendar check failing" > title.txt
             printf 'The content calendar check did not hand on its findings (the check: %s) on %s at %s: %s\n' "$CHECK_RESULT" "$GITHUB_REF_NAME" "$GITHUB_SHA" "$RUN_URL" > body.md
@@ -125,7 +206,13 @@ jobs:
           done
           printf '%s\n' "Content calendar: findings not filed" > title.txt
           if [ -s unfiled.txt ]; then
-            { printf 'A run opens at most %s new issues. These %s findings were not filed by %s; a later run files them:\n\n' "$MAX_OPENED" "$(wc -l < unfiled.txt | tr -d ' ')" "$RUN_URL"; cat unfiled.txt; } > body.md
+            unfiled=$(wc -l < unfiled.txt | tr -d ' ')
+            # At most MAX_LISTED titles, so the body stays under GitHub's 65,536 characters whatever the count.
+            {
+              printf 'A run opens at most %s new issues. These %s findings were not filed by %s; a later run files them:\n\n' "$MAX_OPENED" "$unfiled" "$RUN_URL"
+              head -n "$MAX_LISTED" unfiled.txt
+              if [ "$unfiled" -gt "$MAX_LISTED" ]; then printf -- '- and %s more, each named in the run'"'"'s summary\n' "$((unfiled - MAX_LISTED))"; fi
+            } > body.md
             open_or_comment
           else
             number=$(open_number)

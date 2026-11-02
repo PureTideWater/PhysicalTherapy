@@ -18,6 +18,7 @@ import { readCalendarSources } from './sources';
  * the source pages, written as the findings file the content-calendar workflow files issues from and as a summary.
  * Exit 0 when it ran, with or without findings; 1 when the calendar fails its schema, an input cannot be read,
  * --today is not a date, a title is not one line or the findings pass the file's bound; 2 for usage. It fails closed: an unreadable input never reads as "nothing due".
+ * The summary is written first, so a check stopped at a title's length or the file's bound still names every finding.
  */
 export const USAGE = 'usage: pnpm exec tsx tools/content-calendar/index.ts --today YYYY-MM-DD --out <findings.json> --summary <summary.md> [--no-fetch]';
 
@@ -26,6 +27,8 @@ export interface CalendarRun {
   readonly calendar?: ContentCalendar;
   readonly fetcher?: Fetcher;
   readonly sleep?: (ms: number) => Promise<void>;
+  /** The findings file's bound, MAX_FILE_BYTES unless given; tests make it small. */
+  readonly maxFileBytes?: number;
   readonly stdout: (text: string) => void;
   readonly stderr: (text: string) => void;
 }
@@ -75,16 +78,21 @@ export async function runContentCalendar(argv: readonly string[], run: CalendarR
   const items = contentDue(calendar, read.sources, today);
   const sources: SourceFinding[] = values['no-fetch'] === true ? [] : await watchSources(calendar, run.fetcher ?? httpFetcherFor(sourceHosts(calendar)), run.sleep);
   let list;
-  let text;
   try {
     list = findings(items, sources, calendar, { releaseNo: read.sources.releaseNo });
-    text = findingsJson(list);
+  } catch (error) {
+    run.stderr(`content-calendar: ${(error as Error).message}\n`);
+    return 1;
+  }
+  writeFileSync(summary, summaryMarkdown(list, today));
+  let text;
+  try {
+    text = findingsJson(list, run.maxFileBytes);
   } catch (error) {
     run.stderr(`content-calendar: ${(error as Error).message}\n`);
     return 1;
   }
   writeFileSync(out, text);
-  writeFileSync(summary, summaryMarkdown(list, today));
   run.stdout(`content-calendar: ${String(list.length)} findings on ${today}\n`);
   return 0;
 }
