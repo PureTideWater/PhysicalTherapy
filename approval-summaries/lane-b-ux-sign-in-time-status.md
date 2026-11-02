@@ -12,7 +12,7 @@ GitHub login: PureTideWater.
   (merge method, expectedHeadSha), on the 20:36 ruling (verified and green). Unsubscribed. Worktree
   /home/user/ux-sign-in-time and the local branch removed; remote branches stay (`co-001/ux-sign-in-time`, WIP refs
   `co-001/wip-ux-sign-in-time` 92984990 and `-2` b8654622, both superseded by the merge). The main checkout is
-  fast-forwarded to 4eaf7124, with pnpm install. Push runs on 4eaf7124 (ci, mutation, screening-capacity): being read.
+  fast-forwarded to 4eaf7124, with pnpm install. Push runs on 4eaf7124: mutation and screening-capacity green; ci failed once on an unrelated timeout (apps/worker/src/report/csv-arena.test.ts:151, 5 s limit, under runner load; the merge's tree 4f443b69 is identical to ab68af87's, whose unit job passed), re-run of the failed jobs once: green (attempt 2). Proposal for whoever owns CAS-41.3: give that test an explicit timeout.
 - **Final head ab68af87:** CI green on every check (all green, mutation, screening-capacity gate, approval-of-record
   re-run after ready; Stryker matrix and notify skipped legitimately). The fresh-clone verification passed
   (wf_1b56253c-138). The description was rewritten for the final head and proved byte for byte (copy:
@@ -55,3 +55,4 @@ None blocks this PR. UX PR 66 (Cognito/infra, Lane A); the "three days" comment 
 
 | 2026-11-02 02:00 | Base merged | UX review with shots (UXR2-01 applied); #83 merged in (ab68af87, pushed); verification wf_1b56253c-138 started. |
 | 2026-11-02 02:20 | Merged | #92 merged as 4eaf7124 (head ab68af87) after the fresh-clone verification and CI green; worktree removed; item done. |
+| 2026-11-02 02:55 | Push runs read | 4eaf7124: all green (ci on its second attempt after an unrelated csv-arena timeout). Session done. |
