@@ -431,17 +431,18 @@ user that cannot run the binary.
 - A step takes only the value it uses (one environment string, `NAME=value` and its NUL, stops at 131,072 bytes; the
   test sums each one a workflow sets, a step input as `INPUT_<NAME>`, from its name, its literal bytes and each
   value's bound in bytes, all but `FINDINGS_B64`, recorded over the limit and held alone in its string at its one
-  place). `workflows.test.ts` reads every expression in an env, an input, a script, a job's outputs, a matrix or a key
-  as the runner does, and admits only bounded values, none in a key (GitHub would evaluate it as a variable's or an
-  input's name). It reads this repository's workflows; a pinned action's own `action.yml` and code are not read: the
-  defect N32 fixes came from action code (buildx copying the event into its metadata), which no expression rule can
-  read, so every step output is bounded where a workflow reads it, by the value rule and its table. Never use a
-  build's whole metadata, an event object, a description or title, or `toJSON` of anything but `needs`. A new step
-  output or value one job hands another joins its list with its bound and its producers by name (a step by job and id,
-  a job output, a matrix key, a needed job, tool code as `path#symbol` with the unit test that proves its bound),
-  never by line. A row whose producer is a `run:` step holds its script's fingerprint: when the test prints a new one,
-  re-read the bound against the changed script, then write the new fingerprint in the row. A new `$GITHUB_ENV` write
-  joins its closed map: its file, job, step and exact line, its bound, and the test that runs the step. Every
+  place; an env, a `with:` or a container given as one expression is refused, since no sum can read its strings).
+  `workflows.test.ts` reads every expression in an env, an input, a script, a job's outputs, a matrix or a key as the
+  runner does, and admits only bounded values, none in a key (GitHub would evaluate it as a variable's or an input's
+  name). It reads this repository's workflows; a pinned action's own `action.yml` and code are not read: the defect
+  N32 fixes came from action code (buildx copying the event into its metadata), which no expression rule can read, so
+  every step output is bounded where a workflow reads it, by the value rule and its table. Never use a build's whole
+  metadata, an event object, a description or title, or `toJSON` of anything but `needs`. A new step output or value
+  one job hands another joins its list with its bound and its producers by name (a step by job and id, a job output, a
+  matrix key, a needed job, tool code as `path#symbol` with the unit test that proves its bound), never by line. A row
+  whose producer is a `run:` step holds its script's fingerprint: when the test prints a new one, re-read the bound
+  against the changed script, then write the new fingerprint in the row. A new `$GITHUB_ENV` write joins its closed
+  map: its file, job, step and exact line, its bound, and the test that runs the step. Every
   `docker/build-push-action` step sets `BUILDX_METADATA_PROVENANCE: disabled` and
   `DOCKER_BUILD_RECORD_UPLOAD: ${{ github.event_name != 'pull_request' }}`: its build record (a `.dockerbuild`
   artifact whose provenance holds the whole event, a description and title or commit messages and e-mails) can be

@@ -3411,6 +3411,13 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       }
     };
     const strings = (mapping: unknown, where: string, at: Omit<Reading, 'unbounded' | 'over'>, input = false): void => {
+      // GitHub takes one expression in place of a mapping wherever the mapping takes a context (its schema's step env
+      // and with, job and workflow env, a container and its env): its names and strings come from the value at run
+      // time, so neither this sum nor the key rule could read them.
+      if (typeof mapping === 'string' && mapping.includes('${{')) {
+        problems.push(`${file} ${where}: a mapping from an expression, whose names and strings no sum can read`);
+        return;
+      }
       for (const [name, value] of Object.entries(record(mapping))) {
         const reading: Reading = { ...at, unbounded: [], over: false };
         const variable = input ? `INPUT_${name.replace(/ /g, '_').toUpperCase()}` : name;
@@ -3428,8 +3435,11 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     for (const [id, job] of Object.entries(jobs)) {
       if (!isRecord(job)) continue;
       strings(job.env, `job ${id} env`, { job: id, scopes: [record(root.env)] });
-      strings(record(job.container).env, `job ${id} container.env`, { job: id, scopes: [] });
-      for (const [service, definition] of Object.entries(record(job.services))) strings(record(definition).env, `job ${id} services.${service}.env`, { job: id, scopes: [] });
+      // A container or a service named by a plain string (an image) sets no environment string; one from an expression could.
+      const container = (definition: unknown, where: string) => strings(typeof definition === 'string' ? definition : record(definition).env, typeof definition === 'string' ? where : `${where}.env`, { job: id, scopes: [] });
+      container(job.container, `job ${id} container`);
+      if (typeof job.services === 'string') strings(job.services, `job ${id} services`, { job: id, scopes: [] });
+      for (const [service, definition] of Object.entries(record(job.services))) container(definition, `job ${id} services.${service}`);
       (isList(job.steps) ? job.steps : []).forEach((step, index) => {
         if (!isRecord(step)) return;
         const named = `job ${id} step ${typeof step.name === 'string' ? JSON.stringify(step.name) : String(index)}`;
@@ -3483,6 +3493,20 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     // A comparison's operand counts too (the parser does not read precedence), and a choice input is its longest option.
     expect(sum(step('env: { S: "${{ vars.A || vars.B == vars.C }}${{ vars.D }}${{ vars.E }}" }'))).toEqual([over('env.S', 'S', 2 + 3 * 49_152 + 1)]);
     expect(sum(step('env: { S: "${{ inputs.runner }}" }'))).toEqual([]);
+    // A mapping given as one expression, wherever GitHub accepts one, names its own strings: refused, where a container
+    // or a service named by an image alone sets none.
+    const mapping = '"${{ fromJSON(steps.web.outputs.size) }}"';
+    const fromExpression = (where: string) => `fixture.yml ${where}: a mapping from an expression, whose names and strings no sum can read`;
+    expect(sum(step(`env: ${mapping}`))).toEqual([fromExpression('job images step "The step" env')]);
+    expect(sum(step(`uses: actions/fixture@v1\n        with: ${mapping}`))).toEqual([fromExpression('job images step "The step" with')]);
+    expect(sum(step('env: { E: x }', `    env: ${mapping}\n`))).toEqual([fromExpression('job images env')]);
+    expect(sum(`env: "\${{ fromJSON(vars.A) }}"\n${step('env: { E: x }')}`)).toEqual([fromExpression('env')]);
+    expect(sum(step('env: { E: x }', `    container: ${mapping}\n`))).toEqual([fromExpression('job images container')]);
+    expect(sum(step('env: { E: x }', `    container: { image: x, env: ${mapping} }\n`))).toEqual([fromExpression('job images container.env')]);
+    expect(sum(step('env: { E: x }', `    services: ${mapping}\n`))).toEqual([fromExpression('job images services')]);
+    expect(sum(step('env: { E: x }', `    services: { db: ${mapping} }\n`))).toEqual([fromExpression('job images services.db')]);
+    expect(sum(step('env: { E: x }', `    services: { db: { image: x, env: ${mapping} } }\n`))).toEqual([fromExpression('job images services.db.env')]);
+    expect(sum(step('env: { E: x }', '    container: node:24\n    services: { db: postgres:18 }\n'))).toEqual([]);
     // The one value marked over is the table's to hold, by its sites, and only alone in its string: one expression
     // reading it, in any spelling the runner reads alike. Anything beside it, bounded or not, is refused.
     const marked = [{ ...huge, over: 'ci-findings-transport' as const }];
