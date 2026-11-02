@@ -8,7 +8,7 @@ import { createLogger } from '@tp/observability';
 import { price } from '@tp/pricing';
 import { SYNTHETIC_PLACES, readRuleRelease, syntheticRelease } from '@tp/pricing/testing';
 import { loadRelease, withdrawRelease } from '@tp/rules/loader';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { type MailMessage, type MailSender, MemoryMailSender } from '../mail/mail';
 import { ScreeningPricer, beforeSequestration, releaseChangeDays, screeningClaim } from './adapter';
@@ -17,9 +17,11 @@ import { type JobSender } from '../jobs/enqueue';
 import {
   SCREENING_STALE_SECONDS,
   type ScreeningJobDependencies,
+  failScreeningRun,
   forgetScreeningReleases,
   priceScreeningRun,
   resendScreeningRuns,
+  screeningMailPaused,
   sweepScreeningRuns,
 } from './job';
 import { asOperator, claimRun, failRun, runKeys, runRecords } from './operator';
@@ -806,6 +808,141 @@ describe('the consumer’s pricing (migration 20261106090000; PR 6b-3)', () => {
     expect(bodies).toHaveLength(2);
     for (const { body } of bodies) {
       expect(body).toContain(`interval '${String(SCREENING_STALE_SECONDS / 60)} minutes'`);
+    }
+  });
+});
+
+describe('the screening’s mail gate (audit #76; migration 20261107090000; D3)', () => {
+  /** The screening stream as seeded: open, SES confirmed, never paused or resumed. */
+  async function sending(): Promise<void> {
+    await owner.query(`UPDATE mail_stream SET paused_at = NULL, paused_reason = NULL, paused_by = NULL, pause_sends = NULL, pause_bounces = NULL,
+                         pause_complaints = NULL, ses_enabled_confirmed_at = now(), resumed_at = NULL WHERE stream = 'screening'`);
+  }
+
+  /** Paused, as the cut-off pauses it: the confirmation cleared. */
+  async function pause(): Promise<void> {
+    await owner.query(`UPDATE mail_stream SET paused_at = now(), paused_reason = 'bounce_rate', pause_sends = 7, pause_bounces = 7, pause_complaints = 0,
+                         ses_enabled_confirmed_at = NULL WHERE stream = 'screening'`);
+  }
+
+  afterEach(sending);
+
+  async function run(runId: string): Promise<Record<string, unknown>> {
+    return (await owner.query<Record<string, unknown>>('SELECT status, attempts FROM screening_run WHERE id = $1', [runId])).rows[0] ?? {};
+  }
+
+  it('claims nothing while the stream is paused or resumed but unconfirmed, spending no attempt, and logs a run the pause held as emailed after waiting', async () => {
+    const runId = await submit({ received: new Date(Date.now() - 2_000) });
+    const exhausted = await submit();
+    await rewind("UPDATE screening_run SET status = 'pricing', attempts = 3, started_at = now() - interval '3 minutes', progress_at = now() - interval '3 minutes' WHERE id = $1", [exhausted]);
+    await pause();
+    const mail = new MemoryMailSender();
+    lines = [];
+    expect(await priceScreeningRun(dependencies(mail), runId)).toBe('mail_paused');
+    expect(await run(runId)).toEqual({ status: 'queued', attempts: 0 });
+    expect(lines).toEqual([expect.objectContaining({ msg: 'screening run waits: email paused', screening_run_id: runId, error_code: 'SCREENING_MAIL_PAUSED' })]);
+    // The sweeps send no job again and fail nothing (a failure is an email too) until the stream is sending.
+    const sent: unknown[] = [];
+    const queue = { send: (...args: unknown[]) => Promise.resolve(String(sent.push(args))) } as unknown as JobSender;
+    expect(await resendScreeningRuns(dependencies(mail), queue, { minQueuedAgeSeconds: 0 })).toMatchObject({ sent: 0, held: 0, failed: 0 });
+    expect(sent).toEqual([]);
+    expect(await sweepScreeningRuns(dependencies(mail), { minQueuedAgeSeconds: 0 })).toEqual({ complete: 0, failed: 0, skipped: 0 });
+    expect(await run(exhausted)).toEqual({ status: 'pricing', attempts: 3 });
+    expect(mail.sent).toEqual([]);
+    // Resumed by a platform administrator, but SES not yet confirmed sending: still nothing.
+    await owner.query("UPDATE mail_stream SET paused_at = NULL, paused_reason = NULL, pause_sends = NULL, pause_bounces = NULL, pause_complaints = NULL, resumed_at = now(), window_starts_at = now() WHERE stream = 'screening'");
+    expect(await priceScreeningRun(dependencies(mail), runId)).toBe('mail_paused');
+    expect(await run(runId)).toEqual({ status: 'queued', attempts: 0 });
+    // The platform's reconcile reads the set enabled: the run is claimed, priced and emailed, outside the promise's metric.
+    await asOperator(admin, (operator) => operator.query("SELECT operator_mail_stream_confirmed('screening', true)"), { role: 'tp_operator' });
+    lines = [];
+    expect(await priceScreeningRun(dependencies(mail), runId)).toBe('complete');
+    expect(lines.filter((line) => String(line.msg).startsWith('screening result emailed'))).toEqual([
+      expect.objectContaining({ msg: 'screening result emailed after waiting', screening_run_id: runId, error_code: 'SCREENING_MAIL_PAUSED' }),
+    ]);
+    // On the screening stream, tagged with the run alone: no user, no address.
+    expect(mail.sent.map((message) => message.identity)).toEqual([{ stream: 'screening', kind: 'screening_result', subjectId: runId }]);
+    // The stale run out of attempts is failed, and told, once the stream sends again.
+    expect(await resendScreeningRuns(dependencies(mail), queue, { minQueuedAgeSeconds: 0 })).toMatchObject({ failed: 1 });
+    expect(mail.sent.at(-1)?.identity).toEqual({ stream: 'screening', kind: 'screening_failed', subjectId: exhausted });
+  });
+
+  it('leaves a run in pricing when the stream pauses before its completion or SES refuses the send, and the stale rule completes it once sending', async () => {
+    const paused = await submit();
+    const mail = new MemoryMailSender();
+    lines = [];
+    expect(await priceScreeningRun(dependencies(mail, { afterKeyedRead: pause }), paused)).toBe('mail_paused');
+    expect(await run(paused)).toMatchObject({ status: 'pricing' });
+    expect(mail.sent).toEqual([]);
+    expect(lines.at(-1)).toMatchObject({ msg: 'screening run waits: email paused', screening_run_id: paused, error_code: 'SCREENING_MAIL_PAUSED' });
+    // SES's set disabled while the database still sends (the reconcile has not run yet): the completion rolls back.
+    await sending();
+    const refusedBySes = await submit();
+    const disabled: MailSender = { send: () => Promise.reject(Object.assign(new Error('SYNTHETIC sending paused for the configuration set'), { name: 'SendingPausedException' })) };
+    expect(await priceScreeningRun(dependencies(disabled), refusedBySes)).toBe('mail_paused');
+    expect(await run(refusedBySes)).toMatchObject({ status: 'pricing' });
+    expect(JSON.stringify(lines)).not.toContain('SYNTHETIC');
+    // Sending again: the stale rule claims each again, and each completes once.
+    for (const runId of [paused, refusedBySes]) {
+      await stale(runId);
+      expect(await priceScreeningRun(dependencies(mail), runId)).toBe('complete');
+      expect(await run(runId)).toMatchObject({ status: 'complete' });
+    }
+    expect(mail.sent.map((message) => message.identity.subjectId).sort()).toEqual([paused, refusedBySes].sort());
+  });
+
+  it('fails a run and tells its contact in one step: a pause between the two rolls the failure back, and after the resume the run is failed and told (M6)', async () => {
+    const runId = await submit({ email: 'prospect.failed.paused@synthetic.test' });
+    // SES's set disabled at the moment the failure notice goes: the failure is not kept, the run waits as it was.
+    const disabled: MailSender = { send: () => Promise.reject(Object.assign(new Error('SYNTHETIC sending paused for the configuration set'), { name: 'SendingPausedException' })) };
+    const outcome = await failScreeningRun(dependencies(disabled), runId, 'RELEASE_UNAVAILABLE').then(
+      (failed) => (failed ? 'failed' : 'not failed'),
+      (error: unknown) => (screeningMailPaused(error) ? 'mail_paused' : 'other'),
+    );
+    expect(outcome).toBe('mail_paused');
+    expect(await run(runId)).toEqual({ status: 'queued', attempts: 0 });
+    expect((await owner.query("SELECT count(*)::int AS n FROM audit_event WHERE action = 'screening_failed' AND object_id = $1", [runId])).rows).toEqual([{ n: 0 }]);
+    // Sending: failed and told, once.
+    const mail = new MemoryMailSender();
+    expect(await failScreeningRun(dependencies(mail), runId, 'RELEASE_UNAVAILABLE')).toBe(true);
+    expect(await run(runId)).toMatchObject({ status: 'failed' });
+    expect(mail.sent.map((message) => [message.to[0], message.identity])).toEqual([
+      ['prospect.failed.paused@synthetic.test', { stream: 'screening', kind: 'screening_failed', subjectId: runId }],
+    ]);
+    // A notice the mail service refuses for another reason does not hold the failure back: it is kept, and logged by ID.
+    const refusedRun = await submit({ email: 'prospect.failed.refused@synthetic.test' });
+    const refusing: MailSender = { send: () => Promise.reject(Object.assign(new Error('SYNTHETIC Illegal address prospect.failed.refused@synthetic.test'), { name: 'BadRequestException' })) };
+    lines = [];
+    expect(await failScreeningRun(dependencies(refusing), refusedRun, 'RELEASE_UNAVAILABLE')).toBe(true);
+    expect(await run(refusedRun)).toMatchObject({ status: 'failed' });
+    expect(lines).toEqual([expect.objectContaining({ screening_run_id: refusedRun, error_code: 'SCREENING_NOTICE_UNDELIVERABLE' })]);
+    expect(JSON.stringify(lines)).not.toContain('synthetic.test');
+  });
+
+  it('finishes a run its last attempt priced whole but a pause kept from completing: emailed after the resume, never failed for its attempts (M7)', async () => {
+    for (const sweep of ['consumer', 'inline'] as const) {
+      const runId = await submit({ email: `prospect.last.attempt.${sweep}@synthetic.test` });
+      // Two attempts lost before (a consumer that stopped twice), then the third prices every row and the stream pauses
+      // before its completion.
+      await rewind("UPDATE screening_run SET status = 'pricing', attempts = 2, started_at = now() - interval '3 minutes', progress_at = now() - interval '3 minutes' WHERE id = $1", [runId]);
+      const mail = new MemoryMailSender();
+      expect(await priceScreeningRun(dependencies(mail, { afterKeyedRead: pause }), runId)).toBe('mail_paused');
+      expect(await run(runId)).toEqual({ status: 'pricing', attempts: 3 });
+      expect((await owner.query("SELECT count(*)::int AS n FROM screening_result WHERE run_id = $1 AND disposition = 'pending'", [runId])).rows).toEqual([{ n: 0 }]);
+      // Resumed and confirmed; the run is stale and out of attempts. The sweep completes it on its last attempt and sends
+      // the result.
+      await sending();
+      await stale(runId);
+      lines = [];
+      if (sweep === 'consumer') {
+        const queue = { send: () => Promise.resolve('job') } as unknown as JobSender;
+        expect(await resendScreeningRuns(dependencies(mail), queue, { minQueuedAgeSeconds: 0 })).toMatchObject({ failed: 0 });
+      } else {
+        expect(await sweepScreeningRuns(dependencies(mail), { minQueuedAgeSeconds: 0 })).toMatchObject({ complete: 1, failed: 0 });
+      }
+      expect(await run(runId)).toEqual({ status: 'complete', attempts: 3 });
+      expect(mail.sent.map((message) => message.identity)).toEqual([{ stream: 'screening', kind: 'screening_result', subjectId: runId }]);
+      expect(lines.map((line) => line.error_code)).not.toContain('PRICING_ATTEMPTS_EXHAUSTED');
     }
   });
 });

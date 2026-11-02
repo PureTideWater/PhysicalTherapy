@@ -1,4 +1,4 @@
-import { CfnOutput, Stack, type StackProps, Tags } from 'aws-cdk-lib';
+import { CfnOutput, Fn, Stack, type StackProps, Tags } from 'aws-cdk-lib';
 import type { Construct } from 'constructs';
 
 import { AccountSecurity } from './constructs/account-security';
@@ -9,6 +9,7 @@ import { Edge } from './constructs/edge';
 import { EnvironmentKey } from './constructs/environment-key';
 import { Identity } from './constructs/identity';
 import { Images } from './constructs/images';
+import { MailStreams } from './constructs/mail-streams';
 import { Monitoring, type OperatorEndpoints } from './constructs/monitoring';
 import { Network } from './constructs/network';
 import { OperatorRole } from './constructs/operator-role';
@@ -20,6 +21,7 @@ import { Uptime } from './constructs/uptime';
 import { DeployParameters } from './deploy-parameters';
 import { type EnvironmentName, type EnvironmentSettings, GITHUB_REPOSITORY, environmentSettings } from './environments';
 import { HEARTBEAT_INTERVAL_SECONDS } from './heartbeat';
+import { MAIL_FROM_SUBDOMAIN, MAIL_STREAMS, type MailStream, configurationSetName } from './mail';
 
 export interface PlatformStackProps extends StackProps {
   readonly environmentName: EnvironmentName;
@@ -43,7 +45,8 @@ export interface PlatformStackProps extends StackProps {
  * milestone 1: network, database, S3, KMS, secrets, identity and monitoring; milestone 11: the image
  * repositories, the Fargate services and the migration task, the load balancer with its web ACL,
  * CloudFront for static assets, and the uptime and certificate checks, docs/adr/0049; PR 6b-3: the screening's own
- * consumer, its role, login, security group and alarms, docs/adr/0062). What differs
+ * consumer, its role, login, security group and alarms, docs/adr/0062; PR 6b-4: the mail streams, their identities,
+ * event queue and alarms, docs/adr/0065). What differs
  * per deployment comes in as CloudFormation parameters (DeployParameters).
  */
 export class PlatformStack extends Stack {
@@ -56,6 +59,7 @@ export class PlatformStack extends Stack {
   readonly database: Database;
   readonly identity: Identity;
   readonly monitoring: Monitoring;
+  readonly mailStreams: MailStreams;
   readonly accountSecurity: AccountSecurity;
   readonly application: ApplicationRole;
   readonly operator: OperatorRole;
@@ -82,16 +86,29 @@ export class PlatformStack extends Stack {
     this.network = new Network(this, 'Network', { cidr: this.settings.vpcCidr, natGateways: this.settings.compute.natGateways, key, environmentName });
     this.storage = new Storage(this, 'Storage', { key, objectLockMode: this.settings.objectLockMode, uploadOrigin: parameters.appOrigin });
     this.database = new Database(this, 'Database', { network: this.network, key, settings: this.settings.database, environmentName });
-    this.identity = new Identity(this, 'Identity', {
-      deletionProtection: this.settings.protectFromDeletion,
-      relyingPartyId: parameters.appDomainName,
-      mailFrom: { address: parameters.mailFromAddress, domain: parameters.mailFromDomain },
-    });
     this.monitoring = new Monitoring(this, 'Monitoring', {
       environmentName,
       key,
       operator: props.operator ?? {},
       ...(this.settings.compute.screening.starts === 'launch' ? { screeningRuns: parameters.screeningLaunched } : {}),
+    });
+    this.mailStreams = new MailStreams(this, 'MailStreams', {
+      environmentName,
+      key,
+      mailFromDomain: parameters.mailFromDomain,
+      screeningMailDomain: parameters.screeningMailDomain,
+      notify: this.monitoring.notify,
+    });
+    const mail = this.mailStreams;
+    // By name (tp-<env>-<stream>), as SES authorizes a send against the set it names.
+    const setArn = (stream: MailStream) => this.formatArn({ service: 'ses', resource: 'configuration-set', resourceName: configurationSetName(environmentName, stream) });
+    const configurationSetArns = Object.fromEntries(MAIL_STREAMS.map((stream) => [stream, setArn(stream)])) as Record<MailStream, string>;
+    this.identity = new Identity(this, 'Identity', {
+      deletionProtection: this.settings.protectFromDeletion,
+      relyingPartyId: parameters.appDomainName,
+      mailFrom: { address: parameters.mailFromAddress, domain: parameters.mailFromDomain },
+      configurationSet: mail.configurationSets.transactional.configurationSetName,
+      identitiesVerified: parameters.mailIdentitiesVerified,
     });
     this.accountSecurity = new AccountSecurity(this, 'AccountSecurity', {
       environmentName,
@@ -104,6 +121,8 @@ export class PlatformStack extends Stack {
       documents: this.storage.documents,
       packets: this.storage.packets,
       userPool: this.identity.userPool,
+      digestMail: { mailFromAddress: parameters.mailFromAddress, identityArn: mail.mailIdentity.emailIdentityArn, configurationSetArn: configurationSetArns.transactional },
+      addressValidation: { roleArn: parameters.mailValidationRoleArn, roleSet: parameters.mailValidationRoleSet },
     });
     this.supportMail = new SupportMail(this, 'SupportMail', { environmentName, key, supportEmail: parameters.supportEmail });
     this.operator = new OperatorRole(this, 'Operator', {
@@ -113,8 +132,20 @@ export class PlatformStack extends Stack {
       database: this.database.instance,
       restoreDrillInstanceId: this.database.restoreDrillInstanceId,
       supportMail: this.supportMail.bucket,
+      mail: {
+        mailFromAddress: parameters.mailFromAddress,
+        screeningMailFromAddress: parameters.screeningMailFromAddress,
+        mailIdentityArn: mail.mailIdentity.emailIdentityArn,
+        screeningIdentityArn: mail.screeningIdentity.emailIdentityArn,
+        configurationSetArns,
+        eventsQueue: mail.queue,
+      },
     });
-    this.screeningRole = new ScreeningRole(this, 'Screening', { mailFromAddress: parameters.mailFromAddress, mailFromDomain: parameters.mailFromDomain });
+    this.screeningRole = new ScreeningRole(this, 'Screening', {
+      screeningMailFromAddress: parameters.screeningMailFromAddress,
+      screeningIdentityArn: mail.screeningIdentity.emailIdentityArn,
+      screeningConfigurationSetArn: configurationSetArns.screening,
+    });
     if (this.settings.pullRequestDiffRole) {
       this.pullRequestDiff = new PullRequestDiffRole(this, 'PullRequestDiff', { repository: GITHUB_REPOSITORY });
     }
@@ -153,6 +184,7 @@ export class PlatformStack extends Stack {
         migration: this.monitoring.migrationLogGroup,
       },
       targetGroup: this.edge.targetGroup,
+      mailEventsQueueUrl: mail.queue.queueUrl,
       runMigrations: props.runMigrations ?? true,
     });
     this.uptime = new Uptime(this, 'Uptime', {
@@ -221,11 +253,44 @@ export class PlatformStack extends Stack {
       // The launch value this template carries: `closed`, or the tag and its capacity report's SHA-256 (decision 13).
       ScreeningLaunch: this.parameters.screeningLaunch,
     };
+    Object.assign(values, this.mailOutputs());
     if (this.pullRequestDiff !== undefined) {
       values.PullRequestDiffRoleArn = this.pullRequestDiff.role.roleArn;
     }
     for (const [name, value] of Object.entries(values)) {
       new CfnOutput(this, name, { value });
     }
+  }
+
+  /**
+   * The mail streams' outputs (docs/adr/0065, D2; docs/runbooks/deliverability.md): the records the founder sets at the
+   * registrar in phase 1, each as `<name> <type> <value>` (three DKIM CNAMEs, the MAIL FROM MX and SPF, and the
+   * recommended DMARC record for each identity), the senders, the sets and the queues.
+   */
+  private mailOutputs(): Record<string, string> {
+    const mail = this.mailStreams;
+    const values: Record<string, string> = {
+      MailIdentityDomain: this.parameters.mailFromDomain,
+      ScreeningMailIdentityDomain: this.parameters.screeningMailDomain,
+      ScreeningMailFromAddress: this.parameters.screeningMailFromAddress,
+      MailEventsQueueUrl: mail.queue.queueUrl,
+      MailEventsDeadLetterQueueUrl: mail.deadLetterQueue.queueUrl,
+    };
+    for (const stream of MAIL_STREAMS) {
+      values[`MailConfigurationSet${stream.charAt(0).toUpperCase()}${stream.slice(1)}`] = mail.configurationSets[stream].configurationSetName;
+    }
+    const records = (prefix: string, identity: MailStreams['mailIdentity'], domain: string, dmarcPolicy: string) => {
+      identity.dkimRecords.forEach((record, index) => {
+        values[`${prefix}DkimRecord${String(index + 1)}`] = Fn.join(' ', [record.name, 'CNAME', record.value]);
+      });
+      values[`${prefix}MailFromMxRecord`] = Fn.join('', [MAIL_FROM_SUBDOMAIN, '.', domain, ' MX 10 feedback-smtp.', this.region, '.amazonses.com']);
+      values[`${prefix}MailFromSpfRecord`] = Fn.join('', [MAIL_FROM_SUBDOMAIN, '.', domain, ' TXT "v=spf1 include:amazonses.com -all"']);
+      values[`${prefix}DmarcRecord`] = Fn.join('', ['_dmarc.', domain, ` TXT "${dmarcPolicy}"`]);
+    };
+    // The screening subdomain sends only through SES, aligned, so it rejects; the parent starts at none (the founder's
+    // own mail provider sends from it too) and moves to quarantine once two weeks of reports show only those two pass.
+    records('Mail', mail.mailIdentity, this.parameters.mailFromDomain, 'v=DMARC1; p=none');
+    records('ScreeningMail', mail.screeningIdentity, this.parameters.screeningMailDomain, 'v=DMARC1; p=reject; adkim=s; aspf=r');
+    return values;
   }
 }

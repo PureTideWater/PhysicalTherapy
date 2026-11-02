@@ -191,6 +191,12 @@ needs its ZIP+4 fails once and is not re-created on the next day's plan, a save 
 a queued daily job, a new release in force plans it again), `apps/worker/src/price/price.db.test.ts` (PRC-23 and
 PRC-24, as the worker's login), `apps/worker/src/jobs/registry.test.ts` and `apps/worker/src/monitor/job.test.ts`.
 
+## Note (PR 6b-4, 2026-10-21): the digest's email is tagged
+
+Audit #76 (docs/adr/0065): each digest email goes through the transactional stream's SES configuration set, one
+person a message as before, tagged with its kind (`digest`), the digest's ID and the person's user ID (never an
+address), so its delivery is recorded by message. Nothing else about the digest changes.
+
 ## Amendment (`co-001/unmapped-plan`, 2026-11-01): the MAP-01 wait applies only to months with no mapped plan, and two new uses of the request-keyed monitor
 
 Combined audit #32 ("One unmapped plan freezes a whole month"), adopted by the founder with the whole audit on

@@ -28,9 +28,9 @@ describe.each(ENVIRONMENTS)('%s: database', (environment) => {
     expect(instance.DeletionPolicy).toBe('Snapshot');
   });
 
-  it('accepts only TLS 1.2 or later', () => {
+  it('accepts only TLS 1.2 or later, and logs no bind value of any statement (O11)', () => {
     const [id, group] = onlyResource(template, 'AWS::RDS::DBParameterGroup');
-    expect(propertiesOf(group).Parameters).toEqual({ 'rds.force_ssl': '1', ssl_min_protocol_version: 'TLSv1.2' });
+    expect(propertiesOf(group).Parameters).toEqual({ 'rds.force_ssl': '1', ssl_min_protocol_version: 'TLSv1.2', log_parameter_max_length: '0', log_parameter_max_length_on_error: '0' });
     expect(properties.DBParameterGroupName).toEqual(ref(id));
   });
 

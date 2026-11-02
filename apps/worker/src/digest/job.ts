@@ -2,6 +2,7 @@ import type { PracticeScope, ScopeClient } from '@tp/db/runtime';
 
 import type { JobHandler } from '../jobs/handlers';
 import type { MailMessage, MailSender } from '../mail/mail';
+import { sendErrorName } from '../mail/streams';
 import { notify, recipients } from '../monitor/chain';
 import { todayUtc } from '../triage/execute';
 import { digestFigures } from './figures';
@@ -37,21 +38,44 @@ export function digestLink(origin: string, practiceId: string, digestId: string)
   return `${new URL(origin).origin}/p/${practiceId}/digests/${digestId}`;
 }
 
-/** The email: the digest's sentences (payers by rank, never by name) and the link. */
-export function digestMessage(to: string, period: string, figures: DigestFigures, link: string): MailMessage {
+/** Who a digest is emailed to: the person's address and their user's ID (its tp_recipient tag). */
+export interface DigestRecipient {
+  readonly userId: string;
+  readonly email: string;
+}
+
+/**
+ * The email: the digest's sentences (payers by rank, never by name) and the link, on the transactional stream, tagged
+ * with the digest's and the person's IDs (docs/adr/0039 and 0065).
+ */
+export function digestMessage(to: DigestRecipient, digestId: string, period: string, figures: DigestFigures, link: string): MailMessage {
   return {
-    to: [to],
+    to: [to.email],
     subject: `Monitoring digest for ${monthName(period)}`,
     lines: [...digestSentences(period, figures), 'Open the digest in the application for the detail:'],
     links: [link],
+    identity: { stream: 'transactional', kind: 'digest', subjectId: digestId, recipientUserId: to.userId },
   };
+}
+
+/**
+ * A digest email the mail service refused, carried out of the job by the SES error's name alone (review S6): the job's
+ * failure is kept by pg-boss with its message and stack, and an SES error's message can name the address (an
+ * unverified recipient in the sandbox, say). Never the error itself, as a property or a cause.
+ */
+export class DigestSendFailed extends Error {
+  override readonly name = 'DigestSendFailed';
+
+  constructor(readonly sendErrorName: string) {
+    super(`the mail service refused a digest email (${sendErrorName})`);
+  }
 }
 
 interface Prepared {
   readonly digestId: string;
   readonly sent: boolean;
   readonly figures: DigestFigures;
-  readonly emails: readonly string[];
+  readonly emails: readonly DigestRecipient[];
 }
 
 /** Records the month's digest (once) and its in-app notifications; returns who is to be emailed. */
@@ -79,7 +103,7 @@ export async function prepareDigest(scope: PracticeScope<ScopeClient>, practiceI
   }
   const people = await recipients(client);
   await notify(client, practiceId, 'digest', digestId, figures, people);
-  return { digestId, sent: false, figures, emails: people.filter((person) => person.digestEmail).map((person) => person.email) };
+  return { digestId, sent: false, figures, emails: people.filter((person) => person.digestEmail).map((person) => ({ userId: person.userId, email: person.email })) };
 }
 
 export function digestHandler(services: DigestServices): JobHandler<'digest'> {
@@ -97,7 +121,12 @@ export function digestHandler(services: DigestServices): JobHandler<'digest'> {
     }
     const link = digestLink(services.appOrigin, payload.practice_id, prepared.digestId);
     for (const to of prepared.emails) {
-      await services.mail.send(digestMessage(to, payload.period, prepared.figures, link));
+      try {
+        await services.mail.send(digestMessage(to, prepared.digestId, payload.period, prepared.figures, link));
+      } catch (error) {
+        // Not sent: the job fails and pg-boss tries it again; the digest stays unsent, with its figures.
+        throw new DigestSendFailed(sendErrorName(error));
+      }
     }
     await context.transaction((scope) => scope.client.query('UPDATE digest SET sent_at = now() WHERE id = $1 AND practice_id = $2 AND sent_at IS NULL', [prepared.digestId, payload.practice_id]));
     context.logger.info('digest sent', { digest_id: prepared.digestId });

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { FINDING_ALERT_SEVERITY } from '../lib/constructs/account-security';
 import { ENVIRONMENTS } from '../lib/environments';
-import { type CfnStatement, actionsOf, getAtt, keyId, logicalIdOf, onlyResource, propertiesOf, ref, roleStatements, synthesized } from './synth';
+import { type CfnResource, type CfnStatement, actionsOf, getAtt, keyId, logicalIdOf, onlyResource, propertiesOf, ref, resourcesOf, roleStatements, synthesized } from './synth';
 
 /** PRD 15 and 16: CloudTrail for the account; GuardDuty with malware scanning of uploaded documents. */
 describe.each(ENVIRONMENTS)('%s: account trail and threat detection', (environment) => {
@@ -80,7 +80,11 @@ describe.each(ENVIRONMENTS)('%s: account trail and threat detection', (environme
   });
 
   it(`sends findings of severity ${String(FINDING_ALERT_SEVERITY)} or more to the operator as one line of IDs`, () => {
-    const [, rule] = onlyResource(template, 'AWS::Events::Rule');
+    // The stack's other two rules are the mail streams' (mail-streams.test.ts).
+    const rules = resourcesOf(template, 'AWS::Events::Rule').filter(([id]) => id.startsWith('AccountSecurityGuardDutyFindings'));
+    expect(rules).toHaveLength(1);
+    expect(resourcesOf(template, 'AWS::Events::Rule')).toHaveLength(3);
+    const [, rule] = rules[0] as [string, CfnResource];
     const properties = propertiesOf(rule);
     expect(properties.EventPattern).toEqual({
       source: ['aws.guardduty'],

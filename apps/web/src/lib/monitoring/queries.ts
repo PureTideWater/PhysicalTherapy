@@ -15,7 +15,7 @@ import { PRICED_IN_EFFECT } from '@tp/worker/pricing';
 
 type Scope = PracticeScope<ScopeClient>;
 
-export type NotificationKind = 'monitoring_run' | 'digest' | 'recoupment' | 'follow_up';
+export type NotificationKind = 'monitoring_run' | 'digest' | 'recoupment' | 'follow_up' | 'support_notice_undelivered';
 
 export interface NotificationView {
   readonly id: string;
@@ -31,6 +31,12 @@ export interface NotificationView {
   readonly period: string | null;
   /** For a recoupment: the case it took money back from (its subject is the first recouped entry). */
   readonly caseId: string | null;
+  /**
+   * For an undelivered support-access notice (its subject is the support_grant_notice row; docs/adr/0065, D10): the
+   * grant it was about and which notice it was.
+   */
+  readonly supportGrantId: string | null;
+  readonly notice: 'support_grant_opened' | 'support_grant_closed' | null;
 }
 
 export const NOTIFICATIONS_PER_PAGE = 50;
@@ -47,18 +53,22 @@ interface NotificationRow {
   readonly period_to: string | null;
   readonly period: string | null;
   readonly case_id: string | null;
+  readonly support_grant_id: string | null;
+  readonly notice: string | null;
 }
 
 /** The person's notifications in the practice, newest first, `limit` from `offset` (the policy admits their own only). */
 export async function listNotifications(scope: Scope, practiceId: string, limit = NOTIFICATIONS_PER_PAGE, offset = 0): Promise<NotificationView[]> {
   const { rows } = await scope.client.query<NotificationRow>(
     `SELECT n.id, n.kind, n.subject_id, n.counts, n.totals_cents, n.created_at, n.read_at,
-            r.period_from::text AS period_from, r.period_to::text AS period_to, d.period, coalesce(e.case_id, s.case_id) AS case_id
+            r.period_from::text AS period_from, r.period_to::text AS period_to, d.period, coalesce(e.case_id, s.case_id) AS case_id,
+            g.support_grant_id, g.notice
        FROM notification n
        LEFT JOIN pricing_run r ON n.kind = 'monitoring_run' AND r.id = n.subject_id
        LEFT JOIN digest d ON n.kind = 'digest' AND d.id = n.subject_id
        LEFT JOIN ledger_entry e ON n.kind = 'recoupment' AND e.id = n.subject_id
        LEFT JOIN submission s ON n.kind = 'follow_up' AND s.id = n.subject_id
+       LEFT JOIN support_grant_notice g ON n.kind = 'support_notice_undelivered' AND g.id = n.subject_id
       WHERE n.practice_id = $1 AND n.user_id = app_actor_id()
       ORDER BY n.created_at DESC, n.id DESC
       LIMIT $2 OFFSET $3`,
@@ -76,6 +86,8 @@ export async function listNotifications(scope: Scope, practiceId: string, limit 
     periodTo: row.period_to,
     period: row.period,
     caseId: row.case_id,
+    supportGrantId: row.support_grant_id,
+    notice: row.notice === 'support_grant_opened' || row.notice === 'support_grant_closed' ? row.notice : null,
   }));
 }
 
