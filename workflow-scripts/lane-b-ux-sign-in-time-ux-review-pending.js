@@ -1,0 +1,37 @@
+export const meta = {
+  name: 'lane-b-ux-sign-in-time-ux-review',
+  description: 'PR #92: after shots at the fixed head, the UX and brand review with before/after shots, a skeptic per finding',
+  phases: [{ title: 'Capture' }, { title: 'Review' }, { title: 'Verify' }],
+}
+const SP = '/tmp/claude-0/-home-user-PhysicalTherapy/4a9d4438-0635-51b1-98ea-4663abfca5c5/scratchpad'
+const HEAD = args.head
+const BASE = 'bce57f16'
+const NORETURN = `CRITICAL: your final message ends your run and kills every background process you started. Never end your turn or write a final answer while a build, server or run.sh is going: after starting each in the background, keep working by waiting on its notification (or a blocking until-loop Bash call with a long timeout, re-issued until the condition holds). Return only when the work is done or has failed for a reason you report.`
+const COMMON = `You work on PR #92 of the PaidWhole build (PureTideWater/PhysicalTherapy), branch co-001/ux-sign-in-time at ${HEAD}, base claude/build-platform ${BASE}: UX PR 6, each sign-in step states its limit, warns before it closes, and starts again with the email kept (ADR 0081; SGN-01..04). Design: /home/user/ops/designs/lane-b-ux-sign-in-time.md (section 9 wins). The fix round after the first reviews changed: Start again now ends the pending step server-side (SEC-01), the arrival notice is no longer also a live region (UXS-02), the first-render sentence states the time actually left (UXS-03), key registration's notes (UXS-04).
+Rules: read-only on the product: never edit, commit or push in /home/user/ux-sign-in-time or the PR branch. export PATH=/opt/node24/bin:/opt/pnpm-bin:/opt/py312-ci/bin:$PATH in every command; heavy commands under flock /tmp/laneb-heavy.lock. Synthetic data only; PNGs never on a branch. No model name or identifier in any file or text you write. ${NORETURN}`
+const SAVE = (file, what) => `Save as you go: keep ${SP}/progress/${file} up to date (${what}). If it already exists when you start, an earlier run of yours was interrupted: read it, trust what it holds unless the files say otherwise, and continue from where it stopped.`
+const FINDINGS = { type: 'object', properties: { findings: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, severity: { type: 'string', enum: ['blocking', 'should-fix', 'nit'] }, file: { type: 'string' }, line: { type: 'number' }, title: { type: 'string' }, failure: { type: 'string' }, fix: { type: 'string' }, rule: { type: 'string' } }, required: ['id', 'severity', 'file', 'line', 'title', 'failure', 'fix', 'rule'] } }, checkedSound: { type: 'array', items: { type: 'string' } }, notSeen: { type: 'array', items: { type: 'string' } }, summary: { type: 'string' } }, required: ['findings', 'checkedSound', 'notSeen', 'summary'] }
+const VERDICT = { type: 'object', properties: { real: { type: 'boolean' }, severity: { type: 'string', enum: ['blocking', 'should-fix', 'nit', 'not a defect'] }, reasoning: { type: 'string' }, fix: { type: 'string' } }, required: ['real', 'severity', 'reasoning', 'fix'] }
+
+phase('Capture')
+const shots = await agent(`${COMMON}
+${SAVE('sgn-capture-after-2.md', 'each step, command and result')}
+You take the AFTER screenshots. The tour: /home/user/ops/tools/lane-b-screen-tour (README "From another lane", "Set-up and a run"); pull claude/build-ops first. Read ${SP}/progress/sgn-capture-before-2.md for how the before run went (it worked: export TOUR_DIR before build.sh; start run.sh only after server.pid exists).
+export TOUR_DIR=${SP}/screens-after TOUR_REF=${HEAD} TOUR_ONLY=$(cat ${SP}/sgn-tour-only.txt) (rm -rf the dir first); setup.sh; TOUR_MINUTES=60 flock /tmp/laneb-heavy.lock bash build.sh > build.log 2>&1 in the background; when server.pid exists, bash run.sh > run.log 2>&1 in the background; when it finishes, touch stop; check the lock and server ended together (README step 5); clean up (step 6); tile with /usr/bin/python3 -I tools/lane-b-screen-tour/tile.py $TOUR_DIR sign-in.
+Expect all 81 ids shot at the head. A skip at the head is either a tour fault (fix the spec version-tolerantly on claude/build-ops — the restart is now a form button, not a link, so the tour's Start again click may need a role-agnostic locator; commit ending with a blank line, "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>", "Claude-Session: https://claude.ai/code/session_01FcouKNxVRK8x6iV52PfxXz"; pull; GITLEAKS=/root/.cache/paidwhole/gitleaks/8.24.3/gitleaks git -C /home/user/PhysicalTherapy push origin claude/build-ops; never force — then retake with TOUR_SKIP_POPULATE only per the README) or a product defect (a note, never a spec workaround).
+Return: TOUR_DIR, shot and skip counts, each after skip with its reason, the tour commit used, the before/after pairs (one per id: ${SP}/screens-before-2 tile path or its skip reason, the after tile path, a one-line note), and every command with its result.`, { label: 'capture-after', phase: 'Capture' })
+
+phase('Review')
+const ux = await agent(`${COMMON}
+${SAVE('sgn-review-ux-2.md', 'screens and states looked at, findings so far')}
+You are the UX and brand review, one of the PR's two adversarial reviews, now with the shots. Read .claude/agents/ux-brand-reviewer.md (in a fresh clone of the branch at ${HEAD} under ${SP}, or git -C /home/user/ux-sign-in-time show ${HEAD}:<path>) and apply it whole. Shots: before at ${BASE} in ${SP}/screens-before-2, after at ${HEAD} in ${SP}/screens-after (tiles/index.json, shots.json). The capture's report: ${String(shots).slice(0, 7000)}
+Look at every tile of every pair with the Read tool (images), at 1280 and 390 light and 1280 dark. The baseline findings this closes are UX-012 and UX-128 (/home/user/ops/designs/lane-b-ux-review.md, and its section 6.1 words). The earlier code-only UX review's findings and their dispositions are in ${SP}/progress/sgn-review-ux.md and design section 9: check the fixed ones on screen, do not re-raise the refuted ones without new evidence.
+Attack: every string against design 6.1 and .claude/rules/brand.md; the limit sentence before the work; the warning and closed states as seen (contrast, emphasis, layout shift, 390 px wrap); the Start again control's look as a link-styled button (focus ring, target size 24x24 minimum, keyboard); the step markers "Step 1 of 2" / "Step 2 of 2" / "Step 1 of 3" (look, contrast in light and dark); the email filled and the password line on /sign-in; the hardware-key surface; dark tokens; consistency with ADR 0077's forms.
+Every finding: file:line at ${HEAD}, the tile it shows on, a concrete failure, severity (blocking / should-fix / nit), the exact fix. Return findings per the schema; notSeen lists what neither shots nor code showed.`, { label: 'review-ux', phase: 'Review', schema: FINDINGS })
+if (!ux) throw new Error('the UX review returned nothing')
+phase('Verify')
+const verified = await parallel((ux.findings ?? []).map((f) => () => agent(`${COMMON}
+${SAVE(`sgn-verify-ux2-${f.id}.md`, 'what you checked and your verdict')}
+You are an independent skeptic. Try to REFUTE this UX finding on PR #92 from the code at ${HEAD} and the shots (${SP}/screens-after, ${SP}/screens-before-2). Default to not real if it cannot be shown with a realistic state. If real, is the severity right and the fix the best?
+Finding: ${JSON.stringify(f)}`, { label: `verify-ux2-${f.id}`, phase: 'Verify', schema: VERDICT }).then((v) => ({ ...f, verdict: v }))))
+return { shots, ux: { ...ux, findings: verified.filter(Boolean) } }

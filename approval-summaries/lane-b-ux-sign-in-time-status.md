@@ -7,7 +7,21 @@ session_01FcouKNxVRK8x6iV52PfxXz, a Lane B item session started 2026-11-01 by La
 (`co-001/ux-sign-in-recovery`) and UX PR 8 get their own sessions later; this one leaves design 3.5's hooks for PR 7.
 GitHub login: PureTideWater.
 
-## Now (2026-11-01 20:35 UTC): reviews done (code); fix round and before re-run running
+## Now (2026-11-02 01:15 UTC): fix round committed locally (b8654622); suite finishing
+- **Fix round** (wf_aabddb31-b59): SEC-01 (Start again is a POST through the new sign_in.restart route: it ends the
+  pending step and releases a key registration's grant, keeps the email; ADR 0081 rewritten), SEC-02, UXS-02..05 applied
+  with tests; SEC-03 and UXS-01 recorded as not applied (design section 9, PR #92 table). Two skeptics, then a re-fix.
+  Committed locally as b8654622 (WIP ref `co-001/wip-ux-sign-in-time-2`), not pushed yet: one push after the suite.
+- **Suite:** install through test:db passed (unit 6,932; golden 376; oracle 687 agree; db 9,298 in 4 shards); the
+  5-hour limit stopped it in e2e at ~22:30 UTC; the machine restarted (setup re-run 01:05 UTC). Resumed 01:10 UTC
+  (build, stamp, e2e with E2E_PREBUILT=1, Stryker affected + gate).
+- **Before shots re-run** (wf_6dc4c594-2c1): screens-before-2, 48 shots + 33 skips, all true before reasons (tour at
+  ceabc9a2, with a2d62189). Lesson: a workflow agent that returns while a background run is going kills it (the earlier
+  capture and a first re-run were lost this way); every capture prompt now says so.
+- **Next:** push b8654622 (+ anything the suite fixes); the after shots + shots-based UX and brand review with skeptics
+  (`workflow-scripts/lane-b-ux-sign-in-time-ux-review-pending.js`, args.head = the pushed head); a short fix round if
+  it finds anything; merge the latest base (PR is `behind`; 20:36 ruling: merge when verified and green, resolving
+  shared documents with any PR merged first); the fresh-clone verification; ready; merge.
 - **PR #92** (draft) head e4e05a0d; CI fully green on it (all green, mutation, screening-capacity gate, approval-of-record,
   e2e 4/4 with the real 3-minute test). Description written from the template and checked (wf_b4cf4f54-7c4).
 - **Reviews** (wf_b4cf4f54-7c4): security SEC-01..03, UX UXS-01..05, each with a skeptic. Verified for the fix round:
@@ -62,3 +76,4 @@ None blocks this PR. UX PR 66 (Cognito/infra, Lane A); the "three days" comment 
 | 2026-11-01 20:10 | Built; PR #92 opened | Build wf_01926a3e-1b8 (all checks and the new e2e spec pass); before shots wf_67f26406-d45; commit e4e05a0d pushed; draft PR #92; reviews wf_b4cf4f54-7c4 started. |
 
 | 2026-11-01 20:35 | Reviews done; fix round | Reviews wf_b4cf4f54-7c4 (description, security, UX from code; capture cut off). Fix round wf_aabddb31-b59 and before re-run wf_12938616-543 started. |
+| 2026-11-02 01:15 | Fix round committed | wf_aabddb31-b59 fixes + checks done; suite stopped by the limit in e2e, resumed after a machine restart; b8654622 local, WIP ref -2; before re-run done (wf_6dc4c594-2c1). |
