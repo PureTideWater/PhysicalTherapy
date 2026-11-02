@@ -1288,7 +1288,9 @@ test('public pages and sign-in', async ({ browser }) => {
     act: async (page) => {
       await passwordTo(page, 'time-mfa', /\/sign-in\/mfa$/);
       await toStepPhase(page, 'warning');
-      await page.locator('[data-slot="step-timer"]').getByRole('link', { name: 'Start again' }).click();
+      // A link before the fix round of UX PR 6, a form's submit button from it (the POST ends the step first): either role.
+      const timer = page.locator('[data-slot="step-timer"]');
+      await timer.getByRole('link', { name: 'Start again' }).or(timer.getByRole('button', { name: 'Start again' })).first().click();
       await expect(page).toHaveURL(/\/sign-in\?reason=restarted$/);
       await emailKept(page, 'time-mfa');
     },
