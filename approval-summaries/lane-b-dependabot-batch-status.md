@@ -251,6 +251,15 @@ base merge needs it (rule 6). WIP refs kept pushed.
   (wf_7806c9c6-310) in round 2 (description only: the O9 note's claim about watched paths corrected; base unchanged 877e662f;
   CI green on cf124313).
 
+- 2026-11-02T03:52:00Z: **PR A MERGED: #90 as 88708069** (merge commit; expectedHeadSha cf124313). Before it: merge prep
+  wf_7806c9c6-310, 2 rounds: base 877e662f merged in (cf124313), targeted re-check green, description corrected (O9 per the
+  ruling, with the six watched paths A changes and the heads with and without the change; exact conflict list); CI green on
+  cf124313 (24 runs: 22 success, 2 skipped; unit 7,013, db 9,306, e2e 68, golden 376); fresh-clone verification **VERIFIED**
+  (round 2; record `A-verification.md`). Marked ready 03:49Z; approval-of-record re-ran on ready (success 03:49:15Z); #94
+  (A's only conflicting PR) was a draft and behind, so no ready PR was jumped. **Dependabot #87 closed** with a comment
+  naming #90 and 88708069. Unsubscribed from #90; main checkout fast-forwarded to 88708069 and installed; A's worktree and
+  local branch removed (remote branch and WIP ref `co-001/wip-dependabot-batch-a` stay). Push runs of 88708069 being read.
+
 ## Waiting on someone
 - The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
 - 1 moderate Dependabot alert on the default branch (GitHub's push message, 2026-11-01 18:2xZ): a person reads it (the API answers 403 to the build). Does not block.
@@ -319,4 +328,4 @@ From PR A's reviews and fix round (2026-11-02; the description of #90 names this
    (security-supply P12); design P6 (security-supply P13); the design's record names (both P14).
 
 ## Next step
-Next: A's fix round when its reviews return; B's and C's fix rounds when wf_91a35eba-252 returns; then fresh-clone verifications; A and B merge when ready (20:36Z rule), C after #86.
+Next: read #90's push runs; B's and C's fix rounds (wf_66dd34d8-a6a) -> their merge prep (merge-prep script with B/C args) -> B merges when ready (it must take A's merge: conflict in packages/model-gateway/package.json, keep both ranges, regenerate the lockfile), C after #86 (deadline guard 2026-11-04 12:00Z); close #88 and #89 when B merges; after C merges, read the Dependabot runs its dependabot.yml change starts.
