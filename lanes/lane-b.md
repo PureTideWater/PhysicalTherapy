@@ -1286,3 +1286,29 @@ HANDOFF.md; LANES.md rule 10).
     interest fix's slice 4) and wf_a12c973a-c12 (#42's 6c28d6a2 and the base 43565235 into SS-01) running.
 - **Next:** each PR merges as soon as it is verified and green; between conflicting pairs, #86 before P2 and #91, #75
   before #85 and #84; #42 at the founder's commit, then the schema chain.
+
+### 2026-11-02 02:35 UTC (Lane B's orchestrator): the weekly cap and the pacing call
+- **The weekly cap:** every session reports `rate_limit` `seven_day` `allowed_warning`, resetting 2026-11-06 19:00 UTC.
+  The 5-hour stops (~22:20 UTC on 2026-11-01, reset 00:10 UTC) were HTTP 429 `usage_limit_reached` with overage
+  disabled at the organization level; "no hourly limits" did not hold for this account.
+- **The co-founder's call (relayed 02:07 UTC):** finish the near-done PRs, economically and with no follow-ons; pause the
+  design- and build-stage items at clean points, with one check-in at 2026-11-06 19:15 UTC; no second wave. Budget is
+  kept for the Lane A handoff.
+  - **Finishing:** #86 (ci-images-digest), #75 (contract-phi-check), #85 (ux-payer-response), #93 (ux-home-figures), #95
+    (unmapped-plan), Dependabot (#90, #94, #91), #84 (packet-day-counts; its re-review loop now ends at the first dry
+    round), the schema chain (to a clean point: SS-01 bb13be1b, 1b, interest c18a847e) and #42.
+  - **Paused until the reset:** UX PR 4b (#83's follow-on), ci-findings-transport (built on WIP b9a83bd3, paused before
+    its reviews), redact-ssn-phone (design done), P2 and P4 (P4 is draft #96 at 50029e64, paused before its reviews;
+    resume wf_f8ce3582-ddc), SUITE-CAP-3 (profile: 10,000 lines with 1b 3,412 s; WIP a215ba62).
+  - **Held:** UX PR 7 (now unblocked by #92) and every other new session.
+- **Ruling, 02:11 UTC (Lane B's orchestrator):** P4 keeps its `tools/test/workflows.test.ts` edit (the mutation describe
+  only; disjoint from #42; trial merge clean), a shared file under rule 6 with #42.
+- **Merged:** #92 (UX PR 6, sign-in time) as 4eaf7124, 2026-11-02 02:14 UTC, from ab68af87. Left: UX PR 7 (with UXS-01),
+  UX PR 64, UX PR 66 and the "three days" comment (Lane A and the founder), UXR2-02, audit #103.
+- **The Lane A handoff:** written early and pushed (`lanes/lane-b-handoff-to-lane-a-2026-11-03.md`, 713bd72b; checked
+  live at 02:25 UTC); refreshed before 2026-11-03 14:00 UTC. LANES.md "Handed to Lane A" now has #84's
+  `tp-packet-verifier/3` migration, #92's `identity.ts` comment and AssociateSoftwareToken staging check, and #93's F9.
+- **#42:** still waiting on the founder's commit of the suggested approval line at 02:30 UTC (head 6c28d6a2, behind the
+  base by #83 and #92, both migration-free).
+- **Other:** O9's capacity sizing (S4 45.6 s against 44 s) is a founder item blocking launch, not merges (issue #41);
+  recorded in #94. 1b's CAS-42.1 reports 481 s against its 180 s budget (investigating; CAS-42.2 passes).
