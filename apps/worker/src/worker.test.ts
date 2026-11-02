@@ -292,6 +292,31 @@ describe('startWorker', () => {
     await worker.stop();
   });
 
+  it('never lets the heap line change how an attempt ends: a sink that throws on it neither fails a completed job nor replaces a failure (D19)', async () => {
+    const { handlers, client } = fakeBoss();
+    const lines: Record<string, unknown>[] = [];
+    const logger = createLogger({
+      sink: (line) => {
+        const parsed = JSON.parse(line) as Record<string, unknown>;
+        if (parsed.msg === JOB_HEAP_MESSAGE) {
+          throw new Error('synthetic sink failure');
+        }
+        lines.push(parsed);
+      },
+    });
+    const worker = await startWorker({
+      boss: client,
+      pool,
+      logger,
+      handlers: { ...placeholderHandlers, price: () => Promise.reject(new Error('synthetic failure')), parse_835: () => Promise.resolve() },
+      heartbeatMs: 60_000,
+    });
+    await expect(handlers.get('parse_835')?.([{ id: 'job-parse', data: { practice_id: PRACTICE, document_id: DOCUMENT } }])).resolves.toBeUndefined();
+    await expect(handlers.get('price')?.([{ id: 'job-price', retryCount: 2, data: { practice_id: PRACTICE, pricing_run_id: DOCUMENT } }])).rejects.toThrow('synthetic failure');
+    expect(lines.filter((line) => line.msg === JOB_FAILED_MESSAGE).map((line) => line.job_id)).toEqual(['job-price']);
+    await worker.stop();
+  });
+
   it('records each attempt of a practice job: running, then retrying, failed on the last, or succeeded (JOB-02)', async () => {
     const { handlers, client } = fakeBoss();
     const events: unknown[] = [];
