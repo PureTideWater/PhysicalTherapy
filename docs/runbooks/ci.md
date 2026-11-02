@@ -145,13 +145,15 @@ differential test, which prices the base's engine and this commit's.
      (`tools/ci/print-pictures.sh`; rebuild one as "Upgrading the browser", step 5, says; docs/adr/0058). A "flaky" test,
      one that passed only on its retry, fails the run by design: fix it, never re-run it to green. A refusal of the
      build's stamp means the shard was handed another commit's build: re-run the whole workflow, not the shard.
-   - **`images`:** the Trivy table names each HIGH or CRITICAL finding with a fixed version: take the fix (a base-image
-     or package bump), or record why not in docs/adr/0010's way. An identity step's `::error` names the archive's config
-     digest and the one buildx reported ("nothing it reported" when the metadata lacked it); "Argument list too long" on
-     any step means an environment string (`NAME=value` and its NUL) over 131,072 bytes, or the whole environment and
-     arguments over `ARG_MAX`; `workflows.test.ts` sums each environment string a workflow sets and refuses one over
-     131,072 bytes, or one holding a value it does not list with its bound (docs/adr/0066, Part 3, N32). A pull
-     request's run uploads no build record (`.dockerbuild`) by design; a push's run on the build branch does.
+   - **`images`:** the Trivy table names each HIGH or CRITICAL finding with a fixed version: take the fix (a
+     base-image or package bump), or record why not in docs/adr/0010's way. An identity step's `::error` names the
+     archive's config digest and the one buildx reported ("nothing it reported" when the metadata lacked it);
+     "Argument list too long" on any step means an environment string (`NAME=value` and its NUL) over 131,072 bytes,
+     or the whole environment and arguments over `ARG_MAX`; `workflows.test.ts` sums each environment string a
+     workflow sets and refuses one over 131,072 bytes, or one holding a value it does not list with its bound, but for
+     the content calendar's `FINDINGS_B64`, recorded over the limit and `ci-findings-transport`'s to fix, which it
+     holds alone in its string at its one place (docs/adr/0066, Part 3, N32). A pull request's run uploads no build
+     record (`.dockerbuild`) by design; a push's run on the build branch does.
 3. **Re-running.** Re-run failed jobs only for an infrastructure failure (a runner lost, a download refused, a service
    that did not start), never for a test that failed: a test that passes on a re-run is a flaky test, and is fixed.
    A re-run replaces the artifacts the first attempt left (`overwrite: true`).
@@ -428,18 +430,19 @@ user that cannot run the binary.
   ruleset, which only the founder sets.
 - A step takes only the value it uses (one environment string, `NAME=value` and its NUL, stops at 131,072 bytes; the
   test sums each one a workflow sets, a step input as `INPUT_<NAME>`, from its name, its literal bytes and each
-  value's bound in bytes). `workflows.test.ts` reads every expression in an env, an input, a script, a job's outputs,
-  a matrix or a key as the runner does, and admits only bounded values, none in a key (GitHub would evaluate it as a
-  variable's or an input's name). It reads this repository's workflows; a pinned action's own `action.yml` and code
-  are not read: the defect N32 fixes came from action code (buildx copying the event into its metadata), which no
-  expression rule can read, so every step output is bounded where a workflow reads it, by the value rule and its
-  table. Never use a build's whole metadata, an event object, a description or title, or `toJSON` of anything but
-  `needs`. A new step output or value one job hands another joins its list with its bound and its producers by name (a
-  step by job and id, a job output, a matrix key, a needed job, tool code as `path#symbol` with the unit test that
-  proves its bound), never by line. A row whose producer is a `run:` step holds its script's fingerprint: when the
-  test prints a new one, re-read the bound against the changed script, then write the new fingerprint in the row. A
-  new `$GITHUB_ENV` write joins its closed map: its file, job, step and exact line, its bound, and the test that runs
-  the step. Every `docker/build-push-action` step sets `BUILDX_METADATA_PROVENANCE: disabled` and
+  value's bound in bytes, all but `FINDINGS_B64`, recorded over the limit and held alone in its string at its one
+  place). `workflows.test.ts` reads every expression in an env, an input, a script, a job's outputs, a matrix or a key
+  as the runner does, and admits only bounded values, none in a key (GitHub would evaluate it as a variable's or an
+  input's name). It reads this repository's workflows; a pinned action's own `action.yml` and code are not read: the
+  defect N32 fixes came from action code (buildx copying the event into its metadata), which no expression rule can
+  read, so every step output is bounded where a workflow reads it, by the value rule and its table. Never use a
+  build's whole metadata, an event object, a description or title, or `toJSON` of anything but `needs`. A new step
+  output or value one job hands another joins its list with its bound and its producers by name (a step by job and id,
+  a job output, a matrix key, a needed job, tool code as `path#symbol` with the unit test that proves its bound),
+  never by line. A row whose producer is a `run:` step holds its script's fingerprint: when the test prints a new one,
+  re-read the bound against the changed script, then write the new fingerprint in the row. A new `$GITHUB_ENV` write
+  joins its closed map: its file, job, step and exact line, its bound, and the test that runs the step. Every
+  `docker/build-push-action` step sets `BUILDX_METADATA_PROVENANCE: disabled` and
   `DOCKER_BUILD_RECORD_UPLOAD: ${{ github.event_name != 'pull_request' }}`: its build record (a `.dockerbuild`
   artifact whose provenance holds the whole event, a description and title or commit messages and e-mails) can be
   downloaded by any signed-in account for 90 days in this public repository, so a pull request's run uploads none,

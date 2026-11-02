@@ -3249,7 +3249,7 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     readonly scopes: readonly Readonly<Record<string, unknown>>[];
     /** What has no bound, each in words. */
     readonly unbounded: string[];
-    /** Whether it holds the one value known to be over the limit (its sites are the table's to hold). */
+    /** Whether it reads the one value known to be over the limit directly (alone, the table holds it by its sites). */
     over: boolean;
   }
 
@@ -3260,7 +3260,8 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
    * expression's bound: a github value BOUNDED_GITHUB's, a variable or a secret 48 KB, a bounded input its type's, a
    * matrix key its longest value's, env.X the bound of X where it is set (the step's env, the job's, the workflow's),
    * and a table row its bytes. What refuses one: a sum over 131,072, or a value with no bound, each naming its file,
-   * place and name. A string that holds the one value marked over is the table's (its sites, below).
+   * place and name. The one value marked over is exempt only alone in its string, one expression that reads it and
+   * nothing else; beside anything else it is refused, and its sites (below) hold where it is read.
    */
   function environmentProblems(file: string, parsed: unknown, rows: readonly BoundedValue[] = BOUNDED_VALUES): string[] {
     const problems: string[] = [];
@@ -3398,12 +3399,27 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
         }
       }
     };
+    /** Whether a string is one expression that reads the value marked over and nothing else: no literal, operator or call beside it. */
+    const overAlone = (value: unknown, job: string | undefined): boolean => {
+      const whole = typeof value === 'string' ? /^\$\{\{((?:(?!\}\})[\s\S])*)\}\}$/.exec(value) : null;
+      if (whole === null) return false;
+      try {
+        const read = namesOf(parseExpression(lexExpression(whole[1] ?? '')))?.join('.').toLowerCase();
+        return rows.some((entry) => entry.over !== undefined && entry.file === file && entry.job === job && entry.value === read);
+      } catch {
+        return false;
+      }
+    };
     const strings = (mapping: unknown, where: string, at: Omit<Reading, 'unbounded' | 'over'>, input = false): void => {
       for (const [name, value] of Object.entries(record(mapping))) {
         const reading: Reading = { ...at, unbounded: [], over: false };
         const variable = input ? `INPUT_${name.replace(/ /g, '_').toUpperCase()}` : name;
         const bytes = Buffer.byteLength(`${variable}=`) + scalar(value, reading) + 1;
-        if (reading.over) continue;
+        if (reading.over) {
+          // Exempt from the sum only alone in its string, so nothing joins the value over the limit where it is read.
+          if (!overAlone(value, at.job)) problems.push(`${file} ${where}.${name}: holds the value over the limit with more beside it`);
+          continue;
+        }
         if (reading.unbounded.length > 0) problems.push(`${file} ${where}.${name}: no bound for ${reading.unbounded.join('; ')}`);
         else if (bytes > MAX_ARG_STRLEN) problems.push(`${file} ${where}.${name}: ${variable}=… is up to ${String(bytes)} bytes with its NUL, over ${String(MAX_ARG_STRLEN)}`);
       }
@@ -3467,8 +3483,15 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     // A comparison's operand counts too (the parser does not read precedence), and a choice input is its longest option.
     expect(sum(step('env: { S: "${{ vars.A || vars.B == vars.C }}${{ vars.D }}${{ vars.E }}" }'))).toEqual([over('env.S', 'S', 2 + 3 * 49_152 + 1)]);
     expect(sum(step('env: { S: "${{ inputs.runner }}" }'))).toEqual([]);
-    // The one value marked over is the table's to hold, by its sites.
-    expect(sum(step('env: { S: "${{ steps.web.outputs.size }}${{ vars.A }}" }'), [{ ...huge, over: 'ci-findings-transport' }])).toEqual([]);
+    // The one value marked over is the table's to hold, by its sites, and only alone in its string: one expression
+    // reading it, in any spelling the runner reads alike. Anything beside it, bounded or not, is refused.
+    const marked = [{ ...huge, over: 'ci-findings-transport' as const }];
+    const beside = 'fixture.yml job images step "The step" env.S: holds the value over the limit with more beside it';
+    expect(sum(step('env: { S: "${{ steps.web.outputs.size }}" }'), marked)).toEqual([]);
+    expect(sum(step('env: { S: "${{STEPS.web.outputs.SIZE}}" }'), marked)).toEqual([]);
+    for (const value of ['${{ steps.web.outputs.size }}${{ vars.A }}', 'x${{ steps.web.outputs.size }}', '${{ steps.web.outputs.size }} ', '${{ steps.web.outputs.size || vars.A }}', '${{ steps.web.outputs.size }}${{ env.UNSET }}', "${{ steps.web.outputs.size }}${{ format('{0}', 'x') }}"]) {
+      expect(sum(step(`env: { S: ${JSON.stringify(value)} }`), marked), value).toEqual([beside]);
+    }
   });
 
   it('refuses each route a value could take whole', () => {
@@ -3607,7 +3630,10 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     readonly bound: string;
     /** Its bound in bytes, which every environment string that holds it adds (the sum, below). */
     readonly bytes: number;
-    /** The one value known to be over the limit, and the item that owns its transport. */
+    /**
+     * The one value known to be over Linux's 131,072 bytes as one environment string, and the item that owns its
+     * transport: exempt from the sum only alone in its string, and held to its sites.
+     */
     readonly over?: 'ci-findings-transport';
     /** Where it may be read, exactly (a place as FoundValue's where names it): the over row's every use is pinned. */
     readonly sites?: readonly string[];
@@ -3990,7 +4016,8 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     // ci.yml's gate reads toJSON(needs): results alone, since no ci.yml job declares outputs.
     expect(Object.entries(workflow('ci.yml').jobs).filter(([, job]) => 'outputs' in job).map(([id]) => id)).toEqual([]);
     // One row is over the limit, and says so: the content calendar's findings as FINDINGS_B64, base64 of a file bounded
-    // at MAX_FILE_BYTES, held to its one site (refProblems), so no second use joins it under another name. When
+    // at MAX_FILE_BYTES, held to its one site (refProblems), so no second use reads it under another name, and alone in
+    // its string there (the sum), so nothing joins it. When
     // ci-findings-transport changes the bound or the transport, this turns red and it rewrites the row.
     expect(BOUNDED_VALUES.filter((row) => row.over !== undefined).map(key)).toEqual(['content-calendar.yml notify needs.check.outputs.findings']);
     expect(BOUNDED_VALUES.filter((row) => row.over !== undefined).map((row) => row.sites)).toEqual([['job notify step "Open an issue for each finding not already open" env.FINDINGS_B64']]);

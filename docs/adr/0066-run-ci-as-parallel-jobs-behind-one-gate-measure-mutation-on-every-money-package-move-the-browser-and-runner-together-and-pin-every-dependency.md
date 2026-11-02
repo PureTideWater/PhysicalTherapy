@@ -1018,11 +1018,12 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
     - It sums each environment string a workflow sets as Linux counts it, `NAME=value` and its NUL (a step input as
       `INPUT_<NAME>`): the name, the literal bytes and each value's bound (a repository variable or a secret 48 KB, a
       github value its own, `env.X` the bound of X where it is set, each row of the list its bytes), and refuses one
-      over 131,072 bytes, or one holding a value with no bound, but for the one value named over the limit.
+      over 131,072 bytes, or one holding a value with no bound, but for the one value named over the limit, which is
+      exempt only alone in its string: one expression that reads it and nothing else, at its one place.
     - One listed value is over the limit and named so: the content calendar's findings (`FINDINGS_B64`), held to the
-      one place each job reads them, so no second use joins them. Their transport is an item of its own,
-      `ci-findings-transport`, which also owns their job output: up to 933,336 characters, 1,866,672 bytes as GitHub
-      counts an output (UTF-16), over its 1 MB limit.
+      one place each job reads them, and alone in its string there, so no second use and no other value joins them.
+      Their transport is an item of its own, `ci-findings-transport`, which also owns their job output: up to 933,336
+      characters, 1,866,672 bytes as GitHub counts an output (UTF-16), over its 1 MB limit.
     - A `$GITHUB_ENV` write is one entry of a closed map, its variable's only write: its file, job, step and exact
       line (so its value's form too), with its bound, which the behavioural test named beside it holds by running the
       step.
