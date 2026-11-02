@@ -64,14 +64,17 @@ describe('Stryker by path', () => {
       ['no stryker bin', { [`${CORE}/package.json`]: coreManifest('./bin/stryker.js') }, "@stryker-mutator/core's package.json names no bin.stryker"],
       ['a bin outside the package', { [`${CORE}/package.json`]: coreManifest({ stryker: '../../../evil.js' }), 'evil.js': '' }, "@stryker-mutator/core's bin.stryker, ../../../evil.js, lies outside the package"],
       ['a bin that is not there', { [`${CORE}/package.json`]: coreManifest({ stryker: './bin/stryker.js' }) }, "@stryker-mutator/core's bin.stryker, ./bin/stryker.js, is not installed"],
+      // The root is `repo`, and the only core is its parent directory's: resolvable from the root, and still refused.
+      ['one a parent directory supplies', { 'repo/package.json': '{"name":"synthetic"}', [`${CORE}/package.json`]: coreManifest({ stryker: './bin/stryker.js' }), [`${CORE}/bin/stryker.js`]: '' }, /^@stryker-mutator\/core is not installed in .+, outside it\), so Stryker cannot run by path/],
     ] as const) {
-      const root = syntheticRoot(files);
+      const top = syntheticRoot(files);
+      const root = 'repo/package.json' in files ? path.join(top, 'repo') : top;
       try {
         const { calls, spawn } = recorder();
         expect(() => runStryker(['run', 'x.config.mjs'], {}, root, spawn), why).toThrow(message);
         expect(calls, why).toEqual([]);
       } finally {
-        rmSync(root, { recursive: true, force: true });
+        rmSync(top, { recursive: true, force: true });
       }
     }
   });
