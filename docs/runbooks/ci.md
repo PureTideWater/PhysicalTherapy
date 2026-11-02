@@ -439,17 +439,18 @@ user that cannot run the binary.
   code are not read: the defect N32 fixes came from action code (buildx copying the event into its metadata), which no
   expression rule can read, so every step output is bounded where a workflow reads it, by the value rule and its
   table. Never use a build's whole metadata, an event object, a description or title, or `toJSON` of anything but
-  `needs`. A new step output or value one job hands another joins its list with its bound and its producers by name (a
-  step by job and id, a `uses:` step with its action, a job output that is one step's or needed job's output alone, a
-  matrix key, a needed job, tool code as `path#symbol` with the unit test that holds its bound, named by its title and
-  always run), never by line. A row whose producer is a `run:` step holds the fingerprint of its script, `env`,
-  `shell` and `working-directory`: when the test prints a new one, re-read the bound against the change, then write
-  the new fingerprint in the row. A new `$GITHUB_ENV` write joins its closed map: its file, job, step and exact line,
-  its bound, and the test that runs the step. Every `docker/build-push-action` step sets
-  `BUILDX_METADATA_PROVENANCE: disabled` and `DOCKER_BUILD_RECORD_UPLOAD: ${{ github.event_name != 'pull_request' }}`:
-  its build record (a `.dockerbuild` artifact whose provenance holds the whole event, a description and title or
-  commit messages and e-mails) can be downloaded by any signed-in account for 90 days in this public repository, so a
-  pull request's run uploads none, while a push's and the release's keep the default (docs/adr/0066, Part 3, N32).
+  `needs` or one job's `outputs` (of one value it quotes and escapes, up to six bytes a byte). A new step output or
+  value one job hands another joins its list with its bound and its producers by name (a step by job and id, a `uses:`
+  step with its action, a job output that is one step's or needed job's output alone, a matrix key, a needed job, tool
+  code as `path#symbol` with the unit test that holds its bound, named by its title and always run), never by line. A
+  row whose producer is a `run:` step holds the fingerprint of its script, `env`, `shell` and `working-directory`:
+  when the test prints a new one, re-read the bound against the change, then write the new fingerprint in the row. A
+  new `$GITHUB_ENV` write joins its closed map: its file, job, step and exact line, its bound, and the test that runs
+  the step. Every `docker/build-push-action` step sets `BUILDX_METADATA_PROVENANCE: disabled` and
+  `DOCKER_BUILD_RECORD_UPLOAD: ${{ github.event_name != 'pull_request' }}`: its build record (a `.dockerbuild`
+  artifact whose provenance holds the whole event, a description and title or commit messages and e-mails) can be
+  downloaded by any signed-in account for 90 days in this public repository, so a pull request's run uploads none,
+  while a push's and the release's keep the default (docs/adr/0066, Part 3, N32).
 - A new workflow's concurrency group starts with its own name (`${{ github.workflow }}-`), since groups are shared by
   every workflow of the repository.
 - A new action is pinned as `owner/repo@<40 hex> # vX.Y.Z` at its latest release, read with `git ls-remote`, and takes

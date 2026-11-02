@@ -3146,9 +3146,11 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
         case 'call': {
           if (['success', 'failure', 'always', 'cancelled'].includes(node.name) && node.args.length === 0) return;
           if (node.name === 'tojson') {
+            // toJSON of needs or of one job's outputs, each a row; of one value it would quote and escape the value, up
+            // to six bytes for each of its bytes, which no row's bound counts, so it is refused.
             const [argument] = node.args;
             const names = node.args.length === 1 && argument !== undefined ? namesOf(argument) : undefined;
-            if (names?.[0] === 'needs') reference(names, true);
+            if (names?.[0] === 'needs' && (names.length === 1 || (names.length === 3 && names[2] === 'outputs'))) reference(names, true);
             else problems.push(`toJSON of ${names?.join('.') ?? 'an expression'}`);
             return;
           }
@@ -3582,6 +3584,8 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       "format('{0}', github.event.pull_request.body)",
       'inputs.note',
       'toJSON(needs.build)',
+      'toJSON(needs.build.outputs.digest)',
+      'toJSON(needs.build.result)',
       'needs.build.outputs[github.ref]',
     ];
     for (const expression of refused) {
@@ -3593,6 +3597,7 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       ['github.event.pull_request.number', []],
       ["github['sha']", []],
       ['toJSON(needs)', ['tojson(needs)']],
+      ['toJSON(needs.build.outputs)', ['tojson(needs.build.outputs)']],
       ['runner.temp', []],
       ["hashFiles('pnpm-lock.yaml')", []],
       ['inputs.runner', []],
