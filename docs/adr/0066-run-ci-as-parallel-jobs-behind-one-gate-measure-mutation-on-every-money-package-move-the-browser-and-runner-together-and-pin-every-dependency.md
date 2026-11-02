@@ -24,7 +24,8 @@
     (the release restores no cache, so the attested capacity report depends only on its own run) and
     [0063](0063-protect-main-and-the-build-branch-make-the-founders-github-review-the-approval-of-record-open-each-approval-with-what-changed-and-switch-on-the-edit-hooks.md)
     (the build branch is the default branch until launch, the build branch's ruleset applied, every action pinned by
-    SHA at its release).
+    SHA at its release). Amended 2026-11-01 (`co-001/dependabot-group-routing`): each dependency in one Dependabot
+    group (the amendment closing Part 2).
   - **Part 5** (`co-001/ci-pin-age`) amends Part 1 (History: one step, Action pins, reads GitHub's API with the job's
     read-only token) and Part 2 (the BuildKit builder: its newer-release warning takes the workspace's floor, its
     newness is read from the base's workflows, and its digest is aged with every other image).
