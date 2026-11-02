@@ -317,6 +317,20 @@ first-ready rule, C, B (#94) and D each merge as soon as verified and green. Rec
   toolchain, licenses); description changes; fix-round record; push; CI (db, e2e, Stryker, capacity) read by the verifier).
   C's merge prep: CI green on 07b5382b; verification running.
 
+- 2026-11-02T10:30:00Z: **PR C MERGED: #91 as 21fa10df** (merge commit; expectedHeadSha 07b5382b). Before it: merge prep
+  wf_194e8aaf-799, 2 rounds (base 2affb854 merged in; the fix round's description changes applied; the fix-round record
+  written; round 2 for description corrections only); CI green on 07b5382b (all four required checks; unit 7,291, db 9,649,
+  e2e 70, golden 376; the capacity gate raised no sizing question, S4 middle run 41.1 s); fresh-clone verification
+  **VERIFIED** (an independent Python routing check: 65 direct dependencies, each in one group). The description records
+  the 08:52Z ruling. Marked ready 10:21Z; approval-of-record re-ran on ready (success 10:22:00Z); #86, #94, #75 and #85 were
+  drafts, so no ready PR was jumped. No bot PR to close. Unsubscribed; main checkout at 21fa10df and installed; C's worktree
+  and local branch removed. Watching the push runs of 21fa10df and the Dependabot runs the dependabot.yml change starts
+  (runbook step 1 for a merge that changes the file). Dependabot had closed #97 at 07:42:39Z and opened #98 after #42.
+  **PR D launched** (C's slot freed; D protects B's unit job too): wf_79d9ea3e-347 (design from the investigation and its
+  challenge with CAS-41.3 measured; failing-first build; check; push and draft PR; two reviews with skeptics; one fix round
+  with the unit suite and 30-run loops; one push). B's merge prep (wf_4e12aa8e-264) will meet C's runbook change: B is the
+  second merged of the B/C pair, so it keeps both in the AWS paragraph.
+
 ## Waiting on someone
 - The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
 - 1 moderate Dependabot alert on the default branch (GitHub's push message, 2026-11-01 18:2xZ): a person reads it (the API answers 403 to the build). Does not block.
