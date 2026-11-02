@@ -79,13 +79,16 @@ Once a week, after Thursday's npm batch:
    `belongs to more specific group` line, or a `groups where no dependencies match` warning or a
    `does not match any allowed dependencies` line naming a group whose packages are still in the manifests (when a
    group matches nothing, its packages went to another group or arrive ungrouped, and no "belongs to" line says so).
-   Read the log, green runs included:
+   Read the log, green runs included. The `groups where no dependencies match` warning names its groups on the lines
+   after it, one `- <group>` each, so the last command lists them:
 
    ```sh
    run=<the npm run's id>
    job=$(gh api "repos/PureTideWater/PhysicalTherapy/actions/runs/$run/jobs" --jq '.jobs[0].id')
    gh api "repos/PureTideWater/PhysicalTherapy/actions/jobs/$job/logs" \
      | grep -E 'Pulling image|belongs to more specific group|no dependencies match|does not match any allowed'
+   gh api "repos/PureTideWater/PhysicalTherapy/actions/jobs/$job/logs" \
+     | awk '/no dependencies match/ { on = 1; next } on && $2 == "-" { print "matches nothing: " $3; next } { on = 0 }'
    ```
 
    GitHub picks the updater for each run, and the log names it:
@@ -153,8 +156,11 @@ Once a week, after Thursday's npm batch:
    versions it will not propose again (step 2):
 
    ```sh
-   gh api "repos/PureTideWater/PhysicalTherapy/actions/jobs/$job/logs" | grep -m1 'Job definition' | sed 's/^[^{]*//' \
-     | jq -r '.job["ignore-conditions"][] | [.["dependency-name"], .source] | @tsv'
+   definition=$(gh api "repos/PureTideWater/PhysicalTherapy/actions/jobs/$job/logs" | grep -m1 'Job definition' \
+     | sed 's/^[^{]*//')
+   printf '%s' "$definition" | jq -r '.job["ignore-conditions"][] | [.["dependency-name"], .source] | @tsv'
+   printf '%s' "$definition" | jq -r '.job["existing-pull-requests"][] | [.["pr-number"],
+     (.dependencies | map(.["dependency-name"] + " " + .["dependency-version"]) | join(", "))] | @tsv'
    ```
 
    A condition whose `source` is not `.github/dependabot.yml` was stored by a comment. On 2026-10-29 all five came from
