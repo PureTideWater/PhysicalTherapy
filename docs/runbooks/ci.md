@@ -440,10 +440,10 @@ user that cannot run the binary.
   metadata, an event object, a description or title, or `toJSON` of anything but `needs`. A new step output or value
   one job hands another joins its list with its bound and its producers by name (a step by job and id, a job output, a
   matrix key, a needed job, tool code as `path#symbol` with the unit test that proves its bound), never by line. A row
-  whose producer is a `run:` step holds its script's fingerprint: when the test prints a new one, re-read the bound
-  against the changed script, then write the new fingerprint in the row. A new `$GITHUB_ENV` write joins its closed
-  map: its file, job, step and exact line, its bound, and the test that runs the step. Every
-  `docker/build-push-action` step sets `BUILDX_METADATA_PROVENANCE: disabled` and
+  whose producer is a `run:` step holds the fingerprint of its script, `env`, `shell` and `working-directory`: when
+  the test prints a new one, re-read the bound against the change, then write the new fingerprint in the row. A new
+  `$GITHUB_ENV` write joins its closed map: its file, job, step and exact line, its bound, and the test that runs the
+  step. Every `docker/build-push-action` step sets `BUILDX_METADATA_PROVENANCE: disabled` and
   `DOCKER_BUILD_RECORD_UPLOAD: ${{ github.event_name != 'pull_request' }}`: its build record (a `.dockerbuild`
   artifact whose provenance holds the whole event, a description and title or commit messages and e-mails) can be
   downloaded by any signed-in account for 90 days in this public repository, so a pull request's run uploads none,

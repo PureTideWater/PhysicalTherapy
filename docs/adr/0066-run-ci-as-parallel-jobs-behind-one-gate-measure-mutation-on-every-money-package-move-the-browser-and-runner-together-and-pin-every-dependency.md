@@ -1012,9 +1012,10 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
     expression rule can read, so every step output is bounded where a workflow reads it, by the rule and its list.
     - Each row names its producers by what they are, never by a line, and the test resolves each on the tree: a step
       by its job and id, a job's output, a matrix key, a job the reader needs, and tool code by the name it declares
-      (`path#symbol`). A row whose producer is a workflow's `run:` step holds the fingerprint of its script as parsed,
-      so a changed script fails until a person re-reads the bound and updates it; a row whose bound is tool code's
-      names the unit test that proves it instead, since other lanes change that code for their own reasons.
+      (`path#symbol`). A row whose producer is a workflow's `run:` step holds the fingerprint of what the script runs
+      with as parsed, its `run`, `env`, `shell` and `working-directory`, so a changed script or input fails until a
+      person re-reads the bound and updates it; a row whose bound is tool code's names the unit test that proves it
+      instead, since other lanes change that code for their own reasons.
     - It sums each environment string a workflow sets as Linux counts it, `NAME=value` and its NUL (a step input as
       `INPUT_<NAME>`): the name, the literal bytes and each value's bound (a repository variable or a secret 48 KB, a
       github value its own, `env.X` the bound of X where it is set, each row of the list its bytes), and refuses one
