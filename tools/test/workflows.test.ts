@@ -3460,7 +3460,7 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     for (const [name, write] of Object.entries(GITHUB_ENV_WRITES)) {
       const lines = (workflow(write.file).jobs[write.job]?.steps ?? []).filter((step) => step.name === write.step).flatMap((step) => (step.run ?? '').split('\n'));
       expect(lines.filter((line) => line.trim() === write.line), name).toHaveLength(1);
-      expect(titles.has(write.test), `${name}: ${write.test}`).toBe(true);
+      expect(titles.has(write.test), `${name}: no test named "${write.test}" that always runs`).toBe(true);
     }
   });
 
@@ -3648,7 +3648,8 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
    *   pin rules', CI-11);
    * - an output a job declares, a key of a job's matrix, and a job the reading job needs;
    * - tool code by the name it declares (path#symbol, read with TypeScript's parser), never fingerprinted: other lanes
-   *   own it and change it for their own reasons, so the row names the unit test that proves the bound instead.
+   *   own it and change it for their own reasons, so the row names instead the unit test that holds the bound, by its
+   *   title, one that always runs (testTitles: no skip, todo or condition).
    */
   type Ref =
     | { readonly kind: 'step'; readonly job: string; readonly step: string; readonly run: string }
@@ -3722,7 +3723,12 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     unitTest('tools/release-capacity/checks.test.ts', 'records times as advisory: a slow windows query, or none, fails nothing'),
     unitTest('tools/release-capacity/checks.test.ts', 'is empty with no advisory, and otherwise one line of base64 holding each advisory on a line of its own'),
   ];
-  const SIZING = [symbol('tools/screening-capacity/report.ts#sizingQuestion'), unitTest('tools/screening-capacity/report.test.ts', 'passes the verdict and is reported as a sizing question for the founder, never as a wider limit (O9)')];
+  // The tests that hold the sentence's text exactly: the job's sizing output, and sizingQuestion's longest form.
+  const SIZING = [
+    symbol('tools/screening-capacity/report.ts#sizingQuestion'),
+    unitTest('tools/screening-capacity/report.test.ts', 'passes an advisory run failing only on time, each time verdict a warning the job annotates and hands to the gate'),
+    unitTest('tools/screening-capacity/report.test.ts', 'raises the sizing question when the middle run is between 44 and 48 s, and passes'),
+  ];
   const TIME_WARNINGS = [symbol('tools/screening-capacity/report.ts#verdict'), unitTest('tools/screening-capacity/report.test.ts', 'passes an advisory run failing only on time, each time verdict a warning the job annotates and hands to the gate')];
   const MEASURE_OUTPUTS = [script('capacity', 'measure', '73daec9d'), symbol('tools/screening-capacity/report.ts#jobResult'), symbol('tools/screening-capacity/run.ts#main')];
   const FINDINGS = [symbol('tools/content-calendar/render.ts#MAX_FILE_BYTES'), symbol('tools/content-calendar/render.ts#findingsJson'), unitTest('tools/content-calendar/content-calendar.test.ts', 'refuses a findings file past its bound, so the check fails rather than hand on a cut list')];
@@ -3894,19 +3900,37 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     return names;
   }
 
-  /** The titles of a test file's it() and test() calls written as literals, it.skipIf(…)(…) and the like included. */
+  /**
+   * The titles of a test file's tests that always run: it() and test() calls with a literal title and no modifier but
+   * concurrent or sequential, inside no describe with any other. A test written it.skip, .todo, .only, .fails,
+   * .skipIf(…)(…), .runIf(…)(…) or .each(…)(…), or inside a describe written so, is not one: it may not run, so it holds
+   * no bound.
+   */
   function testTitles(file: string, text: string): Set<string> {
     const titles = new Set<string>();
-    const callee = (node: ts.Expression): ts.Expression => (ts.isCallExpression(node) || ts.isPropertyAccessExpression(node) ? callee(node.expression) : node);
-    const visit = (node: ts.Node): void => {
-      if (ts.isCallExpression(node)) {
-        const name = callee(node.expression);
-        const [title] = node.arguments;
-        if (ts.isIdentifier(name) && (name.text === 'it' || name.text === 'test') && title !== undefined && ts.isStringLiteralLike(title)) titles.add(title.text);
+    const RUNS = new Set(['concurrent', 'sequential']);
+    /** A callee's base name, and whether it runs as written: every modifier on the way one that runs, and no call. */
+    const chain = (node: ts.Expression): { readonly base: string | undefined; readonly runs: boolean } => {
+      if (ts.isIdentifier(node)) return { base: node.text, runs: true };
+      if (ts.isPropertyAccessExpression(node)) {
+        const inner = chain(node.expression);
+        return { base: inner.base, runs: inner.runs && RUNS.has(node.name.text) };
       }
-      ts.forEachChild(node, visit);
+      return { base: ts.isCallExpression(node) ? chain(node.expression).base : undefined, runs: false };
     };
-    visit(ts.createSourceFile(file, text, ts.ScriptTarget.Latest));
+    const visit = (node: ts.Node, runs: boolean): void => {
+      if (ts.isCallExpression(node)) {
+        const { base, runs: plain } = chain(node.expression);
+        const [title] = node.arguments;
+        if ((base === 'it' || base === 'test') && runs && plain && title !== undefined && ts.isStringLiteralLike(title)) titles.add(title.text);
+        if (base === 'describe' && !plain) {
+          ts.forEachChild(node, (child) => visit(child, false));
+          return;
+        }
+      }
+      ts.forEachChild(node, (child) => visit(child, runs));
+    };
+    visit(ts.createSourceFile(file, text, ts.ScriptTarget.Latest), true);
     return titles;
   }
 
@@ -4062,7 +4086,7 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
           case 'test': {
             const code = source(ref.path);
             if (code === undefined) say(`no file ${ref.path}`);
-            else if (!testTitles(ref.path, code).has(ref.name)) say(`${ref.path} has no test named "${ref.name}"`);
+            else if (!testTitles(ref.path, code).has(ref.name)) say(`${ref.path} has no test named "${ref.name}" that always runs`);
             break;
           }
         }
@@ -4070,7 +4094,7 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       // A row with sites is read there and nowhere else, so a second use of the value, under any name, is refused.
       const places = read.map((entry) => entry.where).sort();
       if (row.sites !== undefined && places.join('\n') !== [...row.sites].sort().join('\n')) say(`read at ${places.join(', ')}, not exactly at its sites, ${row.sites.join(', ')}`);
-      // Tool code is never fingerprinted, so the row names the test that proves its bound.
+      // Tool code is never fingerprinted, so the row names the test that holds its bound.
       if (row.refs.some((ref) => ref.kind === 'symbol') && !row.refs.some((ref) => ref.kind === 'test')) say('names tool code but no test that proves its bound');
       // toJSON reads every job it is given and every output of each, so the row names them all, and no other.
       const whole = /^tojson\(needs(?:\.([^.]+)\.outputs)?\)$/.exec(row.value);
@@ -4213,8 +4237,24 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     expect(problems(viaTool, undefined, [{ ...produced, refs: [toolStep] }])).toEqual(['fixture.yml build steps.identity.outputs.digest_web: step identity of job build (fixture.yml:10) writes no digest_web= to $GITHUB_OUTPUT, and the row names no tool that does']);
     // Tool code: a deleted symbol, a deleted or renamed test, and a symbol without a test.
     expect(problems(workflowText, { 'tools/fixture.ts': 'export function digests(): string {\n  return "";\n}\n', 'tools/fixture.test.ts': tests })).toEqual(['fixture.yml build steps.identity.outputs.digest_web: tools/fixture.ts declares no digest']);
-    expect(problems(workflowText, { 'tools/fixture.ts': tool, 'tools/fixture.test.ts': "it('proves a digest', () => {});\n" })).toEqual(['fixture.yml build steps.identity.outputs.digest_web: tools/fixture.test.ts has no test named "proves the digest"']);
+    expect(problems(workflowText, { 'tools/fixture.ts': tool, 'tools/fixture.test.ts': "it('proves a digest', () => {});\n" })).toEqual(['fixture.yml build steps.identity.outputs.digest_web: tools/fixture.test.ts has no test named "proves the digest" that always runs']);
     expect(problems(workflowText, { 'tools/fixture.ts': tool })).toEqual(['fixture.yml build steps.identity.outputs.digest_web: no file tools/fixture.test.ts']);
+    // A test that may not run holds no bound: skipped, to do, conditional, inverted or inside a describe written so.
+    const notRun = 'fixture.yml build steps.identity.outputs.digest_web: tools/fixture.test.ts has no test named "proves the digest" that always runs';
+    for (const written of [
+      "it.skip('proves the digest', () => {});\n",
+      "it.todo('proves the digest');\n",
+      "test.skipIf(process.env.CI !== undefined)('proves the digest', () => {});\n",
+      "it.runIf(false)('proves the digest', () => {});\n",
+      "it.fails('proves the digest', () => {});\n",
+      "describe.skip('the digest', () => {\n  it('proves the digest', () => {});\n});\n",
+      "describe.skipIf(true)('the digest', () => {\n  describe('inside', () => {\n    it('proves the digest', () => {});\n  });\n});\n",
+    ]) {
+      expect(problems(workflowText, { 'tools/fixture.ts': tool, 'tools/fixture.test.ts': written }), written).toEqual([notRun]);
+    }
+    for (const written of ["describe('the digest', () => {\n  it.concurrent('proves the digest', () => {});\n});\n", "test('proves the digest', () => {});\n"]) {
+      expect(problems(workflowText, { 'tools/fixture.ts': tool, 'tools/fixture.test.ts': written }), written).toEqual([]);
+    }
     expect(problems(workflowText, undefined, [{ ...produced, refs: produced.refs.filter((ref) => ref.kind !== 'test') }])).toEqual(['fixture.yml build steps.identity.outputs.digest_web: names tool code but no test that proves its bound']);
     // A job's output is one step's output alone, which has its row in that job, its bound within the reader's: a joined
     // or a repointed output, or a reader that claims less, turns the reading row red.
