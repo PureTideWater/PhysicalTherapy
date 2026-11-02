@@ -1346,3 +1346,47 @@ HANDOFF.md; LANES.md rule 10).
 - **The co-founder's question on reusing open-source code** (answered 03:05 UTC): a bounded prior-art check in the design
   stage for official data sources, permissively licensed maintained libraries and test oracles; never copying code
   without a compatible licence. Awaiting the co-founder's yes to add it to the session brief.
+
+### 2026-11-02 09:25 UTC (Lane B's orchestrator): #42 and #95 merged; SS-01's PR under way
+- **#42 MERGED** as 22789493 (2026-11-02 07:35 UTC, a merge commit) from head 9bb0604e: the founder's approval line
+  9426a8d1 (Tyler Williams, 2026-11-01, `b23fed0e…2518`), then the base 88708069 merged in (migration-free; `--check
+  --require-approval` still reads `b23fed0e…2518`). CI green on 9bb0604e, `domain model` and `all green` included;
+  fresh-clone verification pass. Push runs on 22789493 green (ci 41407227669, mutation 41407227619, screening-capacity
+  41407227658). Its session is done. The items that waited on #42 (UX PR 4b, ux-forms-after-42, P5 ci-catalog, the
+  `help.ts` proposals) stay paused until the 7-day reset.
+- **#95 (#32, one unmapped plan) MERGED** as 2affb854 (08:47 UTC) from head 48dabc28 after its fresh-clone
+  verification; push runs on 2affb854 green (ci 41415623536, mutation 41415623512, screening-capacity 41415623520). Used
+  ADR 0075, MAP-06 to MAP-09 and PRC-29 to PRC-31; MAP-10 stays reserved for Lane A's notice follow-up. #48 (narrative
+  draft) NOT started (pacing): paused. Base now **2affb854**.
+- **Merges this round:** #82, #83, #92, #93, #90, #42, #95.
+- **The schema chain (acting Lane A):**
+  - **SS-01's PR stage runs** (wf_78cd4c88-7b1, from 07:40 UTC): the base 22789493 merged into bb13be1b and
+    regenerated, the draft PR, two reviews (security and tenant isolation; UX and brand with shots), the fix round with
+    one full suite, the verification, then its suggested approval line for the founder as one pull-request comment. At
+    09:25 UTC origin is still bb13be1b and no PR is open. It is the only schema PR to open next.
+  - **1b at 048bc843.** **The 8-CPU-runner ask is WITHDRAWN** (06:22 UTC): the `--small` smoke at 048bc843 passed on 4
+    CPUs, and GitHub's free 4-CPU runner gave FULL_SIZE verdicts (runs 40479127979, 40584379787); CAS-42.5 and .6 run at
+    1b's PR stage. New at ~09:20 UTC: CAS-42.1 fails at 048bc843 too (the report 730-750 s against 180 s; its plan
+    depends on whether autovacuum's ANALYZE lands after triage); a plan-independent fix runs (wf_3118d5d7-edb).
+  - **Interest:** 379fed9f (1b in, 04:26 UTC), then slice 4 (d37a0ee3) and the integrator's take-back fix: at its clean
+    point **74a6b290** (~09:20 UTC), its one full suite green but for 1b's CAS-42.1 (unit 7,275, e2e 71); domain model
+    `47887070…eb8ef` at line 7469, provisional.
+- **Rulings:** (06:22 UTC) the Dependabot session owns **PR D**, `co-001/test-flakes-2`, tests only: FRM-01's monotonic
+  wait (the root cause of the red push run on 88708069: the exact data-shown wait raced a deliberate re-key ~35-50 ms
+  later, 1 in 48 CI runs, not #90's change) and `csv-arena.test.ts:151`'s explicit timeout; added to the Dependabot claim
+  row; it builds after B's and C's suites. (08:52 UTC, an update) **#91 no longer waits for #86** (the first-ready rule;
+  a trivial ADR 0066 overlap that #86 resolves); B, C and D merge when ready. Told to the Dependabot and #86
+  sessions.
+- **Dependabot:** after #90 it closed #89 (04:07 UTC) and #88 (04:10 UTC) and opened #97 (minor-and-patch, 17 updates),
+  deferred to the next weekly triage (pacing; named in #94). After #42 merged it closed #97 (07:42 UTC) and opened #98
+  (minor-and-patch, 18 updates, 07:45 UTC), left like #97 to the next weekly triage.
+- **In flight (finishing):** #75: 88708069 merged locally (WIP `-9` 315ac91e), the suite green through test:db; mutation,
+  e2e and critic 2, then one push. #86: check rounds on the open dispositions (repair 1 fixed two loosenings, WIP
+  a5bc1170; repairs since on the WIP ref, 5c01f150 at 09:18 UTC); then the base, the suite once, push R3. #84: the
+  Stryker split done (17 shards; `-5` 15d8ed1c), a base-merge step before its one suite and re-reviews. #85: verified and
+  ready at a97d6011, waits for #75 only. #94 (B): fix round in its suite (`-b` f43f809d), then B(6) at its merge prep.
+  #91 (C): fix round done (b1fd5df1); merge prep wf_194e8aaf-799.
+- **LANES.md "Handed to Lane A", #32:** checked: it already reads as design §14 (review 12c) does (no figure codes;
+  `lines` and `billed` exist); its "What Lane B did" line now names #95.
+- **The handoff** (`lanes/lane-b-handoff-to-lane-a-2026-11-03.md`) is refreshed to this state (sections 1-3, 5-7 and 9);
+  the 8-CPU runner is off the founder items there and in LANES.md.
