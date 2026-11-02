@@ -18,7 +18,8 @@ the calendar. Three readers use it:
 
 - the content-calendar workflow: its `check` job runs `tools/content-calendar/index.ts` with only read access, and its
   `notify` job, which checks nothing out and runs no repository code, opens one issue per finding whose title is not
-  already open, at most 20 new ones a run, and lists the rest in one issue (section 4);
+  already open, at most 20 new ones a run, reading the findings from the run's own artifact, and lists the rest in one
+  issue (section 4);
 - the console's Rule releases page, section Content due;
 - the customer's Releases page, "What this release covers", and the Coverage page's fee-schedule sentence.
 
@@ -85,8 +86,8 @@ new issues; the others wait in the issue "Content calendar: findings not filed" 
 | Source files not recorded | `Content source files not recorded:` | Record the page's file names in the entry's `knownFiles` (section 5) |
 | Source changed | `Content source changed:` | The page links to files the entry has not recorded: usually a new period's. A name with characters other than letters, digits, dot, underscore and hyphen is shown percent-encoded (`RVU27A%20updated.zip`), never as the page writes it. Download and import them, then add their names to `knownFiles`, as the page names them or as the issue shows them |
 | Source lost | `Content source no longer lists its files:` | The entry records files, but the page links to none matching its pattern: the page changed its layout or moved its files, and the watch cannot see a new period. Find the files, then fix the entry's `source.page`, `filePattern` or `knownFiles` |
-| Findings not filed | `Content calendar: findings not filed` | More than 20 new findings in one run: this issue lists the titles not opened yet. Work the open issues; the rest open on later runs, and this issue closes itself once every finding is filed |
-| Check failing | `Content calendar check failing` | The check did not finish or handed the notify job no findings list: a `COVERAGE.md` that cannot be read, a calendar that fails its schema, findings past the file's bound, or a broken run. Each failing run comments on the open issue. Open the run named and fix the cause; an unreadable input never reads as "nothing due" |
+| Findings not filed | `Content calendar: findings not filed` | More than 20 new findings in one run: this issue lists the titles not opened yet (at most 200; past that, the run's summary names every finding). Work the open issues; the rest open on later runs, and this issue closes itself once every finding is filed |
+| Check failing | `Content calendar check failing` | The check did not finish or handed the notify job no findings list: a `COVERAGE.md` that cannot be read, a calendar that fails its schema, findings past the file's bound, findings the notify job could not download, or a broken run. Each failing run comments on the open issue. Open the run named and fix the cause. If the cause has passed (a download refused, or a run re-run after its findings expired a day later), the next daily run files the findings; to file them sooner, run the workflow on request. An unreadable input never reads as "nothing due" |
 
 The commands, run from the repository root, are the entry's import templates filled for the period, then:
 

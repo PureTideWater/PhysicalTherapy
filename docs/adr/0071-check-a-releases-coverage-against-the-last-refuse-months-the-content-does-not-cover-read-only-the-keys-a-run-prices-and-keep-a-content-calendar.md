@@ -3,14 +3,15 @@
 - **Status:** accepted (`co-001/release-content-checks`, combined audit #7, #30, #31 and #59). Amends
   [0008](0008-rule-records-and-releases.md) (a release's coverage is refused when it
   shrinks; below). A later pull request, after #42 merges, appends the alarms, the heap flags and the daily content job
-  ("The split", below).
+  ("The split", below). Amended <merge date, UTC> (`co-001/ci-findings-transport`): the findings reach the notify job
+  as the run's own artifact (Amendment, below).
 - **Date:** 2026-10-26
 - **Deciders:** the founder, Tyler Williams, who adopted the combined best-option audit in full on 2026-10-20 (about
   15:10 UTC; items #7, #30, #31 and #59 among it, each placed in the release-operations pull request before PR 7, and
   its 19 freeze exceptions granted, #30's among them), under the standing rule of 2026-10-18; the co-founder, under the
   founder's delegation of 2026-10-25 (LANES.md), for the choices the design reports as taken, and by his ruling of
   2026-10-26 (about 00:20 UTC, "Don't ask for approvals anymore just build and optimize") for the cost and security
-  trade-offs Q1 and Q2, both taken as recommended; the build (Lane B, LANES queue item 14), for the rest, each
+  trade-offs Q1 and Q2, both taken as recommended, and for the findings' transport (the Amendment); the build (Lane B, LANES queue item 14), for the rest, each
   reversible.
 - **PRD sections:** 9 (content releases: the checker, the record types and their refresh), 11 (the engine's content
   reads, through its trace), 12 (triage), 16 (operations security: what a public issue may hold), 18 (the checks and
@@ -239,7 +240,8 @@ already open, so no finding is starved by older ones staying open; the rest are 
 calendar: findings not filed", which closes once every finding is filed. A check that did not finish, or handed on no
 findings list, opens or comments on one "Content calendar check failing" issue at every such run. The findings file
 holds every finding (each body at most 6,000 characters; a cut body keeps its source and runbook and says how many
-lines were cut and where the rest is), bounded at 700,000 bytes so its base64 fits a job output.
+lines were cut and where the rest is), bounded at 2,000,000 bytes, every finding whole at its worst, and handed to the
+notify job as the run's own artifact (Amendment, below).
 
 **The source watch** reads each entry's page over https from the calendar's own hosts only, following at most three
 redirects itself under the same rule, for at most 20 seconds and 5 MiB; anything else is "unreachable". It reads
@@ -286,6 +288,27 @@ only, returning the release in force and, per content, the date multirange of it
 "Database: no" holds for this pull request and not for the daily job; the function is handed to Lane A (LANES.md). This
 pull request has no migration.
 
+## Amendment (<merge date, UTC>): the findings travel as the run's own artifact
+
+The check job handed the findings on as a job output, and the notify job read them as one environment variable.
+Linux refuses an environment string over 131,072 bytes, so any findings file over 98,292 bytes stopped the notify
+job before its shell started, and nothing was filed (latent: no run had reached it; ADR 0066, Part 3, N32). The
+check now uploads `findings.json` as the run's own artifact `findings`, kept one day and replaced on a re-run, and
+the notify job downloads it with `gh run download`, in three tries, refusing a file over its bound. For that it
+holds `actions: read` beside `issues: write`. On this public repository, that reads only what any signed-in user
+can read; once the repository is private it reads private run logs and artifacts, which Revisit when names. The
+notify job still checks nothing out, runs no action and runs no repository code: `actions/download-artifact` would
+have needed no permission, but would have run third-party code beside the write token. A download that fails
+opens or comments on "Content calendar check failing". On a pull request, a `handoff` job with `actions: read`
+alone downloads the artifact with the same lines as the notify job and writes nothing, so the hand-over is proved
+on a runner before a change merges. The file's bound is 2,000,000 bytes: a run has at most 41 findings (two of the
+calendar's own and three per family, held by a property test of the generators), titles at most 256 characters,
+and at their worst they take 1,540,660 bytes, so the notify job always receives every finding whole, opens 20 and
+lists the rest by title (at most 200 titles, a bound a run does not reach). The artifact and the check's summary
+hold what the issues hold (Q1). Job outputs were weighed and refused: GitHub caps them at 1 MB counted as UTF-16,
+nine worst-case findings. So was cutting every body to fit, which changes what an issue says. The check writes its
+summary before it bounds a title or the file, so a refused run still names every finding.
+
 ## Alternatives considered
 
 | Option | Why not (or when we would switch) |
@@ -317,7 +340,10 @@ pull request has no migration.
 - The first real CMS download shows how each file states its quarter (the patterns are the contract until then).
 - Lane A's #8 stores per-release counts and windows at load: the web then reads them instead of aggregating a release.
 - The repository turns private: move release-capacity's runner label with screening-capacity's to the 4-core larger
-  runner, read the two workflows' minutes against the budget, and whether issues stay the signal.
+  runner, read the two workflows' minutes against the budget, and whether issues stay the signal; and the notify
+  job's `actions: read`, which then reads this repository's private run logs and artifacts: weigh again a same-run
+  download that needs no permission (`actions/download-artifact` without a token) against running an action beside
+  the write token.
 - The first review of each calendar entry confirms its file pattern against the page (the fix round could not reach
   cms.gov; a page that links per-period sub-pages matches nothing and reads as `source_lost` once files are recorded).
 - The later pull request lands the content alarm: the engine-error page then stops counting content gaps.
