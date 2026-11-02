@@ -15,7 +15,8 @@ GitHub merged_at 2026-10-28T06:50:22Z).
 - **Stage 3 done: draft PR #93**, subscribed; description from the template written and adversarially checked (wf_b80e9712-f4a; one wording fix), read back byte for byte (copy: `approval-summaries/lane-b-ux-home-figures-pr93-body.md`). CI on af3b6d89: all 23 runs green.
 - **Base merged in early** (rule 6, so the reviews see the real merged code): claude/build-platform 43565235 (#82, #83) merged as 87691be4 (wf_4a5f0f16-f8c: no conflicts, nothing regenerated, merge checked by a second agent in a fresh clone); unit 409 files / 6937 passed / 4 skipped and the PR's 6 db files (36 tests, PG18) pass; pushed.
 - **Stage 4 done** (wf_a1a88081-22f, 33 agents): payment-engine review 3 rounds (10 findings, 8 real: 2 should-fix, 6 nit); UX and brand review with 38 after shots (0 failed; 3 out-of-sample ids skipped) 3 rounds (16 findings, 15 real: 7 should-fix, 8 nit); no blocking finding; refuted: engine-r1-E5, engine-r3-R1, ux-r2-04. The loop hit its 3-round cap still finding nits, so the fix round adds a fourth round on the fixes. **Freeze exception: none needed** (payment-engine reviewer: packages/pricing, packages/ledger, packages/db diff empty; the ROI statement's actionable figure is an input roiStatement() only sums; the digest is monitoring output). Findings: `approval-summaries/lane-b-ux-home-figures-review-findings.json`. E4 (a line in reconciliation-001.md) is a #42 file: the sentence goes in ADR 0082, the line is a follow-up after #42.
-- **Stage 5 running (resumed 2026-11-02 01:05 UTC after the 5-hour stop):** fix round wf_768311e7-b88 (money and screens fixes in parallel, the records, a fourth review round on the fixes with skeptics, then the full local suite once and one commit; the session pushes once). #42 now at 6c28d6a2 (219 files; overlap still rows plus watched-paths.txt).
+- **Stage 5 done** (wf_768311e7-b88, resumed once): fix round committed as 30c055c9 and pushed once (base 43565235 unchanged). All 23 real findings fixed per their verdicts; a fourth review round on the fixes found 4 more (N1, N2, F2, F4: fixed); two of its nits (F1 words for a reopened line; F3 the case page's Payer approved fact) carried as proposals. Full local suite once: install, check:fixtures, typecheck, lint, lint:copy, lint:logs, verify-content, engine-freeze, watched.ts, synth (clean), unit 410 files / 6950 passed / 4 skipped, golden 376, oracle 687 agree, db 4 PG18 shards 131 files / 9290 passed / 1 skipped, build, e2e both shards (brand.spec.ts fixed for the mono counts; rerun green), Stryker affected: none, gate passed. Record: `approval-summaries/lane-b-ux-home-figures-fix-suite.md`.
+- **Next: stage 6**, the fresh-clone verification reading CI on 30c055c9; then stage 7 (merge). Pacing (co-founder via orchestrator, 2026-11-02 02:10 UTC): finish to merge spending nothing that does not change the outcome; no follow-on item after the merge.
 - **Merge rule (orchestrator, 2026-11-01 20:36 UTC):** a verified green PR merges as soon as ready; wait only for an earlier unmerged PR that conflicts (for this PR: #42 and #85 share test-matrix/synth rows; #85 also uploads.ts and the case page).
 - **Branch:** `co-001/ux-home-figures` = 83d71fd6 (no commits of its own), worktree `/home/user/ux-home-figures` (recreated by setup). PR #93 (draft). WIP ref `co-001/wip-ux-home-figures` f22eeffc (superseded by af3b6d89).
 - **Reserved:** ADR 0082 if needed; test-matrix HOM-01 to HOM-04, a new series; `packages/synth` module 20 (HOM) if needed.
@@ -42,6 +43,7 @@ GitHub merged_at 2026-10-28T06:50:22Z).
 - 2026-11-01 ~21:40 UTC: reviews done (no blocking; 23 real findings across both lenses, all taken); CI on 87691be4 all green; fix round wf_768311e7-b88 started.
 - 2026-11-01 ~23:00 UTC: the account's 5-hour limit stopped wf_768311e7-b88 after the fixes (money, screens, records) and the UX fourth-round review; the engine fourth-round review, four skeptics and the suite failed. Uncommitted fixes saved as WIP `co-001/wip-ux-home-figures` 27a848c1 (snapshot 4).
 - 2026-11-02 01:05 UTC: machine restarted; setup re-run (PG up); wf_768311e7-b88 resumed with resumeFromRunId.
+- 2026-11-02 ~02:40 UTC: fix round done; 30c055c9 pushed; PR description being republished.
 
 ## Waiting on someone
 - Nothing.
@@ -51,6 +53,11 @@ GitHub merged_at 2026-10-28T06:50:22Z).
 - **Open question 3 (PR 11):** should the refreshed stored `case.actionable_cents` hold the live figure (`ACTIONABLE_NOW`)? That would make the home an indexed read with bounded time. If the CAS-41 gate (F1) fails, the home's statement goes there too.
 
 ## Proposals (improve as you go, outside this PR)
+- Fix round 4, F1: the out-of-figure words call a line a person reopened to an earlier stage "moved on past actionable"; name that cause apart.
+- Fix round 4, F3: the case page's Payer approved fact has no "to date" or patient's-share clause, unlike both tiles.
+- WholeDates could take quarter keys (UX-R1-04 used a local whitespace-nowrap span).
+- The design file's wording (F8/HOM-02 "that stands", D7 "none yet", the D8 Cases sentence, the Payer approved notes) is behind the code; the PR description and ADR 0082 hold the final words.
+- After #42: reconciliation-001.md's freeze record gets ADR 0082's sentence (engine-r1-E4).
 - **After #42:** the monthly summary's actionable bucket (`lib/monitoring/queries.ts`, its CSV and PDF) counts a case line only through the line predicate and reports the rest apart as out of the figure (F2); "stage-five" in `components/help.ts`, and a copy-lint rule against stage numbers.
 - The audit report's run-scoped actionable (no pricing check; its "not cash until it posts" note, which has no proof level to word it by): a follow-up of its own.
 - The digest's set of cases nearing their deadline (state open, from today) differs from the home's (every worked state, passed deadlines included): align them in one definition, in its own PR.
