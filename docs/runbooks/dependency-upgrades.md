@@ -325,7 +325,11 @@ lockfile entry against the release age and the trust policy on every install (`t
   the flag stops the notices fetch, and fails when its `lib/index.js` no longer skips the version check on
   `CDK_DISABLE_VERSION_CHECK`. When it fails on a CDK CLI bump, read `canCollectTelemetry`, the `--no-notices`
   handling and `shouldDisplayVersionMessage`, and change the settings and the test together.
-  `@aws-sdk/*` reaches pricing and packets through the lockfile, so its pull request runs those packages' mutation.
+  `@aws-sdk/*` reaches pricing and packets through the lockfile, so its pull request runs those packages' mutation. No
+  CI job runs the SDK over a real socket or inside the worker's esbuild bundle (the capacity job uses local providers,
+  e2e imports the sources, the images job only builds), so an `@aws-sdk/*`, `@smithy/*` or credential-provider move is
+  also compared, base against head, over real sockets to local stubs and in the worker's bundle: Bedrock over HTTP/2,
+  S3 multipart with 100-continue and checksum validation, KMS, SES, RDS, and ECS container credentials.
   A `@aws-sdk/client-textract` or `@smithy/core` move is a Textract-reader bump (docs/adr/0070): `pnpm test:golden`
   reads the evaluation's scans through a real `TextractClient` answering from their recordings
   (`packages/model-gateway/eval/sets.ts`), so a move that changes the pages as read fails `set_changed`
