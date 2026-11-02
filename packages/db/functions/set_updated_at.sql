@@ -15,6 +15,7 @@
 -- Trigger function of: contract_question.contract_question_updated_at
 -- Trigger function of: contract_version.contract_version_updated_at
 -- Trigger function of: digest.digest_updated_at
+-- Trigger function of: dunning_notice_recipient.dunning_notice_recipient_updated_at
 -- Trigger function of: feature_flag.feature_flag_updated_at
 -- Trigger function of: grant.grant_updated_at
 -- Trigger function of: invitation.invitation_updated_at
@@ -22,6 +23,8 @@
 -- Trigger function of: job_run.job_run_updated_at
 -- Trigger function of: ledger_match.ledger_match_updated_at
 -- Trigger function of: line_note.line_note_updated_at
+-- Trigger function of: mail_send.mail_send_updated_at
+-- Trigger function of: mail_stream.mail_stream_updated_at
 -- Trigger function of: membership.membership_updated_at
 -- Trigger function of: notification.notification_updated_at
 -- Trigger function of: organization.organization_updated_at
@@ -48,6 +51,8 @@
 -- Trigger function of: subscription.subscription_updated_at
 -- Trigger function of: subscription_claim.subscription_claim_updated_at
 -- Trigger function of: support_grant.support_grant_updated_at
+-- Trigger function of: support_grant_notice.support_grant_notice_updated_at
+-- Trigger function of: support_grant_notice_recipient.support_grant_notice_recipient_updated_at
 -- Trigger function of: support_ticket.support_ticket_updated_at
 -- Trigger function of: user.user_updated_at
 -- Trigger function of: user_device.user_device_updated_at

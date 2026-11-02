@@ -1,6 +1,7 @@
-import { bigint, boolean, date, index, integer, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { bigint, boolean, date, index, integer, pgTable, primaryKey, smallint, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
 
-import { organization } from './tenancy';
+import { NOTICE_RECIPIENT_STATES, organization, user } from './tenancy';
 
 /**
  * Billing (Data dictionary, Operations: subscription, invoice, usage_snapshot; PRD 8: "Billing never reads
@@ -146,8 +147,49 @@ export const subscriptionClaim = pgTable(
   (table) => [index('subscription_claim_by_subscription').on(table.stripeSubscriptionId)],
 );
 
+/** The stages a dunning notice goes out for: invoice.dunning_stage's list less resolved, which sends nothing. */
+export const DUNNING_NOTICE_STAGES = ['payment_failed', 'second_notice', 'third_notice', 'final_notice', 'suspended', 'reinstated'] as const;
+export type DunningNoticeStage = (typeof DUNNING_NOTICE_STAGES)[number];
+
+/**
+ * A dunning notice's outbox (audit #76, D10; migration 20261107090000): one row per invoice, stage and billing owner,
+ * pending until sent, then its message's state, or failed. Billing's: no role reads or writes it but through the
+ * billing definer functions. It follows the invoice, which is never deleted.
+ */
+export const dunningNoticeRecipient = pgTable(
+  'dunning_notice_recipient',
+  {
+    invoiceId: uuid('invoice_id')
+      .notNull()
+      .references(() => invoice.id),
+    stage: text('stage', { enum: DUNNING_NOTICE_STAGES }).notNull(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organization.id),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => user.id),
+    sesMessageId: text('ses_message_id').unique(),
+    state: text('state', { enum: NOTICE_RECIPIENT_STATES }).notNull().default('pending'),
+    attempts: smallint('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
+    failureCode: text('failure_code'),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.invoiceId, table.stage, table.userId] }),
+    index('dunning_notice_recipient_by_organization').on(table.organizationId, table.invoiceId),
+    index('dunning_notice_recipient_pending')
+      .on(table.nextAttemptAt)
+      .where(sql`state = 'pending'`),
+  ],
+);
+
 export type SubscriptionRow = typeof subscription.$inferSelect;
 export type InvoiceRow = typeof invoice.$inferSelect;
 export type UsageSnapshotRow = typeof usageSnapshot.$inferSelect;
 export type BillingEventRow = typeof billingEvent.$inferSelect;
 export type SubscriptionClaimRow = typeof subscriptionClaim.$inferSelect;
+export type DunningNoticeRecipientRow = typeof dunningNoticeRecipient.$inferSelect;

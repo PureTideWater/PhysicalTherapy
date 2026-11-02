@@ -13,9 +13,10 @@ export type Environment = 'dev' | 'staging' | 'production';
 export const DISCLOSURE_LEGAL_SURFACES = ['disclosure-response-times', 'good-faith-research'] as const;
 
 /**
- * What the screening says is kept, on each of its surfaces (decisions 7, 17 and 18): while any waits, a production
- * server keeps the screening closed (src/lib/screening/routes.ts, screeningOpen), so nothing is screened, and nothing
- * kept, under wording counsel has not confirmed.
+ * What the screening says is kept, on each of its surfaces (decisions 7, 17 and 18), and what it says about its mail
+ * (audit #76; the founder's Q10 (a), Q11 (b) and Q12 of 2026-10-21: the paused page, and what the form answers about
+ * the address): while any waits, a production server keeps the screening closed (src/lib/screening/routes.ts,
+ * screeningOpen), so nothing is screened, and nothing kept, under wording counsel has not confirmed.
  */
 export const SCREENING_LEGAL_SURFACES = [
   'screening-kept-result',
@@ -24,6 +25,8 @@ export const SCREENING_LEGAL_SURFACES = [
   'screening-kept-upload',
   'screening-kept-sent',
   'screening-kept-convert',
+  'screening-mail-paused',
+  'screening-mail-address',
 ] as const;
 
 /**

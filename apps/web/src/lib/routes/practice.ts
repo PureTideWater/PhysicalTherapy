@@ -1,4 +1,4 @@
-import { type PracticeScope, type ScopeClient, readWithAudit, rolesPermit } from '@tp/db/runtime';
+import { NOTICE_UNDELIVERED_STATES, type PracticeScope, type ScopeClient, readWithAudit, rolesPermit } from '@tp/db/runtime';
 import { practiceRunRefusal } from '@tp/worker/billing';
 import { z } from 'zod';
 
@@ -13,7 +13,8 @@ import { opaqueId } from './schemas';
  * and the last run, with a banner when a run failed on its last attempt; JOB-02), the practice
  * record, its agreement chain and, for its administrators, the support (break-glass) grants on it
  * with the list of records each one read (PRD 5, J15: the practice administrator's notice links
- * here), the dashboard's counts and totals (coverage under the pricing in effect, cases by state, deadlines
+ * here, and each notice's delivery: sending, sent, delivered to every administrator, not delivered to some, or not sent
+ * for want of an administrator; docs/adr/0065, D10), the dashboard's counts and totals (coverage under the pricing in effect, cases by state, deadlines
  * in 14 days, recovered this quarter), and the person's latest in-app notifications from monitoring
  * (docs/adr/0039), and the dashboard's headline and queues (lib/dashboard/queries.ts; docs/adr/0045). Every read of
  * the practice record goes through readWithAudit, so a support engineer's view of it appears in that
@@ -43,17 +44,102 @@ export interface AgreementSummary {
   readonly documentRef: string;
 }
 
+/**
+ * One support-access notice's delivery (audit #76; docs/adr/0065, D10): sent one message per administrator from a
+ * recorded outbox, each recipient's state mirrored from SES's events by message ID. `recipients` is null until the
+ * notice is opened (its administrators read), and 0 when the practice had none; the counts are its recipients'.
+ */
+export interface NoticeDelivery {
+  readonly recipients: number | null;
+  readonly delivered: number;
+  readonly undelivered: number;
+  readonly pending: number;
+  /** When the first of its messages was handed to SES, or null. */
+  readonly sentAt: Date | null;
+}
+
 export interface SupportGrantSummary {
   readonly id: string;
   readonly ticket: string;
   readonly reason: string;
   readonly createdAt: Date;
   readonly expiresAt: Date;
-  readonly notifiedAt: Date | null;
   readonly open: boolean;
+  /** The opening notice (at creation) and the closing notice (at expiry), as delivered. */
+  readonly notices: { readonly opening: NoticeDelivery; readonly closing: NoticeDelivery };
 }
 
-const SUPPORT_GRANT_COLUMNS = `id, ticket, reason, created_at, expires_at, notified_at, (now() < expires_at AND now() < created_at + interval '4 hours') AS open`;
+/** A notice not yet opened. */
+const UNOPENED: NoticeDelivery = { recipients: null, delivered: 0, undelivered: 0, pending: 0, sentAt: null };
+
+function administrators(count: number): string {
+  return count === 1 ? 'administrator' : 'administrators';
+}
+
+/**
+ * What a support-access notice's delivery reads as, on the practice's page and the console's (D10; the founder's Q12 of
+ * 2026-10-21: the recommended wording). A notice reads as delivered only when SES says every administrator's message
+ * was; "sent" never claims more than that the message was handed over.
+ */
+export function noticeStatus(notice: NoticeDelivery, which: 'opening' | 'closing', grantOpen: boolean, time: (at: Date) => string): string {
+  if (notice.recipients === null) {
+    return which === 'closing' && grantOpen ? 'Sent when access ends' : 'Sending';
+  }
+  if (notice.recipients === 0) {
+    return 'Not sent: the practice had no administrator';
+  }
+  const total = notice.recipients;
+  if (notice.undelivered > 0) {
+    return `Not delivered to ${String(notice.undelivered)} of ${String(total)} ${administrators(total)}. PaidWhole has been told.`;
+  }
+  if (notice.delivered >= total) {
+    return `Delivered to ${String(total)} of ${String(total)} ${administrators(total)}`;
+  }
+  return notice.sentAt === null ? 'Sending' : `Sent ${time(notice.sentAt)}; delivery not yet confirmed`;
+}
+
+/** The notices of the given grants, by grant and notice, counted from their recipients' rows (never above recipients). */
+async function noticeDeliveries(scope: PracticeScope<ScopeClient>, practiceId: string, grantIds: readonly string[]): Promise<Map<string, SupportGrantSummary['notices']>> {
+  const byGrant = new Map<string, { opening: NoticeDelivery; closing: NoticeDelivery }>();
+  if (grantIds.length === 0) {
+    return byGrant;
+  }
+  const { rows } = await scope.client.query<{ support_grant_id: string; notice: string; recipients: number; delivered: number; undelivered: number; pending: number; sent_at: Date | null }>(
+    `SELECT n.support_grant_id, n.notice, n.recipients,
+            count(r.id) FILTER (WHERE r.state IN ('delivered', 'complained'))::integer AS delivered,
+            count(r.id) FILTER (WHERE r.state = ANY ($3::text[]))::integer AS undelivered,
+            count(r.id) FILTER (WHERE r.state IN ('pending', 'sent', 'delayed'))::integer AS pending,
+            min(r.sent_at) AS sent_at
+       FROM support_grant_notice n
+       LEFT JOIN support_grant_notice_recipient r ON r.notice_id = n.id AND r.practice_id = n.practice_id
+      WHERE n.practice_id = $1 AND n.support_grant_id = ANY ($2::uuid[])
+      GROUP BY n.id`,
+    [practiceId, grantIds, NOTICE_UNDELIVERED_STATES],
+  );
+  for (const row of rows) {
+    const entry = byGrant.get(row.support_grant_id) ?? { opening: UNOPENED, closing: UNOPENED };
+    const delivery: NoticeDelivery = { recipients: row.recipients, delivered: row.delivered, undelivered: row.undelivered, pending: row.pending, sentAt: row.sent_at };
+    if (row.notice === 'support_grant_opened') {
+      entry.opening = delivery;
+    } else {
+      entry.closing = delivery;
+    }
+    byGrant.set(row.support_grant_id, entry);
+  }
+  return byGrant;
+}
+
+/** The grants with their notices' delivery. */
+async function supportGrants(scope: PracticeScope<ScopeClient>, practiceId: string, rows: readonly SupportGrantRow[]): Promise<SupportGrantSummary[]> {
+  const notices = await noticeDeliveries(
+    scope,
+    practiceId,
+    rows.map((row) => row.id),
+  );
+  return rows.map((row) => supportGrant(row, notices.get(row.id) ?? { opening: UNOPENED, closing: UNOPENED }));
+}
+
+const SUPPORT_GRANT_COLUMNS = `id, ticket, reason, created_at, expires_at, (now() < expires_at AND now() < created_at + interval '4 hours') AS open`;
 
 interface SupportGrantRow {
   readonly id: string;
@@ -61,7 +147,6 @@ interface SupportGrantRow {
   readonly reason: string;
   readonly created_at: Date;
   readonly expires_at: Date;
-  readonly notified_at: Date | null;
   readonly open: boolean;
 }
 
@@ -116,8 +201,8 @@ export async function freshness(scope: PracticeScope<ScopeClient>, practiceId: s
   return { lastFileAt: file.rows[0]?.at ?? null, lastRun: jobRun(last.rows[0]), failedRun: jobRun(failed.rows[0]) };
 }
 
-function supportGrant(row: SupportGrantRow): SupportGrantSummary {
-  return { id: row.id, ticket: row.ticket, reason: row.reason, createdAt: row.created_at, expiresAt: row.expires_at, notifiedAt: row.notified_at, open: row.open };
+function supportGrant(row: SupportGrantRow, notices: SupportGrantSummary['notices']): SupportGrantSummary {
+  return { id: row.id, ticket: row.ticket, reason: row.reason, createdAt: row.created_at, expiresAt: row.expires_at, open: row.open, notices };
 }
 
 export const practiceHome = practiceRoute({
@@ -152,8 +237,8 @@ export const practiceHome = practiceRoute({
       [practiceId],
     );
     const administers = rolesPermit(access.roles, 'access_log.read');
-    const supportGrants = administers
-      ? (await scope.client.query<SupportGrantRow>(`SELECT ${SUPPORT_GRANT_COLUMNS} FROM support_grant WHERE practice_id = $1 ORDER BY created_at DESC, id LIMIT 20`, [practiceId])).rows.map(supportGrant)
+    const grants = administers
+      ? await supportGrants(scope, practiceId, (await scope.client.query<SupportGrantRow>(`SELECT ${SUPPORT_GRANT_COLUMNS} FROM support_grant WHERE practice_id = $1 ORDER BY created_at DESC, id LIMIT 20`, [practiceId])).rows)
       : null;
     return {
       practice: { id: practice.id, name: practice.name, npi: practice.npi, taxIdLast4: practice.taxIdLast4, zip: practice.zip, zipPlusFour: practice.zipPlusFour, localityCode: practice.localityCode, status: practice.status },
@@ -161,7 +246,7 @@ export const practiceHome = practiceRoute({
         (row): AgreementSummary => ({ id: row.id, kind: row.kind, version: row.version, signer: row.signer, signedAt: row.signed_at, sha256: row.sha256, documentRef: row.document_ref }),
       ),
       access: { via: access.via, roles: access.roles },
-      supportGrants,
+      supportGrants: grants,
       freshness: await freshness(scope, practiceId),
       /** Why new runs are refused now (the organization is suspended), or null (docs/adr/0050). */
       suspension: await practiceRunRefusal(scope.client, practiceId),
@@ -197,8 +282,9 @@ export const supportAccessPage = practiceRoute({
       "SELECT object_type, object_id, purpose, at FROM audit_event WHERE grant_id = $1 AND practice_id = $2 AND action = 'read' ORDER BY at, id",
       [params.supportGrantId, practiceId],
     );
+    const [summary] = await supportGrants(scope, practiceId, [grant]);
     return {
-      grant: supportGrant(grant),
+      grant: summary as SupportGrantSummary,
       reads: reads.rows.map((row): RecordRead => ({ objectType: row.object_type, objectId: row.object_id, purpose: row.purpose, at: row.at })),
     };
   },

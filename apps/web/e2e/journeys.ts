@@ -496,7 +496,9 @@ export async function tourPractice(page: Page, options: TourPracticeOptions): Pr
       await page.getByLabel('Agreement', { exact: true }).selectOption({ label: 'No agreement (out of network)' });
       await page.getByLabel('Effective from', { exact: true }).fill('2026-01-01');
       await page.getByRole('button', { name: 'Save the mapping' }).click();
-      await expect(page.locator('[data-notice="mapped"]')).toBeVisible();
+      // April holds this plan's lines alone and the practice's location is set, so the mapping completes it and queues
+      // its monitoring (combined audit #32, D2b), the e2e placeholder for this practice: the runs below are the person's.
+      await expect(page.locator('[data-notice="mapped_pricing"]')).toBeVisible();
     }
     await pricedAndTriaged({ practiceId, managerKey: options.manager, periodFrom: '2026-03-01', periodTo: '2026-03-31' });
     await pricedAndTriaged({ practiceId, managerKey: options.manager, periodFrom: '2026-04-01', periodTo: '2026-04-30' });

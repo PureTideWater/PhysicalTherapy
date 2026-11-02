@@ -8,7 +8,7 @@
       "id": "tenancy",
       "title": "Tenancy and access",
       "dictionary": "Tenancy and access",
-      "about": "Organizations, practices (the tenant) and each practice's pricing location (its billing ZIP and ZIP+4), people, memberships and their roles, grants of practice access to other organizations, agreements, break-glass support grants, sign-in devices and sessions, the persona matrix and the PHI table registry itself.",
+      "about": "Organizations, practices (the tenant) and each practice's pricing location (its billing ZIP and ZIP+4), people, memberships and their roles, grants of practice access to other organizations, agreements, break-glass support grants and the outbox of their opening and closing notices (one row a notice, one a practice administrator, each with its message's delivery), sign-in devices and sessions, the persona matrix and the PHI table registry itself.",
       "tables": [
         "organization",
         "practice",
@@ -19,6 +19,8 @@
         "agreement",
         "agreement_event",
         "support_grant",
+        "support_grant_notice",
+        "support_grant_notice_recipient",
         "role_permission",
         "user_device",
         "user_session",
@@ -128,11 +130,12 @@
       "id": "billing",
       "title": "Billing and onboarding",
       "dictionary": "Operations (no PHI by design)",
-      "about": "Stripe subscriptions, invoices and webhook events, the one-subscription claim, nightly usage counts and the billing standing view; the public audit request, with its attribution and decline reason, user invitations, and terms of use with their acceptances; and the free screening's prospects, uploads, runs and aggregate results, the day's tally of uploads its queue's share and cap count (a keyed subject and a row count, kept until the next UTC day ends), the platform place-of-service split (every practice's default since PR 6b), the counts-only outcome every screening leaves, the frozen summary a converted or consenting practice keeps for 12 months, and the campaign codes the founder lists (no PHI, no practice).",
+      "about": "Stripe subscriptions, invoices and webhook events, the outbox of each invoice's dunning notices (one row a stage and billing owner, with its message's delivery), the one-subscription claim, nightly usage counts and the billing standing view; the public audit request, with its attribution and decline reason, user invitations (with the delivery of their Cognito message), and terms of use with their acceptances; and the free screening's prospects, uploads, runs and aggregate results, the day's tally of uploads its queue's share and cap count (a keyed subject and a row count, kept until the next UTC day ends), the platform place-of-service split (every practice's default since PR 6b), the counts-only outcome every screening leaves, the frozen summary a converted or consenting practice keeps for 12 months, and the campaign codes the founder lists (no PHI, no practice).",
       "tables": [
         "subscription",
         "subscription_claim",
         "invoice",
+        "dunning_notice_recipient",
         "billing_event",
         "usage_snapshot",
         "billing_standing",
@@ -156,7 +159,7 @@
       "id": "operations",
       "title": "Operations",
       "dictionary": "Operations (no PHI by design)",
-      "about": "The append-only audit log, job runs, in-app notifications and digests (counts and totals only), feature flags, mutation request keys, rate-limit counters, restore drills, the public status page, support tickets and the receipts of the support inbox, SOC 2 evidence records, and the migration ledger.",
+      "about": "The append-only audit log, job runs, in-app notifications and digests (counts and totals only), feature flags, mutation request keys, rate-limit counters, restore drills, the public status page, support tickets and the receipts of the support inbox, the mail streams and each message's delivery by SES's message ID (no address), the screening's refusal list (a keyed hash of an address that bounced or was reported, kept 12 months only to refuse it) and its bounce marks (keyed subjects, 7 days), SOC 2 evidence records, and the migration ledger.",
       "tables": [
         "audit_event",
         "job_run",
@@ -171,6 +174,11 @@
         "status_incident_update",
         "support_ticket",
         "support_mail_receipt",
+        "mail_stream",
+        "mail_send",
+        "mail_recipient_key",
+        "screening_mail_refusal",
+        "screening_bounce_mark",
         "compliance_record",
         "schema_migrations"
       ]

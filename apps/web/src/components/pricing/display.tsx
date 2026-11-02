@@ -77,7 +77,11 @@ export function RunFailureText({ code }: { readonly code: string }) {
 /** Why a run failed, in words, from its fixed code (every FailureCode the price job records). */
 export const FAILURE_TEXT: Readonly<Record<string, string>> = {
   engine_version_mismatch: 'The run was created for another version of the pricing engine; create a new run.',
-  unmapped_plan: 'A plan of the period’s lines has no mapping: map it, then create a new run.',
+  // Historical (combined audit #32, docs/adr/0075): no run fails this way since; one that did keeps its code, so it
+  // says what happened then and what a new run does now, in the reader's words, with no internal name such as the
+  // audit's number (PR #95 review UX-6, replacing design 5.4's words).
+  unmapped_plan:
+    'A plan of the period’s lines had no mapping, and at the time a run stopped for that. Runs no longer do: create a new run, which prices every mapped plan and leaves the unmapped plan’s lines unpriced.',
   job_failed: 'The price job failed three times and the operator was alerted; create a new run once it is fixed.',
   // Audit #33 (docs/adr/0064): a line needed the location, so no line was kept and the month waits for it.
   location_not_ready: 'A line of the period needs the practice’s billing ZIP or ZIP+4: fix it in Pricing settings. Waiting months are priced by themselves once it is set.',
@@ -534,6 +538,49 @@ export function UnpricedReasons({ coverage }: { readonly coverage: RunCoverage }
   );
 }
 
+/**
+ * The plans of a run's lines that had no mapping at all when it was priced (coverage tp-pricing-coverage/2; combined
+ * audit #32, docs/adr/0075; MAP-06, PRC-30): "When this run was priced, 2 plans had no mapping; their lines are not
+ * priced (14 lines, $1,234.00 billed)." Beside the unpriced reasons, whose NO_MAPPING (and, for a line that failed the
+ * engine's fact checks first, ENGINE_ERROR) counts hold those lines. Each plan is named in words first, its payer, then
+ * its plan key in the mono face, linked to its mapping page; with no key recorded, "This plan (its key is not
+ * recorded)", never its opaque ID (runNames; PR #95 review UX-9). From the run's own record, never today's mappings: a
+ * run never changes.
+ * Nothing for a run that had none, or a /1 run (which reads as none).
+ */
+export function UnmappedPlansPriced({ practiceId, coverage, names }: { readonly practiceId: string; readonly coverage: RunCoverage; readonly names: RunNames }) {
+  const plans = coverage.unmapped_plans;
+  if (plans.length === 0) {
+    return null;
+  }
+  const lines = plans.reduce((total, plan) => total + plan.lines, 0);
+  const cents = plans.reduce((total, plan) => total + BigInt(plan.charge_cents), 0n);
+  const one = plans.length === 1;
+  return (
+    <div className="flex flex-col gap-1 pt-3 text-sm" data-state="unmapped-plans">
+      <p>
+        When this run was priced, <span className="font-mono tabular-nums">{plans.length}</span> {one ? 'plan' : 'plans'} had no mapping; {one ? 'its' : 'their'} lines are not priced (
+        <span className="font-mono tabular-nums">{lines}</span> {lines === 1 ? 'line' : 'lines'}, <Money value={String(cents)} /> billed).
+      </p>
+      <ul className="flex flex-wrap gap-x-3 gap-y-1" aria-label="Plans with no mapping when this run was priced">
+        {plans.map((plan) => (
+          <li key={plan.plan_id} data-plan={plan.plan_id} className="wrap-anywhere">
+            {names.planPayers[plan.plan_id] ?? 'Payer'}{' '}
+            <Link className="underline" href={`/p/${practiceId}/mapping/${plan.plan_id}`}>
+              <PlanKey planKey={names.plans[plan.plan_id]} />
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** A plan named by its key, a code in the mono face (brand.md), or in words when no key is recorded: never its opaque ID (UX-9). */
+export function PlanKey({ planKey }: { readonly planKey: string | undefined }) {
+  return planKey === undefined ? <>This plan (its key is not recorded)</> : <span className="font-mono tabular-nums">{planKey}</span>;
+}
+
 const KIND_TEXT: Readonly<Record<string, string>> = {
   contract: 'Contract',
   ma_noncontracted: 'Medicare Advantage, non-contracted',
@@ -566,9 +613,9 @@ export function PatternTable({ practiceId, coverage, names, limit }: { readonly 
                 <td className="py-1 pr-3">
                   <div className="min-w-32 wrap-anywhere">
                     {names.payers[pattern.payer_id] ?? 'Payer'}
-                    <div className="font-mono text-xs">
+                    <div className="text-xs">
                       <Link className="underline" href={`/p/${practiceId}/mapping/${pattern.plan_id}`}>
-                        {names.plans[pattern.plan_id] ?? pattern.plan_id}
+                        <PlanKey planKey={names.plans[pattern.plan_id]} />
                       </Link>
                     </div>
                   </div>

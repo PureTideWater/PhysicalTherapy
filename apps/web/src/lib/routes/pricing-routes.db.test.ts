@@ -25,7 +25,7 @@ import { LocalUploadTargets } from '../uploads/targets';
 import { coveragePage } from './coverage';
 import { mapPlanAction } from './mapping';
 import { lineCitation, type pricedLineWords } from '../pricing/queries';
-import { createPricingRunAction, pricingRunPage, pricingRunsPage } from './pricing';
+import { NOTHING_MAPPED, createPricingRunAction, pricingRunPage, pricingRunsPage } from './pricing';
 import { claimsPage, linePage } from './remittances';
 import { loadRouteRelease } from './test-support/pricing-world';
 import { completeUpload, requestUploads, uploadContent } from './uploads';
@@ -220,25 +220,39 @@ let firstRun = '';
 let oonMapping = '';
 
 describe('creating a run through the Pricing runs screen', () => {
-  it('is refused while a plan of the period is unmapped (MAP-01), and for a release that is not the current one', async () => {
+  it('is refused while no plan of the period is mapped (MAP-07), and for a release that is not the current one', async () => {
+    // Every plan of each period is unmapped (February MAP-05's, March MAP-01's, April MAP-04's): a run would price nothing.
+    // F2: the words say a month is priced once any one of its plans is mapped, never only once every plan is.
+    expect(refusedWith(await call(createPricingRunAction, manager, P(), { fromMonth: '2026-02', toMonth: '2026-04', releaseNo: '900001' }))).toBe(`fromMonth: ${NOTHING_MAPPED}`);
+    expect(NOTHING_MAPPED).toMatch(/or once any one is, by the daily monitoring or a run from here; its other plans’ lines then need it priced again\.$/);
+    expect(NOTHING_MAPPED).not.toMatch(/priced once every plan it holds is mapped$/);
+    expect(refusedWith(await call(createPricingRunAction, manager, P(), { fromMonth: '2026-03', releaseNo: '900001' }))).toBe(`fromMonth: ${NOTHING_MAPPED}`);
+    // The MA plan's mapping completes February, whose lines are that plan's alone (D2b): the request queues monitoring of
+    // February only (D20), once it commits.
     const ma = await planOf('CE:SYNPLAN-MA-05');
-    ok(await call(mapPlanAction, manager, P(), { planId: ma, kind: 'ma_noncontracted', effectiveFrom: '2026-01-01' }));
-    expect(refusedWith(await call(createPricingRunAction, manager, P(), { fromMonth: '2026-02', toMonth: '2026-04', releaseNo: '900001' }))).toMatch(/^fromMonth: pricing is refused until every plan is mapped/);
-    expect(refusedWith(await call(createPricingRunAction, manager, P(), { fromMonth: '2026-03', releaseNo: '900001' }))).toMatch(/^fromMonth: pricing is refused until every plan is mapped: 1 plan/);
+    expect(ok(await call(mapPlanAction, manager, P(), { planId: ma, kind: 'ma_noncontracted', effectiveFrom: '2026-01-01' })).redirect).toBe(`/p/${practiceId}/mapping/${ma}?notice=mapped_pricing`);
+    const monitorFebruary = { type: 'monitor', payload: { practice_id: practiceId, request_id: expect.any(String) as unknown, months: ['2026-02-01'] } };
+    expect(queue.jobs).toEqual([monitorFebruary]);
     expect(refusedWith(await call(createPricingRunAction, manager, P(), { fromMonth: '2026-02', releaseNo: '900002' }))).toMatch(/^releaseNo: rule-release mismatch: release 900002 was asked for and release 900001 is the one loaded/);
     expect(refusedWith(await call(createPricingRunAction, manager, P(), { fromMonth: '2026-04', toMonth: '2026-02', releaseNo: '900001' }))).toMatch(/^toMonth:/);
     expect(refusedWith(await call(createPricingRunAction, manager, P(), { fromMonth: '2025-01', releaseNo: '900001' }))).toMatch(/^fromMonth: a period that holds at least one service line/);
     expect((await call(createPricingRunAction, viewer, P(), { fromMonth: '2026-02', releaseNo: '900001' })).status).toBe('forbidden');
-    expect(queue.jobs).toEqual([]);
+    expect(queue.jobs).toEqual([monitorFebruary]);
     expect((await owner.query('SELECT 1 FROM pricing_run')).rowCount).toBe(0);
+    // This file's worker drops monitor jobs, so the next test starts from an empty queue.
+    await runQueue();
   });
 
   it('records the run queued, pinned to the current release, queues its price job, and the job completes it', async () => {
-    // MAP-01's plan mapped only from after its March lines (MAP-02): the plan is mapped, its lines are not.
-    ok(await call(mapPlanAction, manager, P(), { planId: await planOf('CE:SYNPLAN-UNMAPPED-01'), kind: 'no_agreement', effectiveFrom: '2026-04-01' }));
+    // MAP-01's plan mapped only from after its March lines (MAP-02): the plan is mapped, its lines are not. "Mapped" is
+    // decided on each line's date (PR #95 review R3N-1), so March, whose lines are that plan's alone, is not complete and
+    // the mapping queues nothing (D2b). The OON mapping completes April: monitoring of the complete months, February
+    // (its MA plan mapped) and April, never March (D20).
+    expect(ok(await call(mapPlanAction, manager, P(), { planId: await planOf('CE:SYNPLAN-UNMAPPED-01'), kind: 'no_agreement', effectiveFrom: '2026-04-01' })).redirect).toMatch(/notice=mapped$/);
     oonMapping = ok(await call(mapPlanAction, manager, P(), { planId: await planOf('CE:SYNPLAN-OON-04'), kind: 'no_agreement', effectiveFrom: '2026-01-01' })).objectId ?? '';
     firstRun = runFrom(await call(createPricingRunAction, manager, P(), { fromMonth: '2026-02', toMonth: '2026-04', releaseNo: '900001' }));
-    expect(queue.jobs).toEqual([{ type: 'price', payload: { practice_id: practiceId, pricing_run_id: firstRun } }]);
+    const monitor = (months: string[]) => ({ type: 'monitor', payload: { practice_id: practiceId, request_id: expect.any(String) as unknown, months } });
+    expect(queue.jobs).toEqual([monitor(['2026-02-01', '2026-04-01']), { type: 'price', payload: { practice_id: practiceId, pricing_run_id: firstRun } }]);
     const queued = ok(await call(pricingRunPage, manager, { ...P(), runId: firstRun }));
     expect(queued.run).toMatchObject({ status: 'queued', periodFrom: '2026-02-01', periodTo: '2026-04-30', releaseNo: 900001, coverage: null });
     await runQueue();
@@ -262,7 +276,10 @@ describe('the screens after a run', () => {
     const detail = ok(await call(pricingRunPage, viewer, { ...P(), runId: firstRun, lines: 'NO_AGREEMENT' }));
     expect(detail.lines.total).toBe(4);
     expect(detail.lines.lines.every((line) => line.unpricedReason === 'NO_AGREEMENT' && line.expectedAllowedCents === null)).toBe(true);
-    expect(Object.values(detail.names.plans)).toEqual(['CE:SYNPLAN-MA-05']);
+    // R3N-1: MAP-01's plan is mapped only from April, after its March lines, so over this run's lines it had no mapping in
+    // force: the coverage records it with its four lines (all NO_MAPPING), and the run page names it.
+    expect(run?.coverage?.unmapped_plans.map((plan) => plan.lines)).toEqual([4]);
+    expect(Object.values(detail.names.plans).sort()).toEqual(['CE:SYNPLAN-MA-05', 'CE:SYNPLAN-UNMAPPED-01']);
     expect(Object.values(detail.names.payers)).toEqual(['SYNTHETIC PAYER M']);
     expect((await call(pricingRunPage, viewer, { ...P(), runId: randomUUID() })).status).toBe('not_found');
   });

@@ -59,7 +59,7 @@ export interface ScreeningThreadRequest {
  */
 export type ScreeningThreadReply =
   | { readonly kind: 'ready' }
-  | { readonly kind: 'priced'; readonly outcome: 'complete' | 'already_complete' | 'not_claimed' | 'failed' }
+  | { readonly kind: 'priced'; readonly outcome: 'complete' | 'already_complete' | 'not_claimed' | 'failed' | 'mail_paused' }
   | { readonly kind: 'failed' };
 
 /** A thread failed the run it was handed: its pricing threw, it ran out of memory, or it stopped. Fixed text only. */

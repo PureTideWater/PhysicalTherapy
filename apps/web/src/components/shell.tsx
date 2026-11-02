@@ -171,6 +171,7 @@ export type ShellSection =
   | 'status_admin'
   | 'compliance'
   | 'console_models'
+  | 'console_mail'
   | 'screening_split'
   | 'home';
 
@@ -273,6 +274,9 @@ function ShellNav({ shell, section }: { readonly shell: Shell; readonly section:
               </RailLink>
               <RailLink href="/console/models" active={section === 'console_models'}>
                 Model features
+              </RailLink>
+              <RailLink href="/console/mail" active={section === 'console_mail'}>
+                Mail streams
               </RailLink>
             </>
           ) : null}
