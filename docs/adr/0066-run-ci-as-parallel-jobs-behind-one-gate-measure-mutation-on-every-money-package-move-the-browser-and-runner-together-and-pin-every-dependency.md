@@ -2,7 +2,9 @@
 
 - **Status:** accepted, Part 1 (`co-001/ci-speed`, combined audit #109), Part 2 (`co-001/ci-deps`, #112, with #19's
   assert loosening, Dependabot groups and licence fix), Part 3 (`co-001/ci-browser`, #19's upgrade part), Part 4
-  (`co-001/ci-mutation`, #54) and Part 5 (`co-001/ci-pin-age`, the series' follow-up P1). Part 1 amends
+  (`co-001/ci-mutation`, #54), Part 5 (`co-001/ci-pin-age`, the series' follow-up P1) and Part 7
+  (`co-001/ci-mutation-trigger`, the series' follow-up P4; Part 6 is the follow-up P2's, `co-001/ci-trivy-version`,
+  and goes before Part 7 when it merges). Part 1 amends
   [0010](0010-supply-chain-gates-beside-ci.md) (the image and licence gates run as ci.yml jobs under `all green`) and
   [0063](0063-protect-main-and-the-build-branch-make-the-founders-github-review-the-approval-of-record-open-each-approval-with-what-changed-and-switch-on-the-edit-hooks.md)
   (the required checks, the job that writes the domain model's summary, the per-job timeouts).
@@ -28,10 +30,17 @@
   - **Part 5** (`co-001/ci-pin-age`) amends Part 1 (History: one step, Action pins, reads GitHub's API with the job's
     read-only token) and Part 2 (the BuildKit builder: its newer-release warning takes the workspace's floor, its
     newness is read from the base's workflows, and its digest is aged with every other image).
-- **Date:** 2026-10-25; Parts 2 and 3 2026-10-26; Part 5 2026-10-28
+  - **Part 7** (`co-001/ci-mutation-trigger`) amends Part 4 (the root manifest, the workspace list, the workflow and
+    each closure's manifest are read field by field, not whole; and the gate holds every shard, not only one scoring
+    Unicode-bound equivalents, to the pinned Node, Unicode, ICU and pnpm and to the tested commit).
+- **Date:** 2026-10-25; Parts 2 and 3 2026-10-26; Part 5 2026-10-28; Part 7 2026-11-02
 - **Deciders:** the founder, Tyler Williams, who adopted the combined best-option audit in full on 2026-10-20 (items
   #19, #54, #109 and #112 among it, each placed "CI PR before PR 7"), under the standing rule of 2026-10-18; the build
   (Lane B), for the notices below, decided under that rule and each reversible by the founder
+  - **Part 7:** the co-founder's ruling of 2026-10-26, about 00:20 UTC (every choice its recommended option, for
+    security the safer one), under which the follow-up itself (P4, an engineering item the series' design proposed) is
+    taken and each notice below is made; and his Q3 of 2026-10-25, about 21:05 UTC (engineering-only choices inside an
+    already-ruled design are pre-approved and reversible).
   - **Part 5:** the founder's F2 (b) (the three-day release age, with a dated, exact exclude of at most seven days),
     relayed by the co-founder on 2026-10-25 at about 01:10 UTC; the co-founder's CQ1 (a) (actions and images keep
     Dependabot's seven days); and the co-founder's ruling of 2026-10-26, about 00:20 UTC (every choice its recommended
@@ -49,6 +58,8 @@
 - **PRD sections:** 16 (dependency and image hygiene), 17 (milestone 0: "CI with every gate from section 18"), 18
   (continuous integration: "one workflow on every pull request"); Change Order 001, CO-02; reconciliation-001's checks;
   test matrix CI-01 to CI-10; ADRs 0010, 0058, 0062, 0063 and 0064
+  - **Part 7:** 18 (the mutation layer and continuous integration); reconciliation-001's record of the co-founder's
+    ruling of 2026-10-26; test matrix CI-27 to CI-29; Part 4 of this record.
   - **Part 5:** 16 (dependency and image hygiene), 18; reconciliation-001's record of the co-founder's ruling of
     2026-10-26; test matrix CI-21 to CI-23; ADR 0063 (a token on one step, as approval-of-record's).
   - **Part 4:** 17 (milestone 6's check), 18 (the mutation layer and continuous integration); reconciliation-001's
@@ -1102,8 +1113,9 @@ is fully run when every shard holding it ran. The gate fails when:
 - for a fully-run package, a recorded equivalent lacks its reviewer and date, is reviewed by its proposer or on a date
   after the run, no longer matches a mutant (stale), or matches one a test detects or that breaks a load;
 - for a fully-run package, an equivalent that rests on the engine's Unicode data (`tools/stryker/unicode.json`) was
-  scored by a shard whose Node has other Unicode or ICU data than the entry was checked on, or the listing names an
-  entry no equivalents file records.
+  scored by a shard whose Node has other Unicode or ICU data than the entry was checked on (and every shard is held to
+  the pinned Node, Unicode, ICU and pnpm and to the tested commit by Part 7), or the listing names an entry no
+  equivalents file records.
 
 A package none of whose shards ran is "not affected", and neither score rule judges it. The gate prints per-package
 and per-file scores, and every survivor with its covering tests, to the log and the summary.
@@ -1161,7 +1173,8 @@ on other data, and a test holds the workflow's pin to the Node the listing names
   any changed path a package's mutate or test set selects affects it, so a pull request that deletes a money test,
   renames one into the exclusions, or deletes a helper, manifest or data file only the old side held, is measured. A
   lockfile change counts only when it moves one of those resolved versions. The mutation configuration and tooling,
-  the root manifest, the workspace list, the root tsconfigs and the workflow affect all four.
+  the root manifest, the workspace list, the root tsconfigs and the workflow affect all four (narrowed field by field
+  by Part 7).
 - **Jobs:**
   - `changes` (5 min);
   - `stryker (<shard>)` (30 min; skipped when nothing is affected; reports uploaded with `overwrite: true`);
@@ -1679,3 +1692,244 @@ run 40593100176. Unbounded, as before: the verify loop on a pull request, and ch
 - **A web-flow key rotates.** The push run's warning names it; add the new key to `github-web-flow.asc`.
 - **The advisory read.** Its first live run of an action `security-fix` exclude.
 - **The repository goes private.** The token could then read what an anonymous reader cannot.
+
+## Part 7 (`co-001/ci-mutation-trigger`)
+
+### Context
+
+Part 4 decides what a pull request's mutation run measures from the paths it changes (`tools/stryker/affected.ts`).
+Three files counted whole, for every package: the root `package.json`, `pnpm-workspace.yaml` and
+`.github/workflows/mutation.yml`. A closure's own manifest (`packages/*/package.json`, `tools/package.json`) counted
+whole for the packages whose closure lists it. So a new root or package script, a catalog line no money code imports,
+a release-age exclude or a Dependabot actions bump ran every shard: seven since #52, 52.0 to 57.8 runner-minutes a run
+(mean 54.8 with the changes and gate jobs, push runs 40339580137 to 41330911489), and at least about 94 once #84 splits
+packets further. Replayed over the 58 pull requests into the build branch to #89, 22 ran every shard, and 7 of them
+for nothing a shard reads.
+
+The same rule left gaps the other way:
+- an install lifecycle script in a workspace manifest outside every closure (`apps/*`, `infra`) ran nothing, although
+  every shard's frozen install runs it;
+- `tools/package.json`, the manifest of the mutation tooling's own files (`"type": "module"`), counted for pricing
+  alone, and so did `tools/tsconfig.json`;
+- nothing named `.npmrc`, a pnpmfile, `patches/`, the workflows' action lockfile, a `package.yaml` or `package.json5`
+  manifest, a Plug'n'Play loader or a local action, each of which changes the install or every step unseen;
+- the files a shard loads by path (each package's Stryker configuration, the seed's setup file, the canary's
+  configurations and case tests) were not followed for what they import;
+- `pnpm stryker` ran Stryker through a root script and a bin by name, so a root `prestryker` script or another
+  package's `stryker` bin decided what ran.
+
+### Decision
+
+**Field by field, on both sides, failing closed** (`tools/stryker/manifests.ts`, called by `affected()`). The changes
+job reads the text of the root manifest, `pnpm-workspace.yaml`, `mutation.yml` and every changed `*/package.json` at
+the fork point and at the head (`changeSince`; `git diff --name-status --no-renames` tells an added or deleted file's
+absent side from one git cannot show). Each field affects every package, the packages whose closures read it, or none.
+A field no table lists, a side not read, a file that does not parse, and a key or a path holding a control character
+affect every package. Fields are compared in order, so a reordered `exports` condition or override is a change;
+scripts, dependency maps and catalogs are compared entry by entry, so reordering them alone is none. Each reason names
+its file and field, every key JSON-quoted so that no key a pull request writes can start a workflow command in the log,
+and the fields read and found inert are listed on a line of their own:
+
+```text
+pricing: affected by pnpm-workspace.yaml catalog."zod" (imported by pricing, packets)
+money: affected by .github/workflows/mutation.yml step references only: runner proved on money-ledger
+read and affecting no package: package.json scripts."db:domain-model" (no mutation step runs it)
+```
+
+- **The root manifest.** `packageManager`, `engines`, `type`, `name`, `private`, `pnpm` and every key not listed:
+  every package. Scripts: an install script (`pnpm:devPreinstall`, `preinstall`, `install`, `postinstall`,
+  `prepublish`, `preprepare`, `prepare`, `postprepare`, `prepublishOnly`) every package, any other none. Dependency
+  entries by the mirror rule: the test tooling (`TEST_TOOLING`) or a name the mutation tooling imports, every package;
+  a name a closure imports, that closure's package; else none. An entry named `node`, `deno` or `bun`, or whose
+  specifier on either side is not a registry version or range, `catalog:` or an `npm:` alias (`runtime:`,
+  `workspace:`, `link:`, `file:`, git, a URL), affects every package: it can put a `node` bin first on every step's
+  `PATH`, or install a tree no lockfile package entry records.
+- **A closure's manifest** (its owners are the packages whose closure lists it): install scripts and
+  `dependenciesMeta` every package; other scripts none; dependency entries by the mirror rule against the imports of
+  that package's own files, a `workspace:` specifier its owners; `name`, `exports`, `imports`, `type`, `main` and every
+  unlisted key its owners.
+- **The mutation tooling's own package**, a workspace manifest whose directory holds a file of the global closure,
+  computed, not named (`tools/package.json` today): `type`, `imports`, install scripts and every unlisted key every
+  package, since tsx loads every entry point under them, and so does its directory's `tsconfig.json`; `name` and
+  `exports` its owners', or every package when its name, on either side, is one a global file imports (another
+  manifest taking that name, too); dependency entries as the root's, a `workspace:` entry excepted (its owners).
+- **Every other workspace manifest** (`apps/*`, `infra`, a package in no closure): install scripts, `prepublishOnly`
+  and `dependenciesMeta` every package, since every frozen install runs them in every workspace project; everything
+  else none, because `closureOf` resolves imports by the same reading the aliases use, so a `name` or `exports` edit
+  that captures a closure's import makes it that closure's manifest at the head. An added or deleted one is judged
+  against `{}`. A manifest another global glob holds (`tools/stryker/canary/lib/package.json`, under
+  `tools/stryker/**`) and one a closure or the tooling reads as a file (an import, a data entry) are not classified and
+  count whole, as before.
+- **`pnpm-workspace.yaml`.** `packages` is compared by both readings, the YAML pnpm installs from and the mutation
+  tooling's own (`workspacePatterns`, which a blank line or a column-0 comment inside the list cuts short), and affects
+  every package when either differs. `catalog` and `catalogs` entries follow the mirror rule. `minimumReleaseAge`,
+  `minimumReleaseAgeExclude`, `trustPolicy`, `trustPolicyExclude` and `trustPolicyIgnoreAfter` affect none: a frozen
+  install never resolves, and pnpm 10 reads them only to resolve. `onlyBuiltDependencies`, `overrides`,
+  `patchedDependencies` and every other key affect every package, compared by their scalars' source text as well. An
+  anchor, alias, merge key, explicit tag, directive, byte-order mark, parse error or warning (a duplicate key) on
+  either side affects every package, since pnpm's js-yaml and the `yaml` package can read them differently.
+- **`mutation.yml`**, compared parsed under the same YAML rules, so comments and layout alone run nothing. A change
+  that is equal once each step `uses:` pinned to a full SHA on both sides, of the same owner, repository and path,
+  has its SHA removed (`<owner>/<repo>[/<path>]@<40 hex>`, Part 2's `PIN`, copied) runs `money-ledger` alone
+  (`RUNNER_PROOF_SHARD`), which holds money and ledger whole; a test reads `stryker/shards.json` to hold that no other
+  shard holds either. A move of `actions/upload-artifact` or `actions/download-artifact` is never pin-only, since a
+  one-shard run merges one artifact and cannot prove a merge of several; nor is a job-level `uses:`, a tag or branch
+  ref, `docker://`, `./`, `$/`, a changed path, or any other edit. Each of those affects every package, the reason
+  naming the paths that differ.
+- **Added to the global inputs**, none of which exists: `.npmrc`, `.pnpmfile.*`, `patches/**`,
+  `.github/workflows/actions.lock` (GitHub's workflow dependency lockfile, in preview, under which "the locked commit
+  is what runs"), `**/package.yaml` and `**/package.json5` (manifests pnpm reads and the tooling does not), `.pnp.cjs`
+  (required into every `pnpm exec` step) and `.github/actions/**`.
+- **What a shard loads by path** (`GLOBAL_LOADED`): each package's `stryker/<package>.config.mjs`, the seed's setup
+  file, and the canary's Stryker and Vitest configurations and five case tests. The global closure follows their
+  imports with Part 4's entry points, tests included: 32 files, `tools/stryker/canary/**` among them, importing
+  `@tp/stryker-canary` and `fast-check` by name. A test holds the list to those loads, reading the canary's
+  configuration from the workflow's canary step.
+- **Every `git` the changes job runs** takes a `PATH` with each `node_modules/.bin` entry and each relative entry
+  removed, so no dependency's bin answers for git.
+
+**Stryker by path** (`tools/stryker/stryker.ts`). Every Stryker run, the canary's and each shard's, is this Node on the
+`bin.stryker` file that `@stryker-mutator/core`'s own manifest names, resolved from the repository's root:
+`pnpm -s exec tsx tools/stryker/stryker.ts run <config>`. The package must lie under the root's own `node_modules`, so
+one a parent directory or `NODE_PATH` supplies is refused. No root `stryker`, `prestryker` or `poststryker` script, and
+no other package's `stryker` bin, decides what runs, so those scripts are inert too. The root `stryker` script stays,
+for people.
+
+**Every shard on the pinned runtime and one commit** (`tools/stryker/runtime.ts`, `tools/stryker/canary/verdict.ts`,
+`tools/stryker/gate.ts`). The pins are the Node, Unicode and ICU that `tools/stryker/unicode.json`'s `checkedOn` names
+and the pnpm the root `packageManager` names, read by `^pnpm@(\d+\.\d+\.\d+)(\+sha(?:1|224|256|384|512)\.[0-9a-f]+)?$`;
+any other form fails, naming the value.
+- Each canary verdict records the pnpm that ran it (from the user agent pnpm sets for the step) and the commit its
+  shard checked out (read from `.git` as files, a detached `HEAD`, a loose or packed ref, or a worktree's, with no
+  process), and prints both.
+- The gate fails every shard, not only one scoring Unicode-bound equivalents, whose Node, Unicode, ICU or pnpm is not
+  the pinned one, naming both; and every shard whose commit differs from another shard's or, on Actions, from
+  `GITHUB_SHA`. Off Actions it holds the commits equal to each other and says so. Part 4's message for the
+  Unicode-bound equivalents stays, after those failures, since it alone names the equivalents and their remedy. Each
+  shard's own view prints its runtime and commit first.
+- The changes job runs `pnpm -s exec tsx tools/stryker/runtime.ts` after its install and before it decides, through
+  the same pnpm and tsx shims as every later step, so a `node` bin a dependency links, or another pnpm, fails the pull
+  request's `mutation` whatever the classifier decided.
+
+A pin-only change is then proved on the runner, a leg for each step a pin moves: setup-node by Node, Unicode and ICU,
+pnpm/action-setup by pnpm, the checkout by the commit, which on a pull request must be the merge commit GitHub tests.
+
+**Guards that keep the inert rows inert** (`tools/test/workflows.test.ts`).
+- Every `run:` of `mutation.yml` is a whole command on a list: the frozen install, a tooling file run by tsx, and the
+  gate job's shell script, verbatim. No `pnpm <script>`, `pnpm run`, `node --run`, npm, npx or corepack.
+- Over the global closure and the four package closures, no file names `child_process` but `affected.ts` (spawning
+  `git` alone) and `stryker.ts` (`process.execPath` on Stryker's bin alone), each spawn read from the source.
+- No such file names `package.json`, `pnpm-workspace.yaml`, `mutation.yml`, `read-pkg`, `read-package-up`, `pkg-up`,
+  `@npmcli/package-json` or `npm_package_` but those listed with what each reads: `affected.ts`, `manifests.ts`,
+  `workspace.ts`, `stryker.ts`, `runtime.ts`, `tools/screening-capacity/watched.ts`, `vitest.mutation.config.ts`, and
+  the canary's Stryker configuration for a comment.
+- Every entry must still hold its literal, so the lists cannot go stale.
+
+**A correction.** The series' design said Dependabot's `browser-tests` group reaches no money closure. Before Part 3 it
+did: `tools/package.json` was a manifest of pricing's closure, so #38's `playwright-core` line ran pricing's three
+shards. After Part 3 that line is `catalog:`, and the catalog edit ran every shard. Under this part both run none,
+since no closure imports `playwright-core`.
+
+### Measured (2026-11-01 and 2026-11-02)
+
+- **The replay.** Every pull request into the build branch to #95 (64, listed on 2026-11-02 at 01:03 UTC), each judged
+  from its fork point to its head by Part 4's rule (`affected.ts` at 43565235) and by this part's own `affected()`,
+  closures and global inputs taken on both sides:
+  - on the 58 to #89 (37 merged, 12 closed unmerged, 9 open): full runs 22 → 15, partial 8 → 12, none 28 → 31, and
+    no package widened or lost on any;
+  - seven run less: #2 and #4 (a root script) the ledger alone; #3 (`db:domain-model` in the root and `packages/db`)
+    none; #6 (`lint`) pricing and the ledger; #25 and #43 (scripts) none; #31 (`screening:capacity`, and
+    `tools/package.json`'s `exports`) pricing and packets;
+  - saved at their final heads: about 296.9 runner-minutes at the shard means of push runs 40339580137 to
+    41330911489 (294.3 at those of 40316928522 to 40646308297);
+  - none of the pull requests since the series' design runs less (#48 and #49 at their final heads, and #50 to #95):
+    each full run there comes from the mutation tooling, `runs-on`, `packageManager`, the artifact actions, the test
+    tooling's lockfile entries or a lockfile move of vitest's tree, each global here too.
+- **A shard's time on CI**, the mean over the 12 push runs since `stryker/shards.json` last changed (40324477819 to
+  41348076075, each job from its start to its completion): money-ledger 4.49 minutes, packets-scan 7.23, packets-rest
+  12.59, packets-explain 11.86, pricing-engine 7.41, pricing-recompute 4.15, pricing-rest 5.63; 53.36 for the shards and
+  54.24 with the changes and gate jobs. By package: money and the ledger 4.49, pricing 17.19, packets 31.68.
+- **A week, projected** at the ten runs' means: Dependabot's `actions` group without an artifact-action move 53.88 →
+  4.54 (plus the changes and gate jobs either way); `next` and `browser-tests` 53.88 → 0 each; a release-age or trust
+  exclude alone 53.88 → 0; a catalog `zod` line 53.88 → 49.34. Up to about 157 runner-minutes in a week when
+  `actions`, `next` and `browser-tests` all open. Each "→ 0" holds only while the lockfile move reaches no closure
+  import and no test-tooling snapshot: #87 (`@anthropic-ai/sdk`) ran every shard because it moved an optional peer
+  inside vitest's snapshot key.
+- **Locally**, on Node v24.22.0 and pnpm 10.34.8: the changes job's check prints `runtime: Node v24.22.0 (Unicode
+  17.0, ICU 78.3) and pnpm 10.34.8` and passes. Two shards run by path, pricing-recompute and money-ledger, gave every
+  file the same counts as the base's push run (jobs 124972787739 and 124972787830), with no `> therapy-platform@
+  stryker` line.
+- **This part's own pull request** changes the tooling and `mutation.yml`, so it runs every shard: the live proof of
+  Stryker by path and of the runtime and commit legs, compared per file with the push run of the commit it merges into.
+
+### Alternatives considered
+
+| Option | Why not |
+| --- | --- |
+| List the global fields and treat the rest as inert | A field pnpm adds later (it gained `devEngines` and the trust and release-age keys) would be inert until someone noticed. Listing the inert fields fails closed |
+| The test scripts global, as the series' brief listed | No mutation step and no closure file runs a script, and two guards hold that; global would only cost runs (#43's `typecheck` and `lint`). The Stryker script is taken out of the path instead |
+| Specifiers inert, on the frozen install alone | No run is saved: a specifier that moves an imported package moves the lockfile, and the lockfile rule names the same packages. The mirror rule keeps the rule sound if a later pnpm stops checking specifiers on a frozen install |
+| The release-age and trust keys global | A full run for every exclude a person adds or lets expire, for keys pnpm 10.34.8 reads only to resolve; they can fail an install, never change a score |
+| A pin-only change runs nothing, or a canary-only job | Nothing would stop a broken pin merging green and failing the next push run; a canary-only job needs a gate mode of its own. `money-ledger` uses the existing jobs, takes about 4.5 minutes, and keeps "all or none" |
+| A pin-only change also proves transport (`money-ledger` and packets' three shards, four artifacts, about 36 minutes) | It proves a merge of several artifacts but not pricing's upload. An artifact-action move runs every shard instead, a full run only in the weeks those two move |
+| The runtime held only on pin-only runs | One rule with no mode to test; it fails only a runner that ignored the workflow's pins |
+| Closure manifests left whole | #3's only pricing reason was a script in `packages/db/package.json`, and lane pull requests add scripts to `packages/db`, `packages/rules` and `tools` |
+| A glob over `tools/stryker/canary/**` for what a shard loads by path | It would also take `verdict.test.ts`, which no shard loads. A named list held to the loads by a test stays true |
+| Matching reads rather than literals in the guard | A read can be built in ways a pattern misses; a literal scan fails closed, and a short reviewed list stays true |
+| Diff a pull request from the merge's first parent, not its fork point | It changes the rule for every file (proposed separately, P30). From the fork point a pull request is charged for base commits since it forked, a superset of what its merge changes, so this part stays sound |
+| Decide a pull request's mutation with the base's classifier | It changes how every pull request is judged (proposed separately, P43). Today and under this part a pull request runs its own `affected.ts` |
+
+### Notices (decided by the build under the standing rule; the founder can reverse any)
+
+- **N43.** The root manifest, `pnpm-workspace.yaml`, `mutation.yml` and every workspace manifest are read field by
+  field on both sides, failing closed: a field neither listed as inert nor read by a closure, a side not read, a file
+  that does not parse, and a key or path holding a control character affect every package.
+- **N44.** Every script but an install script is inert for mutation, in the root and in every workspace manifest, held
+  by the `run:` list and the closure scan; the test scripts are not global, as the series' brief listed them.
+- **N45.** The release-age and trust keys are inert for mutation: the one place this part rests on the frozen install
+  alone.
+- **N46.** A change to `mutation.yml` that moves only step SHAs, each of the same action, runs `money-ledger` alone; a
+  move of either artifact action runs every shard.
+- **N47.** Every shard is held to the pinned Node, Unicode, ICU and pnpm, and every shard to one commit, `GITHUB_SHA` on
+  Actions; the changes job holds its own runtime before it decides.
+- **N48.** Stryker runs by path from the root's own install; the root `stryker` script stays, for people.
+- **N49.** The mutation tooling's own package's module fields, install scripts, unlisted keys and tsconfig, the `name`
+  and `exports` of a manifest whose name a global file imports, and a manifest another global glob holds, count for
+  every package.
+- **N50.** `.github/workflows/actions.lock`, `$/` references, `**/package.yaml`, `**/package.json5`, `.pnp.cjs` and
+  `.github/actions/**` are global, though none exists.
+
+### Consequences
+
+- A pull request that adds or edits a script no install runs, a dependency or catalog line no closure and none of the
+  tooling imports, or a release-age or trust exclude runs no shard. `mutation` passes in about a minute ("No money path
+  changed"), and the changes job's log lists each such field as read and affecting no package.
+- A Dependabot actions pull request that moves no artifact action runs `money-ledger`, about 4.5 minutes, and proves
+  the new pins on its runner. The first push run after its merge runs every shard on the same pins.
+- A move of `mutation.yml`'s Node or of `packageManager` affects every package, and is now also a change of the pins:
+  `unicode.json`'s `checkedOn` follows the Node, as Part 4 already requires, and `packageManager` is the pnpm pin.
+- A new file a shard loads by path fails `GLOBAL_LOADED`'s test until it is listed. A new tooling file that runs a
+  process or names a manifest fails the guard until it is listed with what it reads.
+- A local shard run needs the pinned Node and `packageManager`'s pnpm, and every shard on one commit
+  (`docs/runbooks/ci.md`, "Running it locally").
+- Rollback is a revert: nothing holds state, and there is no migration.
+
+**What it does not bound.**
+- **The lockfile rule's limit, unchanged.** pnpm hoists every package into `node_modules/.pnpm/node_modules`, so a new
+  root dependency can change what an imported package reaches through an undeclared require, which the lockfile rule
+  (declared dependencies only) does not see. Part 4's whole-file root rule happened to cover that. It is now the
+  lockfile rule's limit, as it already was for every other manifest.
+- **The pnpm version, not its bytes.** pnpm/action-setup self-updates by version, and no mutation runner checks
+  `packageManager`'s hash (proposed separately, P44).
+- **A pull request still decides its own `mutation`** with its own classifier (P43).
+
+### Revisit when
+
+- pnpm 11, whose frozen install checks the release age and trust policy, or a later pnpm that stops checking
+  specifiers on a frozen install.
+- pnpm reads a new workspace key, manifest form or install-time script.
+- A shards rebalance splits money or the ledger (the `RUNNER_PROOF_SHARD` test fails first).
+- The repository adopts `.github/workflows/actions.lock`: pin-only must then read its entries for `mutation.yml` as it
+  reads step SHAs.
+- A new file a shard loads by path.
+- A phantom require's target moves unseen (the hoisting limit above).
