@@ -701,9 +701,8 @@ describe('the screening rules', () => {
     await pauseScreeningMail();
     await admin.query("INSERT INTO screening_mail_refusal (recipient_sha256, reason, expires_at) VALUES (mail_recipient_sha256('closed.first@synthetic.test'), 'bounced', now() + interval '1 day')");
     await expect(submit({ email: 'closed.first@synthetic.test' })).rejects.toMatchObject({ code: '23514', constraint: 'screening_closed' });
-    // The web's check before the address says so too, so nothing of the list is read while closed (S4).
-    const precheck = async () =>
-      (await as<{ refusal: string | null }>(APP_ROLE, 'SELECT screening_submit_mail_refusal($1, $2, NULL) AS refusal', ['closed.first@synthetic.test', accountSubject()]))[0]?.refusal;
+    // The web's check before the address says so too (S4).
+    const precheck = async () => (await as<{ refusal: string | null }>(APP_ROLE, 'SELECT screening_submit_mail_refusal($1, NULL) AS refusal', [accountSubject()]))[0]?.refusal;
     expect(await precheck()).toBe('screening_closed');
     await resetScreeningMail();
     await publishSyntheticRelease(900001);
@@ -1546,33 +1545,44 @@ describe('PR 6b-4: the screening’s mail (migration 20261107090000; audit #76, 
     expect(`${failure?.message ?? ''} ${failure?.detail ?? ''}`).not.toContain('@');
   });
 
-  it('answers the web, before it checks an address, with the refusal submit_screening() would give for the mail, in its order, writing nothing (S4)', async () => {
+  it('answers the web, before it checks an address, with the refusal submit_screening() would give for its submitter, in its order, writing nothing, and never reads the refusal list (S4; the review of 2026-10-27)', async () => {
     const refused = `precheck.${letters()}@synthetic.test`;
     const budgeted = sha256(`precheck account ${randomUUID()}`);
     const client = sha256(`precheck client ${randomUUID()}`);
     await admin.query("INSERT INTO screening_mail_refusal (recipient_sha256, reason, expires_at) VALUES (mail_recipient_sha256($1), 'bounced', now() + interval '1 day')", [refused]);
     await markSubject(budgeted, 'account');
     await markSubject(client, 'client');
-    const precheck = async (email: string, account: string, clientSubject: string | null) =>
-      (await as<{ refusal: string | null }>(APP_ROLE, 'SELECT screening_submit_mail_refusal($1, $2, $3) AS refusal', [email, account, clientSubject]))[0]?.refusal;
-    const other = `precheck.other.${letters()}@synthetic.test`;
-    expect(await precheck(other, accountSubject(), null)).toBeNull();
-    expect(await precheck(` ${refused.toUpperCase()} `, accountSubject(), null)).toBe('screening_contact_undeliverable');
-    // The submitter's budget before the address, for the account and the client alike (S1).
-    expect(await precheck(refused, budgeted, null)).toBe('screening_bounce_budget');
-    expect(await precheck(other, budgeted, null)).toBe('screening_bounce_budget');
-    expect(await precheck(refused, accountSubject(), client)).toBe('screening_bounce_budget');
-    // The same answers submit_screening() gives.
+    const precheck = async (account: string, clientSubject: string | null) =>
+      (await as<{ refusal: string | null }>(APP_ROLE, 'SELECT screening_submit_mail_refusal($1, $2) AS refusal', [account, clientSubject]))[0]?.refusal;
+    // It takes no address: the list answers only from the run's trigger, after the web's address checks and
+    // submit_screening()'s own (its ZIP, rows and bands), so no refusal that ends without an email tells a listed address
+    // from another (the review of 2026-10-27: read here, before the ZIP checks, it told any client whether an address
+    // was on the list, with nothing recorded and nothing sent).
+    expect(
+      (await admin.query<{ args: string }>("SELECT pg_get_function_identity_arguments(p.oid) AS args FROM pg_proc p WHERE p.proname = 'screening_submit_mail_refusal'")).rows,
+    ).toEqual([{ args: 'rate_account_subject text, client_subject text' }]);
+    expect(await precheck(accountSubject(), null)).toBeNull();
+    // The submitter's budget, for the account and the client alike (S1).
+    expect(await precheck(budgeted, null)).toBe('screening_bounce_budget');
+    expect(await precheck(accountSubject(), client)).toBe('screening_bounce_budget');
+    // The same answers submit_screening() gives, which refuses the listed address itself.
     const submitted = (options: SubmitOptions) => submit(options).then(() => null, (error: unknown) => (error as { constraint?: string }).constraint);
-    expect(await submitted({ email: refused, rateSubject: budgeted })).toBe(await precheck(refused, budgeted, null));
+    expect(await submitted({ email: refused, rateSubject: budgeted })).toBe(await precheck(budgeted, null));
     expect(await submitted({ email: refused })).toBe('screening_contact_undeliverable');
+    expect(await precheck(accountSubject(), null)).toBeNull();
+    // And a ZIP submit_screening() refuses is refused alike for a listed and an unlisted address: the ZIP comes first.
+    for (const zip of ['00099', '00012']) {
+      const listed = await submitted({ email: refused, zip });
+      expect(listed, zip).toMatch(/^screening_(zip_unknown|locality_not_loaded)$/);
+      expect(await submitted({ email: `precheck.unlisted.${letters()}@synthetic.test`, zip }), zip).toBe(listed);
+    }
     // Paused before the rest (closed before that: the screening rules' setup).
     await pauseScreeningMail();
-    expect(await precheck(refused, budgeted, client)).toBe('screening_paused');
+    expect(await precheck(budgeted, client)).toBe('screening_paused');
     await resetScreeningMail();
     // A subject not shaped as one finds no marks; nothing is written.
     const before = (await admin.query<{ n: number }>('SELECT (SELECT count(*) FROM screening_prospect) + (SELECT count(*) FROM audit_event) AS n')).rows[0]?.n;
-    expect(await precheck(other, 'not-a-subject', 'nor-this')).toBeNull();
+    expect(await precheck('not-a-subject', 'nor-this')).toBeNull();
     expect((await admin.query<{ n: number }>('SELECT (SELECT count(*) FROM screening_prospect) + (SELECT count(*) FROM audit_event) AS n')).rows[0]?.n).toBe(before);
   });
 
@@ -1658,6 +1668,55 @@ describe('PR 6b-4: the screening’s mail (migration 20261107090000; audit #76, 
     await mailEvent(await submit({ email: `${business}@clinic.synthetic.test` }), 'bounce', `${business}@clinic.synthetic.test`);
     expect(await refusal(`${business}+screening@Clinic.Synthetic.Test`)).toBe('screening_contact_undeliverable');
     expect(await refusal(`${business.replace(/\./g, '')}@clinic.synthetic.test`)).toBe('accepted');
+    await resetScreeningMail();
+  });
+
+  it('keys a permanent bounce by the spelling with its +tag kept and a complaint by the mailbox: a +tag that bounced refuses that spelling alone, and the base address that bounced refuses every +tag of it (the review of 2026-10-27)', async () => {
+    const refusal = (email: string) => submit({ email, practice: `Synthetic Tagged ${letters()}` }).then(() => 'accepted', (error: unknown) => (error as { constraint?: string }).constraint);
+    const name = letters();
+    // A server with no sub-addressing bounces the +tag spelling as an unknown mailbox; the base mailbox is another
+    // address there, and stays open.
+    const tagged = `victim.${name}+zz@clinic.synthetic.test`;
+    await mailEvent(await submit({ email: tagged }), 'bounce', tagged, { bounceSubtype: 'no_email' });
+    expect(await refusal(`victim.${name}@clinic.synthetic.test`)).toBe('accepted');
+    expect(await refusal(`victim.${name}+other@clinic.synthetic.test`)).toBe('accepted');
+    expect(await refusal(` VICTIM.${name.toUpperCase()}+ZZ@Clinic.Synthetic.Test `)).toBe('screening_contact_undeliverable');
+    const kept = await admin.query<{ reason: string; tagged: boolean; base: boolean }>(
+      `SELECT reason, recipient_sha256 = mail_recipient_sha256($1, true) AS tagged, recipient_sha256 = mail_recipient_sha256($1) AS base
+         FROM screening_mail_refusal WHERE recipient_sha256 IN (mail_recipient_sha256($1, true), mail_recipient_sha256($1))`,
+      [tagged],
+    );
+    expect(kept.rows).toEqual([{ reason: 'bounced', tagged: true, base: false }]);
+    // A complaint from a +tag spelling is the person's own: every spelling of the mailbox is refused.
+    const complained = `reported.${name}+t@clinic.synthetic.test`;
+    await mailEvent(await submit({ email: complained }), 'complaint', complained, { complaintType: 'abuse' });
+    for (const spelling of [`reported.${name}@clinic.synthetic.test`, `reported.${name}+u@clinic.synthetic.test`, complained]) {
+      expect(await refusal(spelling), spelling).toBe('screening_contact_undeliverable');
+    }
+    // The base address that bounced refuses every +tag of it (its tag-kept key is its mailbox's).
+    const base = `base.${name}@clinic.synthetic.test`;
+    await mailEvent(await submit({ email: base }), 'bounce', base, { bounceSubtype: 'general' });
+    for (const spelling of [`base.${name}+screening@clinic.synthetic.test`, `BASE.${name.toUpperCase()}@clinic.synthetic.test`]) {
+      expect(await refusal(spelling), spelling).toBe('screening_contact_undeliverable');
+    }
+    // Gmail delivers every +tag to the base mailbox, so a +tag that bounced there refuses the mailbox.
+    const gmail = `synthetic.${name}+t@gmail.com`;
+    await mailEvent(await submit({ email: gmail }), 'bounce', gmail, { bounceSubtype: 'no_email' });
+    expect(await refusal(`synthetic${name}@gmail.com`)).toBe('screening_contact_undeliverable');
+    await resetScreeningMail();
+  });
+
+  it('reads me.com and mac.com as icloud.com, one mailbox under three names (the review of 2026-10-27)', async () => {
+    const refusal = (email: string) => submit({ email, practice: `Synthetic iCloud ${letters()}` }).then(() => 'accepted', (error: unknown) => (error as { constraint?: string }).constraint);
+    const name = letters();
+    const reported = `synthetic.${name}@me.com`;
+    await mailEvent(await submit({ email: reported }), 'complaint', reported, { complaintType: 'abuse' });
+    for (const spelling of [`synthetic.${name}@icloud.com`, `synthetic.${name}@mac.com`, `Synthetic.${name}+x@Me.com`]) {
+      expect(await refusal(spelling), spelling).toBe('screening_contact_undeliverable');
+    }
+    // Dots keep their meaning there, and a subdomain is another domain.
+    expect(await refusal(`synthetic${name}@icloud.com`)).toBe('accepted');
+    expect(await refusal(`synthetic.${name}@mail.me.com`)).toBe('accepted');
     await resetScreeningMail();
   });
 

@@ -6,10 +6,11 @@
  * only as the rate limiter's keyed hash, never in clear.
  *
  * A mailbox is counted once however its address is spelled, by the rule the screening's refusal list keys it by
- * (canonicalMailbox(), @tp/db; mail_recipient_canonical() in SQL): NFKC, ASCII white space and case, a domain's
- * trailing dots, googlemail.com read as gmail.com, a "+tag" dropped, and at gmail.com the local part's dots dropped
- * (Gmail delivers every one of those spellings to one inbox). The address stored and mailed to is the one typed; only
- * the count's key is canonical.
+ * (canonicalMailbox(), @tp/db; mail_recipient_canonical() in SQL): ASCII white space and case, a domain's trailing
+ * dots, googlemail.com read as gmail.com and me.com and mac.com as icloud.com, a "+tag" dropped, and at gmail.com the
+ * local part's dots dropped (each provider delivers every one of those spellings to one inbox); an address with any
+ * character outside ASCII, which the form refuses, is counted as read. The address stored and mailed to is the one
+ * typed; only the count's key is canonical.
  */
 
 import { canonicalMailbox, canonicalMailboxParts } from '@tp/db/runtime';

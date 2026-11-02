@@ -43,6 +43,14 @@ export const ALLOWED_LOG_FIELDS = [
   'invoice_id',
   'invitation_id',
   'queue_message_id',
+  // A probe's recorded event (the review of 2026-10-27; docs/runbooks/deliverability.md, section 2): SES's message ID and
+  // the codes the platform read and recorded (the stream, SES's event type, the state and the bounce's subtype), each
+  // from a closed list. Logged only for a probe, which goes to SES's simulator or the operator's synthetic mailbox.
+  'ses_message_id',
+  'mail_stream_code',
+  'ses_event_type',
+  'mail_state_code',
+  'bounce_subtype_code',
   'error_code',
 ] as const;
 

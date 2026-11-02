@@ -2,7 +2,7 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `358dc53f5340092daf57226a0769486218bd5418` on branch `co-001/suite-cap-1-triage-locks` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Generated at commit `a9e60b4f2b446ea36bb91a4a6cad71fb882edd79` on branch `co-001/suite-cap-1-triage-locks`, with uncommitted changes to its inputs (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
 - Migrations applied: 47; head `20261109090000_line_status_heads.sql`
 - PostgreSQL 18; schema `public`: 100 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
 - PHI flag: 48 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 40 organization- or user-scoped tables with RLS forced; 8 global tables
@@ -6375,9 +6375,10 @@ Invariants enforced by triggers:
 | 9 | `resumed_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
 | 10 | `ses_enabled_confirmed_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
 | 11 | `probe_sent_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
-| 12 | `probe_delivered_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
-| 13 | `probe_bounced_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
-| 14 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261107090000` |  |
+| 12 | `first_probe_sent_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
+| 13 | `probe_delivered_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
+| 14 | `probe_bounced_at` | `timestamp with time zone` | null |  |  | `20261107090000` |  |
+| 15 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261107090000` |  |
 
 Keys:
 - Primary: (stream)
@@ -7068,7 +7069,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `console_register_marketing_campaign(text,text)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `77e5b8145f5d7a10` |
 | `console_release_runs()` | `TABLE(release_no integer, practice_id uuid, name text, runs bigint, runs_in_effect bigint, reruns bigint, reruns_accepted bigint, changed_lines bigint)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes | `adc1da81e4e077a8` |
 | `console_restore_drills(integer)` | `TABLE(started_at timestamp with time zone, completed_at timestamp with time zone, duration_ms bigint, outcome text, catalog_problems integer, error_code text)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `399a93a1a8318075` |
-| `console_resume_mail_stream(text,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `aa7deca1804d4ed7` |
+| `console_resume_mail_stream(text,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `f2458e37f39a9b9d` |
 | `console_set_organization_status(uuid,text,text,text,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `27eface641e5dfbf` |
 | `console_set_practice_location(uuid,text,text)` | `text` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes | `7958eb1f42b77e10` |
 | `console_set_practice_settings(uuid,text,jsonb)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes | `16e2b183396953b5` |
@@ -7117,8 +7118,8 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `line_status_rules()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `d2b97d48b8b792fd` |
 | `locality_status(integer,text,text,date,date)` | `TABLE(status text, carrier text, locality text)` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `93f19de141f69e25` |
 | `ma_dispute_route_confirmed()` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `b7b976b0230f8b43` |
-| `mail_recipient_canonical(text)` | `text` | plpgsql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` |  |  | `3cd5ce229f5df323` |
-| `mail_recipient_sha256(text)` | `text` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `fe2c4d71acd96c24` |
+| `mail_recipient_canonical(text,boolean)` | `text` | plpgsql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` |  |  | `72aaa3efc513682c` |
+| `mail_recipient_sha256(text,boolean)` | `text` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `f0116bf504ae08aa` |
 | `mail_send_expiry()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `3cd6d13742c65cc1` |
 | `mail_state_rank(text)` | `integer` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` |  |  | `72f7fbe980da4163` |
 | `mail_stream_cutoff(text)` | `text` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `fe3e57d4187593b9` |
@@ -7151,11 +7152,11 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `operator_mail_account_signal(text,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `2684abb0a6c123b1` |
 | `operator_mail_cutoff(text)` | `text` | sql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `aec6c3e8b9262b47` |
 | `operator_mail_expire(integer)` | `integer` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `faa298581d4c5479` |
-| `operator_mail_probe_sent(text)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `eb2b3b2faa1ff637` |
+| `operator_mail_probe_sent(text)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `1d712c911dfd58cf` |
 | `operator_mail_stream_confirmed(text,boolean)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `58a4b66cc84c84e4` |
-| `operator_mail_streams()` | `TABLE(stream text, paused boolean, confirmed boolean, probe_due boolean, probe_missed boolean)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `de3024995afee946` |
+| `operator_mail_streams()` | `TABLE(stream text, paused boolean, confirmed boolean, probe_due boolean, probe_missed boolean)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `2fcf2f8b70481744` |
 | `operator_open_support_notice(uuid,text,text)` | `TABLE(notice_id uuid, recipients integer, opened boolean)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `dbbd884fcd0805f7` |
-| `operator_record_mail_event(text,text,text,timestamp with time zone,timestamp with time zone,text,text,uuid,uuid,uuid,text,text,text,text)` | `TABLE(recorded boolean, state text, notice_undelivered uuid, invoice_undelivered uuid, invitation_undelivered uuid, stream_paused text)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `eda27a15443050cf` |
+| `operator_record_mail_event(text,text,text,timestamp with time zone,timestamp with time zone,text,text,uuid,uuid,uuid,text,text,text,text)` | `TABLE(recorded boolean, state text, notice_undelivered uuid, invoice_undelivered uuid, invitation_undelivered uuid, stream_paused text)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `3c175325fc14b48c` |
 | `operator_record_support_mail(text,text,text,text,text,text)` | `TABLE(outcome text, ticket_number bigint)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `2903a95e22531e32` |
 | `operator_screening_claim(uuid)` | `TABLE(release_no integer, release_manifest_sha256 text, release_available boolean, zip text, zip_plus_four text, settings jsonb, as_of date, row_count integer, attempt integer)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator, tp_screening |  | `a35a25f1df1aa1c8` |
 | `operator_screening_complete(uuid,text,text,text,text,integer)` | `TABLE(contact_email text, row_count integer, kept_with text, received_at timestamp with time zone, wait_reason text)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator, tp_screening |  | `8220d43ccceb8bb4` |
@@ -7292,7 +7293,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `run_starting_permissions()` | `text[]` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` |  |  | `532f9006e6ec8cf9` |
 | `screening_band_days(text)` | `daterange` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `f912bb8d6e15fdd1` |
 | `screening_bounce_budget_spent(text,text)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `3de7fd3276da7f3f` |
-| `screening_contact_refused(text)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `276bb32fa4777583` |
+| `screening_contact_refused(text)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `656ff76ac5546175` |
 | `screening_count_band(bigint)` | `text` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `3c43fb92e0243276` |
 | `screening_difference_band(bigint)` | `text` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `02bf48b2aefc21ae` |
 | `screening_freeze_lead(uuid,uuid,text,boolean,text)` | `uuid` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `0621e0dd445907d7` |
@@ -7330,7 +7331,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `screening_run_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `f15d5e31592d5d9e` |
 | `screening_standing(bigint,bigint,bigint,bigint)` | `text` | sql | invoker | immutable |  |  |  | `d8feb37d697d3992` |
 | `screening_status()` | `TABLE(release_no integer, place_of_service_split_id uuid)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `00660ad1e09bf1da` |
-| `screening_submit_mail_refusal(text,text,text)` | `text` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `eadbe9312658ab5d` |
+| `screening_submit_mail_refusal(text,text)` | `text` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `68638b412b4b2db0` |
 | `screening_upload_mail_gate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `4bfa2e936ef0a8bb` |
 | `screening_wait(uuid)` | `TABLE(queue_priority smallint, wait_reason text, pricing integer, queued_ahead integer)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `8b60abe3ed17d2aa` |
 | `screening_wait_limits()` | `TABLE(account_rows integer, daily_rows integer)` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` |  |  | `9366f730bda41f40` |
@@ -7435,7 +7436,7 @@ Every migration applied to the database, from `schema_migrations`, with the SHA-
 | 42 | `20261104090000_free_screening.sql` | ADR 0062 | `8bc938ac54150a7d1d93255acb4610851b3d2bd85f37d6b7a521a6ed950b0a43` |
 | 43 | `20261105090000_pricing_location_and_zip_plus_four.sql` | ADR 0013, ADR 0017, ADR 0039, ADR 0040, ADR 0062, ADR 0064 | `2182a581fe94dde7667ef5561c12c8e78969c6c4bbbe3a406aff525edd9dc293` |
 | 44 | `20261106090000_screening_consumer.sql` | ADR 0014, ADR 0019, ADR 0049, ADR 0062 | `d6e449698132fa47d2f89ce7e27a96111efa27b1a258cde899576754f44e26b0` |
-| 45 | `20261107090000_mail_streams.sql` | ADR 0065 | `23767dd2eeeaf49ed086d75299b4a45b7325e784207c1aa14150756953496868` |
+| 45 | `20261107090000_mail_streams.sql` | ADR 0065 | `744437897a65a3f88c415c637184c02906427228746434cdc3c38d98cec2f3d1` |
 | 46 | `20261108090000_suspension_refusal.sql` | ADR 0009, ADR 0050, ADR 0055, ADR 0080 | `42d1885de95b0763735a856698bdc7f72822a90a4132122954bb7ba3ee7ea0f9` |
 | 47 | `20261109090000_line_status_heads.sql` | ADR 0009, ADR 0083 | `68f42516933890daa77c24a0a773cda4fd0a16ab6b5ef7870d844f0011b5f65b` |
 
@@ -7455,4 +7456,4 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 This document describes the schema at migration head `20261109090000_line_status_heads.sql` (47 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1 and C5. It does not decide C2, C3 and C4, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: ________  Date: ________  Document SHA-256: `81d0ac762702a2c2a2bb1f1b523ffdbf38be30320a619837ca93598b80254065`
+Approved by: ________  Date: ________  Document SHA-256: `e024cf9fce732e2c94795c0cacf8dfc890cef486413c92039108034854efc4df`

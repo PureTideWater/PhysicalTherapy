@@ -14,6 +14,7 @@ import {
   MAIL_NAMESPACE,
   MAIL_PLATFORM_ALARM_CODES,
   MAIL_PLATFORM_ALARM_PERIOD_SECONDS,
+  MAIL_PROBE_HOURS,
   MAIL_PROBE_UNSENT_ALARM,
   MAIL_SIMULATOR_RECIPIENTS,
   MAIL_STREAMS,
@@ -373,6 +374,62 @@ describe.each(ENVIRONMENTS)('%s: mail streams', (environment) => {
     expect(MAIL_PROBE_UNSENT_ALARM).toEqual({ code: 'MAIL_PROBE_UNSENT', periodSeconds: 300, periods: 3 });
     expect(MAIL_PROBE_UNSENT_ALARM.periodSeconds * MAIL_PROBE_UNSENT_ALARM.periods).toBeLessThan(24 * 3600);
     expect(unsent.AlarmDescription).toContain('docs/runbooks/deliverability.md, 3.7');
+  });
+
+  it('pages a stream with no probe back in 26 hours, or a resumed one an hour after its first probe, from the database\'s rule to the operator\'s topic, 22 hours before its readiness lapses (review M3; the review of 2026-10-27)', () => {
+    const { daily, firstProof, missed, ready } = MAIL_PROBE_HOURS;
+    // The database decides it (the generated function files, which CI holds equal to a migrated database): missed is the
+    // older of the last delivered and bounced probe since the last resume 26 hours old, or, with one not back since the
+    // resume, the first probe sent since then an hour old (a re-send never moves it), while the stream is open and
+    // confirmed; ready is both back within 48 hours; a probe goes daily, and hourly while missed.
+    const streams = source('packages/db/functions/operator_mail_streams.sql');
+    expect(streams).toContain(`THEN least(p.delivered, p.bounced) <= now() - interval '${String(missed)} hours'`);
+    expect(streams).toContain(`ELSE s.first_probe_sent_at <= now() - interval '${String(firstProof)} hour' END, false) AS missed`);
+    expect(streams).toContain("CASE WHEN s.probe_delivered_at >= coalesce(s.resumed_at, '-infinity') THEN s.probe_delivered_at END AS delivered");
+    expect(streams).toContain("CASE WHEN s.probe_bounced_at >= coalesce(s.resumed_at, '-infinity') THEN s.probe_bounced_at END AS bounced");
+    expect(streams).toContain(`(NOT o.outstanding AND s.probe_sent_at <= now() - interval '${String(daily)} hours')`);
+    expect(streams).toContain(`(m.missed AND s.probe_sent_at <= now() - interval '${String(firstProof)} hour')`);
+    expect(source('packages/db/functions/operator_mail_probe_sent.sql')).toContain('first_probe_sent_at = coalesce(s.first_probe_sent_at, now())');
+    expect(source('packages/db/functions/console_resume_mail_stream.sql')).toContain('first_probe_sent_at = NULL');
+    expect(source('packages/db/functions/screening_mail_status.sql').split(`now() - interval '${String(ready)} hours'`)).toHaveLength(3);
+    // The platform logs the code on every run while the stream is missed, before it asks whether a probe is due, so the
+    // alarm stays raised until one comes back, sent and lost or never sent.
+    expect(source('apps/worker/src/mail/streams.ts')).toContain("probeMissed: 'MAIL_PROBE_MISSED'");
+    const job = source('apps/worker/src/platform/mail-events.ts');
+    expect(job).toContain('error_code: MAIL_LOG_CODES.probeMissed');
+    expect(job.indexOf('if (row.probe_missed) {')).toBeGreaterThan(0);
+    expect(job.indexOf('if (row.probe_missed) {')).toBeLessThan(job.indexOf('if (!row.probe_due) {'));
+    // Counted on the platform's log group (the platform task's own: compute.test.ts) and alarmed at one in five minutes.
+    const metricName = mailCodeMetricName('MAIL_PROBE_MISSED');
+    expect(metricName).toBe('MailProbeMissed');
+    const filter = resourcesOf(template, 'AWS::Logs::MetricFilter').find(([, candidate]) => JSON.stringify(propertiesOf(candidate).MetricTransformations).includes(`"MetricName":"${metricName}"`));
+    expect(filter).toBeDefined();
+    expect(propertiesOf((filter as [string, CfnResource])[1])).toEqual({
+      LogGroupName: ref(logicalIdOf(stack, stack.monitoring.platformLogGroup)),
+      FilterPattern: '{ $.error_code = "MAIL_PROBE_MISSED" }',
+      MetricTransformations: [{ MetricNamespace: MAIL_NAMESPACE, MetricName: metricName, MetricValue: '1', Unit: 'Count' }],
+    });
+    const alarm = propertiesOf(resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.mailCodeAlarms.MAIL_PROBE_MISSED)));
+    expect(alarm).toMatchObject({
+      Namespace: MAIL_NAMESPACE,
+      MetricName: metricName,
+      Statistic: 'Sum',
+      Period: MAIL_PLATFORM_ALARM_PERIOD_SECONDS,
+      EvaluationPeriods: 1,
+      Threshold: 1,
+      ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+      TreatMissingData: 'notBreaching',
+      AlarmActions: [ref(logicalIdOf(stack, stack.monitoring.operatorTopic))],
+    });
+    expect(alarm.Dimensions).toBeUndefined();
+    expect(alarm.AlarmDescription).toContain(`${String(missed)} hours after the older of its last delivered and bounced probe, or ${String(firstProof)} hour after the first probe sent since a resume`);
+    expect(String(alarm.AlarmDescription).length).toBeLessThanOrEqual(1024);
+    expect(alarm.AlarmDescription).toContain('docs/runbooks/deliverability.md, 3.7');
+    // A daily probe sent and lost pages 2 hours after it went and, with the alarm's period, well before readiness lapses.
+    expect(MAIL_PROBE_HOURS).toEqual({ daily: 24, firstProof: 1, missed: 26, ready: 48 });
+    expect(missed - daily).toBe(2);
+    expect(missed * 3600 + MAIL_PLATFORM_ALARM_PERIOD_SECONDS).toBeLessThan(ready * 3600);
+    expect(ready - missed).toBe(22);
   });
 
   it('has seventeen mail alarms', () => {
