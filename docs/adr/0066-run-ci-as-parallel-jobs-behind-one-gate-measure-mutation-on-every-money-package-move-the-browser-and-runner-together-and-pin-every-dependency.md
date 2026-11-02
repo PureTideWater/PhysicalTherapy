@@ -1042,8 +1042,9 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
       bound passes 131,072 bytes is held to the places it is read in the same way: those findings in both jobs, and
       publish-content's release numbers, read in one script.
     - A `$GITHUB_ENV` write is one entry of a closed map, its variable's only write: its file, job, step and exact
-      line (so its value's form too), with its bound, which the behavioural test named beside it holds by running the
-      step.
+      line (so its value's form too), with its step's fingerprint (a changed script or input fails until a person
+      re-reads the bound) and its bound, which the behavioural test named beside it holds by running the step and
+      reading the whole file it writes.
 
 ### Consequences
 

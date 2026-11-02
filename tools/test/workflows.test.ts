@@ -1589,12 +1589,13 @@ describe('ci.yml: every gate as parallel jobs behind one all green gate (docs/ad
         const file = path.join(repo.dir, `env-${String(Math.random()).slice(2)}`);
         writeFileSync(file, '');
         const result = runScript(step.run ?? '', { ...repo.env, GITHUB_ENV: file, ...env }, repo.dir);
-        return { ...result, base: /^ENGINE_FREEZE_BASE=(.*)$/m.exec(readFileSync(file, 'utf8'))?.[1] };
+        // The whole file the step writes, so a second line (a newline in the value) is caught as the first is.
+        return { ...result, written: readFileSync(file, 'utf8') };
       };
-      expect(run({ EVENT: 'pull_request', BASE_REF: 'main', BEFORE: '' })).toMatchObject({ status: 0, base: repo.first });
-      expect(run({ EVENT: 'push', BASE_REF: '', BEFORE: repo.second })).toMatchObject({ status: 0, base: repo.second });
-      expect(run({ EVENT: 'push', BASE_REF: '', BEFORE: '0000000000000000000000000000000000000000' })).toMatchObject({ status: 0, base: repo.second });
-      expect(run({ EVENT: 'push', BASE_REF: '', BEFORE: 'e'.repeat(40) })).toMatchObject({ status: 1, base: undefined });
+      expect(run({ EVENT: 'pull_request', BASE_REF: 'main', BEFORE: '' })).toMatchObject({ status: 0, written: `ENGINE_FREEZE_BASE=${repo.first}\n` });
+      expect(run({ EVENT: 'push', BASE_REF: '', BEFORE: repo.second })).toMatchObject({ status: 0, written: `ENGINE_FREEZE_BASE=${repo.second}\n` });
+      expect(run({ EVENT: 'push', BASE_REF: '', BEFORE: '0000000000000000000000000000000000000000' })).toMatchObject({ status: 0, written: `ENGINE_FREEZE_BASE=${repo.second}\n` });
+      expect(run({ EVENT: 'push', BASE_REF: '', BEFORE: 'e'.repeat(40) })).toMatchObject({ status: 1, written: '' });
     });
   });
 
@@ -3062,15 +3063,18 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
   const JOB_BYTES: Readonly<Record<string, number>> = { status: WORD_BYTES, check_run_id: INTEGER_BYTES };
   /**
    * The only writes a script may make to $GITHUB_ENV, by the variable each sets: its file, job and step, its line
-   * exactly (so its value's form too), and its bound, which the behavioural test named beside it holds by running the
-   * step. Each is written once, and every line of every workflow that names GITHUB_ENV is one of them.
+   * exactly (so its value's form too), the fingerprint of its step (as a row's run: producer holds one, so any change to
+   * the script or its inputs fails until a person re-reads the bound), and its bound, which the behavioural test named
+   * beside it holds by running the step and reading the whole file it writes. Each is written once, and every line of
+   * every workflow that names GITHUB_ENV is one of them.
    */
-  const GITHUB_ENV_WRITES: Readonly<Record<string, { readonly file: string; readonly job: string; readonly step: string; readonly line: string; readonly bound: string; readonly test: string }>> = {
+  const GITHUB_ENV_WRITES: Readonly<Record<string, { readonly file: string; readonly job: string; readonly step: string; readonly line: string; readonly fingerprint: string; readonly bound: string; readonly test: string }>> = {
     ENGINE_FREEZE_BASE: {
       file: 'ci.yml',
       job: 'unit',
       step: "The engine freeze's base",
       line: 'echo "ENGINE_FREEZE_BASE=$base" >> "$GITHUB_ENV"',
+      fingerprint: 'b3e2ef69',
       bound: "a commit SHA (the pull request's merge base, github.event.before or HEAD's parent), written only once git rev-parse --verify names it a commit, the step exiting 1 otherwise",
       test: 'gives the differential test a pull request’s merge base, a push’s previous head or a new branch’s parent, through GITHUB_ENV',
     },
@@ -3526,8 +3530,13 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     // Each $GITHUB_ENV write of the map is made where it says, exactly once, and the test that holds its bound runs it.
     const titles = testTitles('tools/test/workflows.test.ts', repositorySource('tools/test/workflows.test.ts') ?? '');
     for (const [name, write] of Object.entries(GITHUB_ENV_WRITES)) {
-      const lines = (workflow(write.file).jobs[write.job]?.steps ?? []).filter((step) => step.name === write.step).flatMap((step) => (step.run ?? '').split('\n'));
+      const named = (workflow(write.file).jobs[write.job]?.steps ?? []).filter((step) => step.name === write.step);
+      const lines = named.flatMap((step) => (step.run ?? '').split('\n'));
       expect(lines.filter((line) => line.trim() === write.line), name).toHaveLength(1);
+      expect(
+        named.map((step) => fingerprint(step)),
+        `${name}: the step that writes it has changed (its script, env, shell or working-directory): re-read the bound against it, then write the new fingerprint in the map`,
+      ).toEqual([write.fingerprint]);
       expect(titles.has(write.test), `${name}: no test named "${write.test}" that always runs`).toBe(true);
     }
   });
