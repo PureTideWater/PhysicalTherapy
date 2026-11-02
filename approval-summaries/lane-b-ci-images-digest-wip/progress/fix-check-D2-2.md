@@ -1,0 +1,37 @@
+# fix-check D2 (run 2): adversarial verify of D2 (mapping keys) after repair round 1, head a5bc1170…
+
+Started 2026-11-02 04:08 UTC. Clone: /home/user/fx-imgdigest-D2-2 (read only, never pushed).
+Logs: /tmp/claude-0/-home-user-PhysicalTherapy/fcfc578e-dd4f-58f4-94e2-9bcf8baab1a3/scratchpad/imgdigest/logs/D2w-*.log
+Scripts: scratchpad/imgdigest/d2w/
+
+## Steps
+- [x] clone, fetch WIP ref: local branch verify-d2-2 at a5bc1170… = origin/co-001/wip-ci-images-digest (ls-remote too); PR branch 83167b8f…; build-platform now 88708069…; #42 9426a8d1…
+- [x] pnpm install --frozen-lockfile: ok (D2w-install.log); old worktree /home/user/fx-imgdigest-D2-2-old at b2a41a00… (same lockfile) installed (D2w-install-old.log)
+- [x] read D2 code at head: keys(root,'') walk unchanged from d257fe6d… (key.includes('${{'), whole file) plus an ACTIONS_ALLOW_UNSECURE_COMMANDS check (D6-4); 13 keyed fixtures now (9 from 330deea0… + service id, matrix key, step's own key with W-2's extra message, X_ embedded from 31735bb7…/a5bc1170…), each toEqual exact list
+- [x] head trees (D2w-new-trees.log, D2w-new-msgs.log; d2w/mutate.py, 20 CI_TREE copies): none, harmless-keys (PRICE$, X_{{ not }}, "$ {{ x }}", $HOME, "${ { y } }", ${x}), harmless-values (github.sha, pull_request.number) 7/7 green; all 17 key mutants red, T3 the only failing test, each one message "ci.yml <path>: an expression in a key" (step-own-key also earns W-2's "a key the value rule does not read"); new this run: step-env-nospace, matrix-include-key, matrix-nested-key, step-own-key
+- [x] old-rule trees (b2a41a00…, trees from its own files; D2w-old-trees.log): all 20 trees 4/4 green, so the finding and every new spelling were real holes before D2
+- [x] graft (D2w-strength.log, mode graft): b2a41a00…'s whole route test (adapted only as run 1 did: values by .value, the fixture.yml ENGINE_FREEZE_BASE write now refused by D6, 'closed map') AND d257fe6d…'s nine key fixtures exactly as 330deea0… wrote them, each run on a5bc1170…'s rule: both pass (4/4 with the route test and probe) => nothing loosened
+- [x] probes P1-P21 (adds P14 container own key, P15 credentials key, P16 strategy own key, P17 defaults.run key, P18 matrix include key, P19 complex block key, P20 YAML << merge, P21 no-space workflow env key): every one refused with the key message; G1-G6 harmless: no key problem
+- [x] walk mutants at head (D2w-strength.log): mut-remove RED, mut-envwith RED (service id fixture), mut-places RED (step's own key fixture), mut-startswith RED (X_ fixture), mut-nolists RED => run 1's three survivors are now red (D2-1 fixed)
+- [x] surviving mutants: mut-space (key.includes('${{ '), a space required) GREEN with P6/P21 no-space keys 0 problems: no fixture pins the no-space spelling GitHub evaluates (test-strength gap, code right); mut-noon (walk skips on:) GREEN, mut-nojobid GREEN: GitHub refuses a key expression in on: and a job id at parse, so harmless, but the fixture comment says the rule refuses a job id key and no fixture pins it
+- [x] GitHub's parser read (npm @actions/workflow-parser 0.3.61, read only, never run; d2w/wp-pkg): template-reader accepts a key expression in any mapping whose inherited context is non-empty; container, services-container, container-registry-credentials, strategy (and matrix include entries, nested matrix values), job-defaults-run carry context; container.js skips validation when any token is an expression; strategy and defaults are never converted. So GitHub also accepts (and evaluates at run time) a key expression in a container's or a service's own keys, credentials, strategy's own keys, a matrix include entry and defaults.run: ADR N32's and the function comment's 'refuses the file for one anywhere else' overstates (doc nit; code refuses all of them, P14-P18). runs-on, environment, concurrency keys: converter assertString refuses.
+- [x] proposal check (D2w-proposal.log, d2w/proposal.py): a no-space keyed row (env "${{github.event.pull_request.body}}"), a job-id keyed row and an on.inputs expect pass at a5bc1170… and turn mut-space, mut-nojobid and mut-noon red (the first try put on: inside the loop's wrapper, a duplicate on: key, YAML parse error; moved out)
+- [x] live heads (D2w-live-keyscan.log): #42 9426a8d1…, ci-mutation-trigger 50029e64…, ss-01 bb13be1b…, suite-cap-1-triage-locks now 048bc843…, wip-ci-findings-transport b9a83bd3…, wip-pr42-integrate-3 6c28d6a2…, head: no workflow key holds an expression, so none turns T3's key rule red (main-dependabot-template is cut from main, no workflows)
+- [x] format: eslint on workflows.test.ts exit 0; prettier --check warns on the three files at b2a41a00… too (no prettier config; lint is tools/lint/run.ts), so not D2's (D2w-format.log)
+- [x] baseline whole workflows.test.ts at head: 124/124 passed (D2w-baseline.log)
+- [x] (1) finding's scenario red at a5bc1170…: step-env tree, T3 fails with exactly ["ci.yml jobs.images.steps[8].env.${{ github.event.pull_request.body }}: an expression in a key"] (D2w-new-msgs.log)
+- [x] (2) harmless green: none, harmless-keys, harmless-values trees 7/7 at head; G1-G6 probes no key problem; whole file 124/124 (D2w-baseline.log)
+- [x] (3) nothing loosened: b2a41a00…'s route test and d257fe6d…'s nine key fixtures pass grafted onto head's rule; the walk is unchanged (includes('${{'), whole file) and the head fixtures are d257fe6d…'s nine (also = []) plus four; run 1's survivors now red
+- [x] (4) docs vs code: ADR N32 'What holds it' says 'or a key' and 'refuses an expression in any key'; ci.md 'or a key' and 'none in any key (GitHub evaluates one as an env name, an input's name, a service id or a matrix key)': both match the code. Nit: ADR N32 and the function's JSDoc add 'and refuses the file for one anywhere else', which GitHub's parser contradicts (container's/service's own keys, credentials, strategy's own keys, matrix include entries, defaults.run accepted at parse and evaluated at run time, reaching no process); the fixture comment's list of refused places is right
+- [x] strength: run-1 surviving mutants (mut-envwith, mut-places, mut-startswith) now red; new survivors mut-space (fixture gap, real spelling), mut-noon and mut-nojobid (GitHub refuses those at parse; comment claims job id)
+- [x] clone and -old worktree removed 2026-11-02 04:21 UTC (both clean; nothing pushed; WIP ref still a5bc1170…, PR branch still 83167b8f…); scratch trees, reports and the npm package read removed; logs D2w-*.log and d2w/ scripts kept
+
+## Verdict
+D2 resolved at a5bc1170…, nothing loosened. The finding's scenario and 16 other key spellings and places are red with
+"<file> <path>: an expression in a key"; harmless keys and values stay green; b2a41a00…'s route test and d257fe6d…'s
+nine key fixtures pass on the new rule; run 1's three surviving walk mutants are now red. Two minor, non-blocking items
+inside #86's files: (a) no fixture pins the no-space spelling `${{github.event.pull_request.body}}`, so
+key.includes('${{ ') ships green (a no-space row, checked, closes it; a job-id row and an on.inputs expect pin the
+comment's own claim); (b) ADR N32 and unboundedValueProblems' JSDoc say GitHub "refuses the file for one anywhere
+else", but GitHub's parser accepts a key expression in a container's or a service's own keys, credentials, strategy's
+own keys, a matrix include entry and defaults.run (evaluated at run time, reaching no process); the rule refuses them all.
