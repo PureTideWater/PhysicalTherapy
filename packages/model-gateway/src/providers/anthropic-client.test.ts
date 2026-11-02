@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 
@@ -109,8 +109,29 @@ const SDK_ENV_SITES: Readonly<Record<string, number>> = {
   'tools/agent-toolset/node': 4,
 };
 
-/** The SDK's runtime dependencies at the locked version, none of which touches the environment; a new one is read first. */
-const SDK_DEPENDENCIES = ['@opentelemetry/api', 'json-schema-to-ts', 'standardwebhooks'] as const;
+/**
+ * The packages the SDK's manifest names at the locked version, by kind; a new one, of any kind, is read first. zod is an
+ * optional peer: the gateway's own dependency, which the SDK loads only in its zod helpers. Every package installed for
+ * one of them, and for their own dependencies in turn, is read too, and touches the environment nowhere.
+ */
+const SDK_PACKAGES = {
+  dependencies: ['@opentelemetry/api', 'json-schema-to-ts', 'standardwebhooks'],
+  optionalDependencies: [],
+  peerDependencies: ['zod'],
+  bundleDependencies: [],
+  bundledDependencies: [],
+} as const;
+
+/** What a package's manifest names. */
+interface Manifest {
+  readonly name: string;
+  readonly version: string;
+  readonly dependencies?: Readonly<Record<string, string>>;
+  readonly optionalDependencies?: Readonly<Record<string, string>>;
+  readonly peerDependencies?: Readonly<Record<string, string>>;
+  readonly bundleDependencies?: unknown;
+  readonly bundledDependencies?: unknown;
+}
 
 /** A name the SDK reads: through readEnv, an index of process.env or Deno.env.get, or a property of process.env. */
 const ENV_NAME = /(?:readEnv\)?\(|process\??\.env(?:\?\.)?\[|env\?\.\[|Deno\??\.env\??\.get\??\.?\()\s*(['"`])([A-Z0-9_]+)\1|process\??\.env\.([A-Z][A-Z0-9_]*)/g;
@@ -118,25 +139,78 @@ const ENV_NAME = /(?:readEnv\)?\(|process\??\.env(?:\?\.)?\[|env\?\.\[|Deno\??\.
 /** Any other touch of the environment: readEnv with a computed name, or process.env or Deno.env not followed by a literal name. */
 const ENV_SITE = /\breadEnv\)?\(\s*(?!['"`][A-Z0-9_]+['"`])[^)\s]|(?:process\??\.env|Deno\??\.env)(?!(?:\?\.)?\[\s*['"`][A-Z0-9_]+['"`]|\.[A-Z][A-Z0-9_]*)/g;
 
-/** The installed SDK's directory (its package.json is not in its exports). */
+/** The installed SDK's real directory (its package.json is not in its exports). */
 function sdkDirectory(): string {
-  return path.dirname(createRequire(import.meta.url).resolve('@anthropic-ai/sdk'));
+  return realpathSync(path.dirname(createRequire(import.meta.url).resolve('@anthropic-ai/sdk')));
+}
+
+function manifestOf(directory: string): Manifest {
+  return JSON.parse(readFileSync(path.join(directory, 'package.json'), 'utf8')) as Manifest;
+}
+
+/** The names a manifest field lists: a record's keys or an array's entries; `true` (bundle everything) as itself. */
+function named(field: unknown): string[] {
+  if (Array.isArray(field)) {
+    return field.map(String).sort();
+  }
+  if (field === true) {
+    return ['true'];
+  }
+  return typeof field === 'object' && field !== null ? Object.keys(field).sort() : [];
+}
+
+/** Where Node finds the package `name` from the package at `directory`: the nearest node_modules above it that holds it. */
+function installedPackage(name: string, directory: string): string | undefined {
+  for (let dir = directory; ; dir = path.dirname(dir)) {
+    const candidate = path.join(dir, 'node_modules', name);
+    if (existsSync(path.join(candidate, 'package.json'))) {
+      return realpathSync(candidate);
+    }
+    if (path.dirname(dir) === dir) {
+      return undefined;
+    }
+  }
 }
 
 /**
- * The SDK's shipped code: every JavaScript file and extensionless script, without its TypeScript sources, type
- * declarations, source maps or nested packages. Comments are read too: a name mentioned only there costs a review, never
- * a missed read.
+ * Every package the SDK brings into the process, by real directory with its name and version: what its manifest names,
+ * of any kind, and what those name in turn, as installed. A dependency that is not installed fails; an optional or peer
+ * one that is not is never loaded.
  */
-function sdkCode(directory: string): { readonly file: string; readonly text: string }[] {
+function packagesBroughtIn(sdk: string): Map<string, string> {
+  const packages = new Map<string, string>();
+  const visit = (from: string): void => {
+    const manifest = manifestOf(from);
+    for (const kind of ['dependencies', 'optionalDependencies', 'peerDependencies'] as const) {
+      for (const name of named(manifest[kind])) {
+        const found = installedPackage(name, from);
+        if (found === undefined && kind === 'dependencies') {
+          throw new Error(`${manifest.name} depends on ${name}, which is not installed`);
+        }
+        if (found !== undefined && found !== sdk && !packages.has(found)) {
+          const { name: installed, version } = manifestOf(found);
+          packages.set(found, `${installed}@${version}`);
+          visit(found);
+        }
+      }
+    }
+  };
+  visit(sdk);
+  return packages;
+}
+
+/**
+ * A package's shipped code: every JavaScript file and extensionless script under its directory, nested packages (a
+ * bundled dependency) included, without TypeScript sources, type declarations or source maps. Comments are read too: a
+ * name mentioned only there costs a review, never a missed read.
+ */
+function packageCode(directory: string): { readonly file: string; readonly text: string }[] {
   const code: { readonly file: string; readonly text: string }[] = [];
   const walk = (dir: string): void => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (entry.name !== 'src' && entry.name !== 'node_modules') {
-          walk(full);
-        }
+        walk(full);
       } else if (/\.(?:c?js|mjs)$/.test(entry.name) || (entry.isFile() && !entry.name.includes('.') && !entry.name.startsWith('LICENSE'))) {
         code.push({ file: path.relative(directory, full).split(path.sep).join('/'), text: readFileSync(full, 'utf8') });
       }
@@ -242,11 +316,11 @@ describe('MOD-17: the Anthropic client as configuration builds it, whatever the 
     expect(built().webhookKey).toBeNull();
   });
 
-  it('is built by an SDK that reads no environment variable, touches the environment nowhere and depends on nothing but what this file lists, each closed', () => {
+  it('is built by an SDK that reads no environment variable, touches the environment nowhere and names no package but what this file lists, each closed', () => {
     const directory = sdkDirectory();
     const names = new Set<string>();
     const sites: Record<string, number> = {};
-    for (const { file, text } of sdkCode(directory)) {
+    for (const { file, text } of packageCode(directory)) {
       for (const match of text.matchAll(ENV_NAME)) {
         names.add(match[2] ?? match[3] ?? '');
       }
@@ -258,8 +332,24 @@ describe('MOD-17: the Anthropic client as configuration builds it, whatever the 
     }
     expect([...names].sort()).toEqual([...SDK_ENV_READS].sort());
     expect(sites).toEqual(SDK_ENV_SITES);
-    const manifest = JSON.parse(readFileSync(path.join(directory, 'package.json'), 'utf8')) as { dependencies?: Record<string, string> };
-    expect(Object.keys(manifest.dependencies ?? {}).sort()).toEqual([...SDK_DEPENDENCIES]);
+    const manifest = manifestOf(directory);
+    const kinds = Object.keys(SDK_PACKAGES) as (keyof typeof SDK_PACKAGES)[];
+    expect(Object.fromEntries(kinds.map((kind) => [kind, named(manifest[kind])]))).toEqual(SDK_PACKAGES);
+  });
+
+  it('brings in no package, its dependencies’ own included, that reads or touches the environment', () => {
+    const packages = packagesBroughtIn(sdkDirectory());
+    const brought = [...packages.values()].map((installed) => installed.slice(0, installed.lastIndexOf('@')));
+    expect(brought).toEqual(expect.arrayContaining([...SDK_PACKAGES.dependencies, ...SDK_PACKAGES.peerDependencies]));
+    const touches: string[] = [];
+    for (const [directory, installed] of packages) {
+      for (const { file, text } of packageCode(directory)) {
+        if (text.search(ENV_NAME) !== -1 || text.search(ENV_SITE) !== -1) {
+          touches.push(`${installed}: ${file}`);
+        }
+      }
+    }
+    expect(touches).toEqual([]);
   });
 });
 
