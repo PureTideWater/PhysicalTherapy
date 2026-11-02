@@ -754,6 +754,56 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/components/download-refusal.test.tsx',
     'apps/web/src/components/uploads/uploader.test.tsx',
   ]),
+  // The sign-in steps of the UX baseline review's sixth pull request (docs/adr/0081).
+  'SGN-01': none(1, 'Synthetic personas sign in through the local identity provider on an injected clock and in the browser, and the limit is read from infra’s source text; no file.', [
+    'apps/web/src/lib/auth/step-limits.test.ts',
+    'apps/web/src/lib/auth/dev-provider.test.ts',
+    'apps/web/src/lib/auth/pending.test.ts',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/src/components/step-timer.test.tsx',
+    'apps/web/e2e/sign-in-time.spec.ts',
+  ]),
+  'SGN-02': none(1, 'The step timer runs in the browser harness and on synthetic sign-ins, on a clock the test moves; no file.', [
+    'apps/web/src/lib/auth/step-limits.test.ts',
+    'apps/web/src/components/step-timer.test.tsx',
+    'apps/web/src/components/step-timer.browser.test.tsx',
+    'apps/web/e2e/sign-in-time.spec.ts',
+  ]),
+  'SGN-03': none(1, 'Synthetic personas sign in through the local identity provider; no file.', [
+    'apps/web/src/lib/auth/pending.test.ts',
+    'apps/web/src/app/sign-in/notice.test.tsx',
+    'apps/web/src/components/step-timer.browser.test.tsx',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/e2e/sign-in-time.spec.ts',
+  ]),
+  'SGN-04': none(1, 'Synthetic invited personas, a customer and a staff member, choose a password and enrol through the local identity provider; no file.', [
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/src/app/sign-in/notice.test.tsx',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/e2e/sign-in-time.spec.ts',
+  ]),
+  // The practice home's figures of the UX baseline review's ninth pull request: one actionable figure through one
+  // predicate, the Recovered tile's two periods and the empty home's upload gate (docs/adr/0082).
+  'HOM-01': none(9, 'The tests load SYNTHETIC CAS-08 and the LED worlds, whose files belong to those cases, and the property test generates its ledgers in memory; no file.', [
+    'apps/web/src/lib/routes/pricing-current-routes.db.test.ts',
+    'apps/web/src/lib/routes/reconciliation-routes.db.test.ts',
+    'apps/web/src/lib/dashboard/home-figures.db.test.ts',
+    'apps/worker/src/triage/actionable-now.db.test.ts',
+    'apps/worker/src/reconcile/recovered-periods.test.ts',
+  ]),
+  'HOM-02': none(9, 'The tiles and the words are rendered from synthetic figures the tests pass in memory, and the copy lint reads the app’s own files; no file.', [
+    'apps/web/src/components/dashboard/headline.test.tsx',
+    'apps/web/src/components/format.test.ts',
+    'apps/web/src/components/reconciliation/display.test.tsx',
+    'apps/web/src/components/triage/display.test.tsx',
+    'apps/web/src/lib/triage/queries.test.ts',
+    'tools/brand-copy/scan.test.ts',
+  ]),
+  'HOM-03': none(9, 'The agreements are recorded on synthetic practices by the test, and the empty states rendered in memory; no file.', [
+    'apps/web/src/lib/dashboard/home-figures.db.test.ts',
+    'apps/web/src/components/dashboard/headline.test.tsx',
+  ]),
+  'HOM-04': none(9, 'The LED-06 journey uploads SYNTHETIC LED-06’s remittances and exports, whose files belong to that case, in a practice of its own; no file.', ['apps/web/e2e/reconciliation.spec.ts']),
 };
 
 export interface CaseDefinition {

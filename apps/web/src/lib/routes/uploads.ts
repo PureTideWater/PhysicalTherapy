@@ -20,6 +20,7 @@ import { cameFrom, returnPage } from '../http/download-refusal';
 import { practiceRoute } from '../http/invoke';
 import { type Download, InputError, NotFoundError } from '../http/route';
 import { declaredTypeProblem } from '../uploads/csv-exports';
+import { NO_BAA, baaOnFile } from '../uploads/gate';
 import { CONTENT_TYPES, MAX_FILES_PER_BATCH, MAX_UPLOAD_BYTES, allowedContentType } from '../uploads/limits';
 import { REPORT_FROM, type Receipt } from '../uploads/receipt-labels';
 import { type ReceiptPage, listReceipts, receiptOf, receiptReport } from '../uploads/receipts';
@@ -65,13 +66,8 @@ async function uploadedDocument(scope: PracticeScope<ScopeClient>, practiceId: s
   return row;
 }
 
-/** Whether the practice's BAA is on file (PRD 6: "no upload without a BAA"), asked of the database. */
-export async function baaOnFile(scope: PracticeScope<ScopeClient>, practiceId: string): Promise<boolean> {
-  const { rows } = await scope.client.query<{ open: boolean }>('SELECT practice_baa_on_file($1) AS open', [practiceId]);
-  return rows[0]?.open === true;
-}
-
-export const NO_BAA = 'Uploads open once the practice’s business associate agreement is on file. A platform administrator records it when it is signed.';
+// The gate's BAA half (lib/uploads/gate.ts, which the practice home reads too), as Contracts and Reconciliation import it.
+export { NO_BAA, baaOnFile };
 
 export interface UploadGate {
   readonly open: boolean;

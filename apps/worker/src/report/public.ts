@@ -29,4 +29,4 @@ export {
   shareText,
 } from './documents';
 export { caseStateText, reasonText, unattestedSubmissionsNote, unattestedSubmissionsOf, unattestedSubmissionsText } from './html';
-export { NO_RECOVERED_CASH, RECOVERED_PRINCIPAL_LABELS } from './recovered-words';
+export { ACTIONABLE_OPEN_LABEL, ACTIONABLE_OPEN_NOTE, NO_RECOVERED_CASH, NOTHING_APPROVED_WAITING, RECOVERED_PRINCIPAL_LABELS } from './recovered-words';

@@ -1,6 +1,7 @@
 import { Alert, AlertDescription, AlertTitle } from '@tp/ui';
 
-import type { SignInReason } from '../../lib/routes/sign-in';
+import { ArrivalNotice } from '../../components/arrival-focus';
+import type { PasswordToUse, SignInReason } from '../../lib/routes/sign-in';
 
 /** Why the user is signing in again, in words (the URL carries only the code). */
 const REASONS: Readonly<Record<SignInReason, { readonly title: string; readonly text: string }>> = {
@@ -11,21 +12,73 @@ const REASONS: Readonly<Record<SignInReason, { readonly title: string; readonly 
   device_revoked: { title: 'Device revoked', text: 'This device was revoked, which ended its sessions. Sign in again to use it.' },
   user_disabled: { title: 'Account disabled', text: 'This account is disabled. Ask your administrator.' },
   mfa_required: { title: 'Two-step verification required', text: 'Every account needs an authenticator app or a hardware key. Sign in to set it up.' },
-  step_expired: { title: 'Start again', text: 'That sign-in step expired. Start again from your email and password.' },
+  step_expired: { title: 'Sign-in step closed', text: 'That sign-in step closed. Start again from your email and password.' },
   hardware_key_required: { title: 'Hardware key required', text: 'Your role signs in with a hardware key. Use it below.' },
   key_registered: { title: 'Hardware key registered', text: 'Your hardware key is registered. Sign in with it now.' },
   locked: { title: 'Account locked', text: 'This account is locked after ten failed attempts. A platform administrator can unlock it.' },
+  restarted: { title: 'Start again', text: 'Start again from your email and password.' },
 };
 
-export function SignInNotice({ reason }: { readonly reason: SignInReason | null }) {
+/** The two reasons a person is back after a sign-in step: it closed, or they chose to start again (docs/adr/0081). */
+type RestartReason = Extract<SignInReason, 'step_expired' | 'restarted'>;
+
+const isRestart = (reason: SignInReason): reason is RestartReason => reason === 'step_expired' || reason === 'restarted';
+
+/** The restart reasons' words with the email kept, and on the hardware-key page, which never keeps one. */
+const RESTARTS: Readonly<Record<RestartReason, { readonly kept: string; readonly key: string }>> = {
+  step_expired: {
+    kept: 'That sign-in step closed. Your email is filled in: type your password to start again.',
+    key: 'That sign-in step closed. Start again with your hardware key.',
+  },
+  restarted: { kept: 'Your email is filled in: type your password to start again.', key: 'Start again with your hardware key.' },
+};
+
+/** Which password starts again: the invitation's while none was saved, the chosen one once it was. */
+const PASSWORD_TO_USE: Readonly<Record<PasswordToUse, string>> = {
+  temporary: 'Use the temporary password from your invitation.',
+  chosen: 'Use the password you chose: the temporary one no longer works.',
+};
+
+/** The notice's words: the reason's, or after a step, the kept email's and which password, or the key's. */
+function wordsOf(reason: SignInReason, kept: { readonly use: PasswordToUse | null } | undefined, surface: 'password' | 'key'): string {
+  if (!isRestart(reason)) {
+    return REASONS[reason].text;
+  }
+  if (surface === 'key') {
+    return RESTARTS[reason].key;
+  }
+  if (kept === undefined) {
+    return REASONS[reason].text;
+  }
+  return kept.use === null ? RESTARTS[reason].kept : `${RESTARTS[reason].kept} ${PASSWORD_TO_USE[kept.use]}`;
+}
+
+/**
+ * Why the person is on a sign-in page. `kept` is given only when the page filled in the email kept from a step (never
+ * the address itself, which only the Email field holds); `surface` is the page: the password's, or the hardware key's.
+ * After a step closed or was started again the notice is a note that takes the focus once, so it is read on arrival,
+ * once (docs/adr/0081); every other reason is a polite status, which takes no focus.
+ */
+export function SignInNotice({
+  reason,
+  kept,
+  surface = 'password',
+}: {
+  readonly reason: SignInReason | null;
+  readonly kept?: { readonly use: PasswordToUse | null };
+  readonly surface?: 'password' | 'key';
+}) {
   if (reason === null) {
     return null;
   }
-  const notice = REASONS[reason];
-  return (
+  const { title } = REASONS[reason];
+  const text = wordsOf(reason, kept, surface);
+  return isRestart(reason) ? (
+    <ArrivalNotice reason={reason} title={title} text={text} />
+  ) : (
     <Alert role="status" data-reason={reason}>
-      <AlertTitle>{notice.title}</AlertTitle>
-      <AlertDescription>{notice.text}</AlertDescription>
+      <AlertTitle>{title}</AlertTitle>
+      <AlertDescription>{text}</AlertDescription>
     </Alert>
   );
 }
