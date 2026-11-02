@@ -3088,8 +3088,9 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
    * the script or its inputs fails until a person re-reads the bound), and its bound, which the behavioural test named
    * beside it holds by running the step and reading the whole file it writes. Each is written once, and every line of
    * every workflow's script that names GITHUB_ENV (a backslash-newline joining two, as bash reads them) is one of them;
-   * no env sets ACTIONS_ALLOW_UNSECURE_COMMANDS (::set-env). A script that reaches the file without naming it (a name
-   * built at run time, another interpreter) is not closed by reading text.
+   * nothing but a step's run: names GITHUB_ENV, nothing names the runner's file command files, and no env sets
+   * ACTIONS_ALLOW_UNSECURE_COMMANDS (::set-env). A script that reaches the file without naming it (a name built at
+   * run time, another interpreter) is not closed by reading text.
    */
   const GITHUB_ENV_WRITES: Readonly<Record<string, { readonly file: string; readonly job: string; readonly step: string; readonly line: string; readonly fingerprint: string; readonly bound: string; readonly test: string }>> = {
     ENGINE_FREEZE_BASE: {
@@ -3275,6 +3276,26 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
       }
     };
     keys(root, '');
+    // Only a step's run: may name $GITHUB_ENV, where every line naming it is an entry of the closed map below. A shell
+    // (a step's or a default), an input, an env name or value, or any other string naming it, and anything naming the
+    // runner's file command files themselves, would let a command template or an action set a later step's variables
+    // that no line of a script shows, so each is refused.
+    const fileCommand = (text: string): boolean => text.includes('GITHUB_ENV') || /_runner_file_commands/i.test(text);
+    const outsideRun = (where: string) => `${file} ${where}: names $GITHUB_ENV or the runner's file commands outside a step's run:, where a shell, an input or an action could set a later step's environment unread`;
+    const commands = (value: unknown, where: string): void => {
+      if (typeof value === 'string') {
+        if (fileCommand(value) && !/^jobs\.[^.]+\.steps\[\d+\]\.run$/.test(where)) problems.push(outsideRun(where));
+      } else if (isList(value)) {
+        value.forEach((item, index) => commands(item, `${where}[${String(index)}]`));
+      } else if (isRecord(value)) {
+        for (const [key, item] of Object.entries(value)) {
+          const at = where === '' ? key : `${where}.${key}`;
+          if (fileCommand(key)) problems.push(outsideRun(at));
+          commands(item, at);
+        }
+      }
+    };
+    commands(root, '');
     // A key this rule does not know, at the top, in a job or in a step (a nested parallel: step list, say), would hold
     // expressions nothing reads, so each is refused until the rule reads it.
     const unread = (value: Record<string, unknown>, known: ReadonlySet<string>, where: string): void => {
@@ -3293,7 +3314,9 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
         unread(step, STEP_KEYS, named);
         for (const key of ['env', 'with', 'run', 'working-directory', 'shell']) visit(step[key], `${named} ${key}`, id, index);
         // Each line as bash reads it, a backslash-newline joining two, so a write split across lines is still read.
-        for (const line of (typeof step.run === 'string' ? step.run : '').replace(/\\\n/g, '').split('\n').filter((text) => text.includes('GITHUB_ENV'))) {
+        const lines = (typeof step.run === 'string' ? step.run : '').replace(/\\\n/g, '').split('\n');
+        for (const line of lines.filter((text) => /_runner_file_commands/i.test(text))) problems.push(`${file} ${named} run: names the runner's file commands, which set a later step's environment unread: ${line.trim()}`);
+        for (const line of lines.filter((text) => text.includes('GITHUB_ENV'))) {
           const write = Object.entries(GITHUB_ENV_WRITES).find(([, entry]) => entry.file === file && entry.job === id && entry.step === step.name && entry.line === line.trim());
           if (write === undefined) problems.push(`${file} ${named} run: a $GITHUB_ENV write outside its closed map: ${line.trim()}`);
           else writes.set(write[0], (writes.get(write[0]) ?? 0) + 1);
@@ -3843,6 +3866,21 @@ describe('one environment string of at most Linux’s 131,072 bytes (docs/adr/00
     ]);
     expect(unboundedValueProblems('fixture.yml', parse("name: fixture\non: push\nenv: { actions_allow_unsecure_commands: 'true' }\njobs: {}\n")).problems).toEqual([
       "fixture.yml env.actions_allow_unsecure_commands: a switch for ::set-env, which writes a variable outside $GITHUB_ENV's closed map",
+    ]);
+    // $GITHUB_ENV named anywhere but a step's run: (a step's shell, a job's or the workflow's default shell, an input, an
+    // env value or name), and the runner's file command files named anywhere, a script line included.
+    const commandsIn = (yaml: string) => unboundedValueProblems('fixture.yml', parse(`name: fixture\non: push\n${yaml}\n`)).problems;
+    const outsideRun = (where: string) => `fixture.yml ${where}: names $GITHUB_ENV or the runner's file commands outside a step's run:, where a shell, an input or an action could set a later step's environment unread`;
+    const shell = `'bash -c "git log -1 --format=BODY=%s >> $GITHUB_ENV; bash --noprofile --norc -eo pipefail {0}"'`;
+    expect(commandsIn(`jobs: { check: { runs-on: ubuntu-26.04, steps: [{ name: Probe, shell: ${shell}, run: echo probe }] } }`)).toEqual([outsideRun('jobs.check.steps[0].shell')]);
+    expect(commandsIn(`jobs: { check: { runs-on: ubuntu-26.04, defaults: { run: { shell: ${shell} } }, steps: [{ name: Probe, run: echo probe }] } }`)).toEqual([outsideRun('jobs.check.defaults.run.shell')]);
+    expect(commandsIn(`defaults: { run: { shell: ${shell} } }\njobs: {}`)).toEqual([outsideRun('defaults.run.shell')]);
+    expect(commandsIn('jobs: { check: { runs-on: ubuntu-26.04, steps: [{ name: Probe, uses: actions/fixture@v1, with: { file: $GITHUB_ENV } }] } }')).toEqual([outsideRun('jobs.check.steps[0].with.file')]);
+    expect(commandsIn('jobs: { check: { runs-on: ubuntu-26.04, env: { TARGET: $GITHUB_ENV }, steps: [] } }')).toEqual([outsideRun('jobs.check.env.TARGET')]);
+    expect(commandsIn('jobs: { check: { runs-on: ubuntu-26.04, steps: [{ name: Probe, env: { GITHUB_ENV: /tmp/env }, run: echo }] } }')).toEqual([outsideRun('jobs.check.steps[0].env.GITHUB_ENV')]);
+    expect(commandsIn('jobs: { check: { runs-on: ubuntu-26.04, steps: [{ name: Probe, uses: actions/fixture@v1, with: { path: "$RUNNER_TEMP/_runner_file_commands" } }] } }')).toEqual([outsideRun('jobs.check.steps[0].with.path')]);
+    expect(write(['cat file >> "$RUNNER_TEMP"/_runner_file_commands/set_env_*'])).toEqual([
+      'ci.yml job unit step "The engine freeze\'s base" run: names the runner\'s file commands, which set a later step\'s environment unread: cat file >> "$RUNNER_TEMP"/_runner_file_commands/set_env_*',
     ]);
   });
 
