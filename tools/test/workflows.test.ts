@@ -2839,12 +2839,13 @@ describe('concurrency groups', () => {
  * the pull request's description in it, reached 132,387). So nothing that can grow past it may reach a step's
  * environment, an action's input (an INPUT_* variable) or a script. Every expression there is read as the runner reads
  * it (actions/runner's LexicalAnalyzer: whitespace skipped before every token, a name before "(" a function, names and
- * keys without case) and admitted only from a closed list: values GitHub or the workflow bounds, and each step output or
- * value one job hands another, listed with its bound (docs/adr/0066, Part 3, N32). No key holds an expression, and each
- * environment string a workflow sets is summed from its name, its literal bytes and each value's bound in bytes. These
- * read this repository's workflows: a pinned action's own action.yml and code are not read, and the defect itself came
- * from action code (buildx copying the event into its metadata), which no expression rule can read, so every step
- * output is bounded where a workflow reads it.
+ * keys without case) and admitted only from a closed list: values GitHub or the workflow bounds, and each step output
+ * or value one job hands another, listed with its bound (docs/adr/0066, Part 3, N32). A workflow's, a job's or a step's
+ * key the rule does not read is refused, no key holds an expression, and each environment string a workflow sets is
+ * summed from its name, its literal bytes and each value's bound in bytes. These read this repository's workflows: a
+ * pinned action's own action.yml and code are not read, and the defect itself came from action code (buildx copying the
+ * event into its metadata), which no expression rule can read, so every step output is bounded where a workflow reads
+ * it.
  */
 describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, Part 3, N32)', () => {
   type Token = { readonly kind: 'string' | 'number' | 'keyword' | 'name' | 'function' | 'punctuation' | 'operator' | 'star'; readonly text: string };
@@ -3067,6 +3068,13 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       test: 'gives the differential test a pull request’s merge base, a push’s previous head or a new branch’s parent, through GITHUB_ENV',
     },
   };
+  /**
+   * The keys a workflow, a job and a step may have, each read by the rule below or reaching no process (a name, a
+   * condition, a timeout, permissions, a concurrency group, runs-on's labels, an environment's name and URL).
+   */
+  const WORKFLOW_KEYS: ReadonlySet<string> = new Set(['name', 'run-name', 'on', 'permissions', 'env', 'defaults', 'concurrency', 'jobs']);
+  const JOB_KEYS: ReadonlySet<string> = new Set(['name', 'needs', 'if', 'runs-on', 'timeout-minutes', 'continue-on-error', 'container', 'services', 'env', 'environment', 'permissions', 'concurrency', 'outputs', 'defaults', 'steps', 'strategy', 'uses', 'with', 'secrets']);
+  const STEP_KEYS: ReadonlySet<string> = new Set(['name', 'id', 'if', 'uses', 'run', 'with', 'env', 'working-directory', 'shell', 'continue-on-error', 'timeout-minutes']);
   /** The one form a build's metadata output may take: its config digest, '' for an empty output (fromJSON('') fails a step). */
   const DIGEST_KEY = 'containerimage.config.digest';
 
@@ -3172,9 +3180,10 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
   }
 
   /**
-   * Every expression of a workflow that reaches a process, read as the runner reads it: the workflow's env; each job's
-   * env, outputs, strategy, container, services, with, secrets and defaults (its run's shell is the command the runner
-   * starts); each step's env, with, run and working-directory (`if:` and `name:` reach none). GitHub's contexts table
+   * Every expression of a workflow that reaches a process, read as the runner reads it: the workflow's env and defaults;
+   * each job's env, outputs, strategy, container, services, with, secrets and defaults (its run's shell is the command
+   * the runner starts); each step's env, with, run, working-directory and shell (`if:` and `name:` reach none). A key
+   * outside the closed lists of a workflow's, a job's and a step's keys is refused, so none goes unread. GitHub's contexts table
    * names every key that takes a context. A mapping's keys are read too, anywhere in the file: GitHub evaluates an
    * expression in an env name, an input's name (INPUT_<key>), a service's id or a matrix key, and refuses the file for
    * one anywhere else, so none may hold one. What it refuses, each naming its
@@ -3225,14 +3234,23 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       }
     };
     keys(root, '');
+    // A key this rule does not know, at the top, in a job or in a step (a nested parallel: step list, say), would hold
+    // expressions nothing reads, so each is refused until the rule reads it.
+    const unread = (value: Record<string, unknown>, known: ReadonlySet<string>, where: string): void => {
+      for (const key of Object.keys(value)) if (!known.has(key)) problems.push(`${file} ${where}: ${key}, a key the value rule does not read`);
+    };
+    unread(root, WORKFLOW_KEYS, 'the workflow');
     visit(root.env, 'env', '-');
+    visit(root.defaults, 'defaults', '-');
     for (const [id, job] of Object.entries(isRecord(root.jobs) ? root.jobs : {})) {
       if (!isRecord(job)) continue;
+      unread(job, JOB_KEYS, `job ${id}`);
       for (const key of ['env', 'outputs', 'strategy', 'container', 'services', 'with', 'secrets', 'defaults']) visit(job[key], `job ${id} ${key}`, id);
       (isList(job.steps) ? job.steps : []).forEach((step, index) => {
         if (!isRecord(step)) return;
         const named = `job ${id} step ${typeof step.name === 'string' ? JSON.stringify(step.name) : String(index)}`;
-        for (const key of ['env', 'with', 'run', 'working-directory']) visit(step[key], `${named} ${key}`, id, index);
+        unread(step, STEP_KEYS, named);
+        for (const key of ['env', 'with', 'run', 'working-directory', 'shell']) visit(step[key], `${named} ${key}`, id, index);
         for (const line of (typeof step.run === 'string' ? step.run : '').split('\n').filter((text) => text.includes('GITHUB_ENV'))) {
           const write = Object.entries(GITHUB_ENV_WRITES).find(([, entry]) => entry.file === file && entry.job === id && entry.step === step.name && entry.line === line.trim());
           if (write === undefined) problems.push(`${file} ${named} run: a $GITHUB_ENV write outside its closed map: ${line.trim()}`);
@@ -3625,8 +3643,16 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       [`jobs: { images: { runs-on: ubuntu-26.04, steps: [{ name: The step, env: { "X_${body}": '1' }, run: echo }] } }`, `jobs.images.steps[0].env.X_${body}`],
     ];
     for (const [jobs, where] of keyed) {
-      expect(unboundedValueProblems('fixture.yml', parse(`name: fixture\non: push\n${jobs}\n`)).problems, where).toEqual([`fixture.yml ${where}: an expression in a key`]);
+      expect(unboundedValueProblems('fixture.yml', parse(`name: fixture\non: push\n${jobs}\n`)).problems, where).toEqual([`fixture.yml ${where}: an expression in a key`].concat(where === `jobs.images.steps[0].${body}` ? [`fixture.yml job images step "The step": ${body}, a key the value rule does not read`] : []));
     }
+
+    // A key the rule does not read, whatever it holds: a nested parallel: list of steps (GitHub's parser has one), a
+    // job's or the workflow's key it does not know.
+    const unreadKey = (yaml: string) => unboundedValueProblems('fixture.yml', parse(`name: fixture\non: push\n${yaml}\n`)).problems;
+    expect(unreadKey('jobs: { images: { runs-on: ubuntu-26.04, steps: [{ parallel: [{ name: Leak, env: { B: "${{ github.event.pull_request.body }}" }, run: echo }] }] } }')).toEqual(['fixture.yml job images step 0: parallel, a key the value rule does not read']);
+    expect(unreadKey('jobs: { images: { runs-on: ubuntu-26.04, snapshot: image, steps: [] } }')).toEqual(['fixture.yml job images: snapshot, a key the value rule does not read']);
+    expect(unreadKey('extra: { env: { B: "${{ github.event.pull_request.body }}" } }\njobs: {}')).toEqual(['fixture.yml the workflow: extra, a key the value rule does not read']);
+    expect(unreadKey("defaults: { run: { shell: '${{ github.event.pull_request.body }}' } }\njobs: {}")).toEqual(['fixture.yml defaults.run.shell: github.event.pull_request.body, not a bounded github value, in ${{ github.event.pull_request.body }}']);
 
     // $GITHUB_ENV: each write one entry of a closed map, its file, job, step and line exactly, written once.
     const write = (lines: readonly string[], file = 'ci.yml', job = 'unit', step = "The engine freeze's base") =>

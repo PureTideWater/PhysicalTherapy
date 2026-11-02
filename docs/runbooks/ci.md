@@ -434,8 +434,9 @@ user that cannot run the binary.
   place; an env, a `with:` or a container given as one expression is refused, since no sum can read its strings).
   `workflows.test.ts` reads every expression in an env, an input, a script, a job's outputs, a matrix or a key as the
   runner does, and admits only bounded values, none in any key (GitHub evaluates one as an env name, an input's name,
-  a service id or a matrix key). It reads this repository's workflows; a pinned action's own `action.yml` and code are
-  not read: the defect N32 fixes came from action code (buildx copying the event into its metadata), which no
+  a service id or a matrix key), and refuses a workflow's, a job's or a step's key it does not read (a new GitHub key
+  joins its list once the rule reads it). It reads this repository's workflows; a pinned action's own `action.yml` and
+  code are not read: the defect N32 fixes came from action code (buildx copying the event into its metadata), which no
   expression rule can read, so every step output is bounded where a workflow reads it, by the value rule and its
   table. Never use a build's whole metadata, an event object, a description or title, or `toJSON` of anything but
   `needs`. A new step output or value one job hands another joins its list with its bound and its producers by name (a
