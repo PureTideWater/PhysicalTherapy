@@ -2,7 +2,7 @@
   "case": "MAP-06",
   "module": "MAP",
   "title": "A month holding lines of a mapped plan and of a plan with no mapping",
-  "assertion": "Priced by the monitor and by a person's run, in the worker and with nothing refused in Postgres: the mapped plan's lines price under their mapping, and no line of the other plan is priced (`NO_MAPPING` one by one where the resolver reaches it; `ENGINE_ERROR` for a line that fails the engine's fact checks first). The run's coverage records the plan with no mapping, all its lines and billed cents, equal to what Coverage counts for that month. Coverage, Pricing runs, the home page, the run's page and both printed reports say the plan has no mapping and its lines are not priced, in counts and cents only. The engine is unchanged",
+  "assertion": "Priced by the monitor and by a person's run, in the worker and with nothing refused in Postgres: the mapped plan's lines price under their mapping, and no line of the other plan is priced (`NO_MAPPING` one by one where the resolver reaches it; `ENGINE_ERROR` for a line that fails the engine's fact checks first). The run's coverage records the plan with no mapping, all its lines and billed cents, equal to what Coverage counts for that month. Coverage, Pricing runs and the home page say the plan has no mapping and its lines are not priced; the run's page and the printed audit report say it had no mapping when the run was priced, and the printed coverage report that it had none when the report was made, in counts and cents only. The engine is unchanged",
   "synthetic": true,
   "completesIn": 3,
   "assertedBy": [

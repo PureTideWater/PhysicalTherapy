@@ -218,7 +218,7 @@ describe('the coverage report (PRD 6: CSV and PDF of the Coverage screen)', () =
     expect((await call(reportDocumentPdfRoute, other.manager, elsewhere)).status).toBe('not_found');
   });
 
-  it('records the plans with no mapping with their lines and billed cents, as Coverage counts them, and says their lines are not priced (combined audit #32; PRC-30, MAP-06)', async () => {
+  it('records the plans with no mapping with their lines and billed cents, as Coverage counts them, and says their lines were not priced (combined audit #32; PRC-30, MAP-06, UX-5)', async () => {
     // MAP-06's SYNTHETIC file with neither of its plans mapped: 2 plans, 7 lines, $750.00 billed, and no run.
     const target = await w.practice('REPORT DOCUMENT ROUTES UNMAPPED');
     await w.load(target, 'MAP-06/remit.835');
@@ -234,7 +234,9 @@ describe('the coverage report (PRD 6: CSV and PDF of the Coverage screen)', () =
     expect({ plans: content.readiness.unmapped_plans, lines: content.readiness.unmapped_lines, chargeCents: content.readiness.unmapped_charge_cents }).toEqual(screen);
     let html = '';
     expect(await print(target, documentId, (printed) => (html = printed))).toMatchObject({ outcome: 'printed' });
-    expect(html).toContain('2 plans have no mapping; their lines are not priced (7 lines, ');
+    // UX-5: a stored snapshot states the past, so mapping a plan later never makes it false.
+    expect(html).toContain('2 plans had no mapping; their lines were not priced (7 lines, ');
+    expect(html).not.toContain('have no mapping; their lines are not priced');
     expect(html).toMatch(/\$750\.00<\/span> billed\)\./);
     expect(html).not.toContain('refused');
   });

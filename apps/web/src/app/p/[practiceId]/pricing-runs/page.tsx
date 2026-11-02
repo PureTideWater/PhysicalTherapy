@@ -45,7 +45,7 @@ export default async function PricingRunsPage(props: Props) {
         </p>
       </div>
       {release === null || pinnedElsewhere === 0 ? null : (
-        <Alert data-state="release-note">
+        <Alert role="status" data-state="release-note">
           <AlertTitle>Rule release {release.releaseNo} is in force</AlertTitle>
           <AlertDescription>
             {pinnedElsewhere} {pinnedElsewhere === 1 ? 'run in effect is' : 'runs in effect are'} pinned to another release; they stay as they were priced.{' '}

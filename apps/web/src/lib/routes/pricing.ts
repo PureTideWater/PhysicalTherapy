@@ -54,9 +54,9 @@ import { opaqueId, optionalText } from './schemas';
  * which the billing manager and the firm principal hold; docs/adr/0035): the creator names a period
  * by months and the release the screen showed as current; the run is recorded pinned to that release
  * (refused when it is no longer the current one: a rule-release mismatch) and the price job queued.
- * A run over a period none of whose plans has a mapping is refused, since it would price nothing; in any other run a
- * plan with no mapping leaves its own lines unpriced (MAP-01, MAP-07; combined audit #32, docs/adr/0075). The screen
- * counts those plans' lines and the lines of mapped plans still NO_MAPPING in the pricing in effect (PRC-31).
+ * A run over a period none of whose lines has a mapping in force on its date is refused, since it would price nothing;
+ * in any other run a plan with no mapping leaves its own lines unpriced (MAP-01, MAP-07; combined audit #32,
+ * docs/adr/0075). The screen counts those plans' lines and the lines of mapped plans still NO_MAPPING in the pricing in effect (PRC-31).
  *
  * Re-runs and comparisons (PRD 7: "compare two runs; re-run under a new release with a diff"; PRD 5, J6
  * and J17; PRD 9, step 4; docs/adr/0037): the run in effect for its period is priced again under the
@@ -94,7 +94,7 @@ export interface PricingRunsPageData {
   readonly list: RunPage;
   /** The rule release in force, which a run created now pins; null when none is published. */
   readonly release: CurrentRelease | null;
-  /** The plans with no mapping at all, whose lines no run prices, with their lines and billed cents (MAP-06). */
+  /** The plans with no mapping in force on their lines' dates, whose lines no run prices, with their lines and billed cents (MAP-06; R3N-1). */
   readonly unmappedPlans: UnmappedPlanTotals;
   /** The lines of mapped plans still NO_MAPPING in the pricing in effect, their billed cents and the runs holding them (PRC-31). */
   readonly mappedNotPriced: MappedNotPricedTotals;
@@ -404,11 +404,14 @@ export const acceptPricingRunAction = practiceRoute({
 const PERIOD_FIELDS = { period: 'fromMonth', periodFrom: 'fromMonth', periodTo: 'toMonth' } as const;
 
 /**
- * A period none of whose plans has a mapping (MAP-07): a run would price nothing. Shown under "First month of service"
- * after "Error:" (ADR 0077), lower-case like the period's other messages; counts and dates only.
+ * A period none of whose lines has a mapping of its plan in force on its date (MAP-07; R3N-1): a run would price
+ * nothing. Shown under "First month of service" after "Error:" (ADR 0077), lower-case like the period's other messages;
+ * counts and dates only. Its second sentence says when a month is priced (PR #95 review F2): at once when a mapping
+ * completes it, or once any one plan is mapped, by the daily monitoring or a run from here, the other plans' lines then
+ * needing it priced again; never "once every plan is mapped" alone.
  */
-const NOTHING_MAPPED =
-  'none of the period’s plans has a mapping yet, so a run would price nothing: map them on Payer and plan mapping, and each month is priced once every plan it holds is mapped';
+export const NOTHING_MAPPED =
+  'none of the period’s plans has a mapping in force on its lines’ dates yet, so a run would price nothing: map them on Payer and plan mapping. A month is priced as soon as every plan it holds is mapped, or once any one is, by the daily monitoring or a run from here; its other plans’ lines then need it priced again.';
 
 export const createPricingRunAction = practiceRoute({
   id: 'practice.pricing_runs.create',

@@ -52,7 +52,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'MAP-06',
     title: 'A month holding lines of a mapped plan and of a plan with no mapping',
     assertion:
-      "Priced by the monitor and by a person's run, in the worker and with nothing refused in Postgres: the mapped plan's lines price under their mapping, and no line of the other plan is priced (`NO_MAPPING` one by one where the resolver reaches it; `ENGINE_ERROR` for a line that fails the engine's fact checks first). The run's coverage records the plan with no mapping, all its lines and billed cents, equal to what Coverage counts for that month. Coverage, Pricing runs, the home page, the run's page and both printed reports say the plan has no mapping and its lines are not priced, in counts and cents only. The engine is unchanged",
+      "Priced by the monitor and by a person's run, in the worker and with nothing refused in Postgres: the mapped plan's lines price under their mapping, and no line of the other plan is priced (`NO_MAPPING` one by one where the resolver reaches it; `ENGINE_ERROR` for a line that fails the engine's fact checks first). The run's coverage records the plan with no mapping, all its lines and billed cents, equal to what Coverage counts for that month. Coverage, Pricing runs and the home page say the plan has no mapping and its lines are not priced; the run's page and the printed audit report say it had no mapping when the run was priced, and the printed coverage report that it had none when the report was made, in counts and cents only. The engine is unchanged",
   },
   {
     id: 'MAP-07',
@@ -157,7 +157,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'PRC-30',
     title: 'The coverage a run records of plans with no mapping',
     assertion:
-      '`tp-pricing-coverage/2` lists each plan of the run\'s lines with no mapping when it was priced, with all its lines (whatever their unpriced reason) and billed cents, together at most the run\'s unpriced count. A `tp-pricing-coverage/1` run reads as having none. The printed audit report says "N plans had no mapping when this run was priced; their lines are not priced", and the coverage report "N plans have no mapping; their lines are not priced"; a coverage report stored before keeps both of its own sentences',
+      '`tp-pricing-coverage/2` lists each plan of the run\'s lines with no mapping when it was priced, with all its lines (whatever their unpriced reason) and billed cents, together at most the run\'s unpriced count. A `tp-pricing-coverage/1` run reads as having none. The printed audit report says "N plans had no mapping when this run was priced; their lines are not priced", and a new coverage report, its figures fixed when it was made, "N plans had no mapping; their lines were not priced"; a coverage report stored before keeps both of its own sentences',
   },
   {
     id: 'PRC-31',

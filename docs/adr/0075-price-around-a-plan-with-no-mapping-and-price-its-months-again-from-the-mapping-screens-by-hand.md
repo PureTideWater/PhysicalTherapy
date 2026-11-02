@@ -173,9 +173,11 @@ month it touched:
     usual." and "Map them" (or, without `mapping.edit`, "See them on Payer and plan mapping"); a second Alert, "{L}
     lines of mapped plans are still not priced", links to the months to price again. Everyone who opens the practice
     sees the figures; only `mapping.edit` holders get the actions.
-17. **The reports.** The coverage report (present tense, of the practice now) says "{N} plans have no mapping; their
-    lines are not priced ({L} lines, {$X} billed)."; a stored report without the two new optional fields keeps both of
-    its own sentences, in each view. The audit report (past tense, of one run as priced) says "{N} plans had no mapping
+17. **The reports.** The coverage report is a stored snapshot, its figures fixed when it is made, so a new one says in
+    the past tense "{N} plans had no mapping; their lines were not priced ({L} lines, {$X} billed)." or "Every plan
+    with lines had a mapping.": a plan mapped later never makes a stored document false (review UX-5; the screens keep
+    the present tense, of the practice now). A stored report without the two new optional fields keeps both of its own
+    sentences, in each view. The audit report (past tense, of one run as priced) says "{N} plans had no mapping
     when this run was priced; their lines are not priced ({L} lines, {$X} billed).", from the run's own coverage.
 
 ### The milestone 3 exception

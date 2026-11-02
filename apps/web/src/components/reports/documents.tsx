@@ -27,22 +27,24 @@ export function DocumentStatusBadge({ status }: { readonly status: 'queued' | 'r
 
 /**
  * The coverage report's sentence on plans with no mapping, in the words of the rule it was generated under (combined
- * audit #32, docs/adr/0075; PRC-30), as the PDF says it: a report that records the plans' lines and cents says they are
- * not priced while the rest price ("2 plans have no mapping; their lines are not priced (14 lines, $1,234.00 billed).");
- * one stored before keeps both of the sentences this view showed it with, true when it was generated (decision D8;
- * review R3-9). The same presence check decides both branches.
+ * audit #32, docs/adr/0075; PRC-30), as the PDF says it: a report that records the plans' lines and cents says, in the
+ * past tense, that they had no mapping and their lines were not priced ("2 plans had no mapping; their lines were not
+ * priced (14 lines, $1,234.00 billed)."): its figures are fixed when it is made, and a plan mapped later must not make
+ * it state something false (PR #95 review UX-5; D8 amended: the screens speak of the practice now, a stored report of
+ * the moment it was made). One stored before keeps both of the sentences this view showed it with, true when it was
+ * generated (decision D8; review R3-9). The same presence check decides both branches.
  */
 export function ReadinessText({ readiness }: { readonly readiness: CoverageReportContent['readiness'] }) {
   if (readiness.unmapped_lines === undefined || readiness.unmapped_charge_cents === undefined) {
     return readiness.allowed ? 'Every plan with lines had a mapping.' : `${String(readiness.unmapped_plans)} plan(s) had no mapping at all: pricing them was refused.`;
   }
   if (readiness.allowed) {
-    return 'Every plan with lines has a mapping.';
+    return 'Every plan with lines had a mapping.';
   }
   const one = readiness.unmapped_plans === 1;
   return (
     <span data-state="unmapped">
-      <span className="font-mono tabular-nums">{readiness.unmapped_plans}</span> {one ? 'plan has' : 'plans have'} no mapping; {one ? 'its' : 'their'} lines are not priced (
+      <span className="font-mono tabular-nums">{readiness.unmapped_plans}</span> {one ? 'plan' : 'plans'} had no mapping; {one ? 'its' : 'their'} lines were not priced (
       <span className="font-mono tabular-nums">{readiness.unmapped_lines}</span> {readiness.unmapped_lines === 1 ? 'line' : 'lines'}, <Money value={readiness.unmapped_charge_cents} /> billed).
     </span>
   );

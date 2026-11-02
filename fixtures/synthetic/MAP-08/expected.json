@@ -7,6 +7,7 @@
   "completesIn": 7,
   "assertedBy": [
     "apps/web/src/lib/pricing/mapped-plan.db.test.ts",
+    "apps/web/src/lib/pricing/mapped-plan-content.db.test.ts",
     "apps/web/src/lib/routes/mapping-routes.db.test.ts",
     "apps/web/src/components/mapping/months.test.tsx",
     "apps/web/e2e/mapping.spec.ts"
