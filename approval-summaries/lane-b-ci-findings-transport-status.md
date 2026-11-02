@@ -12,7 +12,22 @@ ADR expected (ADR 0071 amended; ADR 0066's Part 3 sentence at `:982-983` on #86 
 Open questions: none.
 
 <!-- RESUME-BLOCK -->
-## Current state (2026-11-02T02:03:24Z): built on WIP b9a83bd3; reviews next; PR after #86 merges
+## Current state (2026-11-02T02:07:38Z): PAUSED (the co-founder's pacing call, 02:10 UTC); built on WIP b9a83bd3; reviews next
+- **PAUSED at 2026-11-02T02:07:38Z** on the co-founder's pacing call relayed by the orchestrator (02:10 UTC: the account's 7-day limit at its
+  warning level, resets Fri 2026-11-06 19:00 UTC; design/build-stage items pause at the next clean point, start no new
+  workflow). The reviews workflow wf_bbdb863e-90a (script `workflow-scripts/lane-b-ci-findings-transport-reviews-wf_bbdb863e-90a.js`)
+  had run about 3 minutes, its reviewers had only just started, so it was stopped (TaskStop) rather than run to the end of
+  its Review stage: no review result exists; progress files (scratchpad, not durable) may hold a little. Nothing is
+  uncommitted: the WIP ref `co-001/wip-ci-findings-transport` is at b9a83bd3 on origin. One check-in remains:
+  trig_014SoPrF1ZiWFsE8v9KPcBTN at 2026-11-06T19:15:00Z; the 06:13 watchdog was deleted.
+- **Exact next step on resume (only when the orchestrator resumes this item):** re-run setup
+  (`co-001/wip-ci-findings-transport:/home/user/ci-findings-transport`) if PostgreSQL is down or the container is new; check #86
+  (`gh api repos/PureTideWater/PhysicalTherapy/pulls/86 --jq '.merged, .merge_commit_sha'`, `git ls-remote origin
+  co-001/ci-images-digest co-001/wip-ci-images-digest`); if #86's WIP or head moved, merge it into the WIP ref first; then run
+  the two adversarial reviews (the archived reviews script; `resumeFromRunId: wf_bbdb863e-90a` only in this same session,
+  otherwise re-run it with SP rewritten and HEAD/BASE updated); then, after #86 merges, merge the base in, push
+  `co-001/ci-findings-transport`, the draft PR, subscribe, the fix round (also regenerate the §7 proof against the timeout
+  download block), verification, merge.
 - **Stage (2026-11-02T02:03:24Z): built.** Build workflow wf_68f40358-e23 (script archived): design §16 "Re-read at d257fe6d" written and
   checked (5 checker gaps fixed: the runner count 22→23, notifyEnv's values order, runNotify's job argument, the cap case's
   timing, line numbers); builder red first then green; whole-diff adversary 4 findings (S1 TEST_TIMEOUT_MS 30→45 s with its
@@ -83,3 +98,4 @@ Open questions: none.
 - 2026-11-01T20:37:07Z: the orchestrator ruled: build early on a WIP ref from #86's fix-round head once #86 pushes R3; PR after #86 merges.
 - 2026-11-02T01:01:53Z: resumed after the worker restart; WIP ref co-001/wip-ci-findings-transport cut at #86's WIP d257fe6d and pushed; build starting.
 - 2026-11-02T02:03:24Z: built (wf_68f40358-e23); WIP head b9a83bd3; reviews next.
+- 2026-11-02T02:07:38Z: PAUSED (pacing call); reviews workflow wf_bbdb863e-90a stopped after ~3 min, no results; one check-in at 2026-11-06 19:15 UTC.

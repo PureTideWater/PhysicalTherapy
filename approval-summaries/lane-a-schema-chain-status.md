@@ -48,6 +48,21 @@ returns (2026-11-03 14:00 UTC, possibly 15:00). Briefs: `lanes/lane-b-session-br
   Worker restarted; setup re-run 19:58 UTC (PostgreSQL back; no marker); efb20704 kept as WIP ref
   `co-001/wip-ss01-chain`; **resumed 19:59 UTC** with resumeFromRunId (the stage-1 agent continues from its progress file,
   copied to `approval-summaries/lane-a-wip/progress/sc-m1-ss01.md`).
+- **~03:40 UTC (acting Lane A): wf_a12c973a-c12 done. SS-01 head bb13be1b pushed** (6af518c5 merged #42 6c28d6a2: only
+  the domain model conflicted, regenerated; bb13be1b merged base 43565235, no conflict). SS-01's recreated objects re-read
+  on #42's bodies: audit_event_record keeps #42's 7 reserved actions and adds organization_suspended/_reinstated; #42
+  touches none of SS-01's other objects; **migration 20261108090000 unchanged, marker never used.** Checks: typecheck,
+  lint 1,725, lint:copy 552, lint:logs 1,108, unit 7,160 + 4 skipped, test:db 4 shards 9,567 + 1 skipped, build, stamp,
+  e2e 69 passed (0 flaky), verify-content, synth 0 written, fixtures, **domain model --check: SHA-256
+  3922b6a6bb6d2042f5e4c16342841e150d0cae439b797e8cdb4240436195f019, approval line 7414 (blank; provisional until the
+  PR's final head).** Fresh-clone verifier: ok (two nits: one loose commit-message phrase; the attribution trailer the
+  brief requires). Base has since moved to 4eaf7124 (#92, no migration): taken at SS-01's PR time.
+- **02:15 UTC (acting Lane A): the co-founder's pacing call (7-day limit at warning; resets 2026-11-06 19:00 UTC):
+  finish to the next clean point, spend nothing that does not change the outcome.** Decision: wf_5566bd1c-8eb's script
+  edited (archived copy updated) and resumed so each full suite runs ONCE, on the final tree: 1b's integrator first waits
+  for SS-01 with #42 6c28d6a2 (wf_a12c973a-c12) and merges it, then runs 1b's full suite; the interest integrator runs
+  after 1b's and merges 1b's integrated head first; the two pre-PR fresh-clone verifiers are dropped (each PR's own
+  pipeline step 6 does that). Earlier agents replay from cache; the in-flight ones continue from their progress files.
 - **2026-11-02 01:05 UTC (acting Lane A): both workflows resumed** after the 5-hour limit (~22:00-00:10) and a worker
   restart stopped them; setup re-run (PostgreSQL back; no marker). State at the stop:
   - wf_a12c973a-c12: SS-01 local **bb13be1b** (#42 6c28d6a2 and base 43565235 merged; WIP ref `co-001/wip-ss01-chain`):

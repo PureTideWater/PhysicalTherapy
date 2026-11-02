@@ -1,0 +1,8 @@
+export const meta = {
+  name: 'lane-b-ux-home-figures-pr-body-2',
+  description: 'Publish PR #93 description after the fix round and prove it byte for byte',
+  phases: [{ title: 'Publish' }],
+}
+const F = '/tmp/claude-0/-home-user-PhysicalTherapy/e9e32b44-ea9a-56f5-83b4-9164e617462b/scratchpad/pr93-body.md'
+phase('Publish')
+return await agent(`Publish PR #93's description (PureTideWater/PhysicalTherapy) from the file ${F}. First check it quickly against the code at head 30c055c9 (git -C /home/user/ux-home-figures): every template section of .github/pull_request_template.md present under its exact heading; the quoted UI words match the code's strings (grep each); test counts match /tmp/claude-0/-home-user-PhysicalTherapy/e9e32b44-ea9a-56f5-83b4-9164e617462b/scratchpad/progress/hom-fix-suite.md; the head named is 30c055c9; no model name or identifier; it ends with the Claude Code footer and https://claude.ai/code/session_01FcouKPLmdYyBmbVaUjag2c. Fix any mismatch in the file. Then write it ONLY with the MCP tool mcp__github__update_pull_request (load it with ToolSearch; pullNumber 93; body = the file's exact text without its final newline), never gh api PATCH, and read it back with mcp__github__pull_request_read method get and with gh api repos/PureTideWater/PhysicalTherapy/pulls/93 --jq .body; prove byte equality with cmp. Return what you checked, what you fixed, and the cmp result.`, { label: 'pr93-publish', phase: 'Publish' })

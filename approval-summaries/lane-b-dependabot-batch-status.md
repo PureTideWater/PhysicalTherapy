@@ -215,6 +215,29 @@ base merge needs it (rule 6). WIP refs kept pushed.
 - 2026-11-02T01:02Z: setup re-run (PostgreSQL down). B/C reviews resumed (same run id, cached agents replay); A's fix round
   resumes once PostgreSQL is up.
 
+- 2026-11-02T02:20:00Z: **A's fix round done locally** (wf_416e36ca-397): 11 fix commits + the checker's S1 and N1-N10 (950e8ca8,
+  c7bdcbe4, c30be8ea, 48ba78d4, 442d7a81; the rest description-only); full local suite once at 442d7a81, green: typecheck,
+  lint (1,681 files), lint:logs, verify-content, unit 6,936 passed/1 skipped (root-only skip), golden 376, oracle 687 agree,
+  test:db 9,283 passed/1 skipped over 4 shards (every db file once; the PG18 restore drill re-run on PG16: 7 passed), build,
+  stamp, cdk:diff (synthesized), e2e 64 passed, Stryker: none selected, synth, watched, actions, toolchain, licenses,
+  actionlint, audit; the ANTHROPIC_* environment no longer changes a test (478 + 376 with three set). The local
+  screening:capacity no-Docker form exits 1 on its ten known not-applied checks, identically on base 43565235 (not this
+  PR's; CI's Docker run decides). The pusher held the push: the base moved to 4eaf7124 (#92 merged; shares test-matrix,
+  synth matrix and registry with A in separate places; trial merge clean). Design corrections and proposals 1-8 applied.
+  Per the pacing call no second full suite: wf_ba86e428-276 merges 4eaf7124, re-checks what it touched, pushes once,
+  rewrites the description, then the fresh-clone verification reads CI on that head.
+
+- 2026-11-02T03:00:00Z: A pushed **4e70738d** (02:34:50Z; base 4eaf7124 merged; targeted re-check green: synth 271 cases 0
+  written, watched 542 lines, verify-content, check:fixtures, typecheck, lint 1,691 files, unit 1,878 on synth/gateway/web,
+  no Stryker shard); description rewritten (40,170 characters, read back identical). CI on 4e70738d: 22 runs, 20 success,
+  2 skipped (unit 6,980/1 skipped, db 9,299, e2e 68, golden 376: every difference from the local suite is #92's). Records
+  `A-fix-round.md` and `A-verification.md`. **Verification: NOT VERIFIED** on merge state and description only: #93 merged
+  at 02:42:44Z (base 877e662f), the open-PR count was wrong, and the O9 sizing warning CI raised on 4e70738d (S4 middle run
+  52.0 s; the base itself 51.8 s) was not recorded. Applied the 01:02Z O9 ruling to #90 as written ("blocks the screening's
+  launch, not a merge"). Merge prep launched: wf_7806c9c6-310 (base merge, targeted re-check, one push, description
+  corrected, CI, fresh-clone verification; repeats while the base moves, at most 3 rounds); then the session marks #90
+  ready, waits for approval-of-record's re-run and merges with expectedHeadSha.
+
 ## Waiting on someone
 - The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
 - 1 moderate Dependabot alert on the default branch (GitHub's push message, 2026-11-01 18:2xZ): a person reads it (the API answers 403 to the build). Does not block.

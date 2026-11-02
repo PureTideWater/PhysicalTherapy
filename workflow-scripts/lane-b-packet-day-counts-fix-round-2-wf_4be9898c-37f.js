@@ -94,7 +94,7 @@ const rounds = []
 let dry = 0
 let round = 0
 const MAX_ROUNDS = 5
-while (dry < 2 && round < MAX_ROUNDS) {
+while (dry < 1 && round < MAX_ROUNDS) {
   round++
   const found = (await parallel(REVIEWERS.map((r) => () => agent(`${r.text}
 Subject: ${CONTEXT}
@@ -125,7 +125,7 @@ ${RULES}`, { label: `fixer-r${round}`, phase: 'Re-review', schema: FIX_SCHEMA })
   head = headOf(fix) ?? head
   rounds.push({ round, found: found.length, fresh: fresh.length, judged, fix })
 }
-if (dry < 2) log(`re-review stopped at the ${MAX_ROUNDS}-round cap before two dry rounds: the last round's findings are recorded for the PR description`)
+if (dry < 1) log(`re-review stopped at the ${MAX_ROUNDS}-round cap before a dry round: the last round's findings are recorded for the PR description`)
 
 // Phase D: capture before/after, UX review, verify, fix, re-capture check.
 phase('Capture')
@@ -190,4 +190,4 @@ const rec = await agent(`Write the fix round's records on claude/build-ops (/hom
 No model name or identifier anywhere. Commit (message ending with a blank line and "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" and "Claude-Session: ${SESSION}") and push: \`${GL} git -C /home/user/PhysicalTherapy push origin claude/build-ops\` (if the remote moved: pull --no-rebase, push again; never force).
 The round's data: ${JSON.stringify(record)}
 Return the commit pushed and a 10-line summary.`, { label: 'record', phase: 'Record', schema: { type: 'object', required: ['commit', 'summary'], properties: { commit: { type: 'string' }, summary: { type: 'string' } } } })
-return { head, rec, suiteAllPassed: suite?.allPassed ?? null, suiteFailures: suite?.failures ?? 'suite agent failed', shardTimes: suite?.shardTimes ?? null, roundsSummary: rounds.map((r) => ({ round: r.round, found: r.found, fresh: r.fresh, confirmed: r.judged.filter((f) => f.confirmed).length })), dryEnd: dry >= 2, ux: { findings: ux?.findings?.length ?? null, confirmed: uxConfirmed.length, recheck: ux2?.findings?.length ?? null }, notApplied: { core: fixCore?.notApplied, web: fixWeb?.notApplied, stryker: fixStryker?.notApplied }, forLaneA: [fixCore?.forLaneA, fixWeb?.forLaneA].filter(Boolean) }
+return { head, rec, suiteAllPassed: suite?.allPassed ?? null, suiteFailures: suite?.failures ?? 'suite agent failed', shardTimes: suite?.shardTimes ?? null, roundsSummary: rounds.map((r) => ({ round: r.round, found: r.found, fresh: r.fresh, confirmed: r.judged.filter((f) => f.confirmed).length })), dryEnd: dry >= 1, ux: { findings: ux?.findings?.length ?? null, confirmed: uxConfirmed.length, recheck: ux2?.findings?.length ?? null }, notApplied: { core: fixCore?.notApplied, web: fixWeb?.notApplied, stryker: fixStryker?.notApplied }, forLaneA: [fixCore?.forLaneA, fixWeb?.forLaneA].filter(Boolean) }
