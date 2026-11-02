@@ -2,8 +2,9 @@ import { cents } from '@tp/money';
 import { describe, expect, it } from 'vitest';
 
 import { assemblePacket } from './assemble';
-import { type NarrativeFacts, heldRoles, narrativeFacts } from './facts';
+import { type NarrativeFacts, heldRoles, largestHeld, narrativeFacts } from './facts';
 import type { PacketContentV1, PacketContentV2, RegulationCitation } from './format';
+import type { FigureRole } from './roles';
 import { verifyNarrative } from './verifier';
 import { IDS, SHA, assemblyInput, contractCitation, contractWindowSource, line, promptPayRecord } from './test-support';
 
@@ -15,6 +16,13 @@ import { IDS, SHA, assemblyInput, contractCitation, contractWindowSource, line, 
  * wrong role changes what is held.
  */
 
+/** The figures held as stated per a scope, by `<scope>|<kind>:<value>`, each with its roles. */
+const scoped = (facts: NarrativeFacts) =>
+  Object.fromEntries(
+    [...facts.scoped]
+      .map(([key, roles]) => [key, [...roles].sort().join(' ')] as const)
+      .sort(([a], [b]) => (a < b ? -1 : 1)),
+  );
 const sorted = (facts: NarrativeFacts) => ({
   roles: Object.fromEntries(
     [...facts.roles]
@@ -98,6 +106,42 @@ describe('narrativeFacts', () => {
         nextLevelDeadline: { status: 'unverified', source: 'contract', endsOn: '2027-01-15', cause: 'NEXT_LEVEL_UNCITED' },
       }),
     );
+    // An amount and a count of units are held also as stated per what their record states them per, and nothing else.
+    expect(scoped(narrativeFacts(content))).toEqual({
+      'line|amount:10000': 'calculation expected', // lines 1 and 3 expected and their calculation's step
+      'line|amount:12000': 'calculation expected', // line 2
+      'line|amount:131': 'interest', // interest, row 1
+      'line|amount:1400': 'patient_share', // lines 1 and 3
+      'line|amount:1600': 'patient_share', // line 2
+      'line|amount:174': 'interest', // interest, row 2
+      'line|amount:3000': 'variance',
+      'line|amount:4000': 'variance',
+      'line|amount:5600': 'paid',
+      'line|amount:6400': 'paid',
+      'line|amount:7000': 'allowed',
+      'line|amount:8000': 'allowed',
+      'line|number:10': 'line_units units', // each line's units
+      'line|number:7': 'line_units units',
+      'line|number:8': 'line_units units',
+      'total|amount:10000': 'variance', // the pattern's
+      'total|amount:12000': 'expected', // 97140's
+      'total|amount:14000': 'allowed', // 97110's
+      'total|amount:17600': 'paid', // the lines' paid in total
+      'total|amount:20000': 'expected', // 97110's
+      'total|amount:22000': 'allowed', // the pattern's
+      'total|amount:305': 'interest',
+      'total|amount:32000': 'expected', // the pattern's
+      'total|amount:4000': 'variance', // 97140's
+      'total|amount:4400': 'patient_share', // the patients' shares in total
+      'total|amount:6000': 'variance', // 97110's
+      'total|amount:8000': 'allowed', // 97140's
+      'total|number:17': 'units', // 97110's
+      'total|number:25': 'units', // the pattern's
+      'total|number:8': 'units', // 97140's
+      'unit|amount:-300': 'expected', // the contract's rates, per unit (no per-visit rate)
+      'unit|amount:1200': 'expected',
+      'unit|amount:5000': 'expected',
+    });
     expect(sorted(narrativeFacts(content))).toEqual({
       roles: {
         'amount:-300': 'expected', // parameters: tiers[1].cap_cents
@@ -498,6 +542,28 @@ describe('narrativeFacts', () => {
     expect(roles(facts, 'amount', '30000')).toEqual(['expected']);
   });
 
+  it('holds the lines’ paid amounts and patient shares in total only when each is whole cents, and no total of no lines (CORR-20)', () => {
+    const content = assemblePacket(assemblyInput());
+    const totals = (facts: NarrativeFacts, role: FigureRole) => [...facts.scoped].filter(([key, held]) => key.startsWith('total|amount:') && held.has(role)).map(([key]) => key);
+    expect([totals(narrativeFacts(content), 'paid'), totals(narrativeFacts(content), 'patient_share')]).toEqual([['total|amount:16800'], ['total|amount:4200']]);
+    // A stored version read as it is: a line's amount that is not whole cents, or none, leaves the total out.
+    const first = (paid: string, share: string | null) => {
+      const stored = JSON.parse(JSON.stringify(content)) as { lines: Record<string, unknown>[] };
+      const line = stored.lines[0] as Record<string, unknown> & { calculation: Record<string, unknown> };
+      line.paid_cents = paid;
+      line.calculation.patient_share_cents = share;
+      return narrativeFacts(stored as unknown as PacketContentV2);
+    };
+    for (const paid of ['5600.5', 'x5600', '056']) {
+      expect(totals(first(paid, '1400'), 'paid'), paid).toEqual([]);
+    }
+    expect(totals(first('5600', null), 'patient_share')).toEqual([]);
+    expect(totals(first('0', '0'), 'paid')).toEqual(['total|amount:11200']);
+    // No lines: no total of none.
+    const none = narrativeFacts({ ...(JSON.parse(JSON.stringify(content)) as PacketContentV2), lines: [] });
+    expect([totals(none, 'paid'), totals(none, 'patient_share')]).toEqual([[], []]);
+  });
+
   it('holds only whole cents of a calculation, and nothing for a rounding, a patient share or a rule the version does not state', () => {
     const content = assemblePacket(assemblyInput({ interest: { state: 'QQ', releaseNo: 900001, record: null } }));
     const [first, ...rest] = content.lines;
@@ -513,6 +579,12 @@ describe('narrativeFacts', () => {
     // A whole unrounded amount, a negative one included, is a figure.
     const whole = amounts({ ...content, lines: [{ ...first, calculation: { ...first.calculation, rounding: { rule: 'HALF_UP_CENT', unrounded_cents: '-250', rounded_cents: '-250' } } }, ...rest] });
     expect(whole).toStrictEqual([...before, '-250'].sort());
+    // Each is a line's: a step's amount, the unrounded amount and the rounded one.
+    const own = narrativeFacts({
+      ...content,
+      lines: [{ ...first, calculation: { ...first.calculation, steps: first.calculation.steps.map((step) => ({ ...step, amount_cents: '777' })), rounding: { rule: 'HALF_UP_CENT', unrounded_cents: '-250', rounded_cents: '-300' } } }, ...rest],
+    });
+    expect(['777', '-250', '-300'].map((value) => [...heldRoles(own, 'amount', value, 'line')])).toEqual([['calculation'], ['calculation'], ['calculation']]);
     // No rounding and no patient share: no figure for either, nor a total of the patients' shares (one is not known),
     // and nothing else changes.
     const without = narrativeFacts({ ...content, lines: [{ ...first, calculation: { ...first.calculation, rounding: null, patient_share_cents: null } }, ...rest] });
@@ -563,5 +635,23 @@ describe('narrativeFacts', () => {
     // A tp-packet/2 version's window days are the window's days only, never a number of any other role.
     expect(roles(narrativeFacts(current), 'number', '3650')).toEqual(['window_days']);
     expect(values(facts, 'date')).toEqual(values(narrativeFacts(current), 'date'));
+  });
+});
+
+describe('largestHeld', () => {
+  const base = narrativeFacts(assemblePacket(assemblyInput()));
+  const holding = (...entries: (readonly [string, readonly FigureRole[]])[]): NarrativeFacts => ({ ...base, roles: new Map(entries.map(([key, held]) => [key, new Set(held)])) });
+
+  it('is the largest value of the kind the inputs hold in any of the roles, whatever their order', () => {
+    expect(largestHeld(holding(['number:5', ['claims']], ['number:3', ['claims']]), 'number', ['claims'])?.toString()).toBe('5');
+    expect(largestHeld(holding(['number:3', ['claims']], ['number:5', ['claims']]), 'number', ['claims'])?.toString()).toBe('5');
+    // Any one of the roles holds it.
+    expect(largestHeld(holding(['number:3', ['claims']], ['number:4', ['patients']]), 'number', ['lines', 'claims'])?.toString()).toBe('3');
+  });
+
+  it('reads the kind given alone, and gives null when the inputs hold none in the roles', () => {
+    expect(largestHeld(holding(['number:3', ['claims']], ['amount:9000', ['claims']]), 'number', ['claims'])?.toString()).toBe('3');
+    expect(largestHeld(holding(['number:3', ['lines']]), 'number', ['claims'])).toBeNull();
+    expect(largestHeld(holding(), 'number', ['claims'])).toBeNull();
   });
 });

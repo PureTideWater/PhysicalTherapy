@@ -7,7 +7,8 @@
   (the tp-packet/2 facts); reverses none of their rulings.
 - **Date:** 2026-10-28; one cue's role per figure, quoted figures in their own role and the gateway's proof against
   the base, 2026-11-01 (the review of 2026-11-01's fix round); a stored version read again at each step and on each
-  screen, and the editor's words, 2026-11-01 (the same fix round, its second part)
+  screen, and the editor's words, 2026-11-01 (the same fix round, its second part); the reader and its words split
+  into layers and families, each mutated in a shard of its own, 2026-11-02 (its third part)
 - **Deciders:** the build (Lane B), on product observation (b) of the test-flakes item; the founder, on the pull
   request's review
 - **PRD sections:** 12 (The packet: "any figure that is not in the input fails verification"), 14
@@ -69,7 +70,9 @@ may be either. Two decimals without a dollar sign before a count's noun or "days
 An amount, a percentage, a date (a month, a day of a month, a year), a day count and a page each take one cue's roles,
 found in this order (`roles.ts` names each step):
 
-1. "respectively" maps a list's figures to the cues before it, in order;
+1. "respectively" maps a list's figures to the cues before it, in order; with no cue before the list, the steps after
+   read each figure (until the fix round's third part such a list was read in no role, which every figure passed:
+   "These were $300.00 and $91.00, respectively" passed an invented $91.00);
 2. the cue right after the figure ("the $30.00 difference", "$5.76 in interest", "9% a year", "3650 days late", "2025
    rates"), or the noun it completes with "of" ("a shortfall of $90.00");
 3. the nearest cue before it in its own clause, the longer at the same end: a participle after a noun is the noun's
@@ -162,10 +165,22 @@ verifier's, and it is at least as strict as the gateway's own reading was before
 (`narrative-roles.base.fixture.ts`), over 246 generated swaps and every misstated example of the review, and requires
 each one it caught to fail the gateway (PE-2).
 
-**The reader's words are their own module and built on each read** (`roles-words.ts` `vocabulary()`), not when the
+**The reader's words are their own module and built on each read** (`roles-words/` `vocabulary()`), not when the
 module loads, so each word is a mutant only the tests that read it run (a value built at load is a static mutant
-every test reruns: 1,570 of the reader's first 1,988). The reading and its words are mutated in two shards of their own
-(`packets-roles`, `packets-words`): in one they took 33 minutes on 4 shared CPUs, over the job's 30.
+every test reruns: 1,570 of the reader's first 1,988). The reading and its words are mutated in shards of their own,
+each within the mutation job's 30 minutes (the fix round of 2026-11-01, its third part, PE-5): the reading in three, by
+layer (`roles-reader/`: the walk over the tokens with `roles.ts` itself, `packets-roles`; the cues, `packets-roles-cues`;
+the numbers' words, `packets-roles-numbers`), and the words in five, by family, each its own file built on each call
+(`roles-words/`: the labels and nouns, the amounts' cues, the day counts', pages' and percentages' cues, the dates'
+cues, and the prose words, `packets-words-labels`, `-amounts`, `-days`, `-dates` and `-prose`). In two shards the
+reading (1,917 mutants after the fix round's first part) ran past 40 minutes and the words (1,507) past the job's 30.
+The rest of packets' set, grown to 1,515 mutants and about 24 minutes by the same fix round, runs in three: the
+verifier's check with the text it reads (`packets-verifier`), the facts a narrative is held to with the payer's names
+and the placeholders (`packets-facts`), and the arithmetic (`packets-rest`). A mutation run's test files run shortest
+first (`vitest.mutation.config.ts`) and its properties stop at their first counterexample, unshrunk
+(`tools/stryker/seed-setup.ts`), so a mutant meets the unit tests that kill it before the reader's properties. Every
+packets shard ran in 11 minutes or less on 4 shared CPUs on 2026-11-02 (`docs/runbooks/ci.md`), and packets scored
+98.84% (7,556 of 7,644; its 88 undetected mutants are the recorded equivalents), up from 98.59%.
 
 ## Alternatives considered
 

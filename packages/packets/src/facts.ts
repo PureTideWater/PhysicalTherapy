@@ -150,8 +150,8 @@ class Facts {
     }
   }
 
-  year(role: FigureRole, value: number): void {
-    this.add('year', String(value), role);
+  year(role: FigureRole, value: string): void {
+    this.add('year', value, role);
   }
 
   /**
@@ -202,7 +202,8 @@ function parameterFigures(value: unknown, facts: Facts, scopes: readonly Scope[]
 
 /** The sum of amounts in cents, or null when any is not whole cents or none is given. */
 function sum(amounts: readonly (string | null | undefined)[]): string | null {
-  const whole = amounts.filter((amount): amount is string => typeof amount === 'string' && /^(?:0|-?[1-9]\d*)$/.test(amount));
+  // Whole cents only: null and undefined are no digits ("null", "undefined").
+  const whole = amounts.filter((amount): amount is string => /^(?:0|-?[1-9]\d*)$/.test(String(amount)));
   return whole.length === 0 || whole.length !== amounts.length ? null : centsToString(sumCents(whole.map(parseCents)));
 }
 
@@ -220,8 +221,8 @@ export function narrativeFacts(content: PacketContent): NarrativeFacts {
     facts.number('release', release.release_no);
   }
 
-  // A contract's rate is per unit, or per visit (a line) for a per-visit rate.
-  const rate: readonly Scope[] = citation.kind === 'contract' && citation.method === 'PER_VISIT' ? ['unit', 'line'] : ['unit'];
+  // A contract's rate is per unit, or per visit (a line) for a per-visit rate (a regulation's method is MA_NONCONTRACTED).
+  const rate: readonly Scope[] = citation.method === 'PER_VISIT' ? ['unit', 'line'] : ['unit'];
   if (citation.kind === 'contract') {
     facts.number('version', citation.version_no);
     facts.page('citation_page', citation.page);
@@ -250,7 +251,7 @@ export function narrativeFacts(content: PacketContent): NarrativeFacts {
     facts.percent('contract_percent', percent);
   }
   // The fee schedule's year: the contract's locked year, or the service dates' (the schedule in effect for them).
-  const scheduleYears = pattern.contract_years.length > 0 ? pattern.contract_years : content.lines.map((line) => Number.parseInt(line.service_date.slice(0, 4), 10));
+  const scheduleYears = pattern.contract_years.length > 0 ? pattern.contract_years.map(String) : content.lines.map((line) => line.service_date.slice(0, 4));
   for (const year of scheduleYears) {
     facts.year('schedule_year', year);
   }

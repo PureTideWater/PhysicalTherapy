@@ -108,6 +108,14 @@ describe('verifyNarrative', () => {
     expect(verify('Section 4.2 pays within 90 days under G.S. 58-3-225 [1].', quoted).passed).toBe(false);
   });
 
+  it('holds a "respectively" list with no cue before it to the inputs, figure by figure, never to no role', () => {
+    // Read in no role, each figure passed whatever it was (every one of no roles holds it); the steps after read each.
+    for (const narrative of ['These were $300.00 and $91.00, respectively [3].', '$91.00 and $210.00 were allowed and paid, respectively [3].']) {
+      expect(flagged(narrative, verify(narrative)), narrative).toEqual(['$91.00']);
+    }
+    expect(verify('These were $300.00 and $210.00, respectively [3].')).toMatchObject({ passed: true, mismatches: [] });
+  });
+
   it('accepts the contract window’s days only as days and its page only as a page, never as a count (tp-packet/2)', () => {
     const window = assemblePacket(
       assemblyInput({
@@ -679,3 +687,15 @@ describe('a figure stated in its own role, or as a quoted text holds it (CAS-44)
     }
   });
 });
+
+describe('a partitive’s part', () => {
+  it('is held to the number after it, else to the largest count its roles hold, and fails when they hold none', () => {
+    // 4 of 5: the part is at most the 5 stated after it (which itself is no claim count), never the 3 claims held.
+    expect(flagged('We note 4 of the 5 claims were short [1].', verify('We note 4 of the 5 claims were short [1].'))).toEqual(['5']);
+    expect(verify('We note 2 of them here [1].').passed).toBe(true);
+    // No count held in the pronoun's roles: the part fails.
+    const none = { ...narrativeFacts(content), roles: new Map() };
+    expect(flagged('We note 2 of them here [1].', verifyNarrative('We note 2 of them here [1].', none, []))).toEqual(['2']);
+  });
+});
+
