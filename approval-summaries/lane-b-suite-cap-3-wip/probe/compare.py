@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Compares the base's and the candidate's dumps of the same seed, state and shape (dump.py output): per pass,
 identical or the first differing rows by table. Usage: compare.py <base results dir> <try results dir>"""
-import glob, json, os, sys
+import glob, json, os, re, sys
+UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
 base, cand = sys.argv[1], sys.argv[2]
 for path in sorted(glob.glob(os.path.join(cand, '*_try-*.dump.ndjson'))):
     name = os.path.basename(path).replace('_try-', '_base-')
@@ -13,10 +14,12 @@ for path in sorted(glob.glob(os.path.join(cand, '*_try-*.dump.ndjson'))):
         keep, settle = [], []
         for line in lines:
             row = json.loads(line)
+            if row['_t'] == 'source_document' and isinstance(row.get('s3_key'), str):
+                row['s3_key'] = UUID.sub('<id>', row['s3_key']); line = json.dumps(row, sort_keys=True)
             if row['_t'] == '_check':
                 checks.append(row['settle_entries_in_match_order']); continue
             if row['_t'] == 'ledger_entry' and row.get('stage') in ('posted', 'deposited'):
-                row.pop('seq', None); settle.append(json.dumps(row, sort_keys=True))
+                row.pop('seq', None); row.pop('_id', None); settle.append(json.dumps(row, sort_keys=True))
             else:
                 keep.append(line)
         return keep + sorted(settle)

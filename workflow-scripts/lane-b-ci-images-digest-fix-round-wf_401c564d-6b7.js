@@ -67,8 +67,9 @@ const VCHK = { type: 'object', properties: {
   checked: { type: 'string' } }, required: ['resolved', 'loosened', 'issues', 'checked'] }
 let buildReport = String(build)
 let checks = []
+let pendingIds = DISPOSITIONS.map(d => d.id)
 for (let round = 1; round <= 3; round++) {
-  const perD = DISPOSITIONS.map(d => () => agent(`${COMMON}
+  const perD = DISPOSITIONS.filter(d => pendingIds.includes(d.id)).map(d => () => agent(`${COMMON}
 
 You are an ADVERSARIAL VERIFIER of one fix in #86's fix round. Assume it is wrong until you show it right. The builder's report:
 === BUILD ===
@@ -84,8 +85,13 @@ You are the WHOLE-DIFF ADVERSARY for #86's fix round. The builder's report:
 ${buildReport}
 === END ===
 In a fresh clone /home/user/fx-imgdigest-whole-${round} (read only; fetch refs/heads/${WIP}; check out the reported head), read git diff b2a41a00 <head> whole, and the full T1–T6 code at the head. Hunt for: a regression the fixes introduced (a rule now passing something it refused before; a fixture weakened; an assertion deleted), an unhandled place (composite steps, reusable workflows, matrix includes, defaults.run, services, container options), a bound that is wrong in bytes, a resolver that silently resolves nothing (an empty list passing), flakiness (ordering, file-system order, timing), performance (the test file's runtime before and after), and documents that now disagree with the code. Run the whole unit project's tools tests and the typecheck under the lock. Remove the clone. ${SAVE('fix-check-whole-' + round + '.md', 'what was checked and found')}`, { label: `check:whole:${round}`, phase: 'Check', schema: VCHK })
-  checks = (await parallel([...perD, whole])).filter(Boolean)
+  const raw = await parallel([...perD, whole])
+  const ran = DISPOSITIONS.filter(d => pendingIds.includes(d.id)).map(d => d.id).concat(['whole'])
+  checks = raw.filter(Boolean)
   const bad = checks.filter(c => !c.resolved || c.loosened || c.issues.length)
+  // RESUMED 2026-11-02 06:20 UTC (the 7-day pacing call): a later round re-checks only the dispositions still open, plus the whole diff
+  pendingIds = ran.filter((id, i) => id !== 'whole' && (!raw[i] || !raw[i].resolved || raw[i].loosened || raw[i].issues.length))
+  if (raw.some(r => !r)) throw new Error(`check round ${round}: ${raw.filter(r => !r).length} verifier(s) returned nothing; resume this run`)
   if (!bad.length) { log(`check round ${round}: every fix verified`); break }
   if (round === 3) { log(`check round 3 still has ${bad.length} open; they go to the integrator`); break }
   log(`check round ${round}: ${bad.length} verifier(s) found issues; fixing`)
@@ -98,6 +104,7 @@ In ${WT} (at the WIP head), fix each real issue in a new commit with its red/gre
 ${COMMIT_TAIL}
 ${SAVE('fix-repair-' + round + '.md', 'each issue and what was done')}
 Return the new head sha, per issue what changed or why not, and the check results.`, { label: `repair:${round}`, phase: 'Check' })
+  if (!fix || !String(fix).trim()) throw new Error(`repair round ${round} returned nothing; resume this run`)
   buildReport += `\n\n=== REPAIR ROUND ${round} ===\n${fix}`
 }
 

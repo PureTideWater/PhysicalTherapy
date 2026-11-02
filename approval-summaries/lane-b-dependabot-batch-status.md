@@ -41,6 +41,14 @@ the outcome: one full suite per head, no review loops past dry, no follow-on ite
 stop at a clean point and report. For B: no wait for the merge-time version windows; the lockfile is regenerated only when a
 base merge needs it (rule 6). WIP refs kept pushed.
 
+ORCHESTRATOR RULING (2026-11-02 06:22 UTC): this session owns the FRM-01 fix as **PR D** of the batch: branch
+`co-001/test-flakes-2` from the latest base, tests only: (1) FRM-01's `shownCount` wait becomes monotonic (data-shown >= N),
+with a test proving the old exact wait could hang (the forced reproduction); (2) if cheap, the second flake
+`apps/worker/src/report/csv-arena.test.ts:151` (CAS-41.3, timed out at its 5 s default under runner load on #92's merge run)
+gets an explicit timeout sized from its measured runtime, or the reason why not. No new test-matrix IDs. The claim joins this
+item's row. Pipeline: draft PR, two reviews (CI/test infrastructure; a skeptic of the race analysis), one fix round,
+verification, merge when green. Order: after B and C if it slows them, otherwise as soon as ready.
+
 ## Now (2026-11-01T14:50:00Z)
 - **Stage: not started; session starting.** No pipeline stage is done: design, build, draft PRs, reviews, fix round,
   verification, merge, then closing the bot PRs.
@@ -238,6 +246,49 @@ base merge needs it (rule 6). WIP refs kept pushed.
   corrected, CI, fresh-clone verification; repeats while the base moves, at most 3 rounds); then the session marks #90
   ready, waits for approval-of-record's re-run and merges with expectedHeadSha.
 
+- 2026-11-02T03:55:00Z: **B's and C's reviews done** (wf_91a35eba-252, 3 rounds each, 35 agents, none refuted; records
+  `B-review-{ci-infra,security-supply}.md` and `C-review-{ci-infra,security-supply}.md` committed). **B #94:** 25 findings, 0 B,
+  7 S, 18 N: O9 not recorded; no test that the installed CDK CLI still honours the three settings; cdk.json's top-level
+  `notices: false` hides CDK's security notices from a person's deploy (the scripts already pass --no-notices: drop it, the
+  safer option); test:golden stubs Textract, so it cannot evidence the client-textract/@smithy/core codec moves; the
+  merge-time @smithy/core 3.38.1 step does nothing or moves unreviewed tooling (dropped under the pacing call; 3.38.1 with the
+  next triage). **C #91:** 36 findings (22 distinct: 0 B, 4 S, 18 N), the change itself holds (63 direct dependencies, each in
+  one group under dependabot-core 85379652); the S are description and merge mechanics: merge order vs the rulings, C's own
+  merge starts Dependabot within seconds (a post-merge read of those runs), the resolved B x C runbook paragraph written down,
+  O9. **Fix rounds for B and C launched together**: wf_66dd34d8-a6a (the fix-round script once per PR). A's merge prep
+  (wf_7806c9c6-310) in round 2 (description only: the O9 note's claim about watched paths corrected; base unchanged 877e662f;
+  CI green on cf124313).
+
+- 2026-11-02T03:52:00Z: **PR A MERGED: #90 as 88708069** (merge commit; expectedHeadSha cf124313). Before it: merge prep
+  wf_7806c9c6-310, 2 rounds: base 877e662f merged in (cf124313), targeted re-check green, description corrected (O9 per the
+  ruling, with the six watched paths A changes and the heads with and without the change; exact conflict list); CI green on
+  cf124313 (24 runs: 22 success, 2 skipped; unit 7,013, db 9,306, e2e 68, golden 376); fresh-clone verification **VERIFIED**
+  (round 2; record `A-verification.md`). Marked ready 03:49Z; approval-of-record re-ran on ready (success 03:49:15Z); #94
+  (A's only conflicting PR) was a draft and behind, so no ready PR was jumped. **Dependabot #87 closed** with a comment
+  naming #90 and 88708069. Unsubscribed from #90; main checkout fast-forwarded to 88708069 and installed; A's worktree and
+  local branch removed (remote branch and WIP ref `co-001/wip-dependabot-batch-a` stay). Push runs of 88708069 being read.
+
+- 2026-11-02T04:10Z: **the ci push run of 88708069 is red** (run 41386010790; unit job 125086906641): one browser test,
+  `apps/web/src/components/action-form.browser.test.tsx` FRM-01 (S-SEC-2, :366), timed out at 30 s; 7,012 passed; mutation and
+  screening-capacity push runs green. Investigation wf_63290a32-038 (read only): **not #90's** (88708069, cf124313 and the PR's
+  merge ref share tree c7d2d26a); the root cause is a race in the test: its helper `shownCount` waits for the exact value
+  `body[data-shown="1"]`, which the code under test changes to "2" about 35-50 ms later on purpose, while Playwright 1.64.1
+  polls waitForSelector at about 0/20/70/170/270 ms then every 500 ms, so a missed window hangs until vitest's 30 s timeout;
+  reproduced (forced by delay band, and unforced once in 180 runs); CI history 1 timeout in 48 executions since 2026-10-28.
+  docs/runbooks/ci.md:150-151 allows a re-run only for an infrastructure failure, so no re-run; the fix is a tests-only change
+  (a monotonic ">= N" wait), proposed to the orchestrator as its own item. Its skeptic was stopped by the window; resumed 06:20Z.
+- 2026-11-02T04:45Z (recorded 06:20Z): the account's 5-hour window stopped the B/C fix rounds again (reset 05:50Z). Done: B's
+  fixer (all 25 findings; base 877e662f then 88708069 merged, the model-gateway manifest resolved keeping both ranges) and C's
+  fixer and checker (all 36; base merged twice, last 88708069). Not done: B's checker, both suites and pushes. B's last merge
+  commit kept git's "# Conflicts:" lines after the attribution lines; unpushed, so it was replaced by f43f809d (same tree and
+  parents, clean message) with a soft reset. WIP refs: `co-001/wip-dependabot-batch-b` = f43f809d, `-c` = a84a498b. Setup
+  re-run (PostgreSQL down); fix rounds resume next (wf_66dd34d8-a6a, same run id).
+
+- 2026-11-02T06:25:00Z: PR D ruling recorded (top). `co-001/test-flakes-2` created on origin at 88708069 through the hook.
+  C's saved head is b1fd5df1 (the suite stage had committed check N2 and N3 before the stop), not a84a498b as logged above.
+  Plan for D: design from the FRM-01 investigation and its skeptic (the design's reviewer), plus a CAS-41.3 runtime
+  measurement; build after B's and C's full suites, so D does not slow them (all heavy work shares one lock).
+
 ## Waiting on someone
 - The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
 - 1 moderate Dependabot alert on the default branch (GitHub's push message, 2026-11-01 18:2xZ): a person reads it (the API answers 403 to the build). Does not block.
@@ -306,4 +357,4 @@ From PR A's reviews and fix round (2026-11-02; the description of #90 names this
    (security-supply P12); design P6 (security-supply P13); the design's record names (both P14).
 
 ## Next step
-Next: A's fix round when its reviews return; B's and C's fix rounds when wf_91a35eba-252 returns; then fresh-clone verifications; A and B merge when ready (20:36Z rule), C after #86.
+Next: read #90's push runs; B's and C's fix rounds (wf_66dd34d8-a6a) -> their merge prep (merge-prep script with B/C args) -> B merges when ready (it must take A's merge: conflict in packages/model-gateway/package.json, keep both ranges, regenerate the lockfile), C after #86 (deadline guard 2026-11-04 12:00Z); close #88 and #89 when B merges; after C merges, read the Dependabot runs its dependabot.yml change starts.

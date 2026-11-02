@@ -14,3 +14,8 @@
   (b) pre-existing on interest branch: route-tests world ledger-world.ts inserted a one-record interest match (claim only), which 20261110 skips (RETURN NULL) -> undefined.id. EDITED: PLB L6 (-50, ref SYNCCNROUTE0003) on adjusted remittance, claim match no_change of case line to interest claim, interest match with both records, entry evidence provider_adjustment.
   restore-drill skipped (pg_dump 16) -> rerun with PG_BIN_DIR=/opt/pg18/bin.
   Shards 2-4 of run A ran partly during the edits: rerun all 4 after committing the fix.
+- run B: test fixes committed (see git log -1 after c18a847e). Targeted rerun of the 4 failed files earlier: 4 files/660 tests pass. Next: drop old tp_intmerge_* dbs, 4 shards on fresh tp_intmerge_s{1..4}b.
+- run B shard1 pass:  Test Files 35 passed (35); Tests 3332 passed | 1 skipped (3333);
+- run B shard2 pass:  Test Files 35 passed (35); Tests 2184 passed (2184);
+- run B shard3 interrupted (no results; session cut). Rerunning shards 3,4 on fresh tp_intmerge_b3/b4 via int-merge-dbB34.sh (PG_BIN_DIR=/opt/pg18/bin)
+- 02:08 forced to report before shards 3/4 finished; synth --all, fixtures check, restore-drill rerun with PG_BIN_DIR, push still pending

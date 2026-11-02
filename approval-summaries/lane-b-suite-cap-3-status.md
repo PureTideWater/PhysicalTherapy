@@ -10,29 +10,38 @@ module). No migration timestamp and no fixture release are reserved; this item o
 written by this session's design workflow): `designs/lane-b-suite-cap-3-reconcile.md`.
 
 ## Now
-- 2026-11-01 17:00 UTC: container set up (setup-container OK; Node v24.22.0 after moving the base image's v24.22.1 aside);
-  branch re-cut at 83d71fd6 and pushed; worktree installed.
-- 2026-11-01 17:03 UTC: design workflow wf_4bc31523-700 running (`workflow-scripts/lane-b-suite-cap-3-design-wf_4bc31523-700.js`,
-  adapted from wf_860fa29e-3e1): code map (base and e0646746) beside a real-size profile (shapes: postings only and step 7b;
-  schema states (a) base, (b) + claim_by_superseded, (c) + 1b's sections 3-6; N 2,000, 6,000 and the largest feasible; private
-  cluster port 5494 under /tmp/laneb-suitecap3-pg-*), then the design (fixes probed in ${SP}/cap3-try), two review lenses
-  (payment-engine; security with concurrency and capacity), each finding adversarially verified, revision, completeness critic.
-  Agents keep progress in the session scratchpad's progress/cap3-*.md (SP = /tmp/claude-0/-home-user-PhysicalTherapy/
-  6c15628c-0d1e-52dc-840b-36ff1c157316/scratchpad). Check-in 22:11 UTC (trig_01557eo6ZaxAEGmh24yU9EGk). If stopped in this
-  session: resumeFromRunId wf_4bc31523-700; if the session is lost, rerun the archived script from scratch.
-  Next: commit the design; then builders, draft PR.
-- 2026-11-01 19:58 UTC: the account's 5-hour limit (reset 19:10 UTC) stopped wf_4bc31523-700 after the code map (complete;
-  progress/cap3-map.md); the profile had reached 2,000 lines in all states and 6,000 state (c) step 7b (1,486.4 s) when it
-  stopped, and the machine restarted. Setup re-run (OK); the run resumed from wf_4bc31523-700 with a RESUMED note in the
-  profile prompt (the map replays from cache). Check-in moved to 2026-11-02 01:08 UTC (trig_018BPysB9zh2e2rDx18q614x).
-  Early figures (2,000 lines, realistic spread): step 7b shape a 262.5 s, b 224.2 s, c 208.4 s; postings only ~65 s in each state.
-- 2026-11-02 01:05 UTC: the 5-hour limit stopped the resumed run again (reset 00:10 UTC) with the profile still running, and the
-  machine restarted again. Profile progress, probe scripts and result figures pushed as WIP to
-  `approval-summaries/lane-b-suite-cap-3-wip/` (synthetic only; IDs, counts, times). Profile so far: 6,000 lines step 7b
-  1,653.3 s (a), 1,486.4 s (c); 10,000 lines (c) 3,412.1 s; postings only 6,000 (a) 264.7 s; with realistic planner statistics
-  (statsx) 2,000 (c) 143.8 s, 6,000 (c) 1,035.3 s: the empty-table cached trigger plans are one term, the worker's per-line
-  reads (claimLines, byControl, byPatient, settle, single-row stage inserts) the rest. Setup re-run; resuming from
-  wf_4bc31523-700 with the profile told to wrap up.
+**PAUSED 2026-11-02 04:05 UTC** on the orchestrator's pacing call (02:10 UTC, the co-founder's: the account's 7-day limit at its
+warning level, resets Fri 2026-11-06 19:00 UTC). Resume only when the orchestrator says so. Only check-in: 2026-11-06 19:15 UTC
+(trig_01HArjxdYb2yesXHFKy8JJkq).
+
+**Stage:** pipeline stage 1 (design), with the design WRITTEN and NOT YET REVIEWED. Workflow wf_4bc31523-700 finished Scout
+(code map, profile) and Design, and was stopped (TaskStop) before its Review phase, as the pause asked.
+- Design: `designs/lane-b-suite-cap-3-reconcile.md` (838 lines; committed with this entry, pre-review).
+- Candidate code (the design's probe, not a build): WIP ref `co-001/wip-suite-cap-3` at 956b32ef (on 83d71fd6; remittances.ts,
+  stages.ts, postings.ts). Branch `co-001/suite-cap-3-reconcile` is still at 83d71fd6.
+- WIP records: `approval-summaries/lane-b-suite-cap-3-wip/` (map, profile, design progress, probe scripts and README, results).
+  The probe's seeds and the private cluster are gone with the container's /tmp at any restart; the README re-creates them.
+
+**Exact next step on resume:**
+1. Re-run setup with `co-001/suite-cap-3-reconcile:/home/user/suite-cap-3-reconcile`.
+2. If this same session resumes: `Workflow({scriptPath: <session>/workflows/scripts/lane-b-suite-cap-3-design-wf_4bc31523-700.js,
+   resumeFromRunId: 'wf_4bc31523-700'})`; Scout and Design replay from cache and the Review phase (payment-engine and security
+   lenses, each finding adversarially verified), Revise and the completeness critic run. If a new session resumes: run a
+   review-revise-critic workflow on the committed design (the archived script's last three phases, with SP changed), restoring
+   cap3-probe from the WIP folder and the candidate from `co-001/wip-suite-cap-3`.
+3. Commit the revised design; then builders (from the WIP candidate plus CAS-49 to CAS-51, ADR 0087), the draft PR, and on.
+
+**Design in short (pre-review):** D1 candidates found once per round for the whole pass (one statement per round by control
+number, one per pass by patient, each claim decrypted once); D2 each claim's lines read once per pass (`claimLines`' SQL
+unchanged, so the interest fix's `CLAIM_LINES` copy stays valid); D3 a pass's stage events in one multi-row INSERT in today's
+order; D5-D7 and D15 four quadratic TypeScript loops made linear. Matching rules, amounts, order and locks unchanged; nothing
+under packages/ledger/src changes. ADR 0087 needed (D12). Probed: step 7b, state (c) (1b applied): 2,000 lines 208.4 -> 60.2 s,
+6,000 1,486.4 -> 378.3 s, 10,000 3,412.1 -> 1,058.4 s; the pass's own part linear at 5.1-5.7 ms a line; the rest is the
+ledger_entry triggers (For Lane A below). Decrypts at 2,000 lines 144,000 -> 3,500. Writes identical row for row to the base in
+seven pairs at 2,000; reconcile/report db tests (175, LED-01 to LED-18, oracle, CAS-41) and unit (239) pass on the candidate.
+
+**Merge rule now (the orchestrator's 20:36 ruling, relayed 2026-11-02 01:00 UTC):** a verified, green PR merges as soon as it is
+ready; only conflicting PRs keep the section-6 order.
 
 ## Corrections of the 2026-10-28 record (stale facts; the 2026-10-28 session and its scratchpad are lost)
 1. Session and orchestrator: now this session, under Lane B's orchestrator, from 2026-11-01 (was session_019i9ifDUYaz9Hta77Vukkzo
@@ -59,7 +68,13 @@ written by this session's design workflow): `designs/lane-b-suite-cap-3-reconcil
 - None yet.
 
 ## For Lane A
-- None yet (the design writes any with exact DDL and measured gain).
+- **`ledger_line_net` rewrite** (design section 14.1, exact DDL there; a ledger function, so it needs a founder freeze
+  exception). The two LEFT JOINs on reversal/adjustment targets become one correlated subquery per row; same answer for every
+  line and stage. Measured on top of this item's worker fix (step 7b, state (c) -> (m)): 2,000 lines 60.2 -> 21.6 s, 6,000
+  378.3 -> 101.2 s, 10,000 1,058.4 -> 263.3 s; writes identical to the base at 2,000. `ledger_line_stage()` has the same two
+  joins and takes the same rewrite in the same migration (not measured apart; 1-5 s a pass after D3).
+- Measured and rejected: `ledger_entry (service_line_id, stage)` index (no gain).
+- Nothing else beyond 1b's D15 (`claim_by_superseded`), cited.
 
 ## Waiting on someone
 - Founder: a ledger freeze exception, only if the design wants a ledger-table change (that part goes for Lane A; does not
@@ -68,6 +83,7 @@ written by this session's design workflow): `designs/lane-b-suite-cap-3-reconcil
 - Founder: runbook 3i and `APPROVAL_REVIEW_REQUIRED` (until then merge on green CI after the verification; does not block).
 
 ## Log
+- 2026-11-02 04:05 UTC: PAUSED (weekly-limit pacing). Design written (pre-review), committed; candidate on WIP ref co-001/wip-suite-cap-3 956b32ef.
 - 2026-11-02 01:05 UTC: stopped again by the 5-hour limit; WIP pushed; resumed.
 - 2026-11-01 19:58 UTC: design workflow stopped by the 5-hour limit after the map; resumed.
 - 2026-11-01 17:03 UTC: design workflow wf_4bc31523-700 launched.
