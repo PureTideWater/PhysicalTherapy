@@ -260,6 +260,22 @@ base merge needs it (rule 6). WIP refs kept pushed.
   naming #90 and 88708069. Unsubscribed from #90; main checkout fast-forwarded to 88708069 and installed; A's worktree and
   local branch removed (remote branch and WIP ref `co-001/wip-dependabot-batch-a` stay). Push runs of 88708069 being read.
 
+- 2026-11-02T04:10Z: **the ci push run of 88708069 is red** (run 41386010790; unit job 125086906641): one browser test,
+  `apps/web/src/components/action-form.browser.test.tsx` FRM-01 (S-SEC-2, :366), timed out at 30 s; 7,012 passed; mutation and
+  screening-capacity push runs green. Investigation wf_63290a32-038 (read only): **not #90's** (88708069, cf124313 and the PR's
+  merge ref share tree c7d2d26a); the root cause is a race in the test: its helper `shownCount` waits for the exact value
+  `body[data-shown="1"]`, which the code under test changes to "2" about 35-50 ms later on purpose, while Playwright 1.64.1
+  polls waitForSelector at about 0/20/70/170/270 ms then every 500 ms, so a missed window hangs until vitest's 30 s timeout;
+  reproduced (forced by delay band, and unforced once in 180 runs); CI history 1 timeout in 48 executions since 2026-10-28.
+  docs/runbooks/ci.md:150-151 allows a re-run only for an infrastructure failure, so no re-run; the fix is a tests-only change
+  (a monotonic ">= N" wait), proposed to the orchestrator as its own item. Its skeptic was stopped by the window; resumed 06:20Z.
+- 2026-11-02T04:45Z (recorded 06:20Z): the account's 5-hour window stopped the B/C fix rounds again (reset 05:50Z). Done: B's
+  fixer (all 25 findings; base 877e662f then 88708069 merged, the model-gateway manifest resolved keeping both ranges) and C's
+  fixer and checker (all 36; base merged twice, last 88708069). Not done: B's checker, both suites and pushes. B's last merge
+  commit kept git's "# Conflicts:" lines after the attribution lines; unpushed, so it was replaced by f43f809d (same tree and
+  parents, clean message) with a soft reset. WIP refs: `co-001/wip-dependabot-batch-b` = f43f809d, `-c` = a84a498b. Setup
+  re-run (PostgreSQL down); fix rounds resume next (wf_66dd34d8-a6a, same run id).
+
 ## Waiting on someone
 - The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
 - 1 moderate Dependabot alert on the default branch (GitHub's push message, 2026-11-01 18:2xZ): a person reads it (the API answers 403 to the build). Does not block.
