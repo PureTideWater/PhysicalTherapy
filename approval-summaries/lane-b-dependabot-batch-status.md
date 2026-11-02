@@ -289,6 +289,17 @@ verification, merge when green. Order: after B and C if it slows them, otherwise
   Plan for D: design from the FRM-01 investigation and its skeptic (the design's reviewer), plus a CAS-41.3 runtime
   measurement; build after B's and C's full suites, so D does not slow them (all heavy work shares one lock).
 
+- 2026-11-02T08:55:00Z: **#42 merged** (22789493, 07:34:57Z), then #95 (2affb854). After #90's merge Dependabot closed #89
+  (04:07:49Z) and #88 (04:10:18Z) and opened #97 (minor-and-patch, 17 updates): #88/#89 get only a comment when B merges; #97
+  is left to the next weekly triage (pacing). The FRM-01 challenge HOLDS with corrections (cause inferred, not observed);
+  design inputs filed under designs/lane-b-dependabot-batch/test-flakes-2-*.md. **C's fix round done locally** (head b1fd5df1;
+  full suite once, green apart from the local no-Docker capacity form, which fails identically on the base); its push stage
+  stopped on BASE MOVED, as designed. C's merge prep launched: wf_194e8aaf-799 (base merge, description changes from the fix
+  round, fix-round record, one push, CI, verification); C then waits for #86 (open) or the 2026-11-04 12:00Z guard. **B's fix
+  round** still in its suite (e2e green; Stryker shards next); its push will stop on the same base move. B's merge prep then
+  does B(6): #42's three ranges (web client-sesv2, client-sts; worker client-sqs) to ^3.1160.0, the manifest and lockfile
+  conflicts resolved by the generator, the synth comparison redone with #42's stacks.
+
 ## Waiting on someone
 - The founder (carried by the orchestrator): O9, the consumer's size (issue #41); blocks the screening's launch, not #94.
 - 1 moderate Dependabot alert on the default branch (GitHub's push message, 2026-11-01 18:2xZ): a person reads it (the API answers 403 to the build). Does not block.
