@@ -326,6 +326,10 @@ lockfile entry against the release age and the trust policy on every install (`t
   `CDK_DISABLE_VERSION_CHECK`. When it fails on a CDK CLI bump, read `canCollectTelemetry`, the `--no-notices`
   handling and `shouldDisplayVersionMessage`, and change the settings and the test together.
   `@aws-sdk/*` reaches pricing and packets through the lockfile, so its pull request runs those packages' mutation.
+  A `@aws-sdk/client-textract` or `@smithy/core` move is a Textract-reader bump (docs/adr/0070): `pnpm test:golden`
+  reads the evaluation's scans through a real `TextractClient` answering from their recordings
+  (`packages/model-gateway/eval/sets.ts`), so a move that changes the pages as read fails `set_changed`
+  (docs/runbooks/model-evaluation.md, section 5).
 
 ## Actions
 
