@@ -4178,6 +4178,13 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
       '      - name: Read it',
       '        env: { DIGEST: "${{ steps.identity.outputs.digest_web }}" }',
       '        run: echo "$DIGEST"',
+      '      - name: Restore the cache',
+      '        id: cache',
+      '        uses: actions/cache/restore@v5',
+      '        with: { path: cache, key: "${{ runner.os }}" }',
+      '      - name: Name its key',
+      '        env: { KEY: "${{ steps.cache.outputs.cache-primary-key }}" }',
+      '        run: echo "$KEY"',
       '  use:',
       '    needs: build',
       '    runs-on: ubuntu-26.04',
@@ -4199,6 +4206,7 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
         bytes: 71,
       },
       { file: 'fixture.yml', job: 'use', value: 'needs.build.outputs.digest_web', refs: [needs('build'), output('build', 'digest_web')], bound: 'a digest', bytes: 71 },
+      { file: 'fixture.yml', job: 'build', value: 'steps.cache.outputs.cache-primary-key', refs: [action('build', 'cache', 'actions/cache/restore')], bound: 'a key', bytes: 2_048 },
     ];
     const problems = (text: string, files: Readonly<Record<string, string>> = { 'tools/fixture.ts': tool, 'tools/fixture.test.ts': tests }, table: readonly BoundedValue[] = rows) =>
       refProblems(table, unboundedValueProblems('fixture.yml', parse(text)).values, () => text, (file) => files[file]);
@@ -4209,6 +4217,11 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     expect(problems(workflowText.replace('        env: { IMAGE: "${{ matrix.image }}" }\n        run: echo "digest', '        env:\n          IMAGE: ${{ matrix.image }}\n        run: echo "digest'))).toEqual([]);
     const [produced, handed] = rows;
     if (produced === undefined || handed === undefined) throw new Error('two rows');
+    // A uses: producer is its action: another action, or a script in its place, turns its row red.
+    const restore = 'fixture.yml build steps.cache.outputs.cache-primary-key: step cache of job build (fixture.yml:17)';
+    expect(problems(workflowText.replace('uses: actions/cache/restore@v5', 'uses: actions/cache@v5'))).toEqual([`${restore} uses actions/cache, not actions/cache/restore`]);
+    expect(problems(workflowText.replace('        uses: actions/cache/restore@v5\n        with: { path: cache, key: "${{ runner.os }}" }', '        run: echo "cache-primary-key=x" >> "$GITHUB_OUTPUT"'))).toEqual([`${restore} uses no action, not actions/cache/restore`]);
+    expect(problems(workflowText.replace('uses: actions/cache/restore@v5', 'uses: actions/cache/restore@v5.0.1'))).toEqual([]);
     // A name the script does not write: its own lines spell it or it fails, so the last case fails with or without the
     // row's tool (both below).
     const scriptOnly = [{ ...produced, refs: produced.refs.filter((ref) => ref.kind !== 'symbol') }, handed];
