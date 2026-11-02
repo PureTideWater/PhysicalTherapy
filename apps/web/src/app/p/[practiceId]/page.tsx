@@ -9,7 +9,7 @@ import { roleNames, utc, utcDate } from '../../../components/format';
 import { MappedNotPricedAlert, UnmappedPlansAlert } from '../../../components/mapping/months';
 import { NotificationText } from '../../../components/monitoring/display';
 import { proofLevelWords, recoveredLabel } from '../../../components/reconciliation/display';
-import { Money } from '../../../components/remittances/display';
+import { Counted, Money } from '../../../components/remittances/display';
 import { ScrollTable } from '../../../components/scroll-table';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
@@ -151,6 +151,9 @@ const OUTCOME_NAMES: Readonly<Record<string, string>> = {
  * before the first file, the empty state says to upload it. Above the queues, the plans with no mapping, whose lines
  * no run prices, and the lines of mapped plans still NO_MAPPING in effect, as Coverage counts them, each linking to
  * Payer and plan mapping ("Map them" for a person who may map plans; combined audit #32, docs/adr/0075; MAP-06, PRC-31).
+ * The Actionable figure's count counts exactly the lines its dollars sum (one predicate; PR #95 review UX-1), and the
+ * lines of worked cases it leaves out because their pricing is no longer current are said below it, with Cases to
+ * review them.
  */
 export default async function PracticePage(props: { readonly params: Promise<{ practiceId: string }> }) {
   const page = await loadPage(practiceHome, props);
@@ -226,6 +229,16 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
               </Link>
             </div>
             <ul className="flex flex-col gap-1 text-sm" aria-label="Below the headline">
+              {dashboard.actionableNotCurrent.lines === 0 ? null : (
+                <li data-figure="actionable-not-current">
+                  <Counted value={dashboard.actionableNotCurrent.lines} one="line" /> in cases {dashboard.actionableNotCurrent.lines === 1 ? 'is' : 'are'} out of the Actionable figure:{' '}
+                  {dashboard.actionableNotCurrent.lines === 1 ? 'its' : 'their'} pricing is no longer current (priced again, or its terms or release changed).{' '}
+                  <Link className="underline" href={`/p/${practice.id}/cases`}>
+                    Review {dashboard.actionableNotCurrent.lines === 1 ? 'it' : 'them'} on Cases
+                  </Link>
+                  .
+                </li>
+              )}
               <li data-figure="flagged">
                 <Link className="underline" href={stageLinesHref(practice.id, 'flagged')}>
                   {STAGE_LABELS.flagged}

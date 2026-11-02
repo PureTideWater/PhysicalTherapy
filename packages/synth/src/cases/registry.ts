@@ -112,6 +112,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   ]),
   'MAP-08': none(7, "No file of their own: MAP-06's file.", [
     'apps/web/src/lib/pricing/mapped-plan.db.test.ts',
+    'apps/web/src/lib/pricing/mapped-plan-content.db.test.ts',
     'apps/web/src/lib/routes/mapping-routes.db.test.ts',
     'apps/web/src/components/mapping/months.test.tsx',
     'apps/web/e2e/mapping.spec.ts',
@@ -204,6 +205,8 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/components/pricing/display.test.tsx',
     'apps/worker/src/report/documents.test.ts',
     'apps/worker/src/report/report.test.ts',
+    'apps/worker/src/report/unmapped-report.db.test.ts',
+    'apps/web/src/components/reports/display.test.tsx',
     'apps/web/src/lib/routes/report-documents-routes.db.test.ts',
   ]),
   'PRC-31': none(3, "No file of their own: MAP-06's file.", [

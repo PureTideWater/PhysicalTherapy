@@ -1027,8 +1027,11 @@ describe('payer and plan mapping', () => {
     const mappedLine = { planId: mappedPlan, serviceDate: '2041-06-01' };
     // A run over both plans prices (combined audit #32): only the unmapped plan is named, for its coverage.
     expect(await unmappedOf([{ planId: unmapped, serviceDate: '2041-06-01' }, mappedLine])).toEqual([unmapped]);
-    // A plan mapped from a later date has a mapping: its earlier lines are NO_MAPPING one by one (MAP-02), never the plan.
-    expect(await unmappedOf([{ planId: mappedPlan, serviceDate: '2041-01-02' }])).toEqual([]);
+    // PR #95 review R3N-1 / security F2: a plan mapped only from a later date has no mapping in force on these lines'
+    // dates, so over them it is named (a run of them alone would price nothing); with one line in its window it is not,
+    // and its earlier lines are NO_MAPPING one by one (MAP-02).
+    expect(await unmappedOf([{ planId: mappedPlan, serviceDate: '2041-01-02' }])).toEqual([mappedPlan]);
+    expect(await unmappedOf([{ planId: mappedPlan, serviceDate: '2041-01-02' }, mappedLine])).toEqual([]);
     // Every plan unmapped: the creator's "nothing mapped" case (MAP-07), every plan named.
     expect(await unmappedOf([{ planId: unmapped, serviceDate: '2041-06-01' }])).toEqual([unmapped]);
     expect(await unmappedOf([])).toEqual([]);

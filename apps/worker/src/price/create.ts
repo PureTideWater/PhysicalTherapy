@@ -10,10 +10,11 @@ import { RuleReleaseMismatchError, currentReleaseNo } from './release';
  * current rule release and the contract versions in force on each service date ... a run with a
  * rule-release mismatch is refused"; PRD 5, J6 and test matrix MAP-01: a line of an unmapped
  * combination is never priced). In the creator's own scope (a person's request): the period is checked,
- * the release asked for must be the newest published one, the period must hold lines, and some plan of
- * those lines must have a mapping (PricingRunNothingMapped, MAP-07). A plan with no mapping no longer
- * refuses the run (combined audit #32, docs/adr/0075): its lines are left NO_MAPPING one by one and every
- * other line of the period prices (MAP-06). The run is recorded queued,
+ * the release asked for must be the newest published one, the period must hold lines, and some line of
+ * the period must have a mapping of its plan in force on its service date (PricingRunNothingMapped,
+ * MAP-07; decided on the line's date, as the resolver decides, PR #95 review R3N-1). A plan with no
+ * mapping no longer refuses the run (combined audit #32, docs/adr/0075): its lines are left NO_MAPPING
+ * one by one and every other line of the period prices (MAP-06). The run is recorded queued,
  * pinned to that release and to this engine's version; the caller queues the price job for it. The
  * database refuses the same mismatch itself, and a run in another person's name. A re-run of a complete
  * run (rerun.ts) is recorded the same way. The monitoring chain (../monitor) creates a month's run the
@@ -21,7 +22,7 @@ import { RuleReleaseMismatchError, currentReleaseNo } from './release';
  *
  * No run is created for a practice that has no pricing location (audit #33; docs/adr/0064): every line
  * would stop as ENGINE_ERROR invalid_settings, fixed fees included. The location is checked here
- * (PricingLocationWaiting), after the check that some plan is mapped, and Postgres refuses the same run itself
+ * (PricingLocationWaiting), after the check that some line is mapped, and Postgres refuses the same run itself
  * (pricing_run_location_missing, re-runs included), which recordRun reports the same way. A location a
  * line cannot be priced at (a ZIP Medicare's list lacks, or one that needs its ZIP+4) still gets its run:
  * the run fails as location_not_ready only when a line stops on it (execute.ts).
@@ -52,20 +53,21 @@ export class PricingLocationWaiting extends Error {
 }
 
 /**
- * No plan of the period's lines has any mapping (MAP-07), so a run would price nothing: every line
- * would stop as NO_MAPPING, and pricing it later would need a re-run and a hand acceptance per month.
- * No run is recorded. The month is priced once a mapping completes it (the mapping queues monitoring
- * of the months it leaves complete, D2b), or by the daily monitoring once any of its plans is mapped.
- * Counts only: no plan is named.
+ * No line of the period has a mapping of its plan in force on its service date (MAP-07): its plans have
+ * no mapping, or only mappings for other dates (PR #95 review R3N-1), so a run would price nothing:
+ * every line would stop as NO_MAPPING, and pricing it later would need a re-run and a hand acceptance
+ * per month. No run is recorded. The month is priced once a mapping in force on its dates completes it
+ * (the mapping queues monitoring of the months it leaves complete, D2b), or by the daily monitoring once
+ * any of its plans has one. Counts only: no plan is named.
  */
 export class PricingRunNothingMapped extends Error {
   override readonly name = 'PricingRunNothingMapped';
 
   constructor(
-    /** The plans of the period's lines, none of which has a mapping. */
+    /** The plans of the period's lines, none of which has a mapping in force on its lines' dates. */
     readonly plans: number,
   ) {
-    super(`none of the period's ${String(plans)} plan(s) has a mapping: a run would price nothing`);
+    super(`none of the period's ${String(plans)} plan(s) has a mapping in force on its lines' dates: a run would price nothing`);
   }
 }
 
@@ -118,15 +120,17 @@ export async function createPricingRun(scope: PracticeScope<ScopeClient>, input:
   }
   const { rows: clock } = await scope.client.query<{ now: Date }>('SELECT now() AS now');
   const loadedBy = clock[0]?.now ?? new Date(0);
-  const plans = await runPlans(scope.client, { practiceId: input.practiceId, periodFrom: input.periodFrom, periodTo: input.periodTo, loadedBy });
-  if (plans.length === 0) {
+  const lines = await runPlans(scope.client, { practiceId: input.practiceId, periodFrom: input.periodFrom, periodTo: input.periodTo, loadedBy });
+  if (lines.length === 0) {
     throw new PricingRunInputError('period', 'a period that holds at least one service line');
   }
-  // MAP-07: refused when no plan of the run's lines has a mapping (it would price nothing). Any other plan
-  // with no mapping leaves its own lines NO_MAPPING while the rest price (MAP-01, MAP-06; combined audit #32).
-  const unmapped = await practiceUnmappedPlanIds(scope, { practiceId: input.practiceId, requestId: input.requestId, purpose: 'pricing' }, plans);
-  if (unmapped.length === plans.length) {
-    throw new PricingRunNothingMapped(plans.length);
+  // MAP-07: refused when no line of the run has a mapping of its plan in force on its date (it would price
+  // nothing), judged per line date as the resolver judges it (PR #95 review R3N-1, security F2). Any other plan
+  // with no mapping in force leaves its own lines NO_MAPPING while the rest price (MAP-01, MAP-06; audit #32).
+  const plans = new Set(lines.map((line) => line.planId)).size;
+  const unmapped = await practiceUnmappedPlanIds(scope, { practiceId: input.practiceId, requestId: input.requestId, purpose: 'pricing' }, lines);
+  if (unmapped.length === plans) {
+    throw new PricingRunNothingMapped(plans);
   }
   // After the mapping check, so a month both all-unmapped and missing its ZIP is reported as waiting on a mapping.
   // Audit #33: no run while the practice has no location (PricingLocationWaiting); Postgres refuses it too.

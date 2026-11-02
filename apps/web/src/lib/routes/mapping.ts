@@ -1,5 +1,6 @@
 import { mapPlan } from '@tp/contracts';
 import { MAPPING_KINDS, type PracticeScope, type ScopeClient, recordAuditEvent, rolesPermit } from '@tp/db/runtime';
+import { practiceRunRefusal } from '@tp/worker/billing';
 import { PricingLocationWaiting, RerunRefusedError, RuleReleaseMismatchError, createRerun, currentReleaseNo } from '@tp/worker/pricing';
 import { z } from 'zod';
 
@@ -58,21 +59,28 @@ import { opaqueId, optionalText } from './schemas';
  * (createRerun; docs/adr/0037), each accepted by hand on its page after its diff (J17), never a second re-run of a
  * month already being priced again since its newest mapping. The mapping and the press take the practice's months
  * lock first (D22), so two people at once queue monitoring once and create one re-run per month. Both new routes
- * start work and are refused while the practice is suspended (RUN_STARTING_ROUTES); the mapping's own monitoring is
- * the practice's work, in neither of SS-01's lists.
+ * start work and are refused while the practice is suspended (RUN_STARTING_ROUTES); the mapping itself stays allowed
+ * while suspended, but queues nothing then and says why (mapped_held, corrected_held; PR #95 review security F1): the
+ * worker would refuse its monitoring job, so "being priced" would be false. The mapping's own monitoring is the
+ * practice's work, in neither of SS-01's lists.
  */
 
 const page = z.coerce.number().int().min(1).max(100_000).default(1);
 const id = optionalText(opaqueId);
 const date = z.iso.date('a date (YYYY-MM-DD)');
+const VIEWS = ['unmapped', 'mapped', 'all'] as const;
 
 export interface MappingFilters {
   readonly view: PlanView;
   readonly payer?: string;
 }
 
-/** The notices the mapping list shows after its own actions (design 5.3). */
-export const MAPPING_LIST_NOTICES = ['priced_again', 'pricing_requested'] as const;
+/**
+ * The notices the mapping list shows after its own actions (design 5.3): re-runs created (priced_again), none created
+ * because every posted month was already being priced again by someone else's press (already_pricing, PR #95 review
+ * R2-5), and monitoring requested (pricing_requested).
+ */
+export const MAPPING_LIST_NOTICES = ['priced_again', 'already_pricing', 'pricing_requested'] as const;
 export type MappingListNotice = (typeof MAPPING_LIST_NOTICES)[number];
 
 /**
@@ -109,12 +117,18 @@ export interface MappingPageData {
   /** Dollars waiting on mapping, for the whole practice (shown at the top). */
   readonly waiting: Totals;
   readonly list: PlanPage;
-  /** The plans with no mapping at all, whose lines no run prices (MAP-06), and the lines of mapped plans still NO_MAPPING in effect (PRC-31). */
+  /** The plans with no mapping in force on their lines' dates, whose lines no run prices (MAP-06; R3N-1), and the lines of mapped plans still NO_MAPPING in effect (PRC-31). */
   readonly unmappedPlans: UnmappedPlanTotals;
   readonly mappedNotPriced: MappedNotPricedTotals;
   /** The practice's months to price, for the two regions below the card. */
   readonly months: MonthsToPrice;
   readonly notice: MappingListNotice | null;
+  /**
+   * Why the practice may not start work now (the database's practice_run_refusal: an organization suspended for
+   * billing), or null. "Price them now" and "Price these months again" are refused while it holds (RUN_STARTING_ROUTES),
+   * and a mapping queues nothing; the screens say so with this reason, as Uploads does (security F1).
+   */
+  readonly suspension: string | null;
   readonly canMap: boolean;
   /** Whether the person may triage on Cases (case.work), which an accepted re-run's row links to. */
   readonly canWorkCases: boolean;
@@ -129,7 +143,7 @@ export const mappingPage = practiceRoute({
   permission: 'practice.open',
   params: z.object({
     practiceId: opaqueId,
-    view: z.enum(['unmapped', 'mapped', 'all']).default('unmapped'),
+    view: z.enum(VIEWS).default('unmapped'),
     payer: id,
     page,
     notice: z.enum(MAPPING_LIST_NOTICES).optional().catch(undefined),
@@ -146,6 +160,7 @@ export const mappingPage = practiceRoute({
       mappedNotPriced: await mappedNotPricedTotals(scope.client, practiceId),
       months: await monthsToPrice(scope, practiceId, null, request.requestId),
       notice: params.notice ?? null,
+      suspension: await practiceRunRefusal(scope.client, practiceId),
       canMap: rolesPermit(access.roles, 'mapping.edit'),
       canWorkCases: rolesPermit(access.roles, 'case.work'),
       roles: access.roles,
@@ -156,10 +171,23 @@ export const mappingPage = practiceRoute({
 
 /**
  * The plan page's notices (design 5.3): today's three, and after a mapping that queued monitoring of the months it
- * completed (mapped_pricing, corrected_pricing), after "Price these months again" (priced_again) and after "Price them
- * now" (pricing_requested).
+ * completed (mapped_pricing, corrected_pricing), after a mapping that completed months while the practice is suspended,
+ * so nothing was queued (mapped_held, corrected_held: priced once billing is current; the page shows `suspension`),
+ * after "Price these months again" (priced_again, or already_pricing when every posted month was already being priced
+ * again) and after "Price them now" (pricing_requested).
  */
-export const MAPPING_NOTICES = ['mapped', 'corrected', 'unchanged', 'mapped_pricing', 'corrected_pricing', 'priced_again', 'pricing_requested'] as const;
+export const MAPPING_NOTICES = [
+  'mapped',
+  'corrected',
+  'unchanged',
+  'mapped_pricing',
+  'corrected_pricing',
+  'mapped_held',
+  'corrected_held',
+  'priced_again',
+  'already_pricing',
+  'pricing_requested',
+] as const;
 export type MappingNotice = (typeof MAPPING_NOTICES)[number];
 
 export interface PlanPageData {
@@ -172,6 +200,8 @@ export interface PlanPageData {
   readonly canWorkCases: boolean;
   readonly roles: readonly string[];
   readonly notice: MappingNotice | null;
+  /** Why the practice may not start work now (practice_run_refusal), or null: see MappingPageData.suspension. */
+  readonly suspension: string | null;
 }
 
 export const planPage = practiceRoute({
@@ -194,6 +224,7 @@ export const planPage = practiceRoute({
       canWorkCases: rolesPermit(access.roles, 'case.work'),
       roles: access.roles,
       notice: params.notice ?? null,
+      suspension: await practiceRunRefusal(scope.client, practiceId),
     };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId, planId: refs.planId }) },
@@ -205,7 +236,12 @@ export const planPage = practiceRoute({
  * mapping): when a release is in force and the mapping leaves a month holding this plan's lines with every plan mapped
  * and not held on the billing ZIP or on Medicare content, it queues monitoring once the mapping commits, keyed by the
  * request and naming every such complete month (D2b, D20), and says so (mapped_pricing, corrected_pricing); otherwise
- * nothing is queued and the notice is today's. The same mapping again changes nothing and queues nothing.
+ * nothing is queued and the notice is today's. A month's plans count as mapped by the mapping in force on their lines'
+ * dates (R3N-1), so a mapping only for other dates completes nothing. While the practice is suspended
+ * (practice_run_refusal, asked in the same transaction) the mapping is kept and nothing is queued, since the worker
+ * would refuse the job: the notice says the months are priced once billing is current (mapped_held, corrected_held;
+ * security F1), and the daily monitor prices them after reinstatement. The same mapping again changes nothing and
+ * queues nothing.
  */
 export const mapPlanAction = practiceRoute({
   id: 'practice.mapping.map',
@@ -272,10 +308,22 @@ export const mapPlanAction = practiceRoute({
     // The months this mapping completes (D2b), and with them every complete month (D20): planned once the mapping
     // commits, so the plan the job starts reads it. Dates only in the payload.
     const months = monthsToQueue(await monthsAwaitingMappings(scope, practiceId), input.planId);
-    if (months.length > 0) {
+    const held = months.length > 0 && (await practiceRunRefusal(scope.client, practiceId)) !== null;
+    if (months.length > 0 && !held) {
       afterCommit(() => services.queue.enqueue('monitor', { practice_id: practiceId, request_id: request.requestId, months }));
     }
-    const notice: MappingNotice = supersedesId === null ? (months.length > 0 ? 'mapped_pricing' : 'mapped') : months.length > 0 ? 'corrected_pricing' : 'corrected';
+    const notice: MappingNotice =
+      supersedesId === null
+        ? months.length === 0
+          ? 'mapped'
+          : held
+            ? 'mapped_held'
+            : 'mapped_pricing'
+        : months.length === 0
+          ? 'corrected'
+          : held
+            ? 'corrected_held'
+            : 'corrected_pricing';
     return { objectId: mappingId, redirect: `${planPath}?notice=${notice}` };
   },
   sample: {
@@ -284,9 +332,32 @@ export const mapPlanAction = practiceRoute({
   },
 });
 
-/** Where an action of the mapping screens returns: the plan's page it came from, or the mapping list. */
-function returnPath(practiceId: string, planId: string | undefined, notice: MappingNotice): string {
-  return planId === undefined ? `/p/${practiceId}/mapping?notice=${notice}` : `/p/${practiceId}/mapping/${planId}?notice=${notice}`;
+/**
+ * The mapping list's filters a form of the list posts back (UX-7: "filters in the URL"), each optional and dropped when
+ * it is not a valid value, as the list page reads them.
+ */
+const listFilters = {
+  view: z.enum(VIEWS).optional().catch(undefined),
+  payer: id.catch(undefined),
+};
+
+/**
+ * Where an action of the mapping screens returns: the plan's page it came from, or the mapping list with the filters it
+ * was showing (view, payer), then the notice.
+ */
+function returnPath(practiceId: string, planId: string | undefined, notice: MappingNotice, filters: { readonly view?: string | undefined; readonly payer?: string | undefined } = {}): string {
+  if (planId !== undefined) {
+    return `/p/${practiceId}/mapping/${planId}?notice=${notice}`;
+  }
+  const query = new URLSearchParams();
+  if (filters.view !== undefined) {
+    query.set('view', filters.view);
+  }
+  if (filters.payer !== undefined) {
+    query.set('payer', filters.payer);
+  }
+  query.set('notice', notice);
+  return `/p/${practiceId}/mapping?${query.toString()}`;
 }
 
 /** The plan a form of a plan's page names, the practice's own (another practice's is invisible under RLS anyway). */
@@ -314,12 +385,12 @@ export const priceWaitingAction = practiceRoute({
   phi: true,
   permission: 'mapping.edit',
   params: z.object({ practiceId: opaqueId }),
-  input: z.object({ planId: optionalText(opaqueId) }),
+  input: z.object({ planId: optionalText(opaqueId), ...listFilters }),
   audit: { action: 'monitoring_requested', objectType: 'practice' },
   handle: async ({ scope, practiceId, input, request, services, afterCommit }): Promise<MutationResult> => {
     await requirePlan(scope, practiceId, input.planId);
     afterCommit(() => services.queue.enqueue('monitor', { practice_id: practiceId, request_id: request.requestId }));
-    return { objectId: practiceId, redirect: returnPath(practiceId, input.planId, 'pricing_requested') };
+    return { objectId: practiceId, redirect: returnPath(practiceId, input.planId, 'pricing_requested', input) };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: () => ({}) },
 });
@@ -361,7 +432,8 @@ export function priceAgainRefusal(error: unknown, month: { readonly periodFrom: 
  * or a posted month is neither ready nor already being priced again since its newest mapping (it left the list, waits
  * for a newer run, its last re-run failed on what has not changed, or it is not the practice's), nothing is created
  * (months_changed); a posted month already being priced again is skipped, so a second press, by anyone, at any moment,
- * creates no second re-run (D4). Any refusal rolls the whole request back.
+ * creates no second re-run (D4), and a press that creates none says so (already_pricing, R2-5; its audit event is
+ * kept, the record that the press happened). Any refusal rolls the whole request back.
  */
 export const priceAgainAction = practiceRoute({
   id: 'practice.mapping.price_again',
@@ -375,6 +447,7 @@ export const priceAgainAction = practiceRoute({
     runIds,
     /** The release the screen showed as in force. */
     releaseNo: z.coerce.number().int().min(1),
+    ...listFilters,
   }),
   audit: { action: 'plan_months_priced_again', objectType: 'practice' },
   handle: async ({ scope, practiceId, input, request, services }): Promise<MutationResult> => {
@@ -397,7 +470,7 @@ export const priceAgainAction = practiceRoute({
       await services.queue.enqueue('price', { practice_id: practiceId, pricing_run_id: created.pricingRunId });
       await recordAuditEvent(scope, { action: 'pricing_run_rerun_created', objectType: 'pricing_run', objectId: created.pricingRunId, practiceId, requestId: request.requestId });
     }
-    return { objectId: practiceId, redirect: returnPath(practiceId, input.planId, 'priced_again') };
+    return { objectId: practiceId, redirect: returnPath(practiceId, input.planId, ready.length === 0 ? 'already_pricing' : 'priced_again', input) };
   },
   sample: {
     params: (refs) => ({ practiceId: refs.practiceId }),

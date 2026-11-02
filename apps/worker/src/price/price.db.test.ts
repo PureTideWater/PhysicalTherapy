@@ -127,12 +127,41 @@ describe('MAP-01 and MAP-07: a period none of whose plans has a mapping', () => 
     const refused = await errorOf(createRun(target, '2026-03-01', '2026-03-31'));
     expect(refused).toBeInstanceOf(PricingRunNothingMapped);
     // Counts only: no plan is named.
-    expect(refused).toMatchObject({ plans: 1, message: "none of the period's 1 plan(s) has a mapping: a run would price nothing" });
+    expect(refused).toMatchObject({ plans: 1, message: "none of the period's 1 plan(s) has a mapping in force on its lines' dates: a run would price nothing" });
     expect(JSON.stringify(refused)).not.toContain(await planOf(target, 'CE:SYNPLAN-UNMAPPED-01'));
     expect(await one<{ n: number }>('SELECT count(*)::int AS n FROM pricing_run WHERE practice_id = $1', [target.practiceId])).toEqual({ n: 0 });
     const expected = (JSON.parse(readFileSync(path.join(FIXTURES, 'MAP-01/expected.json'), 'utf8')) as { outcome: { coverageWaiting: { lines: number; chargeCents: string; paidCents: string } } }).outcome.coverageWaiting;
     const waiting = await withPracticeScope(w.app, { actorId: target.manager, practiceIds: [target.practiceId] }, (scope) => dollarsWaitingOnMapping(scope, target.practiceId));
     expect(waiting.map((plan) => ({ lines: plan.lines, chargeCents: plan.chargeCents.toString(), paidCents: plan.paidCents.toString() }))).toEqual([expected]);
+  });
+
+  // R3N-1: "mapped" is decided on each line's date, as the resolver decides; a mapping only for later dates prices nothing.
+  it('R3N-1: gets no run while the plan is mapped only from a later date, and a run once a mapping is in force on its dates', async () => {
+    const target = await practice('map-01-later');
+    await load(target, 'MAP-01/remit.835');
+    const planId = await planOf(target, 'CE:SYNPLAN-UNMAPPED-01');
+    const june = await mapped(target, planId, 'no_agreement', '2026-06-01');
+    expect(await errorOf(createRun(target, '2026-03-01', '2026-03-31'))).toBeInstanceOf(PricingRunNothingMapped);
+    expect(await one<{ n: number }>('SELECT count(*)::int AS n FROM pricing_run WHERE practice_id = $1', [target.practiceId])).toEqual({ n: 0 });
+    // Corrected to start on January 1: in force on March's dates, so the run is created and resolves past NO_MAPPING.
+    await w.as(target, target.manager, (context) => correctMapping(context, { practiceId: target.practiceId, planId, kind: 'no_agreement', contractVersionId: null, effectiveFrom: '2026-01-01', supersedesId: june }));
+    const runId = await createRun(target, '2026-03-01', '2026-03-31');
+    await execute(target, runId);
+    const reasons = [...new Set((await pricedLines(runId)).map((line) => line.unpriced_reason))];
+    expect(reasons).toEqual(['NO_AGREEMENT']);
+    expect(parseCoverage((await runRow(runId)).coverage).unmapped_plans).toEqual([]);
+  });
+
+  // R3N-2: the mapping check runs before the location check (design 2.1 rule 5, ADR 0075 rule 2).
+  it('R3N-2: reports a month with no mapped plan and no location as waiting on a mapping, then on the location once mapped', async () => {
+    const target = await practice('map-01-no-location');
+    await load(target, 'MAP-01/remit.835');
+    await w.withoutLocation(target);
+    expect(await errorOf(createRun(target, '2026-03-01', '2026-03-31'))).toBeInstanceOf(PricingRunNothingMapped);
+    await mapped(target, await planOf(target, 'CE:SYNPLAN-UNMAPPED-01'), 'no_agreement', '2026-01-01');
+    const waiting = await errorOf(createRun(target, '2026-03-01', '2026-03-31'));
+    expect(waiting).toBeInstanceOf(PricingLocationWaiting);
+    expect(waiting).toMatchObject({ status: 'zip_missing' });
   });
 });
 
@@ -147,13 +176,19 @@ describe('MAP-06 and PRC-30: a month holding lines of a mapped plan and of a pla
   }
   const map06 = () => JSON.parse(readFileSync(path.join(FIXTURES, 'MAP-06/expected.json'), 'utf8')) as Map06;
 
-  /** The plans with no mapping over the month, as the screens count them (PRICEABLE_LINE, no mapping row at all; §3.2's unmappedPlanTotals). */
+  /**
+   * The plans with no mapping in force on any of their lines' dates over the period, as the screens count them
+   * (PRICEABLE_LINE; §3.2's unmappedPlanTotals with a period, decided per line date since PR #95 review R3N-1).
+   */
   const unmappedTotals = (target: Practice, periodFrom: string, periodTo: string) =>
     one<{ plans: number; lines: number; charge_cents: string }>(
-      `SELECT count(DISTINCT l.payer_plan_key)::int AS plans, count(*)::int AS lines, coalesce(sum(l.charge_cents), 0)::text AS charge_cents
-         FROM claim c JOIN service_line l ON l.claim_id = c.id
-        WHERE c.practice_id = $1 AND ${PRICEABLE_LINE} AND coalesce(l.service_date, c.service_from) BETWEEN $2::date AND $3::date
-          AND NOT EXISTS (SELECT 1 FROM payer_plan_mapping m WHERE m.plan_id = l.payer_plan_key)`,
+      `WITH dated AS (
+         SELECT l.payer_plan_key AS plan_id, l.charge_cents,
+                payer_plan_mapping_in_force(l.payer_plan_key, coalesce(l.service_date, c.service_from)) IS NOT NULL AS covered
+           FROM claim c JOIN service_line l ON l.claim_id = c.id
+          WHERE c.practice_id = $1 AND ${PRICEABLE_LINE} AND coalesce(l.service_date, c.service_from) BETWEEN $2::date AND $3::date
+       ), grouped AS (SELECT plan_id, count(*)::int AS lines, sum(charge_cents) AS charge_cents FROM dated GROUP BY plan_id HAVING NOT bool_or(covered))
+       SELECT count(*)::int AS plans, coalesce(sum(lines), 0)::int AS lines, coalesce(sum(charge_cents), 0)::text AS charge_cents FROM grouped`,
       [target.practiceId, periodFrom, periodTo],
     );
 
@@ -195,6 +230,36 @@ describe('MAP-06 and PRC-30: a month holding lines of a mapped plan and of a pla
     expect(await unmappedTotals(target, '2026-02-01', '2026-02-28')).toEqual({ plans: 1, lines: expected.unmapped.lines, charge_cents: expected.unmapped.chargeCents });
     expect(coverage.unmapped_plans.reduce((sum, plan) => sum + plan.lines, 0)).toBeLessThanOrEqual(coverage.lines - coverage.priced.lines);
     expect(coverage.priced.lines).toBe(expected.priced.length);
+  });
+
+  // R2-2: a run's unmapped_plans counts that run's own priced lines of the plan, never another run's of the same month.
+  it('R2-2: records in each run of a month priced again (a second first run, a re-run) only its own lines of the plan with no mapping', async () => {
+    const { target, unmappedPlan } = await mixedMonth('map-06-twice');
+    const first = await createRun(target, '2026-02-01', '2026-02-28');
+    await execute(target, first);
+    const firstCoverage = (await runRow(first)).coverage;
+    const second = await createRun(target, '2026-02-01', '2026-02-28');
+    await execute(target, second);
+    const rerun = (await withPracticeScope(w.app, { actorId: target.manager, practiceIds: [target.practiceId] }, (scope) =>
+      createRerun(scope, { practiceId: target.practiceId, pricingRunId: second, releaseNo: RELEASE, requestId: `test-${randomUUID()}` }),
+    )).pricingRunId;
+    await execute(target, rerun);
+    for (const runId of [first, second, rerun]) {
+      const run = await runRow(runId);
+      expect(run.status).toBe('complete');
+      const coverage = parseCoverage(run.coverage);
+      // Expected from that run's own priced_line rows, not from a constant.
+      const own = await one<{ lines: number; charge_cents: string }>(
+        `SELECT count(*)::int AS lines, coalesce(sum(l.charge_cents), 0)::text AS charge_cents
+           FROM priced_line p JOIN service_line l ON l.id = p.service_line_id WHERE p.pricing_run_id = $1 AND l.payer_plan_key = $2`,
+        [runId, unmappedPlan],
+      );
+      expect(own).toEqual({ lines: 3, charge_cents: '30000' });
+      expect(coverage.unmapped_plans).toEqual([{ plan_id: unmappedPlan, lines: own.lines, charge_cents: own.charge_cents }]);
+      expect(coverage.unmapped_plans.reduce((sum, plan) => sum + plan.lines, 0)).toBeLessThanOrEqual(coverage.lines - coverage.priced.lines);
+    }
+    // The first run's stored coverage is as it was.
+    expect((await runRow(first)).coverage).toEqual(firstCoverage);
   });
 
   it('counts a line of the plan that stops before the resolver (ENGINE_ERROR invalid_line_facts) among the plan’s lines (review R3-5)', async () => {

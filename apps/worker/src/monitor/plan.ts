@@ -28,8 +28,9 @@ import {
  *    or complete run of the practice whose period holds the whole month and whose cut-off is at or after
  *    that line's load) gets a run for that month, created the way a person creates one
  *    (createPricingRun: the release in force, the period's plans, and MAP-07's refusal of a period none of
- *    whose plans has a mapping), in the job's own name. A month none of whose plans is mapped waits for a
- *    mapping; in any other month a plan with no mapping leaves its own lines NO_MAPPING while the rest
+ *    whose lines has a mapping in force on its date), in the job's own name. A month none of whose lines is
+ *    mapped on its date waits for a mapping (decided per line date, PR #95 review R3N-1: a mapping only for
+ *    other dates does not count); in any other month a plan with no mapping leaves its own lines NO_MAPPING while the rest
  *    price (MAP-01, MAP-06; combined audit #32, docs/adr/0075); a month whose lines are all reversals has
  *    nothing to price. A job queued by a mapping names the months it may plan (D20): only those of them no
  *    run covers are planned, each through steps 4 and 5 and the mapping check as any month, so a mapping's
@@ -90,7 +91,7 @@ export type MonitorPlan =
       readonly outcome: 'planned';
       readonly releaseNo: number;
       readonly created: readonly CreatedMonthRun[];
-      /** Months none of whose plans has a mapping (MAP-07): no run, since it would price nothing. */
+      /** Months none of whose lines has a mapping of its plan in force on its date (MAP-07): no run, since it would price nothing. */
       readonly waitingOnMapping: readonly PlannedMonth[];
       /** Months waiting on the practice's location: none created while it is missing, or its last run failed location_not_ready. */
       readonly waitingOnLocation: readonly WaitingMonth[];
@@ -327,7 +328,7 @@ export async function planMonitoring(scope: PracticeScope<ScopeClient>, practice
       created.push({ ...month, pricingRunId: run.pricingRunId });
     } catch (error) {
       if (error instanceof PricingRunNothingMapped) {
-        // No plan of the month has a mapping (MAP-07): it waits for one.
+        // No line of the month has a mapping in force on its date (MAP-07): it waits for one.
         waitingOnMapping.push(month);
       } else if (error instanceof PricingLocationWaiting) {
         waitingLocation.push({ ...month, status: error.status });

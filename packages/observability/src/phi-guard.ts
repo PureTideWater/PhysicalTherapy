@@ -152,14 +152,16 @@ export function jobPayloadPhiFindings(payload: unknown, options: PhiGuardOptions
   const findings: string[] = [];
   for (const [key, value] of Object.entries(payload)) {
     const where = `job payload field ${key}`;
-    const list = PAYLOAD_LISTS[key];
+    // Own keys only (SEC-R2-1): a plain-object lookup also finds Object.prototype's members, so a key such as
+    // `constructor`, `toString` or `__proto__` would resolve to an inherited value and slip past the key rule.
+    const list = Object.hasOwn(PAYLOAD_LISTS, key) ? PAYLOAD_LISTS[key] : undefined;
     if (list !== undefined) {
       if (!Array.isArray(value) || value.length < list.min || value.length > list.max || !value.every((entry) => typeof entry === 'string' && list.entry.test(entry))) {
         findings.push(`${where} is not in its fixed format`);
       }
       continue;
     }
-    const format = PAYLOAD_FIELDS[key];
+    const format = Object.hasOwn(PAYLOAD_FIELDS, key) ? PAYLOAD_FIELDS[key] : undefined;
     if (format !== undefined) {
       if (typeof value !== 'string' || !format.test(value)) {
         findings.push(`${where} is not in its fixed format`);

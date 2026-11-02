@@ -84,6 +84,12 @@ describe('jobPayloadPhiFindings (SEC-08)', () => {
     [{ months: ['2026-02'] }, /months is not in its fixed format/],
     [{ months: [20260201] }, /months is not in its fixed format/],
     [{ months: ['1950-01-01'] }, /synthetic record/],
+    // SEC-R2-1: a key Object.prototype holds is not an allowed field, whatever its value; refused, never thrown.
+    [{ practice_id: PRACTICE, constructor: [] }, /constructor is not an ID field/],
+    [{ toString: ['2026-02-01'] }, /toString is not an ID field/],
+    [{ valueOf: 'x' }, /valueOf is not an ID field/],
+    [{ hasOwnProperty: [] }, /hasOwnProperty is not an ID field/],
+    [JSON.parse('{"__proto__": []}') as unknown, /__proto__ is not an ID field/],
     [[PRACTICE], /an object of opaque IDs/],
     ['practice', /an object of opaque IDs/],
     [null, /an object of opaque IDs/],
