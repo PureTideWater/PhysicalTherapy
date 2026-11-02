@@ -2727,6 +2727,8 @@ describe('mutation testing (docs/adr/0066, Part 4; CI-15 to CI-17)', () => {
   const MANIFEST_LITERALS = ['package.json', 'pnpm-workspace.yaml', 'mutation.yml', 'read-pkg', 'read-package-up', 'pkg-up', '@npmcli/package-json', 'npm_package_'] as const;
   const MANIFEST_READERS: Readonly<Record<string, { readonly literals: readonly (typeof MANIFEST_LITERALS)[number][]; readonly reads: string }>> = {
     'tools/stryker/affected.ts': { literals: ['package.json', 'pnpm-workspace.yaml', 'mutation.yml'], reads: 'all three as data: the global inputs and each closure’s manifests, diffed, never run' },
+    'tools/stryker/manifests.ts': { literals: ['package.json', 'pnpm-workspace.yaml', 'mutation.yml'], reads: 'all three as data: each side’s text of the root and workspace manifests, the workspace file and this workflow, classified field by field, never run' },
+    'tools/stryker/canary/stryker.config.mjs': { literals: ['mutation.yml'], reads: 'a comment naming the workflow whose shard step runs it' },
     'tools/stryker/workspace.ts': { literals: ['package.json', 'pnpm-workspace.yaml'], reads: 'the workspace’s packages, and each workspace manifest’s name and exports (the aliases)' },
     'tools/stryker/stryker.ts': { literals: ['package.json'], reads: '@stryker-mutator/core’s own manifest under node_modules, for its bin' },
     'tools/stryker/runtime.ts': { literals: ['package.json'], reads: 'the root packageManager, the pinned pnpm' },
