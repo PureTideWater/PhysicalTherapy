@@ -999,7 +999,9 @@ docker-ce past 28, whichever comes first. The follow-up pull request, cut from t
       (it is still written on the runner, and the build summary without its link), while a push's and the release's
       keep the default upload, the release's record being the only full provenance of a released image (its images
       build with `provenance: false`). build-push-action v7.4.0 reads the variable in its post step with
-      actions-toolkit's `parseBool`. The security review's S3, decided for the safer option under the same ruling.
+      actions-toolkit's `parseBool`. A build's env holds these two variables and no other, and no `DOCKER_BUILD_` or
+      `BUILDX_` variable is set for a whole job or workflow (`DOCKER_BUILD_SUMMARY: false` would skip the record on
+      every run). The security review's S3, decided for the safer option under the same ruling.
     - **P2, a proposal:** taking the event out of the record altogether, `provenance-add-gha=false` on the builder,
       needs #82's builder rule changed (`tools/check-action-pins/buildkit.ts` holds `driver-opts` to exactly
       `image=…@sha256:…`), so it stays with the founder.

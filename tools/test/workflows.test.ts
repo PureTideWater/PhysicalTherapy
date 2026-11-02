@@ -4431,6 +4431,17 @@ describe('one environment string under Linux’s 131,072 bytes (docs/adr/0066, P
     // default, the release's record being the only full provenance of a released image. build-push-action v7.4.0 reads
     // the variable in its post step with actions-toolkit's parseBool (true or false; anything else is a warning).
     expect(builds.filter(({ step }) => step.env?.DOCKER_BUILD_RECORD_UPLOAD !== "${{ github.event_name != 'pull_request' }}").map(({ where }) => where)).toEqual([]);
+    // And nothing else: another of build-push-action's variables (DOCKER_BUILD_SUMMARY: false skips the record's export
+    // and upload on every run) set on a build, or any DOCKER_BUILD_ or BUILDX_ variable set for a whole job or
+    // workflow, where every step of it would read it, is named.
+    const BUILD_ENV = { BUILDX_METADATA_PROVENANCE: 'disabled', DOCKER_BUILD_RECORD_UPLOAD: "${{ github.event_name != 'pull_request' }}" };
+    expect(builds.filter(({ step }) => !isDeepStrictEqual(step.env, BUILD_ENV)).map(({ where }) => where)).toEqual([]);
+    const shared = workflowFiles().flatMap((file) => {
+      const parsed = workflow(file) as unknown as { readonly env?: unknown; readonly jobs: Record<string, { readonly env?: unknown }> };
+      const scopes: (readonly [string, unknown])[] = [[`${file} env`, parsed.env], ...Object.entries(parsed.jobs).map(([id, job]) => [`${file} job ${id} env`, job.env] as const)];
+      return scopes.flatMap(([where, env]) => Object.keys(isRecord(env) ? env : {}).filter((name) => /^(?:DOCKER_BUILD_|BUILDX_)/i.test(name)).map((name) => `${where}.${name}`));
+    });
+    expect(shared).toEqual([]);
     expect(builds.length).toBeGreaterThan(0);
     const usesLines = (file: string): number[] => {
       const counter = new LineCounter();
